@@ -25,6 +25,12 @@ export const SALES_OFFICIAL_UPDATE_FIELDS = [
   'installments_count',
   'installment_correction_type',
   'broker_id',
+  'signal_contract_value',
+  'signal_paid_at_sale',
+  'signal_remaining_value',
+  'signal_remaining_payment_mode',
+  'signal_remaining_installments',
+  'signal_remaining_installment_value',
   ...SALE_SPOUSE_DB_FIELDS,
 ] as const;
 
@@ -55,6 +61,12 @@ export type OfficialSalesUpdateInput = {
   installmentCorrectionType?: string | null;
   brokerId: string | null;
   spouse?: Partial<SaleSpouseFormFields>;
+  signalContractValue?: number | null;
+  signalPaidAtSale?: number | null;
+  signalRemainingValue?: number | null;
+  signalRemainingPaymentMode?: string | null;
+  signalRemainingInstallments?: number | null;
+  signalRemainingInstallmentValue?: number | null;
 };
 
 /** Payload seguro para sales.update — somente colunas oficiais. */
@@ -74,6 +86,13 @@ export function buildOfficialSalesUpdatePatch(
       input.installmentCorrectionType ?? DEFAULT_INSTALLMENT_CORRECTION_TYPE,
     ),
     broker_id: input.brokerId,
+    signal_contract_value: input.signalContractValue ?? null,
+    signal_paid_at_sale: input.signalPaidAtSale ?? null,
+    signal_remaining_value: input.signalRemainingValue ?? null,
+    signal_remaining_payment_mode: input.signalRemainingPaymentMode ?? null,
+    signal_remaining_installments: input.signalRemainingInstallments ?? null,
+    signal_remaining_installment_value:
+      input.signalRemainingInstallmentValue ?? null,
     ...buildSaleSpouseDbPatch(input.spouse || {}),
   };
 }

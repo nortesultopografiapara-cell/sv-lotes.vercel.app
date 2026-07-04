@@ -4065,6 +4065,46 @@ export default function GISMap({
               : 1;
           const saleContractModel = normalizeSaleContractModel(tenantContractModel);
 
+          const recantoSignalContract =
+            saleContractModel === "RECANTO_PRIMAVERA"
+              ? parseCurrencyBRLNumber(
+                  customerData.signal_contract_value ||
+                    customerData.down_payment ||
+                    "",
+                )
+              : null;
+          const recantoSignalPaidAtSale =
+            saleContractModel === "RECANTO_PRIMAVERA" &&
+            customerData.signal_paid_at_sale != null &&
+            String(customerData.signal_paid_at_sale).trim() !== ""
+              ? parseCurrencyBRLNumber(String(customerData.signal_paid_at_sale))
+              : null;
+          const recantoSignalRemaining =
+            recantoSignalContract != null && recantoSignalPaidAtSale != null
+              ? Math.max(0, recantoSignalContract - recantoSignalPaidAtSale)
+              : null;
+          const recantoSignalMode =
+            saleContractModel === "RECANTO_PRIMAVERA" &&
+            recantoSignalRemaining != null &&
+            recantoSignalRemaining > 0
+              ? customerData.signal_remaining_payment_mode ||
+                "FIRST_INSTALLMENTS"
+              : null;
+          const recantoSignalInstallments =
+            recantoSignalMode === "FIRST_INSTALLMENTS"
+              ? Number(customerData.signal_remaining_installments) || null
+              : recantoSignalMode === "ALL_INSTALLMENTS"
+                ? instCount
+                : null;
+          const recantoSignalInstallmentValue =
+            recantoSignalRemaining != null &&
+            recantoSignalInstallments &&
+            recantoSignalInstallments > 0
+              ? Math.round(
+                  (recantoSignalRemaining / recantoSignalInstallments) * 100,
+                ) / 100
+              : null;
+
           const salePayload: any = {
             tenant_id: finalTenantId,
             company_id: finalTenantId,
@@ -4082,7 +4122,9 @@ export default function GISMap({
             payment_type: pmtType,
             discount: parseCurrencyBRLNumber(customerData.discount_value),
             total_value: customerData.final_value || finalPrice,
-            down_payment: parseCurrencyBRLNumber(customerData.down_payment),
+            down_payment:
+              recantoSignalContract ??
+              parseCurrencyBRLNumber(customerData.down_payment),
             installments_count: instCount,
             installment_correction_type:
               saleContractModel === "RECANTO_PRIMAVERA"
@@ -4091,6 +4133,12 @@ export default function GISMap({
                     customerData.installment_correction_type,
                   ),
             status: "ACTIVE",
+            signal_contract_value: recantoSignalContract,
+            signal_paid_at_sale: recantoSignalPaidAtSale,
+            signal_remaining_value: recantoSignalRemaining,
+            signal_remaining_payment_mode: recantoSignalMode,
+            signal_remaining_installments: recantoSignalInstallments,
+            signal_remaining_installment_value: recantoSignalInstallmentValue,
             ...buildSaleSpouseDbPatch(customerData),
           };
 

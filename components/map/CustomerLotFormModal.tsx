@@ -28,7 +28,15 @@ import {
 import {
   computeInstallmentDisplayValue,
   downPaymentReducesInstallmentBase,
+  resolveInstallmentPrincipal,
+  splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
+import {
+  applySignalAddonToInstallmentAmounts,
+  resolveRecantoSignalPlan,
+  validateRecantoSignalPlan,
+  type SignalRemainingPaymentMode,
+} from '@/lib/recantoSignalRemaining';
 import {
   DEFAULT_INSTALLMENT_CORRECTION_TYPE,
   INSTALLMENT_CORRECTION_OPTIONS,
@@ -58,6 +66,14 @@ export type LotFormState = CustomerFormValues &
   signal_payment_method?: string;
   signal_notes?: string;
   reservation_signal_paid?: number;
+  /** Recanto: sinal contratado (espelha down_payment). */
+  signal_contract_value?: string;
+  /** Recanto: valor pago no ato do sinal. */
+  signal_paid_at_sale?: string;
+  /** Recanto: FIRST_INSTALLMENTS | ALL_INSTALLMENTS */
+  signal_remaining_payment_mode?: SignalRemainingPaymentMode | '';
+  /** Recanto: qtd de parcelas para o restante (primeiras parcelas). */
+  signal_remaining_installments?: string;
 };
 
 export type LotFormConfirmPayload = LotFormState & {
@@ -87,6 +103,10 @@ function emptyLotFormState(): LotFormState {
     broker_id: '',
     notes: '',
     installment_correction_type: DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+    signal_contract_value: '',
+    signal_paid_at_sale: '',
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
+    signal_remaining_installments: '',
   };
 }
 
@@ -252,15 +272,48 @@ export function CustomerLotFormModal({
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
   const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
   const isStandardSaleForm = !isRecantoSinal;
+  const signalContractValue = isRecantoSinal
+    ? parseCurrencyBRLNumber(
+        formData.signal_contract_value || downPaymentStr || '',
+      )
+    : downPayment;
+  const signalPaidAtSale = isRecantoSinal
+    ? parseCurrencyBRLNumber(formData.signal_paid_at_sale || '')
+    : 0;
+  const recantoSignalPlan = isRecantoSinal
+    ? resolveRecantoSignalPlan({
+        contractValue: signalContractValue,
+        paidAtSale: signalPaidAtSale,
+        paymentMode: formData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS',
+        remainingInstallments: formData.signal_remaining_installments
+          ? Number(formData.signal_remaining_installments)
+          : null,
+        totalInstallments: installmentsCount,
+      })
+    : null;
   const installmentValue =
     installmentsCount > 0
       ? computeInstallmentDisplayValue({
           finalValue,
-          downPayment,
+          downPayment: isRecantoSinal ? signalContractValue : downPayment,
           installmentsCount,
           contractModel,
         })
       : 0;
+  const recantoInstallmentPreview =
+    isRecantoSinal && installmentsCount > 0 && recantoSignalPlan
+      ? applySignalAddonToInstallmentAmounts(
+          splitInstallmentAmounts(
+            resolveInstallmentPrincipal({
+              totalValue: finalValue,
+              downPayment: signalContractValue,
+              contractModel,
+            }),
+            installmentsCount,
+          ),
+          recantoSignalPlan,
+        )
+      : null;
   const installmentValueFmt = formatCurrencyBRL(installmentValue);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -304,7 +357,10 @@ export function CustomerLotFormModal({
           alert('O valor final não pode ser zero ou negativo.');
           return;
         }
-        if (downPayment > price) {
+        const effectiveDownPayment = isRecantoSinal
+          ? signalContractValue
+          : downPayment;
+        if (effectiveDownPayment > price) {
           alert(
             isRecantoSinal
               ? 'O sinal não pode ser maior que o valor do lote.'
@@ -320,16 +376,34 @@ export function CustomerLotFormModal({
         confirmedInstallmentsCount = String(installmentsResult.value);
         confirmedInstallmentValue = computeInstallmentDisplayValue({
           finalValue,
-          downPayment,
+          downPayment: effectiveDownPayment,
           installmentsCount: installmentsResult.value,
           contractModel,
         });
-        if (downPayment > 0 && !formData.down_payment_due_date) {
-          alert(
-            isRecantoSinal
-              ? 'Por favor, preencha a data de vencimento do sinal.'
-              : 'Por favor, preencha a data de vencimento da entrada.',
-          );
+
+        if (isRecantoSinal) {
+          const signalValidation = validateRecantoSignalPlan({
+            contractValue: signalContractValue,
+            paidAtSale: signalPaidAtSale,
+            paymentMode: formData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS',
+            remainingInstallments: formData.signal_remaining_installments
+              ? Number(formData.signal_remaining_installments)
+              : null,
+            totalInstallments: installmentsResult.value,
+          });
+          if (!signalValidation.valid) {
+            alert(signalValidation.message);
+            return;
+          }
+          if (
+            (signalContractValue > 0 || signalPaidAtSale > 0) &&
+            !formData.down_payment_due_date
+          ) {
+            alert('Por favor, preencha a data de vencimento do sinal.');
+            return;
+          }
+        } else if (downPayment > 0 && !formData.down_payment_due_date) {
+          alert('Por favor, preencha a data de vencimento da entrada.');
           return;
         }
         if (!formData.first_installment_due_date) {
@@ -355,11 +429,26 @@ export function CustomerLotFormModal({
 
     setSubmitting(true);
     try {
+      const recantoDownPayment = isRecantoSinal
+        ? serializeCurrencyBRL(String(signalContractValue || 0))
+        : serializeCurrencyBRL(downPaymentStr);
       await onConfirm({
         ...formData,
         payment_type: paymentType,
         discount_value: serializeCurrencyBRL(formData.discount_value),
-        down_payment: serializeCurrencyBRL(downPaymentStr),
+        down_payment: recantoDownPayment,
+        signal_contract_value: isRecantoSinal
+          ? serializeCurrencyBRL(String(signalContractValue || 0))
+          : '',
+        signal_paid_at_sale: isRecantoSinal
+          ? serializeCurrencyBRL(String(signalPaidAtSale || 0))
+          : '',
+        signal_remaining_payment_mode: isRecantoSinal
+          ? formData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS'
+          : '',
+        signal_remaining_installments: isRecantoSinal
+          ? formData.signal_remaining_installments || ''
+          : '',
         installments_count: confirmedInstallmentsCount,
         lot_value: price,
         final_value: finalValue,
@@ -901,33 +990,161 @@ export function CustomerLotFormModal({
                 )}
                 {paymentType === 'Parcelado' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        {isRecantoSinal ? 'Valor do Sinal (R$)' : 'Valor da Entrada (R$)'}
-                      </label>
-                      <CurrencyInput
-                        value={downPaymentStr}
-                        onChange={(next) => setField({ down_payment: next })}
-                        className={GIS_INPUT}
-                      />
-                      {isRecantoSinal && (
-                        <p className="mt-1 text-[11px] text-gray-500 leading-snug">
-                          O sinal não será abatido do valor da chácara neste modelo de contrato.
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        {isRecantoSinal ? 'Venc. Sinal' : 'Venc. Entrada'}
-                      </label>
-                      <input
-                        type="date"
-                        required={downPayment > 0}
-                        value={formData.down_payment_due_date}
-                        onChange={(e) => setField({ down_payment_due_date: e.target.value })}
-                        className={GIS_INPUT_DATE}
-                      />
-                    </div>
+                    {isRecantoSinal ? (
+                      <>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Valor do sinal contratado (R$)
+                          </label>
+                          <CurrencyInput
+                            value={formData.signal_contract_value || downPaymentStr}
+                            onChange={(next) =>
+                              setField({
+                                signal_contract_value: next,
+                                down_payment: next,
+                              })
+                            }
+                            placeholder="3.500,00"
+                            className={GIS_INPUT}
+                          />
+                          <p className="mt-1 text-[11px] text-gray-500 leading-snug">
+                            Não abate o valor do lote nem o saldo parcelado.
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Valor pago no ato do sinal (R$)
+                          </label>
+                          <CurrencyInput
+                            value={formData.signal_paid_at_sale || ''}
+                            onChange={(next) => setField({ signal_paid_at_sale: next })}
+                            placeholder="800,00"
+                            className={GIS_INPUT}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Restante do sinal
+                          </label>
+                          <CurrencyInput
+                            readOnly
+                            value={String(recantoSignalPlan?.remainingValue ?? 0)}
+                            onChange={() => {}}
+                            className={`${GIS_INPUT_READONLY} font-semibold text-amber-800`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Venc. do sinal (pago no ato)
+                          </label>
+                          <input
+                            type="date"
+                            required={signalContractValue > 0 || signalPaidAtSale > 0}
+                            value={formData.down_payment_due_date}
+                            onChange={(e) =>
+                              setField({ down_payment_due_date: e.target.value })
+                            }
+                            className={GIS_INPUT_DATE}
+                          />
+                        </div>
+                        {(recantoSignalPlan?.remainingValue ?? 0) > 0 ? (
+                          <>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                Forma de cobrança do restante do sinal
+                              </label>
+                              <select
+                                value={
+                                  formData.signal_remaining_payment_mode ||
+                                  'FIRST_INSTALLMENTS'
+                                }
+                                onChange={(e) =>
+                                  setField({
+                                    signal_remaining_payment_mode: e.target
+                                      .value as SignalRemainingPaymentMode,
+                                  })
+                                }
+                                className={GIS_INPUT}
+                              >
+                                <option value="FIRST_INSTALLMENTS">
+                                  Acrescentar nas primeiras parcelas
+                                </option>
+                                <option value="ALL_INSTALLMENTS">
+                                  Diluir em todas as parcelas
+                                </option>
+                              </select>
+                            </div>
+                            {(formData.signal_remaining_payment_mode ||
+                              'FIRST_INSTALLMENTS') === 'FIRST_INSTALLMENTS' ? (
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  Qtd. de parcelas do restante do sinal
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={installmentsCount || undefined}
+                                  value={formData.signal_remaining_installments || ''}
+                                  onChange={(e) =>
+                                    setField({
+                                      signal_remaining_installments: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Ex: 15"
+                                  className={GIS_INPUT}
+                                />
+                              </div>
+                            ) : null}
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                Acréscimo por parcela (sinal)
+                              </label>
+                              <CurrencyInput
+                                readOnly
+                                value={String(
+                                  recantoSignalPlan?.remainingInstallmentValue ?? 0,
+                                )}
+                                onChange={() => {}}
+                                className={`${GIS_INPUT_READONLY} font-semibold text-amber-800`}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="md:col-span-2">
+                            <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                              Sinal pago integralmente no ato — nenhum acréscimo nas parcelas.
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Valor da Entrada (R$)
+                          </label>
+                          <CurrencyInput
+                            value={downPaymentStr}
+                            onChange={(next) => setField({ down_payment: next })}
+                            className={GIS_INPUT}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Venc. Entrada
+                          </label>
+                          <input
+                            type="date"
+                            required={downPayment > 0}
+                            value={formData.down_payment_due_date}
+                            onChange={(e) =>
+                              setField({ down_payment_due_date: e.target.value })
+                            }
+                            className={GIS_INPUT_DATE}
+                          />
+                        </div>
+                      </>
+                    )}
                     <InstallmentsCountCombobox
                       value={installmentsCountStr}
                       onChange={(nextValue) => setField({ installments_count: nextValue })}
@@ -946,6 +1163,21 @@ export function CustomerLotFormModal({
                         placeholder="—"
                         className={`${GIS_INPUT_READONLY} font-semibold text-blue-800`}
                       />
+                      {isRecantoSinal &&
+                      recantoInstallmentPreview &&
+                      recantoSignalPlan?.hasRemaining ? (
+                        <p className="mt-1 text-[11px] text-amber-800 leading-snug">
+                          {recantoSignalPlan.paymentMode === 'ALL_INSTALLMENTS'
+                            ? `Todas as parcelas: ${formatCurrencyBRL(
+                                recantoInstallmentPreview[0]?.amount ?? installmentValue,
+                              )} (base ${installmentValueFmt} + sinal ${formatCurrencyBRL(
+                                recantoSignalPlan.remainingInstallmentValue,
+                              )})`
+                            : `Parcelas 1–${recantoSignalPlan.remainingInstallments}: ${formatCurrencyBRL(
+                                recantoInstallmentPreview[0]?.amount ?? installmentValue,
+                              )} · Demais: ${installmentValueFmt}`}
+                        </p>
+                      ) : null}
                     </div>
                     {isStandardSaleForm ? (
                       <div>

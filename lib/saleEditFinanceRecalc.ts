@@ -11,6 +11,11 @@ import {
   splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
+import {
+  applySignalAddonToInstallmentAmounts,
+  isRecantoPrimaveraSaleModel,
+  resolveRecantoSignalPlan,
+} from '@/lib/recantoSignalRemaining';
 
 export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
@@ -31,6 +36,8 @@ export type FinanceReceiptPayload = Record<string, unknown> & {
   amount: number;
   due_date: string;
   status: string;
+  base_amount?: number | null;
+  signal_addon_amount?: number | null;
 };
 
 export function isPaidFinanceReceipt(r: {
@@ -118,7 +125,36 @@ export function buildSaleEditFinancePayloads(
         paid_at: new Date().toISOString(),
       });
     }
-    if (downPayment > 0 && data.down_payment_due_date) {
+    const isRecanto = isRecantoPrimaveraSaleModel(options?.contractModel);
+    const hasExplicitSignalPaidAtSale =
+      data.signal_paid_at_sale != null &&
+      String(data.signal_paid_at_sale).trim() !== '';
+    const recantoSignalPlan = isRecanto
+      ? resolveRecantoSignalPlan({
+          contractValue:
+            data.signal_contract_value != null &&
+            String(data.signal_contract_value).trim() !== ''
+              ? parseCurrencyBRLNumber(String(data.signal_contract_value))
+              : grossDownPayment,
+          paidAtSale: hasExplicitSignalPaidAtSale
+            ? parseCurrencyBRLNumber(String(data.signal_paid_at_sale))
+            : undefined,
+          paymentMode: data.signal_remaining_payment_mode,
+          remainingInstallments: data.signal_remaining_installments
+            ? Number(data.signal_remaining_installments)
+            : null,
+          totalInstallments: instCount,
+        })
+      : null;
+
+    const signalLineAmount =
+      isRecanto && hasExplicitSignalPaidAtSale
+        ? recantoSignalPlan?.paidAtSale ?? 0
+        : downPayment;
+    const signalLinePaidAtAct =
+      isRecanto && hasExplicitSignalPaidAtSale && signalLineAmount > 0;
+
+    if (signalLineAmount > 0 && data.down_payment_due_date) {
       financePayloads.push({
         tenant_id: tenantId,
         company_id: tenantId,
@@ -128,11 +164,13 @@ export function buildSaleEditFinancePayloads(
         project_id: lot.project_id || null,
         block_id: lot.id,
         installment_number: 0,
-        amount: downPayment,
+        amount: signalLineAmount,
+        base_amount: signalLineAmount,
+        signal_addon_amount: 0,
         due_date: data.down_payment_due_date,
-        status: 'pendente',
-        paid_amount: 0,
-        paid_at: null,
+        status: signalLinePaidAtAct ? 'pago' : 'pendente',
+        paid_amount: signalLinePaidAtAct ? signalLineAmount : 0,
+        paid_at: signalLinePaidAtAct ? new Date().toISOString() : null,
       });
     }
     if (data.first_installment_due_date) {
@@ -141,9 +179,28 @@ export function buildSaleEditFinancePayloads(
         downPayment,
         contractModel: options?.contractModel,
       });
-      const amounts = splitInstallmentAmounts(principal, instCount);
+      const baseAmounts = splitInstallmentAmounts(principal, instCount);
+
+      let compositions = baseAmounts.map((baseAmount) => ({
+        baseAmount,
+        signalAddonAmount: 0,
+        amount: baseAmount,
+      }));
+
+      if (recantoSignalPlan && hasExplicitSignalPaidAtSale) {
+        compositions = applySignalAddonToInstallmentAmounts(
+          baseAmounts,
+          recantoSignalPlan,
+        );
+      }
+
       let cDate = new Date(data.first_installment_due_date + 'T12:00:00Z');
       for (let i = 0; i < instCount; i++) {
+        const row = compositions[i] ?? {
+          baseAmount: baseAmounts[i] ?? 0,
+          signalAddonAmount: 0,
+          amount: baseAmounts[i] ?? 0,
+        };
         financePayloads.push({
           tenant_id: tenantId,
           company_id: tenantId,
@@ -153,7 +210,9 @@ export function buildSaleEditFinancePayloads(
           project_id: lot.project_id || null,
           block_id: lot.id,
           installment_number: currentInst++,
-          amount: amounts[i] ?? 0,
+          amount: row.amount,
+          base_amount: row.baseAmount,
+          signal_addon_amount: row.signalAddonAmount,
           due_date: cDate.toISOString().split('T')[0],
           status: 'pendente',
           paid_amount: 0,
