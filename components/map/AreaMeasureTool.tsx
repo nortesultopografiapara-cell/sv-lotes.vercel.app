@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CircleMarker,
   Marker,
+  Polygon,
   Polyline,
   useMap,
   useMapEvents,
@@ -13,43 +14,47 @@ import { Trash2 } from 'lucide-react';
 import {
   MEASURE_CLICK_DELAY_MS,
   MEASURE_DOUBLE_TAP_MS,
-  buildMeasureSegments,
-  canFinalizeMeasure,
-  computePreviewDistanceM,
-  computeTotalWithPreviewM,
   formatGisDistanceM,
   segmentMidpoint,
   toGisLatLng,
   type GisLatLng,
 } from '@/lib/gis/distanceMeasure';
+import {
+  buildAreaFillPositions,
+  buildAreaSides,
+  canFinalizeAreaMeasure,
+  computeGeodesicAreaM2,
+  computePerimeterM,
+  formatGisAreaM2,
+} from '@/lib/gis/areaMeasure';
+
+const AREA_STROKE = '#3b82f6';
 
 function latLngToGis(latlng: L.LatLng): GisLatLng {
   return toGisLatLng(latlng.lat, latlng.lng);
 }
 
-function createSegmentLabelIcon(mapLabel: string, distanceText: string): L.DivIcon {
+function createSideLabelIcon(distanceText: string): L.DivIcon {
   return L.divIcon({
-    className: 'gis-distance-measure-label',
+    className: 'gis-area-measure-label',
     html: `<div style="
       transform: translate(-50%, -50%);
       pointer-events: none;
       white-space: nowrap;
       text-align: center;
       font-size: 10px;
-      font-weight: 700;
-      line-height: 1.25;
+      font-weight: 800;
       color: #fff;
       text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.8);
     ">
-      <div>${mapLabel}</div>
-      <div style="font-size:11px;font-weight:800;color:#fecaca;">${distanceText}</div>
+      <span style="color:#bfdbfe;">${distanceText}</span>
     </div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
 }
 
-export function useDistanceMeasureWithHud(
+export function useAreaMeasureWithHud(
   active: boolean,
   onDeactivate: () => void,
 ) {
@@ -76,7 +81,7 @@ export function useDistanceMeasureWithHud(
   pointsRef.current = points;
 
   const finalize = useCallback(() => {
-    if (!canFinalizeMeasure(pointsRef.current)) return;
+    if (!canFinalizeAreaMeasure(pointsRef.current)) return;
     setFinalized(true);
     setCursor(null);
     setCursorPx(null);
@@ -106,31 +111,25 @@ export function useDistanceMeasureWithHud(
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [active, clearAndExit]);
 
-  const segments = useMemo(() => buildMeasureSegments(points), [points]);
-  const segmentDistances = useMemo(
-    () => segments.map((s) => s.distanceM),
-    [segments],
+  const sides = useMemo(
+    () => buildAreaSides(points, finalized),
+    [points, finalized],
   );
-  const totalM = useMemo(
-    () => segmentDistances.reduce((s, d) => s + d, 0),
-    [segmentDistances],
+  const areaM2 = useMemo(
+    () => computeGeodesicAreaM2(points, finalized, cursor),
+    [points, finalized, cursor],
   );
-  const previewM = useMemo(
-    () => (finalized ? null : computePreviewDistanceM(points, cursor)),
-    [finalized, points, cursor],
-  );
-  const totalWithPreviewM = useMemo(
-    () => computeTotalWithPreviewM(segmentDistances, previewM),
-    [segmentDistances, previewM],
+  const perimeterM = useMemo(
+    () => computePerimeterM(points, finalized, cursor),
+    [points, finalized, cursor],
   );
 
   return {
     points,
     finalized,
-    segments,
-    totalM,
-    previewM,
-    totalWithPreviewM,
+    sides,
+    areaM2,
+    perimeterM,
     cursor,
     cursorPx,
     setCursor,
@@ -142,15 +141,15 @@ export function useDistanceMeasureWithHud(
   };
 }
 
-type DistanceMeasureMapProps = {
+type AreaMeasureMapProps = {
   active: boolean;
-  measure: ReturnType<typeof useDistanceMeasureWithHud>;
+  measure: ReturnType<typeof useAreaMeasureWithHud>;
 };
 
-export function DistanceMeasureMapContent({
+export function AreaMeasureMapContent({
   active,
   measure,
-}: DistanceMeasureMapProps) {
+}: AreaMeasureMapProps) {
   const map = useMap();
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
@@ -158,8 +157,7 @@ export function DistanceMeasureMapContent({
   const {
     points,
     finalized,
-    segments,
-    previewM,
+    sides,
     cursor,
     addPoint,
     finalize,
@@ -202,7 +200,7 @@ export function DistanceMeasureMapContent({
       }
       L.DomEvent.stopPropagation(e.originalEvent);
       L.DomEvent.preventDefault(e.originalEvent);
-      if (canFinalizeMeasure(points)) finalize();
+      if (canFinalizeAreaMeasure(points)) finalize();
     },
     mousemove(e) {
       if (!active) return;
@@ -244,7 +242,7 @@ export function DistanceMeasureMapContent({
           clearTimeout(clickTimerRef.current);
           clickTimerRef.current = null;
         }
-        if (canFinalizeMeasure(points)) finalize();
+        if (canFinalizeAreaMeasure(points)) finalize();
         lastTapRef.current = null;
         return;
       }
@@ -264,9 +262,9 @@ export function DistanceMeasureMapContent({
 
   if (!active) return null;
 
-  const linePositions = points.map((p) => [p.lat, p.lng] as [number, number]);
+  const committedLine = points.map((p) => [p.lat, p.lng] as [number, number]);
   const previewLine =
-    !finalized && previewM != null && cursor && points.length > 0
+    !finalized && cursor && points.length > 0
       ? [
           [points[points.length - 1].lat, points[points.length - 1].lng] as [
             number,
@@ -276,36 +274,72 @@ export function DistanceMeasureMapContent({
         ]
       : null;
 
+  const fillPositions = buildAreaFillPositions(points, finalized, cursor);
+
+  const sideLabelPoints = finalized
+    ? points.map((_, i) => {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        return { mid: segmentMidpoint(a, b), dist: sides[i]?.distanceM ?? 0, i };
+      })
+    : sides
+        .map((side) => {
+          const a = points[side.index];
+          const b = points[side.index + 1];
+          if (!a || !b) return null;
+          return {
+            mid: segmentMidpoint(a, b),
+            dist: side.distanceM,
+            i: side.index,
+          };
+        })
+        .filter(Boolean) as { mid: GisLatLng; dist: number; i: number }[];
+
   return (
     <>
-      {linePositions.length >= 2 && (
-        <Polyline
-          positions={linePositions}
+      {fillPositions && fillPositions.length >= 3 && (
+        <Polygon
+          positions={fillPositions}
           pathOptions={{
-            color: '#ef4444',
+            color: AREA_STROKE,
+            weight: finalized ? 3 : 2,
+            fillColor: AREA_STROKE,
+            fillOpacity: 0.25,
+            dashArray: finalized ? undefined : '6, 8',
+          }}
+          interactive={false}
+        />
+      )}
+      {committedLine.length >= 2 && (
+        <Polyline
+          positions={committedLine}
+          pathOptions={{
+            color: AREA_STROKE,
             weight: 3,
             opacity: 0.95,
           }}
+          interactive={false}
         />
       )}
       {previewLine && (
         <Polyline
           positions={previewLine}
           pathOptions={{
-            color: '#f87171',
+            color: '#60a5fa',
             weight: 2,
             dashArray: '6, 8',
-            opacity: 0.75,
+            opacity: 0.85,
           }}
+          interactive={false}
         />
       )}
       {points.map((p, idx) => (
         <CircleMarker
-          key={`dm-pt-${idx}`}
+          key={`am-pt-${idx}`}
           center={[p.lat, p.lng]}
           radius={5}
           pathOptions={{
-            color: '#ef4444',
+            color: AREA_STROKE,
             fillColor: '#fff',
             fillOpacity: 1,
             weight: 2,
@@ -313,44 +347,33 @@ export function DistanceMeasureMapContent({
           interactive={false}
         />
       ))}
-      {segments.map((seg) => {
-        const a = points[seg.index];
-        const b = points[seg.index + 1];
-        if (!a || !b) return null;
-        const mid = segmentMidpoint(a, b);
-        const icon = createSegmentLabelIcon(
-          seg.mapLabel,
-          formatGisDistanceM(seg.distanceM),
-        );
-        return (
-          <Marker
-            key={`dm-seg-${seg.index}`}
-            position={[mid.lat, mid.lng]}
-            icon={icon}
-            interactive={false}
-          />
-        );
-      })}
+      {sideLabelPoints.map(({ mid, dist, i }) => (
+        <Marker
+          key={`am-side-${i}`}
+          position={[mid.lat, mid.lng]}
+          icon={createSideLabelIcon(formatGisDistanceM(dist))}
+          interactive={false}
+        />
+      ))}
     </>
   );
 }
 
-type DistanceMeasureOverlayProps = {
+type AreaMeasureOverlayProps = {
   active: boolean;
-  measure: ReturnType<typeof useDistanceMeasureWithHud>;
+  measure: ReturnType<typeof useAreaMeasureWithHud>;
 };
 
-export function DistanceMeasureOverlay({
+export function AreaMeasureOverlay({
   active,
   measure,
-}: DistanceMeasureOverlayProps) {
+}: AreaMeasureOverlayProps) {
   const {
     points,
     finalized,
-    segments,
-    totalM,
-    previewM,
-    totalWithPreviewM,
+    sides,
+    areaM2,
+    perimeterM,
     cursorPx,
     finalize,
     clearAndExit,
@@ -360,7 +383,7 @@ export function DistanceMeasureOverlay({
 
   const showPanel = points.length > 0 || !finalized;
   const showHud =
-    !finalized && previewM != null && points.length > 0 && cursorPx != null;
+    !finalized && areaM2 != null && points.length >= 2 && cursorPx != null;
 
   return (
     <>
@@ -372,18 +395,18 @@ export function DistanceMeasureOverlay({
             top: cursorPx.y + 14,
           }}
         >
-          <div className="bg-[#11141a]/95 border border-red-500/40 rounded-lg px-2.5 py-2 shadow-lg text-[10px] leading-snug min-w-[7rem]">
+          <div className="bg-[#11141a]/95 border border-blue-500/40 rounded-lg px-2.5 py-2 shadow-lg text-[10px] leading-snug min-w-[7.5rem]">
             <div className="text-[var(--color-text-muted)] uppercase tracking-wide font-bold text-[9px]">
-              Trecho
+              Área
             </div>
             <div className="text-white font-bold text-xs tabular-nums">
-              {formatGisDistanceM(previewM!)}
+              {formatGisAreaM2(areaM2!)}
             </div>
             <div className="text-[var(--color-text-muted)] uppercase tracking-wide font-bold text-[9px] mt-1.5">
-              Total
+              Perímetro
             </div>
-            <div className="text-red-300 font-bold text-xs tabular-nums">
-              {formatGisDistanceM(totalWithPreviewM)}
+            <div className="text-blue-300 font-bold text-xs tabular-nums">
+              {formatGisDistanceM(perimeterM)}
             </div>
           </div>
         </div>
@@ -391,13 +414,13 @@ export function DistanceMeasureOverlay({
 
       {showPanel && (
         <div
-          className="gis-distance-measure-panel-anchor absolute z-[550] pointer-events-auto w-[min(92vw,240px)]"
-          data-testid="gis-distance-measure-panel"
+          className="gis-area-measure-panel-anchor absolute z-[550] pointer-events-auto w-[min(92vw,260px)]"
+          data-testid="gis-area-measure-panel"
         >
           <div className="bg-[#11141a]/95 backdrop-blur-sm border border-[var(--color-border)] rounded-xl shadow-xl overflow-hidden fade-in-up">
             <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold text-white uppercase tracking-wider">
-                Medição
+                Medição de Área
               </span>
               {finalized && (
                 <span className="text-[9px] font-semibold text-emerald-400 uppercase">
@@ -407,39 +430,44 @@ export function DistanceMeasureOverlay({
             </div>
 
             <div className="px-3 py-2 max-h-[40vh] overflow-y-auto space-y-1.5">
-              {segments.length === 0 ? (
+              {points.length === 0 ? (
                 <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
-                  {finalized
-                    ? 'Nenhum trecho medido.'
-                    : 'Clique no mapa para iniciar a medição.'}
+                  Clique no mapa para iniciar o polígono.
                 </p>
               ) : (
-                segments.map((seg) => (
-                  <div
-                    key={seg.index}
-                    className="flex items-baseline justify-between gap-2 text-[11px]"
-                  >
+                <>
+                  <div className="flex items-baseline justify-between gap-2 text-[11px]">
                     <span className="text-[var(--color-text-muted)] font-medium">
-                      {seg.panelLabel}
+                      Área
                     </span>
                     <span className="text-white font-bold tabular-nums shrink-0">
-                      {formatGisDistanceM(seg.distanceM)}
+                      {areaM2 != null ? formatGisAreaM2(areaM2) : '—'}
                     </span>
                   </div>
-                ))
-              )}
-
-              {segments.length > 0 && (
-                <>
-                  <hr className="border-[var(--color-border)] my-1" />
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wide">
-                      Total
+                  <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span className="text-[var(--color-text-muted)] font-medium">
+                      Perímetro
                     </span>
-                    <span className="text-red-300 font-bold text-sm tabular-nums">
-                      {formatGisDistanceM(totalM)}
+                    <span className="text-blue-300 font-bold tabular-nums shrink-0">
+                      {formatGisDistanceM(perimeterM)}
                     </span>
                   </div>
+                  {sides.length > 0 && (
+                    <hr className="border-[var(--color-border)] my-1" />
+                  )}
+                  {sides.map((side) => (
+                    <div
+                      key={side.index}
+                      className="flex items-baseline justify-between gap-2 text-[11px]"
+                    >
+                      <span className="text-[var(--color-text-muted)] font-medium">
+                        {side.panelLabel}
+                      </span>
+                      <span className="text-white font-bold tabular-nums shrink-0">
+                        {formatGisDistanceM(side.distanceM)}
+                      </span>
+                    </div>
+                  ))}
                 </>
               )}
             </div>
@@ -448,10 +476,10 @@ export function DistanceMeasureOverlay({
               {!finalized && (
                 <button
                   type="button"
-                  disabled={!canFinalizeMeasure(points)}
+                  disabled={!canFinalizeAreaMeasure(points)}
                   onClick={() => finalize()}
-                  className="w-full py-2 rounded-lg text-[11px] font-bold bg-red-600 hover:bg-red-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  data-testid="gis-distance-measure-finalize"
+                  className="w-full py-2 rounded-lg text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  data-testid="gis-area-measure-finalize"
                 >
                   Finalizar
                 </button>
@@ -459,11 +487,11 @@ export function DistanceMeasureOverlay({
               <button
                 type="button"
                 onClick={() => clearAndExit()}
-                className="w-full py-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-red-300 hover:border-red-500/40 hover:bg-red-500/10 transition-colors"
-                data-testid="gis-distance-measure-clear"
+                className="w-full py-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-blue-300 hover:border-blue-500/40 hover:bg-blue-500/10 transition-colors"
+                data-testid="gis-area-measure-clear"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Limpar Medição
+                Limpar
               </button>
             </div>
           </div>
@@ -472,8 +500,8 @@ export function DistanceMeasureOverlay({
 
       {!finalized && active && points.length === 0 && (
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
-          <p className="text-xs font-semibold text-red-100 bg-[#11141a]/95 border border-red-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
-            Medir distância: clique para adicionar pontos. Duplo clique ou
+          <p className="text-xs font-semibold text-blue-100 bg-[#11141a]/95 border border-blue-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
+            Medir área: clique para adicionar vértices. Duplo clique ou
             Finalizar encerra. ESC cancela.
           </p>
         </div>

@@ -10,7 +10,7 @@ import {
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
@@ -407,6 +407,7 @@ export default function MapPage() {
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
   const [gpsActive, setGpsActive] = useState(false);
   const [measureActive, setMeasureActive] = useState(false);
+  const [areaMeasureActive, setAreaMeasureActive] = useState(false);
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
 
   // Formulário unificado: criar / editar projeto
@@ -2978,6 +2979,7 @@ export default function MapPage() {
                      setLotSheetPickMode(false);
                      setLotSheetTarget(null);
                      setMeasureActive(false);
+                     setAreaMeasureActive(false);
                      setDrawStreetActive(false);
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${memorialPickMode || memorialTarget ? 'bg-[#f59e0b]/20 text-[#fbbf24]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b]'}`}
@@ -3005,6 +3007,7 @@ export default function MapPage() {
                   if (measureActive) {
                     setMeasureActive(false);
                   } else {
+                    setAreaMeasureActive(false);
                     setMemorialPickMode(false);
                     setMemorialTarget(null);
                     setLotSheetPickMode(false);
@@ -3017,6 +3020,28 @@ export default function MapPage() {
              >
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medir Distância</span>
+             </button>
+
+             {/* Medir Área */}
+             <button
+                type="button"
+                onClick={() => {
+                  if (areaMeasureActive) {
+                    setAreaMeasureActive(false);
+                  } else {
+                    setMeasureActive(false);
+                    setMemorialPickMode(false);
+                    setMemorialTarget(null);
+                    setLotSheetPickMode(false);
+                    setLotSheetTarget(null);
+                    setDrawStreetActive(false);
+                    setAreaMeasureActive(true);
+                  }
+                }}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${areaMeasureActive ? 'bg-blue-500/20 text-blue-300' : 'bg-transparent text-blue-400/75 hover:bg-blue-500/15 hover:text-blue-300'}`}
+             >
+                <LandPlot className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medir Área</span>
              </button>
 
              {/* Prancha Geral */}
@@ -3040,6 +3065,7 @@ export default function MapPage() {
                   setLotSheetTarget(null);
                   setLotSheetPickMode(true);
                   setMeasureActive(false);
+                  setAreaMeasureActive(false);
                   setDrawStreetActive(false);
                   console.log('LOT_SHEET_PICK_MODE_ENABLED');
                 }}
@@ -3143,6 +3169,8 @@ export default function MapPage() {
             gpsActive={gpsActive} 
             measureActive={measureActive}
             onMeasureDeactivate={() => setMeasureActive(false)}
+            areaMeasureActive={areaMeasureActive}
+            onAreaMeasureDeactivate={() => setAreaMeasureActive(false)}
             refreshKey={mapRefreshKey}
             focusBlockName={focusBlockName}
             focusBlockKey={focusBlockKey}
@@ -3230,6 +3258,7 @@ export default function MapPage() {
               setMemorialTarget(null);
               setMemorialPickMode(true);
               setMeasureActive(false);
+              setAreaMeasureActive(false);
               setDrawStreetActive(false);
             }}
           />
@@ -3249,6 +3278,7 @@ export default function MapPage() {
               setLotSheetTarget(null);
               setLotSheetPickMode(true);
               setMeasureActive(false);
+              setAreaMeasureActive(false);
               setDrawStreetActive(false);
               console.log('LOT_SHEET_PICK_MODE_ENABLED');
             }}
