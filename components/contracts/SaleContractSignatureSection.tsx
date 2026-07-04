@@ -33,6 +33,7 @@ import {
   saleSignatureStatusEmoji,
   saleSignatureStatusLabel,
 } from '@/lib/saleContractSignatureStatus';
+import { isSaleContractFullySigned } from '@/lib/saleContractDashboardStats';
 import { canShowVendorSignButton } from '@/lib/saleContractBilateralSignature';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import { SaleContractVendorSignModal } from '@/components/contracts/SaleContractVendorSignModal';
@@ -345,9 +346,7 @@ export const SaleContractSignatureSection = forwardRef<
 
   const status = latest?.signature_status || contract.signature_status;
   const statusLabel = saleSignatureStatusLabel(status);
-  const isElectronicallySigned =
-    String(status || '').toUpperCase() === 'SIGNED' ||
-    ['assinado', 'signed'].includes(String(contract.status || '').toLowerCase());
+  const isElectronicallySigned = isSaleContractFullySigned(contract);
   const isAwaitingVendor = String(status || '').toUpperCase() === 'CLIENT_SIGNED';
 
   const signedPdfDownloadUrl = `/api/contracts/${contract.id}/pdf?download=1`;
