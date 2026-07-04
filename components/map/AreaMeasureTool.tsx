@@ -416,7 +416,7 @@ export function AreaMeasureOverlay({
           panelLabel: s.panelLabel,
           distanceM: s.distanceM,
         })),
-        mapSnapshotDataUrl: null,
+        points,
       });
       setExportModalOpen(false);
     } catch (err) {
