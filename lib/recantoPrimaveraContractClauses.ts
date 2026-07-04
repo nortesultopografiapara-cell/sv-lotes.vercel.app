@@ -87,6 +87,10 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       ? `${ctx.valorSinalFmt}<br/><span style="font-size: 9.5pt;">Pago no ato: ${ctx.valorSinalPagoNoAtoFmt}<br/>Restante: ${ctx.valorSinalRestanteFmt}</span>`
       : ctx.valorSinalFmt;
 
+  const compositionTable = ctx.parcelasResumoSinalHtml
+    ? `<div style="margin-top: 10px;">${ctx.parcelasResumoSinalHtml}</div>`
+    : '';
+
   return `
     <table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11pt;">
       <thead>
@@ -98,10 +102,11 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       <tbody>
         <tr>
           <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${sinalDetail}</strong></td>
-          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong>${ctx.parcelasResumoSinalHtml || ''}</td>
+          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong></td>
         </tr>
       </tbody>
-    </table>`;
+    </table>
+    ${compositionTable}`;
 }
 
 function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
@@ -109,12 +114,15 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
     ? `, mediante pagamento na conta bancária indicada pelo(a) VENDEDOR(A): ${ctx.bankBoletoText}`
     : ', mediante pagamento na conta bancária indicada pelo(a) VENDEDOR(A)';
 
+  /** Nunca afirma valor único “cada” — parcelas podem variar por complemento do sinal e centavos. */
   const dueText =
-    ctx.dueDay && ctx.valorParcelaFmt && ctx.dataPrimeiraParcelaFmt
-      ? `O vencimento das parcelas ocorrerá mensalmente, todo dia <strong>${ctx.dueDay}</strong>, no valor de <strong>${ctx.valorParcelaFmt}</strong> cada, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>.`
-      : ctx.dueDay && ctx.valorParcelaFmt
-        ? `O vencimento das parcelas ocorrerá mensalmente, todo dia <strong>${ctx.dueDay}</strong>, no valor de <strong>${ctx.valorParcelaFmt}</strong> cada.`
-        : 'O vencimento das parcelas ocorrerá mensalmente, nas datas acordadas entre as partes.';
+    ctx.dueDay && ctx.dataPrimeiraParcelaFmt
+      ? `O vencimento das parcelas ocorrerá mensalmente, todo dia <strong>${ctx.dueDay}</strong>, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
+      : ctx.dueDay
+        ? `O vencimento das parcelas ocorrerá mensalmente, todo dia <strong>${ctx.dueDay}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
+        : ctx.dataPrimeiraParcelaFmt
+          ? `O vencimento das parcelas ocorrerá mensalmente, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
+          : 'O vencimento das parcelas ocorrerá mensalmente, observando-se os valores constantes no quadro de pagamento deste contrato.';
 
   if (ctx.isCashPayment) {
     return `

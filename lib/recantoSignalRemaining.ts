@@ -239,9 +239,9 @@ export function buildRecantoSignalClauseText(plan: RecantoSignalPlan, totalInsta
   }
 
   if (plan.paymentMode === 'ALL_INSTALLMENTS') {
-    return `O COMPRADOR pagará, a título de sinal contratual, o valor de ${fmt(plan.contractValue)}, o qual não será abatido do valor do lote nem do saldo parcelado. Desse sinal, ${fmt(plan.paidAtSale)} será pago no ato da assinatura/celebração da venda, ficando o saldo de ${fmt(plan.remainingValue)} diluído nas ${totalInstallments} parcelas do saldo parcelado do lote, com acréscimo de ${fmt(plan.remainingInstallmentValue)} em cada parcela.`;
+    return `O COMPRADOR pagará, a título de sinal contratual, o valor de ${fmt(plan.contractValue)}, o qual não será abatido do valor do lote nem do saldo parcelado. Desse sinal, ${fmt(plan.paidAtSale)} será pago no ato da assinatura/celebração da venda, ficando o saldo de ${fmt(plan.remainingValue)} diluído nas ${totalInstallments} parcelas do saldo parcelado do lote, com acréscimo proporcional em cada parcela, conforme quadro de pagamento deste contrato.`;
   }
 
   const n = plan.remainingInstallments || 0;
-  return `O COMPRADOR pagará, a título de sinal contratual, o valor de ${fmt(plan.contractValue)}, o qual não será abatido do valor do lote nem do saldo parcelado. Desse sinal, ${fmt(plan.paidAtSale)} será pago no ato da assinatura/celebração da venda, ficando o saldo de ${fmt(plan.remainingValue)} parcelado em ${n} parcelas de ${fmt(plan.remainingInstallmentValue)}, acrescidas às primeiras parcelas do saldo parcelado do lote.`;
+  return `O COMPRADOR pagará, a título de sinal contratual, o valor de ${fmt(plan.contractValue)}, o qual não será abatido do valor do lote nem do saldo parcelado. Desse sinal, ${fmt(plan.paidAtSale)} será pago no ato da assinatura/celebração da venda, ficando o saldo de ${fmt(plan.remainingValue)} parcelado em ${n} parcelas, acrescidas às primeiras parcelas do saldo parcelado do lote, conforme quadro de pagamento deste contrato.`;
 }

@@ -318,8 +318,20 @@ function testRecantoSignalRemainingFirstInstallments() {
   assert(normalized.includes('R$ 800,00'), 'pago no ato no contrato');
   assert(normalized.includes('R$ 2.700,00'), 'restante no contrato');
   assert(normalized.includes('15 parcelas'), 'qtd parcelas do restante');
-  assert(normalized.includes('R$ 180,00'), 'acréscimo por parcela');
+  assert(normalized.includes('R$ 180,00'), 'complemento do sinal no quadro');
   assert(normalized.includes('não será abatido'), 'cláusula sinal não abate');
+  assert(
+    normalized.includes('observando-se os valores constantes no quadro de pagamento'),
+    'parágrafo terceiro sem valor único',
+  );
+  assert(
+    !/no valor de\s*<strong>R\$\s*[\d.,]+<\/strong>\s*cada/i.test(html),
+    'não afirma R$ X cada quando parcelas variam',
+  );
+  assert(normalized.includes('Valor base'), 'quadro com valor base');
+  assert(normalized.includes('Complemento do sinal'), 'quadro com complemento');
+  assert(normalized.includes('1 a 15'), 'faixa com complemento');
+  assert(normalized.includes('16 a 120'), 'faixa sem complemento');
 
   console.log('OK testRecantoSignalRemainingFirstInstallments');
 }
@@ -388,9 +400,18 @@ function testRecantoSignalFullyPaidAtSale() {
     },
     contractDate: '2026-06-17',
   });
+  const normalized = html.replace(/\u00a0/g, ' ');
   assert(
-    html.replace(/\u00a0/g, ' ').includes('pago integralmente no ato'),
+    normalized.includes('pago integralmente no ato'),
     'contrato informa sinal integral no ato',
+  );
+  assert(
+    !normalized.includes('Complemento do sinal'),
+    'sem quadro de complemento indevido',
+  );
+  assert(
+    normalized.includes('observando-se os valores constantes no quadro de pagamento'),
+    'parágrafo terceiro remete ao quadro',
   );
 
   console.log('OK testRecantoSignalFullyPaidAtSale');
@@ -468,10 +489,21 @@ function testRecantoSignalRemainingAllInstallments() {
     },
     contractDate: '2026-06-17',
   });
+  const normalized = html.replace(/\u00a0/g, ' ');
   assert(
-    html.replace(/\u00a0/g, ' ').includes('diluído nas 120 parcelas'),
+    normalized.includes('diluído nas 120 parcelas'),
     'texto diluição em todas as parcelas',
   );
+  assert(
+    normalized.includes('conforme quadro de pagamento deste contrato'),
+    'cláusula remete ao quadro (sem valor único cada)',
+  );
+  assert(
+    !/no valor de\s*<strong>R\$\s*[\d.,]+<\/strong>\s*cada/i.test(html),
+    'não afirma R$ X cada com diluição/arredondamento',
+  );
+  assert(normalized.includes('Complemento do sinal'), 'quadro com complemento');
+  assert(normalized.includes('1 a 120'), 'faixa todas as parcelas');
 
   console.log('OK testRecantoSignalRemainingAllInstallments');
 }
