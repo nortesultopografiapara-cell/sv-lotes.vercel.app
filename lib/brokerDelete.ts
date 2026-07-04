@@ -1,4 +1,9 @@
+/**
+ * Exclusão segura de corretores (soft/hard) e estatísticas do painel.
+ */
+
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { rankBrokersBySalesValue } from '@/lib/brokerDashboardStats';
 import { canReactivateBroker } from '@/lib/saasPlanEnforcement';
 import { isPlatformAdmin, type RlsContext } from '@/lib/rls';
 import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
@@ -164,12 +169,14 @@ export function computeBrokerDashboardStats(brokers: BrokerRow[]): BrokerDashboa
   };
 }
 
-export function rankBrokersByMonthlySales<T extends BrokerRow>(brokers: T[], limit = 3): T[] {
-  return [...filterBrokersForActiveList(brokers)]
-    .filter((b) => (Number(b.vendas_mes_valor) || 0) > 0)
-    .sort((a, b) => (Number(b.vendas_mes_valor) || 0) - (Number(a.vendas_mes_valor) || 0))
-    .slice(0, limit);
+export function rankBrokersByMonthlySales<T extends { vendas_mes_valor?: number }>(
+  brokers: T[],
+  limit = 3,
+): T[] {
+  return rankBrokersBySalesValue(filterBrokersForActiveList(brokers), limit);
 }
+
+export { rankBrokersBySalesValue } from '@/lib/brokerDashboardStats';
 
 export function removeBrokerFromList<T extends BrokerRow>(brokers: T[], brokerId: string): T[] {
   return brokers.filter((b) => b.id !== brokerId);
