@@ -151,6 +151,7 @@ export type SalesBlockRecord = {
   id: string;
   project_id: string;
   block_name: string | null;
+  name?: string | null;
   number: string | null;
   lot_number: string | null;
   status: string | null;
@@ -166,5 +167,6 @@ export type SalesImportContext = {
   brokers: SalesBrokerIndex;
   projects: SalesProjectIndex;
   blocks: SalesBlockIndex;
+  blocksByProject: Map<string, SalesBlockRecord[]>;
   activeSaleBlockIds: Set<string>;
 };

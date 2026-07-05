@@ -4,6 +4,7 @@
 
 import { parseCurrencyBRL } from '@/lib/currencyBrl';
 import { parseBrokerCommissionPercent } from '@/lib/imports/modules/brokers/normalize';
+import { normalizeLotNumberForMatch } from '@/lib/shapefileImport';
 
 export function normalizeImportEntityName(value?: string | null): string {
   return String(value || '')
@@ -23,10 +24,7 @@ export function normalizeImportQuadra(value?: string | null): string {
 }
 
 export function normalizeImportLoteNumber(value?: string | null): string {
-  return String(value || '')
-    .trim()
-    .replace(/^0+/, '')
-    .toUpperCase();
+  return normalizeLotNumberForMatch(value) || normalizeImportEntityName(value);
 }
 
 export function parseSaleImportCurrency(raw: string): {
@@ -43,32 +41,75 @@ export function parseSaleImportCurrency(raw: string): {
   return { value: parsed };
 }
 
-export function parseSaleImportDate(raw: string): {
+function normalizeDateInput(raw: unknown): string {
+  if (raw == null) return '';
+  if (raw instanceof Date) {
+    if (Number.isNaN(raw.getTime())) return '';
+    const y = raw.getFullYear();
+    const m = String(raw.getMonth() + 1).padStart(2, '0');
+    const d = String(raw.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(raw)
+    .trim()
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function validateIsoDateParts(year: string, month: string, day: string): {
   value: string | null;
   error?: string;
 } {
-  const trimmed = String(raw || '').trim();
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  if (
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() + 1 !== m ||
+    date.getUTCDate() !== d
+  ) {
+    return { value: null, error: 'Data de venda inválida.' };
+  }
+  return { value: `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}` };
+}
+
+function parseExcelSerialDate(trimmed: string): string | null {
+  if (!/^-?\d+([.,]\d+)?$/.test(trimmed)) return null;
+
+  const num = Number(trimmed.replace(',', '.'));
+  if (!Number.isFinite(num) || num <= 0 || num > 600000) return null;
+
+  // Evita confundir ano (ex.: 2026) com serial Excel.
+  if (Number.isInteger(num) && num >= 1900 && num <= 2100) return null;
+
+  const wholeDays = Math.floor(num);
+  const ms = (wholeDays - 25569) * 86400000;
+  const date = new Date(ms);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function parseSaleImportDate(raw: unknown): {
+  value: string | null;
+  error?: string;
+} {
+  const trimmed = normalizeDateInput(raw);
   if (!trimmed) return { value: null };
 
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const excelSerial = parseExcelSerialDate(trimmed);
+  if (excelSerial) return { value: excelSerial };
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
   if (isoMatch) {
-    return { value: `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}` };
+    return validateIsoDateParts(isoMatch[1], isoMatch[2], isoMatch[3]);
   }
 
-  const brMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  const brMatch = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:[\sT].*)?$/);
   if (brMatch) {
-    const day = brMatch[1].padStart(2, '0');
-    const month = brMatch[2].padStart(2, '0');
-    const year = brMatch[3];
-    const date = new Date(`${year}-${month}-${day}T12:00:00.000Z`);
-    if (
-      date.getUTCFullYear() !== Number(year) ||
-      date.getUTCMonth() + 1 !== Number(month) ||
-      date.getUTCDate() !== Number(day)
-    ) {
-      return { value: null, error: 'Data de venda inválida.' };
-    }
-    return { value: `${year}-${month}-${day}` };
+    return validateIsoDateParts(brMatch[3], brMatch[2], brMatch[1]);
   }
 
   return { value: null, error: 'Data de venda inválida. Use dd/mm/aaaa.' };
