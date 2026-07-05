@@ -242,17 +242,13 @@ export function validateCurrentWizardStep(
   switch (state.step) {
     case 'upload':
       if (!state.mappingFile && !files.mappingFile) {
-        return state.selectedModuleId === 'legacy_contracts'
-          ? 'Selecione a planilha de mapeamento (.xlsx, .xls ou .csv).'
-          : 'Selecione um arquivo antes de avançar.';
+        if (state.selectedModuleId === 'legacy_contracts') return null;
+        return 'Selecione um arquivo antes de avançar.';
       }
       return null;
     case 'upload-documents':
       if (!files.documentFiles.length && state.documentFiles.length === 0) {
         return 'Selecione ao menos um PDF ou um ZIP contendo os contratos antigos.';
-      }
-      if (!files.mappingFile && !state.mappingFile) {
-        return 'Planilha de mapeamento ausente. Volte à etapa Planilha.';
       }
       return null;
     default:

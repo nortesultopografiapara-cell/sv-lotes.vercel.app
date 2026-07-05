@@ -33,13 +33,15 @@ export function extractLegacyContractFormFiles(formData: FormData): LegacyContra
 export function appendLegacyContractFormData(
   formData: FormData,
   params: {
-    mappingFile: File;
+    mappingFile?: File;
     documentFiles: File[];
     activeTenantId?: string | null;
     confirmed?: boolean;
   },
 ): void {
-  formData.append('mappingFile', params.mappingFile);
+  if (params.mappingFile) {
+    formData.append('mappingFile', params.mappingFile);
+  }
   for (const file of params.documentFiles) {
     formData.append('documentFiles', file);
   }
@@ -49,6 +51,17 @@ export function appendLegacyContractFormData(
   if (params.confirmed) {
     formData.append('confirmed', 'true');
   }
+}
+
+export function appendLegacyContractDocumentsFormData(
+  formData: FormData,
+  params: {
+    documentFiles: File[];
+    activeTenantId?: string | null;
+    confirmed?: boolean;
+  },
+): void {
+  appendLegacyContractFormData(formData, params);
 }
 
 export function summarizeLegacyDocumentFileNames(files: File[]): string {

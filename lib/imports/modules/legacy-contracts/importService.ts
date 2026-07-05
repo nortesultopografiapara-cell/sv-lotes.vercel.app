@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { buildLegacyContractRowsFromPdfIndex } from '@/lib/imports/modules/legacy-contracts/buildRowsFromPdfIndex';
 import { getLegacyContractColumnMappingErrorMessage } from '@/lib/imports/modules/legacy-contracts/columnMapping';
 import { executeImportableLegacyContractRow } from '@/lib/imports/modules/legacy-contracts/executeRow';
 import { loadLegacyContractImportContext } from '@/lib/imports/modules/legacy-contracts/lookupIndex';
@@ -53,6 +54,63 @@ function emptyErrorRow(mappingError: string): LegacyContractImportValidationResu
     status: 'error',
     messages: [{ level: 'error', text: mappingError }],
     importable: false,
+  };
+}
+
+const EMPTY_LEGACY_COLUMN_MAPPING: LegacyContractImportValidationResult['columnMapping'] = {
+  mapping: {},
+  unmappedHeaders: [],
+  missingRequired: [],
+  recognizedHeaders: {} as LegacyContractImportValidationResult['columnMapping']['recognizedHeaders'],
+};
+
+export async function validateLegacyContractDocumentsBuffer(params: {
+  documentUploads: Array<{ buffer: Buffer | ArrayBuffer; fileName: string }>;
+  documentsFileName: string;
+  context: Awaited<ReturnType<typeof loadLegacyContractImportContext>>;
+}): Promise<LegacyContractImportValidationResult> {
+  const pdfResult = await buildLegacyContractPdfIndexFromUploads(params.documentUploads);
+  const rows = buildLegacyContractRowsFromPdfIndex(pdfResult.index);
+
+  if (rows.length === 0) {
+    return {
+      fileName: params.documentsFileName,
+      documentsFileName: params.documentsFileName,
+      fileType: 'unknown',
+      rowCount: 0,
+      pdfCount: 0,
+      columnMapping: EMPTY_LEGACY_COLUMN_MAPPING,
+      summary: {
+        totalRows: 0,
+        validRows: 0,
+        warningRows: 0,
+        errorRows: 1,
+        duplicateRows: 0,
+        existingRows: 0,
+        ignoredRows: 0,
+        importableRows: 0,
+      },
+      rows: [
+        emptyErrorRow('Nenhum PDF encontrado nos arquivos enviados.'),
+      ],
+    };
+  }
+
+  const { rows: validatedRows, summary } = validateLegacyContractRows(
+    rows,
+    params.context,
+    pdfResult.index,
+  );
+
+  return {
+    fileName: params.documentsFileName,
+    documentsFileName: params.documentsFileName,
+    fileType: 'unknown',
+    rowCount: rows.length,
+    pdfCount: pdfResult.pdfCount,
+    columnMapping: EMPTY_LEGACY_COLUMN_MAPPING,
+    summary,
+    rows: validatedRows,
   };
 }
 
@@ -130,21 +188,28 @@ export async function executeLegacyContractImportBuffer(params: {
   tenantId: string;
   userId: string;
   userName: string;
-  spreadsheetBuffer: Buffer | ArrayBuffer;
-  spreadsheetFileName: string;
+  spreadsheetBuffer?: Buffer | ArrayBuffer;
+  spreadsheetFileName?: string;
   documentUploads: Array<{ buffer: Buffer | ArrayBuffer; fileName: string }>;
   documentsFileName: string;
 }): Promise<LegacyContractImportExecuteResult> {
   const context = await loadLegacyContractImportContext(params.admin, params.tenantId);
   const pdfResult = await buildLegacyContractPdfIndexFromUploads(params.documentUploads);
 
-  const validation = await validateLegacyContractImportBuffer({
-    spreadsheetBuffer: params.spreadsheetBuffer,
-    spreadsheetFileName: params.spreadsheetFileName,
-    documentUploads: params.documentUploads,
-    documentsFileName: params.documentsFileName,
-    context,
-  });
+  const validation =
+    params.spreadsheetBuffer && params.spreadsheetFileName
+      ? await validateLegacyContractImportBuffer({
+          spreadsheetBuffer: params.spreadsheetBuffer,
+          spreadsheetFileName: params.spreadsheetFileName,
+          documentUploads: params.documentUploads,
+          documentsFileName: params.documentsFileName,
+          context,
+        })
+      : await validateLegacyContractDocumentsBuffer({
+          documentUploads: params.documentUploads,
+          documentsFileName: params.documentsFileName,
+          context,
+        });
 
   const importableRows = validation.rows.filter((row) => row.importable);
   let imported = 0;
@@ -172,7 +237,7 @@ export async function executeLegacyContractImportBuffer(params: {
     tenantId: params.tenantId,
     userId: params.userId,
     userName: params.userName,
-    fileName: params.spreadsheetFileName,
+    fileName: params.spreadsheetFileName || params.documentsFileName,
     documentsFileName: params.documentsFileName,
     validation,
     imported,

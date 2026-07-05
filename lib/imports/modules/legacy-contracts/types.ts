@@ -119,9 +119,13 @@ export type LegacyContractSaleRecord = {
 
 export type LegacyContractImportContext = {
   customers: import('@/lib/imports/modules/sales/types').SalesCustomerIndex;
+  customersById: Map<string, { id: string; name: string }>;
   projects: import('@/lib/imports/modules/sales/types').SalesProjectIndex;
+  projectsById: Map<string, { id: string; name: string }>;
   blocks: import('@/lib/imports/modules/sales/types').SalesBlockIndex;
+  blocksById: Map<string, import('@/lib/imports/modules/sales/types').SalesBlockRecord>;
   blocksByProject: Map<string, import('@/lib/imports/modules/sales/types').SalesBlockRecord[]>;
   salesByCustomerBlock: Map<string, LegacyContractSaleRecord>;
+  salesById: Map<string, LegacyContractSaleRecord>;
   legacyDocumentBySaleId: Map<string, { id: string; storage_path: string }>;
 };

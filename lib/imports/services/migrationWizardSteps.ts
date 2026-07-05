@@ -11,6 +11,13 @@ const BASE_STEPS: MigrationWizardStepId[] = [
   'upload',
 ];
 
+const LEGACY_STEPS: MigrationWizardStepId[] = [
+  'welcome',
+  'select-type',
+  'template',
+  'upload-documents',
+];
+
 const TAIL_STEPS: MigrationWizardStepId[] = [
   'pre-validation',
   'preview',
@@ -22,14 +29,14 @@ export function getWizardStepsForModule(
 ): { id: MigrationWizardStepId; label: string; order: number }[] {
   const steps: MigrationWizardStepId[] =
     moduleId === 'legacy_contracts'
-      ? [...BASE_STEPS, 'upload-documents', ...TAIL_STEPS]
+      ? [...LEGACY_STEPS, ...TAIL_STEPS]
       : [...BASE_STEPS, ...TAIL_STEPS];
 
   const labels: Record<MigrationWizardStepId, string> = {
     welcome: 'Boas-vindas',
     'select-type': 'Tipo',
     template: 'Modelo',
-    upload: moduleId === 'legacy_contracts' ? 'Planilha' : 'Upload',
+    upload: 'Upload',
     'upload-documents': 'PDFs',
     'pre-validation': 'Pré-validação',
     preview: 'Pré-visualização',

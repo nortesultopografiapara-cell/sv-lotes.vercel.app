@@ -33,7 +33,7 @@ import {
   parseImportFileMeta,
 } from '@/lib/imports/helpers/parseImportFileMeta';
 import {
-  appendLegacyContractFormData,
+  appendLegacyContractDocumentsFormData,
   filterAcceptedLegacyDocumentFiles,
 } from '@/lib/imports/helpers/legacyContractFormData';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
@@ -213,13 +213,11 @@ async function executeSalesImport(file: File, activeTenantId: string | null) {
 }
 
 async function validateLegacyContractsFiles(
-  spreadsheetFile: File,
   documentFiles: File[],
   activeTenantId: string | null,
 ): Promise<LegacyContractImportValidationResult> {
   const formData = new FormData();
-  appendLegacyContractFormData(formData, {
-    mappingFile: spreadsheetFile,
+  appendLegacyContractDocumentsFormData(formData, {
     documentFiles,
     activeTenantId,
   });
@@ -246,13 +244,11 @@ async function validateLegacyContractsFiles(
 }
 
 async function executeLegacyContractsImport(
-  spreadsheetFile: File,
   documentFiles: File[],
   activeTenantId: string | null,
 ) {
   const formData = new FormData();
-  appendLegacyContractFormData(formData, {
-    mappingFile: spreadsheetFile,
+  appendLegacyContractDocumentsFormData(formData, {
     documentFiles,
     activeTenantId,
     confirmed: true,
@@ -430,20 +426,13 @@ export function DataMigrationWizard() {
       return;
     }
 
-    if (state.step === 'upload' && isLegacyContractsModule) {
-      setState((prev) => advanceWizardState({ ...prev, validationError: null }));
-      return;
-    }
-
     if (state.step === 'upload-documents' && isLegacyContractsModule) {
-      const spreadsheetFile = mappingFileRef.current;
       const documentFiles = documentFilesRef.current;
-      if (!spreadsheetFile || documentFiles.length === 0) return;
+      if (documentFiles.length === 0) return;
 
       setState((prev) => ({ ...prev, validating: true, validationError: null }));
       try {
         const validation = await validateLegacyContractsFiles(
-          spreadsheetFile,
           documentFiles,
           activeTenantId,
         );
@@ -464,8 +453,6 @@ export function DataMigrationWizard() {
   };
 
   const handleConfirmImport = async () => {
-    if (!mappingFileRef.current) return;
-
     if (isLegacyContractsModule && state.legacyContractsValidation) {
       if (documentFilesRef.current.length === 0) return;
 
@@ -480,7 +467,6 @@ export function DataMigrationWizard() {
       setState((prev) => ({ ...prev, importing: true }));
       try {
         const result = await executeLegacyContractsImport(
-          mappingFileRef.current,
           documentFilesRef.current,
           activeTenantId,
         );
@@ -496,6 +482,8 @@ export function DataMigrationWizard() {
       }
       return;
     }
+
+    if (!mappingFileRef.current) return;
 
     if (isCustomersModule && state.customerValidation) {
       const importable = state.customerValidation.summary.importableRows;
@@ -692,13 +680,24 @@ export function DataMigrationWizard() {
         return (
           <div className="space-y-4" data-testid="migration-step-template">
             <p className="text-sm text-[var(--text-secondary)]">
-              Baixe o modelo correspondente ao tipo{' '}
-              <strong className="text-[var(--text-primary)]">
-                {selectedModule?.title ?? '—'}
-              </strong>{' '}
-              antes de preparar sua planilha.
+              {isLegacyContractsModule ? (
+                <>
+                  Prepare os PDFs dos contratos antigos para anexar às vendas já existentes.
+                  Você poderá enviar arquivos PDF individuais ou um ZIP contendo os PDFs na
+                  próxima etapa.
+                </>
+              ) : (
+                <>
+                  Baixe o modelo correspondente ao tipo{' '}
+                  <strong className="text-[var(--text-primary)]">
+                    {selectedModule?.title ?? '—'}
+                  </strong>{' '}
+                  antes de preparar sua planilha.
+                </>
+              )}
             </p>
             {!isImportModuleActive ? renderPlaceholderModuleNotice() : null}
+            {!isLegacyContractsModule ? (
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
@@ -727,20 +726,24 @@ export function DataMigrationWizard() {
                 Baixar modelo CSV
               </button>
             </div>
+            ) : (
+              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-secondary)]">
+                Na próxima etapa, selecione um ou mais PDFs ou um arquivo ZIP. Para localizar a
+                venda automaticamente, nomeie cada PDF com o identificador da venda
+                (ex.: <code className="text-[var(--text-primary)]">sale-id.pdf</code>).
+              </div>
+            )}
           </div>
         );
 
       case 'upload':
+        if (isLegacyContractsModule) return null;
         return (
           <div className="space-y-4" data-testid="migration-step-upload">
             <p className="text-sm text-[var(--text-secondary)]">
-              {isLegacyContractsModule
-                ? 'Selecione a planilha de mapeamento (.xlsx, .xls ou .csv).'
-                : 'Selecione o arquivo preparado (.xlsx, .xls ou .csv).'}
+              Selecione o arquivo preparado (.xlsx, .xls ou .csv).
               {isImportModuleActive
-                ? isLegacyContractsModule
-                  ? ' Na próxima etapa você enviará os PDFs.'
-                  : ' Ao avançar, o arquivo será validado sem gravar dados.'
+                ? ' Ao avançar, o arquivo será validado sem gravar dados.'
                 : ' Nenhum dado será gravado nesta fase.'}
             </p>
             {!isImportModuleActive ? renderPlaceholderModuleNotice() : null}
@@ -780,7 +783,7 @@ export function DataMigrationWizard() {
               >
                 <div className="flex items-center gap-2 text-emerald-300 font-medium mb-2">
                   <FileUp className="w-4 h-4" />
-                  {isLegacyContractsModule ? 'Planilha selecionada' : 'Arquivo selecionado'}
+                  Arquivo selecionado
                 </div>
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[var(--text-secondary)]">
                   <div>

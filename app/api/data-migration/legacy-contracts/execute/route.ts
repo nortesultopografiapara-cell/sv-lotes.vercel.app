@@ -17,9 +17,6 @@ export async function POST(request: Request) {
     if (!confirmed) {
       return NextResponse.json({ error: 'Confirmação obrigatória.' }, { status: 400 });
     }
-    if (!mappingFile) {
-      return NextResponse.json({ error: 'Planilha de mapeamento não enviada.' }, { status: 400 });
-    }
     if (documentFiles.length === 0) {
       return NextResponse.json(
         { error: 'Selecione ao menos um PDF ou um arquivo ZIP contendo PDFs.' },
@@ -41,8 +38,8 @@ export async function POST(request: Request) {
       tenantId: auth.ctx.tenantId,
       userId: auth.ctx.userId,
       userName: auth.ctx.userName,
-      spreadsheetBuffer: Buffer.from(await mappingFile.arrayBuffer()),
-      spreadsheetFileName: mappingFile.name,
+      spreadsheetBuffer: mappingFile ? Buffer.from(await mappingFile.arrayBuffer()) : undefined,
+      spreadsheetFileName: mappingFile?.name,
       documentUploads,
       documentsFileName,
     });

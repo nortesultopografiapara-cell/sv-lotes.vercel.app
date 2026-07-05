@@ -5,6 +5,7 @@ import { isCustomerImportParseError } from '@/lib/imports/modules/customers/erro
 import { buildLegacyContractDocumentUploads } from '@/lib/imports/modules/legacy-contracts/documentUploads';
 import {
   loadLegacyContractImportContext,
+  validateLegacyContractDocumentsBuffer,
   validateLegacyContractImportBuffer,
 } from '@/lib/imports/modules/legacy-contracts/importService';
 
@@ -16,9 +17,6 @@ export async function POST(request: Request) {
     const { mappingFile, documentFiles } = extractLegacyContractFormFiles(formData);
     const activeTenantId = formData.get('activeTenantId');
 
-    if (!mappingFile) {
-      return NextResponse.json({ error: 'Planilha de mapeamento não enviada.' }, { status: 400 });
-    }
     if (documentFiles.length === 0) {
       return NextResponse.json(
         { error: 'Selecione ao menos um PDF ou um arquivo ZIP contendo PDFs.' },
@@ -32,18 +30,23 @@ export async function POST(request: Request) {
     );
     if ('error' in auth) return auth.error;
 
-    const spreadsheetBuffer = Buffer.from(await mappingFile.arrayBuffer());
     const { documentUploads, documentsFileName } =
       await buildLegacyContractDocumentUploads(documentFiles);
     const context = await loadLegacyContractImportContext(auth.ctx.admin, auth.ctx.tenantId);
 
-    const validation = await validateLegacyContractImportBuffer({
-      spreadsheetBuffer,
-      spreadsheetFileName: mappingFile.name,
-      documentUploads,
-      documentsFileName,
-      context,
-    });
+    const validation = mappingFile
+      ? await validateLegacyContractImportBuffer({
+          spreadsheetBuffer: Buffer.from(await mappingFile.arrayBuffer()),
+          spreadsheetFileName: mappingFile.name,
+          documentUploads,
+          documentsFileName,
+          context,
+        })
+      : await validateLegacyContractDocumentsBuffer({
+          documentUploads,
+          documentsFileName,
+          context,
+        });
 
     return NextResponse.json({ validation });
   } catch (err) {

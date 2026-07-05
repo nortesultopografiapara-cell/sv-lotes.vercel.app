@@ -12,7 +12,10 @@ import {
   buildLegacyContractImportXlsxBuffer,
 } from '../lib/imports/modules/legacy-contracts/templates';
 import { legacyContractsImportModule } from '../lib/imports/modules/legacy-contracts';
-import { validateLegacyContractImportBuffer } from '../lib/imports/modules/legacy-contracts/importService';
+import {
+  validateLegacyContractDocumentsBuffer,
+  validateLegacyContractImportBuffer,
+} from '../lib/imports/modules/legacy-contracts/importService';
 import {
   buildLegacyContractSaleKey,
   parseLegacyContractDate,
@@ -39,10 +42,10 @@ import {
   validateCurrentWizardStep,
 } from '../lib/imports/services/migrationWizardState';
 import {
-  appendLegacyContractFormData,
+  appendLegacyContractDocumentsFormData,
   extractLegacyContractFormFiles,
 } from '../lib/imports/helpers/legacyContractFormData';
-import { getWizardStepsForModule } from '../lib/imports/services/migrationWizardSteps';
+import { getWizardStepsForModule, getNextWizardStepForModule } from '../lib/imports/services/migrationWizardSteps';
 import {
   buildImportCsvTemplate,
   getImportTemplateHeaders,
@@ -116,12 +119,44 @@ function buildMockContext(
     ],
   ]);
 
+  const salesById = new Map([
+    [
+      'sale-1',
+      {
+        id: 'sale-1',
+        customer_id: 'cust-1',
+        project_id: 'proj-1',
+        block_id: 'block-1',
+        status: 'ACTIVE',
+      },
+    ],
+  ]);
+
   return {
     customers,
+    customersById: new Map([['cust-1', { id: 'cust-1', name: 'Cliente Teste' }]]),
     projects,
+    projectsById: new Map([['proj-1', { id: 'proj-1', name: 'Empreendimento Real Teste' }]]),
     blocks,
+    blocksById: new Map([
+      [
+        'block-1',
+        {
+          id: 'block-1',
+          project_id: 'proj-1',
+          block_name: 'A',
+          number: '1',
+          lot_number: '1',
+          status: 'Vendido',
+          sale_id: 'sale-1',
+          customer_id: 'cust-1',
+          price: 90000,
+        },
+      ],
+    ]),
     blocksByProject,
     salesByCustomerBlock,
+    salesById,
     legacyDocumentBySaleId: new Map(),
     ...overrides,
   };
@@ -253,6 +288,22 @@ async function testValidationRows() {
   console.log('OK testValidationRows');
 }
 
+async function testValidateDocumentsOnlyBuffer() {
+  const pdfBuffer = Buffer.from('%PDF-1.4');
+  const context = buildMockContext();
+
+  const validation = await validateLegacyContractDocumentsBuffer({
+    documentUploads: [{ buffer: pdfBuffer, fileName: 'sale-1.pdf' }],
+    documentsFileName: 'sale-1.pdf',
+    context,
+  });
+
+  assert(validation.summary.totalRows === 1, '1 pdf vira 1 linha');
+  assert(validation.summary.importableRows === 1, 'venda localizada pelo nome do pdf');
+  assert(validation.pdfCount === 1, 'pdf count');
+  console.log('OK testValidateDocumentsOnlyBuffer');
+}
+
 async function testValidateBuffer() {
   const csv = [
     LEGACY_CONTRACTS_IMPORT_TEMPLATE_COLUMNS.join(';'),
@@ -288,14 +339,15 @@ async function testValidateBuffer() {
 
 function testWizardIntegration() {
   const steps = getWizardStepsForModule('legacy_contracts');
-  assert(steps.length === 8, '8 etapas legacy');
+  assert(steps.length === 7, '7 etapas legacy sem planilha');
+  assert(!steps.some((step) => step.id === 'upload'), 'sem etapa planilha');
   assert(steps.some((step) => step.id === 'upload-documents'), 'passo PDFs');
+  assert(steps[3]?.id === 'upload-documents', 'PDFs após modelo');
 
   let state = {
     ...INITIAL_MIGRATION_WIZARD_STATE,
     step: 'upload-documents' as const,
     selectedModuleId: 'legacy_contracts' as const,
-    mappingFile: parseImportFileMeta(new File(['a'], 'map.csv', { type: 'text/csv' })),
     documentFiles: [
       parseImportFileMeta(new File(['%PDF'], 'docs.pdf', { type: 'application/pdf' })),
     ],
@@ -331,22 +383,20 @@ function testWizardIntegration() {
 
 function testFormDataFieldNames() {
   const formData = new FormData();
-  const spreadsheet = new File(['a;b'], 'mapeamento.csv', { type: 'text/csv' });
   const pdf1 = new File(['%PDF-1'], 'contrato_a.pdf', { type: 'application/pdf' });
   const zip = new File(['PK'], 'contratos.zip', { type: 'application/zip' });
 
-  appendLegacyContractFormData(formData, {
-    mappingFile: spreadsheet,
+  appendLegacyContractDocumentsFormData(formData, {
     documentFiles: [pdf1, zip],
     activeTenantId: 'tenant-1',
   });
 
-  assert(formData.has('mappingFile'), 'mappingFile enviado');
+  assert(!formData.has('mappingFile'), 'fluxo pdf-only sem mappingFile');
   assert(formData.getAll('documentFiles').length === 2, 'documentFiles múltiplos');
   assert(formData.get('activeTenantId') === 'tenant-1', 'tenant opcional');
 
   const extracted = extractLegacyContractFormFiles(formData);
-  assert(extracted.mappingFile?.name === 'mapeamento.csv', 'planilha extraída');
+  assert(extracted.mappingFile == null, 'sem planilha');
   assert(extracted.documentFiles.length === 2, 'documentos extraídos');
   assert(extracted.documentFiles[0]?.name === 'contrato_a.pdf', 'pdf extraído');
   assert(extracted.documentFiles[1]?.name === 'contratos.zip', 'zip extraído');
@@ -355,20 +405,13 @@ function testFormDataFieldNames() {
 
 function testWizardUploadStepConstraints() {
   const wizard = read('components/imports/DataMigrationWizard.tsx');
-  const uploadSection =
-    wizard.match(/case 'upload':[\s\S]*?case 'upload-documents':/)?.[0] ?? '';
+  const steps = getWizardStepsForModule('legacy_contracts');
   const docsSection =
     wizard.match(/case 'upload-documents':[\s\S]*?case 'pre-validation':/)?.[0] ?? '';
 
-  assert(uploadSection.includes('openMappingFilePicker'), 'planilha usa picker dedicado');
-  assert(!uploadSection.includes('type="file"'), 'planilha sem input inline');
-  assert(!uploadSection.includes('multiple'), 'planilha sem multiple');
-  assert(wizard.includes('data-testid="migration-file-input"'), 'input planilha na raiz');
-  assert(wizard.includes('ACCEPTED_IMPORT_ACCEPT_ATTR'), 'planilha aceita xlsx/xls/csv');
-  assert(wizard.includes('handleMappingFileChange'), 'handler planilha dedicado');
-  assert(wizard.includes('handleDocumentFilesChange'), 'handler pdfs dedicado');
-  assert(wizard.includes("wizardStepRef.current !== 'upload'"), 'guarda etapa planilha');
-  assert(wizard.includes("wizardStepRef.current !== 'upload-documents'"), 'guarda etapa pdfs');
+  assert(steps.length === 7, 'legacy com 7 etapas');
+  assert(!steps.some((step) => step.label === 'Planilha'), 'indicador sem planilha');
+  assert(steps.some((step) => step.id === 'upload-documents' && step.label === 'PDFs'), 'indicador pdfs');
 
   assert(docsSection.includes('openDocumentsFilePicker'), 'pdfs usa picker dedicado');
   assert(!docsSection.includes('type="file"'), 'pdfs sem input inline');
@@ -387,8 +430,9 @@ function testWizardUploadStepConstraints() {
     'pdfs aceita pdf/zip',
   );
   assert(wizard.includes('data-testid="migration-documents-file-input"'), 'input pdfs na raiz');
-  assert(wizard.includes('appendLegacyContractFormData'), 'formData legacy');
-  assert(wizard.includes('mappingFile: spreadsheetFile'), 'mappingFile no validate');
+  assert(wizard.includes('appendLegacyContractDocumentsFormData'), 'formData pdf-only');
+  assert(wizard.includes('validateLegacyContractsFiles'), 'validate legacy pdfs');
+  assert(wizard.includes('if (isLegacyContractsModule) return null'), 'upload oculto legacy');
 
   let state = {
     ...INITIAL_MIGRATION_WIZARD_STATE,
@@ -411,28 +455,22 @@ function testWizardUploadStepConstraints() {
   };
   assert(canAdvanceWizardStep(state), 'pdfs aceita ao menos 1 arquivo');
 
-  const spreadsheetState = {
+  const legacyUploadState = {
     ...INITIAL_MIGRATION_WIZARD_STATE,
     step: 'upload' as const,
     selectedModuleId: 'legacy_contracts' as const,
   };
-  assert(!canAdvanceWizardStep(spreadsheetState), 'planilha rejeita ausência');
+  assert(!canAdvanceWizardStep(legacyUploadState), 'legacy não usa etapa planilha');
+
+  const templateState = {
+    ...INITIAL_MIGRATION_WIZARD_STATE,
+    step: 'template' as const,
+    selectedModuleId: 'legacy_contracts' as const,
+  };
+  assert(canAdvanceWizardStep(templateState), 'modelo avança sem planilha');
   assert(
-    validateCurrentWizardStep(spreadsheetState, { mappingFile: null, documentFiles: [] })?.includes(
-      'planilha',
-    ),
-    'validateCurrentWizardStep exige planilha',
-  );
-  assert(
-    canAdvanceWizardStep({
-      ...spreadsheetState,
-      mappingFile: parseImportFileMeta(
-        new File(['a'], 'map.xlsx', {
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        }),
-      ),
-    }),
-    'planilha aceita excel',
+    getNextWizardStepForModule('legacy_contracts', 'template') === 'upload-documents',
+    'modelo vai direto para pdfs',
   );
 
   const xlsx = new File(['x'], 'map.xlsx', {
@@ -489,6 +527,7 @@ async function main() {
   testNormalize();
   await testPdfIndex();
   await testValidationRows();
+  await testValidateDocumentsOnlyBuffer();
   await testValidateBuffer();
   testWizardIntegration();
   testFormDataFieldNames();
