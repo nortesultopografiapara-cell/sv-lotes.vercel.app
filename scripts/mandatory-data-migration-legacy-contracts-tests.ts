@@ -354,9 +354,9 @@ function testWizardIntegration() {
   };
 
   state = applyLegacyContractsValidationAndAdvance(state, {
-    fileName: 'map.csv',
+    fileName: 'docs.pdf',
     documentsFileName: 'docs.pdf',
-    fileType: 'csv',
+    fileType: 'unknown',
     rowCount: 1,
     pdfCount: 1,
     columnMapping: {
@@ -378,6 +378,41 @@ function testWizardIntegration() {
     rows: [],
   });
   assert(state.step === 'pre-validation', 'avanço pós-validação legacy');
+  assert(state.validating === false, 'validating limpo após avanço');
+
+  const stuckValidating = applyLegacyContractsValidationAndAdvance(
+    {
+      ...INITIAL_MIGRATION_WIZARD_STATE,
+      step: 'template',
+      selectedModuleId: 'legacy_contracts',
+      validating: true,
+    },
+    {
+      fileName: 'docs.pdf',
+      documentsFileName: 'docs.pdf',
+      fileType: 'unknown',
+      rowCount: 1,
+      pdfCount: 1,
+      columnMapping: {
+        mapping: {},
+        unmappedHeaders: [],
+        missingRequired: [],
+        recognizedHeaders: {} as never,
+      },
+      summary: {
+        totalRows: 1,
+        validRows: 0,
+        warningRows: 0,
+        errorRows: 1,
+        duplicateRows: 0,
+        existingRows: 0,
+        ignoredRows: 1,
+        importableRows: 0,
+      },
+      rows: [],
+    },
+  );
+  assert(stuckValidating.validating === false, 'validating nunca fica preso');
   console.log('OK testWizardIntegration');
 }
 
@@ -430,7 +465,8 @@ function testWizardUploadStepConstraints() {
     'pdfs aceita pdf/zip',
   );
   assert(wizard.includes('data-testid="migration-documents-file-input"'), 'input pdfs na raiz');
-  assert(wizard.includes('appendLegacyContractDocumentsFormData'), 'formData pdf-only');
+  assert(wizard.includes('Validando PDFs'), 'loading legacy sem planilha');
+  assert(!wizard.includes('Validando planilha e PDFs'), 'texto planilha removido legacy');
   assert(wizard.includes('validateLegacyContractsFiles'), 'validate legacy pdfs');
   assert(wizard.includes('if (isLegacyContractsModule) return null'), 'upload oculto legacy');
 

@@ -10,6 +10,7 @@ import {
 } from '@/lib/imports/modules/legacy-contracts/importService';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -32,7 +33,22 @@ export async function POST(request: Request) {
 
     const { documentUploads, documentsFileName } =
       await buildLegacyContractDocumentUploads(documentFiles);
-    const context = await loadLegacyContractImportContext(auth.ctx.admin, auth.ctx.tenantId);
+
+    let context;
+    try {
+      context = await loadLegacyContractImportContext(auth.ctx.admin, auth.ctx.tenantId);
+    } catch (loadErr) {
+      console.error('[data-migration/legacy-contracts/validate] load context', loadErr);
+      return NextResponse.json(
+        {
+          error:
+            loadErr instanceof Error
+              ? loadErr.message
+              : 'Não foi possível carregar os dados para validação.',
+        },
+        { status: 500 },
+      );
+    }
 
     const validation = mappingFile
       ? await validateLegacyContractImportBuffer({
