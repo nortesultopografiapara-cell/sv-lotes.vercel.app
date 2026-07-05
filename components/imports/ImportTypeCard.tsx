@@ -29,6 +29,7 @@ type ImportTypeCardProps = {
 export function ImportTypeCard({ module, selected, onSelect }: ImportTypeCardProps) {
   const Icon = MODULE_ICONS[module.id];
   const isDevelopment = module.status === 'in_development';
+  const isAvailable = module.status === 'available';
 
   return (
     <button
@@ -56,9 +57,11 @@ export function ImportTypeCard({ module, selected, onSelect }: ImportTypeCardPro
             <h3 className="text-sm font-bold text-[var(--text-primary)]">{module.title}</h3>
             <span
               className={`text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                isDevelopment
-                  ? 'bg-slate-500/15 text-slate-400'
-                  : 'bg-amber-500/15 text-amber-400'
+                isAvailable
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : isDevelopment
+                    ? 'bg-slate-500/15 text-slate-400'
+                    : 'bg-amber-500/15 text-amber-400'
               }`}
             >
               {module.statusLabel}
