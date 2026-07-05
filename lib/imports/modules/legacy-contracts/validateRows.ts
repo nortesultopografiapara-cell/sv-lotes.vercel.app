@@ -49,6 +49,24 @@ function resolveRow(
     sale = context.salesByCustomerBlock.get(buildLegacyContractSaleKey(customer.id, block.id)) || null;
   }
 
+  if (!sale && row.nome_arquivo_pdf_normalized) {
+    const saleKey = row.nome_arquivo_pdf_normalized.replace(/\.pdf$/i, '');
+    sale = context.salesById.get(saleKey) || null;
+  }
+
+  let resolvedCustomer = customer;
+  let resolvedProject = project;
+  let resolvedBlock = block;
+
+  if (sale) {
+    resolvedCustomer =
+      (sale.customer_id ? context.customersById.get(sale.customer_id) : null) ?? resolvedCustomer;
+    resolvedProject =
+      (sale.project_id ? context.projectsById.get(sale.project_id) : null) ?? resolvedProject;
+    resolvedBlock =
+      (sale.block_id ? context.blocksById.get(sale.block_id) : null) ?? resolvedBlock;
+  }
+
   const pdfBuffer = lookupLegacyContractPdf(pdfIndex, row.nome_arquivo_pdf);
   const existingLegacy = sale
     ? context.legacyDocumentBySaleId.get(sale.id) || null
@@ -56,11 +74,11 @@ function resolveRow(
 
   return {
     ...row,
-    customer_id: customer?.id ?? null,
-    customer_name: customer?.name ?? null,
-    project_id: project?.id ?? null,
-    project_name: project?.name ?? null,
-    block_id: block?.id ?? null,
+    customer_id: resolvedCustomer?.id ?? null,
+    customer_name: resolvedCustomer?.name ?? null,
+    project_id: resolvedProject?.id ?? null,
+    project_name: resolvedProject?.name ?? null,
+    block_id: resolvedBlock?.id ?? null,
     sale_id: sale?.id ?? null,
     pdf_found: Boolean(pdfBuffer),
     pdf_buffer_key: row.nome_arquivo_pdf_normalized,
@@ -91,41 +109,45 @@ function validateSingleRow(
   }
 
   const hasCustomerIdentifier = row.cliente_cpf_cnpj_digits || row.cliente_email_normalized;
-  if (!hasCustomerIdentifier) {
-    pushMessage({
-      level: 'error',
-      text: 'Informe CPF/CNPJ ou e-mail do cliente para localização.',
-    });
+  if (!row.sale_id) {
+    if (!hasCustomerIdentifier) {
+      pushMessage({
+        level: 'error',
+        text: 'Informe CPF/CNPJ ou e-mail do cliente para localização.',
+      });
+    } else if (!row.customer_id) {
+      pushMessage({ level: 'error', text: 'Cliente não localizado.' });
+    }
+
+    if (!row.empreendimento.trim()) {
+      pushMessage({ level: 'error', text: 'Empreendimento é obrigatório.' });
+    } else if (!row.project_id) {
+      pushMessage({ level: 'error', text: 'Empreendimento não encontrado no sistema.' });
+    }
+
+    if (!row.quadra.trim()) {
+      pushMessage({ level: 'error', text: 'Quadra é obrigatória.' });
+    }
+    if (!row.lote.trim()) {
+      pushMessage({ level: 'error', text: 'Lote é obrigatório.' });
+    }
+
+    if (row.project_id && row.quadra.trim() && row.lote.trim() && !row.block_id) {
+      const projectBlocks = context.blocksByProject.get(row.project_id) || [];
+      const suggestions = suggestSimilarBlocks(projectBlocks, row.quadra, row.lote);
+      const hint =
+        suggestions.length > 0 ? ` Sugestões: ${suggestions.join(', ')}` : '';
+      pushMessage({
+        level: 'error',
+        text: `Quadra/lote não encontrado no empreendimento informado.${hint}`,
+      });
+    }
+
+    if (row.customer_id && row.block_id && !row.sale_id) {
+      pushMessage({ level: 'error', text: 'Venda não localizada.' });
+    }
   } else if (!row.customer_id) {
-    pushMessage({ level: 'error', text: 'Cliente não localizado.' });
-  }
-
-  if (!row.empreendimento.trim()) {
-    pushMessage({ level: 'error', text: 'Empreendimento é obrigatório.' });
-  } else if (!row.project_id) {
-    pushMessage({ level: 'error', text: 'Empreendimento não encontrado no sistema.' });
-  }
-
-  if (!row.quadra.trim()) {
-    pushMessage({ level: 'error', text: 'Quadra é obrigatória.' });
-  }
-  if (!row.lote.trim()) {
-    pushMessage({ level: 'error', text: 'Lote é obrigatório.' });
-  }
-
-  if (row.project_id && row.quadra.trim() && row.lote.trim() && !row.block_id) {
-    const projectBlocks = context.blocksByProject.get(row.project_id) || [];
-    const suggestions = suggestSimilarBlocks(projectBlocks, row.quadra, row.lote);
-    const hint =
-      suggestions.length > 0 ? ` Sugestões: ${suggestions.join(', ')}` : '';
-    pushMessage({
-      level: 'error',
-      text: `Quadra/lote não encontrado no empreendimento informado.${hint}`,
-    });
-  }
-
-  if (row.customer_id && row.block_id && !row.sale_id) {
-    pushMessage({ level: 'error', text: 'Venda não localizada.' });
+    pushMessage({ level: 'error', text: 'Venda localizada, mas cliente não encontrado.' });
   }
 
   if (!row.nome_arquivo_pdf.trim()) {

@@ -50,6 +50,76 @@ async function loadBlocksForProjects(
   return (data || []) as Array<Record<string, unknown>>;
 }
 
+function buildSalesByIdIndex(
+  sales: Array<Record<string, unknown>>,
+): Map<string, LegacyContractSaleRecord> {
+  const index = new Map<string, LegacyContractSaleRecord>();
+
+  for (const sale of sales) {
+    const status = String(sale.status || '').toUpperCase();
+    if (status === 'CANCELLED' || status === 'CANCELADO') continue;
+
+    const id = String(sale.id || '');
+    if (!id) continue;
+
+    index.set(id, {
+      id,
+      customer_id: sale.customer_id ? String(sale.customer_id) : null,
+      project_id: sale.project_id ? String(sale.project_id) : null,
+      block_id: sale.block_id ? String(sale.block_id) : null,
+      status: sale.status ? String(sale.status) : null,
+    });
+  }
+
+  return index;
+}
+
+function buildCustomersByIdIndex(
+  customers: Array<Record<string, unknown>>,
+): Map<string, { id: string; name: string }> {
+  const index = new Map<string, { id: string; name: string }>();
+  for (const customer of customers) {
+    const id = String(customer.id || '');
+    if (!id) continue;
+    index.set(id, { id, name: String(customer.name || '') });
+  }
+  return index;
+}
+
+function buildProjectsByIdIndex(
+  projects: Array<Record<string, unknown>>,
+): Map<string, { id: string; name: string }> {
+  const index = new Map<string, { id: string; name: string }>();
+  for (const project of projects) {
+    const id = String(project.id || '');
+    if (!id) continue;
+    index.set(id, { id, name: String(project.name || '') });
+  }
+  return index;
+}
+
+function buildBlocksByIdIndex(
+  blocks: Array<Record<string, unknown>>,
+): Map<string, import('@/lib/imports/modules/sales/types').SalesBlockRecord> {
+  const index = new Map<string, import('@/lib/imports/modules/sales/types').SalesBlockRecord>();
+  for (const block of blocks) {
+    const id = String(block.id || '');
+    if (!id) continue;
+    index.set(id, {
+      id,
+      project_id: String(block.project_id),
+      block_name: block.block_name ? String(block.block_name) : null,
+      number: block.number ? String(block.number) : null,
+      lot_number: block.lot_number ? String(block.lot_number) : null,
+      status: block.status ? String(block.status) : null,
+      sale_id: null,
+      customer_id: null,
+      price: null,
+    });
+  }
+  return index;
+}
+
 function buildSalesByCustomerBlockIndex(
   sales: Array<Record<string, unknown>>,
 ): Map<string, LegacyContractSaleRecord> {
@@ -136,10 +206,14 @@ export async function loadLegacyContractImportContext(
 
   return {
     customers: buildSalesCustomerIndex(customers),
+    customersById: buildCustomersByIdIndex(customers),
     projects: buildSalesProjectIndex(projects),
+    projectsById: buildProjectsByIdIndex(projects),
     blocks: blockIndex,
+    blocksById: buildBlocksByIdIndex(blocks),
     blocksByProject,
     salesByCustomerBlock: buildSalesByCustomerBlockIndex(sales),
+    salesById: buildSalesByIdIndex(sales),
     legacyDocumentBySaleId,
   };
 }

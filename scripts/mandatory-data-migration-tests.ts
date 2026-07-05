@@ -196,7 +196,8 @@ function testArchitecture() {
 
 function testLegacyWizardSteps() {
   const steps = getWizardStepsForModule('legacy_contracts');
-  assert(steps.length === 8, 'legacy 8 etapas');
+  assert(steps.length === 7, 'legacy 7 etapas sem planilha');
+  assert(!steps.some((step) => step.id === 'upload'), 'legacy sem upload planilha');
   assert(steps.some((step) => step.id === 'upload-documents'), 'legacy passo PDFs');
   console.log('OK testLegacyWizardSteps');
 }
