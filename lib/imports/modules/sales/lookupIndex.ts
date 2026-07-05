@@ -3,12 +3,10 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { registerBlockInIndex } from '@/lib/imports/modules/sales/blockMatch';
 import {
-  buildBlockLookupKey,
   normalizeImportEmail,
   normalizeImportEntityName,
-  normalizeImportLoteNumber,
-  normalizeImportQuadra,
 } from '@/lib/imports/modules/sales/normalize';
 import type {
   SalesBlockIndex,
@@ -111,15 +109,22 @@ export function buildSalesProjectIndex(
   return index;
 }
 
-export function buildSalesBlockIndex(blocks: SalesBlockRecord[]): SalesBlockIndex {
+export function buildSalesBlockIndex(blocks: SalesBlockRecord[]): {
+  index: SalesBlockIndex;
+  blocksByProject: Map<string, SalesBlockRecord[]>;
+} {
   const index: SalesBlockIndex = new Map();
+  const blocksByProject = new Map<string, SalesBlockRecord[]>();
+
   for (const block of blocks) {
-    const quadra = normalizeImportQuadra(block.block_name || block.number);
-    const lote = normalizeImportLoteNumber(block.lot_number || block.number);
-    if (!block.project_id || !quadra || !lote) continue;
-    index.set(buildBlockLookupKey(block.project_id, quadra, lote), block);
+    registerBlockInIndex(index, block);
+
+    const projectBlocks = blocksByProject.get(block.project_id) || [];
+    projectBlocks.push(block);
+    blocksByProject.set(block.project_id, projectBlocks);
   }
-  return index;
+
+  return { index, blocksByProject };
 }
 
 export function lookupCustomer(
@@ -210,11 +215,14 @@ export async function loadSalesImportContext(
     }
   }
 
+  const { index: blockIndex, blocksByProject } = buildSalesBlockIndex(blocks);
+
   return {
     customers: buildSalesCustomerIndex(customers),
     brokers: buildSalesBrokerIndex(brokers),
     projects: buildSalesProjectIndex(projects),
-    blocks: buildSalesBlockIndex(blocks),
+    blocks: blockIndex,
+    blocksByProject,
     activeSaleBlockIds,
   };
 }

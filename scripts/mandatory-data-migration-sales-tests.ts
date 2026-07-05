@@ -64,8 +64,9 @@ function buildMockContext(overrides: Partial<SalesImportContext> = {}): SalesImp
   ]);
   const projects = buildSalesProjectIndex([
     { id: 'proj-1', name: 'Empreendimento Real Teste' },
+    { id: 'proj-recanto', name: 'CHACREAMENTO RECANTO PRIMAVERA I' },
   ]);
-  const blocks = buildSalesBlockIndex([
+  const { index: blocks, blocksByProject } = buildSalesBlockIndex([
     {
       id: 'block-1',
       project_id: 'proj-1',
@@ -88,6 +89,28 @@ function buildMockContext(overrides: Partial<SalesImportContext> = {}): SalesImp
       customer_id: 'cust-1',
       price: 90000,
     },
+    {
+      id: 'block-recanto',
+      project_id: 'proj-recanto',
+      block_name: 'QD 03',
+      number: '32',
+      lot_number: '32',
+      status: 'Disponível',
+      sale_id: null,
+      customer_id: null,
+      price: 85000,
+    },
+    {
+      id: 'block-quadra-num',
+      project_id: 'proj-1',
+      block_name: '03',
+      number: '32',
+      lot_number: null,
+      status: 'Disponível',
+      sale_id: null,
+      customer_id: null,
+      price: 75000,
+    },
   ]);
 
   return {
@@ -95,6 +118,7 @@ function buildMockContext(overrides: Partial<SalesImportContext> = {}): SalesImp
     brokers,
     projects,
     blocks,
+    blocksByProject,
     activeSaleBlockIds: new Set(['block-sold']),
     ...overrides,
   };
@@ -230,9 +254,114 @@ function test8CurrencyNormalization() {
 }
 
 function test9DateNormalization() {
-  const parsed = parseSaleImportDate('15/03/2025');
-  assert(parsed.value === '2025-03-15', 'data brasileira');
+  const br = parseSaleImportDate('15/03/2025');
+  assert(br.value === '2025-03-15', 'data brasileira dd/mm/aaaa');
+
+  const brDash = parseSaleImportDate('05-03-2026');
+  assert(brDash.value === '2026-03-05', 'data brasileira dd-mm-aaaa');
+
+  const productionDate = parseSaleImportDate('05/03/2026');
+  assert(productionDate.value === '2026-03-05', 'data produção 05/03/2026');
+  assert(!productionDate.error, 'sem erro na data produção');
+
+  const iso = parseSaleImportDate('2026-03-05');
+  assert(iso.value === '2026-03-05', 'data ISO yyyy-mm-dd');
+
+  const excelSerial = parseSaleImportDate('46086');
+  assert(excelSerial.value === '2026-03-05', 'serial Excel 46086');
+
   console.log('OK test9DateNormalization');
+}
+
+function test13QuadraLoteVariants() {
+  const { rows } = validateSaleRows(
+    [
+      buildRow({
+        quadra: 'QD 03',
+        quadra_normalized: 'QD 03',
+        lote: 'Lote 32',
+        lote_normalized: '32',
+      }),
+    ],
+    buildMockContext(),
+  );
+  assert(rows[0]?.block_id === 'block-quadra-num', 'QD 03 + Lote 32 encontra quadra 03 lote 32');
+  console.log('OK test13QuadraLoteVariants');
+}
+
+function test14ProductionRecantoPrimavera() {
+  const context = buildMockContext({
+    customers: buildSalesCustomerIndex([
+      {
+        id: 'cust-recanto',
+        name: 'Cliente Recanto',
+        cpf_cnpj: '650.820.282-00',
+        email: '',
+        phone: '',
+      },
+    ]),
+  });
+
+  const { rows, summary } = validateSaleRows(
+    [
+      buildRow({
+        cliente_cpf_cnpj: '650.820.282-00',
+        cliente_cpf_cnpj_digits: '65082028200',
+        cliente_email: '',
+        cliente_email_normalized: '',
+        cliente_telefone: '',
+        cliente_telefone_digits: '',
+        empreendimento: 'CHACREAMENTO RECANTO PRIMAVERA I',
+        empreendimento_normalized: 'CHACREAMENTO RECANTO PRIMAVERA I',
+        quadra: 'QD 03',
+        quadra_normalized: 'QD 03',
+        lote: 'Lote 32',
+        lote_normalized: '32',
+        data_venda_raw: '05/03/2026',
+        data_venda: '2026-03-05',
+      }),
+    ],
+    context,
+  );
+
+  assert(rows[0]?.customer_id === 'cust-recanto', 'cliente CPF produção');
+  assert(rows[0]?.project_id === 'proj-recanto', 'empreendimento localizado');
+  assert(rows[0]?.block_id === 'block-recanto', 'lote QD 03 / Lote 32 localizado');
+  assert(rows[0]?.status === 'valid' || rows[0]?.status === 'warning', 'linha válida');
+  assert(summary.validRows + summary.warningRows >= 1, 'contagem válida');
+  console.log('OK test14ProductionRecantoPrimavera');
+}
+
+function test15ProjectNameNormalization() {
+  const { rows } = validateSaleRows(
+    [
+      buildRow({
+        empreendimento: '  chacreamento recanto primavera i  ',
+        empreendimento_normalized: 'CHACREAMENTO RECANTO PRIMAVERA I',
+        quadra: 'QD 03',
+        quadra_normalized: 'QD 03',
+        lote: 'Lote 32',
+        lote_normalized: '32',
+      }),
+    ],
+    buildMockContext(),
+  );
+  assert(rows[0]?.project_id === 'proj-recanto', 'empreendimento com caixa/espaço diferente');
+  assert(rows[0]?.block_id === 'block-recanto', 'lote no empreendimento normalizado');
+  console.log('OK test15ProjectNameNormalization');
+}
+
+function test16BlockNotFoundSuggestions() {
+  const { rows } = validateSaleRows(
+    [buildRow({ lote: '777', lote_normalized: '777' })],
+    buildMockContext(),
+  );
+  assert(rows[0]?.status === 'error', 'lote não encontrado');
+  assert(
+    rows[0]?.messages.some((m) => m.text.includes('Procurado:')),
+    'mensagem mostra o que foi procurado',
+  );
+  console.log('OK test16BlockNotFoundSuggestions');
 }
 
 function test10SpreadsheetDuplicateBlock() {
@@ -325,6 +454,10 @@ async function main() {
   test10SpreadsheetDuplicateBlock();
   test11ExecutionPayloads();
   test12ModuleAndRoutes();
+  test13QuadraLoteVariants();
+  test14ProductionRecantoPrimavera();
+  test15ProjectNameNormalization();
+  test16BlockNotFoundSuggestions();
   console.log('mandatory-data-migration-sales-tests: all passed');
 }
 

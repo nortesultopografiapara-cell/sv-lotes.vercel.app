@@ -8,17 +8,21 @@ import {
   lookupCustomer,
 } from '@/lib/imports/modules/sales/lookupIndex';
 import {
+  buildBlockNotFoundMessage,
+  lookupBlockInIndex,
+  suggestSimilarBlocks,
+} from '@/lib/imports/modules/sales/blockMatch';
+import {
   buildSpreadsheetBlockKey,
   isBlockOccupiedStatus,
   parseSaleImportCurrency,
   parseSaleImportDate,
   parseSaleImportStatus,
-  buildBlockLookupKey,
 } from '@/lib/imports/modules/sales/normalize';
 import type {
   ParsedSaleRow,
   ResolvedSaleRow,
-  SaleImportContext,
+  SalesImportContext,
   SaleImportRowMessage,
   SaleImportSummary,
   SaleRowStatus,
@@ -55,9 +59,7 @@ function resolveRowEntities(
   let block = null;
   if (project) {
     block =
-      context.blocks.get(
-        buildBlockLookupKey(project.id, row.quadra_normalized, row.lote_normalized),
-      ) || null;
+      lookupBlockInIndex(context.blocks, project.id, row.quadra, row.lote) || null;
   }
 
   const statusParsed = parseSaleImportStatus(row.status_raw);
@@ -168,9 +170,11 @@ function validateSingleRow(
   }
 
   if (row.project_id && row.quadra.trim() && row.lote.trim() && !row.block_id) {
+    const projectBlocks = context.blocksByProject.get(row.project_id) || [];
+    const suggestions = suggestSimilarBlocks(projectBlocks, row.quadra, row.lote);
     pushMessage({
       level: 'error',
-      text: 'Quadra/lote não encontrado no empreendimento informado.',
+      text: buildBlockNotFoundMessage(row.quadra, row.lote, suggestions),
     });
   }
 
