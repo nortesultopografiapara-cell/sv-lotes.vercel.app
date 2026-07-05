@@ -4,6 +4,13 @@
 
 import { parseCurrencyBRL } from '@/lib/currencyBrl';
 import { parseBrokerCommissionPercent } from '@/lib/imports/modules/brokers/normalize';
+import {
+  cleanSpreadsheetString,
+  excelSerialToIsoDate,
+  extractRichCellValue,
+  formatDateObjectAsIso,
+  isLikelyExcelDateSerial,
+} from '@/lib/imports/spreadsheetCellValue';
 import { normalizeLotNumberForMatch } from '@/lib/shapefileImport';
 
 export function normalizeImportEntityName(value?: string | null): string {
@@ -41,75 +48,140 @@ export function parseSaleImportCurrency(raw: string): {
   return { value: parsed };
 }
 
-function normalizeDateInput(raw: unknown): string {
-  if (raw == null) return '';
-  if (raw instanceof Date) {
-    if (Number.isNaN(raw.getTime())) return '';
-    const y = raw.getFullYear();
-    const m = String(raw.getMonth() + 1).padStart(2, '0');
-    const d = String(raw.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  return String(raw)
-    .trim()
-    .replace(/\u00a0/g, ' ')
-    .replace(/\s+/g, ' ');
+function expandTwoDigitYear(year: number): number {
+  if (year >= 100) return year;
+  return year >= 0 && year <= 99 ? 2000 + year : year;
 }
 
-function validateIsoDateParts(year: string, month: string, day: string): {
+function validateIsoDateParts(year: number, month: number, day: number): {
   value: string | null;
   error?: string;
 } {
-  const y = Number(year);
-  const m = Number(month);
-  const d = Number(day);
-  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
   if (
-    date.getUTCFullYear() !== y ||
-    date.getUTCMonth() + 1 !== m ||
-    date.getUTCDate() !== d
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
   ) {
     return { value: null, error: 'Data de venda inválida.' };
   }
-  return { value: `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}` };
+  return {
+    value: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+  };
 }
 
-function parseExcelSerialDate(trimmed: string): string | null {
-  if (!/^-?\d+([.,]\d+)?$/.test(trimmed)) return null;
+function tryBuildDate(yearRaw: string, monthRaw: string, dayRaw: string): {
+  value: string | null;
+  error?: string;
+} {
+  const year = expandTwoDigitYear(Number(yearRaw));
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return { value: null, error: 'Data de venda inválida.' };
+  }
+  return validateIsoDateParts(year, month, day);
+}
 
-  const num = Number(trimmed.replace(',', '.'));
-  if (!Number.isFinite(num) || num <= 0 || num > 600000) return null;
+function hasLeadingZero(part: string): boolean {
+  return part.length >= 2 && part.startsWith('0');
+}
 
-  // Evita confundir ano (ex.: 2026) com serial Excel.
-  if (Number.isInteger(num) && num >= 1900 && num <= 2100) return null;
+function parseSlashDelimitedDate(trimmed: string): {
+  value: string | null;
+  error?: string;
+} | null {
+  const match = trimmed.match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{2}|\d{4})(?:[\sT].*)?$/);
+  if (!match) return null;
 
-  const wholeDays = Math.floor(num);
-  const ms = (wholeDays - 25569) * 86400000;
-  const date = new Date(ms);
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  const [, part1, part2, yearRaw] = match;
+  const n1 = Number(part1);
+  const n2 = Number(part2);
+
+  const attempts: Array<{ day: string; month: string }> = [];
+
+  const brStyle = hasLeadingZero(part1) || hasLeadingZero(part2);
+  if (brStyle || n1 > 12 || n2 > 12) {
+    attempts.push({ day: part1, month: part2 });
+  }
+
+  if (!brStyle && n1 <= 12 && n2 <= 12) {
+    // Exportação US do Excel (M/D/YY) — ex.: 6/5/26 → 2026-06-05
+    attempts.push({ day: part2, month: part1 });
+  }
+
+  if (n1 > 12 && n2 <= 12) {
+    attempts.push({ day: part1, month: part2 });
+  } else if (n2 > 12 && n1 <= 12) {
+    attempts.push({ day: part2, month: part1 });
+  }
+
+  if (attempts.length === 0) {
+    attempts.push({ day: part1, month: part2 });
+  }
+
+  const seen = new Set<string>();
+  for (const attempt of attempts) {
+    const key = `${attempt.day}/${attempt.month}/${yearRaw}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const parsed = tryBuildDate(yearRaw, attempt.month, attempt.day);
+    if (parsed.value) return parsed;
+  }
+
+  return { value: null, error: 'Data de venda inválida.' };
+}
+
+function parseIsoLikeDate(trimmed: string): {
+  value: string | null;
+  error?: string;
+} | null {
+  const dashMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (dashMatch) {
+    return tryBuildDate(dashMatch[1], dashMatch[2], dashMatch[3]);
+  }
+
+  const slashIsoMatch = trimmed.match(/^(\d{4})\/(\d{2})\/(\d{2})(?:[\sT].*)?$/);
+  if (slashIsoMatch) {
+    return tryBuildDate(slashIsoMatch[1], slashIsoMatch[2], slashIsoMatch[3]);
+  }
+
+  return null;
+}
+
+function normalizeDateInput(raw: unknown): string {
+  const extracted = extractRichCellValue(raw);
+  if (extracted == null || extracted === '') return '';
+
+  if (extracted instanceof Date) {
+    return formatDateObjectAsIso(extracted);
+  }
+
+  if (typeof extracted === 'number' && isLikelyExcelDateSerial(extracted)) {
+    return excelSerialToIsoDate(extracted);
+  }
+
+  return cleanSpreadsheetString(String(extracted));
 }
 
 export function parseSaleImportDate(raw: unknown): {
   value: string | null;
   error?: string;
 } {
-  const trimmed = normalizeDateInput(raw);
-  if (!trimmed) return { value: null };
+  const normalized = normalizeDateInput(raw);
+  if (!normalized) return { value: null };
 
-  const excelSerial = parseExcelSerialDate(trimmed);
-  if (excelSerial) return { value: excelSerial };
-
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
-  if (isoMatch) {
-    return validateIsoDateParts(isoMatch[1], isoMatch[2], isoMatch[3]);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return { value: normalized };
   }
 
-  const brMatch = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:[\sT].*)?$/);
-  if (brMatch) {
-    return validateIsoDateParts(brMatch[3], brMatch[2], brMatch[1]);
+  const isoParsed = parseIsoLikeDate(normalized);
+  if (isoParsed?.value) return isoParsed;
+
+  const slashParsed = parseSlashDelimitedDate(normalized);
+  if (slashParsed?.value) return slashParsed;
+  if (slashParsed?.error && !slashParsed.value) {
+    return slashParsed;
   }
 
   return { value: null, error: 'Data de venda inválida. Use dd/mm/aaaa.' };

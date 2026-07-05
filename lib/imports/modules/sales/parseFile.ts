@@ -5,6 +5,7 @@
 import {
   mapSaleImportColumns,
   pickMappedSaleCell,
+  pickMappedSaleImportCell,
 } from '@/lib/imports/modules/sales/columnMapping';
 import { SALES_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/sales/constants';
 import {
@@ -31,10 +32,12 @@ function isExampleRow(empreendimento: string, corretorNome: string): boolean {
 export function mapRawRowsToSaleRows(
   rawRows: Record<string, string>[],
   columnMapping: SaleColumnMappingResult,
+  importCellRows: Record<string, unknown>[] = [],
 ): ParsedSaleRow[] {
   const rows: ParsedSaleRow[] = [];
 
   rawRows.forEach((rawRow, index) => {
+    const importRow = importCellRows[index] || rawRow;
     const empreendimento = pickMappedSaleCell(rawRow, columnMapping.mapping, 'empreendimento');
     const corretorNome = pickMappedSaleCell(rawRow, columnMapping.mapping, 'corretor_nome');
     const allEmpty = SALES_IMPORT_TEMPLATE_COLUMNS.every(
@@ -55,12 +58,20 @@ export function mapRawRowsToSaleRows(
     const saldoRaw = parseSaleImportCurrency(
       pickMappedSaleCell(rawRow, columnMapping.mapping, 'saldo'),
     );
-    const dataVenda = parseSaleImportDate(
-      pickMappedSaleCell(rawRow, columnMapping.mapping, 'data_venda'),
+    const dataVendaCell = pickMappedSaleImportCell(
+      rawRow,
+      importRow,
+      columnMapping.mapping,
+      'data_venda',
     );
-    const vencimento = parseSaleImportDate(
-      pickMappedSaleCell(rawRow, columnMapping.mapping, 'vencimento_primeira_parcela'),
+    const vencimentoCell = pickMappedSaleImportCell(
+      rawRow,
+      importRow,
+      columnMapping.mapping,
+      'vencimento_primeira_parcela',
     );
+    const dataVenda = parseSaleImportDate(dataVendaCell.importValue);
+    const vencimento = parseSaleImportDate(vencimentoCell.importValue);
     const status = parseSaleImportStatus(
       pickMappedSaleCell(rawRow, columnMapping.mapping, 'status'),
     );
@@ -106,7 +117,7 @@ export function mapRawRowsToSaleRows(
       lote_normalized: normalizeImportLoteNumber(
         pickMappedSaleCell(rawRow, columnMapping.mapping, 'lote'),
       ),
-      data_venda_raw: pickMappedSaleCell(rawRow, columnMapping.mapping, 'data_venda'),
+      data_venda_raw: dataVendaCell.display,
       data_venda: dataVenda.value,
       valor_total_raw: pickMappedSaleCell(rawRow, columnMapping.mapping, 'valor_total'),
       valor_total: valorTotalValue,
@@ -118,11 +129,7 @@ export function mapRawRowsToSaleRows(
       saldo: resolveSaleBalance(valorTotalValue, entradaValue, sinalValue, saldoRaw.value),
       quantidade_parcelas_raw: parcelasRaw,
       quantidade_parcelas: parseSaleInstallmentsCount(parcelasRaw),
-      vencimento_primeira_parcela_raw: pickMappedSaleCell(
-        rawRow,
-        columnMapping.mapping,
-        'vencimento_primeira_parcela',
-      ),
+      vencimento_primeira_parcela_raw: vencimentoCell.display,
       vencimento_primeira_parcela: vencimento.value,
       percentual_comissao_raw: commissionRaw,
       percentual_comissao: parseSaleCommissionPercent(commissionRaw),
@@ -147,7 +154,7 @@ export function parseSaleImportFile(
   const columnMapping = mapSaleImportColumns(parsed.headers);
   const rows = columnMapping.missingRequired.length
     ? []
-    : mapRawRowsToSaleRows(parsed.rawRows, columnMapping);
+    : mapRawRowsToSaleRows(parsed.rawRows, columnMapping, parsed.importCellRows);
 
   return { parsed, columnMapping, rows };
 }

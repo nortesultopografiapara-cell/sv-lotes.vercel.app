@@ -125,7 +125,7 @@ function validateSingleRow(
     });
   }
 
-  if (row.data_venda_raw) {
+  if (row.data_venda_raw.trim() && !row.data_venda) {
     const parsedDate = parseSaleImportDate(row.data_venda_raw);
     if (parsedDate.error) pushMessage({ level: 'error', text: parsedDate.error });
   }
