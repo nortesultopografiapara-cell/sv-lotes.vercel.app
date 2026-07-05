@@ -280,7 +280,7 @@ function testWizardAdvanceAfterValidation() {
     ...INITIAL_MIGRATION_WIZARD_STATE,
     step: 'upload' as const,
     selectedModuleId: 'customers' as const,
-    uploadedFile,
+    mappingFile: uploadedFile,
     validating: true,
   };
 

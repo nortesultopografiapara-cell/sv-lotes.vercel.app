@@ -91,8 +91,10 @@ export type CustomerPreviewFilter =
 export type MigrationWizardState = {
   step: MigrationWizardStepId;
   selectedModuleId: ImportModuleId | null;
-  uploadedFile: UploadedImportFileMeta | null;
-  uploadedDocumentsFiles: UploadedImportFileMeta[];
+  /** Etapa 4 — planilha (.xlsx/.xls/.csv) */
+  mappingFile: UploadedImportFileMeta | null;
+  /** Etapa 5 — PDFs/ZIP (Contratos Antigos) */
+  documentFiles: UploadedImportFileMeta[];
   customerValidation: CustomerImportValidationResult | null;
   customerPreviewFilter: CustomerPreviewFilter;
   customerImportResult: CustomerImportExecuteResult | null;

@@ -22,8 +22,8 @@ import type {
 export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   step: 'welcome',
   selectedModuleId: null,
-  uploadedFile: null,
-  uploadedDocumentsFiles: [],
+  mappingFile: null,
+  documentFiles: [],
   customerValidation: null,
   customerPreviewFilter: 'all',
   customerImportResult: null,
@@ -81,20 +81,20 @@ export function canAdvanceWizardStep(state: MigrationWizardState): boolean {
       return state.selectedModuleId != null;
     case 'upload':
       if (state.validating) return false;
-      return state.uploadedFile != null;
+      return state.mappingFile != null;
     case 'upload-documents':
       if (state.validating) return false;
-      return state.uploadedDocumentsFiles.length > 0;
+      return state.documentFiles.length > 0;
     case 'pre-validation':
       if (isActiveImportModule(state.selectedModuleId)) {
         return hasModuleValidation(state) && !state.validating;
       }
-      return state.selectedModuleId != null && state.uploadedFile != null;
+      return state.selectedModuleId != null && state.mappingFile != null;
     case 'preview':
       if (isActiveImportModule(state.selectedModuleId)) {
         return hasModuleValidation(state);
       }
-      return state.selectedModuleId != null && state.uploadedFile != null;
+      return state.selectedModuleId != null && state.mappingFile != null;
     case 'confirmation':
       return false;
     default:
@@ -210,8 +210,8 @@ export function selectImportModule(
   return {
     ...state,
     selectedModuleId: moduleId,
-    uploadedFile: null,
-    uploadedDocumentsFiles: [],
+    mappingFile: null,
+    documentFiles: [],
     customerValidation: null,
     customerPreviewFilter: 'all',
     customerImportResult: null,
@@ -233,4 +233,29 @@ export function selectImportModule(
 
 export function startMigrationWizard(): MigrationWizardState {
   return { ...INITIAL_MIGRATION_WIZARD_STATE, step: 'select-type' };
+}
+
+export function validateCurrentWizardStep(
+  state: MigrationWizardState,
+  files: { mappingFile: File | null; documentFiles: File[] },
+): string | null {
+  switch (state.step) {
+    case 'upload':
+      if (!state.mappingFile && !files.mappingFile) {
+        return state.selectedModuleId === 'legacy_contracts'
+          ? 'Selecione a planilha de mapeamento (.xlsx, .xls ou .csv).'
+          : 'Selecione um arquivo antes de avançar.';
+      }
+      return null;
+    case 'upload-documents':
+      if (!files.documentFiles.length && state.documentFiles.length === 0) {
+        return 'Selecione ao menos um PDF ou um ZIP contendo os contratos antigos.';
+      }
+      if (!files.mappingFile && !state.mappingFile) {
+        return 'Planilha de mapeamento ausente. Volte à etapa Planilha.';
+      }
+      return null;
+    default:
+      return null;
+  }
 }
