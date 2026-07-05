@@ -222,10 +222,29 @@ async function validateLegacyContractsFiles(
     activeTenantId,
   });
 
-  const response = await fetch('/api/data-migration/legacy-contracts/validate', {
-    method: 'POST',
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120_000);
+
+  let response: Response;
+  try {
+    response = await fetch('/api/data-migration/legacy-contracts/validate', {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('A validação demorou demais. Tente novamente com menos arquivos.');
+    }
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : 'Não foi possível conectar ao servidor de validação.',
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const payload = await response.json().catch(() => ({} as Record<string, unknown>));
   if (!response.ok) {
@@ -336,6 +355,7 @@ export function DataMigrationWizard() {
       documentFiles: acceptedFiles.map((file) => parseImportFileMeta(file)),
       legacyContractsValidation: null,
       legacyContractsImportResult: null,
+      validating: false,
       validationError: null,
     }));
   };
@@ -824,7 +844,7 @@ export function DataMigrationWizard() {
           <div className="space-y-4" data-testid="migration-step-upload-documents">
             <p className="text-sm text-[var(--text-secondary)]">
               Selecione os PDFs dos contratos antigos ou um arquivo ZIP contendo os PDFs.
-              Ao avançar, planilha e documentos serão validados sem gravar dados.
+              Ao avançar, os documentos serão validados sem gravar dados.
             </p>
             {state.validationError ? (
               <div
@@ -841,7 +861,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-validating"
               >
                 <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)] shrink-0" />
-                Validando planilha e PDFs… Nenhum dado será gravado nesta etapa.
+                Validando PDFs… Nenhum dado será gravado nesta etapa.
               </div>
             ) : null}
             <button

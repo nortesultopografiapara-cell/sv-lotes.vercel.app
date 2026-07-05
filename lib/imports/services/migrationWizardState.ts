@@ -179,16 +179,13 @@ export function applyLegacyContractsValidationAndAdvance(
   state: MigrationWizardState,
   validation: LegacyContractImportValidationResult,
 ): MigrationWizardState {
-  if (
-    state.step !== 'upload-documents' ||
-    state.selectedModuleId !== 'legacy_contracts'
-  ) {
-    return state;
+  if (state.selectedModuleId !== 'legacy_contracts') {
+    return { ...state, validating: false };
   }
 
   return {
     ...state,
-    step: 'pre-validation',
+    step: state.step === 'upload-documents' ? 'pre-validation' : state.step,
     legacyContractsValidation: validation,
     validating: false,
     validationError: null,
