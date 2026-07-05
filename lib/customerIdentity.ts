@@ -66,6 +66,15 @@ export function normalizeDocument(value?: string | null): string {
   return normalizeCpfCnpj(value);
 }
 
+/** CPF/CNPJ em dígitos a partir dos campos reais de `customers` (cpf_cnpj, document). */
+export function resolveCustomerDocumentDigits(
+  customer: Pick<CustomerRecord, 'cpf_cnpj' | 'document'> | null | undefined,
+): string {
+  return normalizeDocument(customer?.cpf_cnpj || customer?.document || '');
+}
+
+export { isValidBrazilianTaxDocument } from '@/lib/inputMasks';
+
 export function normalizePhone(value?: string | null): string {
   return String(value || '').replace(/\D/g, '');
 }
