@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getColumnMappingErrorMessage } from '@/lib/imports/modules/customers/columnMapping';
+import { isCustomerImportParseError } from '@/lib/imports/modules/customers/errors';
 import { parseCustomerImportFile } from '@/lib/imports/modules/customers/parseFile';
 import {
   buildCustomerInsertPayload,
@@ -28,16 +29,30 @@ export async function loadExistingCustomersForImport(
     phone?: string | null;
   }>
 > {
-  const { data, error } = await admin
-    .from('customers')
-    .select('id, name, cpf_cnpj, document, phone')
-    .or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
+  const selectFields = 'id, name, cpf_cnpj, document, phone';
 
-  if (error) {
-    throw new Error(`Erro ao carregar clientes existentes: ${error.message}`);
+  const byTenant = await admin
+    .from('customers')
+    .select(selectFields)
+    .eq('tenant_id', tenantId);
+
+  if (!byTenant.error) {
+    return byTenant.data || [];
   }
 
-  return data || [];
+  console.warn('[loadExistingCustomersForImport] tenant_id query failed:', byTenant.error.message);
+
+  const byCompany = await admin
+    .from('customers')
+    .select(selectFields)
+    .eq('company_id', tenantId);
+
+  if (!byCompany.error) {
+    return byCompany.data || [];
+  }
+
+  console.warn('[loadExistingCustomersForImport] company_id query failed:', byCompany.error.message);
+  return [];
 }
 
 export async function validateCustomerImportBuffer(
@@ -45,7 +60,23 @@ export async function validateCustomerImportBuffer(
   fileName: string,
   existingCustomers: Awaited<ReturnType<typeof loadExistingCustomersForImport>>,
 ): Promise<CustomerImportValidationResult> {
-  const { parsed, columnMapping, rows } = parseCustomerImportFile(buffer, fileName);
+  let parsed;
+  let columnMapping;
+  let rows;
+
+  try {
+    ({ parsed, columnMapping, rows } = parseCustomerImportFile(buffer, fileName));
+  } catch (err) {
+    if (isCustomerImportParseError(err)) {
+      throw err;
+    }
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : 'Não foi possível processar o arquivo enviado.',
+    );
+  }
+
   const mappingError = getColumnMappingErrorMessage(columnMapping);
 
   if (mappingError) {
