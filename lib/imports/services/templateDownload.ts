@@ -18,8 +18,14 @@ import {
   buildSaleImportXlsxBuffer,
   buildSaleTemplateFileName,
 } from '@/lib/imports/modules/sales/templates';
-import { CUSTOMER_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/customers/constants';
+import {
+  buildLegacyContractImportCsvContent,
+  buildLegacyContractImportXlsxBuffer,
+  buildLegacyContractTemplateFileName,
+} from '@/lib/imports/modules/legacy-contracts/templates';
+import { LEGACY_CONTRACTS_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/legacy-contracts/constants';
 import { BROKER_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/brokers/constants';
+import { CUSTOMER_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/customers/constants';
 import { SALES_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/sales/constants';
 
 const MODULE_TEMPLATE_HEADERS: Record<ImportModuleId, string[]> = {
@@ -27,7 +33,7 @@ const MODULE_TEMPLATE_HEADERS: Record<ImportModuleId, string[]> = {
   brokers: [...BROKER_IMPORT_TEMPLATE_COLUMNS],
   sales: [...SALES_IMPORT_TEMPLATE_COLUMNS],
   installments: ['venda_id', 'numero_parcela', 'valor', 'vencimento', 'status'],
-  contracts: ['numero_contrato', 'cliente', 'venda_id', 'data_contrato', 'status'],
+  legacy_contracts: [...LEGACY_CONTRACTS_IMPORT_TEMPLATE_COLUMNS],
   attachments: ['referencia', 'tipo', 'arquivo', 'observacao'],
 };
 
@@ -39,6 +45,7 @@ export function buildImportCsvTemplate(moduleId: ImportModuleId): string {
   if (moduleId === 'customers') return buildCustomerImportCsvContent();
   if (moduleId === 'brokers') return buildBrokerImportCsvContent();
   if (moduleId === 'sales') return buildSaleImportCsvContent();
+  if (moduleId === 'legacy_contracts') return buildLegacyContractImportCsvContent();
   const headers = getImportTemplateHeaders(moduleId);
   return `${headers.join(';')}\n`;
 }
@@ -55,6 +62,9 @@ export function buildImportTemplateFileName(
   }
   if (moduleId === 'sales') {
     return buildSaleTemplateFileName(format);
+  }
+  if (moduleId === 'legacy_contracts') {
+    return buildLegacyContractTemplateFileName(format);
   }
   return `modelo_migracao_${moduleId}.${format}`;
 }
@@ -101,6 +111,16 @@ export async function downloadImportExcelTemplate(moduleId: ImportModuleId): Pro
 
   if (moduleId === 'sales') {
     const buffer = await buildSaleImportXlsxBuffer();
+    triggerBrowserDownload(
+      buffer,
+      buildImportTemplateFileName(moduleId, 'xlsx'),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    return;
+  }
+
+  if (moduleId === 'legacy_contracts') {
+    const buffer = await buildLegacyContractImportXlsxBuffer();
     triggerBrowserDownload(
       buffer,
       buildImportTemplateFileName(moduleId, 'xlsx'),

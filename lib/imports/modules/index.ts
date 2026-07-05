@@ -4,9 +4,9 @@
 
 import { attachmentsImportModule } from '@/lib/imports/modules/attachments';
 import { brokersImportModule } from '@/lib/imports/modules/brokers';
-import { contractsImportModule } from '@/lib/imports/modules/contracts';
 import { customersImportModule } from '@/lib/imports/modules/customers';
 import { installmentsImportModule } from '@/lib/imports/modules/installments';
+import { legacyContractsImportModule } from '@/lib/imports/modules/legacy-contracts';
 import { salesImportModule } from '@/lib/imports/modules/sales';
 import type { ImportModuleDefinition, ImportModuleId } from '@/lib/imports/types';
 
@@ -15,7 +15,7 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
   brokersImportModule,
   salesImportModule,
   installmentsImportModule,
-  contractsImportModule,
+  legacyContractsImportModule,
   attachmentsImportModule,
 ];
 
@@ -32,6 +32,6 @@ export {
   brokersImportModule,
   salesImportModule,
   installmentsImportModule,
-  contractsImportModule,
+  legacyContractsImportModule,
   attachmentsImportModule,
 };

@@ -23,12 +23,17 @@ import {
   IMPORT_ROW_STATUS_LABELS,
 } from '@/components/imports/customerImportUi';
 import { useAuth } from '@/hooks/useAuth';
-import { ACCEPTED_IMPORT_ACCEPT_ATTR } from '@/lib/imports/constants';
+import {
+  ACCEPTED_IMPORT_ACCEPT_ATTR,
+  ACCEPTED_LEGACY_DOCUMENT_ACCEPT_ATTR,
+} from '@/lib/imports/constants';
 import { listImportModules, getImportModuleById } from '@/lib/imports/modules';
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
+import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
 import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
 import {
   isAcceptedImportFile,
+  isAcceptedLegacyDocumentFile,
   parseImportFileMeta,
 } from '@/lib/imports/helpers/parseImportFileMeta';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
@@ -36,6 +41,7 @@ import {
   advanceWizardState,
   applyBrokerValidationAndAdvance,
   applyCustomerValidationAndAdvance,
+  applyLegacyContractsValidationAndAdvance,
   applySalesValidationAndAdvance,
   canAdvanceWizardStep,
   INITIAL_MIGRATION_WIZARD_STATE,
@@ -205,13 +211,73 @@ async function executeSalesImport(file: File, activeTenantId: string | null) {
   return payload.result;
 }
 
+async function validateLegacyContractsFiles(
+  spreadsheetFile: File,
+  documentsFile: File,
+  activeTenantId: string | null,
+): Promise<LegacyContractImportValidationResult> {
+  const formData = new FormData();
+  formData.append('file', spreadsheetFile);
+  formData.append('documents', documentsFile);
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/legacy-contracts/validate', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    const apiError =
+      (typeof payload.error === 'string' && payload.error) ||
+      (typeof payload.message === 'string' && payload.message) ||
+      `Falha na validação dos arquivos (${response.status}).`;
+    throw new Error(apiError);
+  }
+
+  if (!payload.validation) {
+    throw new Error('Resposta de validação inválida.');
+  }
+
+  return payload.validation as LegacyContractImportValidationResult;
+}
+
+async function executeLegacyContractsImport(
+  spreadsheetFile: File,
+  documentsFile: File,
+  activeTenantId: string | null,
+) {
+  const formData = new FormData();
+  formData.append('file', spreadsheetFile);
+  formData.append('documents', documentsFile);
+  formData.append('confirmed', 'true');
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/legacy-contracts/execute', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    throw new Error(
+      (typeof payload.error === 'string' && payload.error) ||
+        'Falha ao anexar contratos antigos.',
+    );
+  }
+
+  return payload.result;
+}
+
 export function DataMigrationWizard() {
   const { user } = useAuth();
   const [state, setState] = useState<MigrationWizardState>(
     INITIAL_MIGRATION_WIZARD_STATE,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentsFileInputRef = useRef<HTMLInputElement>(null);
   const rawFileRef = useRef<File | null>(null);
+  const rawDocumentsFileRef = useRef<File | null>(null);
   const modules = useMemo(() => listImportModules(), []);
   const selectedModule = state.selectedModuleId
     ? getImportModuleById(state.selectedModuleId)
@@ -219,11 +285,13 @@ export function DataMigrationWizard() {
   const isCustomersModule = state.selectedModuleId === 'customers';
   const isBrokersModule = state.selectedModuleId === 'brokers';
   const isSalesModule = state.selectedModuleId === 'sales';
+  const isLegacyContractsModule = state.selectedModuleId === 'legacy_contracts';
   const isImportModuleActive = isActiveImportModule(state.selectedModuleId);
   const activeTenantId = user?.tenant_id || user?.company_id || null;
 
   const handleSelectModule = (moduleId: ImportModuleId) => {
     rawFileRef.current = null;
+    rawDocumentsFileRef.current = null;
     setState((prev) => selectImportModule(prev, moduleId));
   };
 
@@ -243,6 +311,24 @@ export function DataMigrationWizard() {
       brokerImportResult: null,
       salesValidation: null,
       salesImportResult: null,
+      legacyContractsValidation: null,
+      legacyContractsImportResult: null,
+      validationError: null,
+    }));
+  };
+
+  const handleDocumentsFileChange = (file: File | null) => {
+    if (!file) return;
+    if (!isAcceptedLegacyDocumentFile(file)) {
+      alert('Selecione um arquivo PDF ou ZIP contendo PDFs.');
+      return;
+    }
+    rawDocumentsFileRef.current = file;
+    setState((prev) => ({
+      ...prev,
+      uploadedDocumentsFile: parseImportFileMeta(file),
+      legacyContractsValidation: null,
+      legacyContractsImportResult: null,
       validationError: null,
     }));
   };
@@ -326,11 +412,73 @@ export function DataMigrationWizard() {
       return;
     }
 
+    if (state.step === 'upload-documents' && isLegacyContractsModule) {
+      const spreadsheetFile = rawFileRef.current;
+      const documentsFile = rawDocumentsFileRef.current;
+      if (!spreadsheetFile || !documentsFile) {
+        setState((prev) => ({
+          ...prev,
+          validationError: 'Selecione a planilha e os PDFs antes de avançar.',
+        }));
+        return;
+      }
+
+      setState((prev) => ({ ...prev, validating: true, validationError: null }));
+      try {
+        const validation = await validateLegacyContractsFiles(
+          spreadsheetFile,
+          documentsFile,
+          activeTenantId,
+        );
+        setState((prev) => applyLegacyContractsValidationAndAdvance(prev, validation));
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao validar arquivos.';
+        setState((prev) => ({
+          ...prev,
+          validating: false,
+          validationError: message,
+        }));
+      }
+      return;
+    }
+
     setState((prev) => advanceWizardState(prev));
   };
 
   const handleConfirmImport = async () => {
     if (!rawFileRef.current) return;
+
+    if (isLegacyContractsModule && state.legacyContractsValidation) {
+      if (!rawDocumentsFileRef.current) return;
+
+      const importable = state.legacyContractsValidation.summary.importableRows;
+      const ignored = state.legacyContractsValidation.summary.ignoredRows;
+
+      const confirmed = window.confirm(
+        `Confirmar anexo de ${importable} contrato(s) antigo(s)?\n\n${ignored} registro(s) serão ignorados por erro, PDF ausente, venda não localizada ou contrato já anexado.\n\nVendas, parcelas, lotes e contratos ativos do sistema NÃO serão alterados.`,
+      );
+      if (!confirmed) return;
+
+      setState((prev) => ({ ...prev, importing: true }));
+      try {
+        const result = await executeLegacyContractsImport(
+          rawFileRef.current,
+          rawDocumentsFileRef.current,
+          activeTenantId,
+        );
+        setState((prev) => ({
+          ...prev,
+          step: 'confirmation',
+          legacyContractsImportResult: result,
+          importing: false,
+        }));
+      } catch (err) {
+        setState((prev) => ({ ...prev, importing: false }));
+        alert(err instanceof Error ? err.message : 'Erro ao anexar contratos antigos.');
+      }
+      return;
+    }
 
     if (isCustomersModule && state.customerValidation) {
       const importable = state.customerValidation.summary.importableRows;
@@ -431,13 +579,23 @@ export function DataMigrationWizard() {
     );
   }, [state.salesValidation, state.salesPreviewFilter]);
 
+  const legacyContractsPreviewRows = useMemo(() => {
+    if (!state.legacyContractsValidation) return [];
+    return filterImportPreviewRows(
+      state.legacyContractsValidation.rows,
+      state.legacyContractsPreviewFilter,
+    );
+  }, [state.legacyContractsValidation, state.legacyContractsPreviewFilter]);
+
   const activeValidationSummary = isCustomersModule
     ? state.customerValidation?.summary
     : isBrokersModule
       ? state.brokerValidation?.summary
       : isSalesModule
         ? state.salesValidation?.summary
-        : null;
+        : isLegacyContractsModule
+          ? state.legacyContractsValidation?.summary
+          : null;
 
   const activeValidationMeta = isCustomersModule
     ? state.customerValidation
@@ -445,13 +603,15 @@ export function DataMigrationWizard() {
       ? state.brokerValidation
       : isSalesModule
         ? state.salesValidation
-        : null;
+        : isLegacyContractsModule
+          ? state.legacyContractsValidation
+          : null;
 
   const renderPlaceholderModuleNotice = () => (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
       <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
       <p className="text-sm text-amber-100/90">
-        Este módulo ainda não está habilitado. Clientes, Corretores e Vendas possuem importação ativa nesta fase.
+        Este módulo ainda não está habilitado. Clientes, Corretores, Vendas e Contratos Antigos possuem importação ativa nesta fase.
       </p>
     </div>
   );
@@ -475,7 +635,7 @@ export function DataMigrationWizard() {
                     planilhas Excel para o SV LOTES de forma segura e orientada.
                   </p>
                   <p className="text-xs text-[var(--text-muted)] mt-3">
-                    A importação de Clientes, Corretores e Vendas está disponível. Os demais módulos serão habilitados nas próximas atualizações.
+                    A importação de Clientes, Corretores, Vendas e Contratos Antigos está disponível. Os demais módulos serão habilitados nas próximas atualizações.
                   </p>
                 </div>
               </div>
@@ -557,9 +717,13 @@ export function DataMigrationWizard() {
         return (
           <div className="space-y-4" data-testid="migration-step-upload">
             <p className="text-sm text-[var(--text-secondary)]">
-              Selecione o arquivo preparado (.xlsx, .xls ou .csv).
+              {isLegacyContractsModule
+                ? 'Selecione a planilha de mapeamento (.xlsx, .xls ou .csv).'
+                : 'Selecione o arquivo preparado (.xlsx, .xls ou .csv).'}
               {isImportModuleActive
-                ? ' Ao avançar, o arquivo será validado sem gravar dados.'
+                ? isLegacyContractsModule
+                  ? ' Na próxima etapa você enviará os PDFs.'
+                  : ' Ao avançar, o arquivo será validado sem gravar dados.'
                 : ' Nenhum dado será gravado nesta fase.'}
             </p>
             {!isImportModuleActive ? renderPlaceholderModuleNotice() : null}
@@ -643,6 +807,78 @@ export function DataMigrationWizard() {
           </div>
         );
 
+      case 'upload-documents':
+        return (
+          <div className="space-y-4" data-testid="migration-step-upload-documents">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Selecione um arquivo PDF individual ou ZIP contendo os contratos antigos referenciados
+              na planilha. Ao avançar, planilha e documentos serão validados sem gravar dados.
+            </p>
+            {state.validationError ? (
+              <div
+                className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"
+                data-testid="migration-validation-error"
+                role="alert"
+              >
+                {state.validationError}
+              </div>
+            ) : null}
+            {state.validating ? (
+              <div
+                className="rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 p-4 flex items-center gap-3 text-sm text-[var(--text-secondary)]"
+                data-testid="migration-validating"
+              >
+                <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)] shrink-0" />
+                Validando planilha e PDFs… Nenhum dado será gravado nesta etapa.
+              </div>
+            ) : null}
+            <input
+              ref={documentsFileInputRef}
+              type="file"
+              accept={ACCEPTED_LEGACY_DOCUMENT_ACCEPT_ATTR}
+              className="hidden"
+              data-testid="migration-documents-file-input"
+              onChange={(e) => handleDocumentsFileChange(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              onClick={() => documentsFileInputRef.current?.click()}
+              className="w-full rounded-xl border-2 border-dashed border-[var(--border-color)] bg-[var(--bg-card)] p-8 hover:border-[var(--color-primary)]/40 transition-colors"
+            >
+              <div className="flex flex-col items-center gap-2 text-[var(--text-secondary)]">
+                <Upload className="w-8 h-8 text-[var(--color-primary)]" />
+                <span className="text-sm font-medium">Clique para selecionar PDF ou ZIP</span>
+                <span className="text-xs text-[var(--text-muted)]">pdf ou zip</span>
+              </div>
+            </button>
+            {state.uploadedDocumentsFile ? (
+              <div
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm"
+                data-testid="migration-documents-file-meta"
+              >
+                <div className="flex items-center gap-2 text-emerald-300 font-medium mb-2">
+                  <FileUp className="w-4 h-4" />
+                  Documentos selecionados
+                </div>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[var(--text-secondary)]">
+                  <div>
+                    <dt className="text-[10px] uppercase text-[var(--text-muted)]">Nome</dt>
+                    <dd>{state.uploadedDocumentsFile.name}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase text-[var(--text-muted)]">Tamanho</dt>
+                    <dd>{state.uploadedDocumentsFile.sizeLabel}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase text-[var(--text-muted)]">Extensão</dt>
+                    <dd>{state.uploadedDocumentsFile.extension}</dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
+          </div>
+        );
+
       case 'pre-validation':
         if (!isImportModuleActive || !activeValidationMeta || !activeValidationSummary) {
           return (
@@ -681,6 +917,12 @@ export function DataMigrationWizard() {
               <p>
                 Linhas no arquivo: <strong>{activeValidationMeta.rowCount}</strong> · Tipo:{' '}
                 <strong>{activeValidationMeta.fileType.toUpperCase()}</strong>
+                {isLegacyContractsModule && 'pdfCount' in activeValidationMeta ? (
+                  <>
+                    {' '}
+                    · PDFs encontrados: <strong>{activeValidationMeta.pdfCount}</strong>
+                  </>
+                ) : null}
               </p>
             </div>
           </div>
@@ -700,17 +942,23 @@ export function DataMigrationWizard() {
             ? state.customerPreviewFilter
             : isBrokersModule
               ? state.brokerPreviewFilter
-              : state.salesPreviewFilter;
+              : isLegacyContractsModule
+                ? state.legacyContractsPreviewFilter
+                : state.salesPreviewFilter;
           const previewRowsList = isCustomersModule
             ? customerPreviewRows
             : isBrokersModule
               ? brokerPreviewRows
-              : salesPreviewRows;
+              : isLegacyContractsModule
+                ? legacyContractsPreviewRows
+                : salesPreviewRows;
           const entityLabel = isCustomersModule
             ? 'cliente'
             : isBrokersModule
               ? 'corretor'
-              : 'venda';
+              : isLegacyContractsModule
+                ? 'contrato antigo'
+                : 'venda';
 
           const formatMoney = (value: number) =>
             value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -729,7 +977,9 @@ export function DataMigrationWizard() {
                           ? { ...prev, customerPreviewFilter: filter.id }
                           : isBrokersModule
                             ? { ...prev, brokerPreviewFilter: filter.id }
-                            : { ...prev, salesPreviewFilter: filter.id },
+                            : isLegacyContractsModule
+                              ? { ...prev, legacyContractsPreviewFilter: filter.id }
+                              : { ...prev, salesPreviewFilter: filter.id },
                       )
                     }
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
@@ -771,7 +1021,20 @@ export function DataMigrationWizard() {
                               'Status',
                               'Mensagens',
                             ]
-                          : [
+                          : isLegacyContractsModule
+                            ? [
+                                'Linha',
+                                'Cliente',
+                                'Empreendimento',
+                                'Quadra/Lote',
+                                'Venda localizada',
+                                'Nº contrato antigo',
+                                'PDF',
+                                'Status contrato',
+                                'Resultado',
+                                'Mensagens',
+                              ]
+                            : [
                               'Linha',
                               'Cliente',
                               'Corretor',
@@ -798,7 +1061,15 @@ export function DataMigrationWizard() {
                     {previewRowsList.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={isCustomersModule ? 9 : isBrokersModule ? 10 : 11}
+                          colSpan={
+                            isCustomersModule
+                              ? 9
+                              : isBrokersModule
+                                ? 10
+                                : isLegacyContractsModule
+                                  ? 10
+                                  : 11
+                          }
                           className="px-4 py-8 text-center text-[var(--text-muted)]"
                         >
                           Nenhuma linha para o filtro selecionado.
@@ -843,6 +1114,34 @@ export function DataMigrationWizard() {
                           <td className="px-3 py-2">{row.email || '—'}</td>
                           <td className="px-3 py-2">{row.percentual_comissao}%</td>
                           <td className="px-3 py-2">{row.ativo ? 'Sim' : 'Não'}</td>
+                          <td
+                            className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                          >
+                            {IMPORT_ROW_STATUS_LABELS[row.status]}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                            {row.messages.map((message) => message.text).join(' · ') || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : isLegacyContractsModule ? (
+                      legacyContractsPreviewRows.map((row) => (
+                        <tr
+                          key={row.lineNumber}
+                          className="border-t border-[var(--border-color)]"
+                        >
+                          <td className="px-3 py-2">{row.lineNumber}</td>
+                          <td className="px-3 py-2">{row.customer_name || '—'}</td>
+                          <td className="px-3 py-2">{row.empreendimento || '—'}</td>
+                          <td className="px-3 py-2">
+                            {[row.quadra, row.lote].filter(Boolean).join(' / ') || '—'}
+                          </td>
+                          <td className="px-3 py-2">
+                            {row.sale_id ? `Sim (${row.sale_id.slice(0, 8)}…)` : 'Não'}
+                          </td>
+                          <td className="px-3 py-2">{row.numero_contrato_antigo || '—'}</td>
+                          <td className="px-3 py-2">{row.nome_arquivo_pdf || '—'}</td>
+                          <td className="px-3 py-2">{row.status_contrato || '—'}</td>
                           <td
                             className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
                           >
@@ -916,6 +1215,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
+                  rawDocumentsFileRef.current = null;
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"
@@ -948,6 +1248,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
+                  rawDocumentsFileRef.current = null;
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"
@@ -979,6 +1280,40 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
+                  rawDocumentsFileRef.current = null;
+                  setState(INITIAL_MIGRATION_WIZARD_STATE);
+                }}
+                className="text-sm text-[var(--color-primary)] hover:underline"
+              >
+                Voltar ao início do assistente
+              </button>
+            </div>
+          );
+        }
+
+        if (isLegacyContractsModule && state.legacyContractsImportResult) {
+          return (
+            <div className="space-y-4" data-testid="migration-step-confirmation">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-2">
+                  Anexos concluídos
+                </h2>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Foram anexados{' '}
+                  <strong>{state.legacyContractsImportResult.imported}</strong> contrato(s) antigo(s).
+                </p>
+                <p className="text-sm text-[var(--text-secondary)] mt-2">
+                  <strong>{state.legacyContractsImportResult.ignored}</strong> registros foram
+                  ignorados por erro, PDF ausente, venda não localizada ou contrato já anexado.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="migration-back-to-start"
+                onClick={() => {
+                  rawFileRef.current = null;
+                  rawDocumentsFileRef.current = null;
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"
@@ -1021,28 +1356,38 @@ export function DataMigrationWizard() {
     state.step === 'preview' &&
     ((isCustomersModule && state.customerValidation != null) ||
       (isBrokersModule && state.brokerValidation != null) ||
-      (isSalesModule && state.salesValidation != null));
+      (isSalesModule && state.salesValidation != null) ||
+      (isLegacyContractsModule && state.legacyContractsValidation != null));
 
   const confirmImportableCount = isCustomersModule
     ? (state.customerValidation?.summary.importableRows ?? 0)
     : isBrokersModule
       ? (state.brokerValidation?.summary.importableRows ?? 0)
-      : (state.salesValidation?.summary.importableRows ?? 0);
+      : isLegacyContractsModule
+        ? (state.legacyContractsValidation?.summary.importableRows ?? 0)
+        : (state.salesValidation?.summary.importableRows ?? 0);
   const confirmIgnoredCount = isCustomersModule
     ? (state.customerValidation?.summary.ignoredRows ?? 0)
     : isBrokersModule
       ? (state.brokerValidation?.summary.ignoredRows ?? 0)
-      : (state.salesValidation?.summary.ignoredRows ?? 0);
+      : isLegacyContractsModule
+        ? (state.legacyContractsValidation?.summary.ignoredRows ?? 0)
+        : (state.salesValidation?.summary.ignoredRows ?? 0);
   const confirmEntityLabel = isCustomersModule
     ? 'clientes'
     : isBrokersModule
       ? 'corretores'
-      : 'vendas';
+      : isLegacyContractsModule
+        ? 'contratos antigos'
+        : 'vendas';
+  const confirmActionLabel = isLegacyContractsModule
+    ? 'Confirmar Anexo'
+    : 'Confirmar Importação';
 
   return (
     <div data-testid="data-migration-wizard">
       {state.step !== 'welcome' ? (
-        <WizardStepIndicator currentStep={state.step} />
+        <WizardStepIndicator currentStep={state.step} moduleId={state.selectedModuleId} />
       ) : null}
 
       {renderStep()}
@@ -1050,7 +1395,9 @@ export function DataMigrationWizard() {
       {showConfirmImport ? (
         <div className="mt-6 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 space-y-3">
           <p className="text-sm text-[var(--text-secondary)]">
-            Serão importados <strong>{confirmImportableCount}</strong> novos {confirmEntityLabel}.
+            {isLegacyContractsModule ? 'Serão anexados' : 'Serão importados'}{' '}
+            <strong>{confirmImportableCount}</strong>{' '}
+            {isLegacyContractsModule ? 'contrato(s) antigo(s)' : `novos ${confirmEntityLabel}`}.
           </p>
           <p className="text-sm text-[var(--text-secondary)]">
             <strong>{confirmIgnoredCount}</strong> registros serão ignorados por erro,
@@ -1064,7 +1411,7 @@ export function DataMigrationWizard() {
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-40"
           >
             {state.importing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Confirmar Importação
+            {confirmActionLabel}
           </button>
         </div>
       ) : null}

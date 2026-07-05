@@ -15,6 +15,7 @@ import {
   selectImportModule,
   startMigrationWizard,
 } from '../lib/imports/services/migrationWizardState';
+import { getWizardStepsForModule } from '../lib/imports/services/migrationWizardSteps';
 import {
   isAcceptedImportFile,
   parseImportFileMeta,
@@ -97,6 +98,8 @@ function testWizardSteps() {
   assert(wizard.includes('applyCustomerValidationAndAdvance'), 'avanço pós-validação');
   assert(wizard.includes('applyBrokerValidationAndAdvance'), 'avanço pós-validação corretores');
   assert(wizard.includes('applySalesValidationAndAdvance'), 'avanço pós-validação vendas');
+  assert(wizard.includes('applyLegacyContractsValidationAndAdvance'), 'avanço pós-validação legacy');
+  assert(wizard.includes('migration-step-upload-documents'), 'step upload documentos');
   assert(wizard.includes('migration-validating'), 'loading validação');
   assert(wizard.includes('Iniciar Migração'), 'botão iniciar');
   console.log('OK testWizardSteps');
@@ -108,8 +111,12 @@ function testImportTypeCards() {
   assert(modules.some((m) => m.id === 'customers' && m.status === 'available'), 'clientes disponível');
   assert(modules.some((m) => m.id === 'brokers' && m.status === 'available'), 'corretores disponível');
   assert(modules.some((m) => m.id === 'sales' && m.status === 'available'), 'vendas disponível');
+  assert(
+    modules.some((m) => m.id === 'legacy_contracts' && m.status === 'available'),
+    'contratos antigos disponível',
+  );
   assert(modules.some((m) => m.id === 'attachments' && m.status === 'in_development'), 'anexos dev');
-  assert(modules.filter((m) => m.statusLabel === 'Disponível em breve').length === 2, '2 em breve');
+  assert(modules.filter((m) => m.statusLabel === 'Disponível em breve').length === 1, '1 em breve');
 
   const card = read('components/imports/ImportTypeCard.tsx');
   assert(card.includes('import-type-card-'), 'testid card');
@@ -148,6 +155,8 @@ function testTemplates() {
   const salesHeaders = getImportTemplateHeaders('sales');
   assert(salesHeaders.includes('empreendimento'), 'headers vendas empreendimento');
   assert(salesHeaders.includes('valor_total'), 'headers vendas valor');
+  const legacyHeaders = getImportTemplateHeaders('legacy_contracts');
+  assert(legacyHeaders.includes('nome_arquivo_pdf'), 'headers legacy pdf');
   const tpl = read('lib/imports/services/templateDownload.ts');
   assert(tpl.includes('downloadImportCsvTemplate'), 'download csv');
   assert(tpl.includes('downloadImportExcelTemplate'), 'download xlsx real');
@@ -170,6 +179,7 @@ function testArchitecture() {
     'lib/imports/modules/customers',
     'lib/imports/modules/brokers',
     'lib/imports/modules/sales',
+    'lib/imports/modules/legacy-contracts',
     'lib/imports/modules/installments',
     'lib/imports/modules/contracts',
     'lib/imports/modules/attachments',
@@ -184,6 +194,13 @@ function testArchitecture() {
   console.log('OK testArchitecture');
 }
 
+function testLegacyWizardSteps() {
+  const steps = getWizardStepsForModule('legacy_contracts');
+  assert(steps.length === 8, 'legacy 8 etapas');
+  assert(steps.some((step) => step.id === 'upload-documents'), 'legacy passo PDFs');
+  console.log('OK testLegacyWizardSteps');
+}
+
 function testBrokerBlockedRoute() {
   const roles = read('lib/rolePermissions.ts');
   assert(roles.includes("'/data-migration'"), 'rota bloqueada corretor');
@@ -195,6 +212,7 @@ function main() {
   testSidebarMenu();
   testPageRoute();
   testWizardSteps();
+  testLegacyWizardSteps();
   testImportTypeCards();
   testFileUploadMeta();
   testTemplates();

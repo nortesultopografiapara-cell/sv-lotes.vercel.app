@@ -2,7 +2,7 @@
  * Extrai metadados do arquivo selecionado (sem leitura/gravação de dados).
  */
 
-import { ACCEPTED_IMPORT_EXTENSIONS } from '@/lib/imports/constants';
+import { ACCEPTED_IMPORT_EXTENSIONS, ACCEPTED_LEGACY_DOCUMENT_EXTENSIONS } from '@/lib/imports/constants';
 import { formatImportFileSize } from '@/lib/imports/helpers/formatFileSize';
 import type { UploadedImportFileMeta } from '@/lib/imports/types';
 
@@ -10,6 +10,19 @@ function extractExtension(fileName: string): string {
   const dot = fileName.lastIndexOf('.');
   if (dot < 0) return '';
   return fileName.slice(dot).toLowerCase();
+}
+
+export function isAcceptedLegacyDocumentFile(file: File): boolean {
+  const ext = extractExtension(file.name);
+  if (
+    ACCEPTED_LEGACY_DOCUMENT_EXTENSIONS.includes(
+      ext as (typeof ACCEPTED_LEGACY_DOCUMENT_EXTENSIONS)[number],
+    )
+  ) {
+    return true;
+  }
+  const mime = String(file.type || '').toLowerCase();
+  return mime.includes('pdf') || mime.includes('zip');
 }
 
 export function isAcceptedImportFile(file: File): boolean {

@@ -57,6 +57,7 @@ import {
   type SaleContractSignatureCapabilities,
   type SaleContractSignatureSectionHandle,
 } from "@/components/contracts/SaleContractSignatureSection";
+import { LegacyContractDocumentsSection } from "@/components/contracts/LegacyContractDocumentsSection";
 import {
   canResendSaleSignature,
   canSendSaleSignature,
@@ -2444,6 +2445,9 @@ export default function ContractsPage() {
                           <span className="text-sm font-medium text-[var(--text-primary)]">
                             Baixar PDF
                           </span>
+                          <span className="text-[10px] text-[var(--text-muted)] mt-1">
+                            Contrato ativo
+                          </span>
                         </button>
                         <button
                           onClick={handleImprimir}
@@ -2452,6 +2456,9 @@ export default function ContractsPage() {
                           <Printer className="w-8 h-8 text-info mb-2" />
                           <span className="text-sm font-medium text-[var(--text-primary)]">
                             Imprimir
+                          </span>
+                          <span className="text-[10px] text-[var(--text-muted)] mt-1">
+                            Contrato ativo
                           </span>
                         </button>
                         <button
@@ -2465,13 +2472,7 @@ export default function ContractsPage() {
                         </button>
                       </div>
 
-                      <div className="text-center py-10 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-muted)]">
-                        <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                        <p>Nenhum arquivo anexado ainda.</p>
-                        <p className="text-xs mt-1">
-                          Espaço futuro para anexos.
-                        </p>
-                      </div>
+                      <LegacyContractDocumentsSection saleId={selectedContract.sale_id} />
                     </div>
                   </div>
                 )}

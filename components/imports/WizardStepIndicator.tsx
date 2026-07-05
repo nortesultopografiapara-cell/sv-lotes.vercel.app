@@ -1,19 +1,24 @@
 'use client';
 
-import { MIGRATION_WIZARD_STEPS } from '@/lib/imports/constants';
-import type { MigrationWizardStepId } from '@/lib/imports/types';
+import { getWizardStepsForModule } from '@/lib/imports/services/migrationWizardSteps';
+import type { ImportModuleId, MigrationWizardStepId } from '@/lib/imports/types';
 
 type WizardStepIndicatorProps = {
   currentStep: MigrationWizardStepId;
+  moduleId?: ImportModuleId | null;
 };
 
-export function WizardStepIndicator({ currentStep }: WizardStepIndicatorProps) {
+export function WizardStepIndicator({
+  currentStep,
+  moduleId = null,
+}: WizardStepIndicatorProps) {
+  const steps = getWizardStepsForModule(moduleId);
   const currentOrder =
-    MIGRATION_WIZARD_STEPS.find((s) => s.id === currentStep)?.order ?? 1;
+    steps.find((step) => step.id === currentStep)?.order ?? 1;
 
   return (
     <ol className="flex flex-wrap gap-2 mb-6" aria-label="Etapas do assistente">
-      {MIGRATION_WIZARD_STEPS.map((step) => {
+      {steps.map((step) => {
         const active = step.id === currentStep;
         const done = step.order < currentOrder;
         return (
