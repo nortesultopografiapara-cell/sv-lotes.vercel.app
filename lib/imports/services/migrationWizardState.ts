@@ -5,6 +5,7 @@
 import { MIGRATION_WIZARD_STEPS } from '@/lib/imports/constants';
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
+import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
 import type {
   ActiveImportModuleId,
   ImportModuleId,
@@ -22,6 +23,9 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   brokerValidation: null,
   brokerPreviewFilter: 'all',
   brokerImportResult: null,
+  salesValidation: null,
+  salesPreviewFilter: 'all',
+  salesImportResult: null,
   validating: false,
   importing: false,
   validationError: null,
@@ -30,7 +34,7 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
 export function isActiveImportModule(
   moduleId: ImportModuleId | null,
 ): moduleId is ActiveImportModuleId {
-  return moduleId === 'customers' || moduleId === 'brokers';
+  return moduleId === 'customers' || moduleId === 'brokers' || moduleId === 'sales';
 }
 
 export function getWizardStepIndex(step: MigrationWizardStepId): number {
@@ -44,6 +48,7 @@ export function getWizardStepOrder(step: MigrationWizardStepId): number {
 function hasModuleValidation(state: MigrationWizardState): boolean {
   if (state.selectedModuleId === 'customers') return state.customerValidation != null;
   if (state.selectedModuleId === 'brokers') return state.brokerValidation != null;
+  if (state.selectedModuleId === 'sales') return state.salesValidation != null;
   return false;
 }
 
@@ -133,6 +138,23 @@ export function applyBrokerValidationAndAdvance(
   };
 }
 
+export function applySalesValidationAndAdvance(
+  state: MigrationWizardState,
+  validation: SaleImportValidationResult,
+): MigrationWizardState {
+  if (state.step !== 'upload' || state.selectedModuleId !== 'sales') {
+    return state;
+  }
+
+  return {
+    ...state,
+    step: 'pre-validation',
+    salesValidation: validation,
+    validating: false,
+    validationError: null,
+  };
+}
+
 export function retreatWizardState(
   state: MigrationWizardState,
 ): MigrationWizardState {
@@ -155,6 +177,9 @@ export function selectImportModule(
     brokerValidation: null,
     brokerPreviewFilter: 'all',
     brokerImportResult: null,
+    salesValidation: null,
+    salesPreviewFilter: 'all',
+    salesImportResult: null,
     validating: false,
     importing: false,
     validationError: null,

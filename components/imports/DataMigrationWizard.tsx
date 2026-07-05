@@ -26,6 +26,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { ACCEPTED_IMPORT_ACCEPT_ATTR } from '@/lib/imports/constants';
 import { listImportModules, getImportModuleById } from '@/lib/imports/modules';
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
+import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
 import {
   isAcceptedImportFile,
   parseImportFileMeta,
@@ -35,6 +36,7 @@ import {
   advanceWizardState,
   applyBrokerValidationAndAdvance,
   applyCustomerValidationAndAdvance,
+  applySalesValidationAndAdvance,
   canAdvanceWizardStep,
   INITIAL_MIGRATION_WIZARD_STATE,
   isActiveImportModule,
@@ -153,6 +155,56 @@ async function executeBrokersImport(
   return payload.result;
 }
 
+async function validateSalesFile(
+  file: File,
+  activeTenantId: string | null,
+): Promise<SaleImportValidationResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/sales/validate', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    const apiError =
+      (typeof payload.error === 'string' && payload.error) ||
+      (typeof payload.message === 'string' && payload.message) ||
+      `Falha na validação do arquivo (${response.status}).`;
+    throw new Error(apiError);
+  }
+
+  if (!payload.validation) {
+    throw new Error('Resposta de validação inválida.');
+  }
+
+  return payload.validation as SaleImportValidationResult;
+}
+
+async function executeSalesImport(file: File, activeTenantId: string | null) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('confirmed', 'true');
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/sales/execute', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    throw new Error(
+      (typeof payload.error === 'string' && payload.error) || 'Falha ao importar vendas.',
+    );
+  }
+
+  return payload.result;
+}
+
 export function DataMigrationWizard() {
   const { user } = useAuth();
   const [state, setState] = useState<MigrationWizardState>(
@@ -166,6 +218,7 @@ export function DataMigrationWizard() {
     : null;
   const isCustomersModule = state.selectedModuleId === 'customers';
   const isBrokersModule = state.selectedModuleId === 'brokers';
+  const isSalesModule = state.selectedModuleId === 'sales';
   const isImportModuleActive = isActiveImportModule(state.selectedModuleId);
   const activeTenantId = user?.tenant_id || user?.company_id || null;
 
@@ -188,6 +241,8 @@ export function DataMigrationWizard() {
       customerImportResult: null,
       brokerValidation: null,
       brokerImportResult: null,
+      salesValidation: null,
+      salesImportResult: null,
       validationError: null,
     }));
   };
@@ -233,6 +288,32 @@ export function DataMigrationWizard() {
       try {
         const validation = await validateBrokersFile(file, activeTenantId);
         setState((prev) => applyBrokerValidationAndAdvance(prev, validation));
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao validar arquivo.';
+        setState((prev) => ({
+          ...prev,
+          validating: false,
+          validationError: message,
+        }));
+      }
+      return;
+    }
+
+    if (state.step === 'upload' && isSalesModule) {
+      const file = rawFileRef.current;
+      if (!file) {
+        setState((prev) => ({
+          ...prev,
+          validationError: 'Selecione um arquivo antes de avançar.',
+        }));
+        return;
+      }
+
+      setState((prev) => ({ ...prev, validating: true, validationError: null }));
+      try {
+        const validation = await validateSalesFile(file, activeTenantId);
+        setState((prev) => applySalesValidationAndAdvance(prev, validation));
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Erro ao validar arquivo.';
@@ -298,6 +379,31 @@ export function DataMigrationWizard() {
         setState((prev) => ({ ...prev, importing: false }));
         alert(err instanceof Error ? err.message : 'Erro ao importar corretores.');
       }
+      return;
+    }
+
+    if (isSalesModule && state.salesValidation) {
+      const importable = state.salesValidation.summary.importableRows;
+      const ignored = state.salesValidation.summary.ignoredRows;
+
+      const confirmed = window.confirm(
+        `Confirmar importação de ${importable} nova(s) venda(s)?\n\n${ignored} registro(s) serão ignorados por erro, duplicidade ou por lotes já vendidos/reservados.\n\nClientes, corretores e lotes existentes NÃO serão alterados indevidamente.`,
+      );
+      if (!confirmed) return;
+
+      setState((prev) => ({ ...prev, importing: true }));
+      try {
+        const result = await executeSalesImport(rawFileRef.current, activeTenantId);
+        setState((prev) => ({
+          ...prev,
+          step: 'confirmation',
+          salesImportResult: result,
+          importing: false,
+        }));
+      } catch (err) {
+        setState((prev) => ({ ...prev, importing: false }));
+        alert(err instanceof Error ? err.message : 'Erro ao importar vendas.');
+      }
     }
   };
 
@@ -317,23 +423,35 @@ export function DataMigrationWizard() {
     );
   }, [state.brokerValidation, state.brokerPreviewFilter]);
 
+  const salesPreviewRows = useMemo(() => {
+    if (!state.salesValidation) return [];
+    return filterImportPreviewRows(
+      state.salesValidation.rows,
+      state.salesPreviewFilter,
+    );
+  }, [state.salesValidation, state.salesPreviewFilter]);
+
   const activeValidationSummary = isCustomersModule
     ? state.customerValidation?.summary
     : isBrokersModule
       ? state.brokerValidation?.summary
-      : null;
+      : isSalesModule
+        ? state.salesValidation?.summary
+        : null;
 
   const activeValidationMeta = isCustomersModule
     ? state.customerValidation
     : isBrokersModule
       ? state.brokerValidation
-      : null;
+      : isSalesModule
+        ? state.salesValidation
+        : null;
 
   const renderPlaceholderModuleNotice = () => (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
       <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
       <p className="text-sm text-amber-100/90">
-        Este módulo ainda não está habilitado. Clientes e Corretores possuem importação ativa nesta fase.
+        Este módulo ainda não está habilitado. Clientes, Corretores e Vendas possuem importação ativa nesta fase.
       </p>
     </div>
   );
@@ -357,7 +475,7 @@ export function DataMigrationWizard() {
                     planilhas Excel para o SV LOTES de forma segura e orientada.
                   </p>
                   <p className="text-xs text-[var(--text-muted)] mt-3">
-                    A importação de Clientes e Corretores está disponível. Os demais módulos serão habilitados nas próximas atualizações.
+                    A importação de Clientes, Corretores e Vendas está disponível. Os demais módulos serão habilitados nas próximas atualizações.
                   </p>
                 </div>
               </div>
@@ -580,11 +698,22 @@ export function DataMigrationWizard() {
         {
           const previewFilter = isCustomersModule
             ? state.customerPreviewFilter
-            : state.brokerPreviewFilter;
+            : isBrokersModule
+              ? state.brokerPreviewFilter
+              : state.salesPreviewFilter;
           const previewRowsList = isCustomersModule
             ? customerPreviewRows
-            : brokerPreviewRows;
-          const entityLabel = isCustomersModule ? 'cliente' : 'corretor';
+            : isBrokersModule
+              ? brokerPreviewRows
+              : salesPreviewRows;
+          const entityLabel = isCustomersModule
+            ? 'cliente'
+            : isBrokersModule
+              ? 'corretor'
+              : 'venda';
+
+          const formatMoney = (value: number) =>
+            value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
           return (
             <div className="space-y-4" data-testid="migration-step-preview">
@@ -598,7 +727,9 @@ export function DataMigrationWizard() {
                       setState((prev) =>
                         isCustomersModule
                           ? { ...prev, customerPreviewFilter: filter.id }
-                          : { ...prev, brokerPreviewFilter: filter.id },
+                          : isBrokersModule
+                            ? { ...prev, brokerPreviewFilter: filter.id }
+                            : { ...prev, salesPreviewFilter: filter.id },
                       )
                     }
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
@@ -627,18 +758,32 @@ export function DataMigrationWizard() {
                             'Status',
                             'Mensagens',
                           ]
-                        : [
-                            'Linha',
-                            'Nome',
-                            'CPF/CNPJ',
-                            'Telefone',
-                            'WhatsApp',
-                            'E-mail',
-                            '% Comissão',
-                            'Ativo',
-                            'Status',
-                            'Mensagens',
-                          ]
+                        : isBrokersModule
+                          ? [
+                              'Linha',
+                              'Nome',
+                              'CPF/CNPJ',
+                              'Telefone',
+                              'WhatsApp',
+                              'E-mail',
+                              '% Comissão',
+                              'Ativo',
+                              'Status',
+                              'Mensagens',
+                            ]
+                          : [
+                              'Linha',
+                              'Cliente',
+                              'Corretor',
+                              'Empreendimento',
+                              'Quadra/Lote',
+                              'Valor',
+                              'Entrada/Sinal/Saldo',
+                              'Parcelas',
+                              'Status venda',
+                              'Resultado',
+                              'Mensagens',
+                            ]
                       ).map((header) => (
                         <th
                           key={header}
@@ -653,7 +798,7 @@ export function DataMigrationWizard() {
                     {previewRowsList.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={isCustomersModule ? 9 : 10}
+                          colSpan={isCustomersModule ? 9 : isBrokersModule ? 10 : 11}
                           className="px-4 py-8 text-center text-[var(--text-muted)]"
                         >
                           Nenhuma linha para o filtro selecionado.
@@ -684,7 +829,7 @@ export function DataMigrationWizard() {
                           </td>
                         </tr>
                       ))
-                    ) : (
+                    ) : isBrokersModule ? (
                       previewRowsList.map((row) => (
                         <tr
                           key={row.lineNumber}
@@ -698,6 +843,35 @@ export function DataMigrationWizard() {
                           <td className="px-3 py-2">{row.email || '—'}</td>
                           <td className="px-3 py-2">{row.percentual_comissao}%</td>
                           <td className="px-3 py-2">{row.ativo ? 'Sim' : 'Não'}</td>
+                          <td
+                            className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                          >
+                            {IMPORT_ROW_STATUS_LABELS[row.status]}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                            {row.messages.map((message) => message.text).join(' · ') || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      salesPreviewRows.map((row) => (
+                        <tr
+                          key={row.lineNumber}
+                          className="border-t border-[var(--border-color)]"
+                        >
+                          <td className="px-3 py-2">{row.lineNumber}</td>
+                          <td className="px-3 py-2">{row.customer_name || '—'}</td>
+                          <td className="px-3 py-2">{row.broker_name || '—'}</td>
+                          <td className="px-3 py-2">{row.empreendimento || '—'}</td>
+                          <td className="px-3 py-2">
+                            {[row.quadra, row.lote].filter(Boolean).join(' / ') || '—'}
+                          </td>
+                          <td className="px-3 py-2">{formatMoney(row.valor_total)}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {[formatMoney(row.entrada), formatMoney(row.sinal), row.saldo != null ? formatMoney(row.saldo) : '—'].join(' / ')}
+                          </td>
+                          <td className="px-3 py-2">{row.quantidade_parcelas}</td>
+                          <td className="px-3 py-2">{row.resolved_block_status}</td>
                           <td
                             className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
                           >
@@ -784,6 +958,37 @@ export function DataMigrationWizard() {
           );
         }
 
+        if (isSalesModule && state.salesImportResult) {
+          return (
+            <div className="space-y-4" data-testid="migration-step-confirmation">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-2">
+                  Importação concluída
+                </h2>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Foram importadas <strong>{state.salesImportResult.imported}</strong> novas vendas.
+                </p>
+                <p className="text-sm text-[var(--text-secondary)] mt-2">
+                  <strong>{state.salesImportResult.ignored}</strong> registros foram ignorados
+                  por erro, duplicidade ou lotes já vendidos/reservados.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="migration-back-to-start"
+                onClick={() => {
+                  rawFileRef.current = null;
+                  setState(INITIAL_MIGRATION_WIZARD_STATE);
+                }}
+                className="text-sm text-[var(--color-primary)] hover:underline"
+              >
+                Voltar ao início do assistente
+              </button>
+            </div>
+          );
+        }
+
         return (
           <div className="space-y-4" data-testid="migration-step-confirmation">
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
@@ -815,15 +1020,24 @@ export function DataMigrationWizard() {
     isImportModuleActive &&
     state.step === 'preview' &&
     ((isCustomersModule && state.customerValidation != null) ||
-      (isBrokersModule && state.brokerValidation != null));
+      (isBrokersModule && state.brokerValidation != null) ||
+      (isSalesModule && state.salesValidation != null));
 
   const confirmImportableCount = isCustomersModule
     ? (state.customerValidation?.summary.importableRows ?? 0)
-    : (state.brokerValidation?.summary.importableRows ?? 0);
+    : isBrokersModule
+      ? (state.brokerValidation?.summary.importableRows ?? 0)
+      : (state.salesValidation?.summary.importableRows ?? 0);
   const confirmIgnoredCount = isCustomersModule
     ? (state.customerValidation?.summary.ignoredRows ?? 0)
-    : (state.brokerValidation?.summary.ignoredRows ?? 0);
-  const confirmEntityLabel = isCustomersModule ? 'clientes' : 'corretores';
+    : isBrokersModule
+      ? (state.brokerValidation?.summary.ignoredRows ?? 0)
+      : (state.salesValidation?.summary.ignoredRows ?? 0);
+  const confirmEntityLabel = isCustomersModule
+    ? 'clientes'
+    : isBrokersModule
+      ? 'corretores'
+      : 'vendas';
 
   return (
     <div data-testid="data-migration-wizard">
