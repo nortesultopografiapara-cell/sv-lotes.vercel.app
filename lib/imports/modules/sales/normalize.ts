@@ -34,18 +34,70 @@ export function normalizeImportLoteNumber(value?: string | null): string {
   return normalizeLotNumberForMatch(value) || normalizeImportEntityName(value);
 }
 
-export function parseSaleImportCurrency(raw: string): {
+export function parseSaleImportCurrency(raw: unknown): {
   value: number | null;
   error?: string;
 } {
-  const trimmed = String(raw || '').trim();
+  const extracted = extractRichCellValue(raw);
+  if (extracted == null || extracted === '') return { value: null };
+
+  if (typeof extracted === 'number') {
+    if (!Number.isFinite(extracted) || extracted < 0) {
+      return { value: null, error: 'Valor monetário inválido.' };
+    }
+    if (extracted === 0) return { value: null };
+    return { value: Math.round(extracted * 100) / 100 };
+  }
+
+  const trimmed = cleanSpreadsheetString(String(extracted));
   if (!trimmed) return { value: null };
 
-  const parsed = parseCurrencyBRL(trimmed);
+  const parsed = parseSaleImportCurrencyString(trimmed);
   if (parsed == null) {
     return { value: null, error: 'Valor monetário inválido.' };
   }
   return { value: parsed };
+}
+
+function normalizeSaleImportMoneyNumber(value: number): number | null {
+  if (!Number.isFinite(value) || value < 0) return null;
+  if (value === 0) return null;
+  return Math.round(value * 100) / 100;
+}
+
+function parseSaleImportCurrencyString(raw: string): number | null {
+  let cleaned = raw.replace(/[R$\s\u00a0]/gi, '').trim();
+  if (!cleaned) return null;
+
+  // Formato US do Excel: 90,000.00 ou 90,000
+  if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(cleaned)) {
+    return normalizeSaleImportMoneyNumber(Number(cleaned.replace(/,/g, '')));
+  }
+
+  // Formato brasileiro: 90.000,00
+  if (/^\d{1,3}(\.\d{3})*,\d{1,2}$/.test(cleaned)) {
+    return normalizeSaleImportMoneyNumber(
+      Number(cleaned.replace(/\./g, '').replace(',', '.')),
+    );
+  }
+
+  // Milhar brasileiro sem centavos: 90.000
+  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    return normalizeSaleImportMoneyNumber(Number(cleaned.replace(/\./g, '')));
+  }
+
+  // Decimal brasileiro: 90000,00
+  if (/^\d+,\d{1,2}$/.test(cleaned)) {
+    return normalizeSaleImportMoneyNumber(Number(cleaned.replace(',', '.')));
+  }
+
+  // Inteiro ou decimal com ponto: 90000 ou 90000.00
+  if (/^\d+(\.\d{1,2})?$/.test(cleaned)) {
+    return normalizeSaleImportMoneyNumber(Number(cleaned));
+  }
+
+  const fallback = parseCurrencyBRL(cleaned);
+  return fallback == null ? null : normalizeSaleImportMoneyNumber(fallback);
 }
 
 function expandTwoDigitYear(year: number): number {

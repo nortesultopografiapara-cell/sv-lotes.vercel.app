@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseSaleImportCurrency, parseSaleImportDate } from '../lib/imports/modules/sales/normalize';
+import { parseSaleImportCurrency, parseSaleImportDate, resolveSaleBalance } from '../lib/imports/modules/sales/normalize';
 import {
   buildSalesBlockIndex,
   buildSalesBrokerIndex,
@@ -248,9 +248,44 @@ function test7OccupiedBlockIgnored() {
 }
 
 function test8CurrencyNormalization() {
-  const parsed = parseSaleImportCurrency('R$ 100.000,00');
-  assert(parsed.value === 100000, 'moeda normalizada');
+  assert(parseSaleImportCurrency('R$ 90.000,00').value === 90000, 'R$ 90.000,00');
+  assert(parseSaleImportCurrency('90.000,00').value === 90000, '90.000,00');
+  assert(parseSaleImportCurrency('90000,00').value === 90000, '90000,00');
+  assert(parseSaleImportCurrency('90000').value === 90000, '90000 string');
+  assert(parseSaleImportCurrency(90000).value === 90000, '90000 number');
+  assert(parseSaleImportCurrency('R$ 10.000,00').value === 10000, 'R$ 10.000,00');
+  assert(parseSaleImportCurrency('90,000').value === 90000, 'formato US 90,000');
+  assert(parseSaleImportCurrency('90,000.00').value === 90000, 'formato US 90,000.00');
   console.log('OK test8CurrencyNormalization');
+}
+
+function test18ProductionCurrencyAndBalance() {
+  const valorTotal = parseSaleImportCurrency('R$ 90.000,00').value ?? 0;
+  const entrada = parseSaleImportCurrency('R$ 10.000,00').value ?? 0;
+  const saldo = resolveSaleBalance(valorTotal, entrada, 0, null);
+  assert(valorTotal === 90000, 'valor total produção');
+  assert(entrada === 10000, 'entrada produção');
+  assert(saldo === 80000, 'saldo = 90000 - 10000');
+
+  const { rows } = validateSaleRows(
+    [
+      buildRow({
+        valor_total_raw: 'R$ 90.000,00',
+        valor_total: 90000,
+        entrada_raw: 'R$ 10.000,00',
+        entrada: 10000,
+        sinal_raw: '',
+        sinal: 0,
+        saldo_raw: '',
+        saldo: 80000,
+      }),
+    ],
+    buildMockContext(),
+  );
+  assert(rows[0]?.valor_total === 90000, 'preview valor_total');
+  assert(rows[0]?.entrada === 10000, 'preview entrada');
+  assert(rows[0]?.saldo === 80000, 'preview saldo');
+  console.log('OK test18ProductionCurrencyAndBalance');
 }
 
 function test9DateNormalization() {
@@ -529,6 +564,7 @@ async function main() {
   test15ProjectNameNormalization();
   test16BlockNotFoundSuggestions();
   await test17ProductionExcelDateCells();
+  test18ProductionCurrencyAndBalance();
   console.log('mandatory-data-migration-sales-tests: all passed');
 }
 
