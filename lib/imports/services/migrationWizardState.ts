@@ -2,10 +2,16 @@
  * Estado e navegação do wizard de migração.
  */
 
-import { MIGRATION_WIZARD_STEPS } from '@/lib/imports/constants';
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
+import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
 import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
+import {
+  getNextWizardStepForModule,
+  getPreviousWizardStepForModule,
+  getWizardStepIndexForModule,
+  getWizardStepOrder,
+} from '@/lib/imports/services/migrationWizardSteps';
 import type {
   ActiveImportModuleId,
   ImportModuleId,
@@ -17,6 +23,7 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   step: 'welcome',
   selectedModuleId: null,
   uploadedFile: null,
+  uploadedDocumentsFile: null,
   customerValidation: null,
   customerPreviewFilter: 'all',
   customerImportResult: null,
@@ -26,6 +33,9 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   salesValidation: null,
   salesPreviewFilter: 'all',
   salesImportResult: null,
+  legacyContractsValidation: null,
+  legacyContractsPreviewFilter: 'all',
+  legacyContractsImportResult: null,
   validating: false,
   importing: false,
   validationError: null,
@@ -34,21 +44,30 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
 export function isActiveImportModule(
   moduleId: ImportModuleId | null,
 ): moduleId is ActiveImportModuleId {
-  return moduleId === 'customers' || moduleId === 'brokers' || moduleId === 'sales';
+  return (
+    moduleId === 'customers' ||
+    moduleId === 'brokers' ||
+    moduleId === 'sales' ||
+    moduleId === 'legacy_contracts'
+  );
 }
 
-export function getWizardStepIndex(step: MigrationWizardStepId): number {
-  return MIGRATION_WIZARD_STEPS.findIndex((s) => s.id === step);
+export function getWizardStepIndex(
+  step: MigrationWizardStepId,
+  moduleId: ImportModuleId | null = null,
+): number {
+  return getWizardStepIndexForModule(moduleId, step);
 }
 
-export function getWizardStepOrder(step: MigrationWizardStepId): number {
-  return MIGRATION_WIZARD_STEPS.find((s) => s.id === step)?.order ?? 0;
-}
+export { getWizardStepOrder };
 
 function hasModuleValidation(state: MigrationWizardState): boolean {
   if (state.selectedModuleId === 'customers') return state.customerValidation != null;
   if (state.selectedModuleId === 'brokers') return state.brokerValidation != null;
   if (state.selectedModuleId === 'sales') return state.salesValidation != null;
+  if (state.selectedModuleId === 'legacy_contracts') {
+    return state.legacyContractsValidation != null;
+  }
   return false;
 }
 
@@ -63,6 +82,9 @@ export function canAdvanceWizardStep(state: MigrationWizardState): boolean {
     case 'upload':
       if (state.validating) return false;
       return state.uploadedFile != null;
+    case 'upload-documents':
+      if (state.validating) return false;
+      return state.uploadedDocumentsFile != null;
     case 'pre-validation':
       if (isActiveImportModule(state.selectedModuleId)) {
         return hasModuleValidation(state) && !state.validating;
@@ -82,24 +104,22 @@ export function canAdvanceWizardStep(state: MigrationWizardState): boolean {
 
 export function getNextWizardStep(
   step: MigrationWizardStepId,
+  moduleId: ImportModuleId | null = null,
 ): MigrationWizardStepId | null {
-  const idx = getWizardStepIndex(step);
-  if (idx < 0 || idx >= MIGRATION_WIZARD_STEPS.length - 1) return null;
-  return MIGRATION_WIZARD_STEPS[idx + 1].id;
+  return getNextWizardStepForModule(moduleId, step);
 }
 
 export function getPreviousWizardStep(
   step: MigrationWizardStepId,
+  moduleId: ImportModuleId | null = null,
 ): MigrationWizardStepId | null {
-  const idx = getWizardStepIndex(step);
-  if (idx <= 0) return null;
-  return MIGRATION_WIZARD_STEPS[idx - 1].id;
+  return getPreviousWizardStepForModule(moduleId, step);
 }
 
 export function advanceWizardState(
   state: MigrationWizardState,
 ): MigrationWizardState {
-  const next = getNextWizardStep(state.step);
+  const next = getNextWizardStep(state.step, state.selectedModuleId);
   if (!next || !canAdvanceWizardStep(state)) return state;
   return { ...state, step: next };
 }
@@ -155,10 +175,30 @@ export function applySalesValidationAndAdvance(
   };
 }
 
+export function applyLegacyContractsValidationAndAdvance(
+  state: MigrationWizardState,
+  validation: LegacyContractImportValidationResult,
+): MigrationWizardState {
+  if (
+    state.step !== 'upload-documents' ||
+    state.selectedModuleId !== 'legacy_contracts'
+  ) {
+    return state;
+  }
+
+  return {
+    ...state,
+    step: 'pre-validation',
+    legacyContractsValidation: validation,
+    validating: false,
+    validationError: null,
+  };
+}
+
 export function retreatWizardState(
   state: MigrationWizardState,
 ): MigrationWizardState {
-  const prev = getPreviousWizardStep(state.step);
+  const prev = getPreviousWizardStep(state.step, state.selectedModuleId);
   if (!prev) return state;
   return { ...state, step: prev };
 }
@@ -171,6 +211,7 @@ export function selectImportModule(
     ...state,
     selectedModuleId: moduleId,
     uploadedFile: null,
+    uploadedDocumentsFile: null,
     customerValidation: null,
     customerPreviewFilter: 'all',
     customerImportResult: null,
@@ -180,6 +221,9 @@ export function selectImportModule(
     salesValidation: null,
     salesPreviewFilter: 'all',
     salesImportResult: null,
+    legacyContractsValidation: null,
+    legacyContractsPreviewFilter: 'all',
+    legacyContractsImportResult: null,
     validating: false,
     importing: false,
     validationError: null,

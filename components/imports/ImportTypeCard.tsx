@@ -16,7 +16,7 @@ const MODULE_ICONS: Record<ImportModuleId, LucideIcon> = {
   brokers: UserSquare2,
   sales: ShoppingCart,
   installments: CalendarClock,
-  contracts: FileText,
+  legacy_contracts: FileText,
   attachments: Paperclip,
 };
 

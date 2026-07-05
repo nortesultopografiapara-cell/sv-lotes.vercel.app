@@ -32,3 +32,14 @@ export const ACCEPTED_IMPORT_MIME_TYPES = [
 
 export const ACCEPTED_IMPORT_ACCEPT_ATTR =
   '.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv';
+
+export const ACCEPTED_LEGACY_DOCUMENT_EXTENSIONS = ['.pdf', '.zip'] as const;
+
+export const ACCEPTED_LEGACY_DOCUMENT_MIME_TYPES = [
+  'application/pdf',
+  'application/zip',
+  'application/x-zip-compressed',
+] as const;
+
+export const ACCEPTED_LEGACY_DOCUMENT_ACCEPT_ATTR =
+  '.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed';

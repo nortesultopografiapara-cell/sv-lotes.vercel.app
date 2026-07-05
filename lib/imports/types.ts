@@ -11,6 +11,10 @@ import type {
   CustomerImportValidationResult,
 } from '@/lib/imports/modules/customers/types';
 import type {
+  LegacyContractImportExecuteResult,
+  LegacyContractImportValidationResult,
+} from '@/lib/imports/modules/legacy-contracts/types';
+import type {
   SaleImportExecuteResult,
   SaleImportValidationResult,
 } from '@/lib/imports/modules/sales/types';
@@ -20,7 +24,7 @@ export type ImportModuleId =
   | 'brokers'
   | 'sales'
   | 'installments'
-  | 'contracts'
+  | 'legacy_contracts'
   | 'attachments';
 
 export type ImportModuleStatus =
@@ -33,6 +37,7 @@ export type MigrationWizardStepId =
   | 'select-type'
   | 'template'
   | 'upload'
+  | 'upload-documents'
   | 'pre-validation'
   | 'preview'
   | 'confirmation';
@@ -87,6 +92,7 @@ export type MigrationWizardState = {
   step: MigrationWizardStepId;
   selectedModuleId: ImportModuleId | null;
   uploadedFile: UploadedImportFileMeta | null;
+  uploadedDocumentsFile: UploadedImportFileMeta | null;
   customerValidation: CustomerImportValidationResult | null;
   customerPreviewFilter: CustomerPreviewFilter;
   customerImportResult: CustomerImportExecuteResult | null;
@@ -96,9 +102,16 @@ export type MigrationWizardState = {
   salesValidation: SaleImportValidationResult | null;
   salesPreviewFilter: CustomerPreviewFilter;
   salesImportResult: SaleImportExecuteResult | null;
+  legacyContractsValidation: LegacyContractImportValidationResult | null;
+  legacyContractsPreviewFilter: CustomerPreviewFilter;
+  legacyContractsImportResult: LegacyContractImportExecuteResult | null;
   validating: boolean;
   importing: boolean;
   validationError: string | null;
 };
 
-export type ActiveImportModuleId = 'customers' | 'brokers' | 'sales';
+export type ActiveImportModuleId =
+  | 'customers'
+  | 'brokers'
+  | 'sales'
+  | 'legacy_contracts';
