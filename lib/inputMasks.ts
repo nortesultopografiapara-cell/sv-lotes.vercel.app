@@ -37,6 +37,15 @@ export function normalizeCpfCnpj(value?: string | null): string {
   return onlyDigits(value).slice(0, 14);
 }
 
+/** CPF (11) ou CNPJ (14) — validação por quantidade de dígitos. */
+export function isValidBrazilianTaxDocument(digits: string): boolean {
+  return digits.length === 11 || digits.length === 14;
+}
+
+export function normalizePhoneDigits(value?: string | null): string {
+  return onlyDigits(value);
+}
+
 export function matchesCpfCnpj(
   search?: string | null,
   stored?: string | null,

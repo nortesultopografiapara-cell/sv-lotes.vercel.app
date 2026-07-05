@@ -2,7 +2,6 @@
  * Validação linha a linha — importação de clientes.
  */
 
-import { isValidBrazilianTaxDocument, normalizePhone } from '@/lib/customerIdentity';
 import type {
   CustomerImportRowMessage,
   CustomerImportSummary,
@@ -11,7 +10,12 @@ import type {
   ParsedCustomerRow,
   ValidatedCustomerRow,
 } from '@/lib/imports/modules/customers/types';
-import { formatCep, formatCpfCnpj } from '@/lib/inputMasks';
+import {
+  formatCep,
+  formatCpfCnpj,
+  isValidBrazilianTaxDocument,
+  normalizePhoneDigits,
+} from '@/lib/inputMasks';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
@@ -25,7 +29,7 @@ export function buildNamePhoneKey(name: string, phoneDigits: string): string {
     .trim()
     .toUpperCase()
     .replace(/\s+/g, ' ');
-  const phone = normalizePhone(phoneDigits);
+  const phone = normalizePhoneDigits(phoneDigits);
   if (!normalizedName || !phone) return '';
   return `${normalizedName}::${phone}`;
 }
@@ -216,9 +220,20 @@ export function validateCustomerRows(
     }
   }
 
-  const validatedRows = rows.map((row) =>
-    validateSingleRow(row, existing, spreadsheetCpfCounts, spreadsheetNamePhoneCounts),
-  );
+  const validatedRows = rows.map((row) => {
+    try {
+      return validateSingleRow(row, existing, spreadsheetCpfCounts, spreadsheetNamePhoneCounts);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Erro interno ao validar a linha.';
+      return {
+        ...row,
+        status: 'error' as const,
+        messages: [{ level: 'error' as const, text: message }],
+        importable: false,
+      };
+    }
+  });
 
   const summary: CustomerImportSummary = {
     totalRows: validatedRows.length,

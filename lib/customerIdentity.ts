@@ -73,9 +73,7 @@ export function resolveCustomerDocumentDigits(
   return normalizeDocument(customer?.cpf_cnpj || customer?.document || '');
 }
 
-export function isValidBrazilianTaxDocument(digits: string): boolean {
-  return digits.length === 11 || digits.length === 14;
-}
+export { isValidBrazilianTaxDocument } from '@/lib/inputMasks';
 
 export function normalizePhone(value?: string | null): string {
   return String(value || '').replace(/\D/g, '');

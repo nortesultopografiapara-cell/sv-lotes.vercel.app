@@ -388,6 +388,28 @@ function testEmptyCellsDoNotBreakParser() {
   console.log('OK testEmptyCellsDoNotBreakParser');
 }
 
+function testValidateRowsUsesInputMasksNotCustomerIdentity() {
+  const validateSource = read('lib/imports/modules/customers/validateRows.ts');
+  const parseSource = read('lib/imports/modules/customers/parseFile.ts');
+  assert(!validateSource.includes("from '@/lib/customerIdentity'"), 'validateRows sem customerIdentity');
+  assert(!parseSource.includes("from '@/lib/customerIdentity'"), 'parseFile sem customerIdentity');
+  assert(validateSource.includes('isValidBrazilianTaxDocument'), 'usa isValidBrazilianTaxDocument');
+  assert(
+    read('lib/inputMasks.ts').includes('export function isValidBrazilianTaxDocument'),
+    'função exportada em inputMasks',
+  );
+  console.log('OK testValidateRowsUsesInputMasksNotCustomerIdentity');
+}
+
+function testIsValidBrazilianTaxDocumentFromInputMasks() {
+  const { isValidBrazilianTaxDocument } = require('../lib/inputMasks') as typeof import('../lib/inputMasks');
+  assert(typeof isValidBrazilianTaxDocument === 'function', 'isValidBrazilianTaxDocument é função');
+  assert(isValidBrazilianTaxDocument('12345678901'), 'cpf 11 dígitos');
+  assert(isValidBrazilianTaxDocument('12345678000190'), 'cnpj 14 dígitos');
+  assert(!isValidBrazilianTaxDocument('123'), 'curto inválido');
+  console.log('OK testIsValidBrazilianTaxDocumentFromInputMasks');
+}
+
 function testValidateRouteHandlesParseAndDbSafely() {
   const route = read('app/api/data-migration/customers/validate/route.ts');
   assert(route.includes('try {'), 'rota com try/catch');
@@ -429,6 +451,8 @@ async function main() {
   await testMissingNameColumnFriendlyResult();
   testInvalidCpfRowNotThrowing();
   testEmptyCellsDoNotBreakParser();
+  testValidateRowsUsesInputMasksNotCustomerIdentity();
+  testIsValidBrazilianTaxDocumentFromInputMasks();
   testValidateRouteHandlesParseAndDbSafely();
   console.log('mandatory-data-migration-customers-tests: all passed');
 }

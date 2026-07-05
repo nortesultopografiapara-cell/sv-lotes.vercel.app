@@ -12,8 +12,7 @@ import type {
   CustomerColumnMappingResult,
   ParsedCustomerRow,
 } from '@/lib/imports/modules/customers/types';
-import { normalizeCep, normalizeCpfCnpj } from '@/lib/inputMasks';
-import { normalizePhone } from '@/lib/customerIdentity';
+import { normalizeCep, normalizeCpfCnpj, normalizePhoneDigits } from '@/lib/inputMasks';
 
 export type ParsedSpreadsheet = {
   fileType: 'xlsx' | 'xls' | 'csv' | 'unknown';
@@ -141,9 +140,9 @@ export function mapRawRowsToCustomerRows(
       cpf_cnpj_digits: normalizeCpfCnpj(cpfRaw),
       rg: pickMappedCell(rawRow, columnMapping.mapping, 'rg'),
       telefone: telefoneRaw,
-      telefone_digits: normalizePhone(telefoneRaw),
+      telefone_digits: normalizePhoneDigits(telefoneRaw),
       whatsapp: whatsappRaw,
-      whatsapp_digits: normalizePhone(whatsappRaw),
+      whatsapp_digits: normalizePhoneDigits(whatsappRaw),
       email: pickMappedCell(rawRow, columnMapping.mapping, 'email'),
       endereco: pickMappedCell(rawRow, columnMapping.mapping, 'endereco'),
       cidade: pickMappedCell(rawRow, columnMapping.mapping, 'cidade'),
