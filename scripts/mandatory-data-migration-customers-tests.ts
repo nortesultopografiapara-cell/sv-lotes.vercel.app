@@ -19,7 +19,13 @@ import {
 } from '../lib/imports/modules/customers/validateRows';
 import { canAccessDataMigrationModule } from '../lib/imports/permissions';
 import { customersImportModule } from '../lib/imports/modules/customers';
+import { validateCustomerImportBuffer } from '../lib/imports/modules/customers/importService';
 import type { ParsedCustomerRow } from '../lib/imports/modules/customers/types';
+import {
+  advanceWizardState,
+  applyCustomerValidationAndAdvance,
+  INITIAL_MIGRATION_WIZARD_STATE,
+} from '../lib/imports/services/migrationWizardState';
 import { normalizeCpfCnpj } from '../lib/inputMasks';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -258,6 +264,79 @@ function testCpfNormalization() {
   console.log('OK testCpfNormalization');
 }
 
+function testWizardAdvanceAfterValidation() {
+  const uploadedFile = {
+    name: 'modelo_migracao_clientes.xlsx',
+    sizeBytes: 1000,
+    sizeLabel: '1 KB',
+    extension: '.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    selectedAt: new Date().toISOString(),
+    lastModified: null,
+  };
+
+  const validatingState = {
+    ...INITIAL_MIGRATION_WIZARD_STATE,
+    step: 'upload' as const,
+    selectedModuleId: 'customers' as const,
+    uploadedFile,
+    validating: true,
+  };
+
+  const blocked = advanceWizardState(validatingState);
+  assert(blocked.step === 'upload', 'advanceWizardState bloqueia com validating=true');
+
+  const validation = {
+    fileName: uploadedFile.name,
+    fileType: 'xlsx' as const,
+    rowCount: 2,
+    columnMapping: {
+      mapping: { nome: 'nome' },
+      unmappedHeaders: [],
+      missingRequired: [],
+      recognizedHeaders: { nome: 'nome' },
+    },
+    summary: {
+      totalRows: 0,
+      validRows: 0,
+      warningRows: 0,
+      errorRows: 0,
+      duplicateRows: 0,
+      existingRows: 0,
+      ignoredRows: 0,
+      importableRows: 0,
+    },
+    rows: [],
+  };
+
+  const advanced = applyCustomerValidationAndAdvance(validatingState, validation);
+  assert(advanced.step === 'pre-validation', 'deve avançar para pré-validação');
+  assert(advanced.validating === false, 'validating false após sucesso');
+  assert(advanced.customerValidation === validation, 'validation persistida');
+  assert(advanced.validationError === null, 'sem erro');
+
+  const wizard = read('components/imports/DataMigrationWizard.tsx');
+  assert(wizard.includes('applyCustomerValidationAndAdvance'), 'wizard usa helper');
+  assert(wizard.includes('/api/data-migration/customers/validate'), 'chama API validate');
+  assert(wizard.includes('migration-validation-error'), 'exibe erro na tela');
+  assert(wizard.includes('migration-validating'), 'exibe loading');
+  console.log('OK testWizardAdvanceAfterValidation');
+}
+
+async function testGeneratedExcelTemplateValidation() {
+  const buffer = await buildCustomerImportXlsxBuffer();
+  const validation = await validateCustomerImportBuffer(
+    buffer,
+    'modelo_migracao_clientes.xlsx',
+    [],
+  );
+  assert(validation.columnMapping.missingRequired.length === 0, 'modelo mapeia colunas');
+  assert(validation.fileType === 'xlsx', 'tipo xlsx');
+  assert(validation.summary.totalRows === 0, 'linhas EXEMPLO ignoradas');
+  assert(validation.rowCount >= 2, 'arquivo contém linhas de exemplo');
+  console.log('OK testGeneratedExcelTemplateValidation');
+}
+
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
@@ -281,6 +360,8 @@ async function main() {
   testPermissionsAndModule();
   testMissingNameColumnError();
   testCpfNormalization();
+  testWizardAdvanceAfterValidation();
+  await testGeneratedExcelTemplateValidation();
   console.log('mandatory-data-migration-customers-tests: all passed');
 }
 

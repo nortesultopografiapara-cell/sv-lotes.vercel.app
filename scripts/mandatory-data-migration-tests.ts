@@ -94,6 +94,8 @@ function testWizardSteps() {
   assert(wizard.includes('migration-step-preview'), 'step preview');
   assert(wizard.includes('migration-step-confirmation'), 'step confirmation');
   assert(wizard.includes('migration-confirm-import'), 'confirmar importação');
+  assert(wizard.includes('applyCustomerValidationAndAdvance'), 'avanço pós-validação');
+  assert(wizard.includes('migration-validating'), 'loading validação');
   assert(wizard.includes('Iniciar Migração'), 'botão iniciar');
   console.log('OK testWizardSteps');
 }

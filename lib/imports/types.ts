@@ -84,4 +84,5 @@ export type MigrationWizardState = {
   customerImportResult: CustomerImportExecuteResult | null;
   validating: boolean;
   importing: boolean;
+  validationError: string | null;
 };
