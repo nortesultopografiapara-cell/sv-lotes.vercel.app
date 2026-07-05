@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getLegacyContractColumnMappingErrorMessage } from '@/lib/imports/modules/legacy-contracts/columnMapping';
 import { executeImportableLegacyContractRow } from '@/lib/imports/modules/legacy-contracts/executeRow';
 import { loadLegacyContractImportContext } from '@/lib/imports/modules/legacy-contracts/lookupIndex';
-import { buildLegacyContractPdfIndex } from '@/lib/imports/modules/legacy-contracts/pdfIndex';
+import { buildLegacyContractPdfIndexFromUploads } from '@/lib/imports/modules/legacy-contracts/pdfIndex';
 import { parseLegacyContractImportFile } from '@/lib/imports/modules/legacy-contracts/parseFile';
 import {
   buildLegacyContractMigrationRowDetail,
@@ -59,7 +59,7 @@ function emptyErrorRow(mappingError: string): LegacyContractImportValidationResu
 export async function validateLegacyContractImportBuffer(params: {
   spreadsheetBuffer: Buffer | ArrayBuffer;
   spreadsheetFileName: string;
-  documentsBuffer: Buffer | ArrayBuffer;
+  documentUploads: Array<{ buffer: Buffer | ArrayBuffer; fileName: string }>;
   documentsFileName: string;
   context: Awaited<ReturnType<typeof loadLegacyContractImportContext>>;
 }): Promise<LegacyContractImportValidationResult> {
@@ -74,10 +74,7 @@ export async function validateLegacyContractImportBuffer(params: {
       params.spreadsheetBuffer,
       params.spreadsheetFileName,
     ));
-    const pdfResult = await buildLegacyContractPdfIndex(
-      params.documentsBuffer,
-      params.documentsFileName,
-    );
+    const pdfResult = await buildLegacyContractPdfIndexFromUploads(params.documentUploads);
     pdfIndex = pdfResult.index;
     pdfCount = pdfResult.pdfCount;
   } catch (err) {
@@ -135,19 +132,16 @@ export async function executeLegacyContractImportBuffer(params: {
   userName: string;
   spreadsheetBuffer: Buffer | ArrayBuffer;
   spreadsheetFileName: string;
-  documentsBuffer: Buffer | ArrayBuffer;
+  documentUploads: Array<{ buffer: Buffer | ArrayBuffer; fileName: string }>;
   documentsFileName: string;
 }): Promise<LegacyContractImportExecuteResult> {
   const context = await loadLegacyContractImportContext(params.admin, params.tenantId);
-  const pdfResult = await buildLegacyContractPdfIndex(
-    params.documentsBuffer,
-    params.documentsFileName,
-  );
+  const pdfResult = await buildLegacyContractPdfIndexFromUploads(params.documentUploads);
 
   const validation = await validateLegacyContractImportBuffer({
     spreadsheetBuffer: params.spreadsheetBuffer,
     spreadsheetFileName: params.spreadsheetFileName,
-    documentsBuffer: params.documentsBuffer,
+    documentUploads: params.documentUploads,
     documentsFileName: params.documentsFileName,
     context,
   });

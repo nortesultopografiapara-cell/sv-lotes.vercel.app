@@ -23,10 +23,7 @@ import {
   IMPORT_ROW_STATUS_LABELS,
 } from '@/components/imports/customerImportUi';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  ACCEPTED_IMPORT_ACCEPT_ATTR,
-  ACCEPTED_LEGACY_DOCUMENT_ACCEPT_ATTR,
-} from '@/lib/imports/constants';
+import { ACCEPTED_IMPORT_ACCEPT_ATTR } from '@/lib/imports/constants';
 import { listImportModules, getImportModuleById } from '@/lib/imports/modules';
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
 import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
@@ -36,6 +33,10 @@ import {
   isAcceptedLegacyDocumentFile,
   parseImportFileMeta,
 } from '@/lib/imports/helpers/parseImportFileMeta';
+import {
+  appendLegacyContractFormData,
+  filterAcceptedLegacyDocumentFiles,
+} from '@/lib/imports/helpers/legacyContractFormData';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import {
   advanceWizardState,
@@ -213,13 +214,15 @@ async function executeSalesImport(file: File, activeTenantId: string | null) {
 
 async function validateLegacyContractsFiles(
   spreadsheetFile: File,
-  documentsFile: File,
+  documentFiles: File[],
   activeTenantId: string | null,
 ): Promise<LegacyContractImportValidationResult> {
   const formData = new FormData();
-  formData.append('file', spreadsheetFile);
-  formData.append('documents', documentsFile);
-  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+  appendLegacyContractFormData(formData, {
+    mappingFile: spreadsheetFile,
+    documentFiles,
+    activeTenantId,
+  });
 
   const response = await fetch('/api/data-migration/legacy-contracts/validate', {
     method: 'POST',
@@ -244,14 +247,16 @@ async function validateLegacyContractsFiles(
 
 async function executeLegacyContractsImport(
   spreadsheetFile: File,
-  documentsFile: File,
+  documentFiles: File[],
   activeTenantId: string | null,
 ) {
   const formData = new FormData();
-  formData.append('file', spreadsheetFile);
-  formData.append('documents', documentsFile);
-  formData.append('confirmed', 'true');
-  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+  appendLegacyContractFormData(formData, {
+    mappingFile: spreadsheetFile,
+    documentFiles,
+    activeTenantId,
+    confirmed: true,
+  });
 
   const response = await fetch('/api/data-migration/legacy-contracts/execute', {
     method: 'POST',
@@ -277,7 +282,7 @@ export function DataMigrationWizard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const documentsFileInputRef = useRef<HTMLInputElement>(null);
   const rawFileRef = useRef<File | null>(null);
-  const rawDocumentsFileRef = useRef<File | null>(null);
+  const rawDocumentsFilesRef = useRef<File[]>([]);
   const modules = useMemo(() => listImportModules(), []);
   const selectedModule = state.selectedModuleId
     ? getImportModuleById(state.selectedModuleId)
@@ -291,7 +296,7 @@ export function DataMigrationWizard() {
 
   const handleSelectModule = (moduleId: ImportModuleId) => {
     rawFileRef.current = null;
-    rawDocumentsFileRef.current = null;
+    rawDocumentsFilesRef.current = [];
     setState((prev) => selectImportModule(prev, moduleId));
   };
 
@@ -317,20 +322,30 @@ export function DataMigrationWizard() {
     }));
   };
 
-  const handleDocumentsFileChange = (file: File | null) => {
-    if (!file) return;
-    if (!isAcceptedLegacyDocumentFile(file)) {
-      alert('Selecione um arquivo PDF ou ZIP contendo PDFs.');
+  const handleDocumentsFileChange = (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+
+    const acceptedFiles = filterAcceptedLegacyDocumentFiles(Array.from(fileList));
+    if (acceptedFiles.length === 0) {
+      alert('Selecione arquivos PDF ou um ZIP contendo PDFs.');
       return;
     }
-    rawDocumentsFileRef.current = file;
+
+    rawDocumentsFilesRef.current = acceptedFiles;
     setState((prev) => ({
       ...prev,
-      uploadedDocumentsFile: parseImportFileMeta(file),
+      uploadedDocumentsFiles: acceptedFiles.map((file) => parseImportFileMeta(file)),
       legacyContractsValidation: null,
       legacyContractsImportResult: null,
       validationError: null,
     }));
+  };
+
+  const openDocumentsFilePicker = () => {
+    const input = documentsFileInputRef.current;
+    if (!input) return;
+    input.value = '';
+    input.click();
   };
 
   const handleAdvance = async () => {
@@ -414,11 +429,11 @@ export function DataMigrationWizard() {
 
     if (state.step === 'upload-documents' && isLegacyContractsModule) {
       const spreadsheetFile = rawFileRef.current;
-      const documentsFile = rawDocumentsFileRef.current;
-      if (!spreadsheetFile || !documentsFile) {
+      const documentFiles = rawDocumentsFilesRef.current;
+      if (!spreadsheetFile || documentFiles.length === 0) {
         setState((prev) => ({
           ...prev,
-          validationError: 'Selecione a planilha e os PDFs antes de avançar.',
+          validationError: 'Selecione ao menos um PDF ou um ZIP contendo os contratos antigos.',
         }));
         return;
       }
@@ -427,7 +442,7 @@ export function DataMigrationWizard() {
       try {
         const validation = await validateLegacyContractsFiles(
           spreadsheetFile,
-          documentsFile,
+          documentFiles,
           activeTenantId,
         );
         setState((prev) => applyLegacyContractsValidationAndAdvance(prev, validation));
@@ -450,7 +465,7 @@ export function DataMigrationWizard() {
     if (!rawFileRef.current) return;
 
     if (isLegacyContractsModule && state.legacyContractsValidation) {
-      if (!rawDocumentsFileRef.current) return;
+      if (rawDocumentsFilesRef.current.length === 0) return;
 
       const importable = state.legacyContractsValidation.summary.importableRows;
       const ignored = state.legacyContractsValidation.summary.ignoredRows;
@@ -464,7 +479,7 @@ export function DataMigrationWizard() {
       try {
         const result = await executeLegacyContractsImport(
           rawFileRef.current,
-          rawDocumentsFileRef.current,
+          rawDocumentsFilesRef.current,
           activeTenantId,
         );
         setState((prev) => ({
@@ -811,8 +826,8 @@ export function DataMigrationWizard() {
         return (
           <div className="space-y-4" data-testid="migration-step-upload-documents">
             <p className="text-sm text-[var(--text-secondary)]">
-              Selecione um arquivo PDF individual ou ZIP contendo os contratos antigos referenciados
-              na planilha. Ao avançar, planilha e documentos serão validados sem gravar dados.
+              Selecione os PDFs dos contratos antigos ou um arquivo ZIP contendo os PDFs.
+              Ao avançar, planilha e documentos serão validados sem gravar dados.
             </p>
             {state.validationError ? (
               <div
@@ -833,47 +848,54 @@ export function DataMigrationWizard() {
               </div>
             ) : null}
             <input
+              key="legacy-contract-documents-input"
               ref={documentsFileInputRef}
               type="file"
-              accept={ACCEPTED_LEGACY_DOCUMENT_ACCEPT_ATTR}
+              accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed"
+              multiple
               className="hidden"
               data-testid="migration-documents-file-input"
-              onChange={(e) => handleDocumentsFileChange(e.target.files?.[0] ?? null)}
+              onChange={(e) => handleDocumentsFileChange(e.target.files)}
             />
             <button
               type="button"
-              onClick={() => documentsFileInputRef.current?.click()}
+              onClick={openDocumentsFilePicker}
               className="w-full rounded-xl border-2 border-dashed border-[var(--border-color)] bg-[var(--bg-card)] p-8 hover:border-[var(--color-primary)]/40 transition-colors"
             >
               <div className="flex flex-col items-center gap-2 text-[var(--text-secondary)]">
                 <Upload className="w-8 h-8 text-[var(--color-primary)]" />
-                <span className="text-sm font-medium">Clique para selecionar PDF ou ZIP</span>
-                <span className="text-xs text-[var(--text-muted)]">pdf ou zip</span>
+                <span className="text-sm font-medium text-center">
+                  Selecione os PDFs dos contratos antigos ou um arquivo ZIP contendo os PDFs.
+                </span>
+                <span className="text-xs text-[var(--text-muted)]">
+                  PDF, ZIP ou múltiplos PDFs
+                </span>
               </div>
             </button>
-            {state.uploadedDocumentsFile ? (
+            {state.uploadedDocumentsFiles.length > 0 ? (
               <div
                 className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm"
                 data-testid="migration-documents-file-meta"
               >
-                <div className="flex items-center gap-2 text-emerald-300 font-medium mb-2">
+                <div className="flex items-center gap-2 text-emerald-300 font-medium mb-3">
                   <FileUp className="w-4 h-4" />
-                  Documentos selecionados
+                  {state.uploadedDocumentsFiles.length === 1
+                    ? 'Documento selecionado'
+                    : `${state.uploadedDocumentsFiles.length} documentos selecionados`}
                 </div>
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[var(--text-secondary)]">
-                  <div>
-                    <dt className="text-[10px] uppercase text-[var(--text-muted)]">Nome</dt>
-                    <dd>{state.uploadedDocumentsFile.name}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] uppercase text-[var(--text-muted)]">Tamanho</dt>
-                    <dd>{state.uploadedDocumentsFile.sizeLabel}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] uppercase text-[var(--text-muted)]">Extensão</dt>
-                    <dd>{state.uploadedDocumentsFile.extension}</dd>
-                  </div>
-                </dl>
+                <ul className="space-y-2 text-[var(--text-secondary)]">
+                  {state.uploadedDocumentsFiles.map((file) => (
+                    <li
+                      key={`${file.name}-${file.selectedAt}`}
+                      className="rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-card)]/40 px-3 py-2"
+                    >
+                      <p className="font-medium text-[var(--text-primary)] break-all">{file.name}</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-1">
+                        {file.sizeLabel} · {file.extension}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </div>
@@ -1215,7 +1237,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
-                  rawDocumentsFileRef.current = null;
+                  rawDocumentsFilesRef.current = [];
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"
@@ -1248,7 +1270,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
-                  rawDocumentsFileRef.current = null;
+                  rawDocumentsFilesRef.current = [];
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"
@@ -1280,7 +1302,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
-                  rawDocumentsFileRef.current = null;
+                  rawDocumentsFilesRef.current = [];
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"
@@ -1313,7 +1335,7 @@ export function DataMigrationWizard() {
                 data-testid="migration-back-to-start"
                 onClick={() => {
                   rawFileRef.current = null;
-                  rawDocumentsFileRef.current = null;
+                  rawDocumentsFilesRef.current = [];
                   setState(INITIAL_MIGRATION_WIZARD_STATE);
                 }}
                 className="text-sm text-[var(--color-primary)] hover:underline"

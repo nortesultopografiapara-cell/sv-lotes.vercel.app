@@ -1,26 +1,29 @@
 import { NextResponse } from 'next/server';
 import { authorizeDataMigrationRequest } from '@/lib/imports/apiAuth';
+import { extractLegacyContractFormFiles } from '@/lib/imports/helpers/legacyContractFormData';
 import { isCustomerImportParseError } from '@/lib/imports/modules/customers/errors';
+import { buildLegacyContractDocumentUploads } from '@/lib/imports/modules/legacy-contracts/documentUploads';
 import {
   loadLegacyContractImportContext,
   validateLegacyContractImportBuffer,
 } from '@/lib/imports/modules/legacy-contracts/importService';
-import { extractUploadedFile } from '@/lib/imports/uploadFile';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const spreadsheetFile = extractUploadedFile(formData.get('file'), 'mapeamento_contratos.xlsx');
-    const documentsFile = extractUploadedFile(formData.get('documents'), 'contratos.zip');
+    const { mappingFile, documentFiles } = extractLegacyContractFormFiles(formData);
     const activeTenantId = formData.get('activeTenantId');
 
-    if (!spreadsheetFile) {
+    if (!mappingFile) {
       return NextResponse.json({ error: 'Planilha de mapeamento não enviada.' }, { status: 400 });
     }
-    if (!documentsFile) {
-      return NextResponse.json({ error: 'Arquivo PDF ou ZIP não enviado.' }, { status: 400 });
+    if (documentFiles.length === 0) {
+      return NextResponse.json(
+        { error: 'Selecione ao menos um PDF ou um arquivo ZIP contendo PDFs.' },
+        { status: 400 },
+      );
     }
 
     const auth = await authorizeDataMigrationRequest(
@@ -29,15 +32,16 @@ export async function POST(request: Request) {
     );
     if ('error' in auth) return auth.error;
 
-    const spreadsheetBuffer = Buffer.from(await spreadsheetFile.arrayBuffer());
-    const documentsBuffer = Buffer.from(await documentsFile.arrayBuffer());
+    const spreadsheetBuffer = Buffer.from(await mappingFile.arrayBuffer());
+    const { documentUploads, documentsFileName } =
+      await buildLegacyContractDocumentUploads(documentFiles);
     const context = await loadLegacyContractImportContext(auth.ctx.admin, auth.ctx.tenantId);
 
     const validation = await validateLegacyContractImportBuffer({
       spreadsheetBuffer,
-      spreadsheetFileName: spreadsheetFile.name,
-      documentsBuffer,
-      documentsFileName: documentsFile.name,
+      spreadsheetFileName: mappingFile.name,
+      documentUploads,
+      documentsFileName,
       context,
     });
 

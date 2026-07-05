@@ -23,7 +23,7 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   step: 'welcome',
   selectedModuleId: null,
   uploadedFile: null,
-  uploadedDocumentsFile: null,
+  uploadedDocumentsFiles: [],
   customerValidation: null,
   customerPreviewFilter: 'all',
   customerImportResult: null,
@@ -84,7 +84,7 @@ export function canAdvanceWizardStep(state: MigrationWizardState): boolean {
       return state.uploadedFile != null;
     case 'upload-documents':
       if (state.validating) return false;
-      return state.uploadedDocumentsFile != null;
+      return state.uploadedDocumentsFiles.length > 0;
     case 'pre-validation':
       if (isActiveImportModule(state.selectedModuleId)) {
         return hasModuleValidation(state) && !state.validating;
@@ -211,7 +211,7 @@ export function selectImportModule(
     ...state,
     selectedModuleId: moduleId,
     uploadedFile: null,
-    uploadedDocumentsFile: null,
+    uploadedDocumentsFiles: [],
     customerValidation: null,
     customerPreviewFilter: 'all',
     customerImportResult: null,
