@@ -10,6 +10,7 @@ import { parseCustomerImportFile, parseImportSpreadsheetBuffer } from '../lib/im
 import {
   buildCustomerImportCsvContent,
   buildCustomerImportXlsxBuffer,
+  buildCustomerImportXlsxBufferWithRealTestRow,
 } from '../lib/imports/modules/customers/templates';
 import {
   buildCustomerInsertPayload,
@@ -337,6 +338,68 @@ async function testGeneratedExcelTemplateValidation() {
   console.log('OK testGeneratedExcelTemplateValidation');
 }
 
+async function testTemplateWithExamplesAndRealRow() {
+  const buffer = await buildCustomerImportXlsxBufferWithRealTestRow();
+  const validation = await validateCustomerImportBuffer(
+    buffer,
+    'modelo_migracao_clientes.xlsx',
+    [],
+  );
+  assert(validation.summary.totalRows === 1, 'totalRows = 1 linha real');
+  assert(validation.rows.length === 1, 'uma linha na pré-validação');
+  assert(validation.rows[0]?.nome === 'Cliente Real Teste', 'linha real presente');
+  assert(validation.rowCount >= 3, 'arquivo tem exemplos + real');
+  console.log('OK testTemplateWithExamplesAndRealRow');
+}
+
+async function testMissingNameColumnFriendlyResult() {
+  const validation = await validateCustomerImportBuffer(
+    Buffer.from('email;telefone\na@b.com;11999999999\n', 'utf8'),
+    'sem-nome.csv',
+    [],
+  );
+  assert(validation.summary.errorRows >= 1, 'erro amigável sem throw');
+  assert(
+    validation.rows[0]?.messages.some((m) => m.text.includes('obrigat')),
+    'mensagem coluna nome',
+  );
+  console.log('OK testMissingNameColumnFriendlyResult');
+}
+
+function testInvalidCpfRowNotThrowing() {
+  const { rows, summary } = validateCustomerRows(
+    [buildRow({ cpf_cnpj: '123', cpf_cnpj_digits: '123' })],
+    buildExistingCustomerIndex([]),
+  );
+  assert(summary.errorRows === 1, 'cpf inválido vira erro de linha');
+  assert(rows[0]?.status === 'error', 'status erro');
+  console.log('OK testInvalidCpfRowNotThrowing');
+}
+
+function testEmptyCellsDoNotBreakParser() {
+  const csv = [
+    'nome;cpf_cnpj;rg;telefone;whatsapp;email;endereco;cidade;uf;cep;estado_civil;profissao;observacoes',
+    'Cliente Vazio;;;;;;; ;;;',
+  ].join('\n');
+  const { rows } = parseCustomerImportFile(Buffer.from(csv, 'utf8'), 'vazios.csv');
+  assert(rows.length === 1, 'linha parseada');
+  const validation = validateCustomerRows(rows, buildExistingCustomerIndex([]));
+  assert(validation.rows.length === 1, 'validação não quebra');
+  console.log('OK testEmptyCellsDoNotBreakParser');
+}
+
+function testValidateRouteHandlesParseAndDbSafely() {
+  const route = read('app/api/data-migration/customers/validate/route.ts');
+  assert(route.includes('try {'), 'rota com try/catch');
+  assert(route.includes('isCustomerImportParseError'), 'parse error -> 400');
+  assert(route.includes('extractUploadedFile'), 'aceita Blob/File');
+
+  const service = read('lib/imports/modules/customers/importService.ts');
+  assert(!service.includes('.or(`tenant_id.eq.'), 'sem or frágil no load');
+  assert(!service.includes('Erro ao carregar clientes existentes'), 'db não lança 500');
+  console.log('OK testValidateRouteHandlesParseAndDbSafely');
+}
+
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
@@ -362,6 +425,11 @@ async function main() {
   testCpfNormalization();
   testWizardAdvanceAfterValidation();
   await testGeneratedExcelTemplateValidation();
+  await testTemplateWithExamplesAndRealRow();
+  await testMissingNameColumnFriendlyResult();
+  testInvalidCpfRowNotThrowing();
+  testEmptyCellsDoNotBreakParser();
+  testValidateRouteHandlesParseAndDbSafely();
   console.log('mandatory-data-migration-customers-tests: all passed');
 }
 

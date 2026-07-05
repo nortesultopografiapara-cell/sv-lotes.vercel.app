@@ -7,6 +7,7 @@ import {
   mapCustomerImportColumns,
   pickMappedCell,
 } from '@/lib/imports/modules/customers/columnMapping';
+import { CustomerImportParseError } from '@/lib/imports/modules/customers/errors';
 import type {
   CustomerColumnMappingResult,
   ParsedCustomerRow,
@@ -29,16 +30,26 @@ function detectFileType(fileName: string): ParsedSpreadsheet['fileType'] {
   return 'unknown';
 }
 
+function safeSpreadsheetCell(value: unknown): string {
+  if (value == null) return '';
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value).trim();
+}
+
 function sheetToMatrix(workbook: XLSX.WorkBook): string[][] {
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) return [];
   const sheet = workbook.Sheets[sheetName];
-  const matrix = XLSX.utils.sheet_to_json<string[]>(sheet, {
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',
     raw: false,
-  }) as string[][];
-  return matrix.filter((row) => row.some((cell) => String(cell ?? '').trim() !== ''));
+  }) as unknown[][];
+  return matrix
+    .map((row) => (Array.isArray(row) ? row.map(safeSpreadsheetCell) : []))
+    .filter((row) => row.some((cell) => cell !== ''));
 }
 
 function matrixToRecords(matrix: string[][]): { headers: string[]; rawRows: Record<string, string>[] } {
@@ -47,14 +58,14 @@ function matrixToRecords(matrix: string[][]): { headers: string[]; rawRows: Reco
   }
 
   const headers = matrix[0].map((cell, index) => {
-    const value = String(cell ?? '').trim();
+    const value = safeSpreadsheetCell(cell);
     return value || `coluna_${index + 1}`;
   });
 
   const rawRows = matrix.slice(1).map((row) => {
     const record: Record<string, string> = {};
     headers.forEach((header, index) => {
-      record[header] = String(row[index] ?? '').trim();
+      record[header] = safeSpreadsheetCell(row[index]);
     });
     return record;
   });
@@ -69,12 +80,25 @@ export function parseImportSpreadsheetBuffer(
   const fileType = detectFileType(fileName);
   const data = buffer instanceof Buffer ? buffer : Buffer.from(buffer);
 
+  if (!data.length) {
+    throw new CustomerImportParseError('Arquivo vazio ou corrompido.');
+  }
+
   const readOptions: XLSX.ParsingOptions = { type: 'buffer', cellDates: false };
   if (fileType === 'csv') {
     readOptions.raw = false;
   }
 
-  const workbook = XLSX.read(data, readOptions);
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(data, readOptions);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'formato inválido';
+    throw new CustomerImportParseError(
+      `Não foi possível ler a planilha (${detail}). Use .xlsx, .xls ou .csv válido.`,
+    );
+  }
+
   const matrix = sheetToMatrix(workbook);
   const { headers, rawRows } = matrixToRecords(matrix);
 
@@ -123,7 +147,7 @@ export function mapRawRowsToCustomerRows(
       email: pickMappedCell(rawRow, columnMapping.mapping, 'email'),
       endereco: pickMappedCell(rawRow, columnMapping.mapping, 'endereco'),
       cidade: pickMappedCell(rawRow, columnMapping.mapping, 'cidade'),
-      uf: pickMappedCell(rawRow, columnMapping.mapping, 'uf').toUpperCase(),
+      uf: safeSpreadsheetCell(pickMappedCell(rawRow, columnMapping.mapping, 'uf')).toUpperCase(),
       cep: pickMappedCell(rawRow, columnMapping.mapping, 'cep'),
       cep_digits: normalizeCep(pickMappedCell(rawRow, columnMapping.mapping, 'cep')),
       estado_civil: pickMappedCell(rawRow, columnMapping.mapping, 'estado_civil'),

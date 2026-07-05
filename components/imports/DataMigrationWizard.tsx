@@ -58,13 +58,13 @@ async function validateCustomersFile(
     body: formData,
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
   if (!response.ok) {
-    throw new Error(
-      typeof payload.error === 'string'
-        ? payload.error
-        : `Falha na validação do arquivo (${response.status}).`,
-    );
+    const apiError =
+      (typeof payload.error === 'string' && payload.error) ||
+      (typeof payload.message === 'string' && payload.message) ||
+      `Falha na validação do arquivo (${response.status}).`;
+    throw new Error(apiError);
   }
 
   if (!payload.validation) {

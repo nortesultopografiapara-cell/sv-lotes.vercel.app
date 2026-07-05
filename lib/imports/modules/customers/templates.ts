@@ -40,6 +40,37 @@ export async function buildCustomerImportXlsxBuffer(): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
+export async function buildCustomerImportXlsxBufferWithRealTestRow(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildCustomerImportXlsxBuffer());
+  const sheet = workbook.worksheets[0];
+  if (!sheet) {
+    return buildCustomerImportXlsxBuffer();
+  }
+
+  const realRow = CUSTOMER_IMPORT_TEMPLATE_COLUMNS.map((column) => {
+    const values: Record<string, string> = {
+      nome: 'Cliente Real Teste',
+      cpf_cnpj: '529.982.247-25',
+      rg: '1234567',
+      telefone: '(11) 98888-7777',
+      whatsapp: '',
+      email: 'real@teste.com',
+      endereco: 'Rua Teste 1',
+      cidade: 'Campinas',
+      uf: 'SP',
+      cep: '13000-000',
+      estado_civil: 'SOLTEIRO',
+      profissao: 'ANALISTA',
+      observacoes: 'linha real de teste',
+    };
+    return values[column] ?? '';
+  });
+
+  sheet.addRow(realRow);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 export function buildCustomerTemplateFileName(format: 'csv' | 'xlsx'): string {
   return `modelo_migracao_clientes.${format}`;
 }
