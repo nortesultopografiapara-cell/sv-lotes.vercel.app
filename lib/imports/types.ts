@@ -2,6 +2,11 @@
  * Tipagens centrais — Migração de Dados (SV LOTES).
  */
 
+import type {
+  CustomerImportExecuteResult,
+  CustomerImportValidationResult,
+} from '@/lib/imports/modules/customers/types';
+
 export type ImportModuleId =
   | 'customers'
   | 'brokers'
@@ -11,6 +16,7 @@ export type ImportModuleId =
   | 'attachments';
 
 export type ImportModuleStatus =
+  | 'available'
   | 'available_soon'
   | 'in_development';
 
@@ -61,8 +67,21 @@ export type ImportModuleDefinition = {
   enabled: boolean;
 };
 
+export type CustomerPreviewFilter =
+  | 'all'
+  | 'valid'
+  | 'warning'
+  | 'error'
+  | 'duplicate'
+  | 'existing';
+
 export type MigrationWizardState = {
   step: MigrationWizardStepId;
   selectedModuleId: ImportModuleId | null;
   uploadedFile: UploadedImportFileMeta | null;
+  customerValidation: CustomerImportValidationResult | null;
+  customerPreviewFilter: CustomerPreviewFilter;
+  customerImportResult: CustomerImportExecuteResult | null;
+  validating: boolean;
+  importing: boolean;
 };

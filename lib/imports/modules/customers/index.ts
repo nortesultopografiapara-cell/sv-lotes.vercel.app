@@ -4,15 +4,11 @@ export const customersImportModule: ImportModuleDefinition = {
   id: 'customers',
   title: 'Clientes',
   description: 'Importe cadastro de clientes a partir de planilhas Excel ou CSV.',
-  status: 'available_soon',
-  statusLabel: 'Disponível em breve',
+  status: 'available',
+  statusLabel: 'Disponível',
   enabled: true,
 };
 
-export const CUSTOMERS_IMPORT_TEMPLATE_COLUMNS = [
-  'nome',
-  'cpf',
-  'email',
-  'telefone',
-  'endereco',
-] as const;
+export {
+  CUSTOMER_IMPORT_TEMPLATE_COLUMNS,
+} from '@/lib/imports/modules/customers/constants';

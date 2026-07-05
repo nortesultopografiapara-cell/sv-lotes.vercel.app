@@ -13,6 +13,11 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   step: 'welcome',
   selectedModuleId: null,
   uploadedFile: null,
+  customerValidation: null,
+  customerPreviewFilter: 'all',
+  customerImportResult: null,
+  validating: false,
+  importing: false,
 };
 
 export function getWizardStepIndex(step: MigrationWizardStepId): number {
@@ -21,6 +26,10 @@ export function getWizardStepIndex(step: MigrationWizardStepId): number {
 
 export function getWizardStepOrder(step: MigrationWizardStepId): number {
   return MIGRATION_WIZARD_STEPS.find((s) => s.id === step)?.order ?? 0;
+}
+
+function isCustomersFlow(state: MigrationWizardState): boolean {
+  return state.selectedModuleId === 'customers';
 }
 
 export function canAdvanceWizardStep(state: MigrationWizardState): boolean {
@@ -32,9 +41,20 @@ export function canAdvanceWizardStep(state: MigrationWizardState): boolean {
     case 'template':
       return state.selectedModuleId != null;
     case 'upload':
+      if (state.validating) return false;
+      if (isCustomersFlow(state)) {
+        return state.uploadedFile != null;
+      }
       return state.uploadedFile != null;
     case 'pre-validation':
+      if (isCustomersFlow(state)) {
+        return state.customerValidation != null && !state.validating;
+      }
+      return state.selectedModuleId != null && state.uploadedFile != null;
     case 'preview':
+      if (isCustomersFlow(state)) {
+        return state.customerValidation != null;
+      }
       return state.selectedModuleId != null && state.uploadedFile != null;
     case 'confirmation':
       return false;
@@ -83,6 +103,11 @@ export function selectImportModule(
     ...state,
     selectedModuleId: moduleId,
     uploadedFile: null,
+    customerValidation: null,
+    customerPreviewFilter: 'all',
+    customerImportResult: null,
+    validating: false,
+    importing: false,
     step: state.step === 'welcome' ? 'select-type' : state.step,
   };
 }

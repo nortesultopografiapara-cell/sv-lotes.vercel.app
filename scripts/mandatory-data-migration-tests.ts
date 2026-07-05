@@ -20,7 +20,7 @@ import {
   parseImportFileMeta,
 } from '../lib/imports/helpers/parseImportFileMeta';
 import { buildImportCsvTemplate, getImportTemplateHeaders } from '../lib/imports/services/templateDownload';
-import { listMigrationHistory, getMigrationHistoryColumns } from '../lib/imports/services/migrationHistory';
+import { getMigrationHistoryColumns } from '../lib/imports/services/migrationHistory';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -93,6 +93,7 @@ function testWizardSteps() {
   assert(wizard.includes('migration-step-pre-validation'), 'step validation');
   assert(wizard.includes('migration-step-preview'), 'step preview');
   assert(wizard.includes('migration-step-confirmation'), 'step confirmation');
+  assert(wizard.includes('migration-confirm-import'), 'confirmar importação');
   assert(wizard.includes('Iniciar Migração'), 'botão iniciar');
   console.log('OK testWizardSteps');
 }
@@ -100,9 +101,9 @@ function testWizardSteps() {
 function testImportTypeCards() {
   const modules = listImportModules();
   assert(modules.length === 6, '6 módulos');
-  assert(modules.some((m) => m.id === 'customers'), 'clientes');
+  assert(modules.some((m) => m.id === 'customers' && m.status === 'available'), 'clientes disponível');
   assert(modules.some((m) => m.id === 'attachments' && m.status === 'in_development'), 'anexos dev');
-  assert(modules.filter((m) => m.statusLabel === 'Disponível em breve').length === 5, '5 em breve');
+  assert(modules.filter((m) => m.statusLabel === 'Disponível em breve').length === 4, '4 em breve');
 
   const card = read('components/imports/ImportTypeCard.tsx');
   assert(card.includes('import-type-card-'), 'testid card');
@@ -129,19 +130,21 @@ function testFileUploadMeta() {
 function testTemplates() {
   const headers = getImportTemplateHeaders('customers');
   assert(headers.includes('nome'), 'headers clientes');
-  const csv = buildImportCsvTemplate('brokers');
-  assert(csv.includes('creci'), 'csv corretores');
+  assert(headers.includes('cpf_cnpj'), 'headers cpf_cnpj');
+  assert(headers.includes('whatsapp'), 'headers whatsapp');
+  const csv = buildImportCsvTemplate('customers');
+  assert(csv.includes('EXEMPLO'), 'csv clientes exemplo');
   const tpl = read('lib/imports/services/templateDownload.ts');
   assert(tpl.includes('downloadImportCsvTemplate'), 'download csv');
-  assert(tpl.includes('downloadImportExcelTemplatePlaceholder'), 'download xlsx placeholder');
+  assert(tpl.includes('downloadImportExcelTemplate'), 'download xlsx real');
   console.log('OK testTemplates');
 }
 
 function testHistory() {
-  assert(listMigrationHistory().length === 0, 'histórico vazio fase 1');
   assert(getMigrationHistoryColumns().length === 6, '6 colunas');
   const hist = read('components/imports/MigrationHistoryTable.tsx');
   assert(hist.includes('migration-history-table'), 'tabela histórico');
+  assert(hist.includes('/api/data-migration/history'), 'fetch histórico');
   const page = read('components/imports/DataMigrationPageClient.tsx');
   assert(page.includes('Histórico de Migrações'), 'aba histórico');
   assert(page.includes('migration-tab-history'), 'tab histórico');
