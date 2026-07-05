@@ -46,18 +46,29 @@ export function mapRawRowsToSaleRows(
     if (allEmpty) return;
     if (isExampleRow(empreendimento, corretorNome)) return;
 
-    const valorTotal = parseSaleImportCurrency(
-      pickMappedSaleCell(rawRow, columnMapping.mapping, 'valor_total'),
+    const valorTotalCell = pickMappedSaleImportCell(
+      rawRow,
+      importRow,
+      columnMapping.mapping,
+      'valor_total',
     );
-    const entrada = parseSaleImportCurrency(
-      pickMappedSaleCell(rawRow, columnMapping.mapping, 'entrada'),
+    const entradaCell = pickMappedSaleImportCell(
+      rawRow,
+      importRow,
+      columnMapping.mapping,
+      'entrada',
     );
-    const sinal = parseSaleImportCurrency(
-      pickMappedSaleCell(rawRow, columnMapping.mapping, 'sinal'),
+    const sinalCell = pickMappedSaleImportCell(
+      rawRow,
+      importRow,
+      columnMapping.mapping,
+      'sinal',
     );
-    const saldoRaw = parseSaleImportCurrency(
-      pickMappedSaleCell(rawRow, columnMapping.mapping, 'saldo'),
-    );
+    const saldoCell = pickMappedSaleImportCell(rawRow, importRow, columnMapping.mapping, 'saldo');
+    const valorTotal = parseSaleImportCurrency(valorTotalCell.importValue);
+    const entrada = parseSaleImportCurrency(entradaCell.importValue);
+    const sinal = parseSaleImportCurrency(sinalCell.importValue);
+    const saldoRaw = parseSaleImportCurrency(saldoCell.importValue);
     const dataVendaCell = pickMappedSaleImportCell(
       rawRow,
       importRow,
@@ -119,13 +130,13 @@ export function mapRawRowsToSaleRows(
       ),
       data_venda_raw: dataVendaCell.display,
       data_venda: dataVenda.value,
-      valor_total_raw: pickMappedSaleCell(rawRow, columnMapping.mapping, 'valor_total'),
+      valor_total_raw: valorTotalCell.display,
       valor_total: valorTotalValue,
-      entrada_raw: pickMappedSaleCell(rawRow, columnMapping.mapping, 'entrada'),
+      entrada_raw: entradaCell.display,
       entrada: entradaValue,
-      sinal_raw: pickMappedSaleCell(rawRow, columnMapping.mapping, 'sinal'),
+      sinal_raw: sinalCell.display,
       sinal: sinalValue,
-      saldo_raw: pickMappedSaleCell(rawRow, columnMapping.mapping, 'saldo'),
+      saldo_raw: saldoCell.display,
       saldo: resolveSaleBalance(valorTotalValue, entradaValue, sinalValue, saldoRaw.value),
       quantidade_parcelas_raw: parcelasRaw,
       quantidade_parcelas: parseSaleInstallmentsCount(parcelasRaw),

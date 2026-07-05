@@ -103,8 +103,12 @@ function validateSingleRow(
     else if (message.level === 'warning' && status === 'valid') status = 'warning';
   };
 
-  const valorTotal = parseSaleImportCurrency(row.valor_total_raw);
-  if (!valorTotal.value || valorTotal.value <= 0) {
+  if (row.valor_total_raw.trim() && (!row.valor_total || row.valor_total <= 0)) {
+    const valorTotal = parseSaleImportCurrency(row.valor_total_raw);
+    if (!valorTotal.value || valorTotal.value <= 0) {
+      pushMessage({ level: 'error', text: 'Valor total é obrigatório e deve ser maior que zero.' });
+    }
+  } else if (!row.valor_total || row.valor_total <= 0) {
     pushMessage({ level: 'error', text: 'Valor total é obrigatório e deve ser maior que zero.' });
   }
 
