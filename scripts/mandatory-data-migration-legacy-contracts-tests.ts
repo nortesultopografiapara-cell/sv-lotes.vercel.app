@@ -36,6 +36,7 @@ import {
   applyLegacyContractsValidationAndAdvance,
   canAdvanceWizardStep,
   INITIAL_MIGRATION_WIZARD_STATE,
+  validateCurrentWizardStep,
 } from '../lib/imports/services/migrationWizardState';
 import {
   appendLegacyContractFormData,
@@ -294,8 +295,8 @@ function testWizardIntegration() {
     ...INITIAL_MIGRATION_WIZARD_STATE,
     step: 'upload-documents' as const,
     selectedModuleId: 'legacy_contracts' as const,
-    uploadedFile: parseImportFileMeta(new File(['a'], 'map.csv', { type: 'text/csv' })),
-    uploadedDocumentsFiles: [
+    mappingFile: parseImportFileMeta(new File(['a'], 'map.csv', { type: 'text/csv' })),
+    documentFiles: [
       parseImportFileMeta(new File(['%PDF'], 'docs.pdf', { type: 'application/pdf' })),
     ],
   };
@@ -359,23 +360,35 @@ function testWizardUploadStepConstraints() {
   const docsSection =
     wizard.match(/case 'upload-documents':[\s\S]*?case 'pre-validation':/)?.[0] ?? '';
 
-  assert(uploadSection.includes('ACCEPTED_IMPORT_ACCEPT_ATTR'), 'planilha aceita xlsx/xls/csv');
+  assert(uploadSection.includes('openMappingFilePicker'), 'planilha usa picker dedicado');
+  assert(!uploadSection.includes('type="file"'), 'planilha sem input inline');
   assert(!uploadSection.includes('multiple'), 'planilha sem multiple');
-  assert(uploadSection.includes('data-testid="migration-file-input"'), 'input planilha');
+  assert(wizard.includes('data-testid="migration-file-input"'), 'input planilha na raiz');
+  assert(wizard.includes('ACCEPTED_IMPORT_ACCEPT_ATTR'), 'planilha aceita xlsx/xls/csv');
+  assert(wizard.includes('handleMappingFileChange'), 'handler planilha dedicado');
+  assert(wizard.includes('handleDocumentFilesChange'), 'handler pdfs dedicado');
+  assert(wizard.includes("wizardStepRef.current !== 'upload'"), 'guarda etapa planilha');
+  assert(wizard.includes("wizardStepRef.current !== 'upload-documents'"), 'guarda etapa pdfs');
 
-  assert(
-    docsSection.includes('.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed'),
-    'pdfs aceita pdf/zip',
-  );
-  assert(docsSection.includes('multiple'), 'pdfs com multiple');
+  assert(docsSection.includes('openDocumentsFilePicker'), 'pdfs usa picker dedicado');
+  assert(!docsSection.includes('type="file"'), 'pdfs sem input inline');
   assert(
     docsSection.includes(
       'Selecione os PDFs dos contratos antigos ou um arquivo ZIP contendo os PDFs.',
     ),
     'texto área pdfs',
   );
+  assert(
+    !docsSection.includes('Selecione um arquivo .xlsx, .xls ou .csv.'),
+    'mensagem planilha ausente na etapa pdfs',
+  );
+  assert(
+    wizard.includes('.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed'),
+    'pdfs aceita pdf/zip',
+  );
+  assert(wizard.includes('data-testid="migration-documents-file-input"'), 'input pdfs na raiz');
   assert(wizard.includes('appendLegacyContractFormData'), 'formData legacy');
-  assert(wizard.includes("mappingFile: spreadsheetFile"), 'mappingFile no validate');
+  assert(wizard.includes('mappingFile: spreadsheetFile'), 'mappingFile no validate');
 
   let state = {
     ...INITIAL_MIGRATION_WIZARD_STATE,
@@ -383,10 +396,16 @@ function testWizardUploadStepConstraints() {
     selectedModuleId: 'legacy_contracts' as const,
   };
   assert(!canAdvanceWizardStep(state), 'pdfs rejeita ausência de arquivo');
+  assert(
+    validateCurrentWizardStep(state, { mappingFile: new File(['a'], 'map.csv'), documentFiles: [] })?.includes(
+      'PDF',
+    ),
+    'validateCurrentWizardStep exige pdf',
+  );
 
   state = {
     ...state,
-    uploadedDocumentsFiles: [
+    documentFiles: [
       parseImportFileMeta(new File(['%PDF'], 'doc.pdf', { type: 'application/pdf' })),
     ],
   };
@@ -399,9 +418,15 @@ function testWizardUploadStepConstraints() {
   };
   assert(!canAdvanceWizardStep(spreadsheetState), 'planilha rejeita ausência');
   assert(
+    validateCurrentWizardStep(spreadsheetState, { mappingFile: null, documentFiles: [] })?.includes(
+      'planilha',
+    ),
+    'validateCurrentWizardStep exige planilha',
+  );
+  assert(
     canAdvanceWizardStep({
       ...spreadsheetState,
-      uploadedFile: parseImportFileMeta(
+      mappingFile: parseImportFileMeta(
         new File(['a'], 'map.xlsx', {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }),
