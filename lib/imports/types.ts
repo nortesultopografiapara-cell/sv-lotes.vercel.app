@@ -3,6 +3,10 @@
  */
 
 import type {
+  BrokerImportExecuteResult,
+  BrokerImportValidationResult,
+} from '@/lib/imports/modules/brokers/types';
+import type {
   CustomerImportExecuteResult,
   CustomerImportValidationResult,
 } from '@/lib/imports/modules/customers/types';
@@ -82,7 +86,12 @@ export type MigrationWizardState = {
   customerValidation: CustomerImportValidationResult | null;
   customerPreviewFilter: CustomerPreviewFilter;
   customerImportResult: CustomerImportExecuteResult | null;
+  brokerValidation: BrokerImportValidationResult | null;
+  brokerPreviewFilter: CustomerPreviewFilter;
+  brokerImportResult: BrokerImportExecuteResult | null;
   validating: boolean;
   importing: boolean;
   validationError: string | null;
 };
+
+export type ActiveImportModuleId = 'customers' | 'brokers';

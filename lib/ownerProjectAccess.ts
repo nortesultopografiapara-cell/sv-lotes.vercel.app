@@ -414,6 +414,7 @@ export function canOwnerAccessRoute(
   if (pathname.startsWith('/dashboard')) return permissions.can_view_dashboard;
   if (pathname.startsWith('/map')) return permissions.can_view_map;
   if (pathname.startsWith('/finance')) return permissions.can_view_finance;
+  if (pathname.startsWith('/charges')) return permissions.can_view_finance;
   if (pathname.startsWith('/contracts')) return permissions.can_view_contracts;
   return false;
 }
@@ -460,6 +461,7 @@ export function getOwnerMenuItemsFromPermissions(
   }
   if (rows.length === 0 || permissions.can_view_finance) {
     items.push({ name: 'Financeiro', href: '/finance' });
+    items.push({ name: 'Cobranças', href: '/charges' });
   }
   if (rows.length === 0 || permissions.can_view_contracts) {
     items.push({ name: 'Contratos', href: '/contracts' });

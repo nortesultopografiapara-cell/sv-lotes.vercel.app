@@ -19,7 +19,7 @@ import {
 
 export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
-  /** Na criação de venda à vista, marcar a parcela única como paga. */
+  /** Marcar parcela única como paga somente quando o usuário registrar pagamento no ato da venda. */
   cashInstallmentPaid?: boolean;
 };
 
@@ -99,9 +99,10 @@ export function buildSaleEditFinancePayloads(
       amount: fValue,
       due_date: data.down_payment_due_date || new Date().toISOString().split('T')[0],
       status: options?.cashInstallmentPaid ? 'pago' : 'pendente',
+      paid_amount: options?.cashInstallmentPaid ? fValue : 0,
       ...(options?.cashInstallmentPaid
         ? { paid_at: new Date().toISOString() }
-        : {}),
+        : { paid_at: null }),
     });
   } else if (pmtType === 'Parcelado') {
     let currentInst = 1;
@@ -168,12 +169,8 @@ export function buildSaleEditFinancePayloads(
         signal_addon_amount: 0,
         due_date: data.down_payment_due_date,
         status: signalLinePaidAtAct ? 'pago' : 'pendente',
-        ...(signalLinePaidAtAct
-          ? {
-              paid_amount: signalLineAmount,
-              paid_at: new Date().toISOString(),
-            }
-          : {}),
+        paid_amount: signalLinePaidAtAct ? signalLineAmount : 0,
+        paid_at: signalLinePaidAtAct ? new Date().toISOString() : null,
       });
     }
     if (data.first_installment_due_date) {
@@ -218,6 +215,8 @@ export function buildSaleEditFinancePayloads(
           signal_addon_amount: row.signalAddonAmount,
           due_date: cDate.toISOString().split('T')[0],
           status: 'pendente',
+          paid_amount: 0,
+          paid_at: null,
         });
         cDate.setMonth(cDate.getMonth() + 1);
       }

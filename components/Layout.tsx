@@ -260,6 +260,7 @@ const getMenuItems = (role: string) => {
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+      { name: 'Cobranças', href: '/charges', icon: Banknote, color: 'text-violet-400' },
       { name: 'Minha Assinatura', href: '/billing', icon: CreditCard, color: 'text-[#14b8a6]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
       { name: 'Sócios / Proprietários', href: '/owners', icon: Handshake, color: 'text-[#a855f7]' },
@@ -293,6 +294,7 @@ const getMenuItems = (role: string) => {
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+      { name: 'Cobranças', href: '/charges', icon: Banknote, color: 'text-violet-400' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
     ];
   }
@@ -301,6 +303,7 @@ const getMenuItems = (role: string) => {
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
     { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
     { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+    { name: 'Cobranças', href: '/charges', icon: Banknote, color: 'text-violet-400' },
     { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
   ];
 };
@@ -312,6 +315,7 @@ const OWNER_MENU_ICONS: Record<
   '/dashboard': { icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
   '/map': { icon: MapIcon, color: 'text-[var(--color-success)]' },
   '/finance': { icon: Wallet, color: 'text-[var(--color-warning)]' },
+  '/charges': { icon: Banknote, color: 'text-violet-400' },
   '/contracts': { icon: FileText, color: 'text-[var(--color-info)]' },
 };
 

@@ -58,6 +58,10 @@ import {
   downloadLotReportExcel,
   downloadLotReportPdf,
 } from '@/lib/lotReportExport';
+import { FinancialIntegrationDashboardCard } from '@/components/finance/FinancialIntegrationPanel';
+import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
+import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
+import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import {
   assertOwnerProjectExportAllowed,
   fetchLotReportForExport,
@@ -136,6 +140,10 @@ function OperationalDashboard({ user }: { user: any }) {
     fantasy_name?: string;
     logo_url?: string | null;
   } | null>(null);
+  const bankingUiEnabled = isBankingModuleEnabledForUi();
+  const companyAsaasEnabled = isCompanyAsaasEnabled(user?.tenant_id);
+  const [asaasIntegration, setAsaasIntegration] = useState<AsaasIntegrationConfigResponse | null>(null);
+  const [asaasLoading, setAsaasLoading] = useState(false);
 
   useEffect(() => {
     if (isBrokerRole(user?.role)) {
@@ -175,6 +183,26 @@ function OperationalDashboard({ user }: { user: any }) {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    async function loadAsaasIntegration() {
+      if (!bankingUiEnabled || !companyAsaasEnabled || !user?.tenant_id) return;
+      setAsaasLoading(true);
+      try {
+        const res = await fetch('/api/finance/asaas/integration', { credentials: 'include' });
+        if (res.status === 404) return;
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setAsaasIntegration(json.integration as AsaasIntegrationConfigResponse);
+        }
+      } catch {
+        /* dashboard card opcional */
+      } finally {
+        setAsaasLoading(false);
+      }
+    }
+    void loadAsaasIntegration();
+  }, [bankingUiEnabled, companyAsaasEnabled, user?.tenant_id]);
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -713,6 +741,15 @@ function OperationalDashboard({ user }: { user: any }) {
         ) : null}
 
         <div className="dash-bottom-grid">
+          {bankingUiEnabled && companyAsaasEnabled ? (
+            <FinancialIntegrationDashboardCard
+              loading={asaasLoading}
+              connectionStatus={asaasIntegration?.connectionStatus ?? 'DISCONNECTED'}
+              webhookActive={Boolean(asaasIntegration?.webhookActive)}
+              lastSyncAt={asaasIntegration?.sync.lastAt ?? null}
+              chargesCount={asaasIntegration?.sync.chargesCount ?? 0}
+            />
+          ) : null}
           <div className="dash-compact-panel">
             <div className="px-4 py-2.5 border-b border-[var(--border-subtle)] shrink-0">
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Resumo financeiro</h2>

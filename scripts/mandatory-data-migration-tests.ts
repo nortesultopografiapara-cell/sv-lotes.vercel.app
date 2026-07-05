@@ -95,6 +95,7 @@ function testWizardSteps() {
   assert(wizard.includes('migration-step-confirmation'), 'step confirmation');
   assert(wizard.includes('migration-confirm-import'), 'confirmar importação');
   assert(wizard.includes('applyCustomerValidationAndAdvance'), 'avanço pós-validação');
+  assert(wizard.includes('applyBrokerValidationAndAdvance'), 'avanço pós-validação corretores');
   assert(wizard.includes('migration-validating'), 'loading validação');
   assert(wizard.includes('Iniciar Migração'), 'botão iniciar');
   console.log('OK testWizardSteps');
@@ -104,8 +105,9 @@ function testImportTypeCards() {
   const modules = listImportModules();
   assert(modules.length === 6, '6 módulos');
   assert(modules.some((m) => m.id === 'customers' && m.status === 'available'), 'clientes disponível');
+  assert(modules.some((m) => m.id === 'brokers' && m.status === 'available'), 'corretores disponível');
   assert(modules.some((m) => m.id === 'attachments' && m.status === 'in_development'), 'anexos dev');
-  assert(modules.filter((m) => m.statusLabel === 'Disponível em breve').length === 4, '4 em breve');
+  assert(modules.filter((m) => m.statusLabel === 'Disponível em breve').length === 3, '3 em breve');
 
   const card = read('components/imports/ImportTypeCard.tsx');
   assert(card.includes('import-type-card-'), 'testid card');
@@ -136,6 +138,11 @@ function testTemplates() {
   assert(headers.includes('whatsapp'), 'headers whatsapp');
   const csv = buildImportCsvTemplate('customers');
   assert(csv.includes('EXEMPLO'), 'csv clientes exemplo');
+  const brokerCsv = buildImportCsvTemplate('brokers');
+  assert(brokerCsv.includes('percentual_comissao'), 'csv corretores headers');
+  assert(brokerCsv.includes('EXEMPLO'), 'csv corretores exemplo');
+  const brokerHeaders = getImportTemplateHeaders('brokers');
+  assert(brokerHeaders.includes('nome'), 'headers corretores nome');
   const tpl = read('lib/imports/services/templateDownload.ts');
   assert(tpl.includes('downloadImportCsvTemplate'), 'download csv');
   assert(tpl.includes('downloadImportExcelTemplate'), 'download xlsx real');

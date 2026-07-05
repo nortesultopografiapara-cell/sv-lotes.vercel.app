@@ -17,6 +17,7 @@ import {
   Users,
   Settings2,
   Info,
+  Landmark,
 } from 'lucide-react';
 import {
   normalizeSaleContractModel,
@@ -37,6 +38,7 @@ import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdm
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
+import { FinancialIntegrationPanel } from '@/components/finance/FinancialIntegrationPanel';
 
 type FormState = ReturnType<typeof useCompanySettingsForm>;
 
@@ -46,7 +48,8 @@ export type CompanySettingsV2Tab =
   | 'administradores'
   | 'contratos'
   | 'tecnico'
-  | 'avancado';
+  | 'avancado'
+  | 'financeiro';
 
 const V2_TABS: { id: CompanySettingsV2Tab; label: string; icon: typeof Building2 }[] = [
   { id: 'geral', label: 'Geral', icon: Building2 },
@@ -84,6 +87,7 @@ type Props = Pick<
 > & {
   readOnlyDemo?: boolean;
   showAdmins: boolean;
+  bankingUiEnabled: boolean;
   adminPanelProps?: {
     callerUserId: string;
     tenantId: string;
@@ -148,6 +152,9 @@ function hashToTab(hash: string): CompanySettingsV2Tab | null {
   if (h === 'contratos') return 'contratos';
   if (h === 'tecnico') return 'tecnico';
   if (h === 'avancado') return 'avancado';
+  if (h === 'financeiro' || h === 'integracao-financeira' || h === 'bancario' || h === 'integracao-bancaria') {
+    return 'financeiro';
+  }
   return null;
 }
 
@@ -176,6 +183,7 @@ export function CompanySettingsV2Shell({
   uploadingTechStamp,
   readOnlyDemo = false,
   showAdmins,
+  bankingUiEnabled,
   adminPanelProps,
 }: Props) {
   const [activeTab, setActiveTab] = useState<CompanySettingsV2Tab>('geral');
@@ -243,6 +251,12 @@ export function CompanySettingsV2Shell({
     );
 
   const visibleTabs = V2_TABS.filter((t) => t.id !== 'administradores' || showAdmins);
+  const navTabs = bankingUiEnabled
+    ? [
+        ...visibleTabs,
+        { id: 'financeiro' as const, label: 'Integração Financeira', icon: Landmark },
+      ]
+    : visibleTabs;
   const showSaveBar = ['geral', 'contratos', 'tecnico', 'avancado'].includes(activeTab);
 
   return (
@@ -251,7 +265,7 @@ export function CompanySettingsV2Shell({
         className="lg:w-52 shrink-0 flex flex-row lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0 border-b lg:border-b-0 lg:border-r border-[var(--border-color)] lg:pr-4"
         aria-label="Seções das configurações"
       >
-        {visibleTabs.map(({ id, label, icon: Icon }) => {
+        {navTabs.map(({ id, label, icon: Icon }) => {
           const selected = activeTab === id;
           return (
             <button
@@ -273,8 +287,12 @@ export function CompanySettingsV2Shell({
       </nav>
 
       <div className="flex-1 min-w-0">
-        {activeTab === 'aparencia' || activeTab === 'administradores' ? (
+        {activeTab === 'aparencia' || activeTab === 'administradores' || activeTab === 'financeiro' ? (
           <div className="space-y-6">
+            {activeTab === 'financeiro' ? (
+              <FinancialIntegrationPanel tenantId={String(company.id)} readOnlyDemo={readOnlyDemo} />
+            ) : null}
+
             {activeTab === 'aparencia' ? (
               <>
                 <ThemeAppearanceSection />

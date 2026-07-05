@@ -20,6 +20,12 @@ import {
   isOwnerRole,
 } from '@/lib/rolePermissions';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
+import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
+import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
+import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
+import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
+import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import type { CompanyAsaasChargeSummary } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
@@ -36,6 +42,10 @@ import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { logLotAuditEvent } from '@/lib/lotAudit';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
+import {
+  buildManualFinanceReceiptCashMovement,
+  resolveCashMovementInstallmentId,
+} from '@/lib/finance/cashMovementsSchema';
 import {
   calculateEnterpriseValueSummary,
   type EnterpriseValueSummary,
@@ -159,6 +169,20 @@ export default function FinancePage() {
   const [endDate, setEndDate] = useState('');
   
   const [payments, setPayments] = useState<any[]>([]);
+  const bankingUiEnabled = isBankingModuleEnabledForUi();
+  const resolvedCompanyId = user?.tenant_id || (user as { company_id?: string })?.company_id;
+  const companyAsaasEnabled = isCompanyAsaasEnabled(resolvedCompanyId);
+  const [companyAsaasActive, setCompanyAsaasActive] = useState(false);
+  const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
+    Record<string, CompanyAsaasChargeResponse>
+  >({});
+  const [asaasActionInstallmentId, setAsaasActionInstallmentId] = useState<string | null>(null);
+  const [asaasChargeErrorsByInstallment, setAsaasChargeErrorsByInstallment] = useState<
+    Record<string, string>
+  >({});
+  const [asaasChargeSummary, setAsaasChargeSummary] = useState<CompanyAsaasChargeSummary | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [financeProjects, setFinanceProjects] = useState<any[]>([]);
@@ -429,6 +453,13 @@ export default function FinancePage() {
           });
           
           setPayments(data);
+
+          if (bankingUiEnabled && companyAsaasEnabled && resolvedTenantId && data?.length) {
+            void loadAsaasFinanceContext(resolvedTenantId, data.map((row) => String(row.id)));
+          } else {
+            setCompanyAsaasActive(false);
+            setAsaasChargesByInstallment({});
+          }
         }
         
         let qtyNoPaymentContracts = 0;
@@ -710,38 +741,240 @@ export default function FinancePage() {
     setCurrentPage(1);
   };
 
+  const loadAsaasChargeSummary = async () => {
+    try {
+      const res = await fetch('/api/finance/asaas/charge-summary', { credentials: 'include' });
+      if (res.status === 403 || res.status === 404) {
+        setAsaasChargeSummary(null);
+        return;
+      }
+      if (!res.ok) return;
+      const json = await res.json().catch(() => ({}));
+      setAsaasChargeSummary((json.summary as CompanyAsaasChargeSummary) ?? null);
+    } catch (err) {
+      console.error('ASAAS_CHARGE_SUMMARY', err);
+    }
+  };
+
+  const loadAsaasFinanceContext = async (tenantId: string, installmentIds: string[]) => {
+    try {
+      const integrationRes = await fetch('/api/finance/asaas/integration', { credentials: 'include' });
+      if (integrationRes.status === 404) {
+        setCompanyAsaasActive(false);
+        return;
+      }
+      const integrationJson = await integrationRes.json().catch(() => ({}));
+      if (!integrationRes.ok) {
+        setCompanyAsaasActive(false);
+        return;
+      }
+      const integration = integrationJson.integration as AsaasIntegrationConfigResponse;
+      const active = isCompanyAsaasIntegrationReady(integration);
+      setCompanyAsaasActive(active);
+      if (!active || installmentIds.length === 0) {
+        setAsaasChargesByInstallment({});
+        if (active) await loadAsaasChargeSummary();
+        return;
+      }
+
+      await loadAsaasChargeSummary();
+
+      const chargesRes = await fetch(
+        `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(installmentIds.join(','))}`,
+        { credentials: 'include' },
+      );
+      if (!chargesRes.ok) return;
+      const chargesJson = await chargesRes.json().catch(() => ({}));
+      const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+      const map: Record<string, CompanyAsaasChargeResponse> = {};
+      for (const charge of charges) {
+        map[charge.installmentId] = charge;
+      }
+      setAsaasChargesByInstallment(map);
+    } catch (err) {
+      console.error('ASAAS_FINANCE_CONTEXT', err);
+      setCompanyAsaasActive(false);
+    }
+  };
+
+  const applyAsaasChargeUpdate = (
+    installmentId: string,
+    charge: CompanyAsaasChargeResponse,
+  ) => {
+    setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
+    void loadAsaasChargeSummary();
+  };
+
+  const handleCreateAsaasCharge = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    setAsaasActionInstallmentId(installmentId);
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
+    try {
+      const res = await fetch('/api/finance/asaas/create-charge', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId, billingType }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+    } catch (err) {
+      console.error(err);
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.',
+      }));
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleRefreshAsaasCharge = async (installmentId: string) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    setAsaasActionInstallmentId(installmentId);
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
+    try {
+      const res = await fetch(
+        `/api/finance/asaas/charge-status?installmentId=${encodeURIComponent(installmentId)}`,
+        { credentials: 'include' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      const charge = json.charge as CompanyAsaasChargeResponse | null;
+      if (charge) {
+        applyAsaasChargeUpdate(installmentId, charge);
+      }
+      if (charge?.status === 'PAID') {
+        await loadFinance();
+      }
+    } catch (err) {
+      console.error(err);
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao atualizar cobrança.',
+      }));
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleCancelAsaasCharge = async (installmentId: string) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const current = asaasChargesByInstallment[installmentId];
+    if (!current) return;
+    if (!window.confirm('Cancelar a cobrança Asaas desta parcela?')) return;
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch(
+        `/api/finance/asaas/charge-status?chargeId=${encodeURIComponent(current.id)}`,
+        { method: 'DELETE', credentials: 'include' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+    } catch (err) {
+      console.error(err);
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao cancelar cobrança.',
+      }));
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleRegenerateAsaasCharge = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (!window.confirm('Regenerar cobrança Asaas para esta parcela?')) return;
+    setAsaasActionInstallmentId(installmentId);
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
+    try {
+      const res = await fetch('/api/finance/asaas/regenerate-charge', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId, billingType }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+    } catch (err) {
+      console.error(err);
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao regenerar cobrança.',
+      }));
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
   const handleMarkPaid = async (p: any) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     console.log('FINANCE MARK PAID', p);
     if (!window.confirm("Confirmar pagamento desta parcela?")) return;
     try {
+      const paidAt = new Date().toISOString();
       const { error } = await supabase
         .from('finance_receipts')
         .update({
           status: 'pago',
           paid_amount: p.amount,
-          paid_at: new Date().toISOString()
+          paid_at: paidAt,
         })
         .eq('id', p.id);
       if (error) throw error;
-      
+
       const rlsCtx = await resolveRlsContext(user);
-      const insertPayload = withTenantFields(
-        {
-          type: 'entrada',
-          category: 'Venda de Lote',
-          description: `Pagamento de Parcela ${p.installment_number || '1'} - CT ${p.sales?.contracts?.[0]?.contract_number || 'S/N'}`,
-          amount: p.amount,
-          customer_id: p.customer_id,
-          sale_id: p.sale_id,
-          finance_receipt_id: p.id,
-          movement_date: new Date().toISOString().split('T')[0],
-          created_by: user.id,
-        },
-        rlsCtx.tenantId,
-        'cash_movements',
-      );
-      await supabase.from('cash_movements').insert(insertPayload);
+      const movementPayload = buildManualFinanceReceiptCashMovement({
+        tenantId: rlsCtx.tenantId || '',
+        receiptId: p.id,
+        amount: p.amount,
+        installmentNumber: p.installment_number,
+        contractNumber: p.sales?.contracts?.[0]?.contract_number,
+        customerId: p.customer_id,
+        saleId: p.sale_id,
+        projectId: p.project_id ?? p.sales?.project_id ?? null,
+        userId: user.id,
+        paidAt,
+      });
+      const { error: cashError } = await supabase
+        .from('cash_movements')
+        .insert(movementPayload);
+      if (cashError) {
+        console.error(
+          '[finance/mark-paid] cash_movements insert failed (parcela mantida paga)',
+          cashError,
+        );
+      }
 
       if (p.block_id) {
         void logLotAuditEvent(supabase, {
@@ -1437,7 +1670,7 @@ export default function FinancePage() {
           .update({ status: 'pendente', paid_amount: null, paid_at: null })
           .eq('id', item.receiptId);
         const linkedCash = cashMovements.find(
-          (c) => c.finance_receipt_id === item.receiptId,
+          (c) => resolveCashMovementInstallmentId(c) === item.receiptId,
         );
         if (linkedCash?.id) {
           await supabase
@@ -2907,6 +3140,37 @@ export default function FinancePage() {
         />
       </div>
 
+      {companyAsaasActive && bankingUiEnabled && companyAsaasEnabled ? (
+        <>
+          <p className="finance-section-title">Cobranças Asaas</p>
+          <div className="finance-kpi-grid mb-5">
+            <FinanceStatCard
+              title="Cobranças emitidas"
+              value={String(asaasChargeSummary?.totalCharges ?? 0)}
+              subtitle="Total registrado no Asaas Company"
+              icon={<Banknote />}
+              iconWrapClass="bg-violet-500/12 text-violet-400"
+            />
+            <FinanceStatCard
+              title="Pendentes"
+              value={String(asaasChargeSummary?.pendingCount ?? 0)}
+              subtitle="Aguardando pagamento"
+              subtitleColor="text-violet-400/90"
+              icon={<ReceiptText />}
+              iconWrapClass="bg-violet-500/12 text-violet-400"
+            />
+            <FinanceStatCard
+              title="Valor em aberto"
+              value={formatCurrency(asaasChargeSummary?.openValue ?? 0)}
+              subtitle="Soma das cobranças pendentes"
+              subtitleColor="text-blue-400/90"
+              icon={<Wallet />}
+              iconWrapClass="bg-blue-500/12 text-blue-400"
+            />
+          </div>
+        </>
+      ) : null}
+
       <div className="finance-tabs">
         <button
           type="button"
@@ -3044,6 +3308,25 @@ export default function FinancePage() {
                     onCarne={() => handleGenerateCarne(p)}
                     onDelete={() => handleDeleteReceipt(p)}
                     readOnly={ownerReadOnly}
+                    asaasEnabled={companyAsaasActive && bankingUiEnabled && companyAsaasEnabled}
+                    asaasCharge={asaasChargesByInstallment[p.id] ?? null}
+                    asaasLoading={asaasActionInstallmentId === p.id}
+                    asaasError={asaasChargeErrorsByInstallment[p.id] ?? null}
+                    onGenerateAsaasCharge={(billingType) =>
+                      void handleCreateAsaasCharge(p.id, billingType)
+                    }
+                    onRefreshAsaasCharge={() => void handleRefreshAsaasCharge(p.id)}
+                    onCancelAsaasCharge={() => void handleCancelAsaasCharge(p.id)}
+                    onRegenerateAsaasCharge={(billingType) =>
+                      void handleRegenerateAsaasCharge(p.id, billingType)
+                    }
+                    onClearAsaasError={() =>
+                      setAsaasChargeErrorsByInstallment((prev) => {
+                        const next = { ...prev };
+                        delete next[p.id];
+                        return next;
+                      })
+                    }
                   />
                 ))
               ) : (
