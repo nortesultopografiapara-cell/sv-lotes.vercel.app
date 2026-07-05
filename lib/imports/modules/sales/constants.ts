@@ -1,0 +1,121 @@
+/**
+ * Colunas e aliases — importação de vendas.
+ */
+
+import type { SaleImportField } from '@/lib/imports/modules/sales/types';
+
+export const SALES_IMPORT_TEMPLATE_COLUMNS: SaleImportField[] = [
+  'cliente_cpf_cnpj',
+  'cliente_email',
+  'cliente_telefone',
+  'corretor_cpf_cnpj',
+  'corretor_email',
+  'corretor_nome',
+  'empreendimento',
+  'quadra',
+  'lote',
+  'data_venda',
+  'valor_total',
+  'entrada',
+  'sinal',
+  'saldo',
+  'quantidade_parcelas',
+  'vencimento_primeira_parcela',
+  'percentual_comissao',
+  'status',
+  'observacoes',
+];
+
+export const SALES_IMPORT_REQUIRED_FIELDS: SaleImportField[] = [
+  'empreendimento',
+  'quadra',
+  'lote',
+  'valor_total',
+];
+
+export const SALES_IMPORT_FIELD_ALIASES: Record<SaleImportField, string[]> = {
+  cliente_cpf_cnpj: [
+    'cliente_cpf_cnpj',
+    'cliente cpf cnpj',
+    'cpf_cnpj_cliente',
+    'cpf cliente',
+    'documento_cliente',
+  ],
+  cliente_email: ['cliente_email', 'email_cliente', 'email do cliente'],
+  cliente_telefone: ['cliente_telefone', 'telefone_cliente', 'fone_cliente'],
+  corretor_cpf_cnpj: ['corretor_cpf_cnpj', 'cpf_corretor', 'documento_corretor'],
+  corretor_email: ['corretor_email', 'email_corretor'],
+  corretor_nome: ['corretor_nome', 'nome_corretor', 'corretor'],
+  empreendimento: ['empreendimento', 'projeto', 'project', 'nome_empreendimento'],
+  quadra: ['quadra', 'block', 'block_name', 'nome_quadra'],
+  lote: ['lote', 'numero_lote', 'lot', 'lot_number', 'number'],
+  data_venda: ['data_venda', 'data venda', 'sale_date', 'data'],
+  valor_total: ['valor_total', 'valor total', 'valor', 'preco', 'preço'],
+  entrada: ['entrada', 'down_payment', 'valor_entrada'],
+  sinal: ['sinal', 'signal', 'valor_sinal'],
+  saldo: ['saldo', 'valor_saldo', 'restante'],
+  quantidade_parcelas: [
+    'quantidade_parcelas',
+    'qtd_parcelas',
+    'parcelas',
+    'installments_count',
+  ],
+  vencimento_primeira_parcela: [
+    'vencimento_primeira_parcela',
+    'primeira_parcela',
+    'first_installment_due_date',
+  ],
+  percentual_comissao: [
+    'percentual_comissao',
+    'comissao',
+    'comissão',
+    'percentual comissao',
+  ],
+  status: ['status', 'situacao', 'situação'],
+  observacoes: ['observacoes', 'observações', 'observacao', 'observação', 'notas'],
+};
+
+export const SALES_TEMPLATE_EXAMPLE_ROWS: Record<SaleImportField, string>[] = [
+  {
+    cliente_cpf_cnpj: '529.982.247-25',
+    cliente_email: 'cliente.exemplo@email.com',
+    cliente_telefone: '(11) 98888-7777',
+    corretor_cpf_cnpj: '123.456.789-09',
+    corretor_email: 'corretor.exemplo@email.com',
+    corretor_nome: 'EXEMPLO — Ana Corretora',
+    empreendimento: 'EXEMPLO — Residencial Modelo',
+    quadra: 'A',
+    lote: '12',
+    data_venda: '15/03/2025',
+    valor_total: 'R$ 150.000,00',
+    entrada: 'R$ 30.000,00',
+    sinal: 'R$ 5.000,00',
+    saldo: '',
+    quantidade_parcelas: '120',
+    vencimento_primeira_parcela: '15/04/2025',
+    percentual_comissao: '5%',
+    status: 'VENDIDO',
+    observacoes: 'Linha de exemplo — remover antes de importar',
+  },
+  {
+    cliente_cpf_cnpj: '',
+    cliente_email: 'reserva.exemplo@email.com',
+    cliente_telefone: '(21) 99999-8888',
+    corretor_cpf_cnpj: '',
+    corretor_email: '',
+    corretor_nome: 'EXEMPLO — Carlos Parceiro',
+    empreendimento: 'EXEMPLO — Residencial Modelo',
+    quadra: 'B',
+    lote: '5',
+    data_venda: '01/02/2025',
+    valor_total: 'R$ 95.000,00',
+    entrada: '',
+    sinal: '',
+    saldo: '',
+    quantidade_parcelas: '',
+    vencimento_primeira_parcela: '',
+    percentual_comissao: '',
+    status: 'RESERVADO',
+    observacoes: 'Linha de exemplo',
+  },
+];
