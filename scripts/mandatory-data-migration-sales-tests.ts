@@ -257,20 +257,90 @@ function test9DateNormalization() {
   const br = parseSaleImportDate('15/03/2025');
   assert(br.value === '2025-03-15', 'data brasileira dd/mm/aaaa');
 
-  const brDash = parseSaleImportDate('05-03-2026');
-  assert(brDash.value === '2026-03-05', 'data brasileira dd-mm-aaaa');
+  const brDash = parseSaleImportDate('05-06-2026');
+  assert(brDash.value === '2026-06-05', 'data brasileira dd-mm-aaaa');
 
-  const productionDate = parseSaleImportDate('05/03/2026');
-  assert(productionDate.value === '2026-03-05', 'data produção 05/03/2026');
+  const productionDate = parseSaleImportDate('05/06/2026');
+  assert(productionDate.value === '2026-06-05', 'data produção 05/06/2026');
   assert(!productionDate.error, 'sem erro na data produção');
 
-  const iso = parseSaleImportDate('2026-03-05');
-  assert(iso.value === '2026-03-05', 'data ISO yyyy-mm-dd');
+  const productionVencimento = parseSaleImportDate('10/07/2026');
+  assert(productionVencimento.value === '2026-07-10', 'vencimento produção 10/07/2026');
 
-  const excelSerial = parseSaleImportDate('46086');
-  assert(excelSerial.value === '2026-03-05', 'serial Excel 46086');
+  const shortYear = parseSaleImportDate('05/06/26');
+  assert(shortYear.value === '2026-06-05', 'data com ano de 2 dígitos');
+
+  const usExcelExport = parseSaleImportDate('6/5/26');
+  assert(usExcelExport.value === '2026-06-05', 'exportação US do Excel 6/5/26');
+
+  const iso = parseSaleImportDate('2026-06-05');
+  assert(iso.value === '2026-06-05', 'data ISO yyyy-mm-dd');
+
+  const excelSerial = parseSaleImportDate(46178);
+  assert(excelSerial.value === '2026-06-05', 'serial Excel 46178');
+
+  const excelDate = parseSaleImportDate(new Date(Date.UTC(2026, 5, 5)));
+  assert(excelDate.value === '2026-06-05', 'objeto Date UTC');
 
   console.log('OK test9DateNormalization');
+}
+
+async function test17ProductionExcelDateCells() {
+  const ExcelJS = (await import('exceljs')).default;
+  const { parseSaleImportFile } = await import('../lib/imports/modules/sales/parseFile');
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Vendas');
+  sheet.addRow([
+    'cliente_cpf_cnpj',
+    'empreendimento',
+    'quadra',
+    'lote',
+    'data_venda',
+    'valor_total',
+    'quantidade_parcelas',
+    'vencimento_primeira_parcela',
+    'status',
+  ]);
+  const row = sheet.addRow([
+    '650.820.282-00',
+    'CHACREAMENTO RECANTO PRIMAVERA I',
+    'QD 03',
+    'Lote 32',
+    new Date(2026, 5, 5),
+    'R$ 85.000,00',
+    '80',
+    new Date(2026, 6, 10),
+    'VENDIDO',
+  ]);
+  row.getCell(5).value = new Date(2026, 5, 5);
+  row.getCell(8).value = new Date(2026, 6, 10);
+
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const { rows } = parseSaleImportFile(buffer, 'producao-vendas.xlsx');
+  assert(rows.length === 1, 'uma linha real parseada');
+  assert(rows[0]?.data_venda === '2026-06-05', 'data_venda Excel Date → 2026-06-05');
+  assert(rows[0]?.vencimento_primeira_parcela === '2026-07-10', 'vencimento Excel Date');
+  assert(rows[0]?.data_venda_raw.length > 0, 'raw de exibição preservado');
+
+  const { rows: validated } = validateSaleRows(rows, buildMockContext({
+    customers: buildSalesCustomerIndex([
+      {
+        id: 'cust-recanto',
+        name: 'Cliente Recanto',
+        cpf_cnpj: '650.820.282-00',
+        email: '',
+        phone: '',
+      },
+    ]),
+  }));
+  assert(validated[0]?.block_id === 'block-recanto', 'lote localizado na planilha Excel');
+  assert(validated[0]?.status === 'valid' || validated[0]?.status === 'warning', 'linha válida');
+  assert(
+    !validated[0]?.messages.some((m) => m.text.includes('Data de venda inválida')),
+    'sem erro de data na validação',
+  );
+  console.log('OK test17ProductionExcelDateCells');
 }
 
 function test13QuadraLoteVariants() {
@@ -317,8 +387,8 @@ function test14ProductionRecantoPrimavera() {
         quadra_normalized: 'QD 03',
         lote: 'Lote 32',
         lote_normalized: '32',
-        data_venda_raw: '05/03/2026',
-        data_venda: '2026-03-05',
+        data_venda_raw: '05/06/2026',
+        data_venda: '2026-06-05',
       }),
     ],
     context,
@@ -458,6 +528,7 @@ async function main() {
   test14ProductionRecantoPrimavera();
   test15ProjectNameNormalization();
   test16BlockNotFoundSuggestions();
+  await test17ProductionExcelDateCells();
   console.log('mandatory-data-migration-sales-tests: all passed');
 }
 

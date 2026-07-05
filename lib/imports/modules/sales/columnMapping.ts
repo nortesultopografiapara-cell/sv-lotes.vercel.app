@@ -100,3 +100,17 @@ export function pickMappedSaleCell(
   if (!header) return '';
   return String(rawRow[header] ?? '').trim();
 }
+
+export function pickMappedSaleImportCell(
+  displayRow: Record<string, string>,
+  importRow: Record<string, unknown>,
+  mapping: SaleColumnMapping,
+  field: SaleImportField,
+): { display: string; importValue: unknown } {
+  const header = mapping[field];
+  if (!header) return { display: '', importValue: '' };
+  return {
+    display: String(displayRow[header] ?? '').trim(),
+    importValue: importRow[header] ?? '',
+  };
+}

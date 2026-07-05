@@ -4,6 +4,11 @@
 
 import * as XLSX from 'xlsx';
 import {
+  resolveSpreadsheetCellValue,
+  spreadsheetCellToDisplayString,
+  spreadsheetCellToImportString,
+} from '@/lib/imports/spreadsheetCellValue';
+import {
   mapCustomerImportColumns,
   pickMappedCell,
 } from '@/lib/imports/modules/customers/columnMapping';
@@ -18,6 +23,7 @@ export type ParsedSpreadsheet = {
   fileType: 'xlsx' | 'xls' | 'csv' | 'unknown';
   headers: string[];
   rawRows: Record<string, string>[];
+  importCellRows: Record<string, unknown>[];
   rowCount: number;
 };
 
@@ -29,47 +35,80 @@ function detectFileType(fileName: string): ParsedSpreadsheet['fileType'] {
   return 'unknown';
 }
 
-function safeSpreadsheetCell(value: unknown): string {
-  if (value == null) return '';
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  return String(value).trim();
-}
-
-function sheetToMatrix(workbook: XLSX.WorkBook): string[][] {
+function sheetToMatrices(workbook: XLSX.WorkBook): {
+  displayMatrix: string[][];
+  importMatrix: unknown[][];
+} {
   const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
+  if (!sheetName) return { displayMatrix: [], importMatrix: [] };
   const sheet = workbook.Sheets[sheetName];
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+  const rawMatrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',
-    raw: false,
+    raw: true,
   }) as unknown[][];
-  return matrix
-    .map((row) => (Array.isArray(row) ? row.map(safeSpreadsheetCell) : []))
-    .filter((row) => row.some((cell) => cell !== ''));
+
+  const displayMatrix: string[][] = [];
+  const importMatrix: unknown[][] = [];
+
+  rawMatrix.forEach((row, rowIndex) => {
+    if (!Array.isArray(row)) return;
+
+    const displayRow: string[] = [];
+    const importRow: unknown[] = [];
+    let hasData = false;
+
+    row.forEach((cell, colIndex) => {
+      const resolved = resolveSpreadsheetCellValue(sheet, rowIndex, colIndex, cell);
+      const display = spreadsheetCellToDisplayString(sheet, rowIndex, colIndex, resolved);
+      displayRow.push(display);
+      importRow.push(resolved);
+      if (display !== '' || (resolved != null && resolved !== '')) hasData = true;
+    });
+
+    if (hasData) {
+      displayMatrix.push(displayRow);
+      importMatrix.push(importRow);
+    }
+  });
+
+  return { displayMatrix, importMatrix };
 }
 
-function matrixToRecords(matrix: string[][]): { headers: string[]; rawRows: Record<string, string>[] } {
-  if (!matrix.length) {
-    return { headers: [], rawRows: [] };
+function matricesToRecords(
+  displayMatrix: string[][],
+  importMatrix: unknown[][],
+): {
+  headers: string[];
+  rawRows: Record<string, string>[];
+  importCellRows: Record<string, unknown>[];
+} {
+  if (!displayMatrix.length) {
+    return { headers: [], rawRows: [], importCellRows: [] };
   }
 
-  const headers = matrix[0].map((cell, index) => {
-    const value = safeSpreadsheetCell(cell);
+  const headers = displayMatrix[0].map((cell, index) => {
+    const value = spreadsheetCellToImportString(cell);
     return value || `coluna_${index + 1}`;
   });
 
-  const rawRows = matrix.slice(1).map((row) => {
+  const rawRows = displayMatrix.slice(1).map((row) => {
     const record: Record<string, string> = {};
     headers.forEach((header, index) => {
-      record[header] = safeSpreadsheetCell(row[index]);
+      record[header] = String(row[index] ?? '').trim();
     });
     return record;
   });
 
-  return { headers, rawRows };
+  const importCellRows = importMatrix.slice(1).map((row) => {
+    const record: Record<string, unknown> = {};
+    headers.forEach((header, index) => {
+      record[header] = row[index] ?? '';
+    });
+    return record;
+  });
+
+  return { headers, rawRows, importCellRows };
 }
 
 export function parseImportSpreadsheetBuffer(
@@ -83,7 +122,7 @@ export function parseImportSpreadsheetBuffer(
     throw new CustomerImportParseError('Arquivo vazio ou corrompido.');
   }
 
-  const readOptions: XLSX.ParsingOptions = { type: 'buffer', cellDates: false };
+  const readOptions: XLSX.ParsingOptions = { type: 'buffer', cellDates: true };
   if (fileType === 'csv') {
     readOptions.raw = false;
   }
@@ -98,13 +137,14 @@ export function parseImportSpreadsheetBuffer(
     );
   }
 
-  const matrix = sheetToMatrix(workbook);
-  const { headers, rawRows } = matrixToRecords(matrix);
+  const { displayMatrix, importMatrix } = sheetToMatrices(workbook);
+  const { headers, rawRows, importCellRows } = matricesToRecords(displayMatrix, importMatrix);
 
   return {
     fileType,
     headers,
     rawRows,
+    importCellRows,
     rowCount: rawRows.length,
   };
 }
@@ -146,7 +186,7 @@ export function mapRawRowsToCustomerRows(
       email: pickMappedCell(rawRow, columnMapping.mapping, 'email'),
       endereco: pickMappedCell(rawRow, columnMapping.mapping, 'endereco'),
       cidade: pickMappedCell(rawRow, columnMapping.mapping, 'cidade'),
-      uf: safeSpreadsheetCell(pickMappedCell(rawRow, columnMapping.mapping, 'uf')).toUpperCase(),
+      uf: spreadsheetCellToImportString(pickMappedCell(rawRow, columnMapping.mapping, 'uf')).toUpperCase(),
       cep: pickMappedCell(rawRow, columnMapping.mapping, 'cep'),
       cep_digits: normalizeCep(pickMappedCell(rawRow, columnMapping.mapping, 'cep')),
       estado_civil: pickMappedCell(rawRow, columnMapping.mapping, 'estado_civil'),
