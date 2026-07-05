@@ -29,6 +29,7 @@ import {
   RefreshCw,
   Handshake,
   CreditCard,
+  DatabaseBackup,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
@@ -46,6 +47,8 @@ import { HelpCenterProfileMenuLink } from '@/components/ui/HelpCenterProfileMenu
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
+import { canAccessDataMigrationModule } from '@/lib/imports/permissions';
+import { DATA_MIGRATION_ROUTE } from '@/lib/imports/constants';
 import {
   getOwnerMenuItemsFromPermissions,
   loadOwnerAccessContext,
@@ -251,7 +254,7 @@ const getMenuItems = (role: string) => {
   }
 
   if (shouldShowFullTenantAdminMenu(role)) {
-    return [
+    const items = [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
@@ -262,8 +265,22 @@ const getMenuItems = (role: string) => {
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
       { name: 'Sócios / Proprietários', href: '/owners', icon: Handshake, color: 'text-[#a855f7]' },
       { name: 'Sincronização Offline', href: '/offline-sync', icon: RefreshCw, color: 'text-[#f97316]' },
-      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
     ];
+    if (canAccessDataMigrationModule(role)) {
+      items.push({
+        name: 'Migração de Dados',
+        href: DATA_MIGRATION_ROUTE,
+        icon: DatabaseBackup,
+        color: 'text-[#0ea5e9]',
+      });
+    }
+    items.push({
+      name: 'Configurações',
+      href: '/settings',
+      icon: Settings,
+      color: 'text-[var(--color-text-muted)]',
+    });
+    return items;
   }
 
   if (isBrokerRole(role)) {
