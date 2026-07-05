@@ -18,7 +18,10 @@ import {
   parseLegacyContractDate,
   parseLegacyContractStatus,
 } from '../lib/imports/modules/legacy-contracts/normalize';
-import { buildLegacyContractPdfIndex } from '../lib/imports/modules/legacy-contracts/pdfIndex';
+import {
+  buildLegacyContractPdfIndex,
+  buildLegacyContractPdfIndexFromUploads,
+} from '../lib/imports/modules/legacy-contracts/pdfIndex';
 import { validateLegacyContractRows } from '../lib/imports/modules/legacy-contracts/validateRows';
 import type {
   LegacyContractImportContext,
@@ -31,14 +34,20 @@ import {
 } from '../lib/imports/modules/sales/lookupIndex';
 import {
   applyLegacyContractsValidationAndAdvance,
+  canAdvanceWizardStep,
   INITIAL_MIGRATION_WIZARD_STATE,
 } from '../lib/imports/services/migrationWizardState';
+import {
+  appendLegacyContractFormData,
+  extractLegacyContractFormFiles,
+} from '../lib/imports/helpers/legacyContractFormData';
 import { getWizardStepsForModule } from '../lib/imports/services/migrationWizardSteps';
 import {
   buildImportCsvTemplate,
   getImportTemplateHeaders,
 } from '../lib/imports/services/templateDownload';
 import {
+  isAcceptedImportFile,
   isAcceptedLegacyDocumentFile,
   parseImportFileMeta,
 } from '../lib/imports/helpers/parseImportFileMeta';
@@ -182,6 +191,12 @@ async function testPdfIndex() {
   } catch (err) {
     assert(err instanceof Error && err.message.includes('PDF ou ZIP'), 'erro txt');
   }
+  const multi = await buildLegacyContractPdfIndexFromUploads([
+    { buffer: Buffer.from('%PDF-1'), fileName: 'a.pdf' },
+    { buffer: Buffer.from('%PDF-2'), fileName: 'b.pdf' },
+  ]);
+  assert(multi.pdfCount === 2, '2 pdfs múltiplos');
+  assert(multi.index.has('a.pdf') && multi.index.has('b.pdf'), 'índice múltiplos');
   console.log('OK testPdfIndex');
 }
 
@@ -259,7 +274,7 @@ async function testValidateBuffer() {
   const validation = await validateLegacyContractImportBuffer({
     spreadsheetBuffer: Buffer.from(csv, 'utf8'),
     spreadsheetFileName: 'mapeamento.csv',
-    documentsBuffer: pdfBuffer,
+    documentUploads: [{ buffer: pdfBuffer, fileName: 'contrato_teste.pdf' }],
     documentsFileName: 'contrato_teste.pdf',
     context,
   });
@@ -280,9 +295,9 @@ function testWizardIntegration() {
     step: 'upload-documents' as const,
     selectedModuleId: 'legacy_contracts' as const,
     uploadedFile: parseImportFileMeta(new File(['a'], 'map.csv', { type: 'text/csv' })),
-    uploadedDocumentsFile: parseImportFileMeta(
-      new File(['%PDF'], 'docs.pdf', { type: 'application/pdf' }),
-    ),
+    uploadedDocumentsFiles: [
+      parseImportFileMeta(new File(['%PDF'], 'docs.pdf', { type: 'application/pdf' })),
+    ],
   };
 
   state = applyLegacyContractsValidationAndAdvance(state, {
@@ -313,6 +328,96 @@ function testWizardIntegration() {
   console.log('OK testWizardIntegration');
 }
 
+function testFormDataFieldNames() {
+  const formData = new FormData();
+  const spreadsheet = new File(['a;b'], 'mapeamento.csv', { type: 'text/csv' });
+  const pdf1 = new File(['%PDF-1'], 'contrato_a.pdf', { type: 'application/pdf' });
+  const zip = new File(['PK'], 'contratos.zip', { type: 'application/zip' });
+
+  appendLegacyContractFormData(formData, {
+    mappingFile: spreadsheet,
+    documentFiles: [pdf1, zip],
+    activeTenantId: 'tenant-1',
+  });
+
+  assert(formData.has('mappingFile'), 'mappingFile enviado');
+  assert(formData.getAll('documentFiles').length === 2, 'documentFiles múltiplos');
+  assert(formData.get('activeTenantId') === 'tenant-1', 'tenant opcional');
+
+  const extracted = extractLegacyContractFormFiles(formData);
+  assert(extracted.mappingFile?.name === 'mapeamento.csv', 'planilha extraída');
+  assert(extracted.documentFiles.length === 2, 'documentos extraídos');
+  assert(extracted.documentFiles[0]?.name === 'contrato_a.pdf', 'pdf extraído');
+  assert(extracted.documentFiles[1]?.name === 'contratos.zip', 'zip extraído');
+  console.log('OK testFormDataFieldNames');
+}
+
+function testWizardUploadStepConstraints() {
+  const wizard = read('components/imports/DataMigrationWizard.tsx');
+  const uploadSection =
+    wizard.match(/case 'upload':[\s\S]*?case 'upload-documents':/)?.[0] ?? '';
+  const docsSection =
+    wizard.match(/case 'upload-documents':[\s\S]*?case 'pre-validation':/)?.[0] ?? '';
+
+  assert(uploadSection.includes('ACCEPTED_IMPORT_ACCEPT_ATTR'), 'planilha aceita xlsx/xls/csv');
+  assert(!uploadSection.includes('multiple'), 'planilha sem multiple');
+  assert(uploadSection.includes('data-testid="migration-file-input"'), 'input planilha');
+
+  assert(
+    docsSection.includes('.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed'),
+    'pdfs aceita pdf/zip',
+  );
+  assert(docsSection.includes('multiple'), 'pdfs com multiple');
+  assert(
+    docsSection.includes(
+      'Selecione os PDFs dos contratos antigos ou um arquivo ZIP contendo os PDFs.',
+    ),
+    'texto área pdfs',
+  );
+  assert(wizard.includes('appendLegacyContractFormData'), 'formData legacy');
+  assert(wizard.includes("mappingFile: spreadsheetFile"), 'mappingFile no validate');
+
+  let state = {
+    ...INITIAL_MIGRATION_WIZARD_STATE,
+    step: 'upload-documents' as const,
+    selectedModuleId: 'legacy_contracts' as const,
+  };
+  assert(!canAdvanceWizardStep(state), 'pdfs rejeita ausência de arquivo');
+
+  state = {
+    ...state,
+    uploadedDocumentsFiles: [
+      parseImportFileMeta(new File(['%PDF'], 'doc.pdf', { type: 'application/pdf' })),
+    ],
+  };
+  assert(canAdvanceWizardStep(state), 'pdfs aceita ao menos 1 arquivo');
+
+  const spreadsheetState = {
+    ...INITIAL_MIGRATION_WIZARD_STATE,
+    step: 'upload' as const,
+    selectedModuleId: 'legacy_contracts' as const,
+  };
+  assert(!canAdvanceWizardStep(spreadsheetState), 'planilha rejeita ausência');
+  assert(
+    canAdvanceWizardStep({
+      ...spreadsheetState,
+      uploadedFile: parseImportFileMeta(
+        new File(['a'], 'map.xlsx', {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+      ),
+    }),
+    'planilha aceita excel',
+  );
+
+  const xlsx = new File(['x'], 'map.xlsx', {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  assert(isAcceptedImportFile(xlsx), 'excel na etapa planilha');
+  assert(!isAcceptedLegacyDocumentFile(xlsx), 'excel rejeitado na etapa pdfs');
+  console.log('OK testWizardUploadStepConstraints');
+}
+
 function testTemplatesAndUi() {
   const headers = getImportTemplateHeaders('legacy_contracts');
   assert(headers.includes('nome_arquivo_pdf'), 'header pdf');
@@ -323,8 +428,10 @@ function testTemplatesAndUi() {
 
   const wizard = read('components/imports/DataMigrationWizard.tsx');
   assert(wizard.includes('migration-step-upload-documents'), 'step upload docs');
+  assert(wizard.includes('migration-documents-file-input'), 'input pdfs');
   assert(wizard.includes('applyLegacyContractsValidationAndAdvance'), 'avanço legacy');
   assert(wizard.includes('/api/data-migration/legacy-contracts/validate'), 'api validate');
+  assert(wizard.includes('documentFiles'), 'documentFiles no wizard');
 
   const pdf = new File(['%PDF'], 'contrato.pdf', { type: 'application/pdf' });
   assert(isAcceptedLegacyDocumentFile(pdf), 'pdf aceito');
@@ -359,6 +466,8 @@ async function main() {
   await testValidationRows();
   await testValidateBuffer();
   testWizardIntegration();
+  testFormDataFieldNames();
+  testWizardUploadStepConstraints();
   testTemplatesAndUi();
   await testXlsxTemplate();
   console.log('\nTodos os testes de contratos antigos passaram.');

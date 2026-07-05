@@ -39,6 +39,31 @@ export async function buildLegacyContractPdfIndex(
   return { index, pdfCount: index.size };
 }
 
+export async function buildLegacyContractPdfIndexFromUploads(
+  uploads: Array<{ buffer: Buffer | ArrayBuffer; fileName: string }>,
+): Promise<{ index: LegacyContractPdfIndex; pdfCount: number }> {
+  if (uploads.length === 0) {
+    throw new Error('Nenhum PDF ou ZIP enviado.');
+  }
+
+  const index: LegacyContractPdfIndex = new Map();
+
+  for (const upload of uploads) {
+    const partial = await buildLegacyContractPdfIndex(upload.buffer, upload.fileName);
+    for (const [key, value] of partial.index) {
+      if (!index.has(key)) {
+        index.set(key, value);
+      }
+    }
+  }
+
+  if (index.size === 0) {
+    throw new Error('Nenhum PDF encontrado nos arquivos enviados.');
+  }
+
+  return { index, pdfCount: index.size };
+}
+
 export function lookupLegacyContractPdf(
   index: LegacyContractPdfIndex,
   fileName: string,

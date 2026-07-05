@@ -92,7 +92,7 @@ export type MigrationWizardState = {
   step: MigrationWizardStepId;
   selectedModuleId: ImportModuleId | null;
   uploadedFile: UploadedImportFileMeta | null;
-  uploadedDocumentsFile: UploadedImportFileMeta | null;
+  uploadedDocumentsFiles: UploadedImportFileMeta[];
   customerValidation: CustomerImportValidationResult | null;
   customerPreviewFilter: CustomerPreviewFilter;
   customerImportResult: CustomerImportExecuteResult | null;
