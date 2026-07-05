@@ -33,9 +33,10 @@ import {
   parseImportFileMeta,
 } from '@/lib/imports/helpers/parseImportFileMeta';
 import {
-  appendLegacyContractDocumentsFormData,
   filterAcceptedLegacyDocumentFiles,
 } from '@/lib/imports/helpers/legacyContractFormData';
+import { executeLegacyContractsImport } from '@/lib/imports/helpers/legacyContractExecuteClient';
+import { validateLegacyContractsFiles } from '@/lib/imports/helpers/legacyContractValidationClient';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import {
   advanceWizardState,
@@ -206,83 +207,6 @@ async function executeSalesImport(file: File, activeTenantId: string | null) {
   if (!response.ok) {
     throw new Error(
       (typeof payload.error === 'string' && payload.error) || 'Falha ao importar vendas.',
-    );
-  }
-
-  return payload.result;
-}
-
-async function validateLegacyContractsFiles(
-  documentFiles: File[],
-  activeTenantId: string | null,
-): Promise<LegacyContractImportValidationResult> {
-  const formData = new FormData();
-  appendLegacyContractDocumentsFormData(formData, {
-    documentFiles,
-    activeTenantId,
-  });
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120_000);
-
-  let response: Response;
-  try {
-    response = await fetch('/api/data-migration/legacy-contracts/validate', {
-      method: 'POST',
-      body: formData,
-      credentials: 'same-origin',
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('A validação demorou demais. Tente novamente com menos arquivos.');
-    }
-    throw new Error(
-      err instanceof Error
-        ? err.message
-        : 'Não foi possível conectar ao servidor de validação.',
-    );
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
-  if (!response.ok) {
-    const apiError =
-      (typeof payload.error === 'string' && payload.error) ||
-      (typeof payload.message === 'string' && payload.message) ||
-      `Falha na validação dos arquivos (${response.status}).`;
-    throw new Error(apiError);
-  }
-
-  if (!payload.validation) {
-    throw new Error('Resposta de validação inválida.');
-  }
-
-  return payload.validation as LegacyContractImportValidationResult;
-}
-
-async function executeLegacyContractsImport(
-  documentFiles: File[],
-  activeTenantId: string | null,
-) {
-  const formData = new FormData();
-  appendLegacyContractDocumentsFormData(formData, {
-    documentFiles,
-    activeTenantId,
-    confirmed: true,
-  });
-
-  const response = await fetch('/api/data-migration/legacy-contracts/execute', {
-    method: 'POST',
-    body: formData,
-  });
-
-  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
-  if (!response.ok) {
-    throw new Error(
-      (typeof payload.error === 'string' && payload.error) ||
-        'Falha ao anexar contratos antigos.',
     );
   }
 

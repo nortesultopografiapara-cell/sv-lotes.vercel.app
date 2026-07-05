@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   productionBrowserSourceMaps: false,
+  experimental: {
+    middlewareClientMaxBodySize: '55mb',
+    serverActions: {
+      bodySizeLimit: '55mb',
+    },
+  },
   images: {
     remotePatterns: [
       {

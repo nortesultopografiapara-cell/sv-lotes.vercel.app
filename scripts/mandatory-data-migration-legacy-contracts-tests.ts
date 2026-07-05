@@ -45,6 +45,15 @@ import {
   appendLegacyContractDocumentsFormData,
   extractLegacyContractFormFiles,
 } from '../lib/imports/helpers/legacyContractFormData';
+import { getLegacyContractValidationHttpErrorMessage } from '../lib/imports/helpers/legacyContractHttpErrors';
+import { mergeLegacyContractValidationResults } from '../lib/imports/modules/legacy-contracts/mergeValidationResults';
+import {
+  chunkLegacyDocumentFilesForUpload,
+  LEGACY_CONTRACT_MAX_FILE_BYTES,
+  LEGACY_CONTRACT_PAYLOAD_TOO_LARGE_MESSAGE,
+  LEGACY_CONTRACT_VERCEL_SAFE_REQUEST_BYTES,
+  shouldStageLegacyDocumentFile,
+} from '../lib/imports/modules/legacy-contracts/uploadLimits';
 import { getWizardStepsForModule, getNextWizardStepForModule } from '../lib/imports/services/migrationWizardSteps';
 import {
   buildImportCsvTemplate,
@@ -438,6 +447,102 @@ function testFormDataFieldNames() {
   console.log('OK testFormDataFieldNames');
 }
 
+function testUploadLimitsAnd413Messages() {
+  const nextConfig = read('next.config.ts');
+  const middleware = read('middleware.ts');
+  const validateRoute = read('app/api/data-migration/legacy-contracts/validate/route.ts');
+
+  assert(nextConfig.includes("middlewareClientMaxBodySize: '55mb'"), 'next config 55mb');
+  assert(middleware.includes('api/data-migration/legacy-contracts'), 'middleware exclui legacy api');
+  assert(validateRoute.includes('LEGACY_CONTRACT_PAYLOAD_TOO_LARGE_MESSAGE'), 'api 413 json');
+
+  const smallA = new File([new Uint8Array(1024)], 'a.pdf', { type: 'application/pdf' });
+  const smallB = new File([new Uint8Array(1024)], 'b.pdf', { type: 'application/pdf' });
+  const chunks = chunkLegacyDocumentFilesForUpload([smallA, smallB]);
+  assert(chunks.length === 1 && chunks[0]?.length === 2, 'chunk agrupa arquivos pequenos');
+
+  const large = new File(
+    [new Uint8Array(LEGACY_CONTRACT_VERCEL_SAFE_REQUEST_BYTES + 1)],
+    'grande.pdf',
+    { type: 'application/pdf' },
+  );
+  assert(shouldStageLegacyDocumentFile(large), 'arquivo grande vai para staging');
+  assert(chunkLegacyDocumentFilesForUpload([large]).length === 1, 'arquivo grande chunk isolado');
+
+  const merged = mergeLegacyContractValidationResults(
+    [
+      {
+        fileName: 'docs.pdf',
+        documentsFileName: 'docs.pdf',
+        fileType: 'unknown',
+        rowCount: 1,
+        pdfCount: 1,
+        columnMapping: {
+          mapping: {},
+          unmappedHeaders: [],
+          missingRequired: [],
+          recognizedHeaders: {} as never,
+        },
+        summary: {
+          totalRows: 1,
+          validRows: 1,
+          warningRows: 0,
+          errorRows: 0,
+          duplicateRows: 0,
+          existingRows: 0,
+          ignoredRows: 0,
+          importableRows: 1,
+        },
+        rows: [],
+      },
+      {
+        fileName: 'docs2.pdf',
+        documentsFileName: 'docs2.pdf',
+        fileType: 'unknown',
+        rowCount: 1,
+        pdfCount: 1,
+        columnMapping: {
+          mapping: {},
+          unmappedHeaders: [],
+          missingRequired: [],
+          recognizedHeaders: {} as never,
+        },
+        summary: {
+          totalRows: 1,
+          validRows: 0,
+          warningRows: 0,
+          errorRows: 1,
+          duplicateRows: 0,
+          existingRows: 0,
+          ignoredRows: 1,
+          importableRows: 0,
+        },
+        rows: [],
+      },
+    ],
+    '2 docs',
+  );
+  assert(merged.summary.totalRows === 0, 'merge sem linhas mock');
+  assert(merged.pdfCount === 2, 'merge combina pdfCount');
+
+  assert(
+    getLegacyContractValidationHttpErrorMessage(413, {}) ===
+      LEGACY_CONTRACT_PAYLOAD_TOO_LARGE_MESSAGE,
+    'mensagem 413 amigável',
+  );
+
+  const formData = new FormData();
+  formData.append(
+    'documentStoragePaths',
+    JSON.stringify([{ storagePath: 'tenant/migration-staging/s1/a.pdf', fileName: 'a.pdf' }]),
+  );
+  const extracted = extractLegacyContractFormFiles(formData);
+  assert(extracted.documentStoragePaths.length === 1, 'storage paths extraídos');
+
+  assert(LEGACY_CONTRACT_MAX_FILE_BYTES === 50 * 1024 * 1024, 'limite 50mb por arquivo');
+  console.log('OK testUploadLimitsAnd413Messages');
+}
+
 function testWizardUploadStepConstraints() {
   const wizard = read('components/imports/DataMigrationWizard.tsx');
   const steps = getWizardStepsForModule('legacy_contracts');
@@ -467,7 +572,8 @@ function testWizardUploadStepConstraints() {
   assert(wizard.includes('data-testid="migration-documents-file-input"'), 'input pdfs na raiz');
   assert(wizard.includes('Validando PDFs'), 'loading legacy sem planilha');
   assert(!wizard.includes('Validando planilha e PDFs'), 'texto planilha removido legacy');
-  assert(wizard.includes('validateLegacyContractsFiles'), 'validate legacy pdfs');
+  assert(wizard.includes('legacyContractValidationClient'), 'validate legacy client');
+  assert(wizard.includes('legacyContractExecuteClient'), 'execute legacy client');
   assert(wizard.includes('if (isLegacyContractsModule) return null'), 'upload oculto legacy');
 
   let state = {
@@ -529,7 +635,11 @@ function testTemplatesAndUi() {
   assert(wizard.includes('migration-step-upload-documents'), 'step upload docs');
   assert(wizard.includes('migration-documents-file-input'), 'input pdfs');
   assert(wizard.includes('applyLegacyContractsValidationAndAdvance'), 'avanço legacy');
-  assert(wizard.includes('/api/data-migration/legacy-contracts/validate'), 'api validate');
+  const validationClient = read('lib/imports/helpers/legacyContractValidationClient.ts');
+  assert(
+    validationClient.includes('/api/data-migration/legacy-contracts/validate'),
+    'api validate',
+  );
   assert(wizard.includes('documentFiles'), 'documentFiles no wizard');
 
   const pdf = new File(['%PDF'], 'contrato.pdf', { type: 'application/pdf' });
@@ -567,6 +677,7 @@ async function main() {
   await testValidateBuffer();
   testWizardIntegration();
   testFormDataFieldNames();
+  testUploadLimitsAnd413Messages();
   testWizardUploadStepConstraints();
   testTemplatesAndUi();
   await testXlsxTemplate();
