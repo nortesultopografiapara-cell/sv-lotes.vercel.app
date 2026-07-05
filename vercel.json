@@ -6,6 +6,14 @@
     }
   ],
   "functions": {
+    "app/api/data-migration/legacy-contracts/validate/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "app/api/data-migration/legacy-contracts/execute/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "app/api/sign/sale/[token]/route.ts": {
       "maxDuration": 60,
       "memory": 1024

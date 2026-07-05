@@ -8,6 +8,7 @@ import { isAcceptedLegacyDocumentFile } from '@/lib/imports/helpers/parseImportF
 export type LegacyContractFormFiles = {
   mappingFile: File | null;
   documentFiles: File[];
+  documentStoragePaths: Array<{ storagePath: string; fileName: string }>;
 };
 
 export function extractLegacyContractFormFiles(formData: FormData): LegacyContractFormFiles {
@@ -27,7 +28,46 @@ export function extractLegacyContractFormFiles(formData: FormData): LegacyContra
     if (legacySingle) documentFiles.push(legacySingle);
   }
 
-  return { mappingFile, documentFiles };
+  const documentStoragePaths = parseLegacyContractStoragePaths(formData);
+
+  return { mappingFile, documentFiles, documentStoragePaths };
+}
+
+function parseLegacyContractStoragePaths(
+  formData: FormData,
+): Array<{ storagePath: string; fileName: string }> {
+  const rawJson = formData.get('documentStoragePaths');
+  if (typeof rawJson === 'string' && rawJson.trim()) {
+    try {
+      const parsed = JSON.parse(rawJson) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((entry) => {
+            if (!entry || typeof entry !== 'object') return null;
+            const storagePath = (entry as { storagePath?: unknown }).storagePath;
+            const fileName = (entry as { fileName?: unknown }).fileName;
+            if (typeof storagePath !== 'string' || typeof fileName !== 'string') return null;
+            return { storagePath, fileName };
+          })
+          .filter((entry): entry is { storagePath: string; fileName: string } => entry != null);
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return formData
+    .getAll('documentStoragePaths')
+    .map((entry) => {
+      if (typeof entry !== 'string') return null;
+      const separator = entry.indexOf('|');
+      if (separator <= 0) return null;
+      return {
+        storagePath: entry.slice(0, separator),
+        fileName: entry.slice(separator + 1),
+      };
+    })
+    .filter((entry): entry is { storagePath: string; fileName: string } => entry != null);
 }
 
 export function appendLegacyContractFormData(
@@ -35,6 +75,7 @@ export function appendLegacyContractFormData(
   params: {
     mappingFile?: File;
     documentFiles: File[];
+    documentStoragePaths?: Array<{ storagePath: string; fileName: string }>;
     activeTenantId?: string | null;
     confirmed?: boolean;
   },
@@ -44,6 +85,9 @@ export function appendLegacyContractFormData(
   }
   for (const file of params.documentFiles) {
     formData.append('documentFiles', file);
+  }
+  if (params.documentStoragePaths?.length) {
+    formData.append('documentStoragePaths', JSON.stringify(params.documentStoragePaths));
   }
   if (params.activeTenantId) {
     formData.append('activeTenantId', params.activeTenantId);
@@ -57,6 +101,7 @@ export function appendLegacyContractDocumentsFormData(
   formData: FormData,
   params: {
     documentFiles: File[];
+    documentStoragePaths?: Array<{ storagePath: string; fileName: string }>;
     activeTenantId?: string | null;
     confirmed?: boolean;
   },
