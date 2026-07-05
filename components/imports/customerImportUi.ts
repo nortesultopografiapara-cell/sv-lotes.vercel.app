@@ -1,12 +1,8 @@
 'use client';
 
-import type {
-  CustomerPreviewFilter,
-  CustomerRowStatus,
-  ValidatedCustomerRow,
-} from '@/lib/imports/modules/customers/types';
+import type { CustomerPreviewFilter } from '@/lib/imports/types';
 
-export const CUSTOMER_PREVIEW_FILTERS: {
+export const IMPORT_PREVIEW_FILTERS: {
   id: CustomerPreviewFilter;
   label: string;
 }[] = [
@@ -18,7 +14,7 @@ export const CUSTOMER_PREVIEW_FILTERS: {
   { id: 'existing', label: 'Existentes' },
 ];
 
-export const CUSTOMER_ROW_STATUS_LABELS: Record<CustomerRowStatus, string> = {
+export const IMPORT_ROW_STATUS_LABELS: Record<CustomerRowStatus | string, string> = {
   valid: 'Válido',
   warning: 'Aviso',
   error: 'Erro',
@@ -26,15 +22,21 @@ export const CUSTOMER_ROW_STATUS_LABELS: Record<CustomerRowStatus, string> = {
   existing: 'Existente',
 };
 
-export function filterCustomerPreviewRows(
-  rows: ValidatedCustomerRow[],
+export const CUSTOMER_PREVIEW_FILTERS = IMPORT_PREVIEW_FILTERS;
+export const CUSTOMER_ROW_STATUS_LABELS = IMPORT_ROW_STATUS_LABELS;
+
+export function filterImportPreviewRows<T extends { status: string }>(
+  rows: T[],
   filter: CustomerPreviewFilter,
-): ValidatedCustomerRow[] {
+): T[] {
   if (filter === 'all') return rows;
   return rows.filter((row) => row.status === filter);
 }
 
-export function customerRowStatusClass(status: CustomerRowStatus): string {
+/** @deprecated Use filterImportPreviewRows */
+export const filterCustomerPreviewRows = filterImportPreviewRows;
+
+export function customerRowStatusClass(status: string): string {
   switch (status) {
     case 'valid':
       return 'text-emerald-400';

@@ -16,15 +16,16 @@ import {
 import { ImportTypeCard } from '@/components/imports/ImportTypeCard';
 import { WizardStepIndicator } from '@/components/imports/WizardStepIndicator';
 import {
-  CUSTOMER_PREVIEW_FILTERS,
-  CUSTOMER_ROW_STATUS_LABELS,
   customerRowStatusClass,
   detectImportFileStatusLabel,
-  filterCustomerPreviewRows,
+  filterImportPreviewRows,
+  IMPORT_PREVIEW_FILTERS,
+  IMPORT_ROW_STATUS_LABELS,
 } from '@/components/imports/customerImportUi';
 import { useAuth } from '@/hooks/useAuth';
 import { ACCEPTED_IMPORT_ACCEPT_ATTR } from '@/lib/imports/constants';
 import { listImportModules, getImportModuleById } from '@/lib/imports/modules';
+import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
 import {
   isAcceptedImportFile,
   parseImportFileMeta,
@@ -32,9 +33,11 @@ import {
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import {
   advanceWizardState,
+  applyBrokerValidationAndAdvance,
   applyCustomerValidationAndAdvance,
   canAdvanceWizardStep,
   INITIAL_MIGRATION_WIZARD_STATE,
+  isActiveImportModule,
   retreatWizardState,
   selectImportModule,
   startMigrationWizard,
@@ -96,6 +99,60 @@ async function executeCustomersImport(
   return payload.result;
 }
 
+async function validateBrokersFile(
+  file: File,
+  activeTenantId: string | null,
+): Promise<BrokerImportValidationResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/brokers/validate', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    const apiError =
+      (typeof payload.error === 'string' && payload.error) ||
+      (typeof payload.message === 'string' && payload.message) ||
+      `Falha na validação do arquivo (${response.status}).`;
+    throw new Error(apiError);
+  }
+
+  if (!payload.validation) {
+    throw new Error('Resposta de validação inválida.');
+  }
+
+  return payload.validation as BrokerImportValidationResult;
+}
+
+async function executeBrokersImport(
+  file: File,
+  activeTenantId: string | null,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('confirmed', 'true');
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/brokers/execute', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    throw new Error(
+      (typeof payload.error === 'string' && payload.error) ||
+        'Falha ao importar corretores.',
+    );
+  }
+
+  return payload.result;
+}
+
 export function DataMigrationWizard() {
   const { user } = useAuth();
   const [state, setState] = useState<MigrationWizardState>(
@@ -108,6 +165,8 @@ export function DataMigrationWizard() {
     ? getImportModuleById(state.selectedModuleId)
     : null;
   const isCustomersModule = state.selectedModuleId === 'customers';
+  const isBrokersModule = state.selectedModuleId === 'brokers';
+  const isImportModuleActive = isActiveImportModule(state.selectedModuleId);
   const activeTenantId = user?.tenant_id || user?.company_id || null;
 
   const handleSelectModule = (moduleId: ImportModuleId) => {
@@ -127,6 +186,8 @@ export function DataMigrationWizard() {
       uploadedFile: parseImportFileMeta(file),
       customerValidation: null,
       customerImportResult: null,
+      brokerValidation: null,
+      brokerImportResult: null,
       validationError: null,
     }));
   };
@@ -158,49 +219,121 @@ export function DataMigrationWizard() {
       return;
     }
 
+    if (state.step === 'upload' && isBrokersModule) {
+      const file = rawFileRef.current;
+      if (!file) {
+        setState((prev) => ({
+          ...prev,
+          validationError: 'Selecione um arquivo antes de avançar.',
+        }));
+        return;
+      }
+
+      setState((prev) => ({ ...prev, validating: true, validationError: null }));
+      try {
+        const validation = await validateBrokersFile(file, activeTenantId);
+        setState((prev) => applyBrokerValidationAndAdvance(prev, validation));
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao validar arquivo.';
+        setState((prev) => ({
+          ...prev,
+          validating: false,
+          validationError: message,
+        }));
+      }
+      return;
+    }
+
     setState((prev) => advanceWizardState(prev));
   };
 
   const handleConfirmImport = async () => {
-    if (!isCustomersModule || !rawFileRef.current || !state.customerValidation) return;
+    if (!rawFileRef.current) return;
 
-    const importable = state.customerValidation.summary.importableRows;
-    const ignored = state.customerValidation.summary.ignoredRows;
+    if (isCustomersModule && state.customerValidation) {
+      const importable = state.customerValidation.summary.importableRows;
+      const ignored = state.customerValidation.summary.ignoredRows;
 
-    const confirmed = window.confirm(
-      `Confirmar importação de ${importable} novo(s) cliente(s)?\n\n${ignored} registro(s) serão ignorados por erro, duplicidade ou por já existirem no sistema.\n\nClientes existentes NÃO serão alterados.`,
-    );
-    if (!confirmed) return;
+      const confirmed = window.confirm(
+        `Confirmar importação de ${importable} novo(s) cliente(s)?\n\n${ignored} registro(s) serão ignorados por erro, duplicidade ou por já existirem no sistema.\n\nClientes existentes NÃO serão alterados.`,
+      );
+      if (!confirmed) return;
 
-    setState((prev) => ({ ...prev, importing: true }));
-    try {
-      const result = await executeCustomersImport(rawFileRef.current, activeTenantId);
-      setState((prev) => ({
-        ...prev,
-        step: 'confirmation',
-        customerImportResult: result,
-        importing: false,
-      }));
-    } catch (err) {
-      setState((prev) => ({ ...prev, importing: false }));
-      alert(err instanceof Error ? err.message : 'Erro ao importar clientes.');
+      setState((prev) => ({ ...prev, importing: true }));
+      try {
+        const result = await executeCustomersImport(rawFileRef.current, activeTenantId);
+        setState((prev) => ({
+          ...prev,
+          step: 'confirmation',
+          customerImportResult: result,
+          importing: false,
+        }));
+      } catch (err) {
+        setState((prev) => ({ ...prev, importing: false }));
+        alert(err instanceof Error ? err.message : 'Erro ao importar clientes.');
+      }
+      return;
+    }
+
+    if (isBrokersModule && state.brokerValidation) {
+      const importable = state.brokerValidation.summary.importableRows;
+      const ignored = state.brokerValidation.summary.ignoredRows;
+
+      const confirmed = window.confirm(
+        `Confirmar importação de ${importable} novo(s) corretor(es)?\n\n${ignored} registro(s) serão ignorados por erro, duplicidade ou por já existirem no sistema.\n\nCorretores existentes NÃO serão alterados.`,
+      );
+      if (!confirmed) return;
+
+      setState((prev) => ({ ...prev, importing: true }));
+      try {
+        const result = await executeBrokersImport(rawFileRef.current, activeTenantId);
+        setState((prev) => ({
+          ...prev,
+          step: 'confirmation',
+          brokerImportResult: result,
+          importing: false,
+        }));
+      } catch (err) {
+        setState((prev) => ({ ...prev, importing: false }));
+        alert(err instanceof Error ? err.message : 'Erro ao importar corretores.');
+      }
     }
   };
 
-  const previewRows = useMemo(() => {
+  const customerPreviewRows = useMemo(() => {
     if (!state.customerValidation) return [];
-    return filterCustomerPreviewRows(
+    return filterImportPreviewRows(
       state.customerValidation.rows,
       state.customerPreviewFilter,
     );
   }, [state.customerValidation, state.customerPreviewFilter]);
 
+  const brokerPreviewRows = useMemo(() => {
+    if (!state.brokerValidation) return [];
+    return filterImportPreviewRows(
+      state.brokerValidation.rows,
+      state.brokerPreviewFilter,
+    );
+  }, [state.brokerValidation, state.brokerPreviewFilter]);
+
+  const activeValidationSummary = isCustomersModule
+    ? state.customerValidation?.summary
+    : isBrokersModule
+      ? state.brokerValidation?.summary
+      : null;
+
+  const activeValidationMeta = isCustomersModule
+    ? state.customerValidation
+    : isBrokersModule
+      ? state.brokerValidation
+      : null;
+
   const renderPlaceholderModuleNotice = () => (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
       <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
       <p className="text-sm text-amber-100/90">
-        Este módulo ainda não está habilitado. Apenas Clientes possui importação ativa nesta
-        fase.
+        Este módulo ainda não está habilitado. Clientes e Corretores possuem importação ativa nesta fase.
       </p>
     </div>
   );
@@ -224,8 +357,7 @@ export function DataMigrationWizard() {
                     planilhas Excel para o SV LOTES de forma segura e orientada.
                   </p>
                   <p className="text-xs text-[var(--text-muted)] mt-3">
-                    A importação de Clientes está disponível. Os demais módulos serão habilitados
-                    nas próximas atualizações.
+                    A importação de Clientes e Corretores está disponível. Os demais módulos serão habilitados nas próximas atualizações.
                   </p>
                 </div>
               </div>
@@ -271,7 +403,7 @@ export function DataMigrationWizard() {
               </strong>{' '}
               antes de preparar sua planilha.
             </p>
-            {!isCustomersModule ? renderPlaceholderModuleNotice() : null}
+            {!isImportModuleActive ? renderPlaceholderModuleNotice() : null}
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
@@ -308,11 +440,11 @@ export function DataMigrationWizard() {
           <div className="space-y-4" data-testid="migration-step-upload">
             <p className="text-sm text-[var(--text-secondary)]">
               Selecione o arquivo preparado (.xlsx, .xls ou .csv).
-              {isCustomersModule
+              {isImportModuleActive
                 ? ' Ao avançar, o arquivo será validado sem gravar dados.'
                 : ' Nenhum dado será gravado nesta fase.'}
             </p>
-            {!isCustomersModule ? renderPlaceholderModuleNotice() : null}
+            {!isImportModuleActive ? renderPlaceholderModuleNotice() : null}
             {state.validationError ? (
               <div
                 className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"
@@ -379,7 +511,7 @@ export function DataMigrationWizard() {
                   <div>
                     <dt className="text-[10px] uppercase text-[var(--text-muted)]">Status</dt>
                     <dd>
-                      {isCustomersModule
+                      {isImportModuleActive
                         ? detectImportFileStatusLabel(
                             state.uploadedFile.extension.replace('.', ''),
                             1,
@@ -394,7 +526,7 @@ export function DataMigrationWizard() {
         );
 
       case 'pre-validation':
-        if (!isCustomersModule || !state.customerValidation) {
+        if (!isImportModuleActive || !activeValidationMeta || !activeValidationSummary) {
           return (
             <div className="space-y-4" data-testid="migration-step-pre-validation">
               {renderPlaceholderModuleNotice()}
@@ -409,14 +541,14 @@ export function DataMigrationWizard() {
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                ['Total lidas', state.customerValidation.summary.totalRows],
-                ['Válidas', state.customerValidation.summary.validRows],
-                ['Com avisos', state.customerValidation.summary.warningRows],
-                ['Com erros', state.customerValidation.summary.errorRows],
-                ['Duplicadas na planilha', state.customerValidation.summary.duplicateRows],
-                ['Já existentes', state.customerValidation.summary.existingRows],
-                ['Ignoradas', state.customerValidation.summary.ignoredRows],
-                ['A importar', state.customerValidation.summary.importableRows],
+                ['Total lidas', activeValidationSummary.totalRows],
+                ['Válidas', activeValidationSummary.validRows],
+                ['Com avisos', activeValidationSummary.warningRows],
+                ['Com erros', activeValidationSummary.errorRows],
+                ['Duplicadas na planilha', activeValidationSummary.duplicateRows],
+                ['Já existentes', activeValidationSummary.existingRows],
+                ['Ignoradas', activeValidationSummary.ignoredRows],
+                ['A importar', activeValidationSummary.importableRows],
               ].map(([label, value]) => (
                 <div
                   key={label}
@@ -429,15 +561,15 @@ export function DataMigrationWizard() {
             </div>
             <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-secondary)]">
               <p>
-                Linhas no arquivo: <strong>{state.customerValidation.rowCount}</strong> · Tipo:{' '}
-                <strong>{state.customerValidation.fileType.toUpperCase()}</strong>
+                Linhas no arquivo: <strong>{activeValidationMeta.rowCount}</strong> · Tipo:{' '}
+                <strong>{activeValidationMeta.fileType.toUpperCase()}</strong>
               </p>
             </div>
           </div>
         );
 
       case 'preview':
-        if (!isCustomersModule || !state.customerValidation) {
+        if (!isImportModuleActive || !activeValidationMeta) {
           return (
             <div className="space-y-4" data-testid="migration-step-preview">
               {renderPlaceholderModuleNotice()}
@@ -445,92 +577,147 @@ export function DataMigrationWizard() {
           );
         }
 
-        return (
-          <div className="space-y-4" data-testid="migration-step-preview">
-            <div className="flex flex-wrap gap-2">
-              {CUSTOMER_PREVIEW_FILTERS.map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  data-testid={`preview-filter-${filter.id}`}
-                  onClick={() =>
-                    setState((prev) => ({ ...prev, customerPreviewFilter: filter.id }))
-                  }
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-                    state.customerPreviewFilter === filter.id
-                      ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                      : 'border-[var(--border-color)] text-[var(--text-muted)]'
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-            <div className="rounded-xl border border-[var(--border-color)] overflow-x-auto">
-              <table className="w-full text-sm min-w-[960px]">
-                <thead className="bg-[var(--bg-main)]/60 border-b border-[var(--border-color)]">
-                  <tr>
-                    {[
-                      'Linha',
-                      'Nome',
-                      'CPF/CNPJ',
-                      'Telefone',
-                      'WhatsApp',
-                      'E-mail',
-                      'Cidade/UF',
-                      'Status',
-                      'Mensagens',
-                    ].map((header) => (
-                      <th
-                        key={header}
-                        className="px-3 py-3 text-left text-[10px] font-mono uppercase text-[var(--text-muted)]"
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewRows.length === 0 ? (
+        {
+          const previewFilter = isCustomersModule
+            ? state.customerPreviewFilter
+            : state.brokerPreviewFilter;
+          const previewRowsList = isCustomersModule
+            ? customerPreviewRows
+            : brokerPreviewRows;
+          const entityLabel = isCustomersModule ? 'cliente' : 'corretor';
+
+          return (
+            <div className="space-y-4" data-testid="migration-step-preview">
+              <div className="flex flex-wrap gap-2">
+                {IMPORT_PREVIEW_FILTERS.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    data-testid={`preview-filter-${filter.id}`}
+                    onClick={() =>
+                      setState((prev) =>
+                        isCustomersModule
+                          ? { ...prev, customerPreviewFilter: filter.id }
+                          : { ...prev, brokerPreviewFilter: filter.id },
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+                      previewFilter === filter.id
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                        : 'border-[var(--border-color)] text-[var(--text-muted)]'
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+              <div className="rounded-xl border border-[var(--border-color)] overflow-x-auto">
+                <table className="w-full text-sm min-w-[960px]">
+                  <thead className="bg-[var(--bg-main)]/60 border-b border-[var(--border-color)]">
                     <tr>
-                      <td
-                        colSpan={9}
-                        className="px-4 py-8 text-center text-[var(--text-muted)]"
-                      >
-                        Nenhuma linha para o filtro selecionado.
-                      </td>
-                    </tr>
-                  ) : (
-                    previewRows.map((row) => (
-                      <tr
-                        key={row.lineNumber}
-                        className="border-t border-[var(--border-color)]"
-                      >
-                        <td className="px-3 py-2">{row.lineNumber}</td>
-                        <td className="px-3 py-2">{row.nome}</td>
-                        <td className="px-3 py-2">{row.cpf_cnpj || '—'}</td>
-                        <td className="px-3 py-2">{row.telefone || '—'}</td>
-                        <td className="px-3 py-2">{row.whatsapp || '—'}</td>
-                        <td className="px-3 py-2">{row.email || '—'}</td>
-                        <td className="px-3 py-2">
-                          {[row.cidade, row.uf].filter(Boolean).join('/') || '—'}
-                        </td>
-                        <td
-                          className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                      {(isCustomersModule
+                        ? [
+                            'Linha',
+                            'Nome',
+                            'CPF/CNPJ',
+                            'Telefone',
+                            'WhatsApp',
+                            'E-mail',
+                            'Cidade/UF',
+                            'Status',
+                            'Mensagens',
+                          ]
+                        : [
+                            'Linha',
+                            'Nome',
+                            'CPF/CNPJ',
+                            'Telefone',
+                            'WhatsApp',
+                            'E-mail',
+                            '% Comissão',
+                            'Ativo',
+                            'Status',
+                            'Mensagens',
+                          ]
+                      ).map((header) => (
+                        <th
+                          key={header}
+                          className="px-3 py-3 text-left text-[10px] font-mono uppercase text-[var(--text-muted)]"
                         >
-                          {CUSTOMER_ROW_STATUS_LABELS[row.status]}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
-                          {row.messages.map((message) => message.text).join(' · ') || '—'}
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRowsList.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={isCustomersModule ? 9 : 10}
+                          className="px-4 py-8 text-center text-[var(--text-muted)]"
+                        >
+                          Nenhuma linha para o filtro selecionado.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : isCustomersModule ? (
+                      previewRowsList.map((row) => (
+                        <tr
+                          key={row.lineNumber}
+                          className="border-t border-[var(--border-color)]"
+                        >
+                          <td className="px-3 py-2">{row.lineNumber}</td>
+                          <td className="px-3 py-2">{row.nome}</td>
+                          <td className="px-3 py-2">{row.cpf_cnpj || '—'}</td>
+                          <td className="px-3 py-2">{row.telefone || '—'}</td>
+                          <td className="px-3 py-2">{row.whatsapp || '—'}</td>
+                          <td className="px-3 py-2">{row.email || '—'}</td>
+                          <td className="px-3 py-2">
+                            {[row.cidade, row.uf].filter(Boolean).join('/') || '—'}
+                          </td>
+                          <td
+                            className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                          >
+                            {IMPORT_ROW_STATUS_LABELS[row.status]}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                            {row.messages.map((message) => message.text).join(' · ') || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      previewRowsList.map((row) => (
+                        <tr
+                          key={row.lineNumber}
+                          className="border-t border-[var(--border-color)]"
+                        >
+                          <td className="px-3 py-2">{row.lineNumber}</td>
+                          <td className="px-3 py-2">{row.nome}</td>
+                          <td className="px-3 py-2">{row.cpf_cnpj || '—'}</td>
+                          <td className="px-3 py-2">{row.telefone || '—'}</td>
+                          <td className="px-3 py-2">{row.whatsapp || '—'}</td>
+                          <td className="px-3 py-2">{row.email || '—'}</td>
+                          <td className="px-3 py-2">{row.percentual_comissao}%</td>
+                          <td className="px-3 py-2">{row.ativo ? 'Sim' : 'Não'}</td>
+                          <td
+                            className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                          >
+                            {IMPORT_ROW_STATUS_LABELS[row.status]}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                            {row.messages.map((message) => message.text).join(' · ') || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[var(--text-muted)]">
+                Pré-visualização de {entityLabel}s — nenhum dado foi gravado.
+              </p>
             </div>
-          </div>
-        );
+          );
+        }
 
       case 'confirmation':
         if (isCustomersModule && state.customerImportResult) {
@@ -547,6 +734,38 @@ export function DataMigrationWizard() {
                 </p>
                 <p className="text-sm text-[var(--text-secondary)] mt-2">
                   <strong>{state.customerImportResult.ignored}</strong> registros foram ignorados
+                  por erro, duplicidade ou por já existirem no sistema.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="migration-back-to-start"
+                onClick={() => {
+                  rawFileRef.current = null;
+                  setState(INITIAL_MIGRATION_WIZARD_STATE);
+                }}
+                className="text-sm text-[var(--color-primary)] hover:underline"
+              >
+                Voltar ao início do assistente
+              </button>
+            </div>
+          );
+        }
+
+        if (isBrokersModule && state.brokerImportResult) {
+          return (
+            <div className="space-y-4" data-testid="migration-step-confirmation">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-2">
+                  Importação concluída
+                </h2>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Foram importados{' '}
+                  <strong>{state.brokerImportResult.imported}</strong> novos corretores.
+                </p>
+                <p className="text-sm text-[var(--text-secondary)] mt-2">
+                  <strong>{state.brokerImportResult.ignored}</strong> registros foram ignorados
                   por erro, duplicidade ou por já existirem no sistema.
                 </p>
               </div>
@@ -593,7 +812,18 @@ export function DataMigrationWizard() {
 
   const showNav = state.step !== 'welcome' && state.step !== 'confirmation';
   const showConfirmImport =
-    isCustomersModule && state.step === 'preview' && state.customerValidation != null;
+    isImportModuleActive &&
+    state.step === 'preview' &&
+    ((isCustomersModule && state.customerValidation != null) ||
+      (isBrokersModule && state.brokerValidation != null));
+
+  const confirmImportableCount = isCustomersModule
+    ? (state.customerValidation?.summary.importableRows ?? 0)
+    : (state.brokerValidation?.summary.importableRows ?? 0);
+  const confirmIgnoredCount = isCustomersModule
+    ? (state.customerValidation?.summary.ignoredRows ?? 0)
+    : (state.brokerValidation?.summary.ignoredRows ?? 0);
+  const confirmEntityLabel = isCustomersModule ? 'clientes' : 'corretores';
 
   return (
     <div data-testid="data-migration-wizard">
@@ -606,17 +836,16 @@ export function DataMigrationWizard() {
       {showConfirmImport ? (
         <div className="mt-6 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 space-y-3">
           <p className="text-sm text-[var(--text-secondary)]">
-            Serão importados{' '}
-            <strong>{state.customerValidation?.summary.importableRows ?? 0}</strong> novos clientes.
+            Serão importados <strong>{confirmImportableCount}</strong> novos {confirmEntityLabel}.
           </p>
           <p className="text-sm text-[var(--text-secondary)]">
-            <strong>{state.customerValidation?.summary.ignoredRows ?? 0}</strong> registros serão
-            ignorados por erro, duplicidade ou já existirem no sistema.
+            <strong>{confirmIgnoredCount}</strong> registros serão ignorados por erro,
+            duplicidade ou já existirem no sistema.
           </p>
           <button
             type="button"
             data-testid="migration-confirm-import"
-            disabled={state.importing || (state.customerValidation?.summary.importableRows ?? 0) === 0}
+            disabled={state.importing || confirmImportableCount === 0}
             onClick={() => void handleConfirmImport()}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-40"
           >

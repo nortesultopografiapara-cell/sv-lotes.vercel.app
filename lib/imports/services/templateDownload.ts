@@ -4,15 +4,21 @@
 
 import type { ImportModuleId } from '@/lib/imports/types';
 import {
+  buildBrokerImportCsvContent,
+  buildBrokerImportXlsxBuffer,
+  buildBrokerTemplateFileName,
+} from '@/lib/imports/modules/brokers/templates';
+import {
   buildCustomerImportCsvContent,
   buildCustomerImportXlsxBuffer,
   buildCustomerTemplateFileName,
 } from '@/lib/imports/modules/customers/templates';
 import { CUSTOMER_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/customers/constants';
+import { BROKER_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/brokers/constants';
 
 const MODULE_TEMPLATE_HEADERS: Record<ImportModuleId, string[]> = {
   customers: [...CUSTOMER_IMPORT_TEMPLATE_COLUMNS],
-  brokers: ['nome', 'email', 'telefone', 'cpf', 'creci', 'comissao_percentual'],
+  brokers: [...BROKER_IMPORT_TEMPLATE_COLUMNS],
   sales: ['cliente', 'corretor', 'empreendimento', 'quadra', 'lote', 'valor', 'data_venda'],
   installments: ['venda_id', 'numero_parcela', 'valor', 'vencimento', 'status'],
   contracts: ['numero_contrato', 'cliente', 'venda_id', 'data_contrato', 'status'],
@@ -24,9 +30,8 @@ export function getImportTemplateHeaders(moduleId: ImportModuleId): string[] {
 }
 
 export function buildImportCsvTemplate(moduleId: ImportModuleId): string {
-  if (moduleId === 'customers') {
-    return buildCustomerImportCsvContent();
-  }
+  if (moduleId === 'customers') return buildCustomerImportCsvContent();
+  if (moduleId === 'brokers') return buildBrokerImportCsvContent();
   const headers = getImportTemplateHeaders(moduleId);
   return `${headers.join(';')}\n`;
 }
@@ -37,6 +42,9 @@ export function buildImportTemplateFileName(
 ): string {
   if (moduleId === 'customers') {
     return buildCustomerTemplateFileName(format);
+  }
+  if (moduleId === 'brokers') {
+    return buildBrokerTemplateFileName(format);
   }
   return `modelo_migracao_${moduleId}.${format}`;
 }
@@ -63,6 +71,16 @@ export function downloadImportCsvTemplate(moduleId: ImportModuleId): void {
 export async function downloadImportExcelTemplate(moduleId: ImportModuleId): Promise<void> {
   if (moduleId === 'customers') {
     const buffer = await buildCustomerImportXlsxBuffer();
+    triggerBrowserDownload(
+      buffer,
+      buildImportTemplateFileName(moduleId, 'xlsx'),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    return;
+  }
+
+  if (moduleId === 'brokers') {
+    const buffer = await buildBrokerImportXlsxBuffer();
     triggerBrowserDownload(
       buffer,
       buildImportTemplateFileName(moduleId, 'xlsx'),

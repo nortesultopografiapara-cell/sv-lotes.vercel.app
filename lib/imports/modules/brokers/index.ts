@@ -3,17 +3,10 @@ import type { ImportModuleDefinition } from '@/lib/imports/types';
 export const brokersImportModule: ImportModuleDefinition = {
   id: 'brokers',
   title: 'Corretores',
-  description: 'Importe corretores e percentuais de comissão.',
-  status: 'available_soon',
-  statusLabel: 'Disponível em breve',
+  description: 'Importe corretores e percentuais de comissão a partir de planilhas Excel ou CSV.',
+  status: 'available',
+  statusLabel: 'Disponível',
   enabled: true,
 };
 
-export const BROKERS_IMPORT_TEMPLATE_COLUMNS = [
-  'nome',
-  'email',
-  'telefone',
-  'cpf',
-  'creci',
-  'comissao_percentual',
-] as const;
+export { BROKER_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/brokers/constants';
