@@ -3,6 +3,7 @@
  */
 
 import { MIGRATION_WIZARD_STEPS } from '@/lib/imports/constants';
+import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import type {
   ImportModuleId,
   MigrationWizardState,
@@ -18,6 +19,7 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   customerImportResult: null,
   validating: false,
   importing: false,
+  validationError: null,
 };
 
 export function getWizardStepIndex(step: MigrationWizardStepId): number {
@@ -87,6 +89,24 @@ export function advanceWizardState(
   return { ...state, step: next };
 }
 
+/** Após validação do arquivo na etapa upload — não usar advanceWizardState com validating=true. */
+export function applyCustomerValidationAndAdvance(
+  state: MigrationWizardState,
+  validation: CustomerImportValidationResult,
+): MigrationWizardState {
+  if (state.step !== 'upload' || state.selectedModuleId !== 'customers') {
+    return state;
+  }
+
+  return {
+    ...state,
+    step: 'pre-validation',
+    customerValidation: validation,
+    validating: false,
+    validationError: null,
+  };
+}
+
 export function retreatWizardState(
   state: MigrationWizardState,
 ): MigrationWizardState {
@@ -108,6 +128,7 @@ export function selectImportModule(
     customerImportResult: null,
     validating: false,
     importing: false,
+    validationError: null,
     step: state.step === 'welcome' ? 'select-type' : state.step,
   };
 }

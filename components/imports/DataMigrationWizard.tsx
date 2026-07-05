@@ -32,6 +32,7 @@ import {
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import {
   advanceWizardState,
+  applyCustomerValidationAndAdvance,
   canAdvanceWizardStep,
   INITIAL_MIGRATION_WIZARD_STATE,
   retreatWizardState,
@@ -57,9 +58,17 @@ async function validateCustomersFile(
     body: formData,
   });
 
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || 'Falha na validação do arquivo.');
+    throw new Error(
+      typeof payload.error === 'string'
+        ? payload.error
+        : `Falha na validação do arquivo (${response.status}).`,
+    );
+  }
+
+  if (!payload.validation) {
+    throw new Error('Resposta de validação inválida.');
   }
 
   return payload.validation as CustomerImportValidationResult;
@@ -118,25 +127,33 @@ export function DataMigrationWizard() {
       uploadedFile: parseImportFileMeta(file),
       customerValidation: null,
       customerImportResult: null,
+      validationError: null,
     }));
   };
 
   const handleAdvance = async () => {
-    if (state.step === 'upload' && isCustomersModule && rawFileRef.current) {
-      setState((prev) => ({ ...prev, validating: true }));
-      try {
-        const validation = await validateCustomersFile(
-          rawFileRef.current,
-          activeTenantId,
-        );
+    if (state.step === 'upload' && isCustomersModule) {
+      const file = rawFileRef.current;
+      if (!file) {
         setState((prev) => ({
-          ...advanceWizardState(prev),
-          customerValidation: validation,
-          validating: false,
+          ...prev,
+          validationError: 'Selecione um arquivo antes de avançar.',
         }));
+        return;
+      }
+
+      setState((prev) => ({ ...prev, validating: true, validationError: null }));
+      try {
+        const validation = await validateCustomersFile(file, activeTenantId);
+        setState((prev) => applyCustomerValidationAndAdvance(prev, validation));
       } catch (err) {
-        setState((prev) => ({ ...prev, validating: false }));
-        alert(err instanceof Error ? err.message : 'Erro ao validar arquivo.');
+        const message =
+          err instanceof Error ? err.message : 'Erro ao validar arquivo.';
+        setState((prev) => ({
+          ...prev,
+          validating: false,
+          validationError: message,
+        }));
       }
       return;
     }
@@ -296,6 +313,24 @@ export function DataMigrationWizard() {
                 : ' Nenhum dado será gravado nesta fase.'}
             </p>
             {!isCustomersModule ? renderPlaceholderModuleNotice() : null}
+            {state.validationError ? (
+              <div
+                className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"
+                data-testid="migration-validation-error"
+                role="alert"
+              >
+                {state.validationError}
+              </div>
+            ) : null}
+            {state.validating ? (
+              <div
+                className="rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 p-4 flex items-center gap-3 text-sm text-[var(--text-secondary)]"
+                data-testid="migration-validating"
+              >
+                <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)] shrink-0" />
+                Validando arquivo… Nenhum dado será gravado nesta etapa.
+              </div>
+            ) : null}
             <input
               ref={fileInputRef}
               type="file"
@@ -610,7 +645,7 @@ export function DataMigrationWizard() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-bold disabled:opacity-40"
           >
             {state.validating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Avançar
+            {state.validating ? 'Validando…' : 'Avançar'}
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
