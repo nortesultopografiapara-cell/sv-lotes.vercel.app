@@ -23,6 +23,10 @@
     },
     "app/api/companies/update/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/sales/create/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
 }

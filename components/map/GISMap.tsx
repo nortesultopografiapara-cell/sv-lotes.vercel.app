@@ -38,6 +38,12 @@ import {
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { formatClientFetchError } from "@/lib/clientFetchError";
+import {
+  fetchJsonWithTimeout,
+  SALES_FETCH_TIMEOUT_MS,
+} from "@/lib/fetchJsonWithTimeout";
+
+const SALES_CREATE_FETCH_TIMEOUT_MS = Math.max(SALES_FETCH_TIMEOUT_MS, 90_000);
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
@@ -3915,6 +3921,122 @@ export default function GISMap({
     }
 
     try {
+      if (isVendidoStatus(newStatus)) {
+        console.log("[sales/create] client_start", { lotId: lot.id });
+        const { ok, data, error } = await fetchJsonWithTimeout<{
+          success?: boolean;
+          saleId?: string;
+          contractId?: string | null;
+          customerId?: string;
+          warnings?: string[];
+          error?: string;
+        }>(
+          "/api/sales/create",
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tenantId: finalTenantId,
+              projectId: finalProjectId,
+              lot: {
+                id: lot.id,
+                block: lot.block,
+                block_name: lot.block_name,
+                lot_block: lot.lot_block,
+                number: lot.number,
+                lot_number: lot.lot_number,
+                project_id: lot.project_id,
+                tenant_id: lot.tenant_id,
+                projects: lot.projects,
+              },
+              finalPrice,
+              customerData,
+              brokerId: finalBrokerId,
+              tenantContractModel,
+            }),
+          },
+          SALES_CREATE_FETCH_TIMEOUT_MS,
+        );
+
+        if (!ok || !data?.success || !data.saleId) {
+          throw new Error(
+            error || data?.error || "Não foi possível concluir a venda.",
+          );
+        }
+
+        setLots((prev) =>
+          prev.map((l) =>
+            l.id === lot.id
+              ? {
+                  ...l,
+                  status: "Vendido",
+                  price: finalPrice,
+                  customerId: data.customerId,
+                  customer_id: data.customerId,
+                  customerName: customerData.name || l.customerName,
+                  saleId: data.saleId,
+                  contractId: data.contractId || null,
+                  broker_id: finalBrokerId,
+                }
+              : l,
+          ),
+        );
+        setBlocksData((prev) =>
+          prev.map((l) =>
+            l.id === lot.id
+              ? {
+                  ...l,
+                  status: "Vendido",
+                  price: finalPrice,
+                  customer_id: data.customerId,
+                  sale_id: data.saleId,
+                  contract_id: data.contractId || null,
+                  broker_id: finalBrokerId,
+                }
+              : l,
+          ),
+        );
+
+        void logLotAuditEvent(supabase, {
+          ...lotAuditContextFromBlock(lot, {
+            companyId: finalTenantId,
+            projectId: finalProjectId,
+            saleId: data.saleId,
+            contractId: data.contractId ?? null,
+          }),
+          userId: user.id,
+          action: "sold",
+          title: "Venda concluída",
+          description: `Lote vendido para ${customerData.name || "cliente"} por ${formatCurrencyBRL(Number(customerData.final_value || finalPrice) || 0)}`,
+          newData: {
+            customer_id: data.customerId,
+            broker_id: finalBrokerId,
+            sale_value: customerData.final_value || finalPrice,
+          },
+          source: "sale_flow",
+        });
+
+        await supabase.from("logs").insert({
+          ...(user.tenant_id || lot.tenant_id
+            ? { tenant_id: user.tenant_id || lot.tenant_id }
+            : {}),
+          user_id: user.id,
+          action: newStatus,
+          details: {
+            title: `Lote Quadra ${lot.block} Lote ${lot.number} vendido para ${customerData.name}`,
+            subtitle: `Venda concluída por ${user.name}`,
+          },
+        });
+
+        const warningText =
+          data.warnings?.length ? `\n\nObservações:\n${data.warnings.join("\n")}` : "";
+        alert(
+          `Venda concluída com sucesso! Lote Quadra ${lot.block} Lote ${lot.number} marcado como vendido.${warningText}`,
+        );
+        return;
+      }
+
       const { customerId, clientId, reused } = await resolveOrCreateCustomer(supabase, {
         form: customerData,
         tenantId: finalTenantId,
@@ -3927,9 +4049,6 @@ export default function GISMap({
       if (reused) {
         console.log("CUSTOMER_REUSED", { customerId });
       }
-      if (isVendidoStatus(newStatus)) {
-        console.log("SALE_CREATED_WITH_EXISTING_CUSTOMER", { customerId, reused });
-      }
 
       const reservationSignalPaid = Number(customerData.reservation_signal_paid) || 0;
       const signalAmount =
@@ -3937,8 +4056,6 @@ export default function GISMap({
           ? parseCurrencyBRLNumber(customerData.signal_amount) || null
           : null;
 
-      let newSaleData: any = null;
-      let newContractData: any = null;
       let expirationTime: string | null = null;
       if (newStatus === "Reservado") {
         const d = new Date();
@@ -3946,531 +4063,7 @@ export default function GISMap({
         expirationTime = d.toISOString();
       }
 
-      if (isVendidoStatus(newStatus)) {
-        console.log("[VENDA] TRANSACTION_STARTED");
-        console.log("[VENDA] INICIO POS VENDA COMPLETAMENTE TRANSACIONAL");
-
-        try {
-          // Log start
-          try {
-             await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_STARTED', module: 'SALES', description: 'Iniciando venda do lote ' + lot.id }]);
-          } catch(e) {}
-
-          const { data: projDataSnapshot } = await supabase
-            .from("projects")
-            .select("*")
-            .eq("id", finalProjectId)
-            .maybeSingle();
-
-          const pmtType = customerData.payment_type || "À vista";
-          const instCount =
-            pmtType === "Parcelado"
-              ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ""))
-              : 1;
-          const saleContractModel = normalizeSaleContractModel(tenantContractModel);
-
-          const recantoSignalContract =
-            saleContractModel === "RECANTO_PRIMAVERA"
-              ? parseCurrencyBRLNumber(
-                  customerData.signal_contract_value ||
-                    customerData.down_payment ||
-                    "",
-                )
-              : null;
-          const recantoSignalPaidAtSale =
-            saleContractModel === "RECANTO_PRIMAVERA" &&
-            customerData.signal_paid_at_sale != null &&
-            String(customerData.signal_paid_at_sale).trim() !== ""
-              ? parseCurrencyBRLNumber(String(customerData.signal_paid_at_sale))
-              : null;
-          const recantoSignalRemaining =
-            recantoSignalContract != null && recantoSignalPaidAtSale != null
-              ? Math.max(0, recantoSignalContract - recantoSignalPaidAtSale)
-              : null;
-          const recantoSignalMode =
-            saleContractModel === "RECANTO_PRIMAVERA" &&
-            recantoSignalRemaining != null &&
-            recantoSignalRemaining > 0
-              ? customerData.signal_remaining_payment_mode ||
-                "FIRST_INSTALLMENTS"
-              : null;
-          const recantoSignalInstallments =
-            recantoSignalMode === "FIRST_INSTALLMENTS"
-              ? Number(customerData.signal_remaining_installments) || null
-              : recantoSignalMode === "ALL_INSTALLMENTS"
-                ? instCount
-                : null;
-          const recantoSignalInstallmentValue =
-            recantoSignalRemaining != null &&
-            recantoSignalInstallments &&
-            recantoSignalInstallments > 0
-              ? Math.round(
-                  (recantoSignalRemaining / recantoSignalInstallments) * 100,
-                ) / 100
-              : null;
-
-          const salePayload: any = {
-            tenant_id: finalTenantId,
-            company_id: finalTenantId,
-            project_id: finalProjectId,
-            block_id: lot.id,
-            block_number: lot.block || lot.block_name || lot.lot_block || null,
-            lot_number: lot.number || lot.lot_number || null,
-            lot_id: lot.id,
-            customer_id: customerId,
-            client_id: clientId,
-            user_id: user.id || null,
-            agreed_price: customerData.final_value || finalPrice,
-            lot_price: finalPrice,
-            broker_id: finalBrokerId,
-            payment_type: pmtType,
-            discount: parseCurrencyBRLNumber(customerData.discount_value),
-            total_value: customerData.final_value || finalPrice,
-            down_payment:
-              recantoSignalContract ??
-              parseCurrencyBRLNumber(customerData.down_payment),
-            installments_count: instCount,
-            installment_correction_type:
-              saleContractModel === "RECANTO_PRIMAVERA"
-                ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
-                : normalizeInstallmentCorrectionType(
-                    customerData.installment_correction_type,
-                  ),
-            status: "ACTIVE",
-            signal_contract_value: recantoSignalContract,
-            signal_paid_at_sale: recantoSignalPaidAtSale,
-            signal_remaining_value: recantoSignalRemaining,
-            signal_remaining_payment_mode: recantoSignalMode,
-            signal_remaining_installments: recantoSignalInstallments,
-            signal_remaining_installment_value: recantoSignalInstallmentValue,
-            ...buildSaleSpouseDbPatch(customerData),
-          };
-
-          console.log("SALE_CREATED");
-          const { data: saleData, error: saleError } = await supabase
-            .from("sales")
-            .insert([salePayload])
-            .select()
-            .single();
-
-          if (saleError || !saleData) {
-            console.error("ERRO SALES: ", saleError);
-            throw saleError || new Error("Falha ao criar venda");
-          }
-          console.log("CUSTOMER_ID_LINKED_TO_SALE");
-          newSaleData = saleData;
-          const saleId = saleData.id;
-
-          const { data: tenantContractRow } = await supabase
-            .from("companies")
-            .select("contract_model")
-            .eq("id", finalTenantId)
-            .maybeSingle();
-          const contractModel = normalizeSaleContractModel(
-            tenantContractRow?.contract_model ?? tenantContractModel,
-          );
-
-          if (reservationSignalPaid > 0 && pmtType === "Parcelado") {
-            console.log("SIGNAL_APPLIED_TO_DOWN_PAYMENT", {
-              reservationSignalPaid,
-              grossDownPayment: parseCurrencyBRLNumber(customerData.down_payment),
-            });
-          }
-
-          const financePayloads = buildSaleEditFinancePayloads(
-            finalTenantId,
-            saleId,
-            customerId,
-            finalBrokerId,
-            { id: lot.id, project_id: lot.project_id || finalProjectId },
-            customerData,
-            { contractModel, cashInstallmentPaid: false },
-          );
-
-          let financeData = [];
-          if (financePayloads.length > 0) {
-            console.log("FINANCE_RECEIPTS_CREATED");
-            const { data: fData, error: financeError } = await supabase
-              .from("finance_receipts")
-              .insert(financePayloads)
-              .select();
-
-            if (financeError || !fData) {
-              console.error("ERRO FINANCE", financeError);
-              throw financeError || new Error("Falha ao criar financeiro");
-            }
-            financeData = fData;
-            void logLotAuditEvent(supabase, {
-              ...lotAuditContextFromBlock(lot, {
-                companyId: finalTenantId,
-                projectId: finalProjectId,
-                saleId,
-              }),
-              userId: user.id,
-              action: "finance_created",
-              title: "Parcelas criadas",
-              description: `${financeData.length} parcela(s) geradas na venda`,
-              newData: { receipts_count: financeData.length, sale_id: saleId },
-              source: "finance_flow",
-            });
-          }
-
-          const { data: tenantData } = await supabase
-            .from("companies")
-            .select("*")
-            .eq("id", finalTenantId)
-            .single();
-
-          let fullCustomer = customerData;
-          if (customerId) {
-            const { data: custDb } = await supabase
-              .from("customers")
-              .select("*")
-              .eq("id", customerId)
-              .single();
-            if (custDb) {
-              fullCustomer = mergeCustomerData(custDb, customerData);
-            }
-          }
-
-          const receiptsSum = financeData.reduce((acc: any, curr: any) => acc + Number(curr.amount || 0), 0);
-
-          let brokerSnapshot = null;
-          if (finalBrokerId) {
-            const { data: brokerRow } = await supabase
-              .from("brokers")
-              .select(BROKERS_CONTRACT_SELECT)
-              .eq("id", finalBrokerId)
-              .maybeSingle();
-            brokerSnapshot = brokerRowToSnapshot(
-              (brokerRow as Record<string, unknown>) || null,
-            );
-          }
-
-          const enrichedSaleData = attachBrokerSnapshotToSale(
-            {
-              ...saleData,
-              receipts_sum: receiptsSum,
-              finance_receipts: financeData,
-              down_payment_due_date: customerData.down_payment_due_date || null,
-              first_installment_due_date:
-                customerData.first_installment_due_date || null,
-              ...buildSaleSpouseDbPatch(customerData),
-            },
-            brokerSnapshot,
-          );
-
-          const contractPayloadPartial = {
-            project_name_snapshot: projDataSnapshot?.name || lot?.projects?.name || null,
-            project_city_snapshot: projDataSnapshot?.city || null,
-            project_uf_snapshot: projDataSnapshot?.uf || null,
-            forum_city_snapshot: projDataSnapshot?.forum_city || projDataSnapshot?.city || null,
-          };
-
-          const saleValue = Number(customerData.final_value || finalPrice) || 0;
-          const downPaymentVal = parseCurrencyBRLNumber(customerData.down_payment);
-          const installmentsVal = instCount;
-          // Contrato em try/catch isolado — falha aqui NÃO reverte venda/financeiro
-          try {
-            console.log("[VENDA] iniciando criação do contrato", {
-              saleId,
-              blockId: lot.id,
-              customerId,
-              projectId: finalProjectId,
-            });
-
-            let contractNumber: string;
-            try {
-              contractNumber = await fetchNextContractNumberFromApi(
-                finalTenantId,
-                finalTenantId,
-              );
-            } catch (apiNumErr) {
-              console.warn(
-                "[VENDA] API next-number falhou, tentando client",
-                apiNumErr,
-              );
-              contractNumber = await getNextContractNumber(
-                supabase,
-                finalTenantId,
-                finalTenantId,
-              );
-            }
-
-            if (!isValidStoredContractNumber(contractNumber)) {
-              throw new Error(
-                `Número de contrato inválido gerado: ${contractNumber}`,
-              );
-            }
-
-            console.log("[VENDA] contract_number gerado", contractNumber);
-
-            const customerForContract = {
-              ...fullCustomer,
-              id: customerId,
-            };
-            const contractValidation =
-              validateCustomerForContract(customerForContract);
-            if (!contractValidation.valid) {
-              setCustomerContractValidation(contractValidation);
-              console.warn("[VENDA] contrato bloqueado — dados obrigatórios", {
-                missing: contractValidation.missingRequired,
-                customerId,
-              });
-              void logLotAuditEvent(supabase, {
-                ...lotAuditContextFromBlock(lot, {
-                  companyId: finalTenantId,
-                  projectId: finalProjectId,
-                  saleId,
-                }),
-                userId: user.id,
-                action: "note_added",
-                title: "Geração de contrato bloqueada",
-                description: `Campos pendentes: ${contractValidation.missingRequired.join(", ")}`,
-                newData: {
-                  missing: contractValidation.missingRequired,
-                  customer_id: customerId,
-                },
-                source: "contract_flow",
-              });
-              alert(
-                "Venda e financeiro salvos, mas o contrato não foi gerado: faltam dados obrigatórios do comprador. Complete o cadastro do cliente.",
-              );
-            } else {
-            const blockRow = (await fetchBlockForContract(lot.id)) || lot;
-            const contractHtml = generateContractHTML({
-              tenant: tenantData || {},
-              customer: fullCustomer || {},
-              project: projDataSnapshot || lot.projects || {},
-              block: blockRow,
-              sale: enrichedSaleData,
-              financeReceipts: financeData,
-              contractSnapshot: {
-                ...contractPayloadPartial,
-                contract_number: contractNumber,
-              },
-            });
-
-            const contractPayloads: Record<string, unknown>[] = [
-              {
-                tenant_id: finalTenantId,
-                company_id: finalTenantId,
-                sale_id: saleId,
-                customer_id: customerId,
-                project_id: finalProjectId,
-                block_id: lot.id,
-                broker_id: finalBrokerId,
-                contract_number: contractNumber,
-                sale_value: saleValue,
-                down_payment: downPaymentVal,
-                installments: installmentsVal,
-                status: "ativo",
-                generated_html: contractHtml,
-                created_at: new Date().toISOString(),
-                ...contractPayloadPartial,
-              },
-              {
-                tenant_id: finalTenantId,
-                company_id: finalTenantId,
-                sale_id: saleId,
-                customer_id: customerId,
-                project_id: finalProjectId,
-                block_id: lot.id,
-                contract_number: contractNumber,
-                status: "ativo",
-                generated_html: contractHtml,
-                ...contractPayloadPartial,
-              },
-              {
-                tenant_id: finalTenantId,
-                sale_id: saleId,
-                customer_id: customerId,
-                project_id: finalProjectId,
-                block_id: lot.id,
-                contract_number: contractNumber,
-                status: "ativo",
-              },
-            ];
-
-            const { data: insertedContract, error: contractInsertError } =
-              await insertContractForSale(contractPayloads);
-
-            if (contractInsertError || !insertedContract) {
-              console.error("[VENDA] erro ao criar contrato (final)", contractInsertError);
-              alert(
-                `Venda e financeiro salvos, mas o contrato não foi criado: ${
-                  contractInsertError?.message || "erro desconhecido"
-                }. Use "Regenerar contrato" em Contratos ou contate o suporte.`,
-              );
-            } else {
-              newContractData = insertedContract;
-
-              if (
-                insertedContract.contract_number !== contractNumber &&
-                insertedContract.id
-              ) {
-                const { data: fixedRow, error: fixNumErr } = await supabase
-                  .from("contracts")
-                  .update({ contract_number: contractNumber })
-                  .eq("id", insertedContract.id)
-                  .select("*")
-                  .single();
-                if (!fixNumErr && fixedRow) {
-                  newContractData = fixedRow;
-                  console.log("[VENDA] contract_number corrigido no banco");
-                }
-              }
-
-              if (contractHtml && !insertedContract.generated_html) {
-                const { error: htmlUpdErr } = await supabase
-                  .from("contracts")
-                  .update({ generated_html: contractHtml })
-                  .eq("id", insertedContract.id);
-
-                if (htmlUpdErr) {
-                  console.error("[VENDA] erro ao salvar generated_html", htmlUpdErr);
-                } else {
-                  console.log("[VENDA] generated_html salvo", insertedContract.id);
-                  newContractData = { ...insertedContract, generated_html: contractHtml };
-                }
-              } else {
-                console.log("[VENDA] generated_html salvo no insert");
-              }
-
-              console.log("[VENDA] CUSTOMER_ID_LINKED_TO_CONTRACT", {
-                contract_id: insertedContract.id,
-              });
-
-              void logLotAuditEvent(supabase, {
-                ...lotAuditContextFromBlock(lot, {
-                  companyId: finalTenantId,
-                  projectId: finalProjectId,
-                  saleId,
-                  contractId: insertedContract.id,
-                }),
-                userId: user.id,
-                action: "contract_generated",
-                title: "Contrato gerado",
-                description: `Contrato nº ${contractNumber} gerado`,
-                newData: {
-                  contract_id: insertedContract.id,
-                  contract_number: contractNumber,
-                },
-                source: "contract_flow",
-              });
-            }
-            }
-          } catch (contractErr: unknown) {
-            console.error("[VENDA] exceção ao criar contrato", contractErr);
-            const msg =
-              contractErr instanceof Error ? contractErr.message : String(contractErr);
-            alert(
-              `Venda e financeiro salvos, mas falha ao gerar contrato: ${msg}. Verifique a tela Contratos.`,
-            );
-          }
-
-          // Atualizar BLOCO — venda concluída mesmo se contrato falhou (sale_id preservado)
-          console.log("[VENDA] BLOCK_MARKED_SOLD");
-          const { error: blockUpdErr } = await supabase
-            .from("blocks")
-            .update({
-              status: "Vendido",
-              price: finalPrice,
-              customer_id: customerId,
-              sale_id: saleId,
-              contract_id: newContractData?.id || null,
-              broker_id: finalBrokerId
-            })
-            .eq("id", lot.id);
-            
-          if (blockUpdErr) {
-             console.error("[VENDA] ERRO AO ATUALIZAR STATUS DO LOTE", blockUpdErr);
-             throw blockUpdErr;
-          }
-
-          // COMISSÃO DO CORRETOR AUTOMÁTICA
-          if (user?.role === 'BROKER') {
-            console.log("BROKER_FOUND");
-            try {
-               const { data: brokerData } = await supabase.from('brokers').select('commission_percent').eq('id', finalBrokerId).single();
-               const pct = brokerData?.commission_percent || 0;
-               if (pct > 0) {
-                 const saleVal = customerData.final_value || finalPrice;
-                 const cv = (saleVal * pct) / 100;
-                 
-                 console.log("BROKER_COMMISSION_CREATED");
-                 const { error: commErr } = await supabase.from('broker_commissions').insert([{
-                    company_id: finalTenantId,
-                    tenant_id: finalTenantId,
-                    broker_id: finalBrokerId,
-                    sale_id: saleId,
-                    contract_id: newContractData?.id || null,
-                    customer_id: customerId || clientId,
-                    commission_percent: pct,
-                    amount: cv,
-                    status: 'pendente'
-                 }]);
-                 
-                 if (commErr) {
-                    console.error("Erro insert broker_commissions:", commErr.message);
-                 } else {
-                    console.log("COMISSÃO GRAVADA: ", cv);
-                 }
-               }
-               console.log("BROKER_SALE_FLOW_SUCCESS");
-            } catch (err) {
-               console.error("Erro ao gerar comissão:", err);
-            }
-          }
-          
-          console.log("[VENDA] TRANSACTION_SUCCESS", {
-            sale_id: saleId,
-            contract_id: newContractData?.id || null,
-          });
-
-          void logLotAuditEvent(supabase, {
-            ...lotAuditContextFromBlock(lot, {
-              companyId: finalTenantId,
-              projectId: finalProjectId,
-              saleId,
-              contractId: newContractData?.id ?? null,
-            }),
-            userId: user.id,
-            action: "sold",
-            title: "Venda concluída",
-            description: `Lote vendido para ${customerData.name || "cliente"} por ${formatCurrencyBRL(saleValue)}`,
-            newData: {
-              customer_id: customerId,
-              broker_id: finalBrokerId,
-              sale_value: saleValue,
-            },
-            source: "sale_flow",
-          });
-
-          try {
-             await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_SUCCESS', module: 'SALES', description: 'Venda concluída com sucesso para o lote ' + lot.id, reference_id: newSaleData?.id }]);
-          } catch(e) {}
-
-        } catch (err: any) {
-           console.log("TRANSACTION_ROLLBACK");
-           try {
-             if (newSaleData?.id) {
-                await supabase.from('finance_receipts').delete().eq('sale_id', newSaleData.id);
-                await supabase.from('broker_commissions').delete().eq('sale_id', newSaleData.id);
-             }
-             if (newContractData?.id) await supabase.from('contracts').delete().eq('id', newContractData.id);
-             if (newSaleData?.id) await supabase.from('sales').delete().eq('id', newSaleData.id);
-             await supabase.from('blocks').update({ status: 'Disponível', customer_id: null, sale_id: null, contract_id: null, broker_id: null }).eq('id', lot.id);
-
-             await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_ROLLBACK', module: 'SALES', description: 'Rollback executado para o lote ' + lot.id }]);
-           } catch(rollbackErr) {
-             console.error("CRITICAL: Falha no rollback", rollbackErr);
-           }
-
-           console.error("Erro no fluxo de venda:", err);
-           throw new Error("Erro na venda completa: " + (err.message || JSON.stringify(err)));
-        }
-      } else {
+      {
         // Reservas e Disponível
         console.log("BLOCK_MARKED_RESERVED_OR_AVAILABLE");
         const { error: updateError } = await supabase

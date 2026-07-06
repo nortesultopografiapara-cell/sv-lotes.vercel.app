@@ -461,6 +461,12 @@ export function CustomerLotFormModal({
       });
     } catch (err) {
       console.error('CUSTOMER_LOT_FORM_SUBMIT_ERROR', err);
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível concluir a operação.';
+      alert(msg);
+      throw err;
     } finally {
       setSubmitting(false);
     }
