@@ -69,7 +69,8 @@ export async function fetchJsonWithTimeout<T = unknown>(
         ok: false,
         status: 0,
         data: null,
-        error: 'Tempo esgotado ao salvar. Tente novamente.',
+        error:
+          'Tempo esgotado ao salvar. O servidor demorou demais para responder — tente novamente.',
       };
     }
     const message = err instanceof Error ? err.message : 'Falha de rede ao salvar.';

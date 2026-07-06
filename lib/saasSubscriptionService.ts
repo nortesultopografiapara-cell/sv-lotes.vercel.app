@@ -119,6 +119,10 @@ async function persistSaasSubscriptionRow(
 export type EnsureSaasSubscriptionOptions = {
   /** Billing editado manualmente no Master — não recalcular a partir de start_date/created_at. */
   explicitBilling?: ResolvedSubscriptionDates | null;
+  /** Não gerar contrato PDF automaticamente (ex.: save rápido no Master). */
+  skipContractAutoGenerate?: boolean;
+  /** Não regravar datas de billing na tabela companies (já salvas no PATCH). */
+  skipCompanyDateResync?: boolean;
 };
 
 /** Cria ou atualiza assinatura sem gerar contrato PDF. */
@@ -192,15 +196,17 @@ export async function ensureSaasSubscription(
   const billing = resolveSaasSubscriptionBilling(companyForBilling, subscription, explicitBilling);
   const syncedDates = explicitBilling ?? resolveCompanySubscriptionDates(companyForBilling);
 
-  await supabaseAdmin
-    .from('companies')
-    .update({
-      subscription_start_date: billing.start_date,
-      next_payment_date: billing.next_due_date,
-      subscription_due_day: syncedDates.subscription_due_day,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', company.id);
+  if (!options?.skipCompanyDateResync) {
+    await supabaseAdmin
+      .from('companies')
+      .update({
+        subscription_start_date: billing.start_date,
+        next_payment_date: billing.next_due_date,
+        subscription_due_day: syncedDates.subscription_due_day,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', company.id);
+  }
 
   subscription = {
     ...subscription,
@@ -219,12 +225,88 @@ export async function ensureSaasSubscription(
     monthly_price: subscription.monthly_price,
   });
 
-  if (created) {
+  if (created && !options?.skipContractAutoGenerate) {
     const { tryAutoGenerateSaasContract } = await import('@/lib/saasContractService');
     await tryAutoGenerateSaasContract(supabaseAdmin, company);
   }
 
   return { subscription, created };
+}
+
+const SUBSCRIPTION_PRICING_SELECT =
+  'id, company_id, plan_type, monthly_price, custom_price_enabled, custom_monthly_price, billing_cycle, start_date, first_payment_date, next_due_date, payment_status, contract_status, contract_number, contract_pdf_url, updated_at';
+
+/** Atualização leve de preço/plano na assinatura — sem PDF e sem regravar companies. */
+export async function syncSubscriptionPricingFromCompany(
+  supabaseAdmin: SupabaseClient,
+  company: CompanyPricingSource & {
+    id: string;
+    is_test_company?: boolean | null;
+    is_test?: boolean | null;
+  },
+  options?: EnsureSaasSubscriptionOptions,
+): Promise<{ subscription: CompanySubscription | null; error?: string }> {
+  if (isTestCompany(company)) {
+    return { subscription: null };
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from('company_subscriptions')
+    .select(SUBSCRIPTION_PRICING_SELECT)
+    .eq('company_id', company.id)
+    .maybeSingle();
+
+  if (!existing?.id) {
+    return ensureSaasSubscription(supabaseAdmin, company, {
+      ...options,
+      skipContractAutoGenerate: true,
+      skipCompanyDateResync: true,
+    });
+  }
+
+  const explicitBilling = options?.explicitBilling ?? null;
+  const companyForBilling: CompanySubscriptionDatesSource = explicitBilling
+    ? { ...company, ...companyBillingFromResolved(explicitBilling) }
+    : company;
+
+  const row = buildSubscriptionRow(
+    companyForBilling as CompanyPricingSource & CompanySubscriptionDatesSource & { id: string },
+    existing as CompanySubscription | null,
+    explicitBilling,
+  );
+
+  const billing = resolveSaasSubscriptionBilling(
+    companyForBilling,
+    existing as CompanySubscription | null,
+    explicitBilling,
+  );
+
+  const patch: Record<string, unknown> = {
+    plan_type: row.plan_type,
+    monthly_price: row.monthly_price,
+    custom_price_enabled: row.custom_price_enabled,
+    custom_monthly_price: row.custom_monthly_price,
+    updated_at: row.updated_at,
+  };
+
+  if (explicitBilling) {
+    patch.start_date = billing.start_date;
+    patch.first_payment_date = billing.first_payment_date;
+    patch.next_due_date = billing.next_due_date;
+  }
+
+  const saved = await persistSaasSubscriptionRow(
+    supabaseAdmin,
+    'update',
+    patch,
+    existing.id,
+  );
+
+  if (saved.error) {
+    return { subscription: null, error: saved.error };
+  }
+
+  return { subscription: saved.data };
 }
 
 export async function syncMissingSaasSubscriptions(supabaseAdmin: SupabaseClient): Promise<{
