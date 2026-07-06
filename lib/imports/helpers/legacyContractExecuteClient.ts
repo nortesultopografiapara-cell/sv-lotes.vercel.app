@@ -4,6 +4,8 @@
 
 import { appendLegacyContractDocumentsFormData } from '@/lib/imports/helpers/legacyContractFormData';
 import { getLegacyContractValidationHttpErrorMessage } from '@/lib/imports/helpers/legacyContractHttpErrors';
+import { buildLegacyContractManualLinkOverrides } from '@/lib/imports/modules/legacy-contracts/manualLink';
+import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
 import {
   buildLegacyContractValidationUploadPlan,
   type LegacyContractValidationUploadPlan,
@@ -53,11 +55,17 @@ async function buildLegacyExecuteFormPayload(
 export async function executeLegacyContractsImport(
   documentFiles: File[],
   activeTenantId: string | null,
+  validation: LegacyContractImportValidationResult | null = null,
 ) {
   const payload = await buildLegacyExecuteFormPayload(documentFiles, activeTenantId);
+  const manualLinkOverrides = validation
+    ? buildLegacyContractManualLinkOverrides(validation.rows)
+    : [];
+
   const formData = new FormData();
   appendLegacyContractDocumentsFormData(formData, {
     ...payload,
+    manualLinkOverrides,
     activeTenantId,
     confirmed: true,
   });

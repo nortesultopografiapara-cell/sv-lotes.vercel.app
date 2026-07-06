@@ -4,11 +4,14 @@
 
 import { extractUploadedFile } from '@/lib/imports/uploadFile';
 import { isAcceptedLegacyDocumentFile } from '@/lib/imports/helpers/parseImportFileMeta';
+import type { LegacyContractManualLinkOverride } from '@/lib/imports/modules/legacy-contracts/types';
+import { parseLegacyContractManualLinkOverrides } from '@/lib/imports/helpers/legacyContractManualLinkClient';
 
 export type LegacyContractFormFiles = {
   mappingFile: File | null;
   documentFiles: File[];
   documentStoragePaths: Array<{ storagePath: string; fileName: string }>;
+  manualLinkOverrides: LegacyContractManualLinkOverride[];
 };
 
 export function extractLegacyContractFormFiles(formData: FormData): LegacyContractFormFiles {
@@ -29,8 +32,9 @@ export function extractLegacyContractFormFiles(formData: FormData): LegacyContra
   }
 
   const documentStoragePaths = parseLegacyContractStoragePaths(formData);
+  const manualLinkOverrides = parseLegacyContractManualLinkOverrides(formData);
 
-  return { mappingFile, documentFiles, documentStoragePaths };
+  return { mappingFile, documentFiles, documentStoragePaths, manualLinkOverrides };
 }
 
 function parseLegacyContractStoragePaths(
@@ -76,6 +80,7 @@ export function appendLegacyContractFormData(
     mappingFile?: File;
     documentFiles: File[];
     documentStoragePaths?: Array<{ storagePath: string; fileName: string }>;
+    manualLinkOverrides?: LegacyContractManualLinkOverride[];
     activeTenantId?: string | null;
     confirmed?: boolean;
   },
@@ -88,6 +93,9 @@ export function appendLegacyContractFormData(
   }
   if (params.documentStoragePaths?.length) {
     formData.append('documentStoragePaths', JSON.stringify(params.documentStoragePaths));
+  }
+  if (params.manualLinkOverrides?.length) {
+    formData.append('manualLinkOverrides', JSON.stringify(params.manualLinkOverrides));
   }
   if (params.activeTenantId) {
     formData.append('activeTenantId', params.activeTenantId);
@@ -102,6 +110,7 @@ export function appendLegacyContractDocumentsFormData(
   params: {
     documentFiles: File[];
     documentStoragePaths?: Array<{ storagePath: string; fileName: string }>;
+    manualLinkOverrides?: LegacyContractManualLinkOverride[];
     activeTenantId?: string | null;
     confirmed?: boolean;
   },

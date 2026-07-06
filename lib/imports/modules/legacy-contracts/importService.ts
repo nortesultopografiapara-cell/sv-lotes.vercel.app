@@ -4,6 +4,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildLegacyContractRowsFromPdfIndex } from '@/lib/imports/modules/legacy-contracts/buildRowsFromPdfIndex';
+import {
+  applyManualLinkOverridesToValidationRows,
+  recalculateLegacyContractImportSummary,
+} from '@/lib/imports/modules/legacy-contracts/manualLink';
 import { getLegacyContractColumnMappingErrorMessage } from '@/lib/imports/modules/legacy-contracts/columnMapping';
 import { executeImportableLegacyContractRow } from '@/lib/imports/modules/legacy-contracts/executeRow';
 import { loadLegacyContractImportContext } from '@/lib/imports/modules/legacy-contracts/lookupIndex';
@@ -192,11 +196,12 @@ export async function executeLegacyContractImportBuffer(params: {
   spreadsheetFileName?: string;
   documentUploads: Array<{ buffer: Buffer | ArrayBuffer; fileName: string }>;
   documentsFileName: string;
+  manualLinkOverrides?: import('@/lib/imports/modules/legacy-contracts/types').LegacyContractManualLinkOverride[];
 }): Promise<LegacyContractImportExecuteResult> {
   const context = await loadLegacyContractImportContext(params.admin, params.tenantId);
   const pdfResult = await buildLegacyContractPdfIndexFromUploads(params.documentUploads);
 
-  const validation =
+  let validation =
     params.spreadsheetBuffer && params.spreadsheetFileName
       ? await validateLegacyContractImportBuffer({
           spreadsheetBuffer: params.spreadsheetBuffer,
@@ -210,6 +215,19 @@ export async function executeLegacyContractImportBuffer(params: {
           documentsFileName: params.documentsFileName,
           context,
         });
+
+  if (params.manualLinkOverrides?.length) {
+    const rows = applyManualLinkOverridesToValidationRows(
+      validation.rows,
+      params.manualLinkOverrides,
+      context,
+    );
+    validation = {
+      ...validation,
+      rows,
+      summary: recalculateLegacyContractImportSummary(rows),
+    };
+  }
 
   const importableRows = validation.rows.filter((row) => row.importable);
   let imported = 0;

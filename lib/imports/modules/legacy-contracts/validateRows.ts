@@ -274,6 +274,7 @@ export function buildLegacyContractMigrationRowDetail(row: ValidatedLegacyContra
     nome_arquivo_pdf: row.nome_arquivo_pdf,
     status_contrato: row.status_contrato,
     status: row.status,
+    manual_link_applied: row.manual_link_applied === true,
     messages: row.messages.map((message) => message.text),
     observacoes: row.observacoes || null,
   };
