@@ -18,6 +18,14 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const startedAt = Date.now();
+  const mark = (step: string, extra?: Record<string, unknown>) => {
+    console.log('[contracts/regenerate]', step, {
+      ms: Date.now() - startedAt,
+      ...extra,
+    });
+  };
+
   try {
     const { user, configError } = await getRequestAuthUser(request);
     if (configError || !user) {
@@ -46,6 +54,7 @@ export async function POST(
     const callerTenant = profile?.tenant_id || profile?.company_id || null;
 
     const { id: contractId } = await params;
+    mark('load_contract', { contractId });
     console.log('REGENERATE_ID_RECEIVED', contractId);
     console.log('REGENERATE_CONTRACT_START', contractId);
     console.log('CONTRACT_REGENERATE_CONFIRM', { contractId, userId: user.id });
@@ -95,11 +104,18 @@ export async function POST(
     });
 
     const resolvedContractId = String(contract.id || contractId);
+    mark('generate_html', { resolvedContractId });
 
     const result = await regenerateSaleContract(supabase, {
       contractId: resolvedContractId,
       regeneratedByUserId: user.id,
       session,
+    });
+
+    mark('response', {
+      status: 200,
+      newId: result.newContract.id,
+      version: result.newContract.version,
     });
 
     return NextResponse.json({
@@ -141,6 +157,7 @@ export async function POST(
         receivedId,
       });
     }
+    console.error('[contracts/regenerate] error', error.message);
     console.error('CONTRACT_REGENERATE_ERROR', error.message, error.stack);
     return NextResponse.json(
       {

@@ -11,7 +11,7 @@ import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
-import { loadSaleContractContext } from "@/lib/contractRegeneration";
+import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 
 const COMPANY_CONTRACT_VIEW_SELECT = [
   "id",
@@ -168,6 +168,52 @@ function logHtmlStep(step: string, startedAt: number, extra?: Record<string, unk
   });
 }
 
+function stripViewSelectColumn(select: string, column: string): string {
+  return select
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== column)
+    .join(", ");
+}
+
+async function selectRowWithColumnFallback(
+  supabase: SupabaseClient,
+  table: string,
+  select: string,
+  eqColumn: string,
+  eqValue: string,
+): Promise<Record<string, unknown>> {
+  let currentSelect = select;
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(currentSelect)
+      .eq(eqColumn, eqValue)
+      .maybeSingle();
+
+    if (!error && data) {
+      return data as Record<string, unknown>;
+    }
+
+    if (error) {
+      const missingCol = parseMissingContractColumn(error.message);
+      if (missingCol && currentSelect.includes(missingCol)) {
+        currentSelect = stripViewSelectColumn(currentSelect, missingCol);
+        console.log("[contracts/html] view_select_fallback", {
+          table,
+          removed: missingCol,
+          attempt: attempt + 1,
+        });
+        continue;
+      }
+      throw new Error(error.message);
+    }
+  }
+
+  throw new Error(`Registro não encontrado em ${table}.`);
+}
+
 export async function buildContractViewHtmlForContractId(
   supabase: SupabaseClient,
   contractId: string,
@@ -188,9 +234,41 @@ export async function buildContractViewHtmlForContractId(
     .single();
   logHtmlStep("company_loaded", startedAt);
   if (companyErr || !company) {
-    throw new Error(companyErr?.message || "Empresa não encontrada.");
+    try {
+      const companyRow = await selectRowWithColumnFallback(
+        supabase,
+        "companies",
+        COMPANY_CONTRACT_VIEW_SELECT,
+        "id",
+        tenantId,
+      );
+      logHtmlStep("company_loaded", startedAt, { fallback: true });
+      return buildContractViewHtmlFromContext(
+        supabase,
+        contract,
+        companyRow,
+        startedAt,
+      );
+    } catch {
+      throw new Error(companyErr?.message || "Empresa não encontrada.");
+    }
   }
 
+  return buildContractViewHtmlFromContext(
+    supabase,
+    contract,
+    company as Record<string, unknown>,
+    startedAt,
+  );
+}
+
+async function buildContractViewHtmlFromContext(
+  supabase: SupabaseClient,
+  contract: Record<string, unknown>,
+  company: Record<string, unknown>,
+  startedAt: number,
+): Promise<string> {
+  const tenantId = String(contract.tenant_id || contract.company_id || "").trim();
   const saleId = String(contract.sale_id || "").trim();
   let sale: Record<string, unknown> = {};
   if (saleId) {
