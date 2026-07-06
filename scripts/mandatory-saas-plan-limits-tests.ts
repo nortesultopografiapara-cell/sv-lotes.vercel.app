@@ -25,6 +25,8 @@ import {
   safeCompanyUpdateWithSchemaFallback,
 } from '../lib/saasPlans';
 import { COMPANY_EDIT_SELECT_FIELDS } from '../lib/loadCompanyForEdit';
+import { parseCustomMonthlyPrice } from '../lib/companyPricing';
+import { isPlatformAdmin } from '../lib/rls';
 import {
   buildSaasContractSections,
   resolveSaasContractContext,
@@ -547,6 +549,37 @@ function testLoadCompanySelectWithoutModulePlan() {
   console.log('OK testLoadCompanySelectWithoutModulePlan');
 }
 
+function testCustomMonthlyPriceAcceptsBrlOneCent() {
+  assert(parseCustomMonthlyPrice('R$ 0,01') === 0.01, 'R$ 0,01');
+  assert(parseCustomMonthlyPrice(0.01) === 0.01, 'número 0.01');
+  assert(parseCustomMonthlyPrice('0,01') === 0.01, '0,01 sem símbolo');
+  assert(parseCustomMonthlyPrice('R$ 800,00') === 800, 'R$ 800,00');
+  console.log('OK testCustomMonthlyPriceAcceptsBrlOneCent');
+}
+
+function testMasterAdminCanEditCompanies() {
+  assert(isPlatformAdmin('SUPER_ADMIN'), 'SUPER_ADMIN');
+  assert(isPlatformAdmin('MASTER_ADMIN'), 'MASTER_ADMIN');
+  assert(isPlatformAdmin('MASTER-ADMIN'), 'MASTER-ADMIN');
+  assert(!isPlatformAdmin('ADMIN'), 'ADMIN empresa não é master');
+  assert(!isPlatformAdmin('BROKER'), 'corretor não é master');
+  console.log('OK testMasterAdminCanEditCompanies');
+}
+
+function testPersonalizadoClearsCommercialNoteInDbPayload() {
+  const manual = buildManualLimitsFromForm({
+    max_projects: 5,
+    max_lots: 100,
+    max_brokers: 10,
+    admin_users_limit: 2,
+    saas_commercial_note: '',
+  });
+  const limits = saasLimitsDbPayload('personalizado', manual);
+  const dbWrite = buildCompanyLimitsDbWritePayload(limits);
+  assert(dbWrite.saas_commercial_note === null, 'nota vazia persiste null');
+  console.log('OK testPersonalizadoClearsCommercialNoteInDbPayload');
+}
+
 async function runAsyncTests() {
   await testSafeUpdateIgnoresMissingModulePlan();
   await testSafeUpdateIgnoresMissingModuleType();
@@ -578,6 +611,9 @@ function run() {
   testUpdatePayloadKeepsLimitsWithoutModulePlan();
   testPlanAndCardWithoutModulePlan();
   testLoadCompanySelectWithoutModulePlan();
+  testCustomMonthlyPriceAcceptsBrlOneCent();
+  testMasterAdminCanEditCompanies();
+  testPersonalizadoClearsCommercialNoteInDbPayload();
 }
 
 async function main() {

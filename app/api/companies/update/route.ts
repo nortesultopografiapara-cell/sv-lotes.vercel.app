@@ -1,24 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { parseCustomMonthlyPrice } from '@/lib/companyPricing';
 import {
   buildCompanyLimitsDbWritePayload,
   buildManualLimitsFromForm,
-  parseManualPlanLimit,
   saasLimitsDbPayload,
   safeCompanyUpdateWithSchemaFallback,
 } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
-  resolveCompanySubscriptionDates,
 } from '@/lib/companySubscriptionDates';
+import { isPlatformAdmin } from '@/lib/rls';
 import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
-
-function parseCustomPrice(raw: unknown): number | null {
-  if (raw == null || raw === '') return null;
-  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.'));
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100) / 100;
-}
 
 export async function PATCH(request: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -45,8 +38,11 @@ export async function PATCH(request: Request) {
       .eq('id', userId)
       .single();
 
-    if (callerErr || caller?.role !== 'SUPER_ADMIN') {
-      return NextResponse.json({ error: 'Permissão negada.' }, { status: 403 });
+    if (callerErr || !isPlatformAdmin(caller?.role)) {
+      return NextResponse.json(
+        { error: 'Permissão negada. Apenas Master/Super Admin pode editar empresas.' },
+        { status: 403 },
+      );
     }
 
     const planSource = body.plan_type || body.plan || 'basic';
@@ -55,7 +51,7 @@ export async function PATCH(request: Request) {
 
     const customEnabled =
       body.custom_price_enabled === true || limits.planKey === 'personalizado';
-    const parsedCustom = parseCustomPrice(body.custom_monthly_price);
+    const parsedCustom = parseCustomMonthlyPrice(body.custom_monthly_price);
 
     if (customEnabled && parsedCustom == null) {
       return NextResponse.json({ error: 'Valor personalizado inválido.' }, { status: 400 });
