@@ -58,6 +58,7 @@ function testContractsPageUsesTimeoutHelper() {
   assert(page.includes('fetchJsonWithTimeout'), 'contratos usa fetchJsonWithTimeout');
   assert(page.includes('CONTRACT_LIST_SELECT'), 'lista enxuta');
   assert(!page.includes('selectedContract, tenantData, receipts'), 'sem loop receipts no preview');
+  assert(!page.includes('buildContractViewHtml'), 'preview sem regeneração client-side');
   assert(signature.includes('finally'), 'assinatura libera loading no finally');
   assert(signature.includes('fetchJsonWithTimeout'), 'assinatura com timeout');
   console.log('OK testContractsPageUsesTimeoutHelper');
@@ -78,8 +79,8 @@ function testGisSaleDoesNotReturnBeforeBlockUpdate() {
 function testHtmlRouteReturnsJsonOnError() {
   const fs = require('node:fs') as typeof import('node:fs');
   const route = fs.readFileSync('app/api/contracts/[id]/html/route.ts', 'utf8');
-  assert(route.includes("NextResponse.json({ error:"), 'html retorna JSON em erro');
-  assert(route.includes('[contracts]'), 'logs de timing');
+  assert(route.includes('success: false') && route.includes('error:'), 'html retorna JSON em erro');
+  assert(route.includes('[contracts/html]'), 'logs de timing');
   console.log('OK testHtmlRouteReturnsJsonOnError');
 }
 

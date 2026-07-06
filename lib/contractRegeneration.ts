@@ -111,6 +111,86 @@ function attachHtmlToContractRow(
   return { ...row, generated_html: html };
 }
 
+/** HTML persistido no contrato (generated_html ou coluna legada). */
+export function readStoredContractHtml(
+  contract: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!contract || typeof contract !== 'object') return null;
+  for (const col of CONTRACT_HTML_STORAGE_COLUMNS) {
+    const v = contract[col];
+    if (typeof v === 'string' && v.trim().length > 0) {
+      return v;
+    }
+  }
+  return null;
+}
+
+/** Select enxuto para preview HTML — evita select('*') no fast path. */
+export const CONTRACT_HTML_PREVIEW_SELECT =
+  'id, generated_html, updated_at, needs_regenerar, tenant_id, company_id';
+
+/**
+ * Carrega contrato para preview HTML (fast path).
+ * Campos mínimos: id, generated_html, updated_at (+ tenant para sessão).
+ */
+export async function loadContractHtmlPreviewRow(
+  supabase: SupabaseClient,
+  contractId: string,
+): Promise<Record<string, unknown>> {
+  const receivedId = String(contractId || '').trim();
+  if (!receivedId) {
+    throw new ContractNotFoundError(receivedId, { detail: 'ID do contrato vazio.' });
+  }
+
+  const runLookup = async (
+    field: 'id' | 'contract_number',
+    value: string,
+  ) => {
+    const { data, error } = await supabase
+      .from('contracts')
+      .select(CONTRACT_HTML_PREVIEW_SELECT)
+      .eq(field, value)
+      .maybeSingle();
+
+    if (error) {
+      throw new ContractNotFoundError(receivedId, {
+        lookup: field,
+        supabaseCode: error.code,
+        supabaseMessage: error.message,
+        detail: `Erro ao buscar contrato: ${error.message}`,
+      });
+    }
+
+    return data as Record<string, unknown> | null;
+  };
+
+  let contract: Record<string, unknown> | null = null;
+
+  if (isUuid(receivedId)) {
+    contract = await runLookup('id', receivedId);
+  }
+
+  if (!contract) {
+    contract = await runLookup('contract_number', receivedId);
+  }
+
+  if (!contract && !isUuid(receivedId)) {
+    contract = await runLookup('id', receivedId);
+  }
+
+  if (!contract) {
+    throw new ContractNotFoundError(receivedId, {
+      detail: 'Contrato não encontrado.',
+    });
+  }
+
+  if (!contract.tenant_id && contract.company_id) {
+    contract.tenant_id = contract.company_id;
+  }
+
+  return contract;
+}
+
 export class ContractNotFoundError extends Error {
   readonly receivedId: string;
   readonly lookup: 'id' | 'contract_number';

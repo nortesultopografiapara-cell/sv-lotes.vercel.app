@@ -45,7 +45,6 @@ import {
 import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
 import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
-import { buildContractViewHtml } from "@/lib/buildContractViewHtml";
 import {
   CONTRACTS_FETCH_TIMEOUT_MS,
   fetchJsonWithTimeout,
@@ -154,6 +153,7 @@ const CONTRACT_LIST_SELECT = [
   "broker_id",
   "plan_type",
   "contract_model",
+  "needs_regenerar",
 ].join(", ");
 
 const FINANCE_RECEIPTS_LIST_SELECT =
@@ -548,6 +548,7 @@ export default function ContractsPage() {
   const [contractViewHtml, setContractViewHtml] = useState<string | null>(null);
   const [contractViewLoading, setContractViewLoading] = useState(false);
   const [contractViewError, setContractViewError] = useState<string | null>(null);
+  const [contractViewNeedsRegenerar, setContractViewNeedsRegenerar] = useState(false);
   const [contractHtmlRetryKey, setContractHtmlRetryKey] = useState(0);
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
@@ -776,9 +777,14 @@ export default function ContractsPage() {
   }, [selectedContract?.id, user?.role, canShowRegenerateContract]);
 
   useEffect(() => {
-    if (!selectedContract?.id || !tenantData) {
-      setContractViewHtml(null);
-      setContractViewError(null);
+    setContractViewHtml(null);
+    setContractViewError(null);
+    setContractViewNeedsRegenerar(false);
+    setContractViewLoading(false);
+  }, [selectedContract?.id]);
+
+  useEffect(() => {
+    if (!selectedContract?.id) {
       return;
     }
     let active = true;
@@ -786,7 +792,6 @@ export default function ContractsPage() {
       setContractViewLoading(true);
       setContractViewError(null);
       try {
-        let html: string | null = null;
         const impersonatingTenantId =
           typeof window !== "undefined"
             ? localStorage.getItem("impersonating_tenant_id")
@@ -797,39 +802,43 @@ export default function ContractsPage() {
         if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
           query.set("impersonatingTenantId", impersonatingTenantId);
         }
-        const { ok, data, error } = await fetchJsonWithTimeout<{ html?: string; error?: string }>(
+        const { ok, data, error } = await fetchJsonWithTimeout<{
+          success?: boolean;
+          html?: string;
+          error?: string;
+          source?: string;
+          needs_regenerar?: boolean;
+        }>(
           `/api/contracts/${selectedContract.id}/html?${query.toString()}`,
           { credentials: "include" },
           CONTRACTS_FETCH_TIMEOUT_MS,
         );
-        if (ok && typeof data?.html === "string") {
-          html = data.html;
+        if (!active) return;
+
+        if (ok && data?.success !== false && typeof data?.html === "string" && data.html.trim().length > 0) {
+          setContractViewHtml(data.html);
+          setContractViewError(null);
+          setContractViewNeedsRegenerar(data.needs_regenerar === true);
         } else {
-          console.warn("[CONTRATOS] contractViewHtml API fallback", error || data?.error);
-          if (active && error) {
-            setContractViewError(error);
-          }
-          const block = enrichBlockForContract(selectedContract.blocks);
-          html = await buildContractViewHtml(supabase, {
-            contract: selectedContract,
-            tenant: tenantData,
-            receipts: [],
-            block,
-          });
-        }
-        if (active) setContractViewHtml(html);
-      } catch (e) {
-        console.error("[CONTRATOS] contractViewHtml", e);
-        if (active) {
           setContractViewHtml(null);
+          setContractViewNeedsRegenerar(false);
           setContractViewError(
-            formatClientFetchError({
-              networkMessage: e instanceof Error ? e.message : undefined,
-            }),
+            error ||
+              (typeof data?.error === "string" ? data.error : null) ||
+              "Não foi possível carregar a visualização do contrato.",
           );
-          if (e instanceof CustomerContractValidationError) {
-            setCustomerContractValidation(e.validation);
-          }
+        }
+      } catch (e) {
+        if (!active) return;
+        console.error("[CONTRATOS] contractViewHtml", e);
+        setContractViewHtml(null);
+        setContractViewError(
+          formatClientFetchError({
+            networkMessage: e instanceof Error ? e.message : undefined,
+          }),
+        );
+        if (e instanceof CustomerContractValidationError) {
+          setCustomerContractValidation(e.validation);
         }
       } finally {
         if (active) setContractViewLoading(false);
@@ -838,10 +847,9 @@ export default function ContractsPage() {
     return () => {
       active = false;
     };
-  }, [selectedContract?.id, tenantData?.id, contractHtmlRetryKey]);
+  }, [selectedContract?.id, contractHtmlRetryKey, user?.id]);
 
-  const resolvedContractHtml =
-    contractViewHtml ?? selectedContract?.generated_html ?? null;
+  const resolvedContractHtml = contractViewHtml;
 
   const reloadContractsList = async () => {
     if (!user) return [];
@@ -1541,6 +1549,7 @@ export default function ContractsPage() {
 
       setContractToast("Contrato regenerado com sucesso.");
       setActiveTab("Visualização");
+      setContractHtmlRetryKey((k) => k + 1);
     } catch (e: unknown) {
       const msg =
         e instanceof Error ? e.message : "Erro ao regenerar contrato";
@@ -2096,44 +2105,48 @@ export default function ContractsPage() {
                 {activeTab === "Visualização" && (
                   <>
                     <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
-                      {(!selectedContract.generated_html ||
-                        selectedContract.generated_html.length < 500) && (
-                        <div className="max-w-[800px] mx-auto mb-4 bg-blue-900/40 border border-blue-500/50 p-4 rounded-lg flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-blue-200 font-semibold flex items-center gap-2">
-                              <RefreshCw className="w-4 h-4" /> Versão antiga ou
-                              sem conteúdo completo
-                            </p>
-                            <p className="text-xs text-blue-300 mt-1">
-                              Este contrato foi gerado antes do modelo completo
-                              atual. Deseja recriá-lo?
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={openRegenerateModal}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-[var(--text-primary)] text-sm font-semibold rounded-lg transition-colors"
-                          >
-                            Regenerar Contrato
-                          </button>
-                        </div>
+                      {contractViewNeedsRegenerar && (
+                        <p className="max-w-[800px] mx-auto mb-3 text-xs text-amber-400/90">
+                          Este contrato precisa ser regenerado para atualizar a visualização.
+                        </p>
                       )}
                       <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[var(--border-color)] origin-top p-8 text-black min-h-[800px]">
-                        {contractViewLoading ? (
+                        {contractViewLoading && !resolvedContractHtml ? (
                           <div className="flex items-center justify-center py-32 text-[var(--text-muted)]">
                             <Loader2 className="w-8 h-8 animate-spin mr-2" />
-                            Atualizando contrato com dados da empresa…
+                            Carregando visualização do contrato…
                           </div>
                         ) : contractViewError && !resolvedContractHtml ? (
-                          <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+                          <div className="flex flex-col items-center justify-center py-24 text-center gap-4 px-4">
+                            <p className="text-base font-semibold text-[var(--text-primary)]">
+                              Não foi possível carregar a visualização do contrato.
+                            </p>
                             <p className="text-sm text-red-400 max-w-md">{contractViewError}</p>
-                            <button
-                              type="button"
-                              onClick={() => setContractHtmlRetryKey((k) => k + 1)}
-                              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold"
-                            >
-                              Tentar novamente
-                            </button>
+                            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => setContractHtmlRetryKey((k) => k + 1)}
+                                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold"
+                              >
+                                Tentar novamente
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleBaixarPDF()}
+                                className="px-4 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] hover:bg-[var(--bg-main)] text-[var(--text-primary)] text-sm font-semibold"
+                              >
+                                Baixar PDF
+                              </button>
+                              {canShowRegenerateContract && (
+                                <button
+                                  type="button"
+                                  onClick={openRegenerateModal}
+                                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold"
+                                >
+                                  Regenerar contrato
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ) : resolvedContractHtml ? (
                           <div

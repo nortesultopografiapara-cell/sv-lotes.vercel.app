@@ -13,11 +13,169 @@ import {
 } from "@/lib/saleBrokerSnapshot";
 import { loadSaleContractContext } from "@/lib/contractRegeneration";
 
+const COMPANY_CONTRACT_VIEW_SELECT = [
+  "id",
+  "name",
+  "fantasy_name",
+  "cnpj",
+  "cpf",
+  "email",
+  "phone",
+  "address",
+  "address_number",
+  "complement",
+  "neighborhood",
+  "bairro",
+  "city",
+  "state",
+  "zip_code",
+  "logo_url",
+  "contract_model",
+  "legal_representative_name",
+  "legal_representative_cpf",
+  "legal_representative_rg",
+  "legal_representative_nationality",
+  "legal_representative_profession",
+  "legal_representative_marital_status",
+  "legal_representative_address",
+  "legal_representative_email",
+  "contract_clauses",
+  "contract_footer",
+  "contract_recanto_fields",
+].join(", ");
+
+const SALE_CONTRACT_VIEW_SELECT = [
+  "id",
+  "tenant_id",
+  "project_id",
+  "block_id",
+  "customer_id",
+  "broker_id",
+  "total_value",
+  "final_value",
+  "agreed_price",
+  "sale_value",
+  "down_payment",
+  "installments_count",
+  "installments",
+  "payment_day",
+  "first_due_date",
+  "plan_type",
+  "spouse_name",
+  "spouse_cpf",
+  "spouse_rg",
+  "spouse_nationality",
+  "spouse_profession",
+  "spouse_marital_status",
+  "spouse_address",
+].join(", ");
+
+const CUSTOMER_CONTRACT_VIEW_SELECT = [
+  "id",
+  "tenant_id",
+  "name",
+  "full_name",
+  "document",
+  "cpf",
+  "rg",
+  "email",
+  "phone",
+  "address",
+  "address_number",
+  "complement",
+  "neighborhood",
+  "city",
+  "state",
+  "zip_code",
+  "nationality",
+  "profession",
+  "marital_status",
+  "spouse_name",
+  "spouse_cpf",
+  "spouse_rg",
+  "spouse_nationality",
+  "spouse_profession",
+  "spouse_marital_status",
+  "spouse_address",
+].join(", ");
+
+const BLOCK_CONTRACT_VIEW_SELECT = [
+  "id",
+  "tenant_id",
+  "project_id",
+  "block_name",
+  "block",
+  "quadra",
+  "name",
+  "lot_number",
+  "number",
+  "lot",
+  "area",
+  "price",
+  "front",
+  "back",
+  "left_side",
+  "right_side",
+  "segments_json",
+  "segment_edges",
+  "measures_display",
+  "front_street",
+  "front_street_official",
+  "front_source",
+].join(", ");
+
+const PROJECT_CONTRACT_VIEW_SELECT = [
+  "id",
+  "tenant_id",
+  "name",
+  "city",
+  "state",
+  "registry_office",
+  "registry_number",
+  "matricula",
+  "address",
+].join(", ");
+
+const BLOCKS_PROJECT_LIST_SELECT = [
+  "id",
+  "project_id",
+  "block_name",
+  "block",
+  "quadra",
+  "name",
+  "lot_number",
+  "number",
+  "lot",
+  "area",
+  "front",
+  "back",
+  "left_side",
+  "right_side",
+  "segments_json",
+  "segment_edges",
+  "measures_display",
+  "front_street",
+  "front_street_official",
+].join(", ");
+
+const STREET_GUIDES_SELECT =
+  "id, project_id, street_name, official_name, guide_text, sort_order";
+
+function logHtmlStep(step: string, startedAt: number, extra?: Record<string, unknown>) {
+  console.log("[contracts/html]", step, {
+    ms: Date.now() - startedAt,
+    ...extra,
+  });
+}
+
 export async function buildContractViewHtmlForContractId(
   supabase: SupabaseClient,
   contractId: string,
 ): Promise<string> {
+  const startedAt = Date.now();
   const contract = await loadSaleContractContext(supabase, contractId);
+  logHtmlStep("context_loaded", startedAt);
+
   const tenantId = String(contract.tenant_id || contract.company_id || "").trim();
   if (!tenantId) {
     throw new Error("Contrato sem tenant_id.");
@@ -25,9 +183,10 @@ export async function buildContractViewHtmlForContractId(
 
   const { data: company, error: companyErr } = await supabase
     .from("companies")
-    .select("*")
+    .select(COMPANY_CONTRACT_VIEW_SELECT)
     .eq("id", tenantId)
     .single();
+  logHtmlStep("company_loaded", startedAt);
   if (companyErr || !company) {
     throw new Error(companyErr?.message || "Empresa não encontrada.");
   }
@@ -37,33 +196,36 @@ export async function buildContractViewHtmlForContractId(
   if (saleId) {
     const { data: saleRow } = await supabase
       .from("sales")
-      .select("*")
+      .select(SALE_CONTRACT_VIEW_SELECT)
       .eq("id", saleId)
       .maybeSingle();
     sale = (saleRow as Record<string, unknown>) || {};
   }
+  logHtmlStep("sale_loaded", startedAt, { saleId: saleId || null });
 
   let customer: Record<string, unknown> = {};
   const customerId = String(contract.customer_id || "").trim();
   if (customerId) {
     const { data: customerRow } = await supabase
       .from("customers")
-      .select("*")
+      .select(CUSTOMER_CONTRACT_VIEW_SELECT)
       .eq("id", customerId)
       .maybeSingle();
     customer = (customerRow as Record<string, unknown>) || {};
   }
+  logHtmlStep("customer_loaded", startedAt);
 
   let block: Record<string, unknown> = {};
   const blockId = String(contract.block_id || "").trim();
   if (blockId) {
     const { data: blockRow } = await supabase
       .from("blocks")
-      .select("*")
+      .select(BLOCK_CONTRACT_VIEW_SELECT)
       .eq("id", blockId)
       .maybeSingle();
     block = (blockRow as Record<string, unknown>) || {};
   }
+  logHtmlStep("block_loaded", startedAt);
 
   let project: Record<string, unknown> = {};
   const projectId = String(
@@ -72,11 +234,12 @@ export async function buildContractViewHtmlForContractId(
   if (projectId) {
     const { data: projectRow } = await supabase
       .from("projects")
-      .select("*")
+      .select(PROJECT_CONTRACT_VIEW_SELECT)
       .eq("id", projectId)
       .maybeSingle();
     project = (projectRow as Record<string, unknown>) || {};
   }
+  logHtmlStep("project_loaded", startedAt);
 
   let receipts: ContractFinanceReceiptRef[] = [];
   if (saleId) {
@@ -87,8 +250,9 @@ export async function buildContractViewHtmlForContractId(
       .neq("status", "cancelado");
     receipts = (receiptRows || []) as ContractFinanceReceiptRef[];
   }
+  logHtmlStep("receipts_loaded", startedAt, { count: receipts.length });
 
-  return buildContractViewHtml(supabase, {
+  const html = await buildContractViewHtml(supabase, {
     contract,
     tenant: { ...(company as Record<string, unknown>), id: tenantId },
     receipts,
@@ -97,6 +261,8 @@ export async function buildContractViewHtmlForContractId(
     sale,
     project,
   });
+  logHtmlStep("html_built", startedAt, { bytes: html.length });
+  return html;
 }
 
 export async function buildContractViewHtml(
@@ -124,7 +290,7 @@ export async function buildContractViewHtml(
   if (blockId) {
     const { data: fullBlock } = await supabase
       .from("blocks")
-      .select("*")
+      .select(BLOCK_CONTRACT_VIEW_SELECT)
       .eq("id", blockId)
       .maybeSingle();
     if (fullBlock) {
@@ -146,8 +312,8 @@ export async function buildContractViewHtml(
 
   if (projectId) {
     const [{ data: blocks }, { data: guides }] = await Promise.all([
-      supabase.from("blocks").select("*").eq("project_id", projectId),
-      supabase.from("street_guides").select("*").eq("project_id", projectId),
+      supabase.from("blocks").select(BLOCKS_PROJECT_LIST_SELECT).eq("project_id", projectId),
+      supabase.from("street_guides").select(STREET_GUIDES_SELECT).eq("project_id", projectId),
     ]);
     projectBlocks = (blocks || []) as Record<string, unknown>[];
     streetGuides = (guides || []) as Record<string, unknown>[];
