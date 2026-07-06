@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileArchive } from 'lucide-react';
+import { FileArchive, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import {
   canAccessLegacyContractsModule,
   canManageLegacyContractsModule,
 } from '@/lib/legacy-contracts/permissions';
+import { fetchLegacyContractList } from '@/lib/legacy-contracts/listClient';
 import type {
   LegacyContractListItem,
-  LegacyContractListResult,
   LegacyContractListSummary,
 } from '@/lib/legacy-contracts/types';
 import { LegacyContractSummaryCards } from '@/components/legacy-contracts/LegacyContractSummaryCards';
@@ -39,15 +40,15 @@ const EMPTY_SUMMARY: LegacyContractListSummary = {
 export function LegacyContractsPageClient() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const activeTenantId = user?.tenant_id || user?.company_id || null;
   const canAccess = canAccessLegacyContractsModule(user?.role);
   const canManage = canManageLegacyContractsModule(user?.role);
 
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
   const [filters, setFilters] = useState<LegacyContractsFilterValues>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<LegacyContractsFilterValues>(EMPTY_FILTERS);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<LegacyContractListItem[]>([]);
   const [summary, setSummary] = useState<LegacyContractListSummary>(EMPTY_SUMMARY);
   const [total, setTotal] = useState(0);
@@ -62,6 +63,21 @@ export function LegacyContractsPageClient() {
       router.push('/dashboard');
     }
   }, [authLoading, user, canAccess, router]);
+
+  useEffect(() => {
+    if (!user || authLoading) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const tenantId = await resolveActiveTenantId(user);
+      if (!cancelled) setActiveTenantId(tenantId);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, authLoading]);
 
   useEffect(() => {
     if (!activeTenantId || !user?.id) return;
@@ -96,6 +112,15 @@ export function LegacyContractsPageClient() {
   }, [activeTenantId, user?.id, user?.role]);
 
   const loadDocuments = useCallback(async () => {
+    if (!activeTenantId) {
+      setItems([]);
+      setSummary(EMPTY_SUMMARY);
+      setTotal(0);
+      setError('Empresa ativa não identificada. Recarregue a página ou selecione a empresa novamente.');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
@@ -108,17 +133,9 @@ export function LegacyContractsPageClient() {
       if (appliedFilters.linkType) params.set('linkType', appliedFilters.linkType);
       params.set('page', String(page));
       params.set('pageSize', '25');
-      if (activeTenantId) params.set('activeTenantId', activeTenantId);
+      params.set('activeTenantId', activeTenantId);
 
-      const response = await fetch(`/api/legacy-contracts?${params.toString()}`);
-      const payload = (await response.json().catch(() => ({}))) as LegacyContractListResult & {
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Erro ao carregar contratos antigos.');
-      }
-
+      const payload = await fetchLegacyContractList(params);
       setItems(payload.items || []);
       setSummary(payload.summary || EMPTY_SUMMARY);
       setTotal(payload.total || 0);
@@ -133,9 +150,9 @@ export function LegacyContractsPageClient() {
   }, [activeTenantId, appliedFilters, page]);
 
   useEffect(() => {
-    if (!canAccess || authLoading) return;
+    if (!canAccess || authLoading || !activeTenantId) return;
     void loadDocuments();
-  }, [canAccess, authLoading, loadDocuments]);
+  }, [canAccess, authLoading, activeTenantId, loadDocuments]);
 
   const handleApplyFilters = () => {
     setPage(1);
@@ -152,6 +169,7 @@ export function LegacyContractsPageClient() {
     try {
       const response = await fetch(
         `/api/legacy-contracts/${encodeURIComponent(item.id)}/pdf?format=json`,
+        { credentials: 'same-origin' },
       );
       const payload = await response.json().catch(() => ({} as Record<string, unknown>));
       if (!response.ok) {
@@ -178,6 +196,7 @@ export function LegacyContractsPageClient() {
     try {
       const response = await fetch(`/api/legacy-contracts/${encodeURIComponent(item.id)}`, {
         method: 'DELETE',
+        credentials: 'same-origin',
       });
       const payload = await response.json().catch(() => ({} as Record<string, unknown>));
       if (!response.ok) {
@@ -235,8 +254,16 @@ export function LegacyContractsPageClient() {
         />
 
         {error ? (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {error}
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex flex-wrap items-center justify-between gap-3">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => void loadDocuments()}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-400/40 px-3 py-1.5 text-xs text-red-100"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Tentar novamente
+            </button>
           </div>
         ) : null}
 

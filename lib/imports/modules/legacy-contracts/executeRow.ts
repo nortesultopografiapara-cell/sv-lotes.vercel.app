@@ -3,12 +3,70 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isLegacyContractSchemaColumnError } from '@/lib/legacy-contracts/schemaCompat';
 import { lookupLegacyContractPdf } from '@/lib/imports/modules/legacy-contracts/pdfIndex';
 import { uploadLegacyContractPdf } from '@/lib/imports/modules/legacy-contracts/storage';
 import type {
   LegacyContractPdfIndex,
   ValidatedLegacyContractRow,
 } from '@/lib/imports/modules/legacy-contracts/types';
+
+function buildLegacyContractInsertPayload(params: {
+  tenantId: string;
+  userId: string;
+  row: ValidatedLegacyContractRow;
+  storagePath: string;
+  migrationId?: string | null;
+  extended: boolean;
+}) {
+  const { row, tenantId, userId, storagePath, migrationId, extended } = params;
+  const notes = [row.observacoes, row.manual_link_notes].filter(Boolean).join(' | ') || null;
+
+  const base = {
+    company_id: tenantId,
+    tenant_id: tenantId,
+    sale_id: row.sale_id,
+    customer_id: row.customer_id,
+    project_id: row.project_id,
+    block_id: row.block_id,
+    original_file_name: row.nome_arquivo_pdf,
+    storage_path: storagePath,
+    contract_number: row.numero_contrato_antigo || null,
+    contract_date: row.data_contrato,
+    status: row.status_contrato,
+    notes,
+    created_by: userId,
+  };
+
+  if (!extended) return base;
+
+  return {
+    ...base,
+    quadra: row.quadra || null,
+    lote: row.lote || null,
+    link_type: row.manual_link_applied ? 'manual' : 'automatic',
+    source: 'legacy_migration',
+    migration_id: migrationId || null,
+    is_active: true,
+  };
+}
+
+async function insertLegacyContractDocument(
+  admin: SupabaseClient,
+  payload: Record<string, unknown>,
+): Promise<{ id: string } | { error: string }> {
+  const { data, error } = await admin
+    .from('legacy_contract_documents')
+    .insert([payload])
+    .select('id')
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { id: String(data?.id) };
+}
 
 export async function executeImportableLegacyContractRow(params: {
   admin: SupabaseClient;
@@ -53,43 +111,37 @@ export async function executeImportableLegacyContractRow(params: {
     };
   }
 
-  const linkType = row.manual_link_applied ? 'manual' : 'automatic';
-  const notes = [row.observacoes, row.manual_link_notes].filter(Boolean).join(' | ') || null;
+  const extendedPayload = buildLegacyContractInsertPayload({
+    tenantId,
+    userId,
+    row,
+    storagePath,
+    migrationId,
+    extended: true,
+  });
 
-  const { data, error } = await admin
-    .from('legacy_contract_documents')
-    .insert([
-      {
-        company_id: tenantId,
-        tenant_id: tenantId,
-        sale_id: row.sale_id,
-        customer_id: row.customer_id,
-        project_id: row.project_id,
-        block_id: row.block_id,
-        quadra: row.quadra || null,
-        lote: row.lote || null,
-        original_file_name: row.nome_arquivo_pdf,
-        storage_path: storagePath,
-        contract_number: row.numero_contrato_antigo || null,
-        contract_date: row.data_contrato,
-        status: row.status_contrato,
-        notes,
-        link_type: linkType,
-        source: 'legacy_migration',
-        migration_id: migrationId || null,
-        created_by: userId,
-        is_active: true,
-      },
-    ])
-    .select('id')
-    .single();
-
-  if (error) {
-    await admin.storage.from('legacy-contracts').remove([storagePath]);
-    return { ok: false, error: error.message };
+  let inserted = await insertLegacyContractDocument(admin, extendedPayload);
+  if ('error' in inserted && isLegacyContractSchemaColumnError(inserted.error)) {
+    console.warn('[executeImportableLegacyContractRow] fallback insert base:', inserted.error);
+    inserted = await insertLegacyContractDocument(
+      admin,
+      buildLegacyContractInsertPayload({
+        tenantId,
+        userId,
+        row,
+        storagePath,
+        migrationId,
+        extended: false,
+      }),
+    );
   }
 
-  return { ok: true, documentId: String(data?.id) };
+  if ('error' in inserted) {
+    await admin.storage.from('legacy-contracts').remove([storagePath]);
+    return { ok: false, error: inserted.error };
+  }
+
+  return { ok: true, documentId: inserted.id };
 }
 
 export function buildLegacyContractExecutionExpectation(row: ValidatedLegacyContractRow) {

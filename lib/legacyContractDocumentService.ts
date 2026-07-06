@@ -77,17 +77,26 @@ export async function loadLegacyContractDocumentBySaleId(
   admin: SupabaseClient,
   saleId: string,
 ): Promise<(LegacyContractDocumentView & { storage_path: string; company_id: string }) | null> {
-  const { data, error } = await admin
+  const selectColumns =
+    'id, sale_id, contract_number, contract_date, status, original_file_name, notes, storage_path, company_id, created_at, link_type, quadra, lote';
+
+  let { data, error } = await admin
     .from('legacy_contract_documents')
-    .select(
-      'id, sale_id, contract_number, contract_date, status, original_file_name, notes, storage_path, company_id, created_at, link_type, quadra, lote',
-    )
+    .select(selectColumns)
     .eq('sale_id', saleId)
     .eq('is_active', true)
     .is('deleted_at', null)
     .maybeSingle();
 
-  if (error) {
+  if (error && /link_type|is_active|deleted_at|quadra|lote/i.test(error.message)) {
+    ({ data, error } = await admin
+      .from('legacy_contract_documents')
+      .select(
+        'id, sale_id, contract_number, contract_date, status, original_file_name, notes, storage_path, company_id, created_at',
+      )
+      .eq('sale_id', saleId)
+      .maybeSingle());
+  } else if (error) {
     throw new LegacyContractDocumentError(
       `Erro ao consultar contrato antigo: ${error.message}`,
       500,

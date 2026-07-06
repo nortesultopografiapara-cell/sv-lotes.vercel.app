@@ -5,6 +5,7 @@ import type { LegacyContractLinkType } from '@/lib/legacy-contracts/constants';
 import type { LegacyContractListFilters } from '@/lib/legacy-contracts/types';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function parseListFilters(url: URL): LegacyContractListFilters {
   const linkTypeRaw = url.searchParams.get('linkType') || '';
@@ -40,9 +41,17 @@ export async function GET(request: Request) {
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error('[legacy-contracts GET]', err);
+    const message = err instanceof Error ? err.message : 'Erro ao listar contratos antigos.';
+    console.error('[legacy-contracts GET]', message, err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao listar contratos antigos.' },
+      {
+        error: message,
+        items: [],
+        summary: { total: 0, automatic: 0, manual: 0, unlinked: 0 },
+        total: 0,
+        page: 1,
+        pageSize: 25,
+      },
       { status: 500 },
     );
   }
