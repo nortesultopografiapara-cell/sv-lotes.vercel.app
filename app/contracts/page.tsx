@@ -47,6 +47,12 @@ import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 import { buildContractViewHtml } from "@/lib/buildContractViewHtml";
 import {
+  CONTRACTS_FETCH_TIMEOUT_MS,
+  fetchJsonWithTimeout,
+  fetchWithTimeout,
+} from "@/lib/fetchJsonWithTimeout";
+import { formatClientFetchError } from "@/lib/clientFetchError";
+import {
   CustomerContractValidationError,
   validateCustomerForContractFromContract,
   type CustomerContractValidation,
@@ -124,6 +130,35 @@ async function resolveContractsTenantWithDb(user: any): Promise<string | null> {
   return resolveContractsTenantId(user);
 }
 
+/** Lista sem generated_html — evita payload pesado por linha. */
+const CONTRACT_LIST_SELECT = [
+  "id",
+  "contract_number",
+  "status",
+  "signature_status",
+  "created_at",
+  "customer_id",
+  "block_id",
+  "project_id",
+  "sale_id",
+  "company_id",
+  "tenant_id",
+  "customer_name",
+  "project_name_snapshot",
+  "location_display",
+  "sale_value",
+  "down_payment",
+  "installments",
+  "version",
+  "regenerated_from",
+  "broker_id",
+  "plan_type",
+  "contract_model",
+].join(", ");
+
+const FINANCE_RECEIPTS_LIST_SELECT =
+  "id, sale_id, due_date, amount, status, installment_number, description, payment_date";
+
 /**
  * Carrega contratos sem joins — evita falha silenciosa do PostgREST.
  * Tenta company_id, tenant_id, .or e por último sem filtro (admin).
@@ -164,36 +199,21 @@ async function loadContractsList(
   };
 
   if (tenantId) {
-    await runQuery("company_id", () =>
+    await runQuery("tenant_or_company", () =>
       supabase
         .from("contracts")
-        .select("*")
-        .eq("company_id", tenantId)
+        .select(CONTRACT_LIST_SELECT)
+        .or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`)
         .order("created_at", { ascending: false }),
     );
-
-    await runQuery("tenant_id", () =>
-      supabase
-        .from("contracts")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: false }),
-    );
-
-    if (!merged.length) {
-      await runQuery("tenant_or_company", () =>
-        supabase
-          .from("contracts")
-          .select("*")
-          .or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`)
-          .order("created_at", { ascending: false }),
-      );
-    }
   }
 
   if (!merged.length && user && PLATFORM_ADMIN_ROLES.includes(user.role)) {
     await runQuery("admin_sem_filtro", () =>
-      supabase.from("contracts").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("contracts")
+        .select(CONTRACT_LIST_SELECT)
+        .order("created_at", { ascending: false }),
     );
   }
 
@@ -527,6 +547,8 @@ export default function ContractsPage() {
   const [tenantData, setTenantData] = useState<any>(null);
   const [contractViewHtml, setContractViewHtml] = useState<string | null>(null);
   const [contractViewLoading, setContractViewLoading] = useState(false);
+  const [contractViewError, setContractViewError] = useState<string | null>(null);
+  const [contractHtmlRetryKey, setContractHtmlRetryKey] = useState(0);
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
 
@@ -628,7 +650,7 @@ export default function ContractsPage() {
       if (selectedContract?.sale_id) {
         const { data } = await supabase
           .from("finance_receipts")
-          .select("*")
+          .select(FINANCE_RECEIPTS_LIST_SELECT)
           .eq("sale_id", selectedContract.sale_id)
           .order("due_date", { ascending: true });
         if (active) setReceipts(data || []);
@@ -638,7 +660,7 @@ export default function ContractsPage() {
     };
     fetchReceipts();
     return () => { active = false; };
-  }, [selectedContract]);
+  }, [selectedContract?.sale_id]);
 
   useEffect(() => {
     let active = true;
@@ -648,15 +670,16 @@ export default function ContractsPage() {
         return;
       }
       try {
-        const res = await fetch(
+        const { ok, data, error } = await fetchJsonWithTimeout<{ versions?: unknown[] }>(
           `/api/contracts/${selectedContract.id}/versions`,
           { credentials: "include" },
+          CONTRACTS_FETCH_TIMEOUT_MS,
         );
-        const json = await res.json().catch(() => ({}));
-        if (active && res.ok) {
-          setContractVersions(json.versions || []);
+        if (active && ok) {
+          setContractVersions(data?.versions || []);
         } else if (active) {
           setContractVersions([]);
+          if (error) console.warn("[CONTRATOS] versions", error);
         }
       } catch {
         if (active) setContractVersions([]);
@@ -755,48 +778,42 @@ export default function ContractsPage() {
   useEffect(() => {
     if (!selectedContract?.id || !tenantData) {
       setContractViewHtml(null);
+      setContractViewError(null);
       return;
     }
     let active = true;
     (async () => {
       setContractViewLoading(true);
+      setContractViewError(null);
       try {
         let html: string | null = null;
-        try {
-          const impersonatingTenantId =
-            typeof window !== "undefined"
-              ? localStorage.getItem("impersonating_tenant_id")
-              : null;
-          const activeTenantId = await resolveContractsTenantWithDb(user);
-          const query = new URLSearchParams();
-          if (activeTenantId) query.set("activeTenantId", activeTenantId);
-          if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
-            query.set("impersonatingTenantId", impersonatingTenantId);
+        const impersonatingTenantId =
+          typeof window !== "undefined"
+            ? localStorage.getItem("impersonating_tenant_id")
+            : null;
+        const activeTenantId = await resolveContractsTenantWithDb(user);
+        const query = new URLSearchParams();
+        if (activeTenantId) query.set("activeTenantId", activeTenantId);
+        if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
+          query.set("impersonatingTenantId", impersonatingTenantId);
+        }
+        const { ok, data, error } = await fetchJsonWithTimeout<{ html?: string; error?: string }>(
+          `/api/contracts/${selectedContract.id}/html?${query.toString()}`,
+          { credentials: "include" },
+          CONTRACTS_FETCH_TIMEOUT_MS,
+        );
+        if (ok && typeof data?.html === "string") {
+          html = data.html;
+        } else {
+          console.warn("[CONTRATOS] contractViewHtml API fallback", error || data?.error);
+          if (active && error) {
+            setContractViewError(error);
           }
-          const res = await fetch(
-            `/api/contracts/${selectedContract.id}/html?${query.toString()}`,
-            { credentials: "include" },
-          );
-          const json = await res.json().catch(() => ({}));
-          if (res.ok && typeof json.html === "string") {
-            html = json.html;
-          } else {
-            console.warn("[CONTRATOS] contractViewHtml API fallback", json.error);
-            const block = enrichBlockForContract(selectedContract.blocks);
-            html = await buildContractViewHtml(supabase, {
-              contract: selectedContract,
-              tenant: tenantData,
-              receipts,
-              block,
-            });
-          }
-        } catch (apiErr) {
-          console.warn("[CONTRATOS] contractViewHtml API error", apiErr);
           const block = enrichBlockForContract(selectedContract.blocks);
           html = await buildContractViewHtml(supabase, {
             contract: selectedContract,
             tenant: tenantData,
-            receipts,
+            receipts: [],
             block,
           });
         }
@@ -805,6 +822,11 @@ export default function ContractsPage() {
         console.error("[CONTRATOS] contractViewHtml", e);
         if (active) {
           setContractViewHtml(null);
+          setContractViewError(
+            formatClientFetchError({
+              networkMessage: e instanceof Error ? e.message : undefined,
+            }),
+          );
           if (e instanceof CustomerContractValidationError) {
             setCustomerContractValidation(e.validation);
           }
@@ -816,7 +838,7 @@ export default function ContractsPage() {
     return () => {
       active = false;
     };
-  }, [selectedContract, tenantData, receipts]);
+  }, [selectedContract?.id, tenantData?.id, contractHtmlRetryKey]);
 
   const resolvedContractHtml =
     contractViewHtml ?? selectedContract?.generated_html ?? null;
@@ -888,8 +910,10 @@ export default function ContractsPage() {
       const isElectronicallySigned = isSaleContractFullySigned(selectedContract);
 
       if (isElectronicallySigned) {
-        const res = await fetch(
+        const res = await fetchWithTimeout(
           `/api/contracts/${selectedContract.id}/pdf?download=1`,
+          { credentials: "include" },
+          CONTRACTS_FETCH_TIMEOUT_MS,
         );
         if (res.ok) {
           const blob = await res.blob();
@@ -1464,7 +1488,14 @@ export default function ContractsPage() {
           : null;
       const activeTenantId = await resolveContractsTenantWithDb(user);
 
-      const res = await fetch(
+      const { ok, data, error } = await fetchJsonWithTimeout<{
+        success?: boolean;
+        error?: string;
+        missingFields?: string[];
+        customerId?: string;
+        contract?: { id?: string };
+        versions?: unknown[];
+      }>(
         `/api/contracts/${selectedContract.id}/regenerate`,
         {
           method: "POST",
@@ -1476,22 +1507,23 @@ export default function ContractsPage() {
               user?.role === "SUPER_ADMIN" ? impersonatingTenantId : null,
           }),
         },
+        CONTRACTS_FETCH_TIMEOUT_MS,
       );
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.success) {
-        if (json.missingFields?.length) {
+      if (!ok || !data?.success) {
+        if (data?.missingFields?.length) {
           setCustomerContractValidation({
             valid: false,
-            missingFields: json.missingFields,
-            missingRequired: json.missingFields,
+            missingFields: data.missingFields,
+            missingRequired: data.missingFields,
             missingRecommended: [],
-            customerId: json.customerId,
+            customerId: data.customerId,
           });
           return;
         }
-        throw new Error(json.error || "Erro ao regenerar contrato");
+        throw new Error(error || data?.error || "Erro ao regenerar contrato");
       }
 
+      const json = data;
       setContractVersions(json.versions || []);
 
       const rows = await reloadContractsList();
@@ -1969,8 +2001,13 @@ export default function ContractsPage() {
                   userRole={user?.role}
                   loggedInUserEmail={user?.email}
                   onCapabilitiesChange={setSignatureCaps}
-                  onSigned={() => {
-                    void reloadContractsList();
+                  onSigned={async () => {
+                    const rows = await reloadContractsList();
+                    setContracts(rows);
+                    if (selectedContract?.id) {
+                      const updated = rows.find((c) => c.id === selectedContract.id);
+                      if (updated) setSelectedContract(updated);
+                    }
                   }}
                 />
 
@@ -2086,6 +2123,17 @@ export default function ContractsPage() {
                           <div className="flex items-center justify-center py-32 text-[var(--text-muted)]">
                             <Loader2 className="w-8 h-8 animate-spin mr-2" />
                             Atualizando contrato com dados da empresa…
+                          </div>
+                        ) : contractViewError && !resolvedContractHtml ? (
+                          <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+                            <p className="text-sm text-red-400 max-w-md">{contractViewError}</p>
+                            <button
+                              type="button"
+                              onClick={() => setContractHtmlRetryKey((k) => k + 1)}
+                              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold"
+                            >
+                              Tentar novamente
+                            </button>
                           </div>
                         ) : resolvedContractHtml ? (
                           <div

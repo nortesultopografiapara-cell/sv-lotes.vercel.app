@@ -37,6 +37,11 @@ import { isSaleContractFullySigned } from '@/lib/saleContractDashboardStats';
 import { canShowVendorSignButton } from '@/lib/saleContractBilateralSignature';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import { SaleContractVendorSignModal } from '@/components/contracts/SaleContractVendorSignModal';
+import {
+  CONTRACTS_FETCH_TIMEOUT_MS,
+  fetchJsonWithTimeout,
+} from '@/lib/fetchJsonWithTimeout';
+import { formatClientFetchError } from '@/lib/clientFetchError';
 
 type SelectedContract = {
   id: string;
@@ -134,11 +139,20 @@ export const SaleContractSignatureSection = forwardRef<
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/contracts/${contract.id}/signature`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.error || 'Falha ao carregar assinatura.');
+      const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
+        error?: string;
+        latest?: ContractSignatureRow | null;
+        history?: Array<{ at: string; event: string; details: string }>;
+        vendorDefaults?: { name?: string; document?: string; email?: string; companyName?: string };
+      }>(
+        `/api/contracts/${contract.id}/signature`,
+        { credentials: 'include' },
+        CONTRACTS_FETCH_TIMEOUT_MS,
+      );
+      if (!ok) {
+        throw new Error(fetchError || data?.error || 'Falha ao carregar assinatura.');
       }
+      const json = data || {};
       setLatest(json.latest || null);
       setSignUrl(json.latest?.signature_url || null);
       const fallbackEmail = String(loggedInUserEmail || '').trim();
@@ -148,13 +162,17 @@ export const SaleContractSignatureSection = forwardRef<
         email: String(json.vendorDefaults?.email || fallbackEmail || ''),
         companyName: String(json.vendorDefaults?.companyName || projectName),
       });
-      setTimeline(mergeSaleSignatureTimeline(json.history || [], localTimeline));
+      setTimeline(mergeSaleSignatureTimeline(json.history || [], []));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao carregar assinatura.');
+      setError(
+        e instanceof Error
+          ? e.message
+          : formatClientFetchError({ networkMessage: 'Failed to fetch' }),
+      );
     } finally {
       setLoading(false);
     }
-  }, [contract?.id, localTimeline, loggedInUserEmail, projectName]);
+  }, [contract?.id, loggedInUserEmail, projectName]);
 
   useEffect(() => {
     setLocalTimeline([]);
@@ -183,13 +201,18 @@ export const SaleContractSignatureSection = forwardRef<
       throw new Error('Contrato não selecionado.');
     }
 
-    const res = await fetch(`/api/contracts/${contract.id}/signature`, {
-      credentials: 'include',
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(json.error || 'Falha ao carregar assinatura.');
+    const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
+      error?: string;
+      latest?: ContractSignatureRow | null;
+    }>(
+      `/api/contracts/${contract.id}/signature`,
+      { credentials: 'include' },
+      CONTRACTS_FETCH_TIMEOUT_MS,
+    );
+    if (!ok) {
+      throw new Error(fetchError || data?.error || 'Falha ao carregar assinatura.');
     }
+    const json = data || {};
 
     const refreshed = json.latest as ContractSignatureRow | null;
     if (!refreshed?.id) {
@@ -221,22 +244,29 @@ export const SaleContractSignatureSection = forwardRef<
 
       try {
         const signatureId = await resolveSignatureIdForVendorSign();
-        const res = await fetch(`/api/contracts/${contract.id}/signature/sign-vendor`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signatureId,
-            vendorName: input.vendorName,
-            vendorDocument: input.vendorDocument,
-            vendorEmail: input.vendorEmail,
-            vendorRole: input.vendorRole,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(json.error || 'Falha ao assinar como vendedor.');
+        const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
+          error?: string;
+          signature?: ContractSignatureRow;
+        }>(
+          `/api/contracts/${contract.id}/signature/sign-vendor`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signatureId,
+              vendorName: input.vendorName,
+              vendorDocument: input.vendorDocument,
+              vendorEmail: input.vendorEmail,
+              vendorRole: input.vendorRole,
+            }),
+          },
+          CONTRACTS_FETCH_TIMEOUT_MS,
+        );
+        if (!ok) {
+          throw new Error(fetchError || data?.error || 'Falha ao assinar como vendedor.');
         }
+        const json = data || {};
 
         if (json.signature) {
           setLatest(json.signature as ContractSignatureRow);
@@ -277,24 +307,37 @@ export const SaleContractSignatureSection = forwardRef<
     setSending(true);
     setError(null);
     try {
-      const res = await fetch(`/api/contracts/${contract.id}/signature`, {
-        method: 'POST',
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.error || 'Falha ao enviar para assinatura.');
+      const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
+        error?: string;
+        signUrl?: string;
+        signature?: ContractSignatureRow;
+      }>(
+        `/api/contracts/${contract.id}/signature`,
+        { method: 'POST', credentials: 'include' },
+        CONTRACTS_FETCH_TIMEOUT_MS,
+      );
+      if (!ok) {
+        throw new Error(fetchError || data?.error || 'Falha ao enviar para assinatura.');
       }
+      const json = data || {};
       const url = json.signUrl || json.signature?.signature_url;
       setLatest(json.signature || null);
       setSignUrl(url || null);
       setShareOpen(true);
-      setLocalTimeline((prev) => [
-        ...prev,
-        { at: new Date().toISOString(), event: 'Link enviado', details: 'Enviado para assinatura' },
-      ]);
+      const sentEvent = {
+        at: new Date().toISOString(),
+        event: 'Link enviado',
+        details: 'Enviado para assinatura',
+      };
+      setLocalTimeline((prev) => [...prev, sentEvent]);
+      setTimeline((prev) => [...prev, sentEvent]);
       onSigned?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao enviar.');
+      setError(
+        e instanceof Error
+          ? e.message
+          : formatClientFetchError({ networkMessage: 'Failed to fetch' }),
+      );
     } finally {
       setSending(false);
     }

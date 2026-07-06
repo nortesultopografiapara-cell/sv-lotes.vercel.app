@@ -18,7 +18,12 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const startedAt = Date.now();
+  const mark = (step: string) => {
+    console.log('[contracts]', step, { ms: Date.now() - startedAt });
+  };
   try {
+    mark('start');
     const { user, configError } = await getRequestAuthUser(request);
     if (configError || !user) {
       return NextResponse.json(
@@ -67,6 +72,7 @@ export async function GET(
       supabase,
       String(contract.id || contractId),
     );
+    mark('html_built');
 
     return NextResponse.json({ html });
   } catch (err) {
@@ -84,6 +90,7 @@ export async function GET(
     const message =
       err instanceof Error ? err.message : 'Falha ao gerar HTML do contrato.';
     console.error('[CONTRACT_VIEW_HTML]', message);
+    console.log('[contracts]', 'error', { ms: Date.now() - startedAt, message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
