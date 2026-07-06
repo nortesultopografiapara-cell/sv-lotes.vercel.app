@@ -17,7 +17,7 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const { mappingFile, documentFiles, documentStoragePaths } =
+    const { mappingFile, documentFiles, documentStoragePaths, manualLinkOverrides } =
       extractLegacyContractFormFiles(formData);
     const confirmed = String(formData.get('confirmed') || '') === 'true';
     const activeTenantId = formData.get('activeTenantId');
@@ -71,6 +71,7 @@ export async function POST(request: Request) {
       spreadsheetFileName: mappingFile?.name,
       documentUploads,
       documentsFileName,
+      manualLinkOverrides,
     });
 
     return NextResponse.json({ result });

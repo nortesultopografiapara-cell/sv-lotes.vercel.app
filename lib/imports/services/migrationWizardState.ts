@@ -5,6 +5,7 @@
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
+import { recalculateLegacyContractImportSummary } from '@/lib/imports/modules/legacy-contracts/manualLink';
 import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
 import {
   getNextWizardStepForModule,
@@ -189,6 +190,27 @@ export function applyLegacyContractsValidationAndAdvance(
     legacyContractsValidation: validation,
     validating: false,
     validationError: null,
+  };
+}
+
+export function updateLegacyContractManualLinkRow(
+  state: MigrationWizardState,
+  lineNumber: number,
+  updatedRow: LegacyContractImportValidationResult['rows'][number],
+): MigrationWizardState {
+  if (!state.legacyContractsValidation) return state;
+
+  const rows = state.legacyContractsValidation.rows.map((row) =>
+    row.lineNumber === lineNumber ? updatedRow : row,
+  );
+
+  return {
+    ...state,
+    legacyContractsValidation: {
+      ...state.legacyContractsValidation,
+      rows,
+      summary: recalculateLegacyContractImportSummary(rows),
+    },
   };
 }
 

@@ -67,6 +67,20 @@ export type ValidatedLegacyContractRow = ResolvedLegacyContractRow & {
   status: LegacyContractRowStatus;
   messages: LegacyContractImportRowMessage[];
   importable: boolean;
+  manual_link_applied?: boolean;
+  manual_link_notes?: string | null;
+};
+
+export type LegacyContractManualLinkInput = {
+  project_id: string;
+  quadra: string;
+  lote: string;
+  customer_name: string;
+  observacoes?: string;
+};
+
+export type LegacyContractManualLinkOverride = LegacyContractManualLinkInput & {
+  lineNumber: number;
 };
 
 export type LegacyContractColumnMapping = Partial<Record<LegacyContractImportField, string>>;

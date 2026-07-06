@@ -22,6 +22,14 @@ import {
   IMPORT_PREVIEW_FILTERS,
   IMPORT_ROW_STATUS_LABELS,
 } from '@/components/imports/customerImportUi';
+import { LegacyContractManualLinkModal } from '@/components/imports/LegacyContractManualLinkModal';
+import type { LegacyContractManualLinkFormValues } from '@/components/imports/LegacyContractManualLinkModal';
+import {
+  getLegacyContractRowResultLabel,
+  getLegacyContractSaleLocatedLabel,
+  legacyContractRowResultClass,
+  shouldShowLegacyContractManualLinkButton,
+} from '@/components/imports/legacyContractPreviewUi';
 import { useAuth } from '@/hooks/useAuth';
 import { ACCEPTED_IMPORT_ACCEPT_ATTR } from '@/lib/imports/constants';
 import { listImportModules, getImportModuleById } from '@/lib/imports/modules';
@@ -36,8 +44,10 @@ import {
   filterAcceptedLegacyDocumentFiles,
 } from '@/lib/imports/helpers/legacyContractFormData';
 import { executeLegacyContractsImport } from '@/lib/imports/helpers/legacyContractExecuteClient';
+import { resolveLegacyContractManualLinkRemote } from '@/lib/imports/helpers/legacyContractManualLinkClient';
 import { validateLegacyContractsFiles } from '@/lib/imports/helpers/legacyContractValidationClient';
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
+import type { ValidatedLegacyContractRow } from '@/lib/imports/modules/legacy-contracts/types';
 import {
   advanceWizardState,
   applyBrokerValidationAndAdvance,
@@ -50,6 +60,7 @@ import {
   retreatWizardState,
   selectImportModule,
   startMigrationWizard,
+  updateLegacyContractManualLinkRow,
   validateCurrentWizardStep,
 } from '@/lib/imports/services/migrationWizardState';
 import {
@@ -217,6 +228,9 @@ export function DataMigrationWizard() {
   const { user } = useAuth();
   const [state, setState] = useState<MigrationWizardState>(
     INITIAL_MIGRATION_WIZARD_STATE,
+  );
+  const [manualLinkRow, setManualLinkRow] = useState<ValidatedLegacyContractRow | null>(
+    null,
   );
   const mappingFileInputRef = useRef<HTMLInputElement>(null);
   const documentFilesInputRef = useRef<HTMLInputElement>(null);
@@ -396,6 +410,23 @@ export function DataMigrationWizard() {
     setState((prev) => advanceWizardState(prev));
   };
 
+  const handleLegacyManualLinkConfirm = async (
+    values: LegacyContractManualLinkFormValues,
+  ) => {
+    if (!manualLinkRow) return;
+
+    const updatedRow = await resolveLegacyContractManualLinkRemote(
+      values,
+      activeTenantId,
+      manualLinkRow,
+    );
+
+    setState((prev) =>
+      updateLegacyContractManualLinkRow(prev, manualLinkRow.lineNumber, updatedRow),
+    );
+    setManualLinkRow(null);
+  };
+
   const handleConfirmImport = async () => {
     if (isLegacyContractsModule && state.legacyContractsValidation) {
       if (documentFilesRef.current.length === 0) return;
@@ -413,6 +444,7 @@ export function DataMigrationWizard() {
         const result = await executeLegacyContractsImport(
           documentFilesRef.current,
           activeTenantId,
+          state.legacyContractsValidation,
         );
         setState((prev) => ({
           ...prev,
@@ -986,6 +1018,7 @@ export function DataMigrationWizard() {
                                 'Status contrato',
                                 'Resultado',
                                 'Mensagens',
+                                'Ações',
                               ]
                             : [
                               'Linha',
@@ -1020,7 +1053,7 @@ export function DataMigrationWizard() {
                               : isBrokersModule
                                 ? 10
                                 : isLegacyContractsModule
-                                  ? 10
+                                  ? 11
                                   : 11
                           }
                           className="px-4 py-8 text-center text-[var(--text-muted)]"
@@ -1082,26 +1115,53 @@ export function DataMigrationWizard() {
                         <tr
                           key={row.lineNumber}
                           className="border-t border-[var(--border-color)]"
+                          data-testid={`legacy-contract-preview-row-${row.lineNumber}`}
                         >
                           <td className="px-3 py-2">{row.lineNumber}</td>
-                          <td className="px-3 py-2">{row.customer_name || '—'}</td>
+                          <td className="px-3 py-2">
+                            <div className="space-y-1">
+                              <span>{row.customer_name || '—'}</span>
+                              {row.manual_link_applied ? (
+                                <span
+                                  className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-300"
+                                  data-testid="legacy-manual-link-badge"
+                                >
+                                  Vinculado manualmente
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
                           <td className="px-3 py-2">{row.empreendimento || '—'}</td>
                           <td className="px-3 py-2">
                             {[row.quadra, row.lote].filter(Boolean).join(' / ') || '—'}
                           </td>
                           <td className="px-3 py-2">
-                            {row.sale_id ? `Sim (${row.sale_id.slice(0, 8)}…)` : 'Não'}
+                            {getLegacyContractSaleLocatedLabel(row)}
                           </td>
                           <td className="px-3 py-2">{row.numero_contrato_antigo || '—'}</td>
                           <td className="px-3 py-2">{row.nome_arquivo_pdf || '—'}</td>
                           <td className="px-3 py-2">{row.status_contrato || '—'}</td>
                           <td
-                            className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                            className={`px-3 py-2 font-medium ${legacyContractRowResultClass(row.status)}`}
                           >
-                            {IMPORT_ROW_STATUS_LABELS[row.status]}
+                            {getLegacyContractRowResultLabel(row)}
                           </td>
                           <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
                             {row.messages.map((message) => message.text).join(' · ') || '—'}
+                          </td>
+                          <td className="px-3 py-2">
+                            {shouldShowLegacyContractManualLinkButton(row) ? (
+                              <button
+                                type="button"
+                                data-testid={`legacy-manual-link-open-${row.lineNumber}`}
+                                onClick={() => setManualLinkRow(row)}
+                                className="rounded-lg border border-[var(--color-primary)]/40 px-2.5 py-1 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                              >
+                                Vincular Manualmente
+                              </button>
+                            ) : (
+                              '—'
+                            )}
                           </td>
                         </tr>
                       ))
@@ -1419,6 +1479,15 @@ export function DataMigrationWizard() {
           </button>
         </div>
       ) : null}
+
+      <LegacyContractManualLinkModal
+        open={manualLinkRow != null}
+        row={manualLinkRow}
+        activeTenantId={activeTenantId}
+        userId={user?.id || null}
+        onClose={() => setManualLinkRow(null)}
+        onConfirm={handleLegacyManualLinkConfirm}
+      />
     </div>
   );
 }

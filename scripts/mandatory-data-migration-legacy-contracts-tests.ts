@@ -54,6 +54,21 @@ import {
   LEGACY_CONTRACT_VERCEL_SAFE_REQUEST_BYTES,
   shouldStageLegacyDocumentFile,
 } from '../lib/imports/modules/legacy-contracts/uploadLimits';
+import {
+  applyLegacyContractManualLinkToRow,
+  applyManualLinkOverridesToValidationRows,
+  buildLegacyContractManualLinkOverrides,
+  canLegacyContractRowBeManuallyLinked,
+  recalculateLegacyContractImportSummary,
+  resolveLegacyContractManualLink,
+} from '../lib/imports/modules/legacy-contracts/manualLink';
+import { lookupLegacyContractCustomerByName } from '../lib/imports/modules/legacy-contracts/lookupIndex';
+import {
+  getLegacyContractRowResultLabel,
+  getLegacyContractSaleLocatedLabel,
+} from '../components/imports/legacyContractPreviewUi';
+import type { ValidatedLegacyContractRow } from '../lib/imports/modules/legacy-contracts/types';
+import { updateLegacyContractManualLinkRow } from '../lib/imports/services/migrationWizardState';
 import { getWizardStepsForModule, getNextWizardStepForModule } from '../lib/imports/services/migrationWizardSteps';
 import {
   buildImportCsvTemplate,
@@ -543,6 +558,152 @@ function testUploadLimitsAnd413Messages() {
   console.log('OK testUploadLimitsAnd413Messages');
 }
 
+function buildValidatedLegacyErrorRow(): ValidatedLegacyContractRow {
+  return {
+    ...buildRow({
+      cliente_cpf_cnpj: '',
+      cliente_cpf_cnpj_digits: '',
+      cliente_email: '',
+      cliente_email_normalized: '',
+      empreendimento: '',
+      empreendimento_normalized: '',
+      quadra: '',
+      quadra_normalized: '',
+      lote: '',
+      lote_normalized: '',
+      nome_arquivo_pdf: 'sem_venda.pdf',
+      nome_arquivo_pdf_normalized: 'sem_venda.pdf',
+    }),
+    customer_id: null,
+    customer_name: null,
+    project_id: null,
+    project_name: null,
+    block_id: null,
+    sale_id: null,
+    pdf_found: true,
+    pdf_buffer_key: 'sem_venda.pdf',
+    existing_legacy_document_id: null,
+    status: 'error',
+    importable: false,
+    messages: [{ level: 'error', text: 'Venda não localizada.' }],
+  };
+}
+
+function testManualLink() {
+  const context = buildMockContext();
+  const errorRow = buildValidatedLegacyErrorRow();
+
+  assert(canLegacyContractRowBeManuallyLinked(errorRow), 'linha com erro pode vincular');
+  assert(!canLegacyContractRowBeManuallyLinked({
+    ...errorRow,
+    manual_link_applied: true,
+    sale_id: 'sale-1',
+    status: 'valid',
+    importable: true,
+  }), 'já vinculada não repete');
+
+  const resolved = resolveLegacyContractManualLink(context, {
+    project_id: 'proj-1',
+    quadra: 'A',
+    lote: '1',
+    customer_name: 'Cliente Teste',
+    observacoes: 'Contrato legado',
+  });
+  assert(resolved.ok, 'resolve manual ok');
+
+  const linked = applyLegacyContractManualLinkToRow(
+    errorRow,
+    {
+      project_id: 'proj-1',
+      quadra: 'A',
+      lote: '1',
+      customer_name: 'Cliente Teste',
+      observacoes: 'Contrato legado',
+    },
+    resolved.resolution,
+  );
+
+  assert(linked.manual_link_applied === true, 'flag manual');
+  assert(linked.sale_id === 'sale-1', 'sale vinculada');
+  assert(linked.importable === true, 'linha importável');
+  assert(getLegacyContractSaleLocatedLabel(linked) === 'Manual', 'venda manual');
+  assert(
+    getLegacyContractRowResultLabel(linked) === 'Pronto para importar',
+    'resultado pronto',
+  );
+
+  const overrides = buildLegacyContractManualLinkOverrides([linked]);
+  assert(overrides.length === 1, 'override serializado');
+
+  const mergedRows = applyManualLinkOverridesToValidationRows(
+    [errorRow],
+    overrides,
+    context,
+  );
+  assert(mergedRows[0]?.sale_id === 'sale-1', 'override aplicado no execute');
+
+  const summary = recalculateLegacyContractImportSummary([linked]);
+  assert(summary.importableRows === 1, 'summary importável');
+
+  const customer = lookupLegacyContractCustomerByName(context, 'cliente teste');
+  assert(customer?.id === 'cust-1', 'cliente por nome');
+
+  let wizardState = {
+    ...INITIAL_MIGRATION_WIZARD_STATE,
+    selectedModuleId: 'legacy_contracts' as const,
+    legacyContractsValidation: {
+      fileName: 'docs.pdf',
+      documentsFileName: 'docs.pdf',
+      fileType: 'unknown' as const,
+      rowCount: 1,
+      pdfCount: 1,
+      columnMapping: {
+        mapping: {},
+        unmappedHeaders: [],
+        missingRequired: [],
+        recognizedHeaders: {} as never,
+      },
+      summary: {
+        totalRows: 1,
+        validRows: 0,
+        warningRows: 0,
+        errorRows: 1,
+        duplicateRows: 0,
+        existingRows: 0,
+        ignoredRows: 1,
+        importableRows: 0,
+      },
+      rows: [errorRow],
+    },
+  };
+
+  wizardState = updateLegacyContractManualLinkRow(
+    wizardState,
+    errorRow.lineNumber,
+    linked,
+  );
+  assert(
+    wizardState.legacyContractsValidation?.summary.importableRows === 1,
+    'wizard atualiza summary',
+  );
+
+  const wizard = read('components/imports/DataMigrationWizard.tsx');
+  assert(wizard.includes('Vincular Manualmente'), 'botão vínculo manual');
+  assert(wizard.includes('LegacyContractManualLinkModal'), 'modal vínculo');
+  assert(wizard.includes('Vinculado manualmente'), 'badge manual');
+  assert(
+    fs.existsSync(
+      path.join(ROOT, 'app/api/data-migration/legacy-contracts/resolve-manual-link/route.ts'),
+    ),
+    'route resolve manual link',
+  );
+
+  const executeRoute = read('app/api/data-migration/legacy-contracts/execute/route.ts');
+  assert(executeRoute.includes('manualLinkOverrides'), 'execute recebe overrides');
+
+  console.log('OK testManualLink');
+}
+
 function testWizardUploadStepConstraints() {
   const wizard = read('components/imports/DataMigrationWizard.tsx');
   const steps = getWizardStepsForModule('legacy_contracts');
@@ -678,6 +839,7 @@ async function main() {
   testWizardIntegration();
   testFormDataFieldNames();
   testUploadLimitsAnd413Messages();
+  testManualLink();
   testWizardUploadStepConstraints();
   testTemplatesAndUi();
   await testXlsxTemplate();

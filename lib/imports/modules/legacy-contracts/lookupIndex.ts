@@ -8,7 +8,10 @@ import {
   buildSalesCustomerIndex,
   buildSalesProjectIndex,
 } from '@/lib/imports/modules/sales/lookupIndex';
-import { buildLegacyContractSaleKey } from '@/lib/imports/modules/legacy-contracts/normalize';
+import {
+  buildLegacyContractSaleKey,
+  normalizeImportEntityName,
+} from '@/lib/imports/modules/legacy-contracts/normalize';
 import type {
   LegacyContractImportContext,
   LegacyContractSaleRecord,
@@ -232,4 +235,32 @@ export function lookupLegacyContractCustomer(
     if (byEmail) return byEmail;
   }
   return null;
+}
+
+export function lookupLegacyContractCustomerByName(
+  context: LegacyContractImportContext,
+  name: string,
+): { id: string; name: string } | null {
+  const normalized = normalizeImportEntityName(name);
+  if (!normalized) return null;
+
+  let exact: { id: string; name: string } | null = null;
+  let partial: { id: string; name: string } | null = null;
+
+  for (const customer of context.customersById.values()) {
+    const customerNorm = normalizeImportEntityName(customer.name);
+    if (!customerNorm) continue;
+    if (customerNorm === normalized) {
+      exact = customer;
+      break;
+    }
+    if (
+      !partial &&
+      (customerNorm.includes(normalized) || normalized.includes(customerNorm))
+    ) {
+      partial = customer;
+    }
+  }
+
+  return exact || partial;
 }
