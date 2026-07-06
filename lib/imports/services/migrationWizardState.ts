@@ -6,6 +6,7 @@ import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers
 import type { CustomerImportValidationResult } from '@/lib/imports/modules/customers/types';
 import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
 import { recalculateLegacyContractImportSummary } from '@/lib/imports/modules/legacy-contracts/manualLink';
+import type { InstallmentImportValidationResult } from '@/lib/imports/modules/installments/types';
 import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
 import {
   getNextWizardStepForModule,
@@ -37,6 +38,9 @@ export const INITIAL_MIGRATION_WIZARD_STATE: MigrationWizardState = {
   legacyContractsValidation: null,
   legacyContractsPreviewFilter: 'all',
   legacyContractsImportResult: null,
+  installmentsValidation: null,
+  installmentsPreviewFilter: 'all',
+  installmentsImportResult: null,
   validating: false,
   importing: false,
   validationError: null,
@@ -49,6 +53,7 @@ export function isActiveImportModule(
     moduleId === 'customers' ||
     moduleId === 'brokers' ||
     moduleId === 'sales' ||
+    moduleId === 'installments' ||
     moduleId === 'legacy_contracts'
   );
 }
@@ -66,6 +71,7 @@ function hasModuleValidation(state: MigrationWizardState): boolean {
   if (state.selectedModuleId === 'customers') return state.customerValidation != null;
   if (state.selectedModuleId === 'brokers') return state.brokerValidation != null;
   if (state.selectedModuleId === 'sales') return state.salesValidation != null;
+  if (state.selectedModuleId === 'installments') return state.installmentsValidation != null;
   if (state.selectedModuleId === 'legacy_contracts') {
     return state.legacyContractsValidation != null;
   }
@@ -176,6 +182,23 @@ export function applySalesValidationAndAdvance(
   };
 }
 
+export function applyInstallmentsValidationAndAdvance(
+  state: MigrationWizardState,
+  validation: InstallmentImportValidationResult,
+): MigrationWizardState {
+  if (state.step !== 'upload' || state.selectedModuleId !== 'installments') {
+    return state;
+  }
+
+  return {
+    ...state,
+    step: 'pre-validation',
+    installmentsValidation: validation,
+    validating: false,
+    validationError: null,
+  };
+}
+
 export function applyLegacyContractsValidationAndAdvance(
   state: MigrationWizardState,
   validation: LegacyContractImportValidationResult,
@@ -243,6 +266,9 @@ export function selectImportModule(
     legacyContractsValidation: null,
     legacyContractsPreviewFilter: 'all',
     legacyContractsImportResult: null,
+    installmentsValidation: null,
+    installmentsPreviewFilter: 'all',
+    installmentsImportResult: null,
     validating: false,
     importing: false,
     validationError: null,

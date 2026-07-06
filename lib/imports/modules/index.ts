@@ -10,13 +10,13 @@ import { legacyContractsImportModule } from '@/lib/imports/modules/legacy-contra
 import { salesImportModule } from '@/lib/imports/modules/sales';
 import type { ImportModuleDefinition, ImportModuleId } from '@/lib/imports/types';
 
+/** Módulos exibidos no assistente (Anexos oculto nesta fase). */
 export const IMPORT_MODULES: ImportModuleDefinition[] = [
   customersImportModule,
   brokersImportModule,
   salesImportModule,
   installmentsImportModule,
   legacyContractsImportModule,
-  attachmentsImportModule,
 ];
 
 export function listImportModules(): ImportModuleDefinition[] {
@@ -24,6 +24,7 @@ export function listImportModules(): ImportModuleDefinition[] {
 }
 
 export function getImportModuleById(id: ImportModuleId): ImportModuleDefinition | undefined {
+  if (id === 'attachments') return attachmentsImportModule;
   return IMPORT_MODULES.find((m) => m.id === id);
 }
 

@@ -15,6 +15,10 @@ import type {
   LegacyContractImportValidationResult,
 } from '@/lib/imports/modules/legacy-contracts/types';
 import type {
+  InstallmentImportExecuteResult,
+  InstallmentImportValidationResult,
+} from '@/lib/imports/modules/installments/types';
+import type {
   SaleImportExecuteResult,
   SaleImportValidationResult,
 } from '@/lib/imports/modules/sales/types';
@@ -107,6 +111,9 @@ export type MigrationWizardState = {
   legacyContractsValidation: LegacyContractImportValidationResult | null;
   legacyContractsPreviewFilter: CustomerPreviewFilter;
   legacyContractsImportResult: LegacyContractImportExecuteResult | null;
+  installmentsValidation: InstallmentImportValidationResult | null;
+  installmentsPreviewFilter: CustomerPreviewFilter;
+  installmentsImportResult: InstallmentImportExecuteResult | null;
   validating: boolean;
   importing: boolean;
   validationError: string | null;
@@ -116,4 +123,5 @@ export type ActiveImportModuleId =
   | 'customers'
   | 'brokers'
   | 'sales'
+  | 'installments'
   | 'legacy_contracts';
