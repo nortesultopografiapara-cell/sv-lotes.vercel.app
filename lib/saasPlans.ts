@@ -530,7 +530,9 @@ export function buildCompanyLimitsDbWritePayload(
     payload.max_lots = limits.max_lots;
   }
 
-  if (limits.saas_commercial_note != null) {
+  if (limits.planKey === 'personalizado') {
+    payload.saas_commercial_note = limits.saas_commercial_note ?? null;
+  } else if (limits.saas_commercial_note != null) {
     payload.saas_commercial_note = limits.saas_commercial_note;
   }
 

@@ -14,8 +14,14 @@ import {
   menesesSaasContractFixture,
   resolveSaasContractContext,
 } from '../lib/saasContractContent';
-import { resolveCompanyPricing } from '../lib/companyPricing';
+import { resolveCompanyPricing, parseCustomMonthlyPrice } from '../lib/companyPricing';
 import { resolveSaasSubscriptionBilling } from '../lib/saasSubscriptionService';
+import {
+  buildCompanyLimitsDbWritePayload,
+  buildManualLimitsFromForm,
+  saasLimitsDbPayload,
+} from '../lib/saasPlans';
+import { fetchJsonWithTimeout } from '../lib/fetchJsonWithTimeout';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -200,6 +206,46 @@ function testMenesesUnchanged() {
   assertEq(merged.next_payment_date, '2026-06-27', 'Meneses next payment');
 }
 
+function testPersonalizadoUpdatePayloadOneCent() {
+  const manual = buildManualLimitsFromForm({
+    max_projects: 3,
+    max_lots: 500,
+    max_brokers: 5,
+    admin_users_limit: 1,
+    saas_commercial_note: 'Negociação teste',
+  });
+  const limits = saasLimitsDbPayload('personalizado', manual);
+  const dbWrite = buildCompanyLimitsDbWritePayload(limits);
+  const price = parseCustomMonthlyPrice('R$ 0,01');
+  assert(price === 0.01, 'parse R$ 0,01');
+  assert(dbWrite.project_limit === 3, 'project_limit');
+  assert(dbWrite.max_lots === 500, 'max_lots');
+  assert(dbWrite.broker_limit === 5, 'broker_limit');
+  assert(dbWrite.admin_users_limit === 1, 'admin_users_limit');
+  assert(dbWrite.saas_commercial_note === 'Negociação teste', 'nota comercial');
+}
+
+async function testFetchJsonWithTimeoutOnHang() {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((_input, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+      });
+    })) as typeof fetch;
+
+  try {
+    const result = await fetchJsonWithTimeout('http://localhost/test-hang', {}, 80);
+    assert(!result.ok, 'deve falhar ao estourar timeout');
+    assert(
+      (result.error || '').includes('Tempo esgotado'),
+      'mensagem de timeout para o usuário',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 function main() {
   testSavePayloadFromModal();
   testEnsureUsesExplicitBillingNotCreatedAt();
@@ -208,7 +254,20 @@ function main() {
   testIvanildeCustomPriceUnchanged();
   testIvanildeContractUsesDay15();
   testMenesesUnchanged();
+  testPersonalizadoUpdatePayloadOneCent();
+}
+
+async function mainAsync() {
+  await testFetchJsonWithTimeoutOnHang();
+}
+
+async function runAll() {
+  main();
+  await mainAsync();
   console.log('OK — mandatory-company-edit-save-persistence-tests passed');
 }
 
-main();
+runAll().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

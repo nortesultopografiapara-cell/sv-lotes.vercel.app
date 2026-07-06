@@ -25,6 +25,7 @@ import {
 import { loadCompanyForEdit, mapCompanyForEditForm, type CompanyForEditMerged } from '@/lib/loadCompanyForEdit';
 import { formatDateBr } from '@/lib/saasSubscription';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
@@ -122,14 +123,19 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     (async () => {
       setLoadingCompany(true);
       setError('');
-      const { merged, error: loadErr } = await loadCompanyForEdit(initialData.id!);
-      if (cancelled) return;
-      if (loadErr || !merged) {
-        setError(loadErr || 'Não foi possível carregar a empresa.');
-      } else {
-        setFormData(buildFormStateFromMerged(merged));
+      try {
+        const { merged, error: loadErr } = await loadCompanyForEdit(initialData.id!);
+        if (cancelled) return;
+        if (loadErr || !merged) {
+          setError(loadErr || 'Não foi possível carregar a empresa.');
+        } else {
+          setFormData(buildFormStateFromMerged(merged));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingCompany(false);
+        }
       }
-      setLoadingCompany(false);
     })();
 
     return () => {
@@ -405,21 +411,24 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
          console.log('[company-edit-save-payload]', subscriptionDatesPayload);
 
-         const res = await fetch('/api/companies/update', {
+         const { ok, data: result, error: fetchError } = await fetchJsonWithTimeout<{
+           error?: string;
+           company?: Record<string, unknown>;
+           subscription?: CompanyForEditMerged['saas_subscription'];
+         }>('/api/companies/update', {
            method: 'PATCH',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify(apiBody),
          });
-         const result = await res.json();
 
          console.log('[company-edit-save-response]', result);
          console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', result);
 
-         if (!res.ok || result.error) {
-           throw new Error(result.error || 'Erro ao salvar empresa.');
+         if (!ok || fetchError) {
+           throw new Error(fetchError || result?.error || 'Erro ao salvar empresa.');
          }
 
-         if (result.company) {
+         if (result?.company) {
            const merged = mapCompanyForEditForm(
              result.company as Record<string, unknown>,
              (result.subscription as CompanyForEditMerged['saas_subscription']) || null,
@@ -462,7 +471,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             throw new Error('Informe o valor mensal do plano Personalizado.');
          }
 
-         const response = await fetch('/api/companies/create', {
+         const { ok, data: result, error: fetchError } = await fetchJsonWithTimeout<{
+           error?: string;
+         }>('/api/companies/create', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({
@@ -499,10 +510,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  adminPhone: formData.phone
              })
          });
-         
-         const result = await response.json();
-         if (!response.ok || result.error) {
-             throw new Error(result.error || 'Erro ao cadastrar empresa.');
+
+         if (!ok || fetchError) {
+             throw new Error(fetchError || result?.error || 'Erro ao cadastrar empresa.');
          }
       }
 
