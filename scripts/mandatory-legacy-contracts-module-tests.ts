@@ -21,6 +21,11 @@ import {
   LEGACY_CONTRACT_BASE_SELECT,
   LEGACY_CONTRACT_EXTENDED_SELECT,
 } from '../lib/legacy-contracts/schemaCompat';
+import {
+  isLegacyContractStoragePathInTenantScope,
+  normalizeLegacyContractStoragePath,
+} from '../lib/legacy-contracts/storagePathAccess';
+import { LEGACY_CONTRACT_PDF_NOT_FOUND_MESSAGE } from '../lib/legacy-contracts/pdfAccess';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -100,6 +105,51 @@ function testStoragePaths() {
   console.log('OK testStoragePaths');
 }
 
+function testPdfAccessAndFrontend() {
+  const pdfRoute = read('app/api/legacy-contracts/[id]/pdf/route.ts');
+  const pdfAccess = read('lib/legacy-contracts/pdfAccess.ts');
+  const pdfClient = read('lib/legacy-contracts/pdfClient.ts');
+  const viewer = read('components/legacy-contracts/LegacyContractPdfViewer.tsx');
+  const pageClient = read('components/legacy-contracts/LegacyContractsPageClient.tsx');
+
+  assert(pdfRoute.includes('resolveLegacyContractPdfAccess'), 'rota usa pdfAccess');
+  assert(pdfRoute.includes('NextResponse.json({ error:'), 'erros retornam JSON');
+  assert(pdfRoute.includes('NextResponse.json(access)'), 'resposta JSON com access completo');
+  assert(pdfAccess.includes('mimeType'), 'resposta inclui mimeType');
+  assert(pdfAccess.includes('expiresIn'), 'resposta inclui expiresIn');
+
+  assert(
+    normalizeLegacyContractStoragePath('legacy-contracts/tenant-1/proj/file.pdf') ===
+      'tenant-1/proj/file.pdf',
+    'remove prefixo duplicado do bucket',
+  );
+  assert(
+    isLegacyContractStoragePathInTenantScope('tenant-1/proj-1/QD_01-20/file.pdf', 'tenant-1'),
+    'path no escopo do tenant',
+  );
+  assert(
+    !isLegacyContractStoragePathInTenantScope('other-tenant/proj/file.pdf', 'tenant-1'),
+    'path fora do tenant',
+  );
+  assert(
+    pdfAccess.includes(LEGACY_CONTRACT_PDF_NOT_FOUND_MESSAGE),
+    'mensagem arquivo ausente no storage',
+  );
+
+  assert(pdfClient.includes('AbortController'), 'timeout no cliente PDF');
+  assert(pdfClient.includes('activeTenantId'), 'tenant ativo no cliente PDF');
+  assert(pdfClient.includes('openLegacyContractPdfUrl'), 'helper de download');
+
+  assert(viewer.includes('fetchLegacyContractPdfAccess'), 'viewer usa cliente PDF');
+  assert(viewer.includes('activeTenantId'), 'viewer recebe tenant ativo');
+  assert(viewer.includes('Tentar novamente'), 'retry no modal');
+  assert(viewer.includes('finally'), 'viewer limpa loading');
+  assert(pageClient.includes('fetchLegacyContractPdfAccess'), 'download usa cliente PDF');
+  assert(pageClient.includes('downloadingId'), 'feedback no download da tabela');
+
+  console.log('OK testPdfAccessAndFrontend');
+}
+
 function testRoutesAndUi() {
   assert(fs.existsSync(path.join(ROOT, 'app/legacy-contracts/page.tsx')), 'página');
   assert(fs.existsSync(path.join(ROOT, 'app/api/legacy-contracts/route.ts')), 'api list');
@@ -141,6 +191,7 @@ function main() {
   testTenantAndSchemaCompat();
   testListResilience();
   testStoragePaths();
+  testPdfAccessAndFrontend();
   testRoutesAndUi();
   console.log('\nTodos os testes do módulo Contratos Antigos passaram.');
 }

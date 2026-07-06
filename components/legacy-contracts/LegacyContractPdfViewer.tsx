@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Download, ExternalLink, Eye, Loader2, MapPin, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Download, ExternalLink, Loader2, RefreshCw, X } from 'lucide-react';
+import {
+  fetchLegacyContractPdfAccess,
+  openLegacyContractPdfUrl,
+} from '@/lib/legacy-contracts/pdfClient';
 
 type LegacyContractPdfViewerProps = {
   open: boolean;
   documentId: string | null;
   fileName: string;
+  activeTenantId: string | null;
   onClose: () => void;
 };
 
@@ -14,82 +19,69 @@ export function LegacyContractPdfViewer({
   open,
   documentId,
   fileName,
+  activeTenantId,
   onClose,
 }: LegacyContractPdfViewerProps) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [embedBlocked, setEmbedBlocked] = useState(false);
+
+  const loadPdf = useCallback(async () => {
+    if (!documentId) return;
+
+    setLoading(true);
+    setError('');
+    setPdfUrl(null);
+    setEmbedBlocked(false);
+
+    try {
+      const access = await fetchLegacyContractPdfAccess(documentId, activeTenantId);
+      setPdfUrl(access.url);
+    } catch (err) {
+      setPdfUrl(null);
+      setError(err instanceof Error ? err.message : 'Erro ao carregar PDF.');
+    } finally {
+      setLoading(false);
+    }
+  }, [documentId, activeTenantId]);
 
   useEffect(() => {
     if (!open || !documentId) {
       setPdfUrl(null);
       setError('');
+      setEmbedBlocked(false);
       return;
     }
 
-    let cancelled = false;
-
-    async function loadPdf() {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await fetch(
-          `/api/legacy-contracts/${encodeURIComponent(documentId)}/pdf?format=json`,
-        );
-        const payload = await response.json().catch(() => ({} as Record<string, unknown>));
-        if (!response.ok) {
-          throw new Error(
-            (typeof payload.error === 'string' && payload.error) ||
-              'Não foi possível carregar o PDF.',
-          );
-        }
-        const url = typeof payload.url === 'string' ? payload.url : '';
-        if (!url) throw new Error('URL do PDF indisponível.');
-        if (!cancelled) setPdfUrl(url);
-      } catch (err) {
-        if (!cancelled) {
-          setPdfUrl(null);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar PDF.');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
     void loadPdf();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, documentId]);
-
-  if (!open) return null;
+  }, [open, documentId, reloadKey, loadPdf]);
 
   const handleDownload = async () => {
     if (!documentId) return;
+
+    setDownloading(true);
     try {
-      const response = await fetch(
-        `/api/legacy-contracts/${encodeURIComponent(documentId)}/pdf?format=json`,
-      );
-      const payload = await response.json().catch(() => ({} as Record<string, unknown>));
-      if (!response.ok) {
-        throw new Error(
-          (typeof payload.error === 'string' && payload.error) ||
-            'Não foi possível baixar o PDF.',
-        );
-      }
-      const url = typeof payload.url === 'string' ? payload.url : '';
-      if (!url) throw new Error('URL do PDF indisponível.');
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = fileName || 'contrato-antigo.pdf';
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      anchor.click();
+      const access = await fetchLegacyContractPdfAccess(documentId, activeTenantId);
+      openLegacyContractPdfUrl(access.url, access.fileName || fileName || 'contrato-antigo.pdf');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível baixar o PDF.');
+      setError(err instanceof Error ? err.message : 'Não foi possível baixar o PDF.');
+    } finally {
+      setDownloading(false);
     }
   };
+
+  const handleOpenNewTab = () => {
+    if (pdfUrl) {
+      openLegacyContractPdfUrl(pdfUrl, fileName || 'contrato-antigo.pdf');
+      return;
+    }
+    void handleDownload();
+  };
+
+  if (!open) return null;
 
   return (
     <div
@@ -108,22 +100,26 @@ export function LegacyContractPdfViewer({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={downloading || !documentId}
               onClick={() => void handleDownload()}
-              className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)]"
+              className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] disabled:opacity-60"
             >
-              <Download className="w-3.5 h-3.5" />
-              Baixar
+              {downloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              Baixar PDF
             </button>
-            {pdfUrl ? (
-              <a
-                href={pdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+            {(pdfUrl || documentId) && !loading ? (
+              <button
+                type="button"
+                onClick={handleOpenNewTab}
                 className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)]"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 Nova aba
-              </a>
+              </button>
             ) : null}
             <button
               type="button"
@@ -138,20 +134,58 @@ export function LegacyContractPdfViewer({
 
         <div className="flex-1 min-h-0 bg-[var(--bg-main)]">
           {loading ? (
-            <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--text-muted)]">
+            <div
+              className="flex h-full items-center justify-center gap-2 text-sm text-[var(--text-muted)]"
+              data-testid="legacy-contract-pdf-loading"
+            >
               <Loader2 className="w-5 h-5 animate-spin" />
               Carregando PDF…
             </div>
           ) : error ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <p className="text-sm text-red-300">{error}</p>
+            <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+              <p className="text-sm text-red-300" data-testid="legacy-contract-pdf-error">
+                {error}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReloadKey((prev) => prev + 1)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)]"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Tentar novamente
+                </button>
+                <button
+                  type="button"
+                  disabled={downloading || !documentId}
+                  onClick={() => void handleDownload()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-60"
+                >
+                  {downloading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  Baixar PDF
+                </button>
+              </div>
             </div>
           ) : pdfUrl ? (
-            <iframe
-              title={fileName || 'Contrato antigo'}
-              src={pdfUrl}
-              className="h-full w-full border-0"
-            />
+            <div className="flex h-full flex-col">
+              {embedBlocked ? (
+                <div className="border-b border-[var(--border-color)] bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+                  O navegador pode bloquear a visualização embutida. Use &quot;Nova aba&quot; para abrir o
+                  PDF.
+                </div>
+              ) : null}
+              <iframe
+                title={fileName || 'Contrato antigo'}
+                src={pdfUrl}
+                className="h-full w-full flex-1 border-0"
+                onLoad={() => setEmbedBlocked(false)}
+                onError={() => setEmbedBlocked(true)}
+              />
+            </div>
           ) : null}
         </div>
       </div>

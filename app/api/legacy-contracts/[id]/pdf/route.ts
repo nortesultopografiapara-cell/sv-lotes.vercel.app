@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server';
 import { authorizeLegacyContractsRequest } from '@/lib/legacy-contracts/apiAuth';
 import { loadLegacyContractDocumentById } from '@/lib/legacy-contracts/listService';
-import { createLegacyContractSignedPdfUrl } from '@/lib/legacyContractDocumentService';
+import { resolveLegacyContractPdfAccess } from '@/lib/legacy-contracts/pdfAccess';
+import { LegacyContractDocumentError } from '@/lib/legacyContractDocumentService';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authorizeLegacyContractsRequest(request);
+    const activeTenantId = new URL(request.url).searchParams.get('activeTenantId');
+    const auth = await authorizeLegacyContractsRequest(request, {
+      bodyTenantId: activeTenantId,
+    });
     if ('error' in auth) return auth.error;
 
     const { id } = await params;
@@ -21,32 +26,36 @@ export async function GET(
       ownerProjectIds: auth.ctx.ownerProjectIds,
     });
 
-    if (!document?.storage_path) {
+    if (!document) {
       return NextResponse.json({ error: 'Contrato antigo não encontrado.' }, { status: 404 });
     }
 
-    const expectedPrefix = `${auth.ctx.tenantId}/`;
-    if (!document.storage_path.startsWith(expectedPrefix)) {
-      return NextResponse.json({ error: 'Arquivo fora do escopo do tenant.' }, { status: 403 });
+    if (!document.storage_path?.trim()) {
+      return NextResponse.json({ error: 'Caminho do PDF ausente para este contrato.' }, { status: 404 });
     }
+
+    const access = await resolveLegacyContractPdfAccess({
+      admin: auth.ctx.admin,
+      storagePath: document.storage_path,
+      fileName: document.original_file_name,
+      tenantId: auth.ctx.tenantId,
+    });
 
     const url = new URL(request.url);
     const asJson = url.searchParams.get('format') === 'json';
-    const signedUrl = await createLegacyContractSignedPdfUrl(auth.ctx.admin, document.storage_path);
 
     if (asJson) {
-      return NextResponse.json({
-        url: signedUrl,
-        fileName: document.original_file_name,
-      });
+      return NextResponse.json(access);
     }
 
-    return NextResponse.redirect(signedUrl);
+    return NextResponse.redirect(access.url);
   } catch (err) {
-    console.error('[legacy-contracts/[id]/pdf GET]', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao abrir PDF do contrato antigo.' },
-      { status: 500 },
-    );
+    if (err instanceof LegacyContractDocumentError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+
+    const message = err instanceof Error ? err.message : 'Erro ao abrir PDF do contrato antigo.';
+    console.error('[legacy-contracts/[id]/pdf GET]', message, err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

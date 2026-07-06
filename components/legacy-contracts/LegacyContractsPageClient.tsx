@@ -12,6 +12,10 @@ import {
   canManageLegacyContractsModule,
 } from '@/lib/legacy-contracts/permissions';
 import { fetchLegacyContractList } from '@/lib/legacy-contracts/listClient';
+import {
+  fetchLegacyContractPdfAccess,
+  openLegacyContractPdfUrl,
+} from '@/lib/legacy-contracts/pdfClient';
 import type {
   LegacyContractListItem,
   LegacyContractListSummary,
@@ -55,6 +59,7 @@ export function LegacyContractsPageClient() {
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ id: string; fileName: string } | null>(null);
 
   useEffect(() => {
@@ -166,23 +171,14 @@ export function LegacyContractsPageClient() {
   };
 
   const handleDownload = async (item: LegacyContractListItem) => {
+    setDownloadingId(item.id);
     try {
-      const response = await fetch(
-        `/api/legacy-contracts/${encodeURIComponent(item.id)}/pdf?format=json`,
-        { credentials: 'same-origin' },
-      );
-      const payload = await response.json().catch(() => ({} as Record<string, unknown>));
-      if (!response.ok) {
-        throw new Error(
-          (typeof payload.error === 'string' && payload.error) ||
-            'Não foi possível baixar o PDF.',
-        );
-      }
-      const url = typeof payload.url === 'string' ? payload.url : '';
-      if (!url) throw new Error('URL do PDF indisponível.');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      const access = await fetchLegacyContractPdfAccess(item.id, activeTenantId);
+      openLegacyContractPdfUrl(access.url, access.fileName || item.original_file_name);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Não foi possível baixar o PDF.');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -272,6 +268,7 @@ export function LegacyContractsPageClient() {
           loading={loading}
           canManage={canManage}
           deletingId={deletingId}
+          downloadingId={downloadingId}
           onView={(item) => setViewer({ id: item.id, fileName: item.original_file_name })}
           onDownload={handleDownload}
           onDelete={handleDelete}
@@ -308,6 +305,7 @@ export function LegacyContractsPageClient() {
         open={viewer != null}
         documentId={viewer?.id || null}
         fileName={viewer?.fileName || ''}
+        activeTenantId={activeTenantId}
         onClose={() => setViewer(null)}
       />
     </div>
