@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildContractViewHtml } from '@/lib/buildContractViewHtml';
+import { readStoredContractHtml } from '@/lib/contractRegeneration';
 import { onlyDigits } from '@/lib/inputMasks';
 import {
   isValidSignerEmail,
@@ -392,7 +393,7 @@ function assertContractEligibleForSignature(
       'Aguardando assinatura do vendedor. Não é possível reenviar até concluir a assinatura bilateral.',
     );
   }
-  if (!contract.generated_html && !contract.html_content) {
+  if (!readStoredContractHtml(contract)) {
     throw new SaleContractSignatureError(
       'O contrato não possui conteúdo gerado. Regenerar o contrato antes de enviar.',
     );
@@ -406,6 +407,16 @@ export async function sendSaleContractForSignature(
   signature: ContractSignatureRow;
   signUrl: string;
 }> {
+  const startedAt = Date.now();
+  const mark = (step: string, extra?: Record<string, unknown>) => {
+    console.log('[contracts/signature]', step, {
+      ms: Date.now() - startedAt,
+      contractId,
+      ...extra,
+    });
+  };
+
+  mark('load_contract');
   const { data: contract, error: contractErr } = await supabaseAdmin
     .from('contracts')
     .select('*')
@@ -413,10 +424,14 @@ export async function sendSaleContractForSignature(
     .single();
 
   if (contractErr || !contract) {
+    mark('response', { status: 404 });
     throw new SaleContractSignatureError('Contrato não encontrado.');
   }
 
   const contractRow = contract as Record<string, unknown>;
+  mark('contract_found', {
+    hasHtml: Boolean(readStoredContractHtml(contractRow)),
+  });
   assertContractEligibleForSignature(contractRow);
 
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
@@ -426,6 +441,7 @@ export async function sendSaleContractForSignature(
 
   await cancelOpenSaleSignatures(supabaseAdmin, contractId);
 
+  mark('signature_token');
   const token = generateSignatureToken();
   const signUrl = buildSaleSignUrl(token);
   const validationUrl = buildSignatureVerifyUrl(token);
@@ -451,6 +467,7 @@ export async function sendSaleContractForSignature(
     .single();
 
   if (error || !signature) {
+    mark('response', { status: 500, message: error?.message });
     throw new SaleContractSignatureError(
       `Falha ao registrar envio para assinatura: ${error?.message || 'sem retorno'}`,
       'db_save',
@@ -476,6 +493,7 @@ export async function sendSaleContractForSignature(
     signed_user_agent: null,
   });
 
+  mark('response', { status: 200, signUrl: signUrl.slice(0, 32) + '…' });
   return {
     signature: signature as ContractSignatureRow,
     signUrl,

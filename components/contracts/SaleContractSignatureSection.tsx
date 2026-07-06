@@ -347,7 +347,12 @@ export const SaleContractSignatureSection = forwardRef<
     ref,
     () => ({
       sendForSignature: handleSend,
-      openShareModal: () => setShareOpen(true),
+      openShareModal: () => {
+        if (latest?.signature_url) {
+          setSignUrl(latest.signature_url);
+        }
+        setShareOpen(true);
+      },
       openVendorSignModal: () => {
         const canOpen =
           showVendorSignButton ||
@@ -505,7 +510,7 @@ export const SaleContractSignatureSection = forwardRef<
         </div>
       )}
 
-      {signUrl && (
+      {shareOpen && signUrl && (
         <ContractSignatureShareModal
           isOpen={shareOpen}
           onClose={() => setShareOpen(false)}

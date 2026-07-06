@@ -57,6 +57,7 @@ export async function GET(
     }
 
     const { id: contractId } = await params;
+    console.log('[contracts/signature]', 'load_contract', { contractId });
     const { contract } = await assertContractAccess(supabase, contractId, user.id);
 
     const signatures = await listSaleContractSignatures(supabase, contractId);
@@ -122,9 +123,15 @@ export async function POST(
     }
 
     const { id: contractId } = await params;
+    console.log('[contracts/signature]', 'send_start', { contractId });
     await assertContractAccess(supabase, contractId, user.id);
 
     const result = await sendSaleContractForSignature(supabase, contractId);
+
+    console.log('[contracts/signature]', 'response', {
+      contractId,
+      hasSignUrl: Boolean(result.signUrl),
+    });
 
     return NextResponse.json({
       success: true,

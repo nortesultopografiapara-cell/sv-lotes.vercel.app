@@ -46,6 +46,13 @@ const CONTRACT_HTML_STORAGE_COLUMNS = [
   'html',
 ] as const;
 
+/** Colunas legadas apenas para leitura do HTML salvo. */
+const CONTRACT_HTML_READ_COLUMNS = [
+  'generated_html',
+  'html_content',
+  ...CONTRACT_HTML_STORAGE_COLUMNS.slice(1),
+] as const;
+
 /** Nunca enviar no insert/update — ausente em vários ambientes de produção. */
 const CONTRACT_HTML_SKIP_COLUMNS = new Set(['html_content']);
 
@@ -116,7 +123,7 @@ export function readStoredContractHtml(
   contract: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!contract || typeof contract !== 'object') return null;
-  for (const col of CONTRACT_HTML_STORAGE_COLUMNS) {
+  for (const col of CONTRACT_HTML_READ_COLUMNS) {
     const v = contract[col];
     if (typeof v === 'string' && v.trim().length > 0) {
       return v;
@@ -125,13 +132,21 @@ export function readStoredContractHtml(
   return null;
 }
 
-/** Select enxuto para preview HTML — evita select('*') no fast path. */
+/** Select enxuto para preview HTML — com fallback de colunas ausentes no schema. */
 export const CONTRACT_HTML_PREVIEW_SELECT =
-  'id, generated_html, updated_at, needs_regenerar, tenant_id, company_id';
+  'id, generated_html, html_content, tenant_id, company_id, needs_regenerar';
+
+function stripHtmlPreviewSelectColumn(select: string, column: string): string {
+  return select
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== column)
+    .join(', ');
+}
 
 /**
  * Carrega contrato para preview HTML (fast path).
- * Campos mínimos: id, generated_html, updated_at (+ tenant para sessão).
+ * Campos mínimos: id, generated_html/html_content, tenant_id (+ company_id legado).
  */
 export async function loadContractHtmlPreviewRow(
   supabase: SupabaseClient,
@@ -142,17 +157,37 @@ export async function loadContractHtmlPreviewRow(
     throw new ContractNotFoundError(receivedId, { detail: 'ID do contrato vazio.' });
   }
 
+  let previewSelect = CONTRACT_HTML_PREVIEW_SELECT;
+
   const runLookup = async (
     field: 'id' | 'contract_number',
     value: string,
   ) => {
-    const { data, error } = await supabase
-      .from('contracts')
-      .select(CONTRACT_HTML_PREVIEW_SELECT)
-      .eq(field, value)
-      .maybeSingle();
+    let currentSelect = previewSelect;
 
-    if (error) {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const { data, error } = await supabase
+        .from('contracts')
+        .select(currentSelect)
+        .eq(field, value)
+        .maybeSingle();
+
+      if (!error) {
+        previewSelect = currentSelect;
+        return data as Record<string, unknown> | null;
+      }
+
+      const missingCol = parseMissingContractColumn(error.message);
+      if (missingCol && currentSelect.includes(missingCol)) {
+        currentSelect = stripHtmlPreviewSelectColumn(currentSelect, missingCol);
+        previewSelect = currentSelect;
+        console.log('[contracts/html] preview_select_fallback', {
+          removed: missingCol,
+          attempt: attempt + 1,
+        });
+        continue;
+      }
+
       throw new ContractNotFoundError(receivedId, {
         lookup: field,
         supabaseCode: error.code,
@@ -161,7 +196,10 @@ export async function loadContractHtmlPreviewRow(
       });
     }
 
-    return data as Record<string, unknown> | null;
+    throw new ContractNotFoundError(receivedId, {
+      lookup: field,
+      detail: 'Não foi possível carregar contrato para preview.',
+    });
   };
 
   let contract: Record<string, unknown> | null = null;
@@ -234,7 +272,9 @@ export function resolveRegenerationSession(
     impersonatingTenantId?: string | null;
   },
 ): RegenerationSession {
-  const contractTenantId = String(contract.tenant_id || '').trim();
+  const contractTenantId = String(
+    contract.tenant_id || contract.company_id || '',
+  ).trim();
   if (!contractTenantId) {
     throw new Error('Contrato sem tenant_id — não é possível identificar a empresa.');
   }
@@ -243,7 +283,7 @@ export function resolveRegenerationSession(
   const isPlatformAdmin = PLATFORM_ADMIN_ROLES.has(role);
 
   let activeTenantId = String(
-    options.callerTenantId || contract.company_id || '',
+    options.callerTenantId || contractTenantId || '',
   ).trim();
 
   if (isPlatformAdmin && options.impersonatingTenantId) {
@@ -605,6 +645,29 @@ async function fetchCompanyForTenant(
 
   console.log('REGENERATE_COMPANY_DATA', company);
   return company;
+}
+
+/** Persiste HTML gerado no contrato com fallback de colunas ausentes. */
+export async function persistGeneratedContractHtml(
+  supabase: SupabaseClient,
+  contractId: string,
+  html: string,
+  sourceContract?: Record<string, unknown> | null,
+): Promise<boolean> {
+  const fields = buildRegeneratedContractHtmlFields(html, sourceContract);
+  try {
+    await updateContractRowWithFallback(supabase, contractId, {
+      ...fields,
+      needs_regenerar: false,
+    });
+    return true;
+  } catch (err) {
+    console.warn('[contracts/html] save_html_failed', {
+      contractId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
 }
 
 async function updateContractRowWithFallback(

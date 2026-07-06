@@ -1487,22 +1487,33 @@ export default function ContractsPage() {
       const json = data;
       setContractVersions(json.versions || []);
 
-      const rows = await reloadContractsList();
-      setContracts(rows);
-      processContractsFromRows(rows);
-
       const newId = json.contract?.id;
-      const enriched = rows.find((c: any) => c.id === newId);
-      if (enriched) {
-        setSelectedContract(enriched);
-      } else if (json.contract) {
-        const [one] = await enrichContractsWithRelations([json.contract]);
-        setSelectedContract(one || json.contract);
+      if (json.contract) {
+        try {
+          const [one] = await enrichContractsWithRelations([json.contract]);
+          setSelectedContract(one || json.contract);
+        } catch (enrichErr) {
+          console.warn("[CONTRATOS] enrich após regenerar", enrichErr);
+          setSelectedContract(json.contract);
+        }
       }
 
       setContractToast("Contrato regenerado com sucesso.");
       setActiveTab("Visualização");
       setContractHtmlRetryKey((k) => k + 1);
+
+      void reloadContractsList()
+        .then((rows) => {
+          setContracts(rows);
+          processContractsFromRows(rows);
+          if (newId) {
+            const enriched = rows.find((c: any) => c.id === newId);
+            if (enriched) setSelectedContract(enriched);
+          }
+        })
+        .catch((reloadErr) => {
+          console.warn("[CONTRATOS] reload após regenerar", reloadErr);
+        });
     } catch (e: unknown) {
       const msg =
         e instanceof Error ? e.message : "Erro ao regenerar contrato";

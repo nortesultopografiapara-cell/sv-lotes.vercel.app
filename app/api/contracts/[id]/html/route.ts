@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   ContractNotFoundError,
   loadContractHtmlPreviewRow,
+  persistGeneratedContractHtml,
   readStoredContractHtml,
   resolveRegenerationSession,
 } from '@/lib/contractRegeneration';
@@ -101,13 +102,13 @@ export async function GET(
     );
 
     if (!savedHtml && html.trim()) {
-      await supabase
-        .from('contracts')
-        .update({
-          generated_html: html,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', contract.id as string);
+      mark('save_html');
+      await persistGeneratedContractHtml(
+        supabase,
+        String(contract.id || contractId),
+        html,
+        contract,
+      );
     }
 
     mark('response', { source: 'generated', bytes: html.length });
