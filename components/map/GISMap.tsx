@@ -37,6 +37,7 @@ import {
   isValidStoredContractNumber,
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
+import { formatClientFetchError } from "@/lib/clientFetchError";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
@@ -4235,9 +4236,7 @@ export default function GISMap({
               alert(
                 "Venda e financeiro salvos, mas o contrato não foi gerado: faltam dados obrigatórios do comprador. Complete o cadastro do cliente.",
               );
-              return;
-            }
-
+            } else {
             const blockRow = (await fetchBlockForContract(lot.id)) || lot;
             const contractHtml = generateContractHTML({
               tenant: tenantData || {},
@@ -4360,6 +4359,7 @@ export default function GISMap({
                 source: "contract_flow",
               });
             }
+            }
           } catch (contractErr: unknown) {
             console.error("[VENDA] exceção ao criar contrato", contractErr);
             const msg =
@@ -4392,7 +4392,7 @@ export default function GISMap({
           if (user?.role === 'BROKER') {
             console.log("BROKER_FOUND");
             try {
-               const { data: brokerData } = await supabase.from('brokers').select('commission_percent').eq('id', user.id).single();
+               const { data: brokerData } = await supabase.from('brokers').select('commission_percent').eq('id', finalBrokerId).single();
                const pct = brokerData?.commission_percent || 0;
                if (pct > 0) {
                  const saleVal = customerData.final_value || finalPrice;
@@ -4544,9 +4544,13 @@ export default function GISMap({
       });
 
       alert(`Lote Quadra ${lot.block} Lote ${lot.number} atualizado com sucesso!`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Error saving customer and lot:", e);
-      alert("Erro ao salvar dados (Venda interrompida): " + e.message);
+      const msg =
+        e instanceof Error
+          ? formatClientFetchError({ networkMessage: e.message })
+          : formatClientFetchError({});
+      alert("Erro ao salvar dados (Venda interrompida): " + msg);
     }
   };
 

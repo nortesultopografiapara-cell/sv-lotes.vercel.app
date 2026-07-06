@@ -96,7 +96,10 @@ export async function GET(
     const storedSignedUrl = String(contractRow.pdf_signed_url || '').trim();
     if (storedSignedUrl) {
       try {
-        const storedRes = await fetch(storedSignedUrl, { cache: 'no-store' });
+        const storedRes = await fetch(storedSignedUrl, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15_000),
+        });
         if (storedRes.ok) {
           const storedBytes = new Uint8Array(await storedRes.arrayBuffer());
           if (storedBytes.byteLength >= 5) {

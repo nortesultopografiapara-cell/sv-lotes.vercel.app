@@ -238,7 +238,7 @@ async function testFetchJsonWithTimeoutOnHang() {
     const result = await fetchJsonWithTimeout('http://localhost/test-hang', {}, 80);
     assert(!result.ok, 'deve falhar ao estourar timeout');
     assert(
-      (result.error || '').includes('Tempo esgotado'),
+      (result.error || '').includes('demorou para responder'),
       'mensagem de timeout para o usuário',
     );
   } finally {
