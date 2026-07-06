@@ -80,9 +80,11 @@ export async function loadLegacyContractDocumentBySaleId(
   const { data, error } = await admin
     .from('legacy_contract_documents')
     .select(
-      'id, sale_id, contract_number, contract_date, status, original_file_name, notes, storage_path, company_id, created_at',
+      'id, sale_id, contract_number, contract_date, status, original_file_name, notes, storage_path, company_id, created_at, link_type, quadra, lote',
     )
     .eq('sale_id', saleId)
+    .eq('is_active', true)
+    .is('deleted_at', null)
     .maybeSingle();
 
   if (error) {

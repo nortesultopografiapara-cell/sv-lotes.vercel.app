@@ -30,6 +30,7 @@ import {
   Handshake,
   CreditCard,
   DatabaseBackup,
+  FileArchive,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
@@ -49,6 +50,8 @@ import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
 import { canAccessDataMigrationModule } from '@/lib/imports/permissions';
 import { DATA_MIGRATION_ROUTE } from '@/lib/imports/constants';
+import { canAccessLegacyContractsModule } from '@/lib/legacy-contracts/permissions';
+import { LEGACY_CONTRACTS_ROUTE } from '@/lib/legacy-contracts/constants';
 import {
   getOwnerMenuItemsFromPermissions,
   loadOwnerAccessContext,
@@ -263,9 +266,19 @@ const getMenuItems = (role: string) => {
       { name: 'Cobranças', href: '/charges', icon: Banknote, color: 'text-violet-400' },
       { name: 'Minha Assinatura', href: '/billing', icon: CreditCard, color: 'text-[#14b8a6]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
+    ];
+    if (canAccessLegacyContractsModule(role)) {
+      items.push({
+        name: 'Contratos Antigos',
+        href: LEGACY_CONTRACTS_ROUTE,
+        icon: FileArchive,
+        color: 'text-[#f59e0b]',
+      });
+    }
+    items.push(
       { name: 'Sócios / Proprietários', href: '/owners', icon: Handshake, color: 'text-[#a855f7]' },
       { name: 'Sincronização Offline', href: '/offline-sync', icon: RefreshCw, color: 'text-[#f97316]' },
-    ];
+    );
     if (canAccessDataMigrationModule(role)) {
       items.push({
         name: 'Migração de Dados',
@@ -290,13 +303,22 @@ const getMenuItems = (role: string) => {
   }
 
   if (isOwnerRole(role)) {
-    return [
+    const ownerItems = [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Cobranças', href: '/charges', icon: Banknote, color: 'text-violet-400' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
     ];
+    if (canAccessLegacyContractsModule(role)) {
+      ownerItems.push({
+        name: 'Contratos Antigos',
+        href: LEGACY_CONTRACTS_ROUTE,
+        icon: FileArchive,
+        color: 'text-[#f59e0b]',
+      });
+    }
+    return ownerItems;
   }
   return [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
@@ -317,6 +339,7 @@ const OWNER_MENU_ICONS: Record<
   '/finance': { icon: Wallet, color: 'text-[var(--color-warning)]' },
   '/charges': { icon: Banknote, color: 'text-violet-400' },
   '/contracts': { icon: FileText, color: 'text-[var(--color-info)]' },
+  '/legacy-contracts': { icon: FileArchive, color: 'text-[#f59e0b]' },
 };
 
 function buildOwnerMenuItems(

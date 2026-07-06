@@ -152,6 +152,7 @@ export async function middleware(request: NextRequest) {
       '/billing',
       '/offline-sync',
       '/reports',
+      '/legacy-contracts',
     ];
     const isBlocked = blockedRoutes.some((r) => url.pathname.startsWith(r));
     if (isBlocked) {

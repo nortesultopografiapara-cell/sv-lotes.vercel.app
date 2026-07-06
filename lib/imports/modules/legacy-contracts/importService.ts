@@ -232,6 +232,18 @@ export async function executeLegacyContractImportBuffer(params: {
   const importableRows = validation.rows.filter((row) => row.importable);
   let imported = 0;
 
+  const historyId = await createLegacyContractMigrationHistory({
+    admin: params.admin,
+    tenantId: params.tenantId,
+    userId: params.userId,
+    userName: params.userName,
+    fileName: params.spreadsheetFileName || params.documentsFileName,
+    documentsFileName: params.documentsFileName,
+    validation,
+    imported: 0,
+    status: 'em_andamento',
+  });
+
   for (const row of importableRows) {
     const result = await executeImportableLegacyContractRow({
       admin: params.admin,
@@ -239,6 +251,7 @@ export async function executeLegacyContractImportBuffer(params: {
       userId: params.userId,
       row,
       pdfIndex: pdfResult.index,
+      migrationId: historyId,
     });
 
     if (result.ok) {
@@ -250,13 +263,9 @@ export async function executeLegacyContractImportBuffer(params: {
     }
   }
 
-  const historyId = await saveLegacyContractMigrationHistory({
+  await finalizeLegacyContractMigrationHistory({
     admin: params.admin,
-    tenantId: params.tenantId,
-    userId: params.userId,
-    userName: params.userName,
-    fileName: params.spreadsheetFileName || params.documentsFileName,
-    documentsFileName: params.documentsFileName,
+    historyId,
     validation,
     imported,
     status: imported > 0 || validation.summary.importableRows === 0 ? 'concluido' : 'falhou',
@@ -274,7 +283,7 @@ export async function executeLegacyContractImportBuffer(params: {
   };
 }
 
-async function saveLegacyContractMigrationHistory(params: {
+async function createLegacyContractMigrationHistory(params: {
   admin: SupabaseClient;
   tenantId: string;
   userId: string;
@@ -283,7 +292,7 @@ async function saveLegacyContractMigrationHistory(params: {
   documentsFileName: string | null;
   validation: LegacyContractImportValidationResult;
   imported: number;
-  status: 'concluido' | 'falhou';
+  status: 'em_andamento' | 'concluido' | 'falhou';
 }): Promise<string | null> {
   const details = {
     fileType: params.validation.fileType,
@@ -318,11 +327,48 @@ async function saveLegacyContractMigrationHistory(params: {
     .single();
 
   if (error) {
-    console.warn('[saveLegacyContractMigrationHistory]', error.message);
+    console.warn('[createLegacyContractMigrationHistory]', error.message);
     return null;
   }
 
   return data?.id ?? null;
+}
+
+async function finalizeLegacyContractMigrationHistory(params: {
+  admin: SupabaseClient;
+  historyId: string | null;
+  validation: LegacyContractImportValidationResult;
+  imported: number;
+  status: 'concluido' | 'falhou';
+}): Promise<void> {
+  if (!params.historyId) return;
+
+  const details = {
+    fileType: params.validation.fileType,
+    rowCount: params.validation.rowCount,
+    pdfCount: params.validation.pdfCount,
+    columnMapping: params.validation.columnMapping.recognizedHeaders,
+    summary: {
+      ...params.validation.summary,
+      importableRows: params.imported,
+      ignoredRows: params.validation.summary.totalRows - params.imported,
+    },
+    rows: params.validation.rows.map(buildLegacyContractMigrationRowDetail),
+  };
+
+  const { error } = await params.admin
+    .from('data_migration_history')
+    .update({
+      quantidade_importada: params.imported,
+      quantidade_erros: params.validation.summary.errorRows,
+      status: params.status,
+      detalhes_json: details,
+    })
+    .eq('id', params.historyId);
+
+  if (error) {
+    console.warn('[finalizeLegacyContractMigrationHistory]', error.message);
+  }
 }
 
 export { loadLegacyContractImportContext };
