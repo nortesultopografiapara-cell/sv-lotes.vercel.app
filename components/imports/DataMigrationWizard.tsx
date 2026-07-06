@@ -34,6 +34,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { ACCEPTED_IMPORT_ACCEPT_ATTR } from '@/lib/imports/constants';
 import { listImportModules, getImportModuleById } from '@/lib/imports/modules';
 import type { BrokerImportValidationResult } from '@/lib/imports/modules/brokers/types';
+import type { InstallmentImportValidationResult } from '@/lib/imports/modules/installments/types';
 import type { LegacyContractImportValidationResult } from '@/lib/imports/modules/legacy-contracts/types';
 import type { SaleImportValidationResult } from '@/lib/imports/modules/sales/types';
 import {
@@ -52,6 +53,7 @@ import {
   advanceWizardState,
   applyBrokerValidationAndAdvance,
   applyCustomerValidationAndAdvance,
+  applyInstallmentsValidationAndAdvance,
   applyLegacyContractsValidationAndAdvance,
   applySalesValidationAndAdvance,
   canAdvanceWizardStep,
@@ -224,6 +226,57 @@ async function executeSalesImport(file: File, activeTenantId: string | null) {
   return payload.result;
 }
 
+async function validateInstallmentsFile(
+  file: File,
+  activeTenantId: string | null,
+): Promise<InstallmentImportValidationResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/installments/validate', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    const apiError =
+      (typeof payload.error === 'string' && payload.error) ||
+      (typeof payload.message === 'string' && payload.message) ||
+      `Falha na validação do arquivo (${response.status}).`;
+    throw new Error(apiError);
+  }
+
+  if (!payload.validation) {
+    throw new Error('Resposta de validação inválida.');
+  }
+
+  return payload.validation as InstallmentImportValidationResult;
+}
+
+async function executeInstallmentsImport(file: File, activeTenantId: string | null) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('confirmed', 'true');
+  if (activeTenantId) formData.append('activeTenantId', activeTenantId);
+
+  const response = await fetch('/api/data-migration/installments/execute', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok) {
+    throw new Error(
+      (typeof payload.error === 'string' && payload.error) ||
+        'Falha ao atualizar parcelas.',
+    );
+  }
+
+  return payload.result;
+}
+
 export function DataMigrationWizard() {
   const { user } = useAuth();
   const [state, setState] = useState<MigrationWizardState>(
@@ -245,6 +298,7 @@ export function DataMigrationWizard() {
   const isCustomersModule = state.selectedModuleId === 'customers';
   const isBrokersModule = state.selectedModuleId === 'brokers';
   const isSalesModule = state.selectedModuleId === 'sales';
+  const isInstallmentsModule = state.selectedModuleId === 'installments';
   const isLegacyContractsModule = state.selectedModuleId === 'legacy_contracts';
   const isImportModuleActive = isActiveImportModule(state.selectedModuleId);
   const activeTenantId = user?.tenant_id || user?.company_id || null;
@@ -271,6 +325,8 @@ export function DataMigrationWizard() {
       brokerImportResult: null,
       salesValidation: null,
       salesImportResult: null,
+      installmentsValidation: null,
+      installmentsImportResult: null,
       legacyContractsValidation: null,
       legacyContractsImportResult: null,
       validationError: null,
@@ -372,6 +428,26 @@ export function DataMigrationWizard() {
       try {
         const validation = await validateSalesFile(file, activeTenantId);
         setState((prev) => applySalesValidationAndAdvance(prev, validation));
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Erro ao validar arquivo.';
+        setState((prev) => ({
+          ...prev,
+          validating: false,
+          validationError: message,
+        }));
+      }
+      return;
+    }
+
+    if (state.step === 'upload' && isInstallmentsModule) {
+      const file = mappingFileRef.current;
+      if (!file) return;
+
+      setState((prev) => ({ ...prev, validating: true, validationError: null }));
+      try {
+        const validation = await validateInstallmentsFile(file, activeTenantId);
+        setState((prev) => applyInstallmentsValidationAndAdvance(prev, validation));
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Erro ao validar arquivo.';
@@ -514,6 +590,31 @@ export function DataMigrationWizard() {
       return;
     }
 
+    if (isInstallmentsModule && state.installmentsValidation) {
+      const importable = state.installmentsValidation.summary.importableRows;
+      const ignored = state.installmentsValidation.summary.ignoredRows;
+
+      const confirmed = window.confirm(
+        `Confirmar atualização de ${importable} parcela(s)?\n\n${ignored} registro(s) serão ignorados por erro, duplicidade ou parcela não localizada.\n\nEste fluxo NÃO cria vendas novas e NÃO duplica parcelas.`,
+      );
+      if (!confirmed) return;
+
+      setState((prev) => ({ ...prev, importing: true }));
+      try {
+        const result = await executeInstallmentsImport(mappingFileRef.current, activeTenantId);
+        setState((prev) => ({
+          ...prev,
+          step: 'confirmation',
+          installmentsImportResult: result,
+          importing: false,
+        }));
+      } catch (err) {
+        setState((prev) => ({ ...prev, importing: false }));
+        alert(err instanceof Error ? err.message : 'Erro ao atualizar parcelas.');
+      }
+      return;
+    }
+
     if (isSalesModule && state.salesValidation) {
       const importable = state.salesValidation.summary.importableRows;
       const ignored = state.salesValidation.summary.ignoredRows;
@@ -563,6 +664,14 @@ export function DataMigrationWizard() {
     );
   }, [state.salesValidation, state.salesPreviewFilter]);
 
+  const installmentsPreviewRows = useMemo(() => {
+    if (!state.installmentsValidation) return [];
+    return filterImportPreviewRows(
+      state.installmentsValidation.rows,
+      state.installmentsPreviewFilter,
+    );
+  }, [state.installmentsValidation, state.installmentsPreviewFilter]);
+
   const legacyContractsPreviewRows = useMemo(() => {
     if (!state.legacyContractsValidation) return [];
     return filterImportPreviewRows(
@@ -577,9 +686,11 @@ export function DataMigrationWizard() {
       ? state.brokerValidation?.summary
       : isSalesModule
         ? state.salesValidation?.summary
-        : isLegacyContractsModule
-          ? state.legacyContractsValidation?.summary
-          : null;
+        : isInstallmentsModule
+          ? state.installmentsValidation?.summary
+          : isLegacyContractsModule
+            ? state.legacyContractsValidation?.summary
+            : null;
 
   const activeValidationMeta = isCustomersModule
     ? state.customerValidation
@@ -587,15 +698,17 @@ export function DataMigrationWizard() {
       ? state.brokerValidation
       : isSalesModule
         ? state.salesValidation
-        : isLegacyContractsModule
-          ? state.legacyContractsValidation
-          : null;
+        : isInstallmentsModule
+          ? state.installmentsValidation
+          : isLegacyContractsModule
+            ? state.legacyContractsValidation
+            : null;
 
   const renderPlaceholderModuleNotice = () => (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
       <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
       <p className="text-sm text-amber-100/90">
-        Este módulo ainda não está habilitado. Clientes, Corretores, Vendas e Contratos Antigos possuem importação ativa nesta fase.
+        Este módulo ainda não está habilitado. Clientes, Corretores, Vendas, Atualizar Parcelas das Vendas Importadas e Contratos Antigos possuem importação ativa nesta fase.
       </p>
     </div>
   );
@@ -619,7 +732,7 @@ export function DataMigrationWizard() {
                     planilhas Excel para o SV LOTES de forma segura e orientada.
                   </p>
                   <p className="text-xs text-[var(--text-muted)] mt-3">
-                    A importação de Clientes, Corretores, Vendas e Contratos Antigos está disponível. Os demais módulos serão habilitados nas próximas atualizações.
+                    A importação de Clientes, Corretores, Vendas, Atualizar Parcelas das Vendas Importadas e Contratos Antigos está disponível. Os demais módulos serão habilitados nas próximas atualizações.
                   </p>
                 </div>
               </div>
@@ -890,7 +1003,10 @@ export function DataMigrationWizard() {
                 ['Duplicadas na planilha', activeValidationSummary.duplicateRows],
                 ['Já existentes', activeValidationSummary.existingRows],
                 ['Ignoradas', activeValidationSummary.ignoredRows],
-                ['A importar', activeValidationSummary.importableRows],
+                [
+                  isInstallmentsModule ? 'A atualizar' : 'A importar',
+                  activeValidationSummary.importableRows,
+                ],
               ].map(([label, value]) => (
                 <div
                   key={label}
@@ -901,6 +1017,23 @@ export function DataMigrationWizard() {
                 </div>
               ))}
             </div>
+            {isInstallmentsModule && state.installmentsValidation ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  ['Parcelas localizadas', state.installmentsValidation.summary.locatedRows],
+                  ['Parcelas não localizadas', state.installmentsValidation.summary.notLocatedRows],
+                  ['Serão atualizadas', state.installmentsValidation.summary.updateRows],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-3 text-center"
+                  >
+                    <p className="text-[10px] uppercase text-[var(--text-muted)]">{label}</p>
+                    <p className="text-xl font-bold text-[var(--text-primary)] mt-1">{value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-secondary)]">
               <p>
                 Linhas no arquivo: <strong>{activeValidationMeta.rowCount}</strong> · Tipo:{' '}
@@ -932,21 +1065,27 @@ export function DataMigrationWizard() {
               ? state.brokerPreviewFilter
               : isLegacyContractsModule
                 ? state.legacyContractsPreviewFilter
-                : state.salesPreviewFilter;
+                : isInstallmentsModule
+                  ? state.installmentsPreviewFilter
+                  : state.salesPreviewFilter;
           const previewRowsList = isCustomersModule
             ? customerPreviewRows
             : isBrokersModule
               ? brokerPreviewRows
               : isLegacyContractsModule
                 ? legacyContractsPreviewRows
-                : salesPreviewRows;
+                : isInstallmentsModule
+                  ? installmentsPreviewRows
+                  : salesPreviewRows;
           const entityLabel = isCustomersModule
             ? 'cliente'
             : isBrokersModule
               ? 'corretor'
               : isLegacyContractsModule
                 ? 'contrato antigo'
-                : 'venda';
+                : isInstallmentsModule
+                  ? 'parcela'
+                  : 'venda';
 
           const formatMoney = (value: number) =>
             value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -967,7 +1106,9 @@ export function DataMigrationWizard() {
                             ? { ...prev, brokerPreviewFilter: filter.id }
                             : isLegacyContractsModule
                               ? { ...prev, legacyContractsPreviewFilter: filter.id }
-                              : { ...prev, salesPreviewFilter: filter.id },
+                              : isInstallmentsModule
+                                ? { ...prev, installmentsPreviewFilter: filter.id }
+                                : { ...prev, salesPreviewFilter: filter.id },
                       )
                     }
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
@@ -1023,7 +1164,24 @@ export function DataMigrationWizard() {
                                 'Mensagens',
                                 'Ações',
                               ]
-                            : [
+                            : isInstallmentsModule
+                              ? [
+                                  'Linha',
+                                  'Empreendimento',
+                                  'Quadra',
+                                  'Lote',
+                                  'Cliente',
+                                  'Nº parcela',
+                                  'Venc. atual',
+                                  'Novo venc.',
+                                  'Status atual',
+                                  'Novo status',
+                                  'Valor atual',
+                                  'Valor pago',
+                                  'Resultado',
+                                  'Mensagens',
+                                ]
+                              : [
                               'Linha',
                               'Cliente',
                               'Corretor',
@@ -1057,7 +1215,9 @@ export function DataMigrationWizard() {
                                 ? 10
                                 : isLegacyContractsModule
                                   ? 11
-                                  : 11
+                                  : isInstallmentsModule
+                                    ? 14
+                                    : 11
                           }
                           className="px-4 py-8 text-center text-[var(--text-muted)]"
                         >
@@ -1165,6 +1325,38 @@ export function DataMigrationWizard() {
                             ) : (
                               '—'
                             )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : isInstallmentsModule ? (
+                      installmentsPreviewRows.map((row) => (
+                        <tr
+                          key={row.lineNumber}
+                          className="border-t border-[var(--border-color)]"
+                        >
+                          <td className="px-3 py-2">{row.lineNumber}</td>
+                          <td className="px-3 py-2">{row.project_name || row.empreendimento || '—'}</td>
+                          <td className="px-3 py-2">{row.quadra || '—'}</td>
+                          <td className="px-3 py-2">{row.lote || '—'}</td>
+                          <td className="px-3 py-2">{row.customer_name || row.cliente || '—'}</td>
+                          <td className="px-3 py-2">{row.numero_parcela ?? '—'}</td>
+                          <td className="px-3 py-2">{row.current_due_date || '—'}</td>
+                          <td className="px-3 py-2">{row.novo_vencimento || '—'}</td>
+                          <td className="px-3 py-2">{row.current_status || '—'}</td>
+                          <td className="px-3 py-2">{row.resolved_status || '—'}</td>
+                          <td className="px-3 py-2">
+                            {row.current_amount != null ? formatMoney(row.current_amount) : '—'}
+                          </td>
+                          <td className="px-3 py-2">
+                            {row.valor_pago != null ? formatMoney(row.valor_pago) : '—'}
+                          </td>
+                          <td
+                            className={`px-3 py-2 font-medium ${customerRowStatusClass(row.status)}`}
+                          >
+                            {row.importable ? 'Atualizar' : IMPORT_ROW_STATUS_LABELS[row.status]}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                            {row.messages.map((message) => message.text).join(' · ') || '—'}
                           </td>
                         </tr>
                       ))
@@ -1307,6 +1499,39 @@ export function DataMigrationWizard() {
           );
         }
 
+        if (isInstallmentsModule && state.installmentsImportResult) {
+          return (
+            <div className="space-y-4" data-testid="migration-step-confirmation">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-2">
+                  Atualização concluída
+                </h2>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Foram atualizadas <strong>{state.installmentsImportResult.updated}</strong>{' '}
+                  parcela(s) de vendas já importadas.
+                </p>
+                <p className="text-sm text-[var(--text-secondary)] mt-2">
+                  <strong>{state.installmentsImportResult.ignored}</strong> registros foram ignorados
+                  por erro, duplicidade ou parcela não localizada.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="migration-back-to-start"
+                onClick={() => {
+                  mappingFileRef.current = null;
+                  documentFilesRef.current = [];
+                  setState(INITIAL_MIGRATION_WIZARD_STATE);
+                }}
+                className="text-sm text-[var(--color-primary)] hover:underline"
+              >
+                Voltar ao início do assistente
+              </button>
+            </div>
+          );
+        }
+
         if (isLegacyContractsModule && state.legacyContractsImportResult) {
           return (
             <div className="space-y-4" data-testid="migration-step-confirmation">
@@ -1373,32 +1598,41 @@ export function DataMigrationWizard() {
     ((isCustomersModule && state.customerValidation != null) ||
       (isBrokersModule && state.brokerValidation != null) ||
       (isSalesModule && state.salesValidation != null) ||
+      (isInstallmentsModule && state.installmentsValidation != null) ||
       (isLegacyContractsModule && state.legacyContractsValidation != null));
 
   const confirmImportableCount = isCustomersModule
     ? (state.customerValidation?.summary.importableRows ?? 0)
     : isBrokersModule
       ? (state.brokerValidation?.summary.importableRows ?? 0)
-      : isLegacyContractsModule
-        ? (state.legacyContractsValidation?.summary.importableRows ?? 0)
-        : (state.salesValidation?.summary.importableRows ?? 0);
+      : isInstallmentsModule
+        ? (state.installmentsValidation?.summary.importableRows ?? 0)
+        : isLegacyContractsModule
+          ? (state.legacyContractsValidation?.summary.importableRows ?? 0)
+          : (state.salesValidation?.summary.importableRows ?? 0);
   const confirmIgnoredCount = isCustomersModule
     ? (state.customerValidation?.summary.ignoredRows ?? 0)
     : isBrokersModule
       ? (state.brokerValidation?.summary.ignoredRows ?? 0)
-      : isLegacyContractsModule
-        ? (state.legacyContractsValidation?.summary.ignoredRows ?? 0)
-        : (state.salesValidation?.summary.ignoredRows ?? 0);
+      : isInstallmentsModule
+        ? (state.installmentsValidation?.summary.ignoredRows ?? 0)
+        : isLegacyContractsModule
+          ? (state.legacyContractsValidation?.summary.ignoredRows ?? 0)
+          : (state.salesValidation?.summary.ignoredRows ?? 0);
   const confirmEntityLabel = isCustomersModule
     ? 'clientes'
     : isBrokersModule
       ? 'corretores'
-      : isLegacyContractsModule
-        ? 'contratos antigos'
-        : 'vendas';
+      : isInstallmentsModule
+        ? 'parcelas'
+        : isLegacyContractsModule
+          ? 'contratos antigos'
+          : 'vendas';
   const confirmActionLabel = isLegacyContractsModule
     ? 'Confirmar Anexo'
-    : 'Confirmar Importação';
+    : isInstallmentsModule
+      ? 'Confirmar Atualização'
+      : 'Confirmar Importação';
 
   return (
     <div data-testid="data-migration-wizard">

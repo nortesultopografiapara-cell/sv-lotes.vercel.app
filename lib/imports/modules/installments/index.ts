@@ -1,18 +1,14 @@
 import type { ImportModuleDefinition } from '@/lib/imports/types';
+import { INSTALLMENTS_IMPORT_TEMPLATE_COLUMNS } from '@/lib/imports/modules/installments/constants';
 
 export const installmentsImportModule: ImportModuleDefinition = {
   id: 'installments',
-  title: 'Parcelas',
-  description: 'Importe parcelas e vencimentos vinculados a vendas existentes.',
-  status: 'available_soon',
-  statusLabel: 'Disponível em breve',
+  title: 'Atualizar Parcelas das Vendas Importadas',
+  description:
+    'Atualize status, vencimentos, pagamentos e valores das parcelas já geradas pelas vendas importadas.',
+  status: 'available',
+  statusLabel: 'Disponível',
   enabled: true,
 };
 
-export const INSTALLMENTS_IMPORT_TEMPLATE_COLUMNS = [
-  'venda_id',
-  'numero_parcela',
-  'valor',
-  'vencimento',
-  'status',
-] as const;
+export { INSTALLMENTS_IMPORT_TEMPLATE_COLUMNS };
