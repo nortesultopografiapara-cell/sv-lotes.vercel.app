@@ -411,10 +411,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
          console.log('[company-edit-save-payload]', subscriptionDatesPayload);
 
-         const { ok, data: result, error: fetchError } = await fetchJsonWithTimeout<{
+         const { ok, data: result, error: fetchError, status } = await fetchJsonWithTimeout<{
            error?: string;
            company?: Record<string, unknown>;
            subscription?: CompanyForEditMerged['saas_subscription'];
+           subscription_warning?: string | null;
          }>('/api/companies/update', {
            method: 'PATCH',
            headers: { 'Content-Type': 'application/json' },
@@ -425,7 +426,16 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', result);
 
          if (!ok || fetchError) {
-           throw new Error(fetchError || result?.error || 'Erro ao salvar empresa.');
+           const apiMessage =
+             result?.error ||
+             (status > 0 ? fetchError : null) ||
+             fetchError ||
+             'Erro ao salvar empresa.';
+           throw new Error(apiMessage);
+         }
+
+         if (result?.subscription_warning) {
+           console.warn('[company-edit-save-warning]', result.subscription_warning);
          }
 
          if (result?.company) {
