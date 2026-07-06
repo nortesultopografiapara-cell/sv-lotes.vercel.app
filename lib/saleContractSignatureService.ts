@@ -4,7 +4,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildContractViewHtml } from '@/lib/buildContractViewHtml';
-import { readStoredContractHtml } from '@/lib/contractRegeneration';
+import { readStoredContractHtml, resolveStoredContractHtmlMeta } from '@/lib/contractRegeneration';
+import { logContractHtmlGlobal } from '@/lib/contractHtmlGlobal';
 import { onlyDigits } from '@/lib/inputMasks';
 import {
   isValidSignerEmail,
@@ -409,7 +410,7 @@ export async function sendSaleContractForSignature(
 }> {
   const startedAt = Date.now();
   const mark = (step: string, extra?: Record<string, unknown>) => {
-    console.log('[contracts/signature]', step, {
+    logContractHtmlGlobal('global-signature', step, {
       ms: Date.now() - startedAt,
       contractId,
       ...extra,
@@ -429,8 +430,11 @@ export async function sendSaleContractForSignature(
   }
 
   const contractRow = contract as Record<string, unknown>;
+  const storedMeta = resolveStoredContractHtmlMeta(contractRow);
   mark('contract_found', {
-    hasHtml: Boolean(readStoredContractHtml(contractRow)),
+    hasHtml: Boolean(storedMeta.html),
+    htmlColumn: storedMeta.column,
+    htmlLength: storedMeta.length,
   });
   assertContractEligibleForSignature(contractRow);
 
@@ -995,8 +999,15 @@ export async function loadSaleContractHtmlForSign(
   }
 
   const contractRow = contract as Record<string, unknown>;
-  const storedHtml = String(contractRow.generated_html || contractRow.html_content || '').trim();
-  if (storedHtml) return storedHtml;
+  const storedHtml = readStoredContractHtml(contractRow);
+  if (storedHtml) {
+    logContractHtmlGlobal('global-html', 'load_for_sign_saved', {
+      contractId,
+      column: resolveStoredContractHtmlMeta(contractRow).column,
+      length: storedHtml.length,
+    });
+    return storedHtml;
+  }
 
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
   const [{ data: tenant }, { data: customer }, { data: block }, { data: sale }] =

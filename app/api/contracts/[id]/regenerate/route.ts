@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logContractHtmlGlobal } from '@/lib/contractHtmlGlobal';
 import {
   ContractNotFoundError,
   loadSaleContractContext,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(
   request: Request,
@@ -20,7 +22,7 @@ export async function POST(
 ) {
   const startedAt = Date.now();
   const mark = (step: string, extra?: Record<string, unknown>) => {
-    console.log('[contracts/regenerate]', step, {
+    logContractHtmlGlobal('global-regenerate', step, {
       ms: Date.now() - startedAt,
       ...extra,
     });

@@ -6,8 +6,8 @@
 import fs from 'node:fs';
 import {
   readStoredContractHtml,
-  CONTRACT_HTML_PREVIEW_SELECT,
-} from '../lib/contractRegeneration';
+  resolveStoredContractHtmlMeta,
+} from '../lib/contractHtmlGlobal';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -22,23 +22,24 @@ function testReadStoredContractHtml() {
     readStoredContractHtml({ html_content: '<html>legado</html>' }) === '<html>legado</html>',
     'lê html_content legado',
   );
+  assert(
+    readStoredContractHtml({ contract_html: '<html>legacy</html>' }) === '<html>legacy</html>',
+    'lê contract_html legado',
+  );
   assert(readStoredContractHtml({}) === null, 'sem html retorna null');
+  const meta = resolveStoredContractHtmlMeta({ content: '<p>corpo cláusula promitente</p>' });
+  assert(meta.column === 'content', 'meta identifica coluna');
   console.log('OK testReadStoredContractHtml');
 }
 
 function testHtmlPreviewSelectFallback() {
   const regen = fs.readFileSync('lib/contractRegeneration.ts', 'utf8');
-  assert(
-    CONTRACT_HTML_PREVIEW_SELECT.includes('generated_html'),
-    'preview select inclui generated_html',
-  );
-  assert(
-    CONTRACT_HTML_PREVIEW_SELECT.includes('html_content'),
-    'preview select inclui html_content legado',
-  );
-  assert(!CONTRACT_HTML_PREVIEW_SELECT.includes('updated_at'), 'preview sem updated_at opcional');
-  assert(regen.includes('preview_select_fallback'), 'fallback de colunas no preview');
-  assert(regen.includes('persistGeneratedContractHtml'), 'persistência de html exportada');
+  const globalLib = fs.readFileSync('lib/contractHtmlGlobal.ts', 'utf8');
+  assert(globalLib.includes('loadContractRowForHtmlAccess'), 'load com select(*) global');
+  assert(globalLib.includes('CONTRACT_HTML_READ_COLUMNS'), 'colunas de leitura centralizadas');
+  assert(regen.includes('loadContractRowForHtmlAccess'), 'preview usa load global');
+  assert(regen.includes('persistGeneratedContractHtml'), 'persistência exportada');
+  assert(globalLib.includes('shouldLoadProjectBlocksForContract'), 'skip blocks por modelo');
   console.log('OK testHtmlPreviewSelectFallback');
 }
 
@@ -46,14 +47,15 @@ function testHtmlRouteReturnsSavedWithoutRegenerate() {
   const route = fs.readFileSync('app/api/contracts/[id]/html/route.ts', 'utf8');
   assert(route.includes('loadContractHtmlPreviewRow'), 'rota usa load enxuto');
   assert(route.includes('persistGeneratedContractHtml'), 'persiste html após gerar');
+  assert(route.includes('maxDuration'), 'rota html com maxDuration');
+  assert(route.includes('global-preview'), 'logs global-preview');
   assert(route.includes('success: true'), 'rota retorna success');
   assert(route.includes("source: 'saved'"), 'rota retorna html salvo');
   assert(route.includes('forceRefresh'), 'refresh explícito na rota');
-  assert(route.includes("mark('load_contract')"), 'log load_contract');
-  assert(route.includes('load_data'), 'log load_data');
-  assert(route.includes('generate_html'), 'log generate_html');
-  assert(route.includes('save_html'), 'log save_html');
-  assert(route.includes("mark('response'"), 'log response');
+  assert(route.includes("'load_contract'"), 'log load_contract');
+  assert(route.includes('generate_html_start'), 'log generate_html');
+  assert(route.includes("'save_html'"), 'log save_html');
+  assert(route.includes("'response'"), 'log response');
   assert(
     route.indexOf('if (savedHtml && !forceRefresh)') <
       route.indexOf('await buildContractViewHtmlForContractId'),
@@ -65,7 +67,7 @@ function testHtmlRouteReturnsSavedWithoutRegenerate() {
 function testHtmlRouteJsonErrorAndLogging() {
   const route = fs.readFileSync('app/api/contracts/[id]/html/route.ts', 'utf8');
   assert(route.includes('success: false') && route.includes('error:'), 'erro JSON claro');
-  assert(route.includes('[contracts/html]'), 'logs com prefixo [contracts/html]');
+  assert(route.includes('global-preview'), 'logs com prefixo global-preview');
   console.log('OK testHtmlRouteJsonErrorAndLogging');
 }
 
@@ -85,6 +87,8 @@ function testContractsPagePreviewNoLoop() {
   assert(page.includes('Carregando visualização do contrato'), 'loading claro');
   assert(page.includes('Não foi possível carregar a visualização do contrato'), 'erro amigável');
   assert(page.includes('Baixar PDF'), 'fallback baixar PDF');
+  assert(page.includes('fetchContractHtmlFromApi'), 'PDF busca HTML no backend');
+  assert(page.includes('global-pdf'), 'log global-pdf');
   assert(page.includes('Regenerar contrato'), 'fallback regenerar');
   assert(page.includes('setContractViewLoading(false)'), 'loading sempre limpo');
   assert(page.includes('contractViewNeedsRegenerar'), 'banner via resposta da API');
@@ -111,8 +115,8 @@ function testRetryRefetchesHtml() {
 
 function testSignatureModalAndEligibility() {
   const saleService = fs.readFileSync('lib/saleContractSignatureService.ts', 'utf8');
-  assert(saleService.includes('readStoredContractHtml'), 'assinatura usa readStoredContractHtml');
-  assert(saleService.includes('[contracts/signature]'), 'logs de assinatura');
+  assert(saleService.includes('readStoredContractHtml'), 'assinatura usa readStored/fallback global');
+  assert(saleService.includes("'global-signature'"), 'logs global-signature');
 
   const section = fs.readFileSync('components/contracts/SaleContractSignatureSection.tsx', 'utf8');
   assert(section.includes('setShareOpen(true)'), 'abre modal após envio');
@@ -120,7 +124,7 @@ function testSignatureModalAndEligibility() {
   assert(section.includes('finally') && section.includes('setSending(false)'), 'loading de envio liberado');
 
   const regenRoute = fs.readFileSync('app/api/contracts/[id]/regenerate/route.ts', 'utf8');
-  assert(regenRoute.includes('[contracts/regenerate]'), 'logs de regeneração');
+  assert(regenRoute.includes("'global-regenerate'"), 'logs global-regenerate');
 
   const page = fs.readFileSync('app/contracts/page.tsx', 'utf8');
   assert(page.includes('setRegeneratingContract(false)'), 'loading regenerar liberado');

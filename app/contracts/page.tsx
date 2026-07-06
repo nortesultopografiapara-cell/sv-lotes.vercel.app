@@ -132,6 +132,39 @@ async function resolveContractsTenantWithDb(user: any): Promise<string | null> {
   return resolveContractsTenantId(user);
 }
 
+/** Busca HTML no backend — fonte única para preview, PDF e fallback. */
+async function fetchContractHtmlFromApi(
+  contractId: string,
+  user: any,
+): Promise<string | null> {
+  const impersonatingTenantId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("impersonating_tenant_id")
+      : null;
+  const activeTenantId = await resolveContractsTenantWithDb(user);
+  const query = new URLSearchParams();
+  if (activeTenantId) query.set("activeTenantId", activeTenantId);
+  if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
+    query.set("impersonatingTenantId", impersonatingTenantId);
+  }
+  const { ok, data, error } = await fetchJsonWithTimeout<{
+    html?: string;
+    error?: string;
+  }>(
+    `/api/contracts/${contractId}/html?${query.toString()}`,
+    { credentials: "include" },
+    CONTRACTS_FETCH_TIMEOUT_MS,
+  );
+  if (ok && typeof data?.html === "string" && data.html.trim().length > 0) {
+    return data.html;
+  }
+  console.error("[contracts/global-pdf] fetch_html_failed", {
+    contractId,
+    error: error || data?.error,
+  });
+  return null;
+}
+
 /** @deprecated use loadContractsListForTenant — mantido para reload inline. */
 async function loadContractsList(
   user: any,
@@ -898,8 +931,23 @@ export default function ContractsPage() {
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
 
-      element.innerHTML =
-        resolvedContractHtml || "<p>Contrato sem conteúdo.</p>";
+      let htmlBody = resolvedContractHtml;
+      if (!htmlBody?.trim()) {
+        htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user);
+        if (htmlBody) {
+          setContractViewHtml(htmlBody);
+          setContractViewError(null);
+        }
+      }
+
+      if (!htmlBody?.trim()) {
+        alert(
+          "Não foi possível obter o conteúdo do contrato para gerar o PDF. Tente novamente ou regenerar o contrato.",
+        );
+        return;
+      }
+
+      element.innerHTML = htmlBody;
 
       let logoBase64: string | null = null;
       if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
@@ -953,16 +1001,28 @@ export default function ContractsPage() {
     }
   };
 
-  const handleImprimir = () => {
+  const handleImprimir = async () => {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
+    let htmlBody = resolvedContractHtml;
+    if (!htmlBody?.trim()) {
+      htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user);
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+      }
+    }
+    if (!htmlBody?.trim()) {
+      alert("Não foi possível carregar o conteúdo do contrato para impressão.");
+      return;
+    }
     const printWindow = window.open("", "_blank");
     if (printWindow) {
       printWindow.document.write(`
               <html>
                   <head><title>Imprimir Contrato - ${selectedContract.contract_number || ""}</title></head>
                   <body style="font-family: sans-serif; padding: 20px;">
-                      ${resolvedContractHtml || "<p>Contrato sem conteúdo.</p>"}
+                      ${htmlBody}
                       <script>window.onload = function() { window.print(); }</script>
                   </body>
               </html>

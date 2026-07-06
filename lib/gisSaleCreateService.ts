@@ -19,6 +19,7 @@ import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
 } from '@/lib/saleBrokerSnapshot';
+import { persistGeneratedContractHtml } from '@/lib/contractRegeneration';
 import { BROKERS_CONTRACT_SELECT } from '@/lib/brokersContractQuery';
 import { validateCustomerForContract } from '@/lib/validateCustomerForContract';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
@@ -496,11 +497,19 @@ export async function executeGisSaleCreate(
         }
 
         contractId = String(insertedContract.id || '');
-        if (contractHtml && !insertedContract.generated_html && contractId) {
-          await supabase
-            .from('contracts')
-            .update({ generated_html: contractHtml })
-            .eq('id', contractId);
+        if (contractHtml && contractId) {
+          const hasHtml = Boolean(
+            insertedContract.generated_html &&
+              String(insertedContract.generated_html).trim().length > 0,
+          );
+          if (!hasHtml) {
+            await persistGeneratedContractHtml(
+              supabase,
+              contractId,
+              contractHtml,
+              insertedContract as Record<string, unknown>,
+            );
+          }
         }
 
         if (contractId) {
