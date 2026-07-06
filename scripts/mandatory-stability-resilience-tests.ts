@@ -56,7 +56,7 @@ function testContractsPageUsesTimeoutHelper() {
   const page = fs.readFileSync('app/contracts/page.tsx', 'utf8');
   const signature = fs.readFileSync('components/contracts/SaleContractSignatureSection.tsx', 'utf8');
   assert(page.includes('fetchJsonWithTimeout'), 'contratos usa fetchJsonWithTimeout');
-  assert(page.includes('CONTRACT_LIST_SELECT'), 'lista enxuta');
+  assert(page.includes('loadContractsListForTenant'), 'lista via contractsListService');
   assert(!page.includes('selectedContract, tenantData, receipts'), 'sem loop receipts no preview');
   assert(!page.includes('buildContractViewHtml'), 'preview sem regeneração client-side');
   assert(signature.includes('finally'), 'assinatura libera loading no finally');

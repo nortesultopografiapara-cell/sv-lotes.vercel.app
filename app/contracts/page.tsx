@@ -77,7 +77,9 @@ import {
   buildContractPdfChromeFromTenant,
   getContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
-import "./contracts-mobile.css";
+import {
+  loadContractsListForTenant,
+} from "@/lib/contractsListService";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
@@ -120,111 +122,32 @@ async function resolveContractsTenantWithDb(user: any): Promise<string | null> {
   if (authUserId) {
     const { data, error } = await supabase
       .from("users")
-      .select("tenant_id")
+      .select("tenant_id, company_id")
       .eq("id", authUserId)
       .maybeSingle();
     if (!error && data?.tenant_id) return data.tenant_id;
+    if (!error && data?.company_id) return data.company_id;
   }
 
   return resolveContractsTenantId(user);
 }
 
-/** Lista sem generated_html — evita payload pesado por linha. */
-const CONTRACT_LIST_SELECT = [
-  "id",
-  "contract_number",
-  "status",
-  "signature_status",
-  "created_at",
-  "customer_id",
-  "block_id",
-  "project_id",
-  "sale_id",
-  "company_id",
-  "tenant_id",
-  "customer_name",
-  "project_name_snapshot",
-  "location_display",
-  "sale_value",
-  "down_payment",
-  "installments",
-  "version",
-  "regenerated_from",
-  "broker_id",
-  "plan_type",
-  "contract_model",
-  "needs_regenerar",
-].join(", ");
-
-const FINANCE_RECEIPTS_LIST_SELECT =
-  "id, sale_id, due_date, amount, status, installment_number, description, payment_date";
-
-/**
- * Carrega contratos sem joins — evita falha silenciosa do PostgREST.
- * Tenta company_id, tenant_id, .or e por último sem filtro (admin).
- */
+/** @deprecated use loadContractsListForTenant — mantido para reload inline. */
 async function loadContractsList(
   user: any,
   tenantId: string | null,
-): Promise<any[]> {
-  const seen = new Set<string>();
-  const merged: any[] = [];
-
-  const pushRows = (rows: any[] | null | undefined) => {
-    if (!rows?.length) return;
-    for (const row of rows) {
-      const id = row?.id;
-      if (id) {
-        if (seen.has(id)) continue;
-        seen.add(id);
-      }
-      merged.push(row);
-    }
-  };
-
-  const runQuery = async (
-    label: string,
-    build: () => ReturnType<typeof supabase.from>,
-  ) => {
-    const res = await build();
-    console.log("[CONTRATOS] contratos encontrados", {
-      via: label,
-      count: res.data?.length ?? 0,
-    });
-    if (res.error) {
-      console.error("[CONTRATOS] erro", { via: label, message: res.error.message, code: res.error.code });
-    }
-    pushRows(res.data);
-    return res;
-  };
-
-  if (tenantId) {
-    await runQuery("tenant_or_company", () =>
-      supabase
-        .from("contracts")
-        .select(CONTRACT_LIST_SELECT)
-        .or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`)
-        .order("created_at", { ascending: false }),
-    );
-  }
-
-  if (!merged.length && user && PLATFORM_ADMIN_ROLES.includes(user.role)) {
-    await runQuery("admin_sem_filtro", () =>
-      supabase
-        .from("contracts")
-        .select(CONTRACT_LIST_SELECT)
-        .order("created_at", { ascending: false }),
-    );
-  }
-
-  merged.sort((a, b) => {
-    const ta = new Date(a.created_at || 0).getTime();
-    const tb = new Date(b.created_at || 0).getTime();
-    return tb - ta;
+): Promise<{ rows: any[]; error: string | null }> {
+  const isPlatformAdmin =
+    Boolean(user?.role && PLATFORM_ADMIN_ROLES.includes(user.role));
+  const result = await loadContractsListForTenant(supabase, {
+    tenantId,
+    isPlatformAdmin,
   });
-
-  return merged;
+  return { rows: result.rows, error: result.error };
 }
+
+const FINANCE_RECEIPTS_LIST_SELECT =
+  "id, sale_id, due_date, amount, status, installment_number, description, payment_date";
 
 /** Oculta versões substituídas na lista principal (histórico fica na aba do contrato). */
 function isContractVisibleInList(c: any): boolean {
@@ -514,6 +437,7 @@ export default function ContractsPage() {
   const ownerReadOnly = isOwnerRole(user?.role);
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listLoadError, setListLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedContract, setSelectedContract] = useState<any>(null);
   const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(
@@ -608,10 +532,23 @@ export default function ContractsPage() {
         if (!resolvedTenantId && !isPlatformAdmin) {
           console.warn("[CONTRATOS] erro — tenant não identificado no perfil");
           setContracts([]);
+          setListLoadError("Empresa não identificada. Faça login novamente.");
           return;
         }
 
-        const rawRows = await loadContractsList(user, resolvedTenantId);
+        const { rows: rawRows, error: listError } = await loadContractsList(
+          user,
+          resolvedTenantId,
+        );
+        if (listError && rawRows.length === 0) {
+          setContracts([]);
+          setListLoadError(
+            formatClientFetchError({ apiError: listError }) ||
+              "Não foi possível carregar a lista de contratos.",
+          );
+          return;
+        }
+        setListLoadError(null);
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
         const ownerContractProjectIds = ownerCtx.isOwner
           ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'contracts')
@@ -635,6 +572,11 @@ export default function ContractsPage() {
       } catch (e) {
         console.error("[CONTRATOS] erro", e);
         setContracts([]);
+        setListLoadError(
+          formatClientFetchError({
+            networkMessage: e instanceof Error ? e.message : undefined,
+          }),
+        );
       } finally {
         setLoading(false);
       }
@@ -854,7 +796,18 @@ export default function ContractsPage() {
   const reloadContractsList = async () => {
     if (!user) return [];
     const resolvedTenantId = await resolveContractsTenantWithDb(user);
-    const rawRows = await loadContractsList(user, resolvedTenantId);
+    const { rows: rawRows, error: listError } = await loadContractsList(
+      user,
+      resolvedTenantId,
+    );
+    if (listError) {
+      setListLoadError(
+        formatClientFetchError({ apiError: listError }) ||
+          "Não foi possível recarregar contratos.",
+      );
+    } else {
+      setListLoadError(null);
+    }
     const visible = rawRows.filter(isContractVisibleInList);
     return enrichContractsWithRelations(visible);
   };
@@ -1823,8 +1776,25 @@ export default function ContractsPage() {
                 <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
               </div>
             ) : filteredContracts.length === 0 ? (
-              <div className="text-center text-[var(--text-muted)] p-8 text-sm">
-                Nenhum contrato encontrado.
+              <div className="text-center p-8 text-sm">
+                {listLoadError ? (
+                  <>
+                    <p className="text-red-400 font-medium mb-2">
+                      {listLoadError}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="text-[var(--color-primary)] hover:underline text-xs"
+                    >
+                      Tentar novamente
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[var(--text-muted)]">
+                    Nenhum contrato encontrado.
+                  </span>
+                )}
               </div>
             ) : (
               filteredContracts.map((c) => {
