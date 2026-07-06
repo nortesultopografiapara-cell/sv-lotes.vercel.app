@@ -11,6 +11,7 @@ import type {
 } from '@/lib/imports/modules/legacy-contracts/types';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 type ResolveManualLinkBody = LegacyContractManualLinkInput & {
   lineNumber?: number;
@@ -58,7 +59,17 @@ export async function POST(request: Request) {
       resolved.resolution,
     );
 
-    return NextResponse.json({ row });
+    return NextResponse.json({
+      row,
+      projectId: resolved.resolution.project_id,
+      lotId: resolved.resolution.block_id,
+      saleId: resolved.resolution.sale_id,
+      customerId: resolved.resolution.customer_id,
+      customerName: resolved.resolution.customer_name,
+      projectName: resolved.resolution.project_name,
+      block: resolved.resolution.block,
+      lot: resolved.resolution.lot,
+    });
   } catch (err) {
     console.error('[data-migration/legacy-contracts/resolve-manual-link]', err);
     return NextResponse.json(

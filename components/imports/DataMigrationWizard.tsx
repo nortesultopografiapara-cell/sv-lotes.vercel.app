@@ -413,8 +413,11 @@ export function DataMigrationWizard() {
   const handleLegacyManualLinkConfirm = async (
     values: LegacyContractManualLinkFormValues,
   ) => {
-    if (!manualLinkRow) return;
+    if (!manualLinkRow) {
+      throw new Error('Linha de importação não encontrada.');
+    }
 
+    const lineNumber = manualLinkRow.lineNumber;
     const updatedRow = await resolveLegacyContractManualLinkRemote(
       values,
       activeTenantId,
@@ -422,7 +425,7 @@ export function DataMigrationWizard() {
     );
 
     setState((prev) =>
-      updateLegacyContractManualLinkRow(prev, manualLinkRow.lineNumber, updatedRow),
+      updateLegacyContractManualLinkRow(prev, lineNumber, updatedRow),
     );
     setManualLinkRow(null);
   };
