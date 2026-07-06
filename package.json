@@ -40,7 +40,8 @@
     "test:data-migration": "tsx scripts/mandatory-data-migration-tests.ts && tsx scripts/mandatory-data-migration-customers-tests.ts && tsx scripts/mandatory-data-migration-brokers-tests.ts && tsx scripts/mandatory-data-migration-sales-tests.ts && tsx scripts/mandatory-data-migration-legacy-contracts-tests.ts",
     "test:data-migration-brokers": "tsx scripts/mandatory-data-migration-brokers-tests.ts",
     "test:data-migration-sales": "tsx scripts/mandatory-data-migration-sales-tests.ts",
-    "test:data-migration-legacy-contracts": "tsx scripts/mandatory-data-migration-legacy-contracts-tests.ts"
+    "test:data-migration-legacy-contracts": "tsx scripts/mandatory-data-migration-legacy-contracts-tests.ts",
+    "test:legacy-contracts-module": "tsx scripts/mandatory-legacy-contracts-module-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

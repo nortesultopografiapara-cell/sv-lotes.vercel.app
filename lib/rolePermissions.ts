@@ -131,6 +131,7 @@ export const BROKER_BLOCKED_ROUTE_PREFIXES = [
   '/saas-finance',
   '/offline-sync',
   '/data-migration',
+  '/legacy-contracts',
   '/reports',
 ] as const;
 

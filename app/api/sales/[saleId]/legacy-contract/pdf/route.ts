@@ -33,7 +33,10 @@ export async function GET(
     }
 
     const expectedPrefix = `${access.tenantId}/`;
-    if (!document.storage_path.startsWith(expectedPrefix)) {
+    if (
+      !document.storage_path.startsWith(expectedPrefix) &&
+      !document.storage_path.includes(`/${access.tenantId}/`)
+    ) {
       return NextResponse.json({ error: 'Arquivo fora do escopo do tenant.' }, { status: 403 });
     }
 

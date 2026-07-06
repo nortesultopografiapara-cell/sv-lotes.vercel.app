@@ -16,8 +16,9 @@ export async function executeImportableLegacyContractRow(params: {
   userId: string;
   row: ValidatedLegacyContractRow;
   pdfIndex: LegacyContractPdfIndex;
+  migrationId?: string | null;
 }): Promise<{ ok: true; documentId: string } | { ok: false; error: string }> {
-  const { row, pdfIndex, admin, tenantId, userId } = params;
+  const { row, pdfIndex, admin, tenantId, userId, migrationId } = params;
 
   if (!row.importable || !row.sale_id) {
     return { ok: false, error: 'Linha não importável.' };
@@ -38,6 +39,9 @@ export async function executeImportableLegacyContractRow(params: {
       admin,
       tenantId,
       saleId: row.sale_id,
+      projectId: row.project_id,
+      quadra: row.quadra,
+      lote: row.lote,
       fileName: row.nome_arquivo_pdf,
       pdfBuffer,
     });
@@ -49,6 +53,9 @@ export async function executeImportableLegacyContractRow(params: {
     };
   }
 
+  const linkType = row.manual_link_applied ? 'manual' : 'automatic';
+  const notes = [row.observacoes, row.manual_link_notes].filter(Boolean).join(' | ') || null;
+
   const { data, error } = await admin
     .from('legacy_contract_documents')
     .insert([
@@ -59,13 +66,19 @@ export async function executeImportableLegacyContractRow(params: {
         customer_id: row.customer_id,
         project_id: row.project_id,
         block_id: row.block_id,
+        quadra: row.quadra || null,
+        lote: row.lote || null,
         original_file_name: row.nome_arquivo_pdf,
         storage_path: storagePath,
         contract_number: row.numero_contrato_antigo || null,
         contract_date: row.data_contrato,
         status: row.status_contrato,
-        notes: row.observacoes || null,
+        notes,
+        link_type: linkType,
+        source: 'legacy_migration',
+        migration_id: migrationId || null,
         created_by: userId,
+        is_active: true,
       },
     ])
     .select('id')
