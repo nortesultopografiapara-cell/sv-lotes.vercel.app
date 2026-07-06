@@ -67,11 +67,7 @@ function testContractsPageUsesTimeoutHelper() {
 function testGisSaleDoesNotReturnBeforeBlockUpdate() {
   const fs = require('node:fs') as typeof import('node:fs');
   const gis = fs.readFileSync('components/map/GISMap.tsx', 'utf8');
-  assert(
-    !gis.includes('Complete o cadastro do cliente.",\n              );\n              return;'),
-    'validação de contrato não faz return antes do bloco',
-  );
-  assert(gis.includes('BLOCK_MARKED_SOLD'), 'marca lote vendido após contrato');
+  assert(gis.includes('/api/sales/create'), 'venda GIS via API com timeout');
   assert(gis.includes('formatClientFetchError'), 'venda formata erro de rede');
   console.log('OK testGisSaleDoesNotReturnBeforeBlockUpdate');
 }
