@@ -15,6 +15,12 @@ import {
 } from '../lib/legacy-contracts/permissions';
 import { LEGACY_CONTRACTS_ROUTE } from '../lib/legacy-contracts/constants';
 import { isBrokerBlockedRoute } from '../lib/rolePermissions';
+import { buildLegacyContractTenantOrFilter } from '../lib/legacy-contracts/tenantScope';
+import {
+  isLegacyContractSchemaColumnError,
+  LEGACY_CONTRACT_BASE_SELECT,
+  LEGACY_CONTRACT_EXTENDED_SELECT,
+} from '../lib/legacy-contracts/schemaCompat';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -33,6 +39,43 @@ function testPermissions() {
   assert(canManageLegacyContractsModule('ADMIN'), 'ADMIN gerencia');
   assert(!canManageLegacyContractsModule('OWNER'), 'OWNER não exclui');
   console.log('OK testPermissions');
+}
+
+function testTenantAndSchemaCompat() {
+  const tenantFilter = buildLegacyContractTenantOrFilter('tenant-abc');
+  assert(tenantFilter.includes('company_id.eq.tenant-abc'), 'filtro company_id');
+  assert(tenantFilter.includes('tenant_id.eq.tenant-abc'), 'filtro tenant_id');
+
+  assert(
+    isLegacyContractSchemaColumnError('column legacy_contract_documents.link_type does not exist'),
+    'detecta coluna ausente',
+  );
+  assert(!isLegacyContractSchemaColumnError('permission denied'), 'ignora outros erros');
+  assert(LEGACY_CONTRACT_BASE_SELECT.includes('original_file_name'), 'select base');
+  assert(LEGACY_CONTRACT_EXTENDED_SELECT.includes('link_type'), 'select estendido');
+
+  console.log('OK testTenantAndSchemaCompat');
+}
+
+function testListResilience() {
+  const listService = read('lib/legacy-contracts/listService.ts');
+  const listClient = read('lib/legacy-contracts/listClient.ts');
+  const pageClient = read('components/legacy-contracts/LegacyContractsPageClient.tsx');
+
+  assert(listService.includes('applyTenantScope'), 'listagem usa escopo tenant');
+  assert(listService.includes('listWithSchemaFallback'), 'fallback de schema');
+  assert(listClient.includes('AbortController'), 'timeout na listagem');
+  assert(pageClient.includes('fetchLegacyContractList'), 'page usa cliente com timeout');
+  assert(pageClient.includes('resolveActiveTenantId'), 'tenant ativo na página');
+  assert(pageClient.includes('Tentar novamente'), 'retry em erro');
+  assert(executeRowIncludesFallback(), 'insert com fallback');
+
+  console.log('OK testListResilience');
+}
+
+function executeRowIncludesFallback(): boolean {
+  const executeRow = read('lib/imports/modules/legacy-contracts/executeRow.ts');
+  return executeRow.includes('isLegacyContractSchemaColumnError') && executeRow.includes('extended: false');
 }
 
 function testStoragePaths() {
@@ -88,11 +131,15 @@ function testRoutesAndUi() {
 
   assert(isBrokerBlockedRoute('/legacy-contracts'), 'broker bloqueado na rota');
 
+  assert(executeRow.includes('isLegacyContractSchemaColumnError'), 'execute fallback schema');
+
   console.log('OK testRoutesAndUi');
 }
 
 function main() {
   testPermissions();
+  testTenantAndSchemaCompat();
+  testListResilience();
   testStoragePaths();
   testRoutesAndUi();
   console.log('\nTodos os testes do módulo Contratos Antigos passaram.');
