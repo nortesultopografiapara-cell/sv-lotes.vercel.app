@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LEGACY_CONTRACTS_STORAGE_BUCKET } from '@/lib/imports/modules/legacy-contracts/constants';
+import { normalizeLegacyContractStoragePath } from '@/lib/legacy-contracts/storagePathAccess';
 import { resolveCallerProfile } from '@/lib/supabase/server';
 
 const PLATFORM_ADMIN_ROLES = new Set([
@@ -124,13 +125,22 @@ export async function createLegacyContractSignedPdfUrl(
   storagePath: string,
   expiresInSeconds = 60 * 60,
 ): Promise<string> {
+  const normalizedPath = normalizeLegacyContractStoragePath(storagePath);
+  if (!normalizedPath) {
+    throw new LegacyContractDocumentError('Caminho do PDF ausente.', 404);
+  }
+
   const { data, error } = await admin.storage
     .from(LEGACY_CONTRACTS_STORAGE_BUCKET)
-    .createSignedUrl(storagePath, expiresInSeconds);
+    .createSignedUrl(normalizedPath, expiresInSeconds);
 
   if (error || !data?.signedUrl) {
+    const message = error?.message || '';
+    if (/not found|object not found|does not exist|no such key/i.test(message)) {
+      throw new LegacyContractDocumentError('PDF não encontrado no armazenamento.', 404);
+    }
     throw new LegacyContractDocumentError(
-      error?.message || 'Não foi possível gerar URL segura para o PDF.',
+      message || 'Não foi possível gerar URL segura para o PDF.',
       404,
     );
   }

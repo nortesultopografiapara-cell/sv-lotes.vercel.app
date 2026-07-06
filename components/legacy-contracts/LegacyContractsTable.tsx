@@ -8,6 +8,7 @@ type LegacyContractsTableProps = {
   loading: boolean;
   canManage: boolean;
   deletingId: string | null;
+  downloadingId?: string | null;
   onView: (item: LegacyContractListItem) => void;
   onDownload: (item: LegacyContractListItem) => void;
   onDelete: (item: LegacyContractListItem) => void;
@@ -29,6 +30,7 @@ export function LegacyContractsTable({
   loading,
   canManage,
   deletingId,
+  downloadingId = null,
   onView,
   onDownload,
   onDelete,
@@ -111,10 +113,15 @@ export function LegacyContractsTable({
                   <button
                     type="button"
                     title="Baixar PDF"
+                    disabled={downloadingId === item.id}
                     onClick={() => onDownload(item)}
-                    className="rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--bg-main)]"
+                    className="rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--bg-main)] disabled:opacity-50"
                   >
-                    <Download className="w-4 h-4" />
+                    {downloadingId === item.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                   </button>
                   {item.sale_id ? (
                     <a
