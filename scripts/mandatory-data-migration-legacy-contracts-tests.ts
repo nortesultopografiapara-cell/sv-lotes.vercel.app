@@ -59,6 +59,7 @@ import {
   applyManualLinkOverridesToValidationRows,
   buildLegacyContractManualLinkOverrides,
   canLegacyContractRowBeManuallyLinked,
+  LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE,
   recalculateLegacyContractImportSummary,
   resolveLegacyContractManualLink,
 } from '../lib/imports/modules/legacy-contracts/manualLink';
@@ -701,7 +702,122 @@ function testManualLink() {
   const executeRoute = read('app/api/data-migration/legacy-contracts/execute/route.ts');
   assert(executeRoute.includes('manualLinkOverrides'), 'execute recebe overrides');
 
+  const recantoContext = buildRecantoPrimaveraManualLinkContext();
+  const recantoResolved = resolveLegacyContractManualLink(recantoContext, {
+    project_id: 'proj-recanto',
+    quadra: 'QD 01',
+    lote: 'Lote 20',
+    customer_name: 'severino jose de frança',
+  });
+  assert(recantoResolved.ok, 'recanto QD 01 / Lote 20 resolve');
+  if (recantoResolved.ok) {
+    assert(recantoResolved.resolution.sale_id === 'sale-recanto-20', 'venda recanto lote 20');
+    assert(
+      recantoResolved.resolution.customer_name === 'SEVERINO JOSE DE FRANÇA',
+      'cliente da venda no lote',
+    );
+  }
+
+  const wrongNameResolved = resolveLegacyContractManualLink(recantoContext, {
+    project_id: 'proj-recanto',
+    quadra: '01',
+    lote: '20',
+    customer_name: 'nome divergente apenas registro',
+  });
+  assert(wrongNameResolved.ok, 'vínculo por lote mesmo com nome divergente');
+
+  const notFound = resolveLegacyContractManualLink(recantoContext, {
+    project_id: 'proj-recanto',
+    quadra: 'QD 99',
+    lote: 'Lote 99',
+    customer_name: 'cliente inexistente',
+  });
+  assert(!notFound.ok, 'lote inexistente falha');
+  if (!notFound.ok) {
+    assert(
+      notFound.error === LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE,
+      'mensagem amigável sem venda',
+    );
+  }
+
+  const client = read('lib/imports/helpers/legacyContractManualLinkClient.ts');
+  assert(client.includes('AbortController'), 'timeout no cliente manual link');
+  assert(client.includes('LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE'), 'mensagem no cliente');
+
+  const resolveRoute = read('app/api/data-migration/legacy-contracts/resolve-manual-link/route.ts');
+  assert(resolveRoute.includes('maxDuration'), 'maxDuration na rota manual link');
+  assert(resolveRoute.includes('authorizeDataMigrationRequest'), 'auth na rota manual link');
+
   console.log('OK testManualLink');
+}
+
+function buildRecantoPrimaveraManualLinkContext(): LegacyContractImportContext {
+  const customers = buildSalesCustomerIndex([
+    {
+      id: 'cust-severino',
+      name: 'SEVERINO JOSE DE FRANÇA',
+      cpf_cnpj: '00000000000',
+      email: 'severino@teste.com',
+      phone: '11999990000',
+    },
+  ]);
+  const projects = buildSalesProjectIndex([
+    { id: 'proj-recanto', name: 'CHACREAMENTO RECANTO PRIMAVERA I' },
+  ]);
+  const { index: blocks } = buildSalesBlockIndex([
+    {
+      id: 'block-recanto-20',
+      project_id: 'proj-recanto',
+      block_name: 'QD 01',
+      number: '20',
+      lot_number: '20',
+      status: 'Vendido',
+      sale_id: 'sale-recanto-20',
+      customer_id: 'cust-severino',
+      price: 90000,
+    },
+  ]);
+
+  const salesById = new Map([
+    [
+      'sale-recanto-20',
+      {
+        id: 'sale-recanto-20',
+        customer_id: 'cust-severino',
+        project_id: 'proj-recanto',
+        block_id: 'block-recanto-20',
+        status: 'ACTIVE',
+      },
+    ],
+  ]);
+
+  return {
+    customers,
+    customersById: new Map([
+      ['cust-severino', { id: 'cust-severino', name: 'SEVERINO JOSE DE FRANÇA' }],
+    ]),
+    projects,
+    projectsById: new Map([
+      ['proj-recanto', { id: 'proj-recanto', name: 'CHACREAMENTO RECANTO PRIMAVERA I' }],
+    ]),
+    blocks,
+    blocksById: new Map(),
+    blocksByProject: new Map(),
+    salesByCustomerBlock: new Map([
+      [
+        buildLegacyContractSaleKey('cust-severino', 'block-recanto-20'),
+        {
+          id: 'sale-recanto-20',
+          customer_id: 'cust-severino',
+          project_id: 'proj-recanto',
+          block_id: 'block-recanto-20',
+          status: 'ACTIVE',
+        },
+      ],
+    ]),
+    salesById,
+    legacyDocumentBySaleId: new Map(),
+  };
 }
 
 function testWizardUploadStepConstraints() {

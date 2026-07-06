@@ -2,10 +2,13 @@
  * Vinculação manual — contratos antigos (Migração de Dados).
  */
 
-import { lookupBlockInIndex } from '@/lib/imports/modules/sales/blockMatch';
+import {
+  getBlockLoteRaw,
+  getBlockQuadraRaw,
+  lookupBlockInIndex,
+} from '@/lib/imports/modules/sales/blockMatch';
 import { lookupLegacyContractCustomerByName } from '@/lib/imports/modules/legacy-contracts/lookupIndex';
 import {
-  buildLegacyContractSaleKey,
   normalizeImportEntityName,
   normalizeImportLoteNumber,
   normalizeImportQuadra,
@@ -15,17 +18,58 @@ import type {
   LegacyContractImportSummary,
   LegacyContractManualLinkInput,
   LegacyContractManualLinkOverride,
+  LegacyContractSaleRecord,
   ValidatedLegacyContractRow,
 } from '@/lib/imports/modules/legacy-contracts/types';
+
+export const LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE =
+  'Não foi possível localizar uma venda para este empreendimento, quadra, lote e cliente.';
 
 export type LegacyContractManualLinkResolution = {
   project_id: string;
   project_name: string;
   block_id: string;
+  block: string;
+  lot: string;
   customer_id: string;
   customer_name: string;
   sale_id: string;
 };
+
+function isCancelledLegacyContractSale(status: string | null | undefined): boolean {
+  const normalized = String(status || '').toUpperCase();
+  return normalized === 'CANCELLED' || normalized === 'CANCELADO';
+}
+
+function findLegacyContractSaleByBlockId(
+  context: LegacyContractImportContext,
+  blockId: string,
+): LegacyContractSaleRecord | null {
+  for (const sale of context.salesById.values()) {
+    if (sale.block_id !== blockId) continue;
+    if (isCancelledLegacyContractSale(sale.status)) continue;
+    return sale;
+  }
+  return null;
+}
+
+function resolveLegacyContractCustomerFromSale(
+  context: LegacyContractImportContext,
+  sale: LegacyContractSaleRecord,
+  inputCustomerName: string,
+): { id: string; name: string } | null {
+  if (sale.customer_id) {
+    const fromSale = context.customersById.get(sale.customer_id);
+    if (fromSale) return fromSale;
+  }
+
+  const trimmedName = inputCustomerName.trim();
+  if (trimmedName) {
+    return lookupLegacyContractCustomerByName(context, trimmedName);
+  }
+
+  return null;
+}
 
 export function canLegacyContractRowBeManuallyLinked(
   row: ValidatedLegacyContractRow,
@@ -65,30 +109,17 @@ export function resolveLegacyContractManualLink(
     );
 
   if (!block) {
-    return {
-      ok: false,
-      error: 'Quadra/lote não encontrado no empreendimento informado.',
-    };
+    return { ok: false, error: LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE };
   }
 
-  const customer = lookupLegacyContractCustomerByName(context, customerName);
-  if (!customer) {
-    return {
-      ok: false,
-      error: 'Cliente não encontrado. Verifique o nome informado.',
-    };
-  }
-
-  const sale =
-    context.salesByCustomerBlock.get(
-      buildLegacyContractSaleKey(customer.id, block.id),
-    ) || null;
-
+  const sale = findLegacyContractSaleByBlockId(context, block.id);
   if (!sale) {
-    return {
-      ok: false,
-      error: 'Venda não encontrada para este cliente no lote informado.',
-    };
+    return { ok: false, error: LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE };
+  }
+
+  const customer = resolveLegacyContractCustomerFromSale(context, sale, customerName);
+  if (!customer) {
+    return { ok: false, error: LEGACY_MANUAL_LINK_SALE_NOT_FOUND_MESSAGE };
   }
 
   if (context.legacyDocumentBySaleId.has(sale.id)) {
@@ -98,12 +129,17 @@ export function resolveLegacyContractManualLink(
     };
   }
 
+  const blockLabel = getBlockQuadraRaw(block) || quadra;
+  const lotLabel = getBlockLoteRaw(block) || lote;
+
   return {
     ok: true,
     resolution: {
       project_id: project.id,
       project_name: project.name,
       block_id: block.id,
+      block: blockLabel,
+      lot: lotLabel,
       customer_id: customer.id,
       customer_name: customer.name,
       sale_id: sale.id,
@@ -120,6 +156,12 @@ export function applyLegacyContractManualLinkToRow(
   const mergedObservacoes = observacoes
     ? [row.observacoes, observacoes].filter(Boolean).join(' | ')
     : row.observacoes;
+  const inputCustomerNormalized = normalizeImportEntityName(input.customer_name);
+  const resolvedCustomerNormalized = normalizeImportEntityName(resolution.customer_name);
+  const customerNameDiffers =
+    Boolean(inputCustomerNormalized) &&
+    Boolean(resolvedCustomerNormalized) &&
+    inputCustomerNormalized !== resolvedCustomerNormalized;
 
   return {
     ...row,
@@ -145,6 +187,14 @@ export function applyLegacyContractManualLinkToRow(
         level: 'info',
         text: 'Vinculado manualmente durante a migração.',
       },
+      ...(customerNameDiffers
+        ? [
+            {
+              level: 'info' as const,
+              text: `Nome informado ("${input.customer_name.trim()}") difere do cliente da venda ("${resolution.customer_name}").`,
+            },
+          ]
+        : []),
       ...(mergedObservacoes
         ? [{ level: 'info' as const, text: `Observações: ${mergedObservacoes}` }]
         : []),
