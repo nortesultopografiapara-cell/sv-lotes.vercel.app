@@ -125,8 +125,19 @@ export const RECANTO_CONTRACT_PDF_PRINT_CSS = `
     break-inside: auto;
     margin-bottom: 10px;
   }
+  .sv-contract-recanto-primavera p {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+    orphans: 2;
+    widows: 2;
+  }
   .sv-contract-recanto-primavera .contract-payment-block,
   .sv-contract-recanto-primavera .contract-clause--electronic-signature {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+  .sv-contract-recanto-primavera .contract-payment-block table,
+  .sv-contract-recanto-primavera .contract-payment-block tr {
     page-break-inside: avoid;
     break-inside: avoid-page;
   }
@@ -141,6 +152,8 @@ export const RECANTO_CONTRACT_PDF_PRINT_CSS = `
     text-align: center;
   }
   .sv-contract-recanto-primavera .contract-signatures .signature-slot {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
     margin-bottom: 18px;
     text-align: center;
   }
@@ -172,14 +185,28 @@ export const RECANTO_CONTRACT_PDF_PRINT_CSS = `
 </style>
 `;
 
+export type ContractHtml2pdfPagebreakOptions = {
+  mode: string[];
+  avoid?: string[];
+};
+
 export type ContractHtml2pdfOptions = {
   margin: number[];
   filename: string;
   image: { type: string; quality: number };
   html2canvas: { scale: number; useCORS: boolean };
   jsPDF: { unit: string; format: string; orientation: string };
-  pagebreak: { mode: string[] };
+  pagebreak: ContractHtml2pdfPagebreakOptions;
 };
+
+/** Seletores que o html2pdf deve manter inteiros (evita linha cortada ao rasterizar). */
+export const RECANTO_CONTRACT_HTML2PDF_AVOID_SELECTORS = [
+  '.sv-contract-recanto-primavera p',
+  '.sv-contract-recanto-primavera .contract-payment-block',
+  '.sv-contract-recanto-primavera .contract-signatures',
+  '.sv-contract-recanto-primavera .contract-clause--electronic-signature',
+  '.sv-contract-recanto-primavera .signature-slot',
+] as const;
 
 /** Opções html2pdf — sem avoid-all (evita página vazia extra no final). */
 export function getContractHtml2pdfOptions(
@@ -193,6 +220,32 @@ export function getContractHtml2pdfOptions(
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     pagebreak: { mode: ["css"] },
   };
+}
+
+/**
+ * Recanto — evita corte de linha entre páginas (html2canvas fatia no meio do parágrafo
+ * quando só a cláusula inteira está com break-inside:auto).
+ */
+export function getRecantoContractHtml2pdfOptions(
+  filename: string,
+): ContractHtml2pdfOptions {
+  return {
+    ...getContractHtml2pdfOptions(filename),
+    pagebreak: {
+      mode: ['css', 'legacy'],
+      avoid: [...RECANTO_CONTRACT_HTML2PDF_AVOID_SELECTORS],
+    },
+  };
+}
+
+export function resolveContractHtml2pdfOptions(
+  tenant: Record<string, unknown> | null | undefined,
+  filename: string,
+): ContractHtml2pdfOptions {
+  if (isRecantoPrimaveraContractModel(tenant)) {
+    return getRecantoContractHtml2pdfOptions(filename);
+  }
+  return getContractHtml2pdfOptions(filename);
 }
 
 type PdfWithText = {

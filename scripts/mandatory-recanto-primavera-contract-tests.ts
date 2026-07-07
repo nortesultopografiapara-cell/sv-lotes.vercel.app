@@ -340,8 +340,20 @@ function testRecantoPrintCssAllowsClauseFlow() {
     'cláusulas com fluxo contínuo',
   );
   assert(
+    printCss.includes('.sv-contract-recanto-primavera p'),
+    'parágrafos com break-inside avoid',
+  );
+  assert(
     printCss.includes('contract-payment-block'),
     'tabela financeira permanece junta',
+  );
+  assert(
+    printCss.includes('getRecantoContractHtml2pdfOptions'),
+    'opções html2pdf Recanto',
+  );
+  assert(
+    printCss.includes("mode: ['css', 'legacy']"),
+    'html2pdf legacy+css para evitar corte de linha',
   );
   console.log('OK testRecantoPrintCssAllowsClauseFlow');
 }
