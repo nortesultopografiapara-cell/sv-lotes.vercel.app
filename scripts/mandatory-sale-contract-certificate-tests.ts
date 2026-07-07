@@ -69,7 +69,10 @@ function testPublicUrlHelpers() {
     resolveSaleContractCertificateQrUrl(token, stored, validation) === validation,
     'qr usa url de validação',
   );
-  assert(buildSaleSignUrl(token).includes('/sign/sale/'), 'buildSaleSignUrl');
+  const signUrl = buildSaleSignUrl(token);
+  assert(signUrl.includes('/sign/sale/'), 'buildSaleSignUrl');
+  assert(signUrl.startsWith('https://www.svlotes.com.br/'), 'buildSaleSignUrl usa produção');
+  assert(!signUrl.includes('vercel.app'), 'buildSaleSignUrl sem preview Vercel');
   console.log('OK testPublicUrlHelpers');
 }
 

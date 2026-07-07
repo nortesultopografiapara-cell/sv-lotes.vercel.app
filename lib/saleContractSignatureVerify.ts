@@ -4,7 +4,7 @@
  */
 
 import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
-import { buildSaleSignUrl } from '@/lib/saleContractUrls';
+import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 
 export const SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE =
   'CERTIFICADO DIGITAL DE ASSINATURA SV LOTES';
@@ -40,7 +40,7 @@ export function resolveSaleContractCertificateQrUrl(
 
 /** Rota de assinatura (fluxo interativo). */
 export function resolveSaleContractSignPageUrl(token: string): string {
-  return buildSaleSignUrl(token);
+  return resolveSaleSignUrl(token);
 }
 
 /** @deprecated Use SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE */
