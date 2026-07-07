@@ -33,6 +33,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       rows: result.rows,
       warnings: result.errors,
+      rawCount: result.rawCount,
+      filteredCount: result.filteredCount,
     });
   } catch (e: unknown) {
     perf.finish();

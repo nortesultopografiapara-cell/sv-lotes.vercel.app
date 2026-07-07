@@ -2,20 +2,56 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isMasterAuditEntry,
   mapAuditLogRow,
+  normalizeAuditLogRow,
+  resolveAuditCompanyId,
   type MasterAuditRow,
+  type RawAuditLogRow,
 } from '@/lib/masterAudit';
 import { logMasterApiStep } from '@/lib/masterApiPerfLog';
 
 export type MasterAuditLoadResult = {
   rows: MasterAuditRow[];
   errors: string[];
+  rawCount: number;
+  filteredCount: number;
 };
+
+const AUDIT_LOG_SELECT_PRIMARY =
+  'id, action, module, description, details, created_at, tenant_id, company_id, user_id, entity_type, old_data, new_data';
+
+const AUDIT_LOG_SELECT_FALLBACK =
+  'id, action, module, description, created_at, tenant_id, company_id, user_id';
 
 export function resolveUserDisplayName(user: {
   full_name?: string | null;
+  name?: string | null;
   email?: string | null;
 }): string {
-  return user.full_name || user.email || 'Usuário';
+  return user.full_name || user.name || user.email || 'Usuário';
+}
+
+async function queryAuditLogs(supabase: SupabaseClient) {
+  const primary = await supabase
+    .from('audit_logs')
+    .select(AUDIT_LOG_SELECT_PRIMARY)
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (!primary.error) return primary;
+
+  const message = primary.error.message || '';
+  const missingColumn =
+    message.includes('column') ||
+    message.includes('does not exist') ||
+    message.includes('Could not find');
+
+  if (!missingColumn) return primary;
+
+  return supabase
+    .from('audit_logs')
+    .select(AUDIT_LOG_SELECT_FALLBACK)
+    .order('created_at', { ascending: false })
+    .limit(500);
 }
 
 export async function loadMasterAuditLogs(
@@ -24,23 +60,19 @@ export async function loadMasterAuditLogs(
   const scope = 'loadMasterAuditLogs';
   const errors: string[] = [];
 
-  const auditColumns =
-    'id, action, module, description, created_at, tenant_id, user_id';
-
-  const logsRes = await supabase
-    .from('audit_logs')
-    .select(auditColumns)
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const logsRes = await queryAuditLogs(supabase);
 
   if (logsRes.error) errors.push(`audit_logs: ${logsRes.error.message}`);
 
-  const filteredLogs = (logsRes.data || []).filter(isMasterAuditEntry);
+  const rawLogs = (logsRes.data || []) as RawAuditLogRow[];
+  const normalizedLogs = rawLogs.map(normalizeAuditLogRow);
+  const filteredLogs = normalizedLogs.filter(isMasterAuditEntry);
+
   const companyIds = [
     ...new Set(
       filteredLogs
-        .map((row) => (row.tenant_id ? String(row.tenant_id) : ''))
-        .filter(Boolean),
+        .map((row) => resolveAuditCompanyId(row))
+        .filter((id): id is string => Boolean(id)),
     ),
   ];
   const userIds = [
@@ -57,7 +89,7 @@ export async function loadMasterAuditLogs(
       ? supabase.from('companies').select('id, name').in('id', companyIds)
       : Promise.resolve({ data: [], error: null }),
     userIds.length
-      ? supabase.from('users').select('id, full_name, email').in('id', userIds)
+      ? supabase.from('users').select('id, full_name, name, email').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
   logMasterApiStep(
@@ -78,9 +110,13 @@ export async function loadMasterAuditLogs(
     (usersRes.data || []).map((u) => [u.id, resolveUserDisplayName(u)]),
   );
 
-  const rows = filteredLogs
-    .map((row) => mapAuditLogRow(row, companyNames, userNames));
+  const rows = filteredLogs.map((row) => mapAuditLogRow(row, companyNames, userNames));
   logMasterApiStep(scope, 'process.map_rows', mapStarted, rows.length);
 
-  return { rows, errors };
+  return {
+    rows,
+    errors,
+    rawCount: rawLogs.length,
+    filteredCount: rows.length,
+  };
 }

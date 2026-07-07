@@ -4,9 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
-import { loadMasterAuditLogs } from '@/lib/masterAuditLoad';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import { masterAuditToCsv, type MasterAuditRow } from '@/lib/masterAudit';
+
+type MasterAuditApiResponse = {
+  rows?: MasterAuditRow[];
+  warnings?: string[];
+  rawCount?: number;
+  filteredCount?: number;
+  error?: string;
+};
 
 export default function MasterAuditPage() {
   return (
@@ -17,23 +24,54 @@ export default function MasterAuditPage() {
 }
 
 function MasterAuditContent() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [rows, setRows] = useState<MasterAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [emptyHint, setEmptyHint] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setWarning(null);
+    setEmptyHint(null);
+
     try {
-      const result = await loadMasterAuditLogs(supabase);
-      setRows(result.rows);
-      if (result.errors.length > 0) {
-        setWarning(result.errors.join(' · '));
+      const result = await fetchJsonWithTimeout<MasterAuditApiResponse>(
+        `/api/master/audit?userId=${encodeURIComponent(user.id)}`,
+        { credentials: 'include' },
+        30_000,
+      );
+
+      if (!result.ok || !result.data) {
+        throw new Error(result.error || 'Erro ao carregar auditoria');
+      }
+
+      const payload = result.data;
+      const loadedRows = payload.rows || [];
+      setRows(loadedRows);
+
+      if (payload.warnings?.length) {
+        setWarning(payload.warnings.join(' · '));
+      }
+
+      if (loadedRows.length === 0) {
+        const rawCount = payload.rawCount ?? 0;
+        const filteredCount = payload.filteredCount ?? 0;
+        if (rawCount > 0 && filteredCount === 0) {
+          setEmptyHint(
+            `Foram encontrados ${rawCount} registros em audit_logs, mas nenhum corresponde aos filtros da auditoria Master SaaS.`,
+          );
+        } else if (rawCount === 0) {
+          setEmptyHint('A tabela audit_logs está vazia no momento.');
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar auditoria');
@@ -41,11 +79,12 @@ function MasterAuditContent() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData]);
+  }, [authLoading, loadData]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -71,7 +110,7 @@ function MasterAuditContent() {
     URL.revokeObjectURL(url);
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
@@ -138,7 +177,10 @@ function MasterAuditContent() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} className="p-8 text-center text-slate-500">
-                  Nenhum registro de auditoria encontrado.
+                  <p>Nenhum registro de auditoria encontrado.</p>
+                  {emptyHint ? (
+                    <p className="mt-2 text-xs text-slate-600">{emptyHint}</p>
+                  ) : null}
                 </td>
               </tr>
             ) : (
