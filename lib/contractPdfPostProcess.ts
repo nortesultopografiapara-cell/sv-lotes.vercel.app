@@ -117,6 +117,61 @@ export const CONTRACT_PDF_PRINT_CSS = `
 </style>
 `;
 
+/** CSS de impressão Recanto — fluxo contínuo nas cláusulas; blocos críticos permanecem juntos. */
+export const RECANTO_CONTRACT_PDF_PRINT_CSS = `
+<style type="text/css">
+  .sv-contract-recanto-primavera .contract-clause {
+    page-break-inside: auto;
+    break-inside: auto;
+    margin-bottom: 10px;
+  }
+  .sv-contract-recanto-primavera .contract-payment-block,
+  .sv-contract-recanto-primavera .contract-clause--electronic-signature {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+  .sv-contract-recanto-primavera .contract-signatures {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+    margin-top: 16px;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    text-align: center;
+  }
+  .sv-contract-recanto-primavera .contract-signatures .signature-slot {
+    margin-bottom: 18px;
+    text-align: center;
+  }
+  .sv-contract-recanto-primavera .contract-signatures .signature-slot:last-of-type {
+    margin-bottom: 4px;
+  }
+  .sv-contract-recanto-primavera > *:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+    margin-bottom: 0 !important;
+  }
+  .sv-cert-official-block,
+  .sv-cert-official-inner,
+  .sv-cert-official,
+  .sv-cert-official .sv-cert-cards,
+  .sv-cert-official .sv-cert-card,
+  .sv-cert-official .sv-cert-validation,
+  .sv-cert-official .sv-cert-validation-inner {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+  .sv-cert-official-block {
+    display: block !important;
+    overflow: hidden;
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+</style>
+`;
+
 export type ContractHtml2pdfOptions = {
   margin: number[];
   filename: string;

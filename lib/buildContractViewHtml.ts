@@ -8,6 +8,8 @@ import { assertCustomerValidForContract } from "@/lib/validateCustomerForContrac
 import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
 import { COMPANY_CONTRACT_LOAD_SELECT } from "@/lib/companyContractFields";
+import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
+import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
 import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
@@ -411,8 +413,7 @@ export async function buildContractViewHtml(
 
   assertCustomerValidForContract(mergedCustomer);
 
-  // PDF: app/contracts usa getContractHtml2pdfOptions + applyContractPdfChrome (sem página vazia extra).
-  return generateContractHTML({
+  let html = generateContractHTML({
     tenant: params.tenant,
     customer: mergedCustomer,
     project:
@@ -428,4 +429,10 @@ export async function buildContractViewHtml(
     streetGuides,
     manualConfrontants,
   });
+
+  if (isRecantoPrimaveraContractModel(params.tenant)) {
+    html = await embedRecantoContractSignatureInHtml(html, params.tenant);
+  }
+
+  return html;
 }

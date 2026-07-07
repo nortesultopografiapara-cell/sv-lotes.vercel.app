@@ -15,7 +15,8 @@ import {
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
-import { normalizeSaleContractModel } from '@/lib/contractModel';
+import { normalizeSaleContractModel, isRecantoPrimaveraContractModel } from '@/lib/contractModel';
+import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
@@ -431,7 +432,7 @@ export async function executeGisSaleCreate(
 
         const saleValue = Number(customerData.final_value || finalPrice) || 0;
         const downPaymentVal = parseCurrencyBRLNumber(customerData.down_payment);
-        const contractHtml = generateContractHTML({
+        let contractHtml = generateContractHTML({
           tenant: tenantData || {},
           customer: fullCustomer || {},
           project: projDataSnapshot || lot.projects || {},
@@ -443,6 +444,13 @@ export async function executeGisSaleCreate(
             contract_number: contractNumber,
           },
         });
+
+        if (isRecantoPrimaveraContractModel(tenantData)) {
+          contractHtml = await embedRecantoContractSignatureInHtml(
+            contractHtml,
+            tenantData || {},
+          );
+        }
 
         const contractPayloads: Record<string, unknown>[] = [
           {

@@ -115,27 +115,23 @@ export function resolveRecantoVendorName(
   const isPf = isPfVendorDocument(documentRaw);
 
   if (isPf) {
-    return toTitleCase(
-      pickString(
-        c.legal_representative,
-        c.legal_representative_name,
-        c.responsible_name,
-        c.name,
-        c.fantasy_name,
-        c.razao_social,
-      ),
-    );
-  }
-
-  return toTitleCase(
-    pickString(
+    return pickString(
       c.legal_representative,
       c.legal_representative_name,
       c.responsible_name,
+      c.name,
       c.fantasy_name,
       c.razao_social,
-      c.name,
-    ),
+    );
+  }
+
+  return pickString(
+    c.legal_representative,
+    c.legal_representative_name,
+    c.responsible_name,
+    c.fantasy_name,
+    c.razao_social,
+    c.name,
   );
 }
 

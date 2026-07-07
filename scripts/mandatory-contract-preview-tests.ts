@@ -141,6 +141,18 @@ function testSignatureModalAndEligibility() {
   console.log('OK testSignatureModalAndEligibility');
 }
 
+function testRecantoSignatureEmbedHook() {
+  const viewHtml = fs.readFileSync('lib/buildContractViewHtml.ts', 'utf8');
+  const regen = fs.readFileSync('lib/contractRegeneration.ts', 'utf8');
+  const page = fs.readFileSync('app/contracts/page.tsx', 'utf8');
+  const assets = fs.readFileSync('lib/recantoPrimaveraContractAssets.ts', 'utf8');
+  assert(assets.includes('embedRecantoContractSignatureInHtml'), 'helper de assinatura');
+  assert(viewHtml.includes('embedRecantoContractSignatureInHtml'), 'preview embute assinatura');
+  assert(regen.includes('embedRecantoContractSignatureInHtml'), 'regeneração embute assinatura');
+  assert(page.includes('embedRecantoContractSignatureInHtml'), 'PDF client embute assinatura');
+  console.log('OK testRecantoSignatureEmbedHook');
+}
+
 function testContractCompanySelectAlignedWithSettings() {
   const viewHtml = fs.readFileSync('lib/buildContractViewHtml.ts', 'utf8');
   const gis = fs.readFileSync('lib/gisSaleCreateService.ts', 'utf8');
@@ -162,6 +174,7 @@ function testContractCompanySelectAlignedWithSettings() {
 function run() {
   testReadStoredContractHtml();
   testHtmlPreviewSelectFallback();
+  testRecantoSignatureEmbedHook();
   testContractCompanySelectAlignedWithSettings();
   testHtmlRouteReturnsSavedWithoutRegenerate();
   testHtmlRouteJsonErrorAndLogging();

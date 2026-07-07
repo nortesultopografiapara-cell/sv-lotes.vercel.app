@@ -77,6 +77,8 @@ import {
   buildContractPdfChromeFromTenant,
   getContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
+import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
+import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
 import {
   loadContractsListForTenant,
 } from "@/lib/contractsListService";
@@ -945,6 +947,13 @@ export default function ContractsPage() {
           "Não foi possível obter o conteúdo do contrato para gerar o PDF. Tente novamente ou regenerar o contrato.",
         );
         return;
+      }
+
+      if (isRecantoPrimaveraContractModel(tenantData || {})) {
+        htmlBody = await embedRecantoContractSignatureInHtml(
+          htmlBody,
+          tenantData || {},
+        );
       }
 
       element.innerHTML = htmlBody;

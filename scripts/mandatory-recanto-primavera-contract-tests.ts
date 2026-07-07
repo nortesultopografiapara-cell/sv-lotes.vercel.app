@@ -5,6 +5,7 @@
 
 import { generateContractHTML } from '../lib/contractTemplate';
 import { generateRecantoPrimaveraContract } from '../lib/recantoPrimaveraContractTemplate';
+import fs from 'node:fs';
 import {
   normalizeRecantoPrimaveraCompanyProfile,
   resolveRecantoVendorName,
@@ -291,11 +292,11 @@ function testPfVendorPrefersPersonNameOverFantasy() {
     representative_cpf: '',
   });
   assert(
-    resolveRecantoVendorName(tenant) === 'Ivanilde De Moura Silva',
+    resolveRecantoVendorName(tenant) === 'Ivanilde de Moura Silva',
     'PF usa nome da pessoa, não fantasia',
   );
   const html = buildRecantoHtml(tenant);
-  assert(html.includes('Ivanilde De Moura Silva'), 'nome PF no contrato');
+  assert(html.includes('Ivanilde de Moura Silva'), 'nome PF no contrato');
   assertNotIncludes(html, 'Não Informado', 'sem placeholder de vendedor');
   assertNotIncludes(html, 'Não informado', 'sem placeholder de vendedor');
   console.log('OK testPfVendorPrefersPersonNameOverFantasy');
@@ -312,7 +313,7 @@ function testLegalRepresentativeNameAlias() {
   };
   const profile = normalizeRecantoPrimaveraCompanyProfile(tenant);
   assert(
-    profile.vendorName === 'Ivanilde De Moura Silva',
+    profile.vendorName === 'Ivanilde de Moura Silva',
     'alias legal_representative_name',
   );
   assert(profile.documentFmt === '326.412.811-04', 'alias legal_representative_cpf');
@@ -324,9 +325,37 @@ function testLegalRepresentativeNameAlias() {
     sale: baseSale,
   });
   assert(html.includes('VENDEDOR(A):'), 'modelo Recanto');
-  assert(html.includes('Ivanilde De Moura Silva'), 'vendedor no HTML');
+  assert(html.includes('Ivanilde de Moura Silva'), 'vendedor no HTML');
   assertNotIncludes(html, 'Promitente Proprietário Vendedor', 'não usa modelo clássico');
   console.log('OK testLegalRepresentativeNameAlias');
+}
+
+function testRecantoPrintCssAllowsClauseFlow() {
+  const template = fs.readFileSync('lib/recantoPrimaveraContractTemplate.ts', 'utf8');
+  const printCss = fs.readFileSync('lib/contractPdfPostProcess.ts', 'utf8');
+  assert(template.includes('RECANTO_CONTRACT_PDF_PRINT_CSS'), 'template usa CSS Recanto');
+  assert(printCss.includes('sv-contract-recanto-primavera .contract-clause'), 'CSS Recanto');
+  assert(
+    printCss.includes('page-break-inside: auto'),
+    'cláusulas com fluxo contínuo',
+  );
+  assert(
+    printCss.includes('contract-payment-block'),
+    'tabela financeira permanece junta',
+  );
+  console.log('OK testRecantoPrintCssAllowsClauseFlow');
+}
+
+function testBrokerBlockHiddenWithoutBroker() {
+  const html = generateRecantoPrimaveraContract({
+    tenant: recantoTenant(),
+    customer: baseCustomer,
+    project: baseProject,
+    block: baseBlock,
+    sale: { ...baseSale, broker_id: null },
+  });
+  assertNotIncludes(html, 'CORRETOR', 'sem bloco corretor vazio');
+  console.log('OK testBrokerBlockHiddenWithoutBroker');
 }
 
 function main() {
@@ -343,6 +372,8 @@ function main() {
   testVendorAddressFromContractLegalSettings();
   testPfVendorPrefersPersonNameOverFantasy();
   testLegalRepresentativeNameAlias();
+  testRecantoPrintCssAllowsClauseFlow();
+  testBrokerBlockHiddenWithoutBroker();
   console.log('OK — mandatory-recanto-primavera-contract-tests passed');
 }
 
