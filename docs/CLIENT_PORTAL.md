@@ -159,12 +159,13 @@ Desativado por padrão. Em `develop`/preview, definir ambos como `true` para tes
 - [ ] OTP WhatsApp
 - [ ] Painel read-only
 
-### Etapa 3 — OTP + sessão
+### Etapa 3 — OTP + sessão ✓
 
-- Tabela `client_portal_otp_codes`
-- Integração Z-API (`lib/whatsapp/zapiProvider.ts`)
-- `send-code` + `verify`
-- Cookie de sessão
+- [x] `POST /api/portal-cliente/send-otp`
+- [x] `POST /api/portal-cliente/verify-otp`
+- [x] WhatsApp via Z-API (`CLIENT_PORTAL_OTP`)
+- [x] Cookie httpOnly de sessão
+- [ ] Painel read-only
 
 ### Etapa 4 — Painel read-only
 

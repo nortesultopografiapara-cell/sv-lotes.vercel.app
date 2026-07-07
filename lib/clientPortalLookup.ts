@@ -17,6 +17,7 @@ import type {
   ClientPortalLookupResponse,
   ClientPortalMaskedResult,
 } from '@/lib/portal-cliente/types';
+import type { ClientPortalLinkType } from '@/lib/portal-cliente/types';
 import { createAdminSupabase } from '@/lib/supabase/server';
 
 const CANCELLED_SALE_STATUSES = new Set([
@@ -65,6 +66,7 @@ type CompanyRow = {
   name?: string | null;
   fantasy_name?: string | null;
   razao_social?: string | null;
+  phone?: string | null;
   representative_cpf?: string | null;
   legal_representative_cpf?: string | null;
 };
@@ -244,6 +246,136 @@ export function buildMaskedResultsFromData(input: {
   }
 
   return dedupeResults(results);
+}
+
+export type ClientPortalLinkContext = {
+  linkKey: string;
+  linkType: ClientPortalLinkType;
+  customerId: string | null;
+  companyId: string;
+  saleId: string | null;
+  phone: string | null;
+  phoneMasked: string | null;
+  masked: ClientPortalMaskedResult;
+};
+
+async function loadCompaniesByIds(
+  admin: SupabaseClient,
+  companyIds: Set<string>,
+): Promise<CompanyRow[]> {
+  if (companyIds.size === 0) return [];
+  const { data } = await admin
+    .from('companies')
+    .select(
+      'id, name, fantasy_name, razao_social, phone, representative_cpf, legal_representative_cpf',
+    )
+    .in('id', Array.from(companyIds));
+  return (data as CompanyRow[] | null) ?? [];
+}
+
+/** Resolve vínculo interno a partir do linkKey — uso server-side OTP. */
+export async function resolveClientPortalLinkContext(
+  documentDigits: string,
+  linkKey: string,
+  adminClient?: SupabaseClient | null,
+): Promise<ClientPortalLinkContext | null> {
+  const lookup = await lookupClientPortalByDocument(documentDigits, adminClient);
+  if (!lookup.found) return null;
+
+  const masked = lookup.maskedResults.find((row) => row.linkKey === linkKey);
+  if (!masked) return null;
+
+  const { client: admin, configError } = adminClient
+    ? { client: adminClient, configError: null }
+    : createAdminSupabase();
+  if (!admin || configError) return null;
+
+  const customers = await findCustomersByDocument(admin, documentDigits);
+  const saasCompanies = await findSaasCompaniesByRepresentative(admin, documentDigits);
+  const customerIds = customers.map((c) => c.id);
+
+  let sales: SaleRow[] = [];
+  if (customerIds.length > 0) {
+    const { data } = await admin
+      .from('sales')
+      .select(
+        'id, customer_id, project_id, block_id, tenant_id, company_id, block_number, lot_number, status',
+      )
+      .in('customer_id', customerIds);
+    sales = (data as SaleRow[] | null) ?? [];
+  }
+
+  for (const customer of customers) {
+    const customerSales = sales.filter(
+      (sale) => sale.customer_id === customer.id && isSaleActive(sale.status),
+    );
+
+    for (const sale of customerSales) {
+      const companyId = String(
+        sale.company_id || sale.tenant_id || customer.company_id || customer.tenant_id || '',
+      );
+      const key = buildClientPortalLinkKey({
+        linkType: 'lot_sale',
+        companyId,
+        customerId: customer.id,
+        saleId: sale.id,
+      });
+      if (key === linkKey) {
+        return {
+          linkKey,
+          linkType: 'lot_sale',
+          customerId: customer.id,
+          companyId,
+          saleId: sale.id,
+          phone: customer.phone ?? null,
+          phoneMasked: maskPhone(customer.phone),
+          masked,
+        };
+      }
+    }
+
+    const companyId = String(customer.company_id || customer.tenant_id || '');
+    const customerKey = buildClientPortalLinkKey({
+      linkType: 'customer_record',
+      companyId,
+      customerId: customer.id,
+    });
+    if (customerKey === linkKey) {
+      return {
+        linkKey,
+        linkType: 'customer_record',
+        customerId: customer.id,
+        companyId,
+        saleId: null,
+        phone: customer.phone ?? null,
+        phoneMasked: maskPhone(customer.phone),
+        masked,
+      };
+    }
+  }
+
+  for (const company of saasCompanies) {
+    const saasKey = buildClientPortalLinkKey({
+      linkType: 'saas_contract',
+      companyId: company.id,
+    });
+    if (saasKey !== linkKey) continue;
+
+    const companies = await loadCompaniesByIds(admin, new Set([company.id]));
+    const fullCompany = companies[0] ?? company;
+    return {
+      linkKey,
+      linkType: 'saas_contract',
+      customerId: null,
+      companyId: company.id,
+      saleId: null,
+      phone: fullCompany.phone ?? null,
+      phoneMasked: maskPhone(fullCompany.phone),
+      masked,
+    };
+  }
+
+  return null;
 }
 
 async function findCustomersByDocument(

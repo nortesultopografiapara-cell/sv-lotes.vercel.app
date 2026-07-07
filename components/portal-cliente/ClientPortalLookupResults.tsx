@@ -8,6 +8,19 @@ type Props = {
   onSelect: (linkKey: string) => void;
 };
 
+function parseQuadraLote(quadraLote: string | null): { quadra: string | null; lote: string | null } {
+  if (!quadraLote) return { quadra: null, lote: null };
+  const match = quadraLote.match(/^QD\s+(.+?)\s+LT\s+(.+)$/i);
+  if (match) return { quadra: match[1], lote: match[2] };
+  if (quadraLote.startsWith('Quadra ')) {
+    return { quadra: quadraLote.replace(/^Quadra\s+/i, ''), lote: null };
+  }
+  if (quadraLote.startsWith('Lote ')) {
+    return { quadra: null, lote: quadraLote.replace(/^Lote\s+/i, '') };
+  }
+  return { quadra: null, lote: null };
+}
+
 export function ClientPortalLookupResults({ results, selectedLinkKey, onSelect }: Props) {
   return (
     <div className="space-y-3">
@@ -20,6 +33,10 @@ export function ClientPortalLookupResults({ results, selectedLinkKey, onSelect }
       <ul className="space-y-2" role="listbox" aria-label="Vínculos encontrados">
         {results.map((item) => {
           const selected = selectedLinkKey === item.linkKey;
+          const { quadra, lote } = parseQuadraLote(item.quadraLote);
+          const empreendimento =
+            item.projectName || (item.linkLabel === 'Contrato SaaS' ? item.linkLabel : null);
+
           return (
             <li key={item.linkKey}>
               <button
@@ -40,21 +57,47 @@ export function ClientPortalLookupResults({ results, selectedLinkKey, onSelect }
                     }`}
                     aria-hidden
                   />
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-semibold text-white">{item.companyName}</p>
-                    {item.projectName ? (
-                      <p className="text-sm text-gray-300">{item.projectName}</p>
+                  <div className="min-w-0 space-y-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/80">
+                        Empreendimento
+                      </p>
+                      <p className="text-sm font-semibold text-white">
+                        {empreendimento || 'Cadastro localizado'}
+                      </p>
+                    </div>
+
+                    {lote ? (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                          Lote
+                        </p>
+                        <p className="text-sm text-gray-200">{lote}</p>
+                      </div>
                     ) : null}
-                    {item.quadraLote ? (
-                      <p className="text-xs text-gray-500">{item.quadraLote}</p>
+
+                    {quadra ? (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                          Quadra
+                        </p>
+                        <p className="text-sm text-gray-200">{quadra}</p>
+                      </div>
                     ) : null}
-                    {item.linkLabel ? (
-                      <p className="text-xs text-amber-300/90">{item.linkLabel}</p>
-                    ) : null}
-                    <div className="pt-1 text-xs text-gray-500 space-y-0.5">
-                      <p>Nome: {item.customerNameMasked}</p>
-                      {item.phoneMasked ? <p>Telefone: {item.phoneMasked}</p> : null}
-                      <p>Status: {item.status}</p>
+
+                    <div className="space-y-1 border-t border-white/5 pt-2 text-xs text-gray-500">
+                      <p>
+                        <span className="text-gray-400">Empresa:</span>{' '}
+                        <span className="text-gray-300">{item.companyName}</span>
+                      </p>
+                      <p>
+                        <span className="text-gray-400">Nome:</span> {item.customerNameMasked}
+                      </p>
+                      {item.phoneMasked ? (
+                        <p>
+                          <span className="text-gray-400">Telefone:</span> {item.phoneMasked}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -63,11 +106,6 @@ export function ClientPortalLookupResults({ results, selectedLinkKey, onSelect }
           );
         })}
       </ul>
-
-      <p className="text-xs text-gray-500">
-        Na próxima etapa você confirmará o acesso por WhatsApp. Detalhes de contratos e parcelas
-        só serão exibidos após a validação do código.
-      </p>
     </div>
   );
 }

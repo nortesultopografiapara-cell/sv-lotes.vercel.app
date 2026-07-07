@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { AlertCircle, Loader2, Search } from 'lucide-react';
 import {
@@ -10,12 +11,41 @@ import {
 import type { ClientPortalLookupResponse, ClientPortalMaskedResult } from '@/lib/portal-cliente/types';
 import { ClientPortalLookupResults } from '@/components/portal-cliente/ClientPortalLookupResults';
 
+const PORTAL_OTP_STORAGE_KEY = 'client_portal_otp_context';
+
 type LookupStep = 'form' | 'results' | 'not_found';
 
+export type ClientPortalOtpContext = {
+  cpfCnpj: string;
+  linkKey: string;
+  phoneMasked: string | null;
+};
+
+export function readClientPortalOtpContext(): ClientPortalOtpContext | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(PORTAL_OTP_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as ClientPortalOtpContext;
+  } catch {
+    return null;
+  }
+}
+
+export function writeClientPortalOtpContext(context: ClientPortalOtpContext): void {
+  sessionStorage.setItem(PORTAL_OTP_STORAGE_KEY, JSON.stringify(context));
+}
+
+export function clearClientPortalOtpContext(): void {
+  sessionStorage.removeItem(PORTAL_OTP_STORAGE_KEY);
+}
+
 export function ClientPortalEntryForm() {
+  const router = useRouter();
   const [cpfCnpj, setCpfCnpj] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
   const [step, setStep] = useState<LookupStep>('form');
   const [results, setResults] = useState<ClientPortalMaskedResult[]>([]);
   const [selectedLinkKey, setSelectedLinkKey] = useState<string | null>(null);
@@ -52,12 +82,49 @@ export function ClientPortalEntryForm() {
       }
 
       setResults(data.maskedResults);
-      setSelectedLinkKey(data.maskedResults.length === 1 ? data.maskedResults[0].linkKey : null);
+      setSelectedLinkKey(null);
       setStep('results');
     } catch {
       setError('Não foi possível consultar seu cadastro. Tente novamente.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleContinue = async () => {
+    if (!selectedLinkKey) return;
+    const digits = onlyDigits(cpfCnpj);
+    setError(null);
+    setSendingOtp(true);
+
+    try {
+      const response = await fetch('/api/portal-cliente/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf_cnpj: digits, linkKey: selectedLinkKey }),
+      });
+
+      const data = (await response.json()) as {
+        ok?: boolean;
+        phoneMasked?: string | null;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        setError(data.message || 'Não foi possível enviar o código por WhatsApp.');
+        return;
+      }
+
+      writeClientPortalOtpContext({
+        cpfCnpj: digits,
+        linkKey: selectedLinkKey,
+        phoneMasked: data.phoneMasked ?? null,
+      });
+      router.push('/portal-cliente/confirmar');
+    } catch {
+      setError('Não foi possível enviar o código. Tente novamente.');
+    } finally {
+      setSendingOtp(false);
     }
   };
 
@@ -96,6 +163,29 @@ export function ClientPortalEntryForm() {
           selectedLinkKey={selectedLinkKey}
           onSelect={setSelectedLinkKey}
         />
+
+        {error ? (
+          <p className="text-sm text-red-400" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={handleContinue}
+          disabled={!selectedLinkKey || sendingOtp}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {sendingOtp ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Enviando código…
+            </>
+          ) : (
+            'Continuar'
+          )}
+        </button>
+
         <button
           type="button"
           onClick={handleBack}
