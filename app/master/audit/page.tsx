@@ -60,6 +60,14 @@ function MasterAuditContent() {
       }
 
       const payload = result.data;
+
+      if (payload.error) {
+        setRows([]);
+        setEmptyHint(EMPTY_MESSAGE);
+        setWarning(payload.error);
+        return;
+      }
+
       const loadedRows = payload.rows || [];
       setRows(loadedRows);
 
@@ -69,21 +77,14 @@ function MasterAuditContent() {
       }
 
       if (loadedRows.length === 0) {
-        const rawCount = payload.rawCount ?? 0;
-        const filteredCount = payload.filteredCount ?? 0;
-        if (rawCount > 0 && filteredCount === 0) {
-          setEmptyHint(
-            `${EMPTY_MESSAGE} Foram lidos ${rawCount} registros recentes em audit_logs, mas nenhum é de ação Master SaaS.`,
-          );
-        } else {
-          setEmptyHint(EMPTY_MESSAGE);
-        }
+        setEmptyHint(EMPTY_MESSAGE);
       } else {
         setEmptyHint(null);
       }
-    } catch {
+    } catch (err) {
       setRows([]);
       setEmptyHint(EMPTY_MESSAGE);
+      setWarning(err instanceof Error ? err.message : 'Falha ao carregar auditoria.');
     } finally {
       setLoading(false);
     }

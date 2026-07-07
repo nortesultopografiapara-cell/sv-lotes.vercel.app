@@ -87,8 +87,20 @@ export const MASTER_AUDIT_WRITTEN_MODULES = [
   'CONTRACTS',
 ] as const;
 
-/** Módulos aceitos pelo filtro em memória e pela query SQL. */
-export const MASTER_AUDIT_MODULES = [...MASTER_MODULES] as const;
+/** Módulos consultados diretamente no SQL (schema real confirmado). */
+export const MASTER_AUDIT_SQL_MODULES = [
+  'SAAS_BILLING',
+  'SAAS',
+  'SUBSCRIPTIONS',
+  'COMPANY_ADMINS',
+  'CONTRACTS',
+  'WHATSAPP',
+  'MASTER',
+  'COMPANIES',
+] as const;
+
+/** Módulos aceitos pelo filtro em memória (referência / diagnóstico). */
+export const MASTER_AUDIT_MODULES = [...MASTER_AUDIT_SQL_MODULES] as const;
 
 const MASTER_ACTION_PREFIXES = [
   'COMPANY_',
