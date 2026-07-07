@@ -4,16 +4,25 @@
 
 import { createHmac, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
+import type { ClientPortalLinkType } from '@/lib/portal-cliente/types';
 
 export const CLIENT_PORTAL_SESSION_COOKIE = 'client_portal_session' as const;
 export const CLIENT_PORTAL_OTP_CHALLENGE_COOKIE = 'client_portal_otp_challenge' as const;
 
 export const CLIENT_PORTAL_SESSION_TTL_SEC = 45 * 60;
 
+export type ClientPortalSessionScope = {
+  linkType: ClientPortalLinkType;
+  companyId: string;
+  customerId: string | null;
+  saleId: string | null;
+};
+
 export type ClientPortalSessionPayload = {
   linkKey: string;
   documentHash: string;
   verifiedAt: string;
+  scope: ClientPortalSessionScope;
 };
 
 export type ClientPortalOtpChallengePayload = {
@@ -64,12 +73,16 @@ export function createClientPortalSessionToken(payload: ClientPortalSessionPaylo
 }
 
 export function readClientPortalSessionToken(token: string): ClientPortalSessionPayload | null {
-  const parsed = verifySignedPayload<ClientPortalSessionPayload & { exp: number }>(token);
+  const parsed = verifySignedPayload<
+    ClientPortalSessionPayload & { exp: number; scope?: ClientPortalSessionScope }
+  >(token);
   if (!parsed) return null;
+  if (!parsed.scope?.companyId || !parsed.scope?.linkType) return null;
   return {
     linkKey: parsed.linkKey,
     documentHash: parsed.documentHash,
     verifiedAt: parsed.verifiedAt,
+    scope: parsed.scope,
   };
 }
 

@@ -45,7 +45,8 @@
     "test:legacy-contracts-module": "tsx scripts/mandatory-legacy-contracts-module-tests.ts",
     "test:client-portal-stage1": "tsx scripts/mandatory-client-portal-stage1-tests.ts",
     "test:client-portal-lookup": "tsx scripts/mandatory-client-portal-lookup-tests.ts",
-    "test:client-portal-otp": "tsx scripts/mandatory-client-portal-otp-tests.ts"
+    "test:client-portal-otp": "tsx scripts/mandatory-client-portal-otp-tests.ts",
+    "test:client-portal-dashboard": "tsx scripts/mandatory-client-portal-dashboard-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

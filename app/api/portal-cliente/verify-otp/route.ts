@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveClientPortalLinkContext } from '@/lib/clientPortalLookup';
 import { isValidBrazilianTaxDocument, onlyDigits } from '@/lib/inputMasks';
 import { isClientPortalEnabled } from '@/lib/portal-cliente/config';
 import { hashClientPortalDocument } from '@/lib/portal-cliente/otp';
@@ -76,10 +77,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const linkContext = await resolveClientPortalLinkContext(documentDigits, linkKey);
+  if (!linkContext) {
+    return NextResponse.json({ ok: false, message: 'Vínculo não encontrado.' }, { status: 404 });
+  }
+
   const sessionToken = createClientPortalSessionToken({
     linkKey: verifyResult.linkKey,
     documentHash: verifyResult.documentHash,
     verifiedAt: new Date().toISOString(),
+    scope: {
+      linkType: linkContext.linkType,
+      companyId: linkContext.companyId,
+      customerId: linkContext.customerId,
+      saleId: linkContext.saleId,
+    },
   });
 
   await setClientPortalSessionCookie(sessionToken);
@@ -88,5 +100,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     message: 'Acesso confirmado com sucesso.',
+    redirectTo: '/portal-cliente/painel',
   });
 }

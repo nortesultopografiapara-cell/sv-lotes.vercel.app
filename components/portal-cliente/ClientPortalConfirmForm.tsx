@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, MessageCircle } from 'lucide-react';
+import { Loader2, MessageCircle } from 'lucide-react';
 import {
   clearClientPortalOtpContext,
   readClientPortalOtpContext,
@@ -15,7 +15,6 @@ export function ClientPortalConfirmForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [context, setContext] = useState<ReturnType<typeof readClientPortalOtpContext>>(null);
 
   useEffect(() => {
@@ -44,14 +43,18 @@ export function ClientPortalConfirmForm() {
         }),
       });
 
-      const data = (await response.json()) as { ok?: boolean; message?: string };
+      const data = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        redirectTo?: string;
+      };
       if (!response.ok || !data.ok) {
         setError(data.message || 'Código inválido. Tente novamente.');
         return;
       }
 
       clearClientPortalOtpContext();
-      setSuccess(true);
+      router.push(data.redirectTo || '/portal-cliente/painel');
     } catch {
       setError('Não foi possível validar o código. Tente novamente.');
     } finally {
@@ -100,23 +103,6 @@ export function ClientPortalConfirmForm() {
     return (
       <div className="flex justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-cyan-400" aria-hidden />
-      </div>
-    );
-  }
-
-  if (success) {
-    return (
-      <div className="space-y-4 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
-          <CheckCircle2 className="h-7 w-7 text-emerald-400" aria-hidden />
-        </div>
-        <h2 className="text-lg font-semibold text-white">Acesso confirmado com sucesso.</h2>
-        <p className="text-sm text-gray-400">
-          O painel completo do Portal do Cliente será liberado na próxima etapa.
-        </p>
-        <Link href="/portal-cliente" className="inline-block text-sm text-cyan-400 hover:text-cyan-300">
-          Voltar ao início
-        </Link>
       </div>
     );
   }

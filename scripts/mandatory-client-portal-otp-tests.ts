@@ -102,10 +102,17 @@ function testSessionCreated(): void {
     linkKey: 'link123',
     documentHash: docHash,
     verifiedAt: new Date().toISOString(),
+    scope: {
+      linkType: 'lot_sale',
+      companyId: 'comp-1',
+      customerId: 'cust-1',
+      saleId: 'sale-1',
+    },
   });
   const parsed = readClientPortalSessionToken(session);
   assert(parsed?.linkKey === 'link123', 'session linkKey');
   assert(parsed?.documentHash === docHash, 'session document hash');
+  assert(parsed?.scope.saleId === 'sale-1', 'session sale scope');
 
   const challenge = createClientPortalOtpChallengeToken({
     challengeId: 'challenge-1',
