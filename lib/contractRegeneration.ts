@@ -46,12 +46,25 @@ const CONTRACT_HTML_STORAGE_COLUMNS = [
   'html',
 ] as const;
 
-/** Colunas legadas apenas para leitura do HTML salvo. */
-const CONTRACT_HTML_READ_COLUMNS = [
-  'generated_html',
-  'html_content',
-  ...CONTRACT_HTML_STORAGE_COLUMNS.slice(1),
-] as const;
+import {
+  contractHtmlLooksLikeFullBody,
+  logContractHtmlGlobal,
+  loadContractRowForHtmlAccess,
+  readStoredContractHtml,
+  resolveStoredContractHtmlMeta,
+  shouldLoadProjectBlocksForContract,
+} from '@/lib/contractHtmlGlobal';
+
+export {
+  CONTRACT_HTML_READ_COLUMNS,
+  readStoredContractHtml,
+  resolveStoredContractHtmlMeta,
+  measureContractHtmlColumns,
+  contractHtmlLooksLikeFullBody,
+  loadContractRowForHtmlAccess,
+  shouldLoadProjectBlocksForContract,
+  logContractHtmlGlobal,
+} from '@/lib/contractHtmlGlobal';
 
 /** Nunca enviar no insert/update — ausente em vários ambientes de produção. */
 const CONTRACT_HTML_SKIP_COLUMNS = new Set(['html_content']);
@@ -118,115 +131,42 @@ function attachHtmlToContractRow(
   return { ...row, generated_html: html };
 }
 
-/** HTML persistido no contrato (generated_html ou coluna legada). */
-export function readStoredContractHtml(
-  contract: Record<string, unknown> | null | undefined,
-): string | null {
-  if (!contract || typeof contract !== 'object') return null;
-  for (const col of CONTRACT_HTML_READ_COLUMNS) {
-    const v = contract[col];
-    if (typeof v === 'string' && v.trim().length > 0) {
-      return v;
-    }
-  }
-  return null;
-}
-
-/** Select enxuto para preview HTML — com fallback de colunas ausentes no schema. */
+/** Select legado — preferir loadContractRowForHtmlAccess (select *). */
 export const CONTRACT_HTML_PREVIEW_SELECT =
-  'id, generated_html, html_content, tenant_id, company_id, needs_regenerar';
-
-function stripHtmlPreviewSelectColumn(select: string, column: string): string {
-  return select
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part && part !== column)
-    .join(', ');
-}
+  'id, generated_html, html_content, contract_html, content, html, tenant_id, company_id, needs_regenerar';
 
 /**
  * Carrega contrato para preview HTML (fast path).
- * Campos mínimos: id, generated_html/html_content, tenant_id (+ company_id legado).
+ * Usa select('*') para compatibilidade global com schema legado.
  */
 export async function loadContractHtmlPreviewRow(
   supabase: SupabaseClient,
   contractId: string,
 ): Promise<Record<string, unknown>> {
-  const receivedId = String(contractId || '').trim();
-  if (!receivedId) {
-    throw new ContractNotFoundError(receivedId, { detail: 'ID do contrato vazio.' });
-  }
-
-  let previewSelect = CONTRACT_HTML_PREVIEW_SELECT;
-
-  const runLookup = async (
-    field: 'id' | 'contract_number',
-    value: string,
-  ) => {
-    let currentSelect = previewSelect;
-
-    for (let attempt = 0; attempt < 15; attempt++) {
-      const { data, error } = await supabase
-        .from('contracts')
-        .select(currentSelect)
-        .eq(field, value)
-        .maybeSingle();
-
-      if (!error) {
-        previewSelect = currentSelect;
-        return data as Record<string, unknown> | null;
-      }
-
-      const missingCol = parseMissingContractColumn(error.message);
-      if (missingCol && currentSelect.includes(missingCol)) {
-        currentSelect = stripHtmlPreviewSelectColumn(currentSelect, missingCol);
-        previewSelect = currentSelect;
-        console.log('[contracts/html] preview_select_fallback', {
-          removed: missingCol,
-          attempt: attempt + 1,
-        });
-        continue;
-      }
-
-      throw new ContractNotFoundError(receivedId, {
-        lookup: field,
-        supabaseCode: error.code,
-        supabaseMessage: error.message,
-        detail: `Erro ao buscar contrato: ${error.message}`,
-      });
-    }
-
-    throw new ContractNotFoundError(receivedId, {
-      lookup: field,
-      detail: 'Não foi possível carregar contrato para preview.',
+  const startedAt = Date.now();
+  try {
+    const contract = await loadContractRowForHtmlAccess(supabase, contractId);
+    const meta = resolveStoredContractHtmlMeta(contract);
+    logContractHtmlGlobal('global-html', 'load_preview_row', {
+      ms: Date.now() - startedAt,
+      contractId: contract.id,
+      tenant_id: contract.tenant_id || contract.company_id,
+      htmlColumn: meta.column,
+      htmlLength: meta.length,
+      hasBody: meta.html ? contractHtmlLooksLikeFullBody(meta.html) : false,
     });
-  };
-
-  let contract: Record<string, unknown> | null = null;
-
-  if (isUuid(receivedId)) {
-    contract = await runLookup('id', receivedId);
-  }
-
-  if (!contract) {
-    contract = await runLookup('contract_number', receivedId);
-  }
-
-  if (!contract && !isUuid(receivedId)) {
-    contract = await runLookup('id', receivedId);
-  }
-
-  if (!contract) {
+    return contract;
+  } catch (err) {
+    const receivedId = String(contractId || '').trim();
+    logContractHtmlGlobal('global-html', 'load_preview_row_error', {
+      ms: Date.now() - startedAt,
+      receivedId,
+      message: err instanceof Error ? err.message : String(err),
+    });
     throw new ContractNotFoundError(receivedId, {
-      detail: 'Contrato não encontrado.',
+      detail: err instanceof Error ? err.message : 'Contrato não encontrado.',
     });
   }
-
-  if (!contract.tenant_id && contract.company_id) {
-    contract.tenant_id = contract.company_id;
-  }
-
-  return contract;
 }
 
 export class ContractNotFoundError extends Error {
@@ -660,9 +600,13 @@ export async function persistGeneratedContractHtml(
       ...fields,
       needs_regenerar: false,
     });
+    logContractHtmlGlobal('global-html', 'persist_ok', {
+      contractId,
+      columns: Object.keys(fields),
+    });
     return true;
   } catch (err) {
-    console.warn('[contracts/html] save_html_failed', {
+    logContractHtmlGlobal('global-html', 'persist_failed', {
       contractId,
       message: err instanceof Error ? err.message : String(err),
     });
@@ -885,13 +829,18 @@ export async function loadFreshRegenerationEntities(
 
   let projectBlocks: Array<Record<string, unknown>> = [];
   let streetGuides: Array<Record<string, unknown>> = [];
-  if (projectId) {
+  if (projectId && shouldLoadProjectBlocksForContract(company)) {
     const [{ data: blocks }, { data: guides }] = await Promise.all([
       supabase.from('blocks').select('*').eq('project_id', projectId),
       supabase.from('street_guides').select('*').eq('project_id', projectId),
     ]);
     projectBlocks = (blocks || []) as Array<Record<string, unknown>>;
     streetGuides = (guides || []) as Array<Record<string, unknown>>;
+    logContractHtmlGlobal('global-regenerate', 'project_blocks_loaded', {
+      projectId,
+      blocksCount: projectBlocks.length,
+      guidesCount: streetGuides.length,
+    });
   }
 
   return {

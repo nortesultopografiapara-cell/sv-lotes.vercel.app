@@ -42,6 +42,7 @@ import {
   fetchJsonWithTimeout,
 } from '@/lib/fetchJsonWithTimeout';
 import { formatClientFetchError } from '@/lib/clientFetchError';
+import { buildContractApiTenantQueryString } from '@/lib/contractApiTenantQuery';
 
 type SelectedContract = {
   id: string;
@@ -91,6 +92,12 @@ type Props = {
   contract: SelectedContract | null;
   userRole?: string | null;
   loggedInUserEmail?: string | null;
+  authUser?: {
+    id?: string;
+    role?: string;
+    tenant_id?: string;
+    company_id?: string;
+  } | null;
   compact?: boolean;
   onSigned?: () => void;
   onCapabilitiesChange?: (capabilities: SaleContractSignatureCapabilities) => void;
@@ -100,7 +107,15 @@ export const SaleContractSignatureSection = forwardRef<
   SaleContractSignatureSectionHandle,
   Props
 >(function SaleContractSignatureSection(
-  { contract, userRole, loggedInUserEmail, compact = false, onSigned, onCapabilitiesChange },
+  {
+    contract,
+    userRole,
+    loggedInUserEmail,
+    authUser,
+    compact = false,
+    onSigned,
+    onCapabilitiesChange,
+  },
   ref,
 ) {
   const [loading, setLoading] = useState(false);
@@ -125,6 +140,14 @@ export const SaleContractSignatureSection = forwardRef<
   const buyerName = contract?.customer_name || contract?.customers?.name || 'Comprador';
   const buyerPhone = contract?.customers?.phone || null;
   const buyerEmail = contract?.customers?.email || null;
+
+  const buildSignatureApiUrl = useCallback(
+    async (contractId: string) => {
+      const query = await buildContractApiTenantQueryString(authUser || null);
+      return `/api/contracts/${contractId}/signature${query ? `?${query}` : ''}`;
+    },
+    [authUser],
+  );
   const projectName =
     contract?.project_name || contract?.project_name_snapshot || 'Empreendimento';
   const quadra = resolveQuadra(contract?.blocks || null);
@@ -145,7 +168,7 @@ export const SaleContractSignatureSection = forwardRef<
         history?: Array<{ at: string; event: string; details: string }>;
         vendorDefaults?: { name?: string; document?: string; email?: string; companyName?: string };
       }>(
-        `/api/contracts/${contract.id}/signature`,
+        await buildSignatureApiUrl(contract.id),
         { credentials: 'include' },
         CONTRACTS_FETCH_TIMEOUT_MS,
       );
@@ -172,7 +195,7 @@ export const SaleContractSignatureSection = forwardRef<
     } finally {
       setLoading(false);
     }
-  }, [contract?.id, loggedInUserEmail, projectName]);
+  }, [contract?.id, loggedInUserEmail, projectName, buildSignatureApiUrl]);
 
   useEffect(() => {
     setLocalTimeline([]);
@@ -205,7 +228,7 @@ export const SaleContractSignatureSection = forwardRef<
       error?: string;
       latest?: ContractSignatureRow | null;
     }>(
-      `/api/contracts/${contract.id}/signature`,
+      await buildSignatureApiUrl(contract.id),
       { credentials: 'include' },
       CONTRACTS_FETCH_TIMEOUT_MS,
     );
@@ -225,7 +248,7 @@ export const SaleContractSignatureSection = forwardRef<
     setLatest(refreshed);
     setSignUrl(refreshed.signature_url || null);
     return refreshed.id;
-  }, [contract?.id, latest?.id, latest?.signature_status]);
+  }, [contract?.id, latest?.id, latest?.signature_status, buildSignatureApiUrl]);
 
   const handleVendorSign = useCallback(
     async (input: {
@@ -307,12 +330,14 @@ export const SaleContractSignatureSection = forwardRef<
     setSending(true);
     setError(null);
     try {
+      const apiUrl = await buildSignatureApiUrl(contract.id);
       const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
+        success?: boolean;
         error?: string;
         signUrl?: string;
         signature?: ContractSignatureRow;
       }>(
-        `/api/contracts/${contract.id}/signature`,
+        apiUrl,
         { method: 'POST', credentials: 'include' },
         CONTRACTS_FETCH_TIMEOUT_MS,
       );
@@ -321,8 +346,15 @@ export const SaleContractSignatureSection = forwardRef<
       }
       const json = data || {};
       const url = json.signUrl || json.signature?.signature_url;
+      if (!url) {
+        throw new Error('Link de assinatura não retornado pelo servidor.');
+      }
+      console.log('[contracts/signature-final] client_send_ok', {
+        contractId: contract.id,
+        hasSignUrl: true,
+      });
       setLatest(json.signature || null);
-      setSignUrl(url || null);
+      setSignUrl(url);
       setShareOpen(true);
       const sentEvent = {
         at: new Date().toISOString(),
@@ -333,6 +365,10 @@ export const SaleContractSignatureSection = forwardRef<
       setTimeline((prev) => [...prev, sentEvent]);
       onSigned?.();
     } catch (e) {
+      console.error('[contracts/signature-final] client_send_failed', {
+        contractId: contract?.id,
+        message: e instanceof Error ? e.message : String(e),
+      });
       setError(
         e instanceof Error
           ? e.message
@@ -341,7 +377,7 @@ export const SaleContractSignatureSection = forwardRef<
     } finally {
       setSending(false);
     }
-  }, [contract?.id, onSigned, userRole]);
+  }, [contract?.id, onSigned, userRole, buildSignatureApiUrl]);
 
   useImperativeHandle(
     ref,

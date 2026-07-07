@@ -12,6 +12,7 @@ import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
+import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 
 const COMPANY_CONTRACT_VIEW_SELECT = [
   "id",
@@ -388,13 +389,17 @@ export async function buildContractViewHtml(
   let projectBlocks: Record<string, unknown>[] = [];
   let streetGuides: Record<string, unknown>[] = [];
 
-  if (projectId) {
+  if (projectId && shouldLoadProjectBlocksForContract(params.tenant)) {
     const [{ data: blocks }, { data: guides }] = await Promise.all([
       supabase.from("blocks").select(BLOCKS_PROJECT_LIST_SELECT).eq("project_id", projectId),
       supabase.from("street_guides").select(STREET_GUIDES_SELECT).eq("project_id", projectId),
     ]);
     projectBlocks = (blocks || []) as Record<string, unknown>[];
     streetGuides = (guides || []) as Record<string, unknown>[];
+    logContractHtmlGlobal("global-preview", "project_blocks_loaded", {
+      projectId,
+      blocksCount: projectBlocks.length,
+    });
   }
 
   const manualConfrontants = blockId

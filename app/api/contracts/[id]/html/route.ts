@@ -5,7 +5,12 @@ import {
   persistGeneratedContractHtml,
   readStoredContractHtml,
   resolveRegenerationSession,
+  resolveStoredContractHtmlMeta,
 } from '@/lib/contractRegeneration';
+import {
+  contractHtmlLooksLikeFullBody,
+  logContractHtmlGlobal,
+} from '@/lib/contractHtmlGlobal';
 import { buildContractViewHtmlForContractId } from '@/lib/buildContractViewHtml';
 import { CustomerContractValidationError } from '@/lib/validateCustomerForContract';
 import {
@@ -15,6 +20,7 @@ import {
 } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function GET(
   request: Request,
@@ -22,7 +28,7 @@ export async function GET(
 ) {
   const startedAt = Date.now();
   const mark = (step: string, extra?: Record<string, unknown>) => {
-    console.log('[contracts/html]', step, {
+    logContractHtmlGlobal('global-preview', step, {
       ms: Date.now() - startedAt,
       ...extra,
     });
@@ -49,7 +55,7 @@ export async function GET(
     const callerRole = String(profile?.role || '').toUpperCase();
     const { id: contractId } = await params;
 
-    mark('load_contract');
+    mark('load_contract', { contractId });
     let contract: Record<string, unknown>;
     try {
       contract = await loadContractHtmlPreviewRow(supabase, contractId);
@@ -81,8 +87,18 @@ export async function GET(
       impersonatingTenantId: url.searchParams.get('impersonatingTenantId'),
     });
 
-    const savedHtml = readStoredContractHtml(contract);
+    const htmlMeta = resolveStoredContractHtmlMeta(contract);
+    const savedHtml = htmlMeta.html ?? readStoredContractHtml(contract);
     const needsRegenerar = contract.needs_regenerar === true;
+
+    mark('html_read', {
+      contractId: contract.id,
+      tenant_id: contract.tenant_id || contract.company_id,
+      htmlColumn: htmlMeta.column,
+      htmlLength: htmlMeta.length,
+      hasBody: savedHtml ? contractHtmlLooksLikeFullBody(savedHtml) : false,
+      forceRefresh,
+    });
 
     if (savedHtml && !forceRefresh) {
       mark('response', { source: 'saved', bytes: savedHtml.length });
@@ -90,12 +106,12 @@ export async function GET(
         success: true,
         source: 'saved',
         html: savedHtml,
+        htmlColumn: htmlMeta.column,
         needs_regenerar: needsRegenerar,
       });
     }
 
-    mark('load_data', { forceRefresh, hasSaved: Boolean(savedHtml) });
-    mark('generate_html');
+    mark('generate_html_start', { hasSaved: Boolean(savedHtml) });
     const html = await buildContractViewHtmlForContractId(
       supabase,
       String(contract.id || contractId),
@@ -111,7 +127,11 @@ export async function GET(
       );
     }
 
-    mark('response', { source: 'generated', bytes: html.length });
+    mark('response', {
+      source: 'generated',
+      bytes: html.length,
+      hasBody: contractHtmlLooksLikeFullBody(html),
+    });
     return NextResponse.json({
       success: true,
       source: 'generated',
@@ -134,7 +154,10 @@ export async function GET(
 
     const message =
       err instanceof Error ? err.message : 'Falha ao gerar HTML do contrato.';
-    console.error('[contracts/html] error', message);
+    logContractHtmlGlobal('global-preview', 'error', {
+      ms: Date.now() - startedAt,
+      message,
+    });
     mark('response', { status: 500, message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
