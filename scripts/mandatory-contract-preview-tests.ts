@@ -150,6 +150,7 @@ function testRecantoSignatureEmbedHook() {
   assert(viewHtml.includes('embedRecantoContractSignatureInHtml'), 'preview embute assinatura');
   assert(regen.includes('embedRecantoContractSignatureInHtml'), 'regeneração embute assinatura');
   assert(page.includes('embedRecantoContractSignatureInHtml'), 'PDF client embute assinatura');
+  assert(page.includes('resolveContractHtml2pdfOptions'), 'PDF Recanto usa pagebreak avoid');
   console.log('OK testRecantoSignatureEmbedHook');
 }
 

@@ -76,6 +76,7 @@ import {
   applyContractPdfChrome,
   buildContractPdfChromeFromTenant,
   getContractHtml2pdfOptions,
+  resolveContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
 import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
 import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
@@ -860,13 +861,17 @@ export default function ContractsPage() {
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
       element.innerHTML = ver.generated_html;
+      const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
+      const htmlLooksRecanto = String(ver.generated_html || '').includes(
+        'sv-contract-recanto-primavera',
+      );
+      const pdfOptions = htmlLooksRecanto
+        ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
+        : getContractHtml2pdfOptions(pdfFilename);
+
       await html2pdf()
         .from(element)
-        .set(
-          getContractHtml2pdfOptions(
-            `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`,
-          ),
-        )
+        .set(pdfOptions)
         .toPdf()
         .get("pdf")
         .then((pdf: any) => {
@@ -982,9 +987,8 @@ export default function ContractsPage() {
         }
       }
 
-      const opt = getContractHtml2pdfOptions(
-        `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
-      );
+      const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
+      const opt = resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename);
 
       html2pdf()
         .from(element)
