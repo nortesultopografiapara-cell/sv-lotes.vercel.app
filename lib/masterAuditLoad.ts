@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isMasterAuditEntry,
   mapAuditLogRow,
+  MASTER_AUDIT_MODULES,
   normalizeAuditLogRow,
   resolveAuditCompanyId,
   type MasterAuditRow,
@@ -38,8 +39,11 @@ export const MASTER_AUDIT_FETCH_WINDOW = 250;
 /** Timeout interno por fase da leitura (ms). */
 export const MASTER_AUDIT_QUERY_TIMEOUT_MS = 12_000;
 
+const AUDIT_SELECT_LEAN =
+  'id, action, module, description, created_at, tenant_id, company_id, user_id';
+
 const AUDIT_SELECT_VARIANTS = [
-  'id, action, module, description, created_at, tenant_id, company_id, user_id',
+  AUDIT_SELECT_LEAN,
   'id, action, module, description, details, created_at, tenant_id, company_id, user_id',
   'id, action, module, description, created_at, tenant_id, user_id',
   'id, action, entity_type, description, created_at, tenant_id, user_id',
@@ -165,18 +169,36 @@ export async function diagnoseMasterAuditLogs(
 async function queryAuditLogsWindow(
   supabase: SupabaseClient,
   select: string,
+  rangeEnd: number = MASTER_AUDIT_FETCH_WINDOW - 1,
 ) {
   return supabase
     .from('audit_logs')
     .select(select)
     .order('created_at', { ascending: false })
-    .range(0, MASTER_AUDIT_FETCH_WINDOW - 1);
+    .range(0, rangeEnd);
+}
+
+async function queryMasterModuleAuditLogs(supabase: SupabaseClient, select: string) {
+  return supabase
+    .from('audit_logs')
+    .select(select)
+    .in('module', [...MASTER_AUDIT_MODULES])
+    .order('created_at', { ascending: false })
+    .range(0, MASTER_AUDIT_ROW_LIMIT - 1);
 }
 
 async function queryAuditLogs(supabase: SupabaseClient) {
   let lastError: { message?: string } | null = null;
 
   for (const select of AUDIT_SELECT_VARIANTS) {
+    const moduleRes = await queryMasterModuleAuditLogs(supabase, select);
+    if (!moduleRes.error && (moduleRes.data?.length ?? 0) > 0) {
+      return moduleRes;
+    }
+    if (moduleRes.error && !isMissingColumnError(moduleRes.error.message || '')) {
+      lastError = moduleRes.error;
+    }
+
     const res = await queryAuditLogsWindow(supabase, select);
     if (!res.error) return res;
 

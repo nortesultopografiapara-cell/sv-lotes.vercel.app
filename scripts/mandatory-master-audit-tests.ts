@@ -35,12 +35,36 @@ function testMasterAuditEntryFilter() {
     'whatsapp saas billing',
   );
   assert(
+    isMasterAuditEntry({ module: 'SAAS_BILLING', action: 'SAAS_CHARGE_CREATED' }),
+    'cobrança saas criada',
+  );
+  assert(
+    isMasterAuditEntry({ module: 'SAAS_BILLING', action: 'SAAS_CHARGE_PAID' }),
+    'cobrança saas paga',
+  );
+  assert(
+    isMasterAuditEntry({ module: 'SAAS', action: 'CONTRACT_ARCHIVED' }),
+    'contrato saas arquivado',
+  );
+  assert(
+    isMasterAuditEntry({ module: 'CONTRACTS', action: 'CONTRACT_SIGNED_ELECTRONICALLY' }),
+    'contrato assinado eletronicamente',
+  );
+  assert(
+    isMasterAuditEntry({ module: 'WHATSAPP', action: 'WHATSAPP_TEST_SENT' }),
+    'módulo whatsapp',
+  );
+  assert(
     isMasterAuditEntry({ module: null, action: 'COMPANY_STATUS_CHANGED' }),
     'status empresa sem module',
   );
   assert(
     !isMasterAuditEntry({ module: 'GIS', action: 'TXT_CIVIL3D_IMPORT' }),
     'gis fora do escopo master',
+  );
+  assert(
+    !isMasterAuditEntry({ module: 'FINANCE', action: 'CASH_OUT_CREATED' }),
+    'financeiro fora do escopo master',
   );
   console.log('OK testMasterAuditEntryFilter');
 }
@@ -86,14 +110,125 @@ function testAuditLoadDataSource() {
 
   const loader = fs.readFileSync('lib/masterAuditLoad.ts', 'utf8');
   assert(loader.includes("from('audit_logs')"), 'fonte audit_logs');
-  assert(loader.includes('.range(0, MASTER_AUDIT_FETCH_WINDOW - 1)'), 'range sem count global');
-  assert(!loader.includes(".in('module'"), 'sem filtro SQL por module');
+  assert(loader.includes(".in('module', [...MASTER_AUDIT_MODULES])"), 'filtro SQL por módulos master');
+  assert(loader.includes('.range(0, rangeEnd)'), 'fallback janela ampla');
   assert(!loader.includes('old_data'), 'sem colunas jsonb pesadas');
   assert(!loader.includes('new_data'), 'sem colunas jsonb pesadas');
   assert(loader.includes(".in('id', companyIds)"), 'companies escopadas');
   assert(loader.includes(".in('id', userIds)"), 'users escopados');
   assert(loader.includes('diagnoseMasterAuditLogs'), 'diagnóstico');
   console.log('OK testAuditLoadDataSource');
+}
+
+function testMasterAuditModuleCatalog() {
+  const audit = fs.readFileSync('lib/masterAudit.ts', 'utf8');
+  assert(audit.includes("'CONTRACTS'"), 'módulo contracts no filtro');
+  assert(audit.includes("'SAAS_BILLING'"), 'módulo saas billing no filtro');
+  assert(audit.includes("'SAAS'"), 'módulo saas no filtro');
+  assert(audit.includes("'CONTRACT_'"), 'prefixo contract_ nas actions');
+  console.log('OK testMasterAuditModuleCatalog');
+}
+
+async function testLoadMasterAuditLogsWithRealModules() {
+  const rows = [
+    {
+      id: '1',
+      action: 'SAAS_CHARGE_CREATED',
+      module: 'SAAS_BILLING',
+      description: 'Cobrança PIX',
+      created_at: '2026-07-01T10:00:00Z',
+      tenant_id: 'company-1',
+      company_id: 'company-1',
+      user_id: 'user-1',
+    },
+    {
+      id: '2',
+      action: 'CONTRACT_ARCHIVED',
+      module: 'SAAS',
+      description: '{"contract_id":"c-1"}',
+      created_at: '2026-07-01T09:00:00Z',
+      tenant_id: 'company-1',
+      company_id: 'company-1',
+      user_id: null,
+    },
+    {
+      id: '3',
+      action: 'CONTRACT_SIGNED_ELECTRONICALLY',
+      module: 'CONTRACTS',
+      description: 'Assinatura eletrônica',
+      created_at: '2026-07-01T08:00:00Z',
+      tenant_id: 'company-2',
+      company_id: 'company-2',
+      user_id: null,
+    },
+    {
+      id: '4',
+      action: 'TXT_CIVIL3D_IMPORT',
+      module: 'GIS',
+      description: 'Importação',
+      created_at: '2026-07-01T11:00:00Z',
+      tenant_id: 'company-1',
+      company_id: 'company-1',
+      user_id: 'user-1',
+    },
+  ];
+
+  const supabase = {
+    from(table: string) {
+      assert(table === 'audit_logs' || table === 'companies' || table === 'users', 'tabela inesperada');
+      const filters: { column?: string; values?: string[] } = {};
+      const builder = {
+        select() {
+          return builder;
+        },
+        in(column: string, values: string[]) {
+          filters.column = column;
+          filters.values = values;
+          return builder;
+        },
+        order() {
+          return builder;
+        },
+        range() {
+          return builder;
+        },
+        then(resolve: (value: unknown) => void) {
+          if (table === 'audit_logs') {
+            const data =
+              filters.column === 'module'
+                ? rows.filter((row) => filters.values?.includes(String(row.module)))
+                : rows;
+            resolve({ data, error: null });
+            return;
+          }
+          if (table === 'companies') {
+            resolve({
+              data: [
+                { id: 'company-1', name: 'Empresa Um' },
+                { id: 'company-2', name: 'Empresa Dois' },
+              ],
+              error: null,
+            });
+            return;
+          }
+          resolve({ data: [], error: null });
+        },
+      };
+      return builder;
+    },
+  };
+
+  const result = await loadMasterAuditLogs(supabase as never);
+  assert(result.rawCount === 3, 'lê somente módulos master via SQL');
+  assert(result.filteredCount === 3, 'mantém registros master');
+  assert(result.rows.some((row) => row.action === 'Cobrança SaaS criada'), 'ação saas billing');
+  assert(result.rows.some((row) => row.action === 'Contrato SaaS arquivado'), 'ação saas');
+  assert(
+    result.rows.some((row) => row.action === 'Contrato assinado eletronicamente'),
+    'ação contracts',
+  );
+  assert(result.rows.every((row) => row.user_name === 'Sistema' || row.user_name !== ''), 'usuário fallback');
+  console.log('OK testLoadMasterAuditLogsWithRealModules');
 }
 
 function testAuditApiRouteShape() {
@@ -145,6 +280,8 @@ async function main() {
   testNormalizeAuditLogRow();
   testAuditPageUsesApiRoute();
   testAuditLoadDataSource();
+  testMasterAuditModuleCatalog();
+  await testLoadMasterAuditLogsWithRealModules();
   testAuditApiRouteShape();
   testWrittenModulesCatalog();
   await testAuditTimeoutHelper();

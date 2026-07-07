@@ -53,6 +53,9 @@ function MasterAuditContent() {
       if (!result.ok || !result.data) {
         setRows([]);
         setEmptyHint(EMPTY_MESSAGE);
+        if (result.error) {
+          setWarning(result.error);
+        }
         return;
       }
 
