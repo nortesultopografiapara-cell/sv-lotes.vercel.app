@@ -3,8 +3,6 @@
 import { useMemo } from 'react';
 import { Loader2, Building2, Palette, Landmark } from 'lucide-react';
 import { FinancialIntegrationPanel } from '@/components/finance/FinancialIntegrationPanel';
-import { BankingFlagDiagnosticsBanner } from '@/components/banking/BankingFlagDiagnosticsBanner';
-import type { BankingUiDiagnostics } from '@/lib/banking/config';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
@@ -22,14 +20,10 @@ const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
 export type SettingsPageClientProps = {
   bankingUiEnabled: boolean;
-  showBankingDiagnostics?: boolean;
-  bankingDiagnostics?: BankingUiDiagnostics;
 };
 
 export default function SettingsPageClient({
   bankingUiEnabled,
-  showBankingDiagnostics = false,
-  bankingDiagnostics,
 }: SettingsPageClientProps) {
   const { user, loading: authLoading } = useSessionGuard();
 
@@ -111,10 +105,6 @@ export default function SettingsPageClient({
           </p>
         </div>
       </div>
-
-      {showBankingDiagnostics && bankingDiagnostics ? (
-        <BankingFlagDiagnosticsBanner diagnostics={bankingDiagnostics} />
-      ) : null}
 
       {readOnlyDemo ? <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} /> : null}
 

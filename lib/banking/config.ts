@@ -68,8 +68,18 @@ export function getBankingUiDiagnostics(bankingUiEnabled: boolean): BankingUiDia
   };
 }
 
-/** Banner de diagnóstico — Preview Vercel ou desenvolvimento local. */
-export function shouldShowBankingUiDiagnostics(): boolean {
+/** Logs de diagnóstico — Preview Vercel ou desenvolvimento local (não exibir na UI). */
+export function shouldLogBankingUiDiagnostics(): boolean {
   if (process.env.NODE_ENV === 'development') return true;
   return process.env.VERCEL_ENV === 'preview';
+}
+
+/** Banner de diagnóstico desativado na interface — manter false para usuário final. */
+export function shouldShowBankingUiDiagnostics(): boolean {
+  return false;
+}
+
+export function logBankingUiDiagnosticsIfNeeded(bankingUiEnabled: boolean): void {
+  if (!shouldLogBankingUiDiagnostics()) return;
+  console.info('[banking-ui-diagnostics]', getBankingUiDiagnostics(bankingUiEnabled));
 }
