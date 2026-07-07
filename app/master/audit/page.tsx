@@ -4,9 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
-import { loadMasterAuditLogs } from '@/lib/masterAuditLoad';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import { masterAuditToCsv, type MasterAuditRow } from '@/lib/masterAudit';
+
+type MasterAuditApiResponse = {
+  rows?: MasterAuditRow[];
+  warnings?: string[];
+  rawCount?: number;
+  filteredCount?: number;
+  error?: string;
+};
+
+const EMPTY_MESSAGE = 'Nenhum log registrado ainda.';
 
 export default function MasterAuditPage() {
   return (
@@ -17,35 +26,70 @@ export default function MasterAuditPage() {
 }
 
 function MasterAuditContent() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [rows, setRows] = useState<MasterAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [emptyHint, setEmptyHint] = useState<string | null>(EMPTY_MESSAGE);
   const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    setError(null);
     setWarning(null);
+    setEmptyHint(EMPTY_MESSAGE);
+
     try {
-      const result = await loadMasterAuditLogs(supabase);
-      setRows(result.rows);
-      if (result.errors.length > 0) {
-        setWarning(result.errors.join(' · '));
+      const result = await fetchJsonWithTimeout<MasterAuditApiResponse>(
+        `/api/master/audit?userId=${encodeURIComponent(user.id)}`,
+        { credentials: 'include' },
+        15_000,
+      );
+
+      if (!result.ok || !result.data) {
+        setRows([]);
+        setEmptyHint(EMPTY_MESSAGE);
+        return;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar auditoria');
+
+      const payload = result.data;
+      const loadedRows = payload.rows || [];
+      setRows(loadedRows);
+
+      const partialWarnings = (payload.warnings || []).filter(Boolean);
+      if (partialWarnings.length > 0 && loadedRows.length > 0) {
+        setWarning(partialWarnings.join(' · '));
+      }
+
+      if (loadedRows.length === 0) {
+        const rawCount = payload.rawCount ?? 0;
+        const filteredCount = payload.filteredCount ?? 0;
+        if (rawCount > 0 && filteredCount === 0) {
+          setEmptyHint(
+            `${EMPTY_MESSAGE} Foram lidos ${rawCount} registros recentes em audit_logs, mas nenhum é de ação Master SaaS.`,
+          );
+        } else {
+          setEmptyHint(EMPTY_MESSAGE);
+        }
+      } else {
+        setEmptyHint(null);
+      }
+    } catch {
       setRows([]);
+      setEmptyHint(EMPTY_MESSAGE);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData]);
+  }, [authLoading, loadData]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -71,7 +115,7 @@ function MasterAuditContent() {
     URL.revokeObjectURL(url);
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
@@ -117,12 +161,6 @@ function MasterAuditContent() {
         </div>
       ) : null}
 
-      {error ? (
-        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
-
       <div className="rounded-xl border border-white/10 overflow-hidden">
         <table className="w-full text-left text-sm table-fixed min-w-0">
           <thead className="bg-[var(--color-surface)]/80 text-slate-500 text-xs uppercase">
@@ -138,7 +176,7 @@ function MasterAuditContent() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} className="p-8 text-center text-slate-500">
-                  Nenhum registro de auditoria encontrado.
+                  <p>{emptyHint || EMPTY_MESSAGE}</p>
                 </td>
               </tr>
             ) : (

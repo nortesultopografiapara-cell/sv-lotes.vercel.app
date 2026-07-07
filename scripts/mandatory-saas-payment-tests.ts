@@ -1153,7 +1153,7 @@ function testSaasSharedLayerNonBlocking() {
   assert(plansPage.includes('loadMasterSaasFinanceData'), 'plans lê financeiro via Supabase browser');
 
   const auditPage = read('app/master/audit/page.tsx');
-  assert(auditPage.includes('loadMasterAuditLogs'), 'auditoria via Supabase browser');
+  assert(auditPage.includes('/api/master/audit'), 'auditoria via API service role');
 }
 
 function testTenantBillingAuth() {

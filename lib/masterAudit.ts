@@ -10,6 +10,21 @@ export type MasterAuditRow = {
   user_id?: string | null;
 };
 
+export type RawAuditLogRow = {
+  id: string;
+  created_at?: string | null;
+  action?: string | null;
+  module?: string | null;
+  description?: string | null;
+  details?: string | null;
+  tenant_id?: string | null;
+  company_id?: string | null;
+  user_id?: string | null;
+  entity_type?: string | null;
+  old_data?: unknown;
+  new_data?: unknown;
+};
+
 const ACTION_LABELS: Record<string, string> = {
   COMPANY_CREATED: 'Criação de empresa',
   COMPANY_UPDATED: 'Edição de empresa',
@@ -25,6 +40,9 @@ const ACTION_LABELS: Record<string, string> = {
   SAAS_PLAN_UPDATE: 'Alteração de plano',
   SAAS_PAYMENT_REGISTERED: 'Pagamento de assinatura registrado',
   SAAS_PAYMENT_STATUS_CHANGED: 'Alteração de status de pagamento',
+  SAAS_INVOICE_GENERATED: 'Cobrança SaaS gerada',
+  SAAS_CHARGE_CREATED: 'Cobrança SaaS criada',
+  SAAS_CHARGE_PAID: 'Cobrança SaaS paga',
   SAAS_CHARGE_DELETED: 'Cobrança cancelada excluída',
   CONTRACT_ARCHIVED: 'Contrato SaaS arquivado',
   COMPANY_ADMIN_CREATED: 'Administrador da empresa cadastrado',
@@ -55,6 +73,17 @@ const MASTER_MODULES = new Set([
   'SAAS_BILLING',
 ]);
 
+/** Módulos usados nas escritas Master SaaS no código (referência). */
+export const MASTER_AUDIT_WRITTEN_MODULES = [
+  'SUBSCRIPTIONS',
+  'SAAS_BILLING',
+  'SAAS',
+  'COMPANY_ADMINS',
+] as const;
+
+/** Módulos aceitos pelo filtro em memória isMasterAuditEntry. */
+export const MASTER_AUDIT_MODULES = [...MASTER_MODULES] as const;
+
 const MASTER_ACTION_PREFIXES = [
   'COMPANY_',
   'USER_',
@@ -64,6 +93,8 @@ const MASTER_ACTION_PREFIXES = [
   'RESOURCES_',
   'COMPANY_ADMIN_',
   'IMPERSONATION_',
+  'WHATSAPP_',
+  'MASTER_',
   'LOGIN',
 ];
 
@@ -98,33 +129,53 @@ export function parseAuditDetails(raw?: string | null): string {
   return raw;
 }
 
+export function normalizeAuditLogRow(row: RawAuditLogRow): RawAuditLogRow {
+  const module =
+    row.module ||
+    (row.entity_type && row.entity_type !== 'unknown' ? String(row.entity_type).toUpperCase() : null);
+  const description =
+    row.description ||
+    row.details ||
+    (row.new_data && typeof row.new_data === 'object'
+      ? JSON.stringify(row.new_data)
+      : null);
+
+  return {
+    ...row,
+    module,
+    description,
+    tenant_id: row.tenant_id || row.company_id || null,
+    company_id: row.company_id || row.tenant_id || null,
+  };
+}
+
+export function resolveAuditCompanyId(row: {
+  tenant_id?: string | null;
+  company_id?: string | null;
+}): string | null {
+  return row.tenant_id || row.company_id || null;
+}
+
 export function mapAuditLogRow(
-  row: {
-    id: string;
-    created_at?: string | null;
-    action?: string | null;
-    module?: string | null;
-    description?: string | null;
-    details?: string | null;
-    tenant_id?: string | null;
-    user_id?: string | null;
-  },
+  row: RawAuditLogRow,
   companyNames: Record<string, string>,
   userNames: Record<string, string>,
 ): MasterAuditRow {
-  const tenantId = row.tenant_id || null;
-  const details = row.description || parseAuditDetails(row.details);
+  const normalized = normalizeAuditLogRow(row);
+  const tenantId = resolveAuditCompanyId(normalized);
+  const details =
+    normalized.description || parseAuditDetails(normalized.details);
 
   return {
-    id: row.id,
-    created_at: row.created_at || '',
-    user_name: (row.user_id && userNames[row.user_id]) || 'Sistema',
-    action: formatMasterAuditAction(row.action),
+    id: normalized.id,
+    created_at: normalized.created_at || '',
+    user_name: (normalized.user_id && userNames[normalized.user_id]) || 'Sistema',
+    action: formatMasterAuditAction(normalized.action),
     company_name: (tenantId && companyNames[tenantId]) || '—',
     details,
-    module: row.module,
+    module: normalized.module,
     tenant_id: tenantId,
-    user_id: row.user_id,
+    user_id: normalized.user_id,
   };
 }
 
