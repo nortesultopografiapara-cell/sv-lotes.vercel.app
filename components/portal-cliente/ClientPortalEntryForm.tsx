@@ -1,18 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, MessageCircle } from 'lucide-react';
+import { AlertCircle, Loader2, Search } from 'lucide-react';
 import {
   formatCpfCnpj,
   isValidBrazilianTaxDocument,
   onlyDigits,
 } from '@/lib/inputMasks';
+import type { ClientPortalLookupResponse, ClientPortalMaskedResult } from '@/lib/portal-cliente/types';
+import { ClientPortalLookupResults } from '@/components/portal-cliente/ClientPortalLookupResults';
+
+type LookupStep = 'form' | 'results' | 'not_found';
 
 export function ClientPortalEntryForm() {
   const [cpfCnpj, setCpfCnpj] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<LookupStep>('form');
+  const [results, setResults] = useState<ClientPortalMaskedResult[]>([]);
+  const [selectedLinkKey, setSelectedLinkKey] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -25,25 +31,78 @@ export function ClientPortalEntryForm() {
     }
 
     setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    setLoading(false);
-    setSubmitted(true);
+    try {
+      const response = await fetch('/api/portal-cliente/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf_cnpj: digits }),
+      });
+
+      if (response.status === 404) {
+        setError('Portal do Cliente indisponível no momento.');
+        return;
+      }
+
+      const data = (await response.json()) as ClientPortalLookupResponse;
+      if (!data.found || data.maskedResults.length === 0) {
+        setStep('not_found');
+        setResults([]);
+        setSelectedLinkKey(null);
+        return;
+      }
+
+      setResults(data.maskedResults);
+      setSelectedLinkKey(data.maskedResults.length === 1 ? data.maskedResults[0].linkKey : null);
+      setStep('results');
+    } catch {
+      setError('Não foi possível consultar seu cadastro. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (submitted) {
+  const handleBack = () => {
+    setStep('form');
+    setResults([]);
+    setSelectedLinkKey(null);
+    setError(null);
+  };
+
+  if (step === 'not_found') {
     return (
-      <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-6 text-center space-y-3">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10">
-          <MessageCircle className="h-6 w-6 text-emerald-400" aria-hidden />
+      <div className="space-y-4 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
+          <AlertCircle className="h-6 w-6 text-amber-400" aria-hidden />
         </div>
-        <h2 className="text-lg font-semibold text-white">Próxima etapa em breve</h2>
-        <p className="text-sm text-gray-400 leading-relaxed">
-          Após informar seu CPF ou CNPJ, você receberá um código de 6 dígitos no WhatsApp
-          cadastrado para acessar seus contratos e parcelas com segurança.
+        <p className="text-sm text-gray-300">
+          Nenhum cadastro foi localizado para este CPF/CNPJ.
         </p>
-        <p className="text-xs text-gray-500">
-          Esta versão ainda não envia o código — lookup e OTP serão liberados nas próximas etapas.
-        </p>
+        <button
+          type="button"
+          onClick={handleBack}
+          className="text-sm font-medium text-cyan-400 hover:text-cyan-300"
+        >
+          Tentar outro documento
+        </button>
+      </div>
+    );
+  }
+
+  if (step === 'results') {
+    return (
+      <div className="space-y-5">
+        <ClientPortalLookupResults
+          results={results}
+          selectedLinkKey={selectedLinkKey}
+          onSelect={setSelectedLinkKey}
+        />
+        <button
+          type="button"
+          onClick={handleBack}
+          className="w-full text-sm font-medium text-gray-400 hover:text-gray-200"
+        >
+          Voltar e informar outro CPF/CNPJ
+        </button>
       </div>
     );
   }
@@ -89,10 +148,13 @@ export function ClientPortalEntryForm() {
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            Continuando…
+            Consultando…
           </>
         ) : (
-          'Continuar'
+          <>
+            <Search className="h-4 w-4" aria-hidden />
+            Continuar
+          </>
         )}
       </button>
     </form>

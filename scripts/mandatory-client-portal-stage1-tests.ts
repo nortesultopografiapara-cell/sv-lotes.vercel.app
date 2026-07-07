@@ -107,9 +107,9 @@ function testDocs(): void {
   assert(docs.includes(CLIENT_PORTAL_PATH), 'docs path');
 }
 
-function testNoWriteApisYet(): void {
-  const apiDir = path.join(root, 'app/api/portal-cliente');
-  assert(!fs.existsSync(apiDir), 'no portal API routes in stage 1');
+function testLookupApiExists(): void {
+  const apiRoute = path.join(root, 'app/api/portal-cliente/lookup/route.ts');
+  assert(fs.existsSync(apiRoute), 'lookup API route exists');
 }
 
 function main(): void {
@@ -124,7 +124,7 @@ function main(): void {
   testNextConfig();
   testEnvExample();
   testDocs();
-  testNoWriteApisYet();
+  testLookupApiExists();
   console.log('mandatory-client-portal-stage1-tests: OK');
 }
 

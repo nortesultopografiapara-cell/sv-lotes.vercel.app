@@ -150,11 +150,14 @@ Desativado por padrão. Em `develop`/preview, definir ambos como `true` para tes
 - [ ] OTP WhatsApp
 - [ ] Painel read-only
 
-### Etapa 2 — Lookup cross-tenant
+### Etapa 2 — Lookup cross-tenant ✓
 
-- `POST /api/portal-cliente/lookup`
-- Lista vínculos mascarados
-- Testes de isolamento
+- [x] `POST /api/portal-cliente/lookup`
+- [x] `lib/clientPortalLookup.ts` (isolado)
+- [x] Dados mascarados (nome, telefone)
+- [x] Lista de vínculos múltiplos
+- [ ] OTP WhatsApp
+- [ ] Painel read-only
 
 ### Etapa 3 — OTP + sessão
 
