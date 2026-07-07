@@ -80,6 +80,8 @@ export async function middleware(request: NextRequest) {
     '/api/sign',
     '/verify',
     '/api/verify',
+    '/portal-cliente',
+    '/api/portal-cliente',
   ];
   const isPublicRoute = isLanding || isDemoPage || publicRoutes.some(route => url.pathname.startsWith(route));
 

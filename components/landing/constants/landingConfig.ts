@@ -8,6 +8,9 @@ export const LANDING_TEST_LOTEMENT_PATH = '/demo';
 
 export const LANDING_LOGIN_PATH = '/login';
 
+/** Portal do Cliente público (somente leitura) — ativo com NEXT_PUBLIC_CLIENT_PORTAL_ENABLED */
+export const LANDING_CLIENT_PORTAL_PATH = '/portal-cliente';
+
 export const LANDING_WHATSAPP_NUMBER = '5594991955918';
 export const LANDING_PHONE_NUMBER = '5594991612981';
 
