@@ -70,6 +70,9 @@ const MASTER_MODULES = new Set([
   'SAAS_BILLING',
 ]);
 
+/** Módulos gravados nas ações Master SaaS — usado para filtrar a query inicial. */
+export const MASTER_AUDIT_MODULES = [...MASTER_MODULES] as const;
+
 const MASTER_ACTION_PREFIXES = [
   'COMPANY_',
   'USER_',

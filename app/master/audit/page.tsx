@@ -27,7 +27,6 @@ function MasterAuditContent() {
   const { user, loading: authLoading } = useAuth();
   const [rows, setRows] = useState<MasterAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [emptyHint, setEmptyHint] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -39,7 +38,6 @@ function MasterAuditContent() {
     }
 
     setLoading(true);
-    setError(null);
     setWarning(null);
     setEmptyHint(null);
 
@@ -47,11 +45,16 @@ function MasterAuditContent() {
       const result = await fetchJsonWithTimeout<MasterAuditApiResponse>(
         `/api/master/audit?userId=${encodeURIComponent(user.id)}`,
         { credentials: 'include' },
-        30_000,
+        12_000,
       );
 
       if (!result.ok || !result.data) {
-        throw new Error(result.error || 'Erro ao carregar auditoria');
+        setRows([]);
+        setWarning(
+          result.error ||
+            'Não foi possível carregar a auditoria no momento. Exibindo lista vazia.',
+        );
+        return;
       }
 
       const payload = result.data;
@@ -74,8 +77,12 @@ function MasterAuditContent() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar auditoria');
       setRows([]);
+      setWarning(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar a auditoria no momento. Exibindo lista vazia.',
+      );
     } finally {
       setLoading(false);
     }
@@ -153,12 +160,6 @@ function MasterAuditContent() {
       {warning ? (
         <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           {warning}
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
         </div>
       ) : null}
 
