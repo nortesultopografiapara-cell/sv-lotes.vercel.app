@@ -213,14 +213,88 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
   }, [companyAsaasEnabled, showToast]);
 
+  const refreshInstallmentRows = useCallback(
+    async (
+      installmentIds: string[],
+      rlsCtx: Awaited<ReturnType<typeof resolveRlsContext>>,
+      ownerCtx: Awaited<ReturnType<typeof loadOwnerAccessContext>>,
+    ): Promise<FinanceReceiptRow[]> => {
+      if (!user || installmentIds.length === 0) return [];
+      let refreshQuery = supabase
+        .from('finance_receipts')
+        .select(FINANCE_RECEIPTS_LIST_SELECT)
+        .in('id', installmentIds)
+        .order('due_date', { ascending: true });
+      refreshQuery = applyTenantFilter(refreshQuery, rlsCtx, 'finance_receipts');
+      let { data: refreshedData, error: refreshError } = await refreshQuery;
+      if (refreshError) {
+        let fallbackQuery = supabase
+          .from('finance_receipts')
+          .select(FINANCE_RECEIPTS_LIST_SELECT_FALLBACK)
+          .in('id', installmentIds)
+          .order('due_date', { ascending: true });
+        fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'finance_receipts');
+        const fallbackRes = await fallbackQuery;
+        refreshedData = fallbackRes.data;
+        refreshError = fallbackRes.error;
+      }
+      if (refreshError || !refreshedData) return [];
+      return scopeFinanceRowsForUser(
+        user,
+        refreshedData,
+        ownerCtx.rows,
+        resolveReceiptProjectId,
+      );
+    },
+    [user],
+  );
+
+  const loadAsaasChargesContext = useCallback(
+    async (
+      installmentIds: string[],
+      options?: { refreshReceiptsAfterLoad?: boolean; rlsCtx?: Awaited<ReturnType<typeof resolveRlsContext>>; ownerCtx?: Awaited<ReturnType<typeof loadOwnerAccessContext>> },
+    ) => {
+      const integrationOk = await loadIntegrationStatus();
+      const chargeMap = await loadChargeMap(installmentIds);
+
+      if (
+        options?.refreshReceiptsAfterLoad &&
+        options.rlsCtx &&
+        options.ownerCtx &&
+        installmentIds.length > 0
+      ) {
+        const refreshedRows = await refreshInstallmentRows(
+          installmentIds,
+          options.rlsCtx,
+          options.ownerCtx,
+        );
+        if (refreshedRows.length > 0) {
+          setPayments(refreshedRows);
+        }
+      }
+
+      return { integrationOk, chargeMap };
+    },
+    [loadIntegrationStatus, loadChargeMap, refreshInstallmentRows],
+  );
+
   const loadInstallments = useCallback(async (options?: { syncAsaasStatuses?: boolean }) => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setLoadError(null);
+    const loadStartedAt = Date.now();
     try {
       const rlsCtx = await resolveRlsContext(user);
       const resolvedTenantId =
         rlsCtx.tenantId || user.tenant_id || (user as { company_id?: string }).company_id || null;
+
+      console.log('[charges/financial-agent] load start', {
+        tenantId: resolvedTenantId,
+        syncAsaas: Boolean(options?.syncAsaasStatuses),
+      });
 
       if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
         setPayments([]);
@@ -250,6 +324,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         const message =
           error.message ||
           'Não foi possível carregar as parcelas. Verifique a conexão e tente novamente.';
+        console.error('[charges/financial-agent] finance_receipts query failed', {
+          tenantId: resolvedTenantId,
+          message,
+          ms: Date.now() - loadStartedAt,
+        });
         setLoadError(message);
         setPayments([]);
         showToast(message, true);
@@ -285,78 +364,72 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
       setSelectedIds(new Set());
       const installmentIds = scoped.map((row) => String(row.id));
-      const integrationOk = await loadIntegrationStatus();
-      const chargeMap = await loadChargeMap(installmentIds);
 
-      let finalRows = scoped;
-      if (installmentIds.length > 0) {
-        let refreshQuery = supabase
-          .from('finance_receipts')
-          .select(FINANCE_RECEIPTS_LIST_SELECT)
-          .in('id', installmentIds)
-          .order('due_date', { ascending: true });
-        refreshQuery = applyTenantFilter(refreshQuery, rlsCtx, 'finance_receipts');
-        const { data: refreshedData, error: refreshError } = await refreshQuery;
-        if (!refreshError && refreshedData) {
-          finalRows = scopeFinanceRowsForUser(
-            user,
-            refreshedData,
-            ownerCtx.rows,
-            resolveReceiptProjectId,
-          );
-        }
-      }
-
-      setPayments(finalRows);
+      // Parcelas locais primeiro — não bloquear a UI em integração/cobranças Asaas.
+      setPayments(scoped);
+      console.log('[charges/financial-agent] parcels loaded', {
+        tenantId: resolvedTenantId,
+        count: scoped.length,
+        ms: Date.now() - loadStartedAt,
+      });
 
       const shouldSyncAsaas =
         Boolean(options?.syncAsaasStatuses) &&
-        integrationOk &&
         companyAsaasEnabled &&
         !ownerReadOnly &&
         installmentIds.length > 0;
 
       if (shouldSyncAsaas) {
-        try {
-          const syncIds = Object.keys(chargeMap).length > 0 ? Object.keys(chargeMap) : installmentIds;
-          const result = await requestChargeBulkStatusSync(syncIds);
-          setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
+        const { integrationOk, chargeMap } = await loadAsaasChargesContext(installmentIds, {
+          refreshReceiptsAfterLoad: true,
+          rlsCtx,
+          ownerCtx,
+        });
 
-          if (result.receiptUpdatedCount > 0 || result.paid > 0) {
-            let refreshQuery = supabase
-              .from('finance_receipts')
-              .select(FINANCE_RECEIPTS_LIST_SELECT)
-              .in('id', installmentIds)
-              .order('due_date', { ascending: true });
-            refreshQuery = applyTenantFilter(refreshQuery, rlsCtx, 'finance_receipts');
-            const { data: syncedReceipts, error: syncedError } = await refreshQuery;
-            if (!syncedError && syncedReceipts) {
-              setPayments(
-                scopeFinanceRowsForUser(
-                  user,
-                  syncedReceipts,
-                  ownerCtx.rows,
-                  resolveReceiptProjectId,
-                ),
+        if (integrationOk) {
+          try {
+            const syncIds =
+              Object.keys(chargeMap).length > 0 ? Object.keys(chargeMap) : installmentIds;
+            const result = await requestChargeBulkStatusSync(syncIds);
+            setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
+
+            if (result.receiptUpdatedCount > 0 || result.paid > 0) {
+              const syncedRows = await refreshInstallmentRows(installmentIds, rlsCtx, ownerCtx);
+              if (syncedRows.length > 0) {
+                setPayments(syncedRows);
+              }
+            }
+
+            if (result.updated > 0 || result.failed > 0) {
+              showToast(
+                formatChargeBulkStatusSummary(result),
+                result.updated === 0 && result.failed > 0,
               );
             }
+          } catch (syncErr) {
+            console.error('[charges/financial-agent] bulk sync failed', syncErr);
+            showToast(
+              syncErr instanceof Error
+                ? syncErr.message
+                : 'Erro ao sincronizar status Asaas com a lista.',
+              true,
+            );
           }
-
-          if (result.updated > 0 || result.failed > 0) {
-            showToast(formatChargeBulkStatusSummary(result), result.updated === 0 && result.failed > 0);
-          }
-        } catch (syncErr) {
-          console.error('CHARGES_ASAAS_BULK_SYNC', syncErr);
-          showToast(
-            syncErr instanceof Error
-              ? syncErr.message
-              : 'Erro ao sincronizar status Asaas com a lista.',
-            true,
-          );
         }
+      } else if (companyAsaasEnabled) {
+        void loadAsaasChargesContext(installmentIds, {
+          refreshReceiptsAfterLoad: true,
+          rlsCtx,
+          ownerCtx,
+        }).catch((err) => {
+          console.error('[charges/financial-agent] asaas context background failed', err);
+        });
+      } else {
+        setIntegrationConfig(null);
+        setAsaasChargesByInstallment({});
       }
     } catch (err) {
-      console.error('CHARGES_LOAD', err);
+      console.error('[charges/financial-agent] load failed', err);
       const message =
         err instanceof Error
           ? err.message
@@ -365,14 +438,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       setPayments([]);
       showToast(message, true);
     } finally {
+      console.log('[charges/financial-agent] load finished', { ms: Date.now() - loadStartedAt });
       setLoading(false);
     }
   }, [
     user,
     companyAsaasEnabled,
     ownerReadOnly,
-    loadIntegrationStatus,
-    loadChargeMap,
+    loadAsaasChargesContext,
+    refreshInstallmentRows,
     showToast,
   ]);
 
@@ -430,8 +504,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   );
 
   useEffect(() => {
+    if (authLoading) return;
     void loadInstallments();
-  }, [loadInstallments]);
+  }, [authLoading, loadInstallments]);
 
   const filteredRows = useMemo(
     () =>

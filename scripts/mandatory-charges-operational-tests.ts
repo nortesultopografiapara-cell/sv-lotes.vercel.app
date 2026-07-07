@@ -810,6 +810,37 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
   console.log('OK testCompanyAsaasPaidChargeReconcilesFinanceReceipt');
 }
 
+function testChargesPageLoadingDoesNotBlockOnAsaas() {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const pageClient = fs.readFileSync(
+    path.join(process.cwd(), 'components/charges/ChargesPageClient.tsx'),
+    'utf8',
+  );
+
+  assert(pageClient.includes('setPayments(scoped)'), 'charges define setPayments(scoped)');
+  assert(
+    pageClient.includes('Parcelas locais primeiro'),
+    'parcelas locais renderizadas antes do contexto Asaas',
+  );
+  assert(
+    pageClient.includes('void loadAsaasChargesContext(installmentIds'),
+    'contexto Asaas carregado em background no load inicial',
+  );
+  assert(pageClient.includes('if (authLoading) return;'), 'useEffect aguarda authLoading');
+  assert(pageClient.includes('finally {'), 'loadInstallments usa finally');
+  assert(pageClient.includes('setLoading(false);'), 'loading sempre encerra');
+  assert(
+    pageClient.includes('[charges/financial-agent]'),
+    'logs operacionais com prefixo charges/financial-agent',
+  );
+  assert(
+    pageClient.includes('asaas context background failed'),
+    'falha Asaas em background não trava lista',
+  );
+  console.log('OK testChargesPageLoadingDoesNotBlockOnAsaas');
+}
+
 function main() {
   testPendingWithoutChargeShowsGenerate();
   testPaidInstallmentCannotGenerate();
@@ -826,6 +857,7 @@ function main() {
   testIntegrationReadyWithLegacyDraftStatus();
   testSavePreservesActiveStatus();
   testChargesUsesSameIntegrationReadyRuleAsSettings();
+  testChargesPageLoadingDoesNotBlockOnAsaas();
   testCompanyAsaasPaidChargeReconcilesFinanceReceipt();
   console.log('mandatory-charges-operational-tests: all passed');
 }
