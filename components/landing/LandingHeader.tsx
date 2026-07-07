@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Calendar, Lock, LogIn, Menu, UserCircle, X } from 'lucide-react';
+import { Lock, LogIn, Menu, UserCircle, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { LANDING_CLIENT_PORTAL_PATH, LANDING_LOGIN_PATH } from './constants/landingConfig';
 import { LANDING_NAV_ITEMS, LANDING_SECTION_IDS, type LandingNavId } from './landingNav';
@@ -103,14 +103,6 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <a
-            href="#contato"
-            className="landing-btn-demo landing-btn-system--desktop"
-            aria-label="Agendar demonstração"
-          >
-            <Calendar className="w-4 h-4" />
-            Agendar Demonstração
-          </a>
           {clientPortalEnabled ? (
             <Link
               href={LANDING_CLIENT_PORTAL_PATH}
@@ -151,13 +143,6 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             </li>
           ))}
           <li className="pt-2 border-t border-white/10 space-y-2">
-            <a
-              href="#contato"
-              className="landing-btn-demo w-full justify-center"
-              onClick={closeMenu}
-            >
-              Agendar Demonstração
-            </a>
             {clientPortalEnabled ? (
               <Link
                 href={LANDING_CLIENT_PORTAL_PATH}
