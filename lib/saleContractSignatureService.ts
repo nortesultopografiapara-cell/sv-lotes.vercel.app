@@ -4,8 +4,16 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildContractViewHtml } from '@/lib/buildContractViewHtml';
-import { readStoredContractHtml, resolveStoredContractHtmlMeta } from '@/lib/contractRegeneration';
-import { logContractHtmlGlobal } from '@/lib/contractHtmlGlobal';
+import {
+  readStoredContractHtml,
+  resolveStoredContractHtmlMeta,
+  parseMissingContractColumn,
+} from '@/lib/contractRegeneration';
+import {
+  contractHtmlLooksLikeFullBody,
+  CONTRACT_HTML_READ_COLUMNS,
+  logContractHtmlGlobal,
+} from '@/lib/contractHtmlGlobal';
 import { onlyDigits } from '@/lib/inputMasks';
 import {
   isValidSignerEmail,
@@ -46,6 +54,119 @@ import {
 export { resolveClientIp, isSignatureExpired };
 
 const SALE_CONTRACT_BUCKET = 'company-assets';
+
+/** Select enxuto — evita transferir HTML gigante mais de uma vez no envio para assinatura. */
+export const CONTRACT_SIGNATURE_ACCESS_SELECT = [
+  'id',
+  'contract_number',
+  'tenant_id',
+  'company_id',
+  'customer_id',
+  'sale_id',
+  'status',
+  'signature_status',
+  ...CONTRACT_HTML_READ_COLUMNS,
+].join(', ');
+
+export function logSignatureFinal(
+  step: string,
+  extra?: Record<string, unknown>,
+): void {
+  console.log('[contracts/signature-final]', step, extra ?? {});
+}
+
+async function loadContractRowForSignatureSend(
+  supabaseAdmin: SupabaseClient,
+  contractId: string,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabaseAdmin
+    .from('contracts')
+    .select(CONTRACT_SIGNATURE_ACCESS_SELECT)
+    .eq('id', contractId)
+    .single();
+
+  if (error || !data) {
+    throw new SaleContractSignatureError('Contrato não encontrado.');
+  }
+
+  const row = data as Record<string, unknown>;
+  if (!row.tenant_id && row.company_id) {
+    row.tenant_id = row.company_id;
+  }
+  return row;
+}
+
+async function insertSaleSignatureRowWithFallback(
+  supabaseAdmin: SupabaseClient,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  let cleaned: Record<string, unknown> = { ...payload };
+
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const { data, error } = await supabaseAdmin
+      .from('contract_signatures')
+      .insert(cleaned)
+      .select('*')
+      .single();
+
+    if (!error && data) {
+      return data as Record<string, unknown>;
+    }
+
+    const missingCol = parseMissingContractColumn(error?.message);
+    if (missingCol && missingCol in cleaned) {
+      const { [missingCol]: _removed, ...rest } = cleaned;
+      cleaned = rest;
+      logSignatureFinal('insert_retry_without_column', { column: missingCol });
+      continue;
+    }
+
+    throw new SaleContractSignatureError(
+      `Falha ao registrar envio para assinatura: ${error?.message || 'sem retorno'}`,
+      'db_save',
+    );
+  }
+
+  throw new SaleContractSignatureError(
+    'Falha ao registrar envio para assinatura após tentativas de compatibilidade.',
+    'db_save',
+  );
+}
+
+function scheduleSignaturePostInsertWork(
+  supabaseAdmin: SupabaseClient,
+  contractId: string,
+  signature: ContractSignatureRow,
+  token: string,
+  now: string,
+): void {
+  void (async () => {
+    try {
+      await logSignatureEvent(supabaseAdmin, {
+        signatureToken: token,
+        signatureSource: 'SALE',
+        signatureRecordId: String(signature.id),
+        eventType: 'LINK_CREATED',
+        eventDescription: 'Link de assinatura criado para contrato de venda.',
+        occurredAt: now,
+      });
+      await mirrorSignatureToContract(supabaseAdmin, contractId, signature, {
+        signature_sent_at: now,
+        signature_viewed_at: null,
+        signed_at: null,
+        signed_by_name: null,
+        signed_by_cpf: null,
+        signed_ip: null,
+        signed_user_agent: null,
+      });
+    } catch (err) {
+      logSignatureFinal('post_insert_async_error', {
+        contractId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })();
+}
 
 function sanitizeContractFileName(contractNumber: string): string {
   return contractNumber.replace(/[^\w-]+/g, '_');
@@ -404,38 +525,40 @@ function assertContractEligibleForSignature(
 export async function sendSaleContractForSignature(
   supabaseAdmin: SupabaseClient,
   contractId: string,
+  preloadedContract?: Record<string, unknown> | null,
 ): Promise<{
   signature: ContractSignatureRow;
   signUrl: string;
 }> {
   const startedAt = Date.now();
   const mark = (step: string, extra?: Record<string, unknown>) => {
-    logContractHtmlGlobal('global-signature', step, {
+    logSignatureFinal(step, {
       ms: Date.now() - startedAt,
       contractId,
       ...extra,
     });
   };
 
-  mark('load_contract');
-  const { data: contract, error: contractErr } = await supabaseAdmin
-    .from('contracts')
-    .select('*')
-    .eq('id', contractId)
-    .single();
+  mark('load_contract_start');
+  const contractRow =
+    preloadedContract && typeof preloadedContract === 'object'
+      ? preloadedContract
+      : await loadContractRowForSignatureSend(supabaseAdmin, contractId);
 
-  if (contractErr || !contract) {
-    mark('response', { status: 404 });
-    throw new SaleContractSignatureError('Contrato não encontrado.');
-  }
-
-  const contractRow = contract as Record<string, unknown>;
+  const resolvedId = String(contractRow.id || contractId);
   const storedMeta = resolveStoredContractHtmlMeta(contractRow);
-  mark('contract_found', {
-    hasHtml: Boolean(storedMeta.html),
+  const storedHtml = storedMeta.html;
+
+  mark('contract_loaded', {
+    resolvedId,
+    company_id: contractRow.company_id,
+    tenant_id: contractRow.tenant_id || contractRow.company_id,
+    sale_id: contractRow.sale_id,
     htmlColumn: storedMeta.column,
     htmlLength: storedMeta.length,
+    hasBody: storedHtml ? contractHtmlLooksLikeFullBody(storedHtml) : false,
   });
+
   assertContractEligibleForSignature(contractRow);
 
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
@@ -443,63 +566,46 @@ export async function sendSaleContractForSignature(
     throw new SaleContractSignatureError('Contrato sem tenant vinculado.');
   }
 
-  await cancelOpenSaleSignatures(supabaseAdmin, contractId);
+  mark('cancel_open_signatures');
+  await cancelOpenSaleSignatures(supabaseAdmin, resolvedId);
 
-  mark('signature_token');
+  mark('create_token');
   const token = generateSignatureToken();
   const signUrl = buildSaleSignUrl(token);
   const validationUrl = buildSignatureVerifyUrl(token);
   const now = new Date().toISOString();
   const expiresAt = signatureExpiresAt();
 
-  const { data: signature, error } = await supabaseAdmin
-    .from('contract_signatures')
-    .insert({
-      contract_id: contractId,
-      tenant_id: tenantId,
-      customer_id: (contractRow.customer_id as string) || null,
-      signature_status: 'PENDING',
-      signature_token: token,
-      signature_url: signUrl,
-      validation_public_url: validationUrl,
-      signed_document_type: 'CONTRATO_VENDA',
-      expires_at: expiresAt,
-      created_at: now,
-      updated_at: now,
-    })
-    .select('*')
-    .single();
+  mark('insert_signature');
+  const signature = (await insertSaleSignatureRowWithFallback(supabaseAdmin, {
+    contract_id: resolvedId,
+    tenant_id: tenantId,
+    customer_id: (contractRow.customer_id as string) || null,
+    signature_status: 'PENDING',
+    signature_token: token,
+    signature_url: signUrl,
+    validation_public_url: validationUrl,
+    signed_document_type: 'CONTRATO_VENDA',
+    expires_at: expiresAt,
+    created_at: now,
+    updated_at: now,
+  })) as ContractSignatureRow;
 
-  if (error || !signature) {
-    mark('response', { status: 500, message: error?.message });
-    throw new SaleContractSignatureError(
-      `Falha ao registrar envio para assinatura: ${error?.message || 'sem retorno'}`,
-      'db_save',
-    );
-  }
+  scheduleSignaturePostInsertWork(
+    supabaseAdmin,
+    resolvedId,
+    signature,
+    token,
+    now,
+  );
 
-  await logSignatureEvent(supabaseAdmin, {
-    signatureToken: token,
-    signatureSource: 'SALE',
-    signatureRecordId: String(signature.id),
-    eventType: 'LINK_CREATED',
-    eventDescription: 'Link de assinatura criado para contrato de venda.',
-    occurredAt: now,
+  mark('response', {
+    hasSignUrl: Boolean(signUrl),
+    signUrlPreview: signUrl ? `${signUrl.slice(0, 48)}…` : null,
   });
 
-  await mirrorSignatureToContract(supabaseAdmin, contractId, signature as ContractSignatureRow, {
-    signature_sent_at: now,
-    signature_viewed_at: null,
-    signed_at: null,
-    signed_by_name: null,
-    signed_by_cpf: null,
-    signed_ip: null,
-    signed_user_agent: null,
-  });
-
-  mark('response', { status: 200, signUrl: signUrl.slice(0, 32) + '…' });
   return {
-    signature: signature as ContractSignatureRow,
+    signature,
     signUrl,
   };
 }

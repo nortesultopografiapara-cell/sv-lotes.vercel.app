@@ -2,7 +2,7 @@
  * URLs públicas de validação de assinatura eletrônica.
  */
 
-function resolvePublicBaseUrl(): string {
+export function resolvePublicBaseUrl(): string {
   const explicit = String(process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/$/, '');
   if (explicit) return explicit;
   const vercel = String(process.env.VERCEL_URL || '').trim();

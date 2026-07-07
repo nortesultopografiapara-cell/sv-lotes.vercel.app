@@ -115,11 +115,20 @@ function testRetryRefetchesHtml() {
 
 function testSignatureModalAndEligibility() {
   const saleService = fs.readFileSync('lib/saleContractSignatureService.ts', 'utf8');
-  assert(saleService.includes('readStoredContractHtml'), 'assinatura usa readStored/fallback global');
-  assert(saleService.includes("'global-signature'"), 'logs global-signature');
+  assert(saleService.includes('logSignatureFinal'), 'assinatura usa logSignatureFinal');
+  assert(saleService.includes('scheduleSignaturePostInsertWork'), 'pós-insert assíncrono');
+  assert(saleService.includes('insertSaleSignatureRowWithFallback'), 'insert com fallback');
+  assert(saleService.includes('[contracts/signature-final]'), 'logs signature-final');
+
+  const sigRoute = fs.readFileSync('app/api/contracts/[id]/signature/route.ts', 'utf8');
+  assert(sigRoute.includes('maxDuration'), 'rota signature com maxDuration');
+  assert(sigRoute.includes('loadContractRowForHtmlAccess'), 'rota signature load único');
+  assert(sigRoute.includes('logSignatureFinal'), 'logs signature-final na rota');
 
   const section = fs.readFileSync('components/contracts/SaleContractSignatureSection.tsx', 'utf8');
   assert(section.includes('setShareOpen(true)'), 'abre modal após envio');
+  assert(section.includes('buildSignatureApiUrl'), 'tenant query na assinatura');
+  assert(section.includes('signature-final'), 'log client signature-final');
   assert(section.includes('latest?.signature_url'), 'share modal usa url da assinatura');
   assert(section.includes('finally') && section.includes('setSending(false)'), 'loading de envio liberado');
 

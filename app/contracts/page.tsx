@@ -2050,6 +2050,7 @@ export default function ContractsPage() {
                   contract={selectedContract}
                   userRole={user?.role}
                   loggedInUserEmail={user?.email}
+                  authUser={user}
                   onCapabilitiesChange={setSignatureCaps}
                   onSigned={async () => {
                     const rows = await reloadContractsList();
