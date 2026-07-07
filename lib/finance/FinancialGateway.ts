@@ -14,6 +14,7 @@ export const FINANCIAL_GATEWAY_PROVIDERS = [
   'ITAU',
   'INTER',
   'NUBANK',
+  'CORA',
 ] as const;
 
 export type FinancialGatewayProvider = (typeof FINANCIAL_GATEWAY_PROVIDERS)[number];
@@ -45,6 +46,7 @@ export function listFinancialGatewayProviders(): {
     ITAU: 'Itaú',
     INTER: 'Inter',
     NUBANK: 'Nubank',
+    CORA: 'Cora',
   };
 
   return FINANCIAL_GATEWAY_PROVIDERS.map((code) => ({
