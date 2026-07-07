@@ -6,6 +6,10 @@
 import { generateContractHTML } from '../lib/contractTemplate';
 import { generateRecantoPrimaveraContract } from '../lib/recantoPrimaveraContractTemplate';
 import {
+  normalizeRecantoPrimaveraCompanyProfile,
+  resolveRecantoVendorName,
+} from '../lib/recantoPrimaveraCompanyProfile';
+import {
   RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1,
   RECANTO_PRIMAVERA_LEGAL_MARKER,
 } from '../lib/recantoPrimaveraContractLegal';
@@ -278,6 +282,53 @@ function testVendorAddressFromContractLegalSettings() {
   console.log('OK testVendorAddressFromContractLegalSettings');
 }
 
+function testPfVendorPrefersPersonNameOverFantasy() {
+  const tenant = recantoTenant({
+    legal_representative: '',
+    name: 'Ivanilde de Moura Silva',
+    fantasy_name: 'RECANTO PRIMAVERA',
+    cnpj: '32641281104',
+    representative_cpf: '',
+  });
+  assert(
+    resolveRecantoVendorName(tenant) === 'Ivanilde De Moura Silva',
+    'PF usa nome da pessoa, não fantasia',
+  );
+  const html = buildRecantoHtml(tenant);
+  assert(html.includes('Ivanilde De Moura Silva'), 'nome PF no contrato');
+  assertNotIncludes(html, 'Não Informado', 'sem placeholder de vendedor');
+  assertNotIncludes(html, 'Não informado', 'sem placeholder de vendedor');
+  console.log('OK testPfVendorPrefersPersonNameOverFantasy');
+}
+
+function testLegalRepresentativeNameAlias() {
+  const tenant = {
+    contract_model: 'RECANTO_PRIMAVERA',
+    legal_representative_name: 'Ivanilde de Moura Silva',
+    legal_representative_cpf: '32641281104',
+    fantasy_name: 'RECANTO PRIMAVERA',
+    contract_legal_address: 'Endereço Ivanilde, Parauapebas-PA',
+    signature_url: 'https://cdn.test/sig.png',
+  };
+  const profile = normalizeRecantoPrimaveraCompanyProfile(tenant);
+  assert(
+    profile.vendorName === 'Ivanilde De Moura Silva',
+    'alias legal_representative_name',
+  );
+  assert(profile.documentFmt === '326.412.811-04', 'alias legal_representative_cpf');
+  const html = generateContractHTML({
+    tenant,
+    customer: baseCustomer,
+    project: baseProject,
+    block: baseBlock,
+    sale: baseSale,
+  });
+  assert(html.includes('VENDEDOR(A):'), 'modelo Recanto');
+  assert(html.includes('Ivanilde De Moura Silva'), 'vendedor no HTML');
+  assertNotIncludes(html, 'Promitente Proprietário Vendedor', 'não usa modelo clássico');
+  console.log('OK testLegalRepresentativeNameAlias');
+}
+
 function main() {
   testContractModelNormalization();
   testPhoneUpdatesOnNewContract();
@@ -290,6 +341,8 @@ function main() {
   testRecantoDirectGenerator();
   testCpfLabelForPfSeller();
   testVendorAddressFromContractLegalSettings();
+  testPfVendorPrefersPersonNameOverFantasy();
+  testLegalRepresentativeNameAlias();
   console.log('OK — mandatory-recanto-primavera-contract-tests passed');
 }
 

@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
+import { COMPANY_CONTRACT_LOAD_SELECT } from '@/lib/companyContractFields';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import { mergeCustomerData, resolveOrCreateCustomer } from '@/lib/customerIdentity';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
@@ -347,9 +348,7 @@ export async function executeGisSaleCreate(
       await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
         const { data: tenantData } = await supabase
           .from('companies')
-          .select(
-            'id, name, fantasy_name, cnpj, cpf, email, phone, address, city, state, zip_code, logo_url, contract_model, legal_representative_name, legal_representative_cpf',
-          )
+          .select(COMPANY_CONTRACT_LOAD_SELECT)
           .eq('id', tenantId)
           .single();
 
