@@ -6,7 +6,7 @@ type Props = {
   diagnostics: BankingUiDiagnostics;
 };
 
-/** Indicador temporário — Preview/develop. Remover quando flag estiver estável. */
+/** Componente interno — diagnóstico de feature flag (não renderizar na UI de Configurações). */
 export function BankingFlagDiagnosticsBanner({ diagnostics }: Props) {
   return (
     <div

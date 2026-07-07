@@ -647,6 +647,15 @@ function testFinancialIntegrationSource(): void {
   const banksPanel = read('components/finance/BanksDevelopmentPanel.tsx');
   assert(banksPanel.includes('Em desenvolvimento'), 'bancos marcados em desenvolvimento');
 
+  const uiBanks = read('lib/finance/financialIntegrationUi.ts');
+  assert(uiBanks.includes("'INTER'"), 'UI roadmap Inter');
+  assert(uiBanks.includes("'NUBANK'"), 'UI roadmap Nubank');
+  assert(uiBanks.includes("'CORA'"), 'UI roadmap Cora');
+  assert(!uiBanks.includes("'SICOOB'"), 'Sicoob oculto na UI financeira');
+  assert(!uiBanks.includes("'SICREDI'"), 'Sicredi oculto na UI financeira');
+  assert(!uiBanks.includes("'BANCO_DO_BRASIL'"), 'BB oculto na UI financeira');
+  assert(!uiBanks.includes("'BRADESCO'"), 'Bradesco oculto na UI financeira');
+
   const asaasRoute = read('app/api/finance/asaas/integration/route.ts');
   assert(asaasRoute.includes('assertAsaasIntegrationResponseSafe'), 'API Asaas sanitiza resposta');
   assert(asaasRoute.includes('authorizeCompanyAsaasRoute'), 'API Asaas protegida com whitelist');

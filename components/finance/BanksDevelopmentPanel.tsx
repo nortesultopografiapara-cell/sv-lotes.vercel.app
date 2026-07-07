@@ -2,8 +2,13 @@
 
 import { Construction } from 'lucide-react';
 import { listFinancialGatewayProviders } from '@/lib/finance/FinancialGateway';
+import { FINANCIAL_INTEGRATION_VISIBLE_BANK_CODES } from '@/lib/finance/financialIntegrationUi';
 
-const DEVELOPMENT_BANKS = listFinancialGatewayProviders().filter((p) => p.code !== 'ASAAS');
+const VISIBLE_BANK_CODES = new Set(FINANCIAL_INTEGRATION_VISIBLE_BANK_CODES);
+
+const DEVELOPMENT_BANKS = listFinancialGatewayProviders().filter((provider) =>
+  VISIBLE_BANK_CODES.has(provider.code),
+);
 
 export function BanksDevelopmentPanel() {
   return (
@@ -14,7 +19,7 @@ export function BanksDevelopmentPanel() {
           <div>
             <p className="text-sm font-semibold text-[var(--text-primary)]">Bancos nativos — em desenvolvimento</p>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
-              As integrações diretas com cooperativas e bancos estão em preparação. Nesta versão, utilize a aba{' '}
+              Integrações diretas com Inter, Nubank e Cora estão em preparação. Nesta versão, utilize a aba{' '}
               <strong className="font-semibold text-[var(--text-primary)]">ASAAS</strong> como gateway oficial de
               cobrança e recebimentos.
             </p>
