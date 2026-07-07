@@ -1,13 +1,23 @@
 /**
- * Envio WhatsApp do Portal do Cliente — mesma camada Z-API das cobranças SaaS.
- * Reutiliza sendText / isSaasBillingWhatsAppConfigured sem provider paralelo.
+ * Envio WhatsApp do Portal do Cliente.
+ *
+ * Mesma resolução Z-API dos módulos server-side existentes:
+ * - lib/saasBillingReminderWhatsApp.ts (lembretes automáticos SaaS)
+ * - lib/saasWhatsAppTest.ts (teste Master)
+ * - lib/whatsapp/zapiProvider.ts (provider único)
+ *
+ * Contratos e cobranças manuais usam wa.me no navegador — não passam por aqui.
  */
 
+import { normalizeBrazilianWhatsAppPhone } from '@/lib/saasBillingReminderWhatsApp';
 import {
-  isSaasBillingWhatsAppConfigured,
-  normalizeBrazilianWhatsAppPhone,
-} from '@/lib/saasBillingReminderWhatsApp';
-import { getZapiConfigStatus, sendText } from '@/lib/whatsapp/zapiProvider';
+  buildZapiRequestDiagnostics,
+  isZapiConfigured,
+  resolveZapiInstanceId,
+  resolveZapiRuntimeEnvironment,
+  sendText,
+  type ZapiSendTextResult,
+} from '@/lib/whatsapp/zapiProvider';
 
 export const CLIENT_PORTAL_OTP_MESSAGE_TYPE = 'CLIENT_PORTAL_OTP' as const;
 
@@ -32,23 +42,36 @@ export type SendClientPortalOtpWhatsAppResult = {
   error?: string;
 };
 
+/** Log temporário de diagnóstico — sem tokens, OTP ou telefone completo. */
+export function logClientPortalOtpZapiDiagnostic(
+  result: Pick<ZapiSendTextResult, 'ok' | 'error' | 'debug'>,
+): void {
+  const diagnostics = buildZapiRequestDiagnostics();
+  console.warn(
+    '[client-portal-otp:zapi-diagnostic]',
+    JSON.stringify({
+      environment: resolveZapiRuntimeEnvironment(),
+      messageType: CLIENT_PORTAL_OTP_MESSAGE_TYPE,
+      instanceId: (diagnostics?.instanceId ?? resolveZapiInstanceId()) || null,
+      instanceIdLength: diagnostics?.instanceIdLength ?? resolveZapiInstanceId().length,
+      httpStatus: result.debug?.httpStatus ?? null,
+      responseBody: result.debug?.responseBody ?? null,
+      ok: result.ok,
+      error: result.ok ? null : result.error ?? null,
+    }),
+  );
+}
+
 export async function sendClientPortalOtpWhatsApp(
   phone: string,
   code: string,
 ): Promise<SendClientPortalOtpWhatsAppResult> {
-  if (!isSaasBillingWhatsAppConfigured()) {
-    const status = getZapiConfigStatus();
-    console.warn(
-      '[client-portal-otp:whatsapp-config]',
-      JSON.stringify({
-        type: CLIENT_PORTAL_OTP_MESSAGE_TYPE,
-        ready: status.ready,
-        instanceConfigured: status.instanceConfigured,
-        tokenConfigured: status.tokenConfigured,
-        clientTokenConfigured: status.clientTokenConfigured,
-      }),
-    );
-    return { ok: false, error: 'WhatsApp não configurado no momento.' };
+  if (!isZapiConfigured()) {
+    logClientPortalOtpZapiDiagnostic({
+      ok: false,
+      error: 'Z-API não configurada.',
+    });
+    return { ok: false, error: 'Z-API não configurada.' };
   }
 
   const normalizedPhone = normalizeBrazilianWhatsAppPhone(phone);
@@ -59,15 +82,9 @@ export async function sendClientPortalOtpWhatsApp(
   const message = buildClientPortalOtpWhatsAppMessage(code);
   const result = await sendText({ phone: normalizedPhone, message });
 
+  logClientPortalOtpZapiDiagnostic(result);
+
   if (!result.ok) {
-    console.warn(
-      '[client-portal-otp:whatsapp-send]',
-      JSON.stringify({
-        type: CLIENT_PORTAL_OTP_MESSAGE_TYPE,
-        phoneSuffix: normalizedPhone.slice(-4),
-        error: result.error,
-      }),
-    );
     return {
       ok: false,
       normalizedPhone,

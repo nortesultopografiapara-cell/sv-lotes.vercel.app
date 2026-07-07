@@ -130,10 +130,12 @@ function testConfirmPageExists(): void {
 
 function testWhatsappReuseLayer(): void {
   const whatsapp = read('lib/portal-cliente/whatsapp.ts');
-  assert(whatsapp.includes("from '@/lib/saasBillingReminderWhatsApp'"), 'reuses billing whatsapp layer');
-  assert(whatsapp.includes('isSaasBillingWhatsAppConfigured'), 'same z-api config as billing');
+  assert(whatsapp.includes("from '@/lib/saasBillingReminderWhatsApp'"), 'reuses billing phone normalize');
+  assert(whatsapp.includes('isZapiConfigured'), 'same z-api config as billing/test');
   assert(whatsapp.includes("from '@/lib/whatsapp/zapiProvider'"), 'reuses zapi sendText');
   assert(whatsapp.includes('sendText'), 'uses sendText');
+  assert(whatsapp.includes('logClientPortalOtpZapiDiagnostic'), 'zapi diagnostic log');
+  assert(whatsapp.includes('instanceId'), 'logs instance id');
   assert(!whatsapp.includes('asaas'), 'no asaas');
 }
 
