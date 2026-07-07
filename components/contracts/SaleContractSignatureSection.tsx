@@ -27,6 +27,7 @@ import {
   mergeSaleSignatureTimeline,
   type LocalSignatureTimelineEvent,
 } from '@/lib/saleContractSignatureShare';
+import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 import {
   canResendSaleSignature,
   canSendSaleSignature,
@@ -177,7 +178,12 @@ export const SaleContractSignatureSection = forwardRef<
       }
       const json = data || {};
       setLatest(json.latest || null);
-      setSignUrl(json.latest?.signature_url || null);
+      const token = json.latest?.signature_token;
+      setSignUrl(
+        token
+          ? resolveSaleSignUrl(token, json.latest?.signature_url)
+          : json.latest?.signature_url || null,
+      );
       const fallbackEmail = String(loggedInUserEmail || '').trim();
       setVendorDefaults({
         name: String(json.vendorDefaults?.name || ''),
@@ -246,7 +252,11 @@ export const SaleContractSignatureSection = forwardRef<
     }
 
     setLatest(refreshed);
-    setSignUrl(refreshed.signature_url || null);
+    setSignUrl(
+      refreshed.signature_token
+        ? resolveSaleSignUrl(refreshed.signature_token, refreshed.signature_url)
+        : refreshed.signature_url || null,
+    );
     return refreshed.id;
   }, [contract?.id, latest?.id, latest?.signature_status, buildSignatureApiUrl]);
 
@@ -345,7 +355,11 @@ export const SaleContractSignatureSection = forwardRef<
         throw new Error(fetchError || data?.error || 'Falha ao enviar para assinatura.');
       }
       const json = data || {};
-      const url = json.signUrl || json.signature?.signature_url;
+      const token = json.signature?.signature_token;
+      const url =
+        (token
+          ? resolveSaleSignUrl(token, json.signUrl || json.signature?.signature_url)
+          : json.signUrl || json.signature?.signature_url) || null;
       if (!url) {
         throw new Error('Link de assinatura não retornado pelo servidor.');
       }
@@ -384,7 +398,9 @@ export const SaleContractSignatureSection = forwardRef<
     () => ({
       sendForSignature: handleSend,
       openShareModal: () => {
-        if (latest?.signature_url) {
+        if (latest?.signature_token) {
+          setSignUrl(resolveSaleSignUrl(latest.signature_token, latest.signature_url));
+        } else if (latest?.signature_url) {
           setSignUrl(latest.signature_url);
         }
         setShareOpen(true);
@@ -398,7 +414,7 @@ export const SaleContractSignatureSection = forwardRef<
         }
       },
     }),
-    [handleSend, showVendorSignButton, contract?.signature_status, userRole],
+    [handleSend, showVendorSignButton, contract?.signature_status, userRole, latest],
   );
 
   useEffect(() => {

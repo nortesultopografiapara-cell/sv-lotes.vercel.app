@@ -14,9 +14,50 @@ import {
   logSignatureFinal,
   SaleContractSignatureError,
   sendSaleContractForSignature,
+  type ContractSignatureRow,
 } from '@/lib/saleContractSignatureService';
+import {
+  resolveSaleSignUrl,
+  resolveSaleValidationPublicUrl,
+} from '@/lib/saleContractUrls';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import { getCompanyDisplayName } from '@/lib/contractCompanyDisplay';
+
+function normalizeSaleSignaturePublicUrls(
+  row: ContractSignatureRow | null,
+): ContractSignatureRow | null {
+  if (!row?.signature_token) return row;
+  const signature_url = resolveSaleSignUrl(row.signature_token, row.signature_url);
+  const validation_public_url = resolveSaleValidationPublicUrl(
+    row.signature_token,
+    row.validation_public_url,
+  );
+  if (
+    signature_url === row.signature_url &&
+    validation_public_url === row.validation_public_url
+  ) {
+    return row;
+  }
+  return { ...row, signature_url, validation_public_url };
+}
+
+async function repairSaleSignaturePublicUrlsIfNeeded(
+  supabase: NonNullable<Awaited<ReturnType<typeof createAdminSupabase>>['client']>,
+  row: ContractSignatureRow | null,
+): Promise<ContractSignatureRow | null> {
+  const normalized = normalizeSaleSignaturePublicUrls(row);
+  if (!normalized?.id || normalized === row) return normalized;
+  const now = new Date().toISOString();
+  await supabase
+    .from('contract_signatures')
+    .update({
+      signature_url: normalized.signature_url,
+      validation_public_url: normalized.validation_public_url,
+      updated_at: now,
+    })
+    .eq('id', normalized.id);
+  return normalized;
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -92,7 +133,8 @@ export async function GET(
 
     const resolvedId = String(contract.id || contractId);
     const signatures = await listSaleContractSignatures(supabase, resolvedId);
-    const latest = signatures[0] || null;
+    const latestRaw = signatures[0] || null;
+    const latest = await repairSaleSignaturePublicUrlsIfNeeded(supabase, latestRaw);
     const history = latest ? buildSaleSignatureHistory(latest) : [];
 
     const tenantId = String(contract.tenant_id || contract.company_id || '');
@@ -123,7 +165,7 @@ export async function GET(
       success: true,
       latest,
       history,
-      signatures,
+      signatures: signatures.map((row) => normalizeSaleSignaturePublicUrls(row) || row),
       vendorDefaults,
     });
   } catch (err) {

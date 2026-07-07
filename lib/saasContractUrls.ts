@@ -2,7 +2,7 @@
  * URLs oficiais do contrato SaaS — sempre via API (nunca storage URL direto).
  */
 
-import { getAppBaseUrl } from '@/lib/pdfValidation';
+import { resolvePublicBaseUrl } from '@/lib/signatureVerifyUrls';
 
 export type SaasContractPdfMode = 'inline' | 'download';
 
@@ -29,7 +29,9 @@ export function buildSaasContractPdfUrl(
 }
 
 export function buildSignUrl(token: string): string {
-  return `${getAppBaseUrl()}/sign/${encodeURIComponent(token)}`;
+  const trimmed = String(token || '').trim();
+  if (!trimmed) return '';
+  return `${resolvePublicBaseUrl()}/sign/${encodeURIComponent(trimmed)}`;
 }
 
 export function buildSignApiUrl(token: string): string {
