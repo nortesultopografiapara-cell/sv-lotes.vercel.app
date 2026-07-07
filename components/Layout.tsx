@@ -515,6 +515,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     pathname === '/' ||
     pathname === '/demo' ||
     pathname.startsWith('/sign/') ||
+    pathname.startsWith('/portal-cliente') ||
     ['/login', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
       pathname.startsWith(route)
     );

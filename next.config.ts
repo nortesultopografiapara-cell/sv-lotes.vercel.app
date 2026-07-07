@@ -40,6 +40,8 @@ const nextConfig: NextConfig = {
     // Somente NEXT_PUBLIC_* — nunca incluir secrets server-side (evita bake no build).
     NEXT_PUBLIC_BANKING_MODULE_ENABLED:
       process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED ?? 'false',
+    NEXT_PUBLIC_CLIENT_PORTAL_ENABLED:
+      process.env.NEXT_PUBLIC_CLIENT_PORTAL_ENABLED ?? 'false',
   },
   webpack: (config, { dev }) => {
     if (dev && process.env.DISABLE_HMR === 'true') {
