@@ -7,6 +7,9 @@ import { mergeCustomerData } from "@/lib/customerIdentity";
 import { assertCustomerValidForContract } from "@/lib/validateCustomerForContract";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
+import { COMPANY_CONTRACT_LOAD_SELECT } from "@/lib/companyContractFields";
+import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
+import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
 import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
@@ -14,36 +17,7 @@ import {
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 
-const COMPANY_CONTRACT_VIEW_SELECT = [
-  "id",
-  "name",
-  "fantasy_name",
-  "cnpj",
-  "cpf",
-  "email",
-  "phone",
-  "address",
-  "address_number",
-  "complement",
-  "neighborhood",
-  "bairro",
-  "city",
-  "state",
-  "zip_code",
-  "logo_url",
-  "contract_model",
-  "legal_representative_name",
-  "legal_representative_cpf",
-  "legal_representative_rg",
-  "legal_representative_nationality",
-  "legal_representative_profession",
-  "legal_representative_marital_status",
-  "legal_representative_address",
-  "legal_representative_email",
-  "contract_clauses",
-  "contract_footer",
-  "contract_recanto_fields",
-].join(", ");
+const COMPANY_CONTRACT_VIEW_SELECT = COMPANY_CONTRACT_LOAD_SELECT;
 
 const SALE_CONTRACT_VIEW_SELECT = [
   "id",
@@ -439,8 +413,7 @@ export async function buildContractViewHtml(
 
   assertCustomerValidForContract(mergedCustomer);
 
-  // PDF: app/contracts usa getContractHtml2pdfOptions + applyContractPdfChrome (sem página vazia extra).
-  return generateContractHTML({
+  let html = generateContractHTML({
     tenant: params.tenant,
     customer: mergedCustomer,
     project:
@@ -456,4 +429,10 @@ export async function buildContractViewHtml(
     streetGuides,
     manualConfrontants,
   });
+
+  if (isRecantoPrimaveraContractModel(params.tenant)) {
+    html = await embedRecantoContractSignatureInHtml(html, params.tenant);
+  }
+
+  return html;
 }

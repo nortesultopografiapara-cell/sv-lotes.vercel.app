@@ -133,13 +133,13 @@ export function buildRecantoPrimaveraSignaturesHtml(
       })
     : '';
 
-  const brokerSignatureSlot = buildSignatureSlot({
-    role: 'CORRETOR',
-    name: ctx.hasBroker ? ctx.brokerNome : '',
-    docLines: ctx.hasBroker
-      ? [buildRecantoBrokerCreciLine(ctx.brokerCreci)].filter(Boolean)
-      : [],
-  });
+  const brokerSignatureSlot = ctx.hasBroker
+    ? buildSignatureSlot({
+        role: 'CORRETOR',
+        name: ctx.brokerNome,
+        docLines: [buildRecantoBrokerCreciLine(ctx.brokerCreci)].filter(Boolean),
+      })
+    : '';
 
   return `
     <div class="contract-clause contract-clause--tight">

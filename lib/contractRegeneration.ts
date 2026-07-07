@@ -10,6 +10,8 @@ import {
 } from '@/lib/validateCustomerForContract';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
+import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
+import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
   enrichSaleWithBrokerForContract,
 } from '@/lib/saleBrokerSnapshot';
@@ -929,7 +931,7 @@ export async function buildFreshSaleContractHtml(
 
   assertCustomerValidForContract(customerWithId);
 
-  const html = generateContractHTML({
+  let html = generateContractHTML({
     tenant,
     customer: customerWithId,
     project: projData,
@@ -948,6 +950,10 @@ export async function buildFreshSaleContractHtml(
     streetGuides,
     manualConfrontants: null,
   });
+
+  if (isRecantoPrimaveraContractModel(tenant)) {
+    html = await embedRecantoContractSignatureInHtml(html, tenant);
+  }
 
   console.log('REGENERATE_HTML_GENERATED', {
     contractNumber,

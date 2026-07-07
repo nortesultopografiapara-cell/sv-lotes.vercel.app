@@ -89,6 +89,52 @@ function toTitleCase(str: string): string {
     .replace(/\bS\/n\b/g, 'S/N');
 }
 
+function resolveRecantoVendorDocumentRaw(
+  company: Record<string, unknown>,
+): string {
+  return pickString(
+    company.representative_cpf,
+    company.legal_representative_cpf,
+    company.responsible_cpf,
+    company.cnpj,
+    company.cpf,
+    company.document,
+  );
+}
+
+function isPfVendorDocument(documentRaw: string): boolean {
+  return documentRaw.replace(/\D/g, '').length === 11;
+}
+
+/** Nome do vendedor — PF prioriza pessoa (legal_representative / name), não o nome fantasia. */
+export function resolveRecantoVendorName(
+  company: Record<string, unknown> | null | undefined,
+): string {
+  const c = company && typeof company === 'object' ? company : {};
+  const documentRaw = resolveRecantoVendorDocumentRaw(c);
+  const isPf = isPfVendorDocument(documentRaw);
+
+  if (isPf) {
+    return pickString(
+      c.legal_representative,
+      c.legal_representative_name,
+      c.responsible_name,
+      c.name,
+      c.fantasy_name,
+      c.razao_social,
+    );
+  }
+
+  return pickString(
+    c.legal_representative,
+    c.legal_representative_name,
+    c.responsible_name,
+    c.fantasy_name,
+    c.razao_social,
+    c.name,
+  );
+}
+
 /** Endereço da vendedora: contract_legal_address ou fallback contato/endereço + cidade-UF. */
 export function resolveRecantoVendorContractAddress(
   company: Record<string, unknown> | null | undefined,
@@ -97,6 +143,11 @@ export function resolveRecantoVendorContractAddress(
 
   const contractAddress = sanitizeContractField(c.contract_legal_address);
   if (contractAddress) return contractAddress;
+
+  const representativeAddress = sanitizeContractField(
+    pickString(c.legal_representative_address),
+  );
+  if (representativeAddress) return representativeAddress;
 
   const general = sanitizeContractField(pickString(c.address, c.endereco));
   const city = sanitizeContractField(pickString(c.city, c.cidade));
@@ -133,10 +184,8 @@ export function normalizeRecantoPrimaveraCompanyProfile(
 ): RecantoPrimaveraCompanyProfile {
   const c = company && typeof company === 'object' ? company : {};
 
-  const vendorName = toTitleCase(
-    pickString(c.legal_representative, c.fantasy_name, c.name),
-  );
-  const documentRaw = pickString(c.representative_cpf, c.cnpj, c.document);
+  const vendorName = resolveRecantoVendorName(c);
+  const documentRaw = resolveRecantoVendorDocumentRaw(c);
   const documentFmt = documentRaw ? formatCNPJCPF(documentRaw) : '';
   const documentLabel = resolveContractDocumentLabel(documentRaw);
 
@@ -145,13 +194,27 @@ export function normalizeRecantoPrimaveraCompanyProfile(
     nationality: pickString(c.contract_legal_nationality, 'Brasileira'),
     maritalStatus: toTitleCase(pickString(c.contract_legal_marital_status)),
     profession: toTitleCase(pickString(c.contract_legal_profession)),
-    rg: pickString(c.contract_legal_rg, c.representative_rg),
+    rg: pickString(
+      c.contract_legal_rg,
+      c.representative_rg,
+      c.legal_representative_rg,
+    ),
     rgIssuer: pickString(c.contract_legal_rg_issuer),
     documentRaw,
     documentFmt,
     documentLabel,
-    phone: formatRecantoPhone(pickString(c.contract_legal_phone, c.phone)),
-    email: pickString(c.contract_legal_email, c.email),
+    phone: formatRecantoPhone(
+      pickString(
+        c.contract_legal_phone,
+        c.legal_representative_phone,
+        c.phone,
+      ),
+    ),
+    email: pickString(
+      c.contract_legal_email,
+      c.legal_representative_email,
+      c.email,
+    ),
     address: resolveRecantoVendorContractAddress(c),
     city: toTitleCase(pickString(c.city, c.cidade)),
     state: pickString(c.state, c.uf).toUpperCase(),

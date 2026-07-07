@@ -2,7 +2,7 @@
  * Template de contrato Recanto Primavera — totalmente isolado do modelo Meneses/PADRAO.
  */
 
-import { CONTRACT_PDF_PRINT_CSS } from '@/lib/contractPdfPostProcess';
+import { RECANTO_CONTRACT_PDF_PRINT_CSS } from '@/lib/contractPdfPostProcess';
 import { buildRecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
 import {
   buildRecantoPrimaveraBuyerClauseHtml,
@@ -23,7 +23,7 @@ export function generateRecantoPrimaveraContract(
   const ctx = buildRecantoPrimaveraContractContext(params);
 
   return `
-        ${CONTRACT_PDF_PRINT_CSS}
+        ${RECANTO_CONTRACT_PDF_PRINT_CSS}
         <div class="sv-contract-document sv-contract-recanto-primavera" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
 
             ${buildRecantoPrimaveraTitleHtml(ctx)}

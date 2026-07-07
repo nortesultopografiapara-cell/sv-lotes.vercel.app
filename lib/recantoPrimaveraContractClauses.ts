@@ -92,21 +92,23 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
     : '';
 
   return `
-    <table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11pt;">
-      <thead>
-        <tr>
-          <th style="border: 1px solid #111; padding: 8px; text-align: center; width: 35%;">SINAL</th>
-          <th style="border: 1px solid #111; padding: 8px; text-align: center;">SALDO PARCELADO</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${sinalDetail}</strong></td>
-          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong></td>
-        </tr>
-      </tbody>
-    </table>
-    ${compositionTable}`;
+    <div class="contract-payment-block">
+      <table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11pt;">
+        <thead>
+          <tr>
+            <th style="border: 1px solid #111; padding: 8px; text-align: center; width: 35%;">SINAL</th>
+            <th style="border: 1px solid #111; padding: 8px; text-align: center;">SALDO PARCELADO</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${sinalDetail}</strong></td>
+            <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      ${compositionTable}
+    </div>`;
 }
 
 function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
@@ -283,7 +285,7 @@ export function buildRecantoPrimaveraClausesHtml(
 
 export function buildRecantoPrimaveraElectronicSignatureClauseHtml(): string {
   return `
-    <div class="contract-clause contract-clause--tight" style="padding-bottom: 5px;">
+    <div class="contract-clause contract-clause--electronic-signature contract-clause--tight" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA</strong>
       </p>

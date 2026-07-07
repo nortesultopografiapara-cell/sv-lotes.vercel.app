@@ -141,9 +141,41 @@ function testSignatureModalAndEligibility() {
   console.log('OK testSignatureModalAndEligibility');
 }
 
+function testRecantoSignatureEmbedHook() {
+  const viewHtml = fs.readFileSync('lib/buildContractViewHtml.ts', 'utf8');
+  const regen = fs.readFileSync('lib/contractRegeneration.ts', 'utf8');
+  const page = fs.readFileSync('app/contracts/page.tsx', 'utf8');
+  const assets = fs.readFileSync('lib/recantoPrimaveraContractAssets.ts', 'utf8');
+  assert(assets.includes('embedRecantoContractSignatureInHtml'), 'helper de assinatura');
+  assert(viewHtml.includes('embedRecantoContractSignatureInHtml'), 'preview embute assinatura');
+  assert(regen.includes('embedRecantoContractSignatureInHtml'), 'regeneração embute assinatura');
+  assert(page.includes('embedRecantoContractSignatureInHtml'), 'PDF client embute assinatura');
+  console.log('OK testRecantoSignatureEmbedHook');
+}
+
+function testContractCompanySelectAlignedWithSettings() {
+  const viewHtml = fs.readFileSync('lib/buildContractViewHtml.ts', 'utf8');
+  const gis = fs.readFileSync('lib/gisSaleCreateService.ts', 'utf8');
+  const fields = fs.readFileSync('lib/companyContractFields.ts', 'utf8');
+  const settings = fs.readFileSync('lib/companySettingsFields.ts', 'utf8');
+  assert(fields.includes('COMPANY_CONTRACT_LOAD_SELECT'), 'select centralizado');
+  assert(viewHtml.includes('COMPANY_CONTRACT_LOAD_SELECT'), 'preview usa select centralizado');
+  assert(gis.includes('COMPANY_CONTRACT_LOAD_SELECT'), 'GIS usa select centralizado');
+  assert(
+    !viewHtml.includes('legal_representative_name'),
+    'preview não usa coluna legada legal_representative_name',
+  );
+  assert(settings.includes('legal_representative'), 'settings persiste legal_representative');
+  assert(settings.includes('contract_legal_address'), 'settings persiste endereço jurídico');
+  assert(settings.includes('signature_url'), 'settings persiste assinatura');
+  console.log('OK testContractCompanySelectAlignedWithSettings');
+}
+
 function run() {
   testReadStoredContractHtml();
   testHtmlPreviewSelectFallback();
+  testRecantoSignatureEmbedHook();
+  testContractCompanySelectAlignedWithSettings();
   testHtmlRouteReturnsSavedWithoutRegenerate();
   testHtmlRouteJsonErrorAndLogging();
   testContractsPagePreviewNoLoop();

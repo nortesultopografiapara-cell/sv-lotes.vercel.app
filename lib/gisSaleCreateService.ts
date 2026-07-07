@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
+import { COMPANY_CONTRACT_LOAD_SELECT } from '@/lib/companyContractFields';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import { mergeCustomerData, resolveOrCreateCustomer } from '@/lib/customerIdentity';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
@@ -14,7 +15,8 @@ import {
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
-import { normalizeSaleContractModel } from '@/lib/contractModel';
+import { normalizeSaleContractModel, isRecantoPrimaveraContractModel } from '@/lib/contractModel';
+import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
@@ -347,9 +349,7 @@ export async function executeGisSaleCreate(
       await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
         const { data: tenantData } = await supabase
           .from('companies')
-          .select(
-            'id, name, fantasy_name, cnpj, cpf, email, phone, address, city, state, zip_code, logo_url, contract_model, legal_representative_name, legal_representative_cpf',
-          )
+          .select(COMPANY_CONTRACT_LOAD_SELECT)
           .eq('id', tenantId)
           .single();
 
@@ -432,7 +432,7 @@ export async function executeGisSaleCreate(
 
         const saleValue = Number(customerData.final_value || finalPrice) || 0;
         const downPaymentVal = parseCurrencyBRLNumber(customerData.down_payment);
-        const contractHtml = generateContractHTML({
+        let contractHtml = generateContractHTML({
           tenant: tenantData || {},
           customer: fullCustomer || {},
           project: projDataSnapshot || lot.projects || {},
@@ -444,6 +444,13 @@ export async function executeGisSaleCreate(
             contract_number: contractNumber,
           },
         });
+
+        if (isRecantoPrimaveraContractModel(tenantData)) {
+          contractHtml = await embedRecantoContractSignatureInHtml(
+            contractHtml,
+            tenantData || {},
+          );
+        }
 
         const contractPayloads: Record<string, unknown>[] = [
           {
