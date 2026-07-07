@@ -7,30 +7,45 @@ import {
 } from '@/lib/saasBilling';
 import { generateMonthlySaasCharges } from '@/lib/saasCharges';
 import { assertSaasPaymentGatewayConfigured } from '@/lib/saasPaymentGateway';
+import { createMasterApiPerfTracker } from '@/lib/masterApiPerfLog';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
+  const perf = createMasterApiPerfTracker('/api/master/saas-invoices', 'GET');
+
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
+    perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    assertSuperAdmin(supabaseAdmin, userId),
+  );
   if (!auth.ok) {
+    perf.finish();
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
 
   try {
-    const invoices = await listMasterSaasInvoices(supabaseAdmin, {
-      companyId: searchParams.get('companyId') || undefined,
-      referenceMonth: searchParams.get('referenceMonth') || undefined,
-      status: searchParams.get('status') || undefined,
-    });
+    const invoices = await perf.timeSupabase(
+      'lib.listMasterSaasInvoices',
+      () =>
+        listMasterSaasInvoices(supabaseAdmin, {
+          companyId: searchParams.get('companyId') || undefined,
+          referenceMonth: searchParams.get('referenceMonth') || undefined,
+          status: searchParams.get('status') || undefined,
+        }),
+      (rows) => rows.length,
+    );
+    perf.finish(invoices.length);
     return NextResponse.json({ invoices });
   } catch (e: unknown) {
+    perf.finish();
     const message = e instanceof Error ? e.message : 'Erro ao listar faturas';
     return NextResponse.json({ error: message }, { status: 500 });
   }

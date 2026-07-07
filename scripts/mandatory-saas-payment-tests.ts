@@ -1099,6 +1099,63 @@ function testBillingPage() {
   );
 }
 
+function testSaasSharedLayerNonBlocking() {
+  const financialStatus = read('lib/saasCompanyFinancialStatus.ts');
+  assert(
+    !financialStatus.includes('markOverdueSaasCharges'),
+    'updateCompanyFinancialStatus sem markOverdueSaasCharges global',
+  );
+  assert(
+    !financialStatus.includes('markOverdueInvoices'),
+    'updateCompanyFinancialStatus sem markOverdueInvoices global',
+  );
+
+  const cashRoute = read('app/api/master/saas-cash/route.ts');
+  assert(cashRoute.includes('enabled: false'), 'GET saas-cash desabilita backfill no carregamento');
+
+  const financePage = read('app/saas-finance/page.tsx');
+  assert(
+    !financePage.includes('/api/saas/subscriptions/sync'),
+    'saas-finance sem sync bloqueante no loadData',
+  );
+  assert(
+    financePage.includes('loadMasterSaasFinanceData'),
+    'saas-finance lê pagamentos/faturas/cobranças via Supabase browser',
+  );
+  assert(financePage.includes('MASTER_POST_TIMEOUT_MS'), 'saas-finance POST com timeout');
+
+  const clientLoad = read('lib/masterSaasFinanceClientLoad.ts');
+  assert(clientLoad.includes('master_saas_payments'), 'client load usa master_saas_payments');
+  assert(clientLoad.includes('loadSaasCashPanelView'), 'client load do caixa sem backfill');
+
+  const startAtRoute = read('app/api/master/saas-cash/start-at/route.ts');
+  assert(
+    startAtRoute.includes('shouldReprocess') || startAtRoute.includes('reprocess === true'),
+    'POST marco financeiro não reprocessa por padrão',
+  );
+
+  const auditLoad = read('lib/masterAuditLoad.ts');
+  assert(auditLoad.includes('.in('), 'auditoria com companies/users escopados');
+
+  const cashView = read('lib/saasCashMovements.ts');
+  assert(
+    cashView.includes('computeSaasCashSummaryFromRows(movements)'),
+    'loadSaasCashView sem query duplicada de movimentações',
+  );
+
+  const billingRoute = read('app/api/billing/route.ts');
+  assert(
+    billingRoute.includes('runFinancialStatusRefreshInBackground'),
+    'billing não bloqueia GET aguardando manutenção financeira',
+  );
+
+  const plansPage = read('app/plans/page.tsx');
+  assert(plansPage.includes('loadMasterSaasFinanceData'), 'plans lê financeiro via Supabase browser');
+
+  const auditPage = read('app/master/audit/page.tsx');
+  assert(auditPage.includes('loadMasterAuditLogs'), 'auditoria via Supabase browser');
+}
+
 function testTenantBillingAuth() {
   const server = read('lib/supabase/server.ts');
   assert(server.includes('CALLER_PROFILE_SELECT'), 'select perfil sem company_id');
@@ -1364,10 +1421,11 @@ function testSaasBillingReminders() {
   assert(middleware.includes("'/api/cron'"), 'middleware libera rota cron sem sessão');
 
   const panel = read('components/master/saas/SaasAutomationsPanel.tsx');
-  assert(panel.includes('E-mail · Ativo'), 'UI email ativo');
+  assert(panel.includes('E-mail ·'), 'UI badge email');
   assert(panel.includes('WhatsApp ·'), 'UI badge whatsapp');
   assert(panel.includes('whatsappConfigured'), 'UI estado whatsapp');
-  assert(panel.includes("'Ativo' : 'Em breve'"), 'UI alterna whatsapp ativo/em breve');
+  assert(panel.includes("'Ativo' : 'Desconectado'"), 'UI alterna whatsapp ativo/desconectado');
+  assert(panel.includes('saas-integrations-status'), 'UI lê status real das integrações');
 
   const apiRoute = read('app/api/master/saas-billing-reminders/route.ts');
   assert(apiRoute.includes('whatsappConfigured'), 'API retorna whatsappConfigured');
@@ -1791,6 +1849,7 @@ async function run() {
     ['botão testar WhatsApp SaaS', testSaasWhatsAppTestButton],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
+    ['camada compartilhada SaaS não bloqueante', testSaasSharedLayerNonBlocking],
     ['auth tenant billing', testTenantBillingAuth],
     ['mapeamento status charge', testChargeStatusMapping],
   ];

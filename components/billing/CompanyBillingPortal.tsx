@@ -106,13 +106,29 @@ export function CompanyBillingPortal() {
   const loadBilling = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const startedAt = Date.now();
     try {
-      const res = await fetch('/api/billing', { credentials: 'include' });
-      const json = await res.json();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 12000);
+      const res = await fetch('/api/billing', {
+        credentials: 'include',
+        signal: controller.signal,
+      }).finally(() => window.clearTimeout(timeout));
+      const json = await res.json().catch(() => ({} as any));
       if (!res.ok) throw new Error(json.error || 'Falha ao carregar assinatura');
       setData(json);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro desconhecido');
+      const message =
+        e instanceof DOMException && e.name === 'AbortError'
+          ? 'Tempo excedido ao carregar sua assinatura. Clique em Atualizar.'
+          : e instanceof Error
+            ? e.message
+            : 'Erro desconhecido';
+      console.warn('[minhas-assinaturas] loadBilling failed', {
+        ms: Date.now() - startedAt,
+        error: message,
+      });
+      setError(message);
     } finally {
       setLoading(false);
     }

@@ -704,7 +704,8 @@ export async function getSaasBillingReminderStats(
     .select('reminder_type, channel, sent_to, sent_at, status')
     .eq('status', 'sent')
     .in('channel', ['email', 'whatsapp'])
-    .order('sent_at', { ascending: false });
+    .order('sent_at', { ascending: false })
+    .limit(2000);
 
   if (error) throw new Error(error.message);
 

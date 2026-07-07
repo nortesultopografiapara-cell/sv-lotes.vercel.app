@@ -23,6 +23,7 @@ import { calculateMrrFromCompanies } from '@/lib/companyPricing';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
 import { sumSaasReceivedRevenue } from '@/lib/saasFinanceSettings';
+import { loadMasterSaasFinanceData } from '@/lib/masterSaasFinanceClientLoad';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -113,25 +114,16 @@ export default function PlansPage() {
       setSubscriptionsMap(subsMap);
 
       let payments: MasterSaasPayment[] = [];
-      if (user?.id) {
-        const payRes = await fetch(
-          `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
-        );
-        const payJson = await payRes.json().catch(() => ({}));
-        payments = (payRes.ok ? payJson.payments : []) as MasterSaasPayment[];
-      }
-      setSaasPayments(payments);
-
       let financeStartAt: string | null = null;
       if (user?.id) {
-        const startRes = await fetch(
-          `/api/master/saas-cash/start-at?userId=${encodeURIComponent(user.id)}`,
-          { credentials: 'include' },
-        );
-        const startJson = await startRes.json().catch(() => ({}));
-        financeStartAt =
-          startRes.ok && startJson.cashStartAt ? String(startJson.cashStartAt) : null;
+        const financeData = await loadMasterSaasFinanceData(supabase);
+        if (financeData.errors.length > 0) {
+          setLoadError(financeData.errors.join(' · '));
+        }
+        payments = financeData.payments;
+        financeStartAt = financeData.cashStartAt;
       }
+      setSaasPayments(payments);
       setCashStartAt(financeStartAt);
 
       const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);

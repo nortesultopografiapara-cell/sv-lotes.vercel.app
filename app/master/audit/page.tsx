@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
+import { loadMasterAuditLogs } from '@/lib/masterAuditLoad';
 import { masterAuditToCsv, type MasterAuditRow } from '@/lib/masterAudit';
 
 export default function MasterAuditPage() {
@@ -28,14 +30,10 @@ function MasterAuditContent() {
     setError(null);
     setWarning(null);
     try {
-      const res = await fetch(`/api/master/audit?userId=${encodeURIComponent(user.id)}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.error || 'Erro ao carregar auditoria');
-      }
-      setRows((json.rows as MasterAuditRow[]) || []);
-      if (Array.isArray(json.warnings) && json.warnings.length > 0) {
-        setWarning(json.warnings.join(' · '));
+      const result = await loadMasterAuditLogs(supabase);
+      setRows(result.rows);
+      if (result.errors.length > 0) {
+        setWarning(result.errors.join(' · '));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar auditoria');

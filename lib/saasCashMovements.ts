@@ -20,6 +20,7 @@ import {
   listAsaasFinancialTransactions,
   type AsaasFinancialTransaction,
 } from '@/lib/payments/providers/asaas';
+import { logMasterApiStep } from '@/lib/masterApiPerfLog';
 
 export type SaasCashMovementType = 'income' | 'expense';
 
@@ -1031,6 +1032,8 @@ export async function listSaasCashMovements(
   supabaseAdmin: SupabaseClient,
   options: ListSaasCashMovementsOptions = {},
 ): Promise<SaasCashMovement[]> {
+  const scope = 'listSaasCashMovements';
+  const queryStarted = performance.now();
   const fromDate = effectiveSaasCashFromDate(options.fromDate, options.cashStartAt);
 
   let query = supabaseAdmin
@@ -1065,6 +1068,7 @@ export async function listSaasCashMovements(
   if (error) {
     throw new Error(error.message || 'Falha ao listar movimentações do caixa SaaS');
   }
+  logMasterApiStep(scope, 'supabase.saas_cash_movements.select', queryStarted, data?.length ?? 0);
 
   let rows = (data || []) as Record<string, unknown>[];
   rows = filterMovementsByCashStartAt(
@@ -1134,8 +1138,10 @@ export async function loadSaasCashView(
   backfill?: BackfillSaasCashResult;
   hiddenByMarco: SaasCashHiddenByMarcoSummary;
 }> {
+  const scope = 'loadSaasCashView';
   let backfill: BackfillSaasCashResult | undefined;
   if (backfillOptions?.enabled !== false) {
+    const backfillStarted = performance.now();
     try {
       backfill = await backfillSaasCashForPaidCharges(supabaseAdmin, {
         companyId: options.companyId,
@@ -1144,6 +1150,7 @@ export async function loadSaasCashView(
         createdBy: backfillOptions?.createdBy ?? null,
         cashStartAt,
       });
+      logMasterApiStep(scope, 'lib.backfillSaasCashForPaidCharges', backfillStarted, backfill.backfilled);
     } catch (err) {
       console.warn('[saas-cash-backfill] falha no backfill automático:', {
         error: err instanceof Error ? err.message : String(err),
@@ -1152,11 +1159,19 @@ export async function loadSaasCashView(
   }
 
   const queryOptions = { ...options, cashStartAt };
-  const [movements, summary, hiddenByMarco] = await Promise.all([
-    listSaasCashMovements(supabaseAdmin, queryOptions),
-    getSaasCashSummary(supabaseAdmin, queryOptions),
-    computeSaasCashHiddenByMarcoInPeriod(supabaseAdmin, queryOptions),
-  ]);
+  const loadStarted = performance.now();
+  const movements = await listSaasCashMovements(supabaseAdmin, queryOptions);
+  const summary = computeSaasCashSummaryFromRows(movements);
+  const hiddenByMarco = await computeSaasCashHiddenByMarcoInPeriod(
+    supabaseAdmin,
+    queryOptions,
+  );
+  logMasterApiStep(
+    scope,
+    'load_movements_and_summary',
+    loadStarted,
+    movements.length,
+  );
   return { movements, summary, cashStartAt, backfill, hiddenByMarco };
 }
 

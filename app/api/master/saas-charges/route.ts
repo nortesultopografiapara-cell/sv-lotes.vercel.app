@@ -14,32 +14,49 @@ import {
   getSaasPaymentGatewayStatus,
 } from '@/lib/saasPaymentGateway';
 import { SaasBoletoMinimumError } from '@/lib/saasPixValidation';
+import { createMasterApiPerfTracker } from '@/lib/masterApiPerfLog';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
+  const perf = createMasterApiPerfTracker('/api/master/saas-charges', 'GET');
+
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
+    perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    assertSuperAdmin(supabaseAdmin, userId),
+  );
   if (!auth.ok) {
+    perf.finish();
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
 
   try {
-    const charges = await listSaasCharges(supabaseAdmin, {
-      companyId: searchParams.get('companyId') || undefined,
-      status: searchParams.get('status') || undefined,
-    });
+    const charges = await perf.timeSupabase(
+      'lib.listSaasCharges',
+      () =>
+        listSaasCharges(supabaseAdmin, {
+          companyId: searchParams.get('companyId') || undefined,
+          status: searchParams.get('status') || undefined,
+        }),
+      (rows) => rows.length,
+    );
+    const gateway = perf.timeProcess('process.gateway_status', () =>
+      getSaasPaymentGatewayStatus(),
+    );
+    perf.finish(charges.length);
     return NextResponse.json({
       charges,
-      gateway: getSaasPaymentGatewayStatus(),
+      gateway,
     });
   } catch (e: unknown) {
+    perf.finish();
     const message = e instanceof Error ? e.message : 'Erro ao listar cobranças';
     return NextResponse.json({ error: message }, { status: 500 });
   }

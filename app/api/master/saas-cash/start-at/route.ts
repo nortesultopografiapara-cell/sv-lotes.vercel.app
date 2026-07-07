@@ -6,8 +6,10 @@ import {
   setSaasCashStartAt,
 } from '@/lib/saasFinanceSettings';
 import { loadSaasCashView, reprocessSaasCashForPaidCharges } from '@/lib/saasCashMovements';
+import { createMasterApiPerfTracker } from '@/lib/masterApiPerfLog';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
@@ -31,6 +33,16 @@ export async function POST(request: Request) {
       userId: body.userId,
     });
 
+    const shouldReprocess = body.reprocess === true;
+    const shouldSyncAsaas = body.syncAsaas === true;
+
+    if (!shouldReprocess && !shouldSyncAsaas) {
+      return NextResponse.json({
+        success: true,
+        cashStartAt,
+      });
+    }
+
     const fromDate = String(body.fromDate || '').split('T')[0] || undefined;
     const toDate = String(body.toDate || '').split('T')[0] || undefined;
 
@@ -40,7 +52,7 @@ export async function POST(request: Request) {
       companyId: body.companyId || undefined,
       createdBy: body.userId,
       cashStartAt,
-      syncAsaas: body.syncAsaas !== false,
+      syncAsaas: shouldSyncAsaas,
     });
 
     const view = await loadSaasCashView(
@@ -71,18 +83,27 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  const perf = createMasterApiPerfTracker('/api/master/saas-cash/start-at', 'GET');
+
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
+    perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    assertSuperAdmin(supabaseAdmin, userId),
+  );
   if (!auth.ok) {
+    perf.finish();
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
 
-  const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
+  const cashStartAt = await perf.timeSupabase('lib.getSaasCashStartAt', () =>
+    getSaasCashStartAt(supabaseAdmin),
+  );
+  perf.finish();
   return NextResponse.json({ cashStartAt });
 }

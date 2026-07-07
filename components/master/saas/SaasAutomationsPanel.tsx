@@ -5,6 +5,7 @@ import { SAAS_AUTOMATION_RULES } from '@/lib/masterSaasPanel';
 import { SAAS_BILLING_REMINDER_DEFINITIONS } from '@/lib/saasBillingReminderTypes';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateBr } from '@/lib/saasSubscription';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import { SaasWhatsAppTestModal } from './SaasWhatsAppTestModal';
 
 type ReminderStat = {
@@ -28,9 +29,10 @@ function formatLastSent(iso: string | null | undefined): string {
 export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const { user } = useAuth();
   const [stats, setStats] = useState<ReminderStat[]>([]);
-  const [emailConfigured, setEmailConfigured] = useState(true);
+  const [emailConfigured, setEmailConfigured] = useState(false);
   const [whatsappConfigured, setWhatsappConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [testModalOpen, setTestModalOpen] = useState(false);
 
   useEffect(() => {
@@ -41,24 +43,54 @@ export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: 
         setLoading(false);
         return;
       }
+      setLoading(true);
+      setLoadError(null);
       try {
-        const res = await fetch(
-          `/api/master/saas-billing-reminders?userId=${encodeURIComponent(user.id)}`,
-        );
-        const json = await res.json();
-        if (!cancelled && res.ok) {
-          setStats(Array.isArray(json.stats) ? json.stats : []);
-          setEmailConfigured(json.emailConfigured !== false);
-          setWhatsappConfigured(json.whatsappConfigured === true);
+        const [integrationsRes, remindersRes] = await Promise.all([
+          fetchJsonWithTimeout<{
+            emailConfigured?: boolean;
+            whatsappConfigured?: boolean;
+          }>(
+            `/api/master/saas-integrations-status?userId=${encodeURIComponent(user.id)}`,
+            { credentials: 'include' },
+            10_000,
+          ),
+          fetchJsonWithTimeout<{ stats?: ReminderStat[] }>(
+            `/api/master/saas-billing-reminders?userId=${encodeURIComponent(user.id)}`,
+            { credentials: 'include' },
+            15_000,
+          ),
+        ]);
+
+        if (cancelled) return;
+
+        let errorMessage: string | null = null;
+
+        if (integrationsRes.ok) {
+          setEmailConfigured(integrationsRes.data?.emailConfigured === true);
+          setWhatsappConfigured(integrationsRes.data?.whatsappConfigured === true);
+        } else {
+          errorMessage = integrationsRes.error || 'Falha ao carregar status das integrações.';
         }
-      } catch {
-        if (!cancelled) setStats([]);
+
+        if (remindersRes.ok) {
+          setStats(Array.isArray(remindersRes.data?.stats) ? remindersRes.data.stats : []);
+        } else if (!errorMessage) {
+          errorMessage = remindersRes.error || 'Falha ao carregar estatísticas de lembretes.';
+        }
+
+        setLoadError(errorMessage);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Falha ao carregar automações.');
+          setStats([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    loadStats();
+    void loadStats();
     return () => {
       cancelled = true;
     };
@@ -88,6 +120,9 @@ export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: 
             </button>
           ) : null}
         </div>
+        {loadError ? (
+          <p className="mt-3 text-sm text-amber-300">{loadError}</p>
+        ) : null}
         {!emailConfigured ? (
           <p className="mt-3 text-sm text-amber-300">
             RESEND_API_KEY não configurada — os lembretes por e-mail não serão enviados até configurar
@@ -122,8 +157,14 @@ export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: 
                 {isReminder ? (
                   <div className="mt-3 space-y-3">
                     <div className="flex flex-wrap gap-2">
-                      <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                        E-mail · Ativo
+                      <span
+                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
+                          emailConfigured
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-white/5 text-gray-500 border-white/10'
+                        }`}
+                      >
+                        E-mail · {emailConfigured ? 'Ativo' : 'Desconectado'}
                       </span>
                       <span
                         className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
@@ -132,7 +173,7 @@ export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: 
                             : 'bg-white/5 text-gray-500 border-white/10'
                         }`}
                       >
-                        WhatsApp · {whatsappConfigured ? 'Ativo' : 'Em breve'}
+                        WhatsApp · {whatsappConfigured ? 'Ativo' : 'Desconectado'}
                       </span>
                     </div>
 

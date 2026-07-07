@@ -4,6 +4,7 @@ import { getSaasCashStartAt } from '@/lib/saasFinanceSettings';
 import { loadSaasCashView, reprocessSaasCashForPaidCharges } from '@/lib/saasCashMovements';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
