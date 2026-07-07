@@ -19,30 +19,42 @@ import type {
   ClientPortalDashboardSummary,
   ClientPortalInstallmentStatus,
 } from '@/lib/portal-cliente/dashboardTypes';
+import {
+  logClientPortalDashboardDiagnostic,
+  resolvePortalScopeCompanyId,
+  summarizeSupabaseError,
+} from '@/lib/portal-cliente/dashboardDiagnosticLog';
 
-const UUID_RE =
-  /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+const FORBIDDEN_RESPONSE_KEYS = new Set([
+  'tenant_id',
+  'company_id',
+  'customer_id',
+  'sale_id',
+  'installment_id',
+  'asaas_payment_id',
+  'signature_token',
+  'cpf_cnpj',
+  'document_hash',
+  'link_key',
+]);
+
+function collectObjectKeys(value: unknown, keys = new Set<string>()): Set<string> {
+  if (!value || typeof value !== 'object') return keys;
+  if (Array.isArray(value)) {
+    for (const item of value) collectObjectKeys(item, keys);
+    return keys;
+  }
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    keys.add(key);
+    collectObjectKeys(nested, keys);
+  }
+  return keys;
+}
 
 export function assertClientPortalDashboardSanitized(payload: unknown): void {
-  const json = JSON.stringify(payload);
-  if (UUID_RE.test(json)) {
-    throw new Error('Dashboard response contains internal UUID');
-  }
-  const forbidden = [
-    'tenant_id',
-    'company_id',
-    'customer_id',
-    'sale_id',
-    'installment_id',
-    'asaas_payment_id',
-    'signature_token',
-    'cpf_cnpj',
-    'create-charge',
-    'regenerate-charge',
-  ];
-  const lower = json.toLowerCase();
-  for (const key of forbidden) {
-    if (lower.includes(`"${key}"`)) {
+  const keys = collectObjectKeys(payload);
+  for (const key of keys) {
+    if (FORBIDDEN_RESPONSE_KEYS.has(key)) {
       throw new Error(`Dashboard response contains forbidden field: ${key}`);
     }
   }
@@ -163,6 +175,14 @@ export async function loadClientPortalDashboard(
   admin: SupabaseClient,
   scope: ClientPortalSessionScope,
 ): Promise<ClientPortalDashboardResponse | null> {
+  logClientPortalDashboardDiagnostic({
+    step: 'load_start',
+    linkType: scope.linkType,
+    hasCompanyId: Boolean(scope.companyId),
+    hasCustomerId: Boolean(scope.customerId),
+    hasSaleId: Boolean(scope.saleId),
+  });
+
   if (scope.linkType === 'saas_contract') {
     return loadSaasContractDashboard(admin, scope);
   }
@@ -172,6 +192,13 @@ export async function loadClientPortalDashboard(
   }
 
   if (!scope.saleId || !scope.customerId) {
+    logClientPortalDashboardDiagnostic({
+      step: 'load_abort',
+      linkType: scope.linkType,
+      reason: 'missing_sale_or_customer_scope',
+      hasSaleId: Boolean(scope.saleId),
+      hasCustomerId: Boolean(scope.customerId),
+    });
     return null;
   }
 
@@ -184,37 +211,91 @@ async function loadLotSaleDashboard(
 ): Promise<ClientPortalDashboardResponse | null> {
   const saleId = String(scope.saleId || '');
   const customerId = String(scope.customerId || '');
-  const companyId = String(scope.companyId || '');
+  const scopeCompanyId = String(scope.companyId || '');
 
-  const { data: sale } = await admin
+  const { data: sale, error: saleError } = await admin
     .from('sales')
-    .select('id, customer_id, project_id, company_id, tenant_id, block_number, lot_number, status')
+    .select('id, customer_id, project_id, company_id, tenant_id, block_id, status')
     .eq('id', saleId)
     .maybeSingle();
 
-  if (!sale || String(sale.customer_id) !== customerId) return null;
-  const saleCompanyId = String(sale.company_id || sale.tenant_id || '');
-  if (saleCompanyId !== companyId) return null;
+  if (saleError) {
+    logClientPortalDashboardDiagnostic({
+      step: 'query_sales',
+      reason: 'supabase_error',
+      ...summarizeSupabaseError(saleError),
+    });
+    return null;
+  }
 
-  const [customerRes, companyRes, projectRes, contractRes, receiptsRes] = await Promise.all([
-    admin.from('customers').select('id, name, phone').eq('id', customerId).maybeSingle(),
+  if (!sale) {
+    logClientPortalDashboardDiagnostic({ step: 'query_sales', reason: 'sale_not_found' });
+    return null;
+  }
+
+  if (String(sale.customer_id) !== customerId) {
+    logClientPortalDashboardDiagnostic({ step: 'query_sales', reason: 'customer_mismatch' });
+    return null;
+  }
+
+  const { data: customer, error: customerError } = await admin
+    .from('customers')
+    .select('id, name, phone, company_id, tenant_id')
+    .eq('id', customerId)
+    .maybeSingle();
+
+  if (customerError) {
+    logClientPortalDashboardDiagnostic({
+      step: 'query_customers',
+      reason: 'supabase_error',
+      ...summarizeSupabaseError(customerError),
+    });
+    return null;
+  }
+
+  if (!customer) {
+    logClientPortalDashboardDiagnostic({ step: 'query_customers', reason: 'customer_not_found' });
+    return null;
+  }
+
+  const effectiveCompanyId = resolvePortalScopeCompanyId({
+    saleCompanyId: sale.company_id,
+    saleTenantId: sale.tenant_id,
+    customerCompanyId: customer.company_id,
+    customerTenantId: customer.tenant_id,
+  });
+
+  if (!effectiveCompanyId || effectiveCompanyId !== scopeCompanyId) {
+    logClientPortalDashboardDiagnostic({
+      step: 'scope_company_match',
+      reason: 'company_scope_mismatch',
+      hasCompanyId: Boolean(scopeCompanyId),
+    });
+    return null;
+  }
+
+  const [companyRes, projectRes, blockRes, contractRes, receiptsRes] = await Promise.all([
     admin
       .from('companies')
       .select('id, name, fantasy_name, razao_social, phone')
-      .eq('id', companyId)
+      .eq('id', effectiveCompanyId)
       .maybeSingle(),
     sale.project_id
       ? admin.from('projects').select('id, name').eq('id', sale.project_id).maybeSingle()
-      : Promise.resolve({ data: null }),
+      : Promise.resolve({ data: null, error: null }),
+    sale.block_id
+      ? admin
+          .from('blocks')
+          .select('id, block_name, number, lot_number')
+          .eq('id', sale.block_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     admin
       .from('contracts')
-      .select(
-        'id, contract_number, status, signature_status, signature_token, signature_expires_at, pdf_signed_url',
-      )
+      .select('id, contract_number, status, signature_status, signature_token, signature_expires_at')
       .eq('sale_id', saleId)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(1),
     admin
       .from('finance_receipts')
       .select('id, installment_number, due_date, amount, paid_at, status')
@@ -223,16 +304,35 @@ async function loadLotSaleDashboard(
       .order('installment_number', { ascending: true }),
   ]);
 
-  const customer = customerRes.data;
+  for (const [step, result] of [
+    ['query_companies', companyRes],
+    ['query_projects', projectRes],
+    ['query_blocks', blockRes],
+    ['query_contracts', contractRes],
+    ['query_finance_receipts', receiptsRes],
+  ] as const) {
+    if (result.error) {
+      logClientPortalDashboardDiagnostic({
+        step,
+        reason: 'supabase_error',
+        ...summarizeSupabaseError(result.error),
+      });
+      return null;
+    }
+  }
+
   const company = companyRes.data;
-  if (!customer || !company) return null;
+  if (!company) {
+    logClientPortalDashboardDiagnostic({ step: 'query_companies', reason: 'company_not_found' });
+    return null;
+  }
 
   const projectName = projectRes.data?.name ? String(projectRes.data.name) : null;
-  const quadraLote = resolveQuadraLote(sale, null);
+  const quadraLote = resolveQuadraLote(null, blockRes.data);
   const { quadra, lote } = parseQuadraLote(quadraLote);
 
   let contract: ClientPortalDashboardContract | null = null;
-  const contractRow = contractRes.data;
+  const contractRow = Array.isArray(contractRes.data) ? contractRes.data[0] : contractRes.data;
   if (contractRow) {
     let signUrl: string | null = null;
     let contractPdfUrl: string | null = null;
@@ -293,13 +393,22 @@ async function loadLotSaleDashboard(
 
   let chargeByInstallment = new Map<string, ChargeRow>();
   if (installmentIds.length > 0) {
-    const { data: charges } = await admin
+    const { data: charges, error: chargesError } = await admin
       .from('company_asaas_charges')
       .select('installment_id, status, bank_slip_url, invoice_url, pix_copy_paste, created_at')
-      .eq('company_id', companyId)
+      .eq('company_id', effectiveCompanyId)
       .in('installment_id', installmentIds)
       .order('created_at', { ascending: false });
-    chargeByInstallment = pickLatestChargeByInstallment((charges as ChargeRow[] | null) ?? []);
+
+    if (chargesError) {
+      logClientPortalDashboardDiagnostic({
+        step: 'query_company_asaas_charges',
+        reason: 'supabase_error',
+        ...summarizeSupabaseError(chargesError),
+      });
+    } else {
+      chargeByInstallment = pickLatestChargeByInstallment((charges as ChargeRow[] | null) ?? []);
+    }
   }
 
   const installments: ClientPortalDashboardInstallment[] = receipts
@@ -378,6 +487,7 @@ async function loadLotSaleDashboard(
   };
 
   assertClientPortalDashboardSanitized(response);
+  logClientPortalDashboardDiagnostic({ step: 'load_success', linkType: scope.linkType });
   return response;
 }
 

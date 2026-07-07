@@ -9,6 +9,7 @@ import {
   assertClientPortalDashboardSanitized,
   resolveClientPortalGreetingName,
 } from '../lib/portal-cliente/dashboard';
+import { resolvePortalScopeCompanyId } from '../lib/portal-cliente/dashboardDiagnosticLog';
 import type { ClientPortalDashboardResponse } from '../lib/portal-cliente/dashboardTypes';
 import {
   createClientPortalSessionToken,
@@ -93,6 +94,7 @@ function testUnauthorizedApi(): void {
   assert(route.includes('getClientPortalSessionCookie'), 'reads session cookie');
   assert(route.includes('readClientPortalSessionToken'), 'validates session token');
   assert(route.includes('status: 401'), 'returns 401 without session');
+  assert(route.includes('logClientPortalDashboardDiagnostic'), 'diagnostic logs');
   assert(!route.includes('/api/finance/asaas/create-charge'), 'no create-charge api');
   assert(!route.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate-charge api');
 }
@@ -107,7 +109,25 @@ function testSanitizedResponse(): void {
   const sample = buildSampleDashboard();
   assertClientPortalDashboardSanitized(sample);
   assert(sample.summary.greetingName === 'João', 'greeting name');
-  assert(!JSON.stringify(sample).includes('customer_id'), 'no customer_id key');
+  assert(!JSON.stringify(sample).includes('"customer_id"'), 'no customer_id key');
+  try {
+    assertClientPortalDashboardSanitized({ customer_id: 'x' });
+    assert(false, 'sanitizer should reject internal keys');
+  } catch {
+    // expected
+  }
+}
+
+function testCompanyScopeResolution(): void {
+  const fromCustomer = resolvePortalScopeCompanyId({
+    saleCompanyId: null,
+    saleTenantId: null,
+    customerCompanyId: 'comp-a',
+    customerTenantId: null,
+  });
+  assert(fromCustomer === 'comp-a', 'company fallback from customer');
+  const dashboard = read('lib/portal-cliente/dashboard.ts');
+  assert(dashboard.includes('resolvePortalScopeCompanyId'), 'uses shared company resolver');
 }
 
 function testSessionScopeRequired(): void {
@@ -132,6 +152,8 @@ function testSaleScopeInDashboardLoader(): void {
   assert(dashboard.includes('.eq(\'sale_id\', saleId)'), 'filters by sale_id');
   assert(dashboard.includes('.eq(\'customer_id\', customerId)'), 'filters by customer_id');
   assert(dashboard.includes('company_asaas_charges'), 'reads existing charges only');
+  assert(dashboard.includes('resolvePortalScopeCompanyId'), 'shared company scope');
+  assert(dashboard.includes('from(\'blocks\')'), 'loads block for quadra/lote');
   assert(!dashboard.includes('/api/finance/asaas/create-charge'), 'no create charge api');
   assert(!dashboard.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate charge api');
   assert(!dashboard.includes('createCompanyAsaas'), 'no asaas create service');
@@ -172,6 +194,7 @@ function main(): void {
   testUnauthorizedApi();
   testPainelRedirectWithoutSession();
   testSanitizedResponse();
+  testCompanyScopeResolution();
   testSessionScopeRequired();
   testSaleScopeInDashboardLoader();
   testInstallmentPaymentLinksOnlyWhenPresent();
