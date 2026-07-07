@@ -1,12 +1,22 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import {
-  isMasterAuditEntry,
   mapAuditLogRow,
+  MASTER_AUDIT_SQL_MODULES,
   normalizeAuditLogRow,
   resolveAuditCompanyId,
   type MasterAuditRow,
   type RawAuditLogRow,
 } from '@/lib/masterAudit';
+
+export class MasterAuditLoadError extends Error {
+  readonly stage: string;
+
+  constructor(stage: string, message: string) {
+    super(message);
+    this.name = 'MasterAuditLoadError';
+    this.stage = stage;
+  }
+}
 
 export type MasterAuditLoadResult = {
   rows: MasterAuditRow[];
@@ -29,65 +39,56 @@ export type MasterAuditDiagnostics = {
   notes: string[];
 };
 
-/** Linhas exibidas na UI. */
+/** Linhas retornadas pela API. */
 export const MASTER_AUDIT_ROW_LIMIT = 100;
 
-/** Janela lida do banco antes do filtro Master (sem filtro SQL por module). */
-export const MASTER_AUDIT_FETCH_WINDOW = 250;
+/** Colunas confirmadas no schema real de audit_logs (Supabase produção). */
+export const MASTER_AUDIT_SELECT =
+  'id, action, module, description, company_id, tenant_id, user_id, created_at';
 
-/** Timeout interno por fase da leitura (ms). */
-export const MASTER_AUDIT_QUERY_TIMEOUT_MS = 12_000;
+/** SQL lógico executado (PostgREST). */
+export const MASTER_AUDIT_QUERY_LOG = `SELECT ${MASTER_AUDIT_SELECT}
+FROM audit_logs
+WHERE module IN (${MASTER_AUDIT_SQL_MODULES.join(', ')})
+ORDER BY created_at DESC
+LIMIT ${MASTER_AUDIT_ROW_LIMIT}`;
 
-const AUDIT_SELECT_VARIANTS = [
-  'id, action, module, description, created_at, tenant_id, company_id, user_id',
-  'id, action, module, description, details, created_at, tenant_id, company_id, user_id',
-  'id, action, module, description, created_at, tenant_id, user_id',
-  'id, action, entity_type, description, created_at, tenant_id, user_id',
-  'id, action, entity_type, created_at, tenant_id, user_id',
-  'id, action, module, details, created_at, tenant_id, user_id',
-  'id, action, created_at, tenant_id, user_id',
-] as const;
+export function logSupabaseError(stage: string, error: PostgrestError) {
+  console.error('[audit]', {
+    stage,
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+  });
+}
+
+/** Colunas confirmadas em public.users (produção). */
+export const MASTER_AUDIT_USERS_SELECT = 'id, full_name, email';
 
 export function resolveUserDisplayName(user: {
   full_name?: string | null;
-  name?: string | null;
   email?: string | null;
 }): string {
-  return user.full_name || user.name || user.email || 'Usuário';
-}
-
-function isMissingColumnError(message: string): boolean {
-  return (
-    message.includes('column') ||
-    message.includes('does not exist') ||
-    message.includes('Could not find')
-  );
-}
-
-export async function withMasterAuditTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`${label} excedeu ${ms}ms`)),
-          ms,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  const fullName = String(user.full_name || '').trim();
+  if (fullName) return fullName;
+  const email = String(user.email || '').trim();
+  if (email) return email;
+  return 'Usuário';
 }
 
 function countBucket(map: Record<string, number>, key: string | null | undefined) {
   const bucket = String(key || '(vazio)').trim() || '(vazio)';
   map[bucket] = (map[bucket] || 0) + 1;
+}
+
+async function queryMasterAuditLogs(supabase: SupabaseClient) {
+  return supabase
+    .from('audit_logs')
+    .select(MASTER_AUDIT_SELECT)
+    .in('module', [...MASTER_AUDIT_SQL_MODULES])
+    .order('created_at', { ascending: false })
+    .range(0, MASTER_AUDIT_ROW_LIMIT - 1);
 }
 
 export async function diagnoseMasterAuditLogs(
@@ -101,6 +102,7 @@ export async function diagnoseMasterAuditLogs(
       .from('audit_logs')
       .select('id', { count: 'exact', head: true });
     if (countRes.error) {
+      logSupabaseError('diagnostics.count', countRes.error);
       notes.push(`count: ${countRes.error.message}`);
     } else {
       totalCount = countRes.count ?? 0;
@@ -109,32 +111,17 @@ export async function diagnoseMasterAuditLogs(
     notes.push(err instanceof Error ? err.message : 'count failed');
   }
 
-  let sample: RawAuditLogRow[] = [];
-  for (const select of [
-    'module, action, tenant_id, company_id, entity_type',
-    'action, tenant_id, entity_type',
-    'action, tenant_id',
-  ]) {
-    const res = await supabase
-      .from('audit_logs')
-      .select(select)
-      .order('created_at', { ascending: false })
-      .range(0, 499);
-    if (!res.error) {
-      sample = (res.data || []) as RawAuditLogRow[];
-      break;
-    }
-    if (!isMissingColumnError(res.error.message || '')) {
-      notes.push(`sample: ${res.error.message}`);
-      break;
-    }
+  const sampleRes = await queryMasterAuditLogs(supabase);
+  if (sampleRes.error) {
+    logSupabaseError('diagnostics.sample', sampleRes.error);
+    notes.push(`sample: ${sampleRes.error.message}`);
   }
 
+  const sample = (sampleRes.data || []) as RawAuditLogRow[];
   const byModule: Record<string, number> = {};
   const byAction: Record<string, number> = {};
   let withTenantId = 0;
   let withCompanyId = 0;
-  let masterSampleCount = 0;
 
   for (const row of sample) {
     const normalized = normalizeAuditLogRow(row);
@@ -142,11 +129,10 @@ export async function diagnoseMasterAuditLogs(
     if (normalized.company_id) withCompanyId += 1;
     countBucket(byModule, normalized.module);
     countBucket(byAction, normalized.action);
-    if (isMasterAuditEntry(normalized)) masterSampleCount += 1;
   }
 
   if (sample.length === 0) {
-    notes.push('Amostra recente vazia em audit_logs.');
+    notes.push('Nenhum log Master SaaS nos módulos filtrados.');
   }
 
   return {
@@ -157,93 +143,47 @@ export async function diagnoseMasterAuditLogs(
     withCompanyId,
     byModule,
     byAction,
-    masterSampleCount,
+    masterSampleCount: sample.length,
     notes,
-  };
-}
-
-async function queryAuditLogsWindow(
-  supabase: SupabaseClient,
-  select: string,
-) {
-  return supabase
-    .from('audit_logs')
-    .select(select)
-    .order('created_at', { ascending: false })
-    .range(0, MASTER_AUDIT_FETCH_WINDOW - 1);
-}
-
-async function queryAuditLogs(supabase: SupabaseClient) {
-  let lastError: { message?: string } | null = null;
-
-  for (const select of AUDIT_SELECT_VARIANTS) {
-    const res = await queryAuditLogsWindow(supabase, select);
-    if (!res.error) return res;
-
-    lastError = res.error;
-    if (!isMissingColumnError(res.error.message || '')) {
-      return res;
-    }
-  }
-
-  return {
-    data: [] as RawAuditLogRow[],
-    error: lastError,
-    status: 400,
-    statusText: 'Bad Request',
-    count: null,
   };
 }
 
 export async function loadMasterAuditLogs(
   supabase: SupabaseClient,
-  options?: { queryTimeoutMs?: number },
 ): Promise<MasterAuditLoadResult> {
-  const queryTimeoutMs = options?.queryTimeoutMs ?? MASTER_AUDIT_QUERY_TIMEOUT_MS;
   const errors: string[] = [];
 
+  console.log('[audit] sql', MASTER_AUDIT_QUERY_LOG.replace(/\s+/g, ' ').trim());
+
+  console.time('[audit] query');
   const logsQueryStarted = Date.now();
-  let logsRes: Awaited<ReturnType<typeof queryAuditLogs>>;
-  try {
-    logsRes = await withMasterAuditTimeout(
-      queryAuditLogs(supabase),
-      queryTimeoutMs,
-      'audit_logs',
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Falha ao consultar audit_logs';
-    errors.push(message);
-    return {
-      rows: [],
-      errors,
-      rawCount: 0,
-      filteredCount: 0,
-      logsQueryMs: Date.now() - logsQueryStarted,
-      enrichMs: 0,
-    };
-  }
+  const logsRes = await queryMasterAuditLogs(supabase);
   const logsQueryMs = Date.now() - logsQueryStarted;
+  console.timeEnd('[audit] query');
 
   if (logsRes.error) {
-    errors.push(`audit_logs: ${logsRes.error.message}`);
+    logSupabaseError('audit_logs', logsRes.error);
+    throw new MasterAuditLoadError(
+      'audit_logs',
+      logsRes.error.message || 'Falha ao consultar audit_logs',
+    );
   }
 
   const rawLogs = (logsRes.data || []) as RawAuditLogRow[];
+  console.log('[audit] rows', rawLogs.length, 'query_ms', logsQueryMs);
+
   const normalizedLogs = rawLogs.map(normalizeAuditLogRow);
-  const filteredLogs = normalizedLogs
-    .filter(isMasterAuditEntry)
-    .slice(0, MASTER_AUDIT_ROW_LIMIT);
 
   const companyIds = [
     ...new Set(
-      filteredLogs
+      normalizedLogs
         .map((row) => resolveAuditCompanyId(row))
         .filter((id): id is string => Boolean(id)),
     ),
   ];
   const userIds = [
     ...new Set(
-      filteredLogs
+      normalizedLogs
         .map((row) => (row.user_id ? String(row.user_id) : ''))
         .filter(Boolean),
     ),
@@ -252,53 +192,62 @@ export async function loadMasterAuditLogs(
   const companyNames: Record<string, string> = {};
   const userNames: Record<string, string> = {};
 
+  console.time('[audit] enrich');
   const enrichStarted = Date.now();
-  const enrichTimeoutMs = Math.max(3_000, Math.floor(queryTimeoutMs / 2));
+  const enrichTasks: Promise<void>[] = [];
 
   if (companyIds.length > 0) {
-    try {
-      const companiesRes = await withMasterAuditTimeout(
-        supabase.from('companies').select('id, name').in('id', companyIds),
-        enrichTimeoutMs,
-        'companies',
-      );
-      if (companiesRes.error) {
-        errors.push(`companies: ${companiesRes.error.message}`);
-      } else {
+    enrichTasks.push(
+      (async () => {
+        console.time('[audit] enrich-companies');
+        const companiesRes = await supabase
+          .from('companies')
+          .select('id, name')
+          .in('id', companyIds);
+        console.timeEnd('[audit] enrich-companies');
+        if (companiesRes.error) {
+          logSupabaseError('companies', companiesRes.error);
+          errors.push(`companies: ${companiesRes.error.message}`);
+          return;
+        }
         for (const company of companiesRes.data || []) {
           companyNames[company.id] = company.name || '—';
         }
-      }
-    } catch (err) {
-      errors.push(
-        err instanceof Error ? err.message : 'Falha ao resolver nomes de empresas',
-      );
-    }
+      })(),
+    );
   }
 
   if (userIds.length > 0) {
-    try {
-      const usersRes = await withMasterAuditTimeout(
-        supabase.from('users').select('id, full_name, name, email').in('id', userIds),
-        enrichTimeoutMs,
-        'users',
-      );
-      if (usersRes.error) {
-        errors.push(`users: ${usersRes.error.message}`);
-      } else {
+    enrichTasks.push(
+      (async () => {
+        console.time('[audit] enrich-users');
+        const usersRes = await supabase
+          .from('users')
+          .select(MASTER_AUDIT_USERS_SELECT)
+          .in('id', userIds);
+        console.timeEnd('[audit] enrich-users');
+        if (usersRes.error) {
+          logSupabaseError('users', usersRes.error);
+          errors.push(`users: ${usersRes.error.message}`);
+          return;
+        }
         for (const user of usersRes.data || []) {
           userNames[user.id] = resolveUserDisplayName(user);
         }
-      }
-    } catch (err) {
-      errors.push(
-        err instanceof Error ? err.message : 'Falha ao resolver nomes de usuários',
-      );
-    }
+      })(),
+    );
   }
 
-  const rows = filteredLogs.map((row) => mapAuditLogRow(row, companyNames, userNames));
+  if (enrichTasks.length > 0) {
+    await Promise.all(enrichTasks);
+  }
+
   const enrichMs = Date.now() - enrichStarted;
+  console.timeEnd('[audit] enrich');
+  console.log('[audit] enrich_ms', enrichMs, 'company_ids', companyIds.length, 'user_ids', userIds.length);
+
+  const rows = normalizedLogs.map((row) => mapAuditLogRow(row, companyNames, userNames));
+  console.log('[audit] filtered', rows.length);
 
   return {
     rows,

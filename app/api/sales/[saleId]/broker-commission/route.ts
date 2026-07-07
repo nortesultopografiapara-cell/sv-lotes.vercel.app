@@ -111,10 +111,10 @@ async function authorizeBrokerCommissionManage(
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ saleId: string }> },
 ) {
   try {
-    const { id: saleId } = await params;
+    const { saleId } = await params;
     const auth = await authorizeBrokerCommissionManage(request, { saleId });
     if ('error' in auth && auth.error) return auth.error;
 
@@ -139,10 +139,10 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ saleId: string }> },
 ) {
   try {
-    const { id: saleId } = await params;
+    const { saleId } = await params;
     const body = await request.json();
 
     const auth = await authorizeBrokerCommissionManage(request, {

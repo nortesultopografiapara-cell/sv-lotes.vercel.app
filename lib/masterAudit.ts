@@ -45,6 +45,7 @@ const ACTION_LABELS: Record<string, string> = {
   SAAS_CHARGE_PAID: 'Cobrança SaaS paga',
   SAAS_CHARGE_DELETED: 'Cobrança cancelada excluída',
   CONTRACT_ARCHIVED: 'Contrato SaaS arquivado',
+  CONTRACT_SIGNED_ELECTRONICALLY: 'Contrato assinado eletronicamente',
   COMPANY_ADMIN_CREATED: 'Administrador da empresa cadastrado',
   COMPANY_ADMIN_UPDATED: 'Administrador da empresa atualizado',
   COMPANY_ADMIN_DISABLED: 'Administrador da empresa desativado',
@@ -59,6 +60,9 @@ const ACTION_LABELS: Record<string, string> = {
   IMPERSONATION_ENDED: 'Modo empresa encerrado',
 };
 
+/** Módulos operacionais de tenant — fora do escopo da Auditoria Master. */
+const OPERATIONAL_MODULES = new Set(['GIS', 'FINANCE', 'BROKERS', 'SALES']);
+
 const MASTER_MODULES = new Set([
   'MASTER',
   'COMPANIES',
@@ -66,11 +70,12 @@ const MASTER_MODULES = new Set([
   'USERS',
   'PLANS',
   'SUBSCRIPTIONS',
-  'SALES',
   'AUTH',
   'IMPERSONATION',
   'COMPANY_ADMINS',
   'SAAS_BILLING',
+  'CONTRACTS',
+  'WHATSAPP',
 ]);
 
 /** Módulos usados nas escritas Master SaaS no código (referência). */
@@ -79,10 +84,23 @@ export const MASTER_AUDIT_WRITTEN_MODULES = [
   'SAAS_BILLING',
   'SAAS',
   'COMPANY_ADMINS',
+  'CONTRACTS',
 ] as const;
 
-/** Módulos aceitos pelo filtro em memória isMasterAuditEntry. */
-export const MASTER_AUDIT_MODULES = [...MASTER_MODULES] as const;
+/** Módulos consultados diretamente no SQL (schema real confirmado). */
+export const MASTER_AUDIT_SQL_MODULES = [
+  'SAAS_BILLING',
+  'SAAS',
+  'SUBSCRIPTIONS',
+  'COMPANY_ADMINS',
+  'CONTRACTS',
+  'WHATSAPP',
+  'MASTER',
+  'COMPANIES',
+] as const;
+
+/** Módulos aceitos pelo filtro em memória (referência / diagnóstico). */
+export const MASTER_AUDIT_MODULES = [...MASTER_AUDIT_SQL_MODULES] as const;
 
 const MASTER_ACTION_PREFIXES = [
   'COMPANY_',
@@ -90,6 +108,7 @@ const MASTER_ACTION_PREFIXES = [
   'PLAN_',
   'SUBSCRIPTION_',
   'SAAS_',
+  'CONTRACT_',
   'RESOURCES_',
   'COMPANY_ADMIN_',
   'IMPERSONATION_',
@@ -108,9 +127,10 @@ export function isMasterAuditEntry(row: {
   module?: string | null;
   action?: string | null;
 }): boolean {
-  const module = String(row.module || '').toUpperCase();
-  const action = String(row.action || '').toUpperCase();
-  if (MASTER_MODULES.has(module)) return true;
+  const module = String(row.module || '').trim().toUpperCase();
+  const action = String(row.action || '').trim().toUpperCase();
+  if (module && OPERATIONAL_MODULES.has(module)) return false;
+  if (module && MASTER_MODULES.has(module)) return true;
   return MASTER_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
 }
 
