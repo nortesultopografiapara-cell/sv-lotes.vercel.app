@@ -10,6 +10,7 @@ import { assertSaasPaymentGatewayConfigured } from '@/lib/saasPaymentGateway';
 import { createMasterApiPerfTracker } from '@/lib/masterApiPerfLog';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   const perf = createMasterApiPerfTracker('/api/master/saas-invoices', 'GET');

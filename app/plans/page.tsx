@@ -23,7 +23,7 @@ import { calculateMrrFromCompanies } from '@/lib/companyPricing';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
 import { sumSaasReceivedRevenue } from '@/lib/saasFinanceSettings';
-import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
+import { loadMasterSaasFinanceData } from '@/lib/masterSaasFinanceClientLoad';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -35,8 +35,6 @@ import {
 } from '@/lib/masterSubscriptionActions';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { motion, AnimatePresence } from 'motion/react';
-
-const MASTER_API_TIMEOUT_MS = 15_000;
 
 const PLAN_OPTIONS = {
   starter: { id: 'starter', dbKey: 'basic', name: 'BÁSICO', theme: 'green' as const },
@@ -116,36 +114,16 @@ export default function PlansPage() {
       setSubscriptionsMap(subsMap);
 
       let payments: MasterSaasPayment[] = [];
-      if (user?.id) {
-        const uid = encodeURIComponent(user.id);
-        const payRes = await fetchJsonWithTimeout<{ payments?: MasterSaasPayment[] }>(
-          `/api/master/saas-payments?userId=${uid}`,
-          { credentials: 'include' },
-          MASTER_API_TIMEOUT_MS,
-        );
-        if (!payRes.ok) {
-          setLoadError(payRes.error || 'Falha ao carregar pagamentos SaaS.');
-        } else {
-          payments = (payRes.data?.payments || []) as MasterSaasPayment[];
-        }
-      }
-      setSaasPayments(payments);
-
       let financeStartAt: string | null = null;
       if (user?.id) {
-        const uid = encodeURIComponent(user.id);
-        const startRes = await fetchJsonWithTimeout<{ cashStartAt?: string }>(
-          `/api/master/saas-cash/start-at?userId=${uid}`,
-          { credentials: 'include' },
-          MASTER_API_TIMEOUT_MS,
-        );
-        if (!startRes.ok) {
-          setLoadError((prev) => prev || startRes.error || 'Falha ao carregar marco do caixa.');
-        } else {
-          financeStartAt =
-            startRes.data?.cashStartAt ? String(startRes.data.cashStartAt) : null;
+        const financeData = await loadMasterSaasFinanceData(supabase);
+        if (financeData.errors.length > 0) {
+          setLoadError(financeData.errors.join(' · '));
         }
+        payments = financeData.payments;
+        financeStartAt = financeData.cashStartAt;
       }
+      setSaasPayments(payments);
       setCashStartAt(financeStartAt);
 
       const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);

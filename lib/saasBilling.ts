@@ -131,7 +131,7 @@ export async function syncPendingInvoiceAmountsFromPricing(
     .single();
 
   if (error || !updated) return invoice;
-  return parseInvoiceRow(updated);
+  return mapMasterSaasInvoiceRow(updated);
 }
 
 export function isMockSaasExternalChargeId(id: string | null | undefined): boolean {
@@ -191,7 +191,7 @@ async function repairPhantomSaasInvoiceIfNeeded(
     throw new Error(error?.message || 'Falha ao reparar fatura mock');
   }
 
-  return parseInvoiceRow(updated);
+  return mapMasterSaasInvoiceRow(updated);
 }
 
 /** Reabre fatura após cancelamento/exclusão da cobrança — limpa gateway legado. */
@@ -223,7 +223,7 @@ export async function reopenSaasInvoiceForNewCharge(
     throw new Error(error?.message || 'Falha ao reabrir fatura para nova cobrança');
   }
 
-  return parseInvoiceRow(updated);
+  return mapMasterSaasInvoiceRow(updated);
 }
 
 /** Atualiza due_date de fatura existente quando o Master informa vencimento explícito. */
@@ -249,7 +249,7 @@ async function applyRequestedDueDateToExistingInvoice(
     .single();
 
   if (error || !updated) return invoice;
-  return parseInvoiceRow(updated);
+  return mapMasterSaasInvoiceRow(updated);
 }
 
 export function resolveInvoiceDueDate(
@@ -275,7 +275,7 @@ export function currentReferenceMonth(date = new Date()): string {
   return `${y}-${m}`;
 }
 
-function parseInvoiceRow(row: Record<string, unknown>): MasterSaasInvoice {
+export function mapMasterSaasInvoiceRow(row: Record<string, unknown>): MasterSaasInvoice {
   return {
     id: String(row.id),
     company_id: String(row.company_id),
@@ -369,7 +369,7 @@ export async function generateInvoiceForCompany(
     .maybeSingle();
 
   if (existing) {
-    const parsed = parseInvoiceRow(existing);
+    const parsed = mapMasterSaasInvoiceRow(existing);
     if (isPhantomSaasInvoice(parsed)) {
       const repaired = await repairPhantomSaasInvoiceIfNeeded(
         supabaseAdmin,
@@ -426,7 +426,7 @@ export async function generateInvoiceForCompany(
     throw new Error(insertErr?.message || 'Falha ao criar fatura');
   }
 
-  let invoice = parseInvoiceRow(inserted);
+  let invoice = mapMasterSaasInvoiceRow(inserted);
 
   if (!options?.skipPix) {
     const provider = getGatewayBillingProvider();
@@ -453,7 +453,7 @@ export async function generateInvoiceForCompany(
       .select('*')
       .single();
 
-    if (withPix) invoice = parseInvoiceRow(withPix);
+    if (withPix) invoice = mapMasterSaasInvoiceRow(withPix);
   }
 
   if (subscription?.id) {
@@ -899,7 +899,7 @@ export async function markInvoicePaid(
 
   if (existing) {
     const invoiceStatus = String(invoice.status || '').toUpperCase();
-    let parsed = parseInvoiceRow(invoice);
+    let parsed = mapMasterSaasInvoiceRow(invoice);
 
     if (invoiceStatus !== 'PAGO') {
       const { data: updated, error: updErr } = await supabaseAdmin
@@ -917,7 +917,7 @@ export async function markInvoicePaid(
       if (updErr || !updated) {
         throw new Error(updErr?.message || 'Falha ao atualizar fatura');
       }
-      parsed = parseInvoiceRow(updated);
+      parsed = mapMasterSaasInvoiceRow(updated);
     }
 
     if (invoice.subscription_id) {
@@ -1018,7 +1018,7 @@ export async function markInvoicePaid(
   });
 
   return {
-    invoice: parseInvoiceRow(updated),
+    invoice: mapMasterSaasInvoiceRow(updated),
     paymentId: payment.id,
   };
 }
@@ -1175,7 +1175,7 @@ export async function listMasterSaasInvoices(
   if (error) throw new Error(error.message);
   logMasterApiStep(scope, 'supabase.master_saas_invoices.select', invoicesStarted, data?.length ?? 0);
 
-  const rows = (data || []).map(parseInvoiceRow);
+  const rows = (data || []).map(mapMasterSaasInvoiceRow);
   const companyIds = [...new Set(rows.map((r) => r.company_id))];
 
   const companiesStarted = performance.now();

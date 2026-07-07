@@ -4,10 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { useAuth } from '@/hooks/useAuth';
-import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
+import { supabase } from '@/lib/supabase';
+import { loadMasterAuditLogs } from '@/lib/masterAuditLoad';
 import { masterAuditToCsv, type MasterAuditRow } from '@/lib/masterAudit';
-
-const MASTER_API_TIMEOUT_MS = 15_000;
 
 export default function MasterAuditPage() {
   return (
@@ -31,18 +30,10 @@ function MasterAuditContent() {
     setError(null);
     setWarning(null);
     try {
-      const res = await fetchJsonWithTimeout<{ rows?: MasterAuditRow[]; warnings?: string[] }>(
-        `/api/master/audit?userId=${encodeURIComponent(user.id)}`,
-        { credentials: 'include' },
-        MASTER_API_TIMEOUT_MS,
-      );
-      if (!res.ok) {
-        throw new Error(res.error || 'Erro ao carregar auditoria');
-      }
-      const json = res.data || {};
-      setRows((json.rows as MasterAuditRow[]) || []);
-      if (Array.isArray(json.warnings) && json.warnings.length > 0) {
-        setWarning(json.warnings.join(' · '));
+      const result = await loadMasterAuditLogs(supabase);
+      setRows(result.rows);
+      if (result.errors.length > 0) {
+        setWarning(result.errors.join(' · '));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar auditoria');

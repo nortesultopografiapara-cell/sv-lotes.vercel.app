@@ -18,10 +18,12 @@ import {
   type BackfillSaasCashResult,
 } from '@/lib/saasCashMovements';
 import { formatSaasCashStartAtForInput } from '@/lib/saasFinanceSettings';
+import { loadSaasCashPanelView } from '@/lib/masterSaasFinanceClientLoad';
+import { supabase } from '@/lib/supabase';
 import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import { SaasCashHiddenByMarcoAlert, SaasFinanceStartAtBanner, SaasMetricCard } from './SaasPanelUi';
 
-const MASTER_API_TIMEOUT_MS = 15_000;
+const MASTER_POST_TIMEOUT_MS = 120_000;
 
 const FINANCE_START_CONFIRMATION = 'ZERAR CAIXA';
 
@@ -128,41 +130,19 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        userId: user.id,
+      const view = await loadSaasCashPanelView(supabase, {
         fromDate,
         toDate,
         type: typeFilter,
+        companyId: companyFilter !== 'all' ? companyFilter : undefined,
       });
-      if (companyFilter !== 'all') {
-        params.set('companyId', companyFilter);
+      if (view.error) {
+        throw new Error(view.error);
       }
-      const res = await fetchJsonWithTimeout<{
-        movements?: SaasCashMovement[];
-        summary?: SaasCashSummary;
-        cashStartAt?: string;
-        hiddenByMarco?: SaasCashHiddenByMarcoSummary | null;
-        error?: string;
-      }>(
-        `/api/master/saas-cash?${params.toString()}`,
-        { credentials: 'include' },
-        MASTER_API_TIMEOUT_MS,
-      );
-      if (!res.ok) {
-        throw new Error(res.error || 'Falha ao carregar caixa SaaS');
-      }
-      const body = res.data || {};
-      setMovements(Array.isArray(body.movements) ? body.movements : []);
-      setSummary(
-        body.summary || {
-          periodIncome: 0,
-          periodExpense: 0,
-          netResult: 0,
-          movementCount: 0,
-        },
-      );
-      setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
-      setHiddenByMarco(body.hiddenByMarco ?? null);
+      setMovements(view.movements);
+      setSummary(view.summary);
+      setCashStartAt(view.cashStartAt);
+      setHiddenByMarco(view.hiddenByMarco);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Erro ao carregar caixa SaaS';
       setError(message);
@@ -196,21 +176,25 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     setError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch('/api/master/saas-cash/sync-asaas', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          fromDate,
-          toDate,
-          companyId: companyFilter !== 'all' ? companyFilter : undefined,
-          type: typeFilter,
-        }),
-      });
-      const body = await res.json();
+      const res = await fetchJsonWithTimeout(
+        '/api/master/saas-cash/sync-asaas',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            fromDate,
+            toDate,
+            companyId: companyFilter !== 'all' ? companyFilter : undefined,
+            type: typeFilter,
+          }),
+        },
+        MASTER_POST_TIMEOUT_MS,
+      );
+      const body = (res.data || {}) as Record<string, unknown>;
       if (!res.ok) {
-        throw new Error(body.error || 'Falha ao sincronizar Asaas');
+        throw new Error(res.error || String(body.error || 'Falha ao sincronizar Asaas'));
       }
       setMovements(Array.isArray(body.movements) ? body.movements : []);
       setSummary(
@@ -294,43 +278,32 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     setSettingStartAt(true);
     setError(null);
     try {
-      const res = await fetch('/api/master/saas-cash/start-at', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          startAt: startAtMode === 'custom' ? customStartAt : undefined,
-          fromDate,
-          toDate,
-          companyId: companyFilter !== 'all' ? companyFilter : undefined,
-          type: typeFilter,
-          syncAsaas: true,
-        }),
-      });
-      const body = await res.json();
+      const res = await fetchJsonWithTimeout(
+        '/api/master/saas-cash/start-at',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            startAt: startAtMode === 'custom' ? customStartAt : undefined,
+          }),
+        },
+        30_000,
+      );
+      const body = (res.data || {}) as Record<string, unknown>;
       if (!res.ok) {
-        throw new Error(body.error || 'Falha ao definir marco financeiro');
+        throw new Error(res.error || String(body.error || 'Falha ao definir marco financeiro'));
       }
-      setMovements(Array.isArray(body.movements) ? body.movements : []);
-      setSummary(body.summary || summary);
       setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
-      setHiddenByMarco(body.hiddenByMarco ?? null);
-      const backfillToast = formatBackfillSummary(body.backfill);
-      const hiddenToast = formatHiddenMarcoToast(body.hiddenByMarco);
       setSyncMessage(
-        [
-          startAtMode === 'custom'
-            ? `Marco financeiro ajustado para ${customStartAt.replace('T', ' ')}. Backfill e sync executados.`
-            : 'Marco financeiro atualizado. Backfill e sync executados.',
-          backfillToast,
-          hiddenToast,
-        ]
-          .filter(Boolean)
-          .join(' '),
+        startAtMode === 'custom'
+          ? `Marco financeiro ajustado para ${customStartAt.replace('T', ' ')}.`
+          : 'Marco financeiro atualizado.',
       );
       setStartAtModalOpen(false);
       setStartAtConfirmText('');
+      await loadCash();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao definir marco financeiro');
     } finally {
@@ -347,6 +320,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     startAtConfirmText,
     startAtMode,
     customStartAt,
+    loadCash,
   ]);
 
   const handleReprocessPaid = useCallback(async () => {
@@ -355,22 +329,27 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     setError(null);
     setSyncMessage(null);
     try {
-      const res = await fetch('/api/master/saas-cash/reprocess-paid', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          fromDate,
-          toDate,
-          companyId: companyFilter !== 'all' ? companyFilter : undefined,
-          type: typeFilter,
-          syncAsaas: true,
-        }),
-      });
-      const body = await res.json();
+      const res = await fetchJsonWithTimeout(
+        '/api/master/saas-cash/reprocess-paid',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            fromDate,
+            toDate,
+            companyId: companyFilter !== 'all' ? companyFilter : undefined,
+            type: typeFilter,
+            syncAsaas: true,
+            reprocess: true,
+          }),
+        },
+        MASTER_POST_TIMEOUT_MS,
+      );
+      const body = (res.data || {}) as Record<string, unknown>;
       if (!res.ok) {
-        throw new Error(body.error || 'Falha ao reprocessar cobranças pagas');
+        throw new Error(res.error || String(body.error || 'Falha ao reprocessar cobranças pagas'));
       }
       setMovements(Array.isArray(body.movements) ? body.movements : []);
       setSummary(

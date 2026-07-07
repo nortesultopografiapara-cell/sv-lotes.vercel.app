@@ -63,6 +63,7 @@ import {
   applySaasFinanceStartAtFilter,
   sumSaasReceivedRevenue,
 } from '@/lib/saasFinanceSettings';
+import { loadMasterSaasFinanceData } from '@/lib/masterSaasFinanceClientLoad';
 import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import {
   buildSaasChargeEmailUrl,
@@ -76,7 +77,7 @@ import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
-const MASTER_API_TIMEOUT_MS = 15_000;
+const MASTER_POST_TIMEOUT_MS = 120_000;
 
 function enrichCompany(
   raw: CompanyPricingSource,
@@ -199,60 +200,34 @@ function SaaSFinancePageContent() {
       const subscriptions = (subscriptionsData || []) as CompanySubscription[];
       const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
 
-      const uid = encodeURIComponent(user.id);
-      const [payRes, invRes, chRes, startRes] = await Promise.all([
-        fetchJsonWithTimeout<{ payments?: MasterSaasPayment[] }>(
-          `/api/master/saas-payments?userId=${uid}`,
-          { credentials: 'include' },
-          MASTER_API_TIMEOUT_MS,
-        ),
-        fetchJsonWithTimeout<{ invoices?: MasterSaasInvoice[] }>(
-          `/api/master/saas-invoices?userId=${uid}`,
-          { credentials: 'include' },
-          MASTER_API_TIMEOUT_MS,
-        ),
-        fetchJsonWithTimeout<{
-          charges?: SaasCharge[];
-          gateway?: { configured?: boolean; message?: string; provider?: string };
-        }>(
-          `/api/master/saas-charges?userId=${uid}`,
-          { credentials: 'include' },
-          MASTER_API_TIMEOUT_MS,
-        ),
-        fetchJsonWithTimeout<{ cashStartAt?: string }>(
-          `/api/master/saas-cash/start-at?userId=${uid}`,
-          { credentials: 'include' },
-          MASTER_API_TIMEOUT_MS,
-        ),
-      ]);
-
-      const apiErrors: string[] = [];
-      if (!payRes.ok) apiErrors.push(`Pagamentos: ${payRes.error || 'indisponível'}`);
-      if (!invRes.ok) apiErrors.push(`Faturas: ${invRes.error || 'indisponível'}`);
-      if (!chRes.ok) apiErrors.push(`Cobranças: ${chRes.error || 'indisponível'}`);
-      if (!startRes.ok) apiErrors.push(`Marco do caixa: ${startRes.error || 'indisponível'}`);
-      if (apiErrors.length > 0) {
-        setLoadWarning(apiErrors.join(' · '));
+      const financeData = await loadMasterSaasFinanceData(supabase);
+      if (financeData.errors.length > 0) {
+        setLoadWarning(financeData.errors.join(' · '));
       }
 
-      const payments = (payRes.ok ? payRes.data?.payments : []) as MasterSaasPayment[];
-      setSaasPayments(payments || []);
+      const payments = financeData.payments;
+      const invoices = financeData.invoices;
+      const financeStartAt = financeData.cashStartAt;
 
-      const invoices = (invRes.ok ? invRes.data?.invoices : []) as MasterSaasInvoice[];
-      setSaasInvoices(invoices || []);
+      setSaasPayments(payments);
+      setSaasInvoices(invoices);
+      setSaasCharges(financeData.charges);
+      setCashStartAt(financeStartAt);
 
-      setSaasCharges(chRes.ok ? chRes.data?.charges || [] : []);
-      if (chRes.ok && chRes.data?.gateway) {
+      const integrationsRes = await fetchJsonWithTimeout<{
+        gateway?: { configured?: boolean; message?: string; provider?: string };
+      }>(
+        `/api/master/saas-integrations-status?userId=${encodeURIComponent(user.id)}`,
+        { credentials: 'include' },
+        8_000,
+      );
+      if (integrationsRes.ok && integrationsRes.data?.gateway) {
         setPaymentGateway({
-          configured: !!chRes.data.gateway.configured,
-          message: chRes.data.gateway.message,
-          provider: chRes.data.gateway.provider,
+          configured: !!integrationsRes.data.gateway.configured,
+          message: integrationsRes.data.gateway.message,
+          provider: integrationsRes.data.gateway.provider,
         });
       }
-
-      const financeStartAt =
-        startRes.ok && startRes.data?.cashStartAt ? String(startRes.data.cashStartAt) : null;
-      setCashStartAt(financeStartAt);
 
       const filteredPayments = applySaasFinanceStartAtFilter(payments, financeStartAt);
       const filteredInvoices = applySaasFinanceStartAtFilter(invoices, financeStartAt);
@@ -691,16 +666,20 @@ function SaaSFinancePageContent() {
     if (!user?.id) return;
     setGeneratingInvoiceId('monthly');
     try {
-      const res = await fetch('/api/master/saas-invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          action: 'generate_monthly',
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha na geração mensal');
+      const res = await fetchJsonWithTimeout(
+        '/api/master/saas-invoices',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            action: 'generate_monthly',
+          }),
+        },
+        MASTER_POST_TIMEOUT_MS,
+      );
+      const json = (res.data || {}) as Record<string, unknown>;
+      if (!res.ok) throw new Error(res.error || String(json.error || 'Falha na geração mensal'));
       const created = Number(json.created ?? 0);
       const completed = Number(json.completed ?? 0);
       const parts = [

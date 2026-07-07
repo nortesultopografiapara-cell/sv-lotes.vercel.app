@@ -74,7 +74,7 @@ export type SaasCharge = {
   plan_label?: string;
 };
 
-function parseChargeRow(row: Record<string, unknown>): SaasCharge {
+export function mapSaasChargeRow(row: Record<string, unknown>): SaasCharge {
   return {
     id: String(row.id),
     company_id: String(row.company_id),
@@ -228,7 +228,7 @@ export async function listSaasCharges(
   if (error) throw new Error(error.message);
   logMasterApiStep(scope, 'supabase.saas_charges.select', chargesStarted, data?.length ?? 0);
 
-  const rows = (data || []).map((r) => parseChargeRow(r as Record<string, unknown>));
+  const rows = (data || []).map((r) => mapSaasChargeRow(r as Record<string, unknown>));
   const companyIds = [...new Set(rows.map((r) => r.company_id))];
   const companiesStarted = performance.now();
   const { data: companies } = companyIds.length
@@ -512,7 +512,7 @@ export async function reconcileSaasChargesBeforeRegeneration(
   const now = new Date().toISOString();
 
   for (const row of chargeRows || []) {
-    const parsed = parseChargeRow(row as Record<string, unknown>);
+    const parsed = mapSaasChargeRow(row as Record<string, unknown>);
 
     if (isOrphanSaasCharge(parsed)) {
       await supabaseAdmin
@@ -595,7 +595,7 @@ async function loadSaasChargeRegenerationContext(
     .order('created_at', { ascending: false });
 
   const invoiceCharges = (allChargeRows || []).map((row) =>
-    toSaasChargeSkipInput(parseChargeRow(row as Record<string, unknown>)),
+    toSaasChargeSkipInput(mapSaasChargeRow(row as Record<string, unknown>)),
   );
 
   const { data: chargeRows } = await supabaseAdmin
@@ -606,7 +606,7 @@ async function loadSaasChargeRegenerationContext(
     .order('created_at', { ascending: false });
 
   const activeCharges = (chargeRows || [])
-    .map((row) => toSaasChargeSkipInput(parseChargeRow(row as Record<string, unknown>)))
+    .map((row) => toSaasChargeSkipInput(mapSaasChargeRow(row as Record<string, unknown>)))
     .filter((ch) => isSaasChargeBlockingDuplicate(ch));
 
   const existingCharge = activeCharges[0] ?? null;
@@ -1035,7 +1035,7 @@ export async function createSaasPixCharge(
     throw new Error(insertErr?.message || 'Falha ao criar cobrança SaaS');
   }
 
-  let charge = parseChargeRow(inserted as Record<string, unknown>);
+  let charge = mapSaasChargeRow(inserted as Record<string, unknown>);
   const provider = getPaymentProvider();
 
   const pix = await provider.createPixCharge({
@@ -1089,7 +1089,7 @@ export async function createSaasPixCharge(
     throw new Error('Asaas não retornou URL do boleto — cobrança não concluída.');
   }
 
-  charge = parseChargeRow(withPix as Record<string, unknown>);
+  charge = mapSaasChargeRow(withPix as Record<string, unknown>);
 
   console.warn(
     '[saas-charge-create-result]',
@@ -1203,7 +1203,7 @@ export async function processSaasChargePaid(
   const row = await findSaasChargeRowForPayment(supabaseAdmin, input);
   if (!row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  const charge = mapSaasChargeRow(row as Record<string, unknown>);
   if (charge.status === 'PAID' && charge.master_payment_id) {
     await ensureSaasCashIncomeForPaidCharge(supabaseAdmin, {
       charge,
@@ -1302,7 +1302,7 @@ export async function processSaasChargePaid(
     reference_id: charge.id,
   });
 
-  const updatedCharge = parseChargeRow(updated as Record<string, unknown>);
+  const updatedCharge = mapSaasChargeRow(updated as Record<string, unknown>);
   await ensureSaasCashIncomeForPaidCharge(supabaseAdmin, {
     charge: updatedCharge,
     paidAt,
@@ -1348,7 +1348,7 @@ async function updateChargeAndInvoiceStatus(
   }
 
   await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
-  return parseChargeRow(updated as Record<string, unknown>);
+  return mapSaasChargeRow(updated as Record<string, unknown>);
 }
 
 /** Webhook/sync — cobrança vencida no Asaas. */
@@ -1359,7 +1359,7 @@ export async function processSaasChargeOverdue(
   const row = await findSaasChargeRowForPayment(supabaseAdmin, input);
   if (!row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  const charge = mapSaasChargeRow(row as Record<string, unknown>);
   if (charge.status === 'PAID') return { charge };
 
   const updated = await updateChargeAndInvoiceStatus(
@@ -1392,7 +1392,7 @@ export async function processSaasChargeCancelled(
   const row = await findSaasChargeRowForPayment(supabaseAdmin, input);
   if (!row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  const charge = mapSaasChargeRow(row as Record<string, unknown>);
   if (charge.status === 'PAID') return { charge };
 
   const updated = await updateChargeAndInvoiceStatus(
@@ -1550,7 +1550,7 @@ export async function cancelSaasCharge(
 
   if (error || !row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  const charge = mapSaasChargeRow(row as Record<string, unknown>);
   if (charge.payment_id) {
     const provider = getPaymentProvider();
     if (provider.providerName === charge.payment_provider) {
@@ -1589,7 +1589,7 @@ export async function cancelSaasCharge(
     });
   }
 
-  return parseChargeRow(updated as Record<string, unknown>);
+  return mapSaasChargeRow(updated as Record<string, unknown>);
 }
 
 export type DeleteCancelledSaasChargeResult = {
@@ -1621,7 +1621,7 @@ export async function deleteCancelledSaasCharge(
 
   if (error || !row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  const charge = mapSaasChargeRow(row as Record<string, unknown>);
   assertCanDeleteCancelledSaasCharge(charge);
 
   let asaasResult: DeleteCancelledSaasChargeResult['asaasDelete'] = {
@@ -1761,7 +1761,7 @@ async function persistSaasChargeGatewayFields(
     throw new Error(error?.message || 'Falha ao persistir cobrança do gateway');
   }
 
-  const charge = parseChargeRow(updated as Record<string, unknown>);
+  const charge = mapSaasChargeRow(updated as Record<string, unknown>);
 
   if (invoiceId) {
     await supabaseAdmin
@@ -1812,7 +1812,7 @@ export async function refreshSaasChargePixFromAsaas(
 
   if (error || !row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  const charge = mapSaasChargeRow(row as Record<string, unknown>);
   if (!charge.payment_id) {
     throw new Error('Cobrança sem payment_id no Asaas.');
   }
@@ -1872,7 +1872,7 @@ async function syncSaasDueDatesFromAsaas(
       .eq('id', charge.invoice_id);
   }
 
-  return parseChargeRow(updatedCharge as Record<string, unknown>);
+  return mapSaasChargeRow(updatedCharge as Record<string, unknown>);
 }
 
 /** Consulta status no Asaas e sincroniza saas_charges / fatura / pagamento. */
@@ -1889,7 +1889,7 @@ export async function syncSaasChargeStatusFromAsaas(
 
   if (error || !row) throw new Error('Cobrança não encontrada.');
 
-  let charge = parseChargeRow(row as Record<string, unknown>);
+  let charge = mapSaasChargeRow(row as Record<string, unknown>);
   if (!charge.payment_id) {
     throw new Error('Cobrança sem payment_id no Asaas.');
   }
@@ -1964,7 +1964,7 @@ export async function syncSaasChargeStatusFromAsaas(
     throw new Error(updErr?.message || 'Falha ao sincronizar cobrança');
   }
 
-  const synced = parseChargeRow(updated as Record<string, unknown>);
+  const synced = mapSaasChargeRow(updated as Record<string, unknown>);
 
   if (charge.invoice_id) {
     const invoiceStatus =

@@ -1159,16 +1159,17 @@ export async function loadSaasCashView(
   }
 
   const queryOptions = { ...options, cashStartAt };
-  const parallelStarted = performance.now();
-  const [movements, summary, hiddenByMarco] = await Promise.all([
-    listSaasCashMovements(supabaseAdmin, queryOptions),
-    getSaasCashSummary(supabaseAdmin, queryOptions),
-    computeSaasCashHiddenByMarcoInPeriod(supabaseAdmin, queryOptions),
-  ]);
+  const loadStarted = performance.now();
+  const movements = await listSaasCashMovements(supabaseAdmin, queryOptions);
+  const summary = computeSaasCashSummaryFromRows(movements);
+  const hiddenByMarco = await computeSaasCashHiddenByMarcoInPeriod(
+    supabaseAdmin,
+    queryOptions,
+  );
   logMasterApiStep(
     scope,
-    'parallel.list_movements_summary_hidden_marco',
-    parallelStarted,
+    'load_movements_and_summary',
+    loadStarted,
     movements.length,
   );
   return { movements, summary, cashStartAt, backfill, hiddenByMarco };

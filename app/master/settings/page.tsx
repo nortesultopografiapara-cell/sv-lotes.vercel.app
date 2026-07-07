@@ -18,11 +18,19 @@ import {
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 
 type PlatformStats = {
   totalCompanies: number;
   activeCompanies: number;
   activeSubscriptions: number;
+};
+
+type IntegrationStatus = {
+  gatewayConfigured: boolean;
+  emailConfigured: boolean;
+  whatsappConfigured: boolean;
+  webhookConfigured: boolean;
 };
 
 const FUTURE_CARDS = [
@@ -44,6 +52,12 @@ export default function MasterSettingsPage() {
 function MasterSettingsContent() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [integrations, setIntegrations] = useState<IntegrationStatus>({
+    gatewayConfigured: false,
+    emailConfigured: false,
+    whatsappConfigured: false,
+    webhookConfigured: false,
+  });
   const [stats, setStats] = useState<PlatformStats>({
     totalCompanies: 0,
     activeCompanies: 0,
@@ -54,9 +68,21 @@ function MasterSettingsContent() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [{ data: companies }, { data: subscriptions }] = await Promise.all([
+      const [{ data: companies }, { data: subscriptions }, integrationsRes] = await Promise.all([
         supabase.from('companies').select('id, active, status_operacional'),
         supabase.from('company_subscriptions').select('id, contract_status'),
+        user?.id
+          ? fetchJsonWithTimeout<{
+              gateway?: { configured?: boolean };
+              emailConfigured?: boolean;
+              whatsappConfigured?: boolean;
+              webhookConfigured?: boolean;
+            }>(
+              `/api/master/saas-integrations-status?userId=${encodeURIComponent(user.id)}`,
+              { credentials: 'include' },
+              10_000,
+            )
+          : Promise.resolve({ ok: false, data: null, error: null, status: 0 }),
       ]);
 
       const rows = companies || [];
@@ -72,6 +98,15 @@ function MasterSettingsContent() {
         activeCompanies,
         activeSubscriptions,
       });
+
+      if (integrationsRes.ok && integrationsRes.data) {
+        setIntegrations({
+          gatewayConfigured: integrationsRes.data.gateway?.configured === true,
+          emailConfigured: integrationsRes.data.emailConfigured === true,
+          whatsappConfigured: integrationsRes.data.whatsappConfigured === true,
+          webhookConfigured: integrationsRes.data.webhookConfigured === true,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -160,30 +195,30 @@ function MasterSettingsContent() {
           <IntegrationStatusCard
             icon={CreditCard}
             name="Asaas"
-            status="Conectado"
-            statusTone="connected"
+            status={integrations.gatewayConfigured ? 'Conectado' : 'Desconectado'}
+            statusTone={integrations.gatewayConfigured ? 'connected' : 'disconnected'}
           />
           <IntegrationStatusCard
             icon={Mail}
-            name="SMTP"
-            status="Desconectado"
-            statusTone="disconnected"
+            name="SMTP / E-mail"
+            status={integrations.emailConfigured ? 'Conectado' : 'Desconectado'}
+            statusTone={integrations.emailConfigured ? 'connected' : 'disconnected'}
           />
           <IntegrationStatusCard
             icon={MessageCircle}
             name="WhatsApp"
-            status="Desconectado"
-            statusTone="disconnected"
+            status={integrations.whatsappConfigured ? 'Conectado' : 'Desconectado'}
+            statusTone={integrations.whatsappConfigured ? 'connected' : 'disconnected'}
           />
           <IntegrationStatusCard
             icon={Webhook}
             name="Webhooks"
-            status="Inativo"
-            statusTone="inactive"
+            status={integrations.webhookConfigured ? 'Ativo' : 'Inativo'}
+            statusTone={integrations.webhookConfigured ? 'connected' : 'inactive'}
           />
         </div>
         <p className="text-xs text-slate-500 mt-3">
-          Status preparatório — configuração e validação em desenvolvimento.
+          Status lido das variáveis de ambiente configuradas na Vercel (sem consulta pesada ao banco).
         </p>
       </section>
 
