@@ -115,6 +115,11 @@ export function buildZapiSendTextUrl(instanceId: string, token: string): string 
   return `${ZAPI_SEND_TEXT_BASE_URL}/instances/${encodeURIComponent(instanceId)}/token/${encodeURIComponent(token)}/send-text`;
 }
 
+/** URL de diagnóstico — token substituído por placeholder. */
+export function buildZapiSendTextUrlWithoutToken(instanceId: string): string {
+  return `${ZAPI_SEND_TEXT_BASE_URL}/instances/${encodeURIComponent(instanceId)}/token/[REDACTED]/send-text`;
+}
+
 export function maskZapiRequestUrl(url: string, token: string): string {
   const trimmedToken = String(token || '').trim();
   if (!trimmedToken) return url;
@@ -247,6 +252,40 @@ function logZapiDiagnostics(
   );
 }
 
+/** Logs temporários — investigar "Instance not found". Remover após diagnóstico. */
+function logZapiSendTextTemporaryPre(input: {
+  instanceId: string;
+  hasInstanceToken: boolean;
+  hasClientToken: boolean;
+  requestUrlWithoutToken: string;
+}): void {
+  console.warn(
+    '[zapi-diagnostic-temp:pre]',
+    JSON.stringify({
+      environment: resolveZapiRuntimeEnvironment(),
+      instanceId: input.instanceId,
+      instanceIdLength: input.instanceId.length,
+      hasInstanceToken: input.hasInstanceToken,
+      hasClientToken: input.hasClientToken,
+      requestUrlWithoutToken: input.requestUrlWithoutToken,
+    }),
+  );
+}
+
+function logZapiSendTextTemporaryPost(input: {
+  httpStatus: number;
+  responseBody: unknown;
+}): void {
+  console.warn(
+    '[zapi-diagnostic-temp:post]',
+    JSON.stringify({
+      environment: resolveZapiRuntimeEnvironment(),
+      httpStatus: input.httpStatus,
+      responseBody: input.responseBody,
+    }),
+  );
+}
+
 export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextResult> {
   const config = getZapiConfigStatus();
   if (!config.ready) {
@@ -279,10 +318,20 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
 
   logZapiDiagnostics('request', diagnosticsWithHeaders, {
     environment: resolveZapiRuntimeEnvironment(),
-    phone,
     messageLength: message.length,
     requestHeadersSent,
     requestHeadersMasked,
+  });
+
+  const instanceId = resolveZapiInstanceId();
+  const instanceToken = resolveZapiInstanceToken();
+  const clientToken = resolveZapiClientToken();
+
+  logZapiSendTextTemporaryPre({
+    instanceId,
+    hasInstanceToken: Boolean(instanceToken),
+    hasClientToken: Boolean(clientToken),
+    requestUrlWithoutToken: buildZapiSendTextUrlWithoutToken(instanceId),
   });
 
   try {
@@ -299,6 +348,11 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
     } catch {
       body = { raw: responseText };
     }
+
+    logZapiSendTextTemporaryPost({
+      httpStatus: response.status,
+      responseBody: body,
+    });
 
     logZapiDiagnostics('response', diagnosticsWithHeaders, {
       environment: resolveZapiRuntimeEnvironment(),
