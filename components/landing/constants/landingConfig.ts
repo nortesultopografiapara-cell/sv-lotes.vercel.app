@@ -192,11 +192,11 @@ export const LANDING_INCLUDED_FEATURES = [
   'Importação Civil 3D',
   'Fluxo de Caixa Projetado',
   'Assinatura Digital de Contratos',
+  'API para Integrações',
+  'Cobrança Automática por E-mail/WhatsApp',
+  'Emissão de Boletos e PIX',
 ] as const;
 
 export const LANDING_ROADMAP_FEATURES = [
-  'API para Integrações',
   'Portal do Cliente',
-  'Cobrança Automática por E-mail/WhatsApp',
-  'Emissão de Boletos e PIX',
 ] as const;
