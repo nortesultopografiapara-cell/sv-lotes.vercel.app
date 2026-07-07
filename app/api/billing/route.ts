@@ -17,6 +17,57 @@ import {
 
 export const runtime = 'nodejs';
 
+const BILLING_FINANCIAL_STATUS_TIMEOUT_MS = 1800;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<{ ok: true; value: T } | { ok: false; timedOut: true }> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ ok: false, timedOut: true }), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(t);
+        resolve({ ok: true, value });
+      })
+      .catch(() => {
+        clearTimeout(t);
+        resolve({ ok: false, timedOut: true });
+      });
+  });
+}
+
+async function runFinancialStatusRefreshInBackground(
+  admin: Parameters<typeof updateCompanyFinancialStatus>[0],
+  tenantId: string,
+) {
+  const startedAt = Date.now();
+  try {
+    const result = await withTimeout(
+      updateCompanyFinancialStatus(admin, tenantId),
+      BILLING_FINANCIAL_STATUS_TIMEOUT_MS,
+    );
+    if (!result.ok) {
+      console.warn('[minhas-assinaturas] updateCompanyFinancialStatus timeout', {
+        tenantId,
+        ms: Date.now() - startedAt,
+      });
+      return;
+    }
+    console.log('[minhas-assinaturas] updateCompanyFinancialStatus ok', {
+      tenantId,
+      ms: Date.now() - startedAt,
+      situation: result.value.situation,
+    });
+  } catch (err) {
+    console.warn('[minhas-assinaturas] updateCompanyFinancialStatus error', {
+      tenantId,
+      ms: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export async function GET(request: Request) {
   const auth = await authorizeTenantBilling(request);
   if ('error' in auth) return auth.error;
@@ -24,7 +75,9 @@ export async function GET(request: Request) {
   const { admin, tenantId } = auth;
 
   try {
-    await updateCompanyFinancialStatus(admin, tenantId);
+    // Não bloquear o carregamento do portal aguardando manutenção financeira global.
+    // Essa atualização é "best-effort" e pode ser lenta em bases grandes.
+    void runFinancialStatusRefreshInBackground(admin, tenantId);
 
     const { data: company } = await admin
       .from('companies')
