@@ -177,6 +177,31 @@ html:has(.landing-page) {
 @media (min-width: 1024px) {
   .landing-header-actions {
     justify-self: end;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+}
+
+.landing-btn-portal-label {
+  white-space: nowrap;
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .landing-header-actions .landing-btn-system--desktop.landing-btn-portal {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.75rem;
+    gap: 0.35rem;
+  }
+
+  .landing-header-actions .landing-btn-demo.landing-btn-system--desktop {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .landing-header-actions .landing-btn-system--desktop:not(.landing-btn-portal) {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.75rem;
   }
 }
 

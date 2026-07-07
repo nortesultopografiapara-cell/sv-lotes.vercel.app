@@ -71,7 +71,15 @@ function testLandingHeader(): void {
   const header = read('components/landing/LandingHeader.tsx');
   assert(header.includes('LANDING_CLIENT_PORTAL_PATH'), 'header imports path');
   assert(header.includes('Portal do Cliente'), 'header label');
-  assert(header.includes('isClientPortalEnabledForUi'), 'header feature flag');
+  assert(header.includes('clientPortalEnabled'), 'header prop from server');
+  assert(!header.includes('isClientPortalEnabledForUi'), 'header must not read env on client');
+}
+
+function testLandingPageProp(): void {
+  const page = read('app/page.tsx');
+  assert(page.includes('resolveClientPortalUiEnabled'), 'home resolves flag on server');
+  const landing = read('components/landing/LandingPage.tsx');
+  assert(landing.includes('clientPortalEnabled'), 'landing page receives flag prop');
 }
 
 function testPortalPage(): void {
@@ -111,6 +119,7 @@ function main(): void {
   testLayoutStandalone();
   testLandingConfig();
   testLandingHeader();
+  testLandingPageProp();
   testPortalPage();
   testNextConfig();
   testEnvExample();

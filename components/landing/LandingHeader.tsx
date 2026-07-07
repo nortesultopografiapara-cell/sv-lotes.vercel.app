@@ -4,18 +4,17 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Calendar, Lock, LogIn, Menu, UserCircle, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
-import { isClientPortalEnabledForUi } from '@/lib/portal-cliente/config';
 import { LANDING_CLIENT_PORTAL_PATH, LANDING_LOGIN_PATH } from './constants/landingConfig';
 import { LANDING_NAV_ITEMS, LANDING_SECTION_IDS, type LandingNavId } from './landingNav';
 
 type Props = {
   scrolled: boolean;
+  clientPortalEnabled: boolean;
 };
 
-export function LandingHeader({ scrolled }: Props) {
+export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeId, setActiveId] = useState<LandingNavId>('home');
-  const clientPortalEnabled = isClientPortalEnabledForUi();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -106,7 +105,7 @@ export function LandingHeader({ scrolled }: Props) {
 
           <a
             href="#contato"
-            className="landing-btn-demo landing-btn-system--desktop hidden lg:inline-flex"
+            className="landing-btn-demo landing-btn-system--desktop"
             aria-label="Agendar demonstração"
           >
             <Calendar className="w-4 h-4" />
@@ -115,16 +114,16 @@ export function LandingHeader({ scrolled }: Props) {
           {clientPortalEnabled ? (
             <Link
               href={LANDING_CLIENT_PORTAL_PATH}
-              className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop hidden lg:inline-flex"
+              className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop landing-btn-portal"
               aria-label="Portal do Cliente"
             >
-              <UserCircle className="w-4 h-4" />
-              Portal do Cliente
+              <UserCircle className="w-4 h-4 shrink-0" />
+              <span className="landing-btn-portal-label">Portal do Cliente</span>
             </Link>
           ) : null}
           <Link
             href={LANDING_LOGIN_PATH}
-            className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop hidden lg:inline-flex"
+            className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop"
             aria-label="Acessar o sistema"
           >
             <Lock className="w-4 h-4" />

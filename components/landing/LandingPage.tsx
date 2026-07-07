@@ -14,7 +14,11 @@ import { ContactSection } from './sections/ContactSection';
 import { buildWhatsAppUrl, LANDING_WHATSAPP_MESSAGES } from './constants/landingConfig';
 import './landing.css';
 
-export function LandingPage() {
+type Props = {
+  clientPortalEnabled: boolean;
+};
+
+export function LandingPage({ clientPortalEnabled }: Props) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -26,7 +30,7 @@ export function LandingPage() {
 
   return (
     <div className="landing-page">
-      <LandingHeader scrolled={scrolled} />
+      <LandingHeader scrolled={scrolled} clientPortalEnabled={clientPortalEnabled} />
       <main>
         <HeroSection />
         <ResourcesSection />

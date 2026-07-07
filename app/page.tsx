@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { LandingPage } from '@/components/landing/LandingPage';
+import { resolveClientPortalUiEnabled } from '@/lib/portal-cliente/config';
 
 export const metadata: Metadata = {
   title: 'SV LOTES — Gestão Inteligente para Loteamentos e Chacreamentos',
@@ -28,5 +29,6 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
-  return <LandingPage />;
+  const clientPortalEnabled = resolveClientPortalUiEnabled();
+  return <LandingPage clientPortalEnabled={clientPortalEnabled} />;
 }
