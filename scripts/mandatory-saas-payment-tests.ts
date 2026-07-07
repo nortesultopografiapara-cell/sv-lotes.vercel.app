@@ -1099,6 +1099,37 @@ function testBillingPage() {
   );
 }
 
+function testSaasSharedLayerNonBlocking() {
+  const financialStatus = read('lib/saasCompanyFinancialStatus.ts');
+  assert(
+    !financialStatus.includes('markOverdueSaasCharges'),
+    'updateCompanyFinancialStatus sem markOverdueSaasCharges global',
+  );
+  assert(
+    !financialStatus.includes('markOverdueInvoices'),
+    'updateCompanyFinancialStatus sem markOverdueInvoices global',
+  );
+
+  const cashRoute = read('app/api/master/saas-cash/route.ts');
+  assert(cashRoute.includes('enabled: false'), 'GET saas-cash desabilita backfill no carregamento');
+
+  const financePage = read('app/saas-finance/page.tsx');
+  assert(
+    !financePage.includes('/api/saas/subscriptions/sync'),
+    'saas-finance sem sync bloqueante no loadData',
+  );
+  assert(financePage.includes('fetchJsonWithTimeout'), 'saas-finance usa timeout nas APIs Master');
+
+  const billingRoute = read('app/api/billing/route.ts');
+  assert(
+    billingRoute.includes('runFinancialStatusRefreshInBackground'),
+    'billing não bloqueia GET aguardando manutenção financeira',
+  );
+
+  const plansPage = read('app/plans/page.tsx');
+  assert(plansPage.includes('fetchJsonWithTimeout'), 'plans usa timeout nas APIs Master');
+}
+
 function testTenantBillingAuth() {
   const server = read('lib/supabase/server.ts');
   assert(server.includes('CALLER_PROFILE_SELECT'), 'select perfil sem company_id');
@@ -1791,6 +1822,7 @@ async function run() {
     ['botão testar WhatsApp SaaS', testSaasWhatsAppTestButton],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
+    ['camada compartilhada SaaS não bloqueante', testSaasSharedLayerNonBlocking],
     ['auth tenant billing', testTenantBillingAuth],
     ['mapeamento status charge', testChargeStatusMapping],
   ];

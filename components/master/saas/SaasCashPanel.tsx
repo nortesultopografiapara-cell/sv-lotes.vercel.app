@@ -18,7 +18,10 @@ import {
   type BackfillSaasCashResult,
 } from '@/lib/saasCashMovements';
 import { formatSaasCashStartAtForInput } from '@/lib/saasFinanceSettings';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import { SaasCashHiddenByMarcoAlert, SaasFinanceStartAtBanner, SaasMetricCard } from './SaasPanelUi';
+
+const MASTER_API_TIMEOUT_MS = 15_000;
 
 const FINANCE_START_CONFIRMATION = 'ZERAR CAIXA';
 
@@ -134,13 +137,21 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       if (companyFilter !== 'all') {
         params.set('companyId', companyFilter);
       }
-      const res = await fetch(`/api/master/saas-cash?${params.toString()}`, {
-        credentials: 'include',
-      });
-      const body = await res.json();
+      const res = await fetchJsonWithTimeout<{
+        movements?: SaasCashMovement[];
+        summary?: SaasCashSummary;
+        cashStartAt?: string;
+        hiddenByMarco?: SaasCashHiddenByMarcoSummary | null;
+        error?: string;
+      }>(
+        `/api/master/saas-cash?${params.toString()}`,
+        { credentials: 'include' },
+        MASTER_API_TIMEOUT_MS,
+      );
       if (!res.ok) {
-        throw new Error(body.error || 'Falha ao carregar caixa SaaS');
+        throw new Error(res.error || 'Falha ao carregar caixa SaaS');
       }
+      const body = res.data || {};
       setMovements(Array.isArray(body.movements) ? body.movements : []);
       setSummary(
         body.summary || {

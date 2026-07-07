@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       supabaseAdmin,
       { companyId, type, fromDate, toDate },
       cashStartAt,
-      { createdBy: userId ?? undefined },
+      { enabled: false, createdBy: userId ?? undefined },
     );
 
     return NextResponse.json(view);

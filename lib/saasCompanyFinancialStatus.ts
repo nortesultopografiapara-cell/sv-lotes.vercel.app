@@ -11,8 +11,6 @@ import {
   buildPaidReferenceMonthsByCompany,
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
-import { markOverdueSaasCharges } from '@/lib/saasCharges';
-import { markOverdueInvoices } from '@/lib/saasBilling';
 
 export type CompanyFinancialStatusUpdate = {
   companyId: string;
@@ -69,14 +67,11 @@ function mapSituationToPersistedFields(
   }
 }
 
-/** Marca cobranças/faturas vencidas e recalcula status financeiro persistido. */
+/** Recalcula e persiste o status financeiro de uma empresa (sem manutenção global). */
 export async function updateCompanyFinancialStatus(
   supabaseAdmin: SupabaseClient,
   companyId: string,
 ): Promise<CompanyFinancialStatusUpdate> {
-  await markOverdueSaasCharges(supabaseAdmin);
-  await markOverdueInvoices(supabaseAdmin);
-
   const { data: company, error: companyErr } = await supabaseAdmin
     .from('companies')
     .select('id, active, status_operacional, next_payment_date')

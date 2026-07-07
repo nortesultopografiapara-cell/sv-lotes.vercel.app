@@ -23,7 +23,6 @@ import {
 import {
   formatDateBr,
   hasSaasContractReady,
-  isRealSaasCompany,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -64,6 +63,7 @@ import {
   applySaasFinanceStartAtFilter,
   sumSaasReceivedRevenue,
 } from '@/lib/saasFinanceSettings';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import {
   buildSaasChargeEmailUrl,
   buildSaasChargeWhatsAppUrl,
@@ -75,6 +75,8 @@ import {
 import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
+
+const MASTER_API_TIMEOUT_MS = 15_000;
 
 function enrichCompany(
   raw: CompanyPricingSource,
@@ -124,6 +126,8 @@ function SaaSFinancePageContent() {
   const searchParams = useSearchParams();
   const [companies, setCompanies] = useState<EnrichedCompany[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterPlan, setFilterPlan] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -169,85 +173,85 @@ function SaaSFinancePageContent() {
     }
 
     setLoading(true);
+    setLoadError(null);
+    setLoadWarning(null);
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [
+        { data, error },
+        { data: subscriptionsData, error: subsErr },
+      ] = await Promise.all([
+        supabase.from('companies').select('*').order('created_at', { ascending: false }),
+        supabase.from('company_subscriptions').select('*'),
+      ]);
 
       if (error) {
         console.error('SAAS_FINANCE_LOAD_ERROR', error);
+        setLoadError(error.message || 'Falha ao carregar empresas.');
         setCompanies([]);
         return;
       }
 
-      const rows = (data || []) as CompanyPricingSource[];
-
-      let subscriptions: CompanySubscription[] = [];
-      const syncRes = await fetch('/api/saas/subscriptions/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      });
-
-      if (syncRes.ok) {
-        const syncJson = await syncRes.json();
-        subscriptions = (syncJson.subscriptions || []) as CompanySubscription[];
-        if (syncJson.created > 0) {
-          console.log('SAAS_SUBSCRIPTIONS_SYNC_CREATED', syncJson.created);
-        }
-      } else {
-        const syncErr = await syncRes.json().catch(() => ({}));
-        console.warn('SAAS_SUBSCRIPTIONS_SYNC_FAILED', syncErr.error || syncRes.status);
+      if (subsErr) {
+        console.warn('SAAS_FINANCE_SUBSCRIPTIONS_LOAD_WARN', subsErr);
       }
 
+      const rows = (data || []) as CompanyPricingSource[];
+      const subscriptions = (subscriptionsData || []) as CompanySubscription[];
       const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
 
-      rows.forEach((company) => {
-        if (!isRealSaasCompany(company)) return;
-        const subscription = subMap.get(company.id) ?? null;
-        console.log('SAAS_SUBSCRIPTION_DYNAMIC', {
-          company: { id: company.id, name: company.name },
-          subscription,
-          next_due_date: subscription?.next_due_date ?? null,
-          payment_status: subscription?.payment_status ?? 'pending',
-        });
-      });
+      const uid = encodeURIComponent(user.id);
+      const [payRes, invRes, chRes, startRes] = await Promise.all([
+        fetchJsonWithTimeout<{ payments?: MasterSaasPayment[] }>(
+          `/api/master/saas-payments?userId=${uid}`,
+          { credentials: 'include' },
+          MASTER_API_TIMEOUT_MS,
+        ),
+        fetchJsonWithTimeout<{ invoices?: MasterSaasInvoice[] }>(
+          `/api/master/saas-invoices?userId=${uid}`,
+          { credentials: 'include' },
+          MASTER_API_TIMEOUT_MS,
+        ),
+        fetchJsonWithTimeout<{
+          charges?: SaasCharge[];
+          gateway?: { configured?: boolean; message?: string; provider?: string };
+        }>(
+          `/api/master/saas-charges?userId=${uid}`,
+          { credentials: 'include' },
+          MASTER_API_TIMEOUT_MS,
+        ),
+        fetchJsonWithTimeout<{ cashStartAt?: string }>(
+          `/api/master/saas-cash/start-at?userId=${uid}`,
+          { credentials: 'include' },
+          MASTER_API_TIMEOUT_MS,
+        ),
+      ]);
 
-      const payRes = await fetch(
-        `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
-      );
-      const payJson = await payRes.json().catch(() => ({}));
-      const payments = (payRes.ok ? payJson.payments : []) as MasterSaasPayment[];
-      setSaasPayments(payments);
+      const apiErrors: string[] = [];
+      if (!payRes.ok) apiErrors.push(`Pagamentos: ${payRes.error || 'indisponível'}`);
+      if (!invRes.ok) apiErrors.push(`Faturas: ${invRes.error || 'indisponível'}`);
+      if (!chRes.ok) apiErrors.push(`Cobranças: ${chRes.error || 'indisponível'}`);
+      if (!startRes.ok) apiErrors.push(`Marco do caixa: ${startRes.error || 'indisponível'}`);
+      if (apiErrors.length > 0) {
+        setLoadWarning(apiErrors.join(' · '));
+      }
 
-      const invRes = await fetch(
-        `/api/master/saas-invoices?userId=${encodeURIComponent(user.id)}`,
-      );
-      const invJson = await invRes.json().catch(() => ({}));
-      const invoices = (invRes.ok ? invJson.invoices : []) as MasterSaasInvoice[];
-      setSaasInvoices(invoices);
+      const payments = (payRes.ok ? payRes.data?.payments : []) as MasterSaasPayment[];
+      setSaasPayments(payments || []);
 
-      const chRes = await fetch(
-        `/api/master/saas-charges?userId=${encodeURIComponent(user.id)}`,
-      );
-      const chJson = await chRes.json().catch(() => ({}));
-      setSaasCharges(chRes.ok ? chJson.charges || [] : []);
-      if (chJson.gateway) {
+      const invoices = (invRes.ok ? invRes.data?.invoices : []) as MasterSaasInvoice[];
+      setSaasInvoices(invoices || []);
+
+      setSaasCharges(chRes.ok ? chRes.data?.charges || [] : []);
+      if (chRes.ok && chRes.data?.gateway) {
         setPaymentGateway({
-          configured: !!chJson.gateway.configured,
-          message: chJson.gateway.message,
-          provider: chJson.gateway.provider,
+          configured: !!chRes.data.gateway.configured,
+          message: chRes.data.gateway.message,
+          provider: chRes.data.gateway.provider,
         });
       }
 
-      const startRes = await fetch(
-        `/api/master/saas-cash/start-at?userId=${encodeURIComponent(user.id)}`,
-        { credentials: 'include' },
-      );
-      const startJson = await startRes.json().catch(() => ({}));
       const financeStartAt =
-        startRes.ok && startJson.cashStartAt ? String(startJson.cashStartAt) : null;
+        startRes.ok && startRes.data?.cashStartAt ? String(startRes.data.cashStartAt) : null;
       setCashStartAt(financeStartAt);
 
       const filteredPayments = applySaasFinanceStartAtFilter(payments, financeStartAt);
@@ -295,6 +299,7 @@ function SaaSFinancePageContent() {
       );
     } catch (err) {
       console.error('SAAS_FINANCE_LOAD_ERROR', err);
+      setLoadError(err instanceof Error ? err.message : 'Falha ao carregar Financeiro SaaS.');
       setCompanies([]);
     } finally {
       setLoading(false);
@@ -993,6 +998,20 @@ function SaaSFinancePageContent() {
       />
 
       <SaasFinanceStartAtBanner cashStartAt={cashStartAt} />
+
+      {loadError ? (
+        <div className="mb-6 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-sm flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <p>{loadError}</p>
+        </div>
+      ) : null}
+
+      {loadWarning ? (
+        <div className="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-100 text-sm flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <p>Alguns dados do Financeiro SaaS não puderam ser carregados: {loadWarning}</p>
+        </div>
+      ) : null}
 
       {contractToast && panelView === 'empresas' ? (
         <div

@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { useAuth } from '@/hooks/useAuth';
+import { fetchJsonWithTimeout } from '@/lib/fetchJsonWithTimeout';
 import { masterAuditToCsv, type MasterAuditRow } from '@/lib/masterAudit';
+
+const MASTER_API_TIMEOUT_MS = 15_000;
 
 export default function MasterAuditPage() {
   return (
@@ -28,11 +31,15 @@ function MasterAuditContent() {
     setError(null);
     setWarning(null);
     try {
-      const res = await fetch(`/api/master/audit?userId=${encodeURIComponent(user.id)}`);
-      const json = await res.json().catch(() => ({}));
+      const res = await fetchJsonWithTimeout<{ rows?: MasterAuditRow[]; warnings?: string[] }>(
+        `/api/master/audit?userId=${encodeURIComponent(user.id)}`,
+        { credentials: 'include' },
+        MASTER_API_TIMEOUT_MS,
+      );
       if (!res.ok) {
-        throw new Error(json.error || 'Erro ao carregar auditoria');
+        throw new Error(res.error || 'Erro ao carregar auditoria');
       }
+      const json = res.data || {};
       setRows((json.rows as MasterAuditRow[]) || []);
       if (Array.isArray(json.warnings) && json.warnings.length > 0) {
         setWarning(json.warnings.join(' · '));
