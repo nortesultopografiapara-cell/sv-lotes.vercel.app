@@ -1,10 +1,13 @@
 /**
- * Envio WhatsApp do Portal do Cliente — reutiliza Z-API existente.
- * Não altera providers, cobranças ou contratos.
+ * Envio WhatsApp do Portal do Cliente — mesma camada Z-API das cobranças SaaS.
+ * Reutiliza sendText / isSaasBillingWhatsAppConfigured sem provider paralelo.
  */
 
-import { normalizeBrazilianWhatsAppPhone } from '@/lib/saasBillingReminderWhatsApp';
-import { isZapiConfigured, sendText } from '@/lib/whatsapp/zapiProvider';
+import {
+  isSaasBillingWhatsAppConfigured,
+  normalizeBrazilianWhatsAppPhone,
+} from '@/lib/saasBillingReminderWhatsApp';
+import { getZapiConfigStatus, sendText } from '@/lib/whatsapp/zapiProvider';
 
 export const CLIENT_PORTAL_OTP_MESSAGE_TYPE = 'CLIENT_PORTAL_OTP' as const;
 
@@ -29,15 +32,22 @@ export type SendClientPortalOtpWhatsAppResult = {
   error?: string;
 };
 
-export function isClientPortalWhatsAppConfigured(): boolean {
-  return isZapiConfigured();
-}
-
 export async function sendClientPortalOtpWhatsApp(
   phone: string,
   code: string,
 ): Promise<SendClientPortalOtpWhatsAppResult> {
-  if (!isClientPortalWhatsAppConfigured()) {
+  if (!isSaasBillingWhatsAppConfigured()) {
+    const status = getZapiConfigStatus();
+    console.warn(
+      '[client-portal-otp:whatsapp-config]',
+      JSON.stringify({
+        type: CLIENT_PORTAL_OTP_MESSAGE_TYPE,
+        ready: status.ready,
+        instanceConfigured: status.instanceConfigured,
+        tokenConfigured: status.tokenConfigured,
+        clientTokenConfigured: status.clientTokenConfigured,
+      }),
+    );
     return { ok: false, error: 'WhatsApp não configurado no momento.' };
   }
 
@@ -50,6 +60,14 @@ export async function sendClientPortalOtpWhatsApp(
   const result = await sendText({ phone: normalizedPhone, message });
 
   if (!result.ok) {
+    console.warn(
+      '[client-portal-otp:whatsapp-send]',
+      JSON.stringify({
+        type: CLIENT_PORTAL_OTP_MESSAGE_TYPE,
+        phoneSuffix: normalizedPhone.slice(-4),
+        error: result.error,
+      }),
+    );
     return {
       ok: false,
       normalizedPhone,

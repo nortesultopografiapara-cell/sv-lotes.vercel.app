@@ -12,6 +12,7 @@ import {
 } from '@/lib/portal-cliente/session';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 type VerifyOtpBody = {
   cpf_cnpj?: string;
