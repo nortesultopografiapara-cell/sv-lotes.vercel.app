@@ -196,8 +196,7 @@ export const LANDING_INCLUDED_FEATURES = [
 
 export const LANDING_ROADMAP_FEATURES = [
   'API para Integrações',
-  'Aplicativo do Cliente',
-  'Integração com Contabilidade',
+  'Portal do Cliente',
   'Cobrança Automática por E-mail/WhatsApp',
   'Emissão de Boletos e PIX',
 ] as const;
