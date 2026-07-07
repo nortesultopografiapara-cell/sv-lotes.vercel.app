@@ -19,6 +19,7 @@ import {
   MASTER_AUDIT_ROW_LIMIT,
   MASTER_AUDIT_SELECT,
   MASTER_AUDIT_QUERY_LOG,
+  MASTER_AUDIT_USERS_SELECT,
 } from '../lib/masterAuditLoad';
 
 function assert(cond: boolean, msg: string) {
@@ -138,6 +139,9 @@ function testAuditLoadDataSource() {
   assert(!MASTER_AUDIT_SELECT.includes('reference_id'), 'sem reference_id no select lean');
   assert(loader.includes(".in('id', companyIds)"), 'companies escopadas');
   assert(loader.includes(".in('id', userIds)"), 'users escopados');
+  assert(MASTER_AUDIT_USERS_SELECT.includes('full_name'), 'users select full_name');
+  assert(MASTER_AUDIT_USERS_SELECT.includes('email'), 'users select email');
+  assert(!MASTER_AUDIT_USERS_SELECT.split(',').map((c) => c.trim()).includes('name'), 'users sem coluna name');
   console.log('OK testAuditLoadDataSource');
 }
 
@@ -226,7 +230,7 @@ async function testLoadMasterAuditLogsWithRealModules() {
           if (table === 'users') {
             parallelEnrich = true;
             resolve({
-              data: [{ id: 'user-1', full_name: 'Admin', name: null, email: null }],
+              data: [{ id: 'user-1', full_name: 'Admin', email: 'admin@example.com' }],
               error: null,
             });
             return;

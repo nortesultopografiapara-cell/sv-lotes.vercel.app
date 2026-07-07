@@ -63,12 +63,18 @@ export function logSupabaseError(stage: string, error: PostgrestError) {
   });
 }
 
+/** Colunas confirmadas em public.users (produção). */
+export const MASTER_AUDIT_USERS_SELECT = 'id, full_name, email';
+
 export function resolveUserDisplayName(user: {
   full_name?: string | null;
-  name?: string | null;
   email?: string | null;
 }): string {
-  return user.full_name || user.name || user.email || 'Usuário';
+  const fullName = String(user.full_name || '').trim();
+  if (fullName) return fullName;
+  const email = String(user.email || '').trim();
+  if (email) return email;
+  return 'Usuário';
 }
 
 function countBucket(map: Record<string, number>, key: string | null | undefined) {
@@ -217,7 +223,7 @@ export async function loadMasterAuditLogs(
         console.time('[audit] enrich-users');
         const usersRes = await supabase
           .from('users')
-          .select('id, full_name, name, email')
+          .select(MASTER_AUDIT_USERS_SELECT)
           .in('id', userIds);
         console.timeEnd('[audit] enrich-users');
         if (usersRes.error) {
