@@ -24,6 +24,7 @@ import type { CompanySubscription } from '@/lib/saasSubscription';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 import { resolveAsaasDueDate } from '@/lib/saasPixValidation';
 import { ensureSaasCashAfterInvoicePaid } from '@/lib/saasCashMovements';
+import { logMasterApiStep } from '@/lib/masterApiPerfLog';
 
 export type SaasInvoiceStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 
@@ -1158,6 +1159,8 @@ export async function listMasterSaasInvoices(
     limit?: number;
   },
 ): Promise<MasterSaasInvoice[]> {
+  const scope = 'listMasterSaasInvoices';
+  const invoicesStarted = performance.now();
   let query = supabaseAdmin
     .from('master_saas_invoices')
     .select('*')
@@ -1170,14 +1173,18 @@ export async function listMasterSaasInvoices(
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  logMasterApiStep(scope, 'supabase.master_saas_invoices.select', invoicesStarted, data?.length ?? 0);
 
   const rows = (data || []).map(parseInvoiceRow);
   const companyIds = [...new Set(rows.map((r) => r.company_id))];
 
+  const companiesStarted = performance.now();
   const { data: companies } = companyIds.length
     ? await supabaseAdmin.from('companies').select('id, name, plan, plan_type').in('id', companyIds)
     : { data: [] };
+  logMasterApiStep(scope, 'supabase.companies.select', companiesStarted, companies?.length ?? 0);
 
+  const enrichStarted = performance.now();
   const companyMap = Object.fromEntries(
     (companies || []).map((c) => [
       c.id,
@@ -1185,11 +1192,14 @@ export async function listMasterSaasInvoices(
     ]),
   );
 
-  return rows.map((row) => ({
+  const enriched = rows.map((row) => ({
     ...row,
     company_name: companyMap[row.company_id]?.name || '—',
     plan_label: companyMap[row.company_id]?.plan || '—',
   }));
+  logMasterApiStep(scope, 'process.enrich_invoices', enrichStarted, enriched.length);
+
+  return enriched;
 }
 
 /** Pipeline diário: vencimento → suspensão. */

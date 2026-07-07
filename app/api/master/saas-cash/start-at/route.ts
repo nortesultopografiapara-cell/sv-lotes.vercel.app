@@ -6,6 +6,7 @@ import {
   setSaasCashStartAt,
 } from '@/lib/saasFinanceSettings';
 import { loadSaasCashView, reprocessSaasCashForPaidCharges } from '@/lib/saasCashMovements';
+import { createMasterApiPerfTracker } from '@/lib/masterApiPerfLog';
 
 export const runtime = 'nodejs';
 
@@ -71,18 +72,27 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  const perf = createMasterApiPerfTracker('/api/master/saas-cash/start-at', 'GET');
+
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
+    perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    assertSuperAdmin(supabaseAdmin, userId),
+  );
   if (!auth.ok) {
+    perf.finish();
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
 
-  const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
+  const cashStartAt = await perf.timeSupabase('lib.getSaasCashStartAt', () =>
+    getSaasCashStartAt(supabaseAdmin),
+  );
+  perf.finish();
   return NextResponse.json({ cashStartAt });
 }

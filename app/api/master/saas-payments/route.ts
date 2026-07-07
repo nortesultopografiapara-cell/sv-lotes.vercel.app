@@ -3,43 +3,69 @@ import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import { markInvoicePaid, reactivateCompanyOnPayment } from '@/lib/saasBilling';
 import { createSaasCashIncomeFromMasterPayment } from '@/lib/saasCashMovements';
+import { createMasterApiPerfTracker } from '@/lib/masterApiPerfLog';
 
 export async function GET(request: Request) {
+  const perf = createMasterApiPerfTracker('/api/master/saas-payments', 'GET');
+
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
+    perf.finish();
     return NextResponse.json({ error: configError }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
+  const auth = await perf.timeSupabase('auth.assertSuperAdmin', () =>
+    assertSuperAdmin(supabaseAdmin, userId),
+  );
   if (!auth.ok) {
+    perf.finish();
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
 
-  const { data: payments, error } = await supabaseAdmin
-    .from('master_saas_payments')
-    .select('*')
-    .order('paid_at', { ascending: false })
-    .limit(500);
+  const payments = await perf.timeSupabase(
+    'supabase.master_saas_payments.select',
+    async () => {
+      const { data, error } = await supabaseAdmin
+        .from('master_saas_payments')
+        .select('*')
+        .order('paid_at', { ascending: false })
+        .limit(500);
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
+    (rows) => rows.length,
+  );
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const companyIds = [...new Set(payments.map((p) => p.company_id))];
+  const companies = await perf.timeSupabase(
+    'supabase.companies.select_names',
+    async () => {
+      if (!companyIds.length) return [];
+      const { data } = await supabaseAdmin
+        .from('companies')
+        .select('id, name')
+        .in('id', companyIds);
+      return data || [];
+    },
+    (rows) => rows.length,
+  );
 
-  const companyIds = [...new Set((payments || []).map((p) => p.company_id))];
-  const { data: companies } = companyIds.length
-    ? await supabaseAdmin.from('companies').select('id, name').in('id', companyIds)
-    : { data: [] };
+  const companyNames = Object.fromEntries(companies.map((c) => [c.id, c.name || '—']));
 
-  const companyNames = Object.fromEntries((companies || []).map((c) => [c.id, c.name || '—']));
+  const rows: MasterSaasPayment[] = perf.timeProcess(
+    'process.enrich_payments',
+    () =>
+      payments.map((p) => ({
+        ...p,
+        amount: Number(p.amount || 0),
+        company_name: companyNames[p.company_id] || '—',
+      })),
+    (result) => result.length,
+  );
 
-  const rows: MasterSaasPayment[] = (payments || []).map((p) => ({
-    ...p,
-    amount: Number(p.amount || 0),
-    company_name: companyNames[p.company_id] || '—',
-  }));
-
+  perf.finish(rows.length);
   return NextResponse.json({ payments: rows });
 }
 

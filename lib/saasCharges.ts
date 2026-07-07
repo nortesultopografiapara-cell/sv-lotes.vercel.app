@@ -29,6 +29,7 @@ import {
 import { isBillableCompany } from '@/lib/companyPricing';
 import { todayIsoDate, toIsoDateOnly } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
+import { logMasterApiStep } from '@/lib/masterApiPerfLog';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
 import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
@@ -211,6 +212,8 @@ export async function listSaasCharges(
   supabaseAdmin: SupabaseClient,
   filters?: { companyId?: string; status?: string; limit?: number },
 ): Promise<SaasCharge[]> {
+  const scope = 'listSaasCharges';
+  const chargesStarted = performance.now();
   let query = supabaseAdmin
     .from('saas_charges')
     .select('*')
@@ -223,22 +226,29 @@ export async function listSaasCharges(
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  logMasterApiStep(scope, 'supabase.saas_charges.select', chargesStarted, data?.length ?? 0);
 
   const rows = (data || []).map((r) => parseChargeRow(r as Record<string, unknown>));
   const companyIds = [...new Set(rows.map((r) => r.company_id))];
+  const companiesStarted = performance.now();
   const { data: companies } = companyIds.length
     ? await supabaseAdmin.from('companies').select('id, name, plan, plan_type').in('id', companyIds)
     : { data: [] };
+  logMasterApiStep(scope, 'supabase.companies.select', companiesStarted, companies?.length ?? 0);
 
+  const enrichStarted = performance.now();
   const companyMap = Object.fromEntries(
     (companies || []).map((c) => [c.id, { name: c.name, plan: c.plan || c.plan_type }]),
   );
 
-  return rows.map((row) => ({
+  const enriched = rows.map((row) => ({
     ...row,
     company_name: companyMap[row.company_id]?.name || '—',
     plan_label: companyMap[row.company_id]?.plan || '—',
   }));
+  logMasterApiStep(scope, 'process.enrich_charges', enrichStarted, enriched.length);
+
+  return enriched;
 }
 
 export async function markOverdueSaasCharges(
