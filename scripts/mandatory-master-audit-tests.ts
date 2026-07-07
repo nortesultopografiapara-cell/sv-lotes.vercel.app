@@ -18,7 +18,7 @@ import {
   loadMasterAuditLogs,
   MASTER_AUDIT_ROW_LIMIT,
   MASTER_AUDIT_SELECT,
-  MASTER_AUDIT_SERVER_BUDGET_MS,
+  MASTER_AUDIT_QUERY_LOG,
 } from '../lib/masterAuditLoad';
 
 function assert(cond: boolean, msg: string) {
@@ -103,7 +103,10 @@ function testAuditPageUsesApiRoute() {
   assert(page.includes('fetchJsonWithTimeout'), 'fetch com timeout');
   assert(!page.includes('loadMasterAuditLogs(supabase)'), 'não lê audit_logs no browser');
   assert(page.includes('Nenhum log registrado ainda'), 'mensagem vazia clara');
-  assert(page.includes('setWarning'), 'aviso amarelo em falha');
+  assert(page.includes('Não foi possível carregar os logs de auditoria'), 'mensagem erro exclusiva');
+  assert(page.includes("viewState === 'error'"), 'estado erro exclusivo');
+  assert(page.includes("viewState === 'empty'"), 'estado vazio exclusivo');
+  assert(!page.includes('setEmptyHint'), 'sem emptyHint conflitante com erro');
   console.log('OK testAuditPageUsesApiRoute');
 }
 
@@ -111,13 +114,18 @@ function testAuditLoadDataSource() {
   assert(typeof loadMasterAuditLogs === 'function', 'load export');
   assert(typeof diagnoseMasterAuditLogs === 'function', 'diagnose export');
   assert(MASTER_AUDIT_ROW_LIMIT === 100, 'limite 100');
-  assert(MASTER_AUDIT_SERVER_BUDGET_MS < 15_000, 'budget servidor < cliente');
+  assert(MASTER_AUDIT_QUERY_LOG.includes('LIMIT 100'), 'sql com limite 100');
 
   const loader = fs.readFileSync('lib/masterAuditLoad.ts', 'utf8');
   assert(loader.includes("from('audit_logs')"), 'fonte audit_logs');
   assert(loader.includes('MASTER_AUDIT_SELECT'), 'select fixo');
   assert(loader.includes("in('module', [...MASTER_AUDIT_SQL_MODULES])"), 'filtro SQL por módulo');
   assert(loader.includes('Promise.all'), 'enrich paralelo');
+  assert(loader.includes("console.time('[audit] query')"), 'timer query');
+  assert(loader.includes("console.time('[audit] enrich-companies')"), 'timer enrich companies');
+  assert(loader.includes("console.time('[audit] enrich-users')"), 'timer enrich users');
+  assert(loader.includes('logSupabaseError'), 'log erro supabase');
+  assert(loader.includes('MasterAuditLoadError'), 'erro não mascarado');
   assert(!loader.includes('AUDIT_SELECT_VARIANTS'), 'sem waterfall de variantes');
   assert(!loader.includes('MASTER_AUDIT_FETCH_WINDOW'), 'sem janela operacional');
   assert(!loader.includes('queryAuditLogsWindow'), 'sem fallback 250');
@@ -125,7 +133,9 @@ function testAuditLoadDataSource() {
   assert(!loader.includes('entity_type'), 'sem coluna antiga entity_type');
   assert(!loader.includes('old_data'), 'sem coluna antiga old_data');
   assert(!loader.includes('new_data'), 'sem coluna antiga new_data');
-  assert(loader.includes('reference_id'), 'schema real reference_id');
+  assert(MASTER_AUDIT_SELECT.includes('created_at'), 'schema real created_at');
+  assert(MASTER_AUDIT_SELECT.includes('company_id'), 'schema real company_id');
+  assert(!MASTER_AUDIT_SELECT.includes('reference_id'), 'sem reference_id no select lean');
   assert(loader.includes(".in('id', companyIds)"), 'companies escopadas');
   assert(loader.includes(".in('id', userIds)"), 'users escopados');
   console.log('OK testAuditLoadDataSource');
@@ -136,8 +146,9 @@ function testSqlModulesCatalog() {
   assert(MASTER_AUDIT_SQL_MODULES.includes('SAAS_BILLING'), 'sql saas billing');
   assert(MASTER_AUDIT_SQL_MODULES.includes('SAAS'), 'sql saas');
   assert(MASTER_AUDIT_SQL_MODULES.includes('COMPANIES'), 'sql companies');
-  assert(MASTER_AUDIT_SELECT.includes('reference_id'), 'select com reference_id');
+  assert(MASTER_AUDIT_SELECT.includes('created_at'), 'select com created_at');
   assert(!MASTER_AUDIT_SQL_MODULES.includes('GIS' as never), 'gis fora do sql');
+  assert(MASTER_AUDIT_SELECT.includes('created_at'), 'select com created_at');
   console.log('OK testSqlModulesCatalog');
 }
 
@@ -152,7 +163,6 @@ async function testLoadMasterAuditLogsWithRealModules() {
       tenant_id: 'company-1',
       company_id: 'company-1',
       user_id: 'user-1',
-      reference_id: 'ref-1',
     },
     {
       id: '2',
@@ -163,7 +173,6 @@ async function testLoadMasterAuditLogsWithRealModules() {
       tenant_id: 'company-1',
       company_id: 'company-1',
       user_id: null,
-      reference_id: null,
     },
     {
       id: '3',
@@ -174,7 +183,6 @@ async function testLoadMasterAuditLogsWithRealModules() {
       tenant_id: null,
       company_id: null,
       user_id: null,
-      reference_id: 'contract-1',
     },
   ];
 
@@ -251,10 +259,11 @@ function testAuditApiRouteShape() {
   const route = fs.readFileSync('app/api/master/audit/route.ts', 'utf8');
   assert(route.includes('createServiceSupabase'), 'service role');
   assert(route.includes('loadMasterAuditLogs'), 'loader único');
+  assert(route.includes("console.time('[audit] total')"), 'timer total');
+  assert(route.includes('MasterAuditLoadError'), 'propaga erro real');
   assert(route.includes('diagnostics'), 'endpoint diagnóstico');
   assert(route.includes('filteredCount'), 'filteredCount na resposta');
   assert(!route.includes('Promise.race'), 'sem race na rota');
-  assert(!route.includes('MasterAuditStageError'), 'sem stage error diagnóstico');
   console.log('OK testAuditApiRouteShape');
 }
 
