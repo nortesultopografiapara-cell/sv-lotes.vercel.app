@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
+  diagnoseMasterAuditLogs,
   loadMasterAuditLogs,
   MASTER_AUDIT_QUERY_TIMEOUT_MS,
 } from '@/lib/masterAuditLoad';
+
+function isDevelopDiagnosticsEnabled(): boolean {
+  if (process.env.NODE_ENV === 'development') return true;
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') return true;
+  if (process.env.VERCEL_GIT_COMMIT_REF === 'develop') return true;
+  return false;
+}
 
 export async function GET(request: Request) {
   const startedAt = Date.now();
@@ -26,29 +34,27 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
 
-  try {
-    const result = await loadMasterAuditLogs(supabaseAdmin, {
-      queryTimeoutMs: MASTER_AUDIT_QUERY_TIMEOUT_MS,
-    });
-
-    console.log(`[master-audit] logs_query_ms=${result.logsQueryMs}`);
-    console.log(`[master-audit] enrich_ms=${result.enrichMs}`);
-    console.log(`[master-audit] total_ms=${Date.now() - startedAt}`);
-    console.log(`[master-audit] rows=${result.rows.length}`);
-
-    return NextResponse.json({
-      rows: result.rows,
-      warnings: result.errors,
-      rawCount: result.rawCount,
-      filteredCount: result.filteredCount,
-    });
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Erro ao carregar auditoria';
-    console.log(`[master-audit] logs_query_ms=${Date.now() - startedAt}`);
-    console.log('[master-audit] enrich_ms=0');
-    console.log(`[master-audit] total_ms=${Date.now() - startedAt}`);
-    console.log('[master-audit] rows=0');
-    console.error('[master-audit] error', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+  if (searchParams.get('diagnostics') === '1') {
+    if (!isDevelopDiagnosticsEnabled()) {
+      return NextResponse.json({ error: 'Diagnóstico indisponível em produção.' }, { status: 403 });
+    }
+    const diagnostics = await diagnoseMasterAuditLogs(supabaseAdmin);
+    return NextResponse.json({ diagnostics });
   }
+
+  const result = await loadMasterAuditLogs(supabaseAdmin, {
+    queryTimeoutMs: MASTER_AUDIT_QUERY_TIMEOUT_MS,
+  });
+
+  console.log(`[master-audit] logs_query_ms=${result.logsQueryMs}`);
+  console.log(`[master-audit] enrich_ms=${result.enrichMs}`);
+  console.log(`[master-audit] total_ms=${Date.now() - startedAt}`);
+  console.log(`[master-audit] rows=${result.rows.length}`);
+
+  return NextResponse.json({
+    rows: result.rows,
+    warnings: result.errors.length > 0 ? result.errors : undefined,
+    rawCount: result.rawCount,
+    filteredCount: result.filteredCount,
+  });
 }

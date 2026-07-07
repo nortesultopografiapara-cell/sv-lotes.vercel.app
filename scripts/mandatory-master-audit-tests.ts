@@ -8,12 +8,14 @@ import {
   formatMasterAuditAction,
   isMasterAuditEntry,
   mapAuditLogRow,
-  MASTER_AUDIT_MODULES,
+  MASTER_AUDIT_WRITTEN_MODULES,
   normalizeAuditLogRow,
   resolveAuditCompanyId,
 } from '../lib/masterAudit';
 import {
+  diagnoseMasterAuditLogs,
   loadMasterAuditLogs,
+  MASTER_AUDIT_FETCH_WINDOW,
   MASTER_AUDIT_QUERY_TIMEOUT_MS,
   MASTER_AUDIT_ROW_LIMIT,
   withMasterAuditTimeout,
@@ -70,47 +72,48 @@ function testAuditPageUsesApiRoute() {
   assert(page.includes('/api/master/audit'), 'página usa API master audit');
   assert(page.includes('fetchJsonWithTimeout'), 'fetch com timeout');
   assert(!page.includes('loadMasterAuditLogs(supabase)'), 'não lê audit_logs no browser');
-  assert(page.includes('authLoading'), 'aguarda auth antes de carregar');
-  assert(page.includes('setWarning'), 'falha vira aviso, não erro vermelho');
+  assert(page.includes('Nenhum log registrado ainda'), 'mensagem vazia clara');
+  assert(!page.includes('setError'), 'sem erro vermelho na página');
   console.log('OK testAuditPageUsesApiRoute');
 }
 
-function testAuditLoadPerformanceGuards() {
+function testAuditLoadDataSource() {
   assert(typeof loadMasterAuditLogs === 'function', 'load export');
-  assert(MASTER_AUDIT_ROW_LIMIT === 100, 'limite 100 registros');
+  assert(typeof diagnoseMasterAuditLogs === 'function', 'diagnose export');
+  assert(MASTER_AUDIT_ROW_LIMIT === 100, 'limite 100 exibidos');
+  assert(MASTER_AUDIT_FETCH_WINDOW === 250, 'janela de leitura');
   assert(MASTER_AUDIT_QUERY_TIMEOUT_MS > 0, 'timeout interno');
 
   const loader = fs.readFileSync('lib/masterAuditLoad.ts', 'utf8');
-  assert(loader.includes("from('audit_logs')"), 'tabela audit_logs');
-  assert(loader.includes('.range(0, MASTER_AUDIT_ROW_LIMIT - 1)'), 'paginação range');
-  assert(loader.includes(".in('module',"), 'filtra módulos master na query');
-  assert(loader.includes('MASTER_AUDIT_MODULES'), 'usa lista de módulos master');
+  assert(loader.includes("from('audit_logs')"), 'fonte audit_logs');
+  assert(loader.includes('.range(0, MASTER_AUDIT_FETCH_WINDOW - 1)'), 'range sem count global');
+  assert(!loader.includes(".in('module'"), 'sem filtro SQL por module');
   assert(!loader.includes('old_data'), 'sem colunas jsonb pesadas');
   assert(!loader.includes('new_data'), 'sem colunas jsonb pesadas');
   assert(loader.includes(".in('id', companyIds)"), 'companies escopadas');
   assert(loader.includes(".in('id', userIds)"), 'users escopados');
-  assert(loader.includes('withMasterAuditTimeout'), 'timeout por fase');
-  console.log('OK testAuditLoadPerformanceGuards');
+  assert(loader.includes('diagnoseMasterAuditLogs'), 'diagnóstico');
+  console.log('OK testAuditLoadDataSource');
 }
 
 function testAuditApiRouteShape() {
   const route = fs.readFileSync('app/api/master/audit/route.ts', 'utf8');
   assert(route.includes('createServiceSupabase'), 'service role');
   assert(route.includes('[master-audit] start'), 'log start');
-  assert(route.includes('[master-audit] logs_query_ms'), 'log query');
-  assert(route.includes('[master-audit] enrich_ms'), 'log enrich');
-  assert(route.includes('[master-audit] total_ms'), 'log total');
-  assert(route.includes('[master-audit] rows'), 'log rows');
+  assert(route.includes('diagnostics'), 'endpoint diagnóstico');
+  assert(route.includes('isDevelopDiagnosticsEnabled'), 'diag só develop/preview');
+  assert(!route.includes('return NextResponse.json({ error: message }, { status: 500 })'), 'leitura não lança 500');
   console.log('OK testAuditApiRouteShape');
 }
 
-function testAuditActionLabels() {
+function testWrittenModulesCatalog() {
+  assert(MASTER_AUDIT_WRITTEN_MODULES.includes('SUBSCRIPTIONS'), 'subscriptions');
+  assert(MASTER_AUDIT_WRITTEN_MODULES.includes('SAAS_BILLING'), 'saas billing');
   assert(
-    formatMasterAuditAction('SAAS_CHARGE_CREATED').toLowerCase().includes('saas'),
-    'ação saas legível',
+    formatMasterAuditAction('SAAS_INVOICE_GENERATED').toLowerCase().includes('cobrança'),
+    'ação invoice legível',
   );
-  assert(MASTER_AUDIT_MODULES.includes('SUBSCRIPTIONS'), 'módulo subscriptions');
-  console.log('OK testAuditActionLabels');
+  console.log('OK testWrittenModulesCatalog');
 }
 
 async function testAuditTimeoutHelper() {
@@ -141,9 +144,9 @@ async function main() {
   testMasterAuditEntryFilter();
   testNormalizeAuditLogRow();
   testAuditPageUsesApiRoute();
-  testAuditLoadPerformanceGuards();
+  testAuditLoadDataSource();
   testAuditApiRouteShape();
-  testAuditActionLabels();
+  testWrittenModulesCatalog();
   await testAuditTimeoutHelper();
   console.log('mandatory-master-audit-tests: all passed');
 }

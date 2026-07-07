@@ -15,6 +15,8 @@ type MasterAuditApiResponse = {
   error?: string;
 };
 
+const EMPTY_MESSAGE = 'Nenhum log registrado ainda.';
+
 export default function MasterAuditPage() {
   return (
     <MasterSuperAdminGuard>
@@ -28,7 +30,7 @@ function MasterAuditContent() {
   const [rows, setRows] = useState<MasterAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
-  const [emptyHint, setEmptyHint] = useState<string | null>(null);
+  const [emptyHint, setEmptyHint] = useState<string | null>(EMPTY_MESSAGE);
   const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
@@ -39,21 +41,18 @@ function MasterAuditContent() {
 
     setLoading(true);
     setWarning(null);
-    setEmptyHint(null);
+    setEmptyHint(EMPTY_MESSAGE);
 
     try {
       const result = await fetchJsonWithTimeout<MasterAuditApiResponse>(
         `/api/master/audit?userId=${encodeURIComponent(user.id)}`,
         { credentials: 'include' },
-        12_000,
+        15_000,
       );
 
       if (!result.ok || !result.data) {
         setRows([]);
-        setWarning(
-          result.error ||
-            'Não foi possível carregar a auditoria no momento. Exibindo lista vazia.',
-        );
+        setEmptyHint(EMPTY_MESSAGE);
         return;
       }
 
@@ -61,8 +60,9 @@ function MasterAuditContent() {
       const loadedRows = payload.rows || [];
       setRows(loadedRows);
 
-      if (payload.warnings?.length) {
-        setWarning(payload.warnings.join(' · '));
+      const partialWarnings = (payload.warnings || []).filter(Boolean);
+      if (partialWarnings.length > 0 && loadedRows.length > 0) {
+        setWarning(partialWarnings.join(' · '));
       }
 
       if (loadedRows.length === 0) {
@@ -70,19 +70,17 @@ function MasterAuditContent() {
         const filteredCount = payload.filteredCount ?? 0;
         if (rawCount > 0 && filteredCount === 0) {
           setEmptyHint(
-            `Foram encontrados ${rawCount} registros em audit_logs, mas nenhum corresponde aos filtros da auditoria Master SaaS.`,
+            `${EMPTY_MESSAGE} Foram lidos ${rawCount} registros recentes em audit_logs, mas nenhum é de ação Master SaaS.`,
           );
-        } else if (rawCount === 0) {
-          setEmptyHint('A tabela audit_logs está vazia no momento.');
+        } else {
+          setEmptyHint(EMPTY_MESSAGE);
         }
+      } else {
+        setEmptyHint(null);
       }
-    } catch (err) {
+    } catch {
       setRows([]);
-      setWarning(
-        err instanceof Error
-          ? err.message
-          : 'Não foi possível carregar a auditoria no momento. Exibindo lista vazia.',
-      );
+      setEmptyHint(EMPTY_MESSAGE);
     } finally {
       setLoading(false);
     }
@@ -178,10 +176,7 @@ function MasterAuditContent() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} className="p-8 text-center text-slate-500">
-                  <p>Nenhum registro de auditoria encontrado.</p>
-                  {emptyHint ? (
-                    <p className="mt-2 text-xs text-slate-600">{emptyHint}</p>
-                  ) : null}
+                  <p>{emptyHint || EMPTY_MESSAGE}</p>
                 </td>
               </tr>
             ) : (

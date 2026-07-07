@@ -40,6 +40,9 @@ const ACTION_LABELS: Record<string, string> = {
   SAAS_PLAN_UPDATE: 'Alteração de plano',
   SAAS_PAYMENT_REGISTERED: 'Pagamento de assinatura registrado',
   SAAS_PAYMENT_STATUS_CHANGED: 'Alteração de status de pagamento',
+  SAAS_INVOICE_GENERATED: 'Cobrança SaaS gerada',
+  SAAS_CHARGE_CREATED: 'Cobrança SaaS criada',
+  SAAS_CHARGE_PAID: 'Cobrança SaaS paga',
   SAAS_CHARGE_DELETED: 'Cobrança cancelada excluída',
   CONTRACT_ARCHIVED: 'Contrato SaaS arquivado',
   COMPANY_ADMIN_CREATED: 'Administrador da empresa cadastrado',
@@ -70,7 +73,15 @@ const MASTER_MODULES = new Set([
   'SAAS_BILLING',
 ]);
 
-/** Módulos gravados nas ações Master SaaS — usado para filtrar a query inicial. */
+/** Módulos usados nas escritas Master SaaS no código (referência). */
+export const MASTER_AUDIT_WRITTEN_MODULES = [
+  'SUBSCRIPTIONS',
+  'SAAS_BILLING',
+  'SAAS',
+  'COMPANY_ADMINS',
+] as const;
+
+/** Módulos aceitos pelo filtro em memória isMasterAuditEntry. */
 export const MASTER_AUDIT_MODULES = [...MASTER_MODULES] as const;
 
 const MASTER_ACTION_PREFIXES = [
