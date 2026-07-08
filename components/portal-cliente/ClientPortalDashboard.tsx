@@ -222,8 +222,8 @@ export function ClientPortalDashboard() {
   const hasContract = Boolean(
     data.contract.contractNumber ||
       data.contract.signUrl ||
-      data.contract.contractPdfUrl ||
       data.contract.contractViewUrl ||
+      data.contract.contractDownloadUrl ||
       data.contract.statusLabel ||
       data.contract.signatureStatusLabel,
   );
@@ -297,7 +297,7 @@ export function ClientPortalDashboard() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {data.contract.signUrl ? (
                 <a
                   href={data.contract.signUrl}
@@ -308,29 +308,45 @@ export function ClientPortalDashboard() {
                   Assinar contrato
                 </a>
               ) : null}
-              {data.contract.contractViewUrl ? (
-                <a
-                  href={data.contract.contractViewUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-gray-200 hover:bg-white/10"
-                >
-                  <FileText className="h-3.5 w-3.5" aria-hidden />
-                  Visualizar contrato
-                </a>
-              ) : null}
-              {data.contract.contractPdfUrl ? (
-                <a
-                  href={data.contract.contractPdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-gray-200 hover:bg-white/10"
-                >
-                  <Download className="h-3.5 w-3.5" aria-hidden />
-                  Baixar contrato
-                </a>
-              ) : null}
+              <div className="flex flex-wrap gap-2">
+                {data.contract.contractViewUrl ? (
+                  <a
+                    href={data.contract.contractViewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-gray-200 hover:bg-white/10"
+                  >
+                    <FileText className="h-3.5 w-3.5" aria-hidden />
+                    Visualizar contrato
+                  </a>
+                ) : null}
+                {data.contract.contractDownloadUrl ? (
+                  data.contract.contractDownloadAvailable ? (
+                    <a
+                      href={data.contract.contractDownloadUrl}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-gray-200 hover:bg-white/10"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      Baixar contrato
+                    </a>
+                  ) : (
+                    <span
+                      title={data.contract.contractDownloadUnavailableMessage || undefined}
+                      className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-white/5 bg-white/[0.02] px-4 py-2 text-xs font-semibold text-gray-500"
+                      aria-disabled="true"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      Baixar contrato
+                    </span>
+                  )
+                ) : null}
+              </div>
             </div>
+            {data.contract.contractDownloadUnavailableMessage &&
+            data.contract.contractDownloadUrl &&
+            !data.contract.contractDownloadAvailable ? (
+              <p className="text-xs text-gray-500">{data.contract.contractDownloadUnavailableMessage}</p>
+            ) : null}
             {data.contract.emptyMessage ? (
               <p className="text-sm text-gray-400">{data.contract.emptyMessage}</p>
             ) : null}

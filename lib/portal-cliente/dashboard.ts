@@ -8,7 +8,6 @@ import { resolveCompanyDisplayName, resolveQuadraLote } from '@/lib/clientPortal
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { formatCompanyAsaasChargeStatusLabel } from '@/lib/finance/companyAsaasChargeWorkflow';
-import { resolvePublicBaseUrl } from '@/lib/signatureVerifyUrls';
 import { buildSignatureShareWhatsAppUrl } from '@/lib/saasContractSignatureShare';
 import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 import { maskCustomerName } from '@/lib/portal-cliente/masking';
@@ -30,6 +29,11 @@ import {
   scopeIdFingerprint,
 } from '@/lib/portal-cliente/dashboardDiagnosticLog';
 import { resolvePortalClientContract, type PortalContractRow } from '@/lib/portal-cliente/contractLookup';
+import {
+  PORTAL_CONTRACT_DOWNLOAD_PATH,
+  PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+  resolvePortalContractPdfAvailability,
+} from '@/lib/portal-cliente/contractDownload';
 import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
 
 const CONTRACT_NOT_FOUND_MESSAGE = 'Contrato não encontrado.';
@@ -233,8 +237,10 @@ function buildEmptyContract(message = CONTRACT_NOT_FOUND_MESSAGE): ClientPortalD
     signatureStatusLabel: null,
     generatedAt: null,
     signUrl: null,
-    contractPdfUrl: null,
     contractViewUrl: null,
+    contractDownloadUrl: null,
+    contractDownloadAvailable: false,
+    contractDownloadUnavailableMessage: null,
     emptyMessage: message,
   };
 }
@@ -300,7 +306,6 @@ async function buildPortalDashboardContract(
   contractRow: PortalContractRow,
 ): Promise<ClientPortalDashboardContract> {
   let signUrl: string | null = null;
-  let contractPdfUrl: string | null = null;
   let contractViewUrl: string | null = null;
   let signatureToken: string | null = null;
 
@@ -335,9 +340,7 @@ async function buildPortalDashboardContract(
   }
 
   if (signatureToken) {
-    if (signatureStatus === 'SIGNED' || contractRow.pdf_signed_url) {
-      contractPdfUrl = `${resolvePublicBaseUrl()}/api/sign/sale/${encodeURIComponent(signatureToken)}?pdf=1`;
-    } else if (['PENDING', 'VIEWED'].includes(signatureStatus)) {
+    if (['PENDING', 'VIEWED'].includes(signatureStatus)) {
       const expiresAt = String(signatureRow?.expires_at || contractRow.signature_expires_at || '');
       const expired = expiresAt ? new Date(expiresAt).getTime() < Date.now() : false;
       if (!expired) {
@@ -346,7 +349,8 @@ async function buildPortalDashboardContract(
     }
   }
 
-  const hasDocument = Boolean(signUrl || contractPdfUrl || contractViewUrl);
+  const contractDownloadAvailable = resolvePortalContractPdfAvailability(contractRow, storedHtml);
+  const hasDocument = Boolean(signUrl || contractViewUrl || contractDownloadAvailable);
   const generatedAt = contractRow.created_at ? String(contractRow.created_at).slice(0, 10) : null;
 
   return {
@@ -355,8 +359,12 @@ async function buildPortalDashboardContract(
     signatureStatusLabel: signatureStatusLabel(signatureStatus),
     generatedAt,
     signUrl,
-    contractPdfUrl,
     contractViewUrl,
+    contractDownloadUrl: PORTAL_CONTRACT_DOWNLOAD_PATH,
+    contractDownloadAvailable,
+    contractDownloadUnavailableMessage: contractDownloadAvailable
+      ? null
+      : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
     emptyMessage: hasDocument ? null : CONTRACT_UNAVAILABLE_MESSAGE,
   };
 }

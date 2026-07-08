@@ -53,8 +53,10 @@ function buildSampleDashboard(): ClientPortalDashboardResponse {
       signatureStatusLabel: 'Aguardando assinatura',
       generatedAt: '2026-07-01',
       signUrl: 'https://www.svlotes.com.br/sign/sale/abc123token',
-      contractPdfUrl: null,
       contractViewUrl: '/api/portal-cliente/contract',
+      contractDownloadUrl: '/api/portal-cliente/contract/download',
+      contractDownloadAvailable: true,
+      contractDownloadUnavailableMessage: null,
       emptyMessage: null,
     },
     finance: {
@@ -129,6 +131,25 @@ function testPortalContractRoute(): void {
   assert(route.includes('readStoredContractHtml'), 'reads stored html only');
   assert(!route.includes('contractRegeneration'), 'no regeneration');
   assert(!route.includes('/map'), 'no map route');
+}
+
+function testPortalContractDownloadRoute(): void {
+  const route = read('app/api/portal-cliente/contract/download/route.ts');
+  assert(route.includes('validatePortalLotSaleScope'), 'download validates sale scope');
+  assert(route.includes('resolvePortalClientContract'), 'download uses contract lookup');
+  assert(route.includes('loadPortalContractPdfForDownload'), 'download uses read-only pdf loader');
+  assert(route.includes('attachment'), 'download returns attachment');
+  assert(!route.includes('contractRegeneration'), 'download no regeneration');
+  assert(!route.includes('loadSaleContractPdfForSign'), 'download no sign pdf regeneration');
+  const helper = read('lib/portal-cliente/contractDownload.ts');
+  assert(helper.includes('pdf_signed_url'), 'pdf_signed_url priority');
+  assert(helper.includes('pdf_url'), 'pdf_url fallback');
+  assert(helper.includes('PDF do contrato ainda não disponível'), 'unavailable message');
+  const dashboard = read('components/portal-cliente/ClientPortalDashboard.tsx');
+  assert(dashboard.includes('Visualizar contrato'), 'view button');
+  assert(dashboard.includes('Baixar contrato'), 'download button');
+  assert(dashboard.includes('contractDownloadUrl'), 'download url field');
+  assert(dashboard.includes('contractDownloadAvailable'), 'download availability');
 }
 
 function testPainelRedirectWithoutSession(): void {
@@ -241,6 +262,7 @@ function testIsolatedFromAdminModules(): void {
 function main(): void {
   testUnauthorizedApi();
   testPortalContractRoute();
+  testPortalContractDownloadRoute();
   testPainelRedirectWithoutSession();
   testSanitizedResponse();
   testCompanyScopeResolution();

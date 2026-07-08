@@ -31,8 +31,10 @@ export type ClientPortalDashboardContract = {
   signatureStatusLabel: string | null;
   generatedAt: string | null;
   signUrl: string | null;
-  contractPdfUrl: string | null;
   contractViewUrl: string | null;
+  contractDownloadUrl: string | null;
+  contractDownloadAvailable: boolean;
+  contractDownloadUnavailableMessage: string | null;
   emptyMessage: string | null;
 };
 

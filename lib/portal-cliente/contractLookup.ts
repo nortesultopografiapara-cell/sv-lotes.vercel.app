@@ -28,6 +28,7 @@ export type PortalContractRow = Record<string, unknown> & {
   signature_token?: string | null;
   signature_expires_at?: string | null;
   pdf_signed_url?: string | null;
+  pdf_url?: string | null;
 };
 
 export type PortalContractLookupResult = {
@@ -57,6 +58,7 @@ const PORTAL_CONTRACT_COLUMNS = [
   'signature_token',
   'signature_expires_at',
   'pdf_signed_url',
+  'pdf_url',
   'generated_html',
   'html_content',
   'contract_html',
