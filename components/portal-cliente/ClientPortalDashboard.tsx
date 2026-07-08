@@ -219,12 +219,14 @@ export function ClientPortalDashboard() {
   const open = data.finance.installments.filter((i) => i.status === 'open');
   const overdue = data.finance.installments.filter((i) => i.status === 'overdue');
   const negotiation = data.finance.installments.filter((i) => i.status === 'negotiation');
-  const hasContract =
-    !data.contract.emptyMessage &&
-    (data.contract.contractNumber ||
+  const hasContract = Boolean(
+    data.contract.contractNumber ||
       data.contract.signUrl ||
       data.contract.contractPdfUrl ||
-      data.contract.contractViewUrl);
+      data.contract.contractViewUrl ||
+      data.contract.statusLabel ||
+      data.contract.signatureStatusLabel,
+  );
 
   return (
     <div className="space-y-4 pb-8">
@@ -323,6 +325,9 @@ export function ClientPortalDashboard() {
                 </a>
               ) : null}
             </div>
+            {data.contract.emptyMessage ? (
+              <p className="text-sm text-gray-400">{data.contract.emptyMessage}</p>
+            ) : null}
           </>
         ) : (
           <p className="text-sm text-gray-400">{data.contract.emptyMessage}</p>

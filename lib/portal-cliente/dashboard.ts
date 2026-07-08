@@ -19,22 +19,25 @@ import type {
   ClientPortalDashboardContract,
   ClientPortalDashboardFinance,
   ClientPortalDashboardInstallment,
+  ClientPortalDashboardLoadResult,
   ClientPortalDashboardResponse,
   ClientPortalDashboardSummary,
   ClientPortalInstallmentStatus,
 } from '@/lib/portal-cliente/dashboardTypes';
 import {
   logClientPortalDashboardDiagnostic,
-  summarizeSupabaseError,
+  logDashboardQueryResult,
+  scopeIdFingerprint,
 } from '@/lib/portal-cliente/dashboardDiagnosticLog';
 import {
   assertPortalContractBelongsToSale,
   validatePortalLotSaleScope,
 } from '@/lib/portal-cliente/scopeValidation';
 
-const CONTRACT_EMPTY_MESSAGE = 'Contrato ainda não disponível.';
-const CHARGES_EMPTY_MESSAGE = 'Nenhuma cobrança disponível no momento.';
-const FINANCE_EMPTY_MESSAGE = 'Nenhuma parcela encontrada para este contrato.';
+const CONTRACT_NOT_FOUND_MESSAGE = 'Contrato não encontrado.';
+const CONTRACT_UNAVAILABLE_MESSAGE = 'Contrato ainda não disponível.';
+const CHARGES_NOT_FOUND_MESSAGE = 'Cobranças não encontradas.';
+const FINANCE_NOT_FOUND_MESSAGE = 'Parcelas não encontradas.';
 
 const FORBIDDEN_RESPONSE_KEYS = new Set([
   'tenant_id',
@@ -225,7 +228,7 @@ function pickLatestChargeByInstallment(rows: ChargeRow[]): Map<string, ChargeRow
   return map;
 }
 
-function buildEmptyContract(): ClientPortalDashboardContract {
+function buildEmptyContract(message = CONTRACT_NOT_FOUND_MESSAGE): ClientPortalDashboardContract {
   return {
     contractNumber: null,
     statusLabel: null,
@@ -233,11 +236,11 @@ function buildEmptyContract(): ClientPortalDashboardContract {
     signUrl: null,
     contractPdfUrl: null,
     contractViewUrl: null,
-    emptyMessage: CONTRACT_EMPTY_MESSAGE,
+    emptyMessage: message,
   };
 }
 
-function buildEmptyFinance(): ClientPortalDashboardFinance {
+function buildEmptyFinance(message = FINANCE_NOT_FOUND_MESSAGE): ClientPortalDashboardFinance {
   return {
     summary: {
       financialStatusLabel: 'Sem parcelas',
@@ -248,14 +251,14 @@ function buildEmptyFinance(): ClientPortalDashboardFinance {
       negotiationCount: 0,
     },
     installments: [],
-    emptyMessage: FINANCE_EMPTY_MESSAGE,
+    emptyMessage: FINANCE_NOT_FOUND_MESSAGE,
   };
 }
 
-function buildEmptyCharges(): ClientPortalDashboardCharges {
+function buildEmptyCharges(message = CHARGES_NOT_FOUND_MESSAGE): ClientPortalDashboardCharges {
   return {
     items: [],
-    emptyMessage: CHARGES_EMPTY_MESSAGE,
+    emptyMessage: message,
   };
 }
 
@@ -293,35 +296,114 @@ function buildChargeItems(
   });
 }
 
+function scopeFailureMessage(reason: string): string {
+  switch (reason) {
+    case 'sale_not_found':
+      return 'Venda não encontrada para este acesso.';
+    case 'customer_not_found':
+      return 'Cliente não encontrado para este acesso.';
+    case 'customer_mismatch':
+      return 'Cliente não corresponde à venda vinculada.';
+    case 'company_scope_mismatch':
+    case 'company_unresolved':
+      return 'Empresa não autorizada para este acesso.';
+    case 'missing_scope_ids':
+      return 'Sessão incompleta. Faça login novamente.';
+    case 'sale_query_error':
+    case 'customer_query_error':
+      return 'Erro ao consultar dados da venda. Tente novamente.';
+    default:
+      return 'Não foi possível validar o acesso à venda.';
+  }
+}
+
+function scopeFailureCode(
+  reason: string,
+): 'BAD_REQUEST' | 'NOT_FOUND' | 'FORBIDDEN' | 'SERVER_ERROR' {
+  if (reason === 'missing_scope_ids') return 'BAD_REQUEST';
+  if (reason === 'sale_not_found' || reason === 'customer_not_found') return 'NOT_FOUND';
+  if (
+    reason === 'customer_mismatch' ||
+    reason === 'company_scope_mismatch' ||
+    reason === 'company_unresolved'
+  ) {
+    return 'FORBIDDEN';
+  }
+  return 'SERVER_ERROR';
+}
+
 export async function loadClientPortalDashboard(
   admin: SupabaseClient,
   scope: ClientPortalSessionScope,
-): Promise<ClientPortalDashboardResponse | null> {
+): Promise<ClientPortalDashboardLoadResult> {
   logClientPortalDashboardDiagnostic({
     step: 'load_start',
     linkType: scope.linkType,
+    customerId: scopeIdFingerprint(scope.customerId),
+    saleId: scopeIdFingerprint(scope.saleId),
+    contractId: scopeIdFingerprint(scope.contractId),
+    companyId: scopeIdFingerprint(scope.companyId),
     hasCompanyId: Boolean(scope.companyId),
     hasCustomerId: Boolean(scope.customerId),
     hasSaleId: Boolean(scope.saleId),
+    hasContractId: Boolean(scope.contractId),
+    outcome: 'success',
+    httpStatus: 200,
   });
 
   if (scope.linkType === 'saas_contract') {
-    return loadSaasContractDashboard(admin, scope);
+    const dashboard = await loadSaasContractDashboard(admin, scope);
+    if (!dashboard) {
+      return {
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'Empresa não encontrada.',
+        httpStatus: 404,
+        step: 'query_companies',
+        table: 'companies',
+        filter: `companies.id=eq(${scopeIdFingerprint(scope.companyId)})`,
+        reason: 'company_not_found',
+      };
+    }
+    return { ok: true, dashboard, httpStatus: 200 };
   }
 
   if (scope.linkType === 'customer_record' && !scope.saleId) {
-    return loadCustomerRecordDashboard(admin, scope);
+    const dashboard = await loadCustomerRecordDashboard(admin, scope);
+    if (!dashboard) {
+      return {
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'Cadastro não encontrado.',
+        httpStatus: 404,
+        step: 'query_customers',
+        table: 'customers',
+        filter: `customers.id=eq(${scopeIdFingerprint(scope.customerId)})`,
+        reason: 'customer_or_company_not_found',
+      };
+    }
+    return { ok: true, dashboard, httpStatus: 200 };
   }
 
   if (!scope.saleId || !scope.customerId) {
     logClientPortalDashboardDiagnostic({
-      step: 'load_abort',
-      linkType: scope.linkType,
+      step: '2_scope_ids',
+      outcome: 'failure',
       reason: 'missing_sale_or_customer_scope',
       hasSaleId: Boolean(scope.saleId),
       hasCustomerId: Boolean(scope.customerId),
+      httpStatus: 400,
     });
-    return null;
+    return {
+      ok: false,
+      code: 'BAD_REQUEST',
+      message: 'Sessão incompleta. Faça login novamente.',
+      httpStatus: 400,
+      step: '2_scope_ids',
+      table: 'session',
+      filter: 'scope.saleId + scope.customerId',
+      reason: 'missing_sale_or_customer_scope',
+    };
   }
 
   return loadLotSaleDashboard(admin, scope);
@@ -330,17 +412,28 @@ export async function loadClientPortalDashboard(
 async function loadLotSaleDashboard(
   admin: SupabaseClient,
   scope: ClientPortalSessionScope,
-): Promise<ClientPortalDashboardResponse | null> {
-  const validated = await validatePortalLotSaleScope(admin, scope);
-  if (!validated) {
-    logClientPortalDashboardDiagnostic({
-      step: 'scope_validation',
-      reason: 'sale_scope_invalid',
-    });
-    return null;
+): Promise<ClientPortalDashboardLoadResult> {
+  const validation = await validatePortalLotSaleScope(admin, scope);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      code: scopeFailureCode(validation.reason),
+      message: scopeFailureMessage(validation.reason),
+      httpStatus: validation.httpStatus,
+      step: validation.step,
+      table: validation.table,
+      filter: validation.filter,
+      reason: validation.reason,
+    };
   }
 
+  const validated = validation.data;
   const { saleId, customerId, companyId, sale, customer } = validated;
+
+  const companyFilter = `companies.id=eq(${scopeIdFingerprint(companyId)})`;
+  const contractFilter = `contracts.sale_id=eq(${scopeIdFingerprint(saleId)})`;
+  const receiptsFilter = `finance_receipts.sale_id=eq(${scopeIdFingerprint(saleId)}) + customer_id=eq(${scopeIdFingerprint(customerId)})`;
+  const chargesFilter = `company_asaas_charges.company_id=eq(${scopeIdFingerprint(companyId)}) + sale_id=eq(${scopeIdFingerprint(saleId)})`;
 
   const [companyRes, projectRes, blockRes, contractRes, receiptsRes] = await Promise.all([
     admin
@@ -374,49 +467,110 @@ async function loadLotSaleDashboard(
       .order('installment_number', { ascending: true }),
   ]);
 
-  for (const [step, result] of [
-    ['query_companies', companyRes],
-    ['query_projects', projectRes],
-    ['query_blocks', blockRes],
-    ['query_contracts', contractRes],
-    ['query_finance_receipts', receiptsRes],
-  ] as const) {
-    if (result.error) {
-      logClientPortalDashboardDiagnostic({
-        step,
-        reason: 'supabase_error',
-        ...summarizeSupabaseError(result.error),
-      });
-      return null;
-    }
-  }
+  logDashboardQueryResult({
+    step: '7_query_company',
+    table: 'companies',
+    filter: companyFilter,
+    error: companyRes.error,
+    rowCount: companyRes.data ? 1 : 0,
+  });
+  logDashboardQueryResult({
+    step: '7_query_project',
+    table: 'projects',
+    filter: sale.project_id ? `projects.id=eq(${scopeIdFingerprint(sale.project_id)})` : 'skipped',
+    error: projectRes.error,
+    rowCount: projectRes.data ? 1 : 0,
+  });
+  logDashboardQueryResult({
+    step: '7_query_block',
+    table: 'blocks',
+    filter: sale.block_id ? `blocks.id=eq(${scopeIdFingerprint(sale.block_id)})` : 'skipped',
+    error: blockRes.error,
+    rowCount: blockRes.data ? 1 : 0,
+  });
+  logDashboardQueryResult({
+    step: '8_query_contract',
+    table: 'contracts',
+    filter: contractFilter,
+    error: contractRes.error,
+    rowCount: Array.isArray(contractRes.data) ? contractRes.data.length : contractRes.data ? 1 : 0,
+  });
+  logDashboardQueryResult({
+    step: '9_query_installments',
+    table: 'finance_receipts',
+    filter: receiptsFilter,
+    error: receiptsRes.error,
+    rowCount: Array.isArray(receiptsRes.data) ? receiptsRes.data.length : 0,
+  });
 
   const company = companyRes.data;
-  if (!company) {
-    logClientPortalDashboardDiagnostic({ step: 'query_companies', reason: 'company_not_found' });
-    return null;
-  }
+  const companyDisplay = company
+    ? resolveCompanyDisplayName(company)
+    : 'Loteadora';
 
-  const projectName = projectRes.data?.name ? String(projectRes.data.name) : null;
-  const quadraLote = resolveQuadraLote(null, blockRes.data);
+  const projectName = projectRes.error ? null : projectRes.data?.name ? String(projectRes.data.name) : null;
+  const quadraLote = blockRes.error ? null : resolveQuadraLote(null, blockRes.data);
   const { quadra, lote } = parseQuadraLote(quadraLote);
 
   let contract = buildEmptyContract();
-  const contractRow = Array.isArray(contractRes.data) ? contractRes.data[0] : contractRes.data;
+  const contractRow = contractRes.error
+    ? null
+    : Array.isArray(contractRes.data)
+      ? contractRes.data[0]
+      : contractRes.data;
 
-  if (contractRow && assertPortalContractBelongsToSale(contractRow, validated)) {
+  if (contractRes.error) {
+    contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
+  } else if (!contractRow) {
+    contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
+  } else if (!assertPortalContractBelongsToSale(contractRow, validated)) {
+    logClientPortalDashboardDiagnostic({
+      step: '8_query_contract',
+      outcome: 'failure',
+      table: 'contracts',
+      filter: `${contractFilter} + sale ownership`,
+      reason: 'contract_sale_mismatch',
+      httpStatus: 200,
+    });
+    contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
+  } else {
+    if (
+      validated.contractId &&
+      String(contractRow.id) !== validated.contractId
+    ) {
+      logClientPortalDashboardDiagnostic({
+        step: '8_query_contract',
+        outcome: 'success',
+        table: 'contracts',
+        filter: contractFilter,
+        reason: 'session_contract_id_differs_using_latest',
+        httpStatus: 200,
+        contractId: scopeIdFingerprint(validated.contractId),
+      });
+    }
+
     let signUrl: string | null = null;
     let contractPdfUrl: string | null = null;
     let contractViewUrl: string | null = null;
     let signatureToken: string | null = null;
 
-    const { data: signatureRow } = await admin
+    const { data: signatureRow, error: signatureError } = await admin
       .from('contract_signatures')
       .select('signature_token, signature_status, signature_url, expires_at')
       .eq('contract_id', contractRow.id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    if (signatureError) {
+      logDashboardQueryResult({
+        step: '8_query_contract_signatures',
+        table: 'contract_signatures',
+        filter: `contract_signatures.contract_id=eq(${scopeIdFingerprint(String(contractRow.id))})`,
+        error: signatureError,
+        rowCount: 0,
+      });
+    }
 
     signatureToken =
       String(signatureRow?.signature_token || contractRow.signature_token || '').trim() || null;
@@ -442,6 +596,7 @@ async function loadLotSaleDashboard(
       }
     }
 
+    const hasDocument = Boolean(signUrl || contractPdfUrl || contractViewUrl);
     contract = {
       contractNumber: String(contractRow.contract_number || '').trim() || null,
       statusLabel: contractStatusLabel(contractRow.status),
@@ -449,11 +604,21 @@ async function loadLotSaleDashboard(
       signUrl,
       contractPdfUrl,
       contractViewUrl,
-      emptyMessage: null,
+      emptyMessage: hasDocument ? null : CONTRACT_UNAVAILABLE_MESSAGE,
     };
+
+    logClientPortalDashboardDiagnostic({
+      step: '8_query_contract',
+      outcome: 'success',
+      table: 'contracts',
+      filter: contractFilter,
+      rowCount: 1,
+      httpStatus: 200,
+      reason: hasDocument ? undefined : 'contract_without_document',
+    });
   }
 
-  const receipts = (receiptsRes.data ?? []) as ReceiptRow[];
+  const receipts = receiptsRes.error ? [] : ((receiptsRes.data ?? []) as ReceiptRow[]);
   const installmentIds = receipts.map((r) => r.id);
 
   let chargeByInstallment = new Map<string, ChargeRow>();
@@ -466,15 +631,27 @@ async function loadLotSaleDashboard(
       .in('installment_id', installmentIds)
       .order('created_at', { ascending: false });
 
-    if (chargesError) {
-      logClientPortalDashboardDiagnostic({
-        step: 'query_company_asaas_charges',
-        reason: 'supabase_error',
-        ...summarizeSupabaseError(chargesError),
-      });
-    } else {
+    logDashboardQueryResult({
+      step: '10_query_charges',
+      table: 'company_asaas_charges',
+      filter: chargesFilter,
+      error: chargesError,
+      rowCount: Array.isArray(charges) ? charges.length : 0,
+    });
+
+    if (!chargesError) {
       chargeByInstallment = pickLatestChargeByInstallment((charges as ChargeRow[] | null) ?? []);
     }
+  } else {
+    logClientPortalDashboardDiagnostic({
+      step: '10_query_charges',
+      outcome: 'empty',
+      table: 'company_asaas_charges',
+      filter: chargesFilter,
+      rowCount: 0,
+      httpStatus: 200,
+      reason: 'no_installments_for_charges',
+    });
   }
 
   const installments: ClientPortalDashboardInstallment[] = receipts
@@ -507,7 +684,7 @@ async function loadLotSaleDashboard(
   const summary: ClientPortalDashboardSummary = {
     greetingName: resolveClientPortalGreetingName(customer.name),
     customerNameMasked: maskCustomerName(customer.name),
-    companyName: resolveCompanyDisplayName(company),
+    companyName: companyDisplay,
     projectName,
     quadra,
     lote,
@@ -528,8 +705,11 @@ async function loadLotSaleDashboard(
   };
 
   const finance: ClientPortalDashboardFinance =
-    installments.length > 0
-      ? {
+    receiptsRes.error || installments.length === 0
+      ? buildEmptyFinance(
+          receiptsRes.error ? FINANCE_NOT_FOUND_MESSAGE : FINANCE_NOT_FOUND_MESSAGE,
+        )
+      : {
           summary: {
             financialStatusLabel: summary.financialStatusLabel,
             nextDueDate: summary.nextDueDate,
@@ -540,16 +720,13 @@ async function loadLotSaleDashboard(
           },
           installments,
           emptyMessage: null,
-        }
-      : buildEmptyFinance();
+        };
 
   const chargeItems = buildChargeItems(receipts, chargeByInstallment);
   const charges: ClientPortalDashboardCharges =
-    chargeItems.length > 0
-      ? { items: chargeItems, emptyMessage: null }
-      : buildEmptyCharges();
+    chargeItems.length > 0 ? { items: chargeItems, emptyMessage: null } : buildEmptyCharges();
 
-  const companyPhone = String(company.phone || '').trim();
+  const companyPhone = company ? String(company.phone || '').trim() : '';
   const companyWhatsAppUrl = companyPhone
     ? buildSignatureShareWhatsAppUrl(
         companyPhone,
@@ -569,8 +746,14 @@ async function loadLotSaleDashboard(
   };
 
   assertClientPortalDashboardSanitized(response);
-  logClientPortalDashboardDiagnostic({ step: 'load_success', linkType: scope.linkType });
-  return response;
+  logClientPortalDashboardDiagnostic({
+    step: 'load_success',
+    outcome: 'success',
+    linkType: scope.linkType,
+    httpStatus: 200,
+    rowCount: 1,
+  });
+  return { ok: true, dashboard: response, httpStatus: 200 };
 }
 
 async function loadCustomerRecordDashboard(

@@ -88,6 +88,23 @@ export type ClientPortalDashboardResponse = {
 
 export type ClientPortalDashboardErrorResponse = {
   ok: false;
-  code: 'UNAUTHORIZED' | 'EXPIRED' | 'NOT_FOUND' | 'DISABLED';
+  code: 'UNAUTHORIZED' | 'EXPIRED' | 'NOT_FOUND' | 'FORBIDDEN' | 'BAD_REQUEST' | 'DISABLED' | 'SERVER_ERROR';
   message: string;
+  step?: string;
+  table?: string;
+  filter?: string;
+  reason?: string;
 };
+
+export type ClientPortalDashboardLoadResult =
+  | { ok: true; dashboard: ClientPortalDashboardResponse; httpStatus: 200 }
+  | {
+      ok: false;
+      code: ClientPortalDashboardErrorResponse['code'];
+      message: string;
+      httpStatus: number;
+      step: string;
+      table?: string;
+      filter?: string;
+      reason?: string;
+    };

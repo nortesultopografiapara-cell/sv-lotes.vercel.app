@@ -114,6 +114,9 @@ function testUnauthorizedApi(): void {
   assert(route.includes('readClientPortalSessionToken'), 'validates session token');
   assert(route.includes('status: 401'), 'returns 401 without session');
   assert(route.includes('logClientPortalDashboardDiagnostic'), 'diagnostic logs');
+  assert(route.includes('1_session_loaded'), 'session step log');
+  assert(route.includes('result.step'), 'returns failing step');
+  assert(!route.includes('Não foi possível carregar seus dados'), 'no generic dashboard error');
   assert(!route.includes('/api/finance/asaas/create-charge'), 'no create-charge api');
   assert(!route.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate-charge api');
 }
@@ -188,9 +191,9 @@ function testSaleScopeInDashboardLoader(): void {
   assert(dashboard.includes('company_asaas_charges'), 'reads existing charges only');
   assert(dashboard.includes('validatePortalLotSaleScope'), 'shared scope validation');
   assert(dashboard.includes('from(\'blocks\')'), 'loads block label only');
-  assert(dashboard.includes('Contrato ainda não disponível'), 'contract empty message');
-  assert(dashboard.includes('Nenhuma cobrança disponível no momento'), 'charges empty message');
-  assert(dashboard.includes('Nenhuma parcela encontrada para este contrato'), 'finance empty message');
+  assert(dashboard.includes('Contrato não encontrado.'), 'contract not found message');
+  assert(dashboard.includes('Cobranças não encontradas.'), 'charges not found message');
+  assert(dashboard.includes('Parcelas não encontradas.'), 'finance not found message');
   assert(!dashboard.includes('/api/finance/asaas/create-charge'), 'no create charge api');
   assert(!dashboard.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate charge api');
   assert(!dashboard.includes('createCompanyAsaas'), 'no asaas create service');
