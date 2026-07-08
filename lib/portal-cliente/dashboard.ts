@@ -6,12 +6,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveCompanyDisplayName, resolveQuadraLote } from '@/lib/clientPortalLookup';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
+import { formatCompanyAsaasChargeStatusLabel } from '@/lib/finance/companyAsaasChargeWorkflow';
 import { resolvePublicBaseUrl } from '@/lib/signatureVerifyUrls';
 import { buildSignatureShareWhatsAppUrl } from '@/lib/saasContractSignatureShare';
-import { resolveSaleSignUrl, resolveSaleValidationPublicUrl } from '@/lib/saleContractUrls';
+import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 import { maskCustomerName } from '@/lib/portal-cliente/masking';
 import type { ClientPortalSessionScope } from '@/lib/portal-cliente/session';
 import type {
+  ClientPortalDashboardCharge,
+  ClientPortalDashboardCharges,
   ClientPortalDashboardContract,
   ClientPortalDashboardFinance,
   ClientPortalDashboardInstallment,
@@ -21,15 +25,23 @@ import type {
 } from '@/lib/portal-cliente/dashboardTypes';
 import {
   logClientPortalDashboardDiagnostic,
-  resolvePortalScopeCompanyId,
   summarizeSupabaseError,
 } from '@/lib/portal-cliente/dashboardDiagnosticLog';
+import {
+  assertPortalContractBelongsToSale,
+  validatePortalLotSaleScope,
+} from '@/lib/portal-cliente/scopeValidation';
+
+const CONTRACT_EMPTY_MESSAGE = 'Contrato ainda não disponível.';
+const CHARGES_EMPTY_MESSAGE = 'Nenhuma cobrança disponível no momento.';
+const FINANCE_EMPTY_MESSAGE = 'Nenhuma parcela encontrada para este contrato.';
 
 const FORBIDDEN_RESPONSE_KEYS = new Set([
   'tenant_id',
   'company_id',
   'customer_id',
   'sale_id',
+  'contract_id',
   'installment_id',
   'asaas_payment_id',
   'signature_token',
@@ -77,9 +89,12 @@ function mapInstallmentStatus(
   dueDate: string | null | undefined,
 ): ClientPortalInstallmentStatus {
   const key = String(status || '').trim().toLowerCase();
-  if (key === 'pago') return 'paid';
-  if (key === 'cancelado') return 'cancelled';
-  if (key === 'atrasado') return 'overdue';
+  if (key === 'pago' || key === 'paid') return 'paid';
+  if (key === 'cancelado' || key === 'cancelled' || key === 'canceled') return 'cancelled';
+  if (key === 'atrasado' || key === 'overdue') return 'overdue';
+  if (key === 'negociacao' || key === 'em_negociacao' || key === 'negotiation') {
+    return 'negotiation';
+  }
   const due = String(dueDate || '').slice(0, 10);
   if (due && due < todayIsoDate()) return 'overdue';
   return 'open';
@@ -93,6 +108,8 @@ function installmentStatusLabel(status: ClientPortalInstallmentStatus): string {
       return 'Vencida';
     case 'cancelled':
       return 'Cancelada';
+    case 'negotiation':
+      return 'Em negociação';
     default:
       return 'Em aberto';
   }
@@ -106,6 +123,23 @@ function contractStatusLabel(status?: string | null): string | null {
     ativo: 'Ativo',
     assinado: 'Assinado',
     cancelado: 'Cancelado',
+  };
+  return map[key] ?? status ?? null;
+}
+
+function saleStatusLabel(status?: string | null): string | null {
+  const key = String(status || '').trim().toLowerCase();
+  if (!key) return 'Ativa';
+  const map: Record<string, string> = {
+    ativo: 'Ativa',
+    active: 'Ativa',
+    pendente: 'Pendente',
+    pending: 'Pendente',
+    cancelado: 'Cancelada',
+    cancelled: 'Cancelada',
+    canceled: 'Cancelada',
+    assinado: 'Assinada',
+    signed: 'Assinada',
   };
   return map[key] ?? status ?? null;
 }
@@ -127,14 +161,25 @@ function resolveFinancialStatusLabel(counts: {
   overdue: number;
   open: number;
   paid: number;
+  negotiation: number;
 }): string {
   if (counts.overdue > 0) return 'Parcelas vencidas';
+  if (counts.negotiation > 0) return 'Parcelas em negociação';
   if (counts.open > 0) return 'Parcelas em aberto';
   if (counts.paid > 0) return 'Em dia';
   return 'Sem parcelas';
 }
 
 function resolvePaymentUrl(charge?: {
+  bank_slip_url?: string | null;
+  invoice_url?: string | null;
+} | null): string | null {
+  if (!charge) return null;
+  const url = String(charge.invoice_url || charge.bank_slip_url || '').trim();
+  return url || null;
+}
+
+function resolveBoletoDownloadUrl(charge?: {
   bank_slip_url?: string | null;
   invoice_url?: string | null;
 } | null): string | null {
@@ -159,6 +204,15 @@ type ChargeRow = {
   created_at: string;
 };
 
+type ReceiptRow = {
+  id: string;
+  installment_number: number;
+  due_date: string;
+  amount: number;
+  paid_at: string | null;
+  status: string;
+};
+
 function pickLatestChargeByInstallment(rows: ChargeRow[]): Map<string, ChargeRow> {
   const map = new Map<string, ChargeRow>();
   for (const row of rows) {
@@ -169,6 +223,74 @@ function pickLatestChargeByInstallment(rows: ChargeRow[]): Map<string, ChargeRow
     }
   }
   return map;
+}
+
+function buildEmptyContract(): ClientPortalDashboardContract {
+  return {
+    contractNumber: null,
+    statusLabel: null,
+    signatureStatusLabel: null,
+    signUrl: null,
+    contractPdfUrl: null,
+    contractViewUrl: null,
+    emptyMessage: CONTRACT_EMPTY_MESSAGE,
+  };
+}
+
+function buildEmptyFinance(): ClientPortalDashboardFinance {
+  return {
+    summary: {
+      financialStatusLabel: 'Sem parcelas',
+      nextDueDate: null,
+      paidCount: 0,
+      openCount: 0,
+      overdueCount: 0,
+      negotiationCount: 0,
+    },
+    installments: [],
+    emptyMessage: FINANCE_EMPTY_MESSAGE,
+  };
+}
+
+function buildEmptyCharges(): ClientPortalDashboardCharges {
+  return {
+    items: [],
+    emptyMessage: CHARGES_EMPTY_MESSAGE,
+  };
+}
+
+function buildChargeItems(
+  receipts: ReceiptRow[],
+  chargeByInstallment: Map<string, ChargeRow>,
+): ClientPortalDashboardCharge[] {
+  const receiptById = new Map(receipts.map((row) => [row.id, row]));
+  const items: ClientPortalDashboardCharge[] = [];
+
+  for (const [installmentId, charge] of chargeByInstallment.entries()) {
+    const receipt = receiptById.get(installmentId);
+    const statusKey = String(charge.status || '').toUpperCase() as Parameters<
+      typeof formatCompanyAsaasChargeStatusLabel
+    >[0];
+
+    items.push({
+      installmentNumber: receipt?.installment_number ?? null,
+      dueDate: receipt?.due_date ? String(receipt.due_date).slice(0, 10) : null,
+      amountLabel:
+        receipt?.amount !== undefined && receipt?.amount !== null
+          ? formatCurrencyBRL(Number(receipt.amount) || 0)
+          : null,
+      statusLabel: formatCompanyAsaasChargeStatusLabel(statusKey),
+      paymentUrl: resolvePaymentUrl(charge),
+      boletoDownloadUrl: resolveBoletoDownloadUrl(charge),
+      pixCopyPaste: String(charge.pix_copy_paste || '').trim() || null,
+    });
+  }
+
+  return items.sort((a, b) => {
+    const numA = a.installmentNumber ?? 0;
+    const numB = b.installmentNumber ?? 0;
+    return numA - numB;
+  });
 }
 
 export async function loadClientPortalDashboard(
@@ -209,76 +331,22 @@ async function loadLotSaleDashboard(
   admin: SupabaseClient,
   scope: ClientPortalSessionScope,
 ): Promise<ClientPortalDashboardResponse | null> {
-  const saleId = String(scope.saleId || '');
-  const customerId = String(scope.customerId || '');
-  const scopeCompanyId = String(scope.companyId || '');
-
-  const { data: sale, error: saleError } = await admin
-    .from('sales')
-    .select('id, customer_id, project_id, company_id, tenant_id, block_id, status')
-    .eq('id', saleId)
-    .maybeSingle();
-
-  if (saleError) {
+  const validated = await validatePortalLotSaleScope(admin, scope);
+  if (!validated) {
     logClientPortalDashboardDiagnostic({
-      step: 'query_sales',
-      reason: 'supabase_error',
-      ...summarizeSupabaseError(saleError),
+      step: 'scope_validation',
+      reason: 'sale_scope_invalid',
     });
     return null;
   }
 
-  if (!sale) {
-    logClientPortalDashboardDiagnostic({ step: 'query_sales', reason: 'sale_not_found' });
-    return null;
-  }
-
-  if (String(sale.customer_id) !== customerId) {
-    logClientPortalDashboardDiagnostic({ step: 'query_sales', reason: 'customer_mismatch' });
-    return null;
-  }
-
-  const { data: customer, error: customerError } = await admin
-    .from('customers')
-    .select('id, name, phone, company_id, tenant_id')
-    .eq('id', customerId)
-    .maybeSingle();
-
-  if (customerError) {
-    logClientPortalDashboardDiagnostic({
-      step: 'query_customers',
-      reason: 'supabase_error',
-      ...summarizeSupabaseError(customerError),
-    });
-    return null;
-  }
-
-  if (!customer) {
-    logClientPortalDashboardDiagnostic({ step: 'query_customers', reason: 'customer_not_found' });
-    return null;
-  }
-
-  const effectiveCompanyId = resolvePortalScopeCompanyId({
-    saleCompanyId: sale.company_id,
-    saleTenantId: sale.tenant_id,
-    customerCompanyId: customer.company_id,
-    customerTenantId: customer.tenant_id,
-  });
-
-  if (!effectiveCompanyId || effectiveCompanyId !== scopeCompanyId) {
-    logClientPortalDashboardDiagnostic({
-      step: 'scope_company_match',
-      reason: 'company_scope_mismatch',
-      hasCompanyId: Boolean(scopeCompanyId),
-    });
-    return null;
-  }
+  const { saleId, customerId, companyId, sale, customer } = validated;
 
   const [companyRes, projectRes, blockRes, contractRes, receiptsRes] = await Promise.all([
     admin
       .from('companies')
       .select('id, name, fantasy_name, razao_social, phone')
-      .eq('id', effectiveCompanyId)
+      .eq('id', companyId)
       .maybeSingle(),
     sale.project_id
       ? admin.from('projects').select('id, name').eq('id', sale.project_id).maybeSingle()
@@ -292,7 +360,9 @@ async function loadLotSaleDashboard(
       : Promise.resolve({ data: null, error: null }),
     admin
       .from('contracts')
-      .select('id, contract_number, status, signature_status, signature_token, signature_expires_at')
+      .select(
+        'id, sale_id, contract_number, status, signature_status, signature_token, signature_expires_at, pdf_signed_url, generated_html, html_content, contract_html, content, html',
+      )
       .eq('sale_id', saleId)
       .order('created_at', { ascending: false })
       .limit(1),
@@ -331,12 +401,13 @@ async function loadLotSaleDashboard(
   const quadraLote = resolveQuadraLote(null, blockRes.data);
   const { quadra, lote } = parseQuadraLote(quadraLote);
 
-  let contract: ClientPortalDashboardContract | null = null;
+  let contract = buildEmptyContract();
   const contractRow = Array.isArray(contractRes.data) ? contractRes.data[0] : contractRes.data;
-  if (contractRow) {
+
+  if (contractRow && assertPortalContractBelongsToSale(contractRow, validated)) {
     let signUrl: string | null = null;
     let contractPdfUrl: string | null = null;
-    let validationUrl: string | null = null;
+    let contractViewUrl: string | null = null;
     let signatureToken: string | null = null;
 
     const { data: signatureRow } = await admin
@@ -354,12 +425,13 @@ async function loadLotSaleDashboard(
       signatureRow?.signature_status || contractRow.signature_status || '',
     ).toUpperCase();
 
+    const storedHtml = readStoredContractHtml(contractRow as Record<string, unknown>);
+    if (storedHtml) {
+      contractViewUrl = '/api/portal-cliente/contract';
+    }
+
     if (signatureToken) {
-      validationUrl = resolveSaleValidationPublicUrl(
-        signatureToken,
-        signatureRow?.signature_url ?? null,
-      );
-      if (signatureStatus === 'SIGNED') {
+      if (signatureStatus === 'SIGNED' || contractRow.pdf_signed_url) {
         contractPdfUrl = `${resolvePublicBaseUrl()}/api/sign/sale/${encodeURIComponent(signatureToken)}?pdf=1`;
       } else if (['PENDING', 'VIEWED'].includes(signatureStatus)) {
         const expiresAt = String(signatureRow?.expires_at || contractRow.signature_expires_at || '');
@@ -376,19 +448,12 @@ async function loadLotSaleDashboard(
       signatureStatusLabel: signatureStatusLabel(signatureStatus),
       signUrl,
       contractPdfUrl,
-      validationUrl,
+      contractViewUrl,
+      emptyMessage: null,
     };
   }
 
-  const receipts = (receiptsRes.data ?? []) as Array<{
-    id: string;
-    installment_number: number;
-    due_date: string;
-    amount: number;
-    paid_at: string | null;
-    status: string;
-  }>;
-
+  const receipts = (receiptsRes.data ?? []) as ReceiptRow[];
   const installmentIds = receipts.map((r) => r.id);
 
   let chargeByInstallment = new Map<string, ChargeRow>();
@@ -396,7 +461,8 @@ async function loadLotSaleDashboard(
     const { data: charges, error: chargesError } = await admin
       .from('company_asaas_charges')
       .select('installment_id, status, bank_slip_url, invoice_url, pix_copy_paste, created_at')
-      .eq('company_id', effectiveCompanyId)
+      .eq('company_id', companyId)
+      .eq('sale_id', saleId)
       .in('installment_id', installmentIds)
       .order('created_at', { ascending: false });
 
@@ -432,9 +498,10 @@ async function loadLotSaleDashboard(
   const paidCount = installments.filter((i) => i.status === 'paid').length;
   const openCount = installments.filter((i) => i.status === 'open').length;
   const overdueCount = installments.filter((i) => i.status === 'overdue').length;
+  const negotiationCount = installments.filter((i) => i.status === 'negotiation').length;
 
   const nextDue = installments
-    .filter((i) => i.status === 'open' || i.status === 'overdue')
+    .filter((i) => i.status === 'open' || i.status === 'overdue' || i.status === 'negotiation')
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate ?? null;
 
   const summary: ClientPortalDashboardSummary = {
@@ -445,28 +512,42 @@ async function loadLotSaleDashboard(
     quadra,
     lote,
     quadraLote,
-    contractStatusLabel: contract?.statusLabel ?? null,
+    saleStatusLabel: saleStatusLabel(sale.status),
+    contractStatusLabel: contract.statusLabel ?? contract.signatureStatusLabel ?? null,
     financialStatusLabel: resolveFinancialStatusLabel({
       paid: paidCount,
       open: openCount,
       overdue: overdueCount,
+      negotiation: negotiationCount,
     }),
     nextDueDate: nextDue,
     paidCount,
     openCount,
     overdueCount,
+    negotiationCount,
   };
 
-  const finance: ClientPortalDashboardFinance = {
-    summary: {
-      financialStatusLabel: summary.financialStatusLabel,
-      nextDueDate: summary.nextDueDate,
-      paidCount,
-      openCount,
-      overdueCount,
-    },
-    installments,
-  };
+  const finance: ClientPortalDashboardFinance =
+    installments.length > 0
+      ? {
+          summary: {
+            financialStatusLabel: summary.financialStatusLabel,
+            nextDueDate: summary.nextDueDate,
+            paidCount,
+            openCount,
+            overdueCount,
+            negotiationCount,
+          },
+          installments,
+          emptyMessage: null,
+        }
+      : buildEmptyFinance();
+
+  const chargeItems = buildChargeItems(receipts, chargeByInstallment);
+  const charges: ClientPortalDashboardCharges =
+    chargeItems.length > 0
+      ? { items: chargeItems, emptyMessage: null }
+      : buildEmptyCharges();
 
   const companyPhone = String(company.phone || '').trim();
   const companyWhatsAppUrl = companyPhone
@@ -482,6 +563,7 @@ async function loadLotSaleDashboard(
     summary,
     contract,
     finance,
+    charges,
     companyWhatsAppUrl,
     message: null,
   };
@@ -523,27 +605,31 @@ async function loadCustomerRecordDashboard(
     quadra: null,
     lote: null,
     quadraLote: null,
+    saleStatusLabel: null,
     contractStatusLabel: null,
     financialStatusLabel: 'Sem venda vinculada',
     nextDueDate: null,
     paidCount: 0,
     openCount: 0,
     overdueCount: 0,
+    negotiationCount: 0,
   };
 
   const response: ClientPortalDashboardResponse = {
     ok: true,
     linkType: scope.linkType,
     summary,
-    contract: null,
-    finance: null,
+    contract: buildEmptyContract(),
+    finance: buildEmptyFinance(),
+    charges: buildEmptyCharges(),
     companyWhatsAppUrl: companyPhone
       ? buildSignatureShareWhatsAppUrl(
           companyPhone,
           'Olá! Acessei o Portal do Cliente SV LOTES e gostaria de falar com a loteadora.',
         )
       : null,
-    message: 'Nenhuma venda ativa vinculada a este cadastro. Entre em contato com a loteadora.',
+    message:
+      'Nenhuma venda ativa vinculada a este cadastro. Entre em contato com a loteadora para acessar contrato e parcelas.',
   };
 
   assertClientPortalDashboardSanitized(response);
@@ -572,27 +658,31 @@ async function loadSaasContractDashboard(
     quadra: null,
     lote: null,
     quadraLote: null,
+    saleStatusLabel: null,
     contractStatusLabel: null,
     financialStatusLabel: 'Assinatura SV LOTES',
     nextDueDate: null,
     paidCount: 0,
     openCount: 0,
     overdueCount: 0,
+    negotiationCount: 0,
   };
 
   const response: ClientPortalDashboardResponse = {
     ok: true,
     linkType: scope.linkType,
     summary,
-    contract: null,
-    finance: null,
+    contract: buildEmptyContract(),
+    finance: buildEmptyFinance(),
+    charges: buildEmptyCharges(),
     companyWhatsAppUrl: companyPhone
       ? buildSignatureShareWhatsAppUrl(
           companyPhone,
           'Olá! Acessei o Portal do Cliente SV LOTES.',
         )
       : null,
-    message: 'Painel de assinatura SaaS disponível em breve neste portal.',
+    message:
+      'Este acesso refere-se à assinatura SV LOTES. Contrato e parcelas de lote são exibidos somente para vendas vinculadas ao seu CPF/CNPJ.',
   };
 
   assertClientPortalDashboardSanitized(response);

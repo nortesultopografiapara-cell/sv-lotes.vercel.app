@@ -11,6 +11,7 @@ import {
   readClientPortalOtpChallengeToken,
   setClientPortalSessionCookie,
 } from '@/lib/portal-cliente/session';
+import { createAdminSupabase } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -82,6 +83,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, message: 'Vínculo não encontrado.' }, { status: 404 });
   }
 
+  let contractId: string | null = null;
+  if (linkContext.saleId) {
+    const { client: admin } = createAdminSupabase();
+    if (admin) {
+      const { data: contractRows } = await admin
+        .from('contracts')
+        .select('id')
+        .eq('sale_id', linkContext.saleId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      contractId = contractRows?.[0]?.id ? String(contractRows[0].id) : null;
+    }
+  }
+
   const sessionToken = createClientPortalSessionToken({
     linkKey: verifyResult.linkKey,
     documentHash: verifyResult.documentHash,
@@ -91,6 +106,7 @@ export async function POST(request: NextRequest) {
       companyId: linkContext.companyId,
       customerId: linkContext.customerId,
       saleId: linkContext.saleId,
+      contractId,
     },
   });
 

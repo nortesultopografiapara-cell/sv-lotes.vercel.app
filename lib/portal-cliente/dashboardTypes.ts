@@ -1,6 +1,11 @@
 import type { ClientPortalLinkType } from '@/lib/portal-cliente/types';
 
-export type ClientPortalInstallmentStatus = 'paid' | 'open' | 'overdue' | 'cancelled';
+export type ClientPortalInstallmentStatus =
+  | 'paid'
+  | 'open'
+  | 'overdue'
+  | 'negotiation'
+  | 'cancelled';
 
 export type ClientPortalDashboardSummary = {
   greetingName: string;
@@ -10,12 +15,14 @@ export type ClientPortalDashboardSummary = {
   quadra: string | null;
   lote: string | null;
   quadraLote: string | null;
+  saleStatusLabel: string | null;
   contractStatusLabel: string | null;
   financialStatusLabel: string;
   nextDueDate: string | null;
   paidCount: number;
   openCount: number;
   overdueCount: number;
+  negotiationCount: number;
 };
 
 export type ClientPortalDashboardContract = {
@@ -24,7 +31,8 @@ export type ClientPortalDashboardContract = {
   signatureStatusLabel: string | null;
   signUrl: string | null;
   contractPdfUrl: string | null;
-  validationUrl: string | null;
+  contractViewUrl: string | null;
+  emptyMessage: string | null;
 };
 
 export type ClientPortalDashboardInstallment = {
@@ -41,17 +49,39 @@ export type ClientPortalDashboardInstallment = {
 export type ClientPortalDashboardFinance = {
   summary: Pick<
     ClientPortalDashboardSummary,
-    'financialStatusLabel' | 'nextDueDate' | 'paidCount' | 'openCount' | 'overdueCount'
+    | 'financialStatusLabel'
+    | 'nextDueDate'
+    | 'paidCount'
+    | 'openCount'
+    | 'overdueCount'
+    | 'negotiationCount'
   >;
   installments: ClientPortalDashboardInstallment[];
+  emptyMessage: string | null;
+};
+
+export type ClientPortalDashboardCharge = {
+  installmentNumber: number | null;
+  dueDate: string | null;
+  amountLabel: string | null;
+  statusLabel: string;
+  paymentUrl: string | null;
+  boletoDownloadUrl: string | null;
+  pixCopyPaste: string | null;
+};
+
+export type ClientPortalDashboardCharges = {
+  items: ClientPortalDashboardCharge[];
+  emptyMessage: string | null;
 };
 
 export type ClientPortalDashboardResponse = {
   ok: true;
   linkType: ClientPortalLinkType;
   summary: ClientPortalDashboardSummary;
-  contract: ClientPortalDashboardContract | null;
-  finance: ClientPortalDashboardFinance | null;
+  contract: ClientPortalDashboardContract;
+  finance: ClientPortalDashboardFinance;
+  charges: ClientPortalDashboardCharges;
   companyWhatsAppUrl: string | null;
   message: string | null;
 };

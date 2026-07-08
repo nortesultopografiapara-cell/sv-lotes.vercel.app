@@ -1,5 +1,5 @@
 /**
- * Testes obrigatórios — Portal do Cliente Etapa 4 (painel read-only).
+ * Testes obrigatórios — Portal do Cliente Etapa 4 (painel read-only restrito).
  * Executar: npx tsx scripts/mandatory-client-portal-dashboard-tests.ts
  */
 
@@ -38,12 +38,14 @@ function buildSampleDashboard(): ClientPortalDashboardResponse {
       quadra: '02',
       lote: '21',
       quadraLote: 'QD 02 LT 21',
+      saleStatusLabel: 'Ativa',
       contractStatusLabel: 'Ativo',
       financialStatusLabel: 'Parcelas em aberto',
       nextDueDate: '2026-08-10',
       paidCount: 2,
       openCount: 10,
       overdueCount: 1,
+      negotiationCount: 0,
     },
     contract: {
       contractNumber: '000000123/2026',
@@ -51,7 +53,8 @@ function buildSampleDashboard(): ClientPortalDashboardResponse {
       signatureStatusLabel: 'Aguardando assinatura',
       signUrl: 'https://www.svlotes.com.br/sign/sale/abc123token',
       contractPdfUrl: null,
-      validationUrl: null,
+      contractViewUrl: '/api/portal-cliente/contract',
+      emptyMessage: null,
     },
     finance: {
       summary: {
@@ -60,6 +63,7 @@ function buildSampleDashboard(): ClientPortalDashboardResponse {
         paidCount: 2,
         openCount: 10,
         overdueCount: 1,
+        negotiationCount: 0,
       },
       installments: [
         {
@@ -83,6 +87,21 @@ function buildSampleDashboard(): ClientPortalDashboardResponse {
           pixCopyPaste: '00020126pix',
         },
       ],
+      emptyMessage: null,
+    },
+    charges: {
+      items: [
+        {
+          installmentNumber: 2,
+          dueDate: '2026-08-10',
+          amountLabel: 'R$ 500,00',
+          statusLabel: 'Pendente',
+          paymentUrl: 'https://pay.example/boleto',
+          boletoDownloadUrl: 'https://pay.example/boleto.pdf',
+          pixCopyPaste: '00020126pix',
+        },
+      ],
+      emptyMessage: null,
     },
     companyWhatsAppUrl: 'https://wa.me/5594999999999',
     message: null,
@@ -99,10 +118,23 @@ function testUnauthorizedApi(): void {
   assert(!route.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate-charge api');
 }
 
+function testPortalContractRoute(): void {
+  const route = read('app/api/portal-cliente/contract/route.ts');
+  assert(route.includes('validatePortalLotSaleScope'), 'validates sale scope');
+  assert(route.includes('readStoredContractHtml'), 'reads stored html only');
+  assert(!route.includes('contractRegeneration'), 'no regeneration');
+  assert(!route.includes('/map'), 'no map route');
+}
+
 function testPainelRedirectWithoutSession(): void {
   const page = read('app/portal-cliente/painel/page.tsx');
   assert(page.includes("redirect('/portal-cliente')"), 'redirect without session');
   assert(page.includes('ClientPortalDashboard'), 'dashboard component');
+  const dashboard = read('components/portal-cliente/ClientPortalDashboard.tsx');
+  assert(!dashboard.includes('/map'), 'no map link');
+  assert(!dashboard.includes('memorial'), 'no memorial link');
+  assert(!dashboard.includes('prancha'), 'no prancha link');
+  assert(dashboard.includes('Contrato ainda não disponível') || dashboard.includes('emptyMessage'), 'contract empty state');
 }
 
 function testSanitizedResponse(): void {
@@ -127,7 +159,7 @@ function testCompanyScopeResolution(): void {
   });
   assert(fromCustomer === 'comp-a', 'company fallback from customer');
   const dashboard = read('lib/portal-cliente/dashboard.ts');
-  assert(dashboard.includes('resolvePortalScopeCompanyId'), 'uses shared company resolver');
+  assert(dashboard.includes('validatePortalLotSaleScope'), 'uses scope validation');
 }
 
 function testSessionScopeRequired(): void {
@@ -140,11 +172,13 @@ function testSessionScopeRequired(): void {
       companyId: 'comp-1',
       customerId: 'cust-1',
       saleId: 'sale-1',
+      contractId: 'contract-1',
     },
   });
   const parsed = readClientPortalSessionToken(token);
   assert(parsed?.scope.linkType === 'lot_sale', 'scope linkType');
   assert(parsed?.scope.saleId === 'sale-1', 'scope saleId');
+  assert(parsed?.scope.contractId === 'contract-1', 'scope contractId');
 }
 
 function testSaleScopeInDashboardLoader(): void {
@@ -152,27 +186,32 @@ function testSaleScopeInDashboardLoader(): void {
   assert(dashboard.includes('.eq(\'sale_id\', saleId)'), 'filters by sale_id');
   assert(dashboard.includes('.eq(\'customer_id\', customerId)'), 'filters by customer_id');
   assert(dashboard.includes('company_asaas_charges'), 'reads existing charges only');
-  assert(dashboard.includes('resolvePortalScopeCompanyId'), 'shared company scope');
-  assert(dashboard.includes('from(\'blocks\')'), 'loads block for quadra/lote');
+  assert(dashboard.includes('validatePortalLotSaleScope'), 'shared scope validation');
+  assert(dashboard.includes('from(\'blocks\')'), 'loads block label only');
+  assert(dashboard.includes('Contrato ainda não disponível'), 'contract empty message');
+  assert(dashboard.includes('Nenhuma cobrança disponível no momento'), 'charges empty message');
+  assert(dashboard.includes('Nenhuma parcela encontrada para este contrato'), 'finance empty message');
   assert(!dashboard.includes('/api/finance/asaas/create-charge'), 'no create charge api');
   assert(!dashboard.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate charge api');
   assert(!dashboard.includes('createCompanyAsaas'), 'no asaas create service');
+  assert(!dashboard.includes('gisSaleCreateService'), 'no gis');
+  assert(!dashboard.includes('contractRegeneration'), 'no contract regeneration');
   assert(dashboard.includes('assertClientPortalDashboardSanitized'), 'sanitizer');
 }
 
 function testInstallmentPaymentLinksOnlyWhenPresent(): void {
   const sample = buildSampleDashboard();
-  const paid = sample.finance!.installments[0];
-  const open = sample.finance!.installments[1];
+  const paid = sample.finance.installments[0];
+  const open = sample.finance.installments[1];
   assert(paid.paymentUrl === null, 'paid has no payment url');
   assert(open.paymentUrl !== null, 'open may have payment url');
-  assert(open.pixCopyPaste !== null, 'open may have pix');
+  assert(sample.charges.items[0].pixCopyPaste !== null, 'charge may have pix');
 }
 
 function testVerifyOtpRedirectsToPainel(): void {
   const verify = read('app/api/portal-cliente/verify-otp/route.ts');
   assert(verify.includes('resolveClientPortalLinkContext'), 'verify resolves link scope');
-  assert(verify.includes('scope:'), 'session stores scope');
+  assert(verify.includes('contractId'), 'session stores contractId');
   assert(verify.includes('/portal-cliente/painel'), 'redirect to painel');
   const confirm = read('components/portal-cliente/ClientPortalConfirmForm.tsx');
   assert(confirm.includes('/portal-cliente/painel'), 'confirm navigates to painel');
@@ -185,13 +224,13 @@ function testGreetingName(): void {
 
 function testIsolatedFromAdminModules(): void {
   const dashboard = read('lib/portal-cliente/dashboard.ts');
-  assert(!dashboard.includes('contractRegeneration'), 'no contract regeneration');
   assert(!dashboard.includes('asaasCompanyChargeService'), 'no charge service');
   assert(!dashboard.includes('gisSaleCreateService'), 'no sale create');
 }
 
 function main(): void {
   testUnauthorizedApi();
+  testPortalContractRoute();
   testPainelRedirectWithoutSession();
   testSanitizedResponse();
   testCompanyScopeResolution();

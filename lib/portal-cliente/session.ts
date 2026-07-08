@@ -16,6 +16,7 @@ export type ClientPortalSessionScope = {
   companyId: string;
   customerId: string | null;
   saleId: string | null;
+  contractId: string | null;
 };
 
 export type ClientPortalSessionPayload = {
