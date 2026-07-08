@@ -73,18 +73,51 @@ export function maskZapiClientTokenHeader(value: string): string {
   return `****${trimmed.slice(-4)}`;
 }
 
+/** Remove aspas/quebras acidentais de secrets na Vercel. */
+export function sanitizeZapiEnvScalar(value?: string | null): string {
+  let trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  return trimmed.replace(/\r/g, '');
+}
+
+export function resolveZapiRuntimeEnvironment(): string {
+  return (
+    sanitizeZapiEnvScalar(process.env.VERCEL_ENV) ||
+    sanitizeZapiEnvScalar(process.env.VERCEL_TARGET_ENV) ||
+    sanitizeZapiEnvScalar(process.env.NODE_ENV) ||
+    'unknown'
+  );
+}
+
+export function resolveZapiInstanceId(): string {
+  return sanitizeZapiEnvScalar(process.env.ZAPI_INSTANCE_ID);
+}
+
 /** Token da instância — aceita ZAPI_INSTANCE_TOKEN ou alias legado ZAPI_TOKEN. */
 export function resolveZapiInstanceToken(): string {
-  return String(process.env.ZAPI_INSTANCE_TOKEN || process.env.ZAPI_TOKEN || '').trim();
+  return sanitizeZapiEnvScalar(
+    process.env.ZAPI_INSTANCE_TOKEN || process.env.ZAPI_TOKEN || '',
+  );
 }
 
 /** Token de segurança da conta Z-API (header Client-Token). */
 export function resolveZapiClientToken(): string {
-  return String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
+  return sanitizeZapiEnvScalar(process.env.ZAPI_CLIENT_TOKEN);
 }
 
 export function buildZapiSendTextUrl(instanceId: string, token: string): string {
   return `${ZAPI_SEND_TEXT_BASE_URL}/instances/${encodeURIComponent(instanceId)}/token/${encodeURIComponent(token)}/send-text`;
+}
+
+/** URL de diagnóstico — token substituído por placeholder. */
+export function buildZapiSendTextUrlWithoutToken(instanceId: string): string {
+  return `${ZAPI_SEND_TEXT_BASE_URL}/instances/${encodeURIComponent(instanceId)}/token/[REDACTED]/send-text`;
 }
 
 export function maskZapiRequestUrl(url: string, token: string): string {
@@ -97,7 +130,7 @@ export function maskZapiRequestUrl(url: string, token: string): string {
 }
 
 export function getZapiConfigStatus(): ZapiConfigStatus {
-  const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
+  const instanceId = resolveZapiInstanceId();
   const token = resolveZapiInstanceToken();
   const clientToken = resolveZapiClientToken();
 
@@ -114,7 +147,7 @@ export function getZapiConfigStatus(): ZapiConfigStatus {
 }
 
 export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
-  const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
+  const instanceId = resolveZapiInstanceId();
   const token = resolveZapiInstanceToken();
   const clientToken = resolveZapiClientToken();
 
@@ -153,7 +186,7 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
       requestUrl.startsWith(expectedPrefix) &&
       requestUrl.includes('/token/') &&
       requestUrl.endsWith(expectedSuffix),
-    usesEnvInstanceId: instanceId === String(process.env.ZAPI_INSTANCE_ID || '').trim(),
+    usesEnvInstanceId: instanceId === resolveZapiInstanceId(),
     usesEnvInstanceToken: token === resolveZapiInstanceToken(),
     usesEnvClientToken: !!clientToken && clientToken === resolveZapiClientToken(),
     clientTokenHeaderSent: !!clientToken,
@@ -166,7 +199,7 @@ export function isZapiConfigured(): boolean {
 }
 
 export function resolveZapiSendTextUrl(): string | null {
-  const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
+  const instanceId = resolveZapiInstanceId();
   const token = resolveZapiInstanceToken();
   if (!instanceId || !token) return null;
 
@@ -219,6 +252,40 @@ function logZapiDiagnostics(
   );
 }
 
+/** Logs temporários — investigar "Instance not found". Remover após diagnóstico. */
+function logZapiSendTextTemporaryPre(input: {
+  instanceId: string;
+  hasInstanceToken: boolean;
+  hasClientToken: boolean;
+  requestUrlWithoutToken: string;
+}): void {
+  console.warn(
+    '[zapi-diagnostic-temp:pre]',
+    JSON.stringify({
+      environment: resolveZapiRuntimeEnvironment(),
+      instanceId: input.instanceId,
+      instanceIdLength: input.instanceId.length,
+      hasInstanceToken: input.hasInstanceToken,
+      hasClientToken: input.hasClientToken,
+      requestUrlWithoutToken: input.requestUrlWithoutToken,
+    }),
+  );
+}
+
+function logZapiSendTextTemporaryPost(input: {
+  httpStatus: number;
+  responseBody: unknown;
+}): void {
+  console.warn(
+    '[zapi-diagnostic-temp:post]',
+    JSON.stringify({
+      environment: resolveZapiRuntimeEnvironment(),
+      httpStatus: input.httpStatus,
+      responseBody: input.responseBody,
+    }),
+  );
+}
+
 export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextResult> {
   const config = getZapiConfigStatus();
   if (!config.ready) {
@@ -250,10 +317,21 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
   };
 
   logZapiDiagnostics('request', diagnosticsWithHeaders, {
-    phone,
+    environment: resolveZapiRuntimeEnvironment(),
     messageLength: message.length,
     requestHeadersSent,
     requestHeadersMasked,
+  });
+
+  const instanceId = resolveZapiInstanceId();
+  const instanceToken = resolveZapiInstanceToken();
+  const clientToken = resolveZapiClientToken();
+
+  logZapiSendTextTemporaryPre({
+    instanceId,
+    hasInstanceToken: Boolean(instanceToken),
+    hasClientToken: Boolean(clientToken),
+    requestUrlWithoutToken: buildZapiSendTextUrlWithoutToken(instanceId),
   });
 
   try {
@@ -271,7 +349,13 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
       body = { raw: responseText };
     }
 
+    logZapiSendTextTemporaryPost({
+      httpStatus: response.status,
+      responseBody: body,
+    });
+
     logZapiDiagnostics('response', diagnosticsWithHeaders, {
+      environment: resolveZapiRuntimeEnvironment(),
       httpStatus: response.status,
       responseBody: body,
       requestHeadersSent,
