@@ -290,6 +290,12 @@ export function ClientPortalDashboard() {
                   {data.contract.signatureStatusLabel || data.contract.statusLabel || '—'}
                 </p>
               </div>
+              <div className="col-span-2">
+                <p className="text-xs text-gray-500">Gerado em</p>
+                <p className="font-medium text-white">
+                  {data.contract.generatedAt ? formatDateBr(data.contract.generatedAt) : '—'}
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               {data.contract.signUrl ? (

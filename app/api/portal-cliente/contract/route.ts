@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
+import { resolvePortalClientContract } from '@/lib/portal-cliente/contractLookup';
 import { isClientPortalEnabled } from '@/lib/portal-cliente/config';
-import {
-  assertPortalContractBelongsToSale,
-  validatePortalLotSaleScope,
-} from '@/lib/portal-cliente/scopeValidation';
+import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
 import {
   getClientPortalSessionCookie,
   readClientPortalSessionToken,
@@ -39,22 +37,14 @@ export async function GET() {
   }
 
   const validated = await validatePortalLotSaleScope(admin, session.scope);
-  if (!validated) {
+  if (!validated.ok) {
     return NextResponse.json({ ok: false, message: 'Acesso negado.' }, { status: 403 });
   }
 
-  const { data: contract } = await admin
-    .from('contracts')
-    .select(
-      'id, sale_id, generated_html, html_content, contract_html, content, html, pdf_signed_url, signature_token, signature_status',
-    )
-    .eq('sale_id', validated.saleId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!contract || !assertPortalContractBelongsToSale(contract, validated)) {
-    return NextResponse.json({ ok: false, message: 'Contrato ainda não disponível.' }, { status: 404 });
+  const lookup = await resolvePortalClientContract(admin, validated.data);
+  const contract = lookup.row;
+  if (!contract) {
+    return NextResponse.json({ ok: false, message: 'Contrato não encontrado.' }, { status: 404 });
   }
 
   const html = readStoredContractHtml(contract as Record<string, unknown>);

@@ -29,10 +29,8 @@ import {
   logDashboardQueryResult,
   scopeIdFingerprint,
 } from '@/lib/portal-cliente/dashboardDiagnosticLog';
-import {
-  assertPortalContractBelongsToSale,
-  validatePortalLotSaleScope,
-} from '@/lib/portal-cliente/scopeValidation';
+import { resolvePortalClientContract, type PortalContractRow } from '@/lib/portal-cliente/contractLookup';
+import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
 
 const CONTRACT_NOT_FOUND_MESSAGE = 'Contrato não encontrado.';
 const CONTRACT_UNAVAILABLE_MESSAGE = 'Contrato ainda não disponível.';
@@ -233,6 +231,7 @@ function buildEmptyContract(message = CONTRACT_NOT_FOUND_MESSAGE): ClientPortalD
     contractNumber: null,
     statusLabel: null,
     signatureStatusLabel: null,
+    generatedAt: null,
     signUrl: null,
     contractPdfUrl: null,
     contractViewUrl: null,
@@ -294,6 +293,72 @@ function buildChargeItems(
     const numB = b.installmentNumber ?? 0;
     return numA - numB;
   });
+}
+
+async function buildPortalDashboardContract(
+  admin: SupabaseClient,
+  contractRow: PortalContractRow,
+): Promise<ClientPortalDashboardContract> {
+  let signUrl: string | null = null;
+  let contractPdfUrl: string | null = null;
+  let contractViewUrl: string | null = null;
+  let signatureToken: string | null = null;
+
+  const { data: signatureRow, error: signatureError } = await admin
+    .from('contract_signatures')
+    .select('signature_token, signature_status, signature_url, expires_at')
+    .eq('contract_id', contractRow.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (signatureError) {
+    logDashboardQueryResult({
+      step: '8_query_contract_signatures',
+      table: 'contract_signatures',
+      filter: `contract_signatures.contract_id=eq(${scopeIdFingerprint(String(contractRow.id))})`,
+      error: signatureError,
+      rowCount: 0,
+    });
+  }
+
+  signatureToken =
+    String(signatureRow?.signature_token || contractRow.signature_token || '').trim() || null;
+
+  const signatureStatus = String(
+    signatureRow?.signature_status || contractRow.signature_status || '',
+  ).toUpperCase();
+
+  const storedHtml = readStoredContractHtml(contractRow as Record<string, unknown>);
+  if (storedHtml) {
+    contractViewUrl = '/api/portal-cliente/contract';
+  }
+
+  if (signatureToken) {
+    if (signatureStatus === 'SIGNED' || contractRow.pdf_signed_url) {
+      contractPdfUrl = `${resolvePublicBaseUrl()}/api/sign/sale/${encodeURIComponent(signatureToken)}?pdf=1`;
+    } else if (['PENDING', 'VIEWED'].includes(signatureStatus)) {
+      const expiresAt = String(signatureRow?.expires_at || contractRow.signature_expires_at || '');
+      const expired = expiresAt ? new Date(expiresAt).getTime() < Date.now() : false;
+      if (!expired) {
+        signUrl = resolveSaleSignUrl(signatureToken, signatureRow?.signature_url ?? null);
+      }
+    }
+  }
+
+  const hasDocument = Boolean(signUrl || contractPdfUrl || contractViewUrl);
+  const generatedAt = contractRow.created_at ? String(contractRow.created_at).slice(0, 10) : null;
+
+  return {
+    contractNumber: String(contractRow.contract_number || '').trim() || null,
+    statusLabel: contractStatusLabel(contractRow.status as string | null),
+    signatureStatusLabel: signatureStatusLabel(signatureStatus),
+    generatedAt,
+    signUrl,
+    contractPdfUrl,
+    contractViewUrl,
+    emptyMessage: hasDocument ? null : CONTRACT_UNAVAILABLE_MESSAGE,
+  };
 }
 
 function scopeFailureMessage(reason: string): string {
@@ -431,11 +496,10 @@ async function loadLotSaleDashboard(
   const { saleId, customerId, companyId, sale, customer } = validated;
 
   const companyFilter = `companies.id=eq(${scopeIdFingerprint(companyId)})`;
-  const contractFilter = `contracts.sale_id=eq(${scopeIdFingerprint(saleId)})`;
   const receiptsFilter = `finance_receipts.sale_id=eq(${scopeIdFingerprint(saleId)}) + customer_id=eq(${scopeIdFingerprint(customerId)})`;
   const chargesFilter = `company_asaas_charges.company_id=eq(${scopeIdFingerprint(companyId)}) + sale_id=eq(${scopeIdFingerprint(saleId)})`;
 
-  const [companyRes, projectRes, blockRes, contractRes, receiptsRes] = await Promise.all([
+  const [companyRes, projectRes, blockRes, receiptsRes] = await Promise.all([
     admin
       .from('companies')
       .select('id, name, fantasy_name, razao_social, phone')
@@ -452,20 +516,14 @@ async function loadLotSaleDashboard(
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     admin
-      .from('contracts')
-      .select(
-        'id, sale_id, contract_number, status, signature_status, signature_token, signature_expires_at, pdf_signed_url, generated_html, html_content, contract_html, content, html',
-      )
-      .eq('sale_id', saleId)
-      .order('created_at', { ascending: false })
-      .limit(1),
-    admin
       .from('finance_receipts')
       .select('id, installment_number, due_date, amount, paid_at, status')
       .eq('sale_id', saleId)
       .eq('customer_id', customerId)
       .order('installment_number', { ascending: true }),
   ]);
+
+  const contractLookup = await resolvePortalClientContract(admin, validated);
 
   logDashboardQueryResult({
     step: '7_query_company',
@@ -489,13 +547,6 @@ async function loadLotSaleDashboard(
     rowCount: blockRes.data ? 1 : 0,
   });
   logDashboardQueryResult({
-    step: '8_query_contract',
-    table: 'contracts',
-    filter: contractFilter,
-    error: contractRes.error,
-    rowCount: Array.isArray(contractRes.data) ? contractRes.data.length : contractRes.data ? 1 : 0,
-  });
-  logDashboardQueryResult({
     step: '9_query_installments',
     table: 'finance_receipts',
     filter: receiptsFilter,
@@ -513,109 +564,12 @@ async function loadLotSaleDashboard(
   const { quadra, lote } = parseQuadraLote(quadraLote);
 
   let contract = buildEmptyContract();
-  const contractRow = contractRes.error
-    ? null
-    : Array.isArray(contractRes.data)
-      ? contractRes.data[0]
-      : contractRes.data;
-
-  if (contractRes.error) {
-    contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
-  } else if (!contractRow) {
-    contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
-  } else if (!assertPortalContractBelongsToSale(contractRow, validated)) {
-    logClientPortalDashboardDiagnostic({
-      step: '8_query_contract',
-      outcome: 'failure',
-      table: 'contracts',
-      filter: `${contractFilter} + sale ownership`,
-      reason: 'contract_sale_mismatch',
-      httpStatus: 200,
-    });
+  if (contractLookup.row) {
+    contract = await buildPortalDashboardContract(admin, contractLookup.row);
+  } else if (contractLookup.queryError) {
     contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
   } else {
-    if (
-      validated.contractId &&
-      String(contractRow.id) !== validated.contractId
-    ) {
-      logClientPortalDashboardDiagnostic({
-        step: '8_query_contract',
-        outcome: 'success',
-        table: 'contracts',
-        filter: contractFilter,
-        reason: 'session_contract_id_differs_using_latest',
-        httpStatus: 200,
-        contractId: scopeIdFingerprint(validated.contractId),
-      });
-    }
-
-    let signUrl: string | null = null;
-    let contractPdfUrl: string | null = null;
-    let contractViewUrl: string | null = null;
-    let signatureToken: string | null = null;
-
-    const { data: signatureRow, error: signatureError } = await admin
-      .from('contract_signatures')
-      .select('signature_token, signature_status, signature_url, expires_at')
-      .eq('contract_id', contractRow.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (signatureError) {
-      logDashboardQueryResult({
-        step: '8_query_contract_signatures',
-        table: 'contract_signatures',
-        filter: `contract_signatures.contract_id=eq(${scopeIdFingerprint(String(contractRow.id))})`,
-        error: signatureError,
-        rowCount: 0,
-      });
-    }
-
-    signatureToken =
-      String(signatureRow?.signature_token || contractRow.signature_token || '').trim() || null;
-
-    const signatureStatus = String(
-      signatureRow?.signature_status || contractRow.signature_status || '',
-    ).toUpperCase();
-
-    const storedHtml = readStoredContractHtml(contractRow as Record<string, unknown>);
-    if (storedHtml) {
-      contractViewUrl = '/api/portal-cliente/contract';
-    }
-
-    if (signatureToken) {
-      if (signatureStatus === 'SIGNED' || contractRow.pdf_signed_url) {
-        contractPdfUrl = `${resolvePublicBaseUrl()}/api/sign/sale/${encodeURIComponent(signatureToken)}?pdf=1`;
-      } else if (['PENDING', 'VIEWED'].includes(signatureStatus)) {
-        const expiresAt = String(signatureRow?.expires_at || contractRow.signature_expires_at || '');
-        const expired = expiresAt ? new Date(expiresAt).getTime() < Date.now() : false;
-        if (!expired) {
-          signUrl = resolveSaleSignUrl(signatureToken, signatureRow?.signature_url ?? null);
-        }
-      }
-    }
-
-    const hasDocument = Boolean(signUrl || contractPdfUrl || contractViewUrl);
-    contract = {
-      contractNumber: String(contractRow.contract_number || '').trim() || null,
-      statusLabel: contractStatusLabel(contractRow.status),
-      signatureStatusLabel: signatureStatusLabel(signatureStatus),
-      signUrl,
-      contractPdfUrl,
-      contractViewUrl,
-      emptyMessage: hasDocument ? null : CONTRACT_UNAVAILABLE_MESSAGE,
-    };
-
-    logClientPortalDashboardDiagnostic({
-      step: '8_query_contract',
-      outcome: 'success',
-      table: 'contracts',
-      filter: contractFilter,
-      rowCount: 1,
-      httpStatus: 200,
-      reason: hasDocument ? undefined : 'contract_without_document',
-    });
+    contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
   }
 
   const receipts = receiptsRes.error ? [] : ((receiptsRes.data ?? []) as ReceiptRow[]);

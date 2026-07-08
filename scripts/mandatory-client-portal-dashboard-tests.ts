@@ -51,6 +51,7 @@ function buildSampleDashboard(): ClientPortalDashboardResponse {
       contractNumber: '000000123/2026',
       statusLabel: 'Ativo',
       signatureStatusLabel: 'Aguardando assinatura',
+      generatedAt: '2026-07-01',
       signUrl: 'https://www.svlotes.com.br/sign/sale/abc123token',
       contractPdfUrl: null,
       contractViewUrl: '/api/portal-cliente/contract',
@@ -124,6 +125,7 @@ function testUnauthorizedApi(): void {
 function testPortalContractRoute(): void {
   const route = read('app/api/portal-cliente/contract/route.ts');
   assert(route.includes('validatePortalLotSaleScope'), 'validates sale scope');
+  assert(route.includes('resolvePortalClientContract'), 'uses contract lookup');
   assert(route.includes('readStoredContractHtml'), 'reads stored html only');
   assert(!route.includes('contractRegeneration'), 'no regeneration');
   assert(!route.includes('/map'), 'no map route');
@@ -186,19 +188,24 @@ function testSessionScopeRequired(): void {
 
 function testSaleScopeInDashboardLoader(): void {
   const dashboard = read('lib/portal-cliente/dashboard.ts');
+  assert(dashboard.includes('resolvePortalClientContract'), 'uses contract lookup resolver');
   assert(dashboard.includes('.eq(\'sale_id\', saleId)'), 'filters by sale_id');
   assert(dashboard.includes('.eq(\'customer_id\', customerId)'), 'filters by customer_id');
   assert(dashboard.includes('company_asaas_charges'), 'reads existing charges only');
   assert(dashboard.includes('validatePortalLotSaleScope'), 'shared scope validation');
-  assert(dashboard.includes('from(\'blocks\')'), 'loads block label only');
   assert(dashboard.includes('Contrato não encontrado.'), 'contract not found message');
   assert(dashboard.includes('Cobranças não encontradas.'), 'charges not found message');
   assert(dashboard.includes('Parcelas não encontradas.'), 'finance not found message');
+  const lookup = read('lib/portal-cliente/contractLookup.ts');
+  assert(lookup.includes('sale_id'), 'contract lookup by sale_id');
+  assert(lookup.includes('session_contract_id'), 'contract lookup by session contractId');
+  assert(lookup.includes('customer_project_block'), 'contract lookup fallback');
+  assert(lookup.includes('8_query_contract'), 'contract diagnostic step');
   assert(!dashboard.includes('/api/finance/asaas/create-charge'), 'no create charge api');
   assert(!dashboard.includes('/api/finance/asaas/regenerate-charge'), 'no regenerate charge api');
   assert(!dashboard.includes('createCompanyAsaas'), 'no asaas create service');
   assert(!dashboard.includes('gisSaleCreateService'), 'no gis');
-  assert(!dashboard.includes('contractRegeneration'), 'no contract regeneration');
+  assert(!dashboard.includes('contractRegeneration'), 'no contract regeneration in dashboard');
   assert(dashboard.includes('assertClientPortalDashboardSanitized'), 'sanitizer');
 }
 

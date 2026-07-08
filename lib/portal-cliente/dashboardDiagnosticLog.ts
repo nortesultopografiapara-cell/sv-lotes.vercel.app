@@ -14,6 +14,7 @@ export type ClientPortalDashboardLogContext = {
   customerId?: string;
   saleId?: string;
   contractId?: string;
+  contractIdFound?: string;
   companyId?: string;
   companyIdResolved?: string;
   table?: string;
