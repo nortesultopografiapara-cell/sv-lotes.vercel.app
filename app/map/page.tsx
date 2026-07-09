@@ -420,8 +420,29 @@ export default function MapPage() {
   const [newProjectNbhd, setNewProjectNbhd] = useState('');
   const [newProjectAddr, setNewProjectAddr] = useState('');
   const [newProjectForum, setNewProjectForum] = useState('');
+  const [newProjectFinancialAccountId, setNewProjectFinancialAccountId] = useState('');
+  const [projectFinancialAccounts, setProjectFinancialAccounts] = useState<
+    Array<{ id: string; name: string; accountType: string; beneficiaryName: string | null; isDefault: boolean }>
+  >([]);
   const [projectFormSubmitting, setProjectFormSubmitting] = useState(false);
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
+
+  useEffect(() => {
+    if (!isProjectFormOpen || !saasTenantId) return;
+    let cancelled = false;
+    void fetch('/api/finance/financial-accounts', { credentials: 'include' })
+      .then((res) => res.json().catch(() => ({})))
+      .then((json) => {
+        if (cancelled) return;
+        setProjectFinancialAccounts((json.accounts as typeof projectFinancialAccounts) || []);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectFinancialAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isProjectFormOpen, saasTenantId]);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
@@ -1439,6 +1460,7 @@ export default function MapPage() {
     setNewProjectNbhd(initialData.neighborhood);
     setNewProjectAddr(initialData.address);
     setNewProjectForum(initialData.contract_city);
+    setNewProjectFinancialAccountId(initialData.financial_account_id);
   };
 
   const resetProjectForm = () => {
@@ -1540,6 +1562,7 @@ export default function MapPage() {
         forum_city: contract_city,
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
+        financial_account_id: newProjectFinancialAccountId || null,
       });
 
       const updatedFields = {
@@ -2774,6 +2797,24 @@ export default function MapPage() {
                 placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                Conta financeira padrão do empreendimento
+              </label>
+              <select
+                value={newProjectFinancialAccountId}
+                onChange={(e) => setNewProjectFinancialAccountId(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+              >
+                <option value="">Usar conta padrão da empresa</option>
+                {projectFinancialAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                    {account.isDefault ? ' (Padrão)' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button

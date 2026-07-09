@@ -30,10 +30,18 @@ export const FINANCE_RECEIPTS_CHARGE_SELECT = `
   tenant_id,
   sale_id,
   customer_id,
+  project_id,
+  financial_account_id,
   installment_number,
   due_date,
   amount,
   status,
   customers!${FINANCE_RECEIPTS_CUSTOMER_FKEY}(${FINANCE_RECEIPTS_CHARGE_CUSTOMER_FIELDS}),
-  sales:sale_id(contracts(contract_number))
+  sales:sale_id(
+    financial_account_id,
+    project_id,
+    contracts(contract_number),
+    projects:project_id(financial_account_id)
+  ),
+  projects:project_id(financial_account_id)
 `;

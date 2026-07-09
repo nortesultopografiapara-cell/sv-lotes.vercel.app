@@ -31,6 +31,7 @@ export const SALES_OFFICIAL_UPDATE_FIELDS = [
   'signal_remaining_payment_mode',
   'signal_remaining_installments',
   'signal_remaining_installment_value',
+  'financial_account_id',
   ...SALE_SPOUSE_DB_FIELDS,
 ] as const;
 
@@ -67,6 +68,7 @@ export type OfficialSalesUpdateInput = {
   signalRemainingPaymentMode?: string | null;
   signalRemainingInstallments?: number | null;
   signalRemainingInstallmentValue?: number | null;
+  financialAccountId?: string | null;
 };
 
 /** Payload seguro para sales.update — somente colunas oficiais. */
@@ -93,6 +95,7 @@ export function buildOfficialSalesUpdatePatch(
     signal_remaining_installments: input.signalRemainingInstallments ?? null,
     signal_remaining_installment_value:
       input.signalRemainingInstallmentValue ?? null,
+    financial_account_id: input.financialAccountId ?? null,
     ...buildSaleSpouseDbPatch(input.spouse || {}),
   };
 }

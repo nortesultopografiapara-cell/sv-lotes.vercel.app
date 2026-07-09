@@ -15,6 +15,11 @@ import {
   type AsaasIntegrationMetadata,
   normalizeAsaasEnvironment,
 } from './asaasIntegrationConfig';
+import {
+  createCompanyFinancialAccount,
+  getDefaultFinancialAccountForCompany,
+  updateCompanyFinancialAccount,
+} from './companyFinancialAccountRepository';
 
 const ASAAS_PROVIDER = 'ASAAS_COMPANY';
 
@@ -160,18 +165,38 @@ export async function getCompanyAsaasIntegrationConfig(
   const companyName = await loadCompanyName(admin, companyId);
   const syncedChargesCount = await countSyncedCharges(admin, companyId);
 
-  const { data, error } = await admin
-    .from('bank_integrations')
-    .select(
-      'id, company_id, provider, environment, status, webhook_url, metadata, configured_at, updated_at, active',
-    )
-    .eq('company_id', companyId)
-    .eq('provider', ASAAS_PROVIDER)
-    .maybeSingle();
+  const defaultAccount = await getDefaultFinancialAccountForCompany(admin, companyId);
+  let integrationId = defaultAccount?.bankIntegrationId ?? null;
 
-  if (error) throw new Error(error.message);
+  let data: IntegrationRow | null = null;
+  if (integrationId) {
+    const { data: row, error } = await admin
+      .from('bank_integrations')
+      .select(
+        'id, company_id, provider, environment, status, webhook_url, metadata, configured_at, updated_at, active',
+      )
+      .eq('id', integrationId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    data = (row as IntegrationRow | null) ?? null;
+  }
 
-  const row = (data as IntegrationRow | null) ?? null;
+  if (!data) {
+    const { data: legacyRow, error } = await admin
+      .from('bank_integrations')
+      .select(
+        'id, company_id, provider, environment, status, webhook_url, metadata, configured_at, updated_at, active',
+      )
+      .eq('company_id', companyId)
+      .eq('provider', ASAAS_PROVIDER)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    data = (legacyRow as IntegrationRow | null) ?? null;
+    integrationId = data?.id ?? null;
+  }
+
+  const row = data;
   const credentialTypes = row ? await loadCredentialTypes(admin, row.id) : new Set<string>();
   return mapRowToResponse(row, companyId, companyName, credentialTypes, syncedChargesCount);
 }
@@ -263,6 +288,8 @@ export async function saveCompanyAsaasIntegrationConfig(
     metadata.features = { ...metadata.features, autoSync: Boolean(input.autoSync) };
   }
 
+  let integrationId = existing.id;
+
   const payload = {
     company_id: companyId,
     provider: ASAAS_PROVIDER,
@@ -277,8 +304,6 @@ export async function saveCompanyAsaasIntegrationConfig(
     active: true,
     created_by: userId,
   };
-
-  let integrationId = existing.id;
 
   if (integrationId) {
     const { error } = await admin
@@ -299,6 +324,33 @@ export async function saveCompanyAsaasIntegrationConfig(
 
   for (const secret of secretsToSave) {
     await upsertCredential(admin, integrationId!, companyId, secret.type, secret.value);
+  }
+
+  const defaultAccount = await getDefaultFinancialAccountForCompany(admin, companyId);
+  if (defaultAccount) {
+    await updateCompanyFinancialAccount(admin, companyId, defaultAccount.id, userId, {
+      environment,
+      webhookUrl: cleanText(input.webhookUrl) || existing.webhookUrl || null,
+      sandboxApiKey: cleanText(input.sandboxApiKey) || undefined,
+      productionApiKey: cleanText(input.productionApiKey) || undefined,
+      webhookToken: cleanText(input.webhookToken) || undefined,
+      isDefault: true,
+      active: true,
+    });
+  } else {
+    await createCompanyFinancialAccount(admin, companyId, userId, {
+      name: 'Conta Padrão',
+      accountType: 'IMOBILIARIA',
+      beneficiaryName: existing.companyName,
+      environment,
+      isDefault: true,
+      active: true,
+      notes: 'Criada automaticamente pela configuração Asaas legada.',
+      webhookUrl: cleanText(input.webhookUrl) || existing.webhookUrl || null,
+      sandboxApiKey: cleanText(input.sandboxApiKey) || null,
+      productionApiKey: cleanText(input.productionApiKey) || null,
+      webhookToken: cleanText(input.webhookToken) || null,
+    });
   }
 
   return getCompanyAsaasIntegrationConfig(admin, companyId);

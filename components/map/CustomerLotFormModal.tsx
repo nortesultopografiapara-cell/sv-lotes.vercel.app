@@ -48,6 +48,11 @@ import {
   parseCurrencyBRLNumber,
   serializeCurrencyBRL,
 } from '@/lib/currencyBrl';
+import {
+  formatFinancialAccountLabel,
+  type CompanyFinancialAccountResponse,
+} from '@/lib/finance/companyFinancialAccountTypes';
+import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 
 export type LotFormState = CustomerFormValues &
@@ -59,6 +64,7 @@ export type LotFormState = CustomerFormValues &
   installments_count: string;
   first_installment_due_date: string;
   broker_id: string;
+  financial_account_id: string;
   notes: string;
   installment_correction_type: string;
   signal_amount?: string;
@@ -101,6 +107,7 @@ function emptyLotFormState(): LotFormState {
     installments_count: '',
     first_installment_due_date: '',
     broker_id: '',
+    financial_account_id: '',
     notes: '',
     installment_correction_type: DEFAULT_INSTALLMENT_CORRECTION_TYPE,
     signal_contract_value: '',
@@ -127,6 +134,7 @@ type Props = {
   price: number;
   tenantId: string | null;
   isSuperAdmin: boolean;
+  userRole?: string | null;
   prefillFromReservation?: boolean;
   mode?: 'create' | 'edit';
   initialFormData?: Partial<LotFormState>;
@@ -143,6 +151,7 @@ export function CustomerLotFormModal({
   price,
   tenantId,
   isSuperAdmin,
+  userRole = null,
   prefillFromReservation,
   mode = 'create',
   initialFormData,
@@ -162,12 +171,69 @@ export function CustomerLotFormModal({
   const [prefillBanner, setPrefillBanner] = useState<string | null>(
     isEditMode ? 'Dados da venda carregados para edição.' : null,
   );
+  const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
+  const [financialAccountsLoading, setFinancialAccountsLoading] = useState(false);
+  const canEditFinancialAccount =
+    isSuperAdmin || isTenantEnterpriseAdminRole(userRole);
 
   useEffect(() => {
     if (initialFormData) {
       setFormData((prev) => ({ ...prev, ...initialFormData }));
     }
   }, [initialFormData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFinancialAccounts() {
+      if (!tenantId) return;
+      setFinancialAccountsLoading(true);
+      try {
+        const [accountsRes, projectRes] = await Promise.all([
+          fetch('/api/finance/financial-accounts', { credentials: 'include' }),
+          lot.project_id
+            ? supabase
+                .from('projects')
+                .select('financial_account_id')
+                .eq('id', lot.project_id)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+        if (cancelled) return;
+
+        const accountsJson = await accountsRes.json().catch(() => ({}));
+        const accounts = accountsRes.ok
+          ? ((accountsJson.accounts as CompanyFinancialAccountResponse[]) ?? [])
+          : [];
+        setFinancialAccounts(accounts);
+
+        const projectAccountId = String(
+          (projectRes.data as { financial_account_id?: string } | null)?.financial_account_id || '',
+        );
+        const defaultAccount =
+          accounts.find((account) => account.isDefault) || accounts[0] || null;
+        const resolvedAccountId = projectAccountId || defaultAccount?.id || '';
+
+        if (resolvedAccountId) {
+          setFormData((prev) =>
+            prev.financial_account_id
+              ? prev
+              : { ...prev, financial_account_id: resolvedAccountId },
+          );
+        }
+      } catch {
+        if (!cancelled) setFinancialAccounts([]);
+      } finally {
+        if (!cancelled) setFinancialAccountsLoading(false);
+      }
+    }
+
+    void loadFinancialAccounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, lot.project_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1220,6 +1286,32 @@ export function CustomerLotFormModal({
                   </div>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Conta recebedora / Conta financeira
+                    </label>
+                    <select
+                      value={formData.financial_account_id}
+                      onChange={(e) => setField({ financial_account_id: e.target.value })}
+                      disabled={!canEditFinancialAccount || financialAccountsLoading}
+                      className={canEditFinancialAccount ? GIS_INPUT : GIS_INPUT_READONLY}
+                    >
+                      <option value="">
+                        {financialAccountsLoading ? 'Carregando contas...' : 'Selecione a conta'}
+                      </option>
+                      {financialAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {formatFinancialAccountLabel(account)}
+                          {account.isDefault ? ' · Padrão' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {!canEditFinancialAccount ? (
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        Apenas administradores podem alterar a conta recebedora.
+                      </p>
+                    ) : null}
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Corretor</label>
                     <select

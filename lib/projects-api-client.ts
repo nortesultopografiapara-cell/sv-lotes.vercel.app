@@ -101,6 +101,7 @@ export async function updateProjectThroughApi(
     address?: string | null;
     forum_city?: string | null;
     impersonatingTenantId?: string | null;
+    financial_account_id?: string | null;
   },
 ): Promise<{ project: Record<string, unknown> }> {
   return callProjectsApi(`/${projectId}`, 'PATCH', payload, 'Editar Projeto');

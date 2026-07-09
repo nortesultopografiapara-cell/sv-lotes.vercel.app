@@ -7,6 +7,7 @@ export type ProjectFormInitialData = {
   neighborhood: string;
   address: string;
   contract_city: string;
+  financial_account_id: string;
 };
 
 export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
@@ -16,6 +17,7 @@ export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
   neighborhood: '',
   address: '',
   contract_city: '',
+  financial_account_id: '',
 };
 
 /** Converte registro do Supabase para o formulário unificado (criar/editar). */
@@ -50,5 +52,6 @@ export function projectToFormInitialData(
       project.address || project.address_reference || '',
     ).trim(),
     contract_city: contractCity,
+    financial_account_id: String(project.financial_account_id || '').trim(),
   };
 }

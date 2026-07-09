@@ -3954,6 +3954,7 @@ export default function GISMap({
               customerData,
               brokerId: finalBrokerId,
               tenantContractModel,
+              financialAccountId: customerData.financial_account_id || null,
             }),
           },
           SALES_CREATE_FETCH_TIMEOUT_MS,
@@ -4794,6 +4795,7 @@ export default function GISMap({
           price={customerForm.price}
           tenantId={user.tenant_id || null}
           isSuperAdmin={user.role === "SUPER_ADMIN"}
+          userRole={user.role}
           prefillFromReservation={customerForm.prefillFromReservation}
           mode={customerForm.mode}
           initialFormData={customerForm.editContext?.form}

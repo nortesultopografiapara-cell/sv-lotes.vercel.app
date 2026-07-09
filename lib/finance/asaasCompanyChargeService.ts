@@ -2,8 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
 import {
   getCompanyAsaasIntegrationConfig,
-  loadAsaasApiKeyForEnvironment,
 } from './asaasIntegrationRepository';
+import { loadAsaasApiKeyForFinancialAccount } from './companyFinancialAccountRepository';
+import { resolveFinancialAccountForInstallment } from './companyFinancialAccountResolver';
 import {
   asaasCompanyCancelPayment,
   asaasCompanyCreatePayment,
@@ -53,12 +54,20 @@ type InstallmentRow = {
   tenant_id?: string | null;
   sale_id: string | null;
   customer_id: string | null;
+  project_id?: string | null;
+  financial_account_id?: string | null;
   installment_number: number | null;
   due_date: string;
   amount: number;
   status: string;
   customers?: Pick<CustomerRecord, 'name' | 'cpf_cnpj' | 'document' | 'email' | 'phone'> | null;
-  sales?: { contracts?: Array<{ contract_number?: string }> } | null;
+  sales?: {
+    financial_account_id?: string | null;
+    project_id?: string | null;
+    contracts?: Array<{ contract_number?: string }>;
+    projects?: { financial_account_id?: string | null } | null;
+  } | null;
+  projects?: { financial_account_id?: string | null } | null;
 };
 
 export class CompanyAsaasIntegrationInactiveError extends Error {
@@ -82,21 +91,63 @@ export class CompanyAsaasCustomerDocumentMissingError extends Error {
   }
 }
 
+async function resolveCompanyAsaasCredentialsFromAccountId(
+  admin: SupabaseClient,
+  companyId: string,
+  financialAccountId: string,
+): Promise<{
+  apiKey: string;
+  environment: BankEnvironment;
+  integrationId: string;
+  financialAccountId: string;
+}> {
+  assertCompanyAsaasEnabled(companyId);
+  const credentials = await loadAsaasApiKeyForFinancialAccount(
+    admin,
+    financialAccountId,
+    companyId,
+  );
+  return credentials;
+}
+
 async function resolveCompanyAsaasCredentials(
   admin: SupabaseClient,
   companyId: string,
-): Promise<{ apiKey: string; environment: BankEnvironment; integrationId: string }> {
+  installment: InstallmentRow,
+): Promise<{
+  apiKey: string;
+  environment: BankEnvironment;
+  integrationId: string;
+  financialAccountId: string;
+}> {
   assertCompanyAsaasEnabled(companyId);
+  const resolved = await resolveFinancialAccountForInstallment(admin, companyId, installment);
+  const account = resolved.account;
+
+  if (!account.bankIntegrationId) {
+    throw new CompanyAsaasIntegrationInactiveError(
+      `Conta financeira "${account.name}" sem integração Asaas configurada.`,
+    );
+  }
+
   const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
-  if (!isCompanyAsaasIntegrationReady(config)) {
+  if (!isCompanyAsaasIntegrationReady(config) && resolved.source === 'company_default') {
     throw new CompanyAsaasIntegrationInactiveError();
   }
-  const apiKey = await loadAsaasApiKeyForEnvironment(admin, companyId, config.environment);
-  if (!apiKey) {
-    throw new CompanyAsaasIntegrationInactiveError('API Key Asaas Company não configurada.');
-  }
-  if (!config.id) throw new CompanyAsaasIntegrationInactiveError();
-  return { apiKey, environment: config.environment, integrationId: config.id };
+
+  const credentials = await loadAsaasApiKeyForFinancialAccount(
+    admin,
+    account.id,
+    companyId,
+    account.environment,
+  );
+
+  return {
+    apiKey: credentials.apiKey,
+    environment: credentials.environment,
+    integrationId: credentials.integrationId,
+    financialAccountId: credentials.financialAccountId,
+  };
 }
 
 async function loadInstallment(
@@ -178,8 +229,13 @@ async function createCompanyChargeWithBillingType(
   input: CreateCompanyInstallmentChargeInput,
   billingType: 'PIX' | 'BOLETO',
 ): Promise<CompanyAsaasChargeResponse> {
-  const { apiKey, environment } = await resolveCompanyAsaasCredentials(admin, input.companyId);
   const installment = await loadInstallment(admin, input.companyId, input.installmentId);
+
+  const { apiKey, environment, financialAccountId } = await resolveCompanyAsaasCredentials(
+    admin,
+    input.companyId,
+    installment,
+  );
 
   const existing = await getLatestCompanyAsaasChargeForInstallment(
     admin,
@@ -243,6 +299,7 @@ async function createCompanyChargeWithBillingType(
     bankSlipIdentification,
     pixQrCode: pixQrCode || null,
     pixCopyPaste: pixCopyPaste || null,
+    financialAccountId,
     rawPayload: payment as Record<string, unknown>,
   });
 }
@@ -262,8 +319,19 @@ export async function getCompanyChargeStatus(
   if (error) throw new Error(error.message);
   if (!data) throw new Error('Cobrança não encontrada.');
 
-  const { apiKey, environment } = await resolveCompanyAsaasCredentials(admin, companyId);
   const existingRow = data as CompanyAsaasChargeRow;
+  const financialAccountId = existingRow.financial_account_id;
+  if (!financialAccountId) {
+    throw new CompanyAsaasIntegrationInactiveError(
+      'Cobrança sem conta financeira vinculada. Regenerar a cobrança para corrigir.',
+    );
+  }
+
+  const { apiKey, environment } = await resolveCompanyAsaasCredentialsFromAccountId(
+    admin,
+    companyId,
+    financialAccountId,
+  );
   const enriched = await asaasCompanyEnrichPaymentArtifacts(
     apiKey,
     environment,
@@ -400,7 +468,7 @@ export async function cancelCompanyCharge(
 ): Promise<CompanyAsaasChargeResponse> {
   const { data, error } = await admin
     .from('company_asaas_charges')
-    .select('asaas_payment_id, status')
+    .select('asaas_payment_id, status, financial_account_id')
     .eq('id', chargeId)
     .eq('company_id', companyId)
     .maybeSingle();
@@ -411,7 +479,18 @@ export async function cancelCompanyCharge(
     throw new Error('Cobrança já paga — cancelamento não permitido.');
   }
 
-  const { apiKey, environment } = await resolveCompanyAsaasCredentials(admin, companyId);
+  const financialAccountId = (data as { financial_account_id?: string | null }).financial_account_id;
+  if (!financialAccountId) {
+    throw new CompanyAsaasIntegrationInactiveError(
+      'Cobrança sem conta financeira vinculada. Regenerar a cobrança para corrigir.',
+    );
+  }
+
+  const { apiKey, environment } = await resolveCompanyAsaasCredentialsFromAccountId(
+    admin,
+    companyId,
+    financialAccountId,
+  );
   try {
     await asaasCompanyCancelPayment(
       apiKey,
@@ -434,7 +513,6 @@ export async function syncCompanyCharges(
   admin: SupabaseClient,
   companyId: string,
 ): Promise<{ synced: number; updated: number }> {
-  await resolveCompanyAsaasCredentials(admin, companyId);
   const pending = await listPendingCompanyAsaasCharges(admin, companyId);
   let updated = 0;
   for (const charge of pending) {

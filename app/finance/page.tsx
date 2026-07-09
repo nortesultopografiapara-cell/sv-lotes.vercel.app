@@ -27,6 +27,10 @@ import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrat
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { CompanyAsaasChargeSummary } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
+  formatFinancialAccountLabel,
+  type CompanyFinancialAccountResponse,
+} from '@/lib/finance/companyFinancialAccountTypes';
+import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
   resolveCashMovementProjectId,
@@ -165,6 +169,8 @@ export default function FinancePage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todas as Situações');
   const [projectFilter, setProjectFilter] = useState('Todos os projetos');
+  const [financialAccountFilter, setFinancialAccountFilter] = useState('Todas as contas');
+  const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
@@ -604,6 +610,16 @@ export default function FinancePage() {
   }, [authLoading, user?.role, router]);
 
   useEffect(() => {
+    if (!companyAsaasEnabled) return;
+    void fetch('/api/finance/financial-accounts', { credentials: 'include' })
+      .then((res) => res.json().catch(() => ({})))
+      .then((json) => {
+        setFinancialAccounts((json.accounts as CompanyFinancialAccountResponse[]) || []);
+      })
+      .catch(() => setFinancialAccounts([]));
+  }, [companyAsaasEnabled]);
+
+  useEffect(() => {
     if (!authLoading) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       loadFinance();
@@ -701,11 +717,19 @@ export default function FinancePage() {
          : true;
          
      const matchProject = projectFilter !== 'Todos os projetos' ? (computedProjName === projectFilter) : true;
+
+     const receiptAccountId = String(
+       p.financial_account_id || p.sales?.financial_account_id || '',
+     ).trim();
+     const matchFinancialAccount =
+       financialAccountFilter === 'Todas as contas'
+         ? true
+         : receiptAccountId === financialAccountFilter;
      
      const matchStartDate = startDate ? (p.due_date >= startDate) : true;
      const matchEndDate = endDate ? (p.due_date <= endDate) : true;
      
-     return matchSearch && matchStatus && matchProject && matchStartDate && matchEndDate;
+     return matchSearch && matchStatus && matchProject && matchFinancialAccount && matchStartDate && matchEndDate;
   });
 
   const totalPages = Math.ceil(filteredPayments.length / itemsPerPage) || 1;
@@ -736,6 +760,7 @@ export default function FinancePage() {
     setSearch('');
     setStatusFilter('Todas as Situações');
     setProjectFilter('Todos os projetos');
+    setFinancialAccountFilter('Todas as contas');
     setStartDate('');
     setEndDate('');
     setCurrentPage(1);
@@ -3225,6 +3250,19 @@ export default function FinancePage() {
           {projectsList.map((p, i) => (
             <option key={i} value={p}>
               {p}
+            </option>
+          ))}
+        </select>
+        <select
+          value={financialAccountFilter}
+          onChange={(e) => setFinancialAccountFilter(e.target.value)}
+          className="finance-filter-input finance-filter-select"
+          aria-label="Conta recebedora"
+        >
+          <option value="Todas as contas">Todas as contas</option>
+          {financialAccounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {formatFinancialAccountLabel(account)}
             </option>
           ))}
         </select>

@@ -21,6 +21,7 @@ type UpdateProjectBody = {
   address?: string | null;
   forum_city?: string | null;
   impersonatingTenantId?: string | null;
+  financial_account_id?: string | null;
 };
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -155,6 +156,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       forum_city: forumCity,
       contract_city: forumCity,
       location,
+      financial_account_id: body.financial_account_id?.trim() || null,
     });
 
     if (error) {

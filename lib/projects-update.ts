@@ -9,6 +9,7 @@ export const PROJECT_UPDATE_KNOWN_COLUMNS = [
   'neighborhood',
   'address',
   'forum_city',
+  'financial_account_id',
 ] as const;
 
 export type ProjectUpdateInput = {
@@ -21,6 +22,7 @@ export type ProjectUpdateInput = {
   forum_city?: string | null;
   /** Alias de forum_city — nunca enviado como coluna separada. */
   contract_city?: string | null;
+  financial_account_id?: string | null;
 };
 
 function cleanPayload(payload: Record<string, unknown>): Record<string, unknown> {
@@ -52,6 +54,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
   if (input.neighborhood?.trim()) full.neighborhood = input.neighborhood.trim();
   if (input.address?.trim()) full.address = input.address.trim();
   if (forumCity) full.forum_city = forumCity;
+  if (input.financial_account_id !== undefined) {
+    full.financial_account_id = input.financial_account_id || null;
+  }
 
   return [
     full,
