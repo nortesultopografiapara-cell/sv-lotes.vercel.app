@@ -39,6 +39,6 @@ type Props = Pick<
 };
 
 /** @deprecated Prefer CompanySettingsV2Shell — mantido como wrapper fino. */
-export function CompanySettingsFormV2({ showAdmins = false, adminPanelProps, ...form }: Props) {
-  return <CompanySettingsV2Shell {...form} showAdmins={showAdmins} adminPanelProps={adminPanelProps} />;
+export function CompanySettingsFormV2({ adminPanelProps, ...form }: Props) {
+  return <CompanySettingsV2Shell {...form} adminPanelProps={adminPanelProps} />;
 }

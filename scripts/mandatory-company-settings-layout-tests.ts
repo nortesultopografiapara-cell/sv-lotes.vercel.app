@@ -6,12 +6,10 @@
 import {
   TOPOGRAFIA_COMPANY_ID,
   IVANILDE_LEGACY_CPF,
-  SETTINGS_V2_ROLLOUT_ISO,
   resolveCompanySettingsLayout,
-  isLegacySettingsCompanyDocument,
-  isLegacySettingsCompany,
 } from '../lib/companySettingsLayout';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
+import { COMPANY_SETTINGS_V2_NAV_LABELS } from '../components/settings/CompanySettingsV2Shell';
 import {
   buildCompanySettingsSavePayload,
   resolveLegalRepresentativeForSave,
@@ -19,72 +17,64 @@ import {
 } from '../lib/companySettingsFields';
 import { isSaasContractPlaceholderValue } from '../lib/saasContractCompanyProfile';
 
+const EXPECTED_NAV_LABELS = [
+  'Geral',
+  'Aparência',
+  'Administradores',
+  'Contratos',
+  'Técnico',
+  'Avançado',
+  'Integração Financeira',
+] as const;
+
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
 }
 
-function testMenesesLegacy() {
+function testUnifiedNavLabels() {
   assert(
-    resolveCompanySettingsLayout(MENESES_COMPANY_ID) === 'legacy',
-    'Meneses usa layout legacy',
+    COMPANY_SETTINGS_V2_NAV_LABELS.length === EXPECTED_NAV_LABELS.length,
+    'menu lateral com 7 abas',
   );
-  assert(isLegacySettingsCompany(MENESES_COMPANY_ID), 'Meneses é legacy explícito');
-  console.log('OK testMenesesLegacy');
+  for (const label of EXPECTED_NAV_LABELS) {
+    assert(COMPANY_SETTINGS_V2_NAV_LABELS.includes(label), `aba ${label} presente`);
+  }
+  console.log('OK testUnifiedNavLabels');
 }
 
-function testIvanildeLegacyByCpf() {
-  assert(isLegacySettingsCompanyDocument(IVANILDE_LEGACY_CPF), 'CPF Ivanilde é legacy');
-  assert(
-    resolveCompanySettingsLayout('any-id', { documentRaw: IVANILDE_LEGACY_CPF }) === 'legacy',
-    'Ivanilde por CPF usa legacy',
-  );
-  console.log('OK testIvanildeLegacyByCpf');
-}
+function testAllCompaniesUseV2Layout() {
+  const companies = [
+    { id: TOPOGRAFIA_COMPANY_ID, label: 'SV Topografia' },
+    { id: MENESES_COMPANY_ID, label: 'Menezes' },
+    { id: 'recanto-primavera-sample-id', label: 'Recanto Primavera' },
+  ];
 
-function testTopografiaV2() {
+  for (const company of companies) {
+    assert(
+      resolveCompanySettingsLayout(company.id) === 'v2',
+      `${company.label} usa layout v2`,
+    );
+    assert(
+      resolveCompanySettingsLayout(company.id, {
+        createdAt: '2020-01-01T00:00:00.000Z',
+        settingsLayout: 'legacy',
+      }) === 'v2',
+      `${company.label} permanece v2 mesmo com settings_layout legacy`,
+    );
+  }
+
   assert(
-    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID) === 'v2',
-    'SV Topografia usa layout v2',
+    resolveCompanySettingsLayout('any-id', { documentRaw: IVANILDE_LEGACY_CPF }) === 'v2',
+    'Ivanilde / Recanto PF usa layout v2',
   );
-  console.log('OK testTopografiaV2');
+
+  console.log('OK testAllCompaniesUseV2Layout');
 }
 
 function testSettingsColumnsExcludeCompaniesCpf() {
   const cols = COMPANY_SETTINGS_COLUMNS.split(',').map((s) => s.trim());
   assert(!cols.includes('cpf'), 'SELECT não referencia companies.cpf inexistente');
   console.log('OK testSettingsColumnsExcludeCompaniesCpf');
-}
-
-function testNewCompanyV2() {
-  const afterRollout = new Date(SETTINGS_V2_ROLLOUT_ISO);
-  afterRollout.setDate(afterRollout.getDate() + 1);
-  assert(
-    resolveCompanySettingsLayout('new-company-uuid', {
-      createdAt: afterRollout.toISOString(),
-    }) === 'v2',
-    'empresa criada após rollout usa v2',
-  );
-  console.log('OK testNewCompanyV2');
-}
-
-function testExistingOtherCompanyLegacy() {
-  assert(
-    resolveCompanySettingsLayout('old-company-uuid', {
-      createdAt: '2025-01-01T00:00:00.000Z',
-    }) === 'legacy',
-    'empresa antiga genérica permanece legacy',
-  );
-  console.log('OK testExistingOtherCompanyLegacy');
-}
-
-function testTopografiaNeverLegacyEvenIfOldCreatedAt() {
-  assert(
-    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID, {
-      createdAt: '2020-01-01T00:00:00.000Z',
-    }) === 'v2',
-    'Topografia sempre v2 pelo ID',
-  );
-  console.log('OK testTopografiaNeverLegacyEvenIfOldCreatedAt');
 }
 
 function testTechnicalDoesNotReplaceLegalWithoutCheckbox() {
@@ -198,13 +188,9 @@ function testPlaceholderRejected() {
 }
 
 function main() {
-  testMenesesLegacy();
-  testIvanildeLegacyByCpf();
-  testTopografiaV2();
-  testTopografiaNeverLegacyEvenIfOldCreatedAt();
+  testUnifiedNavLabels();
+  testAllCompaniesUseV2Layout();
   testSettingsColumnsExcludeCompaniesCpf();
-  testNewCompanyV2();
-  testExistingOtherCompanyLegacy();
   testTechnicalDoesNotReplaceLegalWithoutCheckbox();
   testTechnicalAsLegalWhenChecked();
   testLegacySaveDoesNotSyncName();
