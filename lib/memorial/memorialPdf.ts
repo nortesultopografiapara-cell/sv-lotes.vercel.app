@@ -297,63 +297,61 @@ function drawSignatureBlock(
   yStart: number,
   sigImage: string | null,
 ): number {
-  const blockW = 58;
-  const blockX = PAGE_W - MARGIN - blockW;
+  const SIGNATURE_LINE_W = 72;
+  const SIGNATURE_IMAGE_H = 16;
+  const centerX = PAGE_W / 2;
+  const lineLeft = centerX - SIGNATURE_LINE_W / 2;
+  const lineRight = centerX + SIGNATURE_LINE_W / 2;
   let y = yStart;
 
   if (sigImage) {
     try {
-      doc.addImage(sigImage, 'PNG', blockX + 9, y, 40, 12);
-      y += 14;
+      doc.addImage(sigImage, 'PNG', lineLeft, y, SIGNATURE_LINE_W, SIGNATURE_IMAGE_H);
+      y += SIGNATURE_IMAGE_H + 2;
     } catch {
       /* assinatura opcional */
     }
   }
 
+  doc.setDrawColor(60);
+  doc.setLineWidth(0.3);
+  doc.line(lineLeft, y, lineRight, y);
+  y += 4.5;
+
   const tech = payload.technical;
   if (!hasTechnicalResponsible(tech)) {
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
-    doc.text('Responsável técnico: Não informado', PAGE_W - MARGIN, y, {
-      align: 'right',
-    });
+    doc.text('Não informado', centerX, y, { align: 'center' });
     return y + LINE;
   }
 
-  const name = sanitizeMemorialDisplayText(tech.name || '—');
+  const name = sanitizeMemorialDisplayText(tech.name || '—').toUpperCase();
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text(name, PAGE_W - MARGIN, y, { align: 'right', maxWidth: blockW });
+  doc.text(name, centerX, y, { align: 'center', maxWidth: SIGNATURE_LINE_W });
   y += LINE;
 
-  doc.setDrawColor(60);
-  doc.setLineWidth(0.25);
-  doc.line(blockX, y, PAGE_W - MARGIN, y);
-  y += 3.5;
-
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('Responsável técnico', PAGE_W - MARGIN, y, {
-    align: 'right',
-    maxWidth: blockW,
-  });
-  y += LINE_TIGHT;
+  doc.setFontSize(7.5);
   if (tech.title) {
-    doc.text(sanitizeMemorialDisplayText(tech.title), PAGE_W - MARGIN, y, {
-      align: 'right',
-      maxWidth: blockW,
-    });
+    doc.text(
+      sanitizeMemorialDisplayText(tech.title).toUpperCase(),
+      centerX,
+      y,
+      { align: 'center', maxWidth: SIGNATURE_LINE_W },
+    );
     y += LINE_TIGHT;
   }
 
   const reg = formatRegistrySigef(tech);
   if (reg) {
-    doc.text(reg, PAGE_W - MARGIN, y, { align: 'right', maxWidth: blockW });
+    doc.text(reg, centerX, y, { align: 'center', maxWidth: SIGNATURE_LINE_W });
     y += LINE_TIGHT;
   } else {
     const legacy = formatTechnicalRegistryLine(tech);
     if (legacy !== '—') {
-      doc.text(legacy, PAGE_W - MARGIN, y, { align: 'right', maxWidth: blockW });
+      doc.text(legacy, centerX, y, { align: 'center', maxWidth: SIGNATURE_LINE_W });
       y += LINE_TIGHT;
     }
   }

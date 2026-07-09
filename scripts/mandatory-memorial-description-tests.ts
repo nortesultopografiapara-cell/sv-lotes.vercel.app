@@ -797,6 +797,9 @@ async function testMemorialPdfContentAndCompanyBranding() {
       website: 'www.meneses.com.br',
       city: 'Parauapebas',
       state: 'PA',
+      technical_responsible_name: 'SEVERINO JOSE DE FRANÇA',
+      technical_responsible_role: 'TEC. EM AGRIMENSURA',
+      technical_responsible_cft: '6508202820',
     },
   });
   payload.generatedAt = '2026-06-08T12:00:00.000Z';
@@ -809,7 +812,10 @@ async function testMemorialPdfContentAndCompanyBranding() {
   assert(/SIRGAS2000/i.test(text), 'datum');
   assert(/UTM/i.test(text), 'utm');
   assert(!/U\s+T\s+M/.test(text), 'utm quebrado');
-  assert(/Responsável técnico/i.test(text), 'rt');
+  assert(!/Responsável técnico/i.test(text), 'sem label responsavel tecnico');
+  assert(/SEVERINO JOSE DE FRANÇA/i.test(text), 'rt nome');
+  assert(/TEC\. EM AGRIMENSURA/i.test(text), 'rt titulo');
+  assert(/CFT:\s*6508202820/i.test(text), 'rt cft');
   assert(/RUA 01/i.test(text), 'rua 01');
   assert(/RUA 02/i.test(text), 'rua 02');
   assert(/Lote 43/i.test(text), 'lote 43');
