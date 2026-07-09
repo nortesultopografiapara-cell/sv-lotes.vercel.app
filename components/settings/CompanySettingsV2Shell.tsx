@@ -35,6 +35,7 @@ import {
 } from '@/lib/saasContractCompanyProfile';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
+import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
@@ -58,7 +59,10 @@ const V2_TABS: { id: CompanySettingsV2Tab; label: string; icon: typeof Building2
   { id: 'contratos', label: 'Contratos', icon: FileText },
   { id: 'tecnico', label: 'Técnico', icon: HardHat },
   { id: 'avancado', label: 'Avançado', icon: Settings2 },
+  { id: 'financeiro', label: 'Integração Financeira', icon: Landmark },
 ];
+
+export const COMPANY_SETTINGS_V2_NAV_LABELS = V2_TABS.map((tab) => tab.label);
 
 type Props = Pick<
   FormState,
@@ -86,8 +90,6 @@ type Props = Pick<
   | 'uploadingTechStamp'
 > & {
   readOnlyDemo?: boolean;
-  showAdmins: boolean;
-  bankingUiEnabled: boolean;
   adminPanelProps?: {
     callerUserId: string;
     tenantId: string;
@@ -182,8 +184,6 @@ export function CompanySettingsV2Shell({
   uploadingTechSignature,
   uploadingTechStamp,
   readOnlyDemo = false,
-  showAdmins,
-  bankingUiEnabled,
   adminPanelProps,
 }: Props) {
   const [activeTab, setActiveTab] = useState<CompanySettingsV2Tab>('geral');
@@ -250,13 +250,7 @@ export function CompanySettingsV2Shell({
       resolveSaasContractorParty({ cnpj: documentRaw }),
     );
 
-  const visibleTabs = V2_TABS.filter((t) => t.id !== 'administradores' || showAdmins);
-  const navTabs = bankingUiEnabled
-    ? [
-        ...visibleTabs,
-        { id: 'financeiro' as const, label: 'Integração Financeira', icon: Landmark },
-      ]
-    : visibleTabs;
+  const navTabs = V2_TABS;
   const showSaveBar = ['geral', 'contratos', 'tecnico', 'avancado'].includes(activeTab);
 
   return (
@@ -368,17 +362,24 @@ export function CompanySettingsV2Shell({
             ) : null}
 
             {activeTab === 'administradores' && adminPanelProps ? (
-              <div className="sv-theme-card p-6 rounded-xl shadow-lg border space-y-6">
-                <div>
-                  <h2 className="sv-theme-heading flex items-center gap-2">
-                    <Users className="w-5 h-5 sv-theme-section-icon" />
-                    Administradores
-                  </h2>
-                  <p className="text-xs sv-theme-muted mt-1">
-                    Usuários com permissão de administrador nesta empresa.
-                  </p>
+              <div className="space-y-6">
+                <div className="sv-theme-card p-6 rounded-xl shadow-lg border space-y-6">
+                  <div>
+                    <h2 className="sv-theme-heading flex items-center gap-2">
+                      <Users className="w-5 h-5 sv-theme-section-icon" />
+                      Administradores
+                    </h2>
+                    <p className="text-xs sv-theme-muted mt-1">
+                      Usuários com permissão de administrador nesta empresa.
+                    </p>
+                  </div>
+                  <TenantCompanyAdminsPanel {...adminPanelProps} />
                 </div>
-                <TenantCompanyAdminsPanel {...adminPanelProps} />
+                <OwnerProjectAccessPanel
+                  callerUserId={adminPanelProps.callerUserId}
+                  tenantId={adminPanelProps.tenantId}
+                  readOnlyDemo={adminPanelProps.readOnlyDemo}
+                />
               </div>
             ) : null}
           </div>
