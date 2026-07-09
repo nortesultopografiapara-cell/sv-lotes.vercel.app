@@ -31,6 +31,10 @@ export function LandingFooter() {
               {LANDING_CONTACT.email}
             </span>
             <span>
+              <Mail className="w-4 h-4 text-brand" />
+              Suporte Técnico: {LANDING_CONTACT.supportEmail}
+            </span>
+            <span>
               <Phone className="w-4 h-4 text-brand" />
               {LANDING_CONTACT.phone}
             </span>

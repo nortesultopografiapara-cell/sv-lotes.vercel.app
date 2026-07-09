@@ -8,6 +8,7 @@ import { HeroSection } from './sections/HeroSection';
 import { ResourcesSection } from './sections/ResourcesSection';
 import { FunctionalitiesSection } from './sections/FunctionalitiesSection';
 import { BenefitsSection } from './sections/BenefitsSection';
+import { ClientPortalSection } from './sections/ClientPortalSection';
 import { PlansSection } from './sections/PlansSection';
 import { AboutSection } from './sections/AboutSection';
 import { ContactSection } from './sections/ContactSection';
@@ -36,6 +37,7 @@ export function LandingPage({ clientPortalEnabled }: Props) {
         <ResourcesSection />
         <FunctionalitiesSection />
         <BenefitsSection />
+        <ClientPortalSection />
         <PlansSection />
         <AboutSection />
         <ContactSection />

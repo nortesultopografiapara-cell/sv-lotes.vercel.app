@@ -55,10 +55,15 @@ const FLOW_STEPS = [
   {
     n: 5,
     icon: FileSignature,
-    title: 'Contrato',
-    tagline: 'Assinatura digital com validade',
-    points: ['Envio por link ou WhatsApp', 'Rastreabilidade completa', 'Ciclo comercial fechado'],
-    image: '/landing/04.png',
+    title: 'Contrato + Portal do Cliente',
+    tagline: 'Contrato, assinatura e acompanhamento online',
+    points: [
+      'Contrato gerado automaticamente',
+      'Assinatura eletrônica',
+      'Portal liberado automaticamente',
+      'Cliente acompanha tudo online',
+    ],
+    image: '/landing/07.png',
     color: '#22c55e',
   },
 ] as const;

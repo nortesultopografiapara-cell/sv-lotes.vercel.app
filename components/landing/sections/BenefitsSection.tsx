@@ -33,6 +33,7 @@ const AFTER = [
   'Lembretes e notificações',
   'Mapa GIS interativo',
   'Dados sincronizados em tempo real',
+  'Portal do Cliente com acesso 24 horas',
 ];
 
 const BENEFIT_CARDS = [
