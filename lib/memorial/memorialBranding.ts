@@ -103,6 +103,60 @@ export function formatMemorialMunicipality(
 }
 
 /** Data por extenso sem dia da semana (evita "domingo"). */
+/** Título com espaçamento entre letras (layout PDF). */
+export function formatMemorialTitleSpaced(): string {
+  return 'MEMORIAL DESCRITIVO'.split('').join(' ');
+}
+
+/** Linhas de contato para cabeçalho horizontal — mesmos dados da empresa logada. */
+export function buildMemorialHeaderContactLines(
+  company: MemorialCompanyInfo,
+): string[] {
+  const lines: string[] = [];
+  const rawAddress = sanitizeMemorialDisplayText(company.address);
+
+  if (rawAddress && rawAddress !== 'Não informado') {
+    const parts = rawAddress
+      .split(' — ')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 1) {
+      lines.push(parts[0]!);
+      const cityUf = formatMemorialCompanyCityUf(company);
+      const cepPart = parts.find((p) => /\d{5}[\-]?\d{0,3}/.test(p));
+      if (cityUf && cepPart) {
+        lines.push(`${cityUf} — CEP: ${cepPart}`);
+      } else if (cityUf) {
+        lines.push(cityUf);
+      } else if (cepPart) {
+        lines.push(`CEP: ${cepPart}`);
+      }
+    } else {
+      lines.push(rawAddress);
+    }
+  } else {
+    const cityUf = formatMemorialCompanyCityUf(company);
+    if (cityUf) lines.push(cityUf);
+  }
+
+  const phone = sanitizeMemorialDisplayText(company.phone);
+  if (phone !== 'Não informado') {
+    lines.push(`Fone: ${phone}`);
+  }
+
+  const email = sanitizeMemorialDisplayText(company.email);
+  if (email !== 'Não informado') {
+    lines.push(email);
+  }
+
+  const cnpj = sanitizeMemorialDisplayText(company.cnpj);
+  if (cnpj !== 'Não informado') {
+    lines.push(`CNPJ: ${cnpj}`);
+  }
+
+  return lines;
+}
+
 export function formatMemorialDateBr(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'Não informado';
