@@ -28,6 +28,7 @@ export type CompanyAsaasChargeRow = {
   bank_slip_identification: string | null;
   pix_qr_code: string | null;
   pix_copy_paste: string | null;
+  financial_account_id: string | null;
   raw_payload: Record<string, unknown>;
   paid_at: string | null;
   cash_movement_id: string | null;
@@ -51,6 +52,7 @@ export type CompanyAsaasChargeResponse = {
   bankSlipIdentification: string | null;
   pixQrCode: string | null;
   pixCopyPaste: string | null;
+  financialAccountId: string | null;
   paymentLink: string | null;
   paidAt: string | null;
   createdAt: string;
@@ -81,6 +83,7 @@ export function mapCompanyAsaasChargeRow(row: CompanyAsaasChargeRow): CompanyAsa
     bankSlipIdentification: row.bank_slip_identification ?? null,
     pixQrCode: row.pix_qr_code,
     pixCopyPaste: row.pix_copy_paste,
+    financialAccountId: row.financial_account_id ?? null,
     paymentLink: row.invoice_url || row.bank_slip_url,
     paidAt: row.paid_at,
     createdAt: row.created_at,

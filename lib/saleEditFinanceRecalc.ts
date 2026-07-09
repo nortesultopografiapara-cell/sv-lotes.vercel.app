@@ -21,6 +21,7 @@ export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
   /** Marcar parcela única como paga somente quando o usuário registrar pagamento no ato da venda. */
   cashInstallmentPaid?: boolean;
+  financialAccountId?: string | null;
 };
 
 export type FinanceReceiptRow = {
@@ -72,6 +73,7 @@ export function buildSaleEditFinancePayloads(
   options?: SaleFinancePayloadOptions,
 ): FinanceReceiptPayload[] {
   const financePayloads: FinanceReceiptPayload[] = [];
+  const financialAccountId = options?.financialAccountId ?? null;
   const pmtType = data.payment_type || 'À vista';
   const grossDownPayment = parseCurrencyBRLNumber(data.down_payment);
   const reservationSignalPaid = Number(data.reservation_signal_paid) || 0;
@@ -95,6 +97,7 @@ export function buildSaleEditFinancePayloads(
       broker_id: brokerId,
       project_id: lot.project_id || null,
       block_id: lot.id,
+      financial_account_id: financialAccountId,
       installment_number: 1,
       amount: fValue,
       due_date: data.down_payment_due_date || new Date().toISOString().split('T')[0],
@@ -115,6 +118,7 @@ export function buildSaleEditFinancePayloads(
         broker_id: brokerId,
         project_id: lot.project_id || null,
         block_id: lot.id,
+        financial_account_id: financialAccountId,
         installment_number: -1,
         amount: reservationSignalPaid,
         due_date:
@@ -163,6 +167,7 @@ export function buildSaleEditFinancePayloads(
         broker_id: brokerId,
         project_id: lot.project_id || null,
         block_id: lot.id,
+        financial_account_id: financialAccountId,
         installment_number: 0,
         amount: signalLineAmount,
         base_amount: signalLineAmount,
@@ -209,6 +214,7 @@ export function buildSaleEditFinancePayloads(
           broker_id: brokerId,
           project_id: lot.project_id || null,
           block_id: lot.id,
+          financial_account_id: financialAccountId,
           installment_number: currentInst++,
           amount: row.amount,
           base_amount: row.baseAmount,

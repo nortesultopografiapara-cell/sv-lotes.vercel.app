@@ -15,6 +15,8 @@ export type ChargeInstallmentView = {
   installmentStatus: string;
   installmentStatusLabel: string;
   asaasStatusLabel: string;
+  financialAccountId: string | null;
+  financialAccountLabel: string;
 };
 
 export type ChargeKpiSummary = {
@@ -60,6 +62,7 @@ export function buildChargeInstallmentView(
   row: FinanceReceiptRow,
   asaasCharge: CompanyAsaasChargeResponse | null | undefined,
   todayStr = todayIsoDate(),
+  financialAccountLabels?: Record<string, string>,
 ): ChargeInstallmentView {
   const projects = row.projects as { name?: string } | undefined;
   const sales = row.sales as {
@@ -89,6 +92,12 @@ export function buildChargeInstallmentView(
 
   const dueStr = String(row.due_date || '').split('T')[0];
   const installmentStatus = computeInstallmentStatus(row, todayStr);
+  const financialAccountId = String(
+    row.financial_account_id ||
+      (row.sales as { financial_account_id?: string } | undefined)?.financial_account_id ||
+      asaasCharge?.financialAccountId ||
+      '',
+  ).trim() || null;
 
   return {
     id: String(row.id),
@@ -104,6 +113,11 @@ export function buildChargeInstallmentView(
     installmentStatus,
     installmentStatusLabel: formatInstallmentStatusLabel(installmentStatus),
     asaasStatusLabel: resolveAsaasStatusDisplayLabel(asaasCharge),
+    financialAccountId,
+    financialAccountLabel:
+      (financialAccountId && financialAccountLabels?.[financialAccountId]) ||
+      financialAccountId ||
+      '—',
   };
 }
 
@@ -179,14 +193,16 @@ export function filterChargeInstallments(
     search: string;
     statusFilter: string;
     projectFilter: string;
+    financialAccountFilter: string;
     startDate: string;
     endDate: string;
   },
   todayStr = todayIsoDate(),
+  financialAccountLabels?: Record<string, string>,
 ): FinanceReceiptRow[] {
   const search = filters.search.trim().toLowerCase();
   return rows.filter((row) => {
-    const view = buildChargeInstallmentView(row, null, todayStr);
+    const view = buildChargeInstallmentView(row, null, todayStr, financialAccountLabels);
     const matchSearch = search
       ? view.clientName.toLowerCase().includes(search) ||
         view.projectName.toLowerCase().includes(search) ||
@@ -213,9 +229,14 @@ export function filterChargeInstallments(
         ? true
         : view.projectName === filters.projectFilter;
 
+    const matchFinancialAccount =
+      filters.financialAccountFilter === 'Todas as contas'
+        ? true
+        : view.financialAccountId === filters.financialAccountFilter;
+
     const matchStart = filters.startDate ? view.dueDateIso >= filters.startDate : true;
     const matchEnd = filters.endDate ? view.dueDateIso <= filters.endDate : true;
 
-    return matchSearch && matchStatus && matchProject && matchStart && matchEnd;
+    return matchSearch && matchStatus && matchProject && matchFinancialAccount && matchStart && matchEnd;
   });
 }

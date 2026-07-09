@@ -16,6 +16,7 @@ type Body = {
   customerData?: Record<string, unknown>;
   brokerId?: string | null;
   tenantContractModel?: string | null;
+  financialAccountId?: string | null;
 };
 
 export async function POST(request: Request) {
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
       customerData,
       brokerId: body.brokerId?.trim() || null,
       tenantContractModel: body.tenantContractModel,
+      financialAccountId: body.financialAccountId?.trim() || null,
       isSuperAdmin: userRole === 'SUPER_ADMIN',
     });
 

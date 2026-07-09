@@ -25,6 +25,7 @@ import { persistGeneratedContractHtml } from '@/lib/contractRegeneration';
 import { BROKERS_CONTRACT_SELECT } from '@/lib/brokersContractQuery';
 import { validateCustomerForContract } from '@/lib/validateCustomerForContract';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
+import { resolveFinancialAccountForSale } from '@/lib/finance/companyFinancialAccountResolver';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -49,6 +50,7 @@ export type GisSaleCreateInput = {
   brokerId: string | null;
   tenantContractModel?: string | null;
   isSuperAdmin?: boolean;
+  financialAccountId?: string | null;
 };
 
 export type GisSaleCreateResult = {
@@ -199,9 +201,17 @@ export async function executeGisSaleCreate(
 
   const { data: projDataSnapshot } = await supabase
     .from('projects')
-    .select('id, name, city, uf, forum_city')
+    .select('id, name, city, uf, forum_city, financial_account_id')
     .eq('id', projectId)
     .maybeSingle();
+
+  const resolvedFinancialAccount = await resolveFinancialAccountForSale(supabase, tenantId, {
+    financialAccountId: input.financialAccountId,
+    projectId,
+    projectFinancialAccountId: (projDataSnapshot as { financial_account_id?: string | null } | null)
+      ?.financial_account_id,
+  });
+  const financialAccountId = resolvedFinancialAccount.account.id;
 
   const pmtType = String(customerData.payment_type || 'À vista');
   const instCount =
@@ -278,6 +288,7 @@ export async function executeGisSaleCreate(
     signal_remaining_payment_mode: recantoSignalMode,
     signal_remaining_installments: recantoSignalInstallments,
     signal_remaining_installment_value: recantoSignalInstallmentValue,
+    financial_account_id: financialAccountId,
     ...buildSaleSpouseDbPatch(customerData),
   };
 
@@ -310,7 +321,7 @@ export async function executeGisSaleCreate(
       brokerId,
       { id: lotId, project_id: lot.project_id || projectId },
       customerData,
-      { contractModel, cashInstallmentPaid: false },
+      { contractModel, cashInstallmentPaid: false, financialAccountId },
     );
 
     logSaleStep('create_receipts', startedAt, { count: financePayloads.length });

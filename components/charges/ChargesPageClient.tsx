@@ -29,6 +29,10 @@ import {
 } from '@/lib/charges/chargeWhatsAppMessage';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
+import {
+  formatFinancialAccountLabel,
+  type CompanyFinancialAccountResponse,
+} from '@/lib/finance/companyFinancialAccountTypes';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
   buildChargeInstallmentView,
@@ -97,6 +101,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]>('Todas');
   const [projectFilter, setProjectFilter] = useState('Todos os projetos');
+  const [financialAccountFilter, setFinancialAccountFilter] = useState('Todas as contas');
+  const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
@@ -122,6 +128,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   );
   const integrationReady = companyAsaasEnabled && integrationActive;
   const installmentsDataReady = !loading && !loadError;
+
+  const financialAccountLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const account of financialAccounts) {
+      map[account.id] = formatFinancialAccountLabel(account);
+    }
+    return map;
+  }, [financialAccounts]);
 
   const showToast = useCallback((message: string, isError = false) => {
     setToast(message);
@@ -504,20 +518,45 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   );
 
   useEffect(() => {
+    if (authLoading || !companyAsaasEnabled) return;
+    void fetch('/api/finance/financial-accounts', { credentials: 'include' })
+      .then((res) => res.json().catch(() => ({})))
+      .then((json) => {
+        setFinancialAccounts((json.accounts as CompanyFinancialAccountResponse[]) || []);
+      })
+      .catch(() => setFinancialAccounts([]));
+  }, [authLoading, companyAsaasEnabled]);
+
+  useEffect(() => {
     if (authLoading) return;
     void loadInstallments();
   }, [authLoading, loadInstallments]);
 
   const filteredRows = useMemo(
     () =>
-      filterChargeInstallments(payments, {
-        search,
-        statusFilter,
-        projectFilter,
-        startDate,
-        endDate,
-      }),
-    [payments, search, statusFilter, projectFilter, startDate, endDate],
+      filterChargeInstallments(
+        payments,
+        {
+          search,
+          statusFilter,
+          projectFilter,
+          financialAccountFilter,
+          startDate,
+          endDate,
+        },
+        undefined,
+        financialAccountLabels,
+      ),
+    [
+      payments,
+      search,
+      statusFilter,
+      projectFilter,
+      financialAccountFilter,
+      startDate,
+      endDate,
+      financialAccountLabels,
+    ],
   );
 
   const kpis = useMemo(() => computeChargeKpiSummary(payments), [payments]);
@@ -1066,6 +1105,19 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             </option>
           ))}
         </select>
+        <select
+          value={financialAccountFilter}
+          onChange={(e) => setFinancialAccountFilter(e.target.value)}
+          className="finance-filter-input finance-filter-select"
+          aria-label="Conta recebedora"
+        >
+          <option value="Todas as contas">Todas as contas</option>
+          {financialAccounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {formatFinancialAccountLabel(account)}
+            </option>
+          ))}
+        </select>
         <input
           type="date"
           value={startDate}
@@ -1152,6 +1204,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
               <th>Parcela</th>
               <th>Vencimento</th>
               <th>Valor</th>
+              <th>Conta recebedora</th>
               <th>Status parcela</th>
               <th>Status Asaas</th>
               <th className="text-right min-w-[280px]">Ações</th>
@@ -1160,14 +1213,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={10} className="py-12 text-center text-[var(--text-secondary)]">
+                <td colSpan={11} className="py-12 text-center text-[var(--text-secondary)]">
                   <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />
                   Carregando cobranças...
                 </td>
               </tr>
             ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-12 text-center text-[var(--text-secondary)]">
+                <td colSpan={11} className="py-12 text-center text-[var(--text-secondary)]">
                   Nenhuma parcela encontrada para os filtros selecionados.
                 </td>
               </tr>
@@ -1175,7 +1228,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
               filteredRows.map((row) => {
                 const installmentId = String(row.id);
                 const charge = asaasChargesByInstallment[installmentId] ?? null;
-                const view = buildChargeInstallmentView(row, charge);
+                const view = buildChargeInstallmentView(row, charge, undefined, financialAccountLabels);
                 const installmentPaid = isInstallmentPaidForCharges(row);
                 const rowBusy = asaasActionInstallmentId === installmentId || bulkBusy;
                 const customerPhone = resolveChargeCustomerPhone(row);
@@ -1214,6 +1267,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                     <td>{view.parcelLabel}</td>
                     <td>{view.dueDateLabel}</td>
                     <td className="font-semibold">{formatCurrency(view.amount)}</td>
+                    <td className="text-xs text-[var(--text-secondary)]">{view.financialAccountLabel}</td>
                     <td>
                       <FinanceStatusBadge status={view.installmentStatus} />
                     </td>

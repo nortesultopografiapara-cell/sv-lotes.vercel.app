@@ -54,6 +54,7 @@ export type SaleEditLoadedContext = {
     first_installment_due_date: string;
     broker_id: string;
     notes: string;
+    financial_account_id?: string;
     signal_contract_value?: string;
     signal_paid_at_sale?: string;
     signal_remaining_payment_mode?: 'FIRST_INSTALLMENTS' | 'ALL_INSTALLMENTS' | '';
@@ -243,6 +244,7 @@ export async function loadSaleEditContext(
     installments_count: String(sale.installments_count ?? 1),
     first_installment_due_date: firstInstDue ? String(firstInstDue) : '',
     broker_id: String(sale.broker_id || ''),
+    financial_account_id: String(sale.financial_account_id || ''),
     notes: String(sale.notes || ''),
     installment_correction_type: normalizeInstallmentCorrectionType(
       sale.installment_correction_type ?? DEFAULT_INSTALLMENT_CORRECTION_TYPE,
@@ -356,6 +358,9 @@ export async function updateSaleFromEdit(
         100
       : null;
 
+  const financialAccountId =
+    String(data.financial_account_id || saleBefore.financial_account_id || '').trim() || null;
+
   const salePatch = buildOfficialSalesUpdatePatch({
     customerId,
     agreedPrice: data.final_value,
@@ -372,6 +377,7 @@ export async function updateSaleFromEdit(
           ? data.installment_correction_type
           : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
     brokerId,
+    financialAccountId,
     signalContractValue,
     signalPaidAtSale,
     signalRemainingValue,
@@ -403,6 +409,14 @@ export async function updateSaleFromEdit(
     throw new Error(`Erro ao atualizar venda: ${saleUpdErr.message}`);
   }
 
+  if (salePatch.financial_account_id) {
+    await supabase
+      .from('finance_receipts')
+      .update({ financial_account_id: salePatch.financial_account_id })
+      .eq('sale_id', saleId)
+      .in('status', ['pendente', 'pending']);
+  }
+
   const { data: receipts, error: receiptsErr } = await supabase
     .from('finance_receipts')
     .select('id, status, paid_at, installment_number, amount')
@@ -427,7 +441,10 @@ export async function updateSaleFromEdit(
     brokerId,
     lot,
     data,
-    { contractModel },
+    {
+      contractModel,
+      financialAccountId: salePatch.financial_account_id as string,
+    },
   );
 
   let financeChanged = false;

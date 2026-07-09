@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { Banknote, Building2 } from 'lucide-react';
 import { AsaasIntegrationPanel } from '@/components/finance/AsaasIntegrationPanel';
+import { FinancialAccountsPanel } from '@/components/finance/FinancialAccountsPanel';
 import { BanksDevelopmentPanel } from '@/components/finance/BanksDevelopmentPanel';
 
-type Tab = 'asaas' | 'banks';
+type Tab = 'accounts' | 'asaas' | 'banks';
 
 type Props = {
   tenantId: string;
@@ -13,7 +14,7 @@ type Props = {
 };
 
 export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Props) {
-  const [tab, setTab] = useState<Tab>('asaas');
+  const [tab, setTab] = useState<Tab>('accounts');
 
   return (
     <div className="space-y-6">
@@ -23,11 +24,22 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
           <h2 className="text-lg font-bold text-[var(--text-primary)]">Integração Financeira</h2>
         </div>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
-          Cobrança e recebimentos via Asaas — gateway oficial do SV LOTES nesta versão.
+          Contas recebedoras e cobrança via Asaas — cada empreendimento e venda pode usar a conta correta.
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-[var(--border-color)] pb-2">
+        <button
+          type="button"
+          onClick={() => setTab('accounts')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            tab === 'accounts'
+              ? 'sv-brand-muted-bg text-[var(--text-primary)] ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_25%,transparent)]'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+          }`}
+        >
+          Contas Financeiras
+        </button>
         <button
           type="button"
           onClick={() => setTab('asaas')}
@@ -37,7 +49,7 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
               : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
           }`}
         >
-          ASAAS (Principal)
+          ASAAS (Conta padrão)
         </button>
         <button
           type="button"
@@ -52,7 +64,9 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
         </button>
       </div>
 
-      {tab === 'asaas' ? (
+      {tab === 'accounts' ? (
+        <FinancialAccountsPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
+      ) : tab === 'asaas' ? (
         <AsaasIntegrationPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
       ) : (
         <BanksDevelopmentPanel />

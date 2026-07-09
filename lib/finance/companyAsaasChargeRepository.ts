@@ -24,6 +24,7 @@ export async function insertCompanyAsaasCharge(
     bankSlipIdentification?: string | null;
     pixQrCode?: string | null;
     pixCopyPaste?: string | null;
+    financialAccountId?: string | null;
     rawPayload?: Record<string, unknown>;
   },
 ): Promise<CompanyAsaasChargeResponse> {
@@ -45,6 +46,7 @@ export async function insertCompanyAsaasCharge(
       bank_slip_identification: row.bankSlipIdentification ?? null,
       pix_qr_code: row.pixQrCode ?? null,
       pix_copy_paste: row.pixCopyPaste ?? null,
+      financial_account_id: row.financialAccountId ?? null,
       raw_payload: row.rawPayload ?? {},
       updated_at: now,
     })
@@ -66,6 +68,7 @@ export async function updateCompanyAsaasCharge(
     bankSlipIdentification: string | null;
     pixQrCode: string | null;
     pixCopyPaste: string | null;
+    financialAccountId: string | null;
     rawPayload: Record<string, unknown>;
     paidAt: string | null;
     cashMovementId: string | null;
@@ -82,6 +85,7 @@ export async function updateCompanyAsaasCharge(
   }
   if (patch.pixQrCode !== undefined) payload.pix_qr_code = patch.pixQrCode;
   if (patch.pixCopyPaste !== undefined) payload.pix_copy_paste = patch.pixCopyPaste;
+  if (patch.financialAccountId !== undefined) payload.financial_account_id = patch.financialAccountId;
   if (patch.rawPayload !== undefined) payload.raw_payload = patch.rawPayload;
   if (patch.paidAt !== undefined) payload.paid_at = patch.paidAt;
   if (patch.cashMovementId !== undefined) payload.cash_movement_id = patch.cashMovementId;
