@@ -12,6 +12,10 @@ import {
 } from '@/lib/memorial/memorialConfrontants';
 import { buildMemorialSegments } from '@/lib/memorial/memorialGeometry';
 import {
+  applyResolvedOwnerToBlock,
+  resolveLotOwnerFromBlock,
+} from '@/lib/lotOwnerResolution';
+import {
   buildMemorialDescriptionText,
   buildMemorialIdentificationFields,
   buildMemorialObservations,
@@ -205,8 +209,17 @@ export async function loadMemorialPayload(
     normalizeStreetGuideRow,
   ) as StreetGuideConfrontInput[];
 
+  const ownerResolved = await resolveLotOwnerFromBlock(
+    supabase,
+    block as Record<string, unknown>,
+  );
+  const blockForMemorial = applyResolvedOwnerToBlock(
+    block as Record<string, unknown>,
+    ownerResolved,
+  );
+
   return buildMemorialPayloadFromRecords({
-    block: block as Record<string, unknown>,
+    block: blockForMemorial,
     blockId: params.blockId,
     project: project as Record<string, unknown>,
     allBlocks: (allBlocks || []) as Record<string, unknown>[],
