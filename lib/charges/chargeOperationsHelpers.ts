@@ -6,21 +6,30 @@ import {
   resolveCompanyAsaasBoletoUrl,
   resolveCompanyAsaasPaymentLink,
 } from '@/lib/finance/companyAsaasChargeWorkflow';
+import { chargeSupportsBoleto } from '@/lib/finance/asaasCompanyLateFees';
 import { computeInstallmentStatus, type FinanceReceiptRow } from '@/lib/charges/chargeInstallmentHelpers';
 import { canShowChargeWhatsAppButton } from '@/lib/charges/chargeWhatsAppMessage';
 
 export const CHARGES_WHATSAPP_TOOLTIP = 'Enviar cobrança por WhatsApp';
 
+export const BOLETO_UNAVAILABLE_WARNING =
+  'Boleto ainda não disponível. Verifique se a cobrança foi criada com billingType BOLETO ou suporte a boleto habilitado no Asaas.';
+
 export type ChargeActionVisibility = {
   showGenerate: boolean;
-  showOpenLink: boolean;
+  showOpenCharge: boolean;
   showOpenBoleto: boolean;
+  showCopyBarcodeLine: boolean;
   showCopyPix: boolean;
-  showCopyLink: boolean;
+  showWhatsApp: boolean;
+  showBoletoUnavailableWarning: boolean;
   showRefreshStatus: boolean;
   showCancel: boolean;
   showRegenerate: boolean;
-  showWhatsApp: boolean;
+  /** @deprecated use showOpenCharge */
+  showOpenLink: boolean;
+  /** @deprecated use showCopyBarcodeLine */
+  showCopyLink: boolean;
 };
 
 export type AsaasOperationalKpiSummary = {
@@ -115,23 +124,34 @@ export function resolveChargeActionVisibility(params: {
   const paymentLink = params.charge ? resolveCompanyAsaasPaymentLink(params.charge) : '';
   const boletoUrl = params.charge ? resolveCompanyAsaasBoletoUrl(params.charge) : '';
   const pixCopy = params.charge?.pixCopyPaste?.trim() || '';
+  const barcodeLine = params.charge?.bankSlipIdentification?.trim() || '';
   const hasCharge = Boolean(params.charge);
   const mutable = canPerformMutableAsaasActions(params);
+  const expectsBoleto = params.charge ? chargeSupportsBoleto(params.charge.billingType) : false;
+  const hasBoletoArtifact = Boolean(boletoUrl || barcodeLine);
+  const showBoletoUnavailableWarning =
+    Boolean(params.charge) &&
+    expectsBoleto &&
+    !hasBoletoArtifact &&
+    !params.installmentPaid;
 
   return {
     showGenerate: canGenerateAsaasCharge(params),
-    showOpenLink: Boolean(paymentLink),
+    showOpenCharge: Boolean(paymentLink),
     showOpenBoleto: Boolean(boletoUrl),
+    showCopyBarcodeLine: Boolean(barcodeLine),
     showCopyPix: Boolean(pixCopy),
-    showCopyLink: Boolean(paymentLink),
-    showRefreshStatus: mutable && hasCharge && !params.installmentPaid,
-    showCancel: canCancelAsaasCharge(params),
-    showRegenerate: canRegenerateAsaasCharge(params),
     showWhatsApp: canShowChargeWhatsAppButton({
       ownerReadOnly: params.ownerReadOnly,
       charge: params.charge,
       customerPhone: params.customerPhone,
     }),
+    showBoletoUnavailableWarning,
+    showRefreshStatus: mutable && hasCharge && !params.installmentPaid,
+    showCancel: canCancelAsaasCharge(params),
+    showRegenerate: canRegenerateAsaasCharge(params),
+    showOpenLink: Boolean(paymentLink),
+    showCopyLink: Boolean(paymentLink),
   };
 }
 

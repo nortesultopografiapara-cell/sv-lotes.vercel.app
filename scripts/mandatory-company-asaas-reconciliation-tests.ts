@@ -236,6 +236,7 @@ const baseCharge = (): CompanyAsaasChargeResponse => ({
   dueDate: '2026-06-01',
   invoiceUrl: null,
   bankSlipUrl: null,
+  bankSlipIdentification: null,
   pixQrCode: null,
   pixCopyPaste: null,
   paymentLink: null,

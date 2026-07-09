@@ -21,6 +21,7 @@ export async function insertCompanyAsaasCharge(
     dueDate: string;
     invoiceUrl?: string | null;
     bankSlipUrl?: string | null;
+    bankSlipIdentification?: string | null;
     pixQrCode?: string | null;
     pixCopyPaste?: string | null;
     rawPayload?: Record<string, unknown>;
@@ -41,6 +42,7 @@ export async function insertCompanyAsaasCharge(
       due_date: row.dueDate,
       invoice_url: row.invoiceUrl ?? null,
       bank_slip_url: row.bankSlipUrl ?? null,
+      bank_slip_identification: row.bankSlipIdentification ?? null,
       pix_qr_code: row.pixQrCode ?? null,
       pix_copy_paste: row.pixCopyPaste ?? null,
       raw_payload: row.rawPayload ?? {},
@@ -61,6 +63,7 @@ export async function updateCompanyAsaasCharge(
     status: CompanyAsaasChargeStatus;
     invoiceUrl: string | null;
     bankSlipUrl: string | null;
+    bankSlipIdentification: string | null;
     pixQrCode: string | null;
     pixCopyPaste: string | null;
     rawPayload: Record<string, unknown>;
@@ -74,6 +77,9 @@ export async function updateCompanyAsaasCharge(
   if (patch.status !== undefined) payload.status = patch.status;
   if (patch.invoiceUrl !== undefined) payload.invoice_url = patch.invoiceUrl;
   if (patch.bankSlipUrl !== undefined) payload.bank_slip_url = patch.bankSlipUrl;
+  if (patch.bankSlipIdentification !== undefined) {
+    payload.bank_slip_identification = patch.bankSlipIdentification;
+  }
   if (patch.pixQrCode !== undefined) payload.pix_qr_code = patch.pixQrCode;
   if (patch.pixCopyPaste !== undefined) payload.pix_copy_paste = patch.pixCopyPaste;
   if (patch.rawPayload !== undefined) payload.raw_payload = patch.rawPayload;
