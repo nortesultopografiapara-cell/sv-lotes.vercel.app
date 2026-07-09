@@ -33,15 +33,24 @@ async function loadProductionEnv(): Promise<void> {
   if (!auth.token) return;
 
   const projectId = 'prj_qpba9orEU4kJNRHqMLVM1Khp3GIP';
-  const res = await fetch(
-    `https://api.vercel.com/v9/projects/${projectId}/env?decrypt=true&target=production`,
-    { headers: { Authorization: `Bearer ${auth.token}` } },
-  );
-  if (!res.ok) return;
-
-  const data = (await res.json()) as { envs?: Array<{ key: string; value?: string }> };
-  for (const item of data.envs || []) {
-    if (item.key && item.value) process.env[item.key] = item.value;
+  const targets = ['production', 'preview', 'development'] as const;
+  for (const target of targets) {
+    const res = await fetch(
+      `https://api.vercel.com/v9/projects/${projectId}/env?decrypt=true&target=${target}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    );
+    if (!res.ok) continue;
+    const data = (await res.json()) as {
+      envs?: Array<{ key: string; value?: string }>;
+    };
+    const serviceEnv = data.envs?.find(
+      (item) => item.key === 'SUPABASE_SERVICE_ROLE_KEY',
+    );
+    if (!serviceEnv?.value?.length) continue;
+    for (const item of data.envs || []) {
+      if (item.key && item.value) process.env[item.key] = item.value;
+    }
+    return;
   }
 }
 
@@ -57,7 +66,9 @@ function loadEnvFiles() {
     const env = fs.readFileSync(f, 'utf8');
     for (const line of env.split(/\r?\n/)) {
       const m = line.match(/^([^#=]+)=(.*)$/);
-      if (m) process.env[m[1].trim()] = m[2].trim().replace(/^"|"$/g, '');
+      if (!m) continue;
+      const val = m[2].trim().replace(/^"|"$/g, '');
+      if (val) process.env[m[1].trim()] = val;
     }
   }
 }
@@ -323,8 +334,8 @@ async function writeSamplePdf(
 }
 
 async function main() {
-  loadEnvFiles();
   await loadProductionEnv();
+  loadEnvFiles();
   const projectIdArg = process.argv[2];
   const blockIdArg = process.argv[3];
   const url =
