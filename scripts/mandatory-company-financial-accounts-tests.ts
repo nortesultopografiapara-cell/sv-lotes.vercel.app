@@ -11,6 +11,7 @@ import {
 import { buildSaleEditFinancePayloads } from '../lib/saleEditFinanceRecalc';
 import { buildOfficialSalesUpdatePatch } from '../lib/salesWriteSchema';
 import { filterChargeInstallments, buildChargeInstallmentView } from '../lib/charges/chargeInstallmentHelpers';
+import { resolveFinancialAccountForSaleOptional } from '../lib/finance/companyFinancialAccountResolver';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -70,6 +71,57 @@ function testFormatLabel() {
   const label = formatFinancialAccountLabel(accountA);
   assert(label.includes('Conta Irineu'), label);
   assert(label.includes('Irineu Martini'), label);
+}
+
+function testSaleFinancePayloadOmitsAccountWhenUnset() {
+  const payloads = buildSaleEditFinancePayloads(
+    'co-1',
+    'sale-1',
+    'cust-1',
+    null,
+    { id: 'lot-1', project_id: 'proj-1' },
+    {
+      payment_type: 'À vista',
+      discount_value: '',
+      down_payment: '',
+      down_payment_due_date: '2026-08-01',
+      installments_count: '',
+      first_installment_due_date: '',
+      broker_id: '',
+      financial_account_id: '',
+      notes: '',
+      final_value: 1000,
+      lot_value: 1000,
+      installment_value: 1000,
+    },
+  );
+  assert(payloads.length === 1, 'uma parcela à vista');
+  assert(!('financial_account_id' in payloads[0]), 'sem conta financeira não grava coluna');
+}
+
+async function testOptionalSaleResolverReturnsNullWithoutAccounts() {
+  const admin = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: { message: 'relation does not exist' } }),
+          order: () => ({
+            order: () => ({
+              limit: () => ({
+                maybeSingle: async () => ({ data: null, error: { message: 'relation does not exist' } }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  } as never;
+
+  const resolved = await resolveFinancialAccountForSaleOptional(admin, 'co-1', {
+    financialAccountId: null,
+    projectId: 'proj-1',
+  });
+  assert(resolved === null, 'venda sem conta financeira deve continuar');
 }
 
 function testSaleFinancePayloadIncludesAccount() {
@@ -188,6 +240,8 @@ function testChargeFilterByFinancialAccount() {
 async function main() {
   testResponseSafe();
   testFormatLabel();
+  testSaleFinancePayloadOmitsAccountWhenUnset();
+  await testOptionalSaleResolverReturnsNullWithoutAccounts();
   testSaleFinancePayloadIncludesAccount();
   testInstallmentFieldPriorityInChargeView();
   testSalesPatchIncludesFinancialAccount();

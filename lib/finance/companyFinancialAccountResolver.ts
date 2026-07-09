@@ -102,6 +102,62 @@ export async function resolveFinancialAccountForProject(
   return { account: defaultAccount, source: 'company_default' };
 }
 
+/**
+ * Resolve conta financeira para venda/parcela quando existir.
+ * Nunca lança — venda e contrato não dependem de integração financeira.
+ */
+export async function resolveFinancialAccountForSaleOptional(
+  admin: SupabaseClient,
+  companyId: string,
+  input: {
+    financialAccountId?: string | null;
+    projectId?: string | null;
+    projectFinancialAccountId?: string | null;
+  },
+): Promise<ResolvedFinancialAccount | null> {
+  try {
+    const explicit = await resolveFinancialAccountById(
+      admin,
+      companyId,
+      input.financialAccountId,
+      'sale',
+    );
+    if (explicit) return explicit;
+
+    const fromProject = await resolveFinancialAccountById(
+      admin,
+      companyId,
+      input.projectFinancialAccountId,
+      'project',
+    );
+    if (fromProject) return fromProject;
+
+    if (input.projectId) {
+      const { data, error } = await admin
+        .from('projects')
+        .select('financial_account_id')
+        .eq('id', input.projectId)
+        .maybeSingle();
+      if (!error) {
+        const linked = await resolveFinancialAccountById(
+          admin,
+          companyId,
+          (data as { financial_account_id?: string } | null)?.financial_account_id,
+          'project',
+        );
+        if (linked) return linked;
+      }
+    }
+
+    const defaultAccount = await getDefaultFinancialAccountForCompany(admin, companyId);
+    if (!defaultAccount) return null;
+    return { account: defaultAccount, source: 'company_default' };
+  } catch {
+    return null;
+  }
+}
+
+/** Exige conta financeira — usar apenas em fluxos de cobrança Asaas. */
 export async function resolveFinancialAccountForSale(
   admin: SupabaseClient,
   companyId: string,
@@ -111,40 +167,9 @@ export async function resolveFinancialAccountForSale(
     projectFinancialAccountId?: string | null;
   },
 ): Promise<ResolvedFinancialAccount> {
-  const explicit = await resolveFinancialAccountById(
-    admin,
-    companyId,
-    input.financialAccountId,
-    'sale',
-  );
-  if (explicit) return explicit;
-
-  const fromProject = await resolveFinancialAccountById(
-    admin,
-    companyId,
-    input.projectFinancialAccountId,
-    'project',
-  );
-  if (fromProject) return fromProject;
-
-  if (input.projectId) {
-    const { data } = await admin
-      .from('projects')
-      .select('financial_account_id')
-      .eq('id', input.projectId)
-      .maybeSingle();
-    const linked = await resolveFinancialAccountById(
-      admin,
-      companyId,
-      (data as { financial_account_id?: string } | null)?.financial_account_id,
-      'project',
-    );
-    if (linked) return linked;
-  }
-
-  const defaultAccount = await getDefaultFinancialAccountForCompany(admin, companyId);
-  if (!defaultAccount) {
+  const resolved = await resolveFinancialAccountForSaleOptional(admin, companyId, input);
+  if (!resolved) {
     throw new Error('Nenhuma conta financeira configurada para esta empresa.');
   }
-  return { account: defaultAccount, source: 'company_default' };
+  return resolved;
 }
