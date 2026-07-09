@@ -32,6 +32,7 @@ export const LANDING_GOOGLE_MAPS_DIRECTIONS_URL =
 
 export const LANDING_CONTACT = {
   email: 'gerencia@nortesultopografia.com.br',
+  supportEmail: 'suporte@svlotes.com.br',
   phone: '(94) 99161-2981',
   whatsapp: ['(94) 99195-5918', '(94) 98446-1415'],
   hours: 'Segunda a Sexta, 08h às 18h',
@@ -198,8 +199,11 @@ export const LANDING_INCLUDED_FEATURES = [
   'API para Integrações',
   'Cobrança Automática por E-mail/WhatsApp',
   'Emissão de Boletos e PIX',
-] as const;
-
-export const LANDING_ROADMAP_FEATURES = [
   'Portal do Cliente',
+  'Login por CPF',
+  'Autenticação via WhatsApp',
+  'Visualização de Contratos',
+  'Download de PDF',
+  'Consulta de Parcelas',
+  'Acompanhamento Online',
 ] as const;

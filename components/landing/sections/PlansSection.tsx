@@ -1,10 +1,9 @@
 'use client';
 
-import { Calendar, Check, Circle, MessageCircle } from 'lucide-react';
+import { Calendar, Check, MessageCircle } from 'lucide-react';
 import {
   buildWhatsAppUrl,
   LANDING_INCLUDED_FEATURES,
-  LANDING_ROADMAP_FEATURES,
   LANDING_WHATSAPP_MESSAGES,
   type LandingPlanId,
 } from '../constants/landingConfig';
@@ -79,18 +78,6 @@ export function PlansSection() {
                           {LANDING_INCLUDED_FEATURES.map((f) => (
                             <li key={f}>
                               <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              {f}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="landing-plan-roadmap">
-                        <p className="landing-plan-features-title">Em desenvolvimento</p>
-                        <ul>
-                          {LANDING_ROADMAP_FEATURES.map((f) => (
-                            <li key={f}>
-                              <Circle className="w-3 h-3 text-orange-400 shrink-0" />
                               {f}
                             </li>
                           ))}

@@ -4,12 +4,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
 import {
-  BarChart3,
   Calendar,
   FileText,
   FlaskConical,
   Map,
   Play,
+  Smartphone,
   Wallet,
 } from 'lucide-react';
 import {
@@ -23,23 +23,23 @@ import { SCREEN_IMAGE_PATHS } from '../ScreenMocks';
 const HERO_FEATURES = [
   {
     icon: Map,
-    title: 'Mapa GIS interativo',
+    title: 'Mapa GIS Inteligente',
     description: 'Visualize lotes, quadras e disponibilidade em tempo real.',
   },
   {
     icon: FileText,
-    title: 'Contratos e assinaturas',
+    title: 'Contratos e Assinaturas Eletrônicas',
     description: 'Gere contratos automaticamente e colete assinaturas digitais.',
   },
   {
-    icon: Wallet,
-    title: 'Financeiro completo',
-    description: 'Controle parcelas, recebimentos, inadimplência e relatórios.',
+    icon: Smartphone,
+    title: 'Portal do Cliente com acesso por CPF e WhatsApp',
+    description: 'Cliente acompanha contratos, parcelas e documentos online com segurança.',
   },
   {
-    icon: BarChart3,
-    title: 'Relatórios avançados',
-    description: 'Dados precisos para decisões estratégicas mais assertivas.',
+    icon: Wallet,
+    title: 'Financeiro Completo e Cobranças Automáticas',
+    description: 'Controle parcelas, recebimentos, inadimplência e cobranças automáticas.',
   },
 ];
 

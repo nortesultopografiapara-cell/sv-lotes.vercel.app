@@ -89,7 +89,8 @@ const RESOURCES = [
     n: 7,
     icon: Smartphone,
     title: 'Portal do Cliente',
-    description: 'Acompanhamento de contrato e parcelas.',
+    description:
+      'Cliente acessa contratos, parcelas, documentos e boletos utilizando CPF e código enviado por WhatsApp.',
     image: '/landing/07.png',
     color: '#f97316',
   },

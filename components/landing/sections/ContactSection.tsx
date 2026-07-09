@@ -334,6 +334,18 @@ export function ContactSection() {
                 </div>
               </li>
               <li>
+                <Mail className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <p className="font-medium text-white">Suporte Técnico</p>
+                  <a
+                    href={`mailto:${LANDING_CONTACT.supportEmail}`}
+                    className="text-sm text-gray-400 hover:text-white"
+                  >
+                    {LANDING_CONTACT.supportEmail}
+                  </a>
+                </div>
+              </li>
+              <li>
                 <Clock className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div>
                   <p className="font-medium text-white">Horário</p>

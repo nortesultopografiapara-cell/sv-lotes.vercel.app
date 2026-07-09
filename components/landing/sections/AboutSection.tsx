@@ -171,6 +171,26 @@ export function AboutSection() {
           </article>
         </Reveal>
 
+        <Reveal className="landing-about-v2" delay={0.13}>
+          <article className="landing-about-card">
+            <h3 className="text-lg font-bold text-white mb-3">Novidades da versão 2.0</h3>
+            <ul className="landing-about-checklist">
+              {[
+                'Portal do Cliente',
+                'Assinatura Eletrônica',
+                'Login por WhatsApp',
+                'Download Seguro de Contratos',
+                'Rastreabilidade Completa',
+              ].map((item) => (
+                <li key={item}>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Reveal>
+
         <Reveal className="landing-about-cta" delay={0.14}>
           <p className="text-lg text-gray-200">
             <strong className="text-white">Do levantamento topográfico à venda do último lote.</strong>{' '}
