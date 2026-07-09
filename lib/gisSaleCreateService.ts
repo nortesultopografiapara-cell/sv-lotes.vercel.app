@@ -25,7 +25,7 @@ import { persistGeneratedContractHtml } from '@/lib/contractRegeneration';
 import { BROKERS_CONTRACT_SELECT } from '@/lib/brokersContractQuery';
 import { validateCustomerForContract } from '@/lib/validateCustomerForContract';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
-import { resolveFinancialAccountForSale } from '@/lib/finance/companyFinancialAccountResolver';
+import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -86,6 +86,71 @@ async function withTimeout<T>(
       );
     }),
   ]);
+}
+
+function parseMissingColumn(message: string | undefined): string | null {
+  if (!message) return null;
+  const match = message.match(/Could not find the '(\w+)' column/i);
+  return match?.[1] ?? null;
+}
+
+async function insertRowWithColumnFallback(
+  supabase: SupabaseClient,
+  table: string,
+  payload: Record<string, unknown>,
+  select = 'id',
+): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }> {
+  let current = { ...payload };
+
+  while (Object.keys(current).length > 0) {
+    const { data, error } = await supabase
+      .from(table)
+      .insert([current])
+      .select(select)
+      .single();
+
+    if (!error && data) {
+      return { data: data as Record<string, unknown>, error: null };
+    }
+
+    const missingCol = parseMissingColumn(error?.message);
+    if (missingCol && missingCol in current) {
+      const { [missingCol]: _removed, ...rest } = current;
+      current = rest;
+      continue;
+    }
+
+    return { data: null, error: error ?? { message: `Falha ao inserir em ${table}.` } };
+  }
+
+  return { data: null, error: { message: `Nenhum campo válido para inserir em ${table}.` } };
+}
+
+async function loadProjectSnapshotForSale(
+  supabase: SupabaseClient,
+  projectId: string,
+): Promise<Record<string, unknown> | null> {
+  const withAccount = await supabase
+    .from('projects')
+    .select('id, name, city, uf, forum_city, financial_account_id')
+    .eq('id', projectId)
+    .maybeSingle();
+
+  if (!withAccount.error) {
+    return (withAccount.data as Record<string, unknown> | null) ?? null;
+  }
+
+  if (parseMissingColumn(withAccount.error.message) === 'financial_account_id') {
+    const fallback = await supabase
+      .from('projects')
+      .select('id, name, city, uf, forum_city')
+      .eq('id', projectId)
+      .maybeSingle();
+    if (fallback.error) throw new Error(fallback.error.message);
+    return (fallback.data as Record<string, unknown> | null) ?? null;
+  }
+
+  throw new Error(withAccount.error.message);
 }
 
 async function insertContractForSale(
@@ -199,19 +264,15 @@ export async function executeGisSaleCreate(
     changedBy: input.userId,
   });
 
-  const { data: projDataSnapshot } = await supabase
-    .from('projects')
-    .select('id, name, city, uf, forum_city, financial_account_id')
-    .eq('id', projectId)
-    .maybeSingle();
+  const projDataSnapshot = await loadProjectSnapshotForSale(supabase, projectId);
 
-  const resolvedFinancialAccount = await resolveFinancialAccountForSale(supabase, tenantId, {
+  const resolvedFinancialAccount = await resolveFinancialAccountForSaleOptional(supabase, tenantId, {
     financialAccountId: input.financialAccountId,
     projectId,
     projectFinancialAccountId: (projDataSnapshot as { financial_account_id?: string | null } | null)
       ?.financial_account_id,
   });
-  const financialAccountId = resolvedFinancialAccount.account.id;
+  const financialAccountId = resolvedFinancialAccount?.account.id ?? null;
 
   const pmtType = String(customerData.payment_type || 'À vista');
   const instCount =
@@ -288,17 +349,18 @@ export async function executeGisSaleCreate(
     signal_remaining_payment_mode: recantoSignalMode,
     signal_remaining_installments: recantoSignalInstallments,
     signal_remaining_installment_value: recantoSignalInstallmentValue,
-    financial_account_id: financialAccountId,
+    ...(financialAccountId ? { financial_account_id: financialAccountId } : {}),
     ...buildSaleSpouseDbPatch(customerData),
   };
 
   logSaleStep('create_sale', startedAt);
   try {
-    const { data: saleData, error: saleError } = await supabase
-      .from('sales')
-      .insert([salePayload])
-      .select('id')
-      .single();
+    const { data: saleData, error: saleError } = await insertRowWithColumnFallback(
+      supabase,
+      'sales',
+      salePayload,
+      'id',
+    );
 
     if (saleError || !saleData?.id) {
       throw new Error(saleError?.message || 'Falha ao criar venda');
@@ -327,15 +389,20 @@ export async function executeGisSaleCreate(
     logSaleStep('create_receipts', startedAt, { count: financePayloads.length });
     let financeData: Record<string, unknown>[] = [];
     if (financePayloads.length > 0) {
-      const { data: fData, error: financeError } = await supabase
-        .from('finance_receipts')
-        .insert(financePayloads)
-        .select('id, amount, due_date, status, installment_number');
-
-      if (financeError || !fData) {
-        throw new Error(financeError?.message || 'Falha ao criar parcelas');
+      const insertedReceipts: Record<string, unknown>[] = [];
+      for (const financePayload of financePayloads) {
+        const { data: receiptRow, error: financeError } = await insertRowWithColumnFallback(
+          supabase,
+          'finance_receipts',
+          financePayload,
+          'id, amount, due_date, status, installment_number',
+        );
+        if (financeError || !receiptRow) {
+          throw new Error(financeError?.message || 'Falha ao criar parcelas');
+        }
+        insertedReceipts.push(receiptRow);
       }
-      financeData = fData as Record<string, unknown>[];
+      financeData = insertedReceipts;
     }
 
     logSaleStep('update_lot_status', startedAt, { saleId });

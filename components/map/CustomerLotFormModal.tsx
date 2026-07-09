@@ -53,6 +53,7 @@ import {
   type CompanyFinancialAccountResponse,
 } from '@/lib/finance/companyFinancialAccountTypes';
 import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
+import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 
 export type LotFormState = CustomerFormValues &
@@ -189,8 +190,13 @@ export function CustomerLotFormModal({
       if (!tenantId) return;
       setFinancialAccountsLoading(true);
       try {
+        const asaasEnabled = isCompanyAsaasEnabled(tenantId);
+        const accountsPromise = asaasEnabled
+          ? fetch('/api/finance/financial-accounts', { credentials: 'include' })
+          : Promise.resolve({ ok: false } as Response);
+
         const [accountsRes, projectRes] = await Promise.all([
-          fetch('/api/finance/financial-accounts', { credentials: 'include' }),
+          accountsPromise,
           lot.project_id
             ? supabase
                 .from('projects')

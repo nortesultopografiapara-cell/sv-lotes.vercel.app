@@ -4142,7 +4142,7 @@ export default function GISMap({
       console.error("Error saving customer and lot:", e);
       const msg =
         e instanceof Error
-          ? formatClientFetchError({ networkMessage: e.message })
+          ? formatClientFetchError({ apiError: e.message })
           : formatClientFetchError({});
       alert("Erro ao salvar dados (Venda interrompida): " + msg);
     }
