@@ -332,17 +332,23 @@ export function buildSvLotes2ContractSignatureDateLine(
   city: string,
   uf: string,
   sale: Record<string, unknown>,
+  dateLongOverride?: string,
 ): string {
   const cityClean = String(city || '').trim();
   const ufClean = String(uf || '').trim().toUpperCase();
   const cityUf =
-    cityClean && cityClean.toLowerCase() !== 'não informado'
-      ? ufClean
+    cityClean &&
+    cityClean.toLowerCase() !== 'não informado' &&
+    cityClean.toLowerCase() !== 'nao informado'
+      ? ufClean &&
+        ufClean.toLowerCase() !== 'não informado' &&
+        ufClean.toLowerCase() !== 'nao informado'
         ? `${cityClean} – ${ufClean}`
         : cityClean
       : '';
 
-  const dateLong = formatContractSaleDateLongBr(sale);
+  const dateLong =
+    String(dateLongOverride || '').trim() || formatContractSaleDateLongBr(sale);
   if (!cityUf && !dateLong) return '';
   if (!dateLong) return cityUf ? `${cityUf},` : '';
   return cityUf ? `${cityUf}, ${dateLong}.` : `${dateLong}.`;

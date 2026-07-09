@@ -101,14 +101,21 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
   );
   const dataContratoFmt = formatContractSaleDateBr(saleForDates);
   const dataContratoExtensoFmt = formatContractSaleDateLongBr(saleForDates);
-  const signatureCity =
-    base.empresaCidade !== 'Não informado' ? base.empresaCidade : municipio || '';
-  const signatureUf =
-    base.empresaUf !== 'Não informado' ? base.empresaUf : estado || '';
+  const signatureCity = pickString(
+    sv2Seller.city,
+    base.empresaCidade !== 'Não informado' ? base.empresaCidade : '',
+    municipio,
+  );
+  const signatureUf = pickString(
+    sv2Seller.state,
+    base.empresaUf !== 'Não informado' ? base.empresaUf : '',
+    estado,
+  );
   const signatureDateLine = buildSvLotes2ContractSignatureDateLine(
     signatureCity,
     signatureUf,
     saleForDates,
+    dataContratoExtensoFmt,
   );
   const empresaLegalNome = toTitleCase(
     pickString(

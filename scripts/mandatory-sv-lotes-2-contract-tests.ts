@@ -123,6 +123,36 @@ function testSv2SaleDateFromNestedSalesRelation() {
   console.log('OK testSv2SaleDateFromNestedSalesRelation');
 }
 
+function testSv2SignatureLineUsesCityUfAndLongDate() {
+  const html = generateSvLotes2Contract({
+    tenant: {
+      ...tenantSv2,
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    customer,
+    project: { name: 'Residencial Horizonte', city: 'Parauapebas', uf: 'PA' },
+    block,
+    sale: {
+      ...sale,
+      sale_date: '2026-07-08',
+      created_at: '2026-07-08T12:00:00.000Z',
+    },
+    contractSnapshot: { contract_number: '000000012/2026' },
+  });
+  assert(html.includes('08/07/2026'), 'quadro resumo mantém data curta');
+  assert(
+    html.includes('Parauapebas \u2013 PA, 08 de julho de 2026.'),
+    'assinatura com cidade-UF e data por extenso',
+  );
+  assertNotIncludes(
+    html,
+    'Parauapebas, 08/07/2026.',
+    'sem formato antigo na assinatura',
+  );
+  console.log('OK testSv2SignatureLineUsesCityUfAndLongDate');
+}
+
 function testSv2TemplateStructure() {
   const html = generateSvLotes2Contract({
     tenant: tenantSv2,
@@ -153,6 +183,11 @@ function testSv2TemplateStructure() {
     'data por extenso na assinatura',
   );
   assertNotIncludes(html, 'Parauapebas, .', 'sem data vazia na assinatura');
+  assertNotIncludes(
+    html,
+    'Parauapebas, 08/06/2026.',
+    'assinatura sem data curta no encerramento',
+  );
   assert(html.includes('Qualificação das Partes'), 'qualificação');
   assert(html.includes('CLÁUSULA PRIMEIRA — DO OBJETO'), 'cláusula objeto');
   assert(html.includes('CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA'), 'inadimplência 2%');
@@ -516,6 +551,7 @@ async function writeSvTopografiaPdfArtifact() {
 async function main() {
   testModelNormalization();
   testSv2SaleDateFromNestedSalesRelation();
+  testSv2SignatureLineUsesCityUfAndLongDate();
   testSv2TemplateStructure();
   testSv2AddressAndCivilState();
   testSv2SellerFromCompanySettings();
