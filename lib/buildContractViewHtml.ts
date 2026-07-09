@@ -43,6 +43,8 @@ const SALE_CONTRACT_VIEW_SELECT = [
   "spouse_profession",
   "spouse_marital_status",
   "spouse_address",
+  "sale_date",
+  "created_at",
 ].join(", ");
 
 const CUSTOMER_CONTRACT_VIEW_SELECT = [

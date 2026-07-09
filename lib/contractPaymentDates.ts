@@ -34,8 +34,26 @@ export function resolveContractSaleDateRaw(sale: Record<string, unknown>): strin
   return null;
 }
 
+/** Normaliza registro de venda quando datas vêm aninhadas em `sales`. */
+export function normalizeSaleRecordForContractDates(
+  sale: Record<string, unknown>,
+): Record<string, unknown> {
+  if (resolveContractSaleDateRaw(sale)) return sale;
+
+  const nested = sale.sales;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    const nestedSale = nested as Record<string, unknown>;
+    if (resolveContractSaleDateRaw(nestedSale)) {
+      return { ...sale, ...nestedSale };
+    }
+  }
+
+  return sale;
+}
+
 export function parseContractSaleDate(sale: Record<string, unknown>): Date | null {
-  const raw = resolveContractSaleDateRaw(sale);
+  const saleRecord = normalizeSaleRecordForContractDates(sale);
+  const raw = resolveContractSaleDateRaw(saleRecord);
   if (!raw) return null;
 
   const trimmed = raw.trim();
@@ -49,9 +67,19 @@ export function parseContractSaleDate(sale: Record<string, unknown>): Date | nul
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function resolveContractSaleDateTimeZone(raw: string): string {
+  const trimmed = String(raw || '').trim();
+  const dateOnly = trimmed.split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly) && trimmed.length <= 10) {
+    return 'UTC';
+  }
+  return CONTRACT_BRAZIL_TIMEZONE;
+}
+
 /** Data da venda em pt-BR — fuso America/Sao_Paulo para timestamps com hora. */
 export function formatContractSaleDateBr(sale: Record<string, unknown>): string {
-  const raw = resolveContractSaleDateRaw(sale);
+  const saleRecord = normalizeSaleRecordForContractDates(sale);
+  const raw = resolveContractSaleDateRaw(saleRecord);
   if (!raw) return '';
 
   const trimmed = raw.trim();
@@ -65,7 +93,30 @@ export function formatContractSaleDateBr(sale: Record<string, unknown>): string 
 
   const parsed = new Date(trimmed);
   if (isNaN(parsed.getTime())) return '';
-  return parsed.toLocaleDateString('pt-BR', { timeZone: CONTRACT_BRAZIL_TIMEZONE });
+  return parsed.toLocaleDateString('pt-BR', {
+    timeZone: resolveContractSaleDateTimeZone(trimmed),
+  });
+}
+
+/** Data da venda por extenso — ex.: 08 de julho de 2026. */
+export function formatContractSaleDateLongBr(sale: Record<string, unknown>): string {
+  const saleRecord = normalizeSaleRecordForContractDates(sale);
+  const raw = resolveContractSaleDateRaw(saleRecord);
+  const parsed = parseContractSaleDate(saleRecord);
+  if (!raw || !parsed) return '';
+
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: resolveContractSaleDateTimeZone(raw),
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).formatToParts(parsed);
+
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  if (!day || !month || !year) return '';
+  return `${day} de ${month} de ${year}`;
 }
 
 /** Data YYYY-MM-DD em pt-BR sem deslocar fuso (UTC noon). */
