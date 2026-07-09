@@ -16,6 +16,7 @@ import {
   resolveCompanyAsaasPaymentLink,
 } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
+  BOLETO_UNAVAILABLE_WARNING,
   CHARGES_WHATSAPP_TOOLTIP,
   resolveChargeActionVisibility,
   type ChargeActionVisibility,
@@ -47,7 +48,7 @@ export type ChargeInstallmentActionsProps = {
   onCancel: () => void;
   onRegenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onCopyPix: () => void;
-  onCopyLink: () => void;
+  onCopyBarcodeLine: () => void;
   onWhatsApp: () => void;
 };
 
@@ -59,7 +60,7 @@ export function resolveChargeInstallmentActionsProps(
     | 'onCancel'
     | 'onRegenerate'
     | 'onCopyPix'
-    | 'onCopyLink'
+    | 'onCopyBarcodeLine'
     | 'onWhatsApp'
   >,
 ): ChargeActionVisibility {
@@ -91,7 +92,7 @@ export function ChargeInstallmentActions({
   onCancel,
   onRegenerate,
   onCopyPix,
-  onCopyLink,
+  onCopyBarcodeLine,
   onWhatsApp,
 }: ChargeInstallmentActionsProps) {
   const actions = resolveChargeActionVisibility({
@@ -107,7 +108,8 @@ export function ChargeInstallmentActions({
 
   const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';
   const boletoUrl = charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
-  const billingType = charge?.billingType === 'BOLETO' ? 'BOLETO' : 'PIX';
+  const regenerateBillingType =
+    charge?.billingType === 'PIX' ? 'PIX' : ('BOLETO' as const);
 
   if (!companyAsaasEnabled) {
     return (
@@ -132,137 +134,150 @@ export function ChargeInstallmentActions({
   }
 
   return (
-    <div className="flex flex-wrap justify-end gap-1.5" data-installment-id={view.id}>
-      {actions.showGenerate ? (
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onGenerate('PIX')}
-            className={btnPrimaryClass}
-            title="Gerar cobrança PIX no Asaas"
-          >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
-            Gerar cobrança
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onGenerate('BOLETO')}
-            className={btnClass}
-            title="Gerar cobrança boleto no Asaas"
-          >
-            Boleto
-          </button>
-        </>
-      ) : null}
+    <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
+      <div className="flex flex-wrap justify-end gap-1.5">
+        {actions.showGenerate ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onGenerate('BOLETO')}
+              className={btnPrimaryClass}
+              title="Gerar cobrança com boleto e Pix no Asaas"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
+              Gerar cobrança
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onGenerate('BOLETO')}
+              className={btnClass}
+              title="Gerar boleto bancário com Pix como alternativa"
+            >
+              Boleto
+            </button>
+          </>
+        ) : null}
 
-      {actions.showOpenLink && paymentLink ? (
-        <a
-          href={paymentLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={btnClass}
-          title="Abrir link de pagamento"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Link
-        </a>
-      ) : null}
-
-      {actions.showOpenBoleto && boletoUrl ? (
-        <a
-          href={boletoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={btnClass}
-          title="Abrir boleto"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Boleto
-        </a>
-      ) : null}
-
-      {actions.showCopyPix ? (
-        <button type="button" className={btnClass} onClick={onCopyPix} title="Copiar PIX copia e cola">
-          <Copy className="h-3.5 w-3.5" />
-          PIX
-        </button>
-      ) : null}
-
-      {actions.showCopyLink && paymentLink ? (
-        <button type="button" className={btnClass} onClick={onCopyLink} title="Copiar link de pagamento">
-          <Copy className="h-3.5 w-3.5" />
-          Copiar link
-        </button>
-      ) : null}
-
-      {actions.showRefreshStatus ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onRefreshStatus}
-          className={btnVioletClass}
-          title="Atualizar status Asaas"
-        >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Status
-        </button>
-      ) : null}
-
-      {actions.showCancel ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onCancel}
-          className={btnDangerClass}
-          title="Cancelar cobrança Asaas"
-        >
-          <XCircle className="h-3.5 w-3.5" />
-          Cancelar
-        </button>
-      ) : null}
-
-      {actions.showRegenerate ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onRegenerate(billingType)}
-          className={btnClass}
-          title="Regenerar cobrança Asaas"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          Regenerar
-        </button>
-      ) : null}
-
-      {actions.showWhatsApp ? (
-        whatsappShareUrl ? (
+        {actions.showOpenCharge && paymentLink ? (
           <a
-            href={whatsappShareUrl}
+            href={paymentLink}
             target="_blank"
             rel="noopener noreferrer"
             className={btnClass}
-            title={CHARGES_WHATSAPP_TOOLTIP}
+            title="Abrir página da cobrança no Asaas"
           >
-            <MessageCircle className="h-3.5 w-3.5" />
-            WhatsApp
+            <ExternalLink className="h-3.5 w-3.5" />
+            Abrir cobrança
           </a>
-        ) : (
+        ) : null}
+
+        {actions.showOpenBoleto && boletoUrl ? (
+          <a
+            href={boletoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={btnClass}
+            title="Abrir PDF do boleto"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Boleto/PDF
+          </a>
+        ) : null}
+
+        {actions.showCopyBarcodeLine ? (
           <button
             type="button"
             className={btnClass}
-            onClick={onWhatsApp}
-            title={CHARGES_WHATSAPP_TOOLTIP}
+            onClick={onCopyBarcodeLine}
+            title="Copiar linha digitável do boleto"
           >
-            <MessageCircle className="h-3.5 w-3.5" />
-            WhatsApp
+            <Copy className="h-3.5 w-3.5" />
+            Copiar linha digitável
           </button>
-        )
-      ) : null}
+        ) : null}
 
-      {installmentPaid && !charge ? (
-        <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
+        {actions.showCopyPix ? (
+          <button type="button" className={btnClass} onClick={onCopyPix} title="Copiar Pix copia e cola">
+            <Copy className="h-3.5 w-3.5" />
+            Copiar Pix
+          </button>
+        ) : null}
+
+        {actions.showRefreshStatus ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRefreshStatus}
+            className={btnVioletClass}
+            title="Atualizar status Asaas"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Status
+          </button>
+        ) : null}
+
+        {actions.showCancel ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className={btnDangerClass}
+            title="Cancelar cobrança Asaas"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Cancelar
+          </button>
+        ) : null}
+
+        {actions.showRegenerate ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRegenerate(regenerateBillingType)}
+            className={btnClass}
+            title="Regenerar cobrança Asaas"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Regenerar
+          </button>
+        ) : null}
+
+        {actions.showWhatsApp ? (
+          whatsappShareUrl ? (
+            <a
+              href={whatsappShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={btnClass}
+              title={CHARGES_WHATSAPP_TOOLTIP}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              WhatsApp
+            </a>
+          ) : (
+            <button
+              type="button"
+              className={btnClass}
+              onClick={onWhatsApp}
+              title={CHARGES_WHATSAPP_TOOLTIP}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              WhatsApp
+            </button>
+          )
+        ) : null}
+
+        {installmentPaid && !charge ? (
+          <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
+        ) : null}
+      </div>
+
+      {actions.showBoletoUnavailableWarning ? (
+        <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
+          {BOLETO_UNAVAILABLE_WARNING}
+        </p>
       ) : null}
     </div>
   );

@@ -62,6 +62,7 @@ function charge(partial: Partial<CompanyAsaasChargeResponse>): CompanyAsaasCharg
     dueDate: '2026-07-01',
     invoiceUrl: null,
     bankSlipUrl: null,
+    bankSlipIdentification: null,
     pixQrCode: null,
     pixCopyPaste: null,
     paymentLink: null,
@@ -151,6 +152,22 @@ function testCreateChargeApiPathAndDuplicateGuard() {
   assert(createRoute.includes('createCompanyInstallmentCharge'), 'create-charge usa serviço company');
   assert(createRoute.includes('installmentId'), 'create-charge exige installmentId');
   assert(createRoute.includes('authorizeCompanyAsaasRoute'), 'create-charge protegida');
+  assert(createRoute.includes("'BOLETO'"), 'create-charge default híbrido boleto');
+
+  const asaasClient = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/asaasCompanyClient.ts'),
+    'utf8',
+  );
+  assert(asaasClient.includes('fine: lateFees.fine'), 'payload Asaas inclui multa');
+  assert(asaasClient.includes('interest: lateFees.interest'), 'payload Asaas inclui juros');
+  assert(asaasClient.includes("'UNDEFINED'"), 'billingType UNDEFINED suportado');
+
+  const lateFees = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/asaasCompanyLateFees.ts'),
+    'utf8',
+  );
+  assert(lateFees.includes('COMPANY_ASAAS_FINE_PERCENT = 2'), 'multa 2%');
+  assert(lateFees.includes('COMPANY_ASAAS_INTEREST_PERCENT_MONTHLY = 1'), 'juros 1% a.m.');
 
   const page = fs.readFileSync(
     path.join(process.cwd(), 'components/charges/ChargesPageClient.tsx'),
@@ -160,7 +177,7 @@ function testCreateChargeApiPathAndDuplicateGuard() {
   assert(page.includes('/api/finance/asaas/charge-status'), 'charges chama charge-status');
   assert(page.includes('requestChargeBulkStatusSync'), 'charges usa sync bulk');
   assert(page.includes('/api/finance/asaas/regenerate-charge'), 'charges chama regenerate-charge');
-  assert(page.includes('FINANCE_RECEIPTS_LIST_SELECT'), 'charges usa select compartilhado');
+  assert(page.includes("createAsaasChargeRequest(installmentId, 'BOLETO')"), 'bulk gera boleto+pix');
 
   const chargeService = fs.readFileSync(
     path.join(process.cwd(), 'lib/finance/asaasCompanyChargeService.ts'),
@@ -244,9 +261,11 @@ function testAsaasStatusLabels() {
 function testActionsOnlyWhenDataExists() {
   const withPix = charge({
     status: 'PENDING',
+    billingType: 'UNDEFINED',
     paymentLink: 'https://pay.example/1',
     pixCopyPaste: '000201',
     bankSlipUrl: 'https://boleto.example/1',
+    bankSlipIdentification: '23790.00000 00000.000000 00000.000000 0 00000000000000',
   });
   const actions = resolveChargeInstallmentActionsProps({
     view: buildChargeInstallmentView(pendingRow, withPix),
@@ -259,13 +278,14 @@ function testActionsOnlyWhenDataExists() {
     customerPhone: TEST_PHONE,
   });
   assert(!actions.showGenerate, 'com cobrança ativa não mostra gerar');
-  assert(actions.showOpenLink, 'link');
+  assert(actions.showOpenCharge, 'abrir cobrança');
   assert(actions.showOpenBoleto, 'boleto');
   assert(actions.showCopyPix, 'pix');
-  assert(actions.showCopyLink, 'copiar link');
+  assert(actions.showCopyBarcodeLine, 'linha digitável');
   assert(actions.showWhatsApp, 'whatsapp');
+  assert(!actions.showBoletoUnavailableWarning, 'sem aviso quando boleto existe');
 
-  const withoutExtras = charge({ status: 'PENDING' });
+  const withoutExtras = charge({ status: 'PENDING', billingType: 'UNDEFINED' });
   const minimal = resolveChargeInstallmentActionsProps({
     view: buildChargeInstallmentView(pendingRow, withoutExtras),
     charge: withoutExtras,
@@ -275,8 +295,9 @@ function testActionsOnlyWhenDataExists() {
     ownerReadOnly: false,
     busy: false,
   });
-  assert(!minimal.showOpenLink, 'sem link');
+  assert(!minimal.showOpenCharge, 'sem link');
   assert(!minimal.showCopyPix, 'sem pix');
+  assert(minimal.showBoletoUnavailableWarning, 'aviso boleto indisponível');
   console.log('OK testActionsOnlyWhenDataExists');
 }
 

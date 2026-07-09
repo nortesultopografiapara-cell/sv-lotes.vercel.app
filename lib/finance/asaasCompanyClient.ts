@@ -3,6 +3,10 @@
  * Nunca usar credencial Master SaaS — apenas apiKey do tenant.
  */
 import type { BankEnvironment } from '@/lib/banking/types';
+import {
+  buildCompanyAsaasLateFeePayload,
+  extractCompanyAsaasBankSlipIdentification,
+} from '@/lib/finance/asaasCompanyLateFees';
 
 export type AsaasCompanyPayment = {
   id?: string;
@@ -12,15 +16,20 @@ export type AsaasCompanyPayment = {
   invoiceUrl?: string;
   bankSlipUrl?: string;
   identificationField?: string;
+  nossoNumero?: string;
   paymentDate?: string;
   clientPaymentDate?: string;
   billingType?: string;
+  creditDate?: string;
+  estimatedCreditDate?: string;
 };
 
 export type AsaasCompanyPixQrCode = {
   encodedImage?: string;
   payload?: string;
 };
+
+export type AsaasCompanyCreateBillingType = 'PIX' | 'BOLETO' | 'UNDEFINED';
 
 export function asaasCompanyBaseUrl(environment: BankEnvironment): string {
   return environment === 'PRODUCTION'
@@ -92,6 +101,26 @@ export async function asaasCompanyFetchPixQrCode(
   throw lastError || new Error('Asaas Company pixQrCode indisponível.');
 }
 
+async function asaasCompanyPollPaymentBoleto(
+  apiKey: string,
+  environment: BankEnvironment,
+  paymentId: string,
+): Promise<AsaasCompanyPayment> {
+  const maxAttempts = 6;
+  let last: AsaasCompanyPayment | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const payment = await asaasCompanyGetPayment(apiKey, environment, paymentId);
+    last = payment;
+    const hasBoleto =
+      String(payment.bankSlipUrl || '').trim() ||
+      String(payment.identificationField || '').trim() ||
+      String(payment.invoiceUrl || '').trim();
+    if (hasBoleto) return payment;
+    if (attempt < maxAttempts) await sleep(500 * attempt);
+  }
+  return last || { id: paymentId };
+}
+
 export type AsaasCompanyCustomerInput = {
   name: string;
   cpfCnpj?: string;
@@ -129,7 +158,7 @@ export async function asaasCompanyFindOrCreateCustomer(
 
 export type AsaasCompanyCreatePaymentInput = {
   customerId: string;
-  billingType: 'PIX' | 'BOLETO';
+  billingType: AsaasCompanyCreateBillingType;
   value: number;
   dueDate: string;
   description: string;
@@ -144,7 +173,10 @@ export async function asaasCompanyCreatePayment(
   payment: AsaasCompanyPayment;
   pixQrCode: string;
   pixCopyPaste: string;
+  bankSlipIdentification: string | null;
 }> {
+  const lateFees = buildCompanyAsaasLateFeePayload();
+
   const payment = await asaasCompanyFetch<AsaasCompanyPayment>(apiKey, environment, '/payments', {
     method: 'POST',
     body: JSON.stringify({
@@ -154,27 +186,46 @@ export async function asaasCompanyCreatePayment(
       dueDate: input.dueDate,
       description: input.description.slice(0, 500),
       externalReference: input.externalReference,
+      fine: lateFees.fine,
+      interest: lateFees.interest,
     }),
   });
 
   if (!payment.id) throw new Error('Asaas Company não retornou payment id.');
 
-  const paymentFull = await asaasCompanyFetch<AsaasCompanyPayment>(
-    apiKey,
-    environment,
-    `/payments/${encodeURIComponent(payment.id)}`,
-  );
+  let paymentFull =
+    input.billingType === 'PIX'
+      ? await asaasCompanyGetPayment(apiKey, environment, payment.id)
+      : await asaasCompanyPollPaymentBoleto(apiKey, environment, payment.id);
 
   let pixQrCode = '';
   let pixCopyPaste = '';
+
   if (input.billingType === 'PIX') {
     const pix = await asaasCompanyFetchPixQrCode(apiKey, environment, payment.id);
     pixQrCode = normalizePixQrImage(pix.encodedImage);
     pixCopyPaste = String(pix.payload || '').trim();
     if (!pixCopyPaste) throw new Error('Asaas Company não retornou Pix copia e cola.');
+  } else {
+    try {
+      const pix = await asaasCompanyFetchPixQrCode(apiKey, environment, payment.id);
+      pixQrCode = normalizePixQrImage(pix.encodedImage);
+      pixCopyPaste = String(pix.payload || '').trim();
+    } catch {
+      /* Pix opcional em cobranças com boleto — fatura Asaas pode oferecer QR */
+    }
+    const bankSlipUrl = String(paymentFull.bankSlipUrl || '').trim();
+    const invoiceUrl = String(paymentFull.invoiceUrl || '').trim();
+    if (!bankSlipUrl && !invoiceUrl) {
+      throw new Error(
+        'Asaas não retornou boleto/fatura. Verifique se a conta Asaas tem boleto habilitado.',
+      );
+    }
   }
 
-  return { payment: paymentFull, pixQrCode, pixCopyPaste };
+  const bankSlipIdentification = extractCompanyAsaasBankSlipIdentification(paymentFull);
+
+  return { payment: paymentFull, pixQrCode, pixCopyPaste, bankSlipIdentification };
 }
 
 export async function asaasCompanyGetPayment(
@@ -187,6 +238,45 @@ export async function asaasCompanyGetPayment(
     environment,
     `/payments/${encodeURIComponent(paymentId)}`,
   );
+}
+
+export async function asaasCompanyEnrichPaymentArtifacts(
+  apiKey: string,
+  environment: BankEnvironment,
+  paymentId: string,
+  options?: { billingType?: string | null; existingPixCopy?: string | null },
+): Promise<{
+  payment: AsaasCompanyPayment;
+  pixQrCode: string;
+  pixCopyPaste: string;
+  bankSlipIdentification: string | null;
+}> {
+  let payment = await asaasCompanyGetPayment(apiKey, environment, paymentId);
+  const billing = String(options?.billingType || payment.billingType || '').toUpperCase();
+
+  if (billing !== 'PIX') {
+    payment = await asaasCompanyPollPaymentBoleto(apiKey, environment, paymentId);
+  }
+
+  let pixQrCode = '';
+  let pixCopyPaste = String(options?.existingPixCopy || '').trim();
+
+  if (billing === 'PIX' || !pixCopyPaste) {
+    try {
+      const pix = await asaasCompanyFetchPixQrCode(apiKey, environment, paymentId);
+      pixQrCode = normalizePixQrImage(pix.encodedImage);
+      pixCopyPaste = String(pix.payload || '').trim() || pixCopyPaste;
+    } catch {
+      /* mantém pix existente ou vazio */
+    }
+  }
+
+  return {
+    payment,
+    pixQrCode,
+    pixCopyPaste,
+    bankSlipIdentification: extractCompanyAsaasBankSlipIdentification(payment),
+  };
 }
 
 export async function asaasCompanyCancelPayment(

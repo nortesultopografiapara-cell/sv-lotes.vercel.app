@@ -737,6 +737,20 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
   };
 
+  const handleCopyBarcodeLine = async (charge: CompanyAsaasChargeResponse) => {
+    const line = charge.bankSlipIdentification?.trim();
+    if (!line) {
+      showToast('Linha digitável indisponível para esta cobrança.', true);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(line);
+      showToast('Linha digitável copiada.');
+    } catch {
+      showToast('Não foi possível copiar a linha digitável.', true);
+    }
+  };
+
   const handleCopyPix = async (charge: CompanyAsaasChargeResponse) => {
     const pix = charge.pixCopyPaste?.trim();
     if (!pix) {
@@ -836,7 +850,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         continue;
       }
       try {
-        const created = await createAsaasChargeRequest(installmentId, 'PIX');
+        const created = await createAsaasChargeRequest(installmentId, 'BOLETO');
         applyAsaasChargeUpdate(installmentId, created);
         okCount += 1;
       } catch (err) {
@@ -1227,7 +1241,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                           void handleRegenerateAsaas(installmentId, billingType)
                         }
                         onCopyPix={() => charge && void handleCopyPix(charge)}
-                        onCopyLink={() => charge && void handleCopyLink(charge)}
+                        onCopyBarcodeLine={() => charge && void handleCopyBarcodeLine(charge)}
                         onWhatsApp={() => {
                           if (!charge) {
                             showToast('Cobrança indisponível para envio por WhatsApp.', true);

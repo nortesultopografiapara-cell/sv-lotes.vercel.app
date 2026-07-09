@@ -18,8 +18,8 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const installmentId = String(body.installmentId ?? body.installment_id ?? '').trim();
-    const billingTypeRaw = String(body.billingType ?? body.billing_type ?? 'PIX').trim().toUpperCase();
-    const billingType = billingTypeRaw === 'BOLETO' ? 'BOLETO' : 'PIX';
+    const billingTypeRaw = String(body.billingType ?? body.billing_type ?? 'BOLETO').trim().toUpperCase();
+    const billingType = billingTypeRaw === 'PIX' ? 'PIX' : 'BOLETO';
 
     if (!installmentId) {
       return NextResponse.json({ error: 'installmentId obrigatório.' }, { status: 400 });

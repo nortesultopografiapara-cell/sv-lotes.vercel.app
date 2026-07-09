@@ -7,8 +7,8 @@ import {
 import {
   asaasCompanyCancelPayment,
   asaasCompanyCreatePayment,
+  asaasCompanyEnrichPaymentArtifacts,
   asaasCompanyFindOrCreateCustomer,
-  asaasCompanyGetPayment,
 } from './asaasCompanyClient';
 import {
   getCompanyAsaasChargeByPaymentId,
@@ -30,10 +30,16 @@ import {
 import {
   type CreateCompanyInstallmentChargeInput,
   type CompanyAsaasChargeResponse,
+  type CompanyAsaasChargeRow,
   isCompanyAsaasIntegrationReady,
   mapAsaasPaymentStatusToCompanyCharge,
 } from './companyAsaasChargeTypes';
+import {
+  resolveAsaasApiBillingType,
+  resolveStoredCompanyBillingType,
+} from './asaasCompanyLateFees';
 import { assertCompanyAsaasEnabled } from './companyAsaasAccess';
+import { ASAAS_BOLETO_MIN_AMOUNT } from '@/lib/saasMasterConfig';
 import { FINANCE_RECEIPTS_CHARGE_SELECT } from './financeReceiptsEmbed';
 import {
   isValidBrazilianTaxDocument,
@@ -190,6 +196,14 @@ async function createCompanyChargeWithBillingType(
     throw err;
   }
 
+  const amount = Number(installment.amount);
+  const asaasBillingType = resolveAsaasApiBillingType(billingType);
+  if (asaasBillingType !== 'PIX' && amount < ASAAS_BOLETO_MIN_AMOUNT) {
+    throw new Error(
+      `O valor mínimo para cobrança com boleto é R$ ${ASAAS_BOLETO_MIN_AMOUNT.toFixed(2).replace('.', ',')}.`,
+    );
+  }
+
   const dueDate = String(installment.due_date || '').split('T')[0];
   const customerName = installment.customers?.name || 'Cliente';
   const payerDocument = assertPayerDocumentPresent(installment.customers);
@@ -200,20 +214,19 @@ async function createCompanyChargeWithBillingType(
     externalReference: input.companyId,
   });
 
-  const { payment, pixQrCode, pixCopyPaste } = await asaasCompanyCreatePayment(
-    apiKey,
-    environment,
-    {
+  const { payment, pixQrCode, pixCopyPaste, bankSlipIdentification } =
+    await asaasCompanyCreatePayment(apiKey, environment, {
       customerId,
-      billingType,
-      value: Number(installment.amount),
+      billingType: asaasBillingType,
+      value: amount,
       dueDate,
       description: buildChargeDescription(installment),
       externalReference: input.installmentId,
-    },
-  );
+    });
 
   if (!payment.id) throw new Error('Asaas Company não retornou cobrança.');
+
+  const storedBillingType = resolveStoredCompanyBillingType(billingType, payment.billingType);
 
   return insertCompanyAsaasCharge(admin, {
     companyId: input.companyId,
@@ -221,12 +234,13 @@ async function createCompanyChargeWithBillingType(
     saleId: installment.sale_id,
     installmentId: input.installmentId,
     asaasPaymentId: payment.id,
-    billingType,
+    billingType: storedBillingType,
     status: mapAsaasPaymentStatusToCompanyCharge(payment.status),
-    value: Number(installment.amount),
+    value: amount,
     dueDate,
     invoiceUrl: payment.invoiceUrl ?? null,
     bankSlipUrl: payment.bankSlipUrl ?? null,
+    bankSlipIdentification,
     pixQrCode: pixQrCode || null,
     pixCopyPaste: pixCopyPaste || null,
     rawPayload: payment as Record<string, unknown>,
@@ -249,24 +263,27 @@ export async function getCompanyChargeStatus(
   if (!data) throw new Error('Cobrança não encontrada.');
 
   const { apiKey, environment } = await resolveCompanyAsaasCredentials(admin, companyId);
-  const payment = await asaasCompanyGetPayment(
+  const existingRow = data as CompanyAsaasChargeRow;
+  const enriched = await asaasCompanyEnrichPaymentArtifacts(
     apiKey,
     environment,
-    (data as { asaas_payment_id: string }).asaas_payment_id,
+    existingRow.asaas_payment_id,
+    {
+      billingType: existingRow.billing_type,
+      existingPixCopy: existingRow.pix_copy_paste,
+    },
   );
+  const payment = enriched.payment;
 
   const mappedStatus = mapAsaasPaymentStatusToCompanyCharge(payment.status);
-  const existingRow = data as CompanyAsaasChargeRow;
   const updated = await updateCompanyAsaasCharge(admin, chargeId, companyId, {
     status: mappedStatus,
     invoiceUrl: payment.invoiceUrl ?? existingRow.invoice_url ?? null,
     bankSlipUrl: payment.bankSlipUrl ?? existingRow.bank_slip_url ?? null,
-    pixQrCode:
-      (payment as { pixQrCode?: string }).pixQrCode ?? existingRow.pix_qr_code ?? null,
-    pixCopyPaste:
-      (payment as { pixCopyPaste?: string }).pixCopyPaste ??
-      existingRow.pix_copy_paste ??
-      null,
+    bankSlipIdentification:
+      enriched.bankSlipIdentification ?? existingRow.bank_slip_identification ?? null,
+    pixQrCode: enriched.pixQrCode || existingRow.pix_qr_code || null,
+    pixCopyPaste: enriched.pixCopyPaste || existingRow.pix_copy_paste || null,
     rawPayload: payment as Record<string, unknown>,
     paidAt:
       mappedStatus === 'PAID'
