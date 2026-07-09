@@ -98,6 +98,31 @@ function testModelNormalization() {
   console.log('OK testModelNormalization');
 }
 
+function testSv2SaleDateFromNestedSalesRelation() {
+  const html = generateSvLotes2Contract({
+    tenant: tenantSv2,
+    customer,
+    project,
+    block,
+    sale: {
+      payment_type: 'Parcelado',
+      installments_count: 12,
+      total_value: 120000,
+      sales: {
+        sale_date: '2026-07-08T12:00:00.000Z',
+        created_at: '2026-07-08T12:00:00.000Z',
+      },
+    },
+    contractSnapshot: { contract_number: '000000011/2026' },
+  });
+  assert(html.includes('08/07/2026'), 'data da venda via relação sales');
+  assert(
+    html.includes('Parauapebas \u2013 PA, 08 de julho de 2026.'),
+    'data por extenso via relação sales',
+  );
+  console.log('OK testSv2SaleDateFromNestedSalesRelation');
+}
+
 function testSv2TemplateStructure() {
   const html = generateSvLotes2Contract({
     tenant: tenantSv2,
@@ -121,6 +146,13 @@ function testSv2TemplateStructure() {
   assert(html.includes('DESCONTO'), 'desconto no resumo');
   assert(html.includes('SALDO PARCELADO'), 'saldo parcelado no resumo');
   assert(html.includes('CORREÇÃO'), 'correção das parcelas no resumo');
+  assert(html.includes('DATA DA VENDA'), 'data da venda no resumo');
+  assert(html.includes('08/06/2026'), 'data da venda formatada');
+  assert(
+    html.includes('Parauapebas \u2013 PA, 08 de junho de 2026.'),
+    'data por extenso na assinatura',
+  );
+  assertNotIncludes(html, 'Parauapebas, .', 'sem data vazia na assinatura');
   assert(html.includes('Qualificação das Partes'), 'qualificação');
   assert(html.includes('CLÁUSULA PRIMEIRA — DO OBJETO'), 'cláusula objeto');
   assert(html.includes('CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA'), 'inadimplência 2%');
@@ -483,6 +515,7 @@ async function writeSvTopografiaPdfArtifact() {
 
 async function main() {
   testModelNormalization();
+  testSv2SaleDateFromNestedSalesRelation();
   testSv2TemplateStructure();
   testSv2AddressAndCivilState();
   testSv2SellerFromCompanySettings();

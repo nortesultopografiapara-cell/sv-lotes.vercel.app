@@ -3,6 +3,7 @@
  */
 
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
+import { formatContractSaleDateLongBr } from '@/lib/contractPaymentDates';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 
 function pickString(...values: unknown[]): string {
@@ -325,6 +326,27 @@ export type SvLotes2SummaryField = {
   value: string;
   span?: 1 | 2 | 3;
 };
+
+/** Linha de data no encerramento — ex.: Parauapebas – PA, 08 de julho de 2026. */
+export function buildSvLotes2ContractSignatureDateLine(
+  city: string,
+  uf: string,
+  sale: Record<string, unknown>,
+): string {
+  const cityClean = String(city || '').trim();
+  const ufClean = String(uf || '').trim().toUpperCase();
+  const cityUf =
+    cityClean && cityClean.toLowerCase() !== 'não informado'
+      ? ufClean
+        ? `${cityClean} – ${ufClean}`
+        : cityClean
+      : '';
+
+  const dateLong = formatContractSaleDateLongBr(sale);
+  if (!cityUf && !dateLong) return '';
+  if (!dateLong) return cityUf ? `${cityUf},` : '';
+  return cityUf ? `${cityUf}, ${dateLong}.` : `${dateLong}.`;
+}
 
 export function buildSvLotes2SummaryGridHtml(fields: SvLotes2SummaryField[]): string {
   const cells = fields

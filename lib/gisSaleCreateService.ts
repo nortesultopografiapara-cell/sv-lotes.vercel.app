@@ -417,10 +417,13 @@ export async function executeGisSaleCreate(
           (acc, curr) => acc + Number(curr.amount || 0),
           0,
         );
+        const nowIso = new Date().toISOString();
         const enrichedSaleData = attachBrokerSnapshotToSale(
           {
             ...salePayload,
             id: saleId,
+            sale_date: nowIso,
+            created_at: nowIso,
             receipts_sum: receiptsSum,
             finance_receipts: financeData,
             down_payment_due_date: customerData.down_payment_due_date || null,

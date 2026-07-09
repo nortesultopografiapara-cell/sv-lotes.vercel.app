@@ -34,7 +34,7 @@ export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
     { label: 'VALOR PARCELA', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt },
     { label: 'CORREÇÃO', value: ctx.paymentBreakdown.correctionLabel },
     { label: 'VENCIMENTO', value: ctx.vencimentoLabel || '—' },
-    { label: 'DATA VENDA', value: ctx.dataContratoFmt },
+    { label: 'DATA DA VENDA', value: ctx.dataContratoFmt },
   ]);
 }
 
@@ -229,7 +229,7 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
 export function buildSvLotes2SignaturesHtml(ctx: SvLotes2ContractContext): string {
   return `
     <div class="sv2-signatures">
-      <p style="text-align:center; margin-bottom: 24px;">${ctx.empresaCidade !== 'Não informado' ? ctx.empresaCidade : ctx.municipio || 'Local'}, ${ctx.dataContratoFmt}.</p>
+      <p style="text-align:center; margin-bottom: 24px;">${ctx.signatureDateLine}</p>
       <div class="sv2-signatures-grid">
         <div class="sv2-sign-line">
           ${ctx.empresaAssinatura}

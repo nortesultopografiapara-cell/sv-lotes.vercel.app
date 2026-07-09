@@ -11,9 +11,15 @@ import { resolveContractPaymentDates } from '@/lib/contractPaymentDates';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import {
   buildSvLotes2SellerFromCompany,
+  buildSvLotes2ContractSignatureDateLine,
   formatGenderedCivilState,
   sanitizeNeighborhoodForContract,
 } from '@/lib/svLotes2ContractFormat';
+import {
+  formatContractSaleDateBr,
+  formatContractSaleDateLongBr,
+  normalizeSaleRecordForContractDates,
+} from '@/lib/contractPaymentDates';
 import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
 
 function toTitleCase(str: string): string {
@@ -90,6 +96,20 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     : paymentDates.firstInstallmentDueFmt;
 
   const sv2Seller = buildSvLotes2SellerFromCompany(params.tenant);
+  const saleForDates = normalizeSaleRecordForContractDates(
+    sale as Record<string, unknown>,
+  );
+  const dataContratoFmt = formatContractSaleDateBr(saleForDates);
+  const dataContratoExtensoFmt = formatContractSaleDateLongBr(saleForDates);
+  const signatureCity =
+    base.empresaCidade !== 'Não informado' ? base.empresaCidade : municipio || '';
+  const signatureUf =
+    base.empresaUf !== 'Não informado' ? base.empresaUf : estado || '';
+  const signatureDateLine = buildSvLotes2ContractSignatureDateLine(
+    signatureCity,
+    signatureUf,
+    saleForDates,
+  );
   const empresaLegalNome = toTitleCase(
     pickString(
       params.tenant?.razao_social,
@@ -154,6 +174,9 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
       style: 'currency',
       currency: 'BRL',
     }).format(valEntrada),
+    dataContratoFmt,
+    dataContratoExtensoFmt,
+    signatureDateLine,
     buyerCpfFmt: formatCpfCnpj(
       String(customer?.document || customer?.cpf || customer?.cpf_cnpj || ''),
     ) || base.clienteCpfCnpj,
