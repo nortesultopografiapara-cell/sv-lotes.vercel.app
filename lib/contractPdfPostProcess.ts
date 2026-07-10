@@ -194,7 +194,12 @@ export type ContractHtml2pdfOptions = {
   margin: number[];
   filename: string;
   image: { type: string; quality: number };
-  html2canvas: { scale: number; useCORS: boolean };
+  html2canvas: {
+    scale: number;
+    useCORS: boolean;
+    letterRendering?: boolean;
+    logging?: boolean;
+  };
   jsPDF: { unit: string; format: string; orientation: string };
   pagebreak: ContractHtml2pdfPagebreakOptions;
 };
@@ -208,6 +213,12 @@ export const RECANTO_CONTRACT_HTML2PDF_AVOID_SELECTORS = [
   '.sv-contract-recanto-primavera .signature-slot',
 ] as const;
 
+export const CONTRACT_HTML2PDF_AVOID_SELECTORS = [
+  '.contract-balloon-finance',
+  '.contract-balloon-only-table',
+  '.contract-payment-block',
+] as const;
+
 /** Opções html2pdf — sem avoid-all (evita página vazia extra no final). */
 export function getContractHtml2pdfOptions(
   filename: string,
@@ -216,9 +227,18 @@ export function getContractHtml2pdfOptions(
     margin: [35, 15, 25, 15],
     filename,
     image: { type: "jpeg", quality: 1 },
-    html2canvas: { scale: 2, useCORS: true },
+    // scale 3 + letterRendering: tipografia nítida (evita serrilhado do Quadro Financeiro).
+    html2canvas: {
+      scale: 3,
+      useCORS: true,
+      letterRendering: true,
+      logging: false,
+    },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-    pagebreak: { mode: ["css"] },
+    pagebreak: {
+      mode: ["css", "legacy"],
+      avoid: [...CONTRACT_HTML2PDF_AVOID_SELECTORS],
+    },
   };
 }
 

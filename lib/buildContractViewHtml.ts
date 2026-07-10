@@ -14,6 +14,11 @@ import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
+import {
+  diagnoseContractBalloonAddons,
+  loadSaleBalloonRows,
+  resolveContractBalloonAddons,
+} from "@/lib/saleBalloonRepository";
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 
@@ -36,6 +41,10 @@ const SALE_CONTRACT_VIEW_SELECT = [
   "payment_day",
   "first_due_date",
   "plan_type",
+  "payment_type",
+  "use_balloon_installments",
+  "balloon_mode",
+  "balloon_config",
   "spouse_name",
   "spouse_cpf",
   "spouse_rg",
@@ -307,10 +316,27 @@ async function buildContractViewHtmlFromContext(
   }
   logHtmlStep("receipts_loaded", startedAt, { count: receipts.length });
 
+  const balloonRows = saleId ? await loadSaleBalloonRows(supabase, saleId) : [];
+  const balloonDiag = diagnoseContractBalloonAddons({
+    sale: sale as Record<string, unknown>,
+    tableRows: balloonRows,
+  });
+  const balloonAddons = balloonDiag.selectedAddons;
+  logHtmlStep("balloon_addons_loaded", startedAt, {
+    tableCount: balloonRows.length,
+    count: balloonAddons.length,
+    numbers: balloonAddons.map((a) => a.installment_number),
+    selectedSource: balloonDiag.selectedSource,
+    configAddons: balloonDiag.configAddons,
+    tableAddons: balloonDiag.tableAddons,
+    selectedAddons: balloonDiag.selectedAddons,
+  });
+
   const html = await buildContractViewHtml(supabase, {
     contract,
     tenant: { ...(company as Record<string, unknown>), id: tenantId },
     receipts,
+    balloonAddons,
     block,
     customer,
     sale,
@@ -326,6 +352,7 @@ export async function buildContractViewHtml(
     contract: Record<string, unknown>;
     tenant: Record<string, unknown>;
     receipts?: ContractFinanceReceiptRef[] | null;
+    balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
     block?: Record<string, unknown> | null;
     customer?: Record<string, unknown> | null;
     sale?: Record<string, unknown> | null;
@@ -415,6 +442,18 @@ export async function buildContractViewHtml(
 
   assertCustomerValidForContract(mergedCustomer);
 
+  let balloonAddons = params.balloonAddons ?? null;
+  if (!balloonAddons) {
+    const sid = String(saleForContract.id || contract.sale_id || "").trim();
+    if (sid) {
+      const rows = await loadSaleBalloonRows(supabase, sid);
+      balloonAddons = resolveContractBalloonAddons({
+        sale: saleForContract as Record<string, unknown>,
+        tableRows: rows,
+      });
+    }
+  }
+
   let html = generateContractHTML({
     tenant: params.tenant,
     customer: mergedCustomer,
@@ -427,6 +466,7 @@ export async function buildContractViewHtml(
     sale: saleForContract,
     contractSnapshot: contract,
     financeReceipts: params.receipts,
+    balloonAddons,
     projectBlocks,
     streetGuides,
     manualConfrontants,

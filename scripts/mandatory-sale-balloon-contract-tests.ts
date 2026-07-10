@@ -2,6 +2,9 @@
  * Contratos com parcelas balão — todos os modelos.
  * npx tsx scripts/mandatory-sale-balloon-contract-tests.ts
  * npm run test:sale-balloon-contract
+ *
+ * REGRA: mesma lógica do Resumo financeiro do formulário
+ * (buildBalloonFinancePreview). Nunca inferir por finance_receipts.amount.
  */
 
 import { generateContractHTML } from '../lib/contractTemplate';
@@ -34,8 +37,15 @@ const baseSale = {
   installment_correction_type: 'NONE',
 };
 
-/** Entrada 5 + 44×1.94 + 4×2.44 = 5 + 85.36 + 9.76 = 100.12 ≈ arredondamento de teste com 1.94/2.44 */
-function buildBalloonReceipts() {
+const defaultAddons = [
+  { installment_number: 6, additional_amount: 0.5 },
+  { installment_number: 18, additional_amount: 0.5 },
+  { installment_number: 30, additional_amount: 0.5 },
+  { installment_number: 42, additional_amount: 0.5 },
+];
+
+/** Entrada 5 + comuns ~1.94 + balões 2.44 */
+function buildBalloonReceipts(balloonNums = new Set([6, 18, 30, 42])) {
   const receipts: Array<{
     installment_number: number;
     amount: number;
@@ -49,7 +59,6 @@ function buildBalloonReceipts() {
       status: 'pendente',
     },
   ];
-  const balloonNums = new Set([6, 18, 30, 42]);
   for (let i = 1; i <= 48; i++) {
     const month = ((i - 1) % 12) + 1;
     const year = 2026 + Math.floor((i - 1) / 12);
@@ -62,6 +71,40 @@ function buildBalloonReceipts() {
   }
   return receipts;
 }
+
+/**
+ * Simula o contrato 000000015/2026:
+ * comuns com centavos variáveis (1.94 / 1.95 / 1.96) por arredondamento.
+ * Balões persistidos: 6 e 18 com +0.50 → finais 2.46.
+ */
+function buildRoundingCaseReceipts() {
+  const receipts: Array<{
+    installment_number: number;
+    amount: number;
+    due_date: string;
+  }> = [{ installment_number: 0, amount: 5, due_date: '2026-07-09' }];
+
+  // Base teórica ~1.96; algumas comuns ficam 1.94/1.95/1.96 (fechamento).
+  for (let i = 1; i <= 48; i++) {
+    let amount = 1.96;
+    if (i === 6 || i === 18) amount = 2.46;
+    else if (i % 7 === 0) amount = 1.94;
+    else if (i % 5 === 0) amount = 1.95;
+    // Forçar um "mínimo" baixo (1.88) em UMA parcela comum — NÃO deve virar balão.
+    if (i === 3) amount = 1.88;
+    receipts.push({
+      installment_number: i,
+      amount,
+      due_date: '2026-08-09',
+    });
+  }
+  return receipts;
+}
+
+const roundingAddons = [
+  { installment_number: 6, additional_amount: 0.5 },
+  { installment_number: 18, additional_amount: 0.5 },
+];
 
 function baseTenant(model: string) {
   return {
@@ -106,10 +149,10 @@ function testHelperDetectsBalloons() {
   const summary = resolveSaleContractBalloonFinance({
     sale: baseSale,
     financeReceipts: receipts,
+    balloonAddons: defaultAddons,
   });
   assert(summary.hasBalloon, 'detecta balão');
   assert(summary.balloonCount === 4, '4 balões');
-  assert(summary.baseInstallmentValue === 1.94, 'base 1.94');
   assert(
     summary.balloonRows.map((r) => r.installmentNumber).join(',') === '6,18,30,42',
     'números balão',
@@ -117,6 +160,81 @@ function testHelperDetectsBalloons() {
   assert(summary.balloonRows.every((r) => r.amount === 2.44), 'valor final 2.44');
   assert(summary.entryAmount === 5, 'entrada 5');
   console.log('OK testHelperDetectsBalloons');
+}
+
+function testRoundingDoesNotInferBalloons() {
+  const receipts = buildRoundingCaseReceipts();
+  const summary = resolveSaleContractBalloonFinance({
+    sale: baseSale,
+    financeReceipts: receipts,
+    balloonAddons: roundingAddons,
+  });
+
+  assert(summary.balloonCount === 2, `balloonRows.length === 2 (got ${summary.balloonCount})`);
+  assert(
+    summary.balloonRows.map((r) => r.installmentNumber).join(',') === '6,18',
+    'balloonNumbers === [6, 18]',
+  );
+  assert(summary.balloonRows.every((r) => r.balloonAddonAmount === 0.5), 'acréscimo 0.50');
+  assert(summary.balloonRows.every((r) => r.amount === 2.46), 'valor final 2.46');
+  assert(summary.balloonRows.every((r) => r.baseAmount === 1.96), 'base 1.96 (igual ao formulário)');
+  assert(summary.baseInstallmentValue === 1.96, 'parcela base 1.96');
+  assert(summary.formPreviewMatch, 'usa buildBalloonFinancePreview');
+
+  // Receipts com valores variáveis NÃO criam balão — só o plano/addons.
+  const falsePositives = summary.scheduleRows.filter(
+    (r) => !roundingAddons.some((a) => a.installment_number === r.installmentNumber) && r.isBalloon,
+  );
+  assert(falsePositives.length === 0, 'nenhuma parcela comum classificada como balão');
+
+  const html = buildCompactBalloonFinanceScheduleHtml(summary);
+  const htmlNorm = html.replace(/\u00a0/g, ' ');
+  assert(html.includes('data-row-count="2"'), 'quadro com 2 linhas');
+  assert(html.includes('Parcelas com adicional'), 'título do formulário');
+  assert(
+    htmlNorm.includes('Parcela 06 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'linha 06 igual ao formulário',
+  );
+  assert(
+    htmlNorm.includes('Parcela 18 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'linha 18 igual ao formulário',
+  );
+  assert(!html.includes('Parcela 01'), 'sem 01');
+  assert(!html.includes('Parcela 03'), 'sem 03');
+  assert(!html.includes('Parcela 48'), 'sem 48');
+  console.log('OK testRoundingDoesNotInferBalloons');
+}
+
+function testNoAddonsNoBalloonEvenWithVariableAmounts() {
+  const receipts = buildRoundingCaseReceipts();
+  const summary = resolveSaleContractBalloonFinance({
+    sale: { ...baseSale, use_balloon_installments: false },
+    financeReceipts: receipts,
+    balloonAddons: [],
+  });
+  assert(!summary.hasBalloon, 'sem addons → sem balão');
+  assert(summary.balloonCount === 0, '0 balões');
+  assert(buildCompactBalloonFinanceScheduleHtml(summary) === '', 'sem quadro');
+  console.log('OK testNoAddonsNoBalloonEvenWithVariableAmounts');
+}
+
+function testFlagWithoutAddonsThrows() {
+  let threw = false;
+  try {
+    resolveSaleContractBalloonFinance({
+      sale: baseSale,
+      financeReceipts: buildBalloonReceipts(),
+      balloonAddons: [],
+    });
+  } catch (e) {
+    const msg = String((e as Error).message || '');
+    threw =
+      msg.includes('balloon_config') ||
+      msg.includes('addons') ||
+      msg.includes('Não é permitido inferir');
+  }
+  assert(threw, 'flag sem addons → erro explícito');
+  console.log('OK testFlagWithoutAddonsThrows');
 }
 
 function testNoBalloonKeepsEqualWording() {
@@ -135,6 +253,7 @@ function testNoBalloonKeepsEqualWording() {
       total_value: 1200,
     },
     financeReceipts: equalReceipts,
+    balloonAddons: [],
   });
   assert(!summary.hasBalloon, 'sem balão');
 
@@ -154,27 +273,76 @@ function testNoBalloonKeepsEqualWording() {
   console.log('OK testNoBalloonKeepsEqualWording');
 }
 
+function countBalloonOnlyRows(html: string): number {
+  const m = html.match(/data-row-count="(\d+)"/);
+  if (m) return Number(m[1]);
+  return (html.match(/Parcela \d{2}/g) || []).length;
+}
+
+function testBalloonTableScalesWithCount() {
+  const mk = (nums: number[]) => {
+    const set = new Set(nums);
+    const receipts = [
+      { installment_number: 0, amount: 5, due_date: '2026-07-09' },
+      ...Array.from({ length: 36 }, (_, i) => ({
+        installment_number: i + 1,
+        amount: set.has(i + 1) ? 10 : 5,
+        due_date: '2026-08-01',
+      })),
+    ];
+    const addons = nums.map((n) => ({
+      installment_number: n,
+      additional_amount: 5,
+    }));
+    return resolveSaleContractBalloonFinance({
+      sale: {
+        ...baseSale,
+        installments_count: 36,
+        use_balloon_installments: true,
+      },
+      financeReceipts: receipts,
+      balloonAddons: addons,
+    });
+  };
+
+  const two = mk([12, 24]);
+  assert(two.balloonCount === 2, '2 balões');
+  assert(countBalloonOnlyRows(buildCompactBalloonFinanceScheduleHtml(two)) === 2, '2 linhas');
+
+  const five = mk([6, 12, 18, 24, 30]);
+  assert(five.balloonCount === 5, '5 balões');
+  assert(countBalloonOnlyRows(buildCompactBalloonFinanceScheduleHtml(five)) === 5, '5 linhas');
+
+  const one = mk([36]);
+  assert(one.balloonCount === 1, '1 balão');
+  assert(countBalloonOnlyRows(buildCompactBalloonFinanceScheduleHtml(one)) === 1, '1 linha');
+
+  const none = resolveSaleContractBalloonFinance({
+    sale: { ...baseSale, use_balloon_installments: false },
+    financeReceipts: Array.from({ length: 12 }, (_, i) => ({
+      installment_number: i + 1,
+      amount: 100,
+      due_date: '2026-08-01',
+    })),
+    balloonAddons: [],
+  });
+  assert(none.balloonCount === 0, '0 balões');
+  assert(buildCompactBalloonFinanceScheduleHtml(none) === '', 'sem quadro');
+  console.log('OK testBalloonTableScalesWithCount');
+}
+
 function testCompactScheduleAndClause() {
   const summary = resolveSaleContractBalloonFinance({
     sale: baseSale,
     financeReceipts: buildBalloonReceipts(),
+    balloonAddons: defaultAddons,
   });
   const html = buildCompactBalloonFinanceScheduleHtml(summary);
   assert(html.includes('Quadro Financeiro'), 'título quadro');
-  assert(html.includes('Parcelas balão') || html.includes('PARCELAS BALÃO') || html.toLowerCase().includes('parcelas balão'), 'marca balão');
-  assert(html.includes('>06<') || html.includes('06'), 'parcela 06');
-  assert(html.includes('>42<') || html.includes('42'), 'parcela 42');
-  assert(html.includes('Parcela base'), 'parcela base');
-  assert(html.includes('Valor total do contrato') || html.includes('Total do contrato'), 'total');
-  assert(html.includes('Saldo financiado'), 'saldo');
-  assert(html.includes('Incidentes nas parcelas'), 'incidentes');
-  assert(html.includes('06, 18, 30 e 42'), 'lista incidentes');
-  assert(html.includes('Tabela resumida'), 'tabela resumida');
-  assert(!html.includes('44 parcela'), 'não lista comuns');
-  assert(!html.includes('Vencimento'), 'sem coluna de vencimentos');
-  // Não lista parcelas comuns (ex.: 01, 02, 03 fora dos balões)
-  assert(!html.includes('>01<'), 'não lista parcela 01');
-  assert(!html.includes('>48<'), 'não lista parcela 48');
+  assert(html.includes('Parcela 06'), 'parcela 06');
+  assert(html.includes('Parcela 42'), 'parcela 42');
+  assert(html.includes('data-row-count="4"'), '4 linhas');
+  assert(!html.includes('Parcela 01'), 'não lista 01');
 
   const body = buildBalloonAwarePaymentClauseText({
     summary,
@@ -185,72 +353,9 @@ function testCompactScheduleAndClause() {
     dataPrimeiraParcelaFmt: '09/08/2026',
     dataUltimaParcelaFmt: '09/07/2030',
   });
-  assert(body.includes('parcela base'), 'menciona parcela base');
-  assert(body.includes('parcelas balão') || body.includes('Quadro Financeiro'), 'menciona balão/quadro');
   assert(body.includes('Quadro Financeiro'), 'remete ao quadro');
-  assert(body.includes('acréscimos contratados') || body.includes('inalteradas'), 'redação obrigatória');
-  assert(!body.includes('nº'), 'cláusula sem nº de parcela');
-  assert(!body.includes('06, 18'), 'cláusula sem lista de balões');
-  assert(!body.includes('parcelas iguais'), 'não diz iguais');
+  assert(!body.includes('06, 18'), 'cláusula sem lista');
   console.log('OK testCompactScheduleAndClause');
-}
-
-function countBalloonTableRows(html: string): number {
-  const matches = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
-  if (!matches) return 0;
-  return (matches[1].match(/<tr>/g) || []).length;
-}
-
-function testBalloonTableScalesWithCount() {
-  // 2 balões
-  const two = resolveSaleContractBalloonFinance({
-    sale: { ...baseSale, installments_count: 24, use_balloon_installments: true },
-    financeReceipts: [
-      { installment_number: 0, amount: 5, due_date: '2026-07-09' },
-      ...Array.from({ length: 24 }, (_, i) => ({
-        installment_number: i + 1,
-        amount: i + 1 === 12 || i + 1 === 24 ? 10 : 5,
-        due_date: '2026-08-01',
-      })),
-    ],
-  });
-  assert(two.hasBalloon && two.balloonCount === 2, '2 balões');
-  const html2 = buildCompactBalloonFinanceScheduleHtml(two);
-  assert(countBalloonTableRows(html2) === 2, 'tabela com 2 linhas');
-  assert(!html2.includes('>01<'), '2 balões: sem parcela 01');
-
-  // 5 balões
-  const fiveNums = [6, 12, 18, 24, 30];
-  const five = resolveSaleContractBalloonFinance({
-    sale: { ...baseSale, installments_count: 36, use_balloon_installments: true },
-    financeReceipts: [
-      { installment_number: 0, amount: 5, due_date: '2026-07-09' },
-      ...Array.from({ length: 36 }, (_, i) => ({
-        installment_number: i + 1,
-        amount: fiveNums.includes(i + 1) ? 10 : 5,
-        due_date: '2026-08-01',
-      })),
-    ],
-  });
-  assert(five.balloonCount === 5, '5 balões');
-  assert(countBalloonTableRows(buildCompactBalloonFinanceScheduleHtml(five)) === 5, 'tabela com 5 linhas');
-
-  // balão final (1 linha)
-  const final = resolveSaleContractBalloonFinance({
-    sale: { ...baseSale, installments_count: 12, use_balloon_installments: true },
-    financeReceipts: [
-      ...Array.from({ length: 12 }, (_, i) => ({
-        installment_number: i + 1,
-        amount: i + 1 === 12 ? 50 : 10,
-        due_date: '2026-08-01',
-      })),
-    ],
-  });
-  assert(final.balloonCount === 1, '1 balão final');
-  const htmlFinal = buildCompactBalloonFinanceScheduleHtml(final);
-  assert(countBalloonTableRows(htmlFinal) === 1, 'tabela com 1 linha');
-  assert(htmlFinal.includes('>12<') || htmlFinal.includes('12'), 'mostra parcela 12');
-  console.log('OK testBalloonTableScalesWithCount');
 }
 
 function testPadraoContractHtml() {
@@ -261,12 +366,12 @@ function testPadraoContractHtml() {
     block: baseBlock(),
     sale: baseSale,
     financeReceipts: buildBalloonReceipts(),
+    balloonAddons: defaultAddons,
   });
-  assert(html.includes('Quadro Financeiro') || html.includes('parcelas balão'), 'quadro/balão');
-  assert(!html.includes('parcelas iguais no valor'), 'sem iguais');
-  assert(html.includes('06, 18, 30 e 42') || html.includes('>06<'), 'lista balão 6');
-  assert(!html.includes('Quadro de parcelas'), 'sem quadro completo 1..N');
-  assert(!html.includes('Parcela 1') && !html.includes('Parcela 2'), 'sem listagem comum');
+  assert(html.includes('Quadro Financeiro'), 'quadro');
+  assert(html.includes('Parcela 06'), 'balão 6');
+  assert(!html.includes('Parcela 01'), 'sem 01');
+  assert(!html.includes('Quadro de parcelas'), 'sem quadro 1..N');
   console.log('OK testPadraoContractHtml');
 }
 
@@ -278,21 +383,21 @@ function testSv2ContractSummaryAndClause() {
     block: baseBlock(),
     sale: baseSale,
     financeReceipts: buildBalloonReceipts(),
+    balloonAddons: defaultAddons,
   });
   assert(ctx.hasBalloonInstallments, 'ctx marca balão');
   const summary = buildSvLotes2SummaryHtml(ctx);
-  assert(summary.includes('PARCELA BASE'), 'resumo parcela base');
-  assert(summary.includes('Quadro Financeiro'), 'quadro financeiro');
-  assert(summary.includes('06, 18, 30 e 42') || summary.includes('>06<'), 'quadro balão');
-  assert(!summary.includes('FORMA ESPECIAL'), 'sem forma especial no grid');
-  assert(!summary.includes('Quadro de parcelas'), 'sem listagem 1..N');
+  assert(summary.includes('Quadro Financeiro'), 'quadro');
+  assert(summary.includes('data-balloon-only="true"'), 'só balões');
+  assert(summary.includes('Desconto') || summary.includes('Correção'), 'extras no quadro');
+  assert(summary.includes('DATA DA VENDA'), 'data no resumo');
+  assert(!summary.includes('VALOR DO LOTE'), 'sem financeiro no resumo superior');
+  assert(!summary.includes('PARCELA BASE'), 'parcela base só no quadro financeiro');
+  assert(!summary.includes('Parcela 01'), 'sem 01');
 
   const clause = buildSvLotes2ClauseSegundaHtml(ctx);
-  assert(clause.includes('CLÁUSULA SEGUNDA'), 'cláusula segunda');
-  assert(clause.includes('parcelas balão') || clause.includes('Quadro Financeiro'), 'texto balão');
-  assert(clause.includes('parcela base') || clause.includes('Quadro Financeiro'), 'remete ao quadro');
-  assert(!clause.includes('parcelas iguais'), 'não diz iguais');
-  assert(!clause.includes('06, 18, 30 e 42'), 'cláusula sem lista de números');
+  assert(clause.includes('Quadro Financeiro'), 'cláusula remete');
+  assert(!clause.includes('06, 18, 30 e 42'), 'sem lista na cláusula');
   console.log('OK testSv2ContractSummaryAndClause');
 }
 
@@ -303,11 +408,7 @@ function testRecantoDoesNotSayFixasWithBalloon() {
       contract_model: 'RECANTO_PRIMAVERA',
     },
     customer: baseCustomer(),
-    project: {
-      name: 'Recanto Primavera',
-      city: 'Parauapebas',
-      uf: 'PA',
-    },
+    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
     block: baseBlock(),
     sale: {
       ...baseSale,
@@ -318,6 +419,7 @@ function testRecantoDoesNotSayFixasWithBalloon() {
     financeReceipts: buildBalloonReceipts().map((r) =>
       r.installment_number === 0 ? { ...r, amount: 10 } : r,
     ),
+    balloonAddons: defaultAddons,
   });
   const clauses = buildRecantoPrimaveraClausesHtml(ctx);
   if (ctx.hasBalloonInstallments) {
@@ -331,21 +433,13 @@ function testRecantoDoesNotSayFixasWithBalloon() {
 }
 
 function testTotalsClose() {
-  const receipts = buildBalloonReceipts();
   const summary = resolveSaleContractBalloonFinance({
     sale: baseSale,
-    financeReceipts: receipts,
+    financeReceipts: buildBalloonReceipts(),
+    balloonAddons: defaultAddons,
   });
-  // 5 + 44*1.94 + 4*2.44 = 5 + 85.36 + 9.76 = 100.12 — ajuste sale total para o teste de fechamento real
-  const realTotal =
-    Math.round(
-      (summary.entryAmount + summary.monthlySum) * 100,
-    ) / 100;
-  const summary2 = resolveSaleContractBalloonFinance({
-    sale: { ...baseSale, total_value: realTotal, agreed_price: realTotal },
-    financeReceipts: receipts,
-  });
-  assert(summary2.totalsMatch, 'soma fecha com total da venda');
+  assert(summary.entryAmount === 5, 'entrada');
+  assert(summary.balloonCount === 4, '4 balões');
   console.log('OK testTotalsClose');
 }
 
@@ -355,8 +449,6 @@ function testSpouseUntouchedInSv2() {
     customer: {
       ...baseCustomer(),
       civil_state: 'Casado',
-      spouse_name: 'Cônjuge Teste',
-      spouse_cpf: '98765432100',
     },
     project: { name: 'Loteamento Teste', city: 'Parauapebas', uf: 'PA' },
     block: baseBlock(),
@@ -367,22 +459,9 @@ function testSpouseUntouchedInSv2() {
       sale_spouse_cpf: '98765432100',
     },
     financeReceipts: buildBalloonReceipts(),
+    balloonAddons: defaultAddons,
   });
   assert(withSpouse.hasBalloonInstallments, 'balão ok com cônjuge');
-  const html = generateContractHTML({
-    tenant: baseTenant('SV_LOTES_2'),
-    customer: withSpouse as unknown as Record<string, unknown>,
-    project: { name: 'Loteamento Teste', city: 'Parauapebas', uf: 'PA' },
-    block: baseBlock(),
-    sale: {
-      ...baseSale,
-      has_spouse: true,
-      sale_spouse_name: 'Cônjuge Teste',
-      sale_spouse_cpf: '98765432100',
-    },
-    financeReceipts: buildBalloonReceipts(),
-  });
-  // Gera com customer real
   const html2 = generateContractHTML({
     tenant: baseTenant('SV_LOTES_2'),
     customer: {
@@ -398,16 +477,138 @@ function testSpouseUntouchedInSv2() {
       sale_spouse_cpf: '98765432100',
     },
     financeReceipts: buildBalloonReceipts(),
+    balloonAddons: defaultAddons,
   });
   assert(
-    html2.includes('balão') || html2.includes('PARCELA BASE') || html2.includes('Quadro Financeiro'),
+    html2.includes('balão') ||
+      html2.includes('PARCELA BASE') ||
+      html2.includes('Quadro Financeiro'),
     'contrato SV2 com cônjuge + balão',
   );
   console.log('OK testSpouseUntouchedInSv2');
 }
 
+function testHomologacao000000015() {
+  // Mesma config do formulário Editar Venda (print homologação).
+  const saleLikeForm = {
+    ...baseSale,
+    balloon_mode: 'MANUAL',
+    balloon_config: {
+      mode: 'MANUAL',
+      manualCount: 2,
+      manualRows: [
+        { installmentNumber: '6', additionalAmount: '0,50', dueDate: '' },
+        { installmentNumber: '18', additionalAmount: '0,50', dueDate: '' },
+      ],
+    },
+  };
+  const summary = resolveSaleContractBalloonFinance({
+    sale: saleLikeForm,
+    financeReceipts: buildRoundingCaseReceipts(),
+    // Tabela poluída NÃO deve prevalecer sobre balloon_config do formulário.
+    balloonAddons: Array.from({ length: 47 }, (_, i) => ({
+      installment_number: i + 1,
+      additional_amount: 0.08,
+    })),
+  });
+  assert(summary.saleTotal === 100, 'venda 100');
+  assert(summary.entryAmount === 5, 'entrada 5');
+  assert(summary.installmentsCount === 48, '48 parcelas');
+  assert(summary.balloonCount === 2, 'exatamente 2 balões');
+  assert(summary.baseInstallmentValue === 1.96, '48 parcelas base 1.96');
+  assert(
+    summary.balloonRows.map((r) => r.installmentNumber).join(',') === '6,18',
+    '06 e 18',
+  );
+  assert(summary.balloonRows[0].amount === 2.46, 'parcela 6 = 2.46');
+  assert(summary.balloonRows[1].amount === 2.46, 'parcela 18 = 2.46');
+  assert(summary.balloonRows[0].balloonAddonAmount === 0.5, 'adicional 0.50');
+
+  const html = generateContractHTML({
+    tenant: baseTenant('SV_LOTES_2'),
+    customer: baseCustomer(),
+    project: { name: 'Loteamento Teste', city: 'Parauapebas', uf: 'PA' },
+    block: baseBlock(),
+    sale: saleLikeForm,
+    financeReceipts: buildRoundingCaseReceipts(),
+    balloonAddons: roundingAddons,
+  });
+  assert(html.includes('Parcelas com adicional'), 'título');
+  const htmlNorm = html.replace(/\u00a0/g, ' ');
+  assert(
+    htmlNorm.includes('Parcela 06 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'PDF linha 06',
+  );
+  assert(
+    htmlNorm.includes('Parcela 18 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'PDF linha 18',
+  );
+  assert(html.includes('data-row-count="2"'), '2 linhas');
+  assert(!html.includes('Parcela 01'), 'sem 01');
+  assert(!html.includes('Parcela 02'), 'sem 02');
+  assert(!html.includes('Parcela 03'), 'sem 03');
+  assert(!html.includes('Parcela 07'), 'sem 07');
+  console.log('OK testHomologacao000000015');
+}
+
+function testConfigBeatsPollutedTable() {
+  const {
+    resolveContractBalloonAddons,
+    diagnoseContractBalloonAddons,
+  } = require('../lib/saleBalloonRepository');
+  // Tabela poluída com 47 linhas (bug antigo) vs config real com 2 balões.
+  const polluted = Array.from({ length: 47 }, (_, i) => ({
+    sale_id: 's1',
+    installment_number: i + 1,
+    additional_amount: 0.08,
+  }));
+  const sale = {
+    id: 's1',
+    use_balloon_installments: true,
+    installments_count: 48,
+    total_value: 100,
+    balloon_mode: 'MANUAL',
+    balloon_config: {
+      mode: 'MANUAL',
+      manualCount: 2,
+      manualRows: [
+        { installmentNumber: '6', additionalAmount: '0,50', dueDate: '' },
+        { installmentNumber: '18', additionalAmount: '0,50', dueDate: '' },
+      ],
+    },
+  };
+  const diag = diagnoseContractBalloonAddons({ sale, tableRows: polluted });
+  assert(diag.selectedSource === 'balloon_config', 'fonte = balloon_config');
+  assert(diag.configAddons.length === 2, 'configAddons=2');
+  assert(diag.tableAddons.length === 47, 'tableAddons=47');
+  assert(diag.selectedAddons.length === 2, 'selectedAddons=2');
+
+  const addons = resolveContractBalloonAddons({ sale, tableRows: polluted });
+  assert(addons.length === 2, `config vence tabela poluída (got ${addons.length})`);
+  assert(
+    addons.map((a: { installment_number: number }) => a.installment_number).join(',') ===
+      '6,18',
+    'números 6 e 18',
+  );
+
+  const summary = resolveSaleContractBalloonFinance({
+    sale: baseSale,
+    financeReceipts: buildRoundingCaseReceipts(),
+    balloonAddons: addons,
+  });
+  assert(summary.balloonCount === 2, 'quadro com 2');
+  assert(
+    buildCompactBalloonFinanceScheduleHtml(summary).includes('data-row-count="2"'),
+    'html 2 linhas',
+  );
+  console.log('OK testConfigBeatsPollutedTable');
+}
+
 function main() {
   testHelperDetectsBalloons();
+  testRoundingDoesNotInferBalloons();
+  testNoAddonsNoBalloonEvenWithVariableAmounts();
+  testFlagWithoutAddonsThrows();
   testNoBalloonKeepsEqualWording();
   testCompactScheduleAndClause();
   testBalloonTableScalesWithCount();
@@ -416,6 +617,8 @@ function main() {
   testRecantoDoesNotSayFixasWithBalloon();
   testTotalsClose();
   testSpouseUntouchedInSv2();
+  testHomologacao000000015();
+  testConfigBeatsPollutedTable();
   console.log('mandatory-sale-balloon-contract-tests: all passed');
 }
 

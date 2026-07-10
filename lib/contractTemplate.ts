@@ -27,7 +27,6 @@ import {
 } from "@/lib/saleContractLegalTemplate";
 import {
   buildSaleContractPaymentSummaryHtml,
-  hasVariableInstallmentAmounts,
   resolveSaleContractPaymentBreakdown,
   type ContractInstallmentScheduleRow,
 } from "@/lib/saleContractPaymentSummary";
@@ -73,6 +72,8 @@ interface GenerateContractParams {
   contractSnapshot?: any;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
+  /** Fonte exclusiva: sale_balloon_installments. Nunca inferir por valores. */
+  balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
   /** @deprecated Contrato não usa confrontações; mantido para compatibilidade de chamadas. */
   projectBlocks?: Record<string, unknown>[] | null;
   streetGuides?: Record<string, unknown>[] | null;
@@ -88,6 +89,7 @@ export function generateContractHTML({
   contractSnapshot,
   contractDate,
   financeReceipts,
+  balloonAddons,
   projectBlocks,
   streetGuides,
   manualConfrontants,
@@ -102,6 +104,7 @@ export function generateContractHTML({
       contractSnapshot,
       contractDate,
       financeReceipts,
+      balloonAddons,
     });
   }
 
@@ -115,6 +118,7 @@ export function generateContractHTML({
       contractSnapshot,
       contractDate,
       financeReceipts,
+      balloonAddons,
     });
   }
 
@@ -383,21 +387,14 @@ export function generateContractHTML({
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
+    balloonAddons,
     isCashPayment,
   });
-  const hasVariableInstallments =
-    balloonSummary.hasBalloon || hasVariableInstallmentAmounts(scheduleRows);
+  const hasVariableInstallments = balloonSummary.hasBalloon;
 
-  // Com balão: valor base = menor parcela mensal (ou média das iguais); cláusula não afirma "iguais".
+  // Com balão: valor base derivado dos registros persistidos (nunca min(amount)).
   if (hasVariableInstallments) {
-    valorParcela = balloonSummary.hasBalloon
-      ? balloonSummary.baseInstallmentValue
-      : (() => {
-          const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
-          return monthly.length > 0
-            ? Math.min(...monthly.map((r) => r.amount))
-            : valorParcela;
-        })();
+    valorParcela = balloonSummary.baseInstallmentValue;
   }
 
   const valorParcelaFmtBalloonAware = formatBRL(valorParcela);
@@ -479,6 +476,7 @@ export function generateContractHTML({
   const paymentBreakdown = resolveSaleContractPaymentBreakdown(sale, {
     isCashPayment,
     financeReceipts,
+    balloonAddons,
   });
   const paymentSummaryHtml = buildSaleContractPaymentSummaryHtml(
     paymentBreakdown,

@@ -23,6 +23,7 @@ import {
 import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
 import {
   buildCompactBalloonFinanceScheduleHtml,
+  buildContractFinanceQuadroHtml,
   resolveSaleContractBalloonFinance,
 } from '@/lib/saleContractBalloonFinance';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
@@ -90,6 +91,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
+    balloonAddons: params.balloonAddons,
     isCashPayment: base.isCashPayment,
   });
 
@@ -107,6 +109,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     {
       isCashPayment: base.isCashPayment,
       financeReceipts,
+      balloonAddons: params.balloonAddons,
     },
   );
 
@@ -144,14 +147,34 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     ),
   );
 
+  const financeExtras = {
+    discountFmt: paymentBreakdown.discountFmt,
+    correctionLabel: paymentBreakdown.correctionLabel,
+    firstDueDateFmt: vencimentoLabel || null,
+  };
+
+  const balloonFinanceHtml = balloonSummary.hasBalloon
+    ? buildCompactBalloonFinanceScheduleHtml(balloonSummary, financeExtras)
+    : buildContractFinanceQuadroHtml({
+        saleTotalFmt: formatCurrencyBRL(valTotal),
+        discountFmt: paymentBreakdown.discountFmt,
+        entryFmt: paymentBreakdown.entryFmt,
+        financedFmt: paymentBreakdown.installmentBalanceFmt,
+        parcelamentoLabel: base.isCashPayment
+          ? 'À vista'
+          : `${qtdParcelas} parcelas mensais`,
+        baseInstallmentFmt: paymentBreakdown.installmentValueFmt,
+        correctionLabel: paymentBreakdown.correctionLabel,
+        firstDueDateFmt: vencimentoLabel || null,
+        isCashPayment: base.isCashPayment,
+      });
+
   return {
     ...base,
     contractNumber,
     paymentBreakdown,
     balloonSummary,
-    balloonFinanceHtml: balloonSummary.hasBalloon
-      ? buildCompactBalloonFinanceScheduleHtml(balloonSummary)
-      : '',
+    balloonFinanceHtml,
     hasBalloonInstallments: balloonSummary.hasBalloon,
     area,
     municipio,

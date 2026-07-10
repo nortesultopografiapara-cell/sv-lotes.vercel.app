@@ -172,9 +172,11 @@ function testStandardContractShowsPaymentBreakdown() {
     contractSnapshot: { contract_number: '000000002/2026' },
   });
 
-  assert(sv2Html.includes('VALOR DO LOTE'), 'SV2 exibe valor do lote');
-  assert(sv2Html.includes('DESCONTO'), 'SV2 exibe desconto');
-  assert(sv2Html.includes('CORREÇÃO'), 'SV2 exibe correção');
+  assert(sv2Html.includes('Valor da venda'), 'SV2 exibe valor da venda');
+  assert(sv2Html.includes('Desconto'), 'SV2 exibe desconto');
+  assert(sv2Html.includes('Correção'), 'SV2 exibe correção');
+  assert(sv2Html.includes('Quadro Financeiro'), 'SV2 concentra financeiro no quadro');
+  assert(!sv2Html.includes('VALOR DO LOTE'), 'SV2 sem duplicar valor no resumo superior');
 
   const breakdown = resolveSaleContractPaymentBreakdown(sale, { isCashPayment: false });
   assert(breakdown.discountAmount === 5000, 'breakdown desconto 5000');

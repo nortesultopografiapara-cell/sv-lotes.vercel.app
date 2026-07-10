@@ -63,6 +63,8 @@ export type RecantoPrimaveraContractParams = {
   contractSnapshot?: Record<string, unknown>;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
+  /** Fonte exclusiva: sale_balloon_installments. */
+  balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
 };
 
 export type RecantoPrimaveraContractContext = {
@@ -319,6 +321,7 @@ export function buildRecantoPrimaveraContractContext(
     contractSnapshot,
     contractDate,
     financeReceipts,
+    balloonAddons,
   } = params;
 
   const profile = normalizeRecantoPrimaveraCompanyProfile(tenant);
@@ -560,6 +563,7 @@ export function buildRecantoPrimaveraContractContext(
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
+    balloonAddons,
     isCashPayment,
   });
   const hasBalloonInstallments = balloonSummary.hasBalloon;

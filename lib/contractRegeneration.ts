@@ -13,6 +13,15 @@ import { generateContractHTML } from '@/lib/contractTemplate';
 import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
+  diagnoseContractBalloonAddons,
+  loadSaleBalloonRows,
+  replaceSaleBalloonInstallments,
+} from '@/lib/saleBalloonRepository';
+import {
+  resolveSaleBalloonPlan,
+  type SaleBalloonFormConfig,
+} from '@/lib/saleBalloonInstallments';
+import {
   enrichSaleWithBrokerForContract,
 } from '@/lib/saleBrokerSnapshot';
 import {
@@ -895,6 +904,10 @@ export async function buildFreshSaleContractHtml(
     ...sale,
     id: (sale.id as string) || (contract.sale_id as string),
   };
+  // Identificador real da venda — obrigatório para balões/regeneração.
+  // (Bug: saleId era referenciado sem declaração → "saleId is not defined".)
+  const saleId =
+    String(saleWithId.id || contract.sale_id || '').trim() || null;
   const customerWithId = {
     ...mergeCustomerData(customer, sale, contract.customers as Record<string, unknown>),
     id: (customer.id as string) || (contract.customer_id as string),
@@ -931,34 +944,119 @@ export async function buildFreshSaleContractHtml(
 
   assertCustomerValidForContract(customerWithId);
 
-  let html = generateContractHTML({
-    tenant,
-    customer: customerWithId,
-    project: projData,
-    block: blockWithId,
-    sale: {
-      ...saleWithId,
-      receipts_sum,
-      finance_receipts,
-    },
-    financeReceipts: finance_receipts,
-    contractSnapshot: {
-      contract_number: contractNumber,
-      ...contractPayloadPartial,
-    },
-    projectBlocks,
-    streetGuides,
-    manualConfrontants: null,
+  const balloonRows = saleId
+    ? await loadSaleBalloonRows(supabase, saleId)
+    : [];
+  const balloonDiag = diagnoseContractBalloonAddons({
+    sale: saleWithId as Record<string, unknown>,
+    tableRows: balloonRows,
   });
+  const balloonAddons = balloonDiag.selectedAddons;
+  console.log('REGENERATE_BALLOON_ADDONS', {
+    saleId,
+    configAddons: balloonDiag.configAddons,
+    tableAddons: balloonDiag.tableAddons,
+    selectedSource: balloonDiag.selectedSource,
+    selectedAddons: balloonDiag.selectedAddons,
+    balloonConfig: balloonDiag.balloonConfig,
+    tableCount: balloonRows.length,
+    addonCount: balloonAddons.length,
+    addonNumbers: balloonAddons.map((a) => a.installment_number),
+  });
+
+  // Se a tabela estiver poluída (ex.: 47 linhas) e a config tiver os balões reais,
+  // regrava a tabela a partir da config — sem tocar em finance_receipts.
+  // Nunca aborta a regeneração se o repair falhar.
+  if (
+    saleId &&
+    balloonDiag.selectedSource === 'balloon_config' &&
+    balloonAddons.length > 0 &&
+    balloonRows.length !== balloonAddons.length
+  ) {
+    try {
+      const plan = resolveSaleBalloonPlan({
+        useBalloon: true,
+        installmentsCount: Math.max(
+          1,
+          Number(saleWithId.installments_count) || balloonAddons.length,
+        ),
+        contractValue:
+          Number(saleWithId.total_value) ||
+          Number(saleWithId.agreed_price) ||
+          0,
+        config:
+          (saleWithId.balloon_config as SaleBalloonFormConfig | null) || {
+            mode: 'MANUAL',
+            manualCount: balloonAddons.length,
+            manualRows: balloonAddons.map((a) => ({
+              installmentNumber: String(a.installment_number),
+              additionalAmount: String(a.additional_amount),
+              dueDate: '',
+            })),
+          },
+      });
+      if (plan.enabled && plan.items.length === balloonAddons.length) {
+        await replaceSaleBalloonInstallments(supabase, saleId, plan);
+        console.warn('REGENERATE_BALLOON_TABLE_REPAIRED', {
+          saleId,
+          from: balloonRows.length,
+          to: plan.items.length,
+        });
+      }
+    } catch (repairErr) {
+      console.warn('REGENERATE_BALLOON_TABLE_REPAIR_FAILED', {
+        saleId,
+        message: repairErr instanceof Error ? repairErr.message : String(repairErr),
+      });
+    }
+  }
+
+  let html: string;
+  try {
+    html = generateContractHTML({
+      tenant,
+      customer: customerWithId,
+      project: projData,
+      block: blockWithId,
+      sale: {
+        ...saleWithId,
+        receipts_sum,
+        finance_receipts,
+      },
+      financeReceipts: finance_receipts,
+      balloonAddons,
+      contractSnapshot: {
+        contract_number: contractNumber,
+        ...contractPayloadPartial,
+      },
+      projectBlocks,
+      streetGuides,
+      manualConfrontants: null,
+    });
+  } catch (genErr) {
+    console.error('REGENERATE_HTML_GENERATE_FAILED', {
+      saleId,
+      selectedSource: balloonDiag.selectedSource,
+      selectedAddons: balloonDiag.selectedAddons,
+      configAddons: balloonDiag.configAddons,
+      tableAddons: balloonDiag.tableAddons,
+      message: genErr instanceof Error ? genErr.message : String(genErr),
+    });
+    throw genErr;
+  }
 
   if (isRecantoPrimaveraContractModel(tenant)) {
     html = await embedRecantoContractSignatureInHtml(html, tenant);
   }
 
+  const qtyMatch = html.match(/Quantidade:\s*<strong>(\d+)<\/strong>/i)?.[1] || null;
   console.log('REGENERATE_HTML_GENERATED', {
     contractNumber,
     htmlLength: html.length,
     tenantId: session.contractTenantId,
+    balloonQtyInHtml: qtyMatch,
+    selectedSource: balloonDiag.selectedSource,
+    selectedCount: balloonAddons.length,
   });
 
   return {

@@ -172,10 +172,14 @@ function testSv2TemplateStructure() {
   assertNotIncludes(html, 'sv2-header-company', 'sem dados da empresa duplicados no corpo');
   assert(html.includes('Contrato nº'), 'número do contrato abaixo do título');
   assertNotIncludes(html, 'CONTRATO Nº', 'sem número duplicado no quadro resumo');
-  assert(html.includes('VALOR DO LOTE'), 'valor do lote no resumo');
-  assert(html.includes('DESCONTO'), 'desconto no resumo');
-  assert(html.includes('SALDO PARCELADO'), 'saldo parcelado no resumo');
-  assert(html.includes('CORREÇÃO'), 'correção das parcelas no resumo');
+  // Financeiro concentrado no Quadro Financeiro (não no resumo superior).
+  assert(html.includes('Quadro Financeiro'), 'quadro financeiro');
+  assert(html.includes('Valor da venda'), 'valor da venda no quadro financeiro');
+  assert(html.includes('Desconto'), 'desconto no quadro financeiro');
+  assert(html.includes('Saldo financiado'), 'saldo financiado no quadro financeiro');
+  assert(html.includes('Correção'), 'correção no quadro financeiro');
+  assertNotIncludes(html, 'VALOR DO LOTE', 'sem valor do lote duplicado no resumo superior');
+  assertNotIncludes(html, 'SALDO PARCELADO', 'sem saldo parcelado no resumo superior');
   assert(html.includes('DATA DA VENDA'), 'data da venda no resumo');
   assert(html.includes('08/06/2026'), 'data da venda formatada');
   assert(

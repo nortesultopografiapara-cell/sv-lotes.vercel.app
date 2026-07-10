@@ -645,10 +645,17 @@ function testContractClauseVariableInstallments() {
 
   const schedule = buildSaleContractInstallmentScheduleHtml([
     { installmentNumber: 1, amount: 1000, dueDate: '2026-08-01' },
+    { installmentNumber: 2, amount: 1000, dueDate: '2026-09-01' },
     { installmentNumber: 12, amount: 21000, dueDate: '2027-07-01' },
   ]);
-  assert(schedule.includes('(balão)'), 'marca parcela balão');
-  assert(schedule.includes('Total das parcelas'), 'total no quadro');
+  // Legado: nunca inferir balão por amount — sempre vazio.
+  assert(schedule === '', 'schedule legado vazio (sem inferência)');
+
+  const equalSchedule = buildSaleContractInstallmentScheduleHtml([
+    { installmentNumber: 1, amount: 1000, dueDate: '2026-08-01' },
+    { installmentNumber: 2, amount: 1000, dueDate: '2026-09-01' },
+  ]);
+  assert(equalSchedule === '', 'iguais → sem tabela');
 
   assert(
     hasVariableInstallmentAmounts([

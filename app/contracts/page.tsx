@@ -139,6 +139,7 @@ async function resolveContractsTenantWithDb(user: any): Promise<string | null> {
 async function fetchContractHtmlFromApi(
   contractId: string,
   user: any,
+  options?: { refresh?: boolean },
 ): Promise<string | null> {
   const impersonatingTenantId =
     typeof window !== "undefined"
@@ -150,9 +151,12 @@ async function fetchContractHtmlFromApi(
   if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
     query.set("impersonatingTenantId", impersonatingTenantId);
   }
+  // PDF/preview pós-regeneração: força rebuild para não reutilizar HTML salvo com quadro errado.
+  if (options?.refresh) query.set("refresh", "1");
   const { ok, data, error } = await fetchJsonWithTimeout<{
     html?: string;
     error?: string;
+    source?: string;
   }>(
     `/api/contracts/${contractId}/html?${query.toString()}`,
     { credentials: "include" },
@@ -780,6 +784,13 @@ export default function ContractsPage() {
         if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
           query.set("impersonatingTenantId", impersonatingTenantId);
         }
+        // Após regenerar (retryKey) ou needs_regenerar: força HTML fresco com balões persistidos.
+        if (
+          contractHtmlRetryKey > 0 ||
+          selectedContract.needs_regenerar === true
+        ) {
+          query.set("refresh", "1");
+        }
         const { ok, data, error } = await fetchJsonWithTimeout<{
           success?: boolean;
           html?: string;
@@ -825,7 +836,7 @@ export default function ContractsPage() {
     return () => {
       active = false;
     };
-  }, [selectedContract?.id, contractHtmlRetryKey, user?.id]);
+  }, [selectedContract?.id, selectedContract?.needs_regenerar, contractHtmlRetryKey, user?.id]);
 
   const resolvedContractHtml = contractViewHtml;
 
@@ -938,13 +949,15 @@ export default function ContractsPage() {
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
 
-      let htmlBody = resolvedContractHtml;
-      if (!htmlBody?.trim()) {
-        htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user);
-        if (htmlBody) {
-          setContractViewHtml(htmlBody);
-          setContractViewError(null);
-        }
+      // Sempre rebuild no PDF não assinado: evita baixar generated_html antigo (ex.: Quantidade 47).
+      let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
+        refresh: true,
+      });
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+      } else {
+        htmlBody = resolvedContractHtml;
       }
 
       if (!htmlBody?.trim()) {
@@ -1017,13 +1030,14 @@ export default function ContractsPage() {
   const handleImprimir = async () => {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
-    let htmlBody = resolvedContractHtml;
-    if (!htmlBody?.trim()) {
-      htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user);
-      if (htmlBody) {
-        setContractViewHtml(htmlBody);
-        setContractViewError(null);
-      }
+    let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
+      refresh: true,
+    });
+    if (htmlBody) {
+      setContractViewHtml(htmlBody);
+      setContractViewError(null);
+    } else {
+      htmlBody = resolvedContractHtml;
     }
     if (!htmlBody?.trim()) {
       alert("Não foi possível carregar o conteúdo do contrato para impressão.");
@@ -1525,6 +1539,7 @@ export default function ContractsPage() {
       const { ok, data, error } = await fetchJsonWithTimeout<{
         success?: boolean;
         error?: string;
+        diagnosticHint?: string;
         missingFields?: string[];
         customerId?: string;
         contract?: { id?: string };
@@ -1554,7 +1569,13 @@ export default function ContractsPage() {
           });
           return;
         }
-        throw new Error(error || data?.error || "Erro ao regenerar contrato");
+        const detail = data?.error || error || "Erro ao regenerar contrato";
+        console.error("CONTRACT_REGENERATE_UI_FAILED", {
+          contractId: selectedContract.id,
+          detail,
+          diagnosticHint: data?.diagnosticHint,
+        });
+        throw new Error(detail);
       }
 
       const json = data;

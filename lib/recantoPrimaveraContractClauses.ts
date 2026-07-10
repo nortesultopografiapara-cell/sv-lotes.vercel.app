@@ -92,14 +92,31 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       ? `${ctx.valorSinalFmt}<br/><span style="font-size: 9.5pt;">Pago no ato: ${ctx.valorSinalPagoNoAtoFmt}<br/>Restante: ${ctx.valorSinalRestanteFmt}</span>`
       : ctx.valorSinalFmt;
 
+  // Com balão: quadro executivo compacto (sem listagem de parcelas / quadro de composição).
+  if (hasBalloon && ctx.balloonSummary) {
+    return `
+    <div class="contract-payment-block">
+      <table style="width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt;">
+        <thead>
+          <tr>
+            <th style="border: 1px solid #111; padding: 6px; text-align: center; width: 35%;">SINAL</th>
+            <th style="border: 1px solid #111; padding: 6px; text-align: center;">SALDO PARCELADO</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #111; padding: 6px; text-align: center;"><strong>${sinalDetail}</strong></td>
+            <td style="border: 1px solid #111; padding: 6px; text-align: center;"><strong>${saldoLine}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      ${buildCompactBalloonFinanceScheduleHtml(ctx.balloonSummary)}
+    </div>`;
+  }
+
   const compositionTable = ctx.parcelasResumoSinalHtml
     ? `<div style="margin-top: 10px;">${ctx.parcelasResumoSinalHtml}</div>`
     : '';
-
-  const balloonTable =
-    hasBalloon && ctx.balloonSummary
-      ? buildCompactBalloonFinanceScheduleHtml(ctx.balloonSummary)
-      : '';
 
   return `
     <div class="contract-payment-block">
@@ -118,7 +135,6 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
         </tbody>
       </table>
       ${compositionTable}
-      ${balloonTable}
     </div>`;
 }
 

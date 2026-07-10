@@ -31,7 +31,6 @@ import {
   isSaleContractCashPayment,
 } from '@/lib/saleContractLegalTemplate';
 import {
-  hasVariableInstallmentAmounts,
   type ContractInstallmentScheduleRow,
 } from '@/lib/saleContractPaymentSummary';
 import {
@@ -53,6 +52,8 @@ export type SaleContractRenderParams = {
   contractSnapshot?: Record<string, unknown>;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
+  /** Fonte exclusiva de balões: sale_balloon_installments (nunca inferir por valores). */
+  balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
 };
 
 export type SaleContractRenderContext = {
@@ -385,19 +386,12 @@ export function buildSaleContractRenderContext(
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
+    balloonAddons: params.balloonAddons,
     isCashPayment,
   });
-  const hasVariableInstallments =
-    balloonSummary.hasBalloon || hasVariableInstallmentAmounts(scheduleRows);
+  const hasVariableInstallments = balloonSummary.hasBalloon;
   if (hasVariableInstallments) {
-    valorParcela = balloonSummary.hasBalloon
-      ? balloonSummary.baseInstallmentValue
-      : (() => {
-          const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
-          return monthly.length > 0
-            ? Math.min(...monthly.map((r) => r.amount))
-            : valorParcela;
-        })();
+    valorParcela = balloonSummary.baseInstallmentValue;
   }
   const valorParcelaFmtFinal = formatBRL(valorParcela);
   let valorParcelaExtensoFinal = valorParcelaExtenso;

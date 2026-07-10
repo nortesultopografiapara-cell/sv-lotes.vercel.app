@@ -21,13 +21,6 @@ function formatBRL(val: number): string {
   }).format(val);
 }
 
-function formatDateBr(raw: unknown): string {
-  const s = String(raw || '').split('T')[0];
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—';
-  const [y, m, d] = s.split('-');
-  return `${d}/${m}/${y}`;
-}
-
 export type ContractInstallmentScheduleRow = {
   installmentNumber: number;
   amount: number;
@@ -47,49 +40,16 @@ export function hasVariableInstallmentAmounts(
   return amounts.some((a) => Math.abs(a - first) > 0.009);
 }
 
-/** Tabela de parcelas com valores reais (usada quando há balão / valores variáveis). */
+/**
+ * LEGADO — NÃO listar 1..N e NÃO inferir balão por diferença de valores.
+ * Sem balloonAddons persistidos → string vazia.
+ * O quadro oficial é buildCompactBalloonFinanceScheduleHtml.
+ */
 export function buildSaleContractInstallmentScheduleHtml(
-  rows: ContractInstallmentScheduleRow[],
+  _rows: ContractInstallmentScheduleRow[],
 ): string {
-  const monthly = rows
-    .filter((r) => r.installmentNumber >= 1)
-    .sort((a, b) => a.installmentNumber - b.installmentNumber);
-  if (monthly.length === 0) return '';
-
-  const amounts = monthly.map((r) => Math.round((Number(r.amount) || 0) * 100) / 100);
-  const baseAmount = Math.min(...amounts);
-  const total = amounts.reduce((s, a) => s + a, 0);
-
-  const body = monthly
-    .map((r) => {
-      const amount = Math.round((Number(r.amount) || 0) * 100) / 100;
-      const isBalloon = amount > baseAmount + 0.009;
-      const label =
-        r.label ||
-        (isBalloon
-          ? `Parcela ${r.installmentNumber} (balão)`
-          : `Parcela ${r.installmentNumber}`);
-      const rowStyle = isBalloon ? 'background:#fff8e7;' : '';
-      return `<tr style="${rowStyle}"><td style="padding:5px 8px;border:1px solid #ddd;">${label}</td><td style="padding:5px 8px;border:1px solid #ddd;">${formatDateBr(r.dueDate)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;">${formatBRL(amount)}</td></tr>`;
-    })
-    .join('');
-
-  const totalRow = `<tr><td colspan="2" style="padding:5px 8px;border:1px solid #ddd;font-weight:bold;">Total das parcelas</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;font-weight:bold;">${formatBRL(total)}</td></tr>`;
-
-  return `
-    <div class="contract-clause" style="margin: 12px 0 20px;">
-      <p style="margin:0 0 8px;font-weight:bold;">Quadro de parcelas</p>
-      <table style="width:100%;border-collapse:collapse;font-size:10.5pt;">
-        <thead>
-          <tr>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Parcela</th>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Vencimento</th>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:right;">Valor</th>
-          </tr>
-        </thead>
-        <tbody>${body}${totalRow}</tbody>
-      </table>
-    </div>`;
+  // Proibido inferir balões por amount !== base. Sempre vazio aqui.
+  return '';
 }
 
 export type SaleContractPaymentBreakdown = {
@@ -187,43 +147,14 @@ export function buildSaleContractPaymentSummaryHtml(
   },
 ): string {
   const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
-  const variableFromRows = options?.scheduleRows
-    ? hasVariableInstallmentAmounts(options.scheduleRows)
-    : false;
-  const variable =
-    balloon?.hasBalloon === true ||
-    options?.hasVariableInstallments === true ||
-    variableFromRows;
 
-  const correctionNote = breakdown.correctionLabel
-    ? `<p style="margin:4px 0 0;font-size:9pt;color:#444;">Correção das parcelas: ${breakdown.correctionLabel}</p>`
-    : '';
-
-  // Com balão (ou valores variáveis inferidos como balão): SOMENTE quadro executivo.
-  // Nunca listar 1..N parcelas no contrato PDF.
+  // Com balão persistido: SOMENTE quadro executivo.
+  // Nunca listar 1..N e nunca inferir balão por diferença de valores.
   if (!breakdown.isCashPayment && balloon?.hasBalloon) {
-    return `${buildCompactBalloonFinanceScheduleHtml(balloon)}${correctionNote}`;
-  }
-
-  if (!breakdown.isCashPayment && variable && options?.scheduleRows?.length) {
-    const inferred = resolveSaleContractBalloonFinance({
-      sale: {
-        total_value: breakdown.lotPrice - breakdown.discountAmount,
-        down_payment: breakdown.entryAmount,
-        installments_count: breakdown.installmentsCount,
-        use_balloon_installments: true,
-        payment_type: 'Parcelado',
-      },
-      financeReceipts: options.scheduleRows.map((r) => ({
-        installment_number: r.installmentNumber,
-        amount: r.amount,
-        due_date: r.dueDate ?? null,
-      })),
-      isCashPayment: false,
+    return buildCompactBalloonFinanceScheduleHtml(balloon, {
+      discountFmt: breakdown.discountFmt,
+      correctionLabel: breakdown.correctionLabel,
     });
-    if (inferred.hasBalloon) {
-      return `${buildCompactBalloonFinanceScheduleHtml(inferred)}${correctionNote}`;
-    }
   }
 
   const rows: Array<[string, string]> = [

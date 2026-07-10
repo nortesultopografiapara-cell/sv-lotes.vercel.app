@@ -1,20 +1,32 @@
 /**
- * Resumo financeiro central para contratos com parcelas balão.
- * Fonte: finance_receipts.amount (+ sale_balloon_installments quando disponível).
- * Sem balão / valores iguais → hasBalloon=false (templates mantêm texto atual).
+ * Resumo financeiro de balões no contrato — MESMA fonte do formulário de venda.
  *
- * ATENÇÃO: este módulo altera apenas a APRESENTAÇÃO do contrato.
- * Não altera cálculo, Asaas, financeiro, portal ou persistência.
+ * Fonte: buildBalloonFinancePreview (lib/saleBalloonInstallments.ts),
+ * usada por SaleBalloonInstallmentsPanel ("Resumo financeiro").
+ *
+ * NUNCA inferir balão por:
+ * - finance_receipts.amount
+ * - diferença vs parcela-base
+ * - quantidade de linhas em sale_balloon_installments
+ *
+ * Exibe somente parcelas com adicional > 0.
  */
 
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import type { ContractFinanceReceiptRef } from '@/lib/contractPaymentDates';
+import type { ContractInstallmentScheduleRow } from '@/lib/saleContractPaymentSummary';
 import {
-  hasVariableInstallmentAmounts,
-  type ContractInstallmentScheduleRow,
-} from '@/lib/saleContractPaymentSummary';
+  buildBalloonFinancePreview,
+  resolveSaleBalloonPlan,
+  type SaleBalloonFormConfig,
+  type SaleBalloonPlan,
+} from '@/lib/saleBalloonInstallments';
+import { resolveInstallmentPrincipal } from '@/lib/saleInstallmentCalc';
 
-const extenso = require('extenso');
+export type ContractBalloonAddonRef = {
+  installment_number: number;
+  additional_amount: number;
+};
 
 export type ContractBalloonScheduleRow = ContractInstallmentScheduleRow & {
   baseAmount: number;
@@ -38,31 +50,18 @@ export type SaleContractBalloonFinanceSummary = {
   monthlySum: number;
   grandTotal: number;
   totalsMatch: boolean;
+  /** Preview idêntico ao formulário (quando disponível). */
+  formPreviewMatch: boolean;
 };
+
+export const BALLOON_ADDONS_REQUIRED_MESSAGE =
+  'Venda marcada com parcelas balão, mas não há configuração de balão (balloon_config) nem addons válidos. Não é permitido inferir balões por diferença de valores.';
+
+export const BALLOON_RECEIPT_MISSING_MESSAGE =
+  'Inconsistência: parcela balão cadastrada sem finance_receipt correspondente (installment_number).';
 
 function money(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
-}
-
-function toScheduleRows(
-  receipts: ContractFinanceReceiptRef[] | null | undefined,
-): ContractInstallmentScheduleRow[] {
-  return (receipts || [])
-    .map((r) => ({
-      installmentNumber: Number(r.installment_number),
-      amount: money(Number(r.amount) || 0),
-      dueDate: r.due_date ?? null,
-    }))
-    .filter((r) => Number.isFinite(r.installmentNumber));
-}
-
-function formatCurrencyExtenso(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return 'zero reais';
-  try {
-    return extenso(value.toFixed(2).replace('.', ','), { mode: 'currency' });
-  } catch {
-    return '';
-  }
 }
 
 function padInstallmentNumber(n: number): string {
@@ -79,14 +78,68 @@ export function formatBalloonIncidentNumbers(nums: number[]): string {
 }
 
 /**
- * Resolve resumo a partir dos receipts (fonte oficial dos valores finais).
- * balloonAddons opcional: mapa installment_number → additional_amount.
+ * Monta o plano de balão como o formulário:
+ * 1) sales.balloon_config via resolveSaleBalloonPlan
+ * 2) fallback: balloonAddons explícitos (já filtrados pelo caller)
+ */
+export function resolveContractBalloonPlanFromSale(params: {
+  sale: Record<string, unknown>;
+  balloonAddons?: ContractBalloonAddonRef[] | null;
+}): SaleBalloonPlan | null {
+  const sale = params.sale;
+  const useBalloon = Boolean(sale.use_balloon_installments);
+  const installmentsCount = Math.max(1, Number(sale.installments_count) || 0);
+  const contractValue =
+    Number(sale.total_value) ||
+    Number(sale.agreed_price) ||
+    Number(sale.final_value) ||
+    0;
+
+  const rawConfig = sale.balloon_config as SaleBalloonFormConfig | null | undefined;
+  if (useBalloon && rawConfig && typeof rawConfig === 'object') {
+    const fromConfig = resolveSaleBalloonPlan({
+      useBalloon: true,
+      installmentsCount,
+      contractValue,
+      config: rawConfig,
+    });
+    if (fromConfig.enabled && fromConfig.items.length > 0) {
+      return fromConfig;
+    }
+  }
+
+  const addons = (params.balloonAddons || []).filter(
+    (b) =>
+      Number(b.installment_number) >= 1 &&
+      money(Number(b.additional_amount) || 0) > 0.009,
+  );
+  if (addons.length > 0) {
+    return {
+      enabled: true,
+      mode: 'MANUAL',
+      items: addons
+        .map((b) => ({
+          installmentNumber: Number(b.installment_number),
+          additionalAmount: money(Number(b.additional_amount) || 0),
+        }))
+        .sort((a, b) => a.installmentNumber - b.installmentNumber),
+      config: null,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Resolve resumo do contrato com a MESMA lógica do Resumo financeiro do formulário.
+ * Linhas de balão = apenas preview.balloonRows (adicional > 0).
  */
 export function resolveSaleContractBalloonFinance(params: {
   sale: Record<string, unknown>;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
-  balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
+  balloonAddons?: ContractBalloonAddonRef[] | null;
   isCashPayment?: boolean;
+  contractModel?: unknown;
 }): SaleContractBalloonFinanceSummary {
   const sale = params.sale;
   const isCashPayment =
@@ -102,231 +155,286 @@ export function resolveSaleContractBalloonFinance(params: {
       0,
   );
 
-  const rawRows = toScheduleRows(params.financeReceipts);
-  const entryReceipt = rawRows.find((r) => r.installmentNumber === 0);
-  const signalReceipt = rawRows.find((r) => r.installmentNumber === -1);
+  const receipts = params.financeReceipts || [];
+  const entryReceipt = receipts.find((r) => Number(r.installment_number) === 0);
   const entryFromSale = money(Number(sale.down_payment) || 0);
-  const resolvedEntry = entryReceipt
-    ? money(entryReceipt.amount)
+  const entryAmount = entryReceipt
+    ? money(Number(entryReceipt.amount) || 0)
     : entryFromSale;
 
-  const monthly = rawRows
-    .filter((r) => r.installmentNumber >= 1)
-    .sort((a, b) => a.installmentNumber - b.installmentNumber);
-
-  const installmentsCount = Math.max(
-    monthly.length,
-    Number(sale.installments_count) || 0,
-    1,
+  const installmentsCount = Math.max(1, Number(sale.installments_count) || 0);
+  const principal = money(
+    resolveInstallmentPrincipal({
+      totalValue: saleTotal,
+      downPayment: entryAmount,
+      contractModel: params.contractModel ?? sale.contract_model,
+    }),
   );
 
-  const addonMap = new Map<number, number>();
-  for (const b of params.balloonAddons || []) {
-    const n = Number(b.installment_number);
-    if (n >= 1) addonMap.set(n, money(Number(b.additional_amount) || 0));
+  const plan = isCashPayment
+    ? null
+    : resolveContractBalloonPlanFromSale({
+        sale,
+        balloonAddons: params.balloonAddons,
+      });
+
+  const useBalloonFlag = Boolean(sale.use_balloon_installments);
+  if (!isCashPayment && useBalloonFlag && (!plan || plan.items.length === 0)) {
+    throw new Error(BALLOON_ADDONS_REQUIRED_MESSAGE);
   }
 
-  const amounts = monthly.map((r) => money(r.amount));
-  const inferredBase = amounts.length > 0 ? Math.min(...amounts) : 0;
-
-  // Se temos addons persistidos, base = amount - addon; senão inferir pelo mínimo.
-  const scheduleRows: ContractBalloonScheduleRow[] = monthly.map((r) => {
-    const addonFromTable = addonMap.get(r.installmentNumber) || 0;
-    const amount = money(r.amount);
-    let balloonAddonAmount = addonFromTable;
-    let baseAmount = money(amount - balloonAddonAmount);
-    if (balloonAddonAmount <= 0 && amount > inferredBase + 0.009) {
-      balloonAddonAmount = money(amount - inferredBase);
-      baseAmount = inferredBase;
-    } else if (balloonAddonAmount <= 0) {
-      baseAmount = amount;
-      balloonAddonAmount = 0;
-    }
+  if (!plan || plan.items.length === 0 || isCashPayment) {
+    const monthly = receipts
+      .filter((r) => Number(r.installment_number) >= 1)
+      .map((r) => ({
+        installmentNumber: Number(r.installment_number),
+        amount: money(Number(r.amount) || 0),
+        dueDate: r.due_date ?? null,
+        baseAmount: money(Number(r.amount) || 0),
+        balloonAddonAmount: 0,
+        isBalloon: false,
+      }))
+      .sort((a, b) => a.installmentNumber - b.installmentNumber);
+    const monthlySum = money(monthly.reduce((s, r) => s + r.amount, 0));
     return {
-      installmentNumber: r.installmentNumber,
-      amount,
-      dueDate: r.dueDate,
-      baseAmount,
-      balloonAddonAmount,
-      isBalloon: balloonAddonAmount > 0.009,
+      hasBalloon: false,
+      isCashPayment,
+      installmentsCount: Math.max(monthly.length, installmentsCount, 1),
+      entryAmount,
+      entryDueDate: entryReceipt?.due_date
+        ? String(entryReceipt.due_date).split('T')[0]
+        : null,
+      saleTotal,
+      baseInstallmentValue: monthly[0]?.amount || 0,
+      balloonCount: 0,
+      balloonTotal: 0,
+      commonCount: monthly.length,
+      scheduleRows: monthly,
+      balloonRows: [],
+      monthlySum,
+      grandTotal: money(entryAmount + monthlySum),
+      totalsMatch: true,
+      formPreviewMatch: true,
     };
+  }
+
+  // === MESMA função do formulário (SaleBalloonInstallmentsPanel) ===
+  const preview = buildBalloonFinancePreview({
+    finalValue: saleTotal,
+    entryAmount,
+    principal,
+    installmentsCount,
+    plan,
   });
 
-  const hasBalloon =
-    !isCashPayment &&
-    (scheduleRows.some((r) => r.isBalloon) ||
-      hasVariableInstallmentAmounts(monthly) ||
-      Boolean(sale.use_balloon_installments));
-
-  const balloonRows = scheduleRows.filter((r) => r.isBalloon);
-  const baseInstallmentValue =
-    scheduleRows.find((r) => !r.isBalloon)?.baseAmount ??
-    scheduleRows[0]?.baseAmount ??
-    inferredBase;
-  const balloonTotal = money(
-    balloonRows.reduce((s, r) => s + r.balloonAddonAmount, 0),
+  // Somente parcelas com adicional (já filtrado em buildBalloonFinancePreview).
+  const balloonRows: ContractBalloonScheduleRow[] = preview.balloonRows.map(
+    (r) => ({
+      installmentNumber: r.installmentNumber,
+      amount: money(r.finalAmount),
+      dueDate: r.dueDateOverride ?? null,
+      baseAmount: money(r.baseAmount),
+      balloonAddonAmount: money(r.balloonAddonAmount),
+      isBalloon: true,
+    }),
   );
-  const monthlySum = money(scheduleRows.reduce((s, r) => s + r.amount, 0));
-  const entryForTotal = entryReceipt
-    ? money(entryReceipt.amount)
-    : resolvedEntry;
-  void signalReceipt;
-  const grandWithEntry = entryReceipt
-    ? money(money(entryReceipt.amount) + monthlySum)
-    : money(resolvedEntry + monthlySum);
-  const totalsMatch =
-    Math.abs(Math.round(grandWithEntry * 100) - Math.round(saleTotal * 100)) <= 1 ||
-    saleTotal <= 0;
+
+  const scheduleRows: ContractBalloonScheduleRow[] = preview.compositions.map(
+    (c, idx) => ({
+      installmentNumber: idx + 1,
+      amount: money(c.amount),
+      dueDate: c.dueDateOverride ?? null,
+      baseAmount: money(c.baseAmount),
+      balloonAddonAmount: money(c.balloonAddonAmount),
+      isBalloon: money(c.balloonAddonAmount) > 0.009,
+    }),
+  );
 
   return {
-    hasBalloon: Boolean(hasBalloon && balloonRows.length > 0),
+    hasBalloon: balloonRows.length > 0,
     isCashPayment,
-    installmentsCount,
-    entryAmount: entryForTotal || resolvedEntry,
-    entryDueDate: entryReceipt?.dueDate
-      ? String(entryReceipt.dueDate).split('T')[0]
+    installmentsCount: preview.installmentsCount,
+    entryAmount: preview.entryAmount,
+    entryDueDate: entryReceipt?.due_date
+      ? String(entryReceipt.due_date).split('T')[0]
       : null,
-    saleTotal,
-    baseInstallmentValue,
+    saleTotal: preview.saleTotal,
+    baseInstallmentValue: preview.baseInstallmentValue,
     balloonCount: balloonRows.length,
-    balloonTotal,
-    commonCount: Math.max(0, scheduleRows.length - balloonRows.length),
+    balloonTotal: preview.balloonTotal,
+    commonCount: Math.max(0, preview.installmentsCount - balloonRows.length),
     scheduleRows,
     balloonRows,
-    monthlySum,
-    grandTotal: grandWithEntry,
-    totalsMatch,
+    monthlySum: preview.installmentsSum,
+    grandTotal: preview.grandTotal,
+    totalsMatch: preview.totalsMatch,
+    formPreviewMatch: true,
   };
 }
 
-/** Texto dinâmico da cláusula de preço/pagamento (PADRAO Quarta / SV2 Segunda). */
-export function buildBalloonAwarePaymentClauseText(params: {
-  summary: SaleContractBalloonFinanceSummary;
-  valorTotalFmt: string;
-  valorTotalExtenso: string;
-  valorEntradaFmt: string;
-  valorEntradaExtenso: string;
-  dataPrimeiraParcelaFmt: string;
-  dataUltimaParcelaFmt: string;
-  buyerLabel?: string;
+export type ContractFinanceQuadroExtras = {
+  /** Desconto concedido (ex.: R$ 0,00). */
+  discountFmt?: string | null;
+  /** Correção das parcelas (ex.: Parcelas fixas / IPCA). */
+  correctionLabel?: string | null;
+  /** Primeiro vencimento das parcelas. */
+  firstDueDateFmt?: string | null;
+};
+
+/**
+ * Célula compacta do Quadro Financeiro (4 colunas).
+ */
+function financeGridCell(label: string, value: string): string {
+  return `<div class="contract-finance-cell">
+    <span class="contract-finance-label">${label}</span>
+    <span class="contract-finance-value">${value}</span>
+  </div>`;
+}
+
+function financeQuadroShell(params: {
+  gridCellsHtml: string;
+  balloonSectionHtml?: string;
+  totalFmt: string;
+  balloonCount?: number;
+  dataSource: string;
 }): string {
-  const s = params.summary;
-  const hasEntry = s.entryAmount > 0.009;
-
-  const intro = hasEntry
-    ? `O valor da presente compra e venda é de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, sendo <strong>${params.valorEntradaFmt} (${params.valorEntradaExtenso || 'zero reais'})</strong> pagos a título de entrada. `
-    : `O valor da presente compra e venda é de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>. `;
-
-  return `${intro}O saldo será pago em <strong>${s.installmentsCount} parcelas</strong> mensais, observada a parcela base indicada no Quadro Financeiro. As parcelas balão descritas no referido quadro receberão apenas os acréscimos contratados, permanecendo inalteradas as demais parcelas.`;
+  const balloonAttr =
+    params.balloonCount != null ? ` data-balloon-rows="${params.balloonCount}"` : '';
+  // Estilos embutidos: funciona em SV2/PADRAO/Recanto sem depender só do CSS do modelo.
+  const scopedCss = `<style type="text/css">
+.contract-finance-quadro{margin:0 0 8px 0;padding:6px 8px 5px;border:1px solid #1e40af;border-radius:3px;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;page-break-inside:avoid;break-inside:avoid}
+.contract-finance-quadro-title{margin:0 0 4px 0;padding:0 0 3px 0;text-align:center;font-size:10pt;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#1e40af;line-height:1.25;border-bottom:1px dotted #94a3b8;font-family:'Times New Roman',Times,serif}
+.contract-finance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));column-gap:8px;row-gap:0;margin:0}
+.contract-finance-cell{min-width:0;padding:3px 2px 4px;border-bottom:1px dotted #94a3b8}
+.contract-finance-label{display:block;font-size:6.5pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1e40af;margin:0 0 1px 0;line-height:1.15;font-family:'Times New Roman',Times,serif}
+.contract-finance-value{display:block;font-size:9pt;font-weight:700;color:#111;line-height:1.2;word-break:break-word;font-family:'Times New Roman',Times,serif}
+.contract-finance-balloons{margin:4px 0 0 0;padding:3px 0 2px;border-top:1px dotted #94a3b8;border-bottom:1px dotted #94a3b8}
+.contract-finance-balloons-title{margin:0 0 2px 0;font-size:7.5pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1e40af;line-height:1.2;font-family:'Times New Roman',Times,serif}
+.contract-finance-balloon-line{margin:0 0 2px 0;padding:0;font-size:9pt;line-height:1.3;color:#111;font-family:'Times New Roman',Times,serif}
+.contract-finance-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:4px 0 0 0;padding:3px 0 0 0;line-height:1.25;font-family:'Times New Roman',Times,serif}
+.contract-finance-total-label{font-size:8pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1e40af}
+.contract-finance-total-value{font-size:10pt;font-weight:700;color:#111;white-space:nowrap}
+</style>`;
+  return `
+    ${scopedCss}
+    <div class="contract-clause contract-balloon-finance contract-payment-block contract-finance-quadro"${balloonAttr} data-source="${params.dataSource}">
+      <p class="contract-finance-quadro-title">Quadro Financeiro</p>
+      <div class="contract-finance-grid">
+        ${params.gridCellsHtml}
+      </div>
+      ${params.balloonSectionHtml || ''}
+      <div class="contract-finance-total">
+        <span class="contract-finance-total-label">Valor total do contrato</span>
+        <span class="contract-finance-total-value">${params.totalFmt}</span>
+      </div>
+    </div>`;
 }
 
 /**
- * Quadro financeiro executivo compacto (~meia página).
- * Lista APENAS as parcelas balão — nunca todas as parcelas do financiamento.
+ * Quadro Financeiro — condições financeiras (texto HTML tipográfico, grid 4 colunas).
+ * Com balão: lista APENAS parcelas com adicional.
+ * Extras (desconto/correção/vencimento) são só apresentação — sem alterar cálculo.
  */
 export function buildCompactBalloonFinanceScheduleHtml(
   summary: SaleContractBalloonFinanceSummary,
+  extras?: ContractFinanceQuadroExtras | null,
 ): string {
   if (!summary.hasBalloon || summary.isCashPayment) return '';
+  const balloons = summary.balloonRows.filter(
+    (r) => r.isBalloon && money(r.balloonAddonAmount) > 0.009,
+  );
+  if (balloons.length === 0) return '';
 
   const saleTotal = summary.saleTotal > 0 ? summary.saleTotal : summary.grandTotal;
   const financed = money(Math.max(0, saleTotal - summary.entryAmount));
   const baseFmt = formatCurrencyBRL(summary.baseInstallmentValue);
-  const baseExt = formatCurrencyExtenso(summary.baseInstallmentValue);
   const totalFmt = formatCurrencyBRL(saleTotal);
-  const totalExt = formatCurrencyExtenso(saleTotal);
+  const discountFmt = String(extras?.discountFmt || '').trim() || formatCurrencyBRL(0);
+  const correctionLabel = String(extras?.correctionLabel || '').trim() || '—';
+  const firstDue = String(extras?.firstDueDateFmt || '').trim() || '—';
 
-  const addonAmounts = [
-    ...new Set(summary.balloonRows.map((r) => money(r.balloonAddonAmount))),
-  ];
-  const sameAddon = addonAmounts.length === 1;
-  const addonFmt = sameAddon ? formatCurrencyBRL(addonAmounts[0]) : '';
-  const addonExt = sameAddon ? formatCurrencyExtenso(addonAmounts[0]) : '';
-  const addonBlock = sameAddon
-    ? `<div><span style="font-weight:bold;">Acréscimo por parcela:</span><br/>${addonFmt}<br/><span style="font-size:8.5pt;color:#444;">(${addonExt})</span></div>`
-    : `<div><span style="font-weight:bold;">Acréscimo por parcela:</span><br/><span style="font-weight:normal;">Valores distintos conforme tabela resumida</span></div>`;
+  const gridCellsHtml = [
+    financeGridCell('Valor da venda', totalFmt),
+    financeGridCell('Desconto', discountFmt),
+    financeGridCell('Entrada', formatCurrencyBRL(summary.entryAmount)),
+    financeGridCell('Saldo financiado', formatCurrencyBRL(financed)),
+    financeGridCell('Parcelamento', `${summary.installmentsCount} parcelas mensais`),
+    financeGridCell('Parcela base', baseFmt),
+    financeGridCell('Correção', correctionLabel),
+    financeGridCell('Primeiro vencimento', firstDue),
+  ].join('');
 
-  const incidents = formatBalloonIncidentNumbers(
-    summary.balloonRows.map((r) => r.installmentNumber),
-  );
-
-  const cell =
-    'padding:5px 7px;border:1px solid #bbb;font-size:9.5pt;vertical-align:top;';
-  const th =
-    'padding:4px 6px;border:1px solid #bbb;font-size:9pt;text-align:left;background:#f5f5f5;';
-
-  const balloonTableRows = summary.balloonRows
-    .map(
-      (r) =>
-        `<tr><td style="${cell}text-align:center;width:40%;">${padInstallmentNumber(r.installmentNumber)}</td><td style="${cell}text-align:right;">${formatCurrencyBRL(r.amount)}</td></tr>`,
-    )
+  const balloonOnlyLines = balloons
+    .map((r) => {
+      const n = padInstallmentNumber(r.installmentNumber);
+      const line = `Parcela ${n} — Base ${formatCurrencyBRL(r.baseAmount)} — Adicional ${formatCurrencyBRL(r.balloonAddonAmount)} — Total ${formatCurrencyBRL(r.amount)}`;
+      return `<p class="contract-finance-balloon-line">${line}</p>`;
+    })
     .join('');
 
-  return `
-    <div class="contract-clause contract-balloon-finance" style="margin:10px 0 14px;page-break-inside:avoid;">
-      <div style="border:1px solid #222;padding:8px 10px;">
-        <p style="margin:0 0 8px;text-align:center;font-weight:bold;font-size:11pt;letter-spacing:0.6px;text-transform:uppercase;">Quadro Financeiro</p>
+  const balloonSectionHtml = `
+      <div class="contract-finance-balloons contract-balloon-only-table" data-balloon-only="true" data-row-count="${balloons.length}">
+        <p class="contract-finance-balloons-title">Parcelas com adicional</p>
+        ${balloonOnlyLines}
+      </div>`;
 
-        <table style="width:100%;border-collapse:collapse;margin:0 0 8px;">
-          <tr>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Valor da venda:</div>
-              ${totalFmt}
-            </td>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Entrada:</div>
-              ${formatCurrencyBRL(summary.entryAmount)}
-            </td>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Saldo financiado:</div>
-              ${formatCurrencyBRL(financed)}
-            </td>
-          </tr>
-          <tr>
-            <td style="${cell}">
-              <div style="font-weight:bold;">Parcelamento:</div>
-              ${summary.installmentsCount} parcelas mensais
-            </td>
-            <td style="${cell}" colspan="2">
-              <div style="font-weight:bold;">Parcela base:</div>
-              ${baseFmt}<br/><span style="font-size:8.5pt;color:#444;">(${baseExt})</span>
-            </td>
-          </tr>
-        </table>
+  return financeQuadroShell({
+    gridCellsHtml,
+    balloonSectionHtml,
+    totalFmt,
+    balloonCount: balloons.length,
+    dataSource: 'buildBalloonFinancePreview',
+  });
+}
 
-        <p style="margin:0 0 6px;font-weight:bold;font-size:10pt;text-transform:uppercase;letter-spacing:0.4px;">Parcelas balão</p>
-        <table style="width:100%;border-collapse:collapse;margin:0 0 8px;">
-          <tr>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Quantidade:</div>
-              ${summary.balloonCount} parcela${summary.balloonCount === 1 ? '' : 's'} balão
-            </td>
-            <td style="${cell}width:33.33%;">${addonBlock}</td>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Incidentes nas parcelas:</div>
-              ${incidents}
-            </td>
-          </tr>
-        </table>
+/**
+ * Quadro Financeiro sem balão — mesmas condições financeiras, sem seção de adicional.
+ * Usado no SV2 quando o resumo superior não deve repetir dados financeiros.
+ */
+export function buildContractFinanceQuadroHtml(params: {
+  saleTotalFmt: string;
+  discountFmt?: string | null;
+  entryFmt: string;
+  financedFmt: string;
+  parcelamentoLabel: string;
+  baseInstallmentFmt: string;
+  correctionLabel?: string | null;
+  firstDueDateFmt?: string | null;
+  isCashPayment?: boolean;
+}): string {
+  if (params.isCashPayment) {
+    const gridCellsHtml = [
+      financeGridCell('Valor da venda', params.saleTotalFmt),
+      financeGridCell('Desconto', String(params.discountFmt || '').trim() || formatCurrencyBRL(0)),
+      financeGridCell('Forma de pagamento', 'À vista'),
+      financeGridCell('Correção', String(params.correctionLabel || '').trim() || '—'),
+    ].join('');
+    return financeQuadroShell({
+      gridCellsHtml,
+      totalFmt: params.saleTotalFmt,
+      dataSource: 'finance-quadro',
+    });
+  }
 
-        <p style="margin:0 0 4px;font-weight:bold;font-size:9.5pt;">Tabela resumida — somente parcelas balão</p>
-        <table style="width:100%;max-width:320px;border-collapse:collapse;margin:0 0 8px;">
-          <thead>
-            <tr>
-              <th style="${th}text-align:center;">Parcela</th>
-              <th style="${th}text-align:right;">Valor final</th>
-            </tr>
-          </thead>
-          <tbody>${balloonTableRows}</tbody>
-        </table>
+  const gridCellsHtml = [
+    financeGridCell('Valor da venda', params.saleTotalFmt),
+    financeGridCell('Desconto', String(params.discountFmt || '').trim() || formatCurrencyBRL(0)),
+    financeGridCell('Entrada', params.entryFmt),
+    financeGridCell('Saldo financiado', params.financedFmt),
+    financeGridCell('Parcelamento', params.parcelamentoLabel),
+    financeGridCell('Parcela base', params.baseInstallmentFmt),
+    financeGridCell('Correção', String(params.correctionLabel || '').trim() || '—'),
+    financeGridCell(
+      'Primeiro vencimento',
+      String(params.firstDueDateFmt || '').trim() || '—',
+    ),
+  ].join('');
 
-        <div style="border-top:1px solid #222;padding-top:6px;margin-top:2px;">
-          <div style="font-weight:bold;">Valor total do contrato</div>
-          <div>${totalFmt}</div>
-          <div style="font-size:8.5pt;color:#444;">(${totalExt})</div>
-        </div>
-      </div>
-    </div>`;
+  return financeQuadroShell({
+    gridCellsHtml,
+    totalFmt: params.saleTotalFmt,
+    dataSource: 'finance-quadro',
+  });
 }
 
 /** Campos do resumo da 1ª página quando há balão. */
@@ -337,8 +445,27 @@ export function buildBalloonSummaryFieldPairs(
   return [
     ['PARCELAS', `${summary.installmentsCount} parcela(s)`],
     ['PARCELA BASE', formatCurrencyBRL(summary.baseInstallmentValue)],
-    ['PARCELAS BALÃO', String(summary.balloonCount)],
-    ['TOTAL DOS BALÕES', formatCurrencyBRL(summary.balloonTotal)],
+    ['PARCELAS COM ADICIONAL', String(summary.balloonCount)],
+    ['TOTAL DOS ADICIONAIS', formatCurrencyBRL(summary.balloonTotal)],
     ['FORMA ESPECIAL', 'Com parcelas balão'],
   ];
+}
+
+export function buildBalloonAwarePaymentClauseText(params: {
+  summary: SaleContractBalloonFinanceSummary;
+  valorTotalFmt: string;
+  valorTotalExtenso: string;
+  valorEntradaFmt: string;
+  valorEntradaExtenso: string;
+  dataPrimeiraParcelaFmt?: string;
+  dataUltimaParcelaFmt?: string;
+}): string {
+  const s = params.summary;
+  const hasEntry = s.entryAmount > 0.009;
+
+  const intro = hasEntry
+    ? `O valor da presente compra e venda é de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, sendo <strong>${params.valorEntradaFmt} (${params.valorEntradaExtenso || 'zero reais'})</strong> pagos a título de entrada. `
+    : `O valor da presente compra e venda é de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>. `;
+
+  return `${intro}O saldo será pago em <strong>${s.installmentsCount} parcelas</strong> mensais, observada a parcela base indicada no Quadro Financeiro. As parcelas com adicional descritas no referido quadro receberão apenas os acréscimos contratados, permanecendo inalteradas as demais parcelas.`;
 }

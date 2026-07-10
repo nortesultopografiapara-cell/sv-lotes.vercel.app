@@ -15,65 +15,23 @@ import {
 import { buildSaleContractElectronicSignatureClauseHtml } from '@/lib/saleContractLegalTemplate';
 
 export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
-  const parcelasLabel = ctx.isCashPayment
-    ? 'À vista'
-    : `${ctx.qtdParcelas} parcela(s)`;
-
-  const balloon = ctx.balloonSummary as
-    | { hasBalloon?: boolean; balloonCount?: number; balloonTotal?: number }
-    | undefined;
-  const hasBalloon = Boolean(ctx.hasBalloonInstallments || balloon?.hasBalloon);
-
+  // Resumo superior compacto (4 colunas) — só imóvel + partes.
   const fields = [
-    { label: 'EMPREENDIMENTO', value: ctx.empreendimentoNome.toUpperCase(), span: 3 },
+    { label: 'EMPREENDIMENTO', value: ctx.empreendimentoNome.toUpperCase() },
     { label: 'QUADRA', value: ctx.quadra },
     { label: 'LOTE', value: ctx.lote },
     { label: 'ÁREA', value: ctx.area },
     { label: 'MUNICÍPIO', value: ctx.municipio },
     { label: 'UF', value: ctx.estado },
-    { label: 'PROMISSÁRIO(A)', value: ctx.clienteNome, span: 2 },
+    { label: 'PROMISSÁRIO(A)', value: ctx.clienteNome },
     { label: 'CPF', value: ctx.buyerCpfFmt },
-    { label: 'PROMITENTE VENDEDOR(A)', value: ctx.empresaNome, span: 3 },
-    { label: 'VALOR DO LOTE', value: ctx.paymentBreakdown.lotPriceFmt },
-    { label: 'DESCONTO', value: ctx.paymentBreakdown.discountFmt },
-    { label: 'ENTRADA', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.entryFmt },
-    { label: 'SALDO PARCELADO', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentBalanceFmt },
-    { label: 'PARCELAS', value: parcelasLabel },
+    { label: 'PROMITENTE VENDEDOR(A)', value: ctx.empresaNome, span: 2 as const },
+    { label: 'DATA DA VENDA', value: ctx.dataContratoFmt, span: 2 as const },
   ];
 
-  if (hasBalloon) {
-    fields.push(
-      { label: 'PARCELA BASE', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt },
-      {
-        label: 'PARCELAS BALÃO',
-        value: String(balloon?.balloonCount ?? ctx.balloonSummary?.balloonCount ?? '—'),
-      },
-      {
-        label: 'TOTAL DOS BALÕES',
-        value: ctx.balloonSummary
-          ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-              ctx.balloonSummary.balloonTotal,
-            )
-          : '—',
-      },
-      { label: 'FORMA ESPECIAL', value: 'Com parcelas balão' },
-    );
-  } else {
-    fields.push({
-      label: 'VALOR PARCELA',
-      value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt,
-    });
-  }
-
-  fields.push(
-    { label: 'CORREÇÃO', value: ctx.paymentBreakdown.correctionLabel },
-    { label: 'VENCIMENTO', value: ctx.vencimentoLabel || '—' },
-    { label: 'DATA DA VENDA', value: ctx.dataContratoFmt },
-  );
-
   const grid = buildSvLotes2SummaryGridHtml(fields);
-  const balloonHtml = hasBalloon ? String(ctx.balloonFinanceHtml || '') : '';
-  return `${grid}${balloonHtml}`;
+  const financeHtml = String(ctx.balloonFinanceHtml || '');
+  return `${grid}${financeHtml}`;
 }
 
 export function buildSvLotes2VendorQualificationHtml(
