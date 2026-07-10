@@ -31,6 +31,10 @@ import {
   resolveSaleContractPaymentBreakdown,
   type ContractInstallmentScheduleRow,
 } from "@/lib/saleContractPaymentSummary";
+import {
+  buildBalloonAwarePaymentClauseText,
+  resolveSaleContractBalloonFinance,
+} from "@/lib/saleContractBalloonFinance";
 import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
@@ -376,14 +380,24 @@ export function generateContractHTML({
       dueDate: r.due_date ?? null,
     }))
     .filter((r) => Number.isFinite(r.installmentNumber));
-  const hasVariableInstallments = hasVariableInstallmentAmounts(scheduleRows);
+  const balloonSummary = resolveSaleContractBalloonFinance({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+    isCashPayment,
+  });
+  const hasVariableInstallments =
+    balloonSummary.hasBalloon || hasVariableInstallmentAmounts(scheduleRows);
 
   // Com balão: valor base = menor parcela mensal (ou média das iguais); cláusula não afirma "iguais".
   if (hasVariableInstallments) {
-    const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
-    if (monthly.length > 0) {
-      valorParcela = Math.min(...monthly.map((r) => r.amount));
-    }
+    valorParcela = balloonSummary.hasBalloon
+      ? balloonSummary.baseInstallmentValue
+      : (() => {
+          const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
+          return monthly.length > 0
+            ? Math.min(...monthly.map((r) => r.amount))
+            : valorParcela;
+        })();
   }
 
   const valorParcelaFmtBalloonAware = formatBRL(valorParcela);
@@ -399,6 +413,18 @@ export function generateContractHTML({
     } catch (e) {}
   }
 
+  const balloonClauseBody = balloonSummary.hasBalloon
+    ? buildBalloonAwarePaymentClauseText({
+        summary: balloonSummary,
+        valorTotalFmt,
+        valorTotalExtenso,
+        valorEntradaFmt,
+        valorEntradaExtenso,
+        dataPrimeiraParcelaFmt,
+        dataUltimaParcelaFmt,
+      })
+    : null;
+
   const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
     isCash: isCashPayment,
     valorTotalFmt,
@@ -411,6 +437,7 @@ export function generateContractHTML({
     dataPrimeiraParcelaFmt,
     dataUltimaParcelaFmt,
     hasVariableInstallments,
+    balloonClauseBodyHtml: balloonClauseBody,
   });
 
   const electronicSignatureClauseHtml =
@@ -449,11 +476,16 @@ export function generateContractHTML({
     .filter(Boolean)
     .join(" | ");
 
+  const paymentBreakdown = resolveSaleContractPaymentBreakdown(sale, {
+    isCashPayment,
+    financeReceipts,
+  });
   const paymentSummaryHtml = buildSaleContractPaymentSummaryHtml(
-    resolveSaleContractPaymentBreakdown(sale, { isCashPayment }),
+    paymentBreakdown,
     {
       scheduleRows,
       hasVariableInstallments,
+      balloonSummary,
     },
   );
 

@@ -77,6 +77,8 @@ export function buildSaleContractClauseQuartaHtml(params: {
   dataUltimaParcelaFmt: string;
   /** Quando true, valores variam (ex.: parcelas balão) — não afirma "parcelas iguais". */
   hasVariableInstallments?: boolean;
+  /** Texto completo já montado pelo helper de balão (opcional). */
+  balloonClauseBodyHtml?: string | null;
 }): string {
   const taxes =
     ' Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.';
@@ -90,8 +92,13 @@ export function buildSaleContractClauseQuartaHtml(params: {
   const entradaExtenso = params.valorEntradaExtenso || 'zero reais';
 
   if (params.hasVariableInstallments) {
+    if (params.balloonClauseBodyHtml) {
+      return `<p style="margin-bottom: 0;">
+                    <strong>Cláusula Quarta:</strong> ${params.balloonClauseBodyHtml}${taxes}
+                </p>`;
+    }
     return `<p style="margin-bottom: 0;">
-                    <strong>Cláusula Quarta:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR, com o valor de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, entrada de <strong>${params.valorEntradaFmt} (${entradaExtenso})</strong>, e o restante parcelado via boleto bancário em <strong>${params.qtdParcelas} parcelas</strong>, nos valores e vencimentos constantes do quadro financeiro deste contrato. Sendo a primeira parcela para o dia <strong>${params.dataPrimeiraParcelaFmt}</strong> e a última parcela para o dia <strong>${params.dataUltimaParcelaFmt}</strong>.${taxes}
+                    <strong>Cláusula Quarta:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR, com o valor de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, entrada de <strong>${params.valorEntradaFmt} (${entradaExtenso})</strong>, e o restante parcelado via boleto bancário em <strong>${params.qtdParcelas} parcelas</strong>, nos valores e vencimentos constantes do Quadro Financeiro deste contrato, inclusive as parcelas balão com seus respectivos acréscimos. Sendo a primeira parcela para o dia <strong>${params.dataPrimeiraParcelaFmt}</strong> e a última parcela para o dia <strong>${params.dataUltimaParcelaFmt}</strong>.${taxes}
                 </p>`;
   }
 

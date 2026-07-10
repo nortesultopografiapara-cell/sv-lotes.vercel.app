@@ -638,7 +638,10 @@ function testContractClauseVariableInstallments() {
     hasVariableInstallments: true,
   });
   assert(!variable.includes('parcelas iguais'), 'com balão: sem iguais');
-  assert(variable.includes('quadro financeiro'), 'referencia quadro');
+  assert(
+    variable.toLowerCase().includes('quadro financeiro'),
+    'referencia quadro',
+  );
 
   const schedule = buildSaleContractInstallmentScheduleHtml([
     { installmentNumber: 1, amount: 1000, dueDate: '2026-08-01' },

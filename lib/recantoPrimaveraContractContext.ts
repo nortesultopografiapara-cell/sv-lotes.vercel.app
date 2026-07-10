@@ -49,6 +49,10 @@ import {
   resolveInstallmentPrincipal,
   splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
+import {
+  resolveSaleContractBalloonFinance,
+  type SaleContractBalloonFinanceSummary,
+} from '@/lib/saleContractBalloonFinance';
 
 export type RecantoPrimaveraContractParams = {
   tenant: Record<string, unknown>;
@@ -148,6 +152,8 @@ export type RecantoPrimaveraContractContext = {
   dataContratoExtensoFmt: string;
   dataContratoCidade: string;
   dataContratoUf: string;
+  hasBalloonInstallments?: boolean;
+  balloonSummary?: SaleContractBalloonFinanceSummary | null;
 };
 
 function formatBRL(val: number): string {
@@ -551,6 +557,12 @@ export function buildRecantoPrimaveraContractContext(
   }
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
+  const balloonSummary = resolveSaleContractBalloonFinance({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+    isCashPayment,
+  });
+  const hasBalloonInstallments = balloonSummary.hasBalloon;
   const dueDay = extractDueDay(paymentDates.firstInstallmentDueRaw);
   const broker = resolveBroker(sale, contractSnapshot);
 
@@ -691,5 +703,7 @@ export function buildRecantoPrimaveraContractContext(
       : '',
     dataContratoCidade,
     dataContratoUf,
+    hasBalloonInstallments,
+    balloonSummary: hasBalloonInstallments ? balloonSummary : null,
   };
 }

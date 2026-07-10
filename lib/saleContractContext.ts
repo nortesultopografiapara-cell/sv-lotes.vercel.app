@@ -35,6 +35,10 @@ import {
   type ContractInstallmentScheduleRow,
 } from '@/lib/saleContractPaymentSummary';
 import {
+  buildBalloonAwarePaymentClauseText,
+  resolveSaleContractBalloonFinance,
+} from '@/lib/saleContractBalloonFinance';
+import {
   resolveContractPaymentDates,
   formatContractSaleDateBr,
   type ContractFinanceReceiptRef,
@@ -378,12 +382,22 @@ export function buildSaleContractRenderContext(
       dueDate: r.due_date ?? null,
     }))
     .filter((r) => Number.isFinite(r.installmentNumber));
-  const hasVariableInstallments = hasVariableInstallmentAmounts(scheduleRows);
+  const balloonSummary = resolveSaleContractBalloonFinance({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+    isCashPayment,
+  });
+  const hasVariableInstallments =
+    balloonSummary.hasBalloon || hasVariableInstallmentAmounts(scheduleRows);
   if (hasVariableInstallments) {
-    const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
-    if (monthly.length > 0) {
-      valorParcela = Math.min(...monthly.map((r) => r.amount));
-    }
+    valorParcela = balloonSummary.hasBalloon
+      ? balloonSummary.baseInstallmentValue
+      : (() => {
+          const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
+          return monthly.length > 0
+            ? Math.min(...monthly.map((r) => r.amount))
+            : valorParcela;
+        })();
   }
   const valorParcelaFmtFinal = formatBRL(valorParcela);
   let valorParcelaExtensoFinal = valorParcelaExtenso;
@@ -397,6 +411,18 @@ export function buildSaleContractRenderContext(
     }
   }
 
+  const balloonClauseBody = balloonSummary.hasBalloon
+    ? buildBalloonAwarePaymentClauseText({
+        summary: balloonSummary,
+        valorTotalFmt,
+        valorTotalExtenso,
+        valorEntradaFmt,
+        valorEntradaExtenso,
+        dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
+        dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
+      })
+    : null;
+
   const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
     isCash: isCashPayment,
     valorTotalFmt,
@@ -409,6 +435,7 @@ export function buildSaleContractRenderContext(
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
     hasVariableInstallments,
+    balloonClauseBodyHtml: balloonClauseBody,
   });
 
   const projectDescParts: string[] = [];

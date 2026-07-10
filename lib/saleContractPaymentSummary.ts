@@ -7,6 +7,12 @@ import {
   downPaymentReducesInstallmentBase,
 } from '@/lib/saleInstallmentCalc';
 import { formatInstallmentCorrectionLabel } from '@/lib/installmentCorrectionType';
+import {
+  buildCompactBalloonFinanceScheduleHtml,
+  resolveSaleContractBalloonFinance,
+  type SaleContractBalloonFinanceSummary,
+} from '@/lib/saleContractBalloonFinance';
+import type { ContractFinanceReceiptRef } from '@/lib/contractPaymentDates';
 
 function formatBRL(val: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -100,11 +106,17 @@ export type SaleContractPaymentBreakdown = {
   installmentValueFmt: string;
   correctionLabel: string;
   isCashPayment: boolean;
+  balloonSummary?: SaleContractBalloonFinanceSummary | null;
 };
 
 export function resolveSaleContractPaymentBreakdown(
   sale: Record<string, unknown>,
-  options?: { contractModel?: unknown; isCashPayment?: boolean },
+  options?: {
+    contractModel?: unknown;
+    isCashPayment?: boolean;
+    financeReceipts?: ContractFinanceReceiptRef[] | null;
+    balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
+  },
 ): SaleContractPaymentBreakdown {
   const lotPrice =
     Number(sale.lot_price) ||
@@ -127,14 +139,26 @@ export function resolveSaleContractPaymentBreakdown(
       ? Math.max(0, netValue - entryAmount)
       : netValue;
 
+  const balloonSummary =
+    !isCashPayment && options?.financeReceipts
+      ? resolveSaleContractBalloonFinance({
+          sale,
+          financeReceipts: options.financeReceipts,
+          balloonAddons: options.balloonAddons,
+          isCashPayment,
+        })
+      : null;
+
   const installmentValue = isCashPayment
     ? 0
-    : computeInstallmentDisplayValue({
-        finalValue: netValue,
-        downPayment: entryAmount,
-        installmentsCount,
-        contractModel: options?.contractModel,
-      });
+    : balloonSummary?.hasBalloon
+      ? balloonSummary.baseInstallmentValue
+      : computeInstallmentDisplayValue({
+          finalValue: netValue,
+          downPayment: entryAmount,
+          installmentsCount,
+          contractModel: options?.contractModel,
+        });
 
   return {
     lotPrice,
@@ -150,6 +174,7 @@ export function resolveSaleContractPaymentBreakdown(
     installmentValueFmt: formatBRL(installmentValue),
     correctionLabel: formatInstallmentCorrectionLabel(sale.installment_correction_type),
     isCashPayment,
+    balloonSummary,
   };
 }
 
@@ -158,15 +183,18 @@ export function buildSaleContractPaymentSummaryHtml(
   options?: {
     scheduleRows?: ContractInstallmentScheduleRow[];
     hasVariableInstallments?: boolean;
+    balloonSummary?: SaleContractBalloonFinanceSummary | null;
   },
 ): string {
+  const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
   const variable =
-    options?.hasVariableInstallments ??
+    balloon?.hasBalloon === true ||
+    options?.hasVariableInstallments === true ||
     (options?.scheduleRows
       ? hasVariableInstallmentAmounts(options.scheduleRows)
       : false);
 
-  const rows = [
+  const rows: Array<[string, string]> = [
     ['Valor do lote', breakdown.lotPriceFmt],
     ['Desconto concedido', breakdown.discountFmt],
     ['Valor da entrada', breakdown.isCashPayment ? '—' : breakdown.entryFmt],
@@ -176,18 +204,31 @@ export function buildSaleContractPaymentSummaryHtml(
     ],
     [
       'Quantidade de parcelas',
-      breakdown.isCashPayment ? 'À vista' : String(breakdown.installmentsCount),
+      breakdown.isCashPayment
+        ? 'À vista'
+        : `${breakdown.installmentsCount} parcela(s)`,
     ],
-    [
+  ];
+
+  if (variable && balloon?.hasBalloon) {
+    rows.push(
+      ['Parcela base', breakdown.installmentValueFmt],
+      ['Parcelas balão', String(balloon.balloonCount)],
+      ['Total dos balões', formatBRL(balloon.balloonTotal)],
+      ['Forma especial', 'Com parcelas balão'],
+    );
+  } else {
+    rows.push([
       variable ? 'Valor base da parcela' : 'Valor da parcela',
       breakdown.isCashPayment
         ? '—'
         : variable
           ? `${breakdown.installmentValueFmt} (valores por parcela no quadro abaixo)`
           : breakdown.installmentValueFmt,
-    ],
-    ['Correção das parcelas', breakdown.correctionLabel],
-  ];
+    ]);
+  }
+
+  rows.push(['Correção das parcelas', breakdown.correctionLabel]);
 
   const body = rows
     .map(
@@ -196,10 +237,14 @@ export function buildSaleContractPaymentSummaryHtml(
     )
     .join('');
 
-  const scheduleHtml =
-    !breakdown.isCashPayment && variable && options?.scheduleRows?.length
-      ? buildSaleContractInstallmentScheduleHtml(options.scheduleRows)
-      : '';
+  let scheduleHtml = '';
+  if (!breakdown.isCashPayment && variable) {
+    if (balloon?.hasBalloon) {
+      scheduleHtml = buildCompactBalloonFinanceScheduleHtml(balloon);
+    } else if (options?.scheduleRows?.length) {
+      scheduleHtml = buildSaleContractInstallmentScheduleHtml(options.scheduleRows);
+    }
+  }
 
   return `
     <div class="contract-clause" style="margin: 16px 0 20px;">

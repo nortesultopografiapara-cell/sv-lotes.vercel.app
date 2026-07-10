@@ -19,7 +19,12 @@ export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
     ? 'À vista'
     : `${ctx.qtdParcelas} parcela(s)`;
 
-  return buildSvLotes2SummaryGridHtml([
+  const balloon = ctx.balloonSummary as
+    | { hasBalloon?: boolean; balloonCount?: number; balloonTotal?: number }
+    | undefined;
+  const hasBalloon = Boolean(ctx.hasBalloonInstallments || balloon?.hasBalloon);
+
+  const fields = [
     { label: 'EMPREENDIMENTO', value: ctx.empreendimentoNome.toUpperCase(), span: 3 },
     { label: 'QUADRA', value: ctx.quadra },
     { label: 'LOTE', value: ctx.lote },
@@ -34,11 +39,41 @@ export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
     { label: 'ENTRADA', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.entryFmt },
     { label: 'SALDO PARCELADO', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentBalanceFmt },
     { label: 'PARCELAS', value: parcelasLabel },
-    { label: 'VALOR PARCELA', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt },
+  ];
+
+  if (hasBalloon) {
+    fields.push(
+      { label: 'PARCELA BASE', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt },
+      {
+        label: 'PARCELAS BALÃO',
+        value: String(balloon?.balloonCount ?? ctx.balloonSummary?.balloonCount ?? '—'),
+      },
+      {
+        label: 'TOTAL DOS BALÕES',
+        value: ctx.balloonSummary
+          ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+              ctx.balloonSummary.balloonTotal,
+            )
+          : '—',
+      },
+      { label: 'FORMA ESPECIAL', value: 'Com parcelas balão' },
+    );
+  } else {
+    fields.push({
+      label: 'VALOR PARCELA',
+      value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt,
+    });
+  }
+
+  fields.push(
     { label: 'CORREÇÃO', value: ctx.paymentBreakdown.correctionLabel },
     { label: 'VENCIMENTO', value: ctx.vencimentoLabel || '—' },
     { label: 'DATA DA VENDA', value: ctx.dataContratoFmt },
-  ]);
+  );
+
+  const grid = buildSvLotes2SummaryGridHtml(fields);
+  const balloonHtml = hasBalloon ? String(ctx.balloonFinanceHtml || '') : '';
+  return `${grid}${balloonHtml}`;
 }
 
 export function buildSvLotes2VendorQualificationHtml(
