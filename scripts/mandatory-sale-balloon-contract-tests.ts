@@ -3,8 +3,8 @@
  * npx tsx scripts/mandatory-sale-balloon-contract-tests.ts
  * npm run test:sale-balloon-contract
  *
- * REGRA: balões só via sale_balloon_installments (balloonAddons).
- * Nunca inferir por diferença de finance_receipts.amount.
+ * REGRA: mesma lógica do Resumo financeiro do formulário
+ * (buildBalloonFinancePreview). Nunca inferir por finance_receipts.amount.
  */
 
 import { generateContractHTML } from '../lib/contractTemplate';
@@ -177,22 +177,28 @@ function testRoundingDoesNotInferBalloons() {
   );
   assert(summary.balloonRows.every((r) => r.balloonAddonAmount === 0.5), 'acréscimo 0.50');
   assert(summary.balloonRows.every((r) => r.amount === 2.46), 'valor final 2.46');
-  assert(summary.balloonRows.every((r) => r.baseAmount === 1.96), 'base = amount - addon');
+  assert(summary.balloonRows.every((r) => r.baseAmount === 1.96), 'base 1.96 (igual ao formulário)');
+  assert(summary.baseInstallmentValue === 1.96, 'parcela base 1.96');
+  assert(summary.formPreviewMatch, 'usa buildBalloonFinancePreview');
 
-  // Parcela 3 tem 1.88 (menor) — NÃO é balão sem registro persistido.
-  const p3 = summary.scheduleRows.find((r) => r.installmentNumber === 3)!;
-  assert(!p3.isBalloon, 'parcela 3 comum apesar de valor menor');
-  assert(p3.balloonAddonAmount === 0, 'parcela 3 sem addon');
-
-  // Comuns com 1.94/1.95/1.96 ≠ moda/base não viram balão.
+  // Receipts com valores variáveis NÃO criam balão — só o plano/addons.
   const falsePositives = summary.scheduleRows.filter(
     (r) => !roundingAddons.some((a) => a.installment_number === r.installmentNumber) && r.isBalloon,
   );
   assert(falsePositives.length === 0, 'nenhuma parcela comum classificada como balão');
 
   const html = buildCompactBalloonFinanceScheduleHtml(summary);
+  const htmlNorm = html.replace(/\u00a0/g, ' ');
   assert(html.includes('data-row-count="2"'), 'quadro com 2 linhas');
-  assert(html.includes('Parcela 06') && html.includes('Parcela 18'), 'lista 06 e 18');
+  assert(html.includes('Parcelas com adicional'), 'título do formulário');
+  assert(
+    htmlNorm.includes('Parcela 06 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'linha 06 igual ao formulário',
+  );
+  assert(
+    htmlNorm.includes('Parcela 18 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'linha 18 igual ao formulário',
+  );
   assert(!html.includes('Parcela 01'), 'sem 01');
   assert(!html.includes('Parcela 03'), 'sem 03');
   assert(!html.includes('Parcela 48'), 'sem 48');
@@ -221,7 +227,11 @@ function testFlagWithoutAddonsThrows() {
       balloonAddons: [],
     });
   } catch (e) {
-    threw = String((e as Error).message || '').includes('sale_balloon_installments');
+    const msg = String((e as Error).message || '');
+    threw =
+      msg.includes('balloon_config') ||
+      msg.includes('addons') ||
+      msg.includes('Não é permitido inferir');
   }
   assert(threw, 'flag sem addons → erro explícito');
   console.log('OK testFlagWithoutAddonsThrows');
@@ -475,33 +485,60 @@ function testSpouseUntouchedInSv2() {
 }
 
 function testHomologacao000000015() {
+  // Mesma config do formulário Editar Venda (print homologação).
+  const saleLikeForm = {
+    ...baseSale,
+    balloon_mode: 'MANUAL',
+    balloon_config: {
+      mode: 'MANUAL',
+      manualCount: 2,
+      manualRows: [
+        { installmentNumber: '6', additionalAmount: '0,50', dueDate: '' },
+        { installmentNumber: '18', additionalAmount: '0,50', dueDate: '' },
+      ],
+    },
+  };
   const summary = resolveSaleContractBalloonFinance({
-    sale: baseSale,
+    sale: saleLikeForm,
     financeReceipts: buildRoundingCaseReceipts(),
-    balloonAddons: roundingAddons,
+    // Tabela poluída NÃO deve prevalecer sobre balloon_config do formulário.
+    balloonAddons: Array.from({ length: 47 }, (_, i) => ({
+      installment_number: i + 1,
+      additional_amount: 0.08,
+    })),
   });
   assert(summary.saleTotal === 100, 'venda 100');
   assert(summary.entryAmount === 5, 'entrada 5');
   assert(summary.installmentsCount === 48, '48 parcelas');
   assert(summary.balloonCount === 2, 'exatamente 2 balões');
+  assert(summary.baseInstallmentValue === 1.96, '48 parcelas base 1.96');
   assert(
     summary.balloonRows.map((r) => r.installmentNumber).join(',') === '6,18',
     '06 e 18',
   );
   assert(summary.balloonRows[0].amount === 2.46, 'parcela 6 = 2.46');
   assert(summary.balloonRows[1].amount === 2.46, 'parcela 18 = 2.46');
+  assert(summary.balloonRows[0].balloonAddonAmount === 0.5, 'adicional 0.50');
 
   const html = generateContractHTML({
     tenant: baseTenant('SV_LOTES_2'),
     customer: baseCustomer(),
     project: { name: 'Loteamento Teste', city: 'Parauapebas', uf: 'PA' },
     block: baseBlock(),
-    sale: baseSale,
+    sale: saleLikeForm,
     financeReceipts: buildRoundingCaseReceipts(),
     balloonAddons: roundingAddons,
   });
-  assert(html.includes('Parcela 06'), 'PDF lista 06');
-  assert(html.includes('Parcela 18'), 'PDF lista 18');
+  assert(html.includes('Parcelas com adicional'), 'título');
+  const htmlNorm = html.replace(/\u00a0/g, ' ');
+  assert(
+    htmlNorm.includes('Parcela 06 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'PDF linha 06',
+  );
+  assert(
+    htmlNorm.includes('Parcela 18 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46'),
+    'PDF linha 18',
+  );
   assert(html.includes('data-row-count="2"'), '2 linhas');
   assert(!html.includes('Parcela 01'), 'sem 01');
   assert(!html.includes('Parcela 02'), 'sem 02');
