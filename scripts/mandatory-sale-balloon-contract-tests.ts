@@ -389,6 +389,10 @@ function testSv2ContractSummaryAndClause() {
   const summary = buildSvLotes2SummaryHtml(ctx);
   assert(summary.includes('Quadro Financeiro'), 'quadro');
   assert(summary.includes('data-balloon-only="true"'), 'só balões');
+  assert(summary.includes('Desconto') || summary.includes('Correção'), 'extras no quadro');
+  assert(summary.includes('DATA DA VENDA'), 'data no resumo');
+  assert(!summary.includes('VALOR DO LOTE'), 'sem financeiro no resumo superior');
+  assert(!summary.includes('PARCELA BASE'), 'parcela base só no quadro financeiro');
   assert(!summary.includes('Parcela 01'), 'sem 01');
 
   const clause = buildSvLotes2ClauseSegundaHtml(ctx);

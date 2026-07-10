@@ -148,14 +148,13 @@ export function buildSaleContractPaymentSummaryHtml(
 ): string {
   const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
 
-  const correctionNote = breakdown.correctionLabel
-    ? `<p style="margin:4px 0 0;font-size:9pt;color:#444;">Correção das parcelas: ${breakdown.correctionLabel}</p>`
-    : '';
-
   // Com balão persistido: SOMENTE quadro executivo.
   // Nunca listar 1..N e nunca inferir balão por diferença de valores.
   if (!breakdown.isCashPayment && balloon?.hasBalloon) {
-    return `${buildCompactBalloonFinanceScheduleHtml(balloon)}${correctionNote}`;
+    return buildCompactBalloonFinanceScheduleHtml(balloon, {
+      discountFmt: breakdown.discountFmt,
+      correctionLabel: breakdown.correctionLabel,
+    });
   }
 
   const rows: Array<[string, string]> = [

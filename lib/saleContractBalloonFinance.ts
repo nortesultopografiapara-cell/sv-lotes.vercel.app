@@ -272,6 +272,15 @@ export function resolveSaleContractBalloonFinance(params: {
   };
 }
 
+export type ContractFinanceQuadroExtras = {
+  /** Desconto concedido (ex.: R$ 0,00). */
+  discountFmt?: string | null;
+  /** Correção das parcelas (ex.: Parcelas fixas / IPCA). */
+  correctionLabel?: string | null;
+  /** Primeiro vencimento das parcelas. */
+  firstDueDateFmt?: string | null;
+};
+
 /**
  * Linha label/valor — tabela HTML (texto real).
  * NÃO usar flex+overflow:hidden (corta glifos no html2canvas/PDF).
@@ -284,15 +293,13 @@ function financeRow(label: string, value: string): string {
 }
 
 /**
- * Quadro do contrato alinhado ao Resumo financeiro do formulário.
- * Lista APENAS parcelas com adicional.
- *
- * Renderização: HTML/CSS tipográfico (Times New Roman), sem canvas/bitmap próprio.
- * Formato obrigatório por linha:
- * Parcela 06 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46
+ * Quadro Financeiro — condições financeiras (texto HTML tipográfico).
+ * Com balão: lista APENAS parcelas com adicional.
+ * Extras (desconto/correção/vencimento) são só apresentação — sem alterar cálculo.
  */
 export function buildCompactBalloonFinanceScheduleHtml(
   summary: SaleContractBalloonFinanceSummary,
+  extras?: ContractFinanceQuadroExtras | null,
 ): string {
   if (!summary.hasBalloon || summary.isCashPayment) return '';
   const balloons = summary.balloonRows.filter(
@@ -304,6 +311,22 @@ export function buildCompactBalloonFinanceScheduleHtml(
   const financed = money(Math.max(0, saleTotal - summary.entryAmount));
   const baseFmt = formatCurrencyBRL(summary.baseInstallmentValue);
   const totalFmt = formatCurrencyBRL(saleTotal);
+  const discountFmt = String(extras?.discountFmt || '').trim();
+  const correctionLabel = String(extras?.correctionLabel || '').trim();
+  const firstDue = String(extras?.firstDueDateFmt || '').trim();
+
+  const mainRows = [
+    financeRow('Valor da venda', totalFmt),
+    discountFmt ? financeRow('Desconto', discountFmt) : '',
+    financeRow('Entrada', formatCurrencyBRL(summary.entryAmount)),
+    financeRow('Saldo financiado', formatCurrencyBRL(financed)),
+    financeRow('Parcelamento', `${summary.installmentsCount} parcelas mensais`),
+    financeRow('Parcela base', baseFmt),
+    correctionLabel ? financeRow('Correção', correctionLabel) : '',
+    firstDue ? financeRow('Primeiro vencimento', firstDue) : '',
+  ]
+    .filter(Boolean)
+    .join('');
 
   const balloonOnlyLines = balloons
     .map((r) => {
@@ -319,11 +342,7 @@ export function buildCompactBalloonFinanceScheduleHtml(
         <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
         <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
           <tbody>
-            ${financeRow('Valor da venda', totalFmt)}
-            ${financeRow('Entrada', formatCurrencyBRL(summary.entryAmount))}
-            ${financeRow('Saldo financiado', formatCurrencyBRL(financed))}
-            ${financeRow('Parcelamento', `${summary.installmentsCount} parcelas mensais`)}
-            ${financeRow('Parcela base', baseFmt)}
+            ${mainRows}
           </tbody>
         </table>
         <p style="margin:0 0 8px;padding:0;font-weight:bold;font-size:11pt;text-transform:uppercase;letter-spacing:0.4px;font-family:'Times New Roman',Times,serif;line-height:1.5;text-align:left;">Parcelas com adicional</p>
@@ -334,6 +353,73 @@ export function buildCompactBalloonFinanceScheduleHtml(
           <tbody>
             ${financeRow('Valor total do contrato', totalFmt)}
           </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/**
+ * Quadro Financeiro sem balão — mesmas condições financeiras, sem seção de adicional.
+ * Usado no SV2 quando o resumo superior não deve repetir dados financeiros.
+ */
+export function buildContractFinanceQuadroHtml(params: {
+  saleTotalFmt: string;
+  discountFmt?: string | null;
+  entryFmt: string;
+  financedFmt: string;
+  parcelamentoLabel: string;
+  baseInstallmentFmt: string;
+  correctionLabel?: string | null;
+  firstDueDateFmt?: string | null;
+  isCashPayment?: boolean;
+}): string {
+  if (params.isCashPayment) {
+    const rows = [
+      financeRow('Valor da venda', params.saleTotalFmt),
+      params.discountFmt ? financeRow('Desconto', params.discountFmt) : '',
+      financeRow('Forma de pagamento', 'À vista'),
+      params.correctionLabel ? financeRow('Correção', params.correctionLabel) : '',
+    ]
+      .filter(Boolean)
+      .join('');
+    return `
+    <div class="contract-clause contract-balloon-finance contract-payment-block" style="margin:16px 0 20px;padding:0;page-break-inside:avoid;break-inside:avoid;" data-source="finance-quadro">
+      <div style="border:1px solid #222;padding:14px 16px;margin:0;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;overflow:visible;">
+        <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
+        <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
+          <tbody>${rows}</tbody>
+        </table>
+        <table style="width:100%;border-collapse:collapse;margin:0;padding:0;" cellpadding="0" cellspacing="0">
+          <tbody>${financeRow('Valor total do contrato', params.saleTotalFmt)}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  const rows = [
+    financeRow('Valor da venda', params.saleTotalFmt),
+    params.discountFmt ? financeRow('Desconto', params.discountFmt) : '',
+    financeRow('Entrada', params.entryFmt),
+    financeRow('Saldo financiado', params.financedFmt),
+    financeRow('Parcelamento', params.parcelamentoLabel),
+    financeRow('Parcela base', params.baseInstallmentFmt),
+    params.correctionLabel ? financeRow('Correção', params.correctionLabel) : '',
+    params.firstDueDateFmt
+      ? financeRow('Primeiro vencimento', params.firstDueDateFmt)
+      : '',
+  ]
+    .filter(Boolean)
+    .join('');
+
+  return `
+    <div class="contract-clause contract-balloon-finance contract-payment-block" style="margin:16px 0 20px;padding:0;page-break-inside:avoid;break-inside:avoid;" data-source="finance-quadro">
+      <div style="border:1px solid #222;padding:14px 16px;margin:0;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;overflow:visible;">
+        <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
+        <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
+          <tbody>${rows}</tbody>
+        </table>
+        <table style="width:100%;border-collapse:collapse;margin:0;padding:0;" cellpadding="0" cellspacing="0">
+          <tbody>${financeRow('Valor total do contrato', params.saleTotalFmt)}</tbody>
         </table>
       </div>
     </div>`;
