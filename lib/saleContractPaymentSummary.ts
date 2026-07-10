@@ -41,51 +41,15 @@ export function hasVariableInstallmentAmounts(
 }
 
 /**
- * LEGADO — NÃO listar 1..N no contrato.
- * Se houver valores variáveis (balão), devolve APENAS as linhas balão.
- * Se todas forem iguais, devolve string vazia (sem tabela).
- * O quadro oficial com balão é buildCompactBalloonFinanceScheduleHtml.
+ * LEGADO — NÃO listar 1..N e NÃO inferir balão por diferença de valores.
+ * Sem balloonAddons persistidos → string vazia.
+ * O quadro oficial é buildCompactBalloonFinanceScheduleHtml.
  */
 export function buildSaleContractInstallmentScheduleHtml(
-  rows: ContractInstallmentScheduleRow[],
+  _rows: ContractInstallmentScheduleRow[],
 ): string {
-  const monthly = rows
-    .filter((r) => r.installmentNumber >= 1)
-    .sort((a, b) => a.installmentNumber - b.installmentNumber);
-  if (monthly.length === 0) return '';
-
-  const amounts = monthly.map((r) => Math.round((Number(r.amount) || 0) * 100) / 100);
-  const baseAmount = Math.min(...amounts);
-  const balloons = monthly.filter((r) => {
-    const amount = Math.round((Number(r.amount) || 0) * 100) / 100;
-    return amount > baseAmount + 0.009;
-  });
-
-  // Sem balão → nenhuma tabela de parcelas no contrato.
-  if (balloons.length === 0) return '';
-
-  // EXCLUSIVAMENTE balões — nunca parcelas comuns.
-  const body = balloons
-    .map((r) => {
-      const amount = Math.round((Number(r.amount) || 0) * 100) / 100;
-      const n = String(r.installmentNumber).padStart(2, '0');
-      return `<tr><td style="padding:5px 8px;border:1px solid #ddd;">Parcela ${n}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;">${formatBRL(amount)}</td></tr>`;
-    })
-    .join('');
-
-  return `
-    <div class="contract-clause contract-balloon-only-schedule" style="margin: 12px 0 20px;" data-balloon-only="true" data-row-count="${balloons.length}">
-      <p style="margin:0 0 8px;font-weight:bold;">Parcelas balão</p>
-      <table style="width:100%;max-width:360px;border-collapse:collapse;font-size:10.5pt;">
-        <thead>
-          <tr>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Parcela</th>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:right;">Valor final</th>
-          </tr>
-        </thead>
-        <tbody>${body}</tbody>
-      </table>
-    </div>`;
+  // Proibido inferir balões por amount !== base. Sempre vazio aqui.
+  return '';
 }
 
 export type SaleContractPaymentBreakdown = {
@@ -183,43 +147,15 @@ export function buildSaleContractPaymentSummaryHtml(
   },
 ): string {
   const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
-  const variableFromRows = options?.scheduleRows
-    ? hasVariableInstallmentAmounts(options.scheduleRows)
-    : false;
-  const variable =
-    balloon?.hasBalloon === true ||
-    options?.hasVariableInstallments === true ||
-    variableFromRows;
 
   const correctionNote = breakdown.correctionLabel
     ? `<p style="margin:4px 0 0;font-size:9pt;color:#444;">Correção das parcelas: ${breakdown.correctionLabel}</p>`
     : '';
 
-  // Com balão (ou valores variáveis inferidos como balão): SOMENTE quadro executivo.
-  // Nunca listar 1..N parcelas no contrato PDF.
+  // Com balão persistido: SOMENTE quadro executivo.
+  // Nunca listar 1..N e nunca inferir balão por diferença de valores.
   if (!breakdown.isCashPayment && balloon?.hasBalloon) {
     return `${buildCompactBalloonFinanceScheduleHtml(balloon)}${correctionNote}`;
-  }
-
-  if (!breakdown.isCashPayment && variable && options?.scheduleRows?.length) {
-    const inferred = resolveSaleContractBalloonFinance({
-      sale: {
-        total_value: breakdown.lotPrice - breakdown.discountAmount,
-        down_payment: breakdown.entryAmount,
-        installments_count: breakdown.installmentsCount,
-        use_balloon_installments: true,
-        payment_type: 'Parcelado',
-      },
-      financeReceipts: options.scheduleRows.map((r) => ({
-        installment_number: r.installmentNumber,
-        amount: r.amount,
-        due_date: r.dueDate ?? null,
-      })),
-      isCashPayment: false,
-    });
-    if (inferred.hasBalloon) {
-      return `${buildCompactBalloonFinanceScheduleHtml(inferred)}${correctionNote}`;
-    }
   }
 
   const rows: Array<[string, string]> = [

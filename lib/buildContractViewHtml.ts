@@ -14,6 +14,7 @@ import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
+import { loadSaleBalloonRows } from "@/lib/saleBalloonRepository";
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 
@@ -36,6 +37,8 @@ const SALE_CONTRACT_VIEW_SELECT = [
   "payment_day",
   "first_due_date",
   "plan_type",
+  "payment_type",
+  "use_balloon_installments",
   "spouse_name",
   "spouse_cpf",
   "spouse_rg",
@@ -307,10 +310,18 @@ async function buildContractViewHtmlFromContext(
   }
   logHtmlStep("receipts_loaded", startedAt, { count: receipts.length });
 
+  const balloonRows = saleId ? await loadSaleBalloonRows(supabase, saleId) : [];
+  const balloonAddons = balloonRows.map((r) => ({
+    installment_number: Number(r.installment_number),
+    additional_amount: Number(r.additional_amount) || 0,
+  }));
+  logHtmlStep("balloon_addons_loaded", startedAt, { count: balloonAddons.length });
+
   const html = await buildContractViewHtml(supabase, {
     contract,
     tenant: { ...(company as Record<string, unknown>), id: tenantId },
     receipts,
+    balloonAddons,
     block,
     customer,
     sale,
@@ -326,6 +337,7 @@ export async function buildContractViewHtml(
     contract: Record<string, unknown>;
     tenant: Record<string, unknown>;
     receipts?: ContractFinanceReceiptRef[] | null;
+    balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
     block?: Record<string, unknown> | null;
     customer?: Record<string, unknown> | null;
     sale?: Record<string, unknown> | null;
@@ -415,6 +427,18 @@ export async function buildContractViewHtml(
 
   assertCustomerValidForContract(mergedCustomer);
 
+  let balloonAddons = params.balloonAddons ?? null;
+  if (!balloonAddons) {
+    const sid = String(saleForContract.id || contract.sale_id || "").trim();
+    if (sid) {
+      const rows = await loadSaleBalloonRows(supabase, sid);
+      balloonAddons = rows.map((r) => ({
+        installment_number: Number(r.installment_number),
+        additional_amount: Number(r.additional_amount) || 0,
+      }));
+    }
+  }
+
   let html = generateContractHTML({
     tenant: params.tenant,
     customer: mergedCustomer,
@@ -427,6 +451,7 @@ export async function buildContractViewHtml(
     sale: saleForContract,
     contractSnapshot: contract,
     financeReceipts: params.receipts,
+    balloonAddons,
     projectBlocks,
     streetGuides,
     manualConfrontants,

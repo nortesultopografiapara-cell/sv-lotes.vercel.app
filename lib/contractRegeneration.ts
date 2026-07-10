@@ -12,6 +12,7 @@ import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
+import { loadSaleBalloonRows } from '@/lib/saleBalloonRepository';
 import {
   enrichSaleWithBrokerForContract,
 } from '@/lib/saleBrokerSnapshot';
@@ -931,6 +932,14 @@ export async function buildFreshSaleContractHtml(
 
   assertCustomerValidForContract(customerWithId);
 
+  const balloonRows = saleId
+    ? await loadSaleBalloonRows(supabase, saleId)
+    : [];
+  const balloonAddons = balloonRows.map((r) => ({
+    installment_number: Number(r.installment_number),
+    additional_amount: Number(r.additional_amount) || 0,
+  }));
+
   let html = generateContractHTML({
     tenant,
     customer: customerWithId,
@@ -942,6 +951,7 @@ export async function buildFreshSaleContractHtml(
       finance_receipts,
     },
     financeReceipts: finance_receipts,
+    balloonAddons,
     contractSnapshot: {
       contract_number: contractNumber,
       ...contractPayloadPartial,

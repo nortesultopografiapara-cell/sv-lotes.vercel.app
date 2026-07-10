@@ -648,13 +648,8 @@ function testContractClauseVariableInstallments() {
     { installmentNumber: 2, amount: 1000, dueDate: '2026-09-01' },
     { installmentNumber: 12, amount: 21000, dueDate: '2027-07-01' },
   ]);
-  assert(schedule.includes('Parcela 12'), 'mostra só balão 12');
-  assert(!schedule.includes('Parcela 01'), 'não lista parcela 01');
-  assert(!/Parcela 02\b/.test(schedule), 'não lista parcela 02');
-  assert(schedule.includes('data-balloon-only'), 'marca só balão');
-  assert(!schedule.includes('Quadro de parcelas'), 'sem quadro completo');
-  assert(!schedule.includes('Total das parcelas'), 'sem total de todas');
-  assert((schedule.match(/Parcela \d+/g) || []).length === 1, 'exatamente 1 linha');
+  // Legado: nunca inferir balão por amount — sempre vazio.
+  assert(schedule === '', 'schedule legado vazio (sem inferência)');
 
   const equalSchedule = buildSaleContractInstallmentScheduleHtml([
     { installmentNumber: 1, amount: 1000, dueDate: '2026-08-01' },

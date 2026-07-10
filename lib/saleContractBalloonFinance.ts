@@ -1,7 +1,9 @@
 /**
  * Resumo financeiro central para contratos com parcelas balão.
- * Fonte: finance_receipts.amount (+ sale_balloon_installments quando disponível).
- * Sem balão / valores iguais → hasBalloon=false (templates mantêm texto atual).
+ *
+ * FONTE OBRIGATÓRIA DE BALÕES: sale_balloon_installments (via balloonAddons).
+ * NUNCA inferir balão por diferença de finance_receipts.amount vs parcela base.
+ * Diferenças de centavos por arredondamento NÃO criam balão.
  *
  * ATENÇÃO: este módulo altera apenas a APRESENTAÇÃO do contrato.
  * Não altera cálculo, Asaas, financeiro, portal ou persistência.
@@ -9,10 +11,12 @@
 
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import type { ContractFinanceReceiptRef } from '@/lib/contractPaymentDates';
-import {
-  hasVariableInstallmentAmounts,
-  type ContractInstallmentScheduleRow,
-} from '@/lib/saleContractPaymentSummary';
+import type { ContractInstallmentScheduleRow } from '@/lib/saleContractPaymentSummary';
+
+export type ContractBalloonAddonRef = {
+  installment_number: number;
+  additional_amount: number;
+};
 
 export type ContractBalloonScheduleRow = ContractInstallmentScheduleRow & {
   baseAmount: number;
@@ -37,6 +41,12 @@ export type SaleContractBalloonFinanceSummary = {
   grandTotal: number;
   totalsMatch: boolean;
 };
+
+export const BALLOON_ADDONS_REQUIRED_MESSAGE =
+  'Venda marcada com parcelas balão, mas sale_balloon_installments não foi carregado ou está vazio. Não é permitido inferir balões por diferença de valores.';
+
+export const BALLOON_RECEIPT_MISSING_MESSAGE =
+  'Inconsistência: parcela balão cadastrada sem finance_receipt correspondente (installment_number).';
 
 function money(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -67,14 +77,33 @@ export function formatBalloonIncidentNumbers(nums: number[]): string {
   return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 }
 
+/** Moda dos valores (centavos) — ignora outliers de arredondamento. */
+function modeAmount(amounts: number[]): number {
+  if (amounts.length === 0) return 0;
+  const counts = new Map<number, number>();
+  for (const a of amounts) {
+    const k = money(a);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  let best = amounts[0];
+  let bestCount = 0;
+  for (const [val, count] of counts) {
+    if (count > bestCount) {
+      best = val;
+      bestCount = count;
+    }
+  }
+  return money(best);
+}
+
 /**
- * Resolve resumo a partir dos receipts (fonte oficial dos valores finais).
- * balloonAddons opcional: mapa installment_number → additional_amount.
+ * Resolve resumo a partir dos receipts + sale_balloon_installments.
+ * balloonAddons é a ÚNICA fonte de quais parcelas são balão.
  */
 export function resolveSaleContractBalloonFinance(params: {
   sale: Record<string, unknown>;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
-  balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
+  balloonAddons?: ContractBalloonAddonRef[] | null;
   isCashPayment?: boolean;
 }): SaleContractBalloonFinanceSummary {
   const sale = params.sale;
@@ -93,7 +122,6 @@ export function resolveSaleContractBalloonFinance(params: {
 
   const rawRows = toScheduleRows(params.financeReceipts);
   const entryReceipt = rawRows.find((r) => r.installmentNumber === 0);
-  const signalReceipt = rawRows.find((r) => r.installmentNumber === -1);
   const entryFromSale = money(Number(sale.down_payment) || 0);
   const resolvedEntry = entryReceipt
     ? money(entryReceipt.amount)
@@ -109,49 +137,68 @@ export function resolveSaleContractBalloonFinance(params: {
     1,
   );
 
-  const addonMap = new Map<number, number>();
+  // Fonte exclusiva: registros persistidos (nunca inferir por amount).
+  const balloonByInstallmentNumber = new Map<number, number>();
   for (const b of params.balloonAddons || []) {
     const n = Number(b.installment_number);
-    if (n >= 1) addonMap.set(n, money(Number(b.additional_amount) || 0));
+    const addon = money(Number(b.additional_amount) || 0);
+    if (n >= 1 && addon > 0.009) {
+      balloonByInstallmentNumber.set(n, addon);
+    }
   }
 
-  const amounts = monthly.map((r) => money(r.amount));
-  const inferredBase = amounts.length > 0 ? Math.min(...amounts) : 0;
+  const useBalloonFlag = Boolean(sale.use_balloon_installments);
+  if (
+    !isCashPayment &&
+    useBalloonFlag &&
+    balloonByInstallmentNumber.size === 0
+  ) {
+    throw new Error(BALLOON_ADDONS_REQUIRED_MESSAGE);
+  }
 
-  // Se temos addons persistidos, base = amount - addon; senão inferir pelo mínimo.
-  const scheduleRows: ContractBalloonScheduleRow[] = monthly.map((r) => {
-    const addonFromTable = addonMap.get(r.installmentNumber) || 0;
-    const amount = money(r.amount);
-    let balloonAddonAmount = addonFromTable;
-    let baseAmount = money(amount - balloonAddonAmount);
-    if (balloonAddonAmount <= 0 && amount > inferredBase + 0.009) {
-      balloonAddonAmount = money(amount - inferredBase);
-      baseAmount = inferredBase;
-    } else if (balloonAddonAmount <= 0) {
-      baseAmount = amount;
-      balloonAddonAmount = 0;
+  const receiptByNumber = new Map(
+    monthly.map((r) => [r.installmentNumber, r] as const),
+  );
+
+  // Integridade: cada balão persistido deve ter finance_receipt.
+  for (const n of balloonByInstallmentNumber.keys()) {
+    if (!receiptByNumber.has(n)) {
+      throw new Error(`${BALLOON_RECEIPT_MISSING_MESSAGE} Parcela nº ${n}.`);
     }
+  }
+
+  const scheduleRows: ContractBalloonScheduleRow[] = monthly.map((r) => {
+    const amount = money(r.amount);
+    const addon = balloonByInstallmentNumber.get(r.installmentNumber) || 0;
+    const isBalloon = addon > 0.009;
     return {
       installmentNumber: r.installmentNumber,
       amount,
       dueDate: r.dueDate,
-      baseAmount,
-      balloonAddonAmount,
-      isBalloon: balloonAddonAmount > 0.009,
+      baseAmount: isBalloon ? money(amount - addon) : amount,
+      balloonAddonAmount: isBalloon ? addon : 0,
+      isBalloon,
     };
   });
 
-  const hasBalloon =
-    !isCashPayment &&
-    (scheduleRows.some((r) => r.isBalloon) ||
-      hasVariableInstallmentAmounts(monthly) ||
-      Boolean(sale.use_balloon_installments));
+  // Linhas do quadro = exatamente os registros persistidos (ordem por número).
+  const balloonRows = [...balloonByInstallmentNumber.keys()]
+    .sort((a, b) => a - b)
+    .map((n) => {
+      const row = scheduleRows.find((r) => r.installmentNumber === n)!;
+      return row;
+    });
 
-  const balloonRows = scheduleRows.filter((r) => r.isBalloon);
+  const commonAmounts = scheduleRows
+    .filter((r) => !r.isBalloon)
+    .map((r) => r.amount);
+  const baseFromBalloon =
+    balloonRows.length > 0 ? balloonRows[0].baseAmount : 0;
   const baseInstallmentValue =
-    scheduleRows.find((r) => !r.isBalloon)?.baseAmount ??
-    scheduleRows[0]?.baseAmount ??
-    inferredBase;
+    commonAmounts.length > 0
+      ? modeAmount(commonAmounts)
+      : baseFromBalloon;
+
   const balloonTotal = money(
     balloonRows.reduce((s, r) => s + r.balloonAddonAmount, 0),
   );
@@ -159,16 +206,17 @@ export function resolveSaleContractBalloonFinance(params: {
   const entryForTotal = entryReceipt
     ? money(entryReceipt.amount)
     : resolvedEntry;
-  void signalReceipt;
   const grandWithEntry = entryReceipt
     ? money(money(entryReceipt.amount) + monthlySum)
     : money(resolvedEntry + monthlySum);
   const totalsMatch =
-    Math.abs(Math.round(grandWithEntry * 100) - Math.round(saleTotal * 100)) <= 1 ||
-    saleTotal <= 0;
+    Math.abs(Math.round(grandWithEntry * 100) - Math.round(saleTotal * 100)) <=
+      1 || saleTotal <= 0;
+
+  const hasBalloon = !isCashPayment && balloonRows.length > 0;
 
   return {
-    hasBalloon: Boolean(hasBalloon && balloonRows.length > 0),
+    hasBalloon,
     isCashPayment,
     installmentsCount,
     entryAmount: entryForTotal || resolvedEntry,
@@ -218,14 +266,13 @@ function dottedLine(label: string, value: string): string {
 
 /**
  * Quadro financeiro executivo compacto (~meia página).
- * REGRA OBRIGATÓRIA: a lista/tabela contém EXCLUSIVAMENTE as parcelas balão.
- * Nunca lista parcelas comuns (1..N). Linhas = balloonRows.length.
+ * REGRA OBRIGATÓRIA: a lista/tabela contém EXCLUSIVAMENTE as parcelas balão persistidas.
+ * Linhas = balloonRows.length === sale_balloon_installments.length.
  */
 export function buildCompactBalloonFinanceScheduleHtml(
   summary: SaleContractBalloonFinanceSummary,
 ): string {
   if (!summary.hasBalloon || summary.isCashPayment) return '';
-  // Defesa: só balões — nunca scheduleRows completas.
   const balloons = summary.balloonRows.filter((r) => r.isBalloon);
   if (balloons.length === 0) return '';
 
@@ -246,7 +293,6 @@ export function buildCompactBalloonFinanceScheduleHtml(
     balloons.map((r) => r.installmentNumber),
   );
 
-  // EXCLUSIVAMENTE balões — quantidade de linhas = quantidade de balões.
   const balloonOnlyLines = balloons
     .map((r) =>
       dottedLine(

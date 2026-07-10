@@ -90,6 +90,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
+    balloonAddons: params.balloonAddons,
     isCashPayment: base.isCashPayment,
   });
 
@@ -107,6 +108,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     {
       isCashPayment: base.isCashPayment,
       financeReceipts,
+      balloonAddons: params.balloonAddons,
     },
   );
 
