@@ -144,6 +144,8 @@ export function buildSaleContractPaymentSummaryHtml(
     scheduleRows?: ContractInstallmentScheduleRow[];
     hasVariableInstallments?: boolean;
     balloonSummary?: SaleContractBalloonFinanceSummary | null;
+    /** Primeiro vencimento das parcelas mensais (não a entrada). */
+    firstDueDateFmt?: string | null;
   },
 ): string {
   const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
@@ -154,6 +156,7 @@ export function buildSaleContractPaymentSummaryHtml(
     return buildCompactBalloonFinanceScheduleHtml(balloon, {
       discountFmt: breakdown.discountFmt,
       correctionLabel: breakdown.correctionLabel,
+      firstDueDateFmt: options?.firstDueDateFmt ?? null,
     });
   }
 

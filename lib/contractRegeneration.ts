@@ -3,11 +3,12 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { mergeCustomerData, normalizeDocument } from '@/lib/customerIdentity';
+import { mergeCustomerData } from '@/lib/customerIdentity';
 import {
   assertCustomerValidForContract,
   validateCustomerForContract,
 } from '@/lib/validateCustomerForContract';
+import { loadCustomerForSaleContract } from '@/lib/loadCustomerForSaleContract';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
@@ -740,28 +741,10 @@ export async function loadFreshRegenerationEntities(
 
   let customer: Record<string, unknown> = {};
   if (customerId) {
-    customer = await fetchScopedEntity(
-      supabase,
-      'customers',
+    customer = await loadCustomerForSaleContract(supabase, {
       customerId,
       tenantId,
-      'Cliente',
-    );
-
-    const doc = normalizeDocument(
-      String(customer.cpf_cnpj || customer.document || ''),
-    );
-    if (doc.length >= 11) {
-      let clientQuery = supabase
-        .from('clients')
-        .select('*')
-        .eq('cpf_cnpj', doc);
-      clientQuery = clientQuery.eq('tenant_id', tenantId);
-      const { data: clientRow } = await clientQuery.maybeSingle();
-      if (clientRow) {
-        customer = mergeCustomerData(customer, clientRow);
-      }
-    }
+    });
   }
 
   let receipts_sum = 0;

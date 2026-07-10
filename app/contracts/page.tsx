@@ -763,6 +763,9 @@ export default function ContractsPage() {
     setContractViewError(null);
     setContractViewNeedsRegenerar(false);
     setContractViewLoading(false);
+    setCustomerContractValidation(null);
+    // Retry key não deve forçar rebuild eterno entre contratos.
+    setContractHtmlRetryKey(0);
   }, [selectedContract?.id]);
 
   useEffect(() => {
@@ -784,11 +787,9 @@ export default function ContractsPage() {
         if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
           query.set("impersonatingTenantId", impersonatingTenantId);
         }
-        // Após regenerar (retryKey) ou needs_regenerar: força HTML fresco com balões persistidos.
-        if (
-          contractHtmlRetryKey > 0 ||
-          selectedContract.needs_regenerar === true
-        ) {
+        // Rebuild só quando o contrato realmente precisa regenerar.
+        // Após regeneração bem-sucedida o HTML já foi persistido — não reconstruir.
+        if (selectedContract.needs_regenerar === true) {
           query.set("refresh", "1");
         }
         const { ok, data, error } = await fetchJsonWithTimeout<{
@@ -797,6 +798,8 @@ export default function ContractsPage() {
           error?: string;
           source?: string;
           needs_regenerar?: boolean;
+          missingFields?: string[];
+          customerId?: string;
         }>(
           `/api/contracts/${selectedContract.id}/html?${query.toString()}`,
           { credentials: "include" },
@@ -808,9 +811,19 @@ export default function ContractsPage() {
           setContractViewHtml(data.html);
           setContractViewError(null);
           setContractViewNeedsRegenerar(data.needs_regenerar === true);
+          setCustomerContractValidation(null);
         } else {
           setContractViewHtml(null);
           setContractViewNeedsRegenerar(false);
+          if (data?.missingFields?.length) {
+            setCustomerContractValidation({
+              valid: false,
+              missingFields: data.missingFields,
+              missingRequired: data.missingFields,
+              missingRecommended: [],
+              customerId: data.customerId,
+            });
+          }
           setContractViewError(
             error ||
               (typeof data?.error === "string" ? data.error : null) ||
@@ -1521,14 +1534,13 @@ export default function ContractsPage() {
 
   const confirmRegenerateContract = async () => {
     if (!selectedContract) return;
-    if (!ensureCustomerValidForContractAction(selectedContract)) {
-      setShowRegenerateModal(false);
-      return;
-    }
+    // NÃO validar o objeto resumido da lista aqui.
+    // A API regenera com o mesmo loader canônico do Mapa GIS (customers * + clients).
     console.log("CONTRACT_REGENERATE_CONFIRM", {
       contractId: selectedContract.id,
     });
     setRegeneratingContract(true);
+    setCustomerContractValidation(null);
     try {
       const impersonatingTenantId =
         typeof window !== "undefined"
@@ -1542,7 +1554,7 @@ export default function ContractsPage() {
         diagnosticHint?: string;
         missingFields?: string[];
         customerId?: string;
-        contract?: { id?: string };
+        contract?: { id?: string; needs_regenerar?: boolean };
         versions?: unknown[];
       }>(
         `/api/contracts/${selectedContract.id}/regenerate`,
@@ -1592,8 +1604,11 @@ export default function ContractsPage() {
         }
       }
 
+      setCustomerContractValidation(null);
+      setContractViewError(null);
       setContractToast("Contrato regenerado com sucesso.");
       setActiveTab("Visualização");
+      // HTML já foi persistido pela API — apenas refetch (sem refresh=1 forçado).
       setContractHtmlRetryKey((k) => k + 1);
 
       void reloadContractsList()

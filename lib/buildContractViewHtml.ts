@@ -21,6 +21,7 @@ import {
 } from "@/lib/saleBalloonRepository";
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
+import { loadCustomerForSaleContract } from "@/lib/loadCustomerForSaleContract";
 
 const COMPANY_CONTRACT_VIEW_SELECT = COMPANY_CONTRACT_LOAD_SELECT;
 
@@ -54,35 +55,6 @@ const SALE_CONTRACT_VIEW_SELECT = [
   "spouse_address",
   "sale_date",
   "created_at",
-].join(", ");
-
-const CUSTOMER_CONTRACT_VIEW_SELECT = [
-  "id",
-  "tenant_id",
-  "name",
-  "full_name",
-  "document",
-  "cpf",
-  "rg",
-  "email",
-  "phone",
-  "address",
-  "address_number",
-  "complement",
-  "neighborhood",
-  "city",
-  "state",
-  "zip_code",
-  "nationality",
-  "profession",
-  "marital_status",
-  "spouse_name",
-  "spouse_cpf",
-  "spouse_rg",
-  "spouse_nationality",
-  "spouse_profession",
-  "spouse_marital_status",
-  "spouse_address",
 ].join(", ");
 
 const BLOCK_CONTRACT_VIEW_SELECT = [
@@ -268,16 +240,21 @@ async function buildContractViewHtmlFromContext(
   logHtmlStep("sale_loaded", startedAt, { saleId: saleId || null });
 
   let customer: Record<string, unknown> = {};
-  const customerId = String(contract.customer_id || "").trim();
+  const customerId = String(
+    contract.customer_id || sale.customer_id || "",
+  ).trim();
   if (customerId) {
-    const { data: customerRow } = await supabase
-      .from("customers")
-      .select(CUSTOMER_CONTRACT_VIEW_SELECT)
-      .eq("id", customerId)
-      .maybeSingle();
-    customer = (customerRow as Record<string, unknown>) || {};
+    // Mesma fonte da regeneração (GIS/API): select * + merge clients por CPF.
+    customer = await loadCustomerForSaleContract(supabase, {
+      customerId,
+      tenantId,
+    });
   }
-  logHtmlStep("customer_loaded", startedAt);
+  logHtmlStep("customer_loaded", startedAt, {
+    customerId: customerId || null,
+    hasName: Boolean(customer.name || customer.full_name),
+    hasDoc: Boolean(customer.cpf_cnpj || customer.document || customer.cpf),
+  });
 
   let block: Record<string, unknown> = {};
   const blockId = String(contract.block_id || "").trim();

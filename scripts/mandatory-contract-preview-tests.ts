@@ -77,7 +77,7 @@ function testContractsPagePreviewNoLoop() {
   assert(!page.includes('tenantData?.id, contractHtmlRetryKey'), 'preview não depende de tenantData');
   assert(!page.includes('selectedContract, tenantData, receipts'), 'sem loop receipts no preview');
   assert(
-    page.includes('[selectedContract?.id, contractHtmlRetryKey'),
+    page.includes('[selectedContract?.id, selectedContract?.needs_regenerar, contractHtmlRetryKey'),
     'deps estáveis no preview',
   );
   assert(

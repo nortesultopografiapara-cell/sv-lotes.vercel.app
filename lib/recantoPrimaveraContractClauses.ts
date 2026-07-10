@@ -110,7 +110,9 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
           </tr>
         </tbody>
       </table>
-      ${buildCompactBalloonFinanceScheduleHtml(ctx.balloonSummary)}
+      ${buildCompactBalloonFinanceScheduleHtml(ctx.balloonSummary, {
+        firstDueDateFmt: ctx.dataPrimeiraParcelaFmt || null,
+      })}
     </div>`;
   }
 
