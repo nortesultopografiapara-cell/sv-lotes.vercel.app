@@ -189,6 +189,14 @@ function testLotInteractionAfterExit() {
     gisMap.includes('gisMeasureToolActive'),
     'interatividade lotes condicionada a ferramentas de medição',
   );
+  assert(
+    gisMap.includes('SyncPathHitTest'),
+    'sync interactive após mount',
+  );
+  assert(
+    gisMap.includes('GisMeasureExclusiveController'),
+    'modo exclusivo de medição',
+  );
   console.log('OK testLotInteractionAfterExit');
 }
 
