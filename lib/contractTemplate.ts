@@ -484,6 +484,8 @@ export function generateContractHTML({
       scheduleRows,
       hasVariableInstallments,
       balloonSummary,
+      // Mesma fonte da Cláusula Quarta — parcela mensal 1 (não entrada).
+      firstDueDateFmt: dataPrimeiraParcelaFmt || null,
     },
   );
 

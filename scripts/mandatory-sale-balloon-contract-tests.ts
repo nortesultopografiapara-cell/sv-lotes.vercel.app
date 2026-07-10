@@ -372,6 +372,12 @@ function testPadraoContractHtml() {
   assert(html.includes('Parcela 06'), 'balão 6');
   assert(!html.includes('Parcela 01'), 'sem 01');
   assert(!html.includes('Quadro de parcelas'), 'sem quadro 1..N');
+  // Parcela 1 do buildBalloonReceipts = 2026-01-09
+  assert(
+    /Primeiro vencimento[\s\S]*?09\/01\/2026/i.test(html),
+    'PADRAO/Meneses passa primeiro vencimento ao quadro',
+  );
+  assert(!/Primeiro vencimento[\s\S]{0,160}—/.test(html), 'sem traço vazio');
   console.log('OK testPadraoContractHtml');
 }
 
