@@ -272,17 +272,22 @@ export function resolveSaleContractBalloonFinance(params: {
   };
 }
 
-function dottedLine(label: string, value: string): string {
-  return `<div style="display:flex;justify-content:space-between;gap:8px;margin:2px 0;font-size:10pt;line-height:1.35;">
-    <span style="flex:1;overflow:hidden;white-space:nowrap;">${label}<span style="letter-spacing:1px;"> ${'.'.repeat(48)}</span></span>
-    <span style="white-space:nowrap;font-weight:600;">${value}</span>
-  </div>`;
+/**
+ * Linha label/valor — tabela HTML (texto real).
+ * NÃO usar flex+overflow:hidden (corta glifos no html2canvas/PDF).
+ */
+function financeRow(label: string, value: string): string {
+  return `<tr>
+    <td style="padding:3px 8px 3px 0;text-align:left;vertical-align:baseline;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.5;color:#111;">${label}</td>
+    <td style="padding:3px 0 3px 8px;text-align:right;vertical-align:baseline;white-space:nowrap;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.5;font-weight:bold;color:#111;">${value}</td>
+  </tr>`;
 }
 
 /**
  * Quadro do contrato alinhado ao Resumo financeiro do formulário.
  * Lista APENAS parcelas com adicional.
  *
+ * Renderização: HTML/CSS tipográfico (Times New Roman), sem canvas/bitmap próprio.
  * Formato obrigatório por linha:
  * Parcela 06 — Base R$ 1,96 — Adicional R$ 0,50 — Total R$ 2,46
  */
@@ -304,28 +309,32 @@ export function buildCompactBalloonFinanceScheduleHtml(
     .map((r) => {
       const n = padInstallmentNumber(r.installmentNumber);
       const line = `Parcela ${n} — Base ${formatCurrencyBRL(r.baseAmount)} — Adicional ${formatCurrencyBRL(r.balloonAddonAmount)} — Total ${formatCurrencyBRL(r.amount)}`;
-      return `<div style="margin:3px 0;font-size:10pt;line-height:1.4;">${line}</div>`;
+      return `<p style="margin:0 0 6px;padding:0;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.5;color:#111;text-align:left;">${line}</p>`;
     })
     .join('');
 
   return `
-    <div class="contract-clause contract-balloon-finance" style="margin:10px 0 14px;page-break-inside:avoid;" data-balloon-rows="${balloons.length}" data-source="buildBalloonFinancePreview">
-      <div style="border:1px solid #222;padding:10px 12px;font-family:'Courier New',Courier,monospace;">
-        <p style="margin:0 0 8px;text-align:center;font-weight:bold;font-size:11pt;letter-spacing:1px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;">Quadro Financeiro</p>
-        <div style="border-top:1px dashed #666;border-bottom:1px dashed #666;padding:6px 0;margin-bottom:8px;">
-          ${dottedLine('Valor da venda', totalFmt)}
-          ${dottedLine('Entrada', formatCurrencyBRL(summary.entryAmount))}
-          ${dottedLine('Saldo financiado', formatCurrencyBRL(financed))}
-          ${dottedLine('Parcelamento', `${summary.installmentsCount} parcelas mensais`)}
-          ${dottedLine('Parcela base', baseFmt)}
-        </div>
-        <p style="margin:0 0 6px;font-weight:bold;font-size:10pt;text-transform:uppercase;letter-spacing:0.5px;font-family:'Times New Roman',Times,serif;">Parcelas com adicional</p>
-        <div class="contract-balloon-only-table" data-balloon-only="true" data-row-count="${balloons.length}" style="border-top:1px dashed #666;border-bottom:1px dashed #666;padding:6px 0;margin-bottom:8px;">
+    <div class="contract-clause contract-balloon-finance contract-payment-block" style="margin:16px 0 20px;padding:0;page-break-inside:avoid;break-inside:avoid;" data-balloon-rows="${balloons.length}" data-source="buildBalloonFinancePreview">
+      <div style="border:1px solid #222;padding:14px 16px;margin:0;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;overflow:visible;">
+        <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
+        <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
+          <tbody>
+            ${financeRow('Valor da venda', totalFmt)}
+            ${financeRow('Entrada', formatCurrencyBRL(summary.entryAmount))}
+            ${financeRow('Saldo financiado', formatCurrencyBRL(financed))}
+            ${financeRow('Parcelamento', `${summary.installmentsCount} parcelas mensais`)}
+            ${financeRow('Parcela base', baseFmt)}
+          </tbody>
+        </table>
+        <p style="margin:0 0 8px;padding:0;font-weight:bold;font-size:11pt;text-transform:uppercase;letter-spacing:0.4px;font-family:'Times New Roman',Times,serif;line-height:1.5;text-align:left;">Parcelas com adicional</p>
+        <div class="contract-balloon-only-table" data-balloon-only="true" data-row-count="${balloons.length}" style="border-top:1px dashed #666;border-bottom:1px dashed #666;padding:8px 0;margin:0 0 12px;overflow:visible;">
           ${balloonOnlyLines}
         </div>
-        <div>
-          ${dottedLine('Valor total do contrato', totalFmt)}
-        </div>
+        <table style="width:100%;border-collapse:collapse;margin:0;padding:0;" cellpadding="0" cellspacing="0">
+          <tbody>
+            ${financeRow('Valor total do contrato', totalFmt)}
+          </tbody>
+        </table>
       </div>
     </div>`;
 }
