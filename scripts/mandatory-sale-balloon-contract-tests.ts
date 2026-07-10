@@ -160,11 +160,21 @@ function testCompactScheduleAndClause() {
     financeReceipts: buildBalloonReceipts(),
   });
   const html = buildCompactBalloonFinanceScheduleHtml(summary);
-  assert(html.includes('Parcela balão'), 'marca balão');
-  assert(html.includes('Parcela 6/48'), 'parcela 6');
-  assert(html.includes('Parcela 42/48'), 'parcela 42');
-  assert(html.includes('Total da venda'), 'total');
-  assert(html.includes('44 parcela'), 'comuns resumidas');
+  assert(html.includes('Quadro Financeiro'), 'título quadro');
+  assert(html.includes('Parcelas balão') || html.includes('PARCELAS BALÃO') || html.toLowerCase().includes('parcelas balão'), 'marca balão');
+  assert(html.includes('>06<') || html.includes('06'), 'parcela 06');
+  assert(html.includes('>42<') || html.includes('42'), 'parcela 42');
+  assert(html.includes('Parcela base'), 'parcela base');
+  assert(html.includes('Valor total do contrato') || html.includes('Total do contrato'), 'total');
+  assert(html.includes('Saldo financiado'), 'saldo');
+  assert(html.includes('Incidentes nas parcelas'), 'incidentes');
+  assert(html.includes('06, 18, 30 e 42'), 'lista incidentes');
+  assert(html.includes('Tabela resumida'), 'tabela resumida');
+  assert(!html.includes('44 parcela'), 'não lista comuns');
+  assert(!html.includes('Vencimento'), 'sem coluna de vencimentos');
+  // Não lista parcelas comuns (ex.: 01, 02, 03 fora dos balões)
+  assert(!html.includes('>01<'), 'não lista parcela 01');
+  assert(!html.includes('>48<'), 'não lista parcela 48');
 
   const body = buildBalloonAwarePaymentClauseText({
     summary,
@@ -175,10 +185,72 @@ function testCompactScheduleAndClause() {
     dataPrimeiraParcelaFmt: '09/08/2026',
     dataUltimaParcelaFmt: '09/07/2030',
   });
-  assert(body.includes('valor base'), 'menciona base');
-  assert(body.includes('parcelas balão'), 'menciona balão');
+  assert(body.includes('parcela base'), 'menciona parcela base');
+  assert(body.includes('parcelas balão') || body.includes('Quadro Financeiro'), 'menciona balão/quadro');
+  assert(body.includes('Quadro Financeiro'), 'remete ao quadro');
+  assert(body.includes('acréscimos contratados') || body.includes('inalteradas'), 'redação obrigatória');
+  assert(!body.includes('nº'), 'cláusula sem nº de parcela');
+  assert(!body.includes('06, 18'), 'cláusula sem lista de balões');
   assert(!body.includes('parcelas iguais'), 'não diz iguais');
   console.log('OK testCompactScheduleAndClause');
+}
+
+function countBalloonTableRows(html: string): number {
+  const matches = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+  if (!matches) return 0;
+  return (matches[1].match(/<tr>/g) || []).length;
+}
+
+function testBalloonTableScalesWithCount() {
+  // 2 balões
+  const two = resolveSaleContractBalloonFinance({
+    sale: { ...baseSale, installments_count: 24, use_balloon_installments: true },
+    financeReceipts: [
+      { installment_number: 0, amount: 5, due_date: '2026-07-09' },
+      ...Array.from({ length: 24 }, (_, i) => ({
+        installment_number: i + 1,
+        amount: i + 1 === 12 || i + 1 === 24 ? 10 : 5,
+        due_date: '2026-08-01',
+      })),
+    ],
+  });
+  assert(two.hasBalloon && two.balloonCount === 2, '2 balões');
+  const html2 = buildCompactBalloonFinanceScheduleHtml(two);
+  assert(countBalloonTableRows(html2) === 2, 'tabela com 2 linhas');
+  assert(!html2.includes('>01<'), '2 balões: sem parcela 01');
+
+  // 5 balões
+  const fiveNums = [6, 12, 18, 24, 30];
+  const five = resolveSaleContractBalloonFinance({
+    sale: { ...baseSale, installments_count: 36, use_balloon_installments: true },
+    financeReceipts: [
+      { installment_number: 0, amount: 5, due_date: '2026-07-09' },
+      ...Array.from({ length: 36 }, (_, i) => ({
+        installment_number: i + 1,
+        amount: fiveNums.includes(i + 1) ? 10 : 5,
+        due_date: '2026-08-01',
+      })),
+    ],
+  });
+  assert(five.balloonCount === 5, '5 balões');
+  assert(countBalloonTableRows(buildCompactBalloonFinanceScheduleHtml(five)) === 5, 'tabela com 5 linhas');
+
+  // balão final (1 linha)
+  const final = resolveSaleContractBalloonFinance({
+    sale: { ...baseSale, installments_count: 12, use_balloon_installments: true },
+    financeReceipts: [
+      ...Array.from({ length: 12 }, (_, i) => ({
+        installment_number: i + 1,
+        amount: i + 1 === 12 ? 50 : 10,
+        due_date: '2026-08-01',
+      })),
+    ],
+  });
+  assert(final.balloonCount === 1, '1 balão final');
+  const htmlFinal = buildCompactBalloonFinanceScheduleHtml(final);
+  assert(countBalloonTableRows(htmlFinal) === 1, 'tabela com 1 linha');
+  assert(htmlFinal.includes('>12<') || htmlFinal.includes('12'), 'mostra parcela 12');
+  console.log('OK testBalloonTableScalesWithCount');
 }
 
 function testPadraoContractHtml() {
@@ -192,7 +264,9 @@ function testPadraoContractHtml() {
   });
   assert(html.includes('Quadro Financeiro') || html.includes('parcelas balão'), 'quadro/balão');
   assert(!html.includes('parcelas iguais no valor'), 'sem iguais');
-  assert(html.includes('Parcela 6') || html.includes('6/48'), 'lista balão 6');
+  assert(html.includes('06, 18, 30 e 42') || html.includes('>06<'), 'lista balão 6');
+  assert(!html.includes('Quadro de parcelas'), 'sem quadro completo 1..N');
+  assert(!html.includes('Parcela 1') && !html.includes('Parcela 2'), 'sem listagem comum');
   console.log('OK testPadraoContractHtml');
 }
 
@@ -208,14 +282,17 @@ function testSv2ContractSummaryAndClause() {
   assert(ctx.hasBalloonInstallments, 'ctx marca balão');
   const summary = buildSvLotes2SummaryHtml(ctx);
   assert(summary.includes('PARCELA BASE'), 'resumo parcela base');
-  assert(summary.includes('PARCELAS BALÃO'), 'resumo qtd balão');
-  assert(summary.includes('FORMA ESPECIAL') || summary.includes('balão'), 'forma especial');
-  assert(summary.includes('Parcela 6') || summary.includes('6/48'), 'quadro balão');
+  assert(summary.includes('Quadro Financeiro'), 'quadro financeiro');
+  assert(summary.includes('06, 18, 30 e 42') || summary.includes('>06<'), 'quadro balão');
+  assert(!summary.includes('FORMA ESPECIAL'), 'sem forma especial no grid');
+  assert(!summary.includes('Quadro de parcelas'), 'sem listagem 1..N');
 
   const clause = buildSvLotes2ClauseSegundaHtml(ctx);
   assert(clause.includes('CLÁUSULA SEGUNDA'), 'cláusula segunda');
   assert(clause.includes('parcelas balão') || clause.includes('Quadro Financeiro'), 'texto balão');
-  assert(!clause.includes('valor inicial de') || clause.includes('valor base'), 'não só valor inicial genérico');
+  assert(clause.includes('parcela base') || clause.includes('Quadro Financeiro'), 'remete ao quadro');
+  assert(!clause.includes('parcelas iguais'), 'não diz iguais');
+  assert(!clause.includes('06, 18, 30 e 42'), 'cláusula sem lista de números');
   console.log('OK testSv2ContractSummaryAndClause');
 }
 
@@ -333,6 +410,7 @@ function main() {
   testHelperDetectsBalloons();
   testNoBalloonKeepsEqualWording();
   testCompactScheduleAndClause();
+  testBalloonTableScalesWithCount();
   testPadraoContractHtml();
   testSv2ContractSummaryAndClause();
   testRecantoDoesNotSayFixasWithBalloon();
