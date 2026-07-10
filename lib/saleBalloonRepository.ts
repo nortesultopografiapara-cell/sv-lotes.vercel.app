@@ -95,6 +95,59 @@ export async function loadSaleBalloonRows(
   return (data || []) as SaleBalloonRow[];
 }
 
+export type ContractBalloonAddon = {
+  installment_number: number;
+  additional_amount: number;
+};
+
+export type ResolveContractBalloonAddonsResult = {
+  saleId: string | null;
+  useBalloon: boolean;
+  balloonMode: string | null;
+  balloonConfig: SaleBalloonFormConfig | null;
+  configAddons: ContractBalloonAddon[];
+  tableAddons: ContractBalloonAddon[];
+  selectedSource: 'balloon_config' | 'sale_balloon_installments' | 'none';
+  selectedAddons: ContractBalloonAddon[];
+};
+
+function mapTableAddons(tableRows: SaleBalloonRow[]): ContractBalloonAddon[] {
+  return tableRows
+    .filter(
+      (r) =>
+        Number(r.installment_number) >= 1 && Number(r.additional_amount) > 0.009,
+    )
+    .map((r) => ({
+      installment_number: Number(r.installment_number),
+      additional_amount: Number(r.additional_amount) || 0,
+    }));
+}
+
+function mapConfigAddons(params: {
+  sale: Record<string, unknown>;
+  rawConfig: SaleBalloonFormConfig;
+}): ContractBalloonAddon[] {
+  const installmentsCount = Math.max(1, Number(params.sale.installments_count) || 0);
+  const contractValue =
+    Number(params.sale.total_value) ||
+    Number(params.sale.agreed_price) ||
+    Number(params.sale.final_value) ||
+    0;
+  const plan = resolveSaleBalloonPlan({
+    useBalloon: true,
+    installmentsCount,
+    contractValue,
+    config: params.rawConfig,
+  });
+  if (!plan.enabled || plan.items.length === 0) return [];
+  return plan.items
+    .filter((i) => i.installmentNumber >= 1 && i.additionalAmount > 0.009)
+    .map((i) => ({
+      installment_number: i.installmentNumber,
+      additional_amount: Number(i.additionalAmount) || 0,
+    }));
+}
+
 /**
  * Fonte exclusiva de balões para o contrato.
  * Prioridade:
@@ -104,58 +157,75 @@ export async function loadSaleBalloonRows(
  * NUNCA deriva balões de finance_receipts.amount.
  * Se config e tabela divergirem, prevalece a config (evita tabela poluída com N-1 linhas).
  */
-export function resolveContractBalloonAddons(params: {
+export function diagnoseContractBalloonAddons(params: {
   sale: Record<string, unknown>;
   tableRows?: SaleBalloonRow[] | null;
-}): Array<{ installment_number: number; additional_amount: number }> {
+}): ResolveContractBalloonAddonsResult {
   const sale = params.sale;
   const tableRows = params.tableRows || [];
   const useBalloon = Boolean(sale.use_balloon_installments);
-  const installmentsCount = Math.max(1, Number(sale.installments_count) || 0);
-  const contractValue =
-    Number(sale.total_value) ||
-    Number(sale.agreed_price) ||
-    Number(sale.final_value) ||
-    0;
+  const rawConfig = (sale.balloon_config as SaleBalloonFormConfig | null | undefined) || null;
+  const tableAddons = mapTableAddons(tableRows);
+  const configAddons =
+    useBalloon && rawConfig && typeof rawConfig === 'object'
+      ? mapConfigAddons({ sale, rawConfig })
+      : [];
 
-  const rawConfig = sale.balloon_config as SaleBalloonFormConfig | null | undefined;
-  if (useBalloon && rawConfig && typeof rawConfig === 'object') {
-    const plan = resolveSaleBalloonPlan({
-      useBalloon: true,
-      installmentsCount,
-      contractValue,
-      config: rawConfig,
-    });
-    if (plan.enabled && plan.items.length > 0) {
-      const fromConfig = plan.items
-        .filter((i) => i.installmentNumber >= 1 && i.additionalAmount > 0.009)
-        .map((i) => ({
-          installment_number: i.installmentNumber,
-          additional_amount: Number(i.additionalAmount) || 0,
-        }));
-      if (fromConfig.length > 0) {
-        if (
-          tableRows.length > 0 &&
-          tableRows.length !== fromConfig.length
-        ) {
-          console.warn('[saleBalloon] contract addons: config vs table mismatch', {
-            configCount: fromConfig.length,
-            tableCount: tableRows.length,
-            configNumbers: fromConfig.map((a) => a.installment_number),
-            tableNumbers: tableRows.map((r) => r.installment_number),
-          });
-        }
-        return fromConfig;
-      }
-    }
+  let selectedSource: ResolveContractBalloonAddonsResult['selectedSource'] = 'none';
+  let selectedAddons: ContractBalloonAddon[] = [];
+  if (configAddons.length > 0) {
+    selectedSource = 'balloon_config';
+    selectedAddons = configAddons;
+  } else if (tableAddons.length > 0) {
+    selectedSource = 'sale_balloon_installments';
+    selectedAddons = tableAddons;
   }
 
-  return tableRows
-    .filter((r) => Number(r.installment_number) >= 1 && Number(r.additional_amount) > 0.009)
-    .map((r) => ({
-      installment_number: Number(r.installment_number),
-      additional_amount: Number(r.additional_amount) || 0,
-    }));
+  const result: ResolveContractBalloonAddonsResult = {
+    saleId: sale.id ? String(sale.id) : null,
+    useBalloon,
+    balloonMode: sale.balloon_mode != null ? String(sale.balloon_mode) : null,
+    balloonConfig: rawConfig,
+    configAddons,
+    tableAddons,
+    selectedSource,
+    selectedAddons,
+  };
+
+  console.log('CONTRACT_BALLOON_RESOLVE', {
+    saleId: result.saleId,
+    useBalloon: result.useBalloon,
+    balloonMode: result.balloonMode,
+    configAddons: result.configAddons,
+    tableAddons: result.tableAddons,
+    selectedSource: result.selectedSource,
+    selectedAddons: result.selectedAddons,
+    configCount: result.configAddons.length,
+    tableCount: result.tableAddons.length,
+    selectedCount: result.selectedAddons.length,
+  });
+
+  if (
+    result.configAddons.length > 0 &&
+    result.tableAddons.length > 0 &&
+    result.configAddons.length !== result.tableAddons.length
+  ) {
+    console.warn('[saleBalloon] contract addons: config vs table mismatch', {
+      configCount: result.configAddons.length,
+      tableCount: result.tableAddons.length,
+      configNumbers: result.configAddons.map((a) => a.installment_number),
+      tableNumbers: result.tableAddons.map((a) => a.installment_number),
+    });
+  }
+
+  return result;
+}
+
+export function resolveContractBalloonAddons(params: {
+  sale: Record<string, unknown>;
+  tableRows?: SaleBalloonRow[] | null;
+}): ContractBalloonAddon[] {
+  return diagnoseContractBalloonAddons(params).selectedAddons;
 }
 
 export function planFromSaleBalloonFields(params: {

@@ -14,7 +14,11 @@ import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
-import { loadSaleBalloonRows, resolveContractBalloonAddons } from "@/lib/saleBalloonRepository";
+import {
+  diagnoseContractBalloonAddons,
+  loadSaleBalloonRows,
+  resolveContractBalloonAddons,
+} from "@/lib/saleBalloonRepository";
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 
@@ -313,14 +317,19 @@ async function buildContractViewHtmlFromContext(
   logHtmlStep("receipts_loaded", startedAt, { count: receipts.length });
 
   const balloonRows = saleId ? await loadSaleBalloonRows(supabase, saleId) : [];
-  const balloonAddons = resolveContractBalloonAddons({
+  const balloonDiag = diagnoseContractBalloonAddons({
     sale: sale as Record<string, unknown>,
     tableRows: balloonRows,
   });
+  const balloonAddons = balloonDiag.selectedAddons;
   logHtmlStep("balloon_addons_loaded", startedAt, {
     tableCount: balloonRows.length,
     count: balloonAddons.length,
     numbers: balloonAddons.map((a) => a.installment_number),
+    selectedSource: balloonDiag.selectedSource,
+    configAddons: balloonDiag.configAddons,
+    tableAddons: balloonDiag.tableAddons,
+    selectedAddons: balloonDiag.selectedAddons,
   });
 
   const html = await buildContractViewHtml(supabase, {

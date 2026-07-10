@@ -160,12 +160,19 @@ export async function POST(
       });
     }
     console.error('[contracts/regenerate] error', error.message);
-    console.error('CONTRACT_REGENERATE_ERROR', error.message, error.stack);
+    console.error('CONTRACT_REGENERATE_ERROR', {
+      receivedId,
+      message: error.message,
+      stack: error.stack,
+    });
     return NextResponse.json(
       {
         success: false,
         error: error.message,
         receivedId,
+        // Temporário: facilita diagnóstico no Preview sem depender de vercel logs.
+        diagnosticHint:
+          'Abra GET /api/contracts/{id}/balloon-diagnose (autenticado) para ver balloon_config, sale_balloon_installments e selectedSource.',
         stack: error.stack,
       },
       { status: 500 },

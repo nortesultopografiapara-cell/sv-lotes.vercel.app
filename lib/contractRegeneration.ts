@@ -13,9 +13,9 @@ import { generateContractHTML } from '@/lib/contractTemplate';
 import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
+  diagnoseContractBalloonAddons,
   loadSaleBalloonRows,
   replaceSaleBalloonInstallments,
-  resolveContractBalloonAddons,
 } from '@/lib/saleBalloonRepository';
 import {
   resolveSaleBalloonPlan,
@@ -943,12 +943,18 @@ export async function buildFreshSaleContractHtml(
   const balloonRows = saleId
     ? await loadSaleBalloonRows(supabase, saleId)
     : [];
-  const balloonAddons = resolveContractBalloonAddons({
+  const balloonDiag = diagnoseContractBalloonAddons({
     sale: saleWithId as Record<string, unknown>,
     tableRows: balloonRows,
   });
+  const balloonAddons = balloonDiag.selectedAddons;
   console.log('REGENERATE_BALLOON_ADDONS', {
     saleId,
+    configAddons: balloonDiag.configAddons,
+    tableAddons: balloonDiag.tableAddons,
+    selectedSource: balloonDiag.selectedSource,
+    selectedAddons: balloonDiag.selectedAddons,
+    balloonConfig: balloonDiag.balloonConfig,
     tableCount: balloonRows.length,
     addonCount: balloonAddons.length,
     addonNumbers: balloonAddons.map((a) => a.installment_number),
@@ -956,8 +962,10 @@ export async function buildFreshSaleContractHtml(
 
   // Se a tabela estiver poluída (ex.: 47 linhas) e a config tiver os balões reais,
   // regrava a tabela a partir da config — sem tocar em finance_receipts.
+  // Nunca aborta a regeneração se o repair falhar.
   if (
     saleId &&
+    balloonDiag.selectedSource === 'balloon_config' &&
     balloonAddons.length > 0 &&
     balloonRows.length !== balloonAddons.length
   ) {
@@ -992,39 +1000,59 @@ export async function buildFreshSaleContractHtml(
         });
       }
     } catch (repairErr) {
-      console.warn('REGENERATE_BALLOON_TABLE_REPAIR_FAILED', repairErr);
+      console.warn('REGENERATE_BALLOON_TABLE_REPAIR_FAILED', {
+        saleId,
+        message: repairErr instanceof Error ? repairErr.message : String(repairErr),
+      });
     }
   }
 
-  let html = generateContractHTML({
-    tenant,
-    customer: customerWithId,
-    project: projData,
-    block: blockWithId,
-    sale: {
-      ...saleWithId,
-      receipts_sum,
-      finance_receipts,
-    },
-    financeReceipts: finance_receipts,
-    balloonAddons,
-    contractSnapshot: {
-      contract_number: contractNumber,
-      ...contractPayloadPartial,
-    },
-    projectBlocks,
-    streetGuides,
-    manualConfrontants: null,
-  });
+  let html: string;
+  try {
+    html = generateContractHTML({
+      tenant,
+      customer: customerWithId,
+      project: projData,
+      block: blockWithId,
+      sale: {
+        ...saleWithId,
+        receipts_sum,
+        finance_receipts,
+      },
+      financeReceipts: finance_receipts,
+      balloonAddons,
+      contractSnapshot: {
+        contract_number: contractNumber,
+        ...contractPayloadPartial,
+      },
+      projectBlocks,
+      streetGuides,
+      manualConfrontants: null,
+    });
+  } catch (genErr) {
+    console.error('REGENERATE_HTML_GENERATE_FAILED', {
+      saleId,
+      selectedSource: balloonDiag.selectedSource,
+      selectedAddons: balloonDiag.selectedAddons,
+      configAddons: balloonDiag.configAddons,
+      tableAddons: balloonDiag.tableAddons,
+      message: genErr instanceof Error ? genErr.message : String(genErr),
+    });
+    throw genErr;
+  }
 
   if (isRecantoPrimaveraContractModel(tenant)) {
     html = await embedRecantoContractSignatureInHtml(html, tenant);
   }
 
+  const qtyMatch = html.match(/Quantidade:\s*<strong>(\d+)<\/strong>/i)?.[1] || null;
   console.log('REGENERATE_HTML_GENERATED', {
     contractNumber,
     htmlLength: html.length,
     tenantId: session.contractTenantId,
+    balloonQtyInHtml: qtyMatch,
+    selectedSource: balloonDiag.selectedSource,
+    selectedCount: balloonAddons.length,
   });
 
   return {

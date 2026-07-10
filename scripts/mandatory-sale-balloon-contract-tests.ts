@@ -511,30 +511,38 @@ function testHomologacao000000015() {
 }
 
 function testConfigBeatsPollutedTable() {
-  const { resolveContractBalloonAddons } = require('../lib/saleBalloonRepository');
+  const {
+    resolveContractBalloonAddons,
+    diagnoseContractBalloonAddons,
+  } = require('../lib/saleBalloonRepository');
   // Tabela poluída com 47 linhas (bug antigo) vs config real com 2 balões.
   const polluted = Array.from({ length: 47 }, (_, i) => ({
     sale_id: 's1',
     installment_number: i + 1,
     additional_amount: 0.08,
   }));
-  const addons = resolveContractBalloonAddons({
-    sale: {
-      use_balloon_installments: true,
-      installments_count: 48,
-      total_value: 100,
-      balloon_mode: 'MANUAL',
-      balloon_config: {
-        mode: 'MANUAL',
-        manualCount: 2,
-        manualRows: [
-          { installmentNumber: '6', additionalAmount: '0,50', dueDate: '' },
-          { installmentNumber: '18', additionalAmount: '0,50', dueDate: '' },
-        ],
-      },
+  const sale = {
+    id: 's1',
+    use_balloon_installments: true,
+    installments_count: 48,
+    total_value: 100,
+    balloon_mode: 'MANUAL',
+    balloon_config: {
+      mode: 'MANUAL',
+      manualCount: 2,
+      manualRows: [
+        { installmentNumber: '6', additionalAmount: '0,50', dueDate: '' },
+        { installmentNumber: '18', additionalAmount: '0,50', dueDate: '' },
+      ],
     },
-    tableRows: polluted,
-  });
+  };
+  const diag = diagnoseContractBalloonAddons({ sale, tableRows: polluted });
+  assert(diag.selectedSource === 'balloon_config', 'fonte = balloon_config');
+  assert(diag.configAddons.length === 2, 'configAddons=2');
+  assert(diag.tableAddons.length === 47, 'tableAddons=47');
+  assert(diag.selectedAddons.length === 2, 'selectedAddons=2');
+
+  const addons = resolveContractBalloonAddons({ sale, tableRows: polluted });
   assert(addons.length === 2, `config vence tabela poluída (got ${addons.length})`);
   assert(
     addons.map((a: { installment_number: number }) => a.installment_number).join(',') ===
