@@ -13,6 +13,7 @@ import {
   ZoomControl,
   Marker,
 } from "react-leaflet";
+import { useLeafletContext } from "@react-leaflet/core";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import {
@@ -178,6 +179,10 @@ import {
   AreaMeasureOverlay,
   useAreaMeasureWithHud,
 } from "@/components/map/AreaMeasureTool";
+import {
+  isLotPolygonHitTestEnabled,
+  syncLeafletPathInteractive,
+} from "@/lib/gis/mapInteractionMode";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -222,6 +227,43 @@ function isDebugGisLot(number: unknown): boolean {
   const num = normalizeLotDisplayNum(number);
   const raw = String(number ?? "").trim();
   return DEBUG_GIS_LOT_NUMBERS.has(num) || DEBUG_GIS_LOT_NUMBERS.has(raw);
+}
+
+/**
+ * Modo exclusivo de medição: fecha popups, desativa doubleClickZoom do mapa
+ * e marca o container (cursor/crosshair já é aplicado pelas tools).
+ */
+function GisMeasureExclusiveController({ active }: { active: boolean }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!active) {
+      map.doubleClickZoom.enable();
+      map.getContainer().classList.remove("gis-measure-mode");
+      return;
+    }
+    map.closePopup();
+    map.doubleClickZoom.disable();
+    map.getContainer().classList.add("gis-measure-mode");
+    return () => {
+      map.doubleClickZoom.enable();
+      map.getContainer().classList.remove("gis-measure-mode");
+    };
+  }, [active, map]);
+
+  return null;
+}
+
+/** Mantém interactive sincronizado após mount (react-leaflet não reaplica a prop). */
+function SyncPathHitTest({ interactive }: { interactive: boolean }) {
+  const { overlayContainer } = useLeafletContext();
+  useEffect(() => {
+    syncLeafletPathInteractive(
+      overlayContainer as L.Path | undefined,
+      interactive,
+    );
+  }, [interactive, overlayContainer]);
+  return null;
 }
 
 type LatLngPair = [number, number];
@@ -689,6 +731,7 @@ function LotBoundaryEdgePolylines({
   assistedConfrontationActive,
   onConfrontEdgePick,
   segmentEdgeByIndex,
+  suspendLotHitTest = false,
 }: {
   positions: LatLngPair[];
   lot: { id?: string; number?: string; geometryType?: string };
@@ -707,6 +750,8 @@ function LotBoundaryEdgePolylines({
       confrontant?: string | null;
     }
   >;
+  /** Medição / desenho de rua: arestas não capturam clique. */
+  suspendLotHitTest?: boolean;
 }) {
   const hasOfficialSideLabels = (officialSideLabelByEdge?.size ?? 0) > 0;
   const showEdges =
@@ -755,17 +800,15 @@ function LotBoundaryEdgePolylines({
     }
     const tooltipText =
       tooltipParts.length > 0 ? tooltipParts.join(" · ") : undefined;
-    const showOfficialTooltip = Boolean(officialLabel);
+    const showOfficialTooltip = Boolean(officialLabel) && !suspendLotHitTest;
+    const edgeInteractive =
+      !suspendLotHitTest &&
+      (pickOfficialSide || pickConfront || pickFront || showOfficialTooltip);
     lines.push(
       <Polyline
-        key={`${lot.id ?? lot.number}-edge-${i}`}
+        key={`${lot.id ?? lot.number}-edge-${i}-hit-${edgeInteractive ? 1 : 0}`}
         positions={seg}
-        interactive={
-          pickOfficialSide ||
-          pickConfront ||
-          pickFront ||
-          showOfficialTooltip
-        }
+        interactive={edgeInteractive}
         pathOptions={{
           color,
           weight: pickOfficialSide || pickConfront || frontCorrectActive ? 5 : 1,
@@ -773,7 +816,9 @@ function LotBoundaryEdgePolylines({
             pickOfficialSide || pickConfront || frontCorrectActive ? 1 : 0.9,
         }}
         eventHandlers={
-          pickOfficialSide
+          suspendLotHitTest
+            ? undefined
+            : pickOfficialSide
             ? {
                 click: (e) => {
                   L.DomEvent.stopPropagation(e);
@@ -797,7 +842,8 @@ function LotBoundaryEdgePolylines({
                 : undefined
         }
       >
-        {tooltipText ? (
+        <SyncPathHitTest interactive={edgeInteractive} />
+        {tooltipText && !suspendLotHitTest ? (
           <Tooltip sticky direction="top">
             {tooltipText}
           </Tooltip>
@@ -3282,6 +3328,11 @@ export default function GISMap({
   const handleMeasureDeactivate = onMeasureDeactivate ?? (() => {});
   const handleAreaMeasureDeactivate = onAreaMeasureDeactivate ?? (() => {});
   const gisMeasureToolActive = measureActive || areaMeasureActive;
+  const gisMeasureToolActiveRef = useRef(gisMeasureToolActive);
+  useEffect(() => {
+    gisMeasureToolActiveRef.current = gisMeasureToolActive;
+  }, [gisMeasureToolActive]);
+
   const distanceMeasure = useDistanceMeasureWithHud(
     measureActive,
     handleMeasureDeactivate,
@@ -3459,6 +3510,16 @@ export default function GISMap({
     lot: any;
     price: number;
   } | null>(null);
+
+  // Ao entrar no modo exclusivo de medição: fechar painéis comerciais do lote.
+  useEffect(() => {
+    if (!gisMeasureToolActive) return;
+    setCustomerForm(null);
+    setClearConfirmModal(null);
+    setFrontCorrectLotId(null);
+    setDefineOfficialSidePickLotId(null);
+  }, [gisMeasureToolActive]);
+
   const gisOverlayOpen = computeGisMapOverlayOpen({
     customerForm: Boolean(customerForm),
     customerContractValidation: Boolean(customerContractValidation),
@@ -4259,12 +4320,20 @@ export default function GISMap({
                 : 1
               : 0;
 
+            const lotHitTest = isLotPolygonHitTestEnabled({
+              mapLotPickActive,
+              drawStreetActive,
+              measureActive,
+              areaMeasureActive,
+            });
+
             return (
               <Fragment key={lot.id}>
                 <GisSanitizeDebugMarkers lotId={lot.id} validation={validation} />
                 <Polygon
+                  key={`${lot.id}-hit-${lotHitTest ? 1 : 0}`}
                   positions={positions}
-                  interactive={mapLotPickActive || !(drawStreetActive || gisMeasureToolActive)}
+                  interactive={lotHitTest}
                   pathOptions={{
                     color: strokeColor,
                     fillColor: mapLotPickActive ? "#4999e9" : color,
@@ -4274,6 +4343,7 @@ export default function GISMap({
                   }}
                   eventHandlers={{
                     click: () => {
+                      if (gisMeasureToolActiveRef.current) return;
                       const pick = {
                         id: lot.id,
                         number: String(lot.number || ''),
@@ -4287,7 +4357,7 @@ export default function GISMap({
                       }
                     },
                     mouseover: (e) => {
-                      if (mapLotPickActive) return;
+                      if (mapLotPickActive || gisMeasureToolActiveRef.current) return;
                       const layer = e.target;
                       layer.setStyle({
                         fillOpacity: 1,
@@ -4295,7 +4365,7 @@ export default function GISMap({
                       });
                     },
                     mouseout: (e) => {
-                      if (mapLotPickActive) return;
+                      if (mapLotPickActive || gisMeasureToolActiveRef.current) return;
                       const layer = e.target;
                       layer.setStyle({
                         fillOpacity: 0.75,
@@ -4304,7 +4374,8 @@ export default function GISMap({
                     },
                   }}
                 >
-                  {!mapLotPickActive && (
+                  <SyncPathHitTest interactive={lotHitTest} />
+                  {!mapLotPickActive && lotHitTest && (
                     <Popup>
                       <LotPopupContent
                         lot={lot}
@@ -4398,6 +4469,7 @@ export default function GISMap({
                   positions={positions}
                   lot={lot}
                   strokeColor={strokeColor}
+                  suspendLotHitTest={!lotHitTest}
                   frontCorrectActive={frontCorrectLotId === lot.id}
                   onEdgePick={(edgeIndex) =>
                     void handlePickFrontSegment(lot, edgeIndex)
@@ -4486,7 +4558,7 @@ export default function GISMap({
 
             return (
               <Polygon
-                key={`block-${block.id}`}
+                key={`block-${block.id}-hit-${!(drawStreetActive || gisMeasureToolActive) ? 1 : 0}`}
                 positions={positions}
                 interactive={!(drawStreetActive || gisMeasureToolActive)}
                 pathOptions={{
@@ -4498,6 +4570,7 @@ export default function GISMap({
                 }}
                 eventHandlers={{
                   mouseover: (e) => {
+                    if (gisMeasureToolActiveRef.current) return;
                     const layer = e.target;
                     layer.setStyle({
                       fillOpacity: 1,
@@ -4505,6 +4578,7 @@ export default function GISMap({
                     });
                   },
                   mouseout: (e) => {
+                    if (gisMeasureToolActiveRef.current) return;
                     const layer = e.target;
                     layer.setStyle({
                       fillOpacity: 0.75,
@@ -4513,6 +4587,10 @@ export default function GISMap({
                   },
                 }}
               >
+                <SyncPathHitTest
+                  interactive={!(drawStreetActive || gisMeasureToolActive)}
+                />
+                {!(drawStreetActive || gisMeasureToolActive) && (
                 <Popup>
                   <LotPopupContent
                     lot={block}
@@ -4538,6 +4616,7 @@ export default function GISMap({
                     actionLoading={editSaleLoading || actionLoading}
                   />
                 </Popup>
+                )}
               </Polygon>
             );
           })}
@@ -4558,21 +4637,25 @@ export default function GISMap({
                 : null;
             return (
               <Polyline
-                key={`guide-${guide.id}`}
+                key={`guide-${guide.id}-hit-${gisMeasureToolActive ? 0 : 1}`}
                 positions={pts}
+                interactive={!gisMeasureToolActive}
                 pathOptions={{
                   color: guide.active === false ? "#9ca3af" : "#10b981",
                   weight: 4,
                   dashArray: guide.active === false ? "4, 6" : "10, 10",
                 }}
                 eventHandlers={
-                  onEditStreetGuide
+                  gisMeasureToolActive
+                    ? undefined
+                    : onEditStreetGuide
                     ? {
                         click: () => onEditStreetGuide(guide),
                       }
                     : undefined
                 }
               >
+                <SyncPathHitTest interactive={!gisMeasureToolActive} />
                 <Tooltip permanent direction="center" className="street-guide-label">
                   <span
                     style={{
@@ -4585,6 +4668,7 @@ export default function GISMap({
                     {label}
                   </span>
                 </Tooltip>
+                {!gisMeasureToolActive && (
                 <Popup>
                   <div className="p-2 space-y-2 font-sans min-w-[200px]">
                     <p className="text-gray-900 font-bold text-sm">Logradouro</p>
@@ -4627,9 +4711,12 @@ export default function GISMap({
                     </div>
                   </div>
                 </Popup>
+                )}
               </Polyline>
             );
           })}
+
+        <GisMeasureExclusiveController active={gisMeasureToolActive} />
 
         <AreaMeasureMapContent
           active={areaMeasureActive}

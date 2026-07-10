@@ -19,6 +19,14 @@
   max-width: min(calc(100vw - var(--gis-measure-panel-right) - 1rem), 240px);
 }
 
+/* Modo exclusivo de medição — cursor crosshair no container do mapa */
+.leaflet-container.gis-measure-mode {
+  cursor: crosshair !important;
+}
+.leaflet-container.gis-measure-mode .leaflet-interactive {
+  cursor: crosshair !important;
+}
+
 @media (max-width: 767px) {
   .gis-toolbar-desktop-only {
     display: none !important;
