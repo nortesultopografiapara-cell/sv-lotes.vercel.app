@@ -15,18 +15,18 @@ import {
 import { buildSaleContractElectronicSignatureClauseHtml } from '@/lib/saleContractLegalTemplate';
 
 export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
-  // Resumo superior: somente imóvel + partes (sem duplicar o Quadro Financeiro).
+  // Resumo superior compacto (4 colunas) — só imóvel + partes.
   const fields = [
-    { label: 'EMPREENDIMENTO', value: ctx.empreendimentoNome.toUpperCase(), span: 3 },
+    { label: 'EMPREENDIMENTO', value: ctx.empreendimentoNome.toUpperCase() },
     { label: 'QUADRA', value: ctx.quadra },
     { label: 'LOTE', value: ctx.lote },
     { label: 'ÁREA', value: ctx.area },
     { label: 'MUNICÍPIO', value: ctx.municipio },
     { label: 'UF', value: ctx.estado },
-    { label: 'PROMISSÁRIO(A)', value: ctx.clienteNome, span: 2 },
+    { label: 'PROMISSÁRIO(A)', value: ctx.clienteNome },
     { label: 'CPF', value: ctx.buyerCpfFmt },
-    { label: 'PROMITENTE VENDEDOR(A)', value: ctx.empresaNome, span: 3 },
-    { label: 'DATA DA VENDA', value: ctx.dataContratoFmt },
+    { label: 'PROMITENTE VENDEDOR(A)', value: ctx.empresaNome, span: 2 as const },
+    { label: 'DATA DA VENDA', value: ctx.dataContratoFmt, span: 2 as const },
   ];
 
   const grid = buildSvLotes2SummaryGridHtml(fields);

@@ -324,7 +324,7 @@ export function sanitizeNeighborhoodForContract(raw: string): string {
 export type SvLotes2SummaryField = {
   label: string;
   value: string;
-  span?: 1 | 2 | 3;
+  span?: 1 | 2 | 3 | 4;
 };
 
 /** Linha de data no encerramento — ex.: Parauapebas – PA, 08 de julho de 2026. */
@@ -359,7 +359,13 @@ export function buildSvLotes2SummaryGridHtml(fields: SvLotes2SummaryField[]): st
     .map((field) => {
       const span = field.span || 1;
       const spanClass =
-        span === 3 ? ' sv2-summary-cell--span3' : span === 2 ? ' sv2-summary-cell--span2' : '';
+        span === 4
+          ? ' sv2-summary-cell--span4'
+          : span === 3
+            ? ' sv2-summary-cell--span3'
+            : span === 2
+              ? ' sv2-summary-cell--span2'
+              : '';
       const clean = String(field.value || '—').trim() || '—';
       return `
         <div class="sv2-summary-cell${spanClass}">

@@ -282,18 +282,56 @@ export type ContractFinanceQuadroExtras = {
 };
 
 /**
- * Linha label/valor — tabela HTML (texto real).
- * NÃO usar flex+overflow:hidden (corta glifos no html2canvas/PDF).
+ * Célula compacta do Quadro Financeiro (4 colunas).
  */
-function financeRow(label: string, value: string): string {
-  return `<tr>
-    <td style="padding:3px 8px 3px 0;text-align:left;vertical-align:baseline;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.5;color:#111;">${label}</td>
-    <td style="padding:3px 0 3px 8px;text-align:right;vertical-align:baseline;white-space:nowrap;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.5;font-weight:bold;color:#111;">${value}</td>
-  </tr>`;
+function financeGridCell(label: string, value: string): string {
+  return `<div class="contract-finance-cell">
+    <span class="contract-finance-label">${label}</span>
+    <span class="contract-finance-value">${value}</span>
+  </div>`;
+}
+
+function financeQuadroShell(params: {
+  gridCellsHtml: string;
+  balloonSectionHtml?: string;
+  totalFmt: string;
+  balloonCount?: number;
+  dataSource: string;
+}): string {
+  const balloonAttr =
+    params.balloonCount != null ? ` data-balloon-rows="${params.balloonCount}"` : '';
+  // Estilos embutidos: funciona em SV2/PADRAO/Recanto sem depender só do CSS do modelo.
+  const scopedCss = `<style type="text/css">
+.contract-finance-quadro{margin:0 0 8px 0;padding:6px 8px 5px;border:1px solid #1e40af;border-radius:3px;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;page-break-inside:avoid;break-inside:avoid}
+.contract-finance-quadro-title{margin:0 0 4px 0;padding:0 0 3px 0;text-align:center;font-size:10pt;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#1e40af;line-height:1.25;border-bottom:1px dotted #94a3b8;font-family:'Times New Roman',Times,serif}
+.contract-finance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));column-gap:8px;row-gap:0;margin:0}
+.contract-finance-cell{min-width:0;padding:3px 2px 4px;border-bottom:1px dotted #94a3b8}
+.contract-finance-label{display:block;font-size:6.5pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1e40af;margin:0 0 1px 0;line-height:1.15;font-family:'Times New Roman',Times,serif}
+.contract-finance-value{display:block;font-size:9pt;font-weight:700;color:#111;line-height:1.2;word-break:break-word;font-family:'Times New Roman',Times,serif}
+.contract-finance-balloons{margin:4px 0 0 0;padding:3px 0 2px;border-top:1px dotted #94a3b8;border-bottom:1px dotted #94a3b8}
+.contract-finance-balloons-title{margin:0 0 2px 0;font-size:7.5pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1e40af;line-height:1.2;font-family:'Times New Roman',Times,serif}
+.contract-finance-balloon-line{margin:0 0 2px 0;padding:0;font-size:9pt;line-height:1.3;color:#111;font-family:'Times New Roman',Times,serif}
+.contract-finance-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:4px 0 0 0;padding:3px 0 0 0;line-height:1.25;font-family:'Times New Roman',Times,serif}
+.contract-finance-total-label{font-size:8pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1e40af}
+.contract-finance-total-value{font-size:10pt;font-weight:700;color:#111;white-space:nowrap}
+</style>`;
+  return `
+    ${scopedCss}
+    <div class="contract-clause contract-balloon-finance contract-payment-block contract-finance-quadro"${balloonAttr} data-source="${params.dataSource}">
+      <p class="contract-finance-quadro-title">Quadro Financeiro</p>
+      <div class="contract-finance-grid">
+        ${params.gridCellsHtml}
+      </div>
+      ${params.balloonSectionHtml || ''}
+      <div class="contract-finance-total">
+        <span class="contract-finance-total-label">Valor total do contrato</span>
+        <span class="contract-finance-total-value">${params.totalFmt}</span>
+      </div>
+    </div>`;
 }
 
 /**
- * Quadro Financeiro — condições financeiras (texto HTML tipográfico).
+ * Quadro Financeiro — condições financeiras (texto HTML tipográfico, grid 4 colunas).
  * Com balão: lista APENAS parcelas com adicional.
  * Extras (desconto/correção/vencimento) são só apresentação — sem alterar cálculo.
  */
@@ -311,51 +349,42 @@ export function buildCompactBalloonFinanceScheduleHtml(
   const financed = money(Math.max(0, saleTotal - summary.entryAmount));
   const baseFmt = formatCurrencyBRL(summary.baseInstallmentValue);
   const totalFmt = formatCurrencyBRL(saleTotal);
-  const discountFmt = String(extras?.discountFmt || '').trim();
-  const correctionLabel = String(extras?.correctionLabel || '').trim();
-  const firstDue = String(extras?.firstDueDateFmt || '').trim();
+  const discountFmt = String(extras?.discountFmt || '').trim() || formatCurrencyBRL(0);
+  const correctionLabel = String(extras?.correctionLabel || '').trim() || '—';
+  const firstDue = String(extras?.firstDueDateFmt || '').trim() || '—';
 
-  const mainRows = [
-    financeRow('Valor da venda', totalFmt),
-    discountFmt ? financeRow('Desconto', discountFmt) : '',
-    financeRow('Entrada', formatCurrencyBRL(summary.entryAmount)),
-    financeRow('Saldo financiado', formatCurrencyBRL(financed)),
-    financeRow('Parcelamento', `${summary.installmentsCount} parcelas mensais`),
-    financeRow('Parcela base', baseFmt),
-    correctionLabel ? financeRow('Correção', correctionLabel) : '',
-    firstDue ? financeRow('Primeiro vencimento', firstDue) : '',
-  ]
-    .filter(Boolean)
-    .join('');
+  const gridCellsHtml = [
+    financeGridCell('Valor da venda', totalFmt),
+    financeGridCell('Desconto', discountFmt),
+    financeGridCell('Entrada', formatCurrencyBRL(summary.entryAmount)),
+    financeGridCell('Saldo financiado', formatCurrencyBRL(financed)),
+    financeGridCell('Parcelamento', `${summary.installmentsCount} parcelas mensais`),
+    financeGridCell('Parcela base', baseFmt),
+    financeGridCell('Correção', correctionLabel),
+    financeGridCell('Primeiro vencimento', firstDue),
+  ].join('');
 
   const balloonOnlyLines = balloons
     .map((r) => {
       const n = padInstallmentNumber(r.installmentNumber);
       const line = `Parcela ${n} — Base ${formatCurrencyBRL(r.baseAmount)} — Adicional ${formatCurrencyBRL(r.balloonAddonAmount)} — Total ${formatCurrencyBRL(r.amount)}`;
-      return `<p style="margin:0 0 6px;padding:0;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.5;color:#111;text-align:left;">${line}</p>`;
+      return `<p class="contract-finance-balloon-line">${line}</p>`;
     })
     .join('');
 
-  return `
-    <div class="contract-clause contract-balloon-finance contract-payment-block" style="margin:16px 0 20px;padding:0;page-break-inside:avoid;break-inside:avoid;" data-balloon-rows="${balloons.length}" data-source="buildBalloonFinancePreview">
-      <div style="border:1px solid #222;padding:14px 16px;margin:0;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;overflow:visible;">
-        <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
-        <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
-          <tbody>
-            ${mainRows}
-          </tbody>
-        </table>
-        <p style="margin:0 0 8px;padding:0;font-weight:bold;font-size:11pt;text-transform:uppercase;letter-spacing:0.4px;font-family:'Times New Roman',Times,serif;line-height:1.5;text-align:left;">Parcelas com adicional</p>
-        <div class="contract-balloon-only-table" data-balloon-only="true" data-row-count="${balloons.length}" style="border-top:1px dashed #666;border-bottom:1px dashed #666;padding:8px 0;margin:0 0 12px;overflow:visible;">
-          ${balloonOnlyLines}
-        </div>
-        <table style="width:100%;border-collapse:collapse;margin:0;padding:0;" cellpadding="0" cellspacing="0">
-          <tbody>
-            ${financeRow('Valor total do contrato', totalFmt)}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+  const balloonSectionHtml = `
+      <div class="contract-finance-balloons contract-balloon-only-table" data-balloon-only="true" data-row-count="${balloons.length}">
+        <p class="contract-finance-balloons-title">Parcelas com adicional</p>
+        ${balloonOnlyLines}
+      </div>`;
+
+  return financeQuadroShell({
+    gridCellsHtml,
+    balloonSectionHtml,
+    totalFmt,
+    balloonCount: balloons.length,
+    dataSource: 'buildBalloonFinancePreview',
+  });
 }
 
 /**
@@ -374,55 +403,38 @@ export function buildContractFinanceQuadroHtml(params: {
   isCashPayment?: boolean;
 }): string {
   if (params.isCashPayment) {
-    const rows = [
-      financeRow('Valor da venda', params.saleTotalFmt),
-      params.discountFmt ? financeRow('Desconto', params.discountFmt) : '',
-      financeRow('Forma de pagamento', 'À vista'),
-      params.correctionLabel ? financeRow('Correção', params.correctionLabel) : '',
-    ]
-      .filter(Boolean)
-      .join('');
-    return `
-    <div class="contract-clause contract-balloon-finance contract-payment-block" style="margin:16px 0 20px;padding:0;page-break-inside:avoid;break-inside:avoid;" data-source="finance-quadro">
-      <div style="border:1px solid #222;padding:14px 16px;margin:0;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;overflow:visible;">
-        <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
-        <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
-          <tbody>${rows}</tbody>
-        </table>
-        <table style="width:100%;border-collapse:collapse;margin:0;padding:0;" cellpadding="0" cellspacing="0">
-          <tbody>${financeRow('Valor total do contrato', params.saleTotalFmt)}</tbody>
-        </table>
-      </div>
-    </div>`;
+    const gridCellsHtml = [
+      financeGridCell('Valor da venda', params.saleTotalFmt),
+      financeGridCell('Desconto', String(params.discountFmt || '').trim() || formatCurrencyBRL(0)),
+      financeGridCell('Forma de pagamento', 'À vista'),
+      financeGridCell('Correção', String(params.correctionLabel || '').trim() || '—'),
+    ].join('');
+    return financeQuadroShell({
+      gridCellsHtml,
+      totalFmt: params.saleTotalFmt,
+      dataSource: 'finance-quadro',
+    });
   }
 
-  const rows = [
-    financeRow('Valor da venda', params.saleTotalFmt),
-    params.discountFmt ? financeRow('Desconto', params.discountFmt) : '',
-    financeRow('Entrada', params.entryFmt),
-    financeRow('Saldo financiado', params.financedFmt),
-    financeRow('Parcelamento', params.parcelamentoLabel),
-    financeRow('Parcela base', params.baseInstallmentFmt),
-    params.correctionLabel ? financeRow('Correção', params.correctionLabel) : '',
-    params.firstDueDateFmt
-      ? financeRow('Primeiro vencimento', params.firstDueDateFmt)
-      : '',
-  ]
-    .filter(Boolean)
-    .join('');
+  const gridCellsHtml = [
+    financeGridCell('Valor da venda', params.saleTotalFmt),
+    financeGridCell('Desconto', String(params.discountFmt || '').trim() || formatCurrencyBRL(0)),
+    financeGridCell('Entrada', params.entryFmt),
+    financeGridCell('Saldo financiado', params.financedFmt),
+    financeGridCell('Parcelamento', params.parcelamentoLabel),
+    financeGridCell('Parcela base', params.baseInstallmentFmt),
+    financeGridCell('Correção', String(params.correctionLabel || '').trim() || '—'),
+    financeGridCell(
+      'Primeiro vencimento',
+      String(params.firstDueDateFmt || '').trim() || '—',
+    ),
+  ].join('');
 
-  return `
-    <div class="contract-clause contract-balloon-finance contract-payment-block" style="margin:16px 0 20px;padding:0;page-break-inside:avoid;break-inside:avoid;" data-source="finance-quadro">
-      <div style="border:1px solid #222;padding:14px 16px;margin:0;background:#fff;font-family:'Times New Roman',Times,serif;color:#111;overflow:visible;">
-        <p style="margin:0 0 10px;padding:0;text-align:center;font-weight:bold;font-size:12pt;letter-spacing:0.5px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;line-height:1.5;">Quadro Financeiro</p>
-        <table style="width:100%;border-collapse:collapse;border-top:1px dashed #666;border-bottom:1px dashed #666;margin:0 0 12px;padding:0;" cellpadding="0" cellspacing="0">
-          <tbody>${rows}</tbody>
-        </table>
-        <table style="width:100%;border-collapse:collapse;margin:0;padding:0;" cellpadding="0" cellspacing="0">
-          <tbody>${financeRow('Valor total do contrato', params.saleTotalFmt)}</tbody>
-        </table>
-      </div>
-    </div>`;
+  return financeQuadroShell({
+    gridCellsHtml,
+    totalFmt: params.saleTotalFmt,
+    dataSource: 'finance-quadro',
+  });
 }
 
 /** Campos do resumo da 1ª página quando há balão. */
