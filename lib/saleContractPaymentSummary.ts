@@ -187,12 +187,44 @@ export function buildSaleContractPaymentSummaryHtml(
   },
 ): string {
   const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
+  const variableFromRows = options?.scheduleRows
+    ? hasVariableInstallmentAmounts(options.scheduleRows)
+    : false;
   const variable =
     balloon?.hasBalloon === true ||
     options?.hasVariableInstallments === true ||
-    (options?.scheduleRows
-      ? hasVariableInstallmentAmounts(options.scheduleRows)
-      : false);
+    variableFromRows;
+
+  const correctionNote = breakdown.correctionLabel
+    ? `<p style="margin:4px 0 0;font-size:9pt;color:#444;">Correção das parcelas: ${breakdown.correctionLabel}</p>`
+    : '';
+
+  // Com balão (ou valores variáveis inferidos como balão): SOMENTE quadro executivo.
+  // Nunca listar 1..N parcelas no contrato PDF.
+  if (!breakdown.isCashPayment && balloon?.hasBalloon) {
+    return `${buildCompactBalloonFinanceScheduleHtml(balloon)}${correctionNote}`;
+  }
+
+  if (!breakdown.isCashPayment && variable && options?.scheduleRows?.length) {
+    const inferred = resolveSaleContractBalloonFinance({
+      sale: {
+        total_value: breakdown.lotPrice - breakdown.discountAmount,
+        down_payment: breakdown.entryAmount,
+        installments_count: breakdown.installmentsCount,
+        use_balloon_installments: true,
+        payment_type: 'Parcelado',
+      },
+      financeReceipts: options.scheduleRows.map((r) => ({
+        installment_number: r.installmentNumber,
+        amount: r.amount,
+        due_date: r.dueDate ?? null,
+      })),
+      isCashPayment: false,
+    });
+    if (inferred.hasBalloon) {
+      return `${buildCompactBalloonFinanceScheduleHtml(inferred)}${correctionNote}`;
+    }
+  }
 
   const rows: Array<[string, string]> = [
     ['Valor do lote', breakdown.lotPriceFmt],
@@ -208,27 +240,12 @@ export function buildSaleContractPaymentSummaryHtml(
         ? 'À vista'
         : `${breakdown.installmentsCount} parcela(s)`,
     ],
+    [
+      'Valor da parcela',
+      breakdown.isCashPayment ? '—' : breakdown.installmentValueFmt,
+    ],
+    ['Correção das parcelas', breakdown.correctionLabel],
   ];
-
-  if (variable && balloon?.hasBalloon) {
-    rows.push(
-      ['Parcela base', breakdown.installmentValueFmt],
-      ['Parcelas balão', String(balloon.balloonCount)],
-      ['Total dos balões', formatBRL(balloon.balloonTotal)],
-      ['Forma especial', 'Com parcelas balão'],
-    );
-  } else {
-    rows.push([
-      variable ? 'Valor base da parcela' : 'Valor da parcela',
-      breakdown.isCashPayment
-        ? '—'
-        : variable
-          ? `${breakdown.installmentValueFmt} (valores por parcela no quadro abaixo)`
-          : breakdown.installmentValueFmt,
-    ]);
-  }
-
-  rows.push(['Correção das parcelas', breakdown.correctionLabel]);
 
   const body = rows
     .map(
@@ -237,18 +254,10 @@ export function buildSaleContractPaymentSummaryHtml(
     )
     .join('');
 
-  let scheduleHtml = '';
-  if (!breakdown.isCashPayment && variable) {
-    if (balloon?.hasBalloon) {
-      scheduleHtml = buildCompactBalloonFinanceScheduleHtml(balloon);
-    } else if (options?.scheduleRows?.length) {
-      scheduleHtml = buildSaleContractInstallmentScheduleHtml(options.scheduleRows);
-    }
-  }
-
+  // Sem balão: NÃO anexar tabela 1..N (contrato permanece no padrão atual resumido).
   return `
     <div class="contract-clause" style="margin: 16px 0 20px;">
       <p style="margin:0 0 8px;font-weight:bold;">Quadro resumo — condições de pagamento</p>
       <table style="width:100%;border-collapse:collapse;font-size:11pt;">${body}</table>
-    </div>${scheduleHtml}`;
+    </div>`;
 }

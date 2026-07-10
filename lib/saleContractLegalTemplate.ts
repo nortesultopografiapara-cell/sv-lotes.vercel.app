@@ -98,7 +98,7 @@ export function buildSaleContractClauseQuartaHtml(params: {
                 </p>`;
     }
     return `<p style="margin-bottom: 0;">
-                    <strong>Cláusula Quarta:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR, com o valor de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, entrada de <strong>${params.valorEntradaFmt} (${entradaExtenso})</strong>, e o restante parcelado via boleto bancário em <strong>${params.qtdParcelas} parcelas</strong>, nos valores e vencimentos constantes do Quadro Financeiro deste contrato, inclusive as parcelas balão com seus respectivos acréscimos. Sendo a primeira parcela para o dia <strong>${params.dataPrimeiraParcelaFmt}</strong> e a última parcela para o dia <strong>${params.dataUltimaParcelaFmt}</strong>.${taxes}
+                    <strong>Cláusula Quarta:</strong> O valor da presente compra e venda é de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, sendo <strong>${params.valorEntradaFmt} (${entradaExtenso})</strong> pagos a título de entrada. O saldo será pago em <strong>${params.qtdParcelas} parcelas</strong> mensais, observada a parcela base indicada no Quadro Financeiro. As parcelas balão descritas no referido quadro receberão apenas os acréscimos contratados, permanecendo inalteradas as demais parcelas.${taxes}
                 </p>`;
   }
 
