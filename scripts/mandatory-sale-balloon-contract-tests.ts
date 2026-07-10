@@ -161,20 +161,24 @@ function testCompactScheduleAndClause() {
   });
   const html = buildCompactBalloonFinanceScheduleHtml(summary);
   assert(html.includes('Quadro Financeiro'), 'título quadro');
-  assert(html.includes('Parcelas balão') || html.includes('PARCELAS BALÃO') || html.toLowerCase().includes('parcelas balão'), 'marca balão');
-  assert(html.includes('>06<') || html.includes('06'), 'parcela 06');
-  assert(html.includes('>42<') || html.includes('42'), 'parcela 42');
+  assert(html.toLowerCase().includes('parcelas balão'), 'marca balão');
+  assert(html.includes('Parcela 06'), 'parcela 06');
+  assert(html.includes('Parcela 18'), 'parcela 18');
+  assert(html.includes('Parcela 30'), 'parcela 30');
+  assert(html.includes('Parcela 42'), 'parcela 42');
   assert(html.includes('Parcela base'), 'parcela base');
-  assert(html.includes('Valor total do contrato') || html.includes('Total do contrato'), 'total');
+  assert(html.includes('Valor total do contrato'), 'total');
   assert(html.includes('Saldo financiado'), 'saldo');
-  assert(html.includes('Incidentes nas parcelas'), 'incidentes');
+  assert(html.includes('Incidem nas parcelas'), 'incidentes');
   assert(html.includes('06, 18, 30 e 42'), 'lista incidentes');
-  assert(html.includes('Tabela resumida'), 'tabela resumida');
+  assert(html.includes('data-balloon-only="true"'), 'marca só balão');
+  assert(html.includes('data-row-count="4"'), '4 linhas balão');
   assert(!html.includes('44 parcela'), 'não lista comuns');
   assert(!html.includes('Vencimento'), 'sem coluna de vencimentos');
-  // Não lista parcelas comuns (ex.: 01, 02, 03 fora dos balões)
-  assert(!html.includes('>01<'), 'não lista parcela 01');
-  assert(!html.includes('>48<'), 'não lista parcela 48');
+  assert(!html.includes('Quadro de parcelas'), 'sem quadro completo');
+  assert(!html.includes('Parcela 01'), 'não lista parcela 01');
+  assert(!html.includes('Parcela 02'), 'não lista parcela 02');
+  assert(!html.includes('Parcela 48'), 'não lista parcela 48 comum');
 
   const body = buildBalloonAwarePaymentClauseText({
     summary,
@@ -195,10 +199,11 @@ function testCompactScheduleAndClause() {
   console.log('OK testCompactScheduleAndClause');
 }
 
-function countBalloonTableRows(html: string): number {
-  const matches = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
-  if (!matches) return 0;
-  return (matches[1].match(/<tr>/g) || []).length;
+function countBalloonOnlyRows(html: string): number {
+  const m = html.match(/data-row-count="(\d+)"/);
+  if (m) return Number(m[1]);
+  const lines = html.match(/Parcela \d{2}/g) || [];
+  return lines.length;
 }
 
 function testBalloonTableScalesWithCount() {
@@ -216,8 +221,10 @@ function testBalloonTableScalesWithCount() {
   });
   assert(two.hasBalloon && two.balloonCount === 2, '2 balões');
   const html2 = buildCompactBalloonFinanceScheduleHtml(two);
-  assert(countBalloonTableRows(html2) === 2, 'tabela com 2 linhas');
-  assert(!html2.includes('>01<'), '2 balões: sem parcela 01');
+  assert(countBalloonOnlyRows(html2) === 2, 'tabela com 2 linhas');
+  assert(html2.includes('Parcela 12') && html2.includes('Parcela 24'), 'mostra 12 e 24');
+  assert(!html2.includes('Parcela 01'), '2 balões: sem parcela 01');
+  assert(!html2.includes('Quadro de parcelas'), 'sem quadro 1..N');
 
   // 5 balões
   const fiveNums = [6, 12, 18, 24, 30];
@@ -233,7 +240,12 @@ function testBalloonTableScalesWithCount() {
     ],
   });
   assert(five.balloonCount === 5, '5 balões');
-  assert(countBalloonTableRows(buildCompactBalloonFinanceScheduleHtml(five)) === 5, 'tabela com 5 linhas');
+  const html5 = buildCompactBalloonFinanceScheduleHtml(five);
+  assert(countBalloonOnlyRows(html5) === 5, 'tabela com 5 linhas');
+  for (const n of fiveNums) {
+    assert(html5.includes(`Parcela ${String(n).padStart(2, '0')}`), `mostra ${n}`);
+  }
+  assert(!html5.includes('Parcela 01'), '5 balões: sem 01');
 
   // balão final (1 linha)
   const final = resolveSaleContractBalloonFinance({
@@ -248,8 +260,27 @@ function testBalloonTableScalesWithCount() {
   });
   assert(final.balloonCount === 1, '1 balão final');
   const htmlFinal = buildCompactBalloonFinanceScheduleHtml(final);
-  assert(countBalloonTableRows(htmlFinal) === 1, 'tabela com 1 linha');
-  assert(htmlFinal.includes('>12<') || htmlFinal.includes('12'), 'mostra parcela 12');
+  assert(countBalloonOnlyRows(htmlFinal) === 1, 'tabela com 1 linha');
+  assert(htmlFinal.includes('Parcela 12'), 'mostra parcela 12');
+  assert(!htmlFinal.includes('Parcela 01'), '1 balão: sem 01');
+
+  // 0 balões → sem quadro especial
+  const none = resolveSaleContractBalloonFinance({
+    sale: {
+      ...baseSale,
+      use_balloon_installments: false,
+      down_payment: 0,
+      installments_count: 12,
+      total_value: 1200,
+    },
+    financeReceipts: Array.from({ length: 12 }, (_, i) => ({
+      installment_number: i + 1,
+      amount: 100,
+      due_date: '2026-08-01',
+    })),
+  });
+  assert(!none.hasBalloon, '0 balões');
+  assert(buildCompactBalloonFinanceScheduleHtml(none) === '', 'sem quadro especial');
   console.log('OK testBalloonTableScalesWithCount');
 }
 
@@ -264,9 +295,10 @@ function testPadraoContractHtml() {
   });
   assert(html.includes('Quadro Financeiro') || html.includes('parcelas balão'), 'quadro/balão');
   assert(!html.includes('parcelas iguais no valor'), 'sem iguais');
-  assert(html.includes('06, 18, 30 e 42') || html.includes('>06<'), 'lista balão 6');
+  assert(html.includes('Parcela 06') || html.includes('06, 18, 30 e 42'), 'lista balão 6');
   assert(!html.includes('Quadro de parcelas'), 'sem quadro completo 1..N');
-  assert(!html.includes('Parcela 1') && !html.includes('Parcela 2'), 'sem listagem comum');
+  assert(!html.includes('Parcela 01'), 'sem parcela 01');
+  assert(!html.includes('Parcela 02'), 'sem parcela 02');
   console.log('OK testPadraoContractHtml');
 }
 
@@ -283,9 +315,11 @@ function testSv2ContractSummaryAndClause() {
   const summary = buildSvLotes2SummaryHtml(ctx);
   assert(summary.includes('PARCELA BASE'), 'resumo parcela base');
   assert(summary.includes('Quadro Financeiro'), 'quadro financeiro');
-  assert(summary.includes('06, 18, 30 e 42') || summary.includes('>06<'), 'quadro balão');
+  assert(summary.includes('Parcela 06') || summary.includes('06, 18, 30 e 42'), 'quadro balão');
   assert(!summary.includes('FORMA ESPECIAL'), 'sem forma especial no grid');
   assert(!summary.includes('Quadro de parcelas'), 'sem listagem 1..N');
+  assert(!summary.includes('Parcela 01'), 'SV2 sem parcela 01');
+  assert(summary.includes('data-balloon-only="true"'), 'SV2 só balões');
 
   const clause = buildSvLotes2ClauseSegundaHtml(ctx);
   assert(clause.includes('CLÁUSULA SEGUNDA'), 'cláusula segunda');

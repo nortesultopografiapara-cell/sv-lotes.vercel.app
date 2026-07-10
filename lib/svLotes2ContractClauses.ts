@@ -41,29 +41,11 @@ export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
     { label: 'PARCELAS', value: parcelasLabel },
   ];
 
-  if (hasBalloon) {
-    fields.push(
-      { label: 'PARCELA BASE', value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt },
-      {
-        label: 'PARCELAS BALÃO',
-        value: String(balloon?.balloonCount ?? ctx.balloonSummary?.balloonCount ?? '—'),
-      },
-      {
-        label: 'TOTAL DOS BALÕES',
-        value: ctx.balloonSummary
-          ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-              ctx.balloonSummary.balloonTotal,
-            )
-          : '—',
-      },
-      { label: 'FORMA ESPECIAL', value: 'Com parcelas balão' },
-    );
-  } else {
-    fields.push({
-      label: 'VALOR PARCELA',
-      value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt,
-    });
-  }
+  // Com balão, o detalhe fica só no Quadro Financeiro compacto (abaixo).
+  fields.push({
+    label: hasBalloon ? 'PARCELA BASE' : 'VALOR PARCELA',
+    value: ctx.isCashPayment ? '—' : ctx.paymentBreakdown.installmentValueFmt,
+  });
 
   fields.push(
     { label: 'CORREÇÃO', value: ctx.paymentBreakdown.correctionLabel },

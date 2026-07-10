@@ -21,13 +21,6 @@ function formatBRL(val: number): string {
   }).format(val);
 }
 
-function formatDateBr(raw: unknown): string {
-  const s = String(raw || '').split('T')[0];
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—';
-  const [y, m, d] = s.split('-');
-  return `${d}/${m}/${y}`;
-}
-
 export type ContractInstallmentScheduleRow = {
   installmentNumber: number;
   amount: number;
@@ -47,7 +40,12 @@ export function hasVariableInstallmentAmounts(
   return amounts.some((a) => Math.abs(a - first) > 0.009);
 }
 
-/** Tabela de parcelas com valores reais (usada quando há balão / valores variáveis). */
+/**
+ * LEGADO — NÃO listar 1..N no contrato.
+ * Se houver valores variáveis (balão), devolve APENAS as linhas balão.
+ * Se todas forem iguais, devolve string vazia (sem tabela).
+ * O quadro oficial com balão é buildCompactBalloonFinanceScheduleHtml.
+ */
 export function buildSaleContractInstallmentScheduleHtml(
   rows: ContractInstallmentScheduleRow[],
 ): string {
@@ -58,36 +56,34 @@ export function buildSaleContractInstallmentScheduleHtml(
 
   const amounts = monthly.map((r) => Math.round((Number(r.amount) || 0) * 100) / 100);
   const baseAmount = Math.min(...amounts);
-  const total = amounts.reduce((s, a) => s + a, 0);
+  const balloons = monthly.filter((r) => {
+    const amount = Math.round((Number(r.amount) || 0) * 100) / 100;
+    return amount > baseAmount + 0.009;
+  });
 
-  const body = monthly
+  // Sem balão → nenhuma tabela de parcelas no contrato.
+  if (balloons.length === 0) return '';
+
+  // EXCLUSIVAMENTE balões — nunca parcelas comuns.
+  const body = balloons
     .map((r) => {
       const amount = Math.round((Number(r.amount) || 0) * 100) / 100;
-      const isBalloon = amount > baseAmount + 0.009;
-      const label =
-        r.label ||
-        (isBalloon
-          ? `Parcela ${r.installmentNumber} (balão)`
-          : `Parcela ${r.installmentNumber}`);
-      const rowStyle = isBalloon ? 'background:#fff8e7;' : '';
-      return `<tr style="${rowStyle}"><td style="padding:5px 8px;border:1px solid #ddd;">${label}</td><td style="padding:5px 8px;border:1px solid #ddd;">${formatDateBr(r.dueDate)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;">${formatBRL(amount)}</td></tr>`;
+      const n = String(r.installmentNumber).padStart(2, '0');
+      return `<tr><td style="padding:5px 8px;border:1px solid #ddd;">Parcela ${n}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;">${formatBRL(amount)}</td></tr>`;
     })
     .join('');
 
-  const totalRow = `<tr><td colspan="2" style="padding:5px 8px;border:1px solid #ddd;font-weight:bold;">Total das parcelas</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;font-weight:bold;">${formatBRL(total)}</td></tr>`;
-
   return `
-    <div class="contract-clause" style="margin: 12px 0 20px;">
-      <p style="margin:0 0 8px;font-weight:bold;">Quadro de parcelas</p>
-      <table style="width:100%;border-collapse:collapse;font-size:10.5pt;">
+    <div class="contract-clause contract-balloon-only-schedule" style="margin: 12px 0 20px;" data-balloon-only="true" data-row-count="${balloons.length}">
+      <p style="margin:0 0 8px;font-weight:bold;">Parcelas balão</p>
+      <table style="width:100%;max-width:360px;border-collapse:collapse;font-size:10.5pt;">
         <thead>
           <tr>
             <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Parcela</th>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Vencimento</th>
-            <th style="padding:5px 8px;border:1px solid #ddd;text-align:right;">Valor</th>
+            <th style="padding:5px 8px;border:1px solid #ddd;text-align:right;">Valor final</th>
           </tr>
         </thead>
-        <tbody>${body}${totalRow}</tbody>
+        <tbody>${body}</tbody>
       </table>
     </div>`;
 }

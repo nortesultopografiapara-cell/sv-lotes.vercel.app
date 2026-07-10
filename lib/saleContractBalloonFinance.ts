@@ -14,8 +14,6 @@ import {
   type ContractInstallmentScheduleRow,
 } from '@/lib/saleContractPaymentSummary';
 
-const extenso = require('extenso');
-
 export type ContractBalloonScheduleRow = ContractInstallmentScheduleRow & {
   baseAmount: number;
   balloonAddonAmount: number;
@@ -54,15 +52,6 @@ function toScheduleRows(
       dueDate: r.due_date ?? null,
     }))
     .filter((r) => Number.isFinite(r.installmentNumber));
-}
-
-function formatCurrencyExtenso(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return 'zero reais';
-  try {
-    return extenso(value.toFixed(2).replace('.', ','), { mode: 'currency' });
-  } catch {
-    return '';
-  }
 }
 
 function padInstallmentNumber(n: number): string {
@@ -220,110 +209,75 @@ export function buildBalloonAwarePaymentClauseText(params: {
   return `${intro}O saldo será pago em <strong>${s.installmentsCount} parcelas</strong> mensais, observada a parcela base indicada no Quadro Financeiro. As parcelas balão descritas no referido quadro receberão apenas os acréscimos contratados, permanecendo inalteradas as demais parcelas.`;
 }
 
+function dottedLine(label: string, value: string): string {
+  return `<div style="display:flex;justify-content:space-between;gap:8px;margin:2px 0;font-size:10pt;line-height:1.35;">
+    <span style="flex:1;overflow:hidden;white-space:nowrap;">${label}<span style="letter-spacing:1px;"> ${'.'.repeat(48)}</span></span>
+    <span style="white-space:nowrap;font-weight:600;">${value}</span>
+  </div>`;
+}
+
 /**
  * Quadro financeiro executivo compacto (~meia página).
- * Lista APENAS as parcelas balão — nunca todas as parcelas do financiamento.
+ * REGRA OBRIGATÓRIA: a lista/tabela contém EXCLUSIVAMENTE as parcelas balão.
+ * Nunca lista parcelas comuns (1..N). Linhas = balloonRows.length.
  */
 export function buildCompactBalloonFinanceScheduleHtml(
   summary: SaleContractBalloonFinanceSummary,
 ): string {
   if (!summary.hasBalloon || summary.isCashPayment) return '';
+  // Defesa: só balões — nunca scheduleRows completas.
+  const balloons = summary.balloonRows.filter((r) => r.isBalloon);
+  if (balloons.length === 0) return '';
 
   const saleTotal = summary.saleTotal > 0 ? summary.saleTotal : summary.grandTotal;
   const financed = money(Math.max(0, saleTotal - summary.entryAmount));
   const baseFmt = formatCurrencyBRL(summary.baseInstallmentValue);
-  const baseExt = formatCurrencyExtenso(summary.baseInstallmentValue);
   const totalFmt = formatCurrencyBRL(saleTotal);
-  const totalExt = formatCurrencyExtenso(saleTotal);
 
   const addonAmounts = [
-    ...new Set(summary.balloonRows.map((r) => money(r.balloonAddonAmount))),
+    ...new Set(balloons.map((r) => money(r.balloonAddonAmount))),
   ];
   const sameAddon = addonAmounts.length === 1;
-  const addonFmt = sameAddon ? formatCurrencyBRL(addonAmounts[0]) : '';
-  const addonExt = sameAddon ? formatCurrencyExtenso(addonAmounts[0]) : '';
-  const addonBlock = sameAddon
-    ? `<div><span style="font-weight:bold;">Acréscimo por parcela:</span><br/>${addonFmt}<br/><span style="font-size:8.5pt;color:#444;">(${addonExt})</span></div>`
-    : `<div><span style="font-weight:bold;">Acréscimo por parcela:</span><br/><span style="font-weight:normal;">Valores distintos conforme tabela resumida</span></div>`;
+  const addonLabel = sameAddon
+    ? formatCurrencyBRL(addonAmounts[0])
+    : 'valores distintos (ver linhas abaixo)';
 
   const incidents = formatBalloonIncidentNumbers(
-    summary.balloonRows.map((r) => r.installmentNumber),
+    balloons.map((r) => r.installmentNumber),
   );
 
-  const cell =
-    'padding:5px 7px;border:1px solid #bbb;font-size:9.5pt;vertical-align:top;';
-  const th =
-    'padding:4px 6px;border:1px solid #bbb;font-size:9pt;text-align:left;background:#f5f5f5;';
-
-  const balloonTableRows = summary.balloonRows
-    .map(
-      (r) =>
-        `<tr><td style="${cell}text-align:center;width:40%;">${padInstallmentNumber(r.installmentNumber)}</td><td style="${cell}text-align:right;">${formatCurrencyBRL(r.amount)}</td></tr>`,
+  // EXCLUSIVAMENTE balões — quantidade de linhas = quantidade de balões.
+  const balloonOnlyLines = balloons
+    .map((r) =>
+      dottedLine(
+        `Parcela ${padInstallmentNumber(r.installmentNumber)}`,
+        formatCurrencyBRL(r.amount),
+      ),
     )
     .join('');
 
   return `
-    <div class="contract-clause contract-balloon-finance" style="margin:10px 0 14px;page-break-inside:avoid;">
-      <div style="border:1px solid #222;padding:8px 10px;">
-        <p style="margin:0 0 8px;text-align:center;font-weight:bold;font-size:11pt;letter-spacing:0.6px;text-transform:uppercase;">Quadro Financeiro</p>
-
-        <table style="width:100%;border-collapse:collapse;margin:0 0 8px;">
-          <tr>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Valor da venda:</div>
-              ${totalFmt}
-            </td>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Entrada:</div>
-              ${formatCurrencyBRL(summary.entryAmount)}
-            </td>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Saldo financiado:</div>
-              ${formatCurrencyBRL(financed)}
-            </td>
-          </tr>
-          <tr>
-            <td style="${cell}">
-              <div style="font-weight:bold;">Parcelamento:</div>
-              ${summary.installmentsCount} parcelas mensais
-            </td>
-            <td style="${cell}" colspan="2">
-              <div style="font-weight:bold;">Parcela base:</div>
-              ${baseFmt}<br/><span style="font-size:8.5pt;color:#444;">(${baseExt})</span>
-            </td>
-          </tr>
-        </table>
-
-        <p style="margin:0 0 6px;font-weight:bold;font-size:10pt;text-transform:uppercase;letter-spacing:0.4px;">Parcelas balão</p>
-        <table style="width:100%;border-collapse:collapse;margin:0 0 8px;">
-          <tr>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Quantidade:</div>
-              ${summary.balloonCount} parcela${summary.balloonCount === 1 ? '' : 's'} balão
-            </td>
-            <td style="${cell}width:33.33%;">${addonBlock}</td>
-            <td style="${cell}width:33.33%;">
-              <div style="font-weight:bold;">Incidentes nas parcelas:</div>
-              ${incidents}
-            </td>
-          </tr>
-        </table>
-
-        <p style="margin:0 0 4px;font-weight:bold;font-size:9.5pt;">Tabela resumida — somente parcelas balão</p>
-        <table style="width:100%;max-width:320px;border-collapse:collapse;margin:0 0 8px;">
-          <thead>
-            <tr>
-              <th style="${th}text-align:center;">Parcela</th>
-              <th style="${th}text-align:right;">Valor final</th>
-            </tr>
-          </thead>
-          <tbody>${balloonTableRows}</tbody>
-        </table>
-
-        <div style="border-top:1px solid #222;padding-top:6px;margin-top:2px;">
-          <div style="font-weight:bold;">Valor total do contrato</div>
-          <div>${totalFmt}</div>
-          <div style="font-size:8.5pt;color:#444;">(${totalExt})</div>
+    <div class="contract-clause contract-balloon-finance" style="margin:10px 0 14px;page-break-inside:avoid;" data-balloon-rows="${balloons.length}">
+      <div style="border:1px solid #222;padding:10px 12px;font-family:'Courier New',Courier,monospace;">
+        <p style="margin:0 0 8px;text-align:center;font-weight:bold;font-size:11pt;letter-spacing:1px;text-transform:uppercase;font-family:'Times New Roman',Times,serif;">Quadro Financeiro</p>
+        <div style="border-top:1px dashed #666;border-bottom:1px dashed #666;padding:6px 0;margin-bottom:8px;">
+          ${dottedLine('Valor da venda', totalFmt)}
+          ${dottedLine('Entrada', formatCurrencyBRL(summary.entryAmount))}
+          ${dottedLine('Saldo financiado', formatCurrencyBRL(financed))}
+          ${dottedLine('Parcelamento', `${summary.installmentsCount} parcelas mensais`)}
+          ${dottedLine('Parcela base', baseFmt)}
+        </div>
+        <p style="margin:0 0 6px;font-weight:bold;font-size:10pt;text-transform:uppercase;letter-spacing:0.5px;font-family:'Times New Roman',Times,serif;">Parcelas balão</p>
+        <div style="margin:0 0 8px;font-size:10pt;line-height:1.45;">
+          <div>Quantidade: <strong>${String(balloons.length).padStart(2, '0')}</strong></div>
+          <div>Acréscimo: <strong>${addonLabel}</strong></div>
+          <div>Incidem nas parcelas: <strong>${incidents}</strong></div>
+        </div>
+        <div class="contract-balloon-only-table" data-balloon-only="true" data-row-count="${balloons.length}" style="border-top:1px dashed #666;border-bottom:1px dashed #666;padding:6px 0;margin-bottom:8px;">
+          ${balloonOnlyLines}
+        </div>
+        <div>
+          ${dottedLine('Valor total do contrato', totalFmt)}
         </div>
       </div>
     </div>`;
