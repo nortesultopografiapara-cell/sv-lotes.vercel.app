@@ -904,6 +904,10 @@ export async function buildFreshSaleContractHtml(
     ...sale,
     id: (sale.id as string) || (contract.sale_id as string),
   };
+  // Identificador real da venda — obrigatório para balões/regeneração.
+  // (Bug: saleId era referenciado sem declaração → "saleId is not defined".)
+  const saleId =
+    String(saleWithId.id || contract.sale_id || '').trim() || null;
   const customerWithId = {
     ...mergeCustomerData(customer, sale, contract.customers as Record<string, unknown>),
     id: (customer.id as string) || (contract.customer_id as string),
