@@ -15,6 +15,77 @@ function formatBRL(val: number): string {
   }).format(val);
 }
 
+function formatDateBr(raw: unknown): string {
+  const s = String(raw || '').split('T')[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—';
+  const [y, m, d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+export type ContractInstallmentScheduleRow = {
+  installmentNumber: number;
+  amount: number;
+  dueDate?: string | null;
+  label?: string;
+};
+
+/** Detecta valores distintos nas parcelas 1..N (ex.: balão). */
+export function hasVariableInstallmentAmounts(
+  rows: ContractInstallmentScheduleRow[],
+): boolean {
+  const amounts = rows
+    .filter((r) => r.installmentNumber >= 1)
+    .map((r) => Math.round((Number(r.amount) || 0) * 100) / 100);
+  if (amounts.length < 2) return false;
+  const first = amounts[0];
+  return amounts.some((a) => Math.abs(a - first) > 0.009);
+}
+
+/** Tabela de parcelas com valores reais (usada quando há balão / valores variáveis). */
+export function buildSaleContractInstallmentScheduleHtml(
+  rows: ContractInstallmentScheduleRow[],
+): string {
+  const monthly = rows
+    .filter((r) => r.installmentNumber >= 1)
+    .sort((a, b) => a.installmentNumber - b.installmentNumber);
+  if (monthly.length === 0) return '';
+
+  const amounts = monthly.map((r) => Math.round((Number(r.amount) || 0) * 100) / 100);
+  const baseAmount = Math.min(...amounts);
+  const total = amounts.reduce((s, a) => s + a, 0);
+
+  const body = monthly
+    .map((r) => {
+      const amount = Math.round((Number(r.amount) || 0) * 100) / 100;
+      const isBalloon = amount > baseAmount + 0.009;
+      const label =
+        r.label ||
+        (isBalloon
+          ? `Parcela ${r.installmentNumber} (balão)`
+          : `Parcela ${r.installmentNumber}`);
+      const rowStyle = isBalloon ? 'background:#fff8e7;' : '';
+      return `<tr style="${rowStyle}"><td style="padding:5px 8px;border:1px solid #ddd;">${label}</td><td style="padding:5px 8px;border:1px solid #ddd;">${formatDateBr(r.dueDate)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;">${formatBRL(amount)}</td></tr>`;
+    })
+    .join('');
+
+  const totalRow = `<tr><td colspan="2" style="padding:5px 8px;border:1px solid #ddd;font-weight:bold;">Total das parcelas</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;font-weight:bold;">${formatBRL(total)}</td></tr>`;
+
+  return `
+    <div class="contract-clause" style="margin: 12px 0 20px;">
+      <p style="margin:0 0 8px;font-weight:bold;">Quadro de parcelas</p>
+      <table style="width:100%;border-collapse:collapse;font-size:10.5pt;">
+        <thead>
+          <tr>
+            <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Parcela</th>
+            <th style="padding:5px 8px;border:1px solid #ddd;text-align:left;">Vencimento</th>
+            <th style="padding:5px 8px;border:1px solid #ddd;text-align:right;">Valor</th>
+          </tr>
+        </thead>
+        <tbody>${body}${totalRow}</tbody>
+      </table>
+    </div>`;
+}
+
 export type SaleContractPaymentBreakdown = {
   lotPrice: number;
   lotPriceFmt: string;
@@ -84,7 +155,17 @@ export function resolveSaleContractPaymentBreakdown(
 
 export function buildSaleContractPaymentSummaryHtml(
   breakdown: SaleContractPaymentBreakdown,
+  options?: {
+    scheduleRows?: ContractInstallmentScheduleRow[];
+    hasVariableInstallments?: boolean;
+  },
 ): string {
+  const variable =
+    options?.hasVariableInstallments ??
+    (options?.scheduleRows
+      ? hasVariableInstallmentAmounts(options.scheduleRows)
+      : false);
+
   const rows = [
     ['Valor do lote', breakdown.lotPriceFmt],
     ['Desconto concedido', breakdown.discountFmt],
@@ -98,8 +179,12 @@ export function buildSaleContractPaymentSummaryHtml(
       breakdown.isCashPayment ? 'À vista' : String(breakdown.installmentsCount),
     ],
     [
-      'Valor da parcela',
-      breakdown.isCashPayment ? '—' : breakdown.installmentValueFmt,
+      variable ? 'Valor base da parcela' : 'Valor da parcela',
+      breakdown.isCashPayment
+        ? '—'
+        : variable
+          ? `${breakdown.installmentValueFmt} (valores por parcela no quadro abaixo)`
+          : breakdown.installmentValueFmt,
     ],
     ['Correção das parcelas', breakdown.correctionLabel],
   ];
@@ -111,9 +196,14 @@ export function buildSaleContractPaymentSummaryHtml(
     )
     .join('');
 
+  const scheduleHtml =
+    !breakdown.isCashPayment && variable && options?.scheduleRows?.length
+      ? buildSaleContractInstallmentScheduleHtml(options.scheduleRows)
+      : '';
+
   return `
     <div class="contract-clause" style="margin: 16px 0 20px;">
       <p style="margin:0 0 8px;font-weight:bold;">Quadro resumo — condições de pagamento</p>
       <table style="width:100%;border-collapse:collapse;font-size:11pt;">${body}</table>
-    </div>`;
+    </div>${scheduleHtml}`;
 }

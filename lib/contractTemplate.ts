@@ -27,7 +27,9 @@ import {
 } from "@/lib/saleContractLegalTemplate";
 import {
   buildSaleContractPaymentSummaryHtml,
+  hasVariableInstallmentAmounts,
   resolveSaleContractPaymentBreakdown,
+  type ContractInstallmentScheduleRow,
 } from "@/lib/saleContractPaymentSummary";
 import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
@@ -367,6 +369,36 @@ export function generateContractHTML({
   const dataPrimeiraParcelaFmt = paymentDates.firstInstallmentDueFmt;
   const dataUltimaParcelaFmt = paymentDates.lastInstallmentDueFmt;
 
+  const scheduleRows: ContractInstallmentScheduleRow[] = (financeReceipts || [])
+    .map((r) => ({
+      installmentNumber: Number(r.installment_number),
+      amount: Number(r.amount) || 0,
+      dueDate: r.due_date ?? null,
+    }))
+    .filter((r) => Number.isFinite(r.installmentNumber));
+  const hasVariableInstallments = hasVariableInstallmentAmounts(scheduleRows);
+
+  // Com balão: valor base = menor parcela mensal (ou média das iguais); cláusula não afirma "iguais".
+  if (hasVariableInstallments) {
+    const monthly = scheduleRows.filter((r) => r.installmentNumber >= 1);
+    if (monthly.length > 0) {
+      valorParcela = Math.min(...monthly.map((r) => r.amount));
+    }
+  }
+
+  const valorParcelaFmtBalloonAware = formatBRL(valorParcela);
+  let valorParcelaExtensoBalloonAware = valorParcelaExtenso;
+  if (hasVariableInstallments) {
+    try {
+      // @ts-ignore
+      if (valorParcela > 0)
+        valorParcelaExtensoBalloonAware = extenso(
+          valorParcela.toFixed(2).replace(".", ","),
+          { mode: "currency" },
+        );
+    } catch (e) {}
+  }
+
   const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
     isCash: isCashPayment,
     valorTotalFmt,
@@ -374,10 +406,11 @@ export function generateContractHTML({
     valorEntradaFmt,
     valorEntradaExtenso,
     qtdParcelas,
-    valorParcelaFmt,
-    valorParcelaExtenso,
+    valorParcelaFmt: valorParcelaFmtBalloonAware,
+    valorParcelaExtenso: valorParcelaExtensoBalloonAware,
     dataPrimeiraParcelaFmt,
     dataUltimaParcelaFmt,
+    hasVariableInstallments,
   });
 
   const electronicSignatureClauseHtml =
@@ -418,6 +451,10 @@ export function generateContractHTML({
 
   const paymentSummaryHtml = buildSaleContractPaymentSummaryHtml(
     resolveSaleContractPaymentBreakdown(sale, { isCashPayment }),
+    {
+      scheduleRows,
+      hasVariableInstallments,
+    },
   );
 
   return `

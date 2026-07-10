@@ -35,6 +35,25 @@ import { normalizeSaleContractModel } from '@/lib/contractModel';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import { cpfCnpjIlikePatterns, matchesCpfCnpj } from '@/lib/inputMasks';
+import {
+  BALLOON_EDIT_LOCKED_MESSAGE,
+  BALLOON_MIGRATION_REQUIRED_MESSAGE,
+  emptyBalloonFormConfig,
+  resolveSaleBalloonPlan,
+  validateSaleBalloonConfiguration,
+  type SaleBalloonFormConfig,
+} from '@/lib/saleBalloonInstallments';
+import {
+  balloonSalesPatchFromPlan,
+  loadSaleBalloonRows,
+  probeBalloonSchemaAvailable,
+  replaceSaleBalloonInstallments,
+  saleHasGeneratedCharges,
+} from '@/lib/saleBalloonRepository';
+import {
+  downPaymentReducesInstallmentBase,
+  resolveInstallmentPrincipal,
+} from '@/lib/saleInstallmentCalc';
 
 export function canEditCompletedSale(role?: string | null): boolean {
   return isPartnerPanelAdmin(role);
@@ -59,6 +78,9 @@ export type SaleEditLoadedContext = {
     signal_paid_at_sale?: string;
     signal_remaining_payment_mode?: 'FIRST_INSTALLMENTS' | 'ALL_INSTALLMENTS' | '';
     signal_remaining_installments?: string;
+    use_balloon_installments?: boolean;
+    balloon_config?: SaleBalloonFormConfig | null;
+    balloon_locked?: boolean;
   };
   saleBefore: Record<string, unknown>;
   customerBefore: Record<string, unknown>;
@@ -165,6 +187,25 @@ export async function loadSaleEditContext(
     receipts: receipts?.length ?? 0,
   });
 
+  const balloonRows = await loadSaleBalloonRows(supabase, saleId);
+  const balloonLocked = await saleHasGeneratedCharges(supabase, saleId);
+  const useBalloon =
+    Boolean(sale.use_balloon_installments) || balloonRows.length > 0;
+  const balloonConfig =
+    (sale.balloon_config as SaleBalloonFormConfig | null) ||
+    (useBalloon
+      ? {
+          ...emptyBalloonFormConfig(),
+          mode: (sale.balloon_mode as SaleBalloonFormConfig['mode']) || 'MANUAL',
+          manualCount: balloonRows.length || 1,
+          manualRows: balloonRows.map((r) => ({
+            installmentNumber: String(r.installment_number),
+            additionalAmount: String(r.additional_amount ?? ''),
+            dueDate: r.due_date ? String(r.due_date).split('T')[0] : '',
+          })),
+        }
+      : emptyBalloonFormConfig());
+
   const paidSignal = (receipts || []).find(
     (r) => Number(r.installment_number) === -1 && isPaidReceipt(r),
   );
@@ -252,6 +293,9 @@ export async function loadSaleEditContext(
     reservation_signal_paid: paidSignal ? Number(paidSignal.amount) || 0 : 0,
     signal_amount: paidSignal ? String(paidSignal.amount) : '',
     signal_date: paidSignal?.due_date ? String(paidSignal.due_date).split('T')[0] : '',
+    use_balloon_installments: useBalloon,
+    balloon_config: balloonConfig,
+    balloon_locked: balloonLocked,
   };
 
   return {
@@ -361,6 +405,74 @@ export async function updateSaleFromEdit(
   const financialAccountId =
     String(data.financial_account_id || saleBefore.financial_account_id || '').trim() || null;
 
+  const balloonPlan = resolveSaleBalloonPlan({
+    useBalloon: Boolean(data.use_balloon_installments),
+    installmentsCount,
+    contractValue: data.final_value,
+    config: (data.balloon_config as SaleBalloonFormConfig | null | undefined) ?? null,
+  });
+  const balloonLocked = await saleHasGeneratedCharges(supabase, saleId);
+  const previousUseBalloon = Boolean(saleBefore.use_balloon_installments);
+  const balloonChanged =
+    previousUseBalloon !== balloonPlan.enabled ||
+    JSON.stringify(saleBefore.balloon_config ?? null) !==
+      JSON.stringify(balloonPlan.config ?? null) ||
+    JSON.stringify(saleBefore.balloon_mode ?? null) !==
+      JSON.stringify(balloonPlan.enabled ? balloonPlan.mode : null);
+
+  const financePlanChanged =
+    String(saleBefore.payment_type || '') !== String(data.payment_type || '') ||
+    Number(saleBefore.installments_count || 0) !== installmentsCount ||
+    Math.abs(
+      Number(saleBefore.total_value || saleBefore.agreed_price || 0) -
+        Number(data.final_value || 0),
+    ) > 0.009 ||
+    Math.abs(
+      Number(saleBefore.down_payment || 0) -
+        Number(
+          signalContractValue ?? parseCurrencyBRLNumber(data.down_payment),
+        ),
+    ) > 0.009 ||
+    Math.abs(
+      Number(saleBefore.discount || 0) -
+        parseCurrencyBRLNumber(data.discount_value),
+    ) > 0.009;
+
+  if (balloonLocked && (balloonChanged || financePlanChanged)) {
+    throw new Error(BALLOON_EDIT_LOCKED_MESSAGE);
+  }
+
+  if (balloonPlan.enabled) {
+    const schemaOk = await probeBalloonSchemaAvailable(supabase);
+    if (!schemaOk) {
+      throw new Error(BALLOON_MIGRATION_REQUIRED_MESSAGE);
+    }
+    const entryAmount = parseCurrencyBRLNumber(data.down_payment);
+    const principal = resolveInstallmentPrincipal({
+      totalValue: data.final_value,
+      downPayment: entryAmount,
+      contractModel,
+    });
+    const balloonValidation = validateSaleBalloonConfiguration({
+      plan: balloonPlan,
+      paymentType: data.payment_type || 'Parcelado',
+      installmentsCount,
+      principal,
+      finalValue: data.final_value,
+      entryAmount: downPaymentReducesInstallmentBase(contractModel)
+        ? entryAmount
+        : 0,
+      firstInstallmentDueDate: data.first_installment_due_date,
+      entryReducesPrincipal: downPaymentReducesInstallmentBase(contractModel),
+    });
+    if (!balloonValidation.valid) {
+      throw new Error(balloonValidation.message);
+    }
+  }
+
+  const previousBalloonRows = await loadSaleBalloonRows(supabase, saleId);
+  const balloonSalesFields = balloonSalesPatchFromPlan(balloonPlan);
+
   const salePatch = buildOfficialSalesUpdatePatch({
     customerId,
     agreedPrice: data.final_value,
@@ -384,6 +496,9 @@ export async function updateSaleFromEdit(
     signalRemainingPaymentMode: signalRemainingMode,
     signalRemainingInstallments,
     signalRemainingInstallmentValue,
+    useBalloonInstallments: balloonSalesFields.use_balloon_installments,
+    balloonMode: balloonSalesFields.balloon_mode,
+    balloonConfig: balloonSalesFields.balloon_config as Record<string, unknown> | null,
     spouse: {
       has_spouse: data.has_spouse,
       sale_spouse_name: data.sale_spouse_name,
@@ -400,13 +515,48 @@ export async function updateSaleFromEdit(
   });
   // notes permanece apenas no formulário; coluna ausente em produção (20260608120000 não aplicada).
 
-  const { error: saleUpdErr } = await supabase
-    .from('sales')
-    .update(salePatch)
-    .eq('id', saleId);
-
-  if (saleUpdErr) {
-    throw new Error(`Erro ao atualizar venda: ${saleUpdErr.message}`);
+  {
+    let patchToApply: Record<string, unknown> = { ...salePatch };
+    let saleUpdErr: { message?: string } | null = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { error } = await supabase
+        .from('sales')
+        .update(patchToApply)
+        .eq('id', saleId);
+      if (!error) {
+        saleUpdErr = null;
+        break;
+      }
+      saleUpdErr = error;
+      const missing = String(error.message || '').match(
+        /Could not find the '(\w+)' column/i,
+      )?.[1];
+      if (
+        missing &&
+        (missing === 'use_balloon_installments' ||
+          missing === 'balloon_mode' ||
+          missing === 'balloon_config') &&
+        balloonPlan.enabled
+      ) {
+        throw new Error(BALLOON_MIGRATION_REQUIRED_MESSAGE);
+      }
+      if (
+        missing &&
+        (missing === 'use_balloon_installments' ||
+          missing === 'balloon_mode' ||
+          missing === 'balloon_config' ||
+          missing === 'financial_account_id') &&
+        missing in patchToApply
+      ) {
+        const { [missing]: _drop, ...rest } = patchToApply;
+        patchToApply = rest;
+        continue;
+      }
+      break;
+    }
+    if (saleUpdErr) {
+      throw new Error(`Erro ao atualizar venda: ${saleUpdErr.message}`);
+    }
   }
 
   if (salePatch.financial_account_id) {
@@ -419,7 +569,7 @@ export async function updateSaleFromEdit(
 
   const { data: receipts, error: receiptsErr } = await supabase
     .from('finance_receipts')
-    .select('id, status, paid_at, installment_number, amount')
+    .select('id, status, paid_at, installment_number, amount, due_date')
     .eq('sale_id', saleId);
 
   if (receiptsErr) {
@@ -432,6 +582,7 @@ export async function updateSaleFromEdit(
     paid_at?: string | null;
     installment_number: number | string;
     amount?: number | string | null;
+    due_date?: string | null;
   }>;
 
   const newPayloads = buildSaleEditFinancePayloads(
@@ -536,6 +687,32 @@ export async function updateSaleFromEdit(
       saleId,
       inserted: fullPlan.toInsert.length,
     });
+  }
+
+  if (!balloonLocked) {
+    try {
+      await replaceSaleBalloonInstallments(supabase, saleId, balloonPlan);
+    } catch (balloonErr) {
+      // Compensação: tenta restaurar balões anteriores se a gravação falhar após o financeiro.
+      if (previousBalloonRows.length > 0) {
+        try {
+          await supabase.from('sale_balloon_installments').delete().eq('sale_id', saleId);
+          await supabase.from('sale_balloon_installments').insert(
+            previousBalloonRows.map((r) => ({
+              sale_id: saleId,
+              installment_number: r.installment_number,
+              additional_amount: r.additional_amount,
+              due_date: r.due_date || null,
+            })),
+          );
+        } catch (restoreErr) {
+          console.warn('[EDIT_SALE] balloon restore failed', restoreErr);
+        }
+      }
+      throw balloonErr instanceof Error
+        ? balloonErr
+        : new Error('Falha ao gravar parcelas balão.');
+    }
   }
 
   await supabase

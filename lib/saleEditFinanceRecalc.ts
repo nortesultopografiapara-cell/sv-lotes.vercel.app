@@ -8,7 +8,6 @@ import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
 import {
   expectedSaleFinanceTotal,
   resolveInstallmentPrincipal,
-  splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import {
@@ -16,6 +15,11 @@ import {
   isRecantoPrimaveraSaleModel,
   resolveRecantoSignalPlan,
 } from '@/lib/recantoSignalRemaining';
+import {
+  applyBalloonToInstallmentAmounts,
+  resolveSaleBalloonPlan,
+  type SaleBalloonFormConfig,
+} from '@/lib/saleBalloonInstallments';
 
 export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
@@ -30,6 +34,7 @@ export type FinanceReceiptRow = {
   paid_at?: string | null;
   installment_number: number | string;
   amount?: number | string | null;
+  due_date?: string | null;
 };
 
 export type FinanceReceiptPayload = Record<string, unknown> & {
@@ -187,28 +192,53 @@ export function buildSaleEditFinancePayloads(
         downPayment,
         contractModel: options?.contractModel,
       });
-      const baseAmounts = splitInstallmentAmounts(principal, instCount);
 
-      let compositions = baseAmounts.map((baseAmount) => ({
-        baseAmount,
+      // Camada opcional: balão só altera valores quando use_balloon_installments=true.
+      // Sem balão, applyBalloonToInstallmentAmounts == splitInstallmentAmounts.
+      const balloonPlan = resolveSaleBalloonPlan({
+        useBalloon: Boolean(data.use_balloon_installments),
+        installmentsCount: instCount,
+        contractValue: fValue,
+        config: (data.balloon_config as SaleBalloonFormConfig | null | undefined) ?? null,
+      });
+      const balloonComps = applyBalloonToInstallmentAmounts(
+        principal,
+        instCount,
+        balloonPlan,
+      );
+      const amountsBeforeSignal = balloonComps.map((c) => c.amount);
+
+      let compositions = amountsBeforeSignal.map((amount, index) => ({
+        baseAmount: amount,
         signalAddonAmount: 0,
-        amount: baseAmount,
+        amount,
+        dueDateOverride: balloonComps[index]?.dueDateOverride ?? null,
       }));
 
       if (recantoSignalPlan && hasExplicitSignalPaidAtSale) {
-        compositions = applySignalAddonToInstallmentAmounts(
-          baseAmounts,
+        const withSignal = applySignalAddonToInstallmentAmounts(
+          amountsBeforeSignal,
           recantoSignalPlan,
         );
+        compositions = withSignal.map((row, index) => ({
+          baseAmount: row.baseAmount,
+          signalAddonAmount: row.signalAddonAmount,
+          amount: row.amount,
+          dueDateOverride: balloonComps[index]?.dueDateOverride ?? null,
+        }));
       }
 
       let cDate = new Date(data.first_installment_due_date + 'T12:00:00Z');
       for (let i = 0; i < instCount; i++) {
         const row = compositions[i] ?? {
-          baseAmount: baseAmounts[i] ?? 0,
+          baseAmount: amountsBeforeSignal[i] ?? 0,
           signalAddonAmount: 0,
-          amount: baseAmounts[i] ?? 0,
+          amount: amountsBeforeSignal[i] ?? 0,
+          dueDateOverride: null as string | null,
         };
+        const dueOverride = row.dueDateOverride
+          ? String(row.dueDateOverride).split('T')[0]
+          : null;
         financePayloads.push({
           tenant_id: tenantId,
           company_id: tenantId,
@@ -222,7 +252,7 @@ export function buildSaleEditFinancePayloads(
           amount: row.amount,
           base_amount: row.baseAmount,
           signal_addon_amount: row.signalAddonAmount,
-          due_date: cDate.toISOString().split('T')[0],
+          due_date: dueOverride || cDate.toISOString().split('T')[0],
           status: 'pendente',
           paid_amount: 0,
           paid_at: null,
