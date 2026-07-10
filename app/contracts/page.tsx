@@ -780,6 +780,13 @@ export default function ContractsPage() {
         if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
           query.set("impersonatingTenantId", impersonatingTenantId);
         }
+        // Após regenerar (retryKey) ou needs_regenerar: força HTML fresco com balões persistidos.
+        if (
+          contractHtmlRetryKey > 0 ||
+          selectedContract.needs_regenerar === true
+        ) {
+          query.set("refresh", "1");
+        }
         const { ok, data, error } = await fetchJsonWithTimeout<{
           success?: boolean;
           html?: string;
@@ -825,7 +832,7 @@ export default function ContractsPage() {
     return () => {
       active = false;
     };
-  }, [selectedContract?.id, contractHtmlRetryKey, user?.id]);
+  }, [selectedContract?.id, selectedContract?.needs_regenerar, contractHtmlRetryKey, user?.id]);
 
   const resolvedContractHtml = contractViewHtml;
 

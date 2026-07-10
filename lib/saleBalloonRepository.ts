@@ -95,6 +95,69 @@ export async function loadSaleBalloonRows(
   return (data || []) as SaleBalloonRow[];
 }
 
+/**
+ * Fonte exclusiva de balões para o contrato.
+ * Prioridade:
+ * 1) sales.balloon_config (intenção cadastrada no formulário)
+ * 2) sale_balloon_installments (tabela)
+ *
+ * NUNCA deriva balões de finance_receipts.amount.
+ * Se config e tabela divergirem, prevalece a config (evita tabela poluída com N-1 linhas).
+ */
+export function resolveContractBalloonAddons(params: {
+  sale: Record<string, unknown>;
+  tableRows?: SaleBalloonRow[] | null;
+}): Array<{ installment_number: number; additional_amount: number }> {
+  const sale = params.sale;
+  const tableRows = params.tableRows || [];
+  const useBalloon = Boolean(sale.use_balloon_installments);
+  const installmentsCount = Math.max(1, Number(sale.installments_count) || 0);
+  const contractValue =
+    Number(sale.total_value) ||
+    Number(sale.agreed_price) ||
+    Number(sale.final_value) ||
+    0;
+
+  const rawConfig = sale.balloon_config as SaleBalloonFormConfig | null | undefined;
+  if (useBalloon && rawConfig && typeof rawConfig === 'object') {
+    const plan = resolveSaleBalloonPlan({
+      useBalloon: true,
+      installmentsCount,
+      contractValue,
+      config: rawConfig,
+    });
+    if (plan.enabled && plan.items.length > 0) {
+      const fromConfig = plan.items
+        .filter((i) => i.installmentNumber >= 1 && i.additionalAmount > 0.009)
+        .map((i) => ({
+          installment_number: i.installmentNumber,
+          additional_amount: Number(i.additionalAmount) || 0,
+        }));
+      if (fromConfig.length > 0) {
+        if (
+          tableRows.length > 0 &&
+          tableRows.length !== fromConfig.length
+        ) {
+          console.warn('[saleBalloon] contract addons: config vs table mismatch', {
+            configCount: fromConfig.length,
+            tableCount: tableRows.length,
+            configNumbers: fromConfig.map((a) => a.installment_number),
+            tableNumbers: tableRows.map((r) => r.installment_number),
+          });
+        }
+        return fromConfig;
+      }
+    }
+  }
+
+  return tableRows
+    .filter((r) => Number(r.installment_number) >= 1 && Number(r.additional_amount) > 0.009)
+    .map((r) => ({
+      installment_number: Number(r.installment_number),
+      additional_amount: Number(r.additional_amount) || 0,
+    }));
+}
+
 export function planFromSaleBalloonFields(params: {
   useBalloon: boolean;
   balloonMode?: string | null;

@@ -510,6 +510,51 @@ function testHomologacao000000015() {
   console.log('OK testHomologacao000000015');
 }
 
+function testConfigBeatsPollutedTable() {
+  const { resolveContractBalloonAddons } = require('../lib/saleBalloonRepository');
+  // Tabela poluída com 47 linhas (bug antigo) vs config real com 2 balões.
+  const polluted = Array.from({ length: 47 }, (_, i) => ({
+    sale_id: 's1',
+    installment_number: i + 1,
+    additional_amount: 0.08,
+  }));
+  const addons = resolveContractBalloonAddons({
+    sale: {
+      use_balloon_installments: true,
+      installments_count: 48,
+      total_value: 100,
+      balloon_mode: 'MANUAL',
+      balloon_config: {
+        mode: 'MANUAL',
+        manualCount: 2,
+        manualRows: [
+          { installmentNumber: '6', additionalAmount: '0,50', dueDate: '' },
+          { installmentNumber: '18', additionalAmount: '0,50', dueDate: '' },
+        ],
+      },
+    },
+    tableRows: polluted,
+  });
+  assert(addons.length === 2, `config vence tabela poluída (got ${addons.length})`);
+  assert(
+    addons.map((a: { installment_number: number }) => a.installment_number).join(',') ===
+      '6,18',
+    'números 6 e 18',
+  );
+
+  const summary = resolveSaleContractBalloonFinance({
+    sale: baseSale,
+    financeReceipts: buildRoundingCaseReceipts(),
+    balloonAddons: addons,
+  });
+  assert(summary.balloonCount === 2, 'quadro com 2');
+  assert(
+    buildCompactBalloonFinanceScheduleHtml(summary).includes('data-row-count="2"'),
+    'html 2 linhas',
+  );
+  console.log('OK testConfigBeatsPollutedTable');
+}
+
 function main() {
   testHelperDetectsBalloons();
   testRoundingDoesNotInferBalloons();
@@ -524,6 +569,7 @@ function main() {
   testTotalsClose();
   testSpouseUntouchedInSv2();
   testHomologacao000000015();
+  testConfigBeatsPollutedTable();
   console.log('mandatory-sale-balloon-contract-tests: all passed');
 }
 

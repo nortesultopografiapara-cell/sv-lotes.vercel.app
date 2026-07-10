@@ -100,7 +100,11 @@ export async function GET(
       forceRefresh,
     });
 
-    if (savedHtml && !forceRefresh) {
+    // HTML salvo antigo pode conter quadro de balão incorreto (inferência).
+    // Sempre regenera quando refresh=1 ou needs_regenerar.
+    const mustRebuild = forceRefresh || needsRegenerar;
+
+    if (savedHtml && !mustRebuild) {
       mark('response', { source: 'saved', bytes: savedHtml.length });
       return NextResponse.json({
         success: true,
@@ -111,13 +115,17 @@ export async function GET(
       });
     }
 
-    mark('generate_html_start', { hasSaved: Boolean(savedHtml) });
+    mark('generate_html_start', {
+      hasSaved: Boolean(savedHtml),
+      forceRefresh,
+      needsRegenerar,
+    });
     const html = await buildContractViewHtmlForContractId(
       supabase,
       String(contract.id || contractId),
     );
 
-    if (!savedHtml && html.trim()) {
+    if (html.trim()) {
       mark('save_html');
       await persistGeneratedContractHtml(
         supabase,

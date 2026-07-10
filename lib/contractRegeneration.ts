@@ -12,7 +12,15 @@ import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
-import { loadSaleBalloonRows } from '@/lib/saleBalloonRepository';
+import {
+  loadSaleBalloonRows,
+  replaceSaleBalloonInstallments,
+  resolveContractBalloonAddons,
+} from '@/lib/saleBalloonRepository';
+import {
+  resolveSaleBalloonPlan,
+  type SaleBalloonFormConfig,
+} from '@/lib/saleBalloonInstallments';
 import {
   enrichSaleWithBrokerForContract,
 } from '@/lib/saleBrokerSnapshot';
@@ -935,10 +943,58 @@ export async function buildFreshSaleContractHtml(
   const balloonRows = saleId
     ? await loadSaleBalloonRows(supabase, saleId)
     : [];
-  const balloonAddons = balloonRows.map((r) => ({
-    installment_number: Number(r.installment_number),
-    additional_amount: Number(r.additional_amount) || 0,
-  }));
+  const balloonAddons = resolveContractBalloonAddons({
+    sale: saleWithId as Record<string, unknown>,
+    tableRows: balloonRows,
+  });
+  console.log('REGENERATE_BALLOON_ADDONS', {
+    saleId,
+    tableCount: balloonRows.length,
+    addonCount: balloonAddons.length,
+    addonNumbers: balloonAddons.map((a) => a.installment_number),
+  });
+
+  // Se a tabela estiver poluída (ex.: 47 linhas) e a config tiver os balões reais,
+  // regrava a tabela a partir da config — sem tocar em finance_receipts.
+  if (
+    saleId &&
+    balloonAddons.length > 0 &&
+    balloonRows.length !== balloonAddons.length
+  ) {
+    try {
+      const plan = resolveSaleBalloonPlan({
+        useBalloon: true,
+        installmentsCount: Math.max(
+          1,
+          Number(saleWithId.installments_count) || balloonAddons.length,
+        ),
+        contractValue:
+          Number(saleWithId.total_value) ||
+          Number(saleWithId.agreed_price) ||
+          0,
+        config:
+          (saleWithId.balloon_config as SaleBalloonFormConfig | null) || {
+            mode: 'MANUAL',
+            manualCount: balloonAddons.length,
+            manualRows: balloonAddons.map((a) => ({
+              installmentNumber: String(a.installment_number),
+              additionalAmount: String(a.additional_amount),
+              dueDate: '',
+            })),
+          },
+      });
+      if (plan.enabled && plan.items.length === balloonAddons.length) {
+        await replaceSaleBalloonInstallments(supabase, saleId, plan);
+        console.warn('REGENERATE_BALLOON_TABLE_REPAIRED', {
+          saleId,
+          from: balloonRows.length,
+          to: plan.items.length,
+        });
+      }
+    } catch (repairErr) {
+      console.warn('REGENERATE_BALLOON_TABLE_REPAIR_FAILED', repairErr);
+    }
+  }
 
   let html = generateContractHTML({
     tenant,

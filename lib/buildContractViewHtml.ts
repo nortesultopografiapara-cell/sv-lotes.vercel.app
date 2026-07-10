@@ -14,7 +14,7 @@ import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
-import { loadSaleBalloonRows } from "@/lib/saleBalloonRepository";
+import { loadSaleBalloonRows, resolveContractBalloonAddons } from "@/lib/saleBalloonRepository";
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 
@@ -39,6 +39,8 @@ const SALE_CONTRACT_VIEW_SELECT = [
   "plan_type",
   "payment_type",
   "use_balloon_installments",
+  "balloon_mode",
+  "balloon_config",
   "spouse_name",
   "spouse_cpf",
   "spouse_rg",
@@ -311,11 +313,15 @@ async function buildContractViewHtmlFromContext(
   logHtmlStep("receipts_loaded", startedAt, { count: receipts.length });
 
   const balloonRows = saleId ? await loadSaleBalloonRows(supabase, saleId) : [];
-  const balloonAddons = balloonRows.map((r) => ({
-    installment_number: Number(r.installment_number),
-    additional_amount: Number(r.additional_amount) || 0,
-  }));
-  logHtmlStep("balloon_addons_loaded", startedAt, { count: balloonAddons.length });
+  const balloonAddons = resolveContractBalloonAddons({
+    sale: sale as Record<string, unknown>,
+    tableRows: balloonRows,
+  });
+  logHtmlStep("balloon_addons_loaded", startedAt, {
+    tableCount: balloonRows.length,
+    count: balloonAddons.length,
+    numbers: balloonAddons.map((a) => a.installment_number),
+  });
 
   const html = await buildContractViewHtml(supabase, {
     contract,
@@ -432,10 +438,10 @@ export async function buildContractViewHtml(
     const sid = String(saleForContract.id || contract.sale_id || "").trim();
     if (sid) {
       const rows = await loadSaleBalloonRows(supabase, sid);
-      balloonAddons = rows.map((r) => ({
-        installment_number: Number(r.installment_number),
-        additional_amount: Number(r.additional_amount) || 0,
-      }));
+      balloonAddons = resolveContractBalloonAddons({
+        sale: saleForContract as Record<string, unknown>,
+        tableRows: rows,
+      });
     }
   }
 
