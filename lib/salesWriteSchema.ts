@@ -32,6 +32,9 @@ export const SALES_OFFICIAL_UPDATE_FIELDS = [
   'signal_remaining_installments',
   'signal_remaining_installment_value',
   'financial_account_id',
+  'use_balloon_installments',
+  'balloon_mode',
+  'balloon_config',
   ...SALE_SPOUSE_DB_FIELDS,
 ] as const;
 
@@ -69,6 +72,9 @@ export type OfficialSalesUpdateInput = {
   signalRemainingInstallments?: number | null;
   signalRemainingInstallmentValue?: number | null;
   financialAccountId?: string | null;
+  useBalloonInstallments?: boolean;
+  balloonMode?: string | null;
+  balloonConfig?: Record<string, unknown> | null;
 };
 
 /** Payload seguro para sales.update — somente colunas oficiais. */
@@ -96,6 +102,13 @@ export function buildOfficialSalesUpdatePatch(
     signal_remaining_installment_value:
       input.signalRemainingInstallmentValue ?? null,
     financial_account_id: input.financialAccountId ?? null,
+    use_balloon_installments: Boolean(input.useBalloonInstallments),
+    balloon_mode: input.useBalloonInstallments
+      ? input.balloonMode ?? null
+      : null,
+    balloon_config: input.useBalloonInstallments
+      ? input.balloonConfig ?? null
+      : null,
     ...buildSaleSpouseDbPatch(input.spouse || {}),
   };
 }

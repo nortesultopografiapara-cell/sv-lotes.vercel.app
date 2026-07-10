@@ -38,6 +38,13 @@ import {
   type SignalRemainingPaymentMode,
 } from '@/lib/recantoSignalRemaining';
 import {
+  applyBalloonToInstallmentAmounts,
+  emptyBalloonFormConfig,
+  resolveSaleBalloonPlan,
+  validateSaleBalloonConfiguration,
+  type SaleBalloonFormConfig,
+} from '@/lib/saleBalloonInstallments';
+import {
   DEFAULT_INSTALLMENT_CORRECTION_TYPE,
   INSTALLMENT_CORRECTION_OPTIONS,
   normalizeInstallmentCorrectionType,
@@ -55,6 +62,7 @@ import {
 import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { SaleBalloonInstallmentsPanel } from '@/components/map/SaleBalloonInstallmentsPanel';
 
 export type LotFormState = CustomerFormValues &
   SaleSpouseFormFields & {
@@ -81,6 +89,10 @@ export type LotFormState = CustomerFormValues &
   signal_remaining_payment_mode?: SignalRemainingPaymentMode | '';
   /** Recanto: qtd de parcelas para o restante (primeiras parcelas). */
   signal_remaining_installments?: string;
+  /** Parcelas balão (opcional) — desligado = fluxo idêntico ao atual. */
+  use_balloon_installments?: boolean;
+  balloon_config?: SaleBalloonFormConfig | null;
+  balloon_locked?: boolean;
 };
 
 export type LotFormConfirmPayload = LotFormState & {
@@ -115,6 +127,9 @@ function emptyLotFormState(): LotFormState {
     signal_paid_at_sale: '',
     signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
     signal_remaining_installments: '',
+    use_balloon_installments: false,
+    balloon_config: emptyBalloonFormConfig(),
+    balloon_locked: false,
   };
 }
 
@@ -363,26 +378,45 @@ export function CustomerLotFormModal({
         totalInstallments: installmentsCount,
       })
     : null;
-  const installmentValue =
+  const balloonPlan = resolveSaleBalloonPlan({
+    useBalloon: Boolean(formData.use_balloon_installments),
+    installmentsCount,
+    contractValue: finalValue,
+    config: formData.balloon_config ?? null,
+  });
+  const installmentPrincipal =
     installmentsCount > 0
-      ? computeInstallmentDisplayValue({
-          finalValue,
+      ? resolveInstallmentPrincipal({
+          totalValue: finalValue,
           downPayment: isRecantoSinal ? signalContractValue : downPayment,
-          installmentsCount,
           contractModel,
         })
+      : 0;
+  const balloonComps =
+    installmentsCount > 0
+      ? applyBalloonToInstallmentAmounts(
+          installmentPrincipal,
+          installmentsCount,
+          balloonPlan,
+        )
+      : [];
+  const installmentValue =
+    installmentsCount > 0
+      ? balloonPlan.enabled && balloonPlan.items.length > 0
+        ? balloonComps[0]?.baseAmount ?? 0
+        : computeInstallmentDisplayValue({
+            finalValue,
+            downPayment: isRecantoSinal ? signalContractValue : downPayment,
+            installmentsCount,
+            contractModel,
+          })
       : 0;
   const recantoInstallmentPreview =
     isRecantoSinal && installmentsCount > 0 && recantoSignalPlan
       ? applySignalAddonToInstallmentAmounts(
-          splitInstallmentAmounts(
-            resolveInstallmentPrincipal({
-              totalValue: finalValue,
-              downPayment: signalContractValue,
-              contractModel,
-            }),
-            installmentsCount,
-          ),
+          balloonPlan.enabled && balloonPlan.items.length > 0
+            ? balloonComps.map((c) => c.amount)
+            : splitInstallmentAmounts(installmentPrincipal, installmentsCount),
           recantoSignalPlan,
         )
       : null;
@@ -482,6 +516,32 @@ export function CustomerLotFormModal({
           alert('Por favor, preencha a data de vencimento da primeira parcela.');
           return;
         }
+
+        if (formData.use_balloon_installments && !formData.balloon_locked) {
+          const balloonValidation = validateSaleBalloonConfiguration({
+            plan: resolveSaleBalloonPlan({
+              useBalloon: true,
+              installmentsCount: installmentsResult.value,
+              contractValue: finalValue,
+              config: formData.balloon_config ?? null,
+            }),
+            paymentType: paymentType,
+            installmentsCount: installmentsResult.value,
+            principal: resolveInstallmentPrincipal({
+              totalValue: finalValue,
+              downPayment: effectiveDownPayment,
+              contractModel,
+            }),
+            finalValue,
+            entryAmount: isRecantoSinal ? 0 : downPayment,
+            firstInstallmentDueDate: formData.first_installment_due_date,
+            entryReducesPrincipal: !isRecantoSinal,
+          });
+          if (!balloonValidation.valid) {
+            alert(balloonValidation.message);
+            return;
+          }
+        }
       }
     }
 
@@ -525,6 +585,10 @@ export function CustomerLotFormModal({
         lot_value: price,
         final_value: finalValue,
         installment_value: confirmedInstallmentValue,
+        use_balloon_installments: Boolean(formData.use_balloon_installments),
+        balloon_config: formData.use_balloon_installments
+          ? formData.balloon_config || emptyBalloonFormConfig()
+          : null,
         installment_correction_type: isStandardSaleForm
           ? paymentType === 'Parcelado'
             ? normalizeInstallmentCorrectionType(formData.installment_correction_type)
@@ -1287,6 +1351,28 @@ export function CustomerLotFormModal({
                         value={formData.first_installment_due_date}
                         onChange={(e) => setField({ first_installment_due_date: e.target.value })}
                         className={GIS_INPUT_DATE}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <SaleBalloonInstallmentsPanel
+                        enabled={Boolean(formData.use_balloon_installments)}
+                        locked={Boolean(formData.balloon_locked)}
+                        installmentsCount={installmentsCount}
+                        contractValue={finalValue}
+                        entryAmount={isRecantoSinal ? 0 : downPayment}
+                        principal={installmentPrincipal}
+                        config={formData.balloon_config}
+                        disabled={submitting || prefillLoading}
+                        onEnabledChange={(next) =>
+                          setField({
+                            use_balloon_installments: next,
+                            balloon_config:
+                              formData.balloon_config || emptyBalloonFormConfig(),
+                          })
+                        }
+                        onConfigChange={(nextConfig) =>
+                          setField({ balloon_config: nextConfig })
+                        }
                       />
                     </div>
                   </div>

@@ -4,6 +4,7 @@
  */
 
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
+import { buildCompactBalloonFinanceScheduleHtml } from '@/lib/saleContractBalloonFinance';
 
 export const RECANTO_PRIMAVERA_CLAUSE_MARKERS = [
   'CLÁUSULA PRIMEIRA – DAS DECLARAÇÕES INICIAIS',
@@ -77,9 +78,13 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
     </p>`;
   }
 
-  const saldoLine = ctx.hasSignalRemaining
-    ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt})`
-    : `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaFmt} FIXAS`;
+  const hasBalloon = Boolean(ctx.hasBalloonInstallments && ctx.balloonSummary?.hasBalloon);
+
+  const saldoLine = hasBalloon
+    ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt}), com parcelas balão discriminadas no Quadro Financeiro`
+    : ctx.hasSignalRemaining
+      ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt})`
+      : `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaFmt} FIXAS`;
 
   const sinalDetail = ctx.signalPaidFullyAtSale
     ? `${ctx.valorSinalFmt}<br/><span style="font-size: 9.5pt;">Pago integralmente no ato</span>`
@@ -90,6 +95,11 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
   const compositionTable = ctx.parcelasResumoSinalHtml
     ? `<div style="margin-top: 10px;">${ctx.parcelasResumoSinalHtml}</div>`
     : '';
+
+  const balloonTable =
+    hasBalloon && ctx.balloonSummary
+      ? buildCompactBalloonFinanceScheduleHtml(ctx.balloonSummary)
+      : '';
 
   return `
     <div class="contract-payment-block">
@@ -108,6 +118,7 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
         </tbody>
       </table>
       ${compositionTable}
+      ${balloonTable}
     </div>`;
 }
 

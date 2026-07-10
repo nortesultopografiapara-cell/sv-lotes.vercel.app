@@ -1,8 +1,5 @@
-/**
- * Terminologia jurídica padronizada — SV LOTES 2.0.
- */
-
 import type { SvLotes2ContractContext } from '@/lib/svLotes2ContractContext';
+import { buildBalloonAwarePaymentClauseText } from '@/lib/saleContractBalloonFinance';
 
 const extenso = require('extenso');
 
@@ -33,6 +30,23 @@ export function buildSvLotes2ClauseSegundaHtml(ctx: SvLotes2ContractContext): st
   const entradaExtenso = formatCurrencyExtenso(ctx.valEntrada);
   const primeiraParcela = ctx.paymentDates?.firstInstallmentDueFmt || '—';
   const ultimaParcela = ctx.paymentDates?.lastInstallmentDueFmt || '—';
+
+  if (ctx.hasBalloonInstallments && ctx.balloonSummary) {
+    const body = buildBalloonAwarePaymentClauseText({
+      summary: ctx.balloonSummary,
+      valorTotalFmt: ctx.valorTotalFmt,
+      valorTotalExtenso: ctx.valorTotalExtenso,
+      valorEntradaFmt: ctx.entradaFmt,
+      valorEntradaExtenso: entradaExtenso,
+      dataPrimeiraParcelaFmt: primeiraParcela,
+      dataUltimaParcelaFmt: ultimaParcela,
+      buyerLabel: SV2_BUYER_LABEL,
+    });
+    return `
+    <div class="sv2-clause">
+      <p><strong>CLÁUSULA SEGUNDA — DO PREÇO E FORMA DE PAGAMENTO:</strong> ${body}${taxes}</p>
+    </div>`;
+  }
 
   return `
     <div class="sv2-clause">

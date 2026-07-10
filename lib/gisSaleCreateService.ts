@@ -26,6 +26,21 @@ import { BROKERS_CONTRACT_SELECT } from '@/lib/brokersContractQuery';
 import { validateCustomerForContract } from '@/lib/validateCustomerForContract';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
+import {
+  BALLOON_MIGRATION_REQUIRED_MESSAGE,
+  resolveSaleBalloonPlan,
+  validateSaleBalloonConfiguration,
+  type SaleBalloonFormConfig,
+} from '@/lib/saleBalloonInstallments';
+import {
+  balloonSalesPatchFromPlan,
+  probeBalloonSchemaAvailable,
+  replaceSaleBalloonInstallments,
+} from '@/lib/saleBalloonRepository';
+import {
+  downPaymentReducesInstallmentBase,
+  resolveInstallmentPrincipal,
+} from '@/lib/saleInstallmentCalc';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -203,6 +218,7 @@ async function rollbackPartialSale(
   },
 ) {
   if (params.saleId) {
+    await supabase.from('sale_balloon_installments').delete().eq('sale_id', params.saleId);
     await supabase.from('finance_receipts').delete().eq('sale_id', params.saleId);
     await supabase.from('broker_commissions').delete().eq('sale_id', params.saleId);
     await supabase.from('sales').delete().eq('id', params.saleId);
@@ -316,6 +332,46 @@ export async function executeGisSaleCreate(
       ? Math.round((recantoSignalRemaining / recantoSignalInstallments) * 100) / 100
       : null;
 
+  const balloonPlan = resolveSaleBalloonPlan({
+    useBalloon: Boolean(customerData.use_balloon_installments),
+    installmentsCount: instCount,
+    contractValue: customerData.final_value || finalPrice,
+    config: (customerData.balloon_config as SaleBalloonFormConfig | null | undefined) ?? null,
+  });
+
+  if (balloonPlan.enabled) {
+    if (pmtType !== 'Parcelado') {
+      throw new Error('Parcelas balão não podem ser usadas em venda à vista.');
+    }
+    const schemaOk = await probeBalloonSchemaAvailable(supabase);
+    if (!schemaOk) {
+      throw new Error(BALLOON_MIGRATION_REQUIRED_MESSAGE);
+    }
+    const entryForPrincipal = parseCurrencyBRLNumber(customerData.down_payment);
+    const principal = resolveInstallmentPrincipal({
+      totalValue: customerData.final_value || finalPrice,
+      downPayment: entryForPrincipal,
+      contractModel: saleContractModel,
+    });
+    const balloonValidation = validateSaleBalloonConfiguration({
+      plan: balloonPlan,
+      paymentType: pmtType,
+      installmentsCount: instCount,
+      principal,
+      finalValue: customerData.final_value || finalPrice,
+      entryAmount: downPaymentReducesInstallmentBase(saleContractModel)
+        ? entryForPrincipal
+        : 0,
+      firstInstallmentDueDate: customerData.first_installment_due_date,
+      entryReducesPrincipal: downPaymentReducesInstallmentBase(saleContractModel),
+    });
+    if (!balloonValidation.valid) {
+      throw new Error(balloonValidation.message);
+    }
+  }
+
+  const balloonSalesFields = balloonSalesPatchFromPlan(balloonPlan);
+
   const salePayload: Record<string, unknown> = {
     tenant_id: tenantId,
     company_id: tenantId,
@@ -349,6 +405,7 @@ export async function executeGisSaleCreate(
     signal_remaining_payment_mode: recantoSignalMode,
     signal_remaining_installments: recantoSignalInstallments,
     signal_remaining_installment_value: recantoSignalInstallmentValue,
+    ...balloonSalesFields,
     ...(financialAccountId ? { financial_account_id: financialAccountId } : {}),
     ...buildSaleSpouseDbPatch(customerData),
   };
@@ -404,6 +461,8 @@ export async function executeGisSaleCreate(
       }
       financeData = insertedReceipts;
     }
+
+    await replaceSaleBalloonInstallments(supabase, saleId, balloonPlan);
 
     logSaleStep('update_lot_status', startedAt, { saleId });
     const { error: blockUpdErr } = await supabase

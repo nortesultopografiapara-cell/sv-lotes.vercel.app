@@ -21,6 +21,11 @@ import {
   normalizeSaleRecordForContractDates,
 } from '@/lib/contractPaymentDates';
 import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
+import {
+  buildCompactBalloonFinanceScheduleHtml,
+  resolveSaleContractBalloonFinance,
+} from '@/lib/saleContractBalloonFinance';
+import { formatCurrencyBRL } from '@/lib/currencyBrl';
 
 function toTitleCase(str: string): string {
   if (!str) return '';
@@ -81,15 +86,29 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     Number(sale?.sale_price) ||
     Number(block?.price) ||
     0;
+
+  const balloonSummary = resolveSaleContractBalloonFinance({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+    isCashPayment: base.isCashPayment,
+  });
+
   let valorParcela = 0;
   if (!base.isCashPayment && qtdParcelas > 0) {
-    valorParcela = Math.max(0, (valTotal - valEntrada) / qtdParcelas);
+    valorParcela = balloonSummary.hasBalloon
+      ? balloonSummary.baseInstallmentValue
+      : Math.max(0, (valTotal - valEntrada) / qtdParcelas);
   }
 
-  const valorParcelaFmt = new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(valorParcela);
+  const valorParcelaFmt = formatCurrencyBRL(valorParcela);
+
+  const paymentBreakdown = resolveSaleContractPaymentBreakdown(
+    sale as Record<string, unknown>,
+    {
+      isCashPayment: base.isCashPayment,
+      financeReceipts,
+    },
+  );
 
   const vencimentoLabel = base.isCashPayment
     ? paymentDates.downPaymentDueFmt || paymentDates.firstInstallmentDueFmt
@@ -128,9 +147,12 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
   return {
     ...base,
     contractNumber,
-    paymentBreakdown: resolveSaleContractPaymentBreakdown(sale as Record<string, unknown>, {
-      isCashPayment: base.isCashPayment,
-    }),
+    paymentBreakdown,
+    balloonSummary,
+    balloonFinanceHtml: balloonSummary.hasBalloon
+      ? buildCompactBalloonFinanceScheduleHtml(balloonSummary)
+      : '',
+    hasBalloonInstallments: balloonSummary.hasBalloon,
     area,
     municipio,
     estado,
