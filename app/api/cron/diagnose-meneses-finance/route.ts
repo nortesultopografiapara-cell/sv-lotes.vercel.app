@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
       const { data: sale, error: se } = await sb
         .from('sales')
         .select(
-          'id,company_id,tenant_id,payment_type,installments_count,installment_value,lot_price,agreed_price,total_value,final_value,down_payment,discount,down_payment_due_date,first_installment_due_date,sale_date,customer_id',
+          'id,company_id,tenant_id,payment_type,installments_count,lot_price,agreed_price,total_value,down_payment,discount,down_payment_due_date,first_installment_due_date,sale_date,customer_id,sale_price',
         )
         .eq('id', saleId)
         .maybeSingle();
@@ -199,11 +199,10 @@ export async function GET(request: NextRequest) {
           tenant_id: sale?.tenant_id,
           payment_type: sale?.payment_type,
           installments_count: sale?.installments_count,
-          installment_value: sale?.installment_value,
           lot_price: sale?.lot_price,
           agreed_price: sale?.agreed_price,
           total_value: sale?.total_value,
-          final_value: sale?.final_value,
+          sale_price: sale?.sale_price,
           down_payment: sale?.down_payment,
           discount: sale?.discount,
           down_payment_due_date: sale?.down_payment_due_date,
