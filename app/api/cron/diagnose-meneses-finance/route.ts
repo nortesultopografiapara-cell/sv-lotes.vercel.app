@@ -35,7 +35,7 @@ async function loadAllReceiptsForSale(
       .eq('sale_id', saleId)
       .order('installment_number', { ascending: true })
       .range(from, from + page - 1);
-    if (re) throw re;
+    if (re) throw new Error(`finance_receipts page: ${re.message || JSON.stringify(re)}`);
     if (!chunk?.length) break;
     all.push(...(chunk as ReceiptRow[]));
     if (chunk.length < page) break;
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
         )
         .eq('contract_number', contractNumber)
         .order('version', { ascending: false });
-      if (ce) throw ce;
+      if (ce) throw new Error(`contracts query: ${ce.message || JSON.stringify(ce)}`);
 
       const current =
         (contractRows || []).find((c) => c.is_current) || (contractRows || [])[0];
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
         )
         .eq('id', saleId)
         .maybeSingle();
-      if (se) throw se;
+      if (se) throw new Error(`sales query: ${se.message || JSON.stringify(se)}`);
 
       menesesCompanyId = String(sale?.company_id || current.company_id || '');
 
@@ -162,7 +162,11 @@ export async function GET(request: NextRequest) {
         .from('finance_receipts')
         .select('id', { count: 'exact', head: true })
         .eq('sale_id', saleId);
-      if (countErr) throw countErr;
+      if (countErr) {
+        throw new Error(
+          `finance_receipts count: ${countErr.message || JSON.stringify(countErr)}`,
+        );
+      }
 
       const all = await loadAllReceiptsForSale(sb, saleId);
       const summary = summarizeReceipts(sale as Record<string, unknown> | null, all);
@@ -244,7 +248,12 @@ export async function GET(request: NextRequest) {
       postgrestTruncationProbe,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'object' && err && 'message' in err
+          ? String((err as { message?: unknown }).message)
+          : JSON.stringify(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
