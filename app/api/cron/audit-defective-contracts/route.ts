@@ -84,16 +84,41 @@ export async function GET(request: NextRequest) {
   const { data: contracts, error } = await sb
     .from('contracts')
     .select(
-      'id,contract_number,tenant_id,company_id,sale_id,sale_value,version,status,is_current,generated_html,project_name_snapshot',
+      'id,contract_number,tenant_id,company_id,sale_id,version,status,is_current,generated_html,project_name_snapshot',
     )
     .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Fallback sem colunas opcionais (is_current / company_id / generated_html).
+    const fallbackSelect =
+      'id,contract_number,tenant_id,sale_id,version,status,generated_html';
+    const fallback = await sb
+      .from('contracts')
+      .select(fallbackSelect)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (fallback.error) {
+      return NextResponse.json(
+        { error: fallback.error.message, primaryError: error.message },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json(
+      await aggregateAudit(sb, (fallback.data || []) as ContractAuditRow[]),
+    );
   }
 
-  const rows = (contracts || []) as ContractAuditRow[];
+  return NextResponse.json(
+    await aggregateAudit(sb, (contracts || []) as ContractAuditRow[]),
+  );
+}
+
+async function aggregateAudit(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any,
+  rows: ContractAuditRow[],
+) {
   const saleIds = [
     ...new Set(rows.map((r) => r.sale_id).filter(Boolean) as string[]),
   ];
@@ -153,7 +178,8 @@ export async function GET(request: NextRequest) {
 
     const zeroedHtml = htmlLooksZeroed(row.generated_html);
     const missingLot = htmlMissingLot(row.generated_html);
-    const contractValueZero = !(Number(row.sale_value) > 0);
+    const contractValueZero =
+      row.sale_value != null ? !(Number(row.sale_value) > 0) : false;
 
     const suspicious =
       (saleValue > 0 && (zeroedHtml || contractValueZero)) ||
@@ -179,7 +205,10 @@ export async function GET(request: NextRequest) {
       buckets.set(key, bucket);
     }
     bucket.defectiveVersions += 1;
-    if (row.is_current !== false && String(row.status || '').toLowerCase() !== 'superseded') {
+    if (
+      row.is_current !== false &&
+      String(row.status || '').toLowerCase() !== 'superseded'
+    ) {
       bucket.defectiveCurrent += 1;
     }
     const num = String(row.contract_number || '').trim();
@@ -192,7 +221,7 @@ export async function GET(request: NextRequest) {
     (a, b) => b.defectiveVersions - a.defectiveVersions,
   );
 
-  return NextResponse.json({
+  return {
     success: true,
     readOnly: true,
     repaired: false,
@@ -202,5 +231,5 @@ export async function GET(request: NextRequest) {
     byCompanyModel,
     note:
       'Auditoria somente leitura. Não altera contratos. Amostra limitada a contract_number (sem PII).',
-  });
+  };
 }
