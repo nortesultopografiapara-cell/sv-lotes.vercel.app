@@ -3,33 +3,61 @@
  * Mantém o modelo Meneses; alterações pontuais para assinatura eletrônica e consistência.
  */
 
-export function normalizeSalePaymentType(
-  paymentType: unknown,
-): string {
-  return String(paymentType || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
+import {
+  normalizeSalePaymentType,
+  resolveSalePaymentMode,
+  type SalePaymentMode,
+} from '@/lib/salePaymentMode';
 
-/** À vista explícito ou 1 parcela sem entrada (caso Meneses 000000022/2026). */
+export { normalizeSalePaymentType, resolveSalePaymentMode };
+export type { SalePaymentMode };
+
+/** À vista imediato (não inclui “Pagamento único futuro”). */
 export function isSaleContractCashPayment(
   sale: Record<string, unknown>,
 ): boolean {
-  const normalized = normalizeSalePaymentType(sale?.payment_type);
-  const isAVista =
-    normalized === 'a vista' ||
-    normalized.includes('vista') && !normalized.includes('parcel');
+  return resolveSalePaymentMode(sale).isImmediateCash;
+}
 
-  if (isAVista) return true;
+export function buildSaleContractClauseTerceiraHtml(params: {
+  mode: SalePaymentMode;
+  valorTotalFmt: string;
+  valorTotalExtenso: string;
+  dueDateLongFmt?: string;
+}): string {
+  const { mode, valorTotalFmt, valorTotalExtenso } = params;
+  const dueLong = String(params.dueDateLongFmt || '').trim() || '—';
 
-  const installments = Math.max(1, Number(sale?.installments_count) || 1);
-  const downPayment = Number(sale?.down_payment || 0);
+  if (mode === 'SINGLE_FUTURE') {
+    return `
+                <p style="margin-bottom: 10px;">
+                    <strong>Cláusula Terceira:</strong> O valor total do contrato é de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, a ser pago pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR em pagamento único, com vencimento em <strong>${dueLong}</strong>.
+                </p>
+                <p style="margin-bottom: 10px;">
+                    A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
+                </p>
+                <p style="margin-bottom: 0;">
+                    <strong>Parágrafo Único:</strong> O PROMISSÁRIO COMPRADOR fica imitido na posse do imóvel a partir da assinatura do presente contrato, independentemente da quitação financeira, que permanece condicionada ao pagamento.
+                </p>`;
+  }
 
-  if (installments <= 1 && downPayment <= 0) return true;
+  if (mode === 'IMMEDIATE_CASH') {
+    return `
+                <p style="margin-bottom: 10px;">
+                    <strong>Cláusula Terceira:</strong> O valor total do contrato é de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, o qual foi negociado de forma <strong>À VISTA</strong>, pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR no ato da assinatura do presente contrato, outorgando assim o PROMITENTE VENDEDOR a mais ampla, geral e irrevogável quitação mediante emissão do termo de quitação, após a efetiva confirmação do pagamento.
+                </p>
+                <p style="margin-bottom: 0;">
+                    <strong>Parágrafo Único:</strong> O PROMISSÁRIO COMPRADOR fica imitido na posse do imóvel a partir da assinatura do presente contrato.
+                </p>`;
+  }
 
-  return false;
+  return `
+                <p style="margin-bottom: 10px;">
+                    <strong>Cláusula Terceira:</strong> O valor total do contrato é de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, o qual foi negociado de forma <strong>PARCELADA</strong>, pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR, nas condições descritas nas cláusulas seguintes.
+                </p>
+                <p style="margin-bottom: 0;">
+                    <strong>Parágrafo Único:</strong> O PROMISSÁRIO COMPRADOR fica imitido na posse do imóvel a partir da assinatura do presente contrato.
+                </p>`;
 }
 
 export function isValidRepresentativeCpf(raw: unknown): boolean {
@@ -66,6 +94,8 @@ export function buildSaleContractRepresentativeSignatureHtml(params: {
 
 export function buildSaleContractClauseQuartaHtml(params: {
   isCash: boolean;
+  /** Preferencial: modalidade explícita (substitui isCash booleano isolado). */
+  mode?: SalePaymentMode;
   valorTotalFmt: string;
   valorTotalExtenso: string;
   valorEntradaFmt: string;
@@ -75,6 +105,8 @@ export function buildSaleContractClauseQuartaHtml(params: {
   valorParcelaExtenso: string;
   dataPrimeiraParcelaFmt: string;
   dataUltimaParcelaFmt: string;
+  /** Vencimento do pagamento único futuro (por extenso). */
+  singleFutureDueLongFmt?: string;
   /** Quando true, valores variam (ex.: parcelas balão) — não afirma "parcelas iguais". */
   hasVariableInstallments?: boolean;
   /** Texto completo já montado pelo helper de balão (opcional). */
@@ -83,7 +115,17 @@ export function buildSaleContractClauseQuartaHtml(params: {
   const taxes =
     ' Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.';
 
-  if (params.isCash) {
+  const mode: SalePaymentMode =
+    params.mode ?? (params.isCash ? 'IMMEDIATE_CASH' : 'INSTALLMENT');
+
+  if (mode === 'SINGLE_FUTURE') {
+    const dueLong = String(params.singleFutureDueLongFmt || '').trim() || '—';
+    return `<p style="margin-bottom: 0;">
+                    <strong>Cláusula Quarta:</strong> O valor total do contrato é de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong>, a ser pago pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR em pagamento único, com vencimento em <strong>${dueLong}</strong>. A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.${taxes}
+                </p>`;
+  }
+
+  if (mode === 'IMMEDIATE_CASH') {
     return `<p style="margin-bottom: 0;">
                     <strong>Cláusula Quarta:</strong> O pagamento do valor total de <strong>${params.valorTotalFmt} (${params.valorTotalExtenso})</strong> será realizado à vista pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR, na data da assinatura do presente contrato, dando este, após a confirmação do pagamento, plena, geral e irrevogável quitação.${taxes}
                 </p>`;

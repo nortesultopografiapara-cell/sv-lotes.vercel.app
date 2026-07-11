@@ -72,6 +72,14 @@ import {
   FINANCE_RECEIPTS_LIST_SELECT,
   FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
 } from '@/lib/finance/financeReceiptsEmbed';
+import {
+  DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
+  FINANCE_RECEIPTS_UI_PAGE_SIZES,
+  fetchAllFinanceReceiptsPaged,
+  normalizeFinanceReceiptsUiPageSize,
+  paginateFinanceReceiptRows,
+  type FinanceReceiptsUiPageSize,
+} from '@/lib/finance/fetchFinanceReceiptsPaged';
 
 const STATUS_OPTIONS = ['Todas', 'Pendente', 'Vencido', 'Pago', 'Cancelado'] as const;
 
@@ -117,6 +125,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [toast, setToast] = useState<string | null>(null);
   const [toastIsError, setToastIsError] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState<FinanceReceiptsUiPageSize>(
+    DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
+  );
 
   const resolvedCompanyId = user?.tenant_id || (user as { company_id?: string })?.company_id;
   const companyAsaasEnabled = isCompanyAsaasEnabled(resolvedCompanyId);
@@ -315,29 +327,19 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         return;
       }
 
-      let query = supabase
-        .from('finance_receipts')
-        .select(FINANCE_RECEIPTS_LIST_SELECT)
-        .order('due_date', { ascending: true });
-
-      query = applyTenantFilter(query, rlsCtx, 'finance_receipts');
-      let { data, error } = await query;
-
-      if (error) {
-        let fallbackQuery = supabase
-          .from('finance_receipts')
-          .select(FINANCE_RECEIPTS_LIST_SELECT_FALLBACK)
-          .order('due_date', { ascending: true });
-        fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'finance_receipts');
-        const fallbackRes = await fallbackQuery;
-        data = fallbackRes.data;
-        error = fallbackRes.error;
-      }
-
-      if (error) {
+      let fetched;
+      try {
+        fetched = await fetchAllFinanceReceiptsPaged<FinanceReceiptRow>({
+          supabase,
+          rlsCtx,
+          select: FINANCE_RECEIPTS_LIST_SELECT,
+          selectFallback: FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+        });
+      } catch (err) {
         const message =
-          error.message ||
-          'Não foi possível carregar as parcelas. Verifique a conexão e tente novamente.';
+          err instanceof Error
+            ? err.message
+            : 'Não foi possível carregar as parcelas. Verifique a conexão e tente novamente.';
         console.error('[charges/financial-agent] finance_receipts query failed', {
           tenantId: resolvedTenantId,
           message,
@@ -349,6 +351,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         return;
       }
 
+      const data = fetched.rows;
       const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
       const scoped = scopeFinanceRowsForUser(
         user,
@@ -558,6 +561,23 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       financialAccountLabels,
     ],
   );
+
+  const pagination = useMemo(
+    () => paginateFinanceReceiptRows(filteredRows, currentPage, itemsPerPage),
+    [filteredRows, currentPage, itemsPerPage],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, projectFilter, financialAccountFilter, startDate, endDate]);
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
+
+  const pageRows = pagination.pageRows;
 
   const kpis = useMemo(() => computeChargeKpiSummary(payments), [payments]);
   const asaasKpis = useMemo(
@@ -1218,14 +1238,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                   Carregando cobranças...
                 </td>
               </tr>
-            ) : filteredRows.length === 0 ? (
+            ) : pageRows.length === 0 ? (
               <tr>
                 <td colSpan={11} className="py-12 text-center text-[var(--text-secondary)]">
                   Nenhuma parcela encontrada para os filtros selecionados.
                 </td>
               </tr>
             ) : (
-              filteredRows.map((row) => {
+              pageRows.map((row) => {
                 const installmentId = String(row.id);
                 const charge = asaasChargesByInstallment[installmentId] ?? null;
                 const view = buildChargeInstallmentView(row, charge, undefined, financialAccountLabels);
@@ -1312,6 +1332,53 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </tbody>
         </table>
       </div>
+      {!loading && pagination.totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-[var(--border-color)] text-sm text-[var(--text-secondary)] gap-4">
+          <div>
+            Mostrando {pagination.from} a {pagination.to} de {pagination.totalCount} registros
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={pagination.page <= 1}
+              className="px-2 py-1 rounded border border-[var(--border-color)] disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <span>
+              Página {pagination.page} / {pagination.totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))
+              }
+              disabled={pagination.page >= pagination.totalPages}
+              className="px-2 py-1 rounded border border-[var(--border-color)] disabled:opacity-50"
+            >
+              Próxima
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            Registros por página:
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(normalizeFinanceReceiptsUiPageSize(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-transparent border border-[var(--border-color)] rounded px-2 py-1 outline-none"
+            >
+              {FINANCE_RECEIPTS_UI_PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

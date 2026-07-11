@@ -72,7 +72,14 @@ export const RECANTO_PRIMAVERA_LITERAL_PHRASES = [
 ] as const;
 
 function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
-  if (ctx.isCashPayment) {
+  if (ctx.paymentMode === 'SINGLE_FUTURE') {
+    const dueLong = String(ctx.singleFutureDueLongFmt || '').trim() || '—';
+    return `<p style="margin-bottom: 0;">
+      O valor total de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''} será pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) em pagamento único, com vencimento em <strong>${dueLong}</strong>. A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
+    </p>`;
+  }
+
+  if (ctx.isCashPayment || ctx.paymentMode === 'IMMEDIATE_CASH') {
     return `<p style="margin-bottom: 0;">
       O pagamento do valor total de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''} será realizado à vista pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A).
     </p>`;
@@ -155,7 +162,22 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
           ? `O vencimento das parcelas ocorrerá mensalmente, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
           : 'O vencimento das parcelas ocorrerá mensalmente, observando-se os valores constantes no quadro de pagamento deste contrato.';
 
-  if (ctx.isCashPayment) {
+  if (ctx.paymentMode === 'SINGLE_FUTURE') {
+    const dueLong = String(ctx.singleFutureDueLongFmt || '').trim() || '—';
+    return `
+    <div class="contract-clause" style="padding-bottom: 5px;">
+      <p style="margin-bottom: 10px;">
+        <strong>CLÁUSULA TERCEIRA – DO PREÇO E FORMA DE PAGAMENTO:</strong> O preço total da chácara é de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''}, a ser pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) em pagamento único, com vencimento em <strong>${dueLong}</strong>.
+      </p>
+      <p style="margin-bottom: 10px;">
+        A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
+      </p>
+      <p style="margin-bottom: 10px;"><strong>Parágrafo Segundo:</strong> Os pagamentos deverão ser realizados exclusivamente por <strong>boleto bancário</strong>${bankDetail}.</p>
+      <p style="margin-bottom: 10px;"><strong>Parágrafo Quarto:</strong> A falta de recebimento do boleto bancário não isenta o(a) COMPRADOR(A) do pagamento na data do vencimento, devendo este solicitar nova via ao(à) VENDEDOR(A). O(A) COMPRADOR(A) compromete-se a comunicar ao(à) VENDEDOR(A) qualquer alteração de endereço, e-mail e telefone no prazo máximo de 10 (dez) dias.</p>
+    </div>`;
+  }
+
+  if (ctx.isCashPayment || ctx.paymentMode === 'IMMEDIATE_CASH') {
     return `
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">

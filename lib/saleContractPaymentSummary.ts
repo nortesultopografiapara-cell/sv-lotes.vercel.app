@@ -12,7 +12,15 @@ import {
   resolveSaleContractBalloonFinance,
   type SaleContractBalloonFinanceSummary,
 } from '@/lib/saleContractBalloonFinance';
-import type { ContractFinanceReceiptRef } from '@/lib/contractPaymentDates';
+import {
+  formatContractDueDateBr,
+  formatContractDueDateLongBr,
+  type ContractFinanceReceiptRef,
+} from '@/lib/contractPaymentDates';
+import {
+  resolveSalePaymentMode,
+  type SalePaymentMode,
+} from '@/lib/salePaymentMode';
 
 function formatBRL(val: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -66,6 +74,12 @@ export type SaleContractPaymentBreakdown = {
   installmentValueFmt: string;
   correctionLabel: string;
   isCashPayment: boolean;
+  paymentMode: SalePaymentMode;
+  netValue: number;
+  netValueFmt: string;
+  singlePaymentDueRaw: string | null;
+  singlePaymentDueFmt: string;
+  singlePaymentDueLongFmt: string;
   balloonSummary?: SaleContractBalloonFinanceSummary | null;
 };
 
@@ -87,38 +101,43 @@ export function resolveSaleContractPaymentBreakdown(
   const netValue = Math.max(0, lotPrice - discountAmount);
   const entryAmount = Math.max(0, Number(sale.down_payment) || 0);
   const installmentsCount = Math.max(1, Number(sale.installments_count) || 1);
+  const paymentMode = resolveSalePaymentMode(sale);
   const isCashPayment =
-    options?.isCashPayment ??
-    String(sale.payment_type || '')
-      .toLowerCase()
-      .includes('vista');
+    options?.isCashPayment ?? paymentMode.isImmediateCash;
 
-  const installmentBalance = isCashPayment
-    ? 0
-    : downPaymentReducesInstallmentBase(options?.contractModel)
-      ? Math.max(0, netValue - entryAmount)
-      : netValue;
+  const installmentBalance =
+    paymentMode.isImmediateCash || paymentMode.isSingleFuture
+      ? 0
+      : downPaymentReducesInstallmentBase(options?.contractModel)
+        ? Math.max(0, netValue - entryAmount)
+        : netValue;
 
   const balloonSummary =
-    !isCashPayment && options?.financeReceipts
+    paymentMode.isInstallment && options?.financeReceipts
       ? resolveSaleContractBalloonFinance({
           sale,
           financeReceipts: options.financeReceipts,
           balloonAddons: options.balloonAddons,
-          isCashPayment,
+          isCashPayment: false,
         })
       : null;
 
-  const installmentValue = isCashPayment
-    ? 0
-    : balloonSummary?.hasBalloon
-      ? balloonSummary.baseInstallmentValue
-      : computeInstallmentDisplayValue({
-          finalValue: netValue,
-          downPayment: entryAmount,
-          installmentsCount,
-          contractModel: options?.contractModel,
-        });
+  const installmentValue =
+    paymentMode.isImmediateCash || paymentMode.isSingleFuture
+      ? 0
+      : balloonSummary?.hasBalloon
+        ? balloonSummary.baseInstallmentValue
+        : computeInstallmentDisplayValue({
+            finalValue: netValue,
+            downPayment: entryAmount,
+            installmentsCount,
+            contractModel: options?.contractModel,
+          });
+
+  const singlePaymentDueRaw =
+    paymentMode.isImmediateCash || paymentMode.isSingleFuture
+      ? String(sale.down_payment_due_date || '').split('T')[0] || null
+      : null;
 
   return {
     lotPrice,
@@ -134,6 +153,16 @@ export function resolveSaleContractPaymentBreakdown(
     installmentValueFmt: formatBRL(installmentValue),
     correctionLabel: formatInstallmentCorrectionLabel(sale.installment_correction_type),
     isCashPayment,
+    paymentMode: paymentMode.mode,
+    netValue,
+    netValueFmt: formatBRL(netValue),
+    singlePaymentDueRaw,
+    singlePaymentDueFmt: singlePaymentDueRaw
+      ? formatContractDueDateBr(singlePaymentDueRaw)
+      : '',
+    singlePaymentDueLongFmt: singlePaymentDueRaw
+      ? formatContractDueDateLongBr(singlePaymentDueRaw)
+      : '',
     balloonSummary,
   };
 }
@@ -150,9 +179,31 @@ export function buildSaleContractPaymentSummaryHtml(
 ): string {
   const balloon = options?.balloonSummary ?? breakdown.balloonSummary ?? null;
 
+  if (breakdown.paymentMode === 'SINGLE_FUTURE') {
+    const rows: Array<[string, string]> = [
+      ['Valor do lote', breakdown.lotPriceFmt],
+      ['Desconto concedido', breakdown.discountFmt],
+      ['Valor líquido da venda', breakdown.netValueFmt],
+      ['Forma de pagamento', 'Pagamento único com vencimento futuro'],
+      ['Valor do pagamento', breakdown.netValueFmt],
+      ['Data de vencimento', breakdown.singlePaymentDueFmt || '—'],
+      ['Regra de correção', breakdown.correctionLabel],
+    ];
+    const body = rows
+      .map(
+        ([label, value]) =>
+          `<tr><td style="padding:6px 10px;border:1px solid #ddd;font-weight:bold;width:42%;">${label}</td><td style="padding:6px 10px;border:1px solid #ddd;">${value}</td></tr>`,
+      )
+      .join('');
+    return `
+    <div class="contract-clause" style="margin: 16px 0 20px;">
+      <p style="margin:0 0 8px;font-weight:bold;">Quadro resumo — condições de pagamento</p>
+      <table style="width:100%;border-collapse:collapse;font-size:11pt;">${body}</table>
+    </div>`;
+  }
+
   // Com balão persistido: SOMENTE quadro executivo.
-  // Nunca listar 1..N e nunca inferir balão por diferença de valores.
-  if (!breakdown.isCashPayment && balloon?.hasBalloon) {
+  if (breakdown.paymentMode === 'INSTALLMENT' && balloon?.hasBalloon) {
     return buildCompactBalloonFinanceScheduleHtml(balloon, {
       discountFmt: breakdown.discountFmt,
       correctionLabel: breakdown.correctionLabel,
@@ -188,7 +239,6 @@ export function buildSaleContractPaymentSummaryHtml(
     )
     .join('');
 
-  // Sem balão: NÃO anexar tabela 1..N (contrato permanece no padrão atual resumido).
   return `
     <div class="contract-clause" style="margin: 16px 0 20px;">
       <p style="margin:0 0 8px;font-weight:bold;">Quadro resumo — condições de pagamento</p>

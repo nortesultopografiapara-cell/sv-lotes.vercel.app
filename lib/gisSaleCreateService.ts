@@ -41,6 +41,7 @@ import {
   downPaymentReducesInstallmentBase,
   resolveInstallmentPrincipal,
 } from '@/lib/saleInstallmentCalc';
+import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -291,10 +292,13 @@ export async function executeGisSaleCreate(
   const financialAccountId = resolvedFinancialAccount?.account.id ?? null;
 
   const pmtType = String(customerData.payment_type || 'À vista');
-  const instCount =
-    pmtType === 'Parcelado'
-      ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ''))
-      : 1;
+  const paymentMode = resolveSalePaymentMode({
+    payment_type: pmtType,
+    installments_count: customerData.installments_count,
+  });
+  const instCount = paymentMode.isInstallment
+    ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ''))
+    : 1;
   const saleContractModel = normalizeSaleContractModel(input.tenantContractModel);
 
   const recantoSignalContract =
@@ -340,8 +344,12 @@ export async function executeGisSaleCreate(
   });
 
   if (balloonPlan.enabled) {
-    if (pmtType !== 'Parcelado') {
-      throw new Error('Parcelas balão não podem ser usadas em venda à vista.');
+    if (!paymentMode.isInstallment) {
+      throw new Error(
+        paymentMode.isSingleFuture
+          ? 'Parcelas balão não podem ser usadas em pagamento único futuro.'
+          : 'Parcelas balão não podem ser usadas em venda à vista.',
+      );
     }
     const schemaOk = await probeBalloonSchemaAvailable(supabase);
     if (!schemaOk) {

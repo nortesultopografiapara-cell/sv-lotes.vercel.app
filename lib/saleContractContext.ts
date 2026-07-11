@@ -25,10 +25,10 @@ import {
 } from '@/lib/contractIdentity';
 import {
   buildSaleContractClauseQuartaHtml,
+  buildSaleContractClauseTerceiraHtml,
   buildSaleContractElectronicSignatureClauseHtml,
   buildSaleContractForumClauseHtml,
   buildSaleContractRepresentativeSignatureHtml,
-  isSaleContractCashPayment,
 } from '@/lib/saleContractLegalTemplate';
 import {
   type ContractInstallmentScheduleRow,
@@ -39,9 +39,14 @@ import {
 } from '@/lib/saleContractBalloonFinance';
 import {
   resolveContractPaymentDates,
+  formatContractDueDateLongBr,
   formatContractSaleDateBr,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
+import {
+  resolveSalePaymentMode,
+  type SalePaymentMode,
+} from '@/lib/salePaymentMode';
 
 export type SaleContractRenderParams = {
   tenant: Record<string, unknown>;
@@ -95,8 +100,10 @@ export type SaleContractRenderContext = {
   foroText: string;
   valorTotalFmt: string;
   valorTotalExtenso: string;
+  paymentMode: SalePaymentMode;
   isCashPayment: boolean;
   tipoVenda: string;
+  clauseTerceiraHtml: string;
   clauseQuartaHtml: string;
   electronicSignatureClauseHtml: string;
   forumClauseHtml: string;
@@ -344,8 +351,10 @@ export function buildSaleContractRenderContext(
     valorTotalExtenso = '';
   }
 
-  const isCashPayment = isSaleContractCashPayment(sale);
-  const tipoVenda = isCashPayment ? 'À Vista' : 'Parcelada';
+  const paymentModeResolution = resolveSalePaymentMode(sale);
+  const paymentMode = paymentModeResolution.mode;
+  const isCashPayment = paymentModeResolution.isImmediateCash;
+  const tipoVenda = paymentModeResolution.label;
   const valorEntradaFmt = formatBRL(valEntrada);
   let valorEntradaExtenso = '';
   try {
@@ -387,7 +396,7 @@ export function buildSaleContractRenderContext(
     sale: sale as Record<string, unknown>,
     financeReceipts,
     balloonAddons: params.balloonAddons,
-    isCashPayment,
+    isCashPayment: !paymentModeResolution.isInstallment,
   });
   const hasVariableInstallments = balloonSummary.hasBalloon;
   if (hasVariableInstallments) {
@@ -417,8 +426,24 @@ export function buildSaleContractRenderContext(
       })
     : null;
 
+  const singleFutureDueRaw =
+    String(sale?.down_payment_due_date || paymentDates.entryDueRaw || '')
+      .trim()
+      .split('T')[0] || '';
+  const singleFutureDueLongFmt = singleFutureDueRaw
+    ? formatContractDueDateLongBr(singleFutureDueRaw)
+    : '';
+
+  const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
+    mode: paymentMode,
+    valorTotalFmt,
+    valorTotalExtenso,
+    dueDateLongFmt: singleFutureDueLongFmt,
+  });
+
   const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
     isCash: isCashPayment,
+    mode: paymentMode,
     valorTotalFmt,
     valorTotalExtenso,
     valorEntradaFmt,
@@ -428,6 +453,7 @@ export function buildSaleContractRenderContext(
     valorParcelaExtenso: valorParcelaExtensoFinal,
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
+    singleFutureDueLongFmt,
     hasVariableInstallments,
     balloonClauseBodyHtml: balloonClauseBody,
   });
@@ -498,8 +524,10 @@ export function buildSaleContractRenderContext(
     foroText,
     valorTotalFmt,
     valorTotalExtenso,
+    paymentMode,
     isCashPayment,
     tipoVenda,
+    clauseTerceiraHtml,
     clauseQuartaHtml,
     electronicSignatureClauseHtml: buildSaleContractElectronicSignatureClauseHtml(),
     forumClauseHtml: buildSaleContractForumClauseHtml(foroText),

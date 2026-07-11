@@ -8,6 +8,7 @@ import {
   normalizeSaleContractModel,
   type SaleContractModel,
 } from '@/lib/contractModel';
+import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 
 export function downPaymentReducesInstallmentBase(
   contractModel: SaleContractModel | unknown,
@@ -74,7 +75,8 @@ export function expectedSaleFinanceTotal(params: {
 }): number {
   const finalValue = Math.max(0, Number(params.finalValue) || 0);
   const paymentType = params.paymentType || 'Parcelado';
-  if (paymentType === 'À vista') return finalValue;
+  const mode = resolveSalePaymentMode({ payment_type: paymentType }).mode;
+  if (mode === 'IMMEDIATE_CASH' || mode === 'SINGLE_FUTURE') return finalValue;
 
   if (!downPaymentReducesInstallmentBase(params.contractModel)) {
     return finalValue + Math.max(0, Number(params.grossDownPayment) || 0);

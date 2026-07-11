@@ -134,6 +134,26 @@ export function formatContractDueDateBr(dateStr: unknown): string {
   return parsed.toLocaleDateString('pt-BR');
 }
 
+/** Data YYYY-MM-DD por extenso sem deslocar fuso — ex.: 15 de janeiro de 2032. */
+export function formatContractDueDateLongBr(dateStr: unknown): string {
+  if (dateStr == null || dateStr === '') return '';
+  const iso = String(dateStr).trim().split('T')[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return formatContractDueDateBr(dateStr);
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (isNaN(d.getTime())) return formatContractDueDateBr(dateStr);
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).formatToParts(d);
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  if (!day || !month || !year) return formatContractDueDateBr(dateStr);
+  return `${day} de ${month} de ${year}`;
+}
+
 function addMonthsToIsoDate(isoDate: string, months: number): string | null {
   const base = String(isoDate).split('T')[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return null;
