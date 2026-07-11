@@ -105,7 +105,7 @@ function summarizeReceipts(
 
 /**
  * Diagnóstico somente leitura — contratos 000000062/2026 e 000000063/2026.
- * GET only; bloqueado em production; exige x-diag-token.
+ * Rota sob /api/cron (middleware público); bloqueada em production; exige x-diag-token.
  */
 export async function GET(request: NextRequest) {
   if (process.env.VERCEL_ENV === 'production') {
