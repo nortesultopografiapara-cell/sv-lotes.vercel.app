@@ -180,13 +180,13 @@ export function buildSaleContractPaymentSummaryHtml(
 
   if (breakdown.paymentMode === 'SINGLE_FUTURE') {
     const rows: Array<[string, string]> = [
-      ['Valor do lote', breakdown.lotPriceFmt],
-      ['Desconto concedido', breakdown.discountFmt],
-      ['Valor líquido da venda', breakdown.netValueFmt],
+      ['Valor da venda', breakdown.lotPriceFmt],
+      ['Desconto', breakdown.discountFmt],
+      ['Valor líquido', breakdown.netValueFmt],
       ['Forma de pagamento', 'Pagamento único com vencimento futuro'],
       ['Valor do pagamento', breakdown.netValueFmt],
       ['Data de vencimento', breakdown.singlePaymentDueFmt || '—'],
-      ['Regra de correção', breakdown.correctionLabel],
+      ['Correção', breakdown.correctionLabel],
     ];
     const body = rows
       .map(

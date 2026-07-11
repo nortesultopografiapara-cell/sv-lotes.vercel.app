@@ -182,6 +182,8 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
         correctionLabel: paymentBreakdown.correctionLabel,
         firstDueDateFmt: vencimentoLabel || null,
         isCashPayment: base.isCashPayment,
+        paymentMode: base.paymentMode,
+        netValueFmt: paymentBreakdown.netValueFmt,
       });
 
   return {

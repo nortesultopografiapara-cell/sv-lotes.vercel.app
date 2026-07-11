@@ -162,6 +162,12 @@ function testSingleFutureClauseAndQuadroSameDate() {
     summary.includes('Pagamento único com vencimento futuro'),
     'modalidade no quadro',
   );
+  assert(summary.includes('Data de vencimento'), 'rótulo Data de vencimento');
+  assert(!summary.includes('Entrada'), 'sem Entrada no único futuro');
+  assert(!summary.includes('Saldo'), 'sem Saldo no único futuro');
+  assert(!summary.includes('Parcela base'), 'sem Parcela base');
+  assert(!summary.includes('Parcelamento'), 'sem título Parcelamento');
+  assert(!summary.includes('Primeiro vencimento'), 'sem Primeiro vencimento');
 
   const ctx = buildSvLotes2ContractContext({
     tenant: tenantSv2,
@@ -171,6 +177,15 @@ function testSingleFutureClauseAndQuadroSameDate() {
     sale: { ...sale50, finance_receipts: receipts2032 },
     financeReceipts: receipts2032,
   });
+  const finance = String(ctx.balloonFinanceHtml || '');
+  assert(finance.includes('Data de vencimento'), 'SV2 quadro Data de vencimento');
+  assert(finance.includes('09/06/2032'), 'SV2 quadro data');
+  assert(!finance.includes('>Entrada<') && !/finance-label">Entrada/i.test(finance), 'SV2 sem Entrada');
+  assert(!/Saldo financiado/i.test(finance), 'SV2 sem Saldo financiado');
+  assert(!/Parcela base/i.test(finance), 'SV2 sem Parcela base');
+  assert(!/>Parcelamento</i.test(finance) && !/finance-label">Parcelamento/i.test(finance), 'SV2 sem Parcelamento');
+  assert(!/Primeiro vencimento/i.test(finance), 'SV2 sem Primeiro vencimento');
+
   const clause = buildSvLotes2ClauseSegundaHtml(ctx);
   assert(clause.includes('pagamento único'), 'cláusula pagamento único');
   assert(clause.includes(due.longFmt), `cláusula com ${due.longFmt}`);
@@ -179,6 +194,17 @@ function testSingleFutureClauseAndQuadroSameDate() {
   assert(
     /somente será concedida após a efetiva confirmação/i.test(clause),
     'quitação após confirmação',
+  );
+
+  const { buildSvLotes2ClausesHtml } = require('../lib/svLotes2ContractClauses');
+  const allClauses = buildSvLotes2ClausesHtml(ctx);
+  assert(
+    allClauses.includes('atraso no pagamento do valor na data de vencimento'),
+    'inadimplência adaptada ao pagamento único',
+  );
+  assert(
+    !allClauses.includes('atraso no pagamento de qualquer parcela'),
+    'inadimplência sem referência a parcela',
   );
   console.log('OK testSingleFutureClauseAndQuadroSameDate');
 }

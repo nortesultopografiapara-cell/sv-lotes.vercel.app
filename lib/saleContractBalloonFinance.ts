@@ -401,13 +401,45 @@ export function buildContractFinanceQuadroHtml(params: {
   correctionLabel?: string | null;
   firstDueDateFmt?: string | null;
   isCashPayment?: boolean;
+  /** Quando SINGLE_FUTURE, omite Entrada/Saldo/Parcela e usa rótulos semânticos. */
+  paymentMode?: 'IMMEDIATE_CASH' | 'SINGLE_FUTURE' | 'INSTALLMENT' | string | null;
+  /** Valor líquido / valor do pagamento único (default: saleTotalFmt). */
+  netValueFmt?: string | null;
 }): string {
-  if (params.isCashPayment) {
+  const correction =
+    String(params.correctionLabel || '').trim() || '—';
+  const discount =
+    String(params.discountFmt || '').trim() || formatCurrencyBRL(0);
+  const dueFmt = String(params.firstDueDateFmt || '').trim() || '—';
+  const netFmt =
+    String(params.netValueFmt || '').trim() || params.saleTotalFmt;
+
+  if (params.paymentMode === 'SINGLE_FUTURE') {
     const gridCellsHtml = [
       financeGridCell('Valor da venda', params.saleTotalFmt),
-      financeGridCell('Desconto', String(params.discountFmt || '').trim() || formatCurrencyBRL(0)),
+      financeGridCell('Desconto', discount),
+      financeGridCell('Valor líquido', netFmt),
+      financeGridCell(
+        'Forma de pagamento',
+        'Pagamento único com vencimento futuro',
+      ),
+      financeGridCell('Valor do pagamento', netFmt),
+      financeGridCell('Data de vencimento', dueFmt),
+      financeGridCell('Correção', correction),
+    ].join('');
+    return financeQuadroShell({
+      gridCellsHtml,
+      totalFmt: netFmt,
+      dataSource: 'finance-quadro-single-future',
+    });
+  }
+
+  if (params.isCashPayment || params.paymentMode === 'IMMEDIATE_CASH') {
+    const gridCellsHtml = [
+      financeGridCell('Valor da venda', params.saleTotalFmt),
+      financeGridCell('Desconto', discount),
       financeGridCell('Forma de pagamento', 'À vista'),
-      financeGridCell('Correção', String(params.correctionLabel || '').trim() || '—'),
+      financeGridCell('Correção', correction),
     ].join('');
     return financeQuadroShell({
       gridCellsHtml,
@@ -418,16 +450,13 @@ export function buildContractFinanceQuadroHtml(params: {
 
   const gridCellsHtml = [
     financeGridCell('Valor da venda', params.saleTotalFmt),
-    financeGridCell('Desconto', String(params.discountFmt || '').trim() || formatCurrencyBRL(0)),
+    financeGridCell('Desconto', discount),
     financeGridCell('Entrada', params.entryFmt),
     financeGridCell('Saldo financiado', params.financedFmt),
     financeGridCell('Parcelamento', params.parcelamentoLabel),
     financeGridCell('Parcela base', params.baseInstallmentFmt),
-    financeGridCell('Correção', String(params.correctionLabel || '').trim() || '—'),
-    financeGridCell(
-      'Primeiro vencimento',
-      String(params.firstDueDateFmt || '').trim() || '—',
-    ),
+    financeGridCell('Correção', correction),
+    financeGridCell('Primeiro vencimento', dueFmt),
   ].join('');
 
   return financeQuadroShell({

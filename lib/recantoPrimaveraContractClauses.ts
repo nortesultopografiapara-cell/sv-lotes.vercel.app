@@ -4,7 +4,11 @@
  */
 
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
-import { buildCompactBalloonFinanceScheduleHtml } from '@/lib/saleContractBalloonFinance';
+import {
+  buildCompactBalloonFinanceScheduleHtml,
+  buildContractFinanceQuadroHtml,
+} from '@/lib/saleContractBalloonFinance';
+import { formatCurrencyBRL } from '@/lib/currencyBrl';
 
 export const RECANTO_PRIMAVERA_CLAUSE_MARKERS = [
   'CLÁUSULA PRIMEIRA – DAS DECLARAÇÕES INICIAIS',
@@ -74,9 +78,25 @@ export const RECANTO_PRIMAVERA_LITERAL_PHRASES = [
 function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
   if (ctx.paymentMode === 'SINGLE_FUTURE') {
     const dueLong = String(ctx.singleFutureDueLongFmt || '').trim() || '—';
-    return `<p style="margin-bottom: 0;">
-      O valor total de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''} será pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) em pagamento único, com vencimento em <strong>${dueLong}</strong>. A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
-    </p>`;
+    const dueFmt = String(ctx.singleFutureDueFmt || '').trim() || '—';
+    return `
+    <div class="contract-payment-block">
+      ${buildContractFinanceQuadroHtml({
+        saleTotalFmt: ctx.valorTotalFmt,
+        discountFmt: formatCurrencyBRL(0),
+        entryFmt: formatCurrencyBRL(0),
+        financedFmt: formatCurrencyBRL(0),
+        parcelamentoLabel: 'Pagamento único com vencimento futuro',
+        baseInstallmentFmt: formatCurrencyBRL(0),
+        correctionLabel: '—',
+        firstDueDateFmt: dueFmt,
+        paymentMode: 'SINGLE_FUTURE',
+        netValueFmt: ctx.valorTotalFmt,
+      })}
+      <p style="margin: 8px 0 0 0;">
+        O valor total de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''} será pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) em pagamento único, com vencimento em <strong>${dueLong}</strong>. A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
+      </p>
+    </div>`;
   }
 
   if (ctx.isCashPayment || ctx.paymentMode === 'IMMEDIATE_CASH') {
@@ -234,7 +254,23 @@ export function buildRecantoPrimaveraClausesHtml(
 
     ${buildClauseTerceiraHtml(ctx)}
 
-    <div class="contract-clause" style="padding-bottom: 5px;">
+    ${
+      ctx.paymentMode === 'SINGLE_FUTURE'
+        ? `<div class="contract-clause" style="padding-bottom: 5px;">
+      <p style="margin-bottom: 10px;">
+        <strong>CLÁUSULA QUARTA – DA INADIMPLÊNCIA:</strong> O atraso no pagamento do valor na data de vencimento implicará multa moratória de 2% (dois por cento) sobre o valor em atraso, acrescida de juros de mora de 1% (um por cento) ao mês, pro rata die.
+      </p>
+      <p style="margin-bottom: 10px;">
+        Persistindo o inadimplemento, o(a) VENDEDOR(A) poderá considerar rescindido o presente contrato, independentemente de notificação judicial, resguardados os direitos previstos na CLÁUSULA NONA.
+      </p>
+      <p style="margin-bottom: 10px;">
+        Decorridos 15 (quinze) dias de inadimplência, o(a) COMPRADOR(A) autoriza, desde já, a inclusão de seu nome nos cadastros de proteção ao crédito e bancos de inadimplentes.
+      </p>
+      <p style="margin-bottom: 0;">
+        É vedado ao(à) COMPRADOR(A), enquanto não quitado o valor ajustado, lotear, desmembrar, fracionar ou transferir o imóvel objeto deste contrato, sob pena de rescisão e perdas e danos.
+      </p>
+    </div>`
+        : `<div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA QUARTA – DA INADIMPLÊNCIA:</strong> O atraso no pagamento de qualquer parcela implicará multa moratória de 2% (dois por cento) sobre o valor da parcela em atraso, acrescida de juros de mora de 1% (um por cento) ao mês, pro rata die.
       </p>
@@ -247,7 +283,8 @@ export function buildRecantoPrimaveraClausesHtml(
       <p style="margin-bottom: 0;">
         É vedado ao(à) COMPRADOR(A), enquanto não quitadas todas as parcelas ajustadas, lotear, desmembrar, fracionar ou transferir o imóvel objeto deste contrato, sob pena de rescisão e perdas e danos.
       </p>
-    </div>
+    </div>`
+    }
 
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">

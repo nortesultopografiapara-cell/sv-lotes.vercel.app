@@ -146,6 +146,7 @@ export type RecantoPrimaveraContractContext = {
   paymentMode: SalePaymentMode;
   isCashPayment: boolean;
   singleFutureDueLongFmt: string;
+  singleFutureDueFmt: string;
   dueDay: string;
   dataPrimeiraParcelaFmt: string;
   dataUltimaParcelaFmt: string;
@@ -575,6 +576,7 @@ export function buildRecantoPrimaveraContractContext(
     financeReceipts,
   });
   const singleFutureDueLongFmt = singleFutureDue.longFmt;
+  const singleFutureDueFmt = singleFutureDue.fmt;
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
@@ -709,6 +711,7 @@ export function buildRecantoPrimaveraContractContext(
     paymentMode,
     isCashPayment,
     singleFutureDueLongFmt,
+    singleFutureDueFmt,
     dueDay,
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
