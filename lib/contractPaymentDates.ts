@@ -143,7 +143,7 @@ export function formatContractDueDateLongBr(dateStr: unknown): string {
   if (isNaN(d.getTime())) return formatContractDueDateBr(dateStr);
   const parts = new Intl.DateTimeFormat('pt-BR', {
     timeZone: 'UTC',
-    day: '2-digit',
+    day: 'numeric',
     month: 'long',
     year: 'numeric',
   }).formatToParts(d);

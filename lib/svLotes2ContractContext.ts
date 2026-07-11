@@ -18,10 +18,10 @@ import {
 import {
   formatContractSaleDateBr,
   formatContractSaleDateLongBr,
-  formatContractDueDateLongBr,
   normalizeSaleRecordForContractDates,
 } from '@/lib/contractPaymentDates';
 import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import {
   buildCompactBalloonFinanceScheduleHtml,
   buildContractFinanceQuadroHtml,
@@ -116,12 +116,17 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
 
   const singleFutureDueLongFmt =
     paymentBreakdown.singlePaymentDueLongFmt ||
-    formatContractDueDateLongBr(paymentDates.entryDueRaw) ||
+    resolveSingleFuturePaymentDueDateFmt({
+      sale: sale as Record<string, unknown>,
+      financeReceipts,
+    }).longFmt ||
     '';
 
   const vencimentoLabel =
     base.paymentMode === 'IMMEDIATE_CASH' || base.paymentMode === 'SINGLE_FUTURE'
-      ? paymentDates.entryDueFmt || paymentDates.firstInstallmentDueFmt
+      ? paymentBreakdown.singlePaymentDueFmt ||
+        paymentDates.entryDueFmt ||
+        paymentDates.firstInstallmentDueFmt
       : paymentDates.firstInstallmentDueFmt;
 
   const sv2Seller = buildSvLotes2SellerFromCompany(params.tenant);

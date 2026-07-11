@@ -177,6 +177,10 @@ export async function buildContractViewHtmlForContractId(
   contractId: string,
 ): Promise<string> {
   const startedAt = Date.now();
+  // Mesmo resolvedor da geração inicial e da regeneração (não duplicar payload).
+  const { buildFreshSaleContractHtml } = await import(
+    "@/lib/contractRegeneration"
+  );
   const contract = await loadSaleContractContext(supabase, contractId);
   logHtmlStep("context_loaded", startedAt);
 
@@ -185,39 +189,16 @@ export async function buildContractViewHtmlForContractId(
     throw new Error("Contrato sem tenant_id.");
   }
 
-  const { data: company, error: companyErr } = await supabase
-    .from("companies")
-    .select(COMPANY_CONTRACT_VIEW_SELECT)
-    .eq("id", tenantId)
-    .single();
-  logHtmlStep("company_loaded", startedAt);
-  if (companyErr || !company) {
-    try {
-      const companyRow = await selectRowWithColumnFallback(
-        supabase,
-        "companies",
-        COMPANY_CONTRACT_VIEW_SELECT,
-        "id",
-        tenantId,
-      );
-      logHtmlStep("company_loaded", startedAt, { fallback: true });
-      return buildContractViewHtmlFromContext(
-        supabase,
-        contract,
-        companyRow,
-        startedAt,
-      );
-    } catch {
-      throw new Error(companyErr?.message || "Empresa não encontrada.");
-    }
-  }
-
-  return buildContractViewHtmlFromContext(
-    supabase,
-    contract,
-    company as Record<string, unknown>,
-    startedAt,
-  );
+  const built = await buildFreshSaleContractHtml(supabase, contract, {
+    contractTenantId: tenantId,
+    activeTenantId: tenantId,
+    callerRole: "ADMIN",
+  });
+  logHtmlStep("html_built_via_fresh_loader", startedAt, {
+    bytes: built.html.length,
+    receipts_sum: built.receipts_sum,
+  });
+  return built.html;
 }
 
 async function buildContractViewHtmlFromContext(

@@ -39,7 +39,6 @@ import {
 } from '@/lib/saleContractBalloonFinance';
 import {
   resolveContractPaymentDates,
-  formatContractDueDateLongBr,
   formatContractSaleDateBr,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
@@ -47,6 +46,7 @@ import {
   resolveSalePaymentMode,
   type SalePaymentMode,
 } from '@/lib/salePaymentMode';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 
 export type SaleContractRenderParams = {
   tenant: Record<string, unknown>;
@@ -118,16 +118,19 @@ function formatBRL(val: number) {
   }).format(val);
 }
 
-function isValid(v: unknown): v is string {
+function isValid(v: unknown): boolean {
+  if (v == null || v === '') return false;
+  if (typeof v === 'number') return Number.isFinite(v);
+  const s = String(v).trim();
+  if (!s) return false;
+  const lower = s.toLowerCase();
   return (
-    !!v &&
-    typeof v === 'string' &&
-    !v.toLowerCase().includes('não informad') &&
-    !v.toLowerCase().includes('cidade - uf') &&
-    v.toLowerCase() !== 'n/a' &&
-    v !== 'undefined' &&
-    v !== 'null' &&
-    v !== '-'
+    !lower.includes('não informad') &&
+    !lower.includes('cidade - uf') &&
+    lower !== 'n/a' &&
+    s !== 'undefined' &&
+    s !== 'null' &&
+    s !== '-'
   );
 }
 
@@ -426,13 +429,11 @@ export function buildSaleContractRenderContext(
       })
     : null;
 
-  const singleFutureDueRaw =
-    String(sale?.down_payment_due_date || paymentDates.entryDueRaw || '')
-      .trim()
-      .split('T')[0] || '';
-  const singleFutureDueLongFmt = singleFutureDueRaw
-    ? formatContractDueDateLongBr(singleFutureDueRaw)
-    : '';
+  const singleFutureDue = resolveSingleFuturePaymentDueDateFmt({
+    sale,
+    financeReceipts,
+  });
+  const singleFutureDueLongFmt = singleFutureDue.longFmt;
 
   const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
     mode: paymentMode,

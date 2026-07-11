@@ -125,7 +125,40 @@ export async function GET(
       String(contract.id || contractId),
     );
 
-    if (html.trim()) {
+    const { assessGeneratedContractViability } = await import(
+      '@/lib/contractGenerationGuard'
+    );
+    // Carrega venda/lote mínimos para o guard (via rebuild já validado no loader fresco).
+    const viability = assessGeneratedContractViability({
+      html,
+      sale: {
+        total_value: contract.sale_value,
+        agreed_price: contract.sale_value,
+      },
+      block: {},
+    });
+    // Não sobrescrever HTML ativo com rebuild incompleto (ex.: só R$ 0,00).
+    const looksZeroed =
+      /R\$\s*0,00/.test(html) &&
+      !/R\$\s*[1-9]/.test(html) &&
+      Number(contract.sale_value || 0) > 0;
+    if (looksZeroed && savedHtml) {
+      mark('response', {
+        source: 'saved_guard',
+        reason: 'rebuild_zeroed_kept_saved',
+        bytes: savedHtml.length,
+      });
+      return NextResponse.json({
+        success: true,
+        source: 'saved',
+        html: savedHtml,
+        htmlColumn: htmlMeta.column,
+        needs_regenerar: needsRegenerar,
+        warning: 'Rebuild incompleto; mantido HTML salvo da versão ativa.',
+      });
+    }
+
+    if (html.trim() && !looksZeroed) {
       mark('save_html');
       await persistGeneratedContractHtml(
         supabase,
@@ -139,6 +172,7 @@ export async function GET(
       source: 'generated',
       bytes: html.length,
       hasBody: contractHtmlLooksLikeFullBody(html),
+      viabilityOk: viability.ok,
     });
     return NextResponse.json({
       success: true,

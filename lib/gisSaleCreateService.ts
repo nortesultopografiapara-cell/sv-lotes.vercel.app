@@ -4,26 +4,11 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
-import { COMPANY_CONTRACT_LOAD_SELECT } from '@/lib/companyContractFields';
-import { generateContractHTML } from '@/lib/contractTemplate';
-import { mergeCustomerData, resolveOrCreateCustomer } from '@/lib/customerIdentity';
-import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
-import { buildSaleSpouseDbPatch } from '@/lib/saleSpouseFields';
+import { persistGeneratedContractHtml, buildFreshSaleContractHtml } from '@/lib/contractRegeneration';
 import {
-  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
-  normalizeInstallmentCorrectionType,
-} from '@/lib/installmentCorrectionType';
-import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
-import { normalizeSaleContractModel, isRecantoPrimaveraContractModel } from '@/lib/contractModel';
-import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
-import {
-  attachBrokerSnapshotToSale,
-  brokerRowToSnapshot,
-} from '@/lib/saleBrokerSnapshot';
-import { persistGeneratedContractHtml } from '@/lib/contractRegeneration';
-import { BROKERS_CONTRACT_SELECT } from '@/lib/brokersContractQuery';
-import { validateCustomerForContract } from '@/lib/validateCustomerForContract';
+  assessGeneratedContractViability,
+  assertGeneratedContractViable,
+} from '@/lib/contractGenerationGuard';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
 import {
@@ -42,6 +27,16 @@ import {
   resolveInstallmentPrincipal,
 } from '@/lib/saleInstallmentCalc';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
+import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
+import { resolveOrCreateCustomer } from '@/lib/customerIdentity';
+import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
+import { buildSaleSpouseDbPatch } from '@/lib/saleSpouseFields';
+import {
+  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+  normalizeInstallmentCorrectionType,
+} from '@/lib/installmentCorrectionType';
+import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
+import { normalizeSaleContractModel } from '@/lib/contractModel';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -492,43 +487,8 @@ export async function executeGisSaleCreate(
     logSaleStep('generate_contract', startedAt);
     try {
       await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
-        const { data: tenantData } = await supabase
-          .from('companies')
-          .select(COMPANY_CONTRACT_LOAD_SELECT)
-          .eq('id', tenantId)
-          .single();
-
-        let fullCustomer = customerData;
-        if (customerId) {
-          const { data: custDb } = await supabase
-            .from('customers')
-            .select(
-              'id, name, cpf_cnpj, document, cpf, rg, email, phone, address, neighborhood, city, state, state_uf, zip_code, profession, civil_state, marital_status',
-            )
-            .eq('id', customerId)
-            .single();
-          if (custDb) {
-            fullCustomer = mergeCustomerData(custDb, customerData);
-          }
-        }
-
-        const contractPayloadPartial = {
-          project_name_snapshot: projDataSnapshot?.name || lot?.projects?.name || null,
-          project_city_snapshot: projDataSnapshot?.city || null,
-          project_uf_snapshot: projDataSnapshot?.uf || null,
-          forum_city_snapshot:
-            projDataSnapshot?.forum_city || projDataSnapshot?.city || null,
-        };
-
-        const customerForContract = { ...fullCustomer, id: customerId };
-        const contractValidation = validateCustomerForContract(customerForContract);
-        if (!contractValidation.valid) {
-          warnings.push(
-            `Contrato não gerado: faltam dados do comprador (${contractValidation.missingRequired.join(', ')}).`,
-          );
-          return;
-        }
-
+        // Após persistir venda + finance_receipts + lote, recarrega o contexto oficial
+        // pelo mesmo loader da regeneração (não usa payload parcial do formulário).
         const contractNumber = await getNextContractNumber(
           supabase,
           tenantId,
@@ -538,67 +498,41 @@ export async function executeGisSaleCreate(
           throw new Error(`Número de contrato inválido: ${contractNumber}`);
         }
 
-        const { data: blockForContract } = await supabase
-          .from('blocks')
-          .select(
-            'id, block_name, block, lot_number, number, area, segments_json, segment_edges, front_street, project_id',
-          )
-          .eq('id', lotId)
-          .maybeSingle();
+        const stubContract = {
+          sale_id: saleId,
+          customer_id: customerId,
+          project_id: projectId,
+          block_id: lotId,
+          tenant_id: tenantId,
+          company_id: tenantId,
+          contract_number: contractNumber,
+        };
 
-        let brokerSnapshot = null;
-        if (brokerId) {
-          const { data: brokerRow } = await supabase
-            .from('brokers')
-            .select(BROKERS_CONTRACT_SELECT)
-            .eq('id', brokerId)
-            .maybeSingle();
-          brokerSnapshot = brokerRowToSnapshot(
-            (brokerRow as Record<string, unknown>) || null,
-          );
-        }
-
-        const receiptsSum = financeData.reduce(
-          (acc, curr) => acc + Number(curr.amount || 0),
-          0,
-        );
-        const nowIso = new Date().toISOString();
-        const enrichedSaleData = attachBrokerSnapshotToSale(
-          {
-            ...salePayload,
-            id: saleId,
-            sale_date: nowIso,
-            created_at: nowIso,
-            receipts_sum: receiptsSum,
-            finance_receipts: financeData,
-            down_payment_due_date: customerData.down_payment_due_date || null,
-            first_installment_due_date:
-              customerData.first_installment_due_date || null,
-          },
-          brokerSnapshot,
-        );
-
-        const saleValue = Number(customerData.final_value || finalPrice) || 0;
-        const downPaymentVal = parseCurrencyBRLNumber(customerData.down_payment);
-        let contractHtml = generateContractHTML({
-          tenant: tenantData || {},
-          customer: fullCustomer || {},
-          project: projDataSnapshot || lot.projects || {},
-          block: blockForContract || lot,
-          sale: enrichedSaleData,
-          financeReceipts: financeData,
-          contractSnapshot: {
-            ...contractPayloadPartial,
-            contract_number: contractNumber,
-          },
+        const built = await buildFreshSaleContractHtml(supabase, stubContract, {
+          contractTenantId: tenantId,
+          activeTenantId: tenantId,
+          callerRole: String(input.userRole || 'ADMIN'),
         });
 
-        if (isRecantoPrimaveraContractModel(tenantData)) {
-          contractHtml = await embedRecantoContractSignatureInHtml(
-            contractHtml,
-            tenantData || {},
-          );
+        const viability = assessGeneratedContractViability({
+          html: built.html,
+          sale: built.sale,
+          block: built.block,
+          receiptsSum: built.receipts_sum,
+        });
+        if (!viability.ok) {
+          console.error('[sales/create] CONTRACT_GENERATION_BLOCKED', {
+            saleId,
+            reasons: viability.reasons,
+            saleValue: viability.saleValue,
+          });
+          assertGeneratedContractViable(viability);
         }
+
+        const saleValue = viability.saleValue;
+        const downPaymentVal =
+          Number(built.sale.down_payment) ||
+          parseCurrencyBRLNumber(customerData.down_payment);
 
         const contractPayloads: Record<string, unknown>[] = [
           {
@@ -609,14 +543,17 @@ export async function executeGisSaleCreate(
             project_id: projectId,
             block_id: lotId,
             broker_id: brokerId,
-            contract_number: contractNumber,
+            contract_number: built.contractNumber || contractNumber,
             sale_value: saleValue,
             down_payment: downPaymentVal,
             installments: instCount,
             status: 'ativo',
-            generated_html: contractHtml,
+            version: 1,
+            is_current: true,
+            needs_regenerar: false,
+            generated_html: built.html,
             created_at: new Date().toISOString(),
-            ...contractPayloadPartial,
+            ...built.contractPayloadPartial,
           },
           {
             tenant_id: tenantId,
@@ -625,10 +562,12 @@ export async function executeGisSaleCreate(
             customer_id: customerId,
             project_id: projectId,
             block_id: lotId,
-            contract_number: contractNumber,
+            contract_number: built.contractNumber || contractNumber,
             status: 'ativo',
-            generated_html: contractHtml,
-            ...contractPayloadPartial,
+            version: 1,
+            is_current: true,
+            generated_html: built.html,
+            ...built.contractPayloadPartial,
           },
           {
             tenant_id: tenantId,
@@ -636,8 +575,9 @@ export async function executeGisSaleCreate(
             customer_id: customerId,
             project_id: projectId,
             block_id: lotId,
-            contract_number: contractNumber,
+            contract_number: built.contractNumber || contractNumber,
             status: 'ativo',
+            generated_html: built.html,
           },
         ];
 
@@ -652,7 +592,7 @@ export async function executeGisSaleCreate(
         }
 
         contractId = String(insertedContract.id || '');
-        if (contractHtml && contractId) {
+        if (built.html && contractId) {
           const hasHtml = Boolean(
             insertedContract.generated_html &&
               String(insertedContract.generated_html).trim().length > 0,
@@ -661,7 +601,7 @@ export async function executeGisSaleCreate(
             await persistGeneratedContractHtml(
               supabase,
               contractId,
-              contractHtml,
+              built.html,
               insertedContract as Record<string, unknown>,
             );
           }

@@ -962,9 +962,12 @@ export default function ContractsPage() {
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
 
-      // Sempre rebuild no PDF não assinado: evita baixar generated_html antigo (ex.: Quantidade 47).
+      // Preferir HTML persistido da versão ativa; rebuild só se needs_regenerar.
+      const mustRefresh = Boolean(
+        (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
+      );
       let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
-        refresh: true,
+        refresh: mustRefresh,
       });
       if (htmlBody) {
         setContractViewHtml(htmlBody);
@@ -1043,8 +1046,12 @@ export default function ContractsPage() {
   const handleImprimir = async () => {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
+    // Mesma regra do Baixar PDF: versão ativa persistida; rebuild só se needs_regenerar.
+    const mustRefresh = Boolean(
+      (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
+    );
     let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
-      refresh: true,
+      refresh: mustRefresh,
     });
     if (htmlBody) {
       setContractViewHtml(htmlBody);

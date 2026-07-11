@@ -1097,7 +1097,24 @@ export async function regenerateSaleContract(
     block,
     project,
     tenant,
+    receipts_sum,
   } = await buildFreshSaleContractHtml(supabase, contract, params.session);
+
+  const { assessGeneratedContractViability, assertGeneratedContractViable } =
+    await import('@/lib/contractGenerationGuard');
+  const viability = assessGeneratedContractViability({
+    html,
+    sale,
+    block,
+    receiptsSum: receipts_sum,
+  });
+  if (!viability.ok) {
+    console.error('CONTRACT_REGENERATE_BLOCKED', {
+      contractId: params.contractId,
+      reasons: viability.reasons,
+    });
+    assertGeneratedContractViable(viability);
+  }
 
   const validation = validateSaleContractRegeneration({
     contract,

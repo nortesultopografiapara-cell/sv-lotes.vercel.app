@@ -20,11 +20,11 @@ import {
 } from '@/lib/salePaymentMode';
 import {
   resolveContractPaymentDates,
-  formatContractDueDateLongBr,
   formatContractSaleDateBr,
   parseContractSaleDate,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import {
   normalizeRecantoPrimaveraCompanyProfile,
   sanitizeContractField,
@@ -570,13 +570,11 @@ export function buildRecantoPrimaveraContractContext(
   }
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
-  const singleFutureDueRaw =
-    String(sale?.down_payment_due_date || paymentDates.entryDueRaw || '')
-      .trim()
-      .split('T')[0] || '';
-  const singleFutureDueLongFmt = singleFutureDueRaw
-    ? formatContractDueDateLongBr(singleFutureDueRaw)
-    : '';
+  const singleFutureDue = resolveSingleFuturePaymentDueDateFmt({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+  });
+  const singleFutureDueLongFmt = singleFutureDue.longFmt;
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,

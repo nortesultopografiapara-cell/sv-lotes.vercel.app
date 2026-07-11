@@ -46,6 +46,7 @@ import {
   type ContractPaymentDates,
 } from "@/lib/contractPaymentDates";
 import { resolveSalePaymentMode } from "@/lib/salePaymentMode";
+import { resolveSingleFuturePaymentDueDateFmt } from "@/lib/resolveSingleFuturePaymentDueDate";
 
 export type { ContractFinanceReceiptRef, ContractPaymentDates };
 export { formatContractDueDateBr, formatContractSaleDateBr, resolveContractPaymentDates };
@@ -130,15 +131,22 @@ export function generateContractHTML({
       currency: "BRL",
     }).format(val);
 
-  const isValid = (v: any) =>
-    !!v &&
-    typeof v === "string" &&
-    !v.toLowerCase().includes("não informad") &&
-    !v.toLowerCase().includes("cidade - uf") &&
-    v.toLowerCase() !== "n/a" &&
-    v !== "undefined" &&
-    v !== "null" &&
-    v !== "-";
+  const isValid = (v: any) => {
+    if (v == null || v === "") return false;
+    if (typeof v === "number") return Number.isFinite(v);
+    if (typeof v !== "string") {
+      const s = String(v).trim();
+      return Boolean(s) && s !== "undefined" && s !== "null" && s !== "-";
+    }
+    return (
+      !v.toLowerCase().includes("não informad") &&
+      !v.toLowerCase().includes("cidade - uf") &&
+      v.toLowerCase() !== "n/a" &&
+      v !== "undefined" &&
+      v !== "null" &&
+      v !== "-"
+    );
+  };
 
   const formatCNPJCPF = (val: string) => {
     if (!val) return "";
@@ -425,17 +433,11 @@ export function generateContractHTML({
       })
     : null;
 
-  const singleFutureDueRaw =
-    String(
-      (sale as Record<string, unknown>)?.down_payment_due_date ||
-        paymentDates.entryDueRaw ||
-        '',
-    )
-      .trim()
-      .split('T')[0] || '';
-  const singleFutureDueLongFmt = singleFutureDueRaw
-    ? formatContractDueDateLongBr(singleFutureDueRaw)
-    : '';
+  const singleFutureDue = resolveSingleFuturePaymentDueDateFmt({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+  });
+  const singleFutureDueLongFmt = singleFutureDue.longFmt;
 
   const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
     mode: paymentMode,

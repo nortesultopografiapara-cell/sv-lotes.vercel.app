@@ -13,10 +13,9 @@ import {
   type SaleContractBalloonFinanceSummary,
 } from '@/lib/saleContractBalloonFinance';
 import {
-  formatContractDueDateBr,
-  formatContractDueDateLongBr,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import {
   resolveSalePaymentMode,
   type SalePaymentMode,
@@ -134,9 +133,13 @@ export function resolveSaleContractPaymentBreakdown(
             contractModel: options?.contractModel,
           });
 
+  const singleDue = resolveSingleFuturePaymentDueDateFmt({
+    sale,
+    financeReceipts: options?.financeReceipts,
+  });
   const singlePaymentDueRaw =
     paymentMode.isImmediateCash || paymentMode.isSingleFuture
-      ? String(sale.down_payment_due_date || '').split('T')[0] || null
+      ? singleDue.raw
       : null;
 
   return {
@@ -157,12 +160,8 @@ export function resolveSaleContractPaymentBreakdown(
     netValue,
     netValueFmt: formatBRL(netValue),
     singlePaymentDueRaw,
-    singlePaymentDueFmt: singlePaymentDueRaw
-      ? formatContractDueDateBr(singlePaymentDueRaw)
-      : '',
-    singlePaymentDueLongFmt: singlePaymentDueRaw
-      ? formatContractDueDateLongBr(singlePaymentDueRaw)
-      : '',
+    singlePaymentDueFmt: singlePaymentDueRaw ? singleDue.fmt : '',
+    singlePaymentDueLongFmt: singlePaymentDueRaw ? singleDue.longFmt : '',
     balloonSummary,
   };
 }

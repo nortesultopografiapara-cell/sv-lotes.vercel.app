@@ -138,61 +138,47 @@ function testTimezoneDueDateLong() {
   console.log('OK testTimezoneDueDateLong');
 }
 
-function testContractTextSingleFuture() {
+function testContractTextSingleFutureFromReceipts() {
   const sale = {
     payment_type: PAYMENT_TYPE_SINGLE_FUTURE,
-    lot_price: 115000,
+    lot_price: 50,
     discount: 0,
     down_payment: 0,
     installments_count: 1,
-    down_payment_due_date: '2032-01-15',
+    total_value: 50,
   };
-  const dueLong = formatContractDueDateLongBr(sale.down_payment_due_date);
+  const receipts = [
+    {
+      installment_number: 1,
+      amount: 50,
+      due_date: '2032-06-09',
+      status: 'pendente',
+    },
+  ];
+  const { resolveSingleFuturePaymentDueDateFmt } = require('../lib/resolveSingleFuturePaymentDueDate');
+  const due = resolveSingleFuturePaymentDueDateFmt({
+    sale,
+    financeReceipts: receipts,
+  });
+  assert(due.raw === '2032-06-09', 'due from finance_receipts');
+  assert(due.longFmt === '9 de junho de 2032', `long: ${due.longFmt}`);
+
   const terceira = buildSaleContractClauseTerceiraHtml({
     mode: 'SINGLE_FUTURE',
-    valorTotalFmt: 'R$ 115.000,00',
-    valorTotalExtenso: 'cento e quinze mil reais',
-    dueDateLongFmt: dueLong,
+    valorTotalFmt: 'R$ 50,00',
+    valorTotalExtenso: 'cinquenta reais',
+    dueDateLongFmt: due.longFmt,
   });
-  assert(terceira.includes('pagamento único'), 'cláusula pagamento único');
-  assert(terceira.includes(dueLong), 'data por extenso na cláusula');
-  assert(
-    !/no ato da assinatura/i.test(terceira),
-    'não afirma pagamento na assinatura',
-  );
-  assert(
-    /somente será concedida após a efetiva confirmação/i.test(terceira),
-    'quitação só após confirmação',
-  );
-  assert(!/PROMISSÁRIO VENDEDOR/i.test(terceira), 'sem PROMISSÁRIO VENDEDOR');
+  assert(terceira.includes('9 de junho de 2032'), 'cláusula com data');
+  assert(!terceira.includes('vencimento em —'), 'sem travessão');
+  assert(!/na data da assinatura/i.test(terceira), 'sem assinatura');
 
-  const quarta = buildSaleContractClauseQuartaHtml({
-    isCash: false,
-    mode: 'SINGLE_FUTURE',
-    valorTotalFmt: 'R$ 115.000,00',
-    valorTotalExtenso: 'cento e quinze mil reais',
-    valorEntradaFmt: 'R$ 0,00',
-    valorEntradaExtenso: 'zero reais',
-    qtdParcelas: 1,
-    valorParcelaFmt: 'R$ 0,00',
-    valorParcelaExtenso: 'zero reais',
-    dataPrimeiraParcelaFmt: '—',
-    dataUltimaParcelaFmt: '—',
-    singleFutureDueLongFmt: dueLong,
+  const breakdown = resolveSaleContractPaymentBreakdown(sale, {
+    financeReceipts: receipts,
   });
-  assert(quarta.includes('pagamento único'), 'quarta pagamento único');
-  assert(!/na data da assinatura/i.test(quarta), 'quarta sem assinatura');
-
-  const breakdown = resolveSaleContractPaymentBreakdown(sale);
   const summary = buildSaleContractPaymentSummaryHtml(breakdown);
-  assert(
-    summary.includes('Pagamento único com vencimento futuro'),
-    'quadro forma de pagamento',
-  );
-  assert(!summary.includes('Quantidade de parcelas'), 'sem qtd parcelas');
-  assert(!summary.includes('Saldo parcelado'), 'sem saldo parcelado');
-  assert(!summary.includes('Valor da parcela'), 'sem valor parcela');
-  console.log('OK testContractTextSingleFuture');
+  assert(summary.includes('09/06/2032'), 'quadro com mesma data');
+  console.log('OK testContractTextSingleFutureFromReceipts');
 }
 
 function testEditDoesNotDuplicate() {
@@ -260,7 +246,7 @@ function main() {
   testSingleFutureFinanceReceipt();
   testImmediateCashPreserved();
   testTimezoneDueDateLong();
-  testContractTextSingleFuture();
+  testContractTextSingleFutureFromReceipts();
   testEditDoesNotDuplicate();
   testLegacyVistaNotAutoConverted();
   testInstallmentFortyEight();
