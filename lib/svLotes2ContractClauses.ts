@@ -128,9 +128,14 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
       <p><strong>CLÁUSULA SEXTA — DOS TRIBUTOS E TAXAS:</strong> Desde a transmissão da posse, corre por conta exclusiva do(a) ${SV2_BUYER_LABEL} o pagamento de IPTU, taxas condominiais ou associativas, contribuições de melhoria e demais encargos incidentes sobre o imóvel, salvo disposição legal em contrário.</p>
     </div>`;
 
+  const inadimplenciaAtraso =
+    ctx.paymentMode === 'SINGLE_FUTURE'
+      ? 'O atraso no pagamento do valor na data de vencimento'
+      : 'O atraso no pagamento de qualquer parcela';
+
   const inadimplencia = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA:</strong> O atraso no pagamento de qualquer parcela implicará multa moratória de <strong>2% (dois por cento)</strong>, juros de <strong>1% (um por cento) ao mês</strong> e correção monetária pelo índice legal ou contratualmente previsto, sem prejuízo das demais medidas previstas neste instrumento.</p>
+      <p><strong>CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA:</strong> ${inadimplenciaAtraso} implicará multa moratória de <strong>2% (dois por cento)</strong>, juros de <strong>1% (um por cento) ao mês</strong> e correção monetária pelo índice legal ou contratualmente previsto, sem prejuízo das demais medidas previstas neste instrumento.</p>
     </div>`;
 
   // TODO(jurídico): parametrizar percentual de retenção em distrato/rescisão via configuração da empresa ou do contrato.

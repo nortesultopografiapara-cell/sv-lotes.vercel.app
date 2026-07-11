@@ -20,6 +20,7 @@ import {
   resolveSaleBalloonPlan,
   type SaleBalloonFormConfig,
 } from '@/lib/saleBalloonInstallments';
+import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 
 export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
@@ -83,20 +84,28 @@ export function buildSaleEditFinancePayloads(
     ? { financial_account_id: financialAccountId }
     : {};
   const pmtType = data.payment_type || 'À vista';
+  const paymentMode = resolveSalePaymentMode({
+    payment_type: pmtType,
+    installments_count: data.installments_count,
+    down_payment: data.down_payment,
+  });
   const grossDownPayment = parseCurrencyBRLNumber(data.down_payment);
   const reservationSignalPaid = Number(data.reservation_signal_paid) || 0;
   let downPayment = grossDownPayment;
   const instCount =
-    pmtType === 'Parcelado'
+    paymentMode.isInstallment
       ? parseValidatedInstallmentsCount(String(data.installments_count ?? ''))
       : 1;
   const fValue = data.final_value;
 
-  if (reservationSignalPaid > 0 && pmtType === 'Parcelado') {
+  if (reservationSignalPaid > 0 && paymentMode.isInstallment) {
     downPayment = Math.max(0, grossDownPayment - reservationSignalPaid);
   }
 
-  if (pmtType === 'À vista') {
+  if (paymentMode.isImmediateCash || paymentMode.isSingleFuture) {
+    // Pagamento único futuro: sempre pendente (nunca quita na assinatura).
+    const markPaid =
+      paymentMode.isImmediateCash && Boolean(options?.cashInstallmentPaid);
     financePayloads.push({
       tenant_id: tenantId,
       company_id: tenantId,
@@ -109,13 +118,13 @@ export function buildSaleEditFinancePayloads(
       installment_number: 1,
       amount: fValue,
       due_date: data.down_payment_due_date || new Date().toISOString().split('T')[0],
-      status: options?.cashInstallmentPaid ? 'pago' : 'pendente',
-      paid_amount: options?.cashInstallmentPaid ? fValue : 0,
-      ...(options?.cashInstallmentPaid
+      status: markPaid ? 'pago' : 'pendente',
+      paid_amount: markPaid ? fValue : 0,
+      ...(markPaid
         ? { paid_at: new Date().toISOString() }
         : { paid_at: null }),
     });
-  } else if (pmtType === 'Parcelado') {
+  } else if (paymentMode.isInstallment) {
     let currentInst = 1;
     if (reservationSignalPaid > 0) {
       financePayloads.push({

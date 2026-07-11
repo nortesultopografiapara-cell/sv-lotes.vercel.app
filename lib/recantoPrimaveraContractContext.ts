@@ -14,13 +14,17 @@ import { extractRecantoSpouseSource } from '@/lib/saleSpouseFields';
 import {
   resolveIdentityDocumentFields,
 } from '@/lib/contractIdentity';
-import { isSaleContractCashPayment } from '@/lib/saleContractLegalTemplate';
+import {
+  resolveSalePaymentMode,
+  type SalePaymentMode,
+} from '@/lib/salePaymentMode';
 import {
   resolveContractPaymentDates,
   formatContractSaleDateBr,
   parseContractSaleDate,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import {
   normalizeRecantoPrimaveraCompanyProfile,
   sanitizeContractField,
@@ -139,7 +143,10 @@ export type RecantoPrimaveraContractContext = {
   valorParcelaFmt: string;
   valorParcelaExtenso: string;
   qtdParcelas: number;
+  paymentMode: SalePaymentMode;
   isCashPayment: boolean;
+  singleFutureDueLongFmt: string;
+  singleFutureDueFmt: string;
   dueDay: string;
   dataPrimeiraParcelaFmt: string;
   dataUltimaParcelaFmt: string;
@@ -445,7 +452,11 @@ export function buildRecantoPrimaveraContractContext(
     Number(sale?.signal_contract_value ?? sale?.down_payment ?? 0),
   );
   const qtdParcelas = Math.max(1, Number(sale?.installments_count) || 1);
-  const isCashPayment = isSaleContractCashPayment(sale);
+  const paymentModeResolution = resolveSalePaymentMode(sale);
+  const paymentMode = paymentModeResolution.mode;
+  const isCashPayment = paymentModeResolution.isImmediateCash;
+  const isSinglePayment =
+    paymentModeResolution.isImmediateCash || paymentModeResolution.isSingleFuture;
 
   const hasExplicitSignalPaid =
     sale?.signal_paid_at_sale != null &&
@@ -462,15 +473,15 @@ export function buildRecantoPrimaveraContractContext(
 
   // Recanto: parcela base = valor total da chácara / parcelas (sinal NÃO abate).
   const valorParcelaBase =
-    !isCashPayment && qtdParcelas > 0
+    !isSinglePayment && qtdParcelas > 0
       ? resolveInstallmentPrincipal({
           totalValue: valTotal,
           downPayment: valSinal,
           contractModel: 'RECANTO_PRIMAVERA',
         }) / qtdParcelas
       : 0;
-  const baseAmounts = !isCashPayment
-    ? splitInstallmentAmounts(
+  const baseAmounts = !isSinglePayment
+      ? splitInstallmentAmounts(
         resolveInstallmentPrincipal({
           totalValue: valTotal,
           downPayment: valSinal,
@@ -480,7 +491,7 @@ export function buildRecantoPrimaveraContractContext(
       )
     : [];
   const compositions =
-    hasExplicitSignalPaid && !isCashPayment
+    hasExplicitSignalPaid && !isSinglePayment
       ? applySignalAddonToInstallmentAmounts(baseAmounts, signalPlan)
       : baseAmounts.map((baseAmount) => ({
           baseAmount,
@@ -501,7 +512,7 @@ export function buildRecantoPrimaveraContractContext(
     valorParcelaComAcrescimo;
 
   let parcelasResumoSinalHtml = '';
-  if (!isCashPayment && signalPlan.hasRemaining && hasExplicitSignalPaid) {
+  if (!isSinglePayment && signalPlan.hasRemaining && hasExplicitSignalPaid) {
     const row = (
       range: string,
       baseFmt: string,
@@ -560,11 +571,17 @@ export function buildRecantoPrimaveraContractContext(
   }
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
+  const singleFutureDue = resolveSingleFuturePaymentDueDateFmt({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+  });
+  const singleFutureDueLongFmt = singleFutureDue.longFmt;
+  const singleFutureDueFmt = singleFutureDue.fmt;
   const balloonSummary = resolveSaleContractBalloonFinance({
     sale: sale as Record<string, unknown>,
     financeReceipts,
     balloonAddons,
-    isCashPayment,
+    isCashPayment: isSinglePayment,
   });
   const hasBalloonInstallments = balloonSummary.hasBalloon;
   const dueDay = extractDueDay(paymentDates.firstInstallmentDueRaw);
@@ -691,7 +708,10 @@ export function buildRecantoPrimaveraContractContext(
     valorParcelaFmt: formatBRL(valorParcela),
     valorParcelaExtenso: formatExtensoCurrency(valorParcela),
     qtdParcelas,
+    paymentMode,
     isCashPayment,
+    singleFutureDueLongFmt,
+    singleFutureDueFmt,
     dueDay,
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,

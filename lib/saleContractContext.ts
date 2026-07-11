@@ -25,10 +25,10 @@ import {
 } from '@/lib/contractIdentity';
 import {
   buildSaleContractClauseQuartaHtml,
+  buildSaleContractClauseTerceiraHtml,
   buildSaleContractElectronicSignatureClauseHtml,
   buildSaleContractForumClauseHtml,
   buildSaleContractRepresentativeSignatureHtml,
-  isSaleContractCashPayment,
 } from '@/lib/saleContractLegalTemplate';
 import {
   type ContractInstallmentScheduleRow,
@@ -42,6 +42,11 @@ import {
   formatContractSaleDateBr,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
+import {
+  resolveSalePaymentMode,
+  type SalePaymentMode,
+} from '@/lib/salePaymentMode';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 
 export type SaleContractRenderParams = {
   tenant: Record<string, unknown>;
@@ -95,8 +100,10 @@ export type SaleContractRenderContext = {
   foroText: string;
   valorTotalFmt: string;
   valorTotalExtenso: string;
+  paymentMode: SalePaymentMode;
   isCashPayment: boolean;
   tipoVenda: string;
+  clauseTerceiraHtml: string;
   clauseQuartaHtml: string;
   electronicSignatureClauseHtml: string;
   forumClauseHtml: string;
@@ -111,16 +118,19 @@ function formatBRL(val: number) {
   }).format(val);
 }
 
-function isValid(v: unknown): v is string {
+function isValid(v: unknown): boolean {
+  if (v == null || v === '') return false;
+  if (typeof v === 'number') return Number.isFinite(v);
+  const s = String(v).trim();
+  if (!s) return false;
+  const lower = s.toLowerCase();
   return (
-    !!v &&
-    typeof v === 'string' &&
-    !v.toLowerCase().includes('não informad') &&
-    !v.toLowerCase().includes('cidade - uf') &&
-    v.toLowerCase() !== 'n/a' &&
-    v !== 'undefined' &&
-    v !== 'null' &&
-    v !== '-'
+    !lower.includes('não informad') &&
+    !lower.includes('cidade - uf') &&
+    lower !== 'n/a' &&
+    s !== 'undefined' &&
+    s !== 'null' &&
+    s !== '-'
   );
 }
 
@@ -344,8 +354,10 @@ export function buildSaleContractRenderContext(
     valorTotalExtenso = '';
   }
 
-  const isCashPayment = isSaleContractCashPayment(sale);
-  const tipoVenda = isCashPayment ? 'À Vista' : 'Parcelada';
+  const paymentModeResolution = resolveSalePaymentMode(sale);
+  const paymentMode = paymentModeResolution.mode;
+  const isCashPayment = paymentModeResolution.isImmediateCash;
+  const tipoVenda = paymentModeResolution.label;
   const valorEntradaFmt = formatBRL(valEntrada);
   let valorEntradaExtenso = '';
   try {
@@ -387,7 +399,7 @@ export function buildSaleContractRenderContext(
     sale: sale as Record<string, unknown>,
     financeReceipts,
     balloonAddons: params.balloonAddons,
-    isCashPayment,
+    isCashPayment: !paymentModeResolution.isInstallment,
   });
   const hasVariableInstallments = balloonSummary.hasBalloon;
   if (hasVariableInstallments) {
@@ -417,8 +429,22 @@ export function buildSaleContractRenderContext(
       })
     : null;
 
+  const singleFutureDue = resolveSingleFuturePaymentDueDateFmt({
+    sale,
+    financeReceipts,
+  });
+  const singleFutureDueLongFmt = singleFutureDue.longFmt;
+
+  const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
+    mode: paymentMode,
+    valorTotalFmt,
+    valorTotalExtenso,
+    dueDateLongFmt: singleFutureDueLongFmt,
+  });
+
   const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
     isCash: isCashPayment,
+    mode: paymentMode,
     valorTotalFmt,
     valorTotalExtenso,
     valorEntradaFmt,
@@ -428,6 +454,7 @@ export function buildSaleContractRenderContext(
     valorParcelaExtenso: valorParcelaExtensoFinal,
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
+    singleFutureDueLongFmt,
     hasVariableInstallments,
     balloonClauseBodyHtml: balloonClauseBody,
   });
@@ -498,8 +525,10 @@ export function buildSaleContractRenderContext(
     foroText,
     valorTotalFmt,
     valorTotalExtenso,
+    paymentMode,
     isCashPayment,
     tipoVenda,
+    clauseTerceiraHtml,
     clauseQuartaHtml,
     electronicSignatureClauseHtml: buildSaleContractElectronicSignatureClauseHtml(),
     forumClauseHtml: buildSaleContractForumClauseHtml(foroText),

@@ -63,6 +63,12 @@ import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { SaleBalloonInstallmentsPanel } from '@/components/map/SaleBalloonInstallmentsPanel';
+import {
+  PAYMENT_TYPE_INSTALLMENT,
+  resolveSalePaymentMode,
+  salePaymentModeSelectOptions,
+} from '@/lib/salePaymentMode';
+import { formatContractDueDateBr } from '@/lib/contractPaymentDates';
 
 export type LotFormState = CustomerFormValues &
   SaleSpouseFormFields & {
@@ -346,12 +352,16 @@ export function CustomerLotFormModal({
 
   const discountValue = parseCurrencyBRLNumber(formData.discount_value);
   const paymentType = formData.payment_type || 'À vista';
+  const paymentMode = resolveSalePaymentMode({
+    payment_type: paymentType,
+    installments_count: formData.installments_count,
+    down_payment: formData.down_payment,
+  });
   const downPaymentStr = formData.down_payment || '';
   const installmentsCountStr = formData.installments_count ?? '';
-  const installmentsValidation =
-    paymentType === 'Parcelado'
-      ? validateInstallmentsCount(installmentsCountStr)
-      : null;
+  const installmentsValidation = paymentMode.isInstallment
+    ? validateInstallmentsCount(installmentsCountStr)
+    : null;
 
   const finalValue = Math.max(0, price - discountValue);
   const downPayment = parseCurrencyBRLNumber(downPaymentStr);
@@ -441,7 +451,7 @@ export function CustomerLotFormModal({
     }
 
     if (actionName === 'Vendido' || isEditMode) {
-      if (paymentType === 'À vista') {
+      if (paymentMode.isImmediateCash || paymentMode.isSingleFuture) {
         if (discountValue > price) {
           alert('O desconto não pode ser maior que o valor do lote.');
           return;
@@ -581,16 +591,22 @@ export function CustomerLotFormModal({
         signal_remaining_installments: isRecantoSinal
           ? formData.signal_remaining_installments || ''
           : '',
-        installments_count: confirmedInstallmentsCount,
+        installments_count: paymentMode.isInstallment
+          ? confirmedInstallmentsCount
+          : '1',
         lot_value: price,
         final_value: finalValue,
-        installment_value: confirmedInstallmentValue,
-        use_balloon_installments: Boolean(formData.use_balloon_installments),
-        balloon_config: formData.use_balloon_installments
-          ? formData.balloon_config || emptyBalloonFormConfig()
-          : null,
+        installment_value: paymentMode.isInstallment
+          ? confirmedInstallmentValue
+          : finalValue,
+        use_balloon_installments:
+          paymentMode.isInstallment && Boolean(formData.use_balloon_installments),
+        balloon_config:
+          paymentMode.isInstallment && formData.use_balloon_installments
+            ? formData.balloon_config || emptyBalloonFormConfig()
+            : null,
         installment_correction_type: isStandardSaleForm
-          ? paymentType === 'Parcelado'
+          ? paymentMode.isInstallment
             ? normalizeInstallmentCorrectionType(formData.installment_correction_type)
             : DEFAULT_INSTALLMENT_CORRECTION_TYPE
           : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
@@ -1054,12 +1070,21 @@ export function CustomerLotFormModal({
                       value={paymentType}
                       onChange={(e) => {
                         const nextType = e.target.value;
+                        const nextMode = resolveSalePaymentMode({
+                          payment_type: nextType,
+                        });
                         setField({
                           payment_type: nextType,
-                          installments_count: '',
+                          installments_count: nextMode.isInstallment ? '' : '1',
                           first_installment_due_date: '',
+                          use_balloon_installments: nextMode.isInstallment
+                            ? formData.use_balloon_installments
+                            : false,
+                          balloon_config: nextMode.isInstallment
+                            ? formData.balloon_config
+                            : null,
                           installment_correction_type:
-                            nextType === 'Parcelado'
+                            nextType === PAYMENT_TYPE_INSTALLMENT
                               ? formData.installment_correction_type ||
                                 DEFAULT_INSTALLMENT_CORRECTION_TYPE
                               : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
@@ -1067,8 +1092,11 @@ export function CustomerLotFormModal({
                       }}
                       className={GIS_INPUT}
                     >
-                      <option value="À vista">À vista</option>
-                      <option value="Parcelado">Parcelado</option>
+                      {salePaymentModeSelectOptions().map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -1095,7 +1123,7 @@ export function CustomerLotFormModal({
                     </div>
                   </div>
                 )}
-                {paymentType === 'À vista' && (
+                {paymentMode.isImmediateCash && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {!isStandardSaleForm ? (
                       <div>
@@ -1130,7 +1158,60 @@ export function CustomerLotFormModal({
                     </div>
                   </div>
                 )}
-                {paymentType === 'Parcelado' && (
+                {paymentMode.isSingleFuture && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {!isStandardSaleForm ? (
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Desconto (R$)</label>
+                          <CurrencyInput
+                            value={formData.discount_value}
+                            onChange={(next) => setField({ discount_value: next })}
+                            className={GIS_INPUT}
+                          />
+                        </div>
+                      ) : null}
+                      {!isStandardSaleForm ? (
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Valor Final *</label>
+                          <CurrencyInput
+                            readOnly
+                            value={String(finalValue)}
+                            onChange={() => {}}
+                            className={`${GIS_INPUT_READONLY} font-bold text-green-700`}
+                          />
+                        </div>
+                      ) : null}
+                      <div className={isStandardSaleForm ? 'md:col-span-3' : ''}>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          Data de vencimento *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={formData.down_payment_due_date}
+                          onChange={(e) =>
+                            setField({ down_payment_due_date: e.target.value })
+                          }
+                          className={GIS_INPUT_DATE}
+                        />
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                      <p className="font-semibold">Pagamento único com vencimento futuro</p>
+                      <p className="mt-1">
+                        Valor único: {formatCurrencyBRL(finalValue)}
+                        {formData.down_payment_due_date
+                          ? ` · Vencimento: ${formatContractDueDateBr(formData.down_payment_due_date)}`
+                          : ' · Informe a data de vencimento'}
+                      </p>
+                      <p className="mt-1 text-[11px] text-amber-800">
+                        A quitação ocorre somente após a confirmação do pagamento — não na assinatura.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {paymentMode.isInstallment && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {isRecantoSinal ? (
                       <>

@@ -54,6 +54,7 @@ import {
   downPaymentReducesInstallmentBase,
   resolveInstallmentPrincipal,
 } from '@/lib/saleInstallmentCalc';
+import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 
 export function canEditCompletedSale(role?: string | null): boolean {
   return isPartnerPanelAdmin(role);
@@ -216,13 +217,20 @@ export async function loadSaleEditContext(
     (receipts || [])[0];
 
   const paymentType = String(sale.payment_type || 'À vista');
+  const paymentMode = resolveSalePaymentMode({
+    payment_type: paymentType,
+    installments_count: sale.installments_count,
+    down_payment: sale.down_payment,
+  });
   const lotPrice = Number(sale.lot_price ?? sale.agreed_price ?? 0) || 0;
   const discountVal = Number(sale.discount ?? sale.discount_value ?? 0) || 0;
 
   let downPaymentDue =
     (sale.down_payment_due_date as string) ||
     entryReceipt?.due_date ||
-    (paymentType === 'À vista' ? cashReceipt?.due_date : null) ||
+    (paymentMode.isImmediateCash || paymentMode.isSingleFuture
+      ? cashReceipt?.due_date
+      : null) ||
     '';
   let firstInstDue =
     (sale.first_installment_due_date as string) ||
@@ -384,10 +392,14 @@ export async function updateSaleFromEdit(
     isRecanto && signalRemainingValue != null && signalRemainingValue > 0
       ? data.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS'
       : null;
-  const installmentsCount =
-    data.payment_type === 'Parcelado'
-      ? Number(data.installments_count) || 1
-      : 1;
+  const paymentMode = resolveSalePaymentMode({
+    payment_type: data.payment_type,
+    installments_count: data.installments_count,
+    down_payment: data.down_payment,
+  });
+  const installmentsCount = paymentMode.isInstallment
+    ? Number(data.installments_count) || 1
+    : 1;
   const signalRemainingInstallments =
     signalRemainingMode === 'FIRST_INSTALLMENTS'
       ? Number(data.signal_remaining_installments) || null
@@ -485,7 +497,7 @@ export async function updateSaleFromEdit(
     installmentCorrectionType:
       contractModel === 'RECANTO_PRIMAVERA'
         ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
-        : data.payment_type === 'Parcelado'
+        : paymentMode.isInstallment
           ? data.installment_correction_type
           : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
     brokerId,
@@ -622,7 +634,7 @@ export async function updateSaleFromEdit(
     }
 
     if (
-      data.payment_type === 'À vista' &&
+      (paymentMode.isImmediateCash || paymentMode.isSingleFuture) &&
       plan.paid.length === 1 &&
       plan.pending.length === 0
     ) {

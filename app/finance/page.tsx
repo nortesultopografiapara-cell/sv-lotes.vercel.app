@@ -47,6 +47,18 @@ import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { logLotAuditEvent } from '@/lib/lotAudit';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
+  FINANCE_RECEIPTS_LIST_SELECT,
+  FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+} from '@/lib/finance/financeReceiptsEmbed';
+import {
+  DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
+  FINANCE_RECEIPTS_UI_PAGE_SIZES,
+  fetchAllFinanceReceiptsPaged,
+  normalizeFinanceReceiptsUiPageSize,
+  paginateFinanceReceiptRows,
+  type FinanceReceiptsUiPageSize,
+} from '@/lib/finance/fetchFinanceReceiptsPaged';
+import {
   buildManualFinanceReceiptCashMovement,
   resolveCashMovementInstallmentId,
 } from '@/lib/finance/cashMovementsSchema';
@@ -198,7 +210,9 @@ export default function FinancePage() {
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState<FinanceReceiptsUiPageSize>(
+    DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
+  );
   
   // Stats
   const [stats, setStats] = useState({
@@ -319,41 +333,21 @@ export default function FinancePage() {
            return;
         }
         
-        let query = supabase
-           .from('finance_receipts')
-           .select(`
-              *,
-              customers!finance_receipts_customer_id_fkey(*),
-              sales:sale_id(id, installments_count, projects(name), contracts(contract_number)),
-              projects:project_id(*),
-              blocks:block_id(*)
-           `)
-           .order('due_date', { ascending: true });
-           
-        query = applyTenantFilter(query, rlsCtx, 'finance_receipts');
-        
-        let { data, error } = await query;
-        console.log("FINANCE TENANT:", resolvedTenantId);
-        console.log("FINANCE FETCH RESULT", data, error);
-        
-        if (error) {
-            console.warn("ERRO JOIN FINANCE_RECEIPTS:", error);
-            // Fallback to raw finance_receipts
-            let fallbackQuery = supabase
-                .from('finance_receipts')
-                .select('*, customers!finance_receipts_customer_id_fkey(*), sales:sale_id(*), projects:project_id(*), blocks:block_id(*)')
-                .order('due_date', { ascending: true });
-            
-            fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'finance_receipts');
-            
-            const fallbackRes = await fallbackQuery;
-            data = fallbackRes.data;
-            error = fallbackRes.error;
-            console.log("FINANCE RAW FALLBACK:", data, error);
-        }
-        
-        if (error) throw error;
+        const fetched = await fetchAllFinanceReceiptsPaged({
+          supabase,
+          rlsCtx,
+          select: FINANCE_RECEIPTS_LIST_SELECT,
+          selectFallback: FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+        });
+        console.log('FINANCE TENANT:', resolvedTenantId);
+        console.log('FINANCE FETCH RESULT', {
+          exactCount: fetched.exactCount,
+          loaded: fetched.rows.length,
+          pagesFetched: fetched.pagesFetched,
+          wouldTruncateWithoutPagination: fetched.wouldTruncateWithoutPagination,
+        });
 
+        let data: any[] = fetched.rows;
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
         const isOwnerFinanceScope = shouldApplyOwnerFinanceScope(user);
 
@@ -732,8 +726,20 @@ export default function FinancePage() {
      return matchSearch && matchStatus && matchProject && matchFinancialAccount && matchStartDate && matchEndDate;
   });
 
-  const totalPages = Math.ceil(filteredPayments.length / itemsPerPage) || 1;
-  const currentPayments = filteredPayments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paymentsPagination = useMemo(
+    () => paginateFinanceReceiptRows(filteredPayments, currentPage, itemsPerPage),
+    [filteredPayments, currentPage, itemsPerPage],
+  );
+  const totalPages = paymentsPagination.totalPages;
+  const currentPayments = paymentsPagination.pageRows;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, projectFilter, financialAccountFilter, startDate, endDate]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const enterpriseFinanceTotals = useMemo(() => {
     if (!enterpriseSummary) return null;
@@ -3380,7 +3386,7 @@ export default function FinancePage() {
         {/* Pagination Footer */}
         {!loading && filteredPayments.length > 0 && (
           <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-[var(--border-color)] text-sm text-[var(--text-secondary)] gap-4 bg-[var(--bg-card)]">
-             <div>Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, filteredPayments.length)} de {filteredPayments.length} registros</div>
+             <div>Mostrando {paymentsPagination.from} a {paymentsPagination.to} de {paymentsPagination.totalCount} registros</div>
              <div className="flex items-center gap-1">
                 <button 
                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
@@ -3417,11 +3423,14 @@ export default function FinancePage() {
                Registros por página:
                <select 
                   value={itemsPerPage}
-                  onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                  onChange={e => {
+                    setItemsPerPage(normalizeFinanceReceiptsUiPageSize(e.target.value));
+                    setCurrentPage(1);
+                  }}
                   className="bg-transparent border border-[var(--border-color)] rounded px-2 py-1 outline-none">
-                 <option value={10}>10</option>
-                 <option value={25}>25</option>
-                 <option value={50}>50</option>
+                 {FINANCE_RECEIPTS_UI_PAGE_SIZES.map((size) => (
+                   <option key={size} value={size}>{size}</option>
+                 ))}
                </select>
              </div>
           </div>

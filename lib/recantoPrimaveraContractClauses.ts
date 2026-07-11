@@ -4,7 +4,11 @@
  */
 
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
-import { buildCompactBalloonFinanceScheduleHtml } from '@/lib/saleContractBalloonFinance';
+import {
+  buildCompactBalloonFinanceScheduleHtml,
+  buildContractFinanceQuadroHtml,
+} from '@/lib/saleContractBalloonFinance';
+import { formatCurrencyBRL } from '@/lib/currencyBrl';
 
 export const RECANTO_PRIMAVERA_CLAUSE_MARKERS = [
   'CLÁUSULA PRIMEIRA – DAS DECLARAÇÕES INICIAIS',
@@ -72,7 +76,30 @@ export const RECANTO_PRIMAVERA_LITERAL_PHRASES = [
 ] as const;
 
 function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
-  if (ctx.isCashPayment) {
+  if (ctx.paymentMode === 'SINGLE_FUTURE') {
+    const dueLong = String(ctx.singleFutureDueLongFmt || '').trim() || '—';
+    const dueFmt = String(ctx.singleFutureDueFmt || '').trim() || '—';
+    return `
+    <div class="contract-payment-block">
+      ${buildContractFinanceQuadroHtml({
+        saleTotalFmt: ctx.valorTotalFmt,
+        discountFmt: formatCurrencyBRL(0),
+        entryFmt: formatCurrencyBRL(0),
+        financedFmt: formatCurrencyBRL(0),
+        parcelamentoLabel: 'Pagamento único com vencimento futuro',
+        baseInstallmentFmt: formatCurrencyBRL(0),
+        correctionLabel: '—',
+        firstDueDateFmt: dueFmt,
+        paymentMode: 'SINGLE_FUTURE',
+        netValueFmt: ctx.valorTotalFmt,
+      })}
+      <p style="margin: 8px 0 0 0;">
+        O valor total de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''} será pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) em pagamento único, com vencimento em <strong>${dueLong}</strong>. A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
+      </p>
+    </div>`;
+  }
+
+  if (ctx.isCashPayment || ctx.paymentMode === 'IMMEDIATE_CASH') {
     return `<p style="margin-bottom: 0;">
       O pagamento do valor total de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''} será realizado à vista pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A).
     </p>`;
@@ -155,7 +182,22 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
           ? `O vencimento das parcelas ocorrerá mensalmente, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
           : 'O vencimento das parcelas ocorrerá mensalmente, observando-se os valores constantes no quadro de pagamento deste contrato.';
 
-  if (ctx.isCashPayment) {
+  if (ctx.paymentMode === 'SINGLE_FUTURE') {
+    const dueLong = String(ctx.singleFutureDueLongFmt || '').trim() || '—';
+    return `
+    <div class="contract-clause" style="padding-bottom: 5px;">
+      <p style="margin-bottom: 10px;">
+        <strong>CLÁUSULA TERCEIRA – DO PREÇO E FORMA DE PAGAMENTO:</strong> O preço total da chácara é de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''}, a ser pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) em pagamento único, com vencimento em <strong>${dueLong}</strong>.
+      </p>
+      <p style="margin-bottom: 10px;">
+        A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento.
+      </p>
+      <p style="margin-bottom: 10px;"><strong>Parágrafo Segundo:</strong> Os pagamentos deverão ser realizados exclusivamente por <strong>boleto bancário</strong>${bankDetail}.</p>
+      <p style="margin-bottom: 10px;"><strong>Parágrafo Quarto:</strong> A falta de recebimento do boleto bancário não isenta o(a) COMPRADOR(A) do pagamento na data do vencimento, devendo este solicitar nova via ao(à) VENDEDOR(A). O(A) COMPRADOR(A) compromete-se a comunicar ao(à) VENDEDOR(A) qualquer alteração de endereço, e-mail e telefone no prazo máximo de 10 (dez) dias.</p>
+    </div>`;
+  }
+
+  if (ctx.isCashPayment || ctx.paymentMode === 'IMMEDIATE_CASH') {
     return `
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
@@ -212,7 +254,23 @@ export function buildRecantoPrimaveraClausesHtml(
 
     ${buildClauseTerceiraHtml(ctx)}
 
-    <div class="contract-clause" style="padding-bottom: 5px;">
+    ${
+      ctx.paymentMode === 'SINGLE_FUTURE'
+        ? `<div class="contract-clause" style="padding-bottom: 5px;">
+      <p style="margin-bottom: 10px;">
+        <strong>CLÁUSULA QUARTA – DA INADIMPLÊNCIA:</strong> O atraso no pagamento do valor na data de vencimento implicará multa moratória de 2% (dois por cento) sobre o valor em atraso, acrescida de juros de mora de 1% (um por cento) ao mês, pro rata die.
+      </p>
+      <p style="margin-bottom: 10px;">
+        Persistindo o inadimplemento, o(a) VENDEDOR(A) poderá considerar rescindido o presente contrato, independentemente de notificação judicial, resguardados os direitos previstos na CLÁUSULA NONA.
+      </p>
+      <p style="margin-bottom: 10px;">
+        Decorridos 15 (quinze) dias de inadimplência, o(a) COMPRADOR(A) autoriza, desde já, a inclusão de seu nome nos cadastros de proteção ao crédito e bancos de inadimplentes.
+      </p>
+      <p style="margin-bottom: 0;">
+        É vedado ao(à) COMPRADOR(A), enquanto não quitado o valor ajustado, lotear, desmembrar, fracionar ou transferir o imóvel objeto deste contrato, sob pena de rescisão e perdas e danos.
+      </p>
+    </div>`
+        : `<div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA QUARTA – DA INADIMPLÊNCIA:</strong> O atraso no pagamento de qualquer parcela implicará multa moratória de 2% (dois por cento) sobre o valor da parcela em atraso, acrescida de juros de mora de 1% (um por cento) ao mês, pro rata die.
       </p>
@@ -225,7 +283,8 @@ export function buildRecantoPrimaveraClausesHtml(
       <p style="margin-bottom: 0;">
         É vedado ao(à) COMPRADOR(A), enquanto não quitadas todas as parcelas ajustadas, lotear, desmembrar, fracionar ou transferir o imóvel objeto deste contrato, sob pena de rescisão e perdas e danos.
       </p>
-    </div>
+    </div>`
+    }
 
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">

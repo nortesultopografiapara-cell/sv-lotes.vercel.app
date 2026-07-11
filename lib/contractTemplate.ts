@@ -20,10 +20,10 @@ import {
 } from "@/lib/contractIdentity";
 import {
   buildSaleContractClauseQuartaHtml,
+  buildSaleContractClauseTerceiraHtml,
   buildSaleContractElectronicSignatureClauseHtml,
   buildSaleContractForumClauseHtml,
   buildSaleContractRepresentativeSignatureHtml,
-  isSaleContractCashPayment,
 } from "@/lib/saleContractLegalTemplate";
 import {
   buildSaleContractPaymentSummaryHtml,
@@ -39,11 +39,14 @@ import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContract
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
   formatContractDueDateBr,
+  formatContractDueDateLongBr,
   formatContractSaleDateBr,
   resolveContractPaymentDates,
   type ContractFinanceReceiptRef,
   type ContractPaymentDates,
 } from "@/lib/contractPaymentDates";
+import { resolveSalePaymentMode } from "@/lib/salePaymentMode";
+import { resolveSingleFuturePaymentDueDateFmt } from "@/lib/resolveSingleFuturePaymentDueDate";
 
 export type { ContractFinanceReceiptRef, ContractPaymentDates };
 export { formatContractDueDateBr, formatContractSaleDateBr, resolveContractPaymentDates };
@@ -128,15 +131,22 @@ export function generateContractHTML({
       currency: "BRL",
     }).format(val);
 
-  const isValid = (v: any) =>
-    !!v &&
-    typeof v === "string" &&
-    !v.toLowerCase().includes("não informad") &&
-    !v.toLowerCase().includes("cidade - uf") &&
-    v.toLowerCase() !== "n/a" &&
-    v !== "undefined" &&
-    v !== "null" &&
-    v !== "-";
+  const isValid = (v: any) => {
+    if (v == null || v === "") return false;
+    if (typeof v === "number") return Number.isFinite(v);
+    if (typeof v !== "string") {
+      const s = String(v).trim();
+      return Boolean(s) && s !== "undefined" && s !== "null" && s !== "-";
+    }
+    return (
+      !v.toLowerCase().includes("não informad") &&
+      !v.toLowerCase().includes("cidade - uf") &&
+      v.toLowerCase() !== "n/a" &&
+      v !== "undefined" &&
+      v !== "null" &&
+      v !== "-"
+    );
+  };
 
   const formatCNPJCPF = (val: string) => {
     if (!val) return "";
@@ -342,8 +352,9 @@ export function generateContractHTML({
     });
   } catch (e) {}
 
-  const isCashPayment = isSaleContractCashPayment(sale as Record<string, unknown>);
-  const tipoVenda = isCashPayment ? "À Vista" : "Parcelada";
+  const paymentModeResolution = resolveSalePaymentMode(sale as Record<string, unknown>);
+  const paymentMode = paymentModeResolution.mode;
+  const isCashPayment = paymentModeResolution.isImmediateCash;
   const valorEntradaFmt = formatBRL(valEntrada);
 
   let valorEntradaExtenso = "";
@@ -388,7 +399,7 @@ export function generateContractHTML({
     sale: sale as Record<string, unknown>,
     financeReceipts,
     balloonAddons,
-    isCashPayment,
+    isCashPayment: !paymentModeResolution.isInstallment,
   });
   const hasVariableInstallments = balloonSummary.hasBalloon;
 
@@ -422,8 +433,22 @@ export function generateContractHTML({
       })
     : null;
 
+  const singleFutureDue = resolveSingleFuturePaymentDueDateFmt({
+    sale: sale as Record<string, unknown>,
+    financeReceipts,
+  });
+  const singleFutureDueLongFmt = singleFutureDue.longFmt;
+
+  const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
+    mode: paymentMode,
+    valorTotalFmt,
+    valorTotalExtenso,
+    dueDateLongFmt: singleFutureDueLongFmt,
+  });
+
   const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
     isCash: isCashPayment,
+    mode: paymentMode,
     valorTotalFmt,
     valorTotalExtenso,
     valorEntradaFmt,
@@ -433,6 +458,7 @@ export function generateContractHTML({
     valorParcelaExtenso: valorParcelaExtensoBalloonAware,
     dataPrimeiraParcelaFmt,
     dataUltimaParcelaFmt,
+    singleFutureDueLongFmt,
     hasVariableInstallments,
     balloonClauseBodyHtml: balloonClauseBody,
   });
@@ -527,12 +553,7 @@ export function generateContractHTML({
             </div>
 
             <div class="contract-clause" style="padding-bottom: 5px;">
-                <p style="margin-bottom: 10px;">
-                    <strong>Cláusula Terceira:</strong> O valor total do contrato é de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, o qual foi negociado de forma <strong>${tipoVenda.toUpperCase()}</strong>, pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR no ato da assinatura do presente contrato, outorgando assim o PROMISSÁRIO VENDEDOR a mais ampla, geral e irrevogável quitação mediante emissão do termo de quitação pelo PROMITENTE VENDEDOR.
-                </p>
-                <p style="margin-bottom: 0;">
-                    <strong>Parágrafo Único:</strong> O PROMISSÁRIO VENDEDOR fica limitado na posse do imóvel a partir da assinatura do presente contrato.
-                </p>
+                ${clauseTerceiraHtml}
             </div>
 
             <div class="contract-clause" style="padding-bottom: 5px;">

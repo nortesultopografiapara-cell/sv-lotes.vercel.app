@@ -8,6 +8,7 @@
 
 import { splitInstallmentAmounts } from '@/lib/saleInstallmentCalc';
 import { formatCurrencyBRL, parseCurrencyBRLNumber } from '@/lib/currencyBrl';
+import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 
 export type SaleBalloonMode = 'MANUAL' | 'FINAL' | 'RECURRENT';
 
@@ -242,10 +243,13 @@ export function validateSaleBalloonConfiguration(
   if (!plan.enabled) return { valid: true };
 
   const paymentType = String(params.paymentType || '');
-  if (paymentType === 'À vista' || /vista/i.test(paymentType) && !/parcel/i.test(paymentType)) {
+  const paymentMode = resolveSalePaymentMode({ payment_type: paymentType });
+  if (paymentMode.isImmediateCash || paymentMode.isSingleFuture) {
     return {
       valid: false,
-      message: 'Parcelas balão não podem ser usadas em venda à vista.',
+      message: paymentMode.isSingleFuture
+        ? 'Parcelas balão não podem ser usadas em pagamento único futuro.'
+        : 'Parcelas balão não podem ser usadas em venda à vista.',
     };
   }
 

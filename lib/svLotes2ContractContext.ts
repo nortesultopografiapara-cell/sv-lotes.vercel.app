@@ -21,6 +21,7 @@ import {
   normalizeSaleRecordForContractDates,
 } from '@/lib/contractPaymentDates';
 import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
+import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import {
   buildCompactBalloonFinanceScheduleHtml,
   buildContractFinanceQuadroHtml,
@@ -92,11 +93,11 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     sale: sale as Record<string, unknown>,
     financeReceipts,
     balloonAddons: params.balloonAddons,
-    isCashPayment: base.isCashPayment,
+    isCashPayment: base.paymentMode !== 'INSTALLMENT',
   });
 
   let valorParcela = 0;
-  if (!base.isCashPayment && qtdParcelas > 0) {
+  if (base.paymentMode === 'INSTALLMENT' && qtdParcelas > 0) {
     valorParcela = balloonSummary.hasBalloon
       ? balloonSummary.baseInstallmentValue
       : Math.max(0, (valTotal - valEntrada) / qtdParcelas);
@@ -113,9 +114,20 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     },
   );
 
-  const vencimentoLabel = base.isCashPayment
-    ? paymentDates.downPaymentDueFmt || paymentDates.firstInstallmentDueFmt
-    : paymentDates.firstInstallmentDueFmt;
+  const singleFutureDueLongFmt =
+    paymentBreakdown.singlePaymentDueLongFmt ||
+    resolveSingleFuturePaymentDueDateFmt({
+      sale: sale as Record<string, unknown>,
+      financeReceipts,
+    }).longFmt ||
+    '';
+
+  const vencimentoLabel =
+    base.paymentMode === 'IMMEDIATE_CASH' || base.paymentMode === 'SINGLE_FUTURE'
+      ? paymentBreakdown.singlePaymentDueFmt ||
+        paymentDates.entryDueFmt ||
+        paymentDates.firstInstallmentDueFmt
+      : paymentDates.firstInstallmentDueFmt;
 
   const sv2Seller = buildSvLotes2SellerFromCompany(params.tenant);
   const saleForDates = normalizeSaleRecordForContractDates(
@@ -160,13 +172,18 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
         discountFmt: paymentBreakdown.discountFmt,
         entryFmt: paymentBreakdown.entryFmt,
         financedFmt: paymentBreakdown.installmentBalanceFmt,
-        parcelamentoLabel: base.isCashPayment
-          ? 'À vista'
-          : `${qtdParcelas} parcelas mensais`,
+        parcelamentoLabel:
+          base.paymentMode === 'SINGLE_FUTURE'
+            ? 'Pagamento único com vencimento futuro'
+            : base.paymentMode === 'IMMEDIATE_CASH'
+              ? 'À vista'
+              : `${qtdParcelas} parcelas mensais`,
         baseInstallmentFmt: paymentBreakdown.installmentValueFmt,
         correctionLabel: paymentBreakdown.correctionLabel,
         firstDueDateFmt: vencimentoLabel || null,
         isCashPayment: base.isCashPayment,
+        paymentMode: base.paymentMode,
+        netValueFmt: paymentBreakdown.netValueFmt,
       });
 
   return {
@@ -176,6 +193,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     balloonSummary,
     balloonFinanceHtml,
     hasBalloonInstallments: balloonSummary.hasBalloon,
+    singleFutureDueLongFmt,
     area,
     municipio,
     estado,
