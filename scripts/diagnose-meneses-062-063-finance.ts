@@ -103,7 +103,7 @@ async function main() {
     const { data: contracts, error: ce } = await sb
       .from('contracts')
       .select(
-        'id,contract_number,sale_id,company_id,tenant_id,version,is_current,status,contract_model,customer_id',
+        'id,contract_number,sale_id,company_id,tenant_id,version,is_current,status,customer_id',
       )
       .eq('contract_number', contractNumber)
       .order('version', { ascending: false });
