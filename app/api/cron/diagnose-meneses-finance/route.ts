@@ -149,9 +149,7 @@ export async function GET(request: NextRequest) {
       const saleId = String(current.sale_id);
       const { data: sale, error: se } = await sb
         .from('sales')
-        .select(
-          'id,company_id,tenant_id,payment_type,installments_count,lot_price,agreed_price,total_value,down_payment,discount,down_payment_due_date,first_installment_due_date,sale_date,customer_id,sale_price',
-        )
+        .select('*')
         .eq('id', saleId)
         .maybeSingle();
       if (se) throw new Error(`sales query: ${se.message || JSON.stringify(se)}`);
