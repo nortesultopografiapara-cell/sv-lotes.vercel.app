@@ -19,11 +19,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import {
   buildCompanyAdminCounts,
-  buildCompanyBlockCounts,
   buildCompanyBrokerCounts,
   buildCompanyProjectCounts,
   buildCompanyUserCounts,
 } from '@/lib/masterCompanyUsers';
+import { fetchCompanyLotCountsExact } from '@/lib/masterCompanyLotCounts';
 import { supabase } from '@/lib/supabase';
 
 export default function CompaniesPage() {
@@ -59,13 +59,12 @@ function CompaniesPageContent() {
     setLoadError(null);
 
     try {
-      const [{ data, error }, { data: usersData }, { data: projectsData }, { data: brokersData }, { data: blocksData }] =
+      const [{ data, error }, { data: usersData }, { data: projectsData }, { data: brokersData }] =
         await Promise.all([
         supabase.from('companies').select('*'),
         supabase.from('users').select('tenant_id, role'),
-        supabase.from('projects').select('tenant_id, company_id'),
+        supabase.from('projects').select('id, tenant_id, company_id'),
         supabase.from('brokers').select('tenant_id, company_id'),
-        supabase.from('blocks').select('tenant_id, company_id'),
       ]);
 
       console.log('MASTER_COMPANIES_RENDER', data);
@@ -80,7 +79,11 @@ function CompaniesPageContent() {
       const adminCounts = buildCompanyAdminCounts(usersData || []);
       const projectCounts = buildCompanyProjectCounts(projectsData || []);
       const brokerCounts = buildCompanyBrokerCounts(brokersData || []);
-      const lotCounts = buildCompanyBlockCounts(blocksData || []);
+      // Lotes: count exact via project_id (blocks.tenant_id/company_id costumam ser nulos).
+      const lotCounts = await fetchCompanyLotCountsExact(
+        supabase,
+        projectsData || [],
+      );
 
       setCompanies(
         (data ?? []).map((company) => ({
