@@ -52,6 +52,14 @@ export async function GET(request: NextRequest) {
     .from('blocks')
     .select('id', { count: 'exact', head: true })
     .not('tenant_id', 'is', null);
+  const { count: blocksWithProject } = await sb
+    .from('blocks')
+    .select('id', { count: 'exact', head: true })
+    .not('project_id', 'is', null);
+  const { count: blocksNullProject } = await sb
+    .from('blocks')
+    .select('id', { count: 'exact', head: true })
+    .is('project_id', null);
 
   const matchers = [
     { label: 'S.V TOPOGRAFIA', re: /topografia/i },
@@ -60,14 +68,57 @@ export async function GET(request: NextRequest) {
     { label: 'Empresa Demonstração', re: /demonstra/i },
   ];
 
-  const sample = (companies || [])
-    .filter((c) => matchers.some((m) => m.re.test(String(c.name || ''))))
-    .map((c) => ({
+  const sampleCompanies = (companies || []).filter((c) =>
+    matchers.some((m) => m.re.test(String(c.name || ''))),
+  );
+
+  const sample = [];
+  for (const c of sampleCompanies) {
+    const companyProjects = (projects || []).filter(
+      (p) =>
+        String(p.tenant_id || '') === c.id ||
+        String(p.company_id || '') === c.id,
+    );
+    const projectIds = companyProjects.map((p) => p.id).filter(Boolean);
+
+    const { count: byTenant, error: errTenant } = await sb
+      .from('blocks')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', c.id);
+
+    let byProject = 0;
+    let errProject: string | null = null;
+    if (projectIds.length > 0) {
+      const res = await sb
+        .from('blocks')
+        .select('id', { count: 'exact', head: true })
+        .in('project_id', projectIds.slice(0, 80));
+      byProject = res.count ?? 0;
+      errProject = res.error?.message || null;
+    }
+
+    const { count: byTenantNullDeleted, error: errDel } = await sb
+      .from('blocks')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', c.id)
+      .is('deleted_at', null);
+
+    sample.push({
       name: c.name,
-      lotsUsed: lotCounts[c.id] || 0,
+      companyId: c.id,
+      lotsUsedViaLib: lotCounts[c.id] || 0,
       maxLots: c.max_lots,
       display: `${lotCounts[c.id] || 0} / ${c.max_lots ?? '∞'}`,
-    }));
+      projectCount: companyProjects.length,
+      projectIdsSample: projectIds.slice(0, 3),
+      countByTenantExact: byTenant ?? 0,
+      countByTenantErr: errTenant?.message || null,
+      countByProjectExact: byProject,
+      countByProjectErr: errProject,
+      countByTenantAndDeletedNull: byTenantNullDeleted ?? 0,
+      countByTenantDeletedErr: errDel?.message || null,
+    });
+  }
 
   // Método antigo (tenant_id no block) — prova da regressão de exibição
   const legacyCounts: Record<string, number> = {};
@@ -86,13 +137,16 @@ export async function GET(request: NextRequest) {
     readOnly: true,
     blocksTotal: blocksTotal ?? 0,
     blocksWithTenantId: blocksWithTenant ?? 0,
+    blocksWithProjectId: blocksWithProject ?? 0,
+    blocksNullProjectId: blocksNullProject ?? 0,
+    projectsTotal: (projects || []).length,
+    projectsWithTenantOrCompany: (projects || []).filter(
+      (p) => p.tenant_id || p.company_id,
+    ).length,
     sampleCorrect: sample,
-    sampleLegacyViaBlockTenant: sample.map((s) => {
-      const company = (companies || []).find((c) => c.name === s.name);
-      return {
-        name: s.name,
-        legacyLotsUsed: company ? legacyCounts[company.id] || 0 : 0,
-      };
-    }),
+    sampleLegacyViaBlockTenant: sample.map((s) => ({
+      name: s.name,
+      legacyLotsUsed: legacyCounts[s.companyId] || 0,
+    })),
   });
 }
