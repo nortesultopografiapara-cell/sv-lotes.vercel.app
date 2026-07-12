@@ -79,9 +79,11 @@ function CompaniesPageContent() {
       const adminCounts = buildCompanyAdminCounts(usersData || []);
       const projectCounts = buildCompanyProjectCounts(projectsData || []);
       const brokerCounts = buildCompanyBrokerCounts(brokersData || []);
-      // Lotes: count exact via project_id (blocks.tenant_id/company_id costumam ser nulos).
+      // Lotes: head count exact por tenant_id/company_id (sem filtro deleted_at — ver lib).
+      const companyIds = (data ?? []).map((c) => String(c.id));
       const lotCounts = await fetchCompanyLotCountsExact(
         supabase,
+        companyIds,
         projectsData || [],
       );
 

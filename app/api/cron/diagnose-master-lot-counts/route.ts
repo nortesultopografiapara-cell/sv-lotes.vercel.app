@@ -43,7 +43,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: pErr.message }, { status: 500 });
   }
 
-  const lotCounts = await fetchCompanyLotCountsExact(sb, projects || []);
+  const lotCounts = await fetchCompanyLotCountsExact(
+    sb,
+    (companies || []).map((c) => String(c.id)),
+    projects || [],
+  );
 
   const { count: blocksTotal } = await sb
     .from('blocks')

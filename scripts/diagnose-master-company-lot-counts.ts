@@ -83,7 +83,11 @@ async function main() {
     .select('id, tenant_id, company_id');
   if (pErr) throw pErr;
 
-  const lotCounts = await fetchCompanyLotCountsExact(sb, projects || []);
+  const lotCounts = await fetchCompanyLotCountsExact(
+    sb,
+    (companies || []).map((c) => String(c.id)),
+    projects || [],
+  );
 
   const sample = (companies || [])
     .filter((c) => TARGETS.some((t) => t.match.test(String(c.name || ''))))

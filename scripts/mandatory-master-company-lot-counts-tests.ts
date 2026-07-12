@@ -119,9 +119,27 @@ function testGroupProjectIds() {
 function testCompaniesPageUsesExactFetcher() {
   const fs = require('node:fs') as typeof import('node:fs');
   const page = fs.readFileSync('app/companies/page.tsx', 'utf8');
+  const lib = fs.readFileSync('lib/masterCompanyLotCounts.ts', 'utf8');
   assert(page.includes('fetchCompanyLotCountsExact'), 'página usa count exact');
-  assert(!page.includes("blocks').select('tenant_id, company_id')"), 'não conta por tenant do block');
+  assert(!page.includes("blocks').select('tenant_id, company_id')"), 'não carrega rows só para contar');
+  assert(lib.includes('tenant_id.eq.'), 'count exact por tenant_id');
+  assert(!/\$\.is\('deleted_at', null\)/.test(lib) && !lib.includes("query.is('deleted_at'"), 'não aplica filtro deleted_at no count SQL');
+  assert(lib.includes('NÃO filtrar por deleted_at'), 'documenta motivo do skip deleted_at');
   console.log('OK testCompaniesPageUsesExactFetcher');
+}
+
+function testDirectTenantOnBlockCounts() {
+  const counts = buildCompanyLotCountsFromProjectsAndBlocks(
+    [],
+    [
+      { id: '1', tenant_id: 'c1' },
+      { id: '2', tenant_id: 'c1', company_id: 'c1' },
+      { id: '3', company_id: 'c2' },
+    ],
+  );
+  assert(counts['c1'] === 2, 'conta por tenant_id do block');
+  assert(counts['c2'] === 1, 'conta por company_id legado');
+  console.log('OK testDirectTenantOnBlockCounts');
 }
 
 function main() {
@@ -132,6 +150,7 @@ function main() {
   testMultiTenantIsolation();
   testOverLimitDisplaysRealTotal();
   testIgnoresNullTenantOnBlockWhenProjectMaps();
+  testDirectTenantOnBlockCounts();
   testGroupProjectIds();
   testCompaniesPageUsesExactFetcher();
   console.log('ALL mandatory-master-company-lot-counts-tests PASSED');

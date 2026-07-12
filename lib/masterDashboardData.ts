@@ -309,6 +309,7 @@ export async function loadMasterDashboardData(
 
   const lotCounts = await fetchCompanyLotCountsExact(
     supabase,
+    companies.map((c) => String(c.id)),
     projectsListRes.data ?? [],
   );
 

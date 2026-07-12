@@ -1,7 +1,12 @@
 /**
  * Contagem de lotes (blocks) por empresa no Master SaaS.
- * Lotes reais vinculam-se via project_id → projects.tenant_id/company_id.
- * Não depender de blocks.tenant_id/company_id (frequentemente nulos).
+ *
+ * Fonte de verdade no banco atual: blocks.tenant_id (e company_id legado).
+ * project_id → projects também funciona como fallback para linhas sem tenant.
+ *
+ * NÃO filtrar por deleted_at no count do banco: a coluna existe, mas no dado
+ * real os lotes ativos têm deleted_at preenchido e o GIS não aplica soft-delete.
+ * Filtrar "deleted_at IS NULL" no PostgREST zera todas as contagens.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -17,6 +22,7 @@ export type MasterBlockRef = {
   project_id?: string | null;
   tenant_id?: string | null;
   company_id?: string | null;
+  /** Soft-delete opcional — só considerar em agregação em memória de testes. */
   deleted_at?: string | null;
 };
 
@@ -55,8 +61,8 @@ export function groupProjectIdsByCompany(
 }
 
 /**
- * Contagem em memória a partir de blocks (com project_id) + projects.
- * Usado em testes; produção preferir fetchCompanyLotCountsExact.
+ * Contagem em memória a partir de blocks + projects (testes / fallback).
+ * Soft-delete: exclui deleted_at truthy quando o campo está presente e usado.
  */
 export function buildCompanyLotCountsFromProjectsAndBlocks(
   projects: MasterProjectRef[],
@@ -85,45 +91,59 @@ export function buildCompanyLotCountsFromProjectsAndBlocks(
 }
 
 /**
- * Contagem exact no banco por empresa, via project_id dos empreendimentos.
- * Não carrega linhas de lotes — só head count.
+ * Contagem exact no banco por empresa.
+ * Preferência: tenant_id / company_id no próprio block (head count).
+ * Fallback: project_id dos empreendimentos da empresa (quando tenant no block falha).
  */
 export async function fetchCompanyLotCountsExact(
   client: SupabaseClient,
-  projects: MasterProjectRef[],
+  companyIds: string[],
+  projects: MasterProjectRef[] = [],
 ): Promise<Record<string, number>> {
-  const byCompany = groupProjectIdsByCompany(projects);
-  const entries = Object.entries(byCompany);
+  const ids = [...new Set(companyIds.map((id) => String(id || '').trim()).filter(Boolean))];
   const counts: Record<string, number> = {};
+  const byCompanyProjects = groupProjectIdsByCompany(projects);
 
   await Promise.all(
-    entries.map(async ([companyId, projectIds]) => {
+    ids.map(async (companyId) => {
+      const { count, error } = await client
+        .from('blocks')
+        .select('id', { count: 'exact', head: true })
+        .or(`tenant_id.eq.${companyId},company_id.eq.${companyId}`);
+
+      if (!error && (count ?? 0) > 0) {
+        counts[companyId] = count ?? 0;
+        return;
+      }
+
+      if (error) {
+        console.warn('[masterCompanyLotCounts] tenant count failed', {
+          companyId,
+          message: error.message,
+        });
+      }
+
+      // Fallback via projetos da empresa (lotes só com project_id)
+      const projectIds = byCompanyProjects[companyId] || [];
+      if (projectIds.length === 0) {
+        counts[companyId] = count ?? 0;
+        return;
+      }
+
       let total = 0;
       for (const chunk of chunkIds(projectIds, 80)) {
-        let query = client
+        const fallback = await client
           .from('blocks')
           .select('id', { count: 'exact', head: true })
           .in('project_id', chunk);
-
-        let { count, error } = await query.is('deleted_at', null);
-
-        if (error?.message?.match(/deleted_at|Could not find/i)) {
-          const fallback = await client
-            .from('blocks')
-            .select('id', { count: 'exact', head: true })
-            .in('project_id', chunk);
-          count = fallback.count;
-          error = fallback.error;
-        }
-
-        if (error) {
-          console.warn('[masterCompanyLotCounts] count failed', {
+        if (fallback.error) {
+          console.warn('[masterCompanyLotCounts] project count failed', {
             companyId,
-            message: error.message,
+            message: fallback.error.message,
           });
           continue;
         }
-        total += count ?? 0;
+        total += fallback.count ?? 0;
       }
       counts[companyId] = total;
     }),
