@@ -19,7 +19,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import {
   buildCompanyAdminCounts,
-  buildCompanyBlockCounts,
   buildCompanyBrokerCounts,
   buildCompanyProjectCounts,
   buildCompanyUserCounts,
@@ -59,13 +58,12 @@ function CompaniesPageContent() {
     setLoadError(null);
 
     try {
-      const [{ data, error }, { data: usersData }, { data: projectsData }, { data: brokersData }, { data: blocksData }] =
+      const [{ data, error }, { data: usersData }, { data: projectsData }, { data: brokersData }] =
         await Promise.all([
         supabase.from('companies').select('*'),
         supabase.from('users').select('tenant_id, role'),
-        supabase.from('projects').select('tenant_id, company_id'),
+        supabase.from('projects').select('id, tenant_id, company_id'),
         supabase.from('brokers').select('tenant_id, company_id'),
-        supabase.from('blocks').select('tenant_id, company_id'),
       ]);
 
       console.log('MASTER_COMPANIES_RENDER', data);
@@ -80,7 +78,30 @@ function CompaniesPageContent() {
       const adminCounts = buildCompanyAdminCounts(usersData || []);
       const projectCounts = buildCompanyProjectCounts(projectsData || []);
       const brokerCounts = buildCompanyBrokerCounts(brokersData || []);
-      const lotCounts = buildCompanyBlockCounts(blocksData || []);
+
+      // Lotes: API service-role (client supabase sob RLS de blocks retorna 0 nos cards).
+      let lotCounts: Record<string, number> = {};
+      try {
+        const lotRes = await fetch('/api/master/company-lot-counts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            userId: user.id,
+            companyIds: (data ?? []).map((c) => String(c.id)),
+          }),
+        });
+        const lotJson = (await lotRes.json()) as {
+          success?: boolean;
+          lotCounts?: Record<string, number>;
+          error?: string;
+        };
+        if (lotRes.ok && lotJson.success) {
+          lotCounts = lotJson.lotCounts || {};
+        }
+      } catch {
+        // Mantém lot_count=0 se a API falhar; demais métricas seguem normais.
+      }
 
       setCompanies(
         (data ?? []).map((company) => ({
@@ -89,7 +110,7 @@ function CompaniesPageContent() {
           admin_count: adminCounts[company.id] || 0,
           project_count: projectCounts[company.id] || 0,
           broker_count: brokerCounts[company.id] || 0,
-          lot_count: lotCounts[company.id] || 0,
+          lot_count: lotCounts[String(company.id)] || 0,
         })),
       );
     } catch (err) {

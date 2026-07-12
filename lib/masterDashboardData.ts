@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateMrrFromCompanies, getCompanyMonthlyPrice, isBillableCompany } from '@/lib/companyPricing';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
-import { buildCompanyUserCounts, buildCompanyAdminCounts, buildCompanyBrokerCounts, buildCompanyBlockCounts } from '@/lib/masterCompanyUsers';
+import { buildCompanyUserCounts, buildCompanyAdminCounts, buildCompanyBrokerCounts } from '@/lib/masterCompanyUsers';
+import { fetchCompanyLotCountsExact } from '@/lib/masterCompanyLotCounts';
 import { buildPaidReferenceMonthsByCompany } from '@/lib/masterSaasPayments';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
@@ -164,7 +165,6 @@ export async function loadMasterDashboardData(
     projectsListRes,
     usersListRes,
     brokersListRes,
-    blocksListRes,
     subscriptionsRes,
     paymentsRes,
     invoicesRes,
@@ -181,10 +181,9 @@ export async function loadMasterDashboardData(
       .select('amount, status, paid_at, due_date, paid_amount')
       .order('due_date', { ascending: false })
       .limit(5000),
-    supabase.from('projects').select('tenant_id, company_id'),
+    supabase.from('projects').select('id, tenant_id, company_id'),
     supabase.from('users').select('tenant_id, role'),
     supabase.from('brokers').select('tenant_id, company_id'),
-    supabase.from('blocks').select('tenant_id, company_id'),
     supabase.from('company_subscriptions').select('*'),
     supabase
       .from('master_saas_payments')
@@ -308,7 +307,11 @@ export async function loadMasterDashboardData(
     if (id) brokerCounts[id] = (brokerCounts[id] || 0) + 1;
   }
 
-  const lotCounts = buildCompanyBlockCounts(blocksListRes.data ?? []);
+  const lotCounts = await fetchCompanyLotCountsExact(
+    supabase,
+    companies.map((c) => String(c.id)),
+    projectsListRes.data ?? [],
+  );
 
   const alerts: MasterDashboardAlert[] = [];
 
