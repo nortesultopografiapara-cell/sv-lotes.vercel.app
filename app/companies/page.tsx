@@ -114,6 +114,11 @@ function CompaniesPageContent() {
             status: lotRes.status,
             error: lotJson.error,
           });
+          if (isPreviewLotCountDebug()) {
+            setLoadError(
+              `Falha ao carregar contagem de lotes: ${lotJson.error || lotRes.status}`,
+            );
+          }
         } else {
           lotCounts = lotJson.lotCounts || {};
         }
