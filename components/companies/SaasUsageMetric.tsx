@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import {
   formatSaasUsageLabel,
   resolveSaasLimitUsageLevel,
@@ -30,19 +29,6 @@ export function SaasUsageMetric({
   used: number;
   limit: number | null | undefined;
 }) {
-  useEffect(() => {
-    if (label !== 'Lotes') return;
-    const env = process.env.NEXT_PUBLIC_VERCEL_ENV;
-    if (env === 'production') return;
-    if (env !== 'preview' && process.env.NODE_ENV !== 'development') return;
-    console.log('[master-companies-lots] SaasUsageMetric', {
-      label,
-      used_recebido: used,
-      limit,
-      display: formatSaasUsageLabel(used, limit),
-    });
-  }, [label, used, limit]);
-
   const level = resolveSaasLimitUsageLevel(used, limit);
   return (
     <div

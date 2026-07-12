@@ -87,18 +87,6 @@ export function CompanyCard({
   const lotCount = company.lot_count ?? 0;
   const saasPlan = getCompanySaasPlan(company);
 
-  useEffect(() => {
-    const env = process.env.NEXT_PUBLIC_VERCEL_ENV;
-    if (env === 'production') return;
-    if (env !== 'preview' && process.env.NODE_ENV !== 'development') return;
-    console.log('[master-companies-lots] CompanyCard', {
-      companyId: company.id,
-      name: company.name,
-      lot_count_recebido: company.lot_count,
-      lotCount_repassado_SaasUsageMetric: lotCount,
-    });
-  }, [company.id, company.name, company.lot_count, lotCount]);
-
   if (process.env.NODE_ENV === 'development') {
     console.log('[CompanyCard] plan limits', {
       companyId: company.id,

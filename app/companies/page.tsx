@@ -25,19 +25,6 @@ import {
 } from '@/lib/masterCompanyUsers';
 import { supabase } from '@/lib/supabase';
 
-/** Logs de homologação da contagem de lotes — nunca em production. */
-function isPreviewLotCountDebug(): boolean {
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'www.svlotes.com.br' || host === 'svlotes.com.br') return false;
-  }
-  return (
-    process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview' ||
-    process.env.NEXT_PUBLIC_VERCEL_ENV === 'development' ||
-    process.env.NODE_ENV === 'development'
-  );
-}
-
 export default function CompaniesPage() {
   return (
     <Suspense
@@ -109,44 +96,23 @@ function CompaniesPageContent() {
           lotCounts?: Record<string, number>;
           error?: string;
         };
-        if (!lotRes.ok || !lotJson.success) {
-          console.warn('[master-companies-lots] api_failed', {
-            status: lotRes.status,
-            error: lotJson.error,
-          });
-          if (isPreviewLotCountDebug()) {
-            setLoadError(
-              `Falha ao carregar contagem de lotes: ${lotJson.error || lotRes.status}`,
-            );
-          }
-        } else {
+        if (lotRes.ok && lotJson.success) {
           lotCounts = lotJson.lotCounts || {};
         }
-      } catch (lotErr) {
-        console.warn('[master-companies-lots] api_exception', lotErr);
+      } catch {
+        // Mantém lot_count=0 se a API falhar; demais métricas seguem normais.
       }
 
-      const enriched = (data ?? []).map((company) => {
-        const lot_count = lotCounts[String(company.id)] || 0;
-        if (isPreviewLotCountDebug()) {
-          console.log('[master-companies-lots] calculated', {
-            companyId: company.id,
-            name: company.name,
-            lot_count_calculado: lot_count,
-            lot_count_repassado_CompanyCard: lot_count,
-          });
-        }
-        return {
+      setCompanies(
+        (data ?? []).map((company) => ({
           ...company,
           user_count: userCounts[company.id] || 0,
           admin_count: adminCounts[company.id] || 0,
           project_count: projectCounts[company.id] || 0,
           broker_count: brokerCounts[company.id] || 0,
-          lot_count,
-        };
-      });
-
-      setCompanies(enriched);
+          lot_count: lotCounts[String(company.id)] || 0,
+        })),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
       setLoadError(message);
