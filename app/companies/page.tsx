@@ -23,8 +23,20 @@ import {
   buildCompanyProjectCounts,
   buildCompanyUserCounts,
 } from '@/lib/masterCompanyUsers';
-import { fetchCompanyLotCountsExact } from '@/lib/masterCompanyLotCounts';
 import { supabase } from '@/lib/supabase';
+
+/** Logs de homologação da contagem de lotes — nunca em production. */
+function isPreviewLotCountDebug(): boolean {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'www.svlotes.com.br' || host === 'svlotes.com.br') return false;
+  }
+  return (
+    process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview' ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === 'development' ||
+    process.env.NODE_ENV === 'development'
+  );
+}
 
 export default function CompaniesPage() {
   return (
@@ -79,24 +91,57 @@ function CompaniesPageContent() {
       const adminCounts = buildCompanyAdminCounts(usersData || []);
       const projectCounts = buildCompanyProjectCounts(projectsData || []);
       const brokerCounts = buildCompanyBrokerCounts(brokersData || []);
-      // Lotes: head count exact por tenant_id/company_id (sem filtro deleted_at — ver lib).
-      const companyIds = (data ?? []).map((c) => String(c.id));
-      const lotCounts = await fetchCompanyLotCountsExact(
-        supabase,
-        companyIds,
-        projectsData || [],
-      );
 
-      setCompanies(
-        (data ?? []).map((company) => ({
+      // Lotes: API service-role (client supabase sob RLS de blocks retorna 0 nos cards).
+      let lotCounts: Record<string, number> = {};
+      try {
+        const lotRes = await fetch('/api/master/company-lot-counts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            userId: user.id,
+            companyIds: (data ?? []).map((c) => String(c.id)),
+          }),
+        });
+        const lotJson = (await lotRes.json()) as {
+          success?: boolean;
+          lotCounts?: Record<string, number>;
+          error?: string;
+        };
+        if (!lotRes.ok || !lotJson.success) {
+          console.warn('[master-companies-lots] api_failed', {
+            status: lotRes.status,
+            error: lotJson.error,
+          });
+        } else {
+          lotCounts = lotJson.lotCounts || {};
+        }
+      } catch (lotErr) {
+        console.warn('[master-companies-lots] api_exception', lotErr);
+      }
+
+      const enriched = (data ?? []).map((company) => {
+        const lot_count = lotCounts[String(company.id)] || 0;
+        if (isPreviewLotCountDebug()) {
+          console.log('[master-companies-lots] calculated', {
+            companyId: company.id,
+            name: company.name,
+            lot_count_calculado: lot_count,
+            lot_count_repassado_CompanyCard: lot_count,
+          });
+        }
+        return {
           ...company,
           user_count: userCounts[company.id] || 0,
           admin_count: adminCounts[company.id] || 0,
           project_count: projectCounts[company.id] || 0,
           broker_count: brokerCounts[company.id] || 0,
-          lot_count: lotCounts[company.id] || 0,
-        })),
-      );
+          lot_count,
+        };
+      });
+
+      setCompanies(enriched);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
       setLoadError(message);

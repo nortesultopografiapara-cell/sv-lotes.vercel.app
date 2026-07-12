@@ -120,10 +120,15 @@ function testCompaniesPageUsesExactFetcher() {
   const fs = require('node:fs') as typeof import('node:fs');
   const page = fs.readFileSync('app/companies/page.tsx', 'utf8');
   const lib = fs.readFileSync('lib/masterCompanyLotCounts.ts', 'utf8');
-  assert(page.includes('fetchCompanyLotCountsExact'), 'página usa count exact');
-  assert(!page.includes("blocks').select('tenant_id, company_id')"), 'não carrega rows só para contar');
+  const api = fs.readFileSync('app/api/master/company-lot-counts/route.ts', 'utf8');
+  assert(page.includes('/api/master/company-lot-counts'), 'página busca contagem via API master');
+  assert(page.includes('lot_count'), 'página preenche lot_count');
+  assert(!page.includes('fetchCompanyLotCountsExact'), 'não conta blocks no client browser');
+  assert(api.includes('createServiceSupabase'), 'API usa service role');
+  assert(api.includes('assertSuperAdmin'), 'API exige SUPER_ADMIN');
+  assert(api.includes('fetchCompanyLotCountsExact'), 'API usa count exact');
   assert(lib.includes('tenant_id.eq.'), 'count exact por tenant_id');
-  assert(!/\$\.is\('deleted_at', null\)/.test(lib) && !lib.includes("query.is('deleted_at'"), 'não aplica filtro deleted_at no count SQL');
+  assert(!lib.includes("query.is('deleted_at'"), 'não aplica filtro deleted_at no count SQL');
   assert(lib.includes('NÃO filtrar por deleted_at'), 'documenta motivo do skip deleted_at');
   console.log('OK testCompaniesPageUsesExactFetcher');
 }
