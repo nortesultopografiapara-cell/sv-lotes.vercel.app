@@ -29,6 +29,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const { data: smokeAdmin } = await sb
+    .from('users')
+    .select('id')
+    .eq('role', 'SUPER_ADMIN')
+    .limit(1)
+    .maybeSingle();
+
   const { data: companies, error: cErr } = await sb
     .from('companies')
     .select('id, name, max_lots');
@@ -139,6 +146,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     success: true,
     readOnly: true,
+    smokeUserId: smokeAdmin?.id || null,
     blocksTotal: blocksTotal ?? 0,
     blocksWithTenantId: blocksWithTenant ?? 0,
     blocksWithProjectId: blocksWithProject ?? 0,
