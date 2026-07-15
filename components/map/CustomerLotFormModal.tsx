@@ -60,7 +60,6 @@ import {
   type CompanyFinancialAccountResponse,
 } from '@/lib/finance/companyFinancialAccountTypes';
 import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
-import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { SaleBalloonInstallmentsPanel } from '@/components/map/SaleBalloonInstallmentsPanel';
 import {
@@ -195,6 +194,7 @@ export function CustomerLotFormModal({
   );
   const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
   const [financialAccountsLoading, setFinancialAccountsLoading] = useState(false);
+  const [financialAccountsUnavailable, setFinancialAccountsUnavailable] = useState(false);
   const canEditFinancialAccount =
     isSuperAdmin || isTenantEnterpriseAdminRole(userRole);
 
@@ -210,14 +210,10 @@ export function CustomerLotFormModal({
     async function loadFinancialAccounts() {
       if (!tenantId) return;
       setFinancialAccountsLoading(true);
+      setFinancialAccountsUnavailable(false);
       try {
-        const asaasEnabled = isCompanyAsaasEnabled(tenantId);
-        const accountsPromise = asaasEnabled
-          ? fetch('/api/finance/financial-accounts', { credentials: 'include' })
-          : Promise.resolve({ ok: false } as Response);
-
         const [accountsRes, projectRes] = await Promise.all([
-          accountsPromise,
+          fetch('/api/finance/financial-accounts', { credentials: 'include' }),
           lot.project_id
             ? supabase
                 .from('projects')
@@ -228,6 +224,12 @@ export function CustomerLotFormModal({
         ]);
 
         if (cancelled) return;
+
+        if (accountsRes.status === 403 || accountsRes.status === 404) {
+          setFinancialAccounts([]);
+          setFinancialAccountsUnavailable(true);
+          return;
+        }
 
         const accountsJson = await accountsRes.json().catch(() => ({}));
         const accounts = accountsRes.ok
@@ -1466,11 +1468,17 @@ export function CustomerLotFormModal({
                     <select
                       value={formData.financial_account_id}
                       onChange={(e) => setField({ financial_account_id: e.target.value })}
-                      disabled={!canEditFinancialAccount || financialAccountsLoading}
+                      disabled={!canEditFinancialAccount || financialAccountsLoading || financialAccountsUnavailable}
                       className={canEditFinancialAccount ? GIS_INPUT : GIS_INPUT_READONLY}
                     >
                       <option value="">
-                        {financialAccountsLoading ? 'Carregando contas...' : 'Selecione a conta'}
+                        {financialAccountsLoading
+                          ? 'Carregando contas...'
+                          : financialAccountsUnavailable
+                            ? 'Módulo financeiro não disponível'
+                            : financialAccounts.length === 0
+                              ? 'Nenhuma conta financeira ativa cadastrada'
+                              : 'Selecione a conta'}
                       </option>
                       {financialAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
