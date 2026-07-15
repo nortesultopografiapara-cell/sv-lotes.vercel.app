@@ -198,7 +198,7 @@ export function buildSaleEditFinancePayloads(
     if (data.first_installment_due_date) {
       const principal = resolveInstallmentPrincipal({
         totalValue: fValue,
-        downPayment,
+        downPayment: grossDownPayment,
         contractModel: options?.contractModel,
       });
 
