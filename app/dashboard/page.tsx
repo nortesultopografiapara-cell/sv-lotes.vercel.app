@@ -60,7 +60,6 @@ import {
 } from '@/lib/lotReportExport';
 import { FinancialIntegrationDashboardCard } from '@/components/finance/FinancialIntegrationPanel';
 import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
-import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import {
   assertOwnerProjectExportAllowed,
@@ -141,7 +140,7 @@ function OperationalDashboard({ user }: { user: any }) {
     logo_url?: string | null;
   } | null>(null);
   const bankingUiEnabled = isBankingModuleEnabledForUi();
-  const companyAsaasEnabled = isCompanyAsaasEnabled(user?.tenant_id);
+  const [asaasAccessAvailable, setAsaasAccessAvailable] = useState(false);
   const [asaasIntegration, setAsaasIntegration] = useState<AsaasIntegrationConfigResponse | null>(null);
   const [asaasLoading, setAsaasLoading] = useState(false);
 
@@ -186,13 +185,17 @@ function OperationalDashboard({ user }: { user: any }) {
 
   useEffect(() => {
     async function loadAsaasIntegration() {
-      if (!bankingUiEnabled || !companyAsaasEnabled || !user?.tenant_id) return;
+      if (!bankingUiEnabled || !user?.tenant_id) return;
       setAsaasLoading(true);
       try {
         const res = await fetch('/api/finance/asaas/integration', { credentials: 'include' });
-        if (res.status === 404) return;
+        if (res.status === 403 || res.status === 404) {
+          setAsaasAccessAvailable(false);
+          return;
+        }
         const json = await res.json().catch(() => ({}));
         if (res.ok) {
+          setAsaasAccessAvailable(true);
           setAsaasIntegration(json.integration as AsaasIntegrationConfigResponse);
         }
       } catch {
@@ -202,7 +205,7 @@ function OperationalDashboard({ user }: { user: any }) {
       }
     }
     void loadAsaasIntegration();
-  }, [bankingUiEnabled, companyAsaasEnabled, user?.tenant_id]);
+  }, [bankingUiEnabled, user?.tenant_id]);
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -741,7 +744,7 @@ function OperationalDashboard({ user }: { user: any }) {
         ) : null}
 
         <div className="dash-bottom-grid">
-          {bankingUiEnabled && companyAsaasEnabled ? (
+          {bankingUiEnabled && asaasAccessAvailable ? (
             <FinancialIntegrationDashboardCard
               loading={asaasLoading}
               connectionStatus={asaasIntegration?.connectionStatus ?? 'DISCONNECTED'}
