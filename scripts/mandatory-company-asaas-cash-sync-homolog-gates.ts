@@ -36,13 +36,18 @@ console.log('\n═══ GATE 2: Auth retorna 403 sem permissão ═══');
   assert(guard.includes('assertCompanyAsaasTenantEnabled'), 'whitelist tenant');
 }
 
-console.log('\n═══ GATE 3: UI esconde botão sem Asaas ═══');
+console.log('\n═══ GATE 3: UI — botão no Fluxo de Caixa ═══');
 {
   const page = fs.readFileSync('app/finance/page.tsx', 'utf8');
-  assert(page.includes('asaasCashSyncAvailable'), 'gate asaasCashSyncAvailable');
-  assert(page.includes('companyAsaasActive'), 'exige companyAsaasActive');
-  assert(page.includes('hasSandboxApiKey') || page.includes('hasProductionApiKey'), 'exige API key');
-  assert(page.includes('asaasCashSyncAvailable && !ownerReadOnly'), 'owner readonly oculto');
+  assert(page.includes('asaasCashSyncVisible'), 'gate asaasCashSyncVisible');
+  assert(page.includes('hasConfiguredAsaasFinancialAccount'), 'exige conta ativa+bankIntegrationId');
+  const gateStart = page.indexOf('const asaasCashSyncVisible');
+  const gateSlice = page.slice(gateStart, gateStart + 700);
+  assert(!gateSlice.includes('hasSandboxApiKey'), 'gate não exige hasSandboxApiKey');
+  assert(!gateSlice.includes('WEBHOOK_INVALID'), 'gate não exige webhook válido');
+  assert(!gateSlice.includes('companyAsaasActive'), 'gate não exige companyAsaasActive');
+  assert(page.includes('Sincronizando...'), 'estado sincronizando');
+  assert(page.includes('[authLoading, user]'), 'fetch contas após auth');
 }
 
 console.log('\n═══ GATE 4: Conta de outra empresa bloqueada ═══');

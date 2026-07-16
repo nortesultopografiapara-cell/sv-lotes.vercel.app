@@ -245,6 +245,7 @@ export default function FinancePage() {
   const [editingCashMovementId, setEditingCashMovementId] = useState<string | null>(null);
   const [selectedFlowItem, setSelectedFlowItem] = useState<CashFlowItem | null>(null);
   const [financeToast, setFinanceToast] = useState<string | null>(null);
+  const [financeToastIsError, setFinanceToastIsError] = useState(false);
   const [syncingAsaasCash, setSyncingAsaasCash] = useState(false);
 
   const contractsForSaida = useMemo(() => {
@@ -454,8 +455,11 @@ export default function FinancePage() {
           
           setPayments(data);
 
-          if (bankingUiEnabled && resolvedTenantId && data?.length) {
-            void loadAsaasFinanceContext(resolvedTenantId, data.map((row) => String(row.id)));
+          if (bankingUiEnabled && resolvedTenantId) {
+            void loadAsaasFinanceContext(
+              resolvedTenantId,
+              (data || []).map((row) => String(row.id)),
+            );
           } else {
             setCompanyAsaasActive(false);
             setAsaasChargesByInstallment({});
@@ -604,6 +608,7 @@ export default function FinancePage() {
   }, [authLoading, user?.role, router]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     void fetch('/api/finance/financial-accounts', { credentials: 'include' })
       .then((res) => {
         if (res.status === 403 || res.status === 404) return {};
@@ -613,7 +618,40 @@ export default function FinancePage() {
         setFinancialAccounts((json.accounts as CompanyFinancialAccountResponse[]) || []);
       })
       .catch(() => setFinancialAccounts([]));
-  }, []);
+  }, [authLoading, user]);
+
+  /** Probe Asaas Company independente de parcelas — evita botão invisível sem installments. */
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const integrationRes = await fetch('/api/finance/asaas/integration', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (cancelled) return;
+        if (integrationRes.status === 403 || integrationRes.status === 404) {
+          setAsaasAccessAvailable(false);
+          setCompanyAsaasActive(false);
+          return;
+        }
+        setAsaasAccessAvailable(true);
+        if (!integrationRes.ok) {
+          setCompanyAsaasActive(false);
+          return;
+        }
+        const integrationJson = await integrationRes.json().catch(() => ({}));
+        const integration = integrationJson.integration as AsaasIntegrationConfigResponse;
+        setCompanyAsaasActive(isCompanyAsaasIntegrationReady(integration));
+      } catch {
+        if (!cancelled) setAsaasAccessAvailable(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (!authLoading) {
@@ -625,7 +663,10 @@ export default function FinancePage() {
 
   useEffect(() => {
     if (!financeToast) return;
-    const timer = setTimeout(() => setFinanceToast(null), 4000);
+    const timer = setTimeout(() => {
+      setFinanceToast(null);
+      setFinanceToastIsError(false);
+    }, 6000);
     return () => clearTimeout(timer);
   }, [financeToast]);
 
@@ -675,18 +716,25 @@ export default function FinancePage() {
   const showEnterpriseValues = canViewEnterpriseValues(user?.role);
   const ownerReadOnly = isOwnerRole(user?.role);
 
-  const asaasCashSyncAvailable = useMemo(() => {
-    if (!bankingUiEnabled || !asaasAccessAvailable || !companyAsaasActive) return false;
-    return financialAccounts.some((account) => {
-      if (!account.active || !account.bankIntegrationId) return false;
-      if (account.connectionStatus === 'ERROR' || account.connectionStatus === 'WEBHOOK_INVALID') {
-        return false;
-      }
-      return account.environment === 'PRODUCTION'
-        ? account.hasProductionApiKey
-        : account.hasSandboxApiKey;
-    });
-  }, [bankingUiEnabled, asaasAccessAvailable, companyAsaasActive, financialAccounts]);
+  /**
+   * Botão "Sincronizar Asaas" — visível para admin quando há conta Asaas configurada.
+   * Não exige API Key validada / webhook OK / companyAsaasActive (isso falha no clique com mensagem).
+   */
+  const hasConfiguredAsaasFinancialAccount = useMemo(
+    () =>
+      financialAccounts.some(
+        (account) => account.active && Boolean(account.bankIntegrationId),
+      ),
+    [financialAccounts],
+  );
+
+  const asaasCashSyncVisible = useMemo(() => {
+    if (ownerReadOnly) return false;
+    // Conta financeira Asaas ativa+configurada (fonte principal — não exige key/webhook OK).
+    if (hasConfiguredAsaasFinancialAccount) return true;
+    // Fallback: sessão tem acesso à API Asaas Company (whitelist + banking server).
+    return asaasAccessAvailable;
+  }, [ownerReadOnly, hasConfiguredAsaasFinancialAccount, asaasAccessAvailable]);
 
   const enterpriseSummary: EnterpriseValueSummary | null = useMemo(() => {
     if (!showEnterpriseValues) return null;
@@ -846,7 +894,7 @@ export default function FinancePage() {
   };
 
   const handleSyncAsaasCash = async () => {
-    if (!asaasCashSyncAvailable || ownerReadOnly || syncingAsaasCash) return;
+    if (!asaasCashSyncVisible || ownerReadOnly || syncingAsaasCash) return;
 
     setSyncingAsaasCash(true);
     try {
@@ -866,10 +914,24 @@ export default function FinancePage() {
       if (!res.ok) {
         throw new Error(json.error || 'Falha ao sincronizar extrato Asaas.');
       }
-      setFinanceToast(json.sync?.message || 'Sincronização Asaas concluída.');
+      const sync = json.sync || {};
+      const message =
+        sync.message ||
+        [
+          `${Number(sync.created || 0)} novas`,
+          `${Number(sync.skippedDuplicate || 0) + Number(sync.skipped || 0)} já existentes/ignoradas`,
+          `${Number(sync.errors || 0)} falhas`,
+        ].join(', ');
+      setFinanceToastIsError(false);
+      setFinanceToast(
+        typeof message === 'string' && message.includes('Sincronização')
+          ? message
+          : `Sincronização concluída: ${message}.`,
+      );
       await loadFinance();
     } catch (err) {
       console.error('ASAAS_CASH_SYNC', err);
+      setFinanceToastIsError(true);
       setFinanceToast(
         err instanceof Error ? err.message : 'Erro ao sincronizar extrato Asaas.',
       );
@@ -3072,7 +3134,11 @@ export default function FinancePage() {
       {financeToast && (
         <div
           role="status"
-          className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 rounded-lg border border-[var(--success)]/30 bg-[color-mix(in_srgb,var(--success)_12%,var(--bg-card))] px-4 py-3 text-sm text-[var(--success)] shadow-lg"
+          className={`fixed bottom-6 right-6 z-[100] flex max-w-md items-center gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg ${
+            financeToastIsError
+              ? 'border-rose-500/30 bg-[color-mix(in_srgb,var(--danger)_12%,var(--bg-card))] text-rose-300'
+              : 'border-[var(--success)]/30 bg-[color-mix(in_srgb,var(--success)_12%,var(--bg-card))] text-[var(--success)]'
+          }`}
         >
           <CheckCircle className="h-4 w-4 shrink-0" />
           {financeToast}
@@ -3506,15 +3572,16 @@ export default function FinancePage() {
                  Fluxo de caixa
               </h3>
             </div>
-            {asaasCashSyncAvailable && !ownerReadOnly ? (
+            {asaasCashSyncVisible ? (
               <button
                 type="button"
+                data-testid="asaas-cash-sync-button"
                 onClick={() => void handleSyncAsaasCash()}
                 disabled={loading || syncingAsaasCash}
                 className="inline-flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[11px] font-semibold text-blue-300 transition-colors hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CloudDownload className={`w-3.5 h-3.5 ${syncingAsaasCash ? 'animate-pulse' : ''}`} />
-                {syncingAsaasCash ? 'Sincronizando…' : 'Sincronizar Asaas'}
+                {syncingAsaasCash ? 'Sincronizando...' : 'Sincronizar Asaas'}
               </button>
             ) : null}
          </div>

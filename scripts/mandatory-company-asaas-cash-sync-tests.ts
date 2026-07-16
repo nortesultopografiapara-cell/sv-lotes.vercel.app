@@ -581,7 +581,10 @@ console.log('\n═══ TESTE 14: UI — botão no Fluxo de Caixa ═══');
   const page = fs.readFileSync('app/finance/page.tsx', 'utf8');
   assert(page.includes('Sincronizar Asaas'), 'botão no finance page');
   assert(page.includes('/api/finance/asaas/sync-cash'), 'rota sync-cash');
-  assert(page.includes('asaasCashSyncAvailable'), 'gate de visibilidade');
+  assert(page.includes('asaasCashSyncVisible'), 'gate de visibilidade');
+  assert(page.includes('hasConfiguredAsaasFinancialAccount'), 'gate por conta financeira');
+  assert(page.includes('[authLoading, user]'), 'contas financeiras após auth');
+  assert(!page.includes('asaasCashSyncAvailable'), 'gate antigo removido');
 }
 
 console.log('\n═══ TESTE 15: Master permanece inalterado ═══');
