@@ -90,6 +90,7 @@ function mapRowToResponse(
       companyId,
       companyName,
       sync: { lastAt: null, chargesCount: syncedChargesCount },
+      cashSync: { ...EMPTY_ASAAS_INTEGRATION_CONFIG.cashSync },
     };
   }
 
@@ -101,6 +102,20 @@ function mapRowToResponse(
   const sync = {
     lastAt: metadata.sync?.lastAt ?? null,
     chargesCount: metadata.sync?.chargesCount ?? syncedChargesCount,
+  };
+  const cashSync = {
+    lastAt: metadata.cashSync?.lastAt ?? null,
+    financialAccountId: metadata.cashSync?.financialAccountId ?? null,
+    environment: metadata.cashSync?.environment ?? null,
+    periodFrom: metadata.cashSync?.periodFrom ?? null,
+    periodTo: metadata.cashSync?.periodTo ?? null,
+    fetched: metadata.cashSync?.fetched ?? 0,
+    created: metadata.cashSync?.created ?? 0,
+    updated: metadata.cashSync?.updated ?? 0,
+    skipped: metadata.cashSync?.skipped ?? 0,
+    errors: metadata.cashSync?.errors ?? 0,
+    initiatedBy: metadata.cashSync?.initiatedBy ?? null,
+    message: metadata.cashSync?.message ?? null,
   };
   const webhookUrl = row.webhook_url ?? '';
   const hasWebhookToken = credentialTypes.has('webhook_secret');
@@ -125,6 +140,7 @@ function mapRowToResponse(
     accountValidated,
     features,
     sync,
+    cashSync,
     configuredAt: row.configured_at,
     updatedAt: row.updated_at,
     lastConnectionTestAt: metadata.lastConnectionTestAt ?? null,
@@ -402,6 +418,7 @@ export async function patchAsaasIntegrationMetadata(
     ...patch,
     features: { ...current.features, ...patch.features },
     sync: { ...current.sync, ...patch.sync },
+    cashSync: { ...current.cashSync, ...patch.cashSync },
     webhook: { ...current.webhook, ...patch.webhook },
   };
 
