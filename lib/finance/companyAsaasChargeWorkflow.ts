@@ -80,9 +80,9 @@ export function resolveCompanyAsaasBoletoUrl(charge: CompanyAsaasChargeResponse)
 
 export function formatCompanyAsaasChargeStatusLabel(status: CompanyAsaasChargeStatus): string {
   const labels: Record<CompanyAsaasChargeStatus, string> = {
-    PENDING: 'Pendente',
+    PENDING: 'Aguardando pagamento',
     REGISTERED: 'Registrada',
-    PAID: 'Paga',
+    PAID: 'Pago',
     CANCELLED: 'Cancelada',
     EXPIRED: 'Expirada',
     FAILED: 'Falhou',

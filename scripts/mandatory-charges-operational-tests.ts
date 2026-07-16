@@ -251,8 +251,8 @@ function testCreateChargeApiPathAndDuplicateGuard() {
 
 function testAsaasStatusLabels() {
   assert(resolveAsaasStatusDisplayLabel(null) === 'Não gerada', 'não gerada');
-  assert(resolveAsaasStatusDisplayLabel(charge({ status: 'PENDING' })) === 'Pendente', 'pendente');
-  assert(resolveAsaasStatusDisplayLabel(charge({ status: 'PAID' })) === 'Recebida/Paga', 'paga');
+  assert(resolveAsaasStatusDisplayLabel(charge({ status: 'PENDING' })) === 'Aguardando pagamento', 'pendente');
+  assert(resolveAsaasStatusDisplayLabel(charge({ status: 'PAID' })) === 'Pago', 'paga');
   assert(resolveAsaasStatusDisplayLabel(charge({ status: 'OVERDUE' })) === 'Vencida', 'vencida');
   assert(resolveAsaasStatusDisplayLabel(charge({ status: 'CANCELLED' })) === 'Cancelada', 'cancelada');
   assert(resolveAsaasStatusDisplayLabel(charge({ status: 'FAILED' })) === 'Erro', 'erro');

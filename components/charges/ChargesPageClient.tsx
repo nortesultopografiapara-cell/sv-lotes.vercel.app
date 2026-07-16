@@ -47,9 +47,11 @@ import {
 } from '@/lib/charges/chargeIntegrationHelpers';
 import {
   canGenerateAsaasCharge,
+  chunkInstallmentIdsForChargeFetch,
   computeAsaasOperationalKpis,
   isInstallmentPaidForCharges,
   mapCreateChargeApiError,
+  mergeFetchedChargesIntoMap,
 } from '@/lib/charges/chargeOperationsHelpers';
 import {
   applyBulkChargeStatusToMap,
@@ -121,6 +123,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   >({});
   const asaasChargesByInstallmentRef = useRef(asaasChargesByInstallment);
   asaasChargesByInstallmentRef.current = asaasChargesByInstallment;
+  const asaasChargeHistoryIdsRef = useRef<Set<string>>(new Set());
+  const [asaasChargeHistoryIds, setAsaasChargeHistoryIds] = useState<Set<string>>(new Set());
   const [integrationConfig, setIntegrationConfig] =
     useState<AsaasIntegrationConfigResponse | null>(null);
   const [integrationLoading, setIntegrationLoading] = useState(false);
@@ -211,38 +215,56 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
 
     try {
-      const chargesRes = await fetch(
-        `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(installmentIds.join(','))}&_=${Date.now()}`,
-        { credentials: 'include', cache: 'no-store' },
-      );
-      if (chargesRes.status === 403 || chargesRes.status === 404) {
-        // Não zera o mapa existente — falha de acesso não significa "sem cobrança".
-        console.error('CHARGES_ASAAS_LOAD_FORBIDDEN', chargesRes.status);
-        return asaasChargesByInstallmentRef.current;
-      }
-      if (!chargesRes.ok) {
-        console.error('CHARGES_ASAAS_LOAD_HTTP', chargesRes.status);
-        return asaasChargesByInstallmentRef.current;
-      }
-      const chargesJson = await chargesRes.json().catch(() => ({}));
-      const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
-      const syncErrors = (chargesJson.receiptSyncErrors || []) as Array<{
+      let map = { ...asaasChargesByInstallmentRef.current };
+      const chunks = chunkInstallmentIdsForChargeFetch(installmentIds);
+      const allSyncErrors: Array<{
         chargeId?: string;
         installmentId: string;
         error: string;
-      }>;
-      if (syncErrors.length > 0) {
-        console.error('CHARGES_RECEIPT_SYNC_ERRORS', syncErrors);
+      }> = [];
+
+      for (const chunk of chunks) {
+        const chargesRes = await fetch(
+          `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(chunk.join(','))}&_=${Date.now()}`,
+          { credentials: 'include', cache: 'no-store' },
+        );
+        if (chargesRes.status === 403 || chargesRes.status === 404) {
+          // Não zera o mapa existente — falha de acesso não significa "sem cobrança".
+          console.error('CHARGES_ASAAS_LOAD_FORBIDDEN', chargesRes.status);
+          return asaasChargesByInstallmentRef.current;
+        }
+        if (!chargesRes.ok) {
+          console.error('CHARGES_ASAAS_LOAD_HTTP', chargesRes.status);
+          return asaasChargesByInstallmentRef.current;
+        }
+        const chargesJson = await chargesRes.json().catch(() => ({}));
+        const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+        const syncErrors = (chargesJson.receiptSyncErrors || []) as Array<{
+          chargeId?: string;
+          installmentId: string;
+          error: string;
+        }>;
+        if (syncErrors.length > 0) {
+          allSyncErrors.push(...syncErrors);
+        }
+        map = mergeFetchedChargesIntoMap(map, chunk, charges);
+        for (const charge of charges) {
+          if (charge.asaasPaymentId) {
+            asaasChargeHistoryIdsRef.current.add(String(charge.installmentId));
+          }
+        }
+      }
+
+      if (allSyncErrors.length > 0) {
+        console.error('CHARGES_RECEIPT_SYNC_ERRORS', allSyncErrors);
         showToast(
-          syncErrors[0]?.error ||
+          allSyncErrors[0]?.error ||
             'Falha ao sincronizar parcela paga com o Financeiro.',
           true,
         );
       }
-      const map: Record<string, CompanyAsaasChargeResponse> = {};
-      for (const charge of charges) {
-        map[charge.installmentId] = charge;
-      }
+
+      setAsaasChargeHistoryIds(new Set(asaasChargeHistoryIdsRef.current));
       setAsaasChargesByInstallment(map);
       return map;
     } catch (err) {
@@ -1283,7 +1305,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
               pageRows.map((row) => {
                 const installmentId = String(row.id);
                 const charge = asaasChargesByInstallment[installmentId] ?? null;
-                const view = buildChargeInstallmentView(row, charge, undefined, financialAccountLabels);
+                const view = buildChargeInstallmentView(row, charge, undefined, financialAccountLabels, {
+                  hasChargeHistory:
+                    asaasChargeHistoryIds.has(installmentId) || Boolean(charge?.asaasPaymentId),
+                });
                 const installmentPaid = isInstallmentPaidForCharges(row);
                 const rowBusy = asaasActionInstallmentId === installmentId || bulkBusy;
                 const customerPhone = resolveChargeCustomerPhone(row);

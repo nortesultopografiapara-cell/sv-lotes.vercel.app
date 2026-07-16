@@ -3,6 +3,7 @@ import {
   formatReceiptContractNumber,
 } from "@/lib/contractNumber";
 import { parseCurrencyBRL } from "@/lib/currencyBrl";
+import { resolveCashMovementInstallmentId } from "@/lib/finance/cashMovementsSchema";
 
 export type CashFlowItem = {
   id: string;
@@ -306,6 +307,32 @@ export const SAIDA_CATEGORIES = [
   "Outros",
 ] as const;
 
+/** Parcelas que já têm entrada em caixa (Asaas/manual via metadata ou finance_receipt_id). */
+export function collectInstallmentIdsWithCashEntrada(cashMvs: any[]): Set<string> {
+  const ids = new Set<string>();
+  for (const c of cashMvs || []) {
+    const st = String(c?.status || "ativo").toLowerCase();
+    if (st === "estornado" || st === "cancelado" || st === "deleted") continue;
+    const typeStr = String(c?.type || "").toLowerCase();
+    if (isCashMovementSaida(typeStr)) continue;
+    if (!typeStr.includes("entrada")) continue;
+    const installmentId = resolveCashMovementInstallmentId(c);
+    if (installmentId) ids.add(installmentId);
+  }
+  return ids;
+}
+
+/**
+ * Evita duplicar saldo: se existe cash_movement ligado à parcela,
+ * a parcela paga não entra de novo (e vice-versa na listagem).
+ */
+export function shouldCountPaidReceiptInCashFlow(
+  receiptId: string,
+  installmentsWithCash: Set<string>,
+): boolean {
+  return !installmentsWithCash.has(String(receiptId || "").trim());
+}
+
 function isCashMovementSaida(typeStr: string): boolean {
   return ["saida", "saída", "saida ", "despesa", "expense", "commission", "comissao", "comissão"].some(
     (val) => typeStr.includes(val),
@@ -503,10 +530,14 @@ export function calculateFinancialTotals(
   const safeReceipts = receipts || [];
   const safeCash = cashMvs || [];
   const safeComms = comms || [];
+  const installmentsWithCash = collectInstallmentIdsWithCashEntrada(safeCash);
 
   safeReceipts.forEach((r) => {
     const status = (r.status || "").toLowerCase();
     if (status === "pago" || status === "paid") {
+      if (!shouldCountPaidReceiptInCashFlow(String(r.id || ""), installmentsWithCash)) {
+        return;
+      }
       totalEntradas += Number(r.paid_amount) || Number(r.amount) || 0;
     }
   });
@@ -522,7 +553,9 @@ export function calculateFinancialTotals(
     );
     const isEntradaStr = typeStr.includes("entrada");
 
-    if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) {
+    // Entradas de caixa sempre contam (Asaas/manual). Parcelas com cash espelho
+    // já foram excluídas acima — evita R$ 2x quando não há finance_receipt_id.
+    if (isEntradaStr && !isSaidaStr) {
       totalEntradas += Number(c.amount || 0);
     }
 
@@ -577,10 +610,15 @@ export function buildCashFlowItems(
   comms: any[],
 ): CashFlowItem[] {
   const items: CashFlowItem[] = [];
+  const installmentsWithCash = collectInstallmentIdsWithCashEntrada(cashMvs || []);
 
   (receipts || []).forEach((p) => {
     const status = (p.status || "").toLowerCase();
     if (status !== "pago" && status !== "paid") return;
+    // Preferir lançamento de caixa (Asaas/manual) quando existir — um efeito no saldo.
+    if (!shouldCountPaidReceiptInCashFlow(String(p.id || ""), installmentsWithCash)) {
+      return;
+    }
 
     const amount = Number(p.paid_amount) || Number(p.amount) || 0;
     if (amount <= 0) return;
@@ -644,7 +682,7 @@ export function buildCashFlowItems(
     const isSaida = isCashMovementSaida(typeStr);
     const isEntrada = typeStr.includes("entrada") && !isSaida;
     if (!isSaida && !isEntrada) return;
-    if (isEntrada && c.finance_receipt_id) return;
+    // Entradas com vínculo de parcela são a fonte canônica do saldo (sem coluna finance_receipt_id).
 
     const amount = Number(c.amount) || 0;
     if (amount <= 0) return;

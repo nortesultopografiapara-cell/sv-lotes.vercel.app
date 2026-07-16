@@ -47,11 +47,68 @@ export function isInstallmentPaidForCharges(row: FinanceReceiptRow, todayStr?: s
 
 export function resolveAsaasStatusDisplayLabel(
   charge: CompanyAsaasChargeResponse | null | undefined,
+  options?: {
+    hasChargeHistory?: boolean;
+    environmentMismatch?: boolean;
+    legacySandbox?: boolean;
+  },
 ): string {
-  if (!charge) return 'Não gerada';
+  if (options?.environmentMismatch) return 'Cobrança de outro ambiente';
+  if (options?.legacySandbox) return 'Sandbox';
+
+  if (!charge) {
+    // Nunca "Não gerada" quando há histórico local de cobrança.
+    if (options?.hasChargeHistory) return 'Histórico disponível';
+    return 'Não gerada';
+  }
+
+  const remote = String(charge.asaasRemoteStatus || '').toUpperCase();
+  if (remote === 'RECEIVED' || remote === 'RECEIVED_IN_CASH') return 'Pago';
+  if (remote === 'CONFIRMED') return 'Confirmada';
+  if (remote === 'PENDING') return 'Aguardando pagamento';
+  if (remote === 'OVERDUE') return 'Vencida';
+  if (remote === 'REFUNDED') return 'Estornada';
+  if (remote === 'DELETED' || remote === 'CANCELED' || remote === 'CANCELLED') return 'Cancelada';
+
   if (charge.status === 'FAILED') return 'Erro';
-  if (charge.status === 'PAID') return 'Recebida/Paga';
+  if (charge.status === 'PAID') return 'Pago';
   return formatCompanyAsaasChargeStatusLabel(charge.status);
+}
+
+/** Mescla resposta do GET charges no mapa local (chunked, sem apagar histórico não pedido). */
+export const CHARGE_MAP_FETCH_CHUNK_SIZE = 40;
+
+export function mergeFetchedChargesIntoMap(
+  previous: Record<string, CompanyAsaasChargeResponse>,
+  requestedIds: string[],
+  fetched: CompanyAsaasChargeResponse[],
+): Record<string, CompanyAsaasChargeResponse> {
+  const next: Record<string, CompanyAsaasChargeResponse> = { ...previous };
+  const found = new Set(fetched.map((c) => String(c.installmentId)));
+  for (const charge of fetched) {
+    next[String(charge.installmentId)] = charge;
+  }
+  for (const id of requestedIds) {
+    const key = String(id);
+    if (!found.has(key)) {
+      delete next[key];
+    }
+  }
+  return next;
+}
+
+export function chunkInstallmentIdsForChargeFetch(
+  installmentIds: string[],
+  chunkSize = CHARGE_MAP_FETCH_CHUNK_SIZE,
+): string[][] {
+  const ids = installmentIds.map((id) => String(id).trim()).filter(Boolean);
+  if (ids.length === 0) return [];
+  const size = Math.max(1, chunkSize);
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) {
+    chunks.push(ids.slice(i, i + size));
+  }
+  return chunks;
 }
 
 export function canPerformMutableAsaasActions(params: {
@@ -177,6 +234,11 @@ export function computeAsaasOperationalKpis(
     const id = String(row.id);
     const charge = chargesByInstallment[id];
     const amt = Number(row.amount) || 0;
+
+    // Cobrança já paga/encerrada no Asaas não entra em aguardando nem emitidas abertas.
+    if (charge?.status === 'PAID') {
+      continue;
+    }
 
     if (charge && isActiveCompanyAsaasChargeStatus(charge.status)) {
       cobrancasEmitidas += amt;

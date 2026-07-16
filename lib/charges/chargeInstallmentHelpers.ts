@@ -63,6 +63,11 @@ export function buildChargeInstallmentView(
   asaasCharge: CompanyAsaasChargeResponse | null | undefined,
   todayStr = todayIsoDate(),
   financialAccountLabels?: Record<string, string>,
+  options?: {
+    hasChargeHistory?: boolean;
+    environmentMismatch?: boolean;
+    legacySandbox?: boolean;
+  },
 ): ChargeInstallmentView {
   const projects = row.projects as { name?: string } | undefined;
   const sales = row.sales as {
@@ -112,7 +117,11 @@ export function buildChargeInstallmentView(
     amount: Number(row.amount) || 0,
     installmentStatus,
     installmentStatusLabel: formatInstallmentStatusLabel(installmentStatus),
-    asaasStatusLabel: resolveAsaasStatusDisplayLabel(asaasCharge),
+    asaasStatusLabel: resolveAsaasStatusDisplayLabel(asaasCharge, {
+      hasChargeHistory: Boolean(options?.hasChargeHistory || asaasCharge?.asaasPaymentId),
+      environmentMismatch: options?.environmentMismatch,
+      legacySandbox: options?.legacySandbox,
+    }),
     financialAccountId,
     financialAccountLabel:
       (financialAccountId && financialAccountLabels?.[financialAccountId]) ||
