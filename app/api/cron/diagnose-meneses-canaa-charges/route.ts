@@ -270,6 +270,75 @@ export async function GET(request: NextRequest) {
       contracts = contractRows || [];
     }
 
+    // 8) Probe Asaas (READ-ONLY) — production e sandbox para os payment IDs
+    const asaasProbe: Array<Record<string, unknown>> = [];
+    if (paymentIds.length && integrationIds.length) {
+      const { loadAsaasApiKeyForFinancialAccount } = await import(
+        '@/lib/finance/companyFinancialAccountRepository'
+      );
+      const { asaasCompanyGetPayment } = await import('@/lib/finance/asaasCompanyClient');
+      const accountId = String((accounts || [])[0]?.id || '');
+      if (accountId) {
+        for (const env of ['PRODUCTION', 'SANDBOX'] as const) {
+          try {
+            const creds = await loadAsaasApiKeyForFinancialAccount(
+              sb,
+              accountId,
+              companyId,
+              env,
+            );
+            for (const paymentId of paymentIds) {
+              try {
+                const payment = await asaasCompanyGetPayment(
+                  creds.apiKey,
+                  env,
+                  paymentId,
+                );
+                asaasProbe.push({
+                  paymentId,
+                  probedEnvironment: env,
+                  found: true,
+                  status: payment.status ?? null,
+                  value: payment.value ?? null,
+                  dueDate: payment.dueDate ?? null,
+                  paymentDate: payment.paymentDate ?? null,
+                  clientPaymentDate: payment.clientPaymentDate ?? null,
+                  billingType: payment.billingType ?? null,
+                  invoiceUrl: payment.invoiceUrl ? 'present' : null,
+                  bankSlipUrl: payment.bankSlipUrl ? 'present' : null,
+                });
+              } catch (err) {
+                asaasProbe.push({
+                  paymentId,
+                  probedEnvironment: env,
+                  found: false,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+          } catch (err) {
+            asaasProbe.push({
+              probedEnvironment: env,
+              credentialLoadError: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+    }
+
+    // recent webhook events for company (any) — last 24h sample
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data: recentWebhooks, error: rwe } = await sb
+      .from('company_asaas_webhook_events')
+      .select(
+        'id, asaas_payment_id, event_type, processing_status, error_message, created_at',
+      )
+      .eq('company_id', companyId)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    if (rwe) throw new Error(`recent webhooks: ${rwe.message}`);
+
     return NextResponse.json({
       ok: true,
       readOnly: true,
@@ -282,6 +351,8 @@ export async function GET(request: NextRequest) {
       chargesForInstallments: charges,
       chargesByValueDue: chargesByValue,
       webhookEvents,
+      recentWebhooks: recentWebhooks || [],
+      asaasProbe,
       financialAccounts: accounts,
       integrations,
       credentialTypes,
@@ -295,6 +366,7 @@ export async function GET(request: NextRequest) {
         chargeCount: allChargeIds.length,
         paymentIds,
         webhookEventCount: webhookEvents.length,
+        recentWebhookCount: (recentWebhooks || []).length,
         accountEnvironments: (accounts || []).map((a) => ({
           id: a.id,
           name: a.name,
