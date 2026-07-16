@@ -139,9 +139,15 @@ export async function bulkUpdateCompanyChargeStatuses(
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const existing =
+        (await getLatestCompanyAsaasChargeForInstallment(admin, companyId, installmentId).catch(
+          () => null,
+        )) ?? null;
       result.failed += 1;
       result.items.push({
         installmentId,
+        chargeId: existing?.id,
+        charge: existing,
         status: 'failed',
         error: message,
       });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Banknote,
@@ -56,6 +56,10 @@ import {
   formatChargeBulkStatusSummary,
   requestChargeBulkStatusSync,
 } from '@/lib/charges/chargeBulkStatusSync';
+import {
+  formatRefreshAllChargesBlockReason,
+  resolveRefreshAllChargesBlockReason,
+} from '@/lib/finance/companyAsaasChargeLinkGuards';
 import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
@@ -115,6 +119,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
     Record<string, CompanyAsaasChargeResponse>
   >({});
+  const asaasChargesByInstallmentRef = useRef(asaasChargesByInstallment);
+  asaasChargesByInstallmentRef.current = asaasChargesByInstallment;
   const [integrationConfig, setIntegrationConfig] =
     useState<AsaasIntegrationConfigResponse | null>(null);
   const [integrationLoading, setIntegrationLoading] = useState(false);
@@ -210,9 +216,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         { credentials: 'include', cache: 'no-store' },
       );
       if (chargesRes.status === 403 || chargesRes.status === 404) {
-        return {} as Record<string, CompanyAsaasChargeResponse>;
+        // Não zera o mapa existente — falha de acesso não significa "sem cobrança".
+        console.error('CHARGES_ASAAS_LOAD_FORBIDDEN', chargesRes.status);
+        return asaasChargesByInstallmentRef.current;
       }
-      if (!chargesRes.ok) return {} as Record<string, CompanyAsaasChargeResponse>;
+      if (!chargesRes.ok) {
+        console.error('CHARGES_ASAAS_LOAD_HTTP', chargesRes.status);
+        return asaasChargesByInstallmentRef.current;
+      }
       const chargesJson = await chargesRes.json().catch(() => ({}));
       const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
       const syncErrors = (chargesJson.receiptSyncErrors || []) as Array<{
@@ -236,7 +247,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       return map;
     } catch (err) {
       console.error('CHARGES_ASAAS_LOAD', err);
-      return {} as Record<string, CompanyAsaasChargeResponse>;
+      return asaasChargesByInstallmentRef.current;
     }
   }, [showToast]);
 
@@ -620,6 +631,19 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     [filteredRows, asaasChargesByInstallment],
   );
 
+  const refreshAllBlockReason = useMemo(
+    () =>
+      resolveRefreshAllChargesBlockReason({
+        loading,
+        bulkBusy,
+        ownerReadOnly,
+        integrationReady,
+        visibleChargeCount: allWithChargeCount,
+      }),
+    [loading, bulkBusy, ownerReadOnly, integrationReady, allWithChargeCount],
+  );
+  const refreshAllBlockMessage = formatRefreshAllChargesBlockReason(refreshAllBlockReason);
+
   const toggleSelectAll = () => {
     if (allFilteredSelected) {
       setSelectedIds(new Set());
@@ -988,17 +1012,29 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             Atualizar lista
           </button>
           {integrationReady && !ownerReadOnly ? (
-            <button
-              type="button"
-              onClick={() => void runRefreshAllCharges()}
-              disabled={loading || bulkBusy || allWithChargeCount === 0}
-              className="inline-flex items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Consultar Asaas e baixar parcelas pagas de todas as cobranças visíveis"
-            >
-              {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Atualizar todas as cobranças
-            </button>
-          ) : null}
+            <div className="flex flex-col items-stretch gap-1 sm:items-end">
+              <button
+                type="button"
+                onClick={() => void runRefreshAllCharges()}
+                disabled={Boolean(refreshAllBlockReason)}
+                className="inline-flex items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+                title={
+                  refreshAllBlockMessage ||
+                  'Consultar Asaas e baixar parcelas pagas de todas as cobranças visíveis'
+                }
+              >
+                {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Atualizar todas as cobranças
+              </button>
+              {refreshAllBlockMessage && refreshAllBlockReason !== 'busy' && refreshAllBlockReason !== 'loading' ? (
+                <span className="text-[11px] text-amber-200/90">{refreshAllBlockMessage}</span>
+              ) : null}
+            </div>
+          ) : ownerReadOnly ? null : (
+            <span className="text-[11px] text-amber-200/90">
+              {formatRefreshAllChargesBlockReason('integration_unavailable')}
+            </span>
+          )}
         </div>
       </div>
 

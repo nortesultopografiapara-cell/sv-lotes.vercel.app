@@ -9,6 +9,7 @@ import {
 import { chargeSupportsBoleto } from '@/lib/finance/asaasCompanyLateFees';
 import { computeInstallmentStatus, type FinanceReceiptRow } from '@/lib/charges/chargeInstallmentHelpers';
 import { canShowChargeWhatsAppButton } from '@/lib/charges/chargeWhatsAppMessage';
+import { canGenerateAsaasChargeWithHistory } from '@/lib/finance/companyAsaasChargeLinkGuards';
 
 export const CHARGES_WHATSAPP_TOOLTIP = 'Enviar cobrança por WhatsApp';
 
@@ -73,13 +74,10 @@ export function canGenerateAsaasCharge(params: {
   charge: CompanyAsaasChargeResponse | null | undefined;
   installmentsDataReady?: boolean;
   installmentId?: string;
+  hasPaidChargeHistory?: boolean;
+  hasUnresolvedChargeLink?: boolean;
 }): boolean {
-  if (params.installmentsDataReady === false) return false;
-  if (params.installmentId !== undefined && !params.installmentId.trim()) return false;
-  if (!canPerformMutableAsaasActions(params)) return false;
-  if (params.installmentPaid) return false;
-  if (!params.charge) return true;
-  return false;
+  return canGenerateAsaasChargeWithHistory(params);
 }
 
 export function canCancelAsaasCharge(params: {
