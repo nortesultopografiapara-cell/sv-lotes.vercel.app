@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
     const { data: amountCandidates, error: ae } = await sb
       .from('finance_receipts')
       .select(
-        'id, sale_id, installment_number, due_date, amount, status, paid_at, paid_amount, company_id, tenant_id, created_at, updated_at',
+        'id, sale_id, installment_number, due_date, amount, status, paid_at, paid_amount, company_id, tenant_id, created_at',
       )
       .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)
       .gte('amount', 4.99)
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
       const { data: receipts, error: re } = await sb
         .from('finance_receipts')
         .select(
-          'id, sale_id, installment_number, due_date, amount, status, paid_at, paid_amount, company_id, tenant_id, created_at, updated_at, description',
+          'id, sale_id, installment_number, due_date, amount, status, paid_at, paid_amount, company_id, tenant_id, created_at, description',
         )
         .eq('sale_id', saleId)
         .order('installment_number', { ascending: true });
