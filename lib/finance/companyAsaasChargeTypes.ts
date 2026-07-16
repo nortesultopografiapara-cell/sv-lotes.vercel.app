@@ -59,6 +59,8 @@ export type CompanyAsaasChargeResponse = {
   updatedAt: string;
   /** Status bruto do Asaas (raw_payload), para exibição na UI. */
   asaasRemoteStatus?: string | null;
+  /** Comprovante oficial Asaas (raw_payload.transactionReceiptUrl) — sem inventar URL. */
+  transactionReceiptUrl?: string | null;
 };
 
 export type CreateCompanyInstallmentChargeInput = {
@@ -76,6 +78,20 @@ function extractAsaasRemoteStatus(rawPayload: Record<string, unknown> | null | u
   if (payment && typeof payment === 'object') {
     const nested = (payment as Record<string, unknown>).status;
     if (typeof nested === 'string' && nested.trim()) return nested.trim().toUpperCase();
+  }
+  return null;
+}
+
+function extractAsaasTransactionReceiptUrl(
+  rawPayload: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!rawPayload || typeof rawPayload !== 'object') return null;
+  const direct = rawPayload.transactionReceiptUrl;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  const payment = rawPayload.payment;
+  if (payment && typeof payment === 'object') {
+    const nested = (payment as Record<string, unknown>).transactionReceiptUrl;
+    if (typeof nested === 'string' && nested.trim()) return nested.trim();
   }
   return null;
 }
@@ -103,6 +119,7 @@ export function mapCompanyAsaasChargeRow(row: CompanyAsaasChargeRow): CompanyAsa
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     asaasRemoteStatus: extractAsaasRemoteStatus(row.raw_payload),
+    transactionReceiptUrl: extractAsaasTransactionReceiptUrl(row.raw_payload),
   };
 }
 

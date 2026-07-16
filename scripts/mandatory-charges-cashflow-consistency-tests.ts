@@ -13,6 +13,7 @@ import {
   computeAsaasOperationalKpis,
   mergeFetchedChargesIntoMap,
   resolveAsaasStatusDisplayLabel,
+  resolveChargeActionVisibility,
 } from '../lib/charges/chargeOperationsHelpers';
 import { buildChargeInstallmentView } from '../lib/charges/chargeInstallmentHelpers';
 import { mapCompanyAsaasChargeRow } from '../lib/finance/companyAsaasChargeTypes';
@@ -164,7 +165,7 @@ console.log('\n═══ 4: mapa de cobranças — merge/chunk preserva históri
   assert(Boolean(merged['inst-a']), 'preserva charge não pedido no chunk');
   assert(Boolean(merged['inst-b']), 'inclui charge do chunk');
   const cleared = mergeFetchedChargesIntoMap(merged, ['inst-b'], []);
-  assert(!cleared['inst-b'], 'remove só ids pedidos sem retorno');
+  assert(Boolean(cleared['inst-b']), 'não apaga vínculo com asaas_payment_id omitido no lote');
   assert(Boolean(cleared['inst-a']), 'mantém ids fora do chunk');
 
   const chunks = chunkInstallmentIdsForChargeFetch(
@@ -173,6 +174,49 @@ console.log('\n═══ 4: mapa de cobranças — merge/chunk preserva históri
   );
   assert(chunks.length === 3, 'chunk 40 → 3 lotes para 85 ids');
   assert(chunks[0].length === 40 && chunks[2].length === 5, 'tamanhos dos chunks');
+}
+
+console.log('\n═══ 4b: cobrança paga — status e ações de consulta ═══');
+{
+  const paid = charge({
+    status: 'PAID',
+    asaasRemoteStatus: 'RECEIVED',
+    invoiceUrl: 'https://www.asaas.com/i/abc',
+    bankSlipUrl: 'https://www.asaas.com/b/pdf/abc',
+    paymentLink: 'https://www.asaas.com/i/abc',
+    transactionReceiptUrl: 'https://www.asaas.com/comprovantes/h/xyz',
+  });
+  assert(resolveAsaasStatusDisplayLabel(paid) === 'Pago', 'status Pago');
+  assert(resolveAsaasStatusDisplayLabel(paid) !== 'Não gerada', 'não é Não gerada');
+
+  const vis = resolveChargeActionVisibility({
+    charge: paid,
+    installmentPaid: true,
+    integrationActive: true,
+    companyAsaasEnabled: true,
+    ownerReadOnly: false,
+  });
+  assert(!vis.showGenerate, 'pago sem Gerar cobrança');
+  assert(vis.showOpenCharge, 'invoice_url acessível após pagamento');
+  assert(vis.showOpenBoleto, 'boleto acessível após pagamento');
+  assert(vis.showOpenReceipt, 'comprovante quando disponível');
+  assert(vis.showPaidIndicator, 'indicador Parcela paga complementar');
+
+  const visNoReceipt = resolveChargeActionVisibility({
+    charge: charge({
+      status: 'PAID',
+      invoiceUrl: 'https://www.asaas.com/i/abc',
+      paymentLink: 'https://www.asaas.com/i/abc',
+      transactionReceiptUrl: null,
+    }),
+    installmentPaid: true,
+    integrationActive: true,
+    companyAsaasEnabled: true,
+    ownerReadOnly: false,
+  });
+  assert(visNoReceipt.showOpenCharge, 'sem comprovante ainda mantém Abrir cobrança');
+  assert(!visNoReceipt.showOpenReceipt, 'sem comprovante não inventa link');
+  assert(visNoReceipt.showReceiptUnavailableHint, 'hint de comprovante indisponível');
 }
 
 console.log('\n═══ 5: KPIs — paga não entra em aguardando/emitidas ═══');
@@ -205,13 +249,16 @@ console.log('\n═══ 6: raw_payload.status → asaasRemoteStatus ═══')
     status: 'PAID',
     value: 5,
     due_date: '2026-07-16',
-    invoice_url: null,
+    invoice_url: 'https://www.asaas.com/i/x',
     bank_slip_url: null,
     bank_slip_identification: null,
     pix_qr_code: null,
     pix_copy_paste: null,
     financial_account_id: null,
-    raw_payload: { status: 'RECEIVED' },
+    raw_payload: {
+      status: 'RECEIVED',
+      transactionReceiptUrl: 'https://www.asaas.com/comprovantes/h/abc',
+    },
     paid_at: '2026-07-16',
     cash_movement_id: 'cm1',
     created_at: '2026-07-16T12:00:00Z',
@@ -219,6 +266,10 @@ console.log('\n═══ 6: raw_payload.status → asaasRemoteStatus ═══')
   });
   assert(mapped.asaasRemoteStatus === 'RECEIVED', 'extrai RECEIVED do raw_payload');
   assert(resolveAsaasStatusDisplayLabel(mapped) === 'Pago', 'label Pago via remote');
+  assert(
+    mapped.transactionReceiptUrl === 'https://www.asaas.com/comprovantes/h/abc',
+    'extrai transactionReceiptUrl do raw_payload',
+  );
 }
 
 console.log('\n═══ 7: gerar cobrança bloqueado com histórico / PAID ═══');

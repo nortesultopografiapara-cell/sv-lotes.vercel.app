@@ -22,6 +22,7 @@ export type AsaasCompanyPayment = {
   billingType?: string;
   creditDate?: string;
   estimatedCreditDate?: string;
+  transactionReceiptUrl?: string;
 };
 
 export type AsaasCompanyPixQrCode = {

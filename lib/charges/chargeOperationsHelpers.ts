@@ -20,13 +20,17 @@ export type ChargeActionVisibility = {
   showGenerate: boolean;
   showOpenCharge: boolean;
   showOpenBoleto: boolean;
+  showOpenReceipt: boolean;
+  showViewDetails: boolean;
   showCopyBarcodeLine: boolean;
   showCopyPix: boolean;
   showWhatsApp: boolean;
   showBoletoUnavailableWarning: boolean;
+  showReceiptUnavailableHint: boolean;
   showRefreshStatus: boolean;
   showCancel: boolean;
   showRegenerate: boolean;
+  showPaidIndicator: boolean;
   /** @deprecated use showOpenCharge */
   showOpenLink: boolean;
   /** @deprecated use showCopyBarcodeLine */
@@ -91,6 +95,9 @@ export function mergeFetchedChargesIntoMap(
   for (const id of requestedIds) {
     const key = String(id);
     if (!found.has(key)) {
+      // Nunca apagar vínculo com asaas_payment_id (pago/histórico) se o lote omitiu o id.
+      const prev = next[key];
+      if (prev?.asaasPaymentId) continue;
       delete next[key];
     }
   }
@@ -109,6 +116,23 @@ export function chunkInstallmentIdsForChargeFetch(
     chunks.push(ids.slice(i, i + size));
   }
   return chunks;
+}
+
+export function resolveCompanyAsaasReceiptUrl(
+  charge: CompanyAsaasChargeResponse | null | undefined,
+): string {
+  return String(charge?.transactionReceiptUrl || '').trim();
+}
+
+export function resolveCompanyAsaasDetailsUrl(
+  charge: CompanyAsaasChargeResponse | null | undefined,
+): string {
+  if (!charge) return '';
+  return (
+    resolveCompanyAsaasPaymentLink(charge) ||
+    resolveCompanyAsaasReceiptUrl(charge) ||
+    ''
+  );
 }
 
 export function canPerformMutableAsaasActions(params: {
@@ -175,12 +199,15 @@ export function resolveChargeActionVisibility(params: {
   installmentsDataReady?: boolean;
   installmentId?: string;
   customerPhone?: string | null;
+  hasPaidChargeHistory?: boolean;
 }): ChargeActionVisibility {
   const paymentLink = params.charge ? resolveCompanyAsaasPaymentLink(params.charge) : '';
   const boletoUrl = params.charge ? resolveCompanyAsaasBoletoUrl(params.charge) : '';
+  const receiptUrl = resolveCompanyAsaasReceiptUrl(params.charge);
+  const detailsUrl = resolveCompanyAsaasDetailsUrl(params.charge);
   const pixCopy = params.charge?.pixCopyPaste?.trim() || '';
   const barcodeLine = params.charge?.bankSlipIdentification?.trim() || '';
-  const hasCharge = Boolean(params.charge);
+  const hasCharge = Boolean(params.charge?.asaasPaymentId);
   const mutable = canPerformMutableAsaasActions(params);
   const expectsBoleto = params.charge ? chargeSupportsBoleto(params.charge.billingType) : false;
   const hasBoletoArtifact = Boolean(boletoUrl || barcodeLine);
@@ -189,22 +216,31 @@ export function resolveChargeActionVisibility(params: {
     expectsBoleto &&
     !hasBoletoArtifact &&
     !params.installmentPaid;
+  const chargePaid = params.charge?.status === 'PAID';
 
   return {
-    showGenerate: canGenerateAsaasCharge(params),
+    showGenerate: canGenerateAsaasCharge({
+      ...params,
+      hasPaidChargeHistory: params.hasPaidChargeHistory || chargePaid,
+    }),
+    // Links de consulta permanecem após pagamento (não substituir por "Parcela paga").
     showOpenCharge: Boolean(paymentLink),
     showOpenBoleto: Boolean(boletoUrl),
-    showCopyBarcodeLine: Boolean(barcodeLine),
-    showCopyPix: Boolean(pixCopy),
+    showOpenReceipt: Boolean(receiptUrl),
+    showViewDetails: Boolean(detailsUrl),
+    showCopyBarcodeLine: Boolean(barcodeLine) && !params.installmentPaid && !chargePaid,
+    showCopyPix: Boolean(pixCopy) && !params.installmentPaid && !chargePaid,
     showWhatsApp: canShowChargeWhatsAppButton({
       ownerReadOnly: params.ownerReadOnly,
       charge: params.charge,
       customerPhone: params.customerPhone,
     }),
     showBoletoUnavailableWarning,
-    showRefreshStatus: mutable && hasCharge && !params.installmentPaid,
+    showReceiptUnavailableHint: hasCharge && chargePaid && !receiptUrl,
+    showRefreshStatus: mutable && hasCharge && !params.installmentPaid && !chargePaid,
     showCancel: canCancelAsaasCharge(params),
     showRegenerate: canRegenerateAsaasCharge(params),
+    showPaidIndicator: params.installmentPaid,
     showOpenLink: Boolean(paymentLink),
     showCopyLink: Boolean(paymentLink),
   };

@@ -224,12 +224,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       }> = [];
 
       for (const chunk of chunks) {
-        const chargesRes = await fetch(
-          `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(chunk.join(','))}&_=${Date.now()}`,
-          { credentials: 'include', cache: 'no-store' },
-        );
+        // POST evita truncamento de URL com muitas parcelas; inclui PAID/canceladas.
+        const chargesRes = await fetch('/api/finance/asaas/charges', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ installmentIds: chunk }),
+        });
         if (chargesRes.status === 403 || chargesRes.status === 404) {
-          // Não zera o mapa existente — falha de acesso não significa "sem cobrança".
           console.error('CHARGES_ASAAS_LOAD_FORBIDDEN', chargesRes.status);
           return asaasChargesByInstallmentRef.current;
         }
@@ -1366,6 +1369,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         installmentsDataReady={installmentsDataReady}
                         customerPhone={customerPhone}
                         whatsappShareUrl={whatsappShareUrl}
+                        hasPaidChargeHistory={
+                          asaasChargeHistoryIds.has(installmentId) ||
+                          Boolean(charge?.asaasPaymentId)
+                        }
                         onGenerate={(billingType) =>
                           void handleCreateAsaasCharge(installmentId, billingType)
                         }
