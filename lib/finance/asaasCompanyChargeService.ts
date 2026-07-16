@@ -29,6 +29,12 @@ import {
   ensureCompanyAsaasInstallmentReconciled,
 } from './companyAsaasPaymentReconciliation';
 import {
+  CompanyAsaasEnvironmentMismatchError,
+  isAsaasNotFoundError,
+  resolveSafeSyncedChargeStatus,
+  shouldPreserveLocalPaidAt,
+} from './companyAsaasChargeLinkGuards';
+import {
   type CreateCompanyInstallmentChargeInput,
   type CompanyAsaasChargeResponse,
   type CompanyAsaasChargeRow,
@@ -332,18 +338,48 @@ export async function getCompanyChargeStatus(
     companyId,
     financialAccountId,
   );
-  const enriched = await asaasCompanyEnrichPaymentArtifacts(
-    apiKey,
-    environment,
-    existingRow.asaas_payment_id,
-    {
-      billingType: existingRow.billing_type,
-      existingPixCopy: existingRow.pix_copy_paste,
-    },
-  );
+
+  let enriched: Awaited<ReturnType<typeof asaasCompanyEnrichPaymentArtifacts>>;
+  try {
+    enriched = await asaasCompanyEnrichPaymentArtifacts(
+      apiKey,
+      environment,
+      existingRow.asaas_payment_id,
+      {
+        billingType: existingRow.billing_type,
+        existingPixCopy: existingRow.pix_copy_paste,
+      },
+    );
+  } catch (err) {
+    if (isAsaasNotFoundError(err)) {
+      // Nunca apaga vínculo local — sinaliza mismatch de ambiente / chave.
+      throw new CompanyAsaasEnvironmentMismatchError(
+        `Cobrança ${existingRow.asaas_payment_id} não encontrada no ambiente ${environment}. ` +
+          'O vínculo local foi preservado. Verifique se a API Key/ambiente corresponde à cobrança original.',
+        {
+          asaasPaymentId: existingRow.asaas_payment_id,
+          chargeId: chargeId,
+        },
+      );
+    }
+    throw err;
+  }
+
   const payment = enriched.payment;
 
-  const mappedStatus = mapAsaasPaymentStatusToCompanyCharge(payment.status);
+  const mappedRemote = mapAsaasPaymentStatusToCompanyCharge(payment.status);
+  const mappedStatus = resolveSafeSyncedChargeStatus({
+    localStatus: existingRow.status,
+    remoteMappedStatus: mappedRemote,
+  });
+  const paidAtSafe = shouldPreserveLocalPaidAt({
+    localStatus: existingRow.status,
+    nextStatus: mappedStatus,
+    localPaidAt: existingRow.paid_at,
+    remotePaidAt:
+      payment.paymentDate || payment.clientPaymentDate || null,
+  });
+
   const updated = await updateCompanyAsaasCharge(admin, chargeId, companyId, {
     status: mappedStatus,
     invoiceUrl: payment.invoiceUrl ?? existingRow.invoice_url ?? null,
@@ -353,10 +389,7 @@ export async function getCompanyChargeStatus(
     pixQrCode: enriched.pixQrCode || existingRow.pix_qr_code || null,
     pixCopyPaste: enriched.pixCopyPaste || existingRow.pix_copy_paste || null,
     rawPayload: payment as Record<string, unknown>,
-    paidAt:
-      mappedStatus === 'PAID'
-        ? payment.paymentDate || payment.clientPaymentDate || new Date().toISOString()
-        : null,
+    paidAt: paidAtSafe,
   });
 
   if (mappedStatus === 'PAID') {
@@ -412,6 +445,7 @@ export async function getCompanyChargeStatusByInstallment(
         charge
       );
     }
+    // 404/ambiente: propaga erro tipado — NÃO apaga vínculo; bulk marca failed com mensagem clara.
     throw err;
   }
 }
