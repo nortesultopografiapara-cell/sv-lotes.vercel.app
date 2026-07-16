@@ -3,6 +3,7 @@
 import {
   Copy,
   ExternalLink,
+  FileText,
   Loader2,
   MessageCircle,
   QrCode,
@@ -19,6 +20,8 @@ import {
   BOLETO_UNAVAILABLE_WARNING,
   CHARGES_WHATSAPP_TOOLTIP,
   resolveChargeActionVisibility,
+  resolveCompanyAsaasDetailsUrl,
+  resolveCompanyAsaasReceiptUrl,
   type ChargeActionVisibility,
 } from '@/lib/charges/chargeOperationsHelpers';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
@@ -43,6 +46,7 @@ export type ChargeInstallmentActionsProps = {
   installmentsDataReady?: boolean;
   customerPhone?: string | null;
   whatsappShareUrl?: string | null;
+  hasPaidChargeHistory?: boolean;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshStatus: () => void;
   onCancel: () => void;
@@ -73,6 +77,7 @@ export function resolveChargeInstallmentActionsProps(
     installmentsDataReady: params.installmentsDataReady,
     installmentId: params.view.id,
     customerPhone: params.customerPhone,
+    hasPaidChargeHistory: params.hasPaidChargeHistory,
   });
 }
 
@@ -87,6 +92,7 @@ export function ChargeInstallmentActions({
   installmentsDataReady = true,
   customerPhone,
   whatsappShareUrl,
+  hasPaidChargeHistory = false,
   onGenerate,
   onRefreshStatus,
   onCancel,
@@ -104,10 +110,13 @@ export function ChargeInstallmentActions({
     installmentsDataReady,
     installmentId: view.id,
     customerPhone,
+    hasPaidChargeHistory,
   });
 
   const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';
   const boletoUrl = charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
+  const receiptUrl = resolveCompanyAsaasReceiptUrl(charge);
+  const detailsUrl = resolveCompanyAsaasDetailsUrl(charge);
   const regenerateBillingType =
     charge?.billingType === 'PIX' ? 'PIX' : ('BOLETO' as const);
 
@@ -182,7 +191,46 @@ export function ChargeInstallmentActions({
             title="Abrir PDF do boleto"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            Boleto/PDF
+            Ver boleto
+          </a>
+        ) : null}
+
+        {actions.showOpenReceipt && receiptUrl ? (
+          <a
+            href={receiptUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={btnClass}
+            title="Abrir comprovante oficial do Asaas"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Ver comprovante
+          </a>
+        ) : null}
+
+        {actions.showViewDetails && detailsUrl && detailsUrl !== paymentLink ? (
+          <a
+            href={detailsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={btnClass}
+            title="Ver detalhes da cobrança Asaas"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Ver detalhes
+          </a>
+        ) : null}
+
+        {actions.showViewDetails && detailsUrl && detailsUrl === paymentLink && !actions.showOpenCharge ? (
+          <a
+            href={detailsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={btnClass}
+            title="Ver detalhes da cobrança Asaas"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Ver detalhes
           </a>
         ) : null}
 
@@ -269,14 +317,30 @@ export function ChargeInstallmentActions({
           )
         ) : null}
 
-        {installmentPaid && !charge ? (
+        {/* Indicador complementar — nunca substitui links de consulta quando há charge. */}
+        {actions.showPaidIndicator ? (
           <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
+        ) : null}
+
+        {!charge && hasPaidChargeHistory ? (
+          <span
+            className="text-[10px] text-amber-400/90"
+            title="Há histórico de cobrança Asaas. Atualize a lista se os links não aparecerem."
+          >
+            Histórico Asaas
+          </span>
         ) : null}
       </div>
 
       {actions.showBoletoUnavailableWarning ? (
         <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
           {BOLETO_UNAVAILABLE_WARNING}
+        </p>
+      ) : null}
+
+      {actions.showReceiptUnavailableHint ? (
+        <p className="max-w-md text-right text-[10px] leading-snug text-[var(--text-muted)]">
+          Comprovante ainda não disponível no Asaas. Os demais links da cobrança permanecem ativos.
         </p>
       ) : null}
     </div>
