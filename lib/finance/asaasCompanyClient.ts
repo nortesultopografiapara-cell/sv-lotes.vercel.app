@@ -288,3 +288,57 @@ export async function asaasCompanyCancelPayment(
     method: 'DELETE',
   });
 }
+
+export type AsaasCompanyFinancialTransaction = {
+  id?: string;
+  value?: number;
+  type?: string;
+  date?: string;
+  description?: string | null;
+  paymentId?: string | null;
+  transferId?: string | null;
+};
+
+type AsaasCompanyFinancialTransactionListResponse = {
+  hasMore?: boolean;
+  data?: AsaasCompanyFinancialTransaction[];
+};
+
+/** GET /financialTransactions — extrato da conta Asaas do tenant (paginado). */
+export async function listAsaasCompanyFinancialTransactions(
+  apiKey: string,
+  environment: BankEnvironment,
+  startDate: string,
+  finishDate: string,
+): Promise<AsaasCompanyFinancialTransaction[]> {
+  const from = String(startDate || '').split('T')[0];
+  const to = String(finishDate || '').split('T')[0];
+  if (!from || !to) {
+    throw new Error('Período inválido para consulta do extrato Asaas.');
+  }
+
+  const all: AsaasCompanyFinancialTransaction[] = [];
+  let offset = 0;
+  const limit = 100;
+
+  for (let page = 0; page < 200; page += 1) {
+    const params = new URLSearchParams({
+      startDate: from,
+      finishDate: to,
+      limit: String(limit),
+      offset: String(offset),
+      order: 'asc',
+    });
+    const response = await asaasCompanyFetch<AsaasCompanyFinancialTransactionListResponse>(
+      apiKey,
+      environment,
+      `/financialTransactions?${params.toString()}`,
+    );
+    const batch = response.data || [];
+    all.push(...batch);
+    if (!response.hasMore || batch.length < limit) break;
+    offset += limit;
+  }
+
+  return all;
+}

@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, ReceiptText, FileSignature } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, ReceiptText, FileSignature, CloudDownload } from 'lucide-react';
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import './finance-premium.css';
 import {
@@ -245,6 +245,7 @@ export default function FinancePage() {
   const [editingCashMovementId, setEditingCashMovementId] = useState<string | null>(null);
   const [selectedFlowItem, setSelectedFlowItem] = useState<CashFlowItem | null>(null);
   const [financeToast, setFinanceToast] = useState<string | null>(null);
+  const [syncingAsaasCash, setSyncingAsaasCash] = useState(false);
 
   const contractsForSaida = useMemo(() => {
     if (!saidaForm.project_id) return financeContracts;
@@ -674,6 +675,19 @@ export default function FinancePage() {
   const showEnterpriseValues = canViewEnterpriseValues(user?.role);
   const ownerReadOnly = isOwnerRole(user?.role);
 
+  const asaasCashSyncAvailable = useMemo(() => {
+    if (!bankingUiEnabled || !asaasAccessAvailable || !companyAsaasActive) return false;
+    return financialAccounts.some((account) => {
+      if (!account.active || !account.bankIntegrationId) return false;
+      if (account.connectionStatus === 'ERROR' || account.connectionStatus === 'WEBHOOK_INVALID') {
+        return false;
+      }
+      return account.environment === 'PRODUCTION'
+        ? account.hasProductionApiKey
+        : account.hasSandboxApiKey;
+    });
+  }, [bankingUiEnabled, asaasAccessAvailable, companyAsaasActive, financialAccounts]);
+
   const enterpriseSummary: EnterpriseValueSummary | null = useMemo(() => {
     if (!showEnterpriseValues) return null;
     return calculateEnterpriseValueSummary(enterpriseBlocks);
@@ -828,6 +842,39 @@ export default function FinancePage() {
     } catch (err) {
       console.error('ASAAS_FINANCE_CONTEXT', err);
       setCompanyAsaasActive(false);
+    }
+  };
+
+  const handleSyncAsaasCash = async () => {
+    if (!asaasCashSyncAvailable || ownerReadOnly || syncingAsaasCash) return;
+
+    setSyncingAsaasCash(true);
+    try {
+      const selectedAccount =
+        financialAccountFilter !== 'Todas as contas' ? financialAccountFilter : null;
+      const res = await fetch('/api/finance/asaas/sync-cash', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromDate: startDate || undefined,
+          toDate: endDate || undefined,
+          financialAccountId: selectedAccount || undefined,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao sincronizar extrato Asaas.');
+      }
+      setFinanceToast(json.sync?.message || 'Sincronização Asaas concluída.');
+      await loadFinance();
+    } catch (err) {
+      console.error('ASAAS_CASH_SYNC', err);
+      setFinanceToast(
+        err instanceof Error ? err.message : 'Erro ao sincronizar extrato Asaas.',
+      );
+    } finally {
+      setSyncingAsaasCash(false);
     }
   };
 
@@ -3452,11 +3499,24 @@ export default function FinancePage() {
 
       {activeTab === 'caixa' && (
       <div className="finance-table-panel min-h-[360px] min-w-0 max-w-full">
-         <div className="px-4 py-2.5 border-b border-[var(--border-color)]/80 bg-[var(--bg-card)]/90 flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-blue-400" />
-            <h3 className="text-[var(--text-primary)] font-semibold text-xs uppercase tracking-wider">
-               Fluxo de caixa
-            </h3>
+         <div className="px-4 py-2.5 border-b border-[var(--border-color)]/80 bg-[var(--bg-card)]/90 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-blue-400" />
+              <h3 className="text-[var(--text-primary)] font-semibold text-xs uppercase tracking-wider">
+                 Fluxo de caixa
+              </h3>
+            </div>
+            {asaasCashSyncAvailable && !ownerReadOnly ? (
+              <button
+                type="button"
+                onClick={() => void handleSyncAsaasCash()}
+                disabled={loading || syncingAsaasCash}
+                className="inline-flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[11px] font-semibold text-blue-300 transition-colors hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CloudDownload className={`w-3.5 h-3.5 ${syncingAsaasCash ? 'animate-pulse' : ''}`} />
+                {syncingAsaasCash ? 'Sincronizando…' : 'Sincronizar Asaas'}
+              </button>
+            ) : null}
          </div>
          {filteredCashFlowItems.length === 0 ? (
             <div className="p-10 text-center text-[var(--text-muted)] text-sm">

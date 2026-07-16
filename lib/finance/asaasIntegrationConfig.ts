@@ -22,9 +22,26 @@ export type AsaasIntegrationSyncMeta = {
   chargesCount: number;
 };
 
+/** Histórico da sincronização do extrato Asaas → fluxo de caixa da empresa. */
+export type AsaasIntegrationCashSyncMeta = {
+  lastAt: string | null;
+  financialAccountId: string | null;
+  environment: BankEnvironment | null;
+  periodFrom: string | null;
+  periodTo: string | null;
+  fetched: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  initiatedBy: string | null;
+  message: string | null;
+};
+
 export type AsaasIntegrationMetadata = {
   features?: Partial<AsaasIntegrationFeatures>;
   sync?: Partial<AsaasIntegrationSyncMeta>;
+  cashSync?: Partial<AsaasIntegrationCashSyncMeta>;
   webhook?: {
     active?: boolean;
     validatedAt?: string | null;
@@ -61,6 +78,7 @@ export type AsaasIntegrationConfigResponse = {
   accountValidated: boolean;
   features: AsaasIntegrationFeatures;
   sync: AsaasIntegrationSyncMeta;
+  cashSync: AsaasIntegrationCashSyncMeta;
   configuredAt: string | null;
   updatedAt: string | null;
   lastConnectionTestAt: string | null;
@@ -92,6 +110,20 @@ export const EMPTY_ASAAS_INTEGRATION_CONFIG: Omit<
   accountValidated: false,
   features: { ...DEFAULT_ASAAS_FEATURES },
   sync: { lastAt: null, chargesCount: 0 },
+  cashSync: {
+    lastAt: null,
+    financialAccountId: null,
+    environment: null,
+    periodFrom: null,
+    periodTo: null,
+    fetched: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0,
+    initiatedBy: null,
+    message: null,
+  },
   configuredAt: null,
   updatedAt: null,
   lastConnectionTestAt: null,
