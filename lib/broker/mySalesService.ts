@@ -70,6 +70,19 @@ export const MY_SALES_BLOCKS_RESERVATION_SELECT = `
 export const MY_SALES_FORBIDDEN_BLOCK_COLUMNS = ['block', 'quadra'] as const;
 export const MY_SALES_REQUIRED_BLOCK_FIELDS = ['block_name', 'number'] as const;
 
+/**
+ * Select de contracts — alinhado ao módulo Contratos / migrations.
+ * Assinado = status assinado|signed; data = signed_at.
+ * Não solicitar colunas de assinatura inexistentes na tabela contracts.
+ */
+export const MY_SALES_CONTRACTS_SELECT =
+  'id, sale_id, status, is_current, version, signed_at, updated_at, company_id, tenant_id';
+
+/** Nomes de colunas que não devem entrar no select de contracts. */
+export const MY_SALES_FORBIDDEN_CONTRACT_COLUMNS = [
+  'customer_signed_at',
+] as const;
+
 export function parseSelectFieldList(select: string): string[] {
   return select
     .split(',')
@@ -277,12 +290,14 @@ function matchesFilters(item: MySalesListItem, filters: MySalesListFilters): boo
 function mapSaleItem(
   sale: SaleRow,
   contract: ContractRow | null,
+  options?: { contractsAvailable?: boolean },
 ): MySalesListItem {
   const customer = firstEmbed(sale.customers) || firstEmbed(sale.customer);
   const project = firstEmbed(sale.projects) || firstEmbed(sale.project);
   const block = firstEmbed(sale.blocks) || firstEmbed(sale.block);
   const blockRow = (block || {}) as BlockLotRow;
   const saleStatus = String(sale.status || '');
+  const contractsAvailable = options?.contractsAvailable !== false;
   const contractStatus = contract ? String(contract.status || '') : null;
 
   let statusKey = saleStatus || 'ativo';
@@ -290,12 +305,22 @@ function mapSaleItem(
   if (isCanceledSale(sale)) {
     statusKey = 'cancelado';
     statusLabel = 'Cancelado';
-  } else if (isContractSigned(contractStatus)) {
+  } else if (contractsAvailable && isContractSigned(contractStatus)) {
     statusKey = 'assinado';
     statusLabel = 'Assinado';
-  } else if (isContractPending(contractStatus)) {
+  } else if (contractsAvailable && contract && isContractPending(contractStatus)) {
     statusKey = 'contrato_pendente';
     statusLabel = 'Contrato pendente';
+  } else if (contractsAvailable && !contract && !isCanceledSale(sale)) {
+    statusKey = 'contrato_pendente';
+    statusLabel = 'Contrato pendente';
+  }
+
+  let contractStatusLabel: string | null = null;
+  if (contractsAvailable) {
+    contractStatusLabel = contract
+      ? formatContractStatusLabel(contractStatus)
+      : 'Contrato pendente';
   }
 
   return {
@@ -310,12 +335,13 @@ function mapSaleItem(
     customerPhone: customerPhone(customer),
     statusKey,
     statusLabel,
-    contractStatusKey: contractStatus,
-    contractStatusLabel: contract ? formatContractStatusLabel(contractStatus) : 'Contrato pendente',
+    contractStatusKey: contractsAvailable ? contractStatus : null,
+    contractStatusLabel,
     reservationExpiresAt: null,
-    contractSignedAt: isoDate(
-      contract?.signed_at || contract?.customer_signed_at || contract?.updated_at,
-    ),
+    // Data real de assinatura no módulo Contratos: contracts.signed_at
+    contractSignedAt: contractsAvailable
+      ? isoDate(contract?.signed_at || null)
+      : null,
     saleId: String(sale.id),
     reservationId: null,
     contractId: contract?.id ? String(contract.id) : null,
@@ -396,26 +422,40 @@ async function loadSalesForBroker(
   return (data || []) as SaleRow[];
 }
 
-async function loadContractsBySaleIds(
+export type MySalesContractsLoadResult = {
+  map: Map<string, ContractRow>;
+  unavailable: boolean;
+  errorMessage: string | null;
+};
+
+/**
+ * Consulta complementar — falha NÃO deve derrubar vendas/reservas.
+ * Status assinado/pendente segue contracts.status (módulo Contratos).
+ */
+export async function loadContractsBySaleIds(
   admin: SupabaseClient,
   companyId: string,
   saleIds: string[],
-): Promise<Map<string, ContractRow>> {
+): Promise<MySalesContractsLoadResult> {
   const map = new Map<string, ContractRow>();
-  if (saleIds.length === 0) return map;
+  if (saleIds.length === 0) {
+    return { map, unavailable: false, errorMessage: null };
+  }
 
   const { data, error } = await admin
     .from('contracts')
-    .select(
-      'id, sale_id, status, is_current, version, signed_at, customer_signed_at, updated_at, company_id, tenant_id',
-    )
+    .select(MY_SALES_CONTRACTS_SELECT)
     .in('sale_id', saleIds)
     .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)
     .order('version', { ascending: false });
 
   if (error) {
     console.error('[mySalesService] contracts', error.message);
-    throw new Error(`Falha ao consultar contratos: ${error.message}`);
+    return {
+      map,
+      unavailable: true,
+      errorMessage: `Dados de contratos indisponíveis: ${error.message}`,
+    };
   }
 
   for (const row of (data || []) as ContractRow[]) {
@@ -426,7 +466,7 @@ async function loadContractsBySaleIds(
     if (st === 'superseded') continue;
     map.set(saleId, row);
   }
-  return map;
+  return { map, unavailable: false, errorMessage: null };
 }
 
 /**
@@ -460,6 +500,7 @@ function buildSummary(
   saleItems: MySalesListItem[],
   reservationItems: MySalesListItem[],
   contractsBySale: Map<string, ContractRow>,
+  contractsAvailable: boolean,
 ): MySalesSummary {
   const { start, end } = monthBoundsUtc();
   let salesThisMonth = 0;
@@ -471,6 +512,7 @@ function buildSummary(
     const d = String(item.date || '');
     if (d >= start && d < end) salesThisMonth += 1;
 
+    if (!contractsAvailable) continue;
     const contract = item.saleId ? contractsBySale.get(item.saleId) : null;
     const st = contract ? String(contract.status || '') : null;
     if (isContractSigned(st)) signedContracts += 1;
@@ -485,8 +527,8 @@ function buildSummary(
     totalSales: saleItems.filter((s) => s.statusKey !== 'cancelado').length,
     salesThisMonth,
     activeReservations,
-    pendingContracts,
-    signedContracts,
+    pendingContracts: contractsAvailable ? pendingContracts : null,
+    signedContracts: contractsAvailable ? signedContracts : null,
   };
 }
 
@@ -523,7 +565,9 @@ export async function listMySalesForBroker(
   ]);
 
   const saleIds = sales.map((s) => String(s.id));
-  const contractsBySale = await loadContractsBySaleIds(admin, input.companyId, saleIds);
+  const contractsLoad = await loadContractsBySaleIds(admin, input.companyId, saleIds);
+  const contractsBySale = contractsLoad.map;
+  const contractsAvailable = !contractsLoad.unavailable;
 
   const salesByBlock = new Map<string, string>();
   for (const sale of sales) {
@@ -534,7 +578,11 @@ export async function listMySalesForBroker(
   }
 
   const saleItems = sales.map((sale) =>
-    mapSaleItem(sale, sale.id ? contractsBySale.get(String(sale.id)) || null : null),
+    mapSaleItem(
+      sale,
+      sale.id ? contractsBySale.get(String(sale.id)) || null : null,
+      { contractsAvailable },
+    ),
   );
 
   const reservationItems = reservations.map((block) => {
@@ -545,7 +593,12 @@ export async function listMySalesForBroker(
     return mapBlockReservationItem(block, linked);
   });
 
-  const summary = buildSummary(saleItems, reservationItems, contractsBySale);
+  const summary = buildSummary(
+    saleItems,
+    reservationItems,
+    contractsBySale,
+    contractsAvailable,
+  );
 
   let combined = [...saleItems, ...reservationItems].sort((a, b) => {
     const da = String(a.date || '');
@@ -596,6 +649,8 @@ export async function listMySalesForBroker(
     page,
     pageSize,
     projects: [...projectMap.entries()].map(([id, name]) => ({ id, name })),
+    contractsUnavailable: contractsLoad.unavailable || undefined,
+    contractsWarning: contractsLoad.errorMessage,
   };
 }
 

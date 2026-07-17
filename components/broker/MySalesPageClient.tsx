@@ -71,9 +71,15 @@ export function MySalesPageClient() {
   const total = !queryFailed ? data?.total || 0 : 0;
   const pageSize = data?.pageSize || 20;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const contractsUnavailable = Boolean(data?.contractsUnavailable);
+  const contractsWarning = data?.contractsWarning || null;
   const kpiLoading = loading || queryFailed;
-  const kpiValue = (n: number | undefined) =>
-    queryFailed ? '—' : String(n ?? 0);
+  const kpiValue = (n: number | null | undefined) => {
+    if (queryFailed) return '—';
+    if (n === null || n === undefined) return '—';
+    return String(n);
+  };
+  const contractKpiUnavailable = queryFailed || contractsUnavailable;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -207,6 +213,13 @@ export function MySalesPageClient() {
         </div>
       ) : null}
 
+      {!queryFailed && contractsUnavailable && contractsWarning ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {contractsWarning} As vendas e reservas continuam disponíveis; os KPIs de
+          contratos ficaram indisponíveis.
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <FinanceStatCard
           title="Total vendas"
@@ -235,7 +248,7 @@ export function MySalesPageClient() {
         <FinanceStatCard
           title="Contratos pendentes"
           value={kpiValue(summary?.pendingContracts)}
-          subtitle={queryFailed ? 'Indisponível' : 'Aguardando assinatura'}
+          subtitle={contractKpiUnavailable ? 'Indisponível' : 'Aguardando assinatura'}
           icon={<FileText className="h-4 w-4" />}
           iconWrapClass="bg-violet-500/10 text-violet-300"
           loading={kpiLoading}
@@ -243,7 +256,7 @@ export function MySalesPageClient() {
         <FinanceStatCard
           title="Contratos assinados"
           value={kpiValue(summary?.signedContracts)}
-          subtitle={queryFailed ? 'Indisponível' : 'Finalizados'}
+          subtitle={contractKpiUnavailable ? 'Indisponível' : 'Finalizados'}
           icon={<FileSignature className="h-4 w-4" />}
           iconWrapClass="bg-teal-500/10 text-teal-300"
           loading={kpiLoading}

@@ -8,11 +8,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   assertMySalesBlockSelectSchema,
+  formatContractStatusLabel,
   formatReservationStatusLabel,
+  isContractPending,
+  isContractSigned,
   isReservationActiveForKpi,
   MY_SALES_BLOCK_EMBED,
   MY_SALES_BLOCKS_RESERVATION_SELECT,
+  MY_SALES_CONTRACTS_SELECT,
   MY_SALES_CUSTOMER_EMBED,
+  MY_SALES_FORBIDDEN_CONTRACT_COLUMNS,
   MY_SALES_SALES_SELECT,
   parseSelectFieldList,
   resolveBrokerMatchIds,
@@ -253,6 +258,78 @@ function testLegacyBrokerMatchIds() {
   console.log('OK testLegacyBrokerMatchIds');
 }
 
+function testContractsSelectSchemaAndStatusRules() {
+  assert(
+    !MY_SALES_CONTRACTS_SELECT.includes('customer_signed_at'),
+    'select sem customer_signed_at',
+  );
+  for (const forbidden of MY_SALES_FORBIDDEN_CONTRACT_COLUMNS) {
+    assert(
+      !MY_SALES_CONTRACTS_SELECT.includes(forbidden),
+      `contracts select proíbe ${forbidden}`,
+    );
+  }
+  for (const required of [
+    'id',
+    'sale_id',
+    'status',
+    'is_current',
+    'version',
+    'signed_at',
+    'company_id',
+    'tenant_id',
+  ]) {
+    assert(MY_SALES_CONTRACTS_SELECT.includes(required), `contracts tem ${required}`);
+  }
+
+  const service = read('lib/broker/mySalesService.ts');
+  assert(service.includes('MY_SALES_CONTRACTS_SELECT'), 'usa constante de select');
+  assert(
+    service.includes('.select(MY_SALES_CONTRACTS_SELECT)'),
+    'contracts usa MY_SALES_CONTRACTS_SELECT',
+  );
+  assert(service.includes('unavailable: true'), 'falha de contratos = unavailable');
+  assert(
+    !service.includes('Falha ao consultar contratos:'),
+    'falha de contratos não lança erro fatal na listagem',
+  );
+
+  // Mesma regra do módulo Contratos (page marca status "assinado").
+  assert(isContractSigned('assinado'), 'assinado');
+  assert(isContractSigned('signed'), 'signed legado');
+  assert(!isContractSigned('ativo'), 'ativo não é assinado');
+  assert(isContractPending('ativo'), 'ativo = pendente/aguardando');
+  assert(isContractPending('rascunho'), 'rascunho = pendente');
+  assert(!isContractPending('assinado'), 'assinado não pendente');
+  assert(formatContractStatusLabel('assinado') === 'Assinado', 'label assinado');
+  assert(
+    formatContractStatusLabel('ativo') === 'Aguardando assinatura',
+    'label ativo',
+  );
+  console.log('OK testContractsSelectSchemaAndStatusRules');
+}
+
+function testContractsFailureDoesNotDropSalesList() {
+  const service = read('lib/broker/mySalesService.ts');
+  // Vendas e reservas em paralelo; contratos depois, soft-fail.
+  assert(service.includes('Promise.all(['), 'Promise.all vendas+reservas');
+  assert(service.includes('loadSalesForBroker'), 'carrega vendas');
+  assert(service.includes('loadReservationsForBroker'), 'carrega reservas');
+  assert(service.includes('loadContractsBySaleIds'), 'carrega contratos');
+  assert(service.includes('contractsUnavailable'), 'propaga flag');
+  assert(service.includes('contractsWarning'), 'propaga warning');
+  assert(service.includes('contractsAvailable'), 'mapeia com flag');
+
+  const client = read('components/broker/MySalesPageClient.tsx');
+  assert(client.includes('contractsUnavailable'), 'UI lê flag');
+  assert(client.includes('contractsWarning'), 'UI aviso contratos');
+  assert(
+    client.includes('As vendas e reservas continuam disponíveis'),
+    'aviso isolado de contratos',
+  );
+  console.log('OK testContractsFailureDoesNotDropSalesList');
+}
+
 function testResolveBrokerAndApiGuards() {
   const resolveSrc = read('lib/broker/resolveAuthenticatedBroker.ts');
   assert(resolveSrc.includes('auth_user_id'), 'resolve usa auth_user_id');
@@ -336,6 +413,8 @@ function main() {
   testBlockSelectSchemaContract();
   testServiceSelectWhitelistNoFinance();
   testLegacyBrokerMatchIds();
+  testContractsSelectSchemaAndStatusRules();
+  testContractsFailureDoesNotDropSalesList();
   testResolveBrokerAndApiGuards();
   testUiDoesNotMaskQueryErrorsAsEmpty();
   testMenuOnlyBroker();

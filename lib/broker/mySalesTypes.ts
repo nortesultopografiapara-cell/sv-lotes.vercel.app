@@ -11,8 +11,10 @@ export type MySalesSummary = {
   totalSales: number;
   salesThisMonth: number;
   activeReservations: number;
-  pendingContracts: number;
-  signedContracts: number;
+  /** null quando a consulta de contratos falhou (KPI isolado). */
+  pendingContracts: number | null;
+  /** null quando a consulta de contratos falhou (KPI isolado). */
+  signedContracts: number | null;
 };
 
 export type MySalesListItem = {
@@ -69,6 +71,9 @@ export type MySalesListResponse = {
   projects: Array<{ id: string; name: string }>;
   /** Presente em respostas de erro (HTTP 5xx) — UI não deve zerar KPIs. */
   summaryUnavailable?: boolean;
+  /** Consulta de contratos falhou; vendas/reservas ainda podem estar ok. */
+  contractsUnavailable?: boolean;
+  contractsWarning?: string | null;
   error?: string;
   code?: string;
 };
