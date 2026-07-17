@@ -17,7 +17,10 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
   const [activeId, setActiveId] = useState<LandingNavId>('home');
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen) {
+      document.body.style.overflow = '';
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMenuOpen(false);
     };
@@ -28,6 +31,12 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
       document.body.style.overflow = '';
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
 
   useEffect(() => {
     const sections = LANDING_SECTION_IDS.map((id) => document.getElementById(id)).filter(Boolean);
@@ -51,10 +60,24 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
+  /** Fecha o menu após o evento de navegação (não cancela o clique). */
+  const handleNavActivate = useCallback(() => {
+    setMenuOpen(false);
+  }, []);
+
   return (
     <header
       className={`landing-header ${scrolled ? 'is-scrolled' : ''} ${menuOpen ? 'is-menu-open' : ''}`}
     >
+      {menuOpen ? (
+        <button
+          type="button"
+          className="landing-nav-backdrop"
+          aria-label="Fechar menu"
+          onClick={closeMenu}
+        />
+      ) : null}
+
       <div className="landing-header-bar">
         <SvLotesLogo
           href="#home"
@@ -63,7 +86,7 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
           subtitle="Gestão Imobiliária Inteligente"
           className="landing-header-logo shrink-0 min-w-0"
           textClassName="landing-header-logo-text"
-          onClick={closeMenu}
+          onClick={handleNavActivate}
         />
 
         <nav className="landing-nav-desktop" aria-label="Navegação principal">
@@ -73,7 +96,7 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
                 <a
                   href={item.href}
                   className={`landing-nav-link ${activeId === item.id ? 'is-active' : ''}`}
-                  onClick={closeMenu}
+                  onClick={handleNavActivate}
                 >
                   {item.label}
                 </a>
@@ -83,15 +106,6 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
         </nav>
 
         <div className="landing-header-actions">
-          <Link
-            href={LANDING_LOGIN_PATH}
-            className="landing-btn-system landing-btn-system--header-outline landing-btn-system--header-mobile"
-            aria-label="Acessar o sistema"
-          >
-            <LogIn className="w-3.5 h-3.5 shrink-0" />
-            <span>Acessar Sistema</span>
-          </Link>
-
           <button
             type="button"
             className="landing-nav-toggle"
@@ -100,7 +114,7 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             aria-controls="landing-nav-mobile"
             aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
           >
-            {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {menuOpen ? <X className="w-5 h-5" aria-hidden /> : <Menu className="w-5 h-5" aria-hidden />}
           </button>
 
           {clientPortalEnabled ? (
@@ -109,7 +123,7 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
               className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop landing-btn-portal"
               aria-label="Portal do Cliente"
             >
-              <UserCircle className="w-4 h-4 shrink-0" />
+              <UserCircle className="w-4 h-4 shrink-0" aria-hidden />
               <span className="landing-btn-portal-label">Portal do Cliente</span>
             </Link>
           ) : null}
@@ -118,10 +132,33 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop"
             aria-label="Acessar o sistema"
           >
-            <Lock className="w-4 h-4" />
+            <Lock className="w-4 h-4" aria-hidden />
             Acessar o Sistema
           </Link>
         </div>
+      </div>
+
+      <div className="landing-header-mobile-ctas" aria-label="Ações rápidas">
+        <Link
+          href={LANDING_LOGIN_PATH}
+          className="landing-btn-system landing-btn-system--header-outline landing-header-mobile-cta"
+          aria-label="Acessar o sistema"
+          onClick={handleNavActivate}
+        >
+          <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <span>Acessar Sistema</span>
+        </Link>
+        {clientPortalEnabled ? (
+          <Link
+            href={LANDING_CLIENT_PORTAL_PATH}
+            className="landing-btn-system landing-btn-system--header-outline landing-header-mobile-cta landing-btn-portal"
+            aria-label="Portal do Cliente"
+            onClick={handleNavActivate}
+          >
+            <UserCircle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <span>Portal do Cliente</span>
+          </Link>
+        ) : null}
       </div>
 
       <nav
@@ -136,38 +173,36 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
               <a
                 href={item.href}
                 className={`landing-nav-link landing-nav-link--mobile ${activeId === item.id ? 'is-active' : ''}`}
-                onClick={closeMenu}
+                onClick={handleNavActivate}
               >
                 {item.label}
               </a>
             </li>
           ))}
-          <li className="pt-2 border-t border-white/10 space-y-2">
+          <li className="landing-nav-mobile-actions">
             {clientPortalEnabled ? (
               <Link
                 href={LANDING_CLIENT_PORTAL_PATH}
-                className="landing-btn-system landing-btn-system--header-outline w-full justify-center"
-                onClick={closeMenu}
+                className="landing-btn-system landing-btn-system--header-outline landing-nav-mobile-action"
+                aria-label="Portal do Cliente"
+                onClick={handleNavActivate}
               >
-                <UserCircle className="w-4 h-4" />
+                <UserCircle className="w-4 h-4" aria-hidden />
                 Portal do Cliente
               </Link>
             ) : null}
             <Link
               href={LANDING_LOGIN_PATH}
-              className="landing-btn-system landing-btn-system--header-outline w-full justify-center"
-              onClick={closeMenu}
+              className="landing-btn-system landing-btn-system--header-outline landing-nav-mobile-action"
+              aria-label="Acessar o sistema"
+              onClick={handleNavActivate}
             >
-              <Lock className="w-4 h-4" />
+              <Lock className="w-4 h-4" aria-hidden />
               Acessar o Sistema
             </Link>
           </li>
         </ul>
       </nav>
-
-      {menuOpen ? (
-        <button type="button" className="landing-nav-backdrop" aria-label="Fechar menu" onClick={closeMenu} />
-      ) : null}
     </header>
   );
 }
