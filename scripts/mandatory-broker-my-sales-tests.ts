@@ -7,13 +7,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  assertMySalesBlockSelectSchema,
   formatReservationStatusLabel,
   isReservationActiveForKpi,
+  MY_SALES_BLOCK_EMBED,
+  MY_SALES_BLOCKS_RESERVATION_SELECT,
   MY_SALES_CUSTOMER_EMBED,
   MY_SALES_SALES_SELECT,
+  parseSelectFieldList,
   resolveBrokerMatchIds,
   resolveReservationDisplayStatus,
 } from '../lib/broker/mySalesService';
+import {
+  resolveLoteFromBlock,
+  resolveQuadraFromBlock,
+  formatSaleBlockLotLabel,
+} from '../lib/saleBlockLotLabel';
 import {
   MY_SALES_FORBIDDEN_FIELD_KEYS,
   type MySalesListItem,
@@ -121,7 +130,6 @@ function testRealSchemaNoReservationLogsOrFullName() {
   assert(!MY_SALES_CUSTOMER_EMBED.includes('full_name'), 'embed sem full_name');
   assert(MY_SALES_SALES_SELECT.includes('customers:customer_id'), 'join customers');
   assert(!MY_SALES_SALES_SELECT.includes('full_name'), 'sales select sem full_name');
-  // Selects/embeds reais não podem pedir full_name (comentários ok).
   const selectBodies = [MY_SALES_CUSTOMER_EMBED, MY_SALES_SALES_SELECT].join('\n');
   assert(!/\bfull_name\b/.test(selectBodies), 'selects sem full_name');
 
@@ -134,6 +142,76 @@ function testRealSchemaNoReservationLogsOrFullName() {
     'resolve broker sem full_name no select',
   );
   console.log('OK testRealSchemaNoReservationLogsOrFullName');
+}
+
+function testBlockSelectSchemaContract() {
+  assertMySalesBlockSelectSchema(MY_SALES_BLOCK_EMBED);
+
+  const embedFields = parseSelectFieldList(MY_SALES_BLOCK_EMBED);
+  assert(embedFields.includes('block_name'), 'quadra via block_name');
+  assert(embedFields.includes('number'), 'lote via number');
+  assert(embedFields.includes('lot_number'), 'lote fallback lot_number');
+  assert(!embedFields.includes('block'), 'proíbe blocks.block');
+  assert(!embedFields.includes('quadra'), 'proíbe blocks.quadra');
+
+  const reservationLeaf = MY_SALES_BLOCKS_RESERVATION_SELECT
+    .replace(/customers:customer_id\s*\([^)]*\)/g, '')
+    .replace(/projects:project_id\s*\([^)]*\)/g, '');
+  const reservationFields = parseSelectFieldList(reservationLeaf);
+  assert(!reservationFields.includes('block'), 'reserva select sem block');
+  assert(!reservationFields.includes('quadra'), 'reserva select sem quadra');
+  assert(reservationFields.includes('block_name'), 'reserva tem block_name');
+  assert(reservationFields.includes('number'), 'reserva tem number');
+
+  assert(MY_SALES_SALES_SELECT.includes(MY_SALES_BLOCK_EMBED.trim()) || MY_SALES_SALES_SELECT.includes('block_name'), 'sales usa embed de bloco');
+  assert(!MY_SALES_SALES_SELECT.includes('broker_name'), 'sales select sem broker_name');
+  assert(!MY_SALES_SALES_SELECT.includes('broker_email'), 'sales select sem broker_email');
+  // Garante que não pedimos a coluna literal "block" (≠ block_name / block_id).
+  assert(
+    !parseSelectFieldList(
+      MY_SALES_SALES_SELECT
+        .replace(/customers:customer_id\s*\([^)]*\)/g, '')
+        .replace(/projects:project_id\s*\([^)]*\)/g, '')
+        .replace(/blocks:block_id\s*\([^)]*\)/g, MY_SALES_BLOCK_EMBED),
+    ).includes('block'),
+    'sales select sem coluna block',
+  );
+
+  const sample = { block_name: '02', number: '10', lot_number: '10' };
+  assert(resolveQuadraFromBlock(sample) === '02', 'quadra = block_name');
+  assert(resolveLoteFromBlock(sample) === '10', 'lote = number');
+  assert(
+    formatSaleBlockLotLabel(sample) === 'QD 02 - LT 10',
+    'formato QD/LT do helper compartilhado',
+  );
+
+  const auditedSalesFields = [
+    'id',
+    'status',
+    'sale_date',
+    'created_at',
+    'broker_id',
+    'company_id',
+    'tenant_id',
+    'project_id',
+    'block_id',
+    'customer_id',
+  ];
+  for (const field of auditedSalesFields) {
+    assert(MY_SALES_SALES_SELECT.includes(field), `sales select tem ${field}`);
+  }
+  const auditedBlockFields = [
+    'block_name',
+    'number',
+    'lot_number',
+    'name',
+    'status',
+    'project_id',
+  ];
+  for (const field of auditedBlockFields) {
+    assert(MY_SALES_BLOCK_EMBED.includes(field), `block embed tem ${field}`);
+  }
+  console.log('OK testBlockSelectSchemaContract');
 }
 
 function testServiceSelectWhitelistNoFinance() {
@@ -255,6 +333,7 @@ function main() {
   testConvertedReservationNotActiveKpi();
   testDtoHasNoForbiddenFinancialKeys();
   testRealSchemaNoReservationLogsOrFullName();
+  testBlockSelectSchemaContract();
   testServiceSelectWhitelistNoFinance();
   testLegacyBrokerMatchIds();
   testResolveBrokerAndApiGuards();

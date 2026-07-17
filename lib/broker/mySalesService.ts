@@ -1,7 +1,8 @@
 /**
  * Serviço Minhas Vendas — consultas escopadas ao corretor autenticado.
  * Schema real: sales + blocks (status Reservado). Sem reservation_logs.
- * Clientes: customers.name (não full_name). Sem campos financeiros.
+ * Clientes: customers.name. Quadra/lote: block_name + number/lot_number.
+ * Sem campos financeiros. Sem columns blocks.block / blocks.quadra.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -21,16 +22,19 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 20;
 
-/** Select whitelist — sem full_name / campos financeiros. */
+/** Select whitelist — alinhado ao Financeiro/Contratos (sem colunas inexistentes). */
 export const MY_SALES_CUSTOMER_EMBED = 'id, name, phone';
+
+/** Quadra = block_name; Lote = number / lot_number (mesmo padrão finance/contracts). */
+export const MY_SALES_BLOCK_EMBED =
+  'id, block_name, name, number, lot_number, status, project_id, sale_id';
+
 export const MY_SALES_SALES_SELECT = `
   id,
   status,
   sale_date,
   created_at,
   broker_id,
-  broker_name,
-  broker_email,
   company_id,
   tenant_id,
   project_id,
@@ -38,7 +42,7 @@ export const MY_SALES_SALES_SELECT = `
   customer_id,
   customers:customer_id ( ${MY_SALES_CUSTOMER_EMBED} ),
   projects:project_id ( id, name ),
-  blocks:block_id ( id, number, block_name, name, block, quadra, status, project_id )
+  blocks:block_id ( ${MY_SALES_BLOCK_EMBED} )
 `;
 
 export const MY_SALES_BLOCKS_RESERVATION_SELECT = `
@@ -53,16 +57,46 @@ export const MY_SALES_BLOCKS_RESERVATION_SELECT = `
   reservation_date,
   created_at,
   updated_at,
-  number,
   block_name,
   name,
-  block,
-  quadra,
+  number,
+  lot_number,
   sale_id,
   customers:customer_id ( ${MY_SALES_CUSTOMER_EMBED} ),
   projects:project_id ( id, name )
 `;
 
+/** Colunas proibidas / obrigatórias — contrato de schema para testes. */
+export const MY_SALES_FORBIDDEN_BLOCK_COLUMNS = ['block', 'quadra'] as const;
+export const MY_SALES_REQUIRED_BLOCK_FIELDS = ['block_name', 'number'] as const;
+
+export function parseSelectFieldList(select: string): string[] {
+  return select
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.replace(/\s+/g, ' '))
+    .map((part) => {
+      // "customers:customer_id ( ... )" → ignore embed wrappers in leaf lists
+      const bare = part.split(/\s+/)[0] || part;
+      return bare.replace(/\(.*$/, '').trim();
+    })
+    .filter((f) => f && !f.includes(':'));
+}
+
+export function assertMySalesBlockSelectSchema(select: string): void {
+  const fields = parseSelectFieldList(select);
+  for (const required of MY_SALES_REQUIRED_BLOCK_FIELDS) {
+    if (!fields.includes(required) && !select.includes(required)) {
+      throw new Error(`mySales block select missing required field: ${required}`);
+    }
+  }
+  for (const forbidden of MY_SALES_FORBIDDEN_BLOCK_COLUMNS) {
+    if (fields.includes(forbidden)) {
+      throw new Error(`mySales block select must not request columns.${forbidden}`);
+    }
+  }
+}
 type SaleRow = Record<string, unknown>;
 type ReservationRow = Record<string, unknown>;
 type ContractRow = Record<string, unknown>;
