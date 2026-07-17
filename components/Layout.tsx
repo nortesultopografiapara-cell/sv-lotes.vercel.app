@@ -31,6 +31,7 @@ import {
   CreditCard,
   DatabaseBackup,
   FileArchive,
+  ShoppingBag,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
@@ -299,6 +300,7 @@ const getMenuItems = (role: string) => {
   if (isBrokerRole(role)) {
     return [
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+      { name: 'Minhas Vendas', href: '/my-sales', icon: ShoppingBag, color: 'text-[var(--color-primary)]' },
     ];
   }
 
@@ -336,6 +338,7 @@ const OWNER_MENU_ICONS: Record<
 > = {
   '/dashboard': { icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
   '/map': { icon: MapIcon, color: 'text-[var(--color-success)]' },
+  '/my-sales': { icon: ShoppingBag, color: 'text-[var(--color-primary)]' },
   '/finance': { icon: Wallet, color: 'text-[var(--color-warning)]' },
   '/charges': { icon: Banknote, color: 'text-violet-400' },
   '/contracts': { icon: FileText, color: 'text-[var(--color-info)]' },

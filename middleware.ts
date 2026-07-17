@@ -133,7 +133,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 4. BROKER / CORRETOR — somente Mapa GIS (venda e reserva)
+  // 4. BROKER / CORRETOR — Mapa GIS + Minhas Vendas (consulta); demais módulos bloqueados
   const brokerRole = String(userData?.role || '').toUpperCase();
   const isBroker = brokerRole === 'BROKER' || brokerRole === 'CORRETOR';
   if (isBroker) {
