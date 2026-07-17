@@ -21,7 +21,9 @@ import {
   MY_SALES_SALES_SELECT,
   parseSelectFieldList,
   resolveBrokerMatchIds,
+  resolveContractSignatureState,
   resolveReservationDisplayStatus,
+  selectCurrentContractsBySaleId,
 } from '../lib/broker/mySalesService';
 import {
   resolveLoteFromBlock,
@@ -37,6 +39,7 @@ import {
   isBrokerBlockedRoute,
   isBrokerRole,
 } from '../lib/rolePermissions';
+import { isSaleContractFullySigned } from '../lib/saleContractDashboardStats';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -277,6 +280,7 @@ function testContractsSelectSchemaAndStatusRules() {
     'version',
     'signed_at',
     'created_at',
+    'signature_status',
     'company_id',
     'tenant_id',
   ]) {
@@ -302,20 +306,121 @@ function testContractsSelectSchemaAndStatusRules() {
     !service.includes('Falha ao consultar contratos:'),
     'falha de contratos não lança erro fatal na listagem',
   );
+  assert(
+    service.includes('resolveContractSignatureState'),
+    'usa helper canônico de assinatura',
+  );
+  assert(
+    service.includes('selectCurrentContractsBySaleId'),
+    'escolhe contrato atual por sale_id',
+  );
 
-  // Mesma regra do módulo Contratos (page marca status "assinado").
+  // Mesma regra do módulo Contratos (isSaleContractFullySigned).
   assert(isContractSigned('assinado'), 'assinado');
   assert(isContractSigned('signed'), 'signed legado');
-  assert(!isContractSigned('ativo'), 'ativo não é assinado');
-  assert(isContractPending('ativo'), 'ativo = pendente/aguardando');
+  assert(!isContractSigned('ativo'), 'ativo sozinho não é assinado');
+  assert(
+    isContractSigned('ativo', 'SIGNED'),
+    'ativo + signature_status SIGNED = assinado (caso 000000057/2026)',
+  );
+  assert(
+    isSaleContractFullySigned({ status: 'ativo', signature_status: 'SIGNED' }),
+    'alinhado ao dashboard admin',
+  );
+  assert(isContractPending('ativo'), 'ativo sem SIGNED = pendente');
+  assert(isContractPending('ativo', 'CLIENT_SIGNED'), 'só comprador = pendente');
   assert(isContractPending('rascunho'), 'rascunho = pendente');
   assert(!isContractPending('assinado'), 'assinado não pendente');
-  assert(formatContractStatusLabel('assinado') === 'Assinado', 'label assinado');
   assert(
-    formatContractStatusLabel('ativo') === 'Aguardando assinatura',
-    'label ativo',
+    resolveContractSignatureState({ contract: null }) === 'NOT_GENERATED',
+    'sem contrato ≠ pendente',
+  );
+  assert(
+    resolveContractSignatureState({
+      contract: { status: 'cancelado', signature_status: 'SIGNED' },
+    }) === 'CANCELLED',
+    'cancelado tem prioridade',
+  );
+  assert(formatContractStatusLabel('assinado') === 'Contrato assinado', 'label assinado');
+  assert(
+    formatContractStatusLabel('ativo', 'SIGNED') === 'Contrato assinado',
+    'label ativo+SIGNED',
+  );
+  assert(
+    formatContractStatusLabel('ativo', 'PENDING') === 'Contrato pendente',
+    'label ativo+PENDING',
   );
   console.log('OK testContractsSelectSchemaAndStatusRules');
+}
+
+function testCurrentContractVersionWinsOverOldPending() {
+  const saleId = 'sale-arlan-qd04-lt11';
+  const map = selectCurrentContractsBySaleId([
+    {
+      id: 'c-v1',
+      sale_id: saleId,
+      version: 1,
+      is_current: false,
+      status: 'ativo',
+      signature_status: 'PENDING',
+    },
+    {
+      id: 'c-v2',
+      sale_id: saleId,
+      version: 2,
+      is_current: true,
+      status: 'ativo',
+      signature_status: 'SIGNED',
+    },
+  ]);
+  const current = map.get(saleId);
+  assert(Boolean(current), 'escolheu contrato');
+  assert(String(current?.id) === 'c-v2', 'versão atual v2');
+  assert(
+    resolveContractSignatureState({
+      contract: {
+        status: current?.status as string,
+        signature_status: current?.signature_status as string,
+      },
+    }) === 'SIGNED',
+    'v2 assinada → SIGNED (não sobrescrita por v1 pendente)',
+  );
+
+  const onlyOld = selectCurrentContractsBySaleId([
+    {
+      id: 'c-old',
+      sale_id: saleId,
+      version: 1,
+      is_current: false,
+      status: 'ativo',
+      signature_status: 'PENDING',
+    },
+  ]);
+  assert(!onlyOld.has(saleId), 'is_current=false não vira atual');
+  console.log('OK testCurrentContractVersionWinsOverOldPending');
+}
+
+function testSignatureKpiDoesNotCountNoContractAsPending() {
+  const cases: Array<{
+    contract: { status?: string | null; signature_status?: string | null } | null;
+    expect: 'SIGNED' | 'PENDING' | 'CANCELLED' | 'NOT_GENERATED';
+  }> = [
+    { contract: { status: 'ativo', signature_status: 'SIGNED' }, expect: 'SIGNED' },
+    { contract: { status: 'ativo', signature_status: 'PENDING' }, expect: 'PENDING' },
+    { contract: { status: 'cancelado' }, expect: 'CANCELLED' },
+    { contract: null, expect: 'NOT_GENERATED' },
+  ];
+  let signed = 0;
+  let pending = 0;
+  for (const c of cases) {
+    const state = resolveContractSignatureState({ contract: c.contract });
+    assert(state === c.expect, `${JSON.stringify(c.contract)} → ${c.expect}`);
+    if (state === 'SIGNED') signed += 1;
+    else if (state === 'PENDING') pending += 1;
+  }
+  assert(signed === 1, 'KPI assinados');
+  assert(pending === 1, 'KPI pendentes (sem NOT_GENERATED)');
+  console.log('OK testSignatureKpiDoesNotCountNoContractAsPending');
 }
 
 function testContractsFailureDoesNotDropSalesList() {
@@ -442,6 +547,8 @@ function main() {
   testServiceSelectWhitelistNoFinance();
   testLegacyBrokerMatchIds();
   testContractsSelectSchemaAndStatusRules();
+  testCurrentContractVersionWinsOverOldPending();
+  testSignatureKpiDoesNotCountNoContractAsPending();
   testContractsFailureDoesNotDropSalesList();
   testMySalesScrollPaginationMobileStructure();
   testResolveBrokerAndApiGuards();

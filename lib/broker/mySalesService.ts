@@ -11,6 +11,12 @@ import {
   type BlockLotRow,
 } from '@/lib/saleBlockLotLabel';
 import { CANCELED_SALE_STATUSES, isCanceledSale } from '@/lib/brokerDashboardStats';
+import {
+  contractSignatureStateBadgeKey,
+  contractSignatureStateLabel,
+  resolveContractSignatureState,
+  type ContractSignatureState,
+} from '@/lib/saleContractDashboardStats';
 import type {
   MySalesDetail,
   MySalesListFilters,
@@ -72,12 +78,13 @@ export const MY_SALES_REQUIRED_BLOCK_FIELDS = ['block_name', 'number'] as const;
 
 /**
  * Select de contracts — alinhado ao schema real (migrations + módulo Contratos).
- * Assinado = status assinado|signed; data complementar = signed_at.
- * Versão atual: is_current !== false, maior version.
+ * Assinatura: mesma regra do admin (`signature_status` + `status`) via
+ * `resolveContractSignatureState` / `isSaleContractFullySigned`.
+ * Versão atual: is_current !== false, maior version por sale_id.
  * Sem updated_at (coluna inexistente em public.contracts).
  */
 export const MY_SALES_CONTRACTS_SELECT =
-  'id, sale_id, status, is_current, version, signed_at, created_at, company_id, tenant_id';
+  'id, sale_id, status, is_current, version, signed_at, created_at, signature_status, company_id, tenant_id';
 
 /** Nomes de colunas que não devem entrar no select de contracts. */
 export const MY_SALES_FORBIDDEN_CONTRACT_COLUMNS = [
@@ -162,30 +169,66 @@ export function formatSaleStatusLabel(status?: string | null): string {
   return status ? String(status) : 'Em andamento';
 }
 
-export function formatContractStatusLabel(status?: string | null): string {
-  const s = String(status || '').trim().toLowerCase();
-  if (!s) return 'Contrato pendente';
-  if (s === 'assinado' || s === 'signed') return 'Assinado';
-  if (s === 'cancelado' || s === 'cancelled' || s === 'canceled') return 'Cancelado';
-  if (s === 'rascunho' || s === 'draft') return 'Aguardando assinatura';
-  if (s === 'ativo' || s === 'active') return 'Aguardando assinatura';
-  if (s === 'superseded') return 'Substituído';
-  return String(status);
+/** @deprecated Preferir resolveContractSignatureState — status sozinho não define assinatura. */
+export function formatContractStatusLabel(
+  status?: string | null,
+  signatureStatus?: string | null,
+): string {
+  return contractSignatureStateLabel(
+    resolveContractSignatureState({
+      contract: status == null && signatureStatus == null ? null : { status, signature_status: signatureStatus },
+    }),
+  );
 }
 
-export function isContractPending(status?: string | null): boolean {
-  const s = String(status || '').trim().toLowerCase();
-  if (!s) return true;
-  if (s === 'assinado' || s === 'signed') return false;
-  if (s === 'cancelado' || s === 'cancelled' || s === 'canceled' || s === 'superseded') {
-    return false;
+/** @deprecated Preferir resolveContractSignatureState com signature_status. */
+export function isContractPending(
+  status?: string | null,
+  signatureStatus?: string | null,
+): boolean {
+  if (status == null && signatureStatus == null) return false;
+  return (
+    resolveContractSignatureState({
+      contract: { status, signature_status: signatureStatus },
+    }) === 'PENDING'
+  );
+}
+
+/** @deprecated Preferir resolveContractSignatureState com signature_status. */
+export function isContractSigned(
+  status?: string | null,
+  signatureStatus?: string | null,
+): boolean {
+  return (
+    resolveContractSignatureState({
+      contract: { status, signature_status: signatureStatus },
+    }) === 'SIGNED'
+  );
+}
+
+export { resolveContractSignatureState, contractSignatureStateLabel, contractSignatureStateBadgeKey };
+export type { ContractSignatureState };
+
+/**
+ * Escolhe o contrato atual por sale_id (mesma regra do load):
+ * maior version, is_current !== false, ignora superseded.
+ */
+export function selectCurrentContractsBySaleId(
+  rows: Array<Record<string, unknown>>,
+): Map<string, Record<string, unknown>> {
+  const sorted = [...rows].sort(
+    (a, b) => Number(b.version || 0) - Number(a.version || 0),
+  );
+  const map = new Map<string, Record<string, unknown>>();
+  for (const row of sorted) {
+    const saleId = String(row.sale_id || '');
+    if (!saleId || map.has(saleId)) continue;
+    if (row.is_current === false) continue;
+    const st = String(row.status || '').toLowerCase();
+    if (st === 'superseded') continue;
+    map.set(saleId, row);
   }
-  return true;
-}
-
-export function isContractSigned(status?: string | null): boolean {
-  const s = String(status || '').trim().toLowerCase();
-  return s === 'assinado' || s === 'signed';
+  return map;
 }
 
 export type ReservationDisplayStatus =
@@ -300,29 +343,37 @@ function mapSaleItem(
   const blockRow = (block || {}) as BlockLotRow;
   const saleStatus = String(sale.status || '');
   const contractsAvailable = options?.contractsAvailable !== false;
-  const contractStatus = contract ? String(contract.status || '') : null;
+
+  const signatureState = resolveContractSignatureState({
+    contract: contract
+      ? {
+          status: contract.status as string | null | undefined,
+          signature_status: contract.signature_status as string | null | undefined,
+        }
+      : null,
+    contractsAvailable,
+  });
 
   let statusKey = saleStatus || 'ativo';
   let statusLabel = formatSaleStatusLabel(saleStatus);
+  let contractStatusKey: string | null = null;
+  let contractStatusLabel: string | null = null;
+
   if (isCanceledSale(sale)) {
     statusKey = 'cancelado';
     statusLabel = 'Cancelado';
-  } else if (contractsAvailable && isContractSigned(contractStatus)) {
-    statusKey = 'assinado';
-    statusLabel = 'Assinado';
-  } else if (contractsAvailable && contract && isContractPending(contractStatus)) {
-    statusKey = 'contrato_pendente';
-    statusLabel = 'Contrato pendente';
-  } else if (contractsAvailable && !contract && !isCanceledSale(sale)) {
-    statusKey = 'contrato_pendente';
-    statusLabel = 'Contrato pendente';
-  }
-
-  let contractStatusLabel: string | null = null;
-  if (contractsAvailable) {
-    contractStatusLabel = contract
-      ? formatContractStatusLabel(contractStatus)
-      : 'Contrato pendente';
+    if (contractsAvailable && contract) {
+      contractStatusKey = contractSignatureStateBadgeKey(signatureState);
+      contractStatusLabel = contractSignatureStateLabel(signatureState);
+    }
+  } else if (signatureState === 'UNAVAILABLE') {
+    contractStatusKey = null;
+    contractStatusLabel = null;
+  } else {
+    statusKey = contractSignatureStateBadgeKey(signatureState);
+    statusLabel = contractSignatureStateLabel(signatureState);
+    contractStatusKey = statusKey;
+    contractStatusLabel = statusLabel;
   }
 
   return {
@@ -337,7 +388,7 @@ function mapSaleItem(
     customerPhone: customerPhone(customer),
     statusKey,
     statusLabel,
-    contractStatusKey: contractsAvailable ? contractStatus : null,
+    contractStatusKey,
     contractStatusLabel,
     reservationExpiresAt: null,
     // Data real de assinatura no módulo Contratos: contracts.signed_at
@@ -432,7 +483,7 @@ export type MySalesContractsLoadResult = {
 
 /**
  * Consulta complementar — falha NÃO deve derrubar vendas/reservas.
- * Status assinado/pendente segue contracts.status (módulo Contratos).
+ * Assinado/pendente: mesma regra do admin (signature_status + status).
  */
 export async function loadContractsBySaleIds(
   admin: SupabaseClient,
@@ -460,12 +511,8 @@ export async function loadContractsBySaleIds(
     };
   }
 
-  for (const row of (data || []) as ContractRow[]) {
-    const saleId = String(row.sale_id || '');
-    if (!saleId || map.has(saleId)) continue;
-    if (row.is_current === false) continue;
-    const st = String(row.status || '').toLowerCase();
-    if (st === 'superseded') continue;
+  const selected = selectCurrentContractsBySaleId((data || []) as ContractRow[]);
+  for (const [saleId, row] of selected) {
     map.set(saleId, row);
   }
   return { map, unavailable: false, errorMessage: null };
@@ -516,9 +563,18 @@ function buildSummary(
 
     if (!contractsAvailable) continue;
     const contract = item.saleId ? contractsBySale.get(item.saleId) : null;
-    const st = contract ? String(contract.status || '') : null;
-    if (isContractSigned(st)) signedContracts += 1;
-    else if (isContractPending(st)) pendingContracts += 1;
+    const state = resolveContractSignatureState({
+      contract: contract
+        ? {
+            status: contract.status as string | null | undefined,
+            signature_status: contract.signature_status as string | null | undefined,
+          }
+        : null,
+      contractsAvailable: true,
+    });
+    // NOT_GENERATED e CANCELLED não entram em assinados nem pendentes
+    if (state === 'SIGNED') signedContracts += 1;
+    else if (state === 'PENDING') pendingContracts += 1;
   }
 
   const activeReservations = reservationItems.filter((r) =>

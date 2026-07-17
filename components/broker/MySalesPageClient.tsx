@@ -11,7 +11,7 @@ import {
   ShoppingBag,
   X,
 } from 'lucide-react';
-import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/FinancePremiumUI';
+import { FinanceStatCard } from '@/components/finance/FinancePremiumUI';
 import {
   MOBILE_CONTENT_PAD_BOTTOM_CLASS,
   SV_MODAL_BODY_CLASS,
@@ -40,16 +40,49 @@ function formatDate(value: string | null | undefined): string {
 function statusBadgeInput(item: MySalesListItem): string {
   const key = item.statusKey.toLowerCase();
   if (key === 'cancelado' || key === 'cancelada') return 'cancelado';
-  if (key === 'assinado' || key === 'convertida') return 'pago';
+  if (key === 'assinado') return 'assinado';
+  if (key === 'convertida') return 'convertida';
+  if (key === 'sem_contrato') return 'sem_contrato';
+  if (key === 'indisponivel') return 'indisponivel';
   if (key === 'ativa' || key === 'contrato_pendente') return 'pendente';
   if (key === 'expirada') return 'atrasado';
   return 'pendente';
 }
 
 function MySalesStatusBadge({ item }: { item: MySalesListItem }) {
+  const s = statusBadgeInput(item);
+  let cls =
+    'inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border';
+  let label = 'DESCONHECIDO';
+
+  if (s === 'assinado') {
+    cls += ' border-emerald-500/35 bg-emerald-500/12 text-emerald-400';
+    label = 'ASSINADO';
+  } else if (s === 'convertida' || s === 'pago') {
+    cls += ' border-emerald-500/35 bg-emerald-500/12 text-emerald-400';
+    label = 'CONVERTIDA';
+  } else if (s === 'pendente') {
+    cls += ' border-amber-400/35 bg-amber-400/10 text-amber-300';
+    label = 'PENDENTE';
+  } else if (s === 'sem_contrato') {
+    cls += ' border-[var(--border-color)] bg-[var(--bg-card-alt)] text-[var(--text-secondary)]';
+    label = 'SEM CONTRATO';
+  } else if (s === 'atrasado') {
+    cls += ' border-rose-500/35 bg-rose-500/10 text-rose-400';
+    label = 'EXPIRADA';
+  } else if (s === 'cancelado') {
+    cls += ' border-[var(--border-color)] bg-[var(--bg-card-alt)] text-[var(--text-secondary)]';
+    label = 'CANCELADO';
+  } else if (s === 'indisponivel') {
+    cls += ' border-[var(--border-color)] bg-transparent text-[var(--text-secondary)]';
+    label = '—';
+  } else {
+    cls += ' border-[var(--border-color)] bg-transparent text-[var(--text-secondary)]';
+  }
+
   return (
     <span className="inline-flex flex-col gap-0.5 items-start">
-      <FinanceStatusBadge status={statusBadgeInput(item)} />
+      <span className={cls}>{label}</span>
       <span className="text-[10px] text-[var(--text-secondary)]">{item.statusLabel}</span>
     </span>
   );
@@ -373,6 +406,7 @@ export function MySalesPageClient() {
             <option value="">Todas</option>
             <option value="contrato_pendente">Contrato pendente</option>
             <option value="assinado">Assinado</option>
+            <option value="sem_contrato">Sem contrato</option>
             <option value="cancelado">Cancelado</option>
             <option value="ativa">Reserva ativa</option>
             <option value="convertida">Convertida em venda</option>
