@@ -276,11 +276,20 @@ function testContractsSelectSchemaAndStatusRules() {
     'is_current',
     'version',
     'signed_at',
+    'created_at',
     'company_id',
     'tenant_id',
   ]) {
     assert(MY_SALES_CONTRACTS_SELECT.includes(required), `contracts tem ${required}`);
   }
+  assert(
+    !MY_SALES_CONTRACTS_SELECT.includes('updated_at'),
+    'select sem contracts.updated_at',
+  );
+  assert(
+    !MY_SALES_CONTRACTS_SELECT.split(',').map((s) => s.trim()).includes('updated_at'),
+    'campo updated_at ausente do select',
+  );
 
   const service = read('lib/broker/mySalesService.ts');
   assert(service.includes('MY_SALES_CONTRACTS_SELECT'), 'usa constante de select');
@@ -328,6 +337,25 @@ function testContractsFailureDoesNotDropSalesList() {
     'aviso isolado de contratos',
   );
   console.log('OK testContractsFailureDoesNotDropSalesList');
+}
+
+function testMySalesScrollPaginationMobileStructure() {
+  const client = read('components/broker/MySalesPageClient.tsx');
+  assert(client.includes('sv-page--scroll-y') || client.includes('SV_PAGE_MOBILE_CLASS'), 'página com rolagem');
+  assert(client.includes('my-sales-pagination'), 'paginação marcada');
+  assert(client.includes('showPagination'), 'paginação quando total > pageSize');
+  assert(client.includes('total > pageSize'), 'condição total > pageSize');
+  assert(client.includes('my-sales-mobile-cards'), 'cards mobile');
+  assert(client.includes('my-sales-desktop-table'), 'tabela desktop');
+  assert(client.includes('md:hidden'), 'cards só mobile');
+  assert(client.includes('hidden') && client.includes('md:block'), 'tabela só desktop');
+  assert(client.includes('document.body.style.overflow'), 'modal restaura overflow');
+  assert(client.includes('SV_MODAL_OVERLAY_CLASS') || client.includes('sv-modal-overlay'), 'modal padrão');
+  assert(!client.includes('overflow-y-hidden'), 'sem overflow-y-hidden permanente');
+  assert(client.includes('listBusy'), 'loading desabilita toques repetidos');
+  assert(client.includes('Data inicial'), 'filtro data inicial label mobile');
+  assert(client.includes('Data final'), 'filtro data final label mobile');
+  console.log('OK testMySalesScrollPaginationMobileStructure');
 }
 
 function testResolveBrokerAndApiGuards() {
@@ -415,6 +443,7 @@ function main() {
   testLegacyBrokerMatchIds();
   testContractsSelectSchemaAndStatusRules();
   testContractsFailureDoesNotDropSalesList();
+  testMySalesScrollPaginationMobileStructure();
   testResolveBrokerAndApiGuards();
   testUiDoesNotMaskQueryErrorsAsEmpty();
   testMenuOnlyBroker();

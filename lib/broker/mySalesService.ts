@@ -71,16 +71,18 @@ export const MY_SALES_FORBIDDEN_BLOCK_COLUMNS = ['block', 'quadra'] as const;
 export const MY_SALES_REQUIRED_BLOCK_FIELDS = ['block_name', 'number'] as const;
 
 /**
- * Select de contracts — alinhado ao módulo Contratos / migrations.
- * Assinado = status assinado|signed; data = signed_at.
- * Não solicitar colunas de assinatura inexistentes na tabela contracts.
+ * Select de contracts — alinhado ao schema real (migrations + módulo Contratos).
+ * Assinado = status assinado|signed; data complementar = signed_at.
+ * Versão atual: is_current !== false, maior version.
+ * Sem updated_at (coluna inexistente em public.contracts).
  */
 export const MY_SALES_CONTRACTS_SELECT =
-  'id, sale_id, status, is_current, version, signed_at, updated_at, company_id, tenant_id';
+  'id, sale_id, status, is_current, version, signed_at, created_at, company_id, tenant_id';
 
 /** Nomes de colunas que não devem entrar no select de contracts. */
 export const MY_SALES_FORBIDDEN_CONTRACT_COLUMNS = [
   'customer_signed_at',
+  'updated_at',
 ] as const;
 
 export function parseSelectFieldList(select: string): string[] {

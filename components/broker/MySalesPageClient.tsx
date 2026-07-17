@@ -12,12 +12,23 @@ import {
   X,
 } from 'lucide-react';
 import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/FinancePremiumUI';
+import {
+  MOBILE_CONTENT_PAD_BOTTOM_CLASS,
+  SV_MODAL_BODY_CLASS,
+  SV_MODAL_HEADER_CLASS,
+  SV_MODAL_OVERLAY_CLASS,
+  SV_MODAL_SHELL_CLASS,
+  SV_PAGE_MOBILE_CLASS,
+} from '@/lib/mobileLayout';
 import type {
   MySalesDetail,
   MySalesListItem,
   MySalesListResponse,
   MySalesListTab,
 } from '@/lib/broker/mySalesTypes';
+
+const FILTER_INPUT =
+  'mt-1 w-full min-h-11 rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2.5 text-sm text-[var(--text-primary)]';
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
@@ -63,6 +74,7 @@ export function MySalesPageClient() {
   const [typeFilter, setTypeFilter] = useState('');
   const [detail, setDetail] = useState<MySalesDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const queryFailed = Boolean(error) && !brokerUnlinked;
   const summary = !queryFailed && data?.summary ? data.summary : null;
@@ -71,9 +83,11 @@ export function MySalesPageClient() {
   const total = !queryFailed ? data?.total || 0 : 0;
   const pageSize = data?.pageSize || 20;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const showPagination = total > pageSize;
   const contractsUnavailable = Boolean(data?.contractsUnavailable);
   const contractsWarning = data?.contractsWarning || null;
-  const kpiLoading = loading || queryFailed;
+  const kpiLoading = loading && !data;
+  const listBusy = loading;
   const kpiValue = (n: number | null | undefined) => {
     if (queryFailed) return '—';
     if (n === null || n === undefined) return '—';
@@ -105,7 +119,6 @@ export function MySalesPageClient() {
       const json = (await res.json()) as MySalesListResponse & { error?: string };
       if (!res.ok) {
         setBrokerUnlinked(false);
-        setData(null);
         const technical = [
           json.code ? `[${json.code}]` : null,
           json.error || `HTTP ${res.status}`,
@@ -127,7 +140,6 @@ export function MySalesPageClient() {
           ? `Não foi possível carregar Minhas Vendas. ${err.message}`
           : 'Não foi possível carregar Minhas Vendas.',
       );
-      setData(null);
     } finally {
       setLoading(false);
     }
@@ -148,7 +160,25 @@ export function MySalesPageClient() {
     void load();
   }, [load]);
 
+  // Trava rolagem do body só enquanto o modal estiver aberto.
+  useEffect(() => {
+    if (!detailOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [detailOpen]);
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setDetail(null);
+    setDetailLoading(false);
+  };
+
   const openDetail = async (item: MySalesListItem) => {
+    if (listBusy) return;
+    setDetailOpen(true);
     setDetailLoading(true);
     setDetail(null);
     try {
@@ -168,6 +198,7 @@ export function MySalesPageClient() {
       setDetail(json.detail as MySalesDetail);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao abrir detalhe.');
+      closeDetail();
     } finally {
       setDetailLoading(false);
     }
@@ -184,16 +215,19 @@ export function MySalesPageClient() {
   );
 
   const applySearch = () => {
+    if (listBusy) return;
     setPage(1);
     setSearch(searchDraft.trim());
   };
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-[var(--text-primary)] flex items-center gap-2">
-          <ShoppingBag className="h-6 w-6 text-[var(--color-primary)]" />
-          Minhas Vendas
+    <div
+      className={`${SV_PAGE_MOBILE_CLASS} h-full min-h-0 flex-1 w-full space-y-5 p-4 md:p-6 ${MOBILE_CONTENT_PAD_BOTTOM_CLASS} md:pb-6`}
+    >
+      <div className="min-w-0">
+        <h1 className="text-xl sm:text-2xl font-semibold text-[var(--text-primary)] flex items-center gap-2">
+          <ShoppingBag className="h-5 w-5 sm:h-6 sm:w-6 shrink-0 text-[var(--color-primary)]" />
+          <span className="truncate">Minhas Vendas</span>
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
           Consulte suas vendas e reservas. Sem valores financeiros.
@@ -268,12 +302,13 @@ export function MySalesPageClient() {
           <button
             key={t.id}
             type="button"
+            disabled={listBusy}
             onClick={() => {
               setTypeFilter('');
               setTab(t.id);
               setPage(1);
             }}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            className={`min-h-10 rounded-lg px-4 py-2 text-sm font-medium transition disabled:opacity-60 ${
               tab === t.id && !typeFilter
                 ? 'bg-[var(--color-primary)] text-white'
                 : 'bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -284,7 +319,10 @@ export function MySalesPageClient() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 md:grid-cols-2 xl:grid-cols-4">
+      <fieldset
+        disabled={listBusy}
+        className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 disabled:opacity-70 md:grid-cols-2 xl:grid-cols-4"
+      >
         <label className="text-xs text-[var(--text-muted)]">
           Empreendimento
           <select
@@ -293,7 +331,7 @@ export function MySalesPageClient() {
               setProjectId(e.target.value);
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           >
             <option value="">Todos</option>
             {projects.map((p) => (
@@ -315,7 +353,7 @@ export function MySalesPageClient() {
               else setTab('all');
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           >
             <option value="">Todos</option>
             <option value="sale">Venda</option>
@@ -330,7 +368,7 @@ export function MySalesPageClient() {
               setStatus(e.target.value);
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           >
             <option value="">Todas</option>
             <option value="contrato_pendente">Contrato pendente</option>
@@ -352,12 +390,12 @@ export function MySalesPageClient() {
                 if (e.key === 'Enter') applySearch();
               }}
               placeholder="Cliente, lote, quadra…"
-              className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+              className={`${FILTER_INPUT} mt-0`}
             />
             <button
               type="button"
               onClick={applySearch}
-              className="rounded-lg bg-[var(--bg-card-alt)] px-3 text-[var(--text-primary)]"
+              className="min-h-11 min-w-11 rounded-lg bg-[var(--bg-card-alt)] px-3 text-[var(--text-primary)]"
               title="Buscar"
             >
               <Search className="h-4 w-4" />
@@ -365,7 +403,7 @@ export function MySalesPageClient() {
           </div>
         </label>
         <label className="text-xs text-[var(--text-muted)]">
-          De
+          Data inicial
           <input
             type="date"
             value={startDate}
@@ -373,11 +411,11 @@ export function MySalesPageClient() {
               setStartDate(e.target.value);
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           />
         </label>
         <label className="text-xs text-[var(--text-muted)]">
-          Até
+          Data final
           <input
             type="date"
             value={endDate}
@@ -385,7 +423,7 @@ export function MySalesPageClient() {
               setEndDate(e.target.value);
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           />
         </label>
         <label className="text-xs text-[var(--text-muted)]">
@@ -396,7 +434,7 @@ export function MySalesPageClient() {
               setBlockLabel(e.target.value);
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           />
         </label>
         <label className="text-xs text-[var(--text-muted)]">
@@ -407,13 +445,20 @@ export function MySalesPageClient() {
               setLotLabel(e.target.value);
               setPage(1);
             }}
-            className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className={FILTER_INPUT}
           />
         </label>
-      </div>
+      </fieldset>
 
-      <div className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]">
-        <div className="hidden overflow-x-auto md:block">
+      <div className="relative rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]">
+        {listBusy ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center rounded-xl bg-[var(--bg-card)]/50 pt-16">
+            <Loader2 className="h-7 w-7 animate-spin text-blue-400" />
+          </div>
+        ) : null}
+
+        {/* Desktop table */}
+        <div className="my-sales-desktop-table hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-[var(--border-color)] bg-[var(--bg-card-alt)] text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
               <tr>
@@ -427,27 +472,15 @@ export function MySalesPageClient() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {queryFailed && !items.length ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center">
-                    <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-400" />
-                  </td>
-                </tr>
-              ) : queryFailed ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="py-10 text-center text-sm text-rose-200"
-                  >
+                  <td colSpan={7} className="py-10 text-center text-sm text-rose-200">
                     Consulta indisponível — veja a mensagem de erro acima.
                   </td>
                 </tr>
-              ) : items.length === 0 ? (
+              ) : !loading && items.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="py-10 text-center text-[var(--text-muted)]"
-                  >
+                  <td colSpan={7} className="py-10 text-center text-[var(--text-muted)]">
                     Nenhum registro encontrado.
                   </td>
                 </tr>
@@ -478,8 +511,9 @@ export function MySalesPageClient() {
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
+                        disabled={listBusy}
                         onClick={() => void openDetail(item)}
-                        className="text-xs font-medium text-[var(--color-primary)] hover:underline"
+                        className="min-h-9 rounded-lg px-3 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--bg-card-alt)] disabled:opacity-50"
                       >
                         Detalhes
                       </button>
@@ -491,34 +525,35 @@ export function MySalesPageClient() {
           </table>
         </div>
 
-        <div className="space-y-3 p-3 md:hidden">
-          {loading ? (
-            <div className="py-10 text-center">
-              <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-400" />
-            </div>
-          ) : queryFailed ? (
+        {/* Mobile cards */}
+        <div className="my-sales-mobile-cards space-y-3 p-3 md:hidden">
+          {queryFailed && !items.length ? (
             <p className="py-8 text-center text-sm text-rose-200">
               Consulta indisponível — veja a mensagem de erro acima.
             </p>
-          ) : items.length === 0 ? (
+          ) : !loading && items.length === 0 ? (
             <p className="py-8 text-center text-sm text-[var(--text-muted)]">
               Nenhum registro encontrado.
             </p>
           ) : (
             items.map((item) => (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                onClick={() => void openDetail(item)}
-                className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-card-alt)] p-3 text-left"
+                className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-card-alt)] p-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-[var(--text-primary)]">
-                      {item.typeLabel} · {item.customerName}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      {item.typeLabel}
+                    </p>
+                    <p className="mt-0.5 text-sm font-semibold text-[var(--text-primary)] truncate">
+                      {item.customerName}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-secondary)] break-words">
+                      {item.projectName}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                      {item.projectName} · Qd {item.blockLabel} Lt {item.lotLabel}
+                      Quadra {item.blockLabel} · Lote {item.lotLabel}
                     </p>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">
                       {formatDate(item.date)}
@@ -526,89 +561,114 @@ export function MySalesPageClient() {
                   </div>
                   <MySalesStatusBadge item={item} />
                 </div>
-              </button>
+                <button
+                  type="button"
+                  disabled={listBusy}
+                  onClick={() => void openDetail(item)}
+                  className="mt-3 flex min-h-11 w-full items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium text-[var(--color-primary)] disabled:opacity-50"
+                >
+                  Detalhes
+                </button>
+              </div>
             ))
           )}
         </div>
 
-        {totalPages > 1 ? (
-          <div className="flex items-center justify-between border-t border-[var(--border-color)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+        {showPagination || total > 0 ? (
+          <div className="my-sales-pagination flex flex-col gap-3 border-t border-[var(--border-color)] px-4 py-3 text-sm text-[var(--text-secondary)] sm:flex-row sm:items-center sm:justify-between">
             <span>
               Página {page} de {totalPages} · {total} registro(s)
             </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded-lg border border-[var(--border-color)] px-3 py-1 disabled:opacity-40"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="rounded-lg border border-[var(--border-color)] px-3 py-1 disabled:opacity-40"
-              >
-                Próxima
-              </button>
-            </div>
+            {showPagination ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={listBusy || page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="min-h-11 flex-1 rounded-lg border border-[var(--border-color)] px-4 py-2 disabled:opacity-40 sm:flex-none"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  disabled={listBusy || page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="min-h-11 flex-1 rounded-lg border border-[var(--border-color)] px-4 py-2 disabled:opacity-40 sm:flex-none"
+                >
+                  Próxima
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
 
-      {(detail || detailLoading) && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl">
-            <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-3">
+      {detailOpen ? (
+        <div
+          className={SV_MODAL_OVERLAY_CLASS}
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeDetail();
+          }}
+        >
+          <div className={`${SV_MODAL_SHELL_CLASS} bg-[var(--bg-card)] border border-[var(--border-color)]`}>
+            <div
+              className={`${SV_MODAL_HEADER_CLASS} flex items-center justify-between border-b border-[var(--border-color)] px-4 py-3`}
+            >
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">
                 Detalhes
               </h2>
               <button
                 type="button"
-                onClick={() => setDetail(null)}
-                className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--bg-card-alt)]"
+                onClick={closeDetail}
+                className="min-h-11 min-w-11 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--bg-card-alt)]"
+                aria-label="Fechar"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {detailLoading || !detail ? (
-              <div className="py-16 text-center">
-                <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-400" />
-              </div>
-            ) : (
-              <div className="space-y-3 p-4 text-sm">
-                <Row label="Tipo" value={detail.typeLabel} />
-                <Row label="Data" value={formatDate(detail.date)} />
-                <Row label="Empreendimento" value={detail.projectName} />
-                <Row label="Quadra" value={detail.blockLabel} />
-                <Row label="Lote" value={detail.lotLabel} />
-                <Row label="Cliente" value={detail.customerName} />
-                {detail.customerPhone ? (
-                  <Row label="Telefone" value={detail.customerPhone} />
-                ) : null}
-                <Row label="Situação" value={detail.statusLabel} />
-                {detail.contractStatusLabel ? (
-                  <Row label="Contrato" value={detail.contractStatusLabel} />
-                ) : null}
-                {detail.reservationExpiresAt ? (
-                  <Row
-                    label="Expira em"
-                    value={formatDate(detail.reservationExpiresAt)}
-                  />
-                ) : null}
-                {detail.brokerName ? (
-                  <Row label="Corretor" value={detail.brokerName} />
-                ) : null}
-                {detail.linkedSaleId ? (
-                  <Row label="Venda vinculada" value={detail.linkedSaleId.slice(0, 8) + '…'} />
-                ) : null}
-              </div>
-            )}
+            <div className={`${SV_MODAL_BODY_CLASS} p-4`}>
+              {detailLoading || !detail ? (
+                <div className="py-16 text-center">
+                  <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-400" />
+                </div>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  <Row label="Tipo" value={detail.typeLabel} />
+                  <Row label="Data" value={formatDate(detail.date)} />
+                  <Row label="Empreendimento" value={detail.projectName} />
+                  <Row label="Quadra" value={detail.blockLabel} />
+                  <Row label="Lote" value={detail.lotLabel} />
+                  <Row label="Cliente" value={detail.customerName} />
+                  {detail.customerPhone ? (
+                    <Row label="Telefone" value={detail.customerPhone} />
+                  ) : null}
+                  <Row label="Situação" value={detail.statusLabel} />
+                  {detail.contractStatusLabel ? (
+                    <Row label="Contrato" value={detail.contractStatusLabel} />
+                  ) : null}
+                  {detail.contractSignedAt ? (
+                    <Row
+                      label="Assinado em"
+                      value={formatDate(detail.contractSignedAt)}
+                    />
+                  ) : null}
+                  {detail.reservationExpiresAt ? (
+                    <Row
+                      label="Expira em"
+                      value={formatDate(detail.reservationExpiresAt)}
+                    />
+                  ) : null}
+                  {detail.brokerName ? (
+                    <Row label="Corretor" value={detail.brokerName} />
+                  ) : null}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -616,8 +676,10 @@ export function MySalesPageClient() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4 border-b border-[var(--border-color)]/50 py-2">
-      <span className="text-[var(--text-muted)]">{label}</span>
-      <span className="text-right font-medium text-[var(--text-primary)]">{value}</span>
+      <span className="shrink-0 text-[var(--text-muted)]">{label}</span>
+      <span className="text-right font-medium text-[var(--text-primary)] break-words">
+        {value}
+      </span>
     </div>
   );
 }

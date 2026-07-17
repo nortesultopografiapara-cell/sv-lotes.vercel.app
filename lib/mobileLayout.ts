@@ -60,4 +60,5 @@ export const MOBILE_PAGE_SOURCE_FILES = [
   'app/offline-sync/page.tsx',
   'app/manual/page.tsx',
   'components/billing/CompanyBillingPortal.tsx',
+  'components/broker/MySalesPageClient.tsx',
 ] as const;
