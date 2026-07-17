@@ -7,6 +7,7 @@ import {
   classifySaleContractForDashboard,
   computeSaleContractDashboardStats,
   isSaleContractFullySigned,
+  resolveContractSignatureState,
   saleContractDashboardPercent,
 } from '../lib/saleContractDashboardStats';
 
@@ -105,6 +106,31 @@ function testListAndDashboardSameRule() {
   console.log('OK testListAndDashboardSameRule');
 }
 
+function testResolveContractSignatureState() {
+  assert(
+    resolveContractSignatureState({
+      contract: { status: 'ativo', signature_status: 'SIGNED' },
+    }) === 'SIGNED',
+    'ativo+SIGNED',
+  );
+  assert(
+    resolveContractSignatureState({
+      contract: { status: 'ativo', signature_status: 'CLIENT_SIGNED' },
+    }) === 'PENDING',
+    'incompleto',
+  );
+  assert(
+    resolveContractSignatureState({ contract: { status: 'cancelado' } }) === 'CANCELLED',
+    'cancelado',
+  );
+  assert(resolveContractSignatureState({ contract: null }) === 'NOT_GENERATED', 'sem contrato');
+  assert(
+    resolveContractSignatureState({ contractsAvailable: false }) === 'UNAVAILABLE',
+    'indisponível',
+  );
+  console.log('OK testResolveContractSignatureState');
+}
+
 function main() {
   testFullySignedBySignatureStatus();
   testFullySignedByContractStatus();
@@ -113,6 +139,7 @@ function main() {
   testStatsConsistency();
   testPercentages();
   testListAndDashboardSameRule();
+  testResolveContractSignatureState();
   console.log('mandatory-sale-contract-dashboard-stats-tests: all passed');
 }
 

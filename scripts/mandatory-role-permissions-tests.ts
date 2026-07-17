@@ -45,6 +45,7 @@ function testBrokerBlockedRoutes() {
   assert(isBrokerBlockedRoute('/finance'), 'finance');
   assert(isBrokerBlockedRoute('/contracts'), 'contracts');
   assert(!isBrokerBlockedRoute('/map'), 'map allowed');
+  assert(!isBrokerBlockedRoute('/my-sales'), 'my-sales allowed');
   assert(!isBrokerBlockedRoute('/login'), 'login allowed');
   console.log('OK testBrokerBlockedRoutes');
 }

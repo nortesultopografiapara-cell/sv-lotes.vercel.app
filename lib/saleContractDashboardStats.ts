@@ -68,6 +68,72 @@ export function classifySaleContractForDashboard(contract: {
   return 'pending';
 }
 
+/**
+ * Estado de assinatura para Minhas Vendas / listagens — mesma regra do dashboard
+ * administrativo (`isSaleContractFullySigned`), com distinção de “sem contrato”.
+ *
+ * SIGNED: signature_status=SIGNED OU contracts.status assinado/signed
+ * PENDING: contrato existe e ainda não está totalmente assinado
+ * CANCELLED: contrato cancelado
+ * NOT_GENERATED: venda sem contrato
+ * UNAVAILABLE: consulta de contratos falhou
+ */
+export type ContractSignatureState =
+  | 'SIGNED'
+  | 'PENDING'
+  | 'CANCELLED'
+  | 'NOT_GENERATED'
+  | 'UNAVAILABLE';
+
+export function resolveContractSignatureState(input: {
+  contract?: {
+    status?: string | null;
+    signature_status?: string | null;
+  } | null;
+  contractsAvailable?: boolean;
+}): ContractSignatureState {
+  if (input.contractsAvailable === false) return 'UNAVAILABLE';
+  if (!input.contract) return 'NOT_GENERATED';
+  if (isSaleContractSuperseded(input.contract)) return 'CANCELLED';
+  if (isSaleContractCancelled(input.contract)) return 'CANCELLED';
+  if (isSaleContractFullySigned(input.contract)) return 'SIGNED';
+  return 'PENDING';
+}
+
+export function contractSignatureStateLabel(state: ContractSignatureState): string {
+  switch (state) {
+    case 'SIGNED':
+      return 'Contrato assinado';
+    case 'PENDING':
+      return 'Contrato pendente';
+    case 'CANCELLED':
+      return 'Cancelado';
+    case 'NOT_GENERATED':
+      return 'Contrato ainda não gerado';
+    case 'UNAVAILABLE':
+      return 'Status de contrato indisponível';
+    default:
+      return state;
+  }
+}
+
+export function contractSignatureStateBadgeKey(state: ContractSignatureState): string {
+  switch (state) {
+    case 'SIGNED':
+      return 'assinado';
+    case 'PENDING':
+      return 'contrato_pendente';
+    case 'CANCELLED':
+      return 'cancelado';
+    case 'NOT_GENERATED':
+      return 'sem_contrato';
+    case 'UNAVAILABLE':
+      return 'indisponivel';
+    default:
+      return 'contrato_pendente';
+  }
+}
+
 export function resolveSaleContractDashboardValue(
   contract: SaleContractDashboardRow,
 ): number {
