@@ -1,6 +1,6 @@
 /**
- * Minhas Vendas (corretor) — vínculo, isolamento conceitual, convertida≠ativa,
- * DTOs sem campos financeiros, menu só broker, rota liberada.
+ * Minhas Vendas (corretor) — schema real, vínculo, convertida≠ativa,
+ * DTOs sem campos financeiros, menu só broker, falha ≠ vazio.
  *
  * npx tsx scripts/mandatory-broker-my-sales-tests.ts
  */
@@ -9,6 +9,9 @@ import path from 'node:path';
 import {
   formatReservationStatusLabel,
   isReservationActiveForKpi,
+  MY_SALES_CUSTOMER_EMBED,
+  MY_SALES_SALES_SELECT,
+  resolveBrokerMatchIds,
   resolveReservationDisplayStatus,
 } from '../lib/broker/mySalesService';
 import {
@@ -57,7 +60,7 @@ function testConvertedReservationNotActiveKpi() {
     logStatus: 'active',
     expirationTime: new Date(Date.now() + 86400000).toISOString(),
     hasLinkedSale: false,
-    blockStatus: 'reservado',
+    blockStatus: 'Reservado',
   });
   assert(active === 'ativa', `expected ativa got ${active}`);
   assert(isReservationActiveForKpi(active), 'ativa no KPI');
@@ -105,6 +108,34 @@ function testDtoHasNoForbiddenFinancialKeys() {
   console.log('OK testDtoHasNoForbiddenFinancialKeys');
 }
 
+function testRealSchemaNoReservationLogsOrFullName() {
+  const service = read('lib/broker/mySalesService.ts');
+  assert(
+    !service.includes("from('reservation_logs')"),
+    'não deve consultar reservation_logs',
+  );
+  assert(service.includes("from('blocks')"), 'reservas via blocks');
+  assert(service.includes("eq('status', 'Reservado')"), 'status Reservado');
+  assert(service.includes("from('sales')"), 'consulta sales');
+  assert(MY_SALES_CUSTOMER_EMBED.includes('name'), 'embed usa name');
+  assert(!MY_SALES_CUSTOMER_EMBED.includes('full_name'), 'embed sem full_name');
+  assert(MY_SALES_SALES_SELECT.includes('customers:customer_id'), 'join customers');
+  assert(!MY_SALES_SALES_SELECT.includes('full_name'), 'sales select sem full_name');
+  // Selects/embeds reais não podem pedir full_name (comentários ok).
+  const selectBodies = [MY_SALES_CUSTOMER_EMBED, MY_SALES_SALES_SELECT].join('\n');
+  assert(!/\bfull_name\b/.test(selectBodies), 'selects sem full_name');
+
+  const resolveSrc = read('lib/broker/resolveAuthenticatedBroker.ts');
+  assert(resolveSrc.includes("'id, name, email"), 'resolve select name');
+  const resolveSelectMatch = resolveSrc.match(/const selectCols\s*=\s*\n?\s*'([^']+)'/);
+  assert(Boolean(resolveSelectMatch), 'selectCols encontrado');
+  assert(
+    !String(resolveSelectMatch?.[1] || '').includes('full_name'),
+    'resolve broker sem full_name no select',
+  );
+  console.log('OK testRealSchemaNoReservationLogsOrFullName');
+}
+
 function testServiceSelectWhitelistNoFinance() {
   const service = read('lib/broker/mySalesService.ts');
   for (const forbidden of [
@@ -120,10 +151,28 @@ function testServiceSelectWhitelistNoFinance() {
       `mySalesService não deve referenciar ${forbidden}`,
     );
   }
-  assert(service.includes("from('sales')"), 'consulta sales');
-  assert(service.includes("from('reservation_logs')"), 'consulta reservation_logs');
-  assert(service.includes('.eq(\'broker_id\', brokerId)'), 'filtra broker_id');
+  assert(service.includes('.in(\'broker_id\', brokerMatchIds)'), 'filtra broker_id');
   console.log('OK testServiceSelectWhitelistNoFinance');
+}
+
+function testLegacyBrokerMatchIds() {
+  const ids = resolveBrokerMatchIds({
+    brokerId: 'broker-1',
+    authUserId: 'auth-1',
+    userId: 'user-1',
+  });
+  assert(ids.includes('broker-1'), 'broker id');
+  assert(ids.includes('auth-1'), 'auth legado');
+  assert(ids.includes('user-1'), 'user legado');
+  assert(ids.length === 3, '3 ids únicos');
+
+  const dedup = resolveBrokerMatchIds({
+    brokerId: 'same',
+    authUserId: 'same',
+    userId: 'same',
+  });
+  assert(dedup.length === 1, 'dedupe');
+  console.log('OK testLegacyBrokerMatchIds');
 }
 
 function testResolveBrokerAndApiGuards() {
@@ -137,7 +186,19 @@ function testResolveBrokerAndApiGuards() {
   assert(api.includes('resolveAuthenticatedBroker'), 'API resolve broker');
   assert(api.includes('brokerUnlinked'), 'API flag unlinked');
   assert(api.includes('getMySalesDetailForBroker'), 'API detalhe revalida');
+  assert(api.includes('MY_SALES_QUERY_FAILED'), 'código de erro de query');
+  assert(api.includes('summaryUnavailable'), 'flag summaryUnavailable');
+  assert(api.includes('status: 500'), 'HTTP 500 em falha de banco');
   console.log('OK testResolveBrokerAndApiGuards');
+}
+
+function testUiDoesNotMaskQueryErrorsAsEmpty() {
+  const client = read('components/broker/MySalesPageClient.tsx');
+  assert(client.includes('queryFailed'), 'UI distingue falha');
+  assert(client.includes('summaryUnavailable') || client.includes('Indisponível'), 'KPI indisponível');
+  assert(client.includes('Consulta indisponível'), 'mensagem ≠ vazio');
+  assert(client.includes('MY_SALES_QUERY_FAILED') || client.includes('json.code'), 'mostra código');
+  console.log('OK testUiDoesNotMaskQueryErrorsAsEmpty');
 }
 
 function testMenuOnlyBroker() {
@@ -175,7 +236,7 @@ function testPageAndClientExist() {
   );
   const client = read('components/broker/MySalesPageClient.tsx');
   assert(client.includes('/api/my-sales'), 'client consome API');
-  assert(!client.includes('from(\'sales\')'), 'client não lista sales direto');
+  assert(!client.includes("from('sales')"), 'client não lista sales direto');
   console.log('OK testPageAndClientExist');
 }
 
@@ -193,8 +254,11 @@ function main() {
   testBrokerRolesAllowMySales();
   testConvertedReservationNotActiveKpi();
   testDtoHasNoForbiddenFinancialKeys();
+  testRealSchemaNoReservationLogsOrFullName();
   testServiceSelectWhitelistNoFinance();
+  testLegacyBrokerMatchIds();
   testResolveBrokerAndApiGuards();
+  testUiDoesNotMaskQueryErrorsAsEmpty();
   testMenuOnlyBroker();
   testPageAndClientExist();
   testMiddlewareAllowsMySales();

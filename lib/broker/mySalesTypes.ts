@@ -67,6 +67,10 @@ export type MySalesListResponse = {
   page: number;
   pageSize: number;
   projects: Array<{ id: string; name: string }>;
+  /** Presente em respostas de erro (HTTP 5xx) — UI não deve zerar KPIs. */
+  summaryUnavailable?: boolean;
+  error?: string;
+  code?: string;
 };
 
 /** Campos proibidos — usados em testes de regressão. */

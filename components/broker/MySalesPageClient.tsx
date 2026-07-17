@@ -17,16 +17,7 @@ import type {
   MySalesListItem,
   MySalesListResponse,
   MySalesListTab,
-  MySalesSummary,
 } from '@/lib/broker/mySalesTypes';
-
-const EMPTY_SUMMARY: MySalesSummary = {
-  totalSales: 0,
-  salesThisMonth: 0,
-  activeReservations: 0,
-  pendingContracts: 0,
-  signedContracts: 0,
-};
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
@@ -73,12 +64,16 @@ export function MySalesPageClient() {
   const [detail, setDetail] = useState<MySalesDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const summary = data?.summary || EMPTY_SUMMARY;
-  const items = data?.items || [];
+  const queryFailed = Boolean(error) && !brokerUnlinked;
+  const summary = !queryFailed && data?.summary ? data.summary : null;
+  const items = !queryFailed ? data?.items || [] : [];
   const projects = data?.projects || [];
-  const total = data?.total || 0;
+  const total = !queryFailed ? data?.total || 0 : 0;
   const pageSize = data?.pageSize || 20;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const kpiLoading = loading || queryFailed;
+  const kpiValue = (n: number | undefined) =>
+    queryFailed ? '—' : String(n ?? 0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,13 +98,29 @@ export function MySalesPageClient() {
       });
       const json = (await res.json()) as MySalesListResponse & { error?: string };
       if (!res.ok) {
-        throw new Error(json.error || 'Falha ao carregar Minhas Vendas.');
+        setBrokerUnlinked(false);
+        setData(null);
+        const technical = [
+          json.code ? `[${json.code}]` : null,
+          json.error || `HTTP ${res.status}`,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        setError(
+          `Não foi possível carregar Minhas Vendas. ${technical}`,
+        );
+        return;
       }
       setBrokerUnlinked(Boolean(json.brokerUnlinked));
       setUnlinkedMessage(json.message || null);
       setData(json);
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar.');
+      setError(
+        err instanceof Error
+          ? `Não foi possível carregar Minhas Vendas. ${err.message}`
+          : 'Não foi possível carregar Minhas Vendas.',
+      );
       setData(null);
     } finally {
       setLoading(false);
@@ -199,43 +210,43 @@ export function MySalesPageClient() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <FinanceStatCard
           title="Total vendas"
-          value={String(summary.totalSales)}
-          subtitle="Não canceladas"
+          value={kpiValue(summary?.totalSales)}
+          subtitle={queryFailed ? 'Indisponível' : 'Não canceladas'}
           icon={<ShoppingBag className="h-4 w-4" />}
           iconWrapClass="bg-blue-500/10 text-blue-400"
-          loading={loading}
+          loading={kpiLoading}
         />
         <FinanceStatCard
           title="Vendas no mês"
-          value={String(summary.salesThisMonth)}
-          subtitle="Mês corrente"
+          value={kpiValue(summary?.salesThisMonth)}
+          subtitle={queryFailed ? 'Indisponível' : 'Mês corrente'}
           icon={<Calendar className="h-4 w-4" />}
           iconWrapClass="bg-emerald-500/10 text-emerald-400"
-          loading={loading}
+          loading={kpiLoading}
         />
         <FinanceStatCard
           title="Reservas ativas"
-          value={String(summary.activeReservations)}
-          subtitle="Não convertidas"
+          value={kpiValue(summary?.activeReservations)}
+          subtitle={queryFailed ? 'Indisponível' : 'Não convertidas'}
           icon={<Handshake className="h-4 w-4" />}
           iconWrapClass="bg-amber-500/10 text-amber-300"
-          loading={loading}
+          loading={kpiLoading}
         />
         <FinanceStatCard
           title="Contratos pendentes"
-          value={String(summary.pendingContracts)}
-          subtitle="Aguardando assinatura"
+          value={kpiValue(summary?.pendingContracts)}
+          subtitle={queryFailed ? 'Indisponível' : 'Aguardando assinatura'}
           icon={<FileText className="h-4 w-4" />}
           iconWrapClass="bg-violet-500/10 text-violet-300"
-          loading={loading}
+          loading={kpiLoading}
         />
         <FinanceStatCard
           title="Contratos assinados"
-          value={String(summary.signedContracts)}
-          subtitle="Finalizados"
+          value={kpiValue(summary?.signedContracts)}
+          subtitle={queryFailed ? 'Indisponível' : 'Finalizados'}
           icon={<FileSignature className="h-4 w-4" />}
           iconWrapClass="bg-teal-500/10 text-teal-300"
-          loading={loading}
+          loading={kpiLoading}
         />
       </div>
 
@@ -409,6 +420,15 @@ export function MySalesPageClient() {
                     <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-400" />
                   </td>
                 </tr>
+              ) : queryFailed ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="py-10 text-center text-sm text-rose-200"
+                  >
+                    Consulta indisponível — veja a mensagem de erro acima.
+                  </td>
+                </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td
@@ -463,6 +483,10 @@ export function MySalesPageClient() {
             <div className="py-10 text-center">
               <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-400" />
             </div>
+          ) : queryFailed ? (
+            <p className="py-8 text-center text-sm text-rose-200">
+              Consulta indisponível — veja a mensagem de erro acima.
+            </p>
           ) : items.length === 0 ? (
             <p className="py-8 text-center text-sm text-[var(--text-muted)]">
               Nenhum registro encontrado.

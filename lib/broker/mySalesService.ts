@@ -1,6 +1,7 @@
 /**
  * Serviço Minhas Vendas — consultas escopadas ao corretor autenticado.
- * Sem campos financeiros.
+ * Schema real: sales + blocks (status Reservado). Sem reservation_logs.
+ * Clientes: customers.name (não full_name). Sem campos financeiros.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -19,6 +20,48 @@ import type {
 } from '@/lib/broker/mySalesTypes';
 
 const DEFAULT_PAGE_SIZE = 20;
+
+/** Select whitelist — sem full_name / campos financeiros. */
+export const MY_SALES_CUSTOMER_EMBED = 'id, name, phone';
+export const MY_SALES_SALES_SELECT = `
+  id,
+  status,
+  sale_date,
+  created_at,
+  broker_id,
+  broker_name,
+  broker_email,
+  company_id,
+  tenant_id,
+  project_id,
+  block_id,
+  customer_id,
+  customers:customer_id ( ${MY_SALES_CUSTOMER_EMBED} ),
+  projects:project_id ( id, name ),
+  blocks:block_id ( id, number, block_name, name, block, quadra, status, project_id )
+`;
+
+export const MY_SALES_BLOCKS_RESERVATION_SELECT = `
+  id,
+  status,
+  broker_id,
+  customer_id,
+  project_id,
+  company_id,
+  tenant_id,
+  reservation_expires_at,
+  reservation_date,
+  created_at,
+  updated_at,
+  number,
+  block_name,
+  name,
+  block,
+  quadra,
+  sale_id,
+  customers:customer_id ( ${MY_SALES_CUSTOMER_EMBED} ),
+  projects:project_id ( id, name )
+`;
 
 type SaleRow = Record<string, unknown>;
 type ReservationRow = Record<string, unknown>;
@@ -46,6 +89,17 @@ function monthBoundsUtc(now = new Date()): { start: string; end: string } {
   const start = new Date(Date.UTC(y, m, 1)).toISOString();
   const end = new Date(Date.UTC(y, m + 1, 1)).toISOString();
   return { start, end };
+}
+
+function customerDisplayName(customer: Record<string, unknown> | null): string {
+  if (!customer) return '—';
+  return String(customer.name || '').trim() || '—';
+}
+
+function customerPhone(customer: Record<string, unknown> | null): string | null {
+  if (!customer) return null;
+  if (customer.phone) return String(customer.phone);
+  return null;
 }
 
 export function formatSaleStatusLabel(status?: string | null): string {
@@ -105,6 +159,13 @@ export function resolveReservationDisplayStatus(input: {
   if (input.hasLinkedSale) return 'convertida';
   const blockSt = String(input.blockStatus || '').trim().toLowerCase();
   if (blockSt === 'vendido' || blockSt === 'sold') return 'convertida';
+  // Lotes com status Reservado são a fonte real; outros status não-reservados
+  // com sale_id já tratados acima.
+  if (blockSt && blockSt !== 'reservado' && blockSt !== 'reserved') {
+    if (blockSt === 'disponivel' || blockSt === 'available' || blockSt === 'disponível') {
+      return 'cancelada';
+    }
+  }
 
   const exp = input.expirationTime ? new Date(input.expirationTime) : null;
   const now = input.now || new Date();
@@ -154,9 +215,6 @@ function matchesSearch(
 }
 
 function matchesFilters(item: MySalesListItem, filters: MySalesListFilters): boolean {
-  if (filters.projectId) {
-    // projectId filtrado na query quando possível; aqui usa nome se só search
-  }
   if (filters.blockLabel) {
     const b = String(filters.blockLabel).trim().toLowerCase();
     if (b && !item.blockLabel.toLowerCase().includes(b)) return false;
@@ -214,8 +272,8 @@ function mapSaleItem(
     projectName: String(project?.name || '—'),
     blockLabel: resolveQuadraFromBlock(blockRow) || '—',
     lotLabel: resolveLoteFromBlock(blockRow) || '—',
-    customerName: String(customer?.name || customer?.full_name || '—'),
-    customerPhone: customer?.phone ? String(customer.phone) : customer?.whatsapp ? String(customer.whatsapp) : null,
+    customerName: customerDisplayName(customer),
+    customerPhone: customerPhone(customer),
     statusKey,
     statusLabel,
     contractStatusKey: contractStatus,
@@ -231,79 +289,75 @@ function mapSaleItem(
   };
 }
 
-function mapReservationItem(
-  log: ReservationRow,
+function mapBlockReservationItem(
+  block: ReservationRow,
   linkedSaleId: string | null,
 ): MySalesListItem {
-  const customer = firstEmbed(log.customers) || firstEmbed(log.customer);
-  const block = firstEmbed(log.blocks) || firstEmbed(log.block);
-  const project =
-    firstEmbed(block?.projects) ||
-    firstEmbed(log.projects) ||
-    firstEmbed(log.project);
-  const blockRow = (block || {}) as BlockLotRow;
+  const customer = firstEmbed(block.customers) || firstEmbed(block.customer);
+  const project = firstEmbed(block.projects) || firstEmbed(block.project);
+  const blockRow = block as BlockLotRow;
   const display = resolveReservationDisplayStatus({
-    logStatus: String(log.status || ''),
-    expirationTime: isoDate(log.expiration_time),
-    blockStatus: block ? String(block.status || '') : null,
-    hasLinkedSale: Boolean(linkedSaleId),
+    logStatus: 'active',
+    expirationTime: isoDate(block.reservation_expires_at),
+    blockStatus: String(block.status || ''),
+    hasLinkedSale: Boolean(linkedSaleId || block.sale_id),
   });
 
   return {
-    id: `reservation:${String(log.id)}`,
+    id: `reservation:${String(block.id)}`,
     type: 'reservation',
     typeLabel: 'Reserva',
-    date: isoDate(log.created_at || log.reservation_date),
+    date: isoDate(block.reservation_date || block.updated_at || block.created_at),
     projectName: String(project?.name || '—'),
     blockLabel: resolveQuadraFromBlock(blockRow) || '—',
     lotLabel: resolveLoteFromBlock(blockRow) || '—',
-    customerName: String(customer?.name || customer?.full_name || '—'),
-    customerPhone: customer?.phone ? String(customer.phone) : null,
+    customerName: customerDisplayName(customer),
+    customerPhone: customerPhone(customer),
     statusKey: display,
     statusLabel: formatReservationStatusLabel(display),
     contractStatusKey: null,
     contractStatusLabel: null,
-    reservationExpiresAt: isoDate(log.expiration_time),
+    reservationExpiresAt: isoDate(block.reservation_expires_at),
     contractSignedAt: null,
     saleId: null,
-    reservationId: String(log.id),
+    reservationId: String(block.id),
     contractId: null,
-    linkedSaleId,
+    linkedSaleId: linkedSaleId || (block.sale_id ? String(block.sale_id) : null),
   };
+}
+
+/** IDs legítimos do corretor (cadastro + auth legado em sales.broker_id). */
+export function resolveBrokerMatchIds(input: {
+  brokerId: string;
+  authUserId?: string | null;
+  userId?: string | null;
+}): string[] {
+  const ids = new Set<string>();
+  for (const raw of [input.brokerId, input.authUserId, input.userId]) {
+    const id = String(raw || '').trim();
+    if (id) ids.add(id);
+  }
+  return [...ids];
 }
 
 async function loadSalesForBroker(
   admin: SupabaseClient,
   companyId: string,
-  brokerId: string,
+  brokerMatchIds: string[],
 ): Promise<SaleRow[]> {
+  if (brokerMatchIds.length === 0) return [];
+
   const { data, error } = await admin
     .from('sales')
-    .select(
-      `
-      id,
-      status,
-      sale_date,
-      created_at,
-      broker_id,
-      company_id,
-      tenant_id,
-      project_id,
-      block_id,
-      customer_id,
-      customers:customer_id ( id, name, full_name, phone, whatsapp ),
-      projects:project_id ( id, name ),
-      blocks:block_id ( id, number, block_name, name, block, quadra, status, project_id )
-    `,
-    )
-    .eq('broker_id', brokerId)
+    .select(MY_SALES_SALES_SELECT)
+    .in('broker_id', brokerMatchIds)
     .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)
     .order('created_at', { ascending: false })
     .limit(500);
 
   if (error) {
     console.error('[mySalesService] sales', error.message);
-    throw new Error(error.message);
+    throw new Error(`Falha ao consultar vendas: ${error.message}`);
   }
   return (data || []) as SaleRow[];
 }
@@ -326,8 +380,8 @@ async function loadContractsBySaleIds(
     .order('version', { ascending: false });
 
   if (error) {
-    console.warn('[mySalesService] contracts', error.message);
-    return map;
+    console.error('[mySalesService] contracts', error.message);
+    throw new Error(`Falha ao consultar contratos: ${error.message}`);
   }
 
   for (const row of (data || []) as ContractRow[]) {
@@ -341,47 +395,29 @@ async function loadContractsBySaleIds(
   return map;
 }
 
+/**
+ * Reservas reais: lotes em `blocks` com status Reservado e broker_id do corretor.
+ * (reservation_logs não existe no banco homolog/prod atual.)
+ */
 async function loadReservationsForBroker(
   admin: SupabaseClient,
   companyId: string,
-  brokerId: string,
+  brokerMatchIds: string[],
 ): Promise<ReservationRow[]> {
+  if (brokerMatchIds.length === 0) return [];
+
   const { data, error } = await admin
-    .from('reservation_logs')
-    .select(
-      `
-      id,
-      status,
-      created_at,
-      expiration_time,
-      broker_id,
-      block_id,
-      customer_id,
-      company_id,
-      tenant_id,
-      customers:customer_id ( id, name, full_name, phone ),
-      blocks:block_id (
-        id,
-        number,
-        block_name,
-        name,
-        block,
-        quadra,
-        status,
-        project_id,
-        sale_id,
-        projects:project_id ( id, name )
-      )
-    `,
-    )
-    .eq('broker_id', brokerId)
+    .from('blocks')
+    .select(MY_SALES_BLOCKS_RESERVATION_SELECT)
+    .in('broker_id', brokerMatchIds)
+    .eq('status', 'Reservado')
     .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)
-    .order('created_at', { ascending: false })
+    .order('reservation_date', { ascending: false })
     .limit(500);
 
   if (error) {
-    console.error('[mySalesService] reservation_logs', error.message);
-    throw new Error(error.message);
+    console.error('[mySalesService] blocks(Reservado)', error.message);
+    throw new Error(`Falha ao consultar reservas: ${error.message}`);
   }
   return (data || []) as ReservationRow[];
 }
@@ -432,6 +468,8 @@ export async function listMySalesForBroker(
     companyId: string;
     brokerId: string;
     brokerName?: string | null;
+    authUserId?: string | null;
+    userId?: string | null;
     filters?: MySalesListFilters;
   },
 ): Promise<MySalesListResponse> {
@@ -439,10 +477,15 @@ export async function listMySalesForBroker(
   const page = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || DEFAULT_PAGE_SIZE));
   const tab: MySalesListTab = filters.tab || 'all';
+  const brokerMatchIds = resolveBrokerMatchIds({
+    brokerId: input.brokerId,
+    authUserId: input.authUserId,
+    userId: input.userId,
+  });
 
   const [sales, reservations] = await Promise.all([
-    loadSalesForBroker(admin, input.companyId, input.brokerId),
-    loadReservationsForBroker(admin, input.companyId, input.brokerId),
+    loadSalesForBroker(admin, input.companyId, brokerMatchIds),
+    loadReservationsForBroker(admin, input.companyId, brokerMatchIds),
   ]);
 
   const saleIds = sales.map((s) => String(s.id));
@@ -460,13 +503,12 @@ export async function listMySalesForBroker(
     mapSaleItem(sale, sale.id ? contractsBySale.get(String(sale.id)) || null : null),
   );
 
-  const reservationItems = reservations.map((log) => {
-    const block = firstEmbed(log.blocks) || firstEmbed(log.block);
-    const blockId = String(log.block_id || block?.id || '').trim();
+  const reservationItems = reservations.map((block) => {
+    const blockId = String(block.id || '').trim();
     const linked =
-      (block?.sale_id ? String(block.sale_id) : null) ||
+      (block.sale_id ? String(block.sale_id) : null) ||
       (blockId ? salesByBlock.get(blockId) || null : null);
-    return mapReservationItem(log, linked);
+    return mapBlockReservationItem(block, linked);
   });
 
   const summary = buildSummary(saleItems, reservationItems, contractsBySale);
@@ -484,10 +526,7 @@ export async function listMySalesForBroker(
     );
     const resProjectIds = new Set(
       reservations
-        .filter((r) => {
-          const block = firstEmbed(r.blocks) || firstEmbed(r.block);
-          return String(block?.project_id || '') === pid;
-        })
+        .filter((r) => String(r.project_id || '') === pid)
         .map((r) => `reservation:${r.id}`),
     );
     combined = combined.filter(
@@ -508,10 +547,9 @@ export async function listMySalesForBroker(
     const name = String(p?.name || '');
     if (id && name) projectMap.set(id, name);
   }
-  for (const log of reservations) {
-    const block = firstEmbed(log.blocks);
-    const p = firstEmbed(block?.projects);
-    const id = String(block?.project_id || p?.id || '');
+  for (const block of reservations) {
+    const p = firstEmbed(block.projects);
+    const id = String(block.project_id || p?.id || '');
     const name = String(p?.name || '');
     if (id && name) projectMap.set(id, name);
   }
@@ -533,6 +571,8 @@ export async function getMySalesDetailForBroker(
     companyId: string;
     brokerId: string;
     brokerName?: string | null;
+    authUserId?: string | null;
+    userId?: string | null;
     recordId: string;
     type: 'sale' | 'reservation';
   },
@@ -541,6 +581,8 @@ export async function getMySalesDetailForBroker(
     companyId: input.companyId,
     brokerId: input.brokerId,
     brokerName: input.brokerName,
+    authUserId: input.authUserId,
+    userId: input.userId,
     filters: { tab: input.type === 'sale' ? 'sales' : 'reservations', pageSize: 500 },
   });
 
@@ -548,14 +590,19 @@ export async function getMySalesDetailForBroker(
   const targetId = input.recordId.startsWith(prefix)
     ? input.recordId
     : `${prefix}${input.recordId}`;
-  const item = list.items.find((i) => i.id === targetId || i.saleId === input.recordId || i.reservationId === input.recordId);
+  const item = list.items.find(
+    (i) =>
+      i.id === targetId ||
+      i.saleId === input.recordId ||
+      i.reservationId === input.recordId,
+  );
   if (!item) return null;
 
   return {
     ...item,
     brokerName: input.brokerName || null,
     projectId: null,
-    blockId: null,
+    blockId: item.reservationId || null,
     customerId: null,
   };
 }

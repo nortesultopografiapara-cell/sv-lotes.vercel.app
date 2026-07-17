@@ -8,8 +8,11 @@ import { isBrokerActiveForList, type BrokerRow } from '@/lib/brokerDelete';
 export type AuthenticatedBrokerRecord = {
   id: string;
   name: string | null;
+  email: string | null;
   companyId: string;
   authUserId: string | null;
+  /** Coluna legada brokers.user_id (pode coincidir com auth). */
+  userId: string | null;
 };
 
 export type ResolveAuthenticatedBrokerResult =
@@ -25,13 +28,11 @@ function tenantMatches(row: Record<string, unknown>, companyId: string): boolean
 function mapBrokerRow(row: Record<string, unknown>, companyId: string): AuthenticatedBrokerRecord {
   return {
     id: String(row.id),
-    name: (row.name || row.full_name || null) as string | null,
+    name: (row.name || null) as string | null,
+    email: row.email ? String(row.email) : null,
     companyId,
-    authUserId: row.auth_user_id
-      ? String(row.auth_user_id)
-      : row.user_id
-        ? String(row.user_id)
-        : null,
+    authUserId: row.auth_user_id ? String(row.auth_user_id) : null,
+    userId: row.user_id ? String(row.user_id) : null,
   };
 }
 
@@ -50,8 +51,9 @@ export async function resolveAuthenticatedBroker(
     return { ok: false, reason: 'unlinked' };
   }
 
+  // Sem full_name — coluna pode não existir em todos os ambientes; GIS usa name.
   const selectCols =
-    'id, name, full_name, auth_user_id, user_id, company_id, tenant_id, active, status, deleted_at';
+    'id, name, email, auth_user_id, user_id, company_id, tenant_id, active, status, deleted_at';
 
   const tryMatch = async (
     column: 'auth_user_id' | 'user_id' | 'id',
@@ -70,7 +72,7 @@ export async function resolveAuthenticatedBroker(
     return inCompany[0] ?? null;
   };
 
-  let row =
+  const row =
     (await tryMatch('auth_user_id')) ||
     (await tryMatch('user_id')) ||
     (await tryMatch('id'));

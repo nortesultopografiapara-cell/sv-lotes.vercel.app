@@ -28,6 +28,19 @@ function resolveCompanyId(
   return fromMeta || null;
 }
 
+function dbErrorResponse(err: unknown, context: string) {
+  const message = err instanceof Error ? err.message : String(err || 'erro desconhecido');
+  console.error(`[api/my-sales] ${context}`, message);
+  return NextResponse.json(
+    {
+      error: message,
+      code: 'MY_SALES_QUERY_FAILED',
+      summaryUnavailable: true,
+    },
+    { status: 500 },
+  );
+}
+
 export async function GET(request: Request) {
   try {
     const { user, configError } = await getRequestAuthUser(request);
@@ -63,14 +76,13 @@ export async function GET(request: Request) {
       );
     }
 
-    const companyId =
-      resolveCompanyId(
-        {
-          tenant_id: profile?.tenant_id ?? userRow?.tenant_id,
-          company_id: (userRow as { company_id?: string | null } | null)?.company_id,
-        },
-        user.user_metadata as Record<string, unknown>,
-      );
+    const companyId = resolveCompanyId(
+      {
+        tenant_id: profile?.tenant_id ?? userRow?.tenant_id,
+        company_id: (userRow as { company_id?: string | null } | null)?.company_id,
+      },
+      user.user_metadata as Record<string, unknown>,
+    );
     if (!companyId) {
       return NextResponse.json(
         { error: 'Empresa não identificada para o usuário.' },
@@ -101,49 +113,55 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const detailId = url.searchParams.get('id');
     const detailType = url.searchParams.get('type') as 'sale' | 'reservation' | null;
+    const brokerCtx = {
+      companyId,
+      brokerId: brokerResult.broker.id,
+      brokerName: brokerResult.broker.name,
+      authUserId: brokerResult.broker.authUserId || user.id,
+      userId: brokerResult.broker.userId,
+    };
 
     if (detailId && (detailType === 'sale' || detailType === 'reservation')) {
-      const detail = await getMySalesDetailForBroker(admin, {
-        companyId,
-        brokerId: brokerResult.broker.id,
-        brokerName: brokerResult.broker.name,
-        recordId: detailId,
-        type: detailType,
-      });
-      if (!detail) {
-        return NextResponse.json({ error: 'Registro não encontrado.' }, { status: 404 });
+      try {
+        const detail = await getMySalesDetailForBroker(admin, {
+          ...brokerCtx,
+          recordId: detailId,
+          type: detailType,
+        });
+        if (!detail) {
+          return NextResponse.json({ error: 'Registro não encontrado.' }, { status: 404 });
+        }
+        return NextResponse.json({ detail, brokerName: brokerResult.broker.name });
+      } catch (err) {
+        return dbErrorResponse(err, 'detail');
       }
-      return NextResponse.json({ detail, brokerName: brokerResult.broker.name });
     }
 
     const tab = (url.searchParams.get('tab') || 'all') as MySalesListTab;
     const page = Number(url.searchParams.get('page') || 1);
     const pageSize = Number(url.searchParams.get('pageSize') || 20);
 
-    const result = await listMySalesForBroker(admin, {
-      companyId,
-      brokerId: brokerResult.broker.id,
-      brokerName: brokerResult.broker.name,
-      filters: {
-        tab: ['all', 'sales', 'reservations'].includes(tab) ? tab : 'all',
-        projectId: url.searchParams.get('projectId'),
-        status: url.searchParams.get('status'),
-        search: url.searchParams.get('search'),
-        startDate: url.searchParams.get('startDate'),
-        endDate: url.searchParams.get('endDate'),
-        blockLabel: url.searchParams.get('block'),
-        lotLabel: url.searchParams.get('lot'),
-        page,
-        pageSize,
-      },
-    });
-
-    return NextResponse.json(result);
+    try {
+      const result = await listMySalesForBroker(admin, {
+        ...brokerCtx,
+        filters: {
+          tab: ['all', 'sales', 'reservations'].includes(tab) ? tab : 'all',
+          projectId: url.searchParams.get('projectId'),
+          status: url.searchParams.get('status'),
+          search: url.searchParams.get('search'),
+          startDate: url.searchParams.get('startDate'),
+          endDate: url.searchParams.get('endDate'),
+          blockLabel: url.searchParams.get('block'),
+          lotLabel: url.searchParams.get('lot'),
+          page,
+          pageSize,
+        },
+      });
+      return NextResponse.json(result);
+    } catch (err) {
+      return dbErrorResponse(err, 'list');
+    }
   } catch (err) {
-    console.error('[api/my-sales]', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao carregar Minhas Vendas.' },
-      { status: 500 },
-    );
+    return dbErrorResponse(err, 'unhandled');
   }
 }
