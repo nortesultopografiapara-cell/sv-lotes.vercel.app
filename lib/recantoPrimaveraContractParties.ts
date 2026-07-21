@@ -105,12 +105,6 @@ export function buildRecantoPrimaveraSpouseClauseHtml(
     </div>`;
 }
 
-function buildRecantoBrokerCreciLine(creci: string): string {
-  const clean = sanitizeContractField(creci);
-  if (!clean) return '';
-  return `CRECI nº ${clean}`;
-}
-
 export function buildRecantoPrimaveraSignaturesHtml(
   ctx: RecantoPrimaveraContractContext,
 ): string {
@@ -133,14 +127,7 @@ export function buildRecantoPrimaveraSignaturesHtml(
       })
     : '';
 
-  const brokerSignatureSlot = ctx.hasBroker
-    ? buildSignatureSlot({
-        role: 'CORRETOR',
-        name: ctx.brokerNome,
-        docLines: [buildRecantoBrokerCreciLine(ctx.brokerCreci)].filter(Boolean),
-      })
-    : '';
-
+  // RECANTO_PRIMAVERA: sem bloco de assinatura do corretor (corretor permanece na venda).
   return `
     <div class="contract-clause contract-clause--tight">
       <p style="margin-bottom: 10px;">
@@ -166,8 +153,6 @@ export function buildRecantoPrimaveraSignaturesHtml(
       })}
 
       ${conjugeSignatureSlot}
-
-      ${brokerSignatureSlot}
 
       <div class="signature-slot" style="${SIGNATURE_SLOT_STYLE}">
         <div style="${SIGNATURE_LINE_STYLE}"></div>
