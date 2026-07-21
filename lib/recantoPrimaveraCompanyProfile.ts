@@ -3,6 +3,7 @@
  */
 
 import { formatRecantoPhone, formatRecantoCep } from '@/lib/recantoPrimaveraContractFormat';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 export type RecantoPrimaveraCompanyProfile = {
   vendorName: string;
@@ -82,11 +83,7 @@ export function resolveContractDocumentLabel(documentRaw: string): string {
 }
 
 function toTitleCase(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-    .replace(/\bS\/n\b/g, 'S/N');
+  return toContractTitleCase(str);
 }
 
 function resolveRecantoVendorDocumentRaw(

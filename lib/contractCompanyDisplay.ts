@@ -3,13 +3,10 @@
  */
 
 import { normalizeSellerFromCompany } from "@/lib/contractSeller";
+import { toContractTitleCase } from "@/lib/contractTitleCase";
 
 function toTitleCase(str: string): string {
-  if (!str) return "";
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-    .replace(/\bS\/n\b/g, "S/N");
+  return toContractTitleCase(str);
 }
 
 /** Corrige endereços colados sem vírgulas e ", S" → ", S/N". */

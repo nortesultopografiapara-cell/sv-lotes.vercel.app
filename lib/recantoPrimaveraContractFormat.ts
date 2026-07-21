@@ -4,6 +4,7 @@
 
 import { formatCep, formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
 import { sanitizeContractField } from '@/lib/recantoPrimaveraCompanyProfile';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 export function formatRecantoDocument(value: unknown): string {
   const raw = sanitizeContractField(value);
@@ -78,13 +79,7 @@ export function buildRecantoFullAddress(params: {
   uf?: unknown;
   toTitleCase?: (s: string) => string;
 }): string {
-  const title =
-    params.toTitleCase ??
-    ((s: string) =>
-      s
-        .toLowerCase()
-        .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-        .replace(/\bS\/n\b/g, 'S/N'));
+  const title = params.toTitleCase ?? toContractTitleCase;
 
   const street = title(sanitizeContractField(params.street));
   const neighborhood = title(sanitizeContractField(params.neighborhood));

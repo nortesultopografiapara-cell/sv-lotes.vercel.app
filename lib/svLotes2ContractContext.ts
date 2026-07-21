@@ -28,12 +28,10 @@ import {
   resolveSaleContractBalloonFinance,
 } from '@/lib/saleContractBalloonFinance';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 function toTitleCase(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+  return toContractTitleCase(str);
 }
 
 function pickString(...values: unknown[]): string {

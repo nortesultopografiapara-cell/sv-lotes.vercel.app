@@ -30,6 +30,7 @@ import {
   sanitizeContractField,
   type RecantoPrimaveraCompanyProfile,
 } from '@/lib/recantoPrimaveraCompanyProfile';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 import {
   resolveRecantoContractProjectRecord,
   resolveRecantoPrimaveraProjectContractFields,
@@ -173,13 +174,7 @@ function formatBRL(val: number): string {
   }).format(val);
 }
 
-function toTitleCase(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-    .replace(/\bS\/n\b/g, 'S/N');
-}
+const toTitleCase = toContractTitleCase;
 
 function formatCNPJCPF(val: string): string {
   return formatRecantoDocument(val);

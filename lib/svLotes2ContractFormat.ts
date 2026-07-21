@@ -5,6 +5,7 @@
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import { formatContractSaleDateLongBr } from '@/lib/contractPaymentDates';
 import { formatCpfCnpj } from '@/lib/inputMasks';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -27,10 +28,7 @@ function pickString(...values: unknown[]): string {
 }
 
 function toTitleCase(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+  return toContractTitleCase(str);
 }
 
 function normalizeTextForCompare(value: string): string {

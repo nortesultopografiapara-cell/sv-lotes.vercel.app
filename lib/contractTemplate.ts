@@ -35,6 +35,7 @@ import {
   resolveSaleContractBalloonFinance,
 } from "@/lib/saleContractBalloonFinance";
 import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import { toContractTitleCase } from "@/lib/contractTitleCase";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
@@ -160,13 +161,7 @@ export function generateContractHTML({
     return val;
   };
 
-  const toTitleCase = (str: string) => {
-    if (!str) return "";
-    return str
-      .toLowerCase()
-      .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-      .replace(/\bS\/n\b/g, "S/N");
-  };
+  const toTitleCase = (str: string) => toContractTitleCase(str);
 
   // Extenso support for currency
   const extensoOptions = { mode: "currency", currency: { type: "BRL" } };
