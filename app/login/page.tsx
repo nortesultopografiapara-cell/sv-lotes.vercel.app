@@ -20,6 +20,29 @@ export default function LoginPage() {
     setEmail(demoEmail);
   }, []);
 
+  /** Campos sempre vazios ao montar /login (e ao voltar via bfcache). Preserva prefill ?demo=1. */
+  useEffect(() => {
+    const resetLoginFields = () => {
+      const isDemo =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('demo') === '1';
+      setPassword('');
+      setShowPassword(false);
+      setError(null);
+      if (!isDemo) {
+        setEmail('');
+      }
+    };
+
+    resetLoginFields();
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) resetLoginFields();
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
   // Synchronize state avoiding infinite loops between client and middleware
   useEffect(() => {
     // Check demo/dev mode first
@@ -173,7 +196,7 @@ export default function LoginPage() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleLogin} className="space-y-6" autoComplete="off">
             <Suspense fallback={null}>
               <DemoLoginPrefill onDemoMode={applyDemoEmail} />
             </Suspense>
@@ -182,7 +205,10 @@ export default function LoginPage() {
               <div className="relative">
                 <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
                 <input 
-                  type="email" 
+                  type="email"
+                  name="workspace_email"
+                  autoComplete="off"
+                  spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
@@ -201,6 +227,8 @@ export default function LoginPage() {
                 <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
                 <input 
                   type={showPassword ? "text" : "password"}
+                  name="workspace_password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
