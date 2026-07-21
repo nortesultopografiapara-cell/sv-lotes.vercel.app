@@ -4,6 +4,7 @@
 
 import type { ContractPdfChromeInput } from '@/lib/contractPdfPostProcess';
 import { buildSvLotes2SellerFromCompany } from '@/lib/svLotes2ContractFormat';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -14,10 +15,7 @@ function pickString(...values: unknown[]): string {
 }
 
 function toTitleCase(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+  return toContractTitleCase(str);
 }
 
 export function buildSvLotes2PdfChrome(

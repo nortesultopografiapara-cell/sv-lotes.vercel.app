@@ -47,6 +47,7 @@ import {
   type SalePaymentMode,
 } from '@/lib/salePaymentMode';
 import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 export type SaleContractRenderParams = {
   tenant: Record<string, unknown>;
@@ -150,11 +151,7 @@ function formatCNPJCPF(val: string) {
 }
 
 function toTitleCase(str: string) {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-    .replace(/\bS\/n\b/g, 'S/N');
+  return toContractTitleCase(str);
 }
 
 function formatArea(val: unknown) {

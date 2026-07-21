@@ -6,6 +6,7 @@ import {
   sanitizeContractField,
   type RecantoPrimaveraCompanyProfile,
 } from '@/lib/recantoPrimaveraCompanyProfile';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 
 export type RecantoPrimaveraProjectContractFields = {
   enterpriseName: string;
@@ -16,11 +17,7 @@ export type RecantoPrimaveraProjectContractFields = {
 };
 
 function toTitleCase(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-    .replace(/\bS\/n\b/g, 'S/N');
+  return toContractTitleCase(str);
 }
 
 function pickString(...values: unknown[]): string {
