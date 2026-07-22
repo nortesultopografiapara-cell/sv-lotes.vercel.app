@@ -212,6 +212,33 @@ function testLogoAsset() {
   const brand = read('components/master/layout/MasterBrandLogo.tsx');
   assert(brand.includes('MASTER_TOPOGRAFIA_LOGO_PATH'), 'BrandLogo usa path oficial');
   assert(!brand.includes('logo-sv-lotes.png'), 'não usa logo SV LOTES produto');
+  assert(brand.includes('Painel Executivo'), 'bloco institucional');
+}
+
+function testExecutiveDashboardV2() {
+  assert(exists('components/master/dashboard/MasterExecutiveDashboard.tsx'), 'dashboard V2');
+  assert(
+    exists('components/master/dashboard/masterExecutiveDashboard.module.css'),
+    'css dashboard V2',
+  );
+  const dash = read('components/master/dashboard/MasterExecutiveDashboard.tsx');
+  assert(dash.includes('loadMasterDashboardData'), 'reutiliza dados existentes');
+  assert(dash.includes('Empresas Ativas'), 'kpi empresas');
+  assert(dash.includes('Orçamentos'), 'atalho orçamentos');
+  assert(dash.includes('Em breve'), 'módulos em breve');
+  assert(!dash.includes('/finance"'), 'não usa /finance tenant');
+
+  const page = read('app/dashboard/page.tsx');
+  assert(page.includes('MasterExecutiveDashboard'), 'page wire V2');
+  assert(page.includes('isMasterDashboardV2EnabledForUi'), 'page gated by flag');
+  assert(page.includes('SuperAdminDashboard'), 'legado preservado');
+
+  const data = read('lib/masterDashboardData.ts');
+  assert(data.includes('trialCompanies'), 'empresas em teste');
+  assert(data.includes('newCompaniesThisMonth'), 'novos clientes');
+
+  const layout = read('components/Layout.tsx');
+  assert(!layout.includes('master-dashboard-v2-diag'), 'diagnóstico temporário removido');
 }
 
 function main() {
@@ -221,6 +248,7 @@ function main() {
   testLegacyNavUntouched();
   testLayoutBranchIsolation();
   testLogoAsset();
+  testExecutiveDashboardV2();
   console.log('OK mandatory-master-executive-shell-tests');
 }
 

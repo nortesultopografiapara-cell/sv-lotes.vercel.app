@@ -45,9 +45,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem 0.85rem 0.85rem;
+  padding: 1rem 0.75rem 0.9rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  min-height: 5.5rem;
+  min-height: 6.75rem;
 }
 
 .brandAreaCollapsed {
@@ -63,6 +63,7 @@
   width: 100%;
   border-radius: 0.5rem;
   outline-offset: 2px;
+  text-decoration: none;
 }
 
 .brandLink:focus-visible,
@@ -70,14 +71,31 @@
   outline: 2px solid #3b82f6;
 }
 
+.brandInstitution {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.55rem 0.45rem 0.65rem;
+  border-radius: 0.65rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.brandInstitutionCollapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .brandFrame {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 0.35rem 0.5rem;
-  border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.04);
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.45rem;
 }
 
 .brandFrameCollapsed {
@@ -94,7 +112,7 @@
 .brandImg {
   width: 100%;
   height: auto;
-  max-height: 4.5rem;
+  max-height: 3.75rem;
   object-fit: contain;
   object-position: center;
 }
@@ -104,6 +122,32 @@
   height: 3.25rem;
   object-fit: cover;
   object-position: 12% 40%;
+}
+
+.brandCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  text-align: center;
+  width: 100%;
+  padding: 0 0.25rem;
+}
+
+.brandName {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #e2e8f0;
+  line-height: 1.25;
+}
+
+.brandTag {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #93c5fd;
 }
 
 .navScroll {
@@ -294,6 +338,11 @@
   font-size: 0.75rem;
   color: #64748b;
   line-height: 1.2;
+}
+
+.headerSubtitleStrong {
+  font-weight: 700;
+  color: #334155;
 }
 
 .iconBtn {

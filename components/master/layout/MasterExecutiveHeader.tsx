@@ -32,6 +32,18 @@ function formatDisplayDate(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+function firstName(full?: string | null): string {
+  const part = String(full || '').trim().split(/\s+/)[0];
+  return part || 'Administrador';
+}
+
+function greetingPrefix(d = new Date()): string {
+  const h = d.getHours();
+  if (h < 12) return 'Bom dia';
+  if (h < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
+
 export function MasterExecutiveHeader({
   user,
   sidebarCollapsed,
@@ -43,6 +55,7 @@ export function MasterExecutiveHeader({
   const today = useMemo(() => formatDateInput(new Date()), []);
   const [periodStart, setPeriodStart] = useState(today);
   const [periodEnd, setPeriodEnd] = useState(today);
+  const greet = `${greetingPrefix()}, ${firstName(user?.name)}`;
 
   if (mobile) {
     return (
@@ -57,8 +70,8 @@ export function MasterExecutiveHeader({
             <Menu width={18} height={18} aria-hidden />
           </button>
           <div className={styles.headerTitles}>
-            <h1 className={styles.headerTitle}>Painel Master</h1>
-            <p className={styles.headerSubtitle}>Visão geral executiva</p>
+            <h1 className={styles.headerTitle}>{greet}</h1>
+            <p className={styles.headerSubtitle}>Painel Executivo · SV Topografia &amp; Projetos</p>
           </div>
         </div>
         <div className={styles.headerRight}>
@@ -84,8 +97,12 @@ export function MasterExecutiveHeader({
           )}
         </button>
         <div className={styles.headerTitles}>
-          <h1 className={styles.headerTitle}>Painel Master</h1>
-          <p className={styles.headerSubtitle}>Visão geral executiva</p>
+          <h1 className={styles.headerTitle}>{greet}</h1>
+          <p className={styles.headerSubtitle}>
+            <span className={styles.headerSubtitleStrong}>Painel Executivo</span>
+            <span aria-hidden> · </span>
+            SV Topografia &amp; Projetos
+          </p>
         </div>
       </div>
 

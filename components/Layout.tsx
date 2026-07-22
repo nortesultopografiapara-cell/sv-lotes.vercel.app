@@ -51,8 +51,6 @@ import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
 import {
-  getPublicMasterDashboardV2FlagRaw,
-  isMasterDashboardV2Enabled,
   isMasterDashboardV2EnabledForUi,
   shouldUseMasterExecutiveShell,
 } from '@/lib/master/config';
@@ -402,33 +400,6 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const isMasterConsole =
     isPlatformMaster && !(masterDashboardV2Enabled && Boolean(impersonatingTenantId));
   const isDemoUser = isDemoProfile(user);
-
-  // TEMP diagnóstico Master V2 — remover após homologação da flag no Preview
-  useEffect(() => {
-    if (isCheckingAuth) return;
-    const useExecutive = shouldUseMasterExecutiveShell({
-      role: user?.role,
-      impersonatingTenant: Boolean(impersonatingTenantId),
-      flagEnabled: masterDashboardV2Enabled,
-    });
-    console.info('[master-dashboard-v2-diag]', {
-      MASTER_DASHBOARD_V2_ENABLED: process.env.MASTER_DASHBOARD_V2_ENABLED ?? '(undefined no client)',
-      NEXT_PUBLIC_MASTER_DASHBOARD_V2_ENABLED: getPublicMasterDashboardV2FlagRaw(),
-      role: user?.role ?? null,
-      shouldUseMasterConsoleLayout: isPlatformMaster,
-      isMasterDashboardV2Enabled: isMasterDashboardV2Enabled(),
-      isMasterDashboardV2EnabledForUi: masterDashboardV2Enabled,
-      impersonatingTenantId: impersonatingTenantId ?? null,
-      shouldUseMasterExecutiveShell: useExecutive,
-      layoutEscolhido: useExecutive ? 'MasterExecutiveLayout' : 'legado',
-    });
-  }, [
-    isCheckingAuth,
-    user?.role,
-    impersonatingTenantId,
-    masterDashboardV2Enabled,
-    isPlatformMaster,
-  ]);
 
   useEffect(() => {
     try {

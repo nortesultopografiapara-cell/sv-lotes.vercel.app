@@ -49,6 +49,10 @@ export type MasterDashboardData = {
     activeCompanies: number;
     suspendedCompanies: number;
     inactiveCompanies: number;
+    /** Empresas com status_operacional = Teste (já carregadas na mesma query). */
+    trialCompanies: number;
+    /** Empresas criadas no mês civil atual (created_at). */
+    newCompaniesThisMonth: number;
     activeSubscriptions: number;
     mrr: number;
     receivedRevenue: number;
@@ -224,6 +228,18 @@ export async function loadMasterDashboardData(
     (c) => (c.status_operacional || '').trim() === 'Suspensa',
   ).length;
   const inactiveCompanies = companies.filter((c) => c.active === false).length;
+  const trialCompanies = companies.filter(
+    (c) => (c.status_operacional || '').trim().toLowerCase() === 'teste',
+  ).length;
+
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const newCompaniesThisMonth = companies.filter((c) => {
+    if (!c.created_at) return false;
+    const created = new Date(c.created_at);
+    return !Number.isNaN(created.getTime()) && created >= monthStart;
+  }).length;
 
   const mrr = calculateMrrFromCompanies(companies);
   let activeSubscriptions = 0;
@@ -408,6 +424,8 @@ export async function loadMasterDashboardData(
       activeCompanies,
       suspendedCompanies,
       inactiveCompanies,
+      trialCompanies,
+      newCompaniesThisMonth,
       activeSubscriptions,
       mrr,
       receivedRevenue: paymentsReceivedFromCash.visibleTotal,
@@ -440,6 +458,8 @@ export function exportMasterDashboardCsv(data: MasterDashboardData): string {
     `Empresas Ativas,${data.stats.activeCompanies}`,
     `Empresas Suspensas,${data.stats.suspendedCompanies}`,
     `Empresas Inativas,${data.stats.inactiveCompanies}`,
+    `Empresas em Teste,${data.stats.trialCompanies}`,
+    `Novos clientes (mês),${data.stats.newCompaniesThisMonth}`,
     `MRR,${data.stats.mrr.toFixed(2)}`,
     `Usuários,${data.stats.totalUsers}`,
     `Corretores,${data.stats.totalBrokers}`,
