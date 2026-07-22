@@ -424,7 +424,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
                       borderRadius: 8,
                       color: '#0f172a',
                     }}
-                    formatter={(value: number) => [formatCurrency(value), 'Recebido']}
+                    formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Recebido']}
                   />
                   <Line
                     type="monotone"
