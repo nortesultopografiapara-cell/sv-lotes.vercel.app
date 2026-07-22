@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Landmark, Layers, FolderTree, RefreshCw, Tags } from 'lucide-react';
+import {
+  Landmark,
+  Layers,
+  FolderTree,
+  RefreshCw,
+  Tags,
+  HandCoins,
+  CircleDollarSign,
+} from 'lucide-react';
 import type { MasterCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/types';
 import {
   CorporateFinanceGuard,
@@ -10,13 +18,20 @@ import {
 } from './CorporateFinanceGuard';
 import styles from './corporateFinance.module.css';
 
+type HubKpis = MasterCorporateFinanceFoundationKpis & {
+  receivableOpen?: number;
+  receivableOverdue?: number;
+  payableOpen?: number;
+  payableOverdue?: number;
+};
+
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 }
 
 function CorporateFinanceHubInner() {
-  const { userId, qs, bodyAuth } = useCorporateFinanceAuthParams();
-  const [kpis, setKpis] = useState<MasterCorporateFinanceFoundationKpis | null>(null);
+  const { userId, qs } = useCorporateFinanceAuthParams();
+  const [kpis, setKpis] = useState<HubKpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,8 +64,8 @@ function CorporateFinanceHubInner() {
             <p className={styles.eyebrow}>SV Topografia & Projetos · Master</p>
             <h1 className={styles.title}>Financeiro Corporativo</h1>
             <p className={styles.subtitle}>
-              Fundação do financeiro da SV Topografia: contas, categorias e centros de resultado.
-              Contas a receber/pagar e caixa serão liberados em fases seguintes.
+              Contas, categorias, centros, contas a receber e contas a pagar da SV Topografia.
+              Fluxo de caixa e conciliação virão nas próximas fases.
             </p>
           </div>
           <div className={styles.actions}>
@@ -70,34 +85,32 @@ function CorporateFinanceHubInner() {
 
         <div className={styles.kpis}>
           <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Contas ativas</p>
+            <p className={styles.kpiLabel}>A receber</p>
             <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : `${kpis.accountsActive}/${kpis.accountsTotal}`}
+              {loading || !kpis ? '—' : formatCurrency(kpis.receivableOpen || 0)}
             </p>
-            <p className={styles.kpiHint}>Cadastro estrutural</p>
+            <p className={styles.kpiHint}>Saldo em aberto</p>
           </div>
           <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Categorias</p>
-            <p className={styles.kpiValue}>{loading || !kpis ? '—' : kpis.categoriesTotal}</p>
-            <p className={styles.kpiHint}>
-              {kpis
-                ? `${kpis.categoriesIncome} receitas · ${kpis.categoriesExpense} despesas`
-                : 'Receitas e despesas'}
+            <p className={styles.kpiLabel}>A pagar</p>
+            <p className={styles.kpiValue}>
+              {loading || !kpis ? '—' : formatCurrency(kpis.payableOpen || 0)}
             </p>
+            <p className={styles.kpiHint}>Saldo em aberto</p>
           </div>
           <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Centros ativos</p>
+            <p className={styles.kpiLabel}>Vencido a receber</p>
             <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : `${kpis.costCentersActive}/${kpis.costCentersTotal}`}
+              {loading || !kpis ? '—' : formatCurrency(kpis.receivableOverdue || 0)}
             </p>
-            <p className={styles.kpiHint}>Sem auto-criação por projeto</p>
+            <p className={styles.kpiHint}>Com saldo pendente</p>
           </div>
           <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saldos iniciais (ativos)</p>
+            <p className={styles.kpiLabel}>Vencido a pagar</p>
             <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.openingBalanceSum)}
+              {loading || !kpis ? '—' : formatCurrency(kpis.payableOverdue || 0)}
             </p>
-            <p className={styles.kpiHint}>Não é saldo atual calculado</p>
+            <p className={styles.kpiHint}>Com saldo pendente</p>
           </div>
         </div>
 
@@ -129,6 +142,24 @@ function CorporateFinanceHubInner() {
               Centros com código, nome e vínculo opcional a projeto Master.
             </p>
           </Link>
+          <Link href="/master/corporate-finance/receivables" className={styles.shortcut}>
+            <div className={styles.shortcutIcon}>
+              <HandCoins className="w-5 h-5" />
+            </div>
+            <h2 className={styles.shortcutTitle}>Contas a receber</h2>
+            <p className={styles.shortcutDesc}>
+              Obrigações de clientes, recebimentos parciais/totais e vencimentos.
+            </p>
+          </Link>
+          <Link href="/master/corporate-finance/payables" className={styles.shortcut}>
+            <div className={styles.shortcutIcon}>
+              <CircleDollarSign className="w-5 h-5" />
+            </div>
+            <h2 className={styles.shortcutTitle}>Contas a pagar</h2>
+            <p className={styles.shortcutDesc}>
+              Obrigações com fornecedores, pagamentos parciais/totais e atrasos.
+            </p>
+          </Link>
         </div>
 
         <div className={styles.panel}>
@@ -137,8 +168,8 @@ function CorporateFinanceHubInner() {
             <Layers className="w-4 h-4 text-slate-400" />
           </div>
           <p className={styles.muted} style={{ textAlign: 'left', paddingTop: '1rem' }}>
-            Liberado: cadastros de fundação e hub. Ainda não: contas a receber/pagar, movimentos de
-            caixa, fluxo, conciliação, Asaas, Pix, DRE nem bridge de valor_recebido.
+            Liberado: fundação + contas a receber/pagar. Ainda não: movimentos de caixa, fluxo,
+            conciliação, Asaas, DRE nem bridge de valor_recebido.
           </p>
         </div>
       </div>

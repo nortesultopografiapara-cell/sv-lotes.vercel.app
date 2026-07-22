@@ -3,6 +3,8 @@ import {
   authorizeCorporateFinance,
   getCorporateFinanceServiceClient,
 } from '@/lib/master/corporateFinance/apiAuth';
+import { computePayableKpis } from '@/lib/master/corporateFinance/payablesService';
+import { computeReceivableKpis } from '@/lib/master/corporateFinance/receivablesService';
 import { getCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/service';
 
 export async function GET(request: Request) {
@@ -19,8 +21,20 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const kpis = await getCorporateFinanceFoundationKpis(supabaseAdmin);
-    return NextResponse.json({ kpis });
+    const [foundation, receivables, payables] = await Promise.all([
+      getCorporateFinanceFoundationKpis(supabaseAdmin),
+      computeReceivableKpis(supabaseAdmin),
+      computePayableKpis(supabaseAdmin),
+    ]);
+    return NextResponse.json({
+      kpis: {
+        ...foundation,
+        receivableOpen: receivables.totalOpen,
+        receivableOverdue: receivables.overdue,
+        payableOpen: payables.totalOpen,
+        payableOverdue: payables.overdue,
+      },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao carregar KPIs.';
     return NextResponse.json({ error: message }, { status: 500 });

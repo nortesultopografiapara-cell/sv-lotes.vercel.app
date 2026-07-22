@@ -1,12 +1,12 @@
 'use client';
 
-import { MasterModulePlaceholder } from '@/components/master/MasterModulePlaceholder';
+import { Suspense } from 'react';
+import CorporateReceivablesPage from '@/components/master/corporateFinance/CorporateReceivablesPage';
 
-export default function MasterCorporateReceivablesPage() {
+export default function MasterCorporateReceivablesRoute() {
   return (
-    <MasterModulePlaceholder
-      title="Contas a Receber"
-      description="Contas a receber corporativas do Painel Master. Em preparação."
-    />
+    <Suspense fallback={<div style={{ padding: '1.5rem', color: '#64748b' }}>Carregando…</div>}>
+      <CorporateReceivablesPage />
+    </Suspense>
   );
 }

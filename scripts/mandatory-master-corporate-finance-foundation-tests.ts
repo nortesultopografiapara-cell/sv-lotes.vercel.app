@@ -106,13 +106,14 @@ function testFilesAndIsolation() {
   );
   assert(cashFlowBlock.includes('comingSoon: true'), 'Fluxo ainda Em breve (6.3)');
 
-  // Fase 6.2/6.3/6.4 não iniciadas
-  assert(!exists('app/api/master/corporate-finance/receivables/route.ts'), '6.2 AR não iniciada');
-  assert(!exists('app/api/master/corporate-finance/payables/route.ts'), '6.2 AP não iniciada');
+  // Fase 6.3/6.4 não iniciadas (6.2 AR/AP existe)
+  assert(exists('app/api/master/corporate-finance/receivables/route.ts'), '6.2 AR existe');
+  assert(exists('app/api/master/corporate-finance/payables/route.ts'), '6.2 AP existe');
   assert(!exists('app/api/master/corporate-finance/movements/route.ts'), '6.3 movimentos não');
+  assert(!exists('lib/master/corporateFinance/cashMovementsService.ts'), '6.3 cash não');
   assert(
     !migration.includes('valor_recebido') || migration.includes('COMMENT'),
-    'sem bridge valor_recebido',
+    'sem bridge valor_recebido na 6.1',
   );
   assert(!migration.includes('master_corporate_cash_movements'), 'sem movimentos caixa');
 }

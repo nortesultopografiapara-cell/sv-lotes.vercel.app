@@ -1,12 +1,12 @@
 'use client';
 
-import { MasterModulePlaceholder } from '@/components/master/MasterModulePlaceholder';
+import { Suspense } from 'react';
+import CorporatePayablesPage from '@/components/master/corporateFinance/CorporatePayablesPage';
 
-export default function MasterCorporatePayablesPage() {
+export default function MasterCorporatePayablesRoute() {
   return (
-    <MasterModulePlaceholder
-      title="Contas a Pagar"
-      description="Contas a pagar corporativas do Painel Master. Em preparação."
-    />
+    <Suspense fallback={<div style={{ padding: '1.5rem', color: '#64748b' }}>Carregando…</div>}>
+      <CorporatePayablesPage />
+    </Suspense>
   );
 }

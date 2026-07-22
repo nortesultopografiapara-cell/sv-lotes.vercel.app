@@ -138,13 +138,11 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
         name: 'Contas a Pagar',
         href: '/master/corporate-finance/payables',
         icon: CircleDollarSign,
-        comingSoon: true,
       },
       {
         name: 'Contas a Receber',
         href: '/master/corporate-finance/receivables',
         icon: HandCoins,
-        comingSoon: true,
       },
       {
         name: 'Extratos e Conciliação',

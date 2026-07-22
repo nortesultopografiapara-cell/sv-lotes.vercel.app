@@ -2,9 +2,8 @@ import type { MasterCorporateArApListFilters } from './arApTypes';
 
 export function parseArApListFilters(searchParams: URLSearchParams): MasterCorporateArApListFilters {
   const dateFieldRaw = searchParams.get('dateField') || 'due_date';
-  const dateField = (
-    ['due_date', 'issue_date', 'competence_date', 'created_at'] as const
-  ).includes(dateFieldRaw as 'due_date')
+  const allowed = ['due_date', 'issue_date', 'competence_date', 'created_at'] as const;
+  const dateField = (allowed as readonly string[]).includes(dateFieldRaw)
     ? (dateFieldRaw as MasterCorporateArApListFilters['dateField'])
     : 'due_date';
 

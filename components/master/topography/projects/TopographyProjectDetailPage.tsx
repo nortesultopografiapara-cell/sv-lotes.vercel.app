@@ -251,6 +251,20 @@ function TopographyProjectDetailInner() {
           <p className={styles.financeBarLabel}>
             {project.percentual_recebido.toLocaleString('pt-BR')}%
           </p>
+          <div style={{ marginTop: '0.85rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <Link
+              href={`/master/corporate-finance/receivables?projectId=${project.id}`}
+              className={styles.btnSecondary}
+            >
+              Ver contas a receber deste projeto
+            </Link>
+            <Link
+              href={`/master/corporate-finance/payables?projectId=${project.id}`}
+              className={styles.btnSecondary}
+            >
+              Ver contas a pagar deste projeto
+            </Link>
+          </div>
         </div>
 
         <div className={styles.panel}>
