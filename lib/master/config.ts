@@ -17,8 +17,9 @@ export function parseMasterDashboardV2EnvFlag(value: string | undefined | null):
 }
 
 function readPublicMasterDashboardV2EnvRaw(): string | undefined {
-  const envKey = MASTER_DASHBOARD_V2_UI_FLAG;
-  return process.env[envKey];
+  // Acesso estático obrigatório no client: Next.js só embute NEXT_PUBLIC_*
+  // com propriedade literal. Chave dinâmica quebra o bake no Preview/Vercel.
+  return process.env.NEXT_PUBLIC_MASTER_DASHBOARD_V2_ENABLED;
 }
 
 /** Valor bruto de NEXT_PUBLIC (diagnóstico). */
