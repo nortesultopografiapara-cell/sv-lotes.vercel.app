@@ -3,6 +3,7 @@ import {
   authorizeCorporateFinance,
   getCorporateFinanceServiceClient,
 } from '@/lib/master/corporateFinance/apiAuth';
+import { getCashHubKpis } from '@/lib/master/corporateFinance/cashMovementsService';
 import { computePayableKpis } from '@/lib/master/corporateFinance/payablesService';
 import { computeReceivableKpis } from '@/lib/master/corporateFinance/receivablesService';
 import { getCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/service';
@@ -21,10 +22,11 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const [foundation, receivables, payables] = await Promise.all([
+    const [foundation, receivables, payables, cash] = await Promise.all([
       getCorporateFinanceFoundationKpis(supabaseAdmin),
       computeReceivableKpis(supabaseAdmin),
       computePayableKpis(supabaseAdmin),
+      getCashHubKpis(supabaseAdmin),
     ]);
     return NextResponse.json({
       kpis: {
@@ -33,6 +35,10 @@ export async function GET(request: Request) {
         receivableOverdue: receivables.overdue,
         payableOpen: payables.totalOpen,
         payableOverdue: payables.overdue,
+        cashCurrentBalance: cash.currentBalance,
+        cashMonthIncome: cash.monthIncome,
+        cashMonthExpense: cash.monthExpense,
+        cashMonthNet: cash.monthNet,
       },
     });
   } catch (err) {

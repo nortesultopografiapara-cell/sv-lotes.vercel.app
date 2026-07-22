@@ -70,7 +70,18 @@ function fromAccount(a: MasterCorporateFinancialAccount): FormState {
 
 function AccountsInner() {
   const { userId, qs, bodyAuth } = useCorporateFinanceAuthParams();
-  const [rows, setRows] = useState<MasterCorporateFinancialAccount[]>([]);
+  type AccountWithBalance = MasterCorporateFinancialAccount & {
+    balance?: {
+      openingBalance: number;
+      income: number;
+      expense: number;
+      transferIn: number;
+      transferOut: number;
+      currentBalance: number;
+      lastMovementAt: string | null;
+    };
+  };
+  const [rows, setRows] = useState<AccountWithBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -84,7 +95,7 @@ function AccountsInner() {
     setError(null);
     try {
       const res = await fetch(
-        `/api/master/corporate-finance/accounts?${qs()}&includeInactive=1`,
+        `/api/master/corporate-finance/accounts/balances?${qs()}&includeInactive=1`,
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao listar contas.');
@@ -199,9 +210,10 @@ function AccountsInner() {
                   <tr>
                     <th>Nome</th>
                     <th>Tipo</th>
-                    <th>Instituição</th>
                     <th>Saldo inicial</th>
-                    <th>Desde</th>
+                    <th>Entradas</th>
+                    <th>Saídas</th>
+                    <th>Saldo atual</th>
                     <th>Status</th>
                     <th />
                   </tr>
@@ -221,9 +233,10 @@ function AccountsInner() {
                         ) : null}
                       </td>
                       <td>{corporateAccountTypeLabel(a.account_type)}</td>
-                      <td>{a.institution_name || '—'}</td>
-                      <td>{formatCurrency(Number(a.opening_balance))}</td>
-                      <td>{formatDate(a.opening_balance_date)}</td>
+                      <td>{formatCurrency(Number(a.balance?.openingBalance ?? a.opening_balance))}</td>
+                      <td>{formatCurrency(Number(a.balance?.income || 0))}</td>
+                      <td>{formatCurrency(Number(a.balance?.expense || 0))}</td>
+                      <td>{formatCurrency(Number(a.balance?.currentBalance || 0))}</td>
                       <td>
                         <span
                           className={`${styles.badge} ${a.is_active ? styles.badgeOn : styles.badgeOff}`}

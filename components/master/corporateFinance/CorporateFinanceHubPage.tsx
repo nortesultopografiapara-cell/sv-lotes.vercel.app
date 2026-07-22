@@ -10,6 +10,7 @@ import {
   Tags,
   HandCoins,
   CircleDollarSign,
+  ArrowLeftRight,
 } from 'lucide-react';
 import type { MasterCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/types';
 import {
@@ -23,6 +24,10 @@ type HubKpis = MasterCorporateFinanceFoundationKpis & {
   receivableOverdue?: number;
   payableOpen?: number;
   payableOverdue?: number;
+  cashCurrentBalance?: number;
+  cashMonthIncome?: number;
+  cashMonthExpense?: number;
+  cashMonthNet?: number;
 };
 
 function formatCurrency(val: number) {
@@ -64,8 +69,8 @@ function CorporateFinanceHubInner() {
             <p className={styles.eyebrow}>SV Topografia & Projetos · Master</p>
             <h1 className={styles.title}>Financeiro Corporativo</h1>
             <p className={styles.subtitle}>
-              Contas, categorias, centros, contas a receber e contas a pagar da SV Topografia.
-              Fluxo de caixa e conciliação virão nas próximas fases.
+              Contas, categorias, centros, contas a receber/pagar e fluxo de caixa corporativo da
+              SV Topografia.
             </p>
           </div>
           <div className={styles.actions}>
@@ -83,7 +88,32 @@ function CorporateFinanceHubInner() {
 
         {error ? <p className={styles.error}>{error}</p> : null}
 
-        <div className={styles.kpis}>
+        <div className={styles.kpisWide}>
+          <div className={styles.kpi}>
+            <p className={styles.kpiLabel}>Saldo atual</p>
+            <p className={styles.kpiValue}>
+              {loading || !kpis ? '—' : formatCurrency(kpis.cashCurrentBalance || 0)}
+            </p>
+            <p className={styles.kpiHint}>Caixa corporativo</p>
+          </div>
+          <div className={styles.kpi}>
+            <p className={styles.kpiLabel}>Entradas no mês</p>
+            <p className={styles.kpiValue}>
+              {loading || !kpis ? '—' : formatCurrency(kpis.cashMonthIncome || 0)}
+            </p>
+          </div>
+          <div className={styles.kpi}>
+            <p className={styles.kpiLabel}>Saídas no mês</p>
+            <p className={styles.kpiValue}>
+              {loading || !kpis ? '—' : formatCurrency(kpis.cashMonthExpense || 0)}
+            </p>
+          </div>
+          <div className={styles.kpi}>
+            <p className={styles.kpiLabel}>Resultado do mês</p>
+            <p className={styles.kpiValue}>
+              {loading || !kpis ? '—' : formatCurrency(kpis.cashMonthNet || 0)}
+            </p>
+          </div>
           <div className={styles.kpi}>
             <p className={styles.kpiLabel}>A receber</p>
             <p className={styles.kpiValue}>
@@ -103,25 +133,32 @@ function CorporateFinanceHubInner() {
             <p className={styles.kpiValue}>
               {loading || !kpis ? '—' : formatCurrency(kpis.receivableOverdue || 0)}
             </p>
-            <p className={styles.kpiHint}>Com saldo pendente</p>
           </div>
           <div className={styles.kpi}>
             <p className={styles.kpiLabel}>Vencido a pagar</p>
             <p className={styles.kpiValue}>
               {loading || !kpis ? '—' : formatCurrency(kpis.payableOverdue || 0)}
             </p>
-            <p className={styles.kpiHint}>Com saldo pendente</p>
           </div>
         </div>
 
         <div className={styles.shortcuts}>
+          <Link href="/master/corporate-finance/cash-flow" className={styles.shortcut}>
+            <div className={styles.shortcutIcon}>
+              <ArrowLeftRight className="w-5 h-5" />
+            </div>
+            <h2 className={styles.shortcutTitle}>Fluxo de Caixa</h2>
+            <p className={styles.shortcutDesc}>
+              Movimentações, lançamentos manuais, transferências, saldos e exportação.
+            </p>
+          </Link>
           <Link href="/master/corporate-finance/accounts" className={styles.shortcut}>
             <div className={styles.shortcutIcon}>
               <Landmark className="w-5 h-5" />
             </div>
             <h2 className={styles.shortcutTitle}>Contas financeiras</h2>
             <p className={styles.shortcutDesc}>
-              Contas bancárias, caixa e carteiras com saldo inicial e data de referência.
+              Contas bancárias, caixa e carteiras com saldo inicial e saldo atual.
             </p>
           </Link>
           <Link href="/master/corporate-finance/categories" className={styles.shortcut}>
@@ -168,8 +205,8 @@ function CorporateFinanceHubInner() {
             <Layers className="w-4 h-4 text-slate-400" />
           </div>
           <p className={styles.muted} style={{ textAlign: 'left', paddingTop: '1rem' }}>
-            Liberado: fundação + contas a receber/pagar. Ainda não: movimentos de caixa, fluxo,
-            conciliação, Asaas, DRE nem bridge de valor_recebido.
+            Liberado: fundação, AR/AP e fluxo de caixa corporativo. Ainda não: conciliação, Asaas
+            corporativo, DRE nem bridge de valor_recebido (Fase 6.4).
           </p>
         </div>
       </div>

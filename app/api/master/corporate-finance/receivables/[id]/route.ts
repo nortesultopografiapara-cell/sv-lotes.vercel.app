@@ -34,7 +34,13 @@ export async function GET(request: Request, ctx: Ctx) {
       return NextResponse.json({ error: 'Recebível não encontrado.' }, { status: 404 });
     }
     const payments = await listReceivablePayments(supabaseAdmin, id);
-    return NextResponse.json({ receivable, payments });
+    const { findMovementsByPaymentIds } = await import(
+      '@/lib/master/corporateFinance/cashMovementsService'
+    );
+    const cashByPaymentId = await findMovementsByPaymentIds(supabaseAdmin, {
+      receivablePaymentIds: payments.map((p) => p.id),
+    });
+    return NextResponse.json({ receivable, payments, cashByPaymentId });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao obter recebível.';
     return NextResponse.json({ error: message }, { status: 500 });

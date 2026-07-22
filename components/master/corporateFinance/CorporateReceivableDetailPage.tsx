@@ -89,6 +89,9 @@ function DetailInner() {
 
   const [row, setRow] = useState<MasterCorporateReceivable | null>(null);
   const [payments, setPayments] = useState<MasterCorporateReceivablePayment[]>([]);
+  const [cashByPaymentId, setCashByPaymentId] = useState<
+    Record<string, { id: string; code: string; is_reversed: boolean; origin: string }>
+  >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,6 +136,7 @@ function DetailInner() {
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar recebível.');
       setRow(data.receivable);
       setPayments(data.payments || []);
+      setCashByPaymentId(data.cashByPaymentId || {});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar.');
     } finally {
@@ -529,17 +533,34 @@ function DetailInner() {
                         <th>Valor</th>
                         <th>Forma</th>
                         <th>Referência</th>
+                        <th>Caixa</th>
                         <th>Status</th>
                         <th />
                       </tr>
                     </thead>
                     <tbody>
-                      {payments.map((p) => (
+                      {payments.map((p) => {
+                        const cash = cashByPaymentId[p.id];
+                        return (
                         <tr key={p.id}>
                           <td>{formatDate(p.payment_date)}</td>
                           <td>{formatCurrency(p.amount)}</td>
                           <td>{corporatePaymentMethodLabel(p.payment_method)}</td>
                           <td>{p.reference || '—'}</td>
+                          <td>
+                            {cash ? (
+                              <span>
+                                <span className={`${styles.badge} ${styles.badgeIncome}`}>
+                                  Lançado no caixa
+                                </span>{' '}
+                                <Link href="/master/corporate-finance/cash-flow">
+                                  {cash.code}
+                                </Link>
+                              </span>
+                            ) : (
+                              <span className={styles.muted}>Pendente</span>
+                            )}
+                          </td>
                           <td>
                             {p.is_reversed ? (
                               <span className={`${styles.badge} ${styles.badgeOff}`}>
@@ -565,7 +586,8 @@ function DetailInner() {
                             )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

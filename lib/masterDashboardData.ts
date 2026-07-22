@@ -17,9 +17,11 @@ import {
 import {
   aggregateSaasCashMonthlyRevenueExpense,
   buildEmptyMonthlyRevenueExpense,
+  SAAS_CASH_MONTH_LABELS,
   sumSaasCashReceivedIncome,
   type MonthlyRevenueExpense,
 } from '@/lib/saasCashMovements';
+import { aggregateCorporateCashMonthlyRevenueExpense } from '@/lib/master/corporateFinance/cashMath';
 import { computeTopographyProjectKpis } from '@/lib/master/topography/projectsService';
 import type { MasterTopographyProjectKpis } from '@/lib/master/topography/types';
 import { computeTopographyQuoteKpis } from '@/lib/master/topography/quotesService';
@@ -292,8 +294,20 @@ export async function loadMasterDashboardData(
     );
   }
 
-  /** Sem fonte corporativa real — contrato visual pronto, sempre vazio. */
-  const topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
+  let topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
+  try {
+    const corp = await aggregateCorporateCashMonthlyRevenueExpense(supabase, financialYear);
+    topographyMonthlyFinancials = corp.months.map((m) => ({
+      month: m.month,
+      label: SAAS_CASH_MONTH_LABELS[m.month - 1] || String(m.month),
+      revenue: m.income,
+      expense: m.expense,
+    }));
+  } catch (err) {
+    errors.push(
+      `topography_monthly_financials: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   let topographyProjectKpis: MasterTopographyProjectKpis = {
     active: 0,

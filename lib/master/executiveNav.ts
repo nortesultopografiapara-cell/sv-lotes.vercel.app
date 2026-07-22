@@ -132,7 +132,6 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
         name: 'Fluxo de Caixa',
         href: '/master/corporate-finance/cash-flow',
         icon: ArrowLeftRight,
-        comingSoon: true,
       },
       {
         name: 'Contas a Pagar',

@@ -34,7 +34,13 @@ export async function GET(request: Request, ctx: Ctx) {
       return NextResponse.json({ error: 'Pagável não encontrado.' }, { status: 404 });
     }
     const payments = await listPayablePayments(supabaseAdmin, id);
-    return NextResponse.json({ payable, payments });
+    const { findMovementsByPaymentIds } = await import(
+      '@/lib/master/corporateFinance/cashMovementsService'
+    );
+    const cashByPaymentId = await findMovementsByPaymentIds(supabaseAdmin, {
+      payablePaymentIds: payments.map((p) => p.id),
+    });
+    return NextResponse.json({ payable, payments, cashByPaymentId });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao obter pagável.';
     return NextResponse.json({ error: message }, { status: 500 });

@@ -368,7 +368,6 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           title={`Receita × Despesa — SV Topografia e Projetos (${dashboard.financialYear})`}
           data={dashboard.topographyMonthlyFinancials}
           emptyMessage="Sem movimentação financeira corporativa neste período."
-          forceEmpty
         />
       </section>
 
