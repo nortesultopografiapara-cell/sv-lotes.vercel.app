@@ -1,11 +1,18 @@
 import { isTopographyCategory } from './categories';
 import { isTopographyQuoteStatus } from './quoteStatuses';
 import { isTopographyServiceType } from './serviceTypes';
-import type { MasterTopographyQuoteInput } from './quoteTypes';
+import { isTopographyPriceBank } from './priceBanks';
+import type {
+  MasterTopographyQuoteInput,
+  MasterTopographyQuoteItemInput,
+  MasterTopographyQuoteStageInput,
+} from './quoteTypes';
 
 const UF_RE = /^[A-Z]{2}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function cleanText(value: unknown, max = 500): string | null {
   if (value == null) return null;
@@ -41,11 +48,26 @@ function parseMoneyDefault(value: unknown, field: string, fallback = 0): number 
   return Math.round(n * 100) / 100;
 }
 
+function parsePercent(value: unknown, field: string, max = 1000): number {
+  if (value == null || value === '') return 0;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${field} não pode ser negativo.`);
+  if (n > max) throw new Error(`${field} inválido.`);
+  return Math.round(n * 10000) / 10000;
+}
+
 function parseOptionalNumber(value: unknown, field: string): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
   if (!Number.isFinite(n)) throw new Error(`${field} inválido.`);
   return n;
+}
+
+function parseQty(value: unknown, field: string): number {
+  if (value == null || value === '') return 0;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${field} não pode ser negativo.`);
+  return Math.round(n * 10000) / 10000;
 }
 
 /**
@@ -88,6 +110,13 @@ export function validateTopographyQuoteInput(
     throw new Error('Desconto não pode ser maior que o valor estimado.');
   }
 
+  const bdi_percent = parsePercent(raw.bdi_percent ?? raw.bdiPercent, 'BDI', 1000);
+  const discount_percent = parsePercent(
+    raw.discount_percent ?? raw.discountPercent,
+    'Percentual de desconto',
+    100,
+  );
+
   let final_value = parseOptionalMoney(raw.final_value ?? raw.finalValue, 'Valor final');
   if (final_value == null && estimated_value != null) {
     final_value = Math.round((estimated_value - discount_value) * 100) / 100;
@@ -95,6 +124,7 @@ export function validateTopographyQuoteInput(
 
   return {
     client_name,
+    title: cleanText(raw.title, 240),
     contact_name: cleanText(raw.contact_name ?? raw.contactName, 160),
     phone: cleanText(raw.phone, 40),
     email,
@@ -117,6 +147,8 @@ export function validateTopographyQuoteInput(
     ),
     estimated_value,
     discount_value,
+    discount_percent,
+    bdi_percent,
     final_value,
     payment_method: cleanText(raw.payment_method ?? raw.paymentMethod, 120),
     payment_terms: cleanText(raw.payment_terms ?? raw.paymentTerms, 500),
@@ -124,4 +156,60 @@ export function validateTopographyQuoteInput(
     internal_notes: cleanText(raw.internal_notes ?? raw.internalNotes, 4000),
     technical_notes: cleanText(raw.technical_notes ?? raw.technicalNotes, 4000),
   };
+}
+
+export function validateQuoteItemInput(raw: Record<string, unknown>): MasterTopographyQuoteItemInput {
+  const idRaw = cleanText(raw.id, 36);
+  if (idRaw && !UUID_RE.test(idRaw)) throw new Error('Item com id inválido.');
+
+  const bankRaw = cleanText(raw.price_bank ?? raw.priceBank, 32);
+  if (bankRaw && !isTopographyPriceBank(bankRaw)) throw new Error('Banco de preços inválido.');
+
+  return {
+    id: idRaw || undefined,
+    code: cleanText(raw.code, 80),
+    price_bank: bankRaw || null,
+    description: cleanText(raw.description, 2000) || '',
+    unit: cleanText(raw.unit, 20) || 'UN',
+    quantity: parseQty(raw.quantity, 'Quantidade'),
+    unit_value: parseMoneyDefault(raw.unit_value ?? raw.unitValue, 'Valor unitário', 0),
+    sort_order: Math.max(0, Math.trunc(Number(raw.sort_order ?? raw.sortOrder ?? 0) || 0)),
+  };
+}
+
+export function validateQuoteStageInput(raw: Record<string, unknown>): MasterTopographyQuoteStageInput {
+  const idRaw = cleanText(raw.id, 36);
+  if (idRaw && !UUID_RE.test(idRaw)) throw new Error('Etapa com id inválido.');
+
+  const name = cleanRequired(raw.name, 'Nome da etapa', 160);
+  const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
+  const items = itemsRaw.map((item, idx) => {
+    if (!item || typeof item !== 'object') throw new Error(`Item ${idx + 1} inválido.`);
+    return validateQuoteItemInput(item as Record<string, unknown>);
+  });
+
+  return {
+    id: idRaw || undefined,
+    name,
+    sort_order: Math.max(0, Math.trunc(Number(raw.sort_order ?? raw.sortOrder ?? 0) || 0)),
+    is_system: Boolean(raw.is_system ?? raw.isSystem),
+    items,
+  };
+}
+
+export function validateQuoteStructurePayload(raw: Record<string, unknown>): {
+  quote: MasterTopographyQuoteInput;
+  stages: MasterTopographyQuoteStageInput[];
+} {
+  const quoteRaw =
+    raw.quote && typeof raw.quote === 'object'
+      ? (raw.quote as Record<string, unknown>)
+      : raw;
+  const quote = validateTopographyQuoteInput(quoteRaw);
+  const stagesRaw = Array.isArray(raw.stages) ? raw.stages : [];
+  const stages = stagesRaw.map((stage, idx) => {
+    if (!stage || typeof stage !== 'object') throw new Error(`Etapa ${idx + 1} inválida.`);
+    return validateQuoteStageInput(stage as Record<string, unknown>);
+  });
+  return { quote, stages };
 }

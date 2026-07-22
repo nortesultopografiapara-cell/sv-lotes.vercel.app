@@ -1,10 +1,13 @@
 import type { TopographyCategoryCode } from './categories';
 import type { TopographyServiceTypeCode } from './serviceTypes';
 import type { TopographyQuoteStatusCode } from './quoteStatuses';
+import type { TopographyPriceBankCode } from './priceBanks';
+import type { QuoteFinancialSummary } from './quoteFinancials';
 
 export type MasterTopographyQuote = {
   id: string;
   code: string;
+  title: string | null;
   client_name: string;
   contact_name: string | null;
   phone: string | null;
@@ -22,6 +25,8 @@ export type MasterTopographyQuote = {
   estimated_deadline: string | null;
   estimated_value: number | null;
   discount_value: number;
+  discount_percent: number;
+  bdi_percent: number;
   final_value: number | null;
   payment_method: string | null;
   payment_terms: string | null;
@@ -39,6 +44,7 @@ export type MasterTopographyQuote = {
 
 export type MasterTopographyQuoteInput = {
   client_name: string;
+  title?: string | null;
   contact_name?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -55,12 +61,70 @@ export type MasterTopographyQuoteInput = {
   estimated_deadline?: string | null;
   estimated_value?: number | null;
   discount_value?: number;
+  discount_percent?: number;
+  bdi_percent?: number;
   final_value?: number | null;
   payment_method?: string | null;
   payment_terms?: string | null;
   internal_manager?: string | null;
   internal_notes?: string | null;
   technical_notes?: string | null;
+};
+
+export type MasterTopographyQuoteItem = {
+  id: string;
+  quote_id: string;
+  stage_id: string;
+  code: string | null;
+  price_bank: TopographyPriceBankCode | null;
+  description: string;
+  unit: string;
+  quantity: number;
+  unit_value: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MasterTopographyQuoteStage = {
+  id: string;
+  quote_id: string;
+  name: string;
+  sort_order: number;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MasterTopographyQuoteStageWithItems = MasterTopographyQuoteStage & {
+  items: MasterTopographyQuoteItem[];
+  itemCount: number;
+  subtotal: number;
+};
+
+export type MasterTopographyQuoteStructure = {
+  quote: MasterTopographyQuote;
+  stages: MasterTopographyQuoteStageWithItems[];
+  financials: QuoteFinancialSummary;
+};
+
+export type MasterTopographyQuoteItemInput = {
+  id?: string;
+  code?: string | null;
+  price_bank?: TopographyPriceBankCode | null;
+  description: string;
+  unit: string;
+  quantity: number;
+  unit_value: number;
+  sort_order: number;
+};
+
+export type MasterTopographyQuoteStageInput = {
+  id?: string;
+  name: string;
+  sort_order: number;
+  is_system?: boolean;
+  items: MasterTopographyQuoteItemInput[];
 };
 
 export type MasterTopographyQuoteListFilters = {

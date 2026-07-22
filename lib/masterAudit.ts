@@ -73,6 +73,7 @@ const ACTION_LABELS: Record<string, string> = {
   TOPOGRAPHY_QUOTE_RESTORED: 'Orçamento Topografia restaurado',
   TOPOGRAPHY_QUOTE_DUPLICATED: 'Orçamento Topografia duplicado',
   TOPOGRAPHY_QUOTE_CONVERTED: 'Orçamento convertido em projeto',
+  TOPOGRAPHY_QUOTE_STRUCTURE_SAVED: 'Estrutura de orçamento Topografia salva',
 };
 
 /** Módulos operacionais de tenant — fora do escopo da Auditoria Master. */

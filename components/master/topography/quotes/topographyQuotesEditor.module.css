@@ -1,0 +1,580 @@
+/* Orçamentos estruturados — Master Topografia (exclusivo; identidade SV LOTES). */
+
+.editorPage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1rem 6.5rem;
+  background: #f3f4f6;
+  color: #0f172a;
+}
+
+@media (min-width: 768px) {
+  .editorPage {
+    padding: 1.25rem 1.5rem 7rem;
+  }
+}
+
+.execHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.execTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.execMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.execCode {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.execTitleInput {
+  min-width: min(100%, 22rem);
+  flex: 1;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  background: #fff;
+}
+
+.execTitleInput:focus {
+  outline: 2px solid #93c5fd;
+  border-color: #3b82f6;
+}
+
+.execStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+@media (min-width: 900px) {
+  .execStats {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.execStat {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.execStatLabel {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 0.2rem;
+}
+
+.execStatValue {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.execActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.btnPrimary,
+.btnSecondary,
+.btnGhost,
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: #fff;
+  color: #334155;
+}
+
+.btnPrimary {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.btnPrimary:hover {
+  background: #1e40af;
+}
+
+.btnPrimary:disabled,
+.btnSecondary:disabled,
+.btnGhost:disabled,
+.btnDanger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  border-color: #e2e8f0;
+}
+
+.btnSecondary:hover {
+  background: #f8fafc;
+}
+
+.btnGhost {
+  color: #1d4ed8;
+  background: transparent;
+}
+
+.btnDanger {
+  background: #fff1f2;
+  color: #be123c;
+  border-color: #fecdd3;
+}
+
+.exportWrap {
+  position: relative;
+}
+
+.exportMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 30;
+  min-width: 12.5rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 12%);
+  padding: 0.35rem;
+}
+
+.exportItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+
+.exportItem:hover {
+  background: #f1f5f9;
+}
+
+.collapse {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  margin-bottom: 0.85rem;
+  overflow: hidden;
+}
+
+.collapseHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 0;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.collapseTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.collapseBody {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 720px) {
+  .formGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1100px) {
+  .formGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.field input,
+.field select,
+.field textarea {
+  min-height: 2.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.field textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.dateField {
+  position: relative;
+}
+
+.dateField input[type='date'] {
+  width: 100%;
+  padding-right: 2rem;
+}
+
+.dateIcon {
+  position: absolute;
+  right: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+  pointer-events: none;
+}
+
+.stagesHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.stagesHead h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.stageCard {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.stageCardDragging {
+  opacity: 0.65;
+  border-color: #93c5fd;
+}
+
+.stageHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dragHandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.35rem;
+  color: #94a3b8;
+  cursor: grab;
+  border: 0;
+  background: transparent;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.stageNameInput {
+  flex: 1;
+  min-width: 10rem;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.35rem;
+}
+
+.stageNameInput:focus {
+  border-color: #bfdbfe;
+  background: #fff;
+  outline: none;
+}
+
+.stageMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.stageMeta strong {
+  color: #0f172a;
+}
+
+.stageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.tableWrap {
+  overflow: auto;
+  max-height: min(28rem, 55vh);
+}
+
+.itemsTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 980px;
+  font-size: 0.75rem;
+}
+
+.itemsTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 700;
+  text-align: left;
+  padding: 0.55rem 0.45rem;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.itemsTable td {
+  padding: 0.35rem 0.35rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.itemsTable input,
+.itemsTable select {
+  width: 100%;
+  min-height: 2rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+  background: #fff;
+}
+
+.itemRowDragging {
+  background: #eff6ff;
+}
+
+.numCell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-right: 0.55rem !important;
+}
+
+.rowActions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.35rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.iconBtnDanger:hover {
+  background: #fff1f2;
+  color: #be123c;
+  border-color: #fecdd3;
+}
+
+.financeBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin: 1rem -0.25rem -1rem;
+  padding: 0.85rem 1rem;
+  background: #0f172a;
+  color: #f8fafc;
+  border-radius: 0.75rem 0.75rem 0 0;
+  box-shadow: 0 -8px 24px rgb(15 23 42 / 18%);
+}
+
+.financeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+@media (min-width: 900px) {
+  .financeGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.financeItem label {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  margin-bottom: 0.2rem;
+}
+
+.financeItem strong {
+  font-size: 0.95rem;
+}
+
+.financeItem input {
+  width: 100%;
+  min-height: 2rem;
+  border-radius: 0.4rem;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.8rem;
+}
+
+.muted {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.errorBanner {
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.55rem;
+  background: #fff1f2;
+  color: #9f1239;
+  border: 1px solid #fecdd3;
+  font-size: 0.8125rem;
+}
+
+.successBanner {
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.55rem;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  font-size: 0.8125rem;
+}
+
+.emptyStage {
+  padding: 1rem;
+  color: #64748b;
+  font-size: 0.8125rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.virtualBody {
+  position: relative;
+}
+
+.virtualRow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+}

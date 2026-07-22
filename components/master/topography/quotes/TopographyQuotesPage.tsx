@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LayoutGrid, List, Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,10 +20,6 @@ import type {
   MasterTopographyQuote,
   MasterTopographyQuoteKpis,
 } from '@/lib/master/topography/quoteTypes';
-import {
-  TopographyQuoteFormModal,
-  formToQuotePayload,
-} from './TopographyQuoteFormModal';
 import styles from '../projects/topographyProjects.module.css';
 
 function formatCurrency(val: number | null | undefined) {
@@ -86,6 +82,7 @@ function QuotesInner() {
   const [page, setPage] = useState(1);
   const [limit] = useState(12);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [qDebounced, setQDebounced] = useState('');
@@ -95,9 +92,6 @@ function QuotesInner() {
   const [city, setCity] = useState('');
   const [manager, setManager] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(q.trim()), 300);
@@ -111,14 +105,6 @@ function QuotesInner() {
       /* ignore */
     }
   }, [view]);
-
-  useEffect(() => {
-    if (openNew) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setModalOpen(true);
-      router.replace('/master/topography/budgets');
-    }
-  }, [openNew, router]);
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -168,29 +154,48 @@ function QuotesInner() {
     void load();
   }, [load]);
 
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit]);
-
-  const handleCreate = async (payload: ReturnType<typeof formToQuotePayload>) => {
-    if (!user?.id) return;
-    setSaving(true);
-    setFormError(null);
+  const handleCreate = useCallback(async () => {
+    if (!user?.id || creating) return;
+    setCreating(true);
+    setError(null);
     try {
       const res = await fetch('/api/master/topography/quotes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, userId: user.id }),
+        body: JSON.stringify({
+          userId: user.id,
+          client_name: 'Cliente a definir',
+          title: 'Novo orçamento',
+          category: 'TOPOGRAFIA',
+          service_type: 'LEVANTAMENTO_TOPOGRAFICO',
+          status: 'RASCUNHO',
+          bdi_percent: 0,
+          discount_percent: 0,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao criar.');
-      setModalOpen(false);
-      await load();
-      if (data.quote?.id) router.push(`/master/topography/budgets/${data.quote.id}`);
+      if (data.quote?.id) {
+        router.push(`/master/topography/budgets/${data.quote.id}/edit`);
+        return;
+      }
+      throw new Error('Resposta inválida ao criar orçamento.');
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Falha ao salvar.');
-    } finally {
-      setSaving(false);
+      setError(err instanceof Error ? err.message : 'Falha ao criar.');
+      setCreating(false);
     }
-  };
+  }, [user, creating, router]);
+
+  const creatingFromQuery = useRef(false);
+
+  useEffect(() => {
+    if (!openNew || !user?.id || creatingFromQuery.current) return;
+    creatingFromQuery.current = true;
+    router.replace('/master/topography/budgets');
+    void handleCreate();
+  }, [openNew, user, router, handleCreate]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit]);
 
   return (
     <div className={styles.page}>
@@ -198,8 +203,8 @@ function QuotesInner() {
         <div>
           <h1 className={styles.title}>Orçamentos</h1>
           <p className={styles.subtitle}>
-            Propostas comerciais da SV Topografia &amp; Projetos — conversão em projeto após
-            aprovação.
+            Ambiente profissional de orçamentação da SV Topografia &amp; Projetos — etapas, itens e
+            BDI.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -207,9 +212,14 @@ function QuotesInner() {
             <RefreshCw width={14} height={14} />
             Atualizar
           </button>
-          <button type="button" className={styles.btnPrimary} onClick={() => setModalOpen(true)}>
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            disabled={creating}
+            onClick={() => void handleCreate()}
+          >
             <Plus width={14} height={14} />
-            Novo Orçamento
+            {creating ? 'Criando…' : 'Novo Orçamento'}
           </button>
         </div>
       </div>
@@ -351,24 +361,31 @@ function QuotesInner() {
         <div className={styles.empty}>Nenhum orçamento encontrado.</div>
       ) : view === 'cards' ? (
         <div className={styles.cardGrid}>
-          {quotes.map((q) => (
-            <article key={q.id} className={styles.card}>
+          {quotes.map((item) => (
+            <article key={item.id} className={styles.card}>
               <div className={styles.cardTop}>
-                <span className={styles.code}>{q.code}</span>
-                <StatusBadge status={q.status} />
+                <span className={styles.code}>{item.code}</span>
+                <StatusBadge status={item.status} />
               </div>
-              <h3 className={styles.cardTitle}>{q.client_name}</h3>
+              <h3 className={styles.cardTitle}>{item.title || item.client_name}</h3>
+              <p className={styles.meta}>{item.client_name}</p>
               <p className={styles.meta}>
-                {topographyCategoryLabel(q.category)} · {topographyServiceTypeLabel(q.service_type)}
+                {topographyCategoryLabel(item.category)} ·{' '}
+                {topographyServiceTypeLabel(item.service_type)}
               </p>
               <p className={styles.meta}>
-                {[q.city, q.state].filter(Boolean).join('/') || 'Local não informado'}
+                {[item.city, item.state].filter(Boolean).join('/') || 'Local não informado'}
               </p>
-              <p className={styles.meta}>Valor: {formatCurrency(q.final_value ?? q.estimated_value)}</p>
-              <p className={styles.meta}>Validade: {formatDate(q.expiration_date)}</p>
-              <p className={styles.meta}>Resp.: {q.internal_manager || '—'}</p>
-              <Link href={`/master/topography/budgets/${q.id}`} className={styles.btnGhost}>
-                Abrir detalhes →
+              <p className={styles.meta}>
+                Valor: {formatCurrency(item.final_value ?? item.estimated_value)}
+              </p>
+              <p className={styles.meta}>BDI: {(item.bdi_percent ?? 0).toLocaleString('pt-BR')}%</p>
+              <p className={styles.meta}>Validade: {formatDate(item.expiration_date)}</p>
+              <Link
+                href={`/master/topography/budgets/${item.id}/edit`}
+                className={styles.btnGhost}
+              >
+                Abrir editor →
               </Link>
             </article>
           ))}
@@ -379,34 +396,35 @@ function QuotesInner() {
             <thead>
               <tr>
                 <th>Código</th>
+                <th>Título</th>
                 <th>Cliente</th>
                 <th>Categoria</th>
-                <th>Serviço</th>
-                <th>Cidade</th>
                 <th>Status</th>
+                <th>BDI</th>
                 <th>Valor</th>
                 <th>Validade</th>
-                <th>Responsável</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {quotes.map((q) => (
-                <tr key={q.id}>
-                  <td>{q.code}</td>
-                  <td>{q.client_name}</td>
-                  <td>{topographyCategoryLabel(q.category)}</td>
-                  <td>{topographyServiceTypeLabel(q.service_type)}</td>
-                  <td>{[q.city, q.state].filter(Boolean).join('/') || '—'}</td>
+              {quotes.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.code}</td>
+                  <td>{item.title || '—'}</td>
+                  <td>{item.client_name}</td>
+                  <td>{topographyCategoryLabel(item.category)}</td>
                   <td>
-                    <StatusBadge status={q.status} />
+                    <StatusBadge status={item.status} />
                   </td>
-                  <td>{formatCurrency(q.final_value ?? q.estimated_value)}</td>
-                  <td>{formatDate(q.expiration_date)}</td>
-                  <td>{q.internal_manager || '—'}</td>
+                  <td>{(item.bdi_percent ?? 0).toLocaleString('pt-BR')}%</td>
+                  <td>{formatCurrency(item.final_value ?? item.estimated_value)}</td>
+                  <td>{formatDate(item.expiration_date)}</td>
                   <td>
-                    <Link href={`/master/topography/budgets/${q.id}`} className={styles.btnGhost}>
-                      Abrir
+                    <Link
+                      href={`/master/topography/budgets/${item.id}/edit`}
+                      className={styles.btnGhost}
+                    >
+                      Editar
                     </Link>
                   </td>
                 </tr>
@@ -439,20 +457,6 @@ function QuotesInner() {
           </button>
         </div>
       </div>
-
-      <TopographyQuoteFormModal
-        open={modalOpen}
-        mode="create"
-        saving={saving}
-        error={formError}
-        onClose={() => {
-          if (!saving) {
-            setModalOpen(false);
-            setFormError(null);
-          }
-        }}
-        onSubmit={(payload) => void handleCreate(payload)}
-      />
     </div>
   );
 }

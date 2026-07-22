@@ -13,21 +13,25 @@ import type {
   MasterTopographyQuoteListFilters,
   MasterTopographyQuoteListResult,
 } from './quoteTypes';
+import { DEFAULT_QUOTE_STAGE_NAMES } from './defaultQuoteStages';
 
-const SELECT_COLUMNS = `
-  id, code, client_name, contact_name, phone, email,
+export const QUOTE_SELECT_COLUMNS = `
+  id, code, title, client_name, contact_name, phone, email,
   city, state, address, distance_km, category, service_type, description, status,
   proposal_date, expiration_date, estimated_deadline,
-  estimated_value, discount_value, final_value,
+  estimated_value, discount_value, discount_percent, bdi_percent, final_value,
   payment_method, payment_terms, internal_manager, internal_notes, technical_notes,
   approved_at, approved_by, converted_project_id,
   is_archived, created_by, created_at, updated_at
 `.replace(/\s+/g, ' ').trim();
 
-function parseRow(row: Record<string, unknown>): MasterTopographyQuote {
+const SELECT_COLUMNS = QUOTE_SELECT_COLUMNS;
+
+export function parseQuoteRow(row: Record<string, unknown>): MasterTopographyQuote {
   return {
     id: String(row.id),
     code: String(row.code || ''),
+    title: row.title ? String(row.title) : null,
     client_name: String(row.client_name || ''),
     contact_name: row.contact_name ? String(row.contact_name) : null,
     phone: row.phone ? String(row.phone) : null,
@@ -45,6 +49,8 @@ function parseRow(row: Record<string, unknown>): MasterTopographyQuote {
     estimated_deadline: row.estimated_deadline ? String(row.estimated_deadline) : null,
     estimated_value: row.estimated_value == null ? null : Number(row.estimated_value),
     discount_value: Number(row.discount_value || 0),
+    discount_percent: Number(row.discount_percent || 0),
+    bdi_percent: Number(row.bdi_percent || 0),
     final_value: row.final_value == null ? null : Number(row.final_value),
     payment_method: row.payment_method ? String(row.payment_method) : null,
     payment_terms: row.payment_terms ? String(row.payment_terms) : null,
@@ -61,9 +67,14 @@ function parseRow(row: Record<string, unknown>): MasterTopographyQuote {
   };
 }
 
+function parseRow(row: Record<string, unknown>): MasterTopographyQuote {
+  return parseQuoteRow(row);
+}
+
 function inputToRow(input: MasterTopographyQuoteInput) {
   return {
     client_name: input.client_name,
+    title: input.title ?? null,
     contact_name: input.contact_name ?? null,
     phone: input.phone ?? null,
     email: input.email ?? null,
@@ -80,6 +91,8 @@ function inputToRow(input: MasterTopographyQuoteInput) {
     estimated_deadline: input.estimated_deadline ?? null,
     estimated_value: input.estimated_value ?? null,
     discount_value: input.discount_value ?? 0,
+    discount_percent: input.discount_percent ?? 0,
+    bdi_percent: input.bdi_percent ?? 0,
     final_value: input.final_value ?? null,
     payment_method: input.payment_method ?? null,
     payment_terms: input.payment_terms ?? null,
@@ -261,7 +274,22 @@ export async function createTopographyQuote(
     .select(SELECT_COLUMNS)
     .single();
   if (error) throw new Error(error.message || 'Falha ao criar orçamento.');
-  return parseRow(data as Record<string, unknown>);
+  const quote = parseRow(data as Record<string, unknown>);
+
+  const now = new Date().toISOString();
+  const stageRows = DEFAULT_QUOTE_STAGE_NAMES.map((name, index) => ({
+    quote_id: quote.id,
+    name,
+    sort_order: index,
+    is_system: true,
+    updated_at: now,
+  }));
+  const { error: stageError } = await supabase
+    .from('master_topography_quote_stages')
+    .insert(stageRows);
+  if (stageError) throw new Error(stageError.message || 'Falha ao criar etapas padrão.');
+
+  return quote;
 }
 
 export async function updateTopographyQuote(
@@ -325,10 +353,12 @@ export async function duplicateTopographyQuote(
 ): Promise<MasterTopographyQuote> {
   const source = await getTopographyQuoteById(supabase, id);
   if (!source) throw new Error('Orçamento não encontrado.');
-  return createTopographyQuote(
-    supabase,
-    {
+
+  const code = await generateTopographyQuoteCode(supabase);
+  const payload = {
+    ...inputToRow({
       client_name: source.client_name,
+      title: source.title ? `${source.title} (cópia)` : `Cópia de ${source.code}`,
       contact_name: source.contact_name,
       phone: source.phone,
       email: source.email,
@@ -345,6 +375,8 @@ export async function duplicateTopographyQuote(
       estimated_deadline: source.estimated_deadline,
       estimated_value: source.estimated_value,
       discount_value: source.discount_value,
+      discount_percent: source.discount_percent,
+      bdi_percent: source.bdi_percent,
       final_value: source.final_value,
       payment_method: source.payment_method,
       payment_terms: source.payment_terms,
@@ -353,9 +385,25 @@ export async function duplicateTopographyQuote(
         ? `Cópia de ${source.code}\n${source.internal_notes}`
         : `Cópia de ${source.code}`,
       technical_notes: source.technical_notes,
-    },
-    createdBy,
-  );
+    }),
+    code,
+    created_by: createdBy,
+    updated_at: new Date().toISOString(),
+    approved_at: null,
+    approved_by: null,
+  };
+
+  const { data, error } = await supabase
+    .from('master_topography_quotes')
+    .insert(payload)
+    .select(SELECT_COLUMNS)
+    .single();
+  if (error) throw new Error(error.message || 'Falha ao duplicar orçamento.');
+  const quote = parseRow(data as Record<string, unknown>);
+
+  const { duplicateQuoteStructure } = await import('./quoteStructureService');
+  await duplicateQuoteStructure(supabase, id, quote.id);
+  return quote;
 }
 
 /**
@@ -377,10 +425,10 @@ export async function convertQuoteToProject(
   }
 
   const projectInput: MasterTopographyProjectInput = {
-    title: `${topographyServiceTypeLabel(quote.service_type)} — ${quote.client_name}`.slice(
-      0,
-      200,
-    ),
+    title: (
+      quote.title ||
+      `${topographyServiceTypeLabel(quote.service_type)} — ${quote.client_name}`
+    ).slice(0, 200),
     client_name: quote.client_name,
     client_contact_name: quote.contact_name,
     client_phone: quote.phone,
