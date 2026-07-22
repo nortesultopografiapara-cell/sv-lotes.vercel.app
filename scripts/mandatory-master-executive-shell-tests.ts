@@ -227,6 +227,32 @@ function testExecutiveDashboardV2() {
   assert(dash.includes('Orçamentos'), 'atalho orçamentos');
   assert(dash.includes('Em breve'), 'módulos em breve');
   assert(!dash.includes('/finance"'), 'não usa /finance tenant');
+  assert(dash.includes('MasterAnnualRevenueExpenseChart'), 'gráficos anuais Receita×Despesa');
+  assert(dash.includes('MasterCompactAlerts'), 'alertas compactos');
+  assert(dash.includes('Receita × Despesa — SV LOTES'), 'título gráfico SV LOTES');
+  assert(
+    dash.includes('Receita × Despesa — SV Topografia e Projetos'),
+    'título gráfico Topografia',
+  );
+  assert(dash.includes('Distribuição de planos'), 'pizza de planos no centro');
+  assert(!dash.includes('Alertas inteligentes'), 'painel grande de alertas removido');
+  assert(!dash.includes('Receita dos últimos 6 meses'), 'linha 6 meses substituída');
+
+  assert(
+    exists('components/master/dashboard/MasterAnnualRevenueExpenseChart.tsx'),
+    'componente gráfico anual',
+  );
+  assert(exists('components/master/dashboard/MasterCompactAlerts.tsx'), 'componente alertas');
+
+  const annual = read('components/master/dashboard/MasterAnnualRevenueExpenseChart.tsx');
+  assert(annual.includes('BarChart'), 'usa barras');
+  assert(annual.includes('forceEmpty'), 'suporta estado vazio forçado');
+
+  const compact = read('components/master/dashboard/MasterCompactAlerts.tsx');
+  assert(
+    compact.includes('Nenhum alerta crítico no momento.'),
+    'empty state de alertas',
+  );
 
   const page = read('app/dashboard/page.tsx');
   assert(page.includes('MasterExecutiveDashboard'), 'page wire V2');
@@ -236,6 +262,14 @@ function testExecutiveDashboardV2() {
   const data = read('lib/masterDashboardData.ts');
   assert(data.includes('trialCompanies'), 'empresas em teste');
   assert(data.includes('newCompaniesThisMonth'), 'novos clientes');
+  assert(data.includes('saasMonthlyFinancials'), 'série anual Caixa SaaS');
+  assert(data.includes('topographyMonthlyFinancials'), 'contrato Topografia');
+  assert(data.includes('aggregateSaasCashMonthlyRevenueExpense'), 'agrega Caixa SaaS');
+
+  const cash = read('lib/saasCashMovements.ts');
+  assert(cash.includes('aggregateSaasCashMonthlyRevenueExpense'), 'helper anual');
+  assert(cash.includes('buildEmptyMonthlyRevenueExpense'), '12 meses zeros');
+  assert(cash.includes("type: 'all'"), 'income + expense na agregação');
 
   const layout = read('components/Layout.tsx');
   assert(!layout.includes('master-dashboard-v2-diag'), 'diagnóstico temporário removido');

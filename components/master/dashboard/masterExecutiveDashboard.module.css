@@ -243,7 +243,7 @@
 
 @media (min-width: 1100px) {
   .chartsRow {
-    grid-template-columns: 1.2fr 0.9fr 0.9fr;
+    grid-template-columns: 1fr 0.95fr 1fr;
   }
 }
 
@@ -263,6 +263,25 @@
   color: #0f172a;
 }
 
+.cardTitleStrong {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.annualChartCard {
+  display: flex;
+  flex-direction: column;
+}
+
+.planCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .chartBox {
   height: 15rem;
   width: 100%;
@@ -279,7 +298,73 @@
   gap: 0.35rem;
   color: #94a3b8;
   font-size: 0.8125rem;
-  padding: 1rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.emptyChartBars {
+  width: 100%;
+  margin-top: 0.35rem;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.compactAlerts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.65rem;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.compactAlertsList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.compactAlertItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+}
+
+.compactAlertIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compactAlertText {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
+}
+
+.compactAlertsEmpty {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .planLayout {

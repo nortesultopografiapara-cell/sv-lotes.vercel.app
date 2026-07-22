@@ -14,7 +14,12 @@ import {
   getSaasCashStartAt,
   isSaasFinancialRecordAfterStartAt,
 } from '@/lib/saasFinanceSettings';
-import { sumSaasCashReceivedIncome } from '@/lib/saasCashMovements';
+import {
+  aggregateSaasCashMonthlyRevenueExpense,
+  buildEmptyMonthlyRevenueExpense,
+  sumSaasCashReceivedIncome,
+  type MonthlyRevenueExpense,
+} from '@/lib/saasCashMovements';
 
 export type MasterPlanTier = 'BÁSICO' | 'BUSINESS' | 'PROFISSIONAL' | 'PERSONALIZADO';
 
@@ -67,6 +72,13 @@ export type MasterDashboardData = {
     totalLots: number;
   };
   revenueByMonth: { month: string; label: string; value: number }[];
+  /** Jan–Dez do ano selecionado — Caixa SaaS (income/expense), sem dupla contagem. */
+  saasMonthlyFinancials: MonthlyRevenueExpense[];
+  /**
+   * Contrato visual para o gráfico corporativo futuro.
+   * Sem fonte real nesta etapa — sempre zeros + estado vazio explícito.
+   */
+  topographyMonthlyFinancials: MonthlyRevenueExpense[];
   planDistribution: {
     tier: MasterPlanTier;
     count: number;
@@ -77,6 +89,8 @@ export type MasterDashboardData = {
   recentCompanies: MasterRecentCompany[];
   cashStartAt: string | null;
   receivedRevenueSource: 'saas_cash_movements';
+  /** Ano usado em saasMonthlyFinancials / topographyMonthlyFinancials. */
+  financialYear: number;
   errors: string[];
 };
 
@@ -151,11 +165,16 @@ function isSubscriptionExpired(company: {
 
 export async function loadMasterDashboardData(
   supabase: SupabaseClient,
+  options: { financialYear?: number } = {},
 ): Promise<MasterDashboardData> {
   const errors: string[] = [];
   const monthTemplate = lastSixMonthKeys();
   const revenueMap = new Map(monthTemplate.map((m) => [m.key, 0]));
   const cashStartAt = await getSaasCashStartAt(supabase);
+  const financialYear =
+    options.financialYear && Number.isFinite(options.financialYear)
+      ? Math.trunc(options.financialYear)
+      : new Date().getFullYear();
 
   const [
     companiesRes,
@@ -252,6 +271,22 @@ export async function loadMasterDashboardData(
     mrr,
     paymentsReceivedFromCash.visibleTotal,
   );
+
+  let saasMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
+  try {
+    saasMonthlyFinancials = await aggregateSaasCashMonthlyRevenueExpense(
+      supabase,
+      financialYear,
+      cashStartAt,
+    );
+  } catch (err) {
+    errors.push(
+      `saas_monthly_financials: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  /** Sem fonte corporativa real — contrato visual pronto, sempre vazio. */
+  const topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
 
   let totalLots = blocksRes.count ?? 0;
   if (blocksRes.error && lotsRes.count != null) {
@@ -440,11 +475,14 @@ export async function loadMasterDashboardData(
       totalLots,
     },
     revenueByMonth,
+    saasMonthlyFinancials,
+    topographyMonthlyFinancials,
     planDistribution,
     alerts,
     recentCompanies,
     cashStartAt,
     receivedRevenueSource: 'saas_cash_movements',
+    financialYear,
     errors,
   };
 

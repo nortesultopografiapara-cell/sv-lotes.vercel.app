@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -14,8 +14,6 @@ import {
   FileSpreadsheet,
   FolderKanban,
   Lock,
-  Mail,
-  Map as MapIcon,
   Plug,
   RefreshCw,
   ScrollText,
@@ -30,27 +28,17 @@ import {
   Briefcase,
   Globe,
 } from 'lucide-react';
-import {
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import {
   exportMasterDashboardCsv,
   loadMasterDashboardData,
-  type MasterDashboardAlert,
   type MasterDashboardData,
 } from '@/lib/masterDashboardData';
 import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
 import { isPlatformAdmin } from '@/lib/rls';
+import { MasterAnnualRevenueExpenseChart } from './MasterAnnualRevenueExpenseChart';
+import { MasterCompactAlerts } from './MasterCompactAlerts';
 import styles from './masterExecutiveDashboard.module.css';
 
 function formatCurrency(val: number) {
@@ -72,28 +60,6 @@ function greetingPrefix(d = new Date()): string {
   if (h < 12) return 'Bom dia';
   if (h < 18) return 'Boa tarde';
   return 'Boa noite';
-}
-
-function alertIcon(alert: MasterDashboardAlert) {
-  switch (alert.id) {
-    case 'no-email':
-      return <Mail />;
-    case 'inadimplente':
-    case 'expired-subscription':
-      return <Lock />;
-    case 'no-projects':
-      return <MapIcon />;
-    case 'no-users':
-      return <Users />;
-    default:
-      return <AlertTriangle />;
-  }
-}
-
-function alertClass(severity: MasterDashboardAlert['severity']) {
-  if (severity === 'danger') return styles.alertDanger;
-  if (severity === 'warning') return styles.alertWarning;
-  return styles.alertInfo;
 }
 
 function planBadgeStyle(plan: string): { background: string; color: string; borderColor: string } {
@@ -247,10 +213,6 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
   }, [user, router]);
 
   const stats = dashboard?.stats;
-  const hasRevenue = useMemo(
-    () => dashboard?.revenueByMonth.some((m) => m.value > 0) ?? false,
-    [dashboard],
-  );
 
   const handleExport = () => {
     if (!dashboard) return;
@@ -398,54 +360,17 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         />
       </section>
 
-      <section className={styles.chartsRow} aria-label="Gráficos e alertas">
-        <div className={styles.card}>
-          <h3 className={styles.cardTitle}>Receita dos últimos 6 meses</h3>
-          <div className={styles.chartBox}>
-            {hasRevenue ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={dashboard.revenueByMonth}
-                  margin={{ top: 5, right: 12, bottom: 5, left: -8 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v) => (v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`)}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#fff',
-                      borderColor: '#e2e8f0',
-                      borderRadius: 8,
-                      color: '#0f172a',
-                    }}
-                    formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Recebido']}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#1d4ed8"
-                    strokeWidth={2.5}
-                    dot={{ r: 3.5, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className={styles.emptyChart}>
-                <Wallet width={28} height={28} />
-                <p>Sem recebimentos nos últimos 6 meses</p>
-              </div>
-            )}
-          </div>
-        </div>
+      <MasterCompactAlerts alerts={dashboard.alerts} maxVisible={3} detailsHref="/companies" />
 
-        <div className={styles.card}>
-          <h3 className={styles.cardTitle}>Distribuição de planos</h3>
+      <section className={styles.chartsRow} aria-label="Gráficos anuais e planos">
+        <MasterAnnualRevenueExpenseChart
+          title={`Receita × Despesa — SV LOTES (${dashboard.financialYear})`}
+          data={dashboard.saasMonthlyFinancials}
+          emptyMessage="Sem movimentações no Caixa SaaS neste período."
+        />
+
+        <div className={`${styles.card} ${styles.planCard}`}>
+          <h3 className={styles.cardTitleStrong}>Distribuição de planos</h3>
           {planChartData.length > 0 ? (
             <div className={styles.planLayout}>
               <div className={styles.chartBox} style={{ height: 160, maxWidth: 160 }}>
@@ -491,31 +416,12 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           )}
         </div>
 
-        <div className={styles.card}>
-          <h3 className={styles.cardTitle}>Alertas inteligentes</h3>
-          <div className={styles.alertsList}>
-            {dashboard.alerts.length === 0 ? (
-              <div className={styles.emptyChart}>
-                <CheckCircle width={28} height={28} />
-                <p>Nenhum alerta no momento</p>
-              </div>
-            ) : (
-              dashboard.alerts.map((a) => (
-                <div key={a.id} className={styles.alertItem}>
-                  <span className={`${styles.alertIconWrap} ${alertClass(a.severity)}`}>
-                    {alertIcon(a)}
-                  </span>
-                  <div>
-                    <p className={styles.alertTitle} style={{ color: 'inherit' }}>
-                      {a.title}
-                    </p>
-                    <p className={styles.alertDesc}>{a.description}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <MasterAnnualRevenueExpenseChart
+          title={`Receita × Despesa — SV Topografia e Projetos (${dashboard.financialYear})`}
+          data={dashboard.topographyMonthlyFinancials}
+          emptyMessage="Sem movimentação financeira corporativa neste período."
+          forceEmpty
+        />
       </section>
 
       <section className={styles.bottomRow} aria-label="Empresas, ações e resumo">
