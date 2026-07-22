@@ -253,6 +253,12 @@ function TopographyProjectDetailInner() {
           </p>
           <div style={{ marginTop: '0.85rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <Link
+              href={`/master/corporate-finance/receivables?projectId=${project.id}&new=1`}
+              className={styles.btnPrimary}
+            >
+              Criar conta a receber
+            </Link>
+            <Link
               href={`/master/corporate-finance/receivables?projectId=${project.id}`}
               className={styles.btnSecondary}
             >

@@ -27,6 +27,8 @@ export function parseArApListFilters(searchParams: URLSearchParams): MasterCorpo
 
 export function httpStatusFromMessage(message: string): number {
   if (
+    message.includes('Saldo não provisionado') ||
+    message.includes('Justificativa') ||
     message.includes('obrigatório') ||
     message.includes('inválid') ||
     message.includes('maior que') ||

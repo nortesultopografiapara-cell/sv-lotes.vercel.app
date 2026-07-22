@@ -68,6 +68,13 @@ export async function PATCH(request: Request, ctx: Ctx) {
       id,
       input,
       body.userId ? String(body.userId) : null,
+      {
+        allowOverProvision: Boolean(body.allow_over_provision || body.allowOverProvision),
+        overProvisionReason:
+          body.over_provision_reason || body.overProvisionReason
+            ? String(body.over_provision_reason || body.overProvisionReason)
+            : null,
+      },
     );
 
     await logCorporateFinanceAudit(supabaseAdmin, {

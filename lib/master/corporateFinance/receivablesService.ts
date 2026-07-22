@@ -13,6 +13,7 @@ import type {
   MasterCorporateReceivablePayment,
   MasterCorporateSettlementInput,
 } from './arApTypes';
+import { assertReceivableProvisionLimit } from './projectContextService';
 import { logCorporateFinanceAudit } from './service';
 
 function nowIso() {
@@ -68,6 +69,13 @@ async function assertOptionalRefs(
     if (!data) throw new Error('Orçamento não encontrado.');
     if (!isLinkableQuoteStatus(String(data.status))) {
       throw new Error('Somente orçamento aprovado ou convertido pode ser vinculado.');
+    }
+    if (
+      input.project_id &&
+      data.converted_project_id &&
+      String(data.converted_project_id) !== input.project_id
+    ) {
+      throw new Error('Orçamento incompatível com o projeto selecionado.');
     }
   }
   if (input.cost_center_id) {
@@ -334,11 +342,22 @@ export async function createReceivable(
   supabase: SupabaseClient,
   input: MasterCorporateReceivableInput,
   userId: string | null,
+  options?: {
+    allowOverProvision?: boolean;
+    overProvisionReason?: string | null;
+  },
 ): Promise<MasterCorporateReceivable> {
   await assertCategoryIncome(supabase, input.category_id);
   await assertOptionalRefs(supabase, input);
 
   const net_amount = computeNetAmount(input);
+  await assertReceivableProvisionLimit(supabase, {
+    projectId: input.project_id,
+    netAmount: net_amount,
+    allowOverProvision: options?.allowOverProvision,
+    overProvisionReason: options?.overProvisionReason,
+  });
+
   const code = await nextReceivableCode(supabase);
   const preferDraft = input.status === 'DRAFT';
   const status = computeReceivableStatus({
@@ -395,6 +414,10 @@ export async function updateReceivable(
   id: string,
   input: MasterCorporateReceivableInput,
   userId: string | null,
+  options?: {
+    allowOverProvision?: boolean;
+    overProvisionReason?: string | null;
+  },
 ): Promise<MasterCorporateReceivable> {
   const existing = await getReceivable(supabase, id);
   if (!existing) throw new Error('Recebível não encontrado.');
@@ -411,6 +434,14 @@ export async function updateReceivable(
   if (existing.received_amount > net_amount) {
     throw new Error('Novo valor líquido menor que o já recebido.');
   }
+
+  await assertReceivableProvisionLimit(supabase, {
+    projectId: input.project_id,
+    netAmount: net_amount,
+    excludeReceivableId: id,
+    allowOverProvision: options?.allowOverProvision,
+    overProvisionReason: options?.overProvisionReason,
+  });
 
   const remaining_amount = roundMoney(net_amount - existing.received_amount);
   const status = computeReceivableStatus({

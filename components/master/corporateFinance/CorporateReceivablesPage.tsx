@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Download, Plus, X } from 'lucide-react';
@@ -22,33 +22,18 @@ import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
-import { computeLiveNet, formatCurrency, formatDate, todayISO } from './format';
+import ReceivableFormModal from './ReceivableFormModal';
+import { formatCurrency, formatDate, todayISO } from './format';
 import styles from './corporateFinance.module.css';
 
-type LookupProject = { id: string; code: string; title: string };
-type LookupQuote = { id: string; code: string; client_name: string; status: string };
-
-type FormState = {
-  description: string;
-  customer_name: string;
-  customer_document: string;
-  customer_phone: string;
-  customer_email: string;
-  category_id: string;
-  project_id: string;
-  quote_id: string;
-  cost_center_id: string;
-  financial_account_id: string;
-  issue_date: string;
-  competence_date: string;
-  due_date: string;
-  original_amount: string;
-  discount_amount: string;
-  interest_amount: string;
-  fine_amount: string;
-  payment_method: string;
-  notes: string;
-  status: 'DRAFT' | 'OPEN';
+type LookupProject = {
+  id: string;
+  code: string;
+  title: string;
+  client_name?: string;
+  contract_value?: number;
+  valor_recebido?: number;
+  saldo_receber?: number;
 };
 
 type SettleForm = {
@@ -60,32 +45,6 @@ type SettleForm = {
   notes: string;
 };
 
-const EMPTY_FORM = (): FormState => {
-  const t = todayISO();
-  return {
-    description: '',
-    customer_name: '',
-    customer_document: '',
-    customer_phone: '',
-    customer_email: '',
-    category_id: '',
-    project_id: '',
-    quote_id: '',
-    cost_center_id: '',
-    financial_account_id: '',
-    issue_date: t,
-    competence_date: t,
-    due_date: t,
-    original_amount: '0',
-    discount_amount: '0',
-    interest_amount: '0',
-    fine_amount: '0',
-    payment_method: '',
-    notes: '',
-    status: 'OPEN',
-  };
-};
-
 const EMPTY_KPIS: MasterCorporateReceivableKpis = {
   totalOpen: 0,
   dueThisMonth: 0,
@@ -95,31 +54,6 @@ const EMPTY_KPIS: MasterCorporateReceivableKpis = {
   partialCount: 0,
   receivedCount: 0,
 };
-
-function fromReceivable(r: MasterCorporateReceivable): FormState {
-  return {
-    description: r.description || '',
-    customer_name: r.customer_name || '',
-    customer_document: r.customer_document || '',
-    customer_phone: r.customer_phone || '',
-    customer_email: r.customer_email || '',
-    category_id: r.category_id || '',
-    project_id: r.project_id || '',
-    quote_id: r.quote_id || '',
-    cost_center_id: r.cost_center_id || '',
-    financial_account_id: r.financial_account_id || '',
-    issue_date: r.issue_date?.slice(0, 10) || todayISO(),
-    competence_date: r.competence_date?.slice(0, 10) || todayISO(),
-    due_date: r.due_date?.slice(0, 10) || todayISO(),
-    original_amount: String(r.original_amount ?? 0),
-    discount_amount: String(r.discount_amount ?? 0),
-    interest_amount: String(r.interest_amount ?? 0),
-    fine_amount: String(r.fine_amount ?? 0),
-    payment_method: r.payment_method || '',
-    notes: r.notes || '',
-    status: r.status === 'DRAFT' ? 'DRAFT' : 'OPEN',
-  };
-}
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -148,6 +82,7 @@ function canEdit(r: MasterCorporateReceivable) {
 function ReceivablesInner() {
   const searchParams = useSearchParams();
   const initialProjectId = searchParams.get('projectId') || '';
+  const openNewFromQuery = searchParams.get('new') === '1';
   const { userId, qs, bodyAuth } = useCorporateFinanceAuthParams();
   const [rows, setRows] = useState<MasterCorporateReceivable[]>([]);
   const [kpis, setKpis] = useState<MasterCorporateReceivableKpis>(EMPTY_KPIS);
@@ -169,12 +104,12 @@ function ReceivablesInner() {
   const [accounts, setAccounts] = useState<MasterCorporateFinancialAccount[]>([]);
   const [costCenters, setCostCenters] = useState<MasterCorporateCostCenter[]>([]);
   const [projects, setProjects] = useState<LookupProject[]>([]);
-  const [quotes, setQuotes] = useState<LookupQuote[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MasterCorporateReceivable | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
+  const [formInitialProjectId, setFormInitialProjectId] = useState<string | null>(
+    initialProjectId || null,
+  );
 
   const [settleOpen, setSettleOpen] = useState(false);
   const [settling, setSettling] = useState<MasterCorporateReceivable | null>(null);
@@ -188,17 +123,6 @@ function ReceivablesInner() {
   });
   const [settleSaving, setSettleSaving] = useState(false);
 
-  const liveNet = useMemo(
-    () =>
-      computeLiveNet({
-        original: form.original_amount,
-        discount: form.discount_amount,
-        interest: form.interest_amount,
-        fine: form.fine_amount,
-      }),
-    [form.original_amount, form.discount_amount, form.interest_amount, form.fine_amount],
-  );
-
   const settleRemainingBefore = settling ? Number(settling.remaining_amount) || 0 : 0;
   const settleAmount = Number(settleForm.amount) || 0;
   const settleRemainingAfter = Math.max(
@@ -210,22 +134,24 @@ function ReceivablesInner() {
     if (!userId) return;
     const authQs = qs();
     try {
-      const [catRes, accRes, ccRes, projRes, quoteRes] = await Promise.all([
+      const [catRes, accRes, ccRes, projRes] = await Promise.all([
         fetch(`/api/master/corporate-finance/categories?${authQs}&includeInactive=0&type=INCOME`),
         fetch(`/api/master/corporate-finance/accounts?${authQs}`),
         fetch(`/api/master/corporate-finance/cost-centers?${authQs}`),
         fetch(`/api/master/topography/projects?${authQs}&limit=100`),
-        fetch(`/api/master/topography/quotes?${authQs}&limit=50`),
       ]);
-      const [catData, accData, ccData, projData, quoteData] = await Promise.all([
+      const [catData, accData, ccData, projData] = await Promise.all([
         catRes.json(),
         accRes.json(),
         ccRes.json(),
         projRes.json(),
-        quoteRes.json(),
       ]);
       if (catRes.ok) setCategories(catData.categories || []);
-      if (accRes.ok) setAccounts((accData.accounts || []).filter((a: MasterCorporateFinancialAccount) => a.is_active));
+      if (accRes.ok) {
+        setAccounts(
+          (accData.accounts || []).filter((a: MasterCorporateFinancialAccount) => a.is_active),
+        );
+      }
       if (ccRes.ok) {
         setCostCenters(
           (ccData.costCenters || ccData.cost_centers || []).filter(
@@ -233,10 +159,19 @@ function ReceivablesInner() {
           ),
         );
       }
-      if (projRes.ok) setProjects(projData.projects || []);
-      if (quoteRes.ok) {
-        const list = (quoteData.quotes || []) as LookupQuote[];
-        setQuotes(list.filter((qItem) => qItem.status === 'APROVADO' || qItem.status === 'CONVERTIDO'));
+      if (projRes.ok) {
+        const list = (projData.projects || []) as LookupProject[];
+        setProjects(
+          list.map((p) => ({
+            id: p.id,
+            code: p.code,
+            title: p.title,
+            client_name: p.client_name,
+            contract_value: p.contract_value,
+            valor_recebido: p.valor_recebido,
+            saldo_receber: p.saldo_receber,
+          })),
+        );
       }
     } catch {
       /* lookups opcionais */
@@ -282,15 +217,23 @@ function ReceivablesInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!openNewFromQuery) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- open from ?new=1
+    setEditing(null);
+    setFormInitialProjectId(initialProjectId || null);
+    setModalOpen(true);
+  }, [openNewFromQuery, initialProjectId]);
+
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM());
+    setFormInitialProjectId(initialProjectId || null);
     setModalOpen(true);
   }
 
   function openEdit(r: MasterCorporateReceivable) {
     setEditing(r);
-    setForm(fromReceivable(r));
+    setFormInitialProjectId(null);
     setModalOpen(true);
   }
 
@@ -307,52 +250,6 @@ function ReceivablesInner() {
       notes: '',
     });
     setSettleOpen(true);
-  }
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        ...bodyAuth(),
-        description: form.description,
-        customer_name: form.customer_name,
-        customer_document: form.customer_document || null,
-        customer_phone: form.customer_phone || null,
-        customer_email: form.customer_email || null,
-        category_id: form.category_id,
-        project_id: form.project_id || null,
-        quote_id: form.quote_id || null,
-        cost_center_id: form.cost_center_id || null,
-        financial_account_id: form.financial_account_id || null,
-        issue_date: form.issue_date,
-        competence_date: form.competence_date,
-        due_date: form.due_date,
-        original_amount: Number(form.original_amount || 0),
-        discount_amount: Number(form.discount_amount || 0),
-        interest_amount: Number(form.interest_amount || 0),
-        fine_amount: Number(form.fine_amount || 0),
-        payment_method: form.payment_method || null,
-        notes: form.notes || null,
-        status: editing ? undefined : form.status,
-      };
-      const url = editing
-        ? `/api/master/corporate-finance/receivables/${editing.id}`
-        : '/api/master/corporate-finance/receivables';
-      const res = await fetch(url, {
-        method: editing ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao salvar.');
-      setModalOpen(false);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar.');
-    } finally {
-      setSaving(false);
-    }
   }
 
   async function submitSettle() {
@@ -501,7 +398,7 @@ function ReceivablesInner() {
             </button>
             <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              Novo título
+              Nova conta a receber
             </button>
           </div>
         </div>
@@ -740,291 +637,22 @@ function ReceivablesInner() {
         </div>
       </div>
 
-      {modalOpen ? (
-        <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
-          <div className={`${styles.modal} ${styles.modalLg}`}>
-            <div className={styles.modalHead}>
-              <h3 className={styles.modalTitle}>
-                {editing ? `Editar ${editing.code}` : 'Novo recebível'}
-              </h3>
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnGhost}`}
-                onClick={() => setModalOpen(false)}
-                aria-label="Fechar"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className={styles.modalBody}>
-              <div>
-                <label className={styles.label}>Descrição *</label>
-                <input
-                  className={styles.input}
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                />
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Cliente *</label>
-                  <input
-                    className={styles.input}
-                    value={form.customer_name}
-                    onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className={styles.label}>Documento</label>
-                  <input
-                    className={styles.input}
-                    value={form.customer_document}
-                    onChange={(e) => setForm((f) => ({ ...f, customer_document: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Telefone</label>
-                  <input
-                    className={styles.input}
-                    value={form.customer_phone}
-                    onChange={(e) => setForm((f) => ({ ...f, customer_phone: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className={styles.label}>E-mail</label>
-                  <input
-                    className={styles.input}
-                    type="email"
-                    value={form.customer_email}
-                    onChange={(e) => setForm((f) => ({ ...f, customer_email: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Categoria *</label>
-                  <select
-                    className={styles.select}
-                    value={form.category_id}
-                    onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-                  >
-                    <option value="">Selecione…</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={styles.label}>Projeto</label>
-                  <select
-                    className={styles.select}
-                    value={form.project_id}
-                    onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} — {p.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Orçamento</label>
-                  <select
-                    className={styles.select}
-                    value={form.quote_id}
-                    onChange={(e) => setForm((f) => ({ ...f, quote_id: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {quotes.map((qt) => (
-                      <option key={qt.id} value={qt.id}>
-                        {qt.code} — {qt.client_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={styles.label}>Centro de resultado</label>
-                  <select
-                    className={styles.select}
-                    value={form.cost_center_id}
-                    onChange={(e) => setForm((f) => ({ ...f, cost_center_id: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {costCenters.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.code} — {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Conta financeira</label>
-                  <select
-                    className={styles.select}
-                    value={form.financial_account_id}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, financial_account_id: e.target.value }))
-                    }
-                  >
-                    <option value="">—</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={styles.label}>Forma de pagamento</label>
-                  <select
-                    className={styles.select}
-                    value={form.payment_method}
-                    onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
-                  >
-                    <option value="">—</option>
-                    {CORPORATE_PAYMENT_METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {corporatePaymentMethodLabel(m)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Emissão</label>
-                  <input
-                    className={styles.input}
-                    type="date"
-                    value={form.issue_date}
-                    onChange={(e) => setForm((f) => ({ ...f, issue_date: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className={styles.label}>Competência</label>
-                  <input
-                    className={styles.input}
-                    type="date"
-                    value={form.competence_date}
-                    onChange={(e) => setForm((f) => ({ ...f, competence_date: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={styles.label}>Vencimento *</label>
-                <input
-                  className={styles.input}
-                  type="date"
-                  value={form.due_date}
-                  onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
-                />
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Valor original *</label>
-                  <input
-                    className={styles.input}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.original_amount}
-                    onChange={(e) => setForm((f) => ({ ...f, original_amount: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className={styles.label}>Desconto</label>
-                  <input
-                    className={styles.input}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.discount_amount}
-                    onChange={(e) => setForm((f) => ({ ...f, discount_amount: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Juros</label>
-                  <input
-                    className={styles.input}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.interest_amount}
-                    onChange={(e) => setForm((f) => ({ ...f, interest_amount: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className={styles.label}>Multa</label>
-                  <input
-                    className={styles.input}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.fine_amount}
-                    onChange={(e) => setForm((f) => ({ ...f, fine_amount: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <p className={styles.netHint}>Valor líquido: {formatCurrency(liveNet)}</p>
-              {!editing ? (
-                <div>
-                  <label className={styles.label}>Status inicial</label>
-                  <select
-                    className={styles.select}
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        status: e.target.value === 'DRAFT' ? 'DRAFT' : 'OPEN',
-                      }))
-                    }
-                  >
-                    <option value="OPEN">Em aberto</option>
-                    <option value="DRAFT">Rascunho</option>
-                  </select>
-                </div>
-              ) : null}
-              <div>
-                <label className={styles.label}>Observações</label>
-                <textarea
-                  className={styles.textarea}
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className={styles.modalFoot}>
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnGhost}`}
-                onClick={() => setModalOpen(false)}
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnPrimary}`}
-                disabled={saving}
-                onClick={() => void save()}
-              >
-                {saving ? 'Salvando…' : 'Salvar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ReceivableFormModal
+        open={modalOpen}
+        editing={editing}
+        categories={categories}
+        accounts={accounts}
+        costCenters={costCenters}
+        projects={projects}
+        initialProjectId={formInitialProjectId}
+        qs={qs}
+        bodyAuth={bodyAuth}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => {
+          setModalOpen(false);
+          void load();
+        }}
+      />
 
       {settleOpen && settling ? (
         <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
