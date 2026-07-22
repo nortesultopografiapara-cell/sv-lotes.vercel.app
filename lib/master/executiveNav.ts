@@ -83,7 +83,6 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
         name: 'Financeiro',
         href: '/master/topography/finance',
         icon: Briefcase,
-        comingSoon: true,
       },
       {
         name: 'Operação',
@@ -114,6 +113,21 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
   {
     label: 'FINANCEIRO CORPORATIVO',
     items: [
+      {
+        name: 'Contas Financeiras',
+        href: '/master/corporate-finance/accounts',
+        icon: Landmark,
+      },
+      {
+        name: 'Categorias',
+        href: '/master/corporate-finance/categories',
+        icon: Receipt,
+      },
+      {
+        name: 'Centros de Resultado',
+        href: '/master/corporate-finance/cost-centers',
+        icon: FolderKanban,
+      },
       {
         name: 'Fluxo de Caixa',
         href: '/master/corporate-finance/cash-flow',

@@ -52,7 +52,8 @@
     "test:client-portal-dashboard": "tsx scripts/mandatory-client-portal-dashboard-tests.ts",
     "test:master-executive-shell": "tsx scripts/mandatory-master-executive-shell-tests.ts",
     "test:master-topography-projects": "tsx scripts/mandatory-master-topography-projects-tests.ts",
-    "test:master-topography-quotes": "tsx scripts/mandatory-master-topography-quotes-tests.ts"
+    "test:master-topography-quotes": "tsx scripts/mandatory-master-topography-quotes-tests.ts",
+    "test:master-corporate-finance-foundation": "tsx scripts/mandatory-master-corporate-finance-foundation-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
