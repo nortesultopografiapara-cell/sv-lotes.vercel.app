@@ -131,6 +131,8 @@ function testIsolationAndFiles() {
   assert(!cashSvc.includes('valor_recebido'), 'cash sem bridge valor_recebido');
   assert(cashSvc.includes('BACKFILL_RECEIVABLE'), 'backfill AR');
   assert(cashSvc.includes('dryRun'), 'dry-run backfill');
+  // 6.4 bridge pode existir — Asaas ainda não
+  assert(!exists('app/api/master/corporate-finance/asaas/route.ts'), 'Asaas ainda não');
 }
 
 function testAccessRoles() {

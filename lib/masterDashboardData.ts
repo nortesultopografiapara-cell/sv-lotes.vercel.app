@@ -81,13 +81,25 @@ export type MasterDashboardData = {
   /** Jan–Dez do ano selecionado — Caixa SaaS (income/expense), sem dupla contagem. */
   saasMonthlyFinancials: MonthlyRevenueExpense[];
   /**
-   * Contrato visual para o gráfico corporativo futuro.
-   * Sem fonte real nesta etapa — sempre zeros + estado vazio explícito.
+   * Jan–Dez — Financeiro Corporativo MASTER (income/expense), sem transferências.
    */
   topographyMonthlyFinancials: MonthlyRevenueExpense[];
-  /** Contagens reais do módulo Projetos e Serviços (não é receita). */
+  /** Contagens reais do módulo Projetos e Serviços. */
   topographyProjectKpis: MasterTopographyProjectKpis;
   topographyQuoteKpis: MasterTopographyQuoteKpis;
+  /** KPIs realizados do Financeiro Corporativo (Fase 6.4). */
+  corporateFinanceKpis: {
+    monthIncome: number;
+    monthExpense: number;
+    monthNet: number;
+    currentBalance: number;
+    receivableOpen: number;
+    payableOpen: number;
+    receivableOverdue: number;
+    payableOverdue: number;
+    receivedThisMonth: number;
+    paidThisMonth: number;
+  };
   planDistribution: {
     tier: MasterPlanTier;
     count: number;
@@ -345,6 +357,48 @@ export async function loadMasterDashboardData(
     );
   }
 
+  let corporateFinanceKpis = {
+    monthIncome: 0,
+    monthExpense: 0,
+    monthNet: 0,
+    currentBalance: 0,
+    receivableOpen: 0,
+    payableOpen: 0,
+    receivableOverdue: 0,
+    payableOverdue: 0,
+    receivedThisMonth: 0,
+    paidThisMonth: 0,
+  };
+  try {
+    const [{ getCashHubKpis }, { computeReceivableKpis }, { computePayableKpis }] =
+      await Promise.all([
+        import('@/lib/master/corporateFinance/cashMovementsService'),
+        import('@/lib/master/corporateFinance/receivablesService'),
+        import('@/lib/master/corporateFinance/payablesService'),
+      ]);
+    const [cash, ar, ap] = await Promise.all([
+      getCashHubKpis(supabase),
+      computeReceivableKpis(supabase),
+      computePayableKpis(supabase),
+    ]);
+    corporateFinanceKpis = {
+      monthIncome: cash.monthIncome,
+      monthExpense: cash.monthExpense,
+      monthNet: cash.monthNet,
+      currentBalance: cash.currentBalance,
+      receivableOpen: ar.totalOpen,
+      payableOpen: ap.totalOpen,
+      receivableOverdue: ar.overdue,
+      payableOverdue: ap.overdue,
+      receivedThisMonth: ar.receivedThisMonth,
+      paidThisMonth: ap.paidThisMonth,
+    };
+  } catch (err) {
+    errors.push(
+      `corporate_finance_kpis: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   let totalLots = blocksRes.count ?? 0;
   if (blocksRes.error && lotsRes.count != null) {
     totalLots = lotsRes.count;
@@ -536,6 +590,7 @@ export async function loadMasterDashboardData(
     topographyMonthlyFinancials,
     topographyProjectKpis,
     topographyQuoteKpis,
+    corporateFinanceKpis,
     planDistribution,
     alerts,
     recentCompanies,

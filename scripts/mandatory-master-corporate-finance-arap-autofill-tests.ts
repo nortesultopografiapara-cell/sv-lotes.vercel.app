@@ -74,7 +74,8 @@ function testFiles() {
   const detail = read(
     'components/master/topography/projects/TopographyProjectDetailPage.tsx',
   );
-  assert(detail.includes('Criar conta a receber'), 'ação projeto');
+  assert(detail.includes('Nova conta a receber'), 'ação projeto');
+
   assert(detail.includes('new=1'), 'deep link new');
   assert(detail.includes('valor_recebido'), 'valor_recebido preservado na UI');
 

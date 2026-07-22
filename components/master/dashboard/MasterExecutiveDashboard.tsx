@@ -371,6 +371,59 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         />
       </section>
 
+      <section className={styles.kpiRow} aria-label="Financeiro corporativo SV Topografia">
+        <KpiCard
+          title="Receita do mês"
+          value={formatCurrency(dashboard.corporateFinanceKpis.monthIncome)}
+          hint="Caixa corporativo"
+          icon={<Banknote />}
+          iconClass={styles.iconGreen}
+          currency
+        />
+        <KpiCard
+          title="Despesa do mês"
+          value={formatCurrency(dashboard.corporateFinanceKpis.monthExpense)}
+          hint="Caixa corporativo"
+          icon={<Wallet />}
+          iconClass={styles.iconRose}
+          currency
+        />
+        <KpiCard
+          title="Resultado do mês"
+          value={formatCurrency(dashboard.corporateFinanceKpis.monthNet)}
+          hint="Receita − despesa"
+          icon={<DollarSign />}
+          iconClass={
+            dashboard.corporateFinanceKpis.monthNet >= 0 ? styles.iconGreen : styles.iconRose
+          }
+          currency
+        />
+        <KpiCard
+          title="Saldo corporativo"
+          value={formatCurrency(dashboard.corporateFinanceKpis.currentBalance)}
+          hint="Contas financeiras"
+          icon={<Briefcase />}
+          iconClass={styles.iconSky}
+          currency
+        />
+        <KpiCard
+          title="A receber"
+          value={formatCurrency(dashboard.corporateFinanceKpis.receivableOpen)}
+          hint="Títulos em aberto"
+          icon={<Banknote />}
+          iconClass={styles.iconCyan}
+          currency
+        />
+        <KpiCard
+          title="A pagar"
+          value={formatCurrency(dashboard.corporateFinanceKpis.payableOpen)}
+          hint="Títulos em aberto"
+          icon={<CreditCard />}
+          iconClass={styles.iconOrange}
+          currency
+        />
+      </section>
+
       <section className={styles.bottomRow} aria-label="Empresas, ações e resumo">
         <div className={styles.card}>
           <div className={styles.cardHeader}>
@@ -500,6 +553,12 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
               <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.active}</span>
             </div>
             <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Projetos concluídos (mês)</span>
+              <span className={styles.summaryValue}>
+                {dashboard.topographyProjectKpis.completedThisMonth}
+              </span>
+            </div>
+            <div className={styles.summaryRow}>
               <span className={styles.summaryLabel}>Em campo</span>
               <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.inField}</span>
             </div>
@@ -512,6 +571,24 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
             <div className={styles.summaryRow}>
               <span className={styles.summaryLabel}>Projetos em atraso</span>
               <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.overdue}</span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Recebido (projetos)</span>
+              <span className={styles.summaryValue}>
+                {formatCurrency(dashboard.topographyProjectKpis.totalReceived)}
+              </span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Recebimentos (mês)</span>
+              <span className={styles.summaryValue}>
+                {formatCurrency(dashboard.corporateFinanceKpis.receivedThisMonth)}
+              </span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Pagamentos (mês)</span>
+              <span className={styles.summaryValue}>
+                {formatCurrency(dashboard.corporateFinanceKpis.paidThisMonth)}
+              </span>
             </div>
             <div className={styles.summaryRow}>
               <span className={styles.summaryLabel}>Orçamentos</span>
@@ -540,7 +617,8 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
             {TOPOGRAPHY_LINKS.map((item) => {
               const isLive =
                 item.href === '/master/topography/projects' ||
-                item.href === '/master/topography/budgets';
+                item.href === '/master/topography/budgets' ||
+                item.href === '/master/topography/finance';
               return (
                 <Link key={item.href} href={item.href} className={styles.moduleItem}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
