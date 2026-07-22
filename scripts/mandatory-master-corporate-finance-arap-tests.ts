@@ -64,9 +64,12 @@ function testFilesIsolation() {
   assert(!migNoComments.includes('valor_recebido'), 'sem bridge valor_recebido');
   assert(!migNoComments.includes('saas_cash'), 'sem saas cash');
 
-  // 6.3/6.4 não iniciadas
-  assert(!exists('app/api/master/corporate-finance/movements/route.ts'), '6.3 não');
-  assert(!exists('lib/master/corporateFinance/cashMovementsService.ts'), '6.3 cash não');
+  // 6.3 cash existe; 6.4 bridge não
+  assert(exists('lib/master/corporateFinance/cashMovementsService.ts'), '6.3 cash existe');
+  assert(
+    !exists('app/api/master/corporate-finance/asaas/route.ts'),
+    'Asaas corporativo não',
+  );
 
   const nav = read('lib/master/executiveNav.ts');
   const arBlock = nav.slice(
@@ -83,7 +86,7 @@ function testFilesIsolation() {
     nav.indexOf("name: 'Fluxo de Caixa'"),
     nav.indexOf("name: 'Contas a Pagar'"),
   );
-  assert(cashBlock.includes('comingSoon: true'), 'Fluxo ainda Em breve');
+  assert(!cashBlock.includes('comingSoon: true'), 'Fluxo liberado na 6.3');
 
   const projectDetail = read(
     'components/master/topography/projects/TopographyProjectDetailPage.tsx',
@@ -99,8 +102,9 @@ function testFilesIsolation() {
   );
 
   const recvSvc = read('lib/master/corporateFinance/receivablesService.ts');
-  assert(!recvSvc.includes('cash_movements'), 'AR service sem caixa');
+  assert(recvSvc.includes('createMovementFromReceivablePayment'), 'AR integra caixa 6.3');
   assert(!recvSvc.includes('valor_recebido'), 'AR service sem valor_recebido');
+  assert(!recvSvc.includes('company_cash_movements'), 'AR sem company_cash');
 }
 
 function testAccessRoles() {

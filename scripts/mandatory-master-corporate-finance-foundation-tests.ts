@@ -104,18 +104,17 @@ function testFilesAndIsolation() {
     nav.indexOf("name: 'Fluxo de Caixa'"),
     nav.indexOf("name: 'Contas a Pagar'"),
   );
-  assert(cashFlowBlock.includes('comingSoon: true'), 'Fluxo ainda Em breve (6.3)');
+  // Fase 6.3 liberou o fluxo — detalhado em mandatory-master-corporate-finance-cash-tests
+  assert(cashFlowBlock.includes("href: '/master/corporate-finance/cash-flow'"), 'nav fluxo');
 
-  // Fase 6.3/6.4 não iniciadas (6.2 AR/AP existe)
+  // Fase 6.2 AR/AP + 6.3 cash; 6.4 bridge não nesta migration
   assert(exists('app/api/master/corporate-finance/receivables/route.ts'), '6.2 AR existe');
   assert(exists('app/api/master/corporate-finance/payables/route.ts'), '6.2 AP existe');
-  assert(!exists('app/api/master/corporate-finance/movements/route.ts'), '6.3 movimentos não');
-  assert(!exists('lib/master/corporateFinance/cashMovementsService.ts'), '6.3 cash não');
+  assert(exists('lib/master/corporateFinance/cashMovementsService.ts'), '6.3 cash existe');
   assert(
     !migration.includes('valor_recebido') || migration.includes('COMMENT'),
     'sem bridge valor_recebido na 6.1',
   );
-  assert(!migration.includes('master_corporate_cash_movements'), 'sem movimentos caixa');
 }
 
 function testValidation() {

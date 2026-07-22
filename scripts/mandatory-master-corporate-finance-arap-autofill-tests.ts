@@ -78,8 +78,15 @@ function testFiles() {
   assert(detail.includes('new=1'), 'deep link new');
   assert(detail.includes('valor_recebido'), 'valor_recebido preservado na UI');
 
-  assert(!exists('app/api/master/corporate-finance/movements/route.ts'), '6.3 não');
-  assert(!exists('lib/master/corporateFinance/cashMovementsService.ts'), 'sem cash service');
+  // 6.3 cash pode existir; bridge valor_recebido não
+  assert(
+    !exists('app/api/master/corporate-finance/asaas/route.ts'),
+    'Asaas corporativo não',
+  );
+  const cashSvc = exists('lib/master/corporateFinance/cashMovementsService.ts')
+    ? read('lib/master/corporateFinance/cashMovementsService.ts')
+    : '';
+  assert(!cashSvc.includes('valor_recebido'), 'sem bridge valor_recebido no cash');
 }
 
 function testUnprovisionedMath() {
