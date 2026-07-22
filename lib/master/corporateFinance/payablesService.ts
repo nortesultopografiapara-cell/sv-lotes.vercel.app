@@ -12,6 +12,10 @@ import type {
   MasterCorporatePayablePayment,
   MasterCorporateSettlementInput,
 } from './arApTypes';
+import {
+  createMovementFromPayablePayment,
+  reverseCashMovementForPayment,
+} from './cashMovementsService';
 import { logCorporateFinanceAudit } from './service';
 
 function nowIso() {
@@ -492,8 +496,38 @@ export async function payPayable(
     throw new Error(pErr.message);
   }
 
-  const payable = await persistPayableTotals(supabase, existing);
   const payment = paymentRow as MasterCorporatePayablePayment;
+
+  try {
+    await createMovementFromPayablePayment(supabase, {
+      payable: {
+        id: existing.id,
+        code: existing.code,
+        category_id: existing.category_id,
+        cost_center_id: existing.cost_center_id,
+        project_id: existing.project_id,
+        competence_date: existing.competence_date,
+        supplier_name: existing.supplier_name || existing.description || undefined,
+      },
+      payment: {
+        id: payment.id,
+        amount: Number(payment.amount),
+        payment_date: String(payment.payment_date).slice(0, 10),
+        financial_account_id: payment.financial_account_id,
+        payment_method: payment.payment_method,
+        reference: payment.reference,
+        notes: payment.notes,
+      },
+      userId,
+    });
+  } catch (cashErr) {
+    await supabase.from('master_corporate_payable_payments').delete().eq('id', payment.id);
+    throw cashErr instanceof Error
+      ? cashErr
+      : new Error('Falha ao lançar movimento de caixa do pagamento.');
+  }
+
+  const payable = await persistPayableTotals(supabase, existing);
 
   await logCorporateFinanceAudit(supabase, {
     userId,
@@ -531,6 +565,13 @@ export async function reversePayablePayment(
 
   const reasonClean = String(reason || '').trim();
   if (!reasonClean) throw new Error('Motivo do estorno é obrigatório.');
+
+  await reverseCashMovementForPayment(supabase, {
+    kind: 'PAYABLE',
+    paymentId,
+    reason: reasonClean,
+    userId,
+  });
 
   const { data: updatedPay, error: uErr } = await supabase
     .from('master_corporate_payable_payments')

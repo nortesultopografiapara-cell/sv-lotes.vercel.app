@@ -13,6 +13,10 @@ import type {
   MasterCorporateReceivablePayment,
   MasterCorporateSettlementInput,
 } from './arApTypes';
+import {
+  createMovementFromReceivablePayment,
+  reverseCashMovementForPayment,
+} from './cashMovementsService';
 import { assertReceivableProvisionLimit } from './projectContextService';
 import { logCorporateFinanceAudit } from './service';
 
@@ -545,8 +549,50 @@ export async function receiveReceivable(
     throw new Error(pErr.message);
   }
 
-  const receivable = await persistReceivableTotals(supabase, existing);
   const payment = paymentRow as MasterCorporateReceivablePayment;
+
+  try {
+    let projectLabel = existing.customer_name || undefined;
+    if (existing.project_id) {
+      const { data: proj } = await supabase
+        .from('master_topography_projects')
+        .select('title, code')
+        .eq('id', existing.project_id)
+        .maybeSingle();
+      if (proj?.title) projectLabel = `Projeto ${String(proj.title)}`;
+      else if (proj?.code) projectLabel = `Projeto ${String(proj.code)}`;
+    }
+
+    await createMovementFromReceivablePayment(supabase, {
+      receivable: {
+        id: existing.id,
+        code: existing.code,
+        category_id: existing.category_id,
+        cost_center_id: existing.cost_center_id,
+        project_id: existing.project_id,
+        quote_id: existing.quote_id,
+        competence_date: existing.competence_date,
+        customer_name: projectLabel,
+      },
+      payment: {
+        id: payment.id,
+        amount: Number(payment.amount),
+        payment_date: String(payment.payment_date).slice(0, 10),
+        financial_account_id: payment.financial_account_id,
+        payment_method: payment.payment_method,
+        reference: payment.reference,
+        notes: payment.notes,
+      },
+      userId,
+    });
+  } catch (cashErr) {
+    await supabase.from('master_corporate_receivable_payments').delete().eq('id', payment.id);
+    throw cashErr instanceof Error
+      ? cashErr
+      : new Error('Falha ao lançar movimento de caixa do recebimento.');
+  }
+
+  const receivable = await persistReceivableTotals(supabase, existing);
 
   await logCorporateFinanceAudit(supabase, {
     userId,
@@ -584,6 +630,13 @@ export async function reverseReceivablePayment(
 
   const reasonClean = String(reason || '').trim();
   if (!reasonClean) throw new Error('Motivo do estorno é obrigatório.');
+
+  await reverseCashMovementForPayment(supabase, {
+    kind: 'RECEIVABLE',
+    paymentId,
+    reason: reasonClean,
+    userId,
+  });
 
   const { data: updatedPay, error: uErr } = await supabase
     .from('master_corporate_receivable_payments')
