@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
   type DragEvent,
+  type KeyboardEvent,
 } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -34,22 +35,39 @@ import {
   TOPOGRAPHY_QUOTE_STATUSES,
 } from '@/lib/master/topography/quoteStatuses';
 import { TOPOGRAPHY_SERVICE_TYPES } from '@/lib/master/topography/serviceTypes';
-import { TOPOGRAPHY_PRICE_BANKS } from '@/lib/master/topography/priceBanks';
+import {
+  topographyPriceBankLabel,
+  type MasterTopographyPriceDatabase,
+} from '@/lib/master/topography/priceBanks';
+import type { MasterTopographyPriceItem } from '@/lib/master/topography/priceCatalogService';
 import {
   computeQuoteFinancials,
   itemTotalWithBdi,
   itemUnitWithBdi,
+  priceDifferencePercent,
+  priceDifferenceValue,
+  stagePercentOfBudget,
   stageSubtotal,
 } from '@/lib/master/topography/quoteFinancials';
+import {
+  exportQuoteCsv,
+  exportQuoteExcel,
+  exportQuoteMemorial,
+  exportQuotePdfAnalyticalPrepared,
+  exportQuotePdfSynthetic,
+  type QuoteExportPayload,
+} from '@/lib/master/topography/quoteExports';
 import type {
   MasterTopographyQuote,
   MasterTopographyQuoteItem,
   MasterTopographyQuoteStageWithItems,
 } from '@/lib/master/topography/quoteTypes';
+import { QuoteCatalogPicker } from './QuoteCatalogPicker';
+import { QuoteCustomItemModal } from './QuoteCustomItemModal';
 import styles from './topographyQuotesEditor.module.css';
 
 type DraftItem = MasterTopographyQuoteItem & { localKey: string };
-type DraftStage = Omit<MasterTopographyQuoteStageWithItems, 'items' | 'itemCount' | 'subtotal'> & {
+type DraftStage = Omit<MasterTopographyQuoteStageWithItems, 'items' | 'itemCount' | 'subtotal' | 'percentOfBudget'> & {
   localKey: string;
   items: DraftItem[];
 };
@@ -78,9 +96,10 @@ type DraftQuote = {
   technical_notes: string;
   bdi_percent: string;
   discount_percent: string;
+  margin_percent: string;
 };
 
-const ROW_HEIGHT = 44;
+const ROW_HEIGHT = 48;
 const VIRTUAL_OVERSCAN = 8;
 
 function formatCurrency(val: number | null | undefined) {
@@ -91,6 +110,14 @@ function formatCurrency(val: number | null | undefined) {
 function newLocalKey() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function openDatePicker(el: HTMLInputElement) {
+  try {
+    el.showPicker?.();
+  } catch {
+    /* alguns browsers bloqueiam showPicker fora de gesto explícito */
+  }
 }
 
 function quoteToDraft(quote: MasterTopographyQuote): DraftQuote {
@@ -118,14 +145,40 @@ function quoteToDraft(quote: MasterTopographyQuote): DraftQuote {
     technical_notes: quote.technical_notes || '',
     bdi_percent: String(quote.bdi_percent ?? 0),
     discount_percent: String(quote.discount_percent ?? 0),
+    margin_percent: String(quote.margin_percent ?? 0),
+  };
+}
+
+function normalizeDraftItem(item: MasterTopographyQuoteItem, localKey?: string): DraftItem {
+  const adopted = Number(
+    item.adopted_price != null ? item.adopted_price : item.unit_value != null ? item.unit_value : 0,
+  );
+  const reference = Number(item.reference_price != null ? item.reference_price : adopted);
+  return {
+    ...item,
+    localKey: localKey || item.id,
+    unit_value: adopted,
+    adopted_price: adopted,
+    reference_price: reference,
+    competence: item.competence ?? null,
+    uf: item.uf ?? null,
+    notes: item.notes ?? null,
+    catalog_item_id: item.catalog_item_id ?? null,
+    custom_item_id: item.custom_item_id ?? null,
   };
 }
 
 function stagesToDraft(stages: MasterTopographyQuoteStageWithItems[]): DraftStage[] {
   return stages.map((stage) => ({
-    ...stage,
+    id: stage.id,
+    quote_id: stage.quote_id,
+    name: stage.name,
+    sort_order: stage.sort_order,
+    is_system: stage.is_system,
+    created_at: stage.created_at,
+    updated_at: stage.updated_at,
     localKey: stage.id,
-    items: stage.items.map((item) => ({ ...item, localKey: item.id })),
+    items: stage.items.map((item) => normalizeDraftItem(item)),
   }));
 }
 
@@ -148,6 +201,19 @@ function DateField({
           type="date"
           value={value}
           disabled={disabled}
+          readOnly={false}
+          style={{ cursor: disabled ? undefined : 'pointer' }}
+          onClick={(e) => {
+            if (!disabled) openDatePicker(e.currentTarget);
+          }}
+          onFocus={(e) => {
+            if (!disabled) openDatePicker(e.currentTarget);
+          }}
+          onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+            if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
+              e.preventDefault();
+            }
+          }}
           onChange={(e) => onChange(e.target.value)}
         />
         <Calendar className={styles.dateIcon} width={14} height={14} aria-hidden />
@@ -158,18 +224,26 @@ function DateField({
 
 function VirtualItemsBody({
   items,
+  stages,
+  currentStageKey,
   bdiPercent,
   readOnly,
   onChangeItem,
   onDeleteItem,
+  onDuplicateItem,
+  onMoveItem,
   onDragStartItem,
   onDropItem,
 }: {
   items: DraftItem[];
+  stages: DraftStage[];
+  currentStageKey: string;
   bdiPercent: number;
   readOnly: boolean;
   onChangeItem: (localKey: string, patch: Partial<DraftItem>) => void;
   onDeleteItem: (localKey: string) => void;
+  onDuplicateItem: (localKey: string) => void;
+  onMoveItem: (localKey: string, toStageKey: string) => void;
   onDragStartItem: (localKey: string) => void;
   onDropItem: (localKey: string) => void;
 }) {
@@ -203,15 +277,17 @@ function VirtualItemsBody({
         <thead>
           <tr>
             <th style={{ width: 36 }} />
-            <th style={{ width: 90 }}>Código</th>
-            <th style={{ width: 110 }}>Banco</th>
+            <th style={{ width: 84 }}>Código</th>
+            <th style={{ width: 88 }}>Banco</th>
             <th>Descrição</th>
-            <th style={{ width: 70 }}>Unid.</th>
-            <th style={{ width: 90 }}>Qtd</th>
-            <th style={{ width: 110 }}>Vlr unit.</th>
-            <th style={{ width: 110 }}>Vlr c/ BDI</th>
-            <th style={{ width: 110 }}>Total</th>
-            <th style={{ width: 70 }}>Ações</th>
+            <th style={{ width: 58 }}>Unid.</th>
+            <th style={{ width: 72 }}>Qtd</th>
+            <th style={{ width: 96 }}>Ref.</th>
+            <th style={{ width: 110 }}>Adotado</th>
+            <th style={{ width: 96 }}>Unit. c/ BDI</th>
+            <th style={{ width: 96 }}>Total</th>
+            <th style={{ width: 90 }}>Obs.</th>
+            <th style={{ width: 150 }}>Ações</th>
           </tr>
         </thead>
       </table>
@@ -219,8 +295,13 @@ function VirtualItemsBody({
         {slice.map((item, i) => {
           const index = start + i;
           const top = index * ROW_HEIGHT;
-          const unitBdi = itemUnitWithBdi(item.unit_value, bdiPercent);
-          const total = itemTotalWithBdi(item.quantity, item.unit_value, bdiPercent);
+          const adopted = item.adopted_price;
+          const reference = item.reference_price;
+          const unitBdi = itemUnitWithBdi(adopted, bdiPercent);
+          const total = itemTotalWithBdi(item.quantity, adopted, bdiPercent);
+          const diffPct = priceDifferencePercent(reference, adopted);
+          const diffVal = priceDifferenceValue(reference, adopted);
+          const showDiff = Math.abs(adopted - reference) > 0.0001;
           const rowStyle: CSSProperties = {
             top,
             height: ROW_HEIGHT,
@@ -248,29 +329,17 @@ function VirtualItemsBody({
                         <GripVertical width={14} height={14} />
                       </button>
                     </td>
-                    <td style={{ width: 90 }}>
+                    <td style={{ width: 84 }}>
                       <input
                         value={item.code || ''}
                         disabled={readOnly}
                         onChange={(e) => onChangeItem(item.localKey, { code: e.target.value })}
                       />
                     </td>
-                    <td style={{ width: 110 }}>
-                      <select
-                        value={item.price_bank || 'PROPRIO'}
-                        disabled={readOnly}
-                        onChange={(e) =>
-                          onChangeItem(item.localKey, {
-                            price_bank: e.target.value as DraftItem['price_bank'],
-                          })
-                        }
-                      >
-                        {TOPOGRAPHY_PRICE_BANKS.map((b) => (
-                          <option key={b.code} value={b.code}>
-                            {b.label}
-                          </option>
-                        ))}
-                      </select>
+                    <td style={{ width: 88 }}>
+                      <span className={styles.muted} title={item.price_bank || ''}>
+                        {topographyPriceBankLabel(item.price_bank)}
+                      </span>
                     </td>
                     <td>
                       <input
@@ -281,14 +350,14 @@ function VirtualItemsBody({
                         }
                       />
                     </td>
-                    <td style={{ width: 70 }}>
+                    <td style={{ width: 58 }}>
                       <input
                         value={item.unit}
                         disabled={readOnly}
                         onChange={(e) => onChangeItem(item.localKey, { unit: e.target.value })}
                       />
                     </td>
-                    <td style={{ width: 90 }}>
+                    <td style={{ width: 72 }}>
                       <input
                         type="number"
                         min={0}
@@ -300,32 +369,101 @@ function VirtualItemsBody({
                         }
                       />
                     </td>
+                    <td style={{ width: 96 }}>
+                      <input
+                        className={styles.refLocked}
+                        type="number"
+                        value={reference}
+                        readOnly
+                        tabIndex={-1}
+                        aria-readonly
+                        title="Preço de referência (somente leitura)"
+                      />
+                    </td>
                     <td style={{ width: 110 }}>
                       <input
                         type="number"
                         min={0}
                         step="0.01"
-                        value={item.unit_value}
+                        value={adopted}
                         disabled={readOnly}
-                        onChange={(e) =>
-                          onChangeItem(item.localKey, { unit_value: Number(e.target.value) || 0 })
-                        }
+                        onChange={(e) => {
+                          const next = Number(e.target.value) || 0;
+                          onChangeItem(item.localKey, {
+                            adopted_price: next,
+                            unit_value: next,
+                          });
+                        }}
                       />
+                      {showDiff ? (
+                        <span
+                          className={diffPct >= 0 ? styles.diffUp : styles.diffDown}
+                          title={`Diferença: ${formatCurrency(diffVal)}`}
+                        >
+                          {diffPct >= 0 ? '+' : ''}
+                          {diffPct.toFixed(2)}%
+                        </span>
+                      ) : null}
                     </td>
-                    <td className={styles.numCell} style={{ width: 110 }}>
+                    <td className={styles.numCell} style={{ width: 96 }}>
                       {formatCurrency(unitBdi)}
                     </td>
-                    <td className={styles.numCell} style={{ width: 110 }}>
+                    <td className={styles.numCell} style={{ width: 96 }}>
                       {formatCurrency(total)}
                     </td>
-                    <td style={{ width: 70 }}>
+                    <td style={{ width: 90 }}>
+                      <input
+                        value={item.notes || ''}
+                        disabled={readOnly}
+                        placeholder="Obs."
+                        onChange={(e) =>
+                          onChangeItem(item.localKey, { notes: e.target.value || null })
+                        }
+                        style={{ fontSize: '0.72rem' }}
+                      />
+                    </td>
+                    <td style={{ width: 150 }}>
                       <div className={styles.rowActions}>
+                        <button
+                          type="button"
+                          className={styles.iconBtn}
+                          disabled={readOnly}
+                          onClick={() => onDuplicateItem(item.localKey)}
+                          aria-label="Duplicar item"
+                          title="Duplicar"
+                        >
+                          <Copy width={13} height={13} />
+                        </button>
+                        <select
+                          disabled={readOnly || stages.length < 2}
+                          value={currentStageKey}
+                          aria-label="Mover para etapa"
+                          title="Mover para outra etapa"
+                          style={{
+                            maxWidth: 72,
+                            fontSize: '0.68rem',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '0.35rem',
+                            padding: '0.15rem',
+                          }}
+                          onChange={(e) => {
+                            const to = e.target.value;
+                            if (to && to !== currentStageKey) onMoveItem(item.localKey, to);
+                          }}
+                        >
+                          {stages.map((s) => (
+                            <option key={s.localKey} value={s.localKey}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
                           disabled={readOnly}
                           onClick={() => onDeleteItem(item.localKey)}
                           aria-label="Excluir item"
+                          title="Excluir"
                         >
                           <Trash2 width={13} height={13} />
                         </button>
@@ -353,15 +491,18 @@ function EditInner() {
   const [stages, setStages] = useState<DraftStage[]>([]);
   const [knownStageIds, setKnownStageIds] = useState<Set<string>>(new Set());
   const [knownItemIds, setKnownItemIds] = useState<Set<string>>(new Set());
+  const [databases, setDatabases] = useState<MasterTopographyPriceDatabase[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [generalOpen, setGeneralOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
   const [dragStageKey, setDragStageKey] = useState<string | null>(null);
   const [dragItem, setDragItem] = useState<{ stageKey: string; itemKey: string } | null>(null);
+  const [customModalStageKey, setCustomModalStageKey] = useState<string | null>(null);
 
   const readOnly = Boolean(
     quoteMeta?.status === 'CONVERTIDO' || quoteMeta?.converted_project_id || quoteMeta?.is_archived,
@@ -369,11 +510,18 @@ function EditInner() {
 
   const bdiPercent = Number(draft?.bdi_percent || 0) || 0;
   const discountPercent = Number(draft?.discount_percent || 0) || 0;
+  const marginPercent = Number(draft?.margin_percent || 0) || 0;
 
   const financials = useMemo(() => {
-    const items = stages.flatMap((s) => s.items);
-    return computeQuoteFinancials(items, bdiPercent, discountPercent);
-  }, [stages, bdiPercent, discountPercent]);
+    const items = stages.flatMap((s) =>
+      s.items.map((it) => ({
+        quantity: it.quantity,
+        unit_value: it.adopted_price,
+        reference_price: it.reference_price,
+      })),
+    );
+    return computeQuoteFinancials(items, bdiPercent, discountPercent, marginPercent);
+  }, [stages, bdiPercent, discountPercent, marginPercent]);
 
   const load = useCallback(async () => {
     if (!user?.id || !id) return;
@@ -399,10 +547,29 @@ function EditInner() {
     }
   }, [user, id]);
 
+  const loadDatabases = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(
+        `/api/master/topography/price-catalog?mode=databases&userId=${encodeURIComponent(user.id)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao carregar bancos.');
+      setDatabases((data.databases || []) as MasterTopographyPriceDatabase[]);
+    } catch {
+      setDatabases([]);
+    }
+  }, [user]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDatabases();
+  }, [loadDatabases]);
 
   const patchDraft = (patch: Partial<DraftQuote>) => {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -419,6 +586,95 @@ function EditInner() {
     return next;
   };
 
+  const buildExportPayload = useCallback((): QuoteExportPayload | null => {
+    if (!quoteMeta || !draft) return null;
+    const quote: MasterTopographyQuote = {
+      ...quoteMeta,
+      title: draft.title || null,
+      client_name: draft.client_name,
+      contact_name: draft.contact_name || null,
+      phone: draft.phone || null,
+      email: draft.email || null,
+      city: draft.city || null,
+      state: draft.state || null,
+      address: draft.address || null,
+      distance_km: draft.distance_km === '' ? null : Number(draft.distance_km),
+      category: draft.category as MasterTopographyQuote['category'],
+      service_type: draft.service_type as MasterTopographyQuote['service_type'],
+      description: draft.description || null,
+      status: draft.status as MasterTopographyQuote['status'],
+      proposal_date: draft.proposal_date || null,
+      expiration_date: draft.expiration_date || null,
+      estimated_deadline: draft.estimated_deadline || null,
+      payment_method: draft.payment_method || null,
+      payment_terms: draft.payment_terms || null,
+      internal_manager: draft.internal_manager || null,
+      internal_notes: draft.internal_notes || null,
+      technical_notes: draft.technical_notes || null,
+      bdi_percent: bdiPercent,
+      discount_percent: discountPercent,
+      margin_percent: marginPercent,
+      estimated_value: financials.totalWithBdi,
+      discount_value: financials.discountValue,
+      final_value: financials.totalGeral,
+    };
+
+    const exportStages: MasterTopographyQuoteStageWithItems[] = stages.map((stage, idx) => {
+      const calcItems = stage.items.map((it) => ({
+        quantity: it.quantity,
+        unit_value: it.adopted_price,
+        reference_price: it.reference_price,
+      }));
+      const subtotal = stageSubtotal(calcItems, bdiPercent);
+      return {
+        id: stage.id,
+        quote_id: stage.quote_id,
+        name: stage.name,
+        sort_order: idx,
+        is_system: stage.is_system,
+        created_at: stage.created_at,
+        updated_at: stage.updated_at,
+        items: stage.items.map((it, itemIndex) => ({
+          ...it,
+          sort_order: itemIndex,
+          unit_value: it.adopted_price,
+        })),
+        itemCount: stage.items.length,
+        subtotal,
+        percentOfBudget: stagePercentOfBudget(subtotal, financials.totalWithBdi),
+      };
+    });
+
+    return { quote, stages: exportStages, financials };
+  }, [
+    quoteMeta,
+    draft,
+    stages,
+    bdiPercent,
+    discountPercent,
+    marginPercent,
+    financials,
+  ]);
+
+  const runExport = async (kind: 'pdf-synth' | 'pdf-anal' | 'excel' | 'csv' | 'memorial') => {
+    setExportOpen(false);
+    const payload = buildExportPayload();
+    if (!payload) return;
+    setExporting(true);
+    setError(null);
+    try {
+      if (kind === 'pdf-synth') await exportQuotePdfSynthetic(payload);
+      else if (kind === 'excel') await exportQuoteExcel(payload);
+      else if (kind === 'csv') exportQuoteCsv(payload);
+      else if (kind === 'memorial') exportQuoteMemorial(payload);
+      else exportQuotePdfAnalyticalPrepared(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao exportar.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!user?.id || !draft || !id || readOnly) return;
     setSaving(true);
@@ -432,6 +688,7 @@ function EditInner() {
           distance_km: draft.distance_km === '' ? null : Number(draft.distance_km),
           bdi_percent: Number(draft.bdi_percent) || 0,
           discount_percent: Number(draft.discount_percent) || 0,
+          margin_percent: Number(draft.margin_percent) || 0,
           estimated_value: financials.totalWithBdi,
           discount_value: financials.discountValue,
           final_value: financials.totalGeral,
@@ -448,7 +705,14 @@ function EditInner() {
             description: item.description,
             unit: item.unit || 'UN',
             quantity: item.quantity,
-            unit_value: item.unit_value,
+            unit_value: item.adopted_price,
+            reference_price: item.reference_price,
+            adopted_price: item.adopted_price,
+            competence: item.competence,
+            uf: item.uf,
+            notes: item.notes,
+            catalog_item_id: item.catalog_item_id,
+            custom_item_id: item.custom_item_id,
             sort_order: itemIndex,
           })),
         })),
@@ -522,8 +786,10 @@ function EditInner() {
     ]);
   };
 
-  const addItem = (stageKey: string) => {
+  const appendItemToStage = (stageKey: string, partial: Partial<DraftItem> & Pick<DraftItem, 'description'>) => {
     const localKey = newLocalKey();
+    const adopted = Number(partial.adopted_price ?? partial.unit_value ?? 0);
+    const reference = Number(partial.reference_price ?? adopted);
     setStages((prev) =>
       prev.map((stage) => {
         if (stage.localKey !== stageKey) return stage;
@@ -532,12 +798,19 @@ function EditInner() {
           localKey,
           quote_id: id,
           stage_id: stage.id,
-          code: '',
-          price_bank: 'PROPRIO',
-          description: '',
-          unit: 'UN',
-          quantity: 1,
-          unit_value: 0,
+          code: partial.code ?? '',
+          price_bank: partial.price_bank || 'PROPRIO',
+          description: partial.description,
+          unit: partial.unit || 'UN',
+          quantity: partial.quantity ?? 1,
+          unit_value: adopted,
+          reference_price: reference,
+          adopted_price: adopted,
+          competence: partial.competence ?? null,
+          uf: partial.uf ?? null,
+          notes: partial.notes ?? null,
+          catalog_item_id: partial.catalog_item_id ?? null,
+          custom_item_id: partial.custom_item_id ?? null,
           sort_order: stage.items.length,
           created_at: '',
           updated_at: '',
@@ -545,6 +818,100 @@ function EditInner() {
         return { ...stage, items: [...stage.items, item] };
       }),
     );
+    setSavedMsg(null);
+  };
+
+  const addFromCatalog = (stageKey: string, catalogItem: MasterTopographyPriceItem) => {
+    const price = Number(catalogItem.reference_price) || 0;
+    appendItemToStage(stageKey, {
+      code: catalogItem.code,
+      price_bank: catalogItem.bank_code,
+      description: catalogItem.description,
+      unit: catalogItem.unit || 'UN',
+      quantity: 1,
+      reference_price: price,
+      adopted_price: price,
+      unit_value: price,
+      competence: catalogItem.competence,
+      uf: catalogItem.uf,
+      catalog_item_id: catalogItem.source === 'catalog' ? catalogItem.id : null,
+      custom_item_id: catalogItem.source === 'custom' ? catalogItem.id : null,
+      notes: null,
+    });
+  };
+
+  const addFromCustom = (
+    stageKey: string,
+    custom: { id: string; code: string; description: string; unit: string; price: number },
+  ) => {
+    const price = Number(custom.price) || 0;
+    appendItemToStage(stageKey, {
+      code: custom.code,
+      price_bank: 'PROPRIO',
+      description: custom.description,
+      unit: custom.unit || 'UN',
+      quantity: 1,
+      reference_price: price,
+      adopted_price: price,
+      unit_value: price,
+      competence: null,
+      uf: null,
+      catalog_item_id: null,
+      custom_item_id: custom.id,
+      notes: null,
+    });
+  };
+
+  const duplicateItem = (stageKey: string, itemKey: string) => {
+    setStages((prev) =>
+      prev.map((stage) => {
+        if (stage.localKey !== stageKey) return stage;
+        const idx = stage.items.findIndex((it) => it.localKey === itemKey);
+        if (idx < 0) return stage;
+        const src = stage.items[idx];
+        const localKey = newLocalKey();
+        const clone: DraftItem = {
+          ...src,
+          id: localKey,
+          localKey,
+          sort_order: idx + 1,
+        };
+        const items = [...stage.items];
+        items.splice(idx + 1, 0, clone);
+        return { ...stage, items: items.map((it, i) => ({ ...it, sort_order: i })) };
+      }),
+    );
+    setSavedMsg(null);
+  };
+
+  const moveItemToStage = (fromStageKey: string, itemKey: string, toStageKey: string) => {
+    if (fromStageKey === toStageKey) return;
+    setStages((prev) => {
+      let moved: DraftItem | null = null;
+      const stripped = prev.map((stage) => {
+        if (stage.localKey !== fromStageKey) return stage;
+        const found = stage.items.find((it) => it.localKey === itemKey);
+        if (!found) return stage;
+        moved = found;
+        return {
+          ...stage,
+          items: stage.items
+            .filter((it) => it.localKey !== itemKey)
+            .map((it, i) => ({ ...it, sort_order: i })),
+        };
+      });
+      if (!moved) return prev;
+      return stripped.map((stage) => {
+        if (stage.localKey !== toStageKey) return stage;
+        const nextItem: DraftItem = {
+          ...moved!,
+          stage_id: stage.id,
+          sort_order: stage.items.length,
+        };
+        return { ...stage, items: [...stage.items, nextItem] };
+      });
+    });
+    setSavedMsg(null);
   };
 
   const statusMeta = topographyQuoteStatusMeta(draft?.status || quoteMeta?.status || 'RASCUNHO');
@@ -613,32 +980,50 @@ function EditInner() {
               <button
                 type="button"
                 className={styles.btnSecondary}
+                disabled={exporting}
                 onClick={() => setExportOpen((v) => !v)}
               >
-                <FileSpreadsheet width={14} height={14} /> Exportar
+                <FileSpreadsheet width={14} height={14} />
+                {exporting ? 'Exportando…' : 'Exportar'}
                 <ChevronDown width={14} height={14} />
               </button>
               {exportOpen ? (
                 <div className={styles.exportMenu} role="menu">
-                  {[
-                    'PDF Sintético',
-                    'PDF Analítico',
-                    'Excel',
-                    'CSV',
-                    'Memorial de Cálculo',
-                  ].map((label) => (
-                    <button
-                      key={label}
-                      type="button"
-                      className={styles.exportItem}
-                      onClick={() => {
-                        setExportOpen(false);
-                        window.alert('Em desenvolvimento');
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    className={styles.exportItem}
+                    onClick={() => void runExport('pdf-synth')}
+                  >
+                    PDF Sintético
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.exportItem}
+                    onClick={() => void runExport('excel')}
+                  >
+                    Excel
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.exportItem}
+                    onClick={() => void runExport('csv')}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.exportItem}
+                    onClick={() => void runExport('memorial')}
+                  >
+                    Memorial de cálculo
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.exportItem}
+                    onClick={() => void runExport('pdf-anal')}
+                  >
+                    PDF Analítico
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -899,7 +1284,13 @@ function EditInner() {
       </div>
 
       {stages.map((stage) => {
-        const subtotal = stageSubtotal(stage.items, bdiPercent);
+        const calcItems = stage.items.map((it) => ({
+          quantity: it.quantity,
+          unit_value: it.adopted_price,
+          reference_price: it.reference_price,
+        }));
+        const subtotal = stageSubtotal(calcItems, bdiPercent);
+        const pctBudget = stagePercentOfBudget(subtotal, financials.totalWithBdi);
         return (
           <section
             key={stage.localKey}
@@ -948,16 +1339,11 @@ function EditInner() {
                 <span>
                   Subtotal: <strong>{formatCurrency(subtotal)}</strong>
                 </span>
+                <span>
+                  % orçamento: <strong>{pctBudget.toFixed(2)}%</strong>
+                </span>
               </div>
               <div className={styles.stageActions}>
-                <button
-                  type="button"
-                  className={styles.btnSecondary}
-                  disabled={readOnly}
-                  onClick={() => addItem(stage.localKey)}
-                >
-                  <Plus width={13} height={13} /> Adicionar Item
-                </button>
                 <button
                   type="button"
                   className={styles.btnDanger}
@@ -971,11 +1357,23 @@ function EditInner() {
               </div>
             </div>
 
+            {user?.id ? (
+              <QuoteCatalogPicker
+                userId={user.id}
+                databases={databases}
+                disabled={readOnly}
+                onPick={(item) => addFromCatalog(stage.localKey, item)}
+                onCreateCustom={() => setCustomModalStageKey(stage.localKey)}
+              />
+            ) : null}
+
             {stage.items.length === 0 ? (
-              <div className={styles.emptyStage}>Nenhum item nesta etapa.</div>
+              <div className={styles.emptyStage}>Nenhum item nesta etapa. Pesquise no catálogo acima.</div>
             ) : (
               <VirtualItemsBody
                 items={stage.items}
+                stages={stages}
+                currentStageKey={stage.localKey}
                 bdiPercent={bdiPercent}
                 readOnly={readOnly}
                 onChangeItem={(itemKey, patch) =>
@@ -985,9 +1383,15 @@ function EditInner() {
                         ? s
                         : {
                             ...s,
-                            items: s.items.map((it) =>
-                              it.localKey === itemKey ? { ...it, ...patch } : it,
-                            ),
+                            items: s.items.map((it) => {
+                              if (it.localKey !== itemKey) return it;
+                              const next = { ...it, ...patch };
+                              if (patch.adopted_price != null) {
+                                next.unit_value = patch.adopted_price;
+                                next.adopted_price = patch.adopted_price;
+                              }
+                              return next;
+                            }),
                           },
                     ),
                   )
@@ -1000,6 +1404,10 @@ function EditInner() {
                         : { ...s, items: s.items.filter((it) => it.localKey !== itemKey) },
                     ),
                   )
+                }
+                onDuplicateItem={(itemKey) => duplicateItem(stage.localKey, itemKey)}
+                onMoveItem={(itemKey, toStageKey) =>
+                  moveItemToStage(stage.localKey, itemKey, toStageKey)
                 }
                 onDragStartItem={(itemKey) =>
                   setDragItem({ stageKey: stage.localKey, itemKey })
@@ -1047,7 +1455,7 @@ function EditInner() {
             <span className={styles.muted}>{formatCurrency(financials.bdiAmount)}</span>
           </div>
           <div className={styles.financeItem}>
-            <label>Total Geral</label>
+            <label>Total Geral (c/ BDI)</label>
             <strong>{formatCurrency(financials.totalWithBdi)}</strong>
           </div>
           <div className={styles.financeItem}>
@@ -1064,8 +1472,15 @@ function EditInner() {
             <span className={styles.muted}>{formatCurrency(financials.discountValue)}</span>
           </div>
           <div className={styles.financeItem}>
-            <label>Margem</label>
-            <strong className={styles.muted}>Em breve</strong>
+            <label>Margem (%)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={draft.margin_percent}
+              disabled={readOnly}
+              onChange={(e) => patchDraft({ margin_percent: e.target.value })}
+            />
+            <span className={styles.muted}>{formatCurrency(financials.marginValue)}</span>
             <div style={{ marginTop: '0.35rem' }}>
               <strong>{formatCurrency(financials.totalGeral)}</strong>
               <span className={styles.muted}> líquido</span>
@@ -1073,6 +1488,17 @@ function EditInner() {
           </div>
         </div>
       </aside>
+
+      {user?.id ? (
+        <QuoteCustomItemModal
+          open={Boolean(customModalStageKey)}
+          userId={user.id}
+          onClose={() => setCustomModalStageKey(null)}
+          onCreated={(item) => {
+            if (customModalStageKey) addFromCustom(customModalStageKey, item);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

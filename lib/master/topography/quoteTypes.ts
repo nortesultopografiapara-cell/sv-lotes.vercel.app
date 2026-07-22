@@ -27,6 +27,7 @@ export type MasterTopographyQuote = {
   discount_value: number;
   discount_percent: number;
   bdi_percent: number;
+  margin_percent: number;
   final_value: number | null;
   payment_method: string | null;
   payment_terms: string | null;
@@ -63,6 +64,7 @@ export type MasterTopographyQuoteInput = {
   discount_value?: number;
   discount_percent?: number;
   bdi_percent?: number;
+  margin_percent?: number;
   final_value?: number | null;
   payment_method?: string | null;
   payment_terms?: string | null;
@@ -80,7 +82,15 @@ export type MasterTopographyQuoteItem = {
   description: string;
   unit: string;
   quantity: number;
+  /** @deprecated use adopted_price — mantido sincronizado */
   unit_value: number;
+  reference_price: number;
+  adopted_price: number;
+  competence: string | null;
+  uf: string | null;
+  notes: string | null;
+  catalog_item_id: string | null;
+  custom_item_id: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -100,6 +110,7 @@ export type MasterTopographyQuoteStageWithItems = MasterTopographyQuoteStage & {
   items: MasterTopographyQuoteItem[];
   itemCount: number;
   subtotal: number;
+  percentOfBudget: number;
 };
 
 export type MasterTopographyQuoteStructure = {
@@ -115,7 +126,14 @@ export type MasterTopographyQuoteItemInput = {
   description: string;
   unit: string;
   quantity: number;
-  unit_value: number;
+  unit_value?: number;
+  reference_price?: number;
+  adopted_price?: number;
+  competence?: string | null;
+  uf?: string | null;
+  notes?: string | null;
+  catalog_item_id?: string | null;
+  custom_item_id?: string | null;
   sort_order: number;
 };
 

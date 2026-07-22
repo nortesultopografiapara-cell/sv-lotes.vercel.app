@@ -570,11 +570,115 @@
   position: relative;
 }
 
-.virtualRow {
+.catalogPicker {
+  position: relative;
+  margin: 0.65rem 0.85rem 0.85rem;
+}
+
+.catalogRow {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 1fr auto;
+  gap: 0.45rem;
+}
+
+.catalogRow select,
+.catalogRow input {
+  min-height: 2.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
+  background: #fff;
+}
+
+.catalogDropdown {
   position: absolute;
   left: 0;
   right: 0;
-  display: table;
-  table-layout: fixed;
+  top: calc(100% + 0.3rem);
+  z-index: 40;
+  max-height: 18rem;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 14%);
+}
+
+.catalogMeta {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.7rem;
+  color: #64748b;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.catalogItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #f8fafc;
+  background: transparent;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+}
+
+.catalogItem:hover {
+  background: #eff6ff;
+}
+
+.catalogItemBank {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  text-transform: uppercase;
+}
+
+.catalogItem strong {
+  font-size: 0.78rem;
+  color: #0f172a;
+}
+
+.catalogItemMeta {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgb(15 23 42 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modalCard {
+  width: min(36rem, 100%);
+  background: #fff;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  padding: 1rem 1.1rem 1.15rem;
+  box-shadow: 0 20px 40px rgb(15 23 42 / 18%);
+}
+
+.diffUp {
+  color: #b91c1c;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.diffDown {
+  color: #047857;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.refLocked {
+  background: #f8fafc !important;
+  color: #64748b;
 }

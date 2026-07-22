@@ -116,6 +116,11 @@ export function validateTopographyQuoteInput(
     'Percentual de desconto',
     100,
   );
+  const margin_percent = parsePercent(
+    raw.margin_percent ?? raw.marginPercent,
+    'Margem',
+    1000,
+  );
 
   let final_value = parseOptionalMoney(raw.final_value ?? raw.finalValue, 'Valor final');
   if (final_value == null && estimated_value != null) {
@@ -149,6 +154,7 @@ export function validateTopographyQuoteInput(
     discount_value,
     discount_percent,
     bdi_percent,
+    margin_percent,
     final_value,
     payment_method: cleanText(raw.payment_method ?? raw.paymentMethod, 120),
     payment_terms: cleanText(raw.payment_terms ?? raw.paymentTerms, 500),
@@ -162,8 +168,24 @@ export function validateQuoteItemInput(raw: Record<string, unknown>): MasterTopo
   const idRaw = cleanText(raw.id, 36);
   if (idRaw && !UUID_RE.test(idRaw)) throw new Error('Item com id inválido.');
 
-  const bankRaw = cleanText(raw.price_bank ?? raw.priceBank, 32);
+  const bankRaw = cleanText(raw.price_bank ?? raw.priceBank, 40);
   if (bankRaw && !isTopographyPriceBank(bankRaw)) throw new Error('Banco de preços inválido.');
+
+  const adopted = parseMoneyDefault(
+    raw.adopted_price ?? raw.adoptedPrice ?? raw.unit_value ?? raw.unitValue,
+    'Preço adotado',
+    0,
+  );
+  const reference = parseMoneyDefault(
+    raw.reference_price ?? raw.referencePrice ?? adopted,
+    'Preço referência',
+    adopted,
+  );
+
+  const catalogId = cleanText(raw.catalog_item_id ?? raw.catalogItemId, 36);
+  const customId = cleanText(raw.custom_item_id ?? raw.customItemId, 36);
+  if (catalogId && !UUID_RE.test(catalogId)) throw new Error('Catálogo inválido.');
+  if (customId && !UUID_RE.test(customId)) throw new Error('Item próprio inválido.');
 
   return {
     id: idRaw || undefined,
@@ -172,7 +194,14 @@ export function validateQuoteItemInput(raw: Record<string, unknown>): MasterTopo
     description: cleanText(raw.description, 2000) || '',
     unit: cleanText(raw.unit, 20) || 'UN',
     quantity: parseQty(raw.quantity, 'Quantidade'),
-    unit_value: parseMoneyDefault(raw.unit_value ?? raw.unitValue, 'Valor unitário', 0),
+    unit_value: adopted,
+    reference_price: reference,
+    adopted_price: adopted,
+    competence: cleanText(raw.competence, 40),
+    uf: cleanText(raw.uf, 2)?.toUpperCase() ?? null,
+    notes: cleanText(raw.notes ?? raw.observations, 2000),
+    catalog_item_id: catalogId || null,
+    custom_item_id: customId || null,
     sort_order: Math.max(0, Math.trunc(Number(raw.sort_order ?? raw.sortOrder ?? 0) || 0)),
   };
 }
