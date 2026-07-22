@@ -299,6 +299,9 @@ export async function loadMasterDashboardData(
     overdue: 0,
     completedThisMonth: 0,
     activeContractValue: 0,
+    totalContractValue: 0,
+    totalReceived: 0,
+    totalBalance: 0,
   };
   try {
     topographyProjectKpis = await computeTopographyProjectKpis(supabase);

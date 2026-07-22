@@ -68,6 +68,9 @@ const EMPTY_KPIS: MasterTopographyProjectKpis = {
   overdue: 0,
   completedThisMonth: 0,
   activeContractValue: 0,
+  totalContractValue: 0,
+  totalReceived: 0,
+  totalBalance: 0,
 };
 
 function TopographyProjectsInner() {
@@ -256,6 +259,24 @@ function TopographyProjectsInner() {
             {formatCurrency(kpis.activeContractValue)}
           </p>
         </div>
+        <div className={styles.kpiCard}>
+          <p className={styles.kpiLabel}>Valor contratado total</p>
+          <p className={styles.kpiValue} style={{ fontSize: '0.95rem' }}>
+            {formatCurrency(kpis.totalContractValue)}
+          </p>
+        </div>
+        <div className={styles.kpiCard}>
+          <p className={styles.kpiLabel}>Valor recebido total</p>
+          <p className={styles.kpiValue} style={{ fontSize: '0.95rem' }}>
+            {formatCurrency(kpis.totalReceived)}
+          </p>
+        </div>
+        <div className={styles.kpiCard}>
+          <p className={styles.kpiLabel}>Saldo total a receber</p>
+          <p className={styles.kpiValue} style={{ fontSize: '0.95rem' }}>
+            {formatCurrency(kpis.totalBalance)}
+          </p>
+        </div>
       </section>
 
       <div className={styles.toolbar}>
@@ -408,7 +429,30 @@ function TopographyProjectsInner() {
                   <div className={styles.progressBar} style={{ width: `${p.progress_percent}%` }} />
                 </div>
               </div>
-              <p className={styles.meta}>Valor: {formatCurrency(p.contract_value)}</p>
+              <div className={styles.financeSummary}>
+                <div>
+                  <span className={styles.financeLabel}>Contratado</span>
+                  <strong>{formatCurrency(p.contract_value)}</strong>
+                </div>
+                <div>
+                  <span className={styles.financeLabel}>Recebido</span>
+                  <strong>{formatCurrency(p.valor_recebido)}</strong>
+                </div>
+                <div>
+                  <span className={styles.financeLabel}>Saldo</span>
+                  <strong>{formatCurrency(p.saldo_receber)}</strong>
+                </div>
+                <div>
+                  <span className={styles.financeLabel}>Financeiro</span>
+                  <strong>{p.percentual_recebido.toLocaleString('pt-BR')}%</strong>
+                  <div className={styles.progressWrap}>
+                    <div
+                      className={styles.progressBarFinance}
+                      style={{ width: `${Math.min(100, Math.max(0, p.percentual_recebido))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
               <p className={styles.meta}>Prazo: {formatDate(p.planned_end_date)}</p>
               <p className={styles.meta}>Resp.: {p.internal_manager || '—'}</p>
               <Link href={`/master/topography/projects/${p.id}`} className={styles.btnGhost}>
@@ -430,7 +474,10 @@ function TopographyProjectsInner() {
                 <th>Cidade</th>
                 <th>Status</th>
                 <th>Progresso</th>
-                <th>Valor</th>
+                <th>Contratado</th>
+                <th>Recebido</th>
+                <th>Saldo</th>
+                <th>%</th>
                 <th>Prazo</th>
                 <th>Responsável</th>
                 <th>Ações</th>
@@ -450,6 +497,9 @@ function TopographyProjectsInner() {
                   </td>
                   <td>{p.progress_percent}%</td>
                   <td>{formatCurrency(p.contract_value)}</td>
+                  <td>{formatCurrency(p.valor_recebido)}</td>
+                  <td>{formatCurrency(p.saldo_receber)}</td>
+                  <td>{p.percentual_recebido.toLocaleString('pt-BR')}%</td>
                   <td>{formatDate(p.planned_end_date)}</td>
                   <td>{p.internal_manager || '—'}</td>
                   <td>

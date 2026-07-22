@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { computeProjectFinancials } from '@/lib/master/topography/projectFinancials';
 import { TOPOGRAPHY_CATEGORIES } from '@/lib/master/topography/categories';
 import {
   TOPOGRAPHY_FINANCIAL_SITUATIONS,
@@ -34,6 +35,7 @@ export type ProjectFormState = {
   planned_end_date: string;
   actual_end_date: string;
   contract_value: string;
+  valor_recebido: string;
   payment_terms: string;
   origin_budget_number: string;
   internal_manager: string;
@@ -71,6 +73,7 @@ export function emptyProjectForm(): ProjectFormState {
     planned_end_date: '',
     actual_end_date: '',
     contract_value: '',
+    valor_recebido: '0',
     payment_terms: '',
     origin_budget_number: '',
     internal_manager: '',
@@ -112,6 +115,7 @@ export function projectToForm(project: MasterTopographyProject): ProjectFormStat
     planned_end_date: project.planned_end_date || '',
     actual_end_date: project.actual_end_date || '',
     contract_value: project.contract_value == null ? '' : String(project.contract_value),
+    valor_recebido: String(project.valor_recebido ?? 0),
     payment_terms: project.payment_terms || '',
     origin_budget_number: project.origin_budget_number || '',
     internal_manager: project.internal_manager || '',
@@ -152,6 +156,7 @@ export function formToPayload(form: ProjectFormState) {
     planned_end_date: form.planned_end_date || null,
     actual_end_date: form.actual_end_date || null,
     contract_value: form.contract_value === '' ? null : Number(form.contract_value),
+    valor_recebido: form.valor_recebido === '' ? 0 : Number(form.valor_recebido),
     payment_terms: form.payment_terms || null,
     origin_budget_number: form.origin_budget_number || null,
     internal_manager: form.internal_manager || null,
@@ -197,6 +202,15 @@ export function TopographyProjectFormModal({
     setForm(initial ? projectToForm(initial) : emptyProjectForm());
     setFormKey((k) => k + 1);
   }, [open, initial]);
+
+  const liveFinance = useMemo(() => {
+    const contract = form.contract_value === '' ? null : Number(form.contract_value);
+    const received = form.valor_recebido === '' ? 0 : Number(form.valor_recebido);
+    return computeProjectFinancials(
+      Number.isFinite(contract as number) ? contract : null,
+      Number.isFinite(received) ? received : 0,
+    );
+  }, [form.contract_value, form.valor_recebido]);
 
   if (!open) return null;
 
@@ -383,7 +397,75 @@ export function TopographyProjectFormModal({
 
           <section className={styles.section}>
             <h3 className={styles.sectionTitle}>Contrato</h3>
-            <div className={styles.grid2}>
+            <div className={styles.financeBlock}>
+              <h4 className={styles.financeBlockTitle}>Financeiro do Projeto</h4>
+              <div className={styles.grid2}>
+                <div className={styles.field}>
+                  <label>Valor contratado (R$)</label>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={form.contract_value}
+                    onChange={set('contract_value')}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Entrada / Adiantamento recebido (R$)</label>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={form.valor_recebido}
+                    onChange={set('valor_recebido')}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Saldo a receber</label>
+                  <input
+                    className={styles.input}
+                    readOnly
+                    value={new Intl.NumberFormat('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    }).format(liveFinance.saldo_receber)}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Percentual recebido</label>
+                  <input
+                    className={styles.input}
+                    readOnly
+                    value={`${liveFinance.percentual_recebido.toLocaleString('pt-BR')}%`}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Forma de pagamento</label>
+                  <input
+                    className={styles.input}
+                    value={form.payment_terms}
+                    onChange={set('payment_terms')}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Situação financeira</label>
+                  <select
+                    className={styles.select}
+                    value={form.financial_situation}
+                    onChange={set('financial_situation')}
+                  >
+                    {TOPOGRAPHY_FINANCIAL_SITUATIONS.map((f) => (
+                      <option key={f.code} value={f.code}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className={styles.grid2} style={{ marginTop: '0.75rem' }}>
               <div className={styles.field}>
                 <label>Data de contratação</label>
                 <input
@@ -418,39 +500,6 @@ export function TopographyProjectFormModal({
                   type="date"
                   value={form.actual_end_date}
                   onChange={set('actual_end_date')}
-                />
-              </div>
-              <div className={styles.field}>
-                <label>Valor contratado (R$)</label>
-                <input
-                  className={styles.input}
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.contract_value}
-                  onChange={set('contract_value')}
-                />
-              </div>
-              <div className={styles.field}>
-                <label>Situação financeira</label>
-                <select
-                  className={styles.select}
-                  value={form.financial_situation}
-                  onChange={set('financial_situation')}
-                >
-                  {TOPOGRAPHY_FINANCIAL_SITUATIONS.map((f) => (
-                    <option key={f.code} value={f.code}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.field}>
-                <label>Forma de pagamento</label>
-                <input
-                  className={styles.input}
-                  value={form.payment_terms}
-                  onChange={set('payment_terms')}
                 />
               </div>
               <div className={styles.field}>

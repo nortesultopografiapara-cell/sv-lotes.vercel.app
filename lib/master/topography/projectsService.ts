@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { computeProjectFinancials } from './projectFinancials';
 import { TOPOGRAPHY_ACTIVE_STATUS_CODES } from './statuses';
 import type {
   MasterTopographyProject,
@@ -13,7 +14,7 @@ const SELECT_COLUMNS = `
   category, service_type, origin, description, status, priority, financial_situation,
   city, state, address, latitude, longitude, distance_from_parauapebas_km,
   contract_date, planned_start_date, planned_end_date, actual_end_date,
-  contract_value, payment_terms, origin_budget_number,
+  contract_value, valor_recebido, payment_terms, origin_budget_number,
   internal_manager, technical_manager, team_notes,
   progress_percent, physical_progress_percent, current_stage,
   technical_notes, pending_items, next_action, next_action_date,
@@ -30,6 +31,10 @@ function monthStartIso(): string {
 }
 
 function parseRow(row: Record<string, unknown>): MasterTopographyProject {
+  const contractValue = row.contract_value == null ? null : Number(row.contract_value);
+  const valorRecebido = Number(row.valor_recebido || 0);
+  const finances = computeProjectFinancials(contractValue, valorRecebido);
+
   return {
     id: String(row.id),
     code: String(row.code || ''),
@@ -60,7 +65,13 @@ function parseRow(row: Record<string, unknown>): MasterTopographyProject {
       : null,
     planned_end_date: row.planned_end_date ? String(row.planned_end_date).slice(0, 10) : null,
     actual_end_date: row.actual_end_date ? String(row.actual_end_date).slice(0, 10) : null,
-    contract_value: row.contract_value == null ? null : Number(row.contract_value),
+    contract_value: contractValue,
+    valor_recebido: finances.valor_recebido,
+    saldo_receber: finances.saldo_receber,
+    percentual_recebido: finances.percentual_recebido,
+    valorRecebido: finances.valorRecebido,
+    saldoReceber: finances.saldoReceber,
+    percentualRecebido: finances.percentualRecebido,
     payment_terms: row.payment_terms ? String(row.payment_terms) : null,
     origin_budget_number: row.origin_budget_number ? String(row.origin_budget_number) : null,
     internal_manager: row.internal_manager ? String(row.internal_manager) : null,
@@ -105,6 +116,7 @@ function inputToRow(input: MasterTopographyProjectInput) {
     planned_end_date: input.planned_end_date ?? null,
     actual_end_date: input.actual_end_date ?? null,
     contract_value: input.contract_value ?? null,
+    valor_recebido: input.valor_recebido ?? 0,
     payment_terms: input.payment_terms ?? null,
     origin_budget_number: input.origin_budget_number ?? null,
     internal_manager: input.internal_manager ?? null,
@@ -117,6 +129,20 @@ function inputToRow(input: MasterTopographyProjectInput) {
     pending_items: input.pending_items ?? null,
     next_action: input.next_action ?? null,
     next_action_date: input.next_action_date ?? null,
+  };
+}
+
+function emptyKpis(): MasterTopographyProjectKpis {
+  return {
+    active: 0,
+    inField: 0,
+    inProcessing: 0,
+    overdue: 0,
+    completedThisMonth: 0,
+    activeContractValue: 0,
+    totalContractValue: 0,
+    totalReceived: 0,
+    totalBalance: 0,
   };
 }
 
@@ -135,85 +161,16 @@ export async function generateTopographyProjectCode(
   return code;
 }
 
-export async function computeTopographyProjectKpis(
-  supabase: SupabaseClient,
-): Promise<MasterTopographyProjectKpis> {
-  const today = todayIso();
-  const monthStart = monthStartIso();
-
-  const { data, error } = await supabase
-    .from('master_topography_projects')
-    .select('status, planned_end_date, contract_value, actual_end_date, updated_at, is_archived');
-
-  if (error) throw new Error(error.message || 'Falha ao calcular KPIs.');
-
-  const rows = (data || []) as Array<{
-    status: string;
-    planned_end_date: string | null;
-    contract_value: number | null;
-    actual_end_date: string | null;
-    updated_at: string | null;
-    is_archived: boolean;
-  }>;
-
-  let active = 0;
-  let inField = 0;
-  let inProcessing = 0;
-  let overdue = 0;
-  let completedThisMonth = 0;
-  let activeContractValue = 0;
-
-  for (const row of rows) {
-    if (row.is_archived) continue;
-    const status = String(row.status || '');
-    if (TOPOGRAPHY_ACTIVE_STATUS_CODES.includes(status as never)) {
-      active += 1;
-      activeContractValue += Number(row.contract_value || 0);
-    }
-    if (status === 'EM_CAMPO') inField += 1;
-    if (status === 'EM_PROCESSAMENTO') inProcessing += 1;
-    if (
-      status !== 'CONCLUIDO' &&
-      row.planned_end_date &&
-      String(row.planned_end_date).slice(0, 10) < today
-    ) {
-      overdue += 1;
-    }
-    if (status === 'CONCLUIDO') {
-      const end = row.actual_end_date
-        ? String(row.actual_end_date).slice(0, 10)
-        : row.updated_at
-          ? String(row.updated_at).slice(0, 10)
-          : '';
-      if (end >= monthStart) completedThisMonth += 1;
-    }
-  }
-
-  return {
-    active,
-    inField,
-    inProcessing,
-    overdue,
-    completedThisMonth,
-    activeContractValue,
-  };
-}
-
-export async function listTopographyProjects(
-  supabase: SupabaseClient,
-  filters: MasterTopographyProjectListFilters = {},
-): Promise<MasterTopographyProjectListResult> {
-  const page = Math.max(1, Math.trunc(filters.page || 1));
-  const limit = Math.min(100, Math.max(1, Math.trunc(filters.limit || 20)));
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
-  const sort = filters.sort || 'created_at';
-  const ascending = (filters.order || 'desc') === 'asc';
-
-  let query = supabase
-    .from('master_topography_projects')
-    .select(SELECT_COLUMNS, { count: 'exact' });
-
+function applyListFilters(
+  query: {
+    eq: (col: string, val: unknown) => typeof query;
+    ilike: (col: string, val: string) => typeof query;
+    gte: (col: string, val: string) => typeof query;
+    lte: (col: string, val: string) => typeof query;
+    or: (expr: string) => typeof query;
+  },
+  filters: MasterTopographyProjectListFilters,
+) {
   if (!filters.includeArchived) {
     query = query.eq('is_archived', false);
   }
@@ -235,12 +192,103 @@ export async function listTopographyProjects(
       `code.ilike.%${escaped}%,title.ilike.%${escaped}%,client_name.ilike.%${escaped}%`,
     );
   }
+  return query;
+}
 
+export async function computeTopographyProjectKpis(
+  supabase: SupabaseClient,
+  filters: MasterTopographyProjectListFilters = {},
+): Promise<MasterTopographyProjectKpis> {
+  const today = todayIso();
+  const monthStart = monthStartIso();
+
+  let query = supabase
+    .from('master_topography_projects')
+    .select(
+      'status, planned_end_date, contract_value, valor_recebido, actual_end_date, updated_at, is_archived',
+    );
+
+  query = applyListFilters(query, filters);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message || 'Falha ao calcular KPIs.');
+
+  const rows = (data || []) as Array<{
+    status: string;
+    planned_end_date: string | null;
+    contract_value: number | null;
+    valor_recebido: number | null;
+    actual_end_date: string | null;
+    updated_at: string | null;
+    is_archived: boolean;
+  }>;
+
+  const kpis = emptyKpis();
+
+  for (const row of rows) {
+    const contract = Number(row.contract_value || 0);
+    const received = Number(row.valor_recebido || 0);
+    const finances = computeProjectFinancials(contract, received);
+
+    // Totais financeiros sempre sobre o conjunto filtrado (incluindo arquivados se pedido)
+    kpis.totalContractValue += contract;
+    kpis.totalReceived += finances.valor_recebido;
+    kpis.totalBalance += finances.saldo_receber;
+
+    if (row.is_archived) continue;
+    const status = String(row.status || '');
+    if (TOPOGRAPHY_ACTIVE_STATUS_CODES.includes(status as never)) {
+      kpis.active += 1;
+      kpis.activeContractValue += contract;
+    }
+    if (status === 'EM_CAMPO') kpis.inField += 1;
+    if (status === 'EM_PROCESSAMENTO') kpis.inProcessing += 1;
+    if (
+      status !== 'CONCLUIDO' &&
+      row.planned_end_date &&
+      String(row.planned_end_date).slice(0, 10) < today
+    ) {
+      kpis.overdue += 1;
+    }
+    if (status === 'CONCLUIDO') {
+      const end = row.actual_end_date
+        ? String(row.actual_end_date).slice(0, 10)
+        : row.updated_at
+          ? String(row.updated_at).slice(0, 10)
+          : '';
+      if (end >= monthStart) kpis.completedThisMonth += 1;
+    }
+  }
+
+  kpis.totalContractValue = Math.round(kpis.totalContractValue * 100) / 100;
+  kpis.totalReceived = Math.round(kpis.totalReceived * 100) / 100;
+  kpis.totalBalance = Math.round(kpis.totalBalance * 100) / 100;
+  kpis.activeContractValue = Math.round(kpis.activeContractValue * 100) / 100;
+
+  return kpis;
+}
+
+export async function listTopographyProjects(
+  supabase: SupabaseClient,
+  filters: MasterTopographyProjectListFilters = {},
+): Promise<MasterTopographyProjectListResult> {
+  const page = Math.max(1, Math.trunc(filters.page || 1));
+  const limit = Math.min(100, Math.max(1, Math.trunc(filters.limit || 20)));
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  const sort = filters.sort || 'created_at';
+  const ascending = (filters.order || 'desc') === 'asc';
+
+  let query = supabase
+    .from('master_topography_projects')
+    .select(SELECT_COLUMNS, { count: 'exact' });
+
+  query = applyListFilters(query, filters);
   query = query.order(sort, { ascending }).range(from, to);
 
   const [{ data, error, count }, kpis] = await Promise.all([
     query,
-    computeTopographyProjectKpis(supabase),
+    computeTopographyProjectKpis(supabase, filters),
   ]);
 
   if (error) throw new Error(error.message || 'Falha ao listar projetos.');

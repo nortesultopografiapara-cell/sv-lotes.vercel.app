@@ -119,7 +119,13 @@
 
 @media (min-width: 1200px) {
   .kpiRow {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1400px) {
+  .kpiRow {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
@@ -283,6 +289,64 @@
   height: 100%;
   background: #2563eb;
   border-radius: 999px;
+}
+
+.progressBarFinance {
+  height: 100%;
+  background: #059669;
+  border-radius: 999px;
+}
+
+.financeSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  color: #334155;
+}
+
+.financeLabel {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.financeBlock {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  padding: 0.85rem;
+  background: #f8fafc;
+}
+
+.financeBlockTitle {
+  margin: 0 0 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.financeBarWrap {
+  margin-top: 0.85rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.financeBarFill {
+  height: 100%;
+  background: #059669;
+  border-radius: 999px;
+}
+
+.financeBarLabel {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #059669;
 }
 
 .tableWrap {

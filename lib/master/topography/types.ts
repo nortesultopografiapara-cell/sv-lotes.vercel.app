@@ -30,6 +30,16 @@ export type MasterTopographyProject = {
   planned_end_date: string | null;
   actual_end_date: string | null;
   contract_value: number | null;
+  /** Entrada/adiantamento recebido (persistido). */
+  valor_recebido: number;
+  /** Derivado: contratado − recebido (não gravado). */
+  saldo_receber: number;
+  /** Derivado: % recebido (não gravado). */
+  percentual_recebido: number;
+  /** Aliases camelCase para o service/UI. */
+  valorRecebido: number;
+  saldoReceber: number;
+  percentualRecebido: number;
   payment_terms: string | null;
   origin_budget_number: string | null;
   internal_manager: string | null;
@@ -72,6 +82,7 @@ export type MasterTopographyProjectInput = {
   planned_end_date?: string | null;
   actual_end_date?: string | null;
   contract_value?: number | null;
+  valor_recebido?: number;
   payment_terms?: string | null;
   origin_budget_number?: string | null;
   internal_manager?: string | null;
@@ -110,6 +121,10 @@ export type MasterTopographyProjectKpis = {
   overdue: number;
   completedThisMonth: number;
   activeContractValue: number;
+  /** Totais financeiros respeitando filtros da listagem. */
+  totalContractValue: number;
+  totalReceived: number;
+  totalBalance: number;
 };
 
 export type MasterTopographyProjectListResult = {

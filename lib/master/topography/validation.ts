@@ -41,11 +41,20 @@ function parsePercent(value: unknown, field: string, fallback = 0): number {
   return n;
 }
 
-function parseOptionalMoney(value: unknown): number | null {
+function parseOptionalMoney(value: unknown, field = 'Valor'): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) {
-    throw new Error('Valor contratado não pode ser negativo.');
+    throw new Error(`${field} não pode ser negativo.`);
+  }
+  return Math.round(n * 100) / 100;
+}
+
+function parseMoneyDefault(value: unknown, field: string, fallback = 0): number {
+  if (value == null || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`${field} não pode ser negativo.`);
   }
   return Math.round(n * 100) / 100;
 }
@@ -130,7 +139,21 @@ export function validateTopographyProjectInput(
       raw.actual_end_date ?? raw.actualEndDate,
       'Data de conclusão',
     ),
-    contract_value: parseOptionalMoney(raw.contract_value ?? raw.contractValue),
+    ...(() => {
+      const contract_value = parseOptionalMoney(
+        raw.contract_value ?? raw.contractValue,
+        'Valor contratado',
+      );
+      const valor_recebido = parseMoneyDefault(
+        raw.valor_recebido ?? raw.valorRecebido ?? raw.amount_received ?? raw.amountReceived,
+        'Valor recebido',
+        0,
+      );
+      if (valor_recebido > (contract_value ?? 0)) {
+        throw new Error('Valor recebido não pode ser maior que o valor contratado.');
+      }
+      return { contract_value, valor_recebido };
+    })(),
     payment_terms: cleanText(raw.payment_terms ?? raw.paymentTerms, 500),
     origin_budget_number: cleanText(
       raw.origin_budget_number ?? raw.originBudgetNumber,

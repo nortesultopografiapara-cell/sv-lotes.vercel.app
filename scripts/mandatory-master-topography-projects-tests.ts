@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { validateTopographyProjectInput } from '../lib/master/topography/validation';
+import { computeProjectFinancials } from '../lib/master/topography/projectFinancials';
 import { TOPOGRAPHY_STATUSES } from '../lib/master/topography/statuses';
 import { TOPOGRAPHY_SERVICE_TYPES } from '../lib/master/topography/serviceTypes';
 import { TOPOGRAPHY_CATEGORIES } from '../lib/master/topography/categories';
@@ -77,6 +78,19 @@ function testValidation() {
   });
   assert(ok.title === 'Levantamento Fazenda X', 'title ok');
   assert(ok.progress_percent === 0, 'progress default');
+  assert(ok.valor_recebido === 0, 'valor_recebido default');
+
+  const withFinance = validateTopographyProjectInput({
+    title: 'X',
+    client_name: 'Y',
+    category: 'TOPOGRAFIA',
+    service_type: 'LEVANTAMENTO_TOPOGRAFICO',
+    status: 'RASCUNHO',
+    contract_value: 16000,
+    valor_recebido: 8000,
+  });
+  assert(withFinance.contract_value === 16000, 'contratado');
+  assert(withFinance.valor_recebido === 8000, 'recebido');
 
   let threw = false;
   try {
@@ -111,6 +125,22 @@ function testValidation() {
   threw = false;
   try {
     validateTopographyProjectInput({
+      title: 'X',
+      client_name: 'Y',
+      category: 'TOPOGRAFIA',
+      service_type: 'LEVANTAMENTO_TOPOGRAFICO',
+      status: 'RASCUNHO',
+      contract_value: 1000,
+      valor_recebido: 1500,
+    });
+  } catch {
+    threw = true;
+  }
+  assert(threw, 'recebido > contratado rejeitado');
+
+  threw = false;
+  try {
+    validateTopographyProjectInput({
       title: '',
       client_name: 'Y',
       category: 'TOPOGRAFIA',
@@ -121,6 +151,19 @@ function testValidation() {
     threw = true;
   }
   assert(threw, 'título obrigatório');
+}
+
+function testFinancialHelpers() {
+  const f = computeProjectFinancials(16000, 8000);
+  assert(f.saldo_receber === 8000, 'saldo 8000');
+  assert(f.percentual_recebido === 50, '50%');
+  assert(f.valorRecebido === 8000, 'alias camel');
+  const z = computeProjectFinancials(0, 0);
+  assert(z.percentual_recebido === 0, 'percentual zero sem contrato');
+  assert(exists('supabase/migrations/20260722130000_master_topography_projects_valor_recebido.sql'), 'migration 4.1.1');
+  const mig = read('supabase/migrations/20260722130000_master_topography_projects_valor_recebido.sql');
+  assert(mig.includes('valor_recebido'), 'coluna valor_recebido');
+  assert(!mig.includes('REFERENCES public.customers'), 'sem FK tenant');
 }
 
 function testConstantsCentralized() {
@@ -179,6 +222,7 @@ function testTenantUntouched() {
 function main() {
   testFilesAndIsolation();
   testValidation();
+  testFinancialHelpers();
   testConstantsCentralized();
   testApisGuard();
   testDashboardIntegration();

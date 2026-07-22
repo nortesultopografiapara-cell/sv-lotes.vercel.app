@@ -229,6 +229,31 @@ function TopographyProjectDetailInner() {
         </div>
 
         <div className={styles.panel}>
+          <h2 className={styles.panelTitle}>Resumo Financeiro</h2>
+          <dl className={styles.dl}>
+            <dt>Valor contratado</dt>
+            <dd>{formatCurrency(project.contract_value)}</dd>
+            <dt>Recebido</dt>
+            <dd>{formatCurrency(project.valor_recebido)}</dd>
+            <dt>Saldo</dt>
+            <dd>{formatCurrency(project.saldo_receber)}</dd>
+            <dt>Percentual recebido</dt>
+            <dd>{project.percentual_recebido.toLocaleString('pt-BR')}%</dd>
+          </dl>
+          <div className={styles.financeBarWrap} aria-label="Percentual recebido">
+            <div
+              className={styles.financeBarFill}
+              style={{
+                width: `${Math.min(100, Math.max(0, project.percentual_recebido))}%`,
+              }}
+            />
+          </div>
+          <p className={styles.financeBarLabel}>
+            {project.percentual_recebido.toLocaleString('pt-BR')}%
+          </p>
+        </div>
+
+        <div className={styles.panel}>
           <h2 className={styles.panelTitle}>Execução</h2>
           <dl className={styles.dl}>
             <dt>Progresso</dt>
