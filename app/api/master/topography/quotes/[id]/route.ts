@@ -4,6 +4,8 @@ import {
   getTopographyQuoteById,
   logTopographyQuoteAudit,
   updateTopographyQuote,
+  deleteTopographyQuotePermanently,
+  canPermanentlyDeleteTopographyQuote,
 } from '@/lib/master/topography/quotesService';
 import {
   getTopographyQuoteStructure,
@@ -37,7 +39,10 @@ export async function GET(request: Request, context: Ctx) {
 
     const quote = await getTopographyQuoteById(supabaseAdmin, id);
     if (!quote) return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
-    return NextResponse.json({ quote });
+    return NextResponse.json({
+      quote,
+      canDelete: canPermanentlyDeleteTopographyQuote(quote).ok,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao carregar orçamento.';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -126,6 +131,56 @@ export async function PUT(request: Request, context: Ctx) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao salvar estrutura.';
     const status = /obrigatório|inválid|não pode|convertido/i.test(message) ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(request: Request, context: Ctx) {
+  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+  const { id } = await context.params;
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const auth = await assertSuperAdmin(supabaseAdmin, body.userId ?? null);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
+
+    const existing = await getTopographyQuoteById(supabaseAdmin, id);
+    if (!existing) {
+      return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+    }
+
+    const gate = canPermanentlyDeleteTopographyQuote(existing);
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.reason }, { status: 400 });
+    }
+
+    await logTopographyQuoteAudit(supabaseAdmin, {
+      userId: body.userId ? String(body.userId) : null,
+      action: 'TOPOGRAPHY_QUOTE_DELETED',
+      entityId: id,
+      description: `Orçamento ${existing.code} excluído definitivamente`,
+      oldData: {
+        code: existing.code,
+        status: existing.status,
+        client_name: existing.client_name,
+      },
+    });
+
+    const result = await deleteTopographyQuotePermanently(
+      supabaseAdmin,
+      id,
+      String(body.confirmationCode || body.code || ''),
+    );
+
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Falha ao excluir orçamento.';
+    const status = /não confere|não pode|Somente|aprovado|convertido|encontrado/i.test(message)
+      ? 400
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

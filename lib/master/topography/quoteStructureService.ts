@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_QUOTE_STAGE_NAMES } from './defaultQuoteStages';
 import {
   computeQuoteFinancials,
   priceDifferencePercent,
@@ -117,19 +116,12 @@ export function buildStructureFromRows(
 }
 
 export async function seedDefaultQuoteStages(
-  supabase: SupabaseClient,
-  quoteId: string,
+  _supabase: SupabaseClient,
+  _quoteId: string,
 ): Promise<void> {
-  const now = new Date().toISOString();
-  const rows = DEFAULT_QUOTE_STAGE_NAMES.map((name, index) => ({
-    quote_id: quoteId,
-    name,
-    sort_order: index,
-    is_system: true,
-    updated_at: now,
-  }));
-  const { error } = await supabase.from('master_topography_quote_stages').insert(rows);
-  if (error) throw new Error(error.message || 'Falha ao criar etapas padrão.');
+  // Intencionalmente vazio: novos orçamentos iniciam em branco.
+  // Templates futuros (INFRA etc.) serão aplicados só com escolha explícita do usuário.
+  return;
 }
 
 export async function listQuoteStages(
@@ -384,7 +376,7 @@ export async function duplicateQuoteStructure(
     listQuoteItems(supabase, sourceQuoteId),
   ]);
   if (!stages.length) {
-    await seedDefaultQuoteStages(supabase, targetQuoteId);
+    // Cópia também em branco — não regenera etapas padrão.
     return;
   }
 

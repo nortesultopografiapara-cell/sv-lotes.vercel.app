@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { LayoutGrid, List, Plus, RefreshCw } from 'lucide-react';
+import { LayoutGrid, List, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { topographyCategoryLabel, TOPOGRAPHY_CATEGORIES } from '@/lib/master/topography/categories';
@@ -20,6 +20,8 @@ import type {
   MasterTopographyQuote,
   MasterTopographyQuoteKpis,
 } from '@/lib/master/topography/quoteTypes';
+import { canPermanentlyDeleteTopographyQuote } from '@/lib/master/topography/quoteDeletePolicy';
+import { QuoteDeleteConfirmModal } from './QuoteDeleteConfirmModal';
 import styles from '../projects/topographyProjects.module.css';
 
 function formatCurrency(val: number | null | undefined) {
@@ -47,6 +49,105 @@ function StatusBadge({ status }: { status: string }) {
     >
       {topographyQuoteStatusLabel(status)}
     </span>
+  );
+}
+
+function QuoteActionsMenu({
+  quote,
+  busy,
+  onArchive,
+  onRestore,
+  onDuplicate,
+  onDelete,
+}: {
+  quote: MasterTopographyQuote;
+  busy: boolean;
+  onArchive: () => void;
+  onRestore: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const canDelete = canPermanentlyDeleteTopographyQuote(quote).ok;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className={styles.actionsMenuWrap} ref={wrapRef}>
+      <button
+        type="button"
+        className={styles.btnGhost}
+        aria-label="Ações"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <MoreHorizontal width={16} height={16} />
+      </button>
+      {open ? (
+        <div className={styles.actionsMenu} role="menu">
+          <Link
+            href={`/master/topography/budgets/${quote.id}/edit`}
+            className={styles.actionsMenuItem}
+            onClick={() => setOpen(false)}
+          >
+            Abrir / Editar
+          </Link>
+          <button
+            type="button"
+            className={styles.actionsMenuItem}
+            onClick={() => {
+              setOpen(false);
+              onDuplicate();
+            }}
+          >
+            Duplicar
+          </button>
+          {quote.is_archived ? (
+            <button
+              type="button"
+              className={styles.actionsMenuItem}
+              onClick={() => {
+                setOpen(false);
+                onRestore();
+              }}
+            >
+              Restaurar
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.actionsMenuItem}
+              onClick={() => {
+                setOpen(false);
+                onArchive();
+              }}
+            >
+              Arquivar
+            </button>
+          )}
+          {canDelete ? (
+            <button
+              type="button"
+              className={`${styles.actionsMenuItem} ${styles.actionsMenuItemDanger}`}
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+            >
+              Excluir definitivamente
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -92,6 +193,9 @@ function QuotesInner() {
   const [city, setCity] = useState('');
   const [manager, setManager] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [rowBusy, setRowBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MasterTopographyQuote | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(q.trim()), 300);
@@ -187,6 +291,51 @@ function QuotesInner() {
   }, [user, creating, router]);
 
   const creatingFromQuery = useRef(false);
+
+  const runRowAction = async (quoteId: string, path: string) => {
+    if (!user?.id) return;
+    setRowBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/master/topography/quotes/${quoteId}/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha na operação.');
+      if (path === 'duplicate' && data.quote?.id) {
+        router.push(`/master/topography/budgets/${data.quote.id}/edit`);
+        return;
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha na operação.');
+    } finally {
+      setRowBusy(false);
+    }
+  };
+
+  const handleHardDelete = async (typedCode: string) => {
+    if (!user?.id || !deleteTarget) return;
+    setRowBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/master/topography/quotes/${deleteTarget.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, confirmationCode: typedCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao excluir.');
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Falha ao excluir.');
+    } finally {
+      setRowBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!openNew || !user?.id || creatingFromQuery.current) return;
@@ -381,12 +530,25 @@ function QuotesInner() {
               </p>
               <p className={styles.meta}>BDI: {(item.bdi_percent ?? 0).toLocaleString('pt-BR')}%</p>
               <p className={styles.meta}>Validade: {formatDate(item.expiration_date)}</p>
-              <Link
-                href={`/master/topography/budgets/${item.id}/edit`}
-                className={styles.btnGhost}
-              >
-                Abrir editor →
-              </Link>
+              <div className={styles.headerActions}>
+                <Link
+                  href={`/master/topography/budgets/${item.id}/edit`}
+                  className={styles.btnGhost}
+                >
+                  Abrir editor →
+                </Link>
+                <QuoteActionsMenu
+                  quote={item}
+                  busy={rowBusy}
+                  onArchive={() => void runRowAction(item.id, 'archive')}
+                  onRestore={() => void runRowAction(item.id, 'restore')}
+                  onDuplicate={() => void runRowAction(item.id, 'duplicate')}
+                  onDelete={() => {
+                    setDeleteError(null);
+                    setDeleteTarget(item);
+                  }}
+                />
+              </div>
             </article>
           ))}
         </div>
@@ -420,12 +582,17 @@ function QuotesInner() {
                   <td>{formatCurrency(item.final_value ?? item.estimated_value)}</td>
                   <td>{formatDate(item.expiration_date)}</td>
                   <td>
-                    <Link
-                      href={`/master/topography/budgets/${item.id}/edit`}
-                      className={styles.btnGhost}
-                    >
-                      Editar
-                    </Link>
+                    <QuoteActionsMenu
+                      quote={item}
+                      busy={rowBusy}
+                      onArchive={() => void runRowAction(item.id, 'archive')}
+                      onRestore={() => void runRowAction(item.id, 'restore')}
+                      onDuplicate={() => void runRowAction(item.id, 'duplicate')}
+                      onDelete={() => {
+                        setDeleteError(null);
+                        setDeleteTarget(item);
+                      }}
+                    />
                   </td>
                 </tr>
               ))}
@@ -457,6 +624,21 @@ function QuotesInner() {
           </button>
         </div>
       </div>
+
+      <QuoteDeleteConfirmModal
+        key={deleteTarget?.id || 'closed'}
+        open={Boolean(deleteTarget)}
+        code={deleteTarget?.code || ''}
+        busy={rowBusy}
+        error={deleteError}
+        onClose={() => {
+          if (!rowBusy) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        onConfirm={(typed) => void handleHardDelete(typed)}
+      />
     </div>
   );
 }

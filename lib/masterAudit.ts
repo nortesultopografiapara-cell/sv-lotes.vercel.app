@@ -76,6 +76,7 @@ const ACTION_LABELS: Record<string, string> = {
   TOPOGRAPHY_QUOTE_STRUCTURE_SAVED: 'Estrutura de orçamento Topografia salva',
   TOPOGRAPHY_CUSTOM_ITEM_CREATED: 'Item próprio Topografia criado',
   TOPOGRAPHY_PRICE_IMPORT: 'Importação de banco de preços Topografia',
+  TOPOGRAPHY_QUOTE_DELETED: 'Orçamento Topografia excluído definitivamente',
 };
 
 /** Módulos operacionais de tenant — fora do escopo da Auditoria Master. */

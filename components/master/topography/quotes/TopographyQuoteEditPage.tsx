@@ -40,6 +40,7 @@ import {
   type MasterTopographyPriceDatabase,
 } from '@/lib/master/topography/priceBanks';
 import type { MasterTopographyPriceItem } from '@/lib/master/topography/priceCatalogService';
+import { canPermanentlyDeleteTopographyQuote } from '@/lib/master/topography/quoteDeletePolicy';
 import {
   computeQuoteFinancials,
   itemTotalWithBdi,
@@ -64,6 +65,7 @@ import type {
 } from '@/lib/master/topography/quoteTypes';
 import { QuoteCatalogPicker } from './QuoteCatalogPicker';
 import { QuoteCustomItemModal } from './QuoteCustomItemModal';
+import { QuoteDeleteConfirmModal } from './QuoteDeleteConfirmModal';
 import styles from './topographyQuotesEditor.module.css';
 
 type DraftItem = MasterTopographyQuoteItem & { localKey: string };
@@ -501,6 +503,8 @@ function EditInner() {
   const [generalOpen, setGeneralOpen] = useState(true);
   const [financeOpen, setFinanceOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [dragStageKey, setDragStageKey] = useState<string | null>(null);
   const [dragItem, setDragItem] = useState<{ stageKey: string; itemKey: string } | null>(null);
   const [customModalStageKey, setCustomModalStageKey] = useState<string | null>(null);
@@ -508,6 +512,10 @@ function EditInner() {
   const readOnly = Boolean(
     quoteMeta?.status === 'CONVERTIDO' || quoteMeta?.converted_project_id || quoteMeta?.is_archived,
   );
+
+  const canHardDelete = quoteMeta
+    ? canPermanentlyDeleteTopographyQuote(quoteMeta).ok
+    : false;
 
   const bdiPercent = Number(draft?.bdi_percent || 0) || 0;
   const discountPercent = Number(draft?.discount_percent || 0) || 0;
@@ -764,6 +772,27 @@ function EditInner() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha na operação.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleHardDelete = async (typedCode: string) => {
+    if (!user?.id || !id) return;
+    setBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/master/topography/quotes/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, confirmationCode: typedCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao excluir.');
+      setDeleteOpen(false);
+      router.push('/master/topography/budgets');
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Falha ao excluir.');
     } finally {
       setBusy(false);
     }
@@ -1044,6 +1073,19 @@ function EditInner() {
             >
               <Archive width={14} height={14} /> Arquivar
             </button>
+            {canHardDelete ? (
+              <button
+                type="button"
+                className={styles.btnDanger}
+                disabled={busy}
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+              >
+                <Trash2 width={14} height={14} /> Excluir definitivamente
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -1279,10 +1321,21 @@ function EditInner() {
 
       <div className={styles.stagesHead}>
         <h2>Etapas</h2>
-        <button type="button" className={styles.btnSecondary} disabled={readOnly} onClick={addStage}>
+        <button type="button" className={styles.btnPrimary} disabled={readOnly} onClick={addStage}>
           <Plus width={14} height={14} /> Nova etapa
         </button>
       </div>
+
+      {stages.length === 0 ? (
+        <div className={styles.emptyStagesBox}>
+          <p>
+            Nenhuma etapa adicionada. Clique em “Nova etapa” para estruturar este orçamento.
+          </p>
+          <button type="button" className={styles.btnPrimary} disabled={readOnly} onClick={addStage}>
+            <Plus width={14} height={14} /> Nova etapa
+          </button>
+        </div>
+      ) : null}
 
       {stages.map((stage) => {
         const calcItems = stage.items.map((it) => ({
@@ -1512,6 +1565,21 @@ function EditInner() {
           }}
         />
       ) : null}
+
+      <QuoteDeleteConfirmModal
+        key={quoteMeta.id}
+        open={deleteOpen}
+        code={quoteMeta.code}
+        busy={busy}
+        error={deleteError}
+        onClose={() => {
+          if (!busy) {
+            setDeleteOpen(false);
+            setDeleteError(null);
+          }
+        }}
+        onConfirm={(typed) => void handleHardDelete(typed)}
+      />
     </div>
   );
 }

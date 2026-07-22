@@ -15,8 +15,12 @@ import {
   priceDifferencePercent,
   stagePercentOfBudget,
 } from '../lib/master/topography/quoteFinancials';
-import { DEFAULT_QUOTE_STAGE_NAMES } from '../lib/master/topography/defaultQuoteStages';
+import {
+  getDefaultQuoteStageTemplate,
+  QUOTE_STAGE_TEMPLATES,
+} from '../lib/master/topography/defaultQuoteStages';
 import { TOPOGRAPHY_PRICE_BANK_SEED } from '../lib/master/topography/priceBanks';
+import { canPermanentlyDeleteTopographyQuote } from '../lib/master/topography/quoteDeletePolicy';
 
 const root = path.join(__dirname, '..');
 
@@ -48,8 +52,8 @@ function testFiles() {
   assert(exists('app/api/master/topography/price-catalog/custom/route.ts'), 'custom API');
   assert(exists('app/api/master/topography/price-catalog/import/route.ts'), 'import API');
   assert(exists('components/master/topography/quotes/QuoteCatalogPicker.tsx'), 'picker UI');
-  assert(exists('components/master/topography/quotes/TopographyQuoteEditPage.tsx'), 'edit UI');
-  assert(!exists('components/master/topography/quotes/TopographyQuoteFormModal.tsx'), 'modal removido');
+  assert(exists('lib/master/topography/quoteDeletePolicy.ts'), 'delete policy');
+  assert(exists('components/master/topography/quotes/QuoteDeleteConfirmModal.tsx'), 'delete modal');
 
   const mig = read('supabase/migrations/20260722160000_master_topography_price_catalog.sql');
   assert(mig.includes('master_topography_price_databases'), 'tabela bancos');
@@ -129,11 +133,74 @@ function testValidationAndFinancials() {
 }
 
 function testBanksAndDefaults() {
-  assert(DEFAULT_QUOTE_STAGE_NAMES.length >= 7, 'etapas padrão');
+  const blank = getDefaultQuoteStageTemplate();
+  assert(blank.code === 'BLANK', 'padrão em branco');
+  assert(blank.stages.length === 0, 'template blank sem etapas');
+  assert(QUOTE_STAGE_TEMPLATES.some((t) => t.code === 'INFRA'), 'template infra preparado');
   assert(TOPOGRAPHY_PRICE_BANK_SEED.some((b) => b.code === 'SINAPI'), 'SINAPI');
   assert(TOPOGRAPHY_PRICE_BANK_SEED.some((b) => b.code === 'SIURB_INFRA'), 'SIURB INFRA');
   assert(TOPOGRAPHY_PRICE_BANK_SEED.some((b) => b.code === 'PROPRIO'), 'PRÓPRIO');
   assert(TOPOGRAPHY_PRICE_BANK_SEED.length >= 20, 'bancos extensíveis');
+}
+
+function testBlankCreateAndHardDelete() {
+  const svc = read('lib/master/topography/quotesService.ts');
+  assert(svc.includes('Orçamento em branco'), 'create sem etapas auto');
+  assert(!/createTopographyQuote[\s\S]*master_topography_quote_stages/.test(svc), 'create não insere etapas');
+  assert(svc.includes('deleteTopographyQuotePermanently'), 'delete service');
+  assert(svc.includes('Código do orçamento não confere'), 'confirma código');
+  assert(read('lib/master/topography/quoteDeletePolicy.ts').includes('RASCUNHO'), 'policy rascunho');
+
+  const draftOk = canPermanentlyDeleteTopographyQuote({
+    status: 'RASCUNHO',
+    converted_project_id: null,
+    approved_at: null,
+  });
+  assert(draftOk.ok, 'rascunho pode excluir');
+
+  const approved = canPermanentlyDeleteTopographyQuote({
+    status: 'APROVADO',
+    converted_project_id: null,
+    approved_at: '2026-01-01',
+  });
+  assert(!approved.ok, 'aprovado não exclui');
+
+  const converted = canPermanentlyDeleteTopographyQuote({
+    status: 'CONVERTIDO',
+    converted_project_id: 'abc',
+    approved_at: null,
+  });
+  assert(!converted.ok, 'convertido não exclui');
+
+  const enviado = canPermanentlyDeleteTopographyQuote({
+    status: 'ENVIADO',
+    converted_project_id: null,
+    approved_at: null,
+  });
+  assert(!enviado.ok, 'enviado não exclui');
+
+  const idApi = read('app/api/master/topography/quotes/[id]/route.ts');
+  assert(idApi.includes('export async function DELETE'), 'DELETE endpoint');
+  assert(idApi.includes('assertSuperAdmin'), 'DELETE exige SUPER_ADMIN');
+  assert(idApi.includes('deleteTopographyQuotePermanently'), 'DELETE chama service');
+  assert(idApi.includes('TOPOGRAPHY_QUOTE_DELETED'), 'auditoria exclusão');
+
+  const structure = read('lib/master/topography/quoteStructureService.ts');
+  assert(structure.includes('não regenera etapas padrão'), 'duplicate vazio sem seed');
+
+  const edit = read('components/master/topography/quotes/TopographyQuoteEditPage.tsx');
+  assert(edit.includes('Nenhuma etapa adicionada'), 'empty state');
+  assert(edit.includes('Excluir definitivamente'), 'botão exclusão editor');
+  assert(edit.includes('QuoteDeleteConfirmModal'), 'modal exclusão');
+
+  const list = read('components/master/topography/quotes/TopographyQuotesPage.tsx');
+  assert(list.includes('QuoteActionsMenu'), 'menu ações');
+  assert(list.includes('Excluir definitivamente'), 'exclusão na listagem');
+  assert(list.includes('Restaurar'), 'restaurar arquivado');
+
+  const modal = read('components/master/topography/quotes/QuoteDeleteConfirmModal.tsx');
+  assert(modal.includes('Excluir permanentemente'), 'botão destrutivo');
+  assert(modal.includes('Não será possível'), 'aviso forte');
 }
 
 function testConversionAndGuards() {
@@ -150,6 +217,8 @@ function testConversionAndGuards() {
     'app/api/master/topography/price-catalog/route.ts',
     'app/api/master/topography/price-catalog/custom/route.ts',
     'app/api/master/topography/price-catalog/import/route.ts',
+    'app/api/master/topography/quotes/[id]/route.ts',
+    'app/api/master/topography/quotes/[id]/archive/route.ts',
   ]) {
     assert(read(rel).includes('assertSuperAdmin'), `${rel} guard`);
   }
@@ -192,15 +261,28 @@ function testUiExports() {
 
 function testTenantIsolation() {
   assert(!exists('app/api/topography/price-catalog/route.ts'), 'sem API fora master');
+  assert(!exists('app/api/topography/quotes/route.ts'), 'sem quotes fora master');
   const tenantProjects = read('app/api/projects/route.ts');
   assert(!tenantProjects.includes('master_topography_price_items'), 'tenant intacto');
   assert(!tenantProjects.includes('master_topography_quotes'), 'tenant quotes intacto');
+
+  // Diff sensível: APIs tenant/GIS/contratos/portal não devem aparecer nestas mudanças
+  for (const rel of [
+    'app/api/gis/route.ts',
+    'app/api/contracts/route.ts',
+    'app/api/portal-cliente/route.ts',
+  ]) {
+    if (exists(rel)) {
+      assert(!read(rel).includes('master_topography_quotes'), `${rel} sem quotes master`);
+    }
+  }
 }
 
 function main() {
   testFiles();
   testValidationAndFinancials();
   testBanksAndDefaults();
+  testBlankCreateAndHardDelete();
   testConversionAndGuards();
   testUiExports();
   testTenantIsolation();

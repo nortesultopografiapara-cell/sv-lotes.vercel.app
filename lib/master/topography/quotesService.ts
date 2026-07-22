@@ -13,7 +13,9 @@ import type {
   MasterTopographyQuoteListFilters,
   MasterTopographyQuoteListResult,
 } from './quoteTypes';
-import { DEFAULT_QUOTE_STAGE_NAMES } from './defaultQuoteStages';
+import { canPermanentlyDeleteTopographyQuote } from './quoteDeletePolicy';
+
+export { canPermanentlyDeleteTopographyQuote } from './quoteDeletePolicy';
 
 export const QUOTE_SELECT_COLUMNS = `
   id, code, title, client_name, contact_name, phone, email,
@@ -276,22 +278,8 @@ export async function createTopographyQuote(
     .select(SELECT_COLUMNS)
     .single();
   if (error) throw new Error(error.message || 'Falha ao criar orçamento.');
-  const quote = parseRow(data as Record<string, unknown>);
-
-  const now = new Date().toISOString();
-  const stageRows = DEFAULT_QUOTE_STAGE_NAMES.map((name, index) => ({
-    quote_id: quote.id,
-    name,
-    sort_order: index,
-    is_system: true,
-    updated_at: now,
-  }));
-  const { error: stageError } = await supabase
-    .from('master_topography_quote_stages')
-    .insert(stageRows);
-  if (stageError) throw new Error(stageError.message || 'Falha ao criar etapas padrão.');
-
-  return quote;
+  // Orçamento em branco: sem etapas/itens automáticos (Fase correção cirúrgica).
+  return parseRow(data as Record<string, unknown>);
 }
 
 export async function updateTopographyQuote(
@@ -346,6 +334,32 @@ export async function archiveTopographyQuote(supabase: SupabaseClient, id: strin
 
 export async function restoreTopographyQuote(supabase: SupabaseClient, id: string) {
   return patchTopographyQuoteFields(supabase, id, { is_archived: false });
+}
+
+/**
+ * Remove o orçamento. Filhos (etapas, itens, preços, histórico) seguem ON DELETE CASCADE.
+ */
+export async function deleteTopographyQuotePermanently(
+  supabase: SupabaseClient,
+  id: string,
+  confirmationCode: string,
+): Promise<{ id: string; code: string }> {
+  const existing = await getTopographyQuoteById(supabase, id);
+  if (!existing) throw new Error('Orçamento não encontrado.');
+
+  const gate = canPermanentlyDeleteTopographyQuote(existing);
+  if (!gate.ok) throw new Error(gate.reason);
+
+  const expected = existing.code.trim();
+  const typed = String(confirmationCode || '').trim();
+  if (!typed || typed !== expected) {
+    throw new Error('Código do orçamento não confere. Digite o código exatamente para confirmar.');
+  }
+
+  const { error } = await supabase.from('master_topography_quotes').delete().eq('id', id);
+  if (error) throw new Error(error.message || 'Falha ao excluir orçamento.');
+
+  return { id: existing.id, code: existing.code };
 }
 
 export async function duplicateTopographyQuote(
