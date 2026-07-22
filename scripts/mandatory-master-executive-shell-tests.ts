@@ -225,7 +225,10 @@ function testExecutiveDashboardV2() {
   assert(dash.includes('loadMasterDashboardData'), 'reutiliza dados existentes');
   assert(dash.includes('Empresas Ativas'), 'kpi empresas');
   assert(dash.includes('Orçamentos'), 'atalho orçamentos');
-  assert(dash.includes('Em breve'), 'módulos em breve');
+  assert(dash.includes('Em breve'), 'módulos em breve (exceto Projetos)');
+  assert(dash.includes('Novo Projeto'), 'ação rápida Novo Projeto');
+  assert(dash.includes('topographyProjectKpis'), 'KPIs topografia');
+  assert(!dash.includes('MasterModulePlaceholder'), 'sem placeholder no dash');
   assert(!dash.includes('/finance"'), 'não usa /finance tenant');
   assert(
     (dash.match(/MasterAnnualRevenueExpenseChart/g) || []).length >= 2,

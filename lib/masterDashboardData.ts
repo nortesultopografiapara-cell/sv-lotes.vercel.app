@@ -20,6 +20,8 @@ import {
   sumSaasCashReceivedIncome,
   type MonthlyRevenueExpense,
 } from '@/lib/saasCashMovements';
+import { computeTopographyProjectKpis } from '@/lib/master/topography/projectsService';
+import type { MasterTopographyProjectKpis } from '@/lib/master/topography/types';
 
 export type MasterPlanTier = 'BÁSICO' | 'BUSINESS' | 'PROFISSIONAL' | 'PERSONALIZADO';
 
@@ -79,6 +81,8 @@ export type MasterDashboardData = {
    * Sem fonte real nesta etapa — sempre zeros + estado vazio explícito.
    */
   topographyMonthlyFinancials: MonthlyRevenueExpense[];
+  /** Contagens reais do módulo Projetos e Serviços (não é receita). */
+  topographyProjectKpis: MasterTopographyProjectKpis;
   planDistribution: {
     tier: MasterPlanTier;
     count: number;
@@ -288,6 +292,22 @@ export async function loadMasterDashboardData(
   /** Sem fonte corporativa real — contrato visual pronto, sempre vazio. */
   const topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
 
+  let topographyProjectKpis: MasterTopographyProjectKpis = {
+    active: 0,
+    inField: 0,
+    inProcessing: 0,
+    overdue: 0,
+    completedThisMonth: 0,
+    activeContractValue: 0,
+  };
+  try {
+    topographyProjectKpis = await computeTopographyProjectKpis(supabase);
+  } catch (err) {
+    errors.push(
+      `topography_project_kpis: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   let totalLots = blocksRes.count ?? 0;
   if (blocksRes.error && lotsRes.count != null) {
     totalLots = lotsRes.count;
@@ -477,6 +497,7 @@ export async function loadMasterDashboardData(
     revenueByMonth,
     saasMonthlyFinancials,
     topographyMonthlyFinancials,
+    topographyProjectKpis,
     planDistribution,
     alerts,
     recentCompanies,

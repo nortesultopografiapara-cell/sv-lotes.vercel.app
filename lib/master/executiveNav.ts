@@ -73,7 +73,6 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
         name: 'Projetos e Serviços',
         href: '/master/topography/projects',
         icon: FolderKanban,
-        comingSoon: true,
       },
       {
         name: 'Orçamentos',

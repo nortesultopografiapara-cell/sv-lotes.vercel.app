@@ -50,7 +50,8 @@
     "test:client-portal-lookup": "tsx scripts/mandatory-client-portal-lookup-tests.ts",
     "test:client-portal-otp": "tsx scripts/mandatory-client-portal-otp-tests.ts",
     "test:client-portal-dashboard": "tsx scripts/mandatory-client-portal-dashboard-tests.ts",
-    "test:master-executive-shell": "tsx scripts/mandatory-master-executive-shell-tests.ts"
+    "test:master-executive-shell": "tsx scripts/mandatory-master-executive-shell-tests.ts",
+    "test:master-topography-projects": "tsx scripts/mandatory-master-topography-projects-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

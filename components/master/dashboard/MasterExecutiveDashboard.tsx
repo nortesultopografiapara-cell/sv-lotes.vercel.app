@@ -451,6 +451,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <div className={styles.card}>
           <h3 className={styles.cardTitle}>Ações rápidas</h3>
           <div className={styles.quickGrid}>
+            <QuickLink href="/master/topography/projects?new=1" icon={FolderKanban} label="Novo Projeto" />
             <QuickLink href="/companies?new=1" icon={Building2} label="Nova Empresa" />
             <QuickLink href="/plans" icon={CreditCard} label="Nova Assinatura" />
             <QuickLink href="/saas-finance" icon={Wallet} label="Financeiro SaaS" />
@@ -493,19 +494,39 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
       <section className={styles.modulesRow} aria-label="Módulos futuros">
         <div className={styles.card}>
           <h3 className={styles.cardTitle}>SV Topografia &amp; Projetos</h3>
-          <p className={styles.welcomeSub} style={{ marginBottom: '0.85rem' }}>
-            Módulos operacionais em preparação — atalhos para as páginas placeholder do Master.
-          </p>
+          <div className={styles.summaryList} style={{ marginBottom: '0.85rem' }}>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Projetos ativos</span>
+              <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.active}</span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Em campo</span>
+              <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.inField}</span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Em processamento</span>
+              <span className={styles.summaryValue}>
+                {dashboard.topographyProjectKpis.inProcessing}
+              </span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Projetos em atraso</span>
+              <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.overdue}</span>
+            </div>
+          </div>
           <div className={styles.moduleGrid}>
-            {TOPOGRAPHY_LINKS.map((item) => (
-              <Link key={item.href} href={item.href} className={styles.moduleItem}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <item.icon width={14} height={14} aria-hidden />
-                  {item.label}
-                </span>
-                <span className={styles.soon}>Em breve</span>
-              </Link>
-            ))}
+            {TOPOGRAPHY_LINKS.map((item) => {
+              const isProjects = item.href === '/master/topography/projects';
+              return (
+                <Link key={item.href} href={item.href} className={styles.moduleItem}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <item.icon width={14} height={14} aria-hidden />
+                    {item.label}
+                  </span>
+                  {isProjects ? null : <span className={styles.soon}>Em breve</span>}
+                </Link>
+              );
+            })}
           </div>
         </div>
 
