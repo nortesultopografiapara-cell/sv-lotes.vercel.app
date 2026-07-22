@@ -451,6 +451,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <div className={styles.card}>
           <h3 className={styles.cardTitle}>Ações rápidas</h3>
           <div className={styles.quickGrid}>
+            <QuickLink href="/master/topography/budgets?new=1" icon={FileSpreadsheet} label="Novo Orçamento" />
             <QuickLink href="/master/topography/projects?new=1" icon={FolderKanban} label="Novo Projeto" />
             <QuickLink href="/companies?new=1" icon={Building2} label="Nova Empresa" />
             <QuickLink href="/plans" icon={CreditCard} label="Nova Assinatura" />
@@ -513,17 +514,41 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
               <span className={styles.summaryLabel}>Projetos em atraso</span>
               <span className={styles.summaryValue}>{dashboard.topographyProjectKpis.overdue}</span>
             </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Orçamentos</span>
+              <span className={styles.summaryValue}>{dashboard.topographyQuoteKpis.active}</span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Valor total orçado</span>
+              <span className={styles.summaryValue}>
+                {formatCurrency(dashboard.topographyQuoteKpis.totalQuotedValue)}
+              </span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Valor aprovado</span>
+              <span className={styles.summaryValue}>
+                {formatCurrency(dashboard.topographyQuoteKpis.totalApprovedValue)}
+              </span>
+            </div>
+            <div className={styles.summaryRow}>
+              <span className={styles.summaryLabel}>Taxa de conversão</span>
+              <span className={styles.summaryValue}>
+                {dashboard.topographyQuoteKpis.approvalRate.toLocaleString('pt-BR')}%
+              </span>
+            </div>
           </div>
           <div className={styles.moduleGrid}>
             {TOPOGRAPHY_LINKS.map((item) => {
-              const isProjects = item.href === '/master/topography/projects';
+              const isLive =
+                item.href === '/master/topography/projects' ||
+                item.href === '/master/topography/budgets';
               return (
                 <Link key={item.href} href={item.href} className={styles.moduleItem}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
                     <item.icon width={14} height={14} aria-hidden />
                     {item.label}
                   </span>
-                  {isProjects ? null : <span className={styles.soon}>Em breve</span>}
+                  {isLive ? null : <span className={styles.soon}>Em breve</span>}
                 </Link>
               );
             })}

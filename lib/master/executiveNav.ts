@@ -78,7 +78,6 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
         name: 'Orçamentos',
         href: '/master/topography/budgets',
         icon: FileSpreadsheet,
-        comingSoon: true,
       },
       {
         name: 'Financeiro',

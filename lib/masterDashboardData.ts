@@ -22,6 +22,8 @@ import {
 } from '@/lib/saasCashMovements';
 import { computeTopographyProjectKpis } from '@/lib/master/topography/projectsService';
 import type { MasterTopographyProjectKpis } from '@/lib/master/topography/types';
+import { computeTopographyQuoteKpis } from '@/lib/master/topography/quotesService';
+import type { MasterTopographyQuoteKpis } from '@/lib/master/topography/quoteTypes';
 
 export type MasterPlanTier = 'BÁSICO' | 'BUSINESS' | 'PROFISSIONAL' | 'PERSONALIZADO';
 
@@ -83,6 +85,7 @@ export type MasterDashboardData = {
   topographyMonthlyFinancials: MonthlyRevenueExpense[];
   /** Contagens reais do módulo Projetos e Serviços (não é receita). */
   topographyProjectKpis: MasterTopographyProjectKpis;
+  topographyQuoteKpis: MasterTopographyQuoteKpis;
   planDistribution: {
     tier: MasterPlanTier;
     count: number;
@@ -311,6 +314,23 @@ export async function loadMasterDashboardData(
     );
   }
 
+  let topographyQuoteKpis: MasterTopographyQuoteKpis = {
+    active: 0,
+    inNegotiation: 0,
+    approved: 0,
+    refused: 0,
+    totalQuotedValue: 0,
+    totalApprovedValue: 0,
+    approvalRate: 0,
+  };
+  try {
+    topographyQuoteKpis = await computeTopographyQuoteKpis(supabase);
+  } catch (err) {
+    errors.push(
+      `topography_quote_kpis: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   let totalLots = blocksRes.count ?? 0;
   if (blocksRes.error && lotsRes.count != null) {
     totalLots = lotsRes.count;
@@ -501,6 +521,7 @@ export async function loadMasterDashboardData(
     saasMonthlyFinancials,
     topographyMonthlyFinancials,
     topographyProjectKpis,
+    topographyQuoteKpis,
     planDistribution,
     alerts,
     recentCompanies,

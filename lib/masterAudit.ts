@@ -66,6 +66,13 @@ const ACTION_LABELS: Record<string, string> = {
   TOPOGRAPHY_PROJECT_PROGRESS_CHANGED: 'Progresso de projeto Topografia alterado',
   TOPOGRAPHY_PROJECT_ARCHIVED: 'Projeto Topografia arquivado',
   TOPOGRAPHY_PROJECT_RESTORED: 'Projeto Topografia restaurado',
+  TOPOGRAPHY_QUOTE_CREATED: 'Orçamento Topografia criado',
+  TOPOGRAPHY_QUOTE_UPDATED: 'Orçamento Topografia editado',
+  TOPOGRAPHY_QUOTE_STATUS_CHANGED: 'Status de orçamento Topografia alterado',
+  TOPOGRAPHY_QUOTE_ARCHIVED: 'Orçamento Topografia arquivado',
+  TOPOGRAPHY_QUOTE_RESTORED: 'Orçamento Topografia restaurado',
+  TOPOGRAPHY_QUOTE_DUPLICATED: 'Orçamento Topografia duplicado',
+  TOPOGRAPHY_QUOTE_CONVERTED: 'Orçamento convertido em projeto',
 };
 
 /** Módulos operacionais de tenant — fora do escopo da Auditoria Master. */

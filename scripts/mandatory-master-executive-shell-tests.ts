@@ -227,7 +227,9 @@ function testExecutiveDashboardV2() {
   assert(dash.includes('Orçamentos'), 'atalho orçamentos');
   assert(dash.includes('Em breve'), 'módulos em breve (exceto Projetos)');
   assert(dash.includes('Novo Projeto'), 'ação rápida Novo Projeto');
+  assert(dash.includes('Novo Orçamento'), 'ação rápida Novo Orçamento');
   assert(dash.includes('topographyProjectKpis'), 'KPIs topografia');
+  assert(dash.includes('topographyQuoteKpis'), 'KPIs orçamentos');
   assert(!dash.includes('MasterModulePlaceholder'), 'sem placeholder no dash');
   assert(!dash.includes('/finance"'), 'não usa /finance tenant');
   assert(
