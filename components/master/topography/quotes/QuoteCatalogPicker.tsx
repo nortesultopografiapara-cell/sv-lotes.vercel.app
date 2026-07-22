@@ -78,9 +78,20 @@ export function QuoteCatalogPicker({
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
   return (
-    <div ref={wrapRef} className={styles.catalogPicker}>
-      <div className={styles.catalogRow}>
+    <div
+      ref={wrapRef}
+      className={`${styles.catalogPicker}${open ? ` ${styles.catalogPickerOpen}` : ''}`}
+    >      <div className={styles.catalogRow}>
         <select
           value={bank}
           disabled={disabled}

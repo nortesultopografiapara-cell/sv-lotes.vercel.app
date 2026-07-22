@@ -169,6 +169,17 @@ function testUiExports() {
   assert(edit.includes('reference_price'), 'preço referência');
   assert(edit.includes('adopted_price'), 'preço adotado');
   assert(edit.includes('Criar Item Próprio') || edit.includes('QuoteCustomItemModal'), 'item próprio');
+  assert(edit.includes('financeBarToggle') || edit.includes('financeOpen'), 'resumo recolhível mobile');
+
+  const css = read('components/master/topography/quotes/topographyQuotesEditor.module.css');
+  assert(css.includes('--budget-summary-height'), 'espaço inferior do editor');
+  assert(css.includes('catalogPickerOpen'), 'stacking autocomplete');
+  assert(css.includes('max-height: 360px'), 'altura resultados');
+  assert(css.includes('overflow: visible'), 'etapa não corta dropdown');
+  assert(/\.financeBar\s*\{[^}]*z-index:\s*5/s.test(css), 'resumo abaixo do catálogo');
+
+  const picker = read('components/master/topography/quotes/QuoteCatalogPicker.tsx');
+  assert(picker.includes('Escape'), 'fecha com Escape');
 
   const exportsLib = read('lib/master/topography/quoteExports.ts');
   assert(exportsLib.includes('orientation: \'landscape\''), 'PDF paisagem');

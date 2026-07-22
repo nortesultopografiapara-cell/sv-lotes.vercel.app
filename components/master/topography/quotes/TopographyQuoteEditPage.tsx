@@ -499,6 +499,7 @@ function EditInner() {
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [generalOpen, setGeneralOpen] = useState(true);
+  const [financeOpen, setFinanceOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
   const [dragStageKey, setDragStageKey] = useState<string | null>(null);
   const [dragItem, setDragItem] = useState<{ stageKey: string; itemKey: string } | null>(null);
@@ -1436,7 +1437,19 @@ function EditInner() {
         );
       })}
 
-      <aside className={styles.financeBar} aria-label="Resumo financeiro">
+      <aside
+        className={`${styles.financeBar}${financeOpen ? '' : ` ${styles.financeBarCollapsed}`}`}
+        aria-label="Resumo financeiro"
+      >
+        <button
+          type="button"
+          className={styles.financeBarToggle}
+          aria-expanded={financeOpen}
+          onClick={() => setFinanceOpen((v) => !v)}
+        >
+          <span>Resumo financeiro · {formatCurrency(financials.totalGeral)}</span>
+          {financeOpen ? <ChevronUp width={16} height={16} /> : <ChevronDown width={16} height={16} />}
+        </button>
         <div className={styles.financeGrid}>
           <div className={styles.financeItem}>
             <label>Total sem BDI</label>
