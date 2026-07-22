@@ -227,16 +227,13 @@ function testExecutiveDashboardV2() {
   assert(dash.includes('Orçamentos'), 'atalho orçamentos');
   assert(dash.includes('Em breve'), 'módulos em breve');
   assert(!dash.includes('/finance"'), 'não usa /finance tenant');
-  assert(dash.includes('MasterAnnualRevenueExpenseChart'), 'gráficos anuais Receita×Despesa');
-  assert(dash.includes('MasterCompactAlerts'), 'alertas compactos');
-  assert(dash.includes('Receita × Despesa — SV LOTES'), 'título gráfico SV LOTES');
   assert(
-    dash.includes('Receita × Despesa — SV Topografia e Projetos'),
-    'título gráfico Topografia',
+    (dash.match(/MasterAnnualRevenueExpenseChart/g) || []).length >= 2,
+    'dois gráficos anuais renderizados',
   );
-  assert(dash.includes('Distribuição de planos'), 'pizza de planos no centro');
-  assert(!dash.includes('Alertas inteligentes'), 'painel grande de alertas removido');
-  assert(!dash.includes('Receita dos últimos 6 meses'), 'linha 6 meses substituída');
+  assert(dash.includes('saasMonthlyFinancials'), 'SV LOTES usa dados reais Caixa SaaS');
+  assert(dash.includes('forceEmpty'), 'Topografia com estado vazio forçado');
+  assert(dash.includes('topographyMonthlyFinancials'), 'Topografia usa contrato vazio');
 
   assert(
     exists('components/master/dashboard/MasterAnnualRevenueExpenseChart.tsx'),

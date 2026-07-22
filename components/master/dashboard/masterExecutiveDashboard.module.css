@@ -241,9 +241,9 @@
   margin-bottom: 0.85rem;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .chartsRow {
-    grid-template-columns: 1fr 0.95fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -274,12 +274,8 @@
 .annualChartCard {
   display: flex;
   flex-direction: column;
-}
-
-.planCard {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  min-height: 0;
+  height: 100%;
 }
 
 .chartBox {
@@ -365,52 +361,6 @@
   font-size: 0.75rem;
   font-weight: 600;
   color: #64748b;
-}
-
-.planLayout {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem;
-}
-
-.planLegend {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  min-width: 0;
-  flex: 1;
-}
-
-.planLegendItem {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.planLegendRow {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.planDot {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
-.planName {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.planMeta {
-  margin-left: 1.1rem;
-  font-size: 0.6875rem;
-  color: #94a3b8;
 }
 
 .alertsList {

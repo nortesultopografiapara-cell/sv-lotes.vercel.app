@@ -28,7 +28,6 @@ import {
   Briefcase,
   Globe,
 } from 'lucide-react';
-import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import {
   exportMasterDashboardCsv,
@@ -244,10 +243,6 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
 
   if (!dashboard || !stats) return null;
 
-  const planChartData = dashboard.planDistribution
-    .filter((p) => p.count > 0)
-    .map((p) => ({ name: p.tier, value: p.count, color: p.color }));
-
   return (
     <div className={styles.page}>
       <div className={styles.toolbar}>
@@ -362,59 +357,12 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
 
       <MasterCompactAlerts alerts={dashboard.alerts} maxVisible={3} detailsHref="/companies" />
 
-      <section className={styles.chartsRow} aria-label="Gráficos anuais e planos">
+      <section className={styles.chartsRow} aria-label="Gráficos anuais Receita × Despesa">
         <MasterAnnualRevenueExpenseChart
           title={`Receita × Despesa — SV LOTES (${dashboard.financialYear})`}
           data={dashboard.saasMonthlyFinancials}
           emptyMessage="Sem movimentações no Caixa SaaS neste período."
         />
-
-        <div className={`${styles.card} ${styles.planCard}`}>
-          <h3 className={styles.cardTitleStrong}>Distribuição de planos</h3>
-          {planChartData.length > 0 ? (
-            <div className={styles.planLayout}>
-              <div className={styles.chartBox} style={{ height: 160, maxWidth: 160 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={planChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={42}
-                      outerRadius={68}
-                      paddingAngle={4}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {planChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className={styles.planLegend}>
-                {dashboard.planDistribution.map((plan) => (
-                  <div key={plan.tier} className={styles.planLegendItem}>
-                    <div className={styles.planLegendRow}>
-                      <span className={styles.planDot} style={{ backgroundColor: plan.color }} />
-                      <span className={styles.planName}>{plan.tier}</span>
-                    </div>
-                    <span className={styles.planMeta}>
-                      {plan.count} {plan.count === 1 ? 'empresa' : 'empresas'}
-                      {stats.totalCompanies > 0 ? ` (${plan.percent.toFixed(1)}%)` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className={styles.emptyChart}>
-              <Tag width={28} height={28} />
-              <p>Nenhuma empresa cadastrada</p>
-            </div>
-          )}
-        </div>
 
         <MasterAnnualRevenueExpenseChart
           title={`Receita × Despesa — SV Topografia e Projetos (${dashboard.financialYear})`}
