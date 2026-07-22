@@ -8,7 +8,6 @@ import {
   CORPORATE_PAYMENT_METHODS,
   CORPORATE_RECEIVABLE_STATUSES,
   corporatePaymentMethodLabel,
-  corporateReceivableStatusColor,
   corporateReceivableStatusLabel,
   type MasterCorporateReceivable,
   type MasterCorporateReceivableKpis,
@@ -22,8 +21,15 @@ import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
+import {
+  CorporateFinanceSemanticBadge,
+  CorporateFinanceSemanticKpi,
+} from './CorporateFinanceSemantic';
 import ReceivableFormModal from './ReceivableFormModal';
 import { formatCurrency, formatDate, todayISO } from './format';
+import {
+  semanticToneForReceivableStatus,
+} from '@/lib/master/corporateFinance/semantic';
 import styles from './corporateFinance.module.css';
 
 type LookupProject = {
@@ -57,12 +63,9 @@ const EMPTY_KPIS: MasterCorporateReceivableKpis = {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span
-      className={styles.statusBadge}
-      style={{ background: corporateReceivableStatusColor(status) }}
-    >
+    <CorporateFinanceSemanticBadge tone={semanticToneForReceivableStatus(status)}>
       {corporateReceivableStatusLabel(status)}
-    </span>
+    </CorporateFinanceSemanticBadge>
   );
 }
 
@@ -406,34 +409,37 @@ function ReceivablesInner() {
         {error ? <p className={styles.error}>{error}</p> : null}
 
         <div className={styles.kpisWide}>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Em aberto</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.totalOpen)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Vence no mês</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.dueThisMonth)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Recebido no mês</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.receivedThisMonth)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Vencido</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.overdue)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Qtd. abertos</p>
-            <p className={styles.kpiValue}>{kpis.openCount}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Qtd. parciais</p>
-            <p className={styles.kpiValue}>{kpis.partialCount}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Qtd. recebidos</p>
-            <p className={styles.kpiValue}>{kpis.receivedCount}</p>
-          </div>
+          <CorporateFinanceSemanticKpi
+            label="Em aberto"
+            value={formatCurrency(kpis.totalOpen)}
+            tone="open"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vence no mês"
+            value={formatCurrency(kpis.dueThisMonth)}
+            tone="dueMonth"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Recebido no mês"
+            value={formatCurrency(kpis.receivedThisMonth)}
+            tone="received"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vencido"
+            value={formatCurrency(kpis.overdue)}
+            tone="overdue"
+          />
+          <CorporateFinanceSemanticKpi label="Qtd. abertos" value={kpis.openCount} tone="open" />
+          <CorporateFinanceSemanticKpi
+            label="Qtd. parciais"
+            value={kpis.partialCount}
+            tone="partial"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Qtd. recebidos"
+            value={kpis.receivedCount}
+            tone="received"
+          />
         </div>
 
         <div className={styles.panel}>

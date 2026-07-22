@@ -7,7 +7,6 @@ import { ArrowLeft, Download, Plus, X } from 'lucide-react';
 import {
   CORPORATE_PAYMENT_METHODS,
   CORPORATE_PAYABLE_STATUSES,
-  corporatePayableStatusColor,
   corporatePayableStatusLabel,
   corporatePaymentMethodLabel,
   type MasterCorporatePayable,
@@ -22,7 +21,12 @@ import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
+import {
+  CorporateFinanceSemanticBadge,
+  CorporateFinanceSemanticKpi,
+} from './CorporateFinanceSemantic';
 import { computeLiveNet, formatCurrency, formatDate, todayISO } from './format';
+import { semanticToneForPayableStatus } from '@/lib/master/corporateFinance/semantic';
 import styles from './corporateFinance.module.css';
 
 type LookupProject = { id: string; code: string; title: string };
@@ -119,12 +123,9 @@ function fromPayable(r: MasterCorporatePayable): FormState {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span
-      className={styles.statusBadge}
-      style={{ background: corporatePayableStatusColor(status) }}
-    >
+    <CorporateFinanceSemanticBadge tone={semanticToneForPayableStatus(status)}>
       {corporatePayableStatusLabel(status)}
-    </span>
+    </CorporateFinanceSemanticBadge>
   );
 }
 
@@ -497,34 +498,34 @@ function PayablesInner() {
         {error ? <p className={styles.error}>{error}</p> : null}
 
         <div className={styles.kpisWide}>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Em aberto</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.totalOpen)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Vence no mês</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.dueThisMonth)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Pago no mês</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.paidThisMonth)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Vencido</p>
-            <p className={styles.kpiValue}>{formatCurrency(kpis.overdue)}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Qtd. abertos</p>
-            <p className={styles.kpiValue}>{kpis.openCount}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Qtd. parciais</p>
-            <p className={styles.kpiValue}>{kpis.partialCount}</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Qtd. pagos</p>
-            <p className={styles.kpiValue}>{kpis.paidCount}</p>
-          </div>
+          <CorporateFinanceSemanticKpi
+            label="Em aberto"
+            value={formatCurrency(kpis.totalOpen)}
+            tone="open"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vence no mês"
+            value={formatCurrency(kpis.dueThisMonth)}
+            tone="dueMonth"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Pago no mês"
+            value={formatCurrency(kpis.paidThisMonth)}
+            hint="Saída de caixa"
+            tone="expense"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vencido"
+            value={formatCurrency(kpis.overdue)}
+            tone="overdue"
+          />
+          <CorporateFinanceSemanticKpi label="Qtd. abertos" value={kpis.openCount} tone="open" />
+          <CorporateFinanceSemanticKpi
+            label="Qtd. parciais"
+            value={kpis.partialCount}
+            tone="partial"
+          />
+          <CorporateFinanceSemanticKpi label="Qtd. pagos" value={kpis.paidCount} tone="received" />
         </div>
 
         <div className={styles.panel}>

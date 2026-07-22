@@ -307,18 +307,22 @@ export async function loadMasterDashboardData(
   }
 
   let topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
+  let topographyMonthlyError: string | null = null;
   try {
+    // Preferência: esta chamada funciona com service_role.
+    // No browser o Dashboard V2 sobrescreve via API Master (service role) —
+    // ver MasterExecutiveDashboard — porque RLS no client pode retornar [].
     const corp = await aggregateCorporateCashMonthlyRevenueExpense(supabase, financialYear);
     topographyMonthlyFinancials = corp.months.map((m) => ({
       month: m.month,
       label: SAAS_CASH_MONTH_LABELS[m.month - 1] || String(m.month),
-      revenue: m.income,
-      expense: m.expense,
+      revenue: Number(m.income) || 0,
+      expense: Number(m.expense) || 0,
     }));
   } catch (err) {
-    errors.push(
-      `topography_monthly_financials: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    topographyMonthlyError =
+      err instanceof Error ? err.message : String(err);
+    errors.push(`topography_monthly_financials: ${topographyMonthlyError}`);
   }
 
   let topographyProjectKpis: MasterTopographyProjectKpis = {

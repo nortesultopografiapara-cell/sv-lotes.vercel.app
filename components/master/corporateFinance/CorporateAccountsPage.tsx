@@ -12,7 +12,12 @@ import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
+import {
+  CorporateFinanceSemanticBadge,
+  corporateFinanceValueClass,
+} from './CorporateFinanceSemantic';
 import styles from './corporateFinance.module.css';
+import { semanticToneForSignedAmount } from '@/lib/master/corporateFinance/semantic';
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -234,15 +239,23 @@ function AccountsInner() {
                       </td>
                       <td>{corporateAccountTypeLabel(a.account_type)}</td>
                       <td>{formatCurrency(Number(a.balance?.openingBalance ?? a.opening_balance))}</td>
-                      <td>{formatCurrency(Number(a.balance?.income || 0))}</td>
-                      <td>{formatCurrency(Number(a.balance?.expense || 0))}</td>
-                      <td>{formatCurrency(Number(a.balance?.currentBalance || 0))}</td>
+                      <td className={corporateFinanceValueClass('income')}>
+                        {formatCurrency(Number(a.balance?.income || 0))}
+                      </td>
+                      <td className={corporateFinanceValueClass('expense')}>
+                        {formatCurrency(Number(a.balance?.expense || 0))}
+                      </td>
+                      <td
+                        className={corporateFinanceValueClass(
+                          semanticToneForSignedAmount(Number(a.balance?.currentBalance || 0)),
+                        )}
+                      >
+                        {formatCurrency(Number(a.balance?.currentBalance || 0))}
+                      </td>
                       <td>
-                        <span
-                          className={`${styles.badge} ${a.is_active ? styles.badgeOn : styles.badgeOff}`}
-                        >
+                        <CorporateFinanceSemanticBadge tone={a.is_active ? 'received' : 'neutral'}>
                           {a.is_active ? 'Ativa' : 'Inativa'}
-                        </span>
+                        </CorporateFinanceSemanticBadge>
                       </td>
                       <td>
                         <div className={styles.rowActions}>

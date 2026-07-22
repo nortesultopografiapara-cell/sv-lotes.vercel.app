@@ -22,6 +22,7 @@ import type {
 } from '@/lib/master/topography/quoteTypes';
 import { canPermanentlyDeleteTopographyQuote } from '@/lib/master/topography/quoteDeletePolicy';
 import { QuoteDeleteConfirmModal } from './QuoteDeleteConfirmModal';
+import { CorporateFinanceSemanticKpi } from '@/components/master/corporateFinance/CorporateFinanceSemantic';
 import styles from '../projects/topographyProjects.module.css';
 
 function formatCurrency(val: number | null | undefined) {
@@ -375,39 +376,34 @@ function QuotesInner() {
 
       {error ? <div className={styles.errorBanner}>{error}</div> : null}
 
-      <section className={styles.kpiRow} aria-label="Indicadores">
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Orçamentos ativos</p>
-          <p className={styles.kpiValue}>{kpis.active}</p>
-        </div>
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Em negociação</p>
-          <p className={styles.kpiValue}>{kpis.inNegotiation}</p>
-        </div>
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Aprovados</p>
-          <p className={styles.kpiValue}>{kpis.approved}</p>
-        </div>
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Recusados</p>
-          <p className={styles.kpiValue}>{kpis.refused}</p>
-        </div>
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Valor total orçado</p>
-          <p className={styles.kpiValue} style={{ fontSize: '0.95rem' }}>
-            {formatCurrency(kpis.totalQuotedValue)}
-          </p>
-        </div>
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Valor aprovado</p>
-          <p className={styles.kpiValue} style={{ fontSize: '0.95rem' }}>
-            {formatCurrency(kpis.totalApprovedValue)}
-          </p>
-        </div>
-        <div className={styles.kpiCard}>
-          <p className={styles.kpiLabel}>Taxa de aprovação</p>
-          <p className={styles.kpiValue}>{kpis.approvalRate.toLocaleString('pt-BR')}%</p>
-        </div>
+      <section
+        className={styles.kpiRow}
+        aria-label="Indicadores"
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}
+      >
+        <CorporateFinanceSemanticKpi label="Orçamentos ativos" value={kpis.active} tone="open" />
+        <CorporateFinanceSemanticKpi
+          label="Em negociação"
+          value={kpis.inNegotiation}
+          tone="dueMonth"
+        />
+        <CorporateFinanceSemanticKpi label="Aprovados" value={kpis.approved} tone="received" />
+        <CorporateFinanceSemanticKpi label="Recusados" value={kpis.refused} tone="expense" />
+        <CorporateFinanceSemanticKpi
+          label="Valor total orçado"
+          value={formatCurrency(kpis.totalQuotedValue)}
+          tone="balance"
+        />
+        <CorporateFinanceSemanticKpi
+          label="Valor aprovado"
+          value={formatCurrency(kpis.totalApprovedValue)}
+          tone="received"
+        />
+        <CorporateFinanceSemanticKpi
+          label="Taxa de aprovação"
+          value={`${kpis.approvalRate.toLocaleString('pt-BR')}%`}
+          tone="partial"
+        />
       </section>
 
       <div className={styles.toolbar}>

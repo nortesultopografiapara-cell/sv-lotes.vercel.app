@@ -38,6 +38,11 @@ import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
 import { isPlatformAdmin } from '@/lib/rls';
 import { MasterAnnualRevenueExpenseChart } from './MasterAnnualRevenueExpenseChart';
 import { MasterCompactAlerts } from './MasterCompactAlerts';
+import {
+  CORPORATE_FINANCE_SEMANTIC_COLORS,
+  semanticToneForResult,
+  semanticToneForSignedAmount,
+} from '@/lib/master/corporateFinance/semantic';
 import styles from './masterExecutiveDashboard.module.css';
 
 function formatCurrency(val: number) {
@@ -99,6 +104,8 @@ function KpiCard({
   icon,
   iconClass,
   currency,
+  valueColor,
+  borderColor,
 }: {
   title: string;
   value: string | number;
@@ -106,15 +113,25 @@ function KpiCard({
   icon: ReactNode;
   iconClass: string;
   currency?: boolean;
+  valueColor?: string;
+  borderColor?: string;
 }) {
   return (
-    <article className={styles.kpiCard}>
+    <article
+      className={styles.kpiCard}
+      style={borderColor ? { borderTop: `3px solid ${borderColor}` } : undefined}
+    >
       <div className={styles.kpiTop}>
         <p className={styles.kpiTitle}>{title}</p>
         <span className={`${styles.kpiIcon} ${iconClass}`}>{icon}</span>
       </div>
       <div>
-        <p className={`${styles.kpiValue} ${currency ? styles.kpiValueCurrency : ''}`}>{value}</p>
+        <p
+          className={`${styles.kpiValue} ${currency ? styles.kpiValueCurrency : ''}`}
+          style={valueColor ? { color: valueColor } : undefined}
+        >
+          {value}
+        </p>
         <p className={styles.kpiHint}>{hint}</p>
       </div>
     </article>
@@ -170,6 +187,57 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
     setLoadError(null);
     try {
       const data = await loadMasterDashboardData(supabase);
+      const year = data.financialYear;
+      const userId = user?.id ? String(user.id) : '';
+
+      // Série e KPIs corporativos via API Master (service_role) — evita RLS vazio no browser.
+      if (userId) {
+        const qs = new URLSearchParams({ userId, year: String(year) });
+        const [monthlyRes, summaryRes] = await Promise.all([
+          fetch(`/api/master/corporate-finance/cash-movements/monthly?${qs}`),
+          fetch(`/api/master/corporate-finance/summary?${qs}`),
+        ]);
+        const monthlyJson = await monthlyRes.json().catch(() => ({}));
+        const summaryJson = await summaryRes.json().catch(() => ({}));
+
+        if (monthlyRes.ok && Array.isArray(monthlyJson.months)) {
+          data.topographyMonthlyFinancials = monthlyJson.months.map(
+            (m: { month: number; income: number; expense: number }) => ({
+              month: Number(m.month),
+              label:
+                data.topographyMonthlyFinancials[Number(m.month) - 1]?.label ||
+                String(m.month),
+              revenue: Number(m.income) || 0,
+              expense: Number(m.expense) || 0,
+            }),
+          );
+          data.errors = data.errors.filter(
+            (e) => !e.startsWith('topography_monthly_financials:'),
+          );
+        } else if (monthlyJson.error) {
+          data.errors.push(`topography_monthly_financials: ${monthlyJson.error}`);
+        }
+
+        if (summaryRes.ok && summaryJson.kpis) {
+          const k = summaryJson.kpis;
+          data.corporateFinanceKpis = {
+            monthIncome: Number(k.cashMonthIncome) || 0,
+            monthExpense: Number(k.cashMonthExpense) || 0,
+            monthNet: Number(k.cashMonthNet) || 0,
+            currentBalance: Number(k.cashCurrentBalance) || 0,
+            receivableOpen: Number(k.receivableOpen) || 0,
+            payableOpen: Number(k.payableOpen) || 0,
+            receivableOverdue: Number(k.receivableOverdue) || 0,
+            payableOverdue: Number(k.payableOverdue) || 0,
+            receivedThisMonth: Number(k.receivableReceivedThisMonth) || 0,
+            paidThisMonth: Number(k.payablePaidThisMonth) || 0,
+          };
+          data.errors = data.errors.filter(
+            (e) => !e.startsWith('corporate_finance_kpis:'),
+          );
+        }
+      }
+
       setDashboard(data);
       if (data.errors.length > 0) {
         setLoadError(data.errors.join(' · '));
@@ -181,7 +249,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!isPlatformAdmin(user?.role)) {
@@ -192,24 +260,16 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await loadMasterDashboardData(supabase);
-        if (cancelled) return;
-        setDashboard(data);
-        setLoadError(data.errors.length > 0 ? data.errors.join(' · ') : null);
-      } catch (err) {
-        if (cancelled) return;
-        const msg = err instanceof Error ? err.message : 'Falha ao carregar dashboard';
-        setLoadError(msg);
-        setDashboard(null);
+        await loadData();
       } finally {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user, router]);
+  }, [user, router, loadData]);
 
   const stats = dashboard?.stats;
 
@@ -379,6 +439,8 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           icon={<Banknote />}
           iconClass={styles.iconGreen}
           currency
+          borderColor={CORPORATE_FINANCE_SEMANTIC_COLORS.income}
+          valueColor={CORPORATE_FINANCE_SEMANTIC_COLORS.income}
         />
         <KpiCard
           title="Despesa do mês"
@@ -387,6 +449,8 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           icon={<Wallet />}
           iconClass={styles.iconRose}
           currency
+          borderColor={CORPORATE_FINANCE_SEMANTIC_COLORS.expense}
+          valueColor={CORPORATE_FINANCE_SEMANTIC_COLORS.expense}
         />
         <KpiCard
           title="Resultado do mês"
@@ -397,6 +461,16 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
             dashboard.corporateFinanceKpis.monthNet >= 0 ? styles.iconGreen : styles.iconRose
           }
           currency
+          borderColor={
+            CORPORATE_FINANCE_SEMANTIC_COLORS[
+              semanticToneForResult(dashboard.corporateFinanceKpis.monthNet)
+            ]
+          }
+          valueColor={
+            CORPORATE_FINANCE_SEMANTIC_COLORS[
+              semanticToneForResult(dashboard.corporateFinanceKpis.monthNet)
+            ]
+          }
         />
         <KpiCard
           title="Saldo corporativo"
@@ -405,6 +479,16 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           icon={<Briefcase />}
           iconClass={styles.iconSky}
           currency
+          borderColor={
+            CORPORATE_FINANCE_SEMANTIC_COLORS[
+              semanticToneForSignedAmount(dashboard.corporateFinanceKpis.currentBalance)
+            ]
+          }
+          valueColor={
+            CORPORATE_FINANCE_SEMANTIC_COLORS[
+              semanticToneForSignedAmount(dashboard.corporateFinanceKpis.currentBalance)
+            ]
+          }
         />
         <KpiCard
           title="A receber"
@@ -413,6 +497,8 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           icon={<Banknote />}
           iconClass={styles.iconCyan}
           currency
+          borderColor={CORPORATE_FINANCE_SEMANTIC_COLORS.open}
+          valueColor={CORPORATE_FINANCE_SEMANTIC_COLORS.open}
         />
         <KpiCard
           title="A pagar"
@@ -421,6 +507,8 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           icon={<CreditCard />}
           iconClass={styles.iconOrange}
           currency
+          borderColor={CORPORATE_FINANCE_SEMANTIC_COLORS.open}
+          valueColor={CORPORATE_FINANCE_SEMANTIC_COLORS.open}
         />
       </section>
 

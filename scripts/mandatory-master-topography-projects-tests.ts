@@ -200,12 +200,12 @@ function testDashboardIntegration() {
   assert(dash.includes('topographyProjectKpis'), 'KPIs topografia no dashboard');
   assert(dash.includes('Novo Projeto'), 'ação rápida Novo Projeto');
   assert(dash.includes('/master/topography/projects?new=1'), 'link formulário real');
-  assert(dash.includes('forceEmpty'), 'gráfico financeiro topografia vazio');
-  assert(dash.includes('topographyMonthlyFinancials'), 'série financeira vazia mantida');
+  assert(dash.includes('topographyMonthlyFinancials'), 'série financeira topografia');
+  assert(!dash.includes('forceEmpty'), 'gráfico topografia conectado (sem forceEmpty)');
 
   const data = read('lib/masterDashboardData.ts');
   assert(data.includes('computeTopographyProjectKpis'), 'KPIs reais no loader');
-  assert(data.includes('buildEmptyMonthlyRevenueExpense'), 'financeiro topo vazio');
+  assert(data.includes('aggregateCorporateCashMonthlyRevenueExpense'), 'agrega caixa corporativo');
 }
 
 function testTenantUntouched() {

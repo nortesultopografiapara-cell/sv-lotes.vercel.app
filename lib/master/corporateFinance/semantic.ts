@@ -70,7 +70,8 @@ export function semanticToneForReceivableStatus(status: string): CorporateFinanc
 export function semanticToneForPayableStatus(status: string): CorporateFinanceSemanticTone {
   switch (String(status || '').toUpperCase()) {
     case 'PAID':
-      return 'paid';
+      // Status concluído: verde (não confundir com saída de caixa)
+      return 'received';
     case 'PARTIAL':
       return 'partial';
     case 'OVERDUE':
@@ -116,4 +117,36 @@ export function semanticToneForResult(amount: number): CorporateFinanceSemanticT
 
 export function receivedSourceLabel(source: string): string {
   return source === 'CORPORATE_FINANCE' ? 'Financeiro corporativo' : 'Legado';
+}
+
+export function resolveCorporateFinanceSemantic(tone: CorporateFinanceSemanticTone): {
+  tone: CorporateFinanceSemanticTone;
+  color: string;
+  label: string;
+} {
+  const labels: Record<CorporateFinanceSemanticTone, string> = {
+    income: 'Receita',
+    received: 'Recebido',
+    expense: 'Despesa',
+    paid: 'Pago',
+    open: 'Em aberto',
+    partial: 'Parcial',
+    overdue: 'Vencido',
+    dueMonth: 'Vence no mês',
+    transfer: 'Transferência',
+    balance: 'Saldo',
+    balancePositive: 'Saldo positivo',
+    balanceNegative: 'Saldo negativo',
+    canceled: 'Cancelado',
+    archived: 'Arquivado',
+    alert: 'Alerta',
+    neutral: 'Neutro',
+    resultPositive: 'Resultado positivo',
+    resultNegative: 'Resultado negativo',
+  };
+  return {
+    tone,
+    color: CORPORATE_FINANCE_SEMANTIC_COLORS[tone],
+    label: labels[tone],
+  };
 }

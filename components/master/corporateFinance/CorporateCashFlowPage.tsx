@@ -27,14 +27,20 @@ import type {
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
 import {
-  CorporateFinanceSemanticKpi,
-} from './CorporateFinanceSemantic';
-import { semanticToneForResult } from '@/lib/master/corporateFinance/semantic';
-import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
+import {
+  CorporateFinanceSemanticBadge,
+  CorporateFinanceSemanticKpi,
+  corporateFinanceValueClass,
+} from './CorporateFinanceSemantic';
 import { formatCurrency, formatDate, todayISO } from './format';
+import {
+  semanticToneForCashType,
+  semanticToneForResult,
+  semanticToneForSignedAmount,
+} from '@/lib/master/corporateFinance/semantic';
 import styles from './corporateFinance.module.css';
 
 type Row = MasterCorporateCashMovement & { running_balance: number | null };
@@ -392,7 +398,7 @@ function CashFlowInner() {
           <CorporateFinanceSemanticKpi
             label="Saldo atual"
             value={loading || !kpis ? '—' : formatCurrency(kpis.currentBalance)}
-            tone="balance"
+            tone={semanticToneForSignedAmount(kpis?.currentBalance || 0)}
           />
           <CorporateFinanceSemanticKpi
             label="Entradas no período"
@@ -417,7 +423,7 @@ function CashFlowInner() {
           <CorporateFinanceSemanticKpi
             label="Saldo final"
             value={loading || !kpis ? '—' : formatCurrency(kpis.closingBalance)}
-            tone="balance"
+            tone={semanticToneForSignedAmount(kpis?.closingBalance || 0)}
           />
           <CorporateFinanceSemanticKpi
             label="Movimentos"
@@ -620,12 +626,20 @@ function CashFlowInner() {
                           <td>{formatDate(m.movement_date)}</td>
                           <td>{m.code}</td>
                           <td>{m.description}</td>
-                          <td>{corporateCashTypeLabel(m.type)}</td>
+                          <td>
+                            <CorporateFinanceSemanticBadge tone={semanticToneForCashType(m.type)}>
+                              {corporateCashTypeLabel(m.type)}
+                            </CorporateFinanceSemanticBadge>
+                          </td>
                           <td>{categoryName(m.category_id)}</td>
                           <td>{accountName(m.financial_account_id)}</td>
                           <td>{corporateCashOriginLabel(m.origin)}</td>
-                          <td>{ie.income ? formatCurrency(ie.income) : '—'}</td>
-                          <td>{ie.expense ? formatCurrency(ie.expense) : '—'}</td>
+                          <td className={ie.income ? corporateFinanceValueClass('income') : undefined}>
+                            {ie.income ? formatCurrency(ie.income) : '—'}
+                          </td>
+                          <td className={ie.expense ? corporateFinanceValueClass('expense') : undefined}>
+                            {ie.expense ? formatCurrency(ie.expense) : '—'}
+                          </td>
                           <td>
                             {m.running_balance != null
                               ? formatCurrency(m.running_balance)

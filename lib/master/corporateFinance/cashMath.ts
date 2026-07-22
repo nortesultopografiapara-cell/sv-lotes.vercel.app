@@ -73,22 +73,117 @@ export function signedCashEffect(m: {
 }
 
 /** Contribui para receita/despesa do período (exclui transferências). */
+export const CORPORATE_PNL_INCOME_ORIGINS = new Set([
+  'MANUAL_INCOME',
+  'RECEIVABLE_PAYMENT',
+  'BACKFILL_RECEIVABLE',
+  'LEGACY_PROJECT_RECEIVED',
+  'ASAAS',
+]);
+
+export const CORPORATE_PNL_EXPENSE_ORIGINS = new Set([
+  'MANUAL_EXPENSE',
+  'PAYABLE_PAYMENT',
+  'BACKFILL_PAYABLE',
+]);
+
 export function pnlCashEffect(m: {
   type: string;
-  amount: number;
+  amount: number | string;
   is_reversed: boolean;
+  origin?: string | null;
   notes?: string | null;
 }): { income: number; expense: number } {
   if (m.is_reversed) return { income: 0, expense: 0 };
-  const amt = Number(m.amount) || 0;
-  if (m.type === 'INCOME') return { income: amt, expense: 0 };
-  if (m.type === 'EXPENSE') return { income: 0, expense: amt };
+  const amt = Number(m.amount);
+  const amount = Number.isFinite(amt) ? amt : 0;
+  if (amount <= 0) return { income: 0, expense: 0 };
+
+  if (m.type === 'INCOME') {
+    const origin = m.origin ? String(m.origin) : '';
+    if (origin && !CORPORATE_PNL_INCOME_ORIGINS.has(origin)) {
+      return { income: 0, expense: 0 };
+    }
+    return { income: amount, expense: 0 };
+  }
+  if (m.type === 'EXPENSE') {
+    const origin = m.origin ? String(m.origin) : '';
+    if (origin && !CORPORATE_PNL_EXPENSE_ORIGINS.has(origin)) {
+      return { income: 0, expense: 0 };
+    }
+    return { income: 0, expense: amount };
+  }
   if (m.type === 'REVERSAL') {
     const n = String(m.notes || '');
-    if (n.includes('[REV:INCOME]')) return { income: -amt, expense: 0 };
-    if (n.includes('[REV:EXPENSE]')) return { income: 0, expense: -amt };
+    if (n.includes('[REV:INCOME]')) return { income: -amount, expense: 0 };
+    if (n.includes('[REV:EXPENSE]')) return { income: 0, expense: -amount };
   }
+  // TRANSFER_IN / TRANSFER_OUT / outros → fora do P&L consolidado
   return { income: 0, expense: 0 };
+}
+
+/**
+ * Agrega Jan–Dez a partir de linhas já carregadas (testável com fixtures).
+ * Usa movement_date; converte amount string→number; 12 meses sempre.
+ */
+export function aggregateCorporateCashMonthlyFromRows(
+  rows: Array<{
+    movement_date: string;
+    type: string;
+    amount: number | string;
+    is_reversed: boolean;
+    origin?: string | null;
+    notes?: string | null;
+  }>,
+  year: number,
+): CorporateMonthlyRevenueExpense {
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    income: 0,
+    expense: 0,
+    net: 0,
+    result: 0,
+  }));
+
+  for (const raw of rows) {
+    const day = String(raw.movement_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    const y = Number(day.slice(0, 4));
+    if (y !== year) continue;
+    const month = Number(day.slice(5, 7));
+    if (!Number.isInteger(month) || month < 1 || month > 12) continue;
+
+    const pnl = pnlCashEffect({
+      type: String(raw.type || ''),
+      amount: raw.amount,
+      is_reversed: Boolean(raw.is_reversed),
+      origin: raw.origin,
+      notes: raw.notes,
+    });
+    const bucket = months[month - 1];
+    if (!bucket) continue;
+    bucket.income = roundMoney(bucket.income + pnl.income);
+    bucket.expense = roundMoney(bucket.expense + pnl.expense);
+  }
+
+  for (const b of months) {
+    b.net = roundMoney(b.income - b.expense);
+    b.result = b.net;
+  }
+
+  const totals = months.reduce(
+    (acc, m) => ({
+      income: roundMoney(acc.income + m.income),
+      expense: roundMoney(acc.expense + m.expense),
+      net: 0,
+      result: 0,
+    }),
+    { income: 0, expense: 0, net: 0, result: 0 },
+  );
+  totals.net = roundMoney(totals.income - totals.expense);
+  totals.result = totals.net;
+
+  return { year, months, totals };
 }
 
 export async function nextCashMovementCode(supabase: SupabaseClient): Promise<string> {
@@ -274,45 +369,25 @@ export async function aggregateCorporateCashMonthlyRevenueExpense(
 ): Promise<CorporateMonthlyRevenueExpense> {
   const from = `${year}-01-01`;
   const to = `${year}-12-31`;
+  // includeReversed=true: originais marcados is_reversed são ignorados em pnl;
+  // linhas REVERSAL ativas anulam o efeito no mês do estorno.
   const movements = await listCashMovementsRaw(supabase, {
     fromDate: from,
     toDate: to,
     includeReversed: true,
   });
 
-  const months = Array.from({ length: 12 }, (_, i) => ({
-    month: i + 1,
-    income: 0,
-    expense: 0,
-    net: 0,
-  }));
-
-  for (const m of movements) {
-    const y = Number(m.movement_date.slice(0, 4));
-    if (y !== year) continue;
-    const month = Number(m.movement_date.slice(5, 7));
-    const pnl = pnlCashEffect(m);
-    const bucket = months[month - 1];
-    if (!bucket) continue;
-    bucket.income = roundMoney(bucket.income + pnl.income);
-    bucket.expense = roundMoney(bucket.expense + pnl.expense);
-  }
-
-  for (const b of months) {
-    b.net = roundMoney(b.income - b.expense);
-  }
-
-  const totals = months.reduce(
-    (acc, m) => ({
-      income: roundMoney(acc.income + m.income),
-      expense: roundMoney(acc.expense + m.expense),
-      net: 0,
-    }),
-    { income: 0, expense: 0, net: 0 },
+  return aggregateCorporateCashMonthlyFromRows(
+    movements.map((m) => ({
+      movement_date: m.movement_date,
+      type: m.type,
+      amount: m.amount,
+      is_reversed: m.is_reversed,
+      origin: m.origin,
+      notes: m.notes,
+    })),
+    year,
   );
-  totals.net = roundMoney(totals.income - totals.expense);
-
-  return { year, months, totals };
 }
 
 export { mapRow as mapCashMovementRow };

@@ -126,8 +126,10 @@ export type CorporateMonthlyRevenueExpense = {
     income: number;
     expense: number;
     net: number;
+    /** Alias de net (receita − despesa). */
+    result: number;
   }>;
-  totals: { income: number; expense: number; net: number };
+  totals: { income: number; expense: number; net: number; result: number };
 };
 
 export function corporateCashTypeLabel(type: string): string {

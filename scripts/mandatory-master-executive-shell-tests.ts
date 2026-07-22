@@ -237,8 +237,12 @@ function testExecutiveDashboardV2() {
     'dois gráficos anuais renderizados',
   );
   assert(dash.includes('saasMonthlyFinancials'), 'SV LOTES usa dados reais Caixa SaaS');
-  assert(dash.includes('forceEmpty'), 'Topografia com estado vazio forçado');
-  assert(dash.includes('topographyMonthlyFinancials'), 'Topografia usa contrato vazio');
+  assert(
+    dash.includes('/api/master/corporate-finance/cash-movements/monthly'),
+    'Topografia carrega série corporativa via API Master',
+  );
+  assert(dash.includes('topographyMonthlyFinancials'), 'Topografia série anual');
+  assert(!dash.includes('forceEmpty'), 'Topografia sem forceEmpty');
 
   assert(
     exists('components/master/dashboard/MasterAnnualRevenueExpenseChart.tsx'),
