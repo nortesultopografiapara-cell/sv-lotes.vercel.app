@@ -27,7 +27,15 @@ export async function GET(request: Request, context: Ctx) {
   try {
     const project = await getTopographyProjectById(supabaseAdmin, id);
     if (!project) return NextResponse.json({ error: 'Projeto não encontrado.' }, { status: 404 });
-    return NextResponse.json({ project });
+    const { computeProjectCorporateFinancialSummary } = await import(
+      '@/lib/master/corporateFinance/projectReceivedBridge'
+    );
+    const financialSummary = await computeProjectCorporateFinancialSummary(supabaseAdmin, {
+      projectId: project.id,
+      contractValue: Number(project.contract_value || 0),
+      legacyValorRecebido: Number(project.valor_recebido || 0),
+    });
+    return NextResponse.json({ project, financialSummary });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao carregar projeto.';
     return NextResponse.json({ error: message }, { status: 500 });

@@ -148,7 +148,13 @@ export async function getReceivableProjectContext(
   if (project.is_archived) throw new Error('Projeto arquivado não pode gerar cobrança.');
 
   const contractValue = roundMoney(Number(project.contract_value || 0));
-  const valorRecebido = roundMoney(Number(project.valor_recebido || 0));
+  const { resolveProjectReceivedBridge } = await import('./projectReceivedBridge');
+  const bridge = await resolveProjectReceivedBridge(
+    supabase,
+    projectId,
+    Number(project.valor_recebido || 0),
+  );
+  const valorRecebido = bridge.amount;
   const saldoReceber = roundMoney(Math.max(0, contractValue - valorRecebido));
 
   let quote: ReceivableProjectContext['quote'] = null;

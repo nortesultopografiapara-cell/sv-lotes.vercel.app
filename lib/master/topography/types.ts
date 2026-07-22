@@ -30,16 +30,23 @@ export type MasterTopographyProject = {
   planned_end_date: string | null;
   actual_end_date: string | null;
   contract_value: number | null;
-  /** Entrada/adiantamento recebido (persistido). */
+  /** Entrada/adiantamento recebido (persistido — legado). */
   valor_recebido: number;
-  /** Derivado: contratado − recebido (não gravado). */
+  /** Derivado: contratado − recebido efetivo (não gravado). */
   saldo_receber: number;
-  /** Derivado: % recebido (não gravado). */
+  /** Derivado: % recebido efetivo (não gravado). */
   percentual_recebido: number;
   /** Aliases camelCase para o service/UI. */
   valorRecebido: number;
   saldoReceber: number;
   percentualRecebido: number;
+  /**
+   * Origem do recebido efetivo (Fase 6.4).
+   * LEGACY = coluna valor_recebido; CORPORATE_FINANCE = Σ entradas de caixa.
+   */
+  received_source?: 'LEGACY' | 'CORPORATE_FINANCE';
+  /** Recebido efetivo (nunca soma legado + corporativo). */
+  received_effective?: number;
   payment_terms: string | null;
   origin_budget_number: string | null;
   internal_manager: string | null;

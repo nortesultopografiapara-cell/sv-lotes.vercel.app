@@ -205,7 +205,7 @@ export async function computeTopographyProjectKpis(
   let query = supabase
     .from('master_topography_projects')
     .select(
-      'status, planned_end_date, contract_value, valor_recebido, actual_end_date, updated_at, is_archived',
+      'id, status, planned_end_date, contract_value, valor_recebido, actual_end_date, updated_at, is_archived',
     );
 
   query = applyListFilters(query, filters);
@@ -214,6 +214,7 @@ export async function computeTopographyProjectKpis(
   if (error) throw new Error(error.message || 'Falha ao calcular KPIs.');
 
   const rows = (data || []) as Array<{
+    id: string;
     status: string;
     planned_end_date: string | null;
     contract_value: number | null;
@@ -223,11 +224,20 @@ export async function computeTopographyProjectKpis(
     is_archived: boolean;
   }>;
 
+  const { batchResolveProjectReceived } = await import(
+    '@/lib/master/corporateFinance/projectReceivedBridge'
+  );
+  const bridges = await batchResolveProjectReceived(
+    supabase,
+    rows.map((r) => ({ id: String(r.id), valor_recebido: Number(r.valor_recebido || 0) })),
+  );
+
   const kpis = emptyKpis();
 
   for (const row of rows) {
     const contract = Number(row.contract_value || 0);
-    const received = Number(row.valor_recebido || 0);
+    const bridge = bridges.get(String(row.id));
+    const received = bridge ? bridge.amount : Number(row.valor_recebido || 0);
     const finances = computeProjectFinancials(contract, received);
 
     // Totais financeiros sempre sobre o conjunto filtrado (incluindo arquivados se pedido)
@@ -293,12 +303,51 @@ export async function listTopographyProjects(
 
   if (error) throw new Error(error.message || 'Falha ao listar projetos.');
 
+  const projects = (data || []).map((row) => parseRow(row as Record<string, unknown>));
+  const { batchResolveProjectReceived } = await import(
+    '@/lib/master/corporateFinance/projectReceivedBridge'
+  );
+  const bridges = await batchResolveProjectReceived(
+    supabase,
+    projects.map((p) => ({ id: p.id, valor_recebido: p.valor_recebido })),
+  );
+
+  const enriched = projects.map((p) => {
+    const b = bridges.get(p.id);
+    if (!b) return { ...p, received_source: 'LEGACY' as const, received_effective: p.valor_recebido };
+    const finances = computeProjectFinancials(p.contract_value, b.amount);
+    return {
+      ...p,
+      received_source: b.source,
+      received_effective: b.amount,
+      saldo_receber: finances.saldo_receber,
+      percentual_recebido: finances.percentual_recebido,
+      saldoReceber: finances.saldoReceber,
+      percentualRecebido: finances.percentualRecebido,
+      // Display aliases keep effective received for list cards without mutating DB column
+      valorRecebido: b.amount,
+    };
+  });
+
+  // Recalcula KPIs financeiros com bridge
+  let totalReceived = 0;
+  let totalBalance = 0;
+  for (const p of enriched) {
+    totalReceived += Number(p.received_effective ?? p.valor_recebido);
+    totalBalance += Number(p.saldo_receber);
+  }
+  const mergedKpis = {
+    ...kpis,
+    totalReceived: Math.round(totalReceived * 100) / 100,
+    totalBalance: Math.round(totalBalance * 100) / 100,
+  };
+
   return {
-    projects: (data || []).map((row) => parseRow(row as Record<string, unknown>)),
+    projects: enriched,
     total: count ?? 0,
     page,
     limit,
-    kpis,
+    kpis: mergedKpis,
   };
 }
 
@@ -313,7 +362,26 @@ export async function getTopographyProjectById(
     .maybeSingle();
   if (error) throw new Error(error.message || 'Falha ao carregar projeto.');
   if (!data) return null;
-  return parseRow(data as Record<string, unknown>);
+  const project = parseRow(data as Record<string, unknown>);
+  const { resolveProjectReceivedBridge } = await import(
+    '@/lib/master/corporateFinance/projectReceivedBridge'
+  );
+  const bridge = await resolveProjectReceivedBridge(
+    supabase,
+    project.id,
+    project.valor_recebido,
+  );
+  const finances = computeProjectFinancials(project.contract_value, bridge.amount);
+  return {
+    ...project,
+    received_source: bridge.source,
+    received_effective: bridge.amount,
+    saldo_receber: finances.saldo_receber,
+    percentual_recebido: finances.percentual_recebido,
+    saldoReceber: finances.saldoReceber,
+    percentualRecebido: finances.percentualRecebido,
+    valorRecebido: bridge.amount,
+  };
 }
 
 export async function createTopographyProject(
