@@ -27,6 +27,10 @@ import type {
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
 import {
+  CorporateFinanceSemanticKpi,
+} from './CorporateFinanceSemantic';
+import { semanticToneForResult } from '@/lib/master/corporateFinance/semantic';
+import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
@@ -385,46 +389,41 @@ function CashFlowInner() {
         {backfillMsg ? <p className={styles.muted}>{backfillMsg}</p> : null}
 
         <div className={styles.kpisWide}>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saldo atual</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.currentBalance)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Entradas no período</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.periodIncome)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saídas no período</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.periodExpense)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Resultado líquido</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.periodNet)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saldo inicial período</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.openingBalanceInPeriod)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saldo final</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.closingBalance)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Movimentos</p>
-            <p className={styles.kpiValue}>{loading || !kpis ? '—' : kpis.movementsCount}</p>
-          </div>
+          <CorporateFinanceSemanticKpi
+            label="Saldo atual"
+            value={loading || !kpis ? '—' : formatCurrency(kpis.currentBalance)}
+            tone="balance"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Entradas no período"
+            value={loading || !kpis ? '—' : formatCurrency(kpis.periodIncome)}
+            tone="income"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Saídas no período"
+            value={loading || !kpis ? '—' : formatCurrency(kpis.periodExpense)}
+            tone="expense"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Resultado líquido"
+            value={loading || !kpis ? '—' : formatCurrency(kpis.periodNet)}
+            tone={semanticToneForResult(kpis?.periodNet || 0)}
+          />
+          <CorporateFinanceSemanticKpi
+            label="Saldo inicial período"
+            value={loading || !kpis ? '—' : formatCurrency(kpis.openingBalanceInPeriod)}
+            tone="neutral"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Saldo final"
+            value={loading || !kpis ? '—' : formatCurrency(kpis.closingBalance)}
+            tone="balance"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Movimentos"
+            value={loading || !kpis ? '—' : kpis.movementsCount}
+            tone="neutral"
+          />
         </div>
 
         <div className={styles.panel} style={{ marginBottom: '1rem' }}>

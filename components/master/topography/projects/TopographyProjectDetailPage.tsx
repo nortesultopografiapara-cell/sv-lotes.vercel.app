@@ -6,6 +6,16 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
+import {
+  CorporateFinanceSemanticBadge,
+  CorporateFinanceSemanticKpi,
+} from '@/components/master/corporateFinance/CorporateFinanceSemantic';
+import type { ProjectCorporateFinancialSummary } from '@/lib/master/corporateFinance/projectReceivedBridge';
+import {
+  receivedSourceLabel,
+  semanticToneForResult,
+  semanticToneForSignedAmount,
+} from '@/lib/master/corporateFinance/semantic';
 import { topographyCategoryLabel } from '@/lib/master/topography/categories';
 import {
   topographyFinancialSituationLabel,
@@ -43,6 +53,7 @@ function TopographyProjectDetailInner() {
   const id = String(params?.id || '');
 
   const [project, setProject] = useState<MasterTopographyProject | null>(null);
+  const [finance, setFinance] = useState<ProjectCorporateFinancialSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,11 +73,13 @@ function TopographyProjectDetailInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar.');
       setProject(data.project);
+      setFinance(data.financialSummary || null);
       setStatusDraft(data.project.status);
       setProgressDraft(String(data.project.progress_percent ?? 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar.');
       setProject(null);
+      setFinance(null);
     } finally {
       setLoading(false);
     }
@@ -229,46 +242,157 @@ function TopographyProjectDetailInner() {
         </div>
 
         <div className={styles.panel}>
-          <h2 className={styles.panelTitle}>Resumo Financeiro</h2>
-          <dl className={styles.dl}>
-            <dt>Valor contratado</dt>
-            <dd>{formatCurrency(project.contract_value)}</dd>
-            <dt>Recebido</dt>
-            <dd>{formatCurrency(project.valor_recebido)}</dd>
-            <dt>Saldo</dt>
-            <dd>{formatCurrency(project.saldo_receber)}</dd>
-            <dt>Percentual recebido</dt>
-            <dd>{project.percentual_recebido.toLocaleString('pt-BR')}%</dd>
-          </dl>
-          <div className={styles.financeBarWrap} aria-label="Percentual recebido">
-            <div
-              className={styles.financeBarFill}
-              style={{
-                width: `${Math.min(100, Math.max(0, project.percentual_recebido))}%`,
-              }}
-            />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            <h2 className={styles.panelTitle} style={{ margin: 0, flex: 1 }}>
+              Resumo Financeiro
+            </h2>
+            {finance ? (
+              <CorporateFinanceSemanticBadge
+                tone={finance.received_source === 'CORPORATE_FINANCE' ? 'received' : 'neutral'}
+              >
+                {receivedSourceLabel(finance.received_source)}
+              </CorporateFinanceSemanticBadge>
+            ) : null}
           </div>
-          <p className={styles.financeBarLabel}>
-            {project.percentual_recebido.toLocaleString('pt-BR')}%
-          </p>
+
+          {finance ? (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                  gap: '0.75rem',
+                  marginTop: '1rem',
+                }}
+              >
+                <CorporateFinanceSemanticKpi
+                  label="Contratado"
+                  value={formatCurrency(finance.contract_value)}
+                  tone="neutral"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Recebido"
+                  value={formatCurrency(finance.received)}
+                  tone="received"
+                  hint={
+                    finance.received_source === 'CORPORATE_FINANCE'
+                      ? 'Σ entradas corporativas'
+                      : 'valor_recebido legado'
+                  }
+                />
+                <CorporateFinanceSemanticKpi
+                  label="A receber"
+                  value={formatCurrency(finance.open_receivable)}
+                  tone="open"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Provisionado"
+                  value={formatCurrency(finance.provisioned)}
+                  tone="partial"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Não provisionado"
+                  value={formatCurrency(finance.unprovisioned)}
+                  tone="alert"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Despesas"
+                  value={formatCurrency(finance.expenses)}
+                  tone="expense"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Resultado"
+                  value={formatCurrency(finance.result)}
+                  tone={semanticToneForResult(finance.result)}
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Margem"
+                  value={`${finance.margin_percent.toLocaleString('pt-BR')}%`}
+                  tone={semanticToneForResult(finance.result)}
+                />
+                <CorporateFinanceSemanticKpi
+                  label="% financeiro"
+                  value={`${finance.financial_percent.toLocaleString('pt-BR')}%`}
+                  tone="balance"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Saldo realizado"
+                  value={formatCurrency(finance.realized_balance)}
+                  tone={semanticToneForSignedAmount(finance.realized_balance)}
+                />
+                <CorporateFinanceSemanticKpi
+                  label="Saldo previsto"
+                  value={formatCurrency(finance.predicted_balance)}
+                  tone="open"
+                />
+                <CorporateFinanceSemanticKpi
+                  label="A pagar"
+                  value={formatCurrency(finance.open_payable)}
+                  tone="expense"
+                />
+              </div>
+              <dl className={styles.dl} style={{ marginTop: '1rem' }}>
+                <dt>Último recebimento</dt>
+                <dd>{formatDate(finance.last_receipt_at)}</dd>
+                <dt>Último pagamento</dt>
+                <dd>{formatDate(finance.last_payment_at)}</dd>
+                {finance.received_source === 'CORPORATE_FINANCE' ? (
+                  <>
+                    <dt>Legado (coluna)</dt>
+                    <dd>{formatCurrency(finance.legacy_valor_recebido)}</dd>
+                  </>
+                ) : null}
+              </dl>
+              <div className={styles.financeBarWrap} aria-label="Percentual financeiro">
+                <div
+                  className={styles.financeBarFill}
+                  style={{
+                    width: `${Math.min(100, Math.max(0, finance.financial_percent))}%`,
+                  }}
+                />
+              </div>
+              <p className={styles.financeBarLabel}>
+                {finance.financial_percent.toLocaleString('pt-BR')}%
+              </p>
+            </>
+          ) : (
+            <dl className={styles.dl}>
+              <dt>Valor contratado</dt>
+              <dd>{formatCurrency(project.contract_value)}</dd>
+              <dt>Recebido</dt>
+              <dd>{formatCurrency(project.received_effective ?? project.valor_recebido)}</dd>
+              <dt>Saldo</dt>
+              <dd>{formatCurrency(project.saldo_receber)}</dd>
+            </dl>
+          )}
+
           <div style={{ marginTop: '0.85rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <Link
               href={`/master/corporate-finance/receivables?projectId=${project.id}&new=1`}
               className={styles.btnPrimary}
             >
-              Criar conta a receber
+              Nova conta a receber
+            </Link>
+            <Link
+              href={`/master/corporate-finance/payables?projectId=${project.id}&new=1`}
+              className={styles.btnSecondary}
+            >
+              Nova conta a pagar
+            </Link>
+            <Link href="/master/corporate-finance/cash-flow" className={styles.btnSecondary}>
+              Abrir fluxo de caixa
             </Link>
             <Link
               href={`/master/corporate-finance/receivables?projectId=${project.id}`}
               className={styles.btnSecondary}
             >
-              Ver contas a receber deste projeto
+              Histórico a receber
             </Link>
             <Link
               href={`/master/corporate-finance/payables?projectId=${project.id}`}
               className={styles.btnSecondary}
             >
-              Ver contas a pagar deste projeto
+              Histórico a pagar
             </Link>
           </div>
         </div>

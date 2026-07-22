@@ -13,6 +13,8 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import type { MasterCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/types';
+import { semanticToneForResult } from '@/lib/master/corporateFinance/semantic';
+import { CorporateFinanceSemanticKpi } from './CorporateFinanceSemantic';
 import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
@@ -22,8 +24,12 @@ import styles from './corporateFinance.module.css';
 type HubKpis = MasterCorporateFinanceFoundationKpis & {
   receivableOpen?: number;
   receivableOverdue?: number;
+  receivableDueThisMonth?: number;
+  receivableReceivedThisMonth?: number;
   payableOpen?: number;
   payableOverdue?: number;
+  payableDueThisMonth?: number;
+  payablePaidThisMonth?: number;
   cashCurrentBalance?: number;
   cashMonthIncome?: number;
   cashMonthExpense?: number;
@@ -61,6 +67,8 @@ function CorporateFinanceHubInner() {
     void load();
   }, [load]);
 
+  const dash = loading || !kpis;
+
   return (
     <div className={styles.page}>
       <div className={styles.wrap}>
@@ -69,8 +77,7 @@ function CorporateFinanceHubInner() {
             <p className={styles.eyebrow}>SV Topografia & Projetos · Master</p>
             <h1 className={styles.title}>Financeiro Corporativo</h1>
             <p className={styles.subtitle}>
-              Contas, categorias, centros, contas a receber/pagar e fluxo de caixa corporativo da
-              SV Topografia.
+              Contas, categorias, centros, AR/AP, fluxo de caixa e bridge de recebido dos projetos.
             </p>
           </div>
           <div className={styles.actions}>
@@ -89,57 +96,69 @@ function CorporateFinanceHubInner() {
         {error ? <p className={styles.error}>{error}</p> : null}
 
         <div className={styles.kpisWide}>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saldo atual</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.cashCurrentBalance || 0)}
-            </p>
-            <p className={styles.kpiHint}>Caixa corporativo</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Entradas no mês</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.cashMonthIncome || 0)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Saídas no mês</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.cashMonthExpense || 0)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Resultado do mês</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.cashMonthNet || 0)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>A receber</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.receivableOpen || 0)}
-            </p>
-            <p className={styles.kpiHint}>Saldo em aberto</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>A pagar</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.payableOpen || 0)}
-            </p>
-            <p className={styles.kpiHint}>Saldo em aberto</p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Vencido a receber</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.receivableOverdue || 0)}
-            </p>
-          </div>
-          <div className={styles.kpi}>
-            <p className={styles.kpiLabel}>Vencido a pagar</p>
-            <p className={styles.kpiValue}>
-              {loading || !kpis ? '—' : formatCurrency(kpis.payableOverdue || 0)}
-            </p>
-          </div>
+          <CorporateFinanceSemanticKpi
+            label="Saldo atual"
+            value={dash ? '—' : formatCurrency(kpis!.cashCurrentBalance || 0)}
+            hint="Caixa corporativo"
+            tone="balance"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Entradas no mês"
+            value={dash ? '—' : formatCurrency(kpis!.cashMonthIncome || 0)}
+            tone="income"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Saídas no mês"
+            value={dash ? '—' : formatCurrency(kpis!.cashMonthExpense || 0)}
+            tone="expense"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Resultado do mês"
+            value={dash ? '—' : formatCurrency(kpis!.cashMonthNet || 0)}
+            tone={semanticToneForResult(kpis?.cashMonthNet || 0)}
+          />
+          <CorporateFinanceSemanticKpi
+            label="A receber"
+            value={dash ? '—' : formatCurrency(kpis!.receivableOpen || 0)}
+            hint="Em aberto"
+            tone="open"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Recebido no mês"
+            value={dash ? '—' : formatCurrency(kpis!.receivableReceivedThisMonth || 0)}
+            tone="received"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vencido a receber"
+            value={dash ? '—' : formatCurrency(kpis!.receivableOverdue || 0)}
+            tone="overdue"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vence no mês (AR)"
+            value={dash ? '—' : formatCurrency(kpis!.receivableDueThisMonth || 0)}
+            tone="dueMonth"
+          />
+          <CorporateFinanceSemanticKpi
+            label="A pagar"
+            value={dash ? '—' : formatCurrency(kpis!.payableOpen || 0)}
+            hint="Em aberto"
+            tone="open"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Pago no mês"
+            value={dash ? '—' : formatCurrency(kpis!.payablePaidThisMonth || 0)}
+            tone="paid"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vencido a pagar"
+            value={dash ? '—' : formatCurrency(kpis!.payableOverdue || 0)}
+            tone="overdue"
+          />
+          <CorporateFinanceSemanticKpi
+            label="Vence no mês (AP)"
+            value={dash ? '—' : formatCurrency(kpis!.payableDueThisMonth || 0)}
+            tone="dueMonth"
+          />
         </div>
 
         <div className={styles.shortcuts}>
@@ -205,8 +224,8 @@ function CorporateFinanceHubInner() {
             <Layers className="w-4 h-4 text-slate-400" />
           </div>
           <p className={styles.muted} style={{ textAlign: 'left', paddingTop: '1rem' }}>
-            Liberado: fundação, AR/AP e fluxo de caixa corporativo. Ainda não: conciliação, Asaas
-            corporativo, DRE nem bridge de valor_recebido (Fase 6.4).
+            Liberado: fundação, AR/AP, fluxo de caixa e bridge valor_recebido ↔ caixa corporativo.
+            Ainda não (Fase 7): Asaas corporativo, PIX/boleto, conciliação e DRE.
           </p>
         </div>
       </div>

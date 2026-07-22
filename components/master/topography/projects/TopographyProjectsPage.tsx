@@ -436,7 +436,7 @@ function TopographyProjectsInner() {
                 </div>
                 <div>
                   <span className={styles.financeLabel}>Recebido</span>
-                  <strong>{formatCurrency(p.valor_recebido)}</strong>
+                  <strong>{formatCurrency(p.received_effective ?? p.valorRecebido ?? p.valor_recebido)}</strong>
                 </div>
                 <div>
                   <span className={styles.financeLabel}>Saldo</span>
@@ -497,7 +497,7 @@ function TopographyProjectsInner() {
                   </td>
                   <td>{p.progress_percent}%</td>
                   <td>{formatCurrency(p.contract_value)}</td>
-                  <td>{formatCurrency(p.valor_recebido)}</td>
+                  <td>{formatCurrency(p.received_effective ?? p.valorRecebido ?? p.valor_recebido)}</td>
                   <td>{formatCurrency(p.saldo_receber)}</td>
                   <td>{p.percentual_recebido.toLocaleString('pt-BR')}%</td>
                   <td>{formatDate(p.planned_end_date)}</td>
