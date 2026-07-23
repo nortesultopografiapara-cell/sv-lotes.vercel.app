@@ -47,6 +47,27 @@ export const CORPORATE_FINANCE_SEMANTIC_COLORS: Record<
   resultNegative: '#dc2626',
 };
 
+export function semanticToneForAsaasStatus(status: string): CorporateFinanceSemanticTone {
+  switch (String(status || '').toUpperCase()) {
+    case 'RECEIVED':
+    case 'CONFIRMED':
+      return 'received';
+    case 'OVERDUE':
+      return 'overdue';
+    case 'CANCELLED':
+    case 'CANCELED':
+      return 'canceled';
+    case 'REFUNDED':
+      return 'alert';
+    case 'ERROR':
+      return 'alert';
+    case 'AWAITING_PAYMENT':
+    case 'PENDING':
+    default:
+      return 'open';
+  }
+}
+
 export function semanticToneForReceivableStatus(status: string): CorporateFinanceSemanticTone {
   switch (String(status || '').toUpperCase()) {
     case 'RECEIVED':

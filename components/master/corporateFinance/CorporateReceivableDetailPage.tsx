@@ -22,6 +22,7 @@ import {
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
 import { computeLiveNet, formatCurrency, formatDate, todayISO } from './format';
+import CorporateAsaasChargeSection from './CorporateAsaasChargeSection';
 import styles from './corporateFinance.module.css';
 
 type LookupProject = { id: string; code: string; title: string };
@@ -517,6 +518,12 @@ function DetailInner() {
                 ) : null}
               </div>
             </div>
+
+            <CorporateAsaasChargeSection
+              receivable={row}
+              accounts={accounts}
+              onSettled={() => void load()}
+            />
 
             <div className={styles.panel}>
               <div className={styles.panelHead}>

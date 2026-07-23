@@ -11,6 +11,7 @@ import {
   HandCoins,
   CircleDollarSign,
   ArrowLeftRight,
+  QrCode,
 } from 'lucide-react';
 import type { MasterCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/types';
 import { semanticToneForResult } from '@/lib/master/corporateFinance/semantic';
@@ -226,6 +227,15 @@ function CorporateFinanceHubInner() {
               Obrigações com fornecedores, pagamentos parciais/totais e atrasos.
             </p>
           </Link>
+          <Link href="/master/corporate-finance/asaas" className={styles.shortcut}>
+            <div className={styles.shortcutIcon}>
+              <QrCode className="w-5 h-5" />
+            </div>
+            <h2 className={styles.shortcutTitle}>Cobranças Asaas</h2>
+            <p className={styles.shortcutDesc}>
+              PIX e boleto corporativos da SV Topografia, sincronização e links de pagamento.
+            </p>
+          </Link>
         </div>
 
         <div className={styles.panel}>
@@ -234,8 +244,8 @@ function CorporateFinanceHubInner() {
             <Layers className="w-4 h-4 text-slate-400" />
           </div>
           <p className={styles.muted} style={{ textAlign: 'left', paddingTop: '1rem' }}>
-            Liberado: fundação, AR/AP, fluxo de caixa e bridge valor_recebido ↔ caixa corporativo.
-            Ainda não (Fase 7): Asaas corporativo, PIX/boleto, conciliação e DRE.
+            Liberado: fundação, AR/AP, fluxo de caixa, bridge e Asaas corporativo (PIX/boleto).
+            Ainda não: cartão Asaas, DRE e conciliação bancária genérica (OFX).
           </p>
         </div>
       </div>
