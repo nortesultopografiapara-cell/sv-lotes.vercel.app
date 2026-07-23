@@ -67,8 +67,10 @@ function testModelGating() {
     'recanto com cônjuge e slot',
   );
 
+  // Regra unificada: venda com cônjuge NÃO depende do texto no HTML persistido
+  // (PDF regenerado pode ter o slot mesmo quando a coluna HTML está truncada).
   assert(
-    !shouldCreateSpouseSignatureParty({
+    shouldCreateSpouseSignatureParty({
       contractModel: 'RECANTO_PRIMAVERA',
       sale: {
         sale_spouse_name: 'Maria Silva',
@@ -76,7 +78,16 @@ function testModelGating() {
       },
       contractHtml: '<div>sem slot</div>',
     }),
-    'sem slot PDF bloqueia',
+    'sale_spouse_* obriga SPOUSE mesmo sem slot no HTML salvo',
+  );
+
+  assert(
+    shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {},
+      contractHtml: '<div>CÔNJUGE ANUENTE</div>',
+    }),
+    'slot no HTML também exige SPOUSE',
   );
 
   assert(
@@ -353,6 +364,143 @@ function testMigrationAndWiring() {
   console.log('OK testMigrationAndWiring');
 }
 
+function testUnifiedSpouseRuleAndViews() {
+  const {
+    hasRecantoSpouse,
+    requiresSpouseSignature,
+    contractHtmlHasSpouseAnuenteSlot,
+  } = require('../lib/saleContractSignaturePartyRules') as typeof import('../lib/saleContractSignaturePartyRules');
+  const { toPublicPartyViews } = require('../lib/saleContractSignatureParties') as typeof import('../lib/saleContractSignatureParties');
+  const { hasSaleSpouseData } = require('../lib/saleSpouseFields') as typeof import('../lib/saleSpouseFields');
+
+  const sale = {
+    sale_spouse_name: 'Rosivan de Oliveira',
+    sale_spouse_cpf: '39053344705',
+    sale_spouse_phone: '9498141415',
+  };
+
+  assert(hasRecantoSpouse(sale) === hasSaleSpouseData(sale), 'alias = saleSpouseFields');
+  assert(
+    requiresSpouseSignature({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale,
+      contractHtml: '',
+    }),
+    'requiresSpouse sem HTML',
+  );
+  assert(
+    !requiresSpouseSignature({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: { has_spouse: true },
+      contractHtml: '',
+    }),
+    'has_spouse UI sozinho não basta',
+  );
+  assert(
+    contractHtmlHasSpouseAnuenteSlot('<p>CÔNJUGE ANUENTE</p>'),
+    'detecta slot HTML',
+  );
+
+  process.env.VERCEL_ENV = 'preview';
+  process.env.VERCEL_URL = 'sv-lotes-vercel-test.vercel.app';
+
+  const views = toPublicPartyViews(
+    [
+      {
+        id: 'v',
+        company_id: 'c',
+        contract_signature_id: 's',
+        contract_id: 'ct',
+        sale_id: null,
+        role: 'VENDOR',
+        signer_name: 'Severino',
+        signer_cpf: null,
+        signer_phone: null,
+        signer_email: null,
+        signature_token_hash: null,
+        signature_url: null,
+        status: 'PENDING',
+        sent_at: null,
+        viewed_at: null,
+        signed_at: null,
+        cancelled_at: null,
+        expires_at: null,
+        signature_data: {},
+        ip_address: null,
+        user_agent: null,
+        signature_hash: null,
+        created_at: '',
+        updated_at: '',
+      },
+      {
+        id: 's',
+        company_id: 'c',
+        contract_signature_id: 's',
+        contract_id: 'ct',
+        sale_id: null,
+        role: 'SPOUSE',
+        signer_name: 'Rosivan de Oliveira',
+        signer_cpf: '39053344705',
+        signer_phone: '9498141415',
+        signer_email: null,
+        signature_token_hash: 'h',
+        signature_url: null,
+        status: 'PENDING',
+        sent_at: null,
+        viewed_at: null,
+        signed_at: null,
+        cancelled_at: null,
+        expires_at: null,
+        signature_data: {},
+        ip_address: null,
+        user_agent: null,
+        signature_hash: null,
+        created_at: '',
+        updated_at: '',
+      },
+      {
+        id: 'b',
+        company_id: 'c',
+        contract_signature_id: 's',
+        contract_id: 'ct',
+        sale_id: null,
+        role: 'BUYER',
+        signer_name: 'Severino José de França',
+        signer_cpf: null,
+        signer_phone: null,
+        signer_email: null,
+        signature_token_hash: 'h2',
+        signature_url: 'https://old/sign/sale/tok-b',
+        status: 'PENDING',
+        sent_at: null,
+        viewed_at: null,
+        signed_at: null,
+        cancelled_at: null,
+        expires_at: null,
+        signature_data: {},
+        ip_address: null,
+        user_agent: null,
+        signature_hash: null,
+        created_at: '',
+        updated_at: '',
+      },
+    ],
+    { includeUrls: true },
+  );
+
+  assert(views.map((p) => p.role).join(',') === 'BUYER,SPOUSE,VENDOR', 'ordem');
+  assert(views[1].missingPublicUrl === true, 'SPOUSE sem URL → erro explícito');
+  assert(views[1].name === 'Rosivan de Oliveira', 'nome cônjuge');
+  assert(views[2].signatureUrl === null, 'vendor null');
+
+  const modal = read('components/contracts/SaleContractMultiPartyShareModal.tsx');
+  assert(modal.includes('CÔNJUGE ANUENTE'), 'heading modal');
+  assert(modal.includes('missingPublicUrl') || modal.includes('link individual não foi gerado'), 'erro SPOUSE');
+  assert(!modal.includes("parties.filter"), 'sem filtro silencioso');
+
+  console.log('OK testUnifiedSpouseRuleAndViews');
+}
+
 function main() {
   testModelGating();
   testSpouseValidation();
@@ -362,6 +510,7 @@ function main() {
   testShareMessagesDistinct();
   testSlotsAndCertificate();
   testMigrationAndWiring();
+  testUnifiedSpouseRuleAndViews();
   console.log('\nTodos os testes de cônjuge/assinatura passaram.');
 }
 

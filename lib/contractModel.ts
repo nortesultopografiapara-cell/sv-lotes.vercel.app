@@ -37,7 +37,11 @@ export function normalizeSaleContractModel(
   ) {
     return 'SV_LOTES_2';
   }
-  if (value === 'RECANTO_PRIMAVERA' || value === 'RECANTO PRIMAVERA') {
+  if (
+    value === 'RECANTO_PRIMAVERA' ||
+    value === 'RECANTO PRIMAVERA' ||
+    value.includes('RECANTO')
+  ) {
     return 'RECANTO_PRIMAVERA';
   }
   if (value === 'MENESES') {

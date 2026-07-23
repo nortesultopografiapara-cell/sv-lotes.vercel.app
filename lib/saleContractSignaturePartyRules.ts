@@ -1,6 +1,14 @@
 /**
  * Regras de inclusão e validação do cônjuge como signatário eletrônico.
  * Fase atual: apenas RECANTO_PRIMAVERA (campo CÔNJUGE ANUENTE no PDF).
+ *
+ * Regra unificada (alinhada a recantoPrimaveraContractContext / saleSpouseFields):
+ *   requiresSpouse =
+ *     model === RECANTO_PRIMAVERA &&
+ *     (hasRecantoSpouse(sale) || contractHtmlHasSpouseSlot(html))
+ *
+ * Não depende de has_spouse (UI). Não bloqueia por ausência do texto no HTML
+ * quando a venda já tem sale_spouse_name / sale_spouse_cpf.
  */
 
 import { isValidSignerEmail } from '@/lib/saleContractEmailValidation';
@@ -22,6 +30,37 @@ export const SPOUSE_ELECTRONIC_SIGNATURE_MODELS: SaleContractModel[] = [
 export const SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE =
   'O contrato possui cônjuge anuente, mas os dados necessários para a assinatura estão incompletos. Informe o nome, o CPF e pelo menos um telefone ou e-mail do cônjuge.';
 
+/** Alias estável — mesma regra do PDF Recanto (sale_spouse_name || sale_spouse_cpf). */
+export function hasRecantoSpouse(
+  sale: Record<string, unknown> | null | undefined,
+): boolean {
+  return hasSaleSpouseData(sale);
+}
+
+/**
+ * Detecta o slot "CÔNJUGE ANUENTE" no HTML (NFC/NFD e entidades comuns).
+ */
+export function contractHtmlHasSpouseAnuenteSlot(
+  contractHtml?: string | null,
+): boolean {
+  const raw = String(contractHtml || '');
+  if (!raw.trim()) return false;
+
+  const normalized = raw
+    .normalize('NFKC')
+    .replace(/&Ocirc;|&ocirc;|&#[Oo]circ;|&#212;|&#244;/g, 'Ô')
+    .replace(/Ã[”"]/g, 'Ô')
+    .toUpperCase();
+
+  // Remove tags para cobrir "CÔNJUGE</p><p>ANUENTE" e variações com espaços.
+  const plain = normalized.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  return (
+    plain.includes('CÔNJUGE ANUENTE') ||
+    plain.includes('CONJUGE ANUENTE') ||
+    /C[\u00D4O]NJUGE\s+ANUENTE/.test(plain)
+  );
+}
+
 export function supportsSpouseElectronicSignature(
   contractModel: unknown,
 ): boolean {
@@ -30,8 +69,8 @@ export function supportsSpouseElectronicSignature(
 }
 
 /**
- * Cônjuge é signatário eletrônico somente quando o modelo tem slot PDF
- * e a venda inclui o cônjuge no contrato gerado (sale_spouse_*).
+ * Cônjuge é signatário eletrônico quando o modelo é Recanto e a venda
+ * (ou o HTML) indica presença do cônjuge — mesma base do PDF.
  */
 export function shouldCreateSpouseSignatureParty(params: {
   contractModel: unknown;
@@ -41,14 +80,22 @@ export function shouldCreateSpouseSignatureParty(params: {
   if (!supportsSpouseElectronicSignature(params.contractModel)) {
     return false;
   }
-  if (!hasSaleSpouseData(params.sale)) {
-    return false;
-  }
-  const html = String(params.contractHtml || '');
-  if (html && !html.includes('CÔNJUGE ANUENTE')) {
-    return false;
-  }
-  return true;
+
+  const fromSale = hasRecantoSpouse(params.sale);
+  const fromHtml = contractHtmlHasSpouseAnuenteSlot(params.contractHtml);
+
+  // Venda com cônjuge → obrigatório (não depende do HTML persistido).
+  // HTML com slot e venda sem campos → também exige (validação pedirá os dados).
+  return fromSale || fromHtml;
+}
+
+/** Nome explícito pedido na homologação. */
+export function requiresSpouseSignature(params: {
+  contractModel: unknown;
+  sale: Record<string, unknown> | null | undefined;
+  contractHtml?: string | null;
+}): boolean {
+  return shouldCreateSpouseSignatureParty(params);
 }
 
 export type SpouseSignatureValidationResult =

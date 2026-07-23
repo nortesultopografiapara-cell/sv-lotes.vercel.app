@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
+  AlertTriangle,
   Copy,
   ExternalLink,
   Mail,
@@ -22,6 +23,7 @@ import {
 } from '@/lib/saleContractSignatureShare';
 import { qrCodePayloadForSignatureUrl } from '@/lib/saasContractSignatureShare';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
+import { maskEmailPublic, maskPhonePublic } from '@/lib/signaturePrivacy';
 import {
   signatureStatusEmoji,
   signatureStatusLabel,
@@ -30,6 +32,9 @@ import {
 
 const VENDOR_INTERNAL_MESSAGE =
   'A assinatura da vendedora será realizada internamente no sistema após a conclusão das assinaturas do comprador e do cônjuge.';
+
+const SPOUSE_MISSING_URL_MESSAGE =
+  'O cônjuge foi identificado como signatário, mas o link individual não foi gerado. Reemita o link ou verifique o processo de assinatura.';
 
 export type SaleContractMultiPartyShareModalProps = {
   isOpen: boolean;
@@ -61,6 +66,14 @@ type PartyCardProps = {
   onLinkOpened?: () => void;
 };
 
+function roleHeading(role: string): string {
+  const key = String(role || '').toUpperCase();
+  if (key === 'BUYER') return 'COMPRADOR';
+  if (key === 'SPOUSE') return 'CÔNJUGE ANUENTE';
+  if (key === 'VENDOR') return 'VENDEDORA';
+  return 'SIGNATÁRIO';
+}
+
 function PartyShareCard({
   party,
   projectName,
@@ -77,16 +90,21 @@ function PartyShareCard({
   const signatureUrl = String(
     party.signatureUrl || party.signature_url || '',
   ).trim();
-  const name = party.name || party.signer_name || party.roleLabel;
+  const displayName = String(
+    party.name || party.signer_name || '',
+  ).trim();
   const phone = party.phone || party.signer_phone;
   const email = party.email || party.signer_email;
   const isVendor = party.role === 'VENDOR';
+  const isSpouse = party.role === 'SPOUSE';
   const isExternal = party.role === 'BUYER' || party.role === 'SPOUSE';
+  const missingUrl =
+    Boolean(party.missingPublicUrl) || (isExternal && !isVendor && !signatureUrl);
 
   const shareMessage = useMemo(() => {
     if (!isExternal || !signatureUrl) return '';
     return buildSalePartySignatureShareMessage({
-      signerName: name || party.roleLabel,
+      signerName: displayName || party.roleLabel,
       role: party.role,
       projectName,
       quadra,
@@ -96,9 +114,9 @@ function PartyShareCard({
     });
   }, [
     contractNumber,
+    displayName,
     isExternal,
     lote,
-    name,
     party.role,
     party.roleLabel,
     projectName,
@@ -114,7 +132,7 @@ function PartyShareCard({
   );
 
   useEffect(() => {
-    if (!signatureUrl || isVendor) {
+    if (!signatureUrl || isVendor || missingUrl) {
       setQrDataUrl(null);
       return;
     }
@@ -133,7 +151,7 @@ function PartyShareCard({
     return () => {
       cancelled = true;
     };
-  }, [isVendor, signatureUrl]);
+  }, [isVendor, missingUrl, signatureUrl]);
 
   const handleCopy = useCallback(async () => {
     if (!signatureUrl) return;
@@ -158,14 +176,30 @@ function PartyShareCard({
     onLinkOpened?.();
   }, [onLinkOpened, signatureUrl]);
 
+  const phoneMasked = phone ? maskPhonePublic(phone) : '';
+  const emailMasked = email ? maskEmailPublic(email) : '';
+
   return (
     <section className="rounded-xl border border-white/10 bg-[#0B0E14] p-4 space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-gray-500">
-            {party.roleLabel}
+          <p className="text-[10px] uppercase tracking-wide text-blue-300/90 font-semibold">
+            {roleHeading(party.role)}
           </p>
-          <p className="text-sm font-semibold text-white mt-0.5">{name}</p>
+          <p className="text-base font-semibold text-white mt-0.5">
+            {displayName || party.roleLabel}
+          </p>
+          {(phoneMasked && phoneMasked !== '—') ||
+          (emailMasked && emailMasked !== '—') ? (
+            <p className="text-[11px] text-gray-400 mt-1 space-x-2">
+              {phoneMasked && phoneMasked !== '—' ? (
+                <span>WhatsApp: final {String(phone).replace(/\D/g, '').slice(-4)}</span>
+              ) : null}
+              {emailMasked && emailMasked !== '—' ? (
+                <span>E-mail: {emailMasked}</span>
+              ) : null}
+            </p>
+          ) : null}
         </div>
         <p className="text-xs text-gray-300">
           {signatureStatusEmoji(party.status)} {party.statusLabel}
@@ -174,6 +208,15 @@ function PartyShareCard({
 
       {isVendor ? (
         <p className="text-sm text-amber-200/90 leading-relaxed">{VENDOR_INTERNAL_MESSAGE}</p>
+      ) : missingUrl ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100 flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            {isSpouse
+              ? SPOUSE_MISSING_URL_MESSAGE
+              : 'O link individual deste signatário não foi gerado. Reemita o link ou verifique o processo de assinatura.'}
+          </p>
+        </div>
       ) : (
         <>
           <div>
@@ -203,14 +246,14 @@ function PartyShareCard({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={qrDataUrl}
-                  alt={`QR Code — ${party.roleLabel}`}
+                  alt={`QR Code — ${roleHeading(party.role)}`}
                   width={148}
                   height={148}
                 />
               </div>
             ) : (
               <div className="w-[148px] h-[148px] rounded-xl border border-dashed border-white/15 flex items-center justify-center text-xs text-gray-500">
-                {signatureUrl ? 'Gerando QR…' : 'Sem link'}
+                Gerando QR…
               </div>
             )}
             <p className="text-xs text-gray-400 text-center sm:text-left">
@@ -275,6 +318,7 @@ export function SaleContractMultiPartyShareModal({
       if (role === 'VENDOR') return 2;
       return 9;
     };
+    // Nunca filtrar por URL — VENDOR e SPOUSE sem link também aparecem.
     return [...parties].sort((a, b) => rank(a.role) - rank(b.role));
   }, [parties]);
 

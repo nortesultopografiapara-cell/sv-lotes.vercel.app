@@ -403,7 +403,13 @@ export function toPublicPartyViews(
   options?: { includeUrls?: boolean },
 ): SaleSignaturePartyPublicView[] {
   const includeUrls = options?.includeUrls !== false;
-  return parties.map((party) => {
+  const order: Record<string, number> = {
+    BUYER: 1,
+    SPOUSE: 2,
+    VENDOR: 3,
+  };
+
+  const views = parties.map((party) => {
     const status = String(party.status).toUpperCase() as SaleSignaturePartyStatus;
     const role = party.role;
     const resolvedUrl = resolvePartySignatureUrl(party.signature_url);
@@ -412,8 +418,11 @@ export function toPublicPartyViews(
       ['PENDING', 'VIEWED'].includes(status) &&
       Boolean(resolvedUrl || party.signature_url);
     const canResend = canShare;
+    // Sempre incluir a party (incl. SPOUSE/VENDOR). URL só para roles públicos.
     const publicUrl =
-      includeUrls && isPublicPartyRole(role) ? resolvedUrl || party.signature_url : null;
+      includeUrls && isPublicPartyRole(role)
+        ? resolvedUrl || party.signature_url || null
+        : null;
 
     return {
       id: party.id,
@@ -442,6 +451,15 @@ export function toPublicPartyViews(
         : undefined,
       canResend,
       canShare,
+      missingPublicUrl:
+        includeUrls &&
+        isPublicPartyRole(role) &&
+        ['PENDING', 'VIEWED'].includes(status) &&
+        !publicUrl,
     };
   });
+
+  return views.sort(
+    (a, b) => (order[a.role] || 9) - (order[b.role] || 9),
+  );
 }

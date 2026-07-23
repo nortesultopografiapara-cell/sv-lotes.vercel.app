@@ -69,6 +69,8 @@ export type SaleSignaturePartyPublicView = {
   signatureUrl?: string | null;
   canResend: boolean;
   canShare: boolean;
+  /** Preview: SPOUSE/BUYER pendente sem URL — modal deve exibir erro, não omitir. */
+  missingPublicUrl?: boolean;
 };
 
 export function saleSignaturePartyRoleLabel(

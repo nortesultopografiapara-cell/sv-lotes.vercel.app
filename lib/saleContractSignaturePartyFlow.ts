@@ -137,21 +137,35 @@ export async function createSignaturePartiesAfterSend(
     await loadSaleAndCompanyForSignature(supabaseAdmin, params.contractRow);
 
   const storedHtml = readStoredContractHtml(params.contractRow) || '';
+  const spouseRequired = shouldCreateSpouseSignatureParty({
+    contractModel,
+    sale,
+    contractHtml: storedHtml,
+  });
   const spouseCheck = assertSpouseReadyForSignatureSend({
     contractModel,
     sale,
     contractHtml: storedHtml,
   });
 
+  console.log('[signature-parties] spouse_gate', {
+    contractId: params.signature.contract_id,
+    contractModel,
+    saleId: sale?.id ? String(sale.id).slice(0, 8) : null,
+    hasRecantoSpouse: Boolean(
+      sale &&
+        (String(sale.sale_spouse_name || '').trim() ||
+          String(sale.sale_spouse_cpf || '').trim()),
+    ),
+    spouseRequired,
+    spouseCheckOk: spouseCheck.ok,
+    spouseSkipped: 'skipped' in spouseCheck,
+    htmlLen: storedHtml.length,
+  });
+
   if (!spouseCheck.ok) {
     throw new SaleContractSignatureError(spouseCheck.message, 'validation');
   }
-
-  const spouseRequired = shouldCreateSpouseSignatureParty({
-    contractModel,
-    sale,
-    contractHtml: storedHtml,
-  });
 
   const spouseData =
     spouseRequired && spouseCheck.ok && !('skipped' in spouseCheck)

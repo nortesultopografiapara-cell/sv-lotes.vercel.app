@@ -166,10 +166,47 @@ function testLegacyFallbackShape() {
   console.log('OK testLegacyFallbackShape');
 }
 
+function testSpouseMissingUrlStillRendered() {
+  process.env.VERCEL_ENV = 'preview';
+  process.env.VERCEL_URL = 'sv-lotes-vercel-komjx6nnh.vercel.app';
+
+  const views = toPublicPartyViews(
+    [
+      party({
+        id: 'b',
+        role: 'BUYER',
+        signer_name: 'Severino José de França',
+        signature_url: 'https://x/sign/sale/tok-buyer',
+      }),
+      party({
+        id: 's',
+        role: 'SPOUSE',
+        signer_name: 'Rosivan de Oliveira',
+        signer_phone: '9498141415',
+        signature_url: null,
+      }),
+      party({
+        id: 'v',
+        role: 'VENDOR',
+        signer_name: 'Severino José de França',
+      }),
+    ],
+    { includeUrls: true },
+  );
+
+  assert(views.length === 3, '3 cartões');
+  assert(views.map((p) => p.role).join(',') === 'BUYER,SPOUSE,VENDOR', 'ordem');
+  assert(views[1].missingPublicUrl === true, 'erro explícito sem omitir');
+  assert(views[1].name === 'Rosivan de Oliveira', 'nome real');
+
+  console.log('OK testSpouseMissingUrlStillRendered');
+}
+
 function main() {
   testModalWithoutSpouse();
   testModalWithSpouse();
   testLegacyFallbackShape();
+  testSpouseMissingUrlStillRendered();
   console.log('\nTodos os testes da modal multi-party passaram.');
 }
 
