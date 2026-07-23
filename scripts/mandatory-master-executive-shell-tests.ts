@@ -64,7 +64,34 @@ function testShellGateIsolation() {
       flagEnabled: false,
       impersonatingTenant: false,
     }) === false,
-    'flag off => shell off',
+    'flag off + fora de /master => shell off',
+  );
+  assert(
+    shouldUseMasterExecutiveShell({
+      role: 'SUPER_ADMIN',
+      flagEnabled: false,
+      pathname: '/master',
+      impersonatingTenant: false,
+    }) === true,
+    '/master força shell mesmo com flag off',
+  );
+  assert(
+    shouldUseMasterExecutiveShell({
+      role: 'SUPER_ADMIN',
+      flagEnabled: false,
+      pathname: '/master/corporate-finance/receivables',
+      impersonatingTenant: false,
+    }) === true,
+    '/master/** força shell mesmo com flag off',
+  );
+  assert(
+    shouldUseMasterExecutiveShell({
+      role: 'SUPER_ADMIN',
+      flagEnabled: false,
+      pathname: '/dashboard',
+      impersonatingTenant: false,
+    }) === false,
+    '/dashboard com flag off mantém shell legado',
   );
   assert(
     shouldUseMasterExecutiveShell({
@@ -118,6 +145,7 @@ function testShellGateIsolation() {
     shouldUseMasterExecutiveShell({
       role: 'SUPER_ADMIN',
       flagEnabled: true,
+      pathname: '/master',
       impersonatingTenant: true,
     }) === false,
     'impersonation não recebe chrome Master V2',
@@ -184,6 +212,7 @@ function testLayoutBranchIsolation() {
   const layout = read('components/Layout.tsx');
   assert(layout.includes('MasterExecutiveLayout'), 'Layout importa shell V2');
   assert(layout.includes('shouldUseMasterExecutiveShell'), 'Layout usa gate V2');
+  assert(layout.includes('pathname,'), 'Layout passa pathname ao gate V2');
   assert(layout.includes('SuperAdminSidebar'), 'Layout preserva sidebar legado');
   assert(!layout.includes('globals.css'), 'Layout não injeta globals por V2');
 

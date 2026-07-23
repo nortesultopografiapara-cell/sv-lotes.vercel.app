@@ -49,7 +49,7 @@ async function runHarnessScrollProof() {
 
     const metrics = await page.evaluate(async () => {
       const main = document.querySelector(
-        '[data-testid="master-executive-main"]',
+        '#master-executive-scroll-container',
       ) as HTMLElement;
       const before = main.scrollTop;
       main.scrollBy(0, 1400);
@@ -92,14 +92,16 @@ function testStaticContract() {
     path.join(root, 'components/master/layout/masterExecutiveLayout.module.css'),
     'utf8',
   );
-  assert(/\.content\s*\{[^}]*overflow-y:\s*auto/s.test(css), 'content overflow-y auto');
-  assert(/\.shell\s*\{[^}]*height:\s*100dvh/s.test(css), 'shell 100dvh');
-  assert(/\.shell\s*\{[^}]*overflow:\s*hidden/s.test(css), 'shell overflow hidden');
   const layout = fs.readFileSync(
     path.join(root, 'components/master/layout/MasterExecutiveLayout.tsx'),
     'utf8',
   );
+  assert(/\.content\s*\{[^}]*overflow-y:\s*(scroll|auto)/s.test(css), 'content overflow-y');
+  assert(/\.shell\s*\{[^}]*height:\s*100dvh/s.test(css), 'shell 100dvh');
+  assert(/\.shell\s*\{[^}]*overflow:\s*hidden/s.test(css), 'shell overflow hidden');
   assert(layout.includes('data-master-scroll-strategy="main"'), 'strategy main');
+  assert(layout.includes('master-executive-scroll-container'), 'scroll container id');
+  assert(layout.includes('MASTER_EXECUTIVE_BUILD_MARKER'), 'build marker');
   assert(layout.includes('master-executive-root'), 'html class');
 }
 
