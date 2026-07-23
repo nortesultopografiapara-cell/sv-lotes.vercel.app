@@ -41,7 +41,13 @@ export function isPublicSaleSignBlocked(
   status?: SaleSignatureStatus | string | null,
 ): boolean {
   const key = String(status || '').toUpperCase();
-  return key === 'CLIENT_SIGNED' || key === 'SIGNED' || key === 'EXPIRED' || key === 'CANCELLED';
+  return (
+    key === 'PARTIALLY_SIGNED' ||
+    key === 'CLIENT_SIGNED' ||
+    key === 'SIGNED' ||
+    key === 'EXPIRED' ||
+    key === 'CANCELLED'
+  );
 }
 
 export function canShowVendorSignButton(

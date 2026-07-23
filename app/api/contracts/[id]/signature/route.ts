@@ -17,6 +17,15 @@ import {
   type ContractSignatureRow,
 } from '@/lib/saleContractSignatureService';
 import {
+  listSignatureParties,
+  toPublicPartyViews,
+} from '@/lib/saleContractSignatureParties';
+import { countSignedParties } from '@/lib/saleContractSignaturePartyStatus';
+import {
+  enrichBuyerPartyPhone,
+  pickCustomerPhoneForSignature,
+} from '@/lib/saleContractPublicSignUi';
+import {
   resolveSaleSignUrl,
   resolveSaleValidationPublicUrl,
 } from '@/lib/saleContractUrls';
@@ -136,6 +145,41 @@ export async function GET(
     const latestRaw = signatures[0] || null;
     const latest = await repairSaleSignaturePublicUrlsIfNeeded(supabase, latestRaw);
     const history = latest ? buildSaleSignatureHistory(latest) : [];
+    const partiesRaw = latest
+      ? await listSignatureParties(supabase, latest.id)
+      : [];
+    let buyerPhoneFallback: string | null = null;
+    const customerId = String(
+      contract.customer_id ||
+        (contract as { customers?: { id?: string } }).customers?.id ||
+        '',
+    );
+    if (customerId) {
+      const first = await supabase
+        .from('customers')
+        .select('phone, whatsapp, mobile, celular, contact_phone, telefone')
+        .eq('id', customerId)
+        .maybeSingle();
+      if (!first.error && first.data) {
+        buyerPhoneFallback = pickCustomerPhoneForSignature(
+          first.data as Record<string, unknown>,
+        );
+      } else {
+        const { data: retry } = await supabase
+          .from('customers')
+          .select('phone')
+          .eq('id', customerId)
+          .maybeSingle();
+        buyerPhoneFallback = pickCustomerPhoneForSignature(
+          (retry as Record<string, unknown>) || null,
+        );
+      }
+    }
+    const parties = enrichBuyerPartyPhone(
+      toPublicPartyViews(partiesRaw, { includeUrls: true }),
+      buyerPhoneFallback,
+    );
+    const progress = countSignedParties(partiesRaw);
 
     const tenantId = String(contract.tenant_id || contract.company_id || '');
     let vendorDefaults = {
@@ -166,6 +210,8 @@ export async function GET(
       latest,
       history,
       signatures: signatures.map((row) => normalizeSaleSignaturePublicUrls(row) || row),
+      parties,
+      progress,
       vendorDefaults,
     });
   } catch (err) {
@@ -236,16 +282,39 @@ export async function POST(
       contract,
     );
 
+    const signature = normalizeSaleSignaturePublicUrls(result.signature) || result.signature;
+    const buyerPhoneFromParties = result.parties.find((p) => p.role === 'BUYER')
+      ?.signer_phone;
+    const parties = enrichBuyerPartyPhone(
+      toPublicPartyViews(result.parties, { includeUrls: true }),
+      buyerPhoneFromParties,
+    );
+    const buyerParty = parties.find((p) => p.role === 'BUYER');
+    const spouseParty = parties.find((p) => p.role === 'SPOUSE');
+    const signUrl =
+      buyerParty?.signatureUrl ||
+      buyerParty?.signature_url ||
+      resolveSaleSignUrl(signature.signature_token, result.signUrl || signature.signature_url);
+    const spouseSignUrl =
+      spouseParty?.signatureUrl ||
+      spouseParty?.signature_url ||
+      result.spouseSignUrl ||
+      null;
+
     mark('post_response', {
       contractId: resolvedId,
-      hasSignUrl: Boolean(result.signUrl),
-      signUrlPreview: result.signUrl ? `${result.signUrl.slice(0, 48)}…` : null,
+      hasSignUrl: Boolean(signUrl),
+      signUrlPreview: signUrl ? `${signUrl.slice(0, 48)}…` : null,
+      partyCount: parties.length,
+      partyRoles: parties.map((p) => p.role),
     });
 
     return NextResponse.json({
       success: true,
-      signUrl: result.signUrl,
-      signature: result.signature,
+      signUrl,
+      spouseSignUrl,
+      signature,
+      parties,
     });
   } catch (err) {
     const message =

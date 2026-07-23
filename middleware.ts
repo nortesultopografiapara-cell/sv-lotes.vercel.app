@@ -60,7 +60,9 @@ export async function middleware(request: NextRequest) {
 
   const url = request.nextUrl.clone();
 
-  // 1. PUBLIC ROUTES (landing + auth + validação + demo)
+  // 1. PUBLIC ROUTES (landing + auth + validação + assinatura pública + demo)
+  // Assinatura eletrônica: /sign e /api/sign são públicos (protegidos só pelo token).
+  // Deployment Protection da Vercel (SSO) NÃO deve bloquear estas rotas no Preview.
   const isLanding = url.pathname === '/';
   const isDemoPage = url.pathname === '/demo';
   const publicRoutes = [
@@ -78,13 +80,15 @@ export async function middleware(request: NextRequest) {
     '/api/validar-recibo',
     '/api/company-lookup',
     '/sign',
+    '/sign/sale',
     '/api/sign',
+    '/api/sign/sale',
     '/verify',
     '/api/verify',
     '/portal-cliente',
     '/api/portal-cliente',
   ];
-  const isPublicRoute = isLanding || isDemoPage || publicRoutes.some(route => url.pathname.startsWith(route));
+  const isPublicRoute = isLanding || isDemoPage || publicRoutes.some(route => url.pathname === route || url.pathname.startsWith(`${route}/`));
 
   if (isPublicRoute) {
     if (user || isDemoMode) {

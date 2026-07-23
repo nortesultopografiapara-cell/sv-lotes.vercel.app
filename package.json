@@ -39,7 +39,7 @@
     "test:company-financial-accounts": "tsx scripts/mandatory-company-financial-accounts-tests.ts",
     "test:company-asaas-reconciliation": "tsx scripts/mandatory-company-asaas-reconciliation-tests.ts",
     "test:company-asaas-bulk-status": "tsx scripts/mandatory-company-asaas-bulk-status-tests.ts",
-    "test:sale-signature": "tsx scripts/mandatory-signature-verify-evidence-tests.ts && tsx scripts/mandatory-sale-contract-certificate-tests.ts && tsx scripts/mandatory-sale-sign-email-certificate-tests.ts && tsx scripts/mandatory-sale-bilateral-signature-tests.ts",
+    "test:sale-signature": "tsx scripts/mandatory-public-signature-url-tests.ts && tsx scripts/mandatory-signature-verify-evidence-tests.ts && tsx scripts/mandatory-sale-contract-certificate-tests.ts && tsx scripts/mandatory-sale-sign-email-certificate-tests.ts && tsx scripts/mandatory-sale-bilateral-signature-tests.ts && tsx scripts/mandatory-sale-spouse-signature-tests.ts && tsx scripts/mandatory-sale-signature-share-modal-tests.ts && tsx scripts/mandatory-sale-signature-parties-integration-tests.ts",
     "test:data-migration": "tsx scripts/mandatory-data-migration-tests.ts && tsx scripts/mandatory-data-migration-customers-tests.ts && tsx scripts/mandatory-data-migration-brokers-tests.ts && tsx scripts/mandatory-data-migration-sales-tests.ts && tsx scripts/mandatory-data-migration-installments-tests.ts && tsx scripts/mandatory-data-migration-legacy-contracts-tests.ts",
     "test:data-migration-installments": "tsx scripts/mandatory-data-migration-installments-tests.ts",
     "test:data-migration-brokers": "tsx scripts/mandatory-data-migration-brokers-tests.ts",

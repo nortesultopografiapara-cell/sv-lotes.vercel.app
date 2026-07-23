@@ -17,22 +17,28 @@ import {
 import { buildSaleSignApiUrl } from '@/lib/saleContractUrls';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
 import { isValidSignerEmail } from '@/lib/saleContractEmailValidation';
+import { resolveSalePublicSignPanel } from '@/lib/saleContractPublicSignUi';
 
 type SaleSignPageData = {
   contract: { id: string; number: string; status: string };
   company: { id: string; name: string; cnpj?: string | null } | null;
   lot: { quadra: string; lote: string; project: string };
   buyer: { name: string | null; document?: string | null; email?: string | null };
-    signature: {
-      status: string;
-      statusLabel: string;
-      expiresAt: string;
-      signedAt?: string | null;
-      signerName?: string | null;
-      blocked: boolean;
-      canSign: boolean;
-      awaitingVendor?: boolean;
-    };
+  party?: { role: string; roleLabel: string; status: string; statusLabel: string } | null;
+  signature: {
+    status: string;
+    statusLabel: string;
+    expiresAt: string;
+    signedAt?: string | null;
+    signerName?: string | null;
+    blocked: boolean;
+    canSign: boolean;
+    awaitingVendor?: boolean;
+    awaitingOtherBuyers?: boolean;
+    partyStatus?: string | null;
+    partyRole?: string | null;
+    title?: string;
+  };
   pdfUrl: string;
   pdfDownloadUrl: string;
 };
@@ -134,13 +140,30 @@ export default function SaleSignContractPage() {
         prev
           ? {
               ...prev,
+              party: prev.party
+                ? {
+                    ...prev.party,
+                    status: 'SIGNED',
+                    statusLabel: 'Assinado',
+                  }
+                : prev.party,
               signature: {
                 ...prev.signature,
-                status: 'CLIENT_SIGNED',
-                statusLabel: 'Aguardando assinatura do vendedor',
+                status: json.awaitingOtherBuyers
+                  ? 'PARTIALLY_SIGNED'
+                  : json.awaitingVendor
+                    ? 'CLIENT_SIGNED'
+                    : prev.signature.status,
+                statusLabel: json.awaitingOtherBuyers
+                  ? 'Aguardando demais assinaturas'
+                  : json.awaitingVendor
+                    ? 'Aguardando assinatura do vendedor'
+                    : prev.signature.statusLabel,
                 blocked: true,
                 canSign: false,
-                awaitingVendor: true,
+                awaitingVendor: Boolean(json.awaitingVendor),
+                awaitingOtherBuyers: Boolean(json.awaitingOtherBuyers),
+                partyStatus: 'SIGNED',
                 signedAt: new Date().toISOString(),
                 signerName: signerName.trim(),
               },
@@ -154,9 +177,20 @@ export default function SaleSignContractPage() {
     }
   };
 
+  const panelKind = data
+    ? resolveSalePublicSignPanel({
+        processStatus: data.signature.status,
+        partyStatus: data.party?.status || data.signature.partyStatus,
+        partyRole: data.party?.role || data.signature.partyRole,
+        canSign: data.signature.canSign,
+        awaitingOtherBuyers: data.signature.awaitingOtherBuyers,
+        awaitingVendor: data.signature.awaitingVendor,
+      })
+    : 'unavailable';
+
   const signaturePanel =
     data &&
-    (data.signature.status === 'SIGNED' ? (
+    (panelKind === 'fully_signed' ? (
       <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 text-center">
         <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
         <h3 className="text-lg font-bold text-emerald-300">Contrato assinado com sucesso</h3>
@@ -176,7 +210,19 @@ export default function SaleSignContractPage() {
           Baixar contrato
         </a>
       </div>
-    ) : data.signature.status === 'CLIENT_SIGNED' || data.signature.awaitingVendor ? (
+    ) : panelKind === 'awaiting_other_buyers' ? (
+      <div className="bg-sky-500/10 border border-sky-500/30 rounded-2xl p-6 text-center">
+        <CheckCircle2 className="w-12 h-12 text-sky-400 mx-auto mb-3" />
+        <h3 className="text-lg font-bold text-sky-300">Sua assinatura foi registrada</h3>
+        <p className="text-sm text-gray-300 mt-2">
+          Aguardando a assinatura dos demais participantes do contrato.
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          Assinado por {data.signature.signerName || signerName} em{' '}
+          {formatDateTimeBr(data.signature.signedAt)}
+        </p>
+      </div>
+    ) : panelKind === 'awaiting_vendor' ? (
       <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center">
         <CheckCircle2 className="w-12 h-12 text-amber-400 mx-auto mb-3" />
         <h3 className="text-lg font-bold text-amber-300">Sua assinatura foi registrada</h3>
@@ -188,18 +234,30 @@ export default function SaleSignContractPage() {
           {formatDateTimeBr(data.signature.signedAt)}
         </p>
       </div>
-    ) : data.signature.canSign ? (
+    ) : panelKind === 'form' ? (
       <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-5">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-amber-400" />
-          <h3 className="font-semibold">Assinar contrato</h3>
+          <h3 className="font-semibold">
+            {data.signature.title ||
+              (data.party?.role === 'SPOUSE'
+                ? 'Assinatura do cônjuge anuente'
+                : 'Assinatura do comprador')}
+          </h3>
         </div>
+
+        {data.party?.roleLabel && (
+          <p className="text-xs text-amber-200/80">
+            Você está assinando como <strong>{data.party.roleLabel}</strong>
+            {data.buyer.name ? ` — ${data.buyer.name}` : ''}.
+          </p>
+        )}
 
         <Field
           label="Nome completo"
           value={signerName}
           onChange={setSignerName}
-          placeholder="Nome do comprador"
+          placeholder="Nome completo"
         />
         <Field
           label="CPF"

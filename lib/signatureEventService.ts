@@ -14,7 +14,16 @@ export type SignatureEventType =
   | 'CLIENT_SIGNED'
   | 'PROVIDER_SIGNED'
   | 'CERTIFICATE_ISSUED'
-  | 'QR_VALIDATED';
+  | 'QR_VALIDATED'
+  | 'BUYER_LINK_CREATED'
+  | 'BUYER_VIEWED'
+  | 'BUYER_SIGNED'
+  | 'SPOUSE_LINK_CREATED'
+  | 'SPOUSE_VIEWED'
+  | 'SPOUSE_SIGNED'
+  | 'VENDOR_SIGNED'
+  | 'PARTY_LINK_REISSUED'
+  | 'SIGNATURE_COMPLETED';
 
 export type LogSignatureEventInput = {
   signatureToken: string;
@@ -103,6 +112,15 @@ export const SIGNATURE_EVENT_LABELS: Record<SignatureEventType, string> = {
   PROVIDER_SIGNED: 'Assinatura do vendedor/SV',
   CERTIFICATE_ISSUED: 'Certificado emitido',
   QR_VALIDATED: 'Documento validado via QR Code',
+  BUYER_LINK_CREATED: 'Link do comprador criado',
+  BUYER_VIEWED: 'Comprador visualizou o contrato',
+  BUYER_SIGNED: 'Comprador assinou',
+  SPOUSE_LINK_CREATED: 'Link do cônjuge criado',
+  SPOUSE_VIEWED: 'Cônjuge visualizou o contrato',
+  SPOUSE_SIGNED: 'Cônjuge anuente assinou',
+  VENDOR_SIGNED: 'Vendedora assinou',
+  PARTY_LINK_REISSUED: 'Link do participante reemitido',
+  SIGNATURE_COMPLETED: 'Assinaturas concluídas',
 };
 
 export function signatureEventLabel(eventType: string): string {

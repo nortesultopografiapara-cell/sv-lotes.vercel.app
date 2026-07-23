@@ -39,6 +39,37 @@ export function buildSaleSignatureShareMessage(input: SaleSignatureShareInput): 
   ].join('\n');
 }
 
+export type SalePartySignatureShareInput = {
+  signerName: string;
+  role: 'BUYER' | 'SPOUSE';
+  projectName: string;
+  quadra: string;
+  lote: string;
+  contractNumber: string;
+  signatureUrl: string;
+};
+
+/** Mensagem individual por participante (comprador ou cônjuge). */
+export function buildSalePartySignatureShareMessage(
+  input: SalePartySignatureShareInput,
+): string {
+  const name = input.signerName.trim() || 'signatário';
+
+  if (input.role === 'SPOUSE') {
+    return [
+      `Olá, ${name}. Segue seu link individual para assinatura do contrato na condição de cônjuge anuente. Este link é pessoal e deve ser utilizado somente por você.`,
+      '',
+      input.signatureUrl,
+    ].join('\n');
+  }
+
+  return [
+    `Olá, ${name}. Segue seu link individual para assinatura do contrato de compra e venda. Este link é pessoal e deve ser utilizado somente por você.`,
+    '',
+    input.signatureUrl,
+  ].join('\n');
+}
+
 export function buildSaleSignatureEmailSubject(projectName: string): string {
   return `Assinatura eletrônica — Contrato de compra e venda (${projectName})`;
 }

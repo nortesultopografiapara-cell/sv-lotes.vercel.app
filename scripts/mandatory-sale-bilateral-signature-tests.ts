@@ -33,7 +33,7 @@ function assert(cond: boolean, msg: string) {
 }
 
 function testStatusHelpers() {
-  assert(saleSignatureStatusLabel('CLIENT_SIGNED') === 'Aguardando assinatura do vendedor', 'label');
+  assert(saleSignatureStatusLabel('CLIENT_SIGNED') === 'Aguardando assinatura da vendedora', 'label');
   assert(canVendorSignSaleContract('CLIENT_SIGNED'), 'vendor can sign');
   assert(!canVendorSignSaleContract('VIEWED'), 'vendor cannot before client');
   assert(canShowVendorSignButton('CLIENT_SIGNED'), 'show vendor button');
