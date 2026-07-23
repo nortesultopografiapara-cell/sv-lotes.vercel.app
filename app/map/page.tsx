@@ -3229,6 +3229,7 @@ export default function MapPage() {
               setStreetGuideModal({ mode: 'edit', guide })
             }
             onDeleteStreetGuide={handleDeleteStreetGuide}
+            labelsMinZoom={16}
             lotSheetPickMode={ownerReadOnly ? false : lotSheetPickMode}
             onLotSheetLotPick={
               ownerReadOnly
