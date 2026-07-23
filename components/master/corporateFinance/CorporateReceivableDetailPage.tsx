@@ -522,7 +522,7 @@ function DetailInner() {
             <CorporateAsaasChargeSection
               receivable={row}
               accounts={accounts}
-              onSettled={() => void load()}
+              onChargeChanged={() => void load()}
             />
 
             <div className={styles.panel}>

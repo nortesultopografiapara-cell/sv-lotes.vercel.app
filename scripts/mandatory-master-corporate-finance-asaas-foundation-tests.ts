@@ -50,7 +50,15 @@ function testMigrationIsolation() {
   assert(mig.includes('master_corporate_asaas_charges'), 'charges');
   assert(mig.includes('master_corporate_asaas_webhook_events'), 'webhook events');
   assert(mig.includes('MASTER_CORPORATE_FINANCE'), 'domain');
-  assert(mig.includes("LIKE 'MCF:%'"), 'ext ref prefix');
+  assert(mig.includes("LIKE 'MCF:%'"), 'ext ref prefix legado 7.1');
+  assert(
+    exists('supabase/migrations/20260723110000_master_corporate_asaas_ext_ref_prefix.sql'),
+    'migration prefix 7.1b',
+  );
+  const mig2 = read(
+    'supabase/migrations/20260723110000_master_corporate_asaas_ext_ref_prefix.sql',
+  );
+  assert(mig2.includes('ASAAS_CORP_AR:%'), 'novo prefixo');
   assert(mig.includes('is_super_admin()'), 'RLS');
   assert(mig.includes('uq_master_corp_asaas_charges_active_receivable'), 'active unique');
   assert(mig.includes('asaas_integration_status'), 'receivable light field');
@@ -86,9 +94,13 @@ function testAccess() {
 function testDomainHelpers() {
   assert(MASTER_CORPORATE_ASAAS_DOMAIN === 'MASTER_CORPORATE_FINANCE', 'domain const');
   const ref = buildCorporateAsaasExternalReference('rec-123');
-  assert(ref === 'MCF:rec-123', `ref ${ref}`);
+  assert(ref === 'ASAAS_CORP_AR:rec-123', `ref ${ref}`);
   const parsed = parseCorporateAsaasExternalReference(ref);
   assert(parsed?.receivableId === 'rec-123', 'parse receivable');
+  assert(
+    parseCorporateAsaasExternalReference('MCF:rec-legacy')?.receivableId === 'rec-legacy',
+    'parse legado MCF',
+  );
   assert(isCorporateAsaasDomain('MASTER_CORPORATE_FINANCE'), 'domain check');
   assert(!isCorporateAsaasDomain('ASAAS_COMPANY'), 'tenant domain rejected');
   assert(maskCpfCnpj('52998224725').includes('***'), 'mask cpf');

@@ -21,7 +21,8 @@ import styles from './corporateFinance.module.css';
 type Props = {
   receivable: MasterCorporateReceivable;
   accounts: MasterCorporateFinancialAccount[];
-  onSettled?: () => void;
+  /** Recarrega a AR após criar/sync/cancel — NÃO liquida. */
+  onChargeChanged?: () => void;
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -35,7 +36,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function CorporateAsaasChargeSection({
   receivable,
   accounts,
-  onSettled,
+  onChargeChanged,
 }: Props) {
   const { userId, qs, bodyAuth } = useCorporateFinanceAuthParams();
   const [charges, setCharges] = useState<MasterCorporateAsaasCharge[]>([]);
@@ -122,7 +123,7 @@ export default function CorporateAsaasChargeSection({
         `Cobrança ${billingType} criada. Isso não registra recebimento no caixa até o pagamento confirmado.`,
       );
       await load();
-      onSettled?.();
+      onChargeChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar cobrança.');
     } finally {
@@ -163,7 +164,7 @@ export default function CorporateAsaasChargeSection({
               : 'Sincronização concluída.',
         );
         await load();
-        onSettled?.();
+        onChargeChanged?.();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro na ação Asaas.');
@@ -359,7 +360,14 @@ export default function CorporateAsaasChargeSection({
 
       {createOpen ? (
         <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
-          <div className={styles.modal}>
+          <form
+            className={styles.modal}
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void createCharge();
+            }}
+          >
             <div className={styles.modalHead}>
               <h3 className={styles.modalTitle}>Nova cobrança Asaas</h3>
               <button
@@ -461,15 +469,14 @@ export default function CorporateAsaasChargeSection({
                 Cancelar
               </button>
               <button
-                type="button"
+                type="submit"
                 className={`${styles.btn} ${styles.btnPrimary}`}
                 disabled={busy}
-                onClick={() => void createCharge()}
               >
                 {busy ? 'Gerando…' : 'Gerar cobrança'}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       ) : null}
     </div>

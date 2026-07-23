@@ -2,7 +2,11 @@
 
 export const MASTER_CORPORATE_ASAAS_DOMAIN = 'MASTER_CORPORATE_FINANCE' as const;
 
-export const MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX = 'MCF:' as const;
+/** Prefixo exclusivo — não colide com Caixa SaaS nem cobranças de imobiliárias. */
+export const MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX = 'ASAAS_CORP_AR:' as const;
+
+/** Legado Fase 7.1 (ainda aceito na leitura/webhook). */
+export const MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX_LEGACY = 'MCF:' as const;
 
 /** Variáveis server-side obrigatórias (nunca NEXT_PUBLIC). */
 export const MASTER_CORPORATE_ASAAS_ENV_KEYS = {
@@ -27,8 +31,12 @@ export function parseCorporateAsaasExternalReference(
   ref: string | null | undefined,
 ): { receivableId: string; suffix: string | null } | null {
   const raw = String(ref || '').trim();
-  if (!raw.startsWith(MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX)) return null;
-  const rest = raw.slice(MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX.length);
+  let rest: string | null = null;
+  if (raw.startsWith(MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX)) {
+    rest = raw.slice(MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX.length);
+  } else if (raw.startsWith(MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX_LEGACY)) {
+    rest = raw.slice(MASTER_CORPORATE_ASAAS_EXTERNAL_REF_PREFIX_LEGACY.length);
+  }
   if (!rest) return null;
   const [receivableId, ...parts] = rest.split(':');
   if (!receivableId) return null;
@@ -36,6 +44,10 @@ export function parseCorporateAsaasExternalReference(
     receivableId,
     suffix: parts.length ? parts.join(':') : null,
   };
+}
+
+export function isCorporateAsaasExternalReference(ref: string | null | undefined): boolean {
+  return parseCorporateAsaasExternalReference(ref) != null;
 }
 
 export function isCorporateAsaasDomain(value: unknown): boolean {
@@ -64,7 +76,9 @@ export function requireCorporateAsaasWebhookToken(): string {
 export function requireCorporateAsaasApiKey(): string {
   const key = String(process.env.ASAAS_API_KEY || '').trim();
   if (!key) {
-    throw new Error('ASAAS_API_KEY não configurada (conta corporativa SV Topografia).');
+    throw new Error(
+      'ASAAS_API_KEY não configurada no ambiente (mesma conta SV Topografia / Caixa SaaS). Configure a variável server-side no Preview.',
+    );
   }
   return key;
 }

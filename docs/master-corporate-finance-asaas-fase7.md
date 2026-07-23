@@ -60,11 +60,31 @@ Exemplo (substituir pelo host do Preview após o deploy):
 
 Cobranças corporativas usam:
 
-- `externalReference = MCF:{receivable_id}`
+- `externalReference = ASAAS_CORP_AR:{receivable_id}[:charge_id]`
 - `domain = MASTER_CORPORATE_FINANCE`
 - tabelas `master_corporate_asaas_*` apenas
 
+**Criar cobrança nunca liquida a Conta a Receber nem gera caixa.** Liquidação só com pagamento confirmado (webhook/sync/reconcile com evidência) ou botão Receber manual.
+
 Eventos SaaS/tenant são rejeitados pelo liquidator corporativo.
+
+## Preview — variáveis obrigatórias
+
+Além de `ASAAS_CORPORATE_WEBHOOK_TOKEN`, o Preview **precisa** das mesmas variáveis da conta SV Topografia usadas no Caixa SaaS:
+
+- `ASAAS_API_KEY` (Production já tem; **copiar para Preview**)
+- `ASAAS_ENV` (recomendado `sandbox` no Preview)
+
+Sem `ASAAS_API_KEY` no Preview, a criação de cobrança falha.
+
+## Reabrir AR liquidada indevidamente
+
+`POST /api/master/corporate-finance/receivables/reopen-code`
+
+Body: `{ "userId": "<SUPER_ADMIN>", "code": "REC-2026-0002", "reason": "..." }`
+
+Estorna recebimentos ativos + movimentos de caixa vinculados e recoloca a AR em aberto, sem apagar o título.
+
 
 ## 5. Roteiro de homologação
 

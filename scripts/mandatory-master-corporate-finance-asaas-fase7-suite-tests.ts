@@ -49,6 +49,7 @@ function main() {
   run('scripts/mandatory-master-corporate-finance-asaas-webhook-tests.ts');
   run('scripts/mandatory-master-corporate-finance-asaas-ui-tests.ts');
   run('scripts/mandatory-master-corporate-finance-asaas-reconcile-tests.ts');
+  run('scripts/mandatory-master-corporate-finance-asaas-create-no-settle-tests.ts');
   isolationGates();
   console.log('OK isolation gates');
   console.log('ALL PASS');

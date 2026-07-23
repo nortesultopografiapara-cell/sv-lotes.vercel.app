@@ -12,6 +12,7 @@ import {
 } from './domain';
 import {
   mapAsaasRemoteStatusToLocal,
+  hasCorporateAsaasPaymentEvidence,
   type CorporateAsaasPaymentRemote,
 } from './client';
 import { mapCorporateAsaasChargeRow } from './mappers';
@@ -66,7 +67,7 @@ async function findCharge(
   }
 
   const ext = String(payment.externalReference || '').trim();
-  if (ext.startsWith('MCF:')) {
+  if (ext.startsWith('ASAAS_CORP_AR:') || ext.startsWith('MCF:')) {
     const { data, error } = await supabase
       .from('master_corporate_asaas_charges')
       .select('*')
@@ -362,7 +363,7 @@ export async function processCorporateAsaasWebhook(
   try {
     let nextStatus = mapAsaasRemoteStatusToLocal(payment.status);
 
-    // Eventos tipados reforçam status
+    // Eventos tipados reforçam status — PAYMENT_CREATED sozinho NÃO liquida
     if (eventType.includes('CONFIRMED')) nextStatus = 'CONFIRMED';
     else if (eventType.includes('RECEIVED')) nextStatus = 'RECEIVED';
     else if (eventType.includes('OVERDUE')) nextStatus = 'OVERDUE';
@@ -371,6 +372,8 @@ export async function processCorporateAsaasWebhook(
     } else if (eventType.includes('REFUNDED') || eventType.includes('CHARGEBACK')) {
       nextStatus = 'REFUNDED';
     }
+
+    const isCreateOnly = eventType === 'PAYMENT_CREATED';
 
     if (!canDowngradeCorporateAsaasStatus(charge.local_status, nextStatus)) {
       await supabase
@@ -384,7 +387,11 @@ export async function processCorporateAsaasWebhook(
       return { ok: true, status: 200, result: 'IGNORED_NO_DOWNGRADE' };
     }
 
-    if (isCorporateAsaasPaidStatus(nextStatus)) {
+    if (
+      isCorporateAsaasPaidStatus(nextStatus) &&
+      hasCorporateAsaasPaymentEvidence(payment) &&
+      !isCreateOnly
+    ) {
       const settled = await settleCorporateAsaasChargeFromRemote(
         supabase,
         charge,
@@ -416,7 +423,12 @@ export async function processCorporateAsaasWebhook(
       return { ok: true, status: 200, result: settled.settled ? 'SETTLED' : 'ALREADY_SETTLED' };
     }
 
-    // Atualiza status não-pago (overdue/cancel) sem mexer no caixa
+    // PAYMENT_CREATED ou status pago sem evidência: espelha aguardando — não liquida AR
+    if (isCorporateAsaasPaidStatus(nextStatus) && (isCreateOnly || !hasCorporateAsaasPaymentEvidence(payment))) {
+      nextStatus = 'AWAITING_PAYMENT';
+    }
+
+    // Atualiza status não-pago (overdue/cancel/awaiting) sem mexer no caixa
     const patch: Record<string, unknown> = {
       local_status: nextStatus,
       asaas_status: payment.status || null,

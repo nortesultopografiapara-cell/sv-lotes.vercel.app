@@ -26,7 +26,8 @@ function main() {
   assert(exists('app/master/corporate-finance/asaas/page.tsx'), 'route');
 
   const section = read('components/master/corporateFinance/CorporateAsaasChargeSection.tsx');
-  assert(section.includes('Cobrança Asaas'), 'title');
+  assert(section.includes('onChargeChanged'), 'callback');
+  assert(!section.includes('onSettled'), 'sem onSettled');
   assert(section.includes('Gerar cobrança'), 'create');
   assert(section.includes("billingType"), 'pix/boleto');
   assert(section.includes('maskCpfCnpj'), 'mask doc');
@@ -35,11 +36,13 @@ function main() {
   assert(section.includes("'cancel'"), 'cancel');
   assert(section.includes('bodyAuth()'), 'auth fn');
   assert(section.includes('qs()'), 'qs fn');
+  assert(!section.includes('/receive'), 'sem receive API');
   assert(!section.includes('NEXT_PUBLIC_ASAAS'), 'sem key client');
   assert(!section.includes('ASAAS_API_KEY'), 'sem api key client');
 
   const detail = read('components/master/corporateFinance/CorporateReceivableDetailPage.tsx');
   assert(detail.includes('CorporateAsaasChargeSection'), 'wired in AR detail');
+  assert(detail.includes('onChargeChanged'), 'detail callback');
 
   const hub = read('components/master/corporateFinance/CorporateFinanceHubPage.tsx');
   assert(hub.includes('/master/corporate-finance/asaas'), 'hub shortcut');

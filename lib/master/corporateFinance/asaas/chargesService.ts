@@ -17,6 +17,7 @@ import {
   corporateAsaasFetchPixQrCode,
   corporateAsaasFindCustomerIdByCpfCnpj,
   corporateAsaasGetPayment,
+  hasCorporateAsaasPaymentEvidence,
   mapAsaasRemoteStatusToLocal,
   normalizeCorporatePixQrImage,
 } from './client';
@@ -195,6 +196,35 @@ async function updateReceivableAsaasMirror(
   if (error) throw new Error(error.message);
 }
 
+import {
+  corporateAsaasCancelPayment,
+  corporateAsaasCreateCustomer,
+  corporateAsaasCreatePayment,
+  corporateAsaasFetchPixQrCode,
+  corporateAsaasFindCustomerIdByCpfCnpj,
+  corporateAsaasGetPayment,
+  hasCorporateAsaasPaymentEvidence,
+  mapAsaasRemoteStatusToLocal,
+  normalizeCorporatePixQrImage,
+} from './client';
+import { mapCorporateAsaasChargeRow, mapCorporateAsaasCustomerRow } from './mappers';
+import type {
+  CorporateAsaasCreateChargeInput,
+  MasterCorporateAsaasCharge,
+  MasterCorporateAsaasCustomer,
+} from './types';
+import { isCorporateAsaasActiveStatus, isCorporateAsaasPaidStatus } from './types';
+import {
+  normalizeCpfCnpj,
+  sanitizeCorporateAsaasErrorMessage,
+  validateCorporateAsaasCreateChargeInput,
+} from './validation';
+import { settleCorporateAsaasChargeFromRemote } from './webhookSettlement';
+
+/**
+ * Criar cobrança Asaas NUNCA liquida Conta a Receber nem gera caixa.
+ * Liquidação apenas via webhook/sync/reconcile com evidência de pagamento, ou Receber manual.
+ */
 export async function createCorporateAsaasCharge(
   supabase: SupabaseClient,
   raw: Record<string, unknown>,
@@ -208,6 +238,12 @@ export async function createCorporateAsaasCharge(
   if (receivable.remaining_amount <= 0) {
     throw new Error('Conta a receber sem saldo pendente.');
   }
+  if (receivable.status === 'RECEIVED') {
+    throw new Error('Conta a receber já liquidada — não é possível gerar cobrança.');
+  }
+
+  const statusBefore = receivable.status;
+  const receivedBefore = Number(receivable.received_amount || 0);
 
   const active = await getActiveCorporateAsaasCharge(supabase, receivable.id);
   if (active) {
@@ -240,16 +276,6 @@ export async function createCorporateAsaasCharge(
     input.description ||
     `${receivable.code} — ${receivable.description}`.slice(0, 480);
 
-  const idempotencyKey = `CORP_ASAAS:${receivable.id}:${input.billing_type}:${value.toFixed(2)}:${dueDate}`;
-  const { data: byKey } = await supabase
-    .from('master_corporate_asaas_charges')
-    .select('*')
-    .eq('idempotency_key', idempotencyKey)
-    .maybeSingle();
-  if (byKey) {
-    return mapCorporateAsaasChargeRow(byKey as Record<string, unknown>);
-  }
-
   // Cliente Asaas
   let asaasCustomerId =
     (await findLocalCustomer(supabase, cpfCnpj, environment))?.asaas_customer_id || null;
@@ -263,7 +289,7 @@ export async function createCorporateAsaasCharge(
       email,
       phone,
       mobilePhone: mobile,
-      externalReference: `MCF_CUSTOMER:${cpfCnpj}`,
+      externalReference: `ASAAS_CORP_CUSTOMER:${cpfCnpj}`,
     });
   }
   const localCustomer = await upsertLocalCustomer(supabase, {
@@ -277,6 +303,8 @@ export async function createCorporateAsaasCharge(
   });
 
   const chargeId = crypto.randomUUID();
+  // Idempotência por cobrança (nunca reutilizar chave de cobrança antiga já paga)
+  const idempotencyKey = `CORP_ASAAS_CHARGE:${chargeId}`;
   const externalReference = buildCorporateAsaasExternalReference(receivable.id, chargeId);
 
   let remote;
@@ -325,7 +353,8 @@ export async function createCorporateAsaasCharge(
     }
   }
 
-  const localStatus = mapAsaasRemoteStatusToLocal(remote.status);
+  // Sempre AWAITING na criação — mesmo se o Asaas devolver status pago.
+  // Liquidação só ocorre em webhook/sync/reconcile com evidência, ou Receber manual.
   const row = {
     id: chargeId,
     receivable_id: receivable.id,
@@ -336,8 +365,8 @@ export async function createCorporateAsaasCharge(
     asaas_customer_id: asaasCustomerId,
     asaas_payment_id: paymentId,
     billing_type: input.billing_type,
-    local_status: localStatus === 'PENDING' ? 'AWAITING_PAYMENT' : localStatus,
-    asaas_status: remote.status || null,
+    local_status: 'AWAITING_PAYMENT' as const,
+    asaas_status: remote.status || 'PENDING',
     original_value: value,
     net_value: remote.netValue != null ? Number(remote.netValue) : null,
     due_date: dueDate,
@@ -355,6 +384,8 @@ export async function createCorporateAsaasCharge(
     pix_expiration_at,
     last_sync_at: nowIso(),
     last_error: null,
+    receivable_payment_id: null,
+    cash_movement_id: null,
     created_by: userId,
     created_at: nowIso(),
     updated_at: nowIso(),
@@ -366,41 +397,53 @@ export async function createCorporateAsaasCharge(
     .select('*')
     .single();
   if (error) {
-    // Concorrência / idempotência
     if (error.code === '23505') {
       const again = await getActiveCorporateAsaasCharge(supabase, receivable.id);
       if (again) return again;
-      const byIdem = await supabase
-        .from('master_corporate_asaas_charges')
-        .select('*')
-        .eq('idempotency_key', idempotencyKey)
-        .maybeSingle();
-      if (byIdem.data) {
-        return mapCorporateAsaasChargeRow(byIdem.data as Record<string, unknown>);
-      }
     }
-    throw new Error(error.message);
+    // Cobrança existe no Asaas mas falhou localmente — marca erro, não liquida AR
+    await updateReceivableAsaasMirror(supabase, receivable.id, {
+      asaas_integration_status: 'ERROR',
+      asaas_active_charge_id: null,
+      asaas_last_sync_at: nowIso(),
+      asaas_last_error: sanitizeCorporateAsaasErrorMessage(error.message),
+    });
+    throw new Error(
+      `Cobrança criada no Asaas (${paymentId}) mas falhou ao gravar localmente: ${error.message}`,
+    );
   }
 
   const charge = mapCorporateAsaasChargeRow(inserted as Record<string, unknown>);
   await updateReceivableAsaasMirror(supabase, receivable.id, {
-    asaas_integration_status: charge.local_status,
+    asaas_integration_status: 'AWAITING_PAYMENT',
     asaas_active_charge_id: charge.id,
     asaas_last_sync_at: nowIso(),
     asaas_last_error: null,
   });
 
+  // Guarda: criar cobrança não pode alterar status/recebido da AR
+  const after = await getReceivable(supabase, receivable.id);
+  if (
+    after &&
+    (after.status === 'RECEIVED' || Number(after.received_amount || 0) > receivedBefore + 0.001)
+  ) {
+    throw new Error(
+      `Inconsistência: gerar cobrança não deve liquidar a AR (antes=${statusBefore}, depois=${after.status}). Use estorno e reporte o incidente.`,
+    );
+  }
+
   await logCorporateFinanceAudit(supabase, {
     userId,
     action: 'CORPORATE_ASAAS_CHARGE_CREATED',
     entityId: charge.id,
-    description: `Cobrança Asaas ${charge.billing_type} ${charge.asaas_payment_id} para ${receivable.code}`,
+    description: `Cobrança Asaas ${charge.billing_type} ${charge.asaas_payment_id} para ${receivable.code} (AR permanece ${statusBefore})`,
     newData: {
       billing_type: charge.billing_type,
       value: charge.original_value,
       receivable_id: receivable.id,
       asaas_payment_id: charge.asaas_payment_id,
-      // sem QR/payload
+      receivable_status: statusBefore,
+      settled: false,
     },
   });
 
@@ -469,8 +512,12 @@ export async function syncCorporateAsaasCharge(
 
   let updated = mapCorporateAsaasChargeRow(data as Record<string, unknown>);
 
-  // Sync pago sem webhook: materializa recebimento/caixa de forma idempotente
-  if (isCorporateAsaasPaidStatus(updated.local_status) && !updated.receivable_payment_id) {
+  // Liquidação somente com evidência real de pagamento (data + status pago)
+  if (
+    isCorporateAsaasPaidStatus(updated.local_status) &&
+    !updated.receivable_payment_id &&
+    hasCorporateAsaasPaymentEvidence(remote)
+  ) {
     const settled = await settleCorporateAsaasChargeFromRemote(
       supabase,
       updated,
@@ -478,6 +525,23 @@ export async function syncCorporateAsaasCharge(
       updated.local_status,
     );
     updated = settled.charge;
+  } else if (
+    isCorporateAsaasPaidStatus(updated.local_status) &&
+    !hasCorporateAsaasPaymentEvidence(remote)
+  ) {
+    // Status ambíguo sem data de pagamento — mantém aguardando, não liquida AR
+    const { data: forced } = await supabase
+      .from('master_corporate_asaas_charges')
+      .update({
+        local_status: 'AWAITING_PAYMENT',
+        last_sync_at: nowIso(),
+        last_error: 'Status Asaas sem evidência de pagamento — AR não liquidada',
+        updated_at: nowIso(),
+      })
+      .eq('id', charge.id)
+      .select('*')
+      .single();
+    if (forced) updated = mapCorporateAsaasChargeRow(forced as Record<string, unknown>);
   }
 
   await updateReceivableAsaasMirror(supabase, charge.receivable_id, {

@@ -221,3 +221,20 @@ export function mapAsaasRemoteStatusToLocal(
   if (['PENDING', 'AWAITING_RISK_ANALYSIS'].includes(key)) return 'AWAITING_PAYMENT';
   return 'AWAITING_PAYMENT';
 }
+
+/**
+ * Evidência mínima de pagamento real no Asaas.
+ * Status pago sozinho (sem data) NÃO basta para liquidar AR/caixa na criação.
+ */
+export function hasCorporateAsaasPaymentEvidence(
+  payment: CorporateAsaasPaymentRemote | null | undefined,
+): boolean {
+  if (!payment) return false;
+  const status = String(payment.status || '').toUpperCase();
+  const paidStatus = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(status);
+  if (!paidStatus) return false;
+  const date =
+    payment.paymentDate || payment.clientPaymentDate || payment.confirmedDate || null;
+  return Boolean(String(date || '').trim());
+}
+
