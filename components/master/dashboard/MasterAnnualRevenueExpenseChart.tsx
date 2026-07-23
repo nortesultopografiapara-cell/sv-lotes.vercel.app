@@ -66,6 +66,7 @@ export function MasterAnnualRevenueExpenseChart({
     <div className={`${styles.card} ${styles.annualChartCard}`}>
       <h3 className={styles.cardTitleStrong}>{title}</h3>
       <div className={styles.chartBox}>
+        <div className={styles.chartBoxInner}>
         {loading ? (
           <div className={styles.emptyChart}>
             <p>Carregando movimentações…</p>
@@ -115,6 +116,7 @@ export function MasterAnnualRevenueExpenseChart({
             </BarChart>
           </ResponsiveContainer>
         )}
+        </div>
       </div>
     </div>
   );

@@ -125,7 +125,7 @@ function MasterSettingsContent() {
   }
 
   return (
-    <div className="sv-page sv-page--scroll-y p-4 md:p-8">
+    <div className="sv-page p-4 md:p-8">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Settings className="w-7 h-7 text-[var(--color-primary)]" />
