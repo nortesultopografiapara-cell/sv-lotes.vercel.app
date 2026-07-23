@@ -196,31 +196,6 @@ async function updateReceivableAsaasMirror(
   if (error) throw new Error(error.message);
 }
 
-import {
-  corporateAsaasCancelPayment,
-  corporateAsaasCreateCustomer,
-  corporateAsaasCreatePayment,
-  corporateAsaasFetchPixQrCode,
-  corporateAsaasFindCustomerIdByCpfCnpj,
-  corporateAsaasGetPayment,
-  hasCorporateAsaasPaymentEvidence,
-  mapAsaasRemoteStatusToLocal,
-  normalizeCorporatePixQrImage,
-} from './client';
-import { mapCorporateAsaasChargeRow, mapCorporateAsaasCustomerRow } from './mappers';
-import type {
-  CorporateAsaasCreateChargeInput,
-  MasterCorporateAsaasCharge,
-  MasterCorporateAsaasCustomer,
-} from './types';
-import { isCorporateAsaasActiveStatus, isCorporateAsaasPaidStatus } from './types';
-import {
-  normalizeCpfCnpj,
-  sanitizeCorporateAsaasErrorMessage,
-  validateCorporateAsaasCreateChargeInput,
-} from './validation';
-import { settleCorporateAsaasChargeFromRemote } from './webhookSettlement';
-
 /**
  * Criar cobrança Asaas NUNCA liquida Conta a Receber nem gera caixa.
  * Liquidação apenas via webhook/sync/reconcile com evidência de pagamento, ou Receber manual.
