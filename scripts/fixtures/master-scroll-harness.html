@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Master scroll harness</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .shell {
+        display: flex;
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow: hidden;
+      }
+      .sidebar {
+        width: 220px;
+        height: 100%;
+        overflow: hidden;
+        background: #0f172a;
+        color: #fff;
+      }
+      .mainColumn {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .header {
+        flex-shrink: 0;
+        height: 64px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .content {
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+      .block {
+        height: 420px;
+        margin: 16px;
+        background: #dbeafe;
+        border: 1px solid #93c5fd;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell" data-master-scroll-strategy="main">
+      <aside class="sidebar">Sidebar</aside>
+      <div class="mainColumn">
+        <header class="header">Header</header>
+        <main class="content" data-testid="master-executive-main" id="master-executive-main">
+          <div class="block">Card 1</div>
+          <div class="block">Card 2</div>
+          <div class="block">Charts</div>
+          <div class="block">Footer area</div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

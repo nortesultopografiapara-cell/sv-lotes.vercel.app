@@ -13,11 +13,16 @@
 }
 
 .shell {
-  /* Estratégia: rolagem no documento (body). Não travar altura do shell. */
+  /*
+   * Estratégia definitiva: scrollport interno no <main>.
+   * Shell trava no viewport; só .content (.main) rola verticalmente.
+   * Páginas SaaS legado NÃO usam este CSS.
+   */
   display: flex;
-  align-items: flex-start;
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
   width: 100%;
+  overflow: hidden;
   background: #f3f4f6;
   color: #0f172a;
 }
@@ -27,10 +32,9 @@
   flex-direction: column;
   flex-shrink: 0;
   z-index: 200;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  height: 100dvh;
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
   background: #0f172a;
   color: #e2e8f0;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -301,17 +305,16 @@
 .mainColumn {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: #f3f4f6;
-  /* Altura = conteúdo (mín. viewport). Não esticar à sidebar 100dvh. */
-  min-height: 100dvh;
 }
 
 .header {
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
   z-index: 40;
   height: 4rem;
   display: flex;
@@ -436,10 +439,15 @@
 }
 
 .content {
-  /* Documento faz a rolagem vertical — sem overflow-y concorrente */
-  flex: 1 0 auto;
+  /* Único scrollport vertical do Painel Executivo */
+  flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
   width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: #f3f4f6;
 }
 
@@ -625,9 +633,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.65rem 1.25rem;
+  margin-top: 1.5rem;
+  padding: 0.85rem 1.25rem 1.25rem;
   border-top: 1px solid #e5e7eb;
-  background: #fff;
+  background: #f3f4f6;
   color: #64748b;
   font-size: 0.6875rem;
 }

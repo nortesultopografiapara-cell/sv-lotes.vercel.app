@@ -107,22 +107,19 @@ function testSyncRecoversLostPayment() {
 
 function testShellScrollNotBlocked() {
   const css = read('components/master/layout/masterExecutiveLayout.module.css');
-  assert(css.includes('min-height: 100dvh'), 'shell min-height');
-  assert(css.includes('align-items: flex-start'), 'shell flex-start');
   const shellMatch = css.match(/\.shell\s*\{([^}]+)\}/);
   assert(shellMatch, 'shell rule');
-  assert(!shellMatch![1].includes('overflow: hidden'), 'shell sem overflow:hidden');
-  const mainMatch = css.match(/\.mainColumn\s*\{([^}]+)\}/);
-  assert(mainMatch, 'mainColumn rule');
-  assert(!mainMatch![1].includes('overflow: hidden'), 'mainColumn sem overflow:hidden');
+  assert(shellMatch![1].includes('overflow: hidden'), 'shell overflow hidden (main strategy)');
+  assert(/height:\s*100dvh/.test(shellMatch![1]), 'shell height 100dvh');
   const contentMatch = css.match(/\.content\s*\{([^}]+)\}/);
   assert(contentMatch, 'content rule');
-  assert(!contentMatch![1].includes('overflow-y: auto'), 'content sem scroll concorrente');
+  assert(contentMatch![1].includes('overflow-y: auto'), 'content overflow-y auto');
+  assert(contentMatch![1].includes('min-height: 0'), 'content min-height 0');
   assert(
     read('components/master/layout/MasterExecutiveLayout.tsx').includes(
-      'data-master-scroll-strategy="document"',
+      'data-master-scroll-strategy="main"',
     ),
-    'strategy document',
+    'strategy main',
   );
 }
 
