@@ -54,18 +54,31 @@ export const MASTER_TOPOGRAFIA_LOGO_PATH = '/brand/sv-topografia-projetos-logo.p
 /**
  * Quando usar o shell executivo V2 (sidebar/header novos).
  * Nunca em impersonation de tenant — nesse caso o chrome da empresa deve prevalecer.
+ *
+ * Rotas `/master` e `/master/**` SEMPRE usam o shell executivo para SUPER_ADMIN,
+ * mesmo com a flag de rollout desligada — evita renderizar o dashboard V2
+ * dentro do chrome SaaS legado (`h-dvh` + `overflow-hidden`), que corta o scroll.
  */
 export function shouldUseMasterExecutiveShell(options: {
   role?: string | null;
   impersonatingTenant?: boolean;
   /** Override explícito da flag UI (testes). */
   flagEnabled?: boolean;
+  /** Pathname atual — `/master/**` força o shell executivo. */
+  pathname?: string | null;
 }): boolean {
+  if (options.impersonatingTenant) return false;
+  if (!shouldUseMasterConsoleLayout(options.role)) return false;
+
+  const path = String(options.pathname || '').split('?')[0].trim();
+  if (path === '/master' || path.startsWith('/master/')) return true;
+
   const flag =
     typeof options.flagEnabled === 'boolean'
       ? options.flagEnabled
       : isMasterDashboardV2EnabledForUi();
-  if (!flag) return false;
-  if (options.impersonatingTenant) return false;
-  return shouldUseMasterConsoleLayout(options.role);
+  return flag;
 }
+
+/** Marcador discreto do shell Master (data-attribute; sem texto de diagnóstico). */
+export const MASTER_EXECUTIVE_BUILD_MARKER = 'master-shell-v1' as const;

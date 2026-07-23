@@ -148,7 +148,7 @@ function testBlankCreateAndHardDelete() {
   assert(svc.includes('Orçamento em branco'), 'create sem etapas auto');
   assert(!/createTopographyQuote[\s\S]*master_topography_quote_stages/.test(svc), 'create não insere etapas');
   assert(svc.includes('deleteTopographyQuotePermanently'), 'delete service');
-  assert(svc.includes('Código do orçamento não confere'), 'confirma código');
+  assert(svc.includes('EXCLUIR') || svc.includes('código do orçamento'), 'confirma código ou EXCLUIR');
   assert(read('lib/master/topography/quoteDeletePolicy.ts').includes('RASCUNHO'), 'policy rascunho');
 
   const draftOk = canPermanentlyDeleteTopographyQuote({

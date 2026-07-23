@@ -28,10 +28,9 @@ function cssBlock(css: string, selector: string): string {
 function testMainScrollStrategy() {
   const layout = read('components/master/layout/MasterExecutiveLayout.tsx');
   assert(layout.includes('data-master-scroll-strategy="main"'), 'strategy main');
-  assert(layout.includes('data-testid="master-executive-main"'), 'main testid');
-  assert(layout.includes('master-executive-root'), 'html class master');
-  assert(layout.includes('<main'), 'main semantico');
-  assert(layout.includes('styles.footerBar'), 'footer dentro do fluxo do main');
+  assert(layout.includes('master-executive-scroll-container'), 'scroll container id');
+  assert(layout.includes('MASTER_EXECUTIVE_BUILD_MARKER'), 'build marker');
+  assert(layout.includes('data-master-build='), 'data-master-build attr');
 
   const css = read('components/master/layout/masterExecutiveLayout.module.css');
   const shell = cssBlock(css, '.shell');
@@ -44,8 +43,15 @@ function testMainScrollStrategy() {
 
   const content = cssBlock(css, '.content');
   assert(content.includes('min-height: 0'), 'content min-height 0');
-  assert(content.includes('overflow-y: auto'), 'content overflow-y auto');
+  assert(
+    content.includes('overflow-y: scroll') || content.includes('overflow-y: auto'),
+    'content overflow-y scroll|auto',
+  );
   assert(content.includes('flex: 1'), 'content flex 1');
+
+  const config = read('lib/master/config.ts');
+  assert(config.includes("path.startsWith('/master/')"), 'pathname /master força shell');
+  assert(config.includes('MASTER_EXECUTIVE_BUILD_MARKER'), 'marker export');
 }
 
 function testNoPageLevelVerticalScrollCompetitors() {

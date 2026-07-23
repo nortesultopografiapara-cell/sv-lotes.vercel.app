@@ -9,6 +9,7 @@ import {
   type MasterCorporateAsaasCharge,
 } from '@/lib/master/corporateFinance/asaas/types';
 import { semanticToneForAsaasStatus } from '@/lib/master/corporateFinance/semantic';
+import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import { CorporateFinanceSemanticBadge } from './CorporateFinanceSemantic';
 import { useCorporateFinanceAuthParams } from './CorporateFinanceGuard';
 import { formatCurrency, formatDate } from './format';
@@ -33,6 +34,12 @@ export default function CorporateAsaasViewModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteLocalOnly, setDeleteLocalOnly] = useState(false);
+  const [forceLocalUnlink, setForceLocalUnlink] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,9 +101,52 @@ export default function CorporateAsaasViewModal({
     }
   }
 
+  function openSecureDelete() {
+    if (!charge) return;
+    const paid = isCorporateAsaasPaidStatus(charge.local_status);
+    setDeleteError(null);
+    setDeleteLocalOnly(false);
+    setForceLocalUnlink(paid);
+    setDeleteOpen(true);
+  }
+
+  async function confirmSecureDelete(confirmWord: string) {
+    if (!charge) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const paid = isCorporateAsaasPaidStatus(charge.local_status);
+      const res = await fetch(
+        `/api/master/corporate-finance/asaas/charges/${charge.id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...bodyAuth(),
+            confirmWord,
+            forceLocalUnlink: paid || forceLocalUnlink,
+            localOnly: deleteLocalOnly,
+            reason: 'Exclusão segura via Painel Executivo',
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao excluir vínculo.');
+      setDeleteOpen(false);
+      setInfo(data.message || 'Vínculo local da cobrança removido.');
+      onChanged();
+      onClose();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   const c = charge;
 
   return (
+    <>
     <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
       <div className={styles.modal} style={{ maxWidth: 640 }}>
         <div className={styles.modalHead}>
@@ -286,11 +336,59 @@ export default function CorporateAsaasViewModal({
                     Cancelar cobrança
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnDanger}`}
+                  disabled={busy || deleteBusy}
+                  onClick={openSecureDelete}
+                >
+                  Excluir vínculo local
+                </button>
               </div>
             </>
           )}
         </div>
       </div>
     </div>
+
+        <MasterSecureDeleteModal
+          open={deleteOpen && Boolean(c)}
+          title="Excluir vínculo Asaas"
+          recordLabel={
+            c
+              ? `${c.asaas_payment_id || c.id} — ${c.description || receivableCode || 'cobrança'}`
+              : ''
+          }
+          amountLabel={c ? formatCurrency(c.original_value) : null}
+          linksWarning={
+            c && isCorporateAsaasPaidStatus(c.local_status)
+              ? 'Cobrança paga: apenas o vínculo local será removido (forceLocalUnlink). Nada será apagado no Asaas remoto.'
+              : 'Cobrança em aberto: tentará cancelar no Asaas e remover o registro local. A Conta a Receber permanece.'
+          }
+          localOnlyOption={
+            c && !isCorporateAsaasPaidStatus(c.local_status)
+              ? {
+                  label: 'Somente vínculo local (não cancelar no Asaas)',
+                  checked: deleteLocalOnly,
+                  onChange: setDeleteLocalOnly,
+                }
+              : c && isCorporateAsaasPaidStatus(c.local_status)
+                ? {
+                    label: 'Confirmar desvínculo local da cobrança paga (forceLocalUnlink)',
+                    checked: forceLocalUnlink,
+                    onChange: setForceLocalUnlink,
+                  }
+                : null
+          }
+          busy={deleteBusy}
+          error={deleteError}
+          onClose={() => {
+            if (deleteBusy) return;
+            setDeleteOpen(false);
+            setDeleteError(null);
+          }}
+          onConfirm={(word) => void confirmSecureDelete(word)}
+        />
+    </>
   );
 }

@@ -113,13 +113,13 @@ function testShellScrollNotBlocked() {
   assert(/height:\s*100dvh/.test(shellMatch![1]), 'shell height 100dvh');
   const contentMatch = css.match(/\.content\s*\{([^}]+)\}/);
   assert(contentMatch, 'content rule');
-  assert(contentMatch![1].includes('overflow-y: auto'), 'content overflow-y auto');
+  assert(contentMatch![1].includes('overflow-y: scroll') || contentMatch![1].includes('overflow-y: auto'), 'content overflow-y');
   assert(contentMatch![1].includes('min-height: 0'), 'content min-height 0');
   assert(
     read('components/master/layout/MasterExecutiveLayout.tsx').includes(
-      'data-master-scroll-strategy="main"',
+      'master-executive-scroll-container',
     ),
-    'strategy main',
+    'scroll container id',
   );
 }
 

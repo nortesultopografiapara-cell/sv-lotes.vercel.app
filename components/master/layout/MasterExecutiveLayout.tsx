@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { MasterExecutiveHeader } from './MasterExecutiveHeader';
 import { MasterExecutiveSidebar } from './MasterExecutiveSidebar';
+import { MASTER_EXECUTIVE_BUILD_MARKER } from '@/lib/master/config';
 import styles from './masterExecutiveLayout.module.css';
 
 const COLLAPSE_STORAGE_KEY = 'master_executive_sidebar_collapsed';
@@ -30,7 +31,7 @@ function readCollapsedPreference(): boolean {
 
 /**
  * Shell exclusivo do Painel Master Executivo V2.
- * Estratégia: rolagem vertical SOMENTE no <main> (scrollport interno).
+ * Estratégia: rolagem vertical SOMENTE no #master-executive-scroll-container.
  * Não compartilha chrome com layouts de empresa / SaaS legado.
  */
 export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecutiveLayoutProps) {
@@ -49,10 +50,6 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
     return () => window.removeEventListener('resize', syncViewport);
   }, []);
 
-  /**
-   * Garante que html/body não fiquem com overflow travado por efeitos
-   * residuais (ex.: drawer mobile) e marca o modo Master para CSS dedicado.
-   */
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
@@ -84,6 +81,7 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
     <div
       className={styles.shell}
       data-master-scroll-strategy="main"
+      data-master-build={MASTER_EXECUTIVE_BUILD_MARKER}
       data-testid="master-executive-shell"
     >
       <MasterExecutiveSidebar
@@ -114,9 +112,9 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
         )}
 
         <main
+          id="master-executive-scroll-container"
           className={styles.content}
           data-testid="master-executive-main"
-          id="master-executive-main"
         >
           <div className={styles.contentInner}>{children}</div>
           <footer className={styles.footerBar}>
@@ -124,7 +122,6 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
               © {new Date().getFullYear()} SV Topografia &amp; Projetos / SV LOTES. Todos os direitos
               reservados.
             </span>
-            <span>Versão 2.1.0 · Master Executivo</span>
           </footer>
         </main>
       </div>

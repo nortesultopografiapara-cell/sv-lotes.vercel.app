@@ -35,7 +35,10 @@ export function httpStatusFromMessage(message: string): number {
     message.includes('não pode') ||
     message.includes('duplicado') ||
     message.includes('Somente orçamento') ||
-    message.includes('menor que')
+    message.includes('menor que') ||
+    message.includes('Confirmação') ||
+    message.includes('EXCLUIR') ||
+    message.includes('restrita')
   ) {
     return 400;
   }

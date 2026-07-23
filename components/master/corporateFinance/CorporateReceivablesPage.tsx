@@ -29,6 +29,7 @@ import {
 import ReceivableFormModal from './ReceivableFormModal';
 import CorporateAsaasGenerateModal from './CorporateAsaasGenerateModal';
 import CorporateAsaasViewModal from './CorporateAsaasViewModal';
+import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import { formatCurrency, formatDate, todayISO } from './format';
 import {
   semanticToneForReceivableStatus,
@@ -136,6 +137,12 @@ function ReceivablesInner() {
   const [asaasGenerateFor, setAsaasGenerateFor] = useState<MasterCorporateReceivable | null>(null);
   const [asaasViewChargeId, setAsaasViewChargeId] = useState<string | null>(null);
   const [asaasViewCode, setAsaasViewCode] = useState<string | undefined>(undefined);
+
+  const [deleteTarget, setDeleteTarget] = useState<MasterCorporateReceivable | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteLocalOnly, setDeleteLocalOnly] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const settleRemainingBefore = settling ? Number(settling.remaining_amount) || 0 : 0;
   const settleAmount = Number(settleForm.amount) || 0;
@@ -335,6 +342,40 @@ function ReceivablesInner() {
     }
   }
 
+  async function confirmSecureDelete(confirmWord: string) {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(
+        `/api/master/corporate-finance/receivables/${deleteTarget.id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...bodyAuth(),
+            confirmWord,
+            localOnly: deleteLocalOnly,
+            reason: 'Exclusão segura via Painel Executivo',
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.requiresLocalOnly) setDeleteLocalOnly(true);
+        throw new Error(data.error || 'Falha ao excluir.');
+      }
+      setToast(data.message || `Conta ${deleteTarget.code} excluída.`);
+      setDeleteTarget(null);
+      setDeleteLocalOnly(false);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function buildExportQuery() {
     const p = new URLSearchParams(qs());
     if (q.trim()) p.set('q', q.trim());
@@ -406,6 +447,17 @@ function ReceivablesInner() {
             {r.is_archived ? 'Restaurar' : 'Arquivar'}
           </button>
         ) : null}
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnDanger}`}
+          onClick={() => {
+            setDeleteError(null);
+            setDeleteLocalOnly(false);
+            setDeleteTarget(r);
+          }}
+        >
+          Excluir
+        </button>
       </div>
     );
   }
@@ -825,6 +877,70 @@ function ReceivablesInner() {
           }}
           onChanged={() => void load()}
         />
+      ) : null}
+
+      <MasterSecureDeleteModal
+        open={Boolean(deleteTarget)}
+        title="Excluir conta a receber"
+        recordLabel={
+          deleteTarget
+            ? `${deleteTarget.code} — ${deleteTarget.customer_name || deleteTarget.description || 'sem descrição'}`
+            : ''
+        }
+        amountLabel={deleteTarget ? formatCurrency(deleteTarget.net_amount) : null}
+        linksWarning={
+          deleteTarget && Number(deleteTarget.received_amount) > 0
+            ? 'Conta já recebida: o recebimento e a entrada correspondente no Caixa Corporativo serão removidos. Cobrança Asaas paga não será apagada remotamente.'
+            : 'Conta em aberto: vínculos corporativos e cobrança Asaas local serão removidos. Nenhum lançamento de caixa será criado.'
+        }
+        localOnlyOption={{
+          label:
+            'Excluir somente registro local (se o cancelamento no Asaas falhar ou cobrança já estiver paga)',
+          checked: deleteLocalOnly,
+          onChange: setDeleteLocalOnly,
+        }}
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => {
+          if (deleteBusy) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={(word) => void confirmSecureDelete(word)}
+      />
+
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            zIndex: 80,
+            maxWidth: 420,
+            padding: '0.85rem 1rem',
+            borderRadius: 10,
+            background: '#0f172a',
+            color: '#f8fafc',
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(15,23,42,0.35)',
+          }}
+        >
+          {toast}
+          <button
+            type="button"
+            style={{
+              marginLeft: 12,
+              background: 'transparent',
+              border: 'none',
+              color: '#93c5fd',
+              cursor: 'pointer',
+            }}
+            onClick={() => setToast(null)}
+          >
+            Fechar
+          </button>
+        </div>
       ) : null}
     </div>
   );

@@ -567,6 +567,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       role: user?.role,
       impersonatingTenant: Boolean(impersonatingTenantId),
       flagEnabled: masterDashboardV2Enabled,
+      pathname,
     })
   ) {
     return (
