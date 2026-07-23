@@ -30,7 +30,7 @@ export function validateCorporateAsaasCreateChargeInput(
     .trim()
     .toUpperCase();
   if (!(CORPORATE_ASAAS_BILLING_TYPES as readonly string[]).includes(billingRaw)) {
-    throw new Error('billing_type deve ser PIX ou BOLETO.');
+    throw new Error('billing_type deve ser PIX, BOLETO ou UNDEFINED (PIX + Boleto).');
   }
   const billing_type = billingRaw as CorporateAsaasBillingType;
 

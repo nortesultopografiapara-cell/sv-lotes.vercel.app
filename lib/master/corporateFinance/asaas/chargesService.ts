@@ -317,14 +317,30 @@ export async function createCorporateAsaasCharge(
   let pix_payload: string | null = null;
   let pix_qr_code: string | null = null;
   let pix_expiration_at: string | null = null;
-  if (input.billing_type === 'PIX') {
+  // PIX e UNDEFINED (PIX+Boleto): busca QR; boleto puro também tenta QR opcional na fatura
+  if (input.billing_type === 'PIX' || input.billing_type === 'UNDEFINED' || input.billing_type === 'BOLETO') {
     try {
       const pix = await corporateAsaasFetchPixQrCode(paymentId);
       pix_payload = String(pix.payload || '').trim() || null;
       pix_qr_code = normalizeCorporatePixQrImage(pix.encodedImage);
       pix_expiration_at = pix.expirationDate ? String(pix.expirationDate) : null;
     } catch {
-      /* QR pode demorar — sync posterior */
+      if (input.billing_type === 'PIX') {
+        /* QR pode demorar — sync posterior */
+      }
+    }
+  }
+
+  // Enrich boleto/invoice URLs se ainda vazios
+  if (
+    (input.billing_type === 'BOLETO' || input.billing_type === 'UNDEFINED') &&
+    (!remote.bankSlipUrl || !remote.invoiceUrl || !remote.identificationField)
+  ) {
+    try {
+      const full = await corporateAsaasGetPayment(paymentId);
+      remote = { ...remote, ...full };
+    } catch {
+      /* ignore */
     }
   }
 

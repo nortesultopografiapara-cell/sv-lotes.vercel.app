@@ -47,7 +47,7 @@ export default function CorporateAsaasChargeSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const [billingType, setBillingType] = useState<'PIX' | 'BOLETO'>('PIX');
+  const [billingType, setBillingType] = useState<'PIX' | 'BOLETO' | 'UNDEFINED'>('UNDEFINED');
   const [financialAccountId, setFinancialAccountId] = useState(
     receivable.financial_account_id || '',
   );
@@ -389,8 +389,11 @@ export default function CorporateAsaasChargeSection({
                   <select
                     className={styles.select}
                     value={billingType}
-                    onChange={(e) => setBillingType(e.target.value as 'PIX' | 'BOLETO')}
+                    onChange={(e) =>
+                      setBillingType(e.target.value as 'PIX' | 'BOLETO' | 'UNDEFINED')
+                    }
                   >
+                    <option value="UNDEFINED">PIX + Boleto</option>
                     <option value="PIX">PIX</option>
                     <option value="BOLETO">Boleto</option>
                   </select>

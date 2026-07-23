@@ -1,6 +1,6 @@
 /** Tipos — Asaas Corporativo MASTER (Fase 7.1). */
 
-export const CORPORATE_ASAAS_BILLING_TYPES = ['PIX', 'BOLETO'] as const;
+export const CORPORATE_ASAAS_BILLING_TYPES = ['PIX', 'BOLETO', 'UNDEFINED'] as const;
 export type CorporateAsaasBillingType = (typeof CORPORATE_ASAAS_BILLING_TYPES)[number];
 
 export const CORPORATE_ASAAS_LOCAL_STATUSES = [
@@ -165,6 +165,8 @@ export function corporateAsaasBillingTypeLabel(type: string): string {
       return 'PIX';
     case 'BOLETO':
       return 'Boleto';
+    case 'UNDEFINED':
+      return 'PIX + Boleto';
     default:
       return type;
   }
@@ -176,6 +178,41 @@ export function isCorporateAsaasActiveStatus(status: string): boolean {
 
 export function isCorporateAsaasPaidStatus(status: string): boolean {
   return (CORPORATE_ASAAS_PAID_STATUSES as readonly string[]).includes(status);
+}
+
+/** AR com cobrança ativa (espelho leve) — não gerar outra. */
+export function receivableHasActiveCorporateAsaasCharge(r: {
+  asaas_active_charge_id?: string | null;
+  asaas_integration_status?: string | null;
+}): boolean {
+  if (!r.asaas_active_charge_id) return false;
+  const st = String(r.asaas_integration_status || '').toUpperCase();
+  if (!st) return true;
+  if (st === 'CANCELLED' || st === 'REFUNDED' || st === 'NONE') return false;
+  return isCorporateAsaasActiveStatus(st) || isCorporateAsaasPaidStatus(st);
+}
+
+/** Pode exibir Gerar Cobrança na listagem. */
+export function receivableCanGenerateCorporateAsaasCharge(r: {
+  status: string;
+  remaining_amount: number;
+  canceled_at?: string | null;
+  is_archived?: boolean;
+  asaas_active_charge_id?: string | null;
+  asaas_integration_status?: string | null;
+}): boolean {
+  if (r.canceled_at || r.is_archived) return false;
+  if (Number(r.remaining_amount) <= 0) return false;
+  if (!['OPEN', 'PARTIAL', 'OVERDUE', 'DRAFT'].includes(String(r.status))) return false;
+  return !receivableHasActiveCorporateAsaasCharge(r);
+}
+
+/** Pode exibir Ver Cobrança. */
+export function receivableCanViewCorporateAsaasCharge(r: {
+  asaas_active_charge_id?: string | null;
+  asaas_integration_status?: string | null;
+}): boolean {
+  return Boolean(r.asaas_active_charge_id) && receivableHasActiveCorporateAsaasCharge(r);
 }
 
 /** Status pago não pode ser rebaixado por evento posterior. */

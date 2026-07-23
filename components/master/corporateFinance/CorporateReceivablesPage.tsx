@@ -27,10 +27,16 @@ import {
   CorporateFinanceSemanticKpi,
 } from './CorporateFinanceSemantic';
 import ReceivableFormModal from './ReceivableFormModal';
+import CorporateAsaasGenerateModal from './CorporateAsaasGenerateModal';
+import CorporateAsaasViewModal from './CorporateAsaasViewModal';
 import { formatCurrency, formatDate, todayISO } from './format';
 import {
   semanticToneForReceivableStatus,
 } from '@/lib/master/corporateFinance/semantic';
+import {
+  receivableCanGenerateCorporateAsaasCharge,
+  receivableCanViewCorporateAsaasCharge,
+} from '@/lib/master/corporateFinance/asaas/types';
 import styles from './corporateFinance.module.css';
 
 type LookupProject = {
@@ -126,6 +132,10 @@ function ReceivablesInner() {
     notes: '',
   });
   const [settleSaving, setSettleSaving] = useState(false);
+
+  const [asaasGenerateFor, setAsaasGenerateFor] = useState<MasterCorporateReceivable | null>(null);
+  const [asaasViewChargeId, setAsaasViewChargeId] = useState<string | null>(null);
+  const [asaasViewCode, setAsaasViewCode] = useState<string | undefined>(undefined);
 
   const settleRemainingBefore = settling ? Number(settling.remaining_amount) || 0 : 0;
   const settleAmount = Number(settleForm.amount) || 0;
@@ -352,8 +362,29 @@ function ReceivablesInner() {
             Editar
           </button>
         ) : null}
+        {receivableCanGenerateCorporateAsaasCharge(r) ? (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            onClick={() => setAsaasGenerateFor(r)}
+          >
+            Gerar Cobrança
+          </button>
+        ) : null}
+        {receivableCanViewCorporateAsaasCharge(r) && r.asaas_active_charge_id ? (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGhost}`}
+            onClick={() => {
+              setAsaasViewChargeId(r.asaas_active_charge_id);
+              setAsaasViewCode(r.code);
+            }}
+          >
+            Ver Cobrança
+          </button>
+        ) : null}
         {canSettle(r) ? (
-          <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => openSettle(r)}>
+          <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => openSettle(r)}>
             Receber
           </button>
         ) : null}
@@ -773,6 +804,27 @@ function ReceivablesInner() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {asaasGenerateFor ? (
+        <CorporateAsaasGenerateModal
+          receivable={asaasGenerateFor}
+          accounts={accounts}
+          onClose={() => setAsaasGenerateFor(null)}
+          onCreated={() => void load()}
+        />
+      ) : null}
+
+      {asaasViewChargeId ? (
+        <CorporateAsaasViewModal
+          chargeId={asaasViewChargeId}
+          receivableCode={asaasViewCode}
+          onClose={() => {
+            setAsaasViewChargeId(null);
+            setAsaasViewCode(undefined);
+          }}
+          onChanged={() => void load()}
+        />
       ) : null}
     </div>
   );

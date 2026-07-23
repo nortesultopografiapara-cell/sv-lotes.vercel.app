@@ -116,7 +116,7 @@ export async function corporateAsaasCreateCustomer(input: {
 
 export async function corporateAsaasCreatePayment(input: {
   customer: string;
-  billingType: 'PIX' | 'BOLETO';
+  billingType: 'PIX' | 'BOLETO' | 'UNDEFINED';
   value: number;
   dueDate: string;
   description: string;
