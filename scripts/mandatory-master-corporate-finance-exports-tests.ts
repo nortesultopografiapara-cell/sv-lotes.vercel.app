@@ -34,10 +34,25 @@ import {
   CORPORATE_BRAND,
   formatCorporateDateBr,
 } from '../lib/master/corporateFinance/exports/corporateBranding';
+import {
+  CORPORATE_EXPORT_LABEL_COLUMNS,
+  mapName,
+} from '../lib/master/corporateFinance/exports/exportLookups';
+import {
+  buildPayablesExcelBuffer,
+  buildReceivablesExcelBuffer,
+} from '../lib/master/corporateFinance/exports/excelExport';
+import {
+  buildPayablesPdfBuffer,
+  buildReceivablesPdfBuffer,
+} from '../lib/master/corporateFinance/exports/pdfExport';
 import type {
+  CorporateArApExportSummary,
   CorporateCashExportRow,
   CorporateCashExportSummary,
   CorporateExportMeta,
+  CorporatePayableExportRow,
+  CorporateReceivableExportRow,
 } from '../lib/master/corporateFinance/exports/exportTypes';
 
 const root = path.join(__dirname, '..');
@@ -312,6 +327,169 @@ function testDates() {
   assert(formatCorporateDateBr('invalid') === 'invalid' || formatCorporateDateBr('') === '—', 'invalid date');
 }
 
+/** Regressão: nunca solicitar master_topography_projects.name (coluna real = title). */
+function testProjectTitleColumnRegression() {
+  const lookups = read('lib/master/corporateFinance/exports/exportLookups.ts');
+  const migration = read('supabase/migrations/20260722120000_master_topography_projects.sql');
+  assert(migration.includes('title text NOT NULL'), 'migration tem title');
+  assert(!migration.includes('\n  name text'), 'migration sem coluna name de projeto');
+
+  assert(CORPORATE_EXPORT_LABEL_COLUMNS.projects === 'title', 'const label = title');
+  assert(lookups.includes("projects: 'title'"), 'lookups usa title');
+  assert(
+    !lookups.includes("master_topography_projects', ids.projectIds || [], 'name'"),
+    'sem name no load projects',
+  );
+  assert(!lookups.includes("projects: 'name'"), 'sem projects: name');
+  assert(
+    lookups.includes('CORPORATE_EXPORT_LABEL_COLUMNS.projects'),
+    'load usa CORPORATE_EXPORT_LABEL_COLUMNS.projects',
+  );
+
+  const withProject = new Map([['proj-1', 'Loteamento Alpha']]);
+  assert(mapName(withProject, 'proj-1') === 'Loteamento Alpha', 'título mapeado');
+  assert(mapName(withProject, null) === '—', 'sem project_id = —');
+  assert(mapName(withProject, undefined) === '—', 'undefined = —');
+  assert(mapName(new Map(), 'missing-id') === '—', 'id sem lookup = —');
+}
+
+async function testExportsWithAndWithoutProject() {
+  const summaryCash = sampleSummary();
+  const withProject = sampleCashRows();
+  withProject[0]!.project = 'Loteamento Alpha';
+  withProject[2]!.project = '—';
+
+  const xlsx = await buildCashFlowExcelBuffer({
+    meta: sampleMeta({ format: 'xlsx' }),
+    summary: summaryCash,
+    rows: withProject,
+  });
+  assert(isValidXlsxBuffer(xlsx), 'xlsx com/sem projeto');
+
+  const pdf = await buildCashFlowPdfBuffer({
+    meta: sampleMeta({ format: 'pdf' }),
+    summary: summaryCash,
+    rows: withProject,
+  });
+  assert(isValidPdfBuffer(pdf), 'pdf com/sem projeto');
+
+  const csv = buildCorporateCsv({
+    headers: ['Projeto', 'Entrada'],
+    rows: [
+      ['Loteamento Alpha', '4000,00'],
+      ['—', ''],
+    ],
+  });
+  assert(csv.includes('Loteamento Alpha'), 'csv título projeto');
+  assert(csv.includes('—'), 'csv sem projeto');
+
+  const arSummary: CorporateArApExportSummary = {
+    openAmount: 0,
+    dueThisMonthAmount: 0,
+    settledThisMonthAmount: 4000,
+    overdueAmount: 0,
+    statusCounts: { Recebido: 1 },
+    rowCount: 1,
+  };
+  const arRows: CorporateReceivableExportRow[] = [
+    {
+      code: 'REC-1',
+      customer: 'Cliente',
+      project: 'Loteamento Alpha',
+      quote: 'ORC-1',
+      description: 'Serviço',
+      issueDate: '01/07/2026',
+      dueDate: '10/07/2026',
+      originalAmount: 4000,
+      discount: 0,
+      interest: 0,
+      fine: 0,
+      netAmount: 4000,
+      received: 4000,
+      remaining: 0,
+      status: 'Recebido',
+      account: 'Caixa',
+      paymentMethod: 'PIX',
+    },
+  ];
+  const arXlsx = await buildReceivablesExcelBuffer({
+    meta: sampleMeta({ module: 'receivables', title: 'Contas a Receber', format: 'xlsx' }),
+    summary: arSummary,
+    rows: arRows,
+  });
+  assert(isValidXlsxBuffer(arXlsx), 'AR xlsx com projeto');
+  const arPdf = await buildReceivablesPdfBuffer({
+    meta: sampleMeta({ module: 'receivables', title: 'Contas a Receber', format: 'pdf' }),
+    summary: arSummary,
+    rows: arRows,
+  });
+  assert(isValidPdfBuffer(arPdf), 'AR pdf com projeto');
+
+  const apSummary: CorporateArApExportSummary = {
+    openAmount: 0,
+    dueThisMonthAmount: 0,
+    settledThisMonthAmount: 800,
+    overdueAmount: 0,
+    statusCounts: { Pago: 2 },
+    rowCount: 2,
+  };
+  const apRows: CorporatePayableExportRow[] = [
+    {
+      code: 'PAG-1',
+      supplier: 'Fornecedor A',
+      project: 'Loteamento Alpha',
+      description: 'Despesa A',
+      issueDate: '01/07/2026',
+      dueDate: '12/07/2026',
+      originalAmount: 300,
+      discount: 0,
+      interest: 0,
+      fine: 0,
+      netAmount: 300,
+      paid: 300,
+      remaining: 0,
+      status: 'Pago',
+      account: 'Caixa',
+      paymentMethod: 'PIX',
+    },
+    {
+      code: 'PAG-2',
+      supplier: 'Fornecedor B',
+      project: '—',
+      description: 'Despesa B',
+      issueDate: '01/07/2026',
+      dueDate: '15/07/2026',
+      originalAmount: 500,
+      discount: 0,
+      interest: 0,
+      fine: 0,
+      netAmount: 500,
+      paid: 500,
+      remaining: 0,
+      status: 'Pago',
+      account: 'Caixa',
+      paymentMethod: 'TED',
+    },
+  ];
+  const apXlsx = await buildPayablesExcelBuffer({
+    meta: sampleMeta({ module: 'payables', title: 'Contas a Pagar', format: 'xlsx' }),
+    summary: apSummary,
+    rows: apRows,
+  });
+  assert(isValidXlsxBuffer(apXlsx), 'AP xlsx');
+  const apPdf = await buildPayablesPdfBuffer({
+    meta: sampleMeta({ module: 'payables', title: 'Contas a Pagar', format: 'pdf' }),
+    summary: apSummary,
+    rows: apRows,
+  });
+  assert(isValidPdfBuffer(apPdf), 'AP pdf');
+  const apCsv = buildCorporateCsv({
+    headers: ['Fornecedor', 'Projeto', 'Pago'],
+    rows: apRows.map((r) => [r.supplier, r.project, String(r.paid)]),
+  });
+  assert(apCsv.includes('Loteamento Alpha') && apCsv.includes('—'), 'AP csv com e sem projeto');
+}
+
 async function main() {
   console.log('=== Fase 6.5 corporate exports tests ===');
   testAccess();
@@ -330,10 +508,14 @@ async function main() {
   console.log('OK dates');
   testEmptyError();
   console.log('OK empty');
+  testProjectTitleColumnRegression();
+  console.log('OK project title regression');
   await testExcelReal();
   console.log('OK excel');
   await testPdfValidAndMultiPage();
   console.log('OK pdf');
+  await testExportsWithAndWithoutProject();
+  console.log('OK exports with/without project');
   console.log('ALL PASS');
 }
 
