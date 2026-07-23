@@ -62,7 +62,12 @@ export default function LoginPage() {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (user) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
-        window.location.href = '/dashboard';
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+        window.location.href = resolveLoginRedirectPath(userData?.role);
       } else if (error) {
         // We have a stale session in localStorage that middleware rejected, wipe it to break the loop.
         await supabase.auth.signOut();

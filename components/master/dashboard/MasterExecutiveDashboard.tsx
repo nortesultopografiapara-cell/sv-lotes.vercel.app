@@ -324,6 +324,11 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           <p className={styles.welcomeSub}>
             Resumo do SaaS SV LOTES e visão institucional da SV Topografia &amp; Projetos.
           </p>
+          <p className={styles.welcomeSub} style={{ marginTop: 8 }}>
+            <Link href="/dashboard" className={styles.linkAll}>
+              Abrir Painel SaaS (empresas, assinaturas e cobranças)
+            </Link>
+          </p>
         </div>
         <div className={styles.toolbarActions}>
           <button type="button" className={styles.toolBtn} onClick={handleExport}>
@@ -601,6 +606,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <div className={styles.card}>
           <h3 className={styles.cardTitle}>Ações rápidas</h3>
           <div className={styles.quickGrid}>
+            <QuickLink href="/dashboard" icon={Building2} label="Painel SaaS" />
             <QuickLink href="/master/topography/budgets?new=1" icon={FileSpreadsheet} label="Novo Orçamento" />
             <QuickLink href="/master/topography/projects?new=1" icon={FolderKanban} label="Novo Projeto" />
             <QuickLink href="/companies?new=1" icon={Building2} label="Nova Empresa" />
