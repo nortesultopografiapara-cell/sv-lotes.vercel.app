@@ -262,9 +262,10 @@ function testShareMessagesDistinct() {
   assert(spouseMsg.includes('token-spouse'), 'link cônjuge');
   assert(!buyerMsg.includes('token-spouse'), 'sem cruzamento');
   assert(!spouseMsg.includes('token-buyer'), 'sem cruzamento 2');
-  assert(buyerMsg.includes('Comprador'), 'rótulo comprador');
-  assert(spouseMsg.includes('Cônjuge'), 'rótulo cônjuge');
+  assert(buyerMsg.includes('compra e venda'), 'texto comprador');
   assert(spouseMsg.includes('cônjuge anuente'), 'texto anuente');
+  assert(buyerMsg.includes('somente por você'), 'pessoal comprador');
+  assert(spouseMsg.includes('somente por você'), 'pessoal cônjuge');
 
   console.log('OK testShareMessagesDistinct');
 }

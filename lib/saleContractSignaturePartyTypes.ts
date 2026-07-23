@@ -50,9 +50,13 @@ export type SaleSignaturePartyPublicView = {
   role: SaleSignaturePartyRole;
   roleLabel: string;
   signer_name: string | null;
+  /** Alias camelCase para a modal / API de compartilhamento. */
+  name?: string | null;
   signer_cpf_masked?: string | null;
   signer_phone: string | null;
+  phone?: string | null;
   signer_email: string | null;
+  email?: string | null;
   status: SaleSignaturePartyStatus;
   statusLabel: string;
   sent_at: string | null;
@@ -61,6 +65,8 @@ export type SaleSignaturePartyPublicView = {
   expires_at: string | null;
   /** URL pública — só retornada na API autenticada, nunca no log. */
   signature_url?: string | null;
+  /** Alias camelCase (mesmo valor de signature_url quando includeUrls). */
+  signatureUrl?: string | null;
   canResend: boolean;
   canShare: boolean;
 };

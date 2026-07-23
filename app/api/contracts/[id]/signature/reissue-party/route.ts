@@ -96,12 +96,14 @@ export async function POST(
     });
 
     const parties = await listSignatureParties(supabase, signatureId);
+    const partyViews = toPublicPartyViews(parties, { includeUrls: true });
+    const reissuedView = toPublicPartyViews([result.party], { includeUrls: true })[0];
 
     return NextResponse.json({
       success: true,
-      party: toPublicPartyViews([result.party], { includeUrls: true })[0],
-      signUrl: result.signUrl,
-      parties: toPublicPartyViews(parties, { includeUrls: true }),
+      party: reissuedView,
+      signUrl: reissuedView?.signatureUrl || reissuedView?.signature_url || result.signUrl,
+      parties: partyViews,
     });
   } catch (err) {
     const message =

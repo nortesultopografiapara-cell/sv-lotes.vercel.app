@@ -16,7 +16,7 @@ import {
   Share2,
   ShieldCheck,
 } from 'lucide-react';
-import { ContractSignatureShareModal } from '@/components/saas/ContractSignatureShareModal';
+import { SaleContractMultiPartyShareModal } from '@/components/contracts/SaleContractMultiPartyShareModal';
 import type { ContractSignatureRow } from '@/lib/saleContractSignatureService';
 import {
   buildSaleSignatureEmailSubject,
@@ -31,7 +31,6 @@ import {
   type LocalSignatureTimelineEvent,
 } from '@/lib/saleContractSignatureShare';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
-import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 import {
   canResendSaleSignature,
   canSendSaleSignature,
@@ -130,7 +129,6 @@ export const SaleContractSignatureSection = forwardRef<
   const [progress, setProgress] = useState<{ signed: number; total: number } | null>(null);
   const [timeline, setTimeline] = useState<Array<{ at: string; event: string; details: string }>>([]);
   const [shareOpen, setShareOpen] = useState(false);
-  const [shareParty, setShareParty] = useState<SaleSignaturePartyPublicView | null>(null);
   const [signUrl, setSignUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
@@ -189,12 +187,8 @@ export const SaleContractSignatureSection = forwardRef<
       setLatest(json.latest || null);
       setParties(json.parties || []);
       setProgress(json.progress || null);
-      const token = json.latest?.signature_token;
-      setSignUrl(
-        token
-          ? resolveSaleSignUrl(token, json.latest?.signature_url)
-          : json.latest?.signature_url || null,
-      );
+      // Confiar na URL já normalizada pelo servidor (Preview usa VERCEL_URL em runtime).
+      setSignUrl(json.latest?.signature_url || null);
       const fallbackEmail = String(loggedInUserEmail || '').trim();
       setVendorDefaults({
         name: String(json.vendorDefaults?.name || ''),
@@ -336,15 +330,16 @@ export const SaleContractSignatureSection = forwardRef<
 
   const shareMessage = useMemo(() => {
     if (!signUrl || !contract) return '';
-    if (shareParty?.role === 'BUYER' || shareParty?.role === 'SPOUSE') {
+    const buyerParty = parties.find((p) => p.role === 'BUYER');
+    if (buyerParty?.signature_url || buyerParty?.signatureUrl) {
       return buildSalePartySignatureShareMessage({
-        signerName: shareParty.signer_name || buyerName,
-        role: shareParty.role,
+        signerName: buyerParty.signer_name || buyerName,
+        role: 'BUYER',
         projectName,
         quadra,
         lote,
         contractNumber: String(contract.contract_number || ''),
-        signatureUrl: shareParty.signature_url || signUrl,
+        signatureUrl: String(buyerParty.signatureUrl || buyerParty.signature_url || signUrl),
       });
     }
     return buildSaleSignatureShareMessage({
@@ -355,7 +350,7 @@ export const SaleContractSignatureSection = forwardRef<
       contractNumber: String(contract.contract_number || ''),
       signatureUrl: signUrl,
     });
-  }, [signUrl, contract, buyerName, projectName, quadra, lote, shareParty]);
+  }, [signUrl, contract, buyerName, projectName, quadra, lote, parties]);
 
   const handleReissueParty = useCallback(
     async (party: SaleSignaturePartyPublicView) => {
@@ -414,21 +409,20 @@ export const SaleContractSignatureSection = forwardRef<
         throw new Error(fetchError || data?.error || 'Falha ao enviar para assinatura.');
       }
       const json = data || {};
-      const token = json.signature?.signature_token;
+      const returnedParties = (json.parties || []) as SaleSignaturePartyPublicView[];
+      const buyerFromParties = returnedParties.find((p) => p.role === 'BUYER');
       const url =
-        (token
-          ? resolveSaleSignUrl(token, json.signUrl || json.signature?.signature_url)
-          : json.signUrl || json.signature?.signature_url) || null;
-      if (!url) {
+        json.signUrl ||
+        json.signature?.signature_url ||
+        buyerFromParties?.signatureUrl ||
+        buyerFromParties?.signature_url ||
+        null;
+      if (!url && returnedParties.length === 0) {
         throw new Error('Link de assinatura não retornado pelo servidor.');
       }
       setLatest(json.signature || null);
-      if (json.parties) setParties(json.parties as SaleSignaturePartyPublicView[]);
+      if (returnedParties.length > 0) setParties(returnedParties);
       setSignUrl(url);
-      const buyerParty = (json.parties as SaleSignaturePartyPublicView[] | undefined)?.find(
-        (p) => p.role === 'BUYER',
-      );
-      setShareParty(buyerParty || null);
       setShareOpen(true);
       const sentEvent = {
         at: new Date().toISOString(),
@@ -458,10 +452,12 @@ export const SaleContractSignatureSection = forwardRef<
     () => ({
       sendForSignature: handleSend,
       openShareModal: () => {
-        if (latest?.signature_token) {
-          setSignUrl(resolveSaleSignUrl(latest.signature_token, latest.signature_url));
-        } else if (latest?.signature_url) {
+        if (latest?.signature_url) {
           setSignUrl(latest.signature_url);
+        } else {
+          const buyer = parties.find((p) => p.role === 'BUYER');
+          const url = buyer?.signatureUrl || buyer?.signature_url || null;
+          if (url) setSignUrl(url);
         }
         setShareOpen(true);
       },
@@ -474,7 +470,7 @@ export const SaleContractSignatureSection = forwardRef<
         }
       },
     }),
-    [handleSend, showVendorSignButton, contract?.signature_status, userRole, latest],
+    [handleSend, showVendorSignButton, contract?.signature_status, userRole, latest, parties],
   );
 
   useEffect(() => {
@@ -554,7 +550,7 @@ export const SaleContractSignatureSection = forwardRef<
           {parties.map((party) => {
             const phone = party.signer_phone;
             const email = party.signer_email;
-            const url = party.signature_url || null;
+            const url = party.signatureUrl || party.signature_url || null;
             const partyMessage =
               party.role === 'BUYER' || party.role === 'SPOUSE'
                 ? buildSalePartySignatureShareMessage({
@@ -727,33 +723,22 @@ export const SaleContractSignatureSection = forwardRef<
         </div>
       )}
 
-      {shareOpen && signUrl && (
-        <ContractSignatureShareModal
+      {shareOpen && (parties.length > 0 || signUrl) && (
+        <SaleContractMultiPartyShareModal
           isOpen={shareOpen}
-          onClose={() => {
-            setShareOpen(false);
-            setShareParty(null);
-          }}
+          onClose={() => setShareOpen(false)}
           companyName={projectName}
-          signerName={shareParty?.signer_name || buyerName}
-          signerPhone={shareParty?.signer_phone || buyerPhone}
-          signerEmail={shareParty?.signer_email || buyerEmail}
           contractNumber={String(contract.contract_number || '')}
-          signatureUrl={shareParty?.signature_url || signUrl}
-          expiresAt={shareParty?.expires_at || latest?.expires_at || new Date().toISOString()}
+          expiresAt={latest?.expires_at || new Date().toISOString()}
           status={status}
-          shareMessage={shareMessage}
-          emailSubject={buildSaleSignatureEmailSubject(projectName)}
-          modalTitle={
-            shareParty?.role === 'SPOUSE'
-              ? 'Link do cônjuge anuente'
-              : 'Contrato enviado para assinatura'
-          }
-          modalSubtitle={
-            shareParty?.role === 'SPOUSE'
-              ? 'Compartilhe o link individual do cônjuge por WhatsApp, e-mail ou QR Code.'
-              : 'Compartilhe o link com o comprador por WhatsApp, e-mail ou QR Code.'
-          }
+          parties={parties}
+          legacySignatureUrl={parties.length === 0 ? signUrl : null}
+          legacySignerName={buyerName}
+          legacySignerPhone={buyerPhone}
+          legacySignerEmail={buyerEmail}
+          projectName={projectName}
+          quadra={quadra}
+          lote={lote}
         />
       )}
 

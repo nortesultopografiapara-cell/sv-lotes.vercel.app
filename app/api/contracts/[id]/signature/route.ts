@@ -248,18 +248,34 @@ export async function POST(
       contract,
     );
 
+    const signature = normalizeSaleSignaturePublicUrls(result.signature) || result.signature;
+    const parties = toPublicPartyViews(result.parties, { includeUrls: true });
+    const buyerParty = parties.find((p) => p.role === 'BUYER');
+    const spouseParty = parties.find((p) => p.role === 'SPOUSE');
+    const signUrl =
+      buyerParty?.signatureUrl ||
+      buyerParty?.signature_url ||
+      resolveSaleSignUrl(signature.signature_token, result.signUrl || signature.signature_url);
+    const spouseSignUrl =
+      spouseParty?.signatureUrl ||
+      spouseParty?.signature_url ||
+      result.spouseSignUrl ||
+      null;
+
     mark('post_response', {
       contractId: resolvedId,
-      hasSignUrl: Boolean(result.signUrl),
-      signUrlPreview: result.signUrl ? `${result.signUrl.slice(0, 48)}…` : null,
+      hasSignUrl: Boolean(signUrl),
+      signUrlPreview: signUrl ? `${signUrl.slice(0, 48)}…` : null,
+      partyCount: parties.length,
+      partyRoles: parties.map((p) => p.role),
     });
 
     return NextResponse.json({
       success: true,
-      signUrl: result.signUrl,
-      spouseSignUrl: result.spouseSignUrl,
-      signature: result.signature,
-      parties: toPublicPartyViews(result.parties, { includeUrls: true }),
+      signUrl,
+      spouseSignUrl,
+      signature,
+      parties,
     });
   } catch (err) {
     const message =

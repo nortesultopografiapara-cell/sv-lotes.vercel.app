@@ -3,7 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildSaleSignUrl } from '@/lib/saleContractUrls';
+import { buildSaleSignUrl, resolvePartySignatureUrl } from '@/lib/saleContractUrls';
 import { signatureExpiresAt } from '@/lib/saasContractSignatureService';
 import { maskCpfPublic } from '@/lib/signaturePrivacy';
 import {
@@ -406,29 +406,40 @@ export function toPublicPartyViews(
   return parties.map((party) => {
     const status = String(party.status).toUpperCase() as SaleSignaturePartyStatus;
     const role = party.role;
+    const resolvedUrl = resolvePartySignatureUrl(party.signature_url);
     const canShare =
       isPublicPartyRole(role) &&
       ['PENDING', 'VIEWED'].includes(status) &&
-      Boolean(party.signature_url);
+      Boolean(resolvedUrl || party.signature_url);
     const canResend = canShare;
+    const publicUrl =
+      includeUrls && isPublicPartyRole(role) ? resolvedUrl || party.signature_url : null;
 
     return {
       id: party.id,
       role,
       roleLabel: saleSignaturePartyRoleLabel(role),
       signer_name: party.signer_name,
+      name: party.signer_name,
       signer_cpf_masked: party.signer_cpf
         ? maskCpfPublic(party.signer_cpf)
         : null,
       signer_phone: party.signer_phone,
+      phone: party.signer_phone,
       signer_email: party.signer_email,
+      email: party.signer_email,
       status,
       statusLabel: saleSignaturePartyStatusLabel(status),
       sent_at: party.sent_at,
       viewed_at: party.viewed_at,
       signed_at: party.signed_at,
       expires_at: party.expires_at,
-      signature_url: includeUrls && canShare ? party.signature_url : undefined,
+      signature_url: includeUrls && isPublicPartyRole(role) ? publicUrl : undefined,
+      signatureUrl: includeUrls
+        ? isPublicPartyRole(role)
+          ? publicUrl
+          : null
+        : undefined,
       canResend,
       canShare,
     };

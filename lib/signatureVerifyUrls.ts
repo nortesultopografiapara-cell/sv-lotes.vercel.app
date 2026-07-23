@@ -1,6 +1,10 @@
 /**
- * URLs públicas de validação de assinatura eletrônica.
- * Links enviados a clientes usam sempre o domínio de produção — nunca preview Vercel.
+ * URLs públicas de validação / assinatura eletrônica.
+ *
+ * Resolução centralizada:
+ * - Preview/dev: host do deploy atual (VERCEL_URL), depois env explícita
+ * - Production: NEXT_PUBLIC_PUBLIC_APP_URL / APP / SITE, senão www.svlotes.com.br
+ * - Nunca hardcodar URL de um Preview antigo no código
  */
 
 const PRODUCTION_PUBLIC_APP_URL_DEFAULT = 'https://www.svlotes.com.br';
@@ -9,7 +13,14 @@ function stripTrailingSlash(url: string): string {
   return url.replace(/\/$/, '');
 }
 
-/** Hosts que não devem aparecer em links compartilhados com clientes. */
+function normalizeHostToHttpsBase(hostOrUrl: string): string {
+  const raw = String(hostOrUrl || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return stripTrailingSlash(raw);
+  return `https://${stripTrailingSlash(raw.replace(/^\/\//, ''))}`;
+}
+
+/** Hosts que não devem ser tratados como domínio público de produção. */
 export function isNonProductionPublicUrl(url: string): boolean {
   const lowered = String(url || '').trim().toLowerCase();
   if (!lowered) return true;
@@ -21,12 +32,41 @@ export function isNonProductionPublicUrl(url: string): boolean {
   );
 }
 
+function resolvePreviewOrDevBaseUrl(): string {
+  const vercelHost = String(process.env.VERCEL_URL || '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/$/, '');
+  if (vercelHost) return `https://${vercelHost}`;
+
+  const explicitPublic = stripTrailingSlash(
+    String(process.env.NEXT_PUBLIC_PUBLIC_APP_URL || '').trim(),
+  );
+  if (explicitPublic) return explicitPublic;
+
+  const appUrl = stripTrailingSlash(String(process.env.NEXT_PUBLIC_APP_URL || '').trim());
+  if (appUrl) return appUrl;
+
+  const siteUrl = stripTrailingSlash(String(process.env.NEXT_PUBLIC_SITE_URL || '').trim());
+  if (siteUrl) return siteUrl.startsWith('http') ? siteUrl : normalizeHostToHttpsBase(siteUrl);
+
+  return 'http://localhost:3000';
+}
+
 /**
- * Base URL fixa para links públicos (assinatura, validação, WhatsApp, e-mail).
- * Prioridade: NEXT_PUBLIC_PUBLIC_APP_URL → NEXT_PUBLIC_APP_URL (se produção) → NEXT_PUBLIC_SITE_URL (https) → padrão.
- * Nunca usa VERCEL_URL nem request host.
+ * Base URL para links públicos (assinatura, validação, WhatsApp, e-mail, QR).
+ *
+ * Prioridade:
+ * 1) Preview/development → VERCEL_URL (deploy atual), depois envs
+ * 2) Production → NEXT_PUBLIC_PUBLIC_APP_URL → APP/SITE (se produção) → padrão
  */
 export function resolvePublicBaseUrl(): string {
+  const vercelEnv = String(process.env.VERCEL_ENV || '').trim().toLowerCase();
+
+  if (vercelEnv === 'preview' || vercelEnv === 'development') {
+    return resolvePreviewOrDevBaseUrl();
+  }
+
   const explicitPublic = stripTrailingSlash(
     String(process.env.NEXT_PUBLIC_PUBLIC_APP_URL || '').trim(),
   );
