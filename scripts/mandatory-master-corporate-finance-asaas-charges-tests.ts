@@ -29,7 +29,6 @@ function testFiles() {
   assert(exists('app/api/master/corporate-finance/asaas/charges/[id]/sync/route.ts'), 'sync');
   assert(exists('app/api/master/corporate-finance/asaas/charges/[id]/cancel/route.ts'), 'cancel');
   assert(exists('app/api/master/corporate-finance/asaas/charges/[id]/pix/route.ts'), 'pix');
-  assert(!exists('app/api/master/corporate-finance/asaas/webhook/route.ts'), 'webhook ainda 7.3');
 }
 
 function testIsolation() {

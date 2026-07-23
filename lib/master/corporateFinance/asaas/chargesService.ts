@@ -32,6 +32,7 @@ import {
   sanitizeCorporateAsaasErrorMessage,
   validateCorporateAsaasCreateChargeInput,
 } from './validation';
+import { settleCorporateAsaasChargeFromRemote } from './webhookSettlement';
 
 function nowIso() {
   return new Date().toISOString();
@@ -466,7 +467,19 @@ export async function syncCorporateAsaasCharge(
     .single();
   if (error) throw new Error(error.message);
 
-  const updated = mapCorporateAsaasChargeRow(data as Record<string, unknown>);
+  let updated = mapCorporateAsaasChargeRow(data as Record<string, unknown>);
+
+  // Sync pago sem webhook: materializa recebimento/caixa de forma idempotente
+  if (isCorporateAsaasPaidStatus(updated.local_status) && !updated.receivable_payment_id) {
+    const settled = await settleCorporateAsaasChargeFromRemote(
+      supabase,
+      updated,
+      remote,
+      updated.local_status,
+    );
+    updated = settled.charge;
+  }
+
   await updateReceivableAsaasMirror(supabase, charge.receivable_id, {
     asaas_integration_status: updated.local_status,
     asaas_active_charge_id: isCorporateAsaasActiveStatus(updated.local_status)
@@ -483,7 +496,11 @@ export async function syncCorporateAsaasCharge(
     action: 'CORPORATE_ASAAS_CHARGE_SYNCED',
     entityId: charge.id,
     description: `Sync Asaas ${charge.asaas_payment_id} → ${updated.local_status}`,
-    newData: { local_status: updated.local_status, asaas_status: updated.asaas_status },
+    newData: {
+      local_status: updated.local_status,
+      asaas_status: updated.asaas_status,
+      receivable_payment_id: updated.receivable_payment_id,
+    },
   });
 
   return updated;
