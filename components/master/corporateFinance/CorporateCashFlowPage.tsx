@@ -41,6 +41,11 @@ import {
   semanticToneForResult,
   semanticToneForSignedAmount,
 } from '@/lib/master/corporateFinance/semantic';
+import {
+  corporateCashDerivedDeleteBlockMessage,
+  isManualCorporateCashOrigin,
+} from '@/lib/master/corporateFinance/secureDeletePolicy';
+import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import styles from './corporateFinance.module.css';
 
 type Row = MasterCorporateCashMovement & { running_balance: number | null };
@@ -144,6 +149,15 @@ function CashFlowInner() {
     amount: '',
     notes: '',
   });
+
+  const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [derivedAlert, setDerivedAlert] = useState<{
+    message: string;
+    originHref: string | null;
+  } | null>(null);
 
   const accountName = useMemo(() => {
     const map = new Map(accounts.map((a) => [a.id, a.name]));
@@ -383,6 +397,62 @@ function CashFlowInner() {
       return;
     }
     void runBackfill(false);
+  }
+
+  function requestDelete(m: Row) {
+    if (m.is_reversed) return;
+    if (!isManualCorporateCashOrigin(m.origin)) {
+      setDerivedAlert({
+        message: corporateCashDerivedDeleteBlockMessage(String(m.origin || '')),
+        originHref: m.receivable_id
+          ? `/master/corporate-finance/receivables/${m.receivable_id}`
+          : m.payable_id
+            ? `/master/corporate-finance/payables/${m.payable_id}`
+            : null,
+      });
+      return;
+    }
+    setDeleteError(null);
+    setDeleteTarget(m);
+  }
+
+  async function confirmSecureDelete(confirmWord: string) {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(
+        `/api/master/corporate-finance/cash-movements/${deleteTarget.id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...bodyAuth(),
+            confirmWord,
+            reason: 'Exclusão segura via Painel Executivo',
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setDeleteTarget(null);
+          setDerivedAlert({
+            message: data.error || corporateCashDerivedDeleteBlockMessage(String(deleteTarget.origin || '')),
+            originHref: data.originHref || null,
+          });
+          return;
+        }
+        throw new Error(data.error || 'Falha ao excluir.');
+      }
+      setToast(data.message || `Movimento ${deleteTarget.code} excluído.`);
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir.');
+    } finally {
+      setDeleteBusy(false);
+    }
   }
 
   function buildExportQuery() {
@@ -685,6 +755,7 @@ function CashFlowInner() {
                       <th>Saída</th>
                       <th>Saldo acum.</th>
                       <th>Status</th>
+                      <th />
                     </tr>
                   </thead>
                   <tbody>
@@ -723,6 +794,17 @@ function CashFlowInner() {
                               <span className={`${styles.badge} ${styles.badgeOn}`}>Ativo</span>
                             )}
                           </td>
+                          <td>
+                            {!m.is_reversed ? (
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnDanger}`}
+                                onClick={() => requestDelete(m)}
+                              >
+                                Excluir
+                              </button>
+                            ) : null}
+                          </td>
                         </tr>
                       );
                     })}
@@ -752,6 +834,15 @@ function CashFlowInner() {
                             : '—'}
                         </span>
                       </div>
+                      {!m.is_reversed ? (
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnDanger}`}
+                          onClick={() => requestDelete(m)}
+                        >
+                          Excluir
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -1030,6 +1121,96 @@ function CashFlowInner() {
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      <MasterSecureDeleteModal
+        open={Boolean(deleteTarget)}
+        title="Excluir lançamento de caixa"
+        recordLabel={
+          deleteTarget
+            ? `${deleteTarget.code} — ${deleteTarget.description || 'sem descrição'}`
+            : ''
+        }
+        amountLabel={deleteTarget ? formatCurrency(deleteTarget.amount) : null}
+        linksWarning="Somente lançamentos manuais (entrada/despesa) podem ser excluídos aqui. O saldo da conta será recalculado."
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => {
+          if (deleteBusy) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={(word) => void confirmSecureDelete(word)}
+      />
+
+      {derivedAlert ? (
+        <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
+          <div className={styles.modal}>
+            <div className={styles.modalHead}>
+              <h3 className={styles.modalTitle}>Exclusão não permitida</h3>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnGhost}`}
+                onClick={() => setDerivedAlert(null)}
+              >
+                Fechar
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              <p style={{ margin: 0, lineHeight: 1.45, color: '#334155' }}>{derivedAlert.message}</p>
+              {derivedAlert.originHref ? (
+                <p style={{ marginTop: '0.75rem' }}>
+                  <Link href={derivedAlert.originHref} className={`${styles.btn} ${styles.btnPrimary}`}>
+                    Abrir registro de origem
+                  </Link>
+                </p>
+              ) : null}
+            </div>
+            <div className={styles.modalFoot}>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnGhost}`}
+                onClick={() => setDerivedAlert(null)}
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            zIndex: 80,
+            maxWidth: 420,
+            padding: '0.85rem 1rem',
+            borderRadius: 10,
+            background: '#0f172a',
+            color: '#f8fafc',
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(15,23,42,0.35)',
+          }}
+        >
+          {toast}
+          <button
+            type="button"
+            style={{
+              marginLeft: 12,
+              background: 'transparent',
+              border: 'none',
+              color: '#93c5fd',
+              cursor: 'pointer',
+            }}
+            onClick={() => setToast(null)}
+          >
+            Fechar
+          </button>
         </div>
       ) : null}
     </div>

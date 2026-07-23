@@ -28,6 +28,7 @@ import {
 } from './CorporateFinanceSemantic';
 import { computeLiveNet, formatCurrency, formatDate, todayISO } from './format';
 import { semanticToneForPayableStatus } from '@/lib/master/corporateFinance/semantic';
+import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import styles from './corporateFinance.module.css';
 
 type LookupProject = { id: string; code: string; title: string };
@@ -184,6 +185,11 @@ function PayablesInner() {
     notes: '',
   });
   const [settleSaving, setSettleSaving] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<MasterCorporatePayable | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const liveNet = useMemo(
     () =>
@@ -414,6 +420,37 @@ function PayablesInner() {
     }
   }
 
+  async function confirmSecureDelete(confirmWord: string) {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(
+        `/api/master/corporate-finance/payables/${deleteTarget.id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...bodyAuth(),
+            confirmWord,
+            reason: 'Exclusão segura via Painel Executivo',
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao excluir.');
+      }
+      setToast(data.message || `Conta ${deleteTarget.code} excluída.`);
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function buildExportQuery() {
     const p = new URLSearchParams(qs());
     if (q.trim()) p.set('q', q.trim());
@@ -464,6 +501,16 @@ function PayablesInner() {
             {r.is_archived ? 'Restaurar' : 'Arquivar'}
           </button>
         ) : null}
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnDanger}`}
+          onClick={() => {
+            setDeleteError(null);
+            setDeleteTarget(r);
+          }}
+        >
+          Excluir
+        </button>
       </div>
     );
   }
@@ -1110,6 +1157,64 @@ function PayablesInner() {
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      <MasterSecureDeleteModal
+        open={Boolean(deleteTarget)}
+        title="Excluir conta a pagar"
+        recordLabel={
+          deleteTarget
+            ? `${deleteTarget.code} — ${deleteTarget.supplier_name || deleteTarget.description || 'sem descrição'}`
+            : ''
+        }
+        amountLabel={deleteTarget ? formatCurrency(deleteTarget.net_amount) : null}
+        linksWarning={
+          deleteTarget && Number(deleteTarget.paid_amount) > 0
+            ? 'Conta já paga: o pagamento e a saída correspondente no Caixa Corporativo serão removidos.'
+            : 'Conta em aberto: vínculos corporativos serão removidos. Nenhum lançamento de caixa será criado.'
+        }
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => {
+          if (deleteBusy) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={(word) => void confirmSecureDelete(word)}
+      />
+
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            zIndex: 80,
+            maxWidth: 420,
+            padding: '0.85rem 1rem',
+            borderRadius: 10,
+            background: '#0f172a',
+            color: '#f8fafc',
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(15,23,42,0.35)',
+          }}
+        >
+          {toast}
+          <button
+            type="button"
+            style={{
+              marginLeft: 12,
+              background: 'transparent',
+              border: 'none',
+              color: '#93c5fd',
+              cursor: 'pointer',
+            }}
+            onClick={() => setToast(null)}
+          >
+            Fechar
+          </button>
         </div>
       ) : null}
     </div>

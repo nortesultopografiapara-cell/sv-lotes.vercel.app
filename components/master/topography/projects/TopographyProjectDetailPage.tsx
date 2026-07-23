@@ -6,11 +6,17 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
+import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import {
   CorporateFinanceSemanticBadge,
   CorporateFinanceSemanticKpi,
 } from '@/components/master/corporateFinance/CorporateFinanceSemantic';
 import type { ProjectCorporateFinancialSummary } from '@/lib/master/corporateFinance/projectReceivedBridge';
+import {
+  formatProjectDeleteLinks,
+  projectDeleteHasLinks,
+  type ProjectDeleteLinkSummary,
+} from '@/lib/master/corporateFinance/secureDeletePolicy';
 import {
   receivedSourceLabel,
   semanticToneForResult,
@@ -61,6 +67,13 @@ function TopographyProjectDetailInner() {
   const [formError, setFormError] = useState<string | null>(null);
   const [statusDraft, setStatusDraft] = useState('');
   const [progressDraft, setProgressDraft] = useState('0');
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteCascade, setDeleteCascade] = useState(false);
+  const [deleteLinks, setDeleteLinks] = useState<ProjectDeleteLinkSummary | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user?.id || !id) return;
@@ -154,6 +167,54 @@ function TopographyProjectDetailInner() {
     }
   };
 
+  const openSecureDelete = async () => {
+    if (!user?.id || !project) return;
+    setDeleteError(null);
+    setDeleteCascade(false);
+    setDeleteLinks(null);
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(
+        `/api/master/topography/projects/${id}/delete?userId=${encodeURIComponent(user.id)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao inspecionar vínculos.');
+      setDeleteLinks(data.links || null);
+      setDeleteOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao preparar exclusão.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const confirmSecureDelete = async (confirmWord: string) => {
+    if (!user?.id || !project) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/master/topography/projects/${id}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          confirmWord,
+          cascadeLinks: deleteCascade,
+          reason: 'Exclusão segura via Painel Executivo',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao excluir projeto.');
+      setToast(data.message || `Projeto ${project.code} excluído.`);
+      setDeleteOpen(false);
+      setTimeout(() => router.push('/master/topography/projects'), 900);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   if (loading) {
     return <div className={styles.page}><div className={styles.empty}>Carregando…</div></div>;
   }
@@ -199,6 +260,14 @@ function TopographyProjectDetailInner() {
             onClick={() => void archiveOrRestore()}
           >
             {project.is_archived ? 'Restaurar' : 'Arquivar'}
+          </button>
+          <button
+            type="button"
+            className={styles.btnDanger}
+            disabled={busy || deleteBusy}
+            onClick={() => void openSecureDelete()}
+          >
+            Excluir Projeto
           </button>
         </div>
       </div>
@@ -498,6 +567,69 @@ function TopographyProjectDetailInner() {
         }}
         onSubmit={(payload) => void handleSave(payload)}
       />
+
+      <MasterSecureDeleteModal
+        open={deleteOpen}
+        title="Excluir Projeto"
+        recordLabel={`${project.code} — ${project.title}`}
+        amountLabel={formatCurrency(project.contract_value)}
+        linksWarning={
+          deleteLinks && projectDeleteHasLinks(deleteLinks)
+            ? `Vínculos detectados: ${formatProjectDeleteLinks(deleteLinks).join(', ')}. Marque a opção de cascata para remover também esses vínculos corporativos.`
+            : 'Nenhum vínculo financeiro/orçamento detectado. A exclusão remove apenas o projeto.'
+        }
+        cascadeOption={
+          deleteLinks && projectDeleteHasLinks(deleteLinks)
+            ? {
+                label: 'Excluir também vínculos corporativos (contas, orçamentos, caixa, Asaas)',
+                checked: deleteCascade,
+                onChange: setDeleteCascade,
+              }
+            : null
+        }
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => {
+          if (deleteBusy) return;
+          setDeleteOpen(false);
+          setDeleteError(null);
+        }}
+        onConfirm={(word) => void confirmSecureDelete(word)}
+      />
+
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            zIndex: 80,
+            maxWidth: 420,
+            padding: '0.85rem 1rem',
+            borderRadius: 10,
+            background: '#0f172a',
+            color: '#f8fafc',
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(15,23,42,0.35)',
+          }}
+        >
+          {toast}
+          <button
+            type="button"
+            style={{
+              marginLeft: 12,
+              background: 'transparent',
+              border: 'none',
+              color: '#93c5fd',
+              cursor: 'pointer',
+            }}
+            onClick={() => setToast(null)}
+          >
+            Fechar
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

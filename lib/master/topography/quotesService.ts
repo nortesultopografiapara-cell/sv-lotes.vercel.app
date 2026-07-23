@@ -338,6 +338,7 @@ export async function restoreTopographyQuote(supabase: SupabaseClient, id: strin
 
 /**
  * Remove o orçamento. Filhos (etapas, itens, preços, histórico) seguem ON DELETE CASCADE.
+ * Confirmação: digitar o código do orçamento OU a palavra EXCLUIR.
  */
 export async function deleteTopographyQuotePermanently(
   supabase: SupabaseClient,
@@ -352,8 +353,12 @@ export async function deleteTopographyQuotePermanently(
 
   const expected = existing.code.trim();
   const typed = String(confirmationCode || '').trim();
-  if (!typed || typed !== expected) {
-    throw new Error('Código do orçamento não confere. Digite o código exatamente para confirmar.');
+  const typedNorm = typed.toUpperCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const okWord = typedNorm === 'EXCLUIR';
+  if (!typed || (typed !== expected && !okWord)) {
+    throw new Error(
+      'Confirmação inválida. Digite o código do orçamento ou a palavra EXCLUIR para confirmar.',
+    );
   }
 
   const { error } = await supabase.from('master_topography_quotes').delete().eq('id', id);

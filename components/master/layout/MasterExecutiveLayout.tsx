@@ -122,9 +122,6 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
               © {new Date().getFullYear()} SV Topografia &amp; Projetos / SV LOTES. Todos os direitos
               reservados.
             </span>
-            <span data-master-build-label={MASTER_EXECUTIVE_BUILD_MARKER}>
-              Master build: {MASTER_EXECUTIVE_BUILD_MARKER}
-            </span>
           </footer>
         </main>
       </div>

@@ -8,9 +8,11 @@ import {
   corporateAsaasBillingTypeLabel,
   corporateAsaasLocalStatusLabel,
   isCorporateAsaasActiveStatus,
+  isCorporateAsaasPaidStatus,
   type MasterCorporateAsaasCharge,
 } from '@/lib/master/corporateFinance/asaas/types';
 import { semanticToneForAsaasStatus } from '@/lib/master/corporateFinance/semantic';
+import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
@@ -41,6 +43,13 @@ function AsaasChargesInner() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [billingType, setBillingType] = useState('');
+
+  const [deleteTarget, setDeleteTarget] = useState<MasterCorporateAsaasCharge | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteLocalOnly, setDeleteLocalOnly] = useState(false);
+  const [forceLocalUnlink, setForceLocalUnlink] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -127,6 +136,46 @@ function AsaasChargesInner() {
       setError(err instanceof Error ? err.message : 'Erro na conciliação.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  function openSecureDelete(c: MasterCorporateAsaasCharge) {
+    const paid = isCorporateAsaasPaidStatus(c.local_status);
+    setDeleteError(null);
+    setDeleteLocalOnly(false);
+    setForceLocalUnlink(paid);
+    setDeleteTarget(c);
+  }
+
+  async function confirmSecureDelete(confirmWord: string) {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const paid = isCorporateAsaasPaidStatus(deleteTarget.local_status);
+      const res = await fetch(
+        `/api/master/corporate-finance/asaas/charges/${deleteTarget.id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...bodyAuth(),
+            confirmWord,
+            forceLocalUnlink: paid || forceLocalUnlink,
+            localOnly: deleteLocalOnly,
+            reason: 'Exclusão segura via Painel Executivo',
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao excluir vínculo.');
+      setToast(data.message || 'Vínculo local da cobrança removido.');
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir.');
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -303,6 +352,14 @@ function AsaasChargesInner() {
                               Cancelar
                             </button>
                           ) : null}
+                          <button
+                            type="button"
+                            className={`${styles.btn} ${styles.btnDanger}`}
+                            disabled={busy || deleteBusy}
+                            onClick={() => openSecureDelete(c)}
+                          >
+                            Excluir vínculo local
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -336,6 +393,79 @@ function AsaasChargesInner() {
           </div>
         </div>
       </div>
+
+      <MasterSecureDeleteModal
+        open={Boolean(deleteTarget)}
+        title="Excluir vínculo Asaas"
+        recordLabel={
+          deleteTarget
+            ? `${deleteTarget.asaas_payment_id || deleteTarget.id} — ${deleteTarget.description || 'cobrança'}`
+            : ''
+        }
+        amountLabel={deleteTarget ? formatCurrency(deleteTarget.original_value) : null}
+        linksWarning={
+          deleteTarget && isCorporateAsaasPaidStatus(deleteTarget.local_status)
+            ? 'Cobrança paga: apenas o vínculo local será removido (forceLocalUnlink). Nada será apagado no Asaas remoto.'
+            : 'Cobrança em aberto: tentará cancelar no Asaas e remover o registro local. A Conta a Receber permanece.'
+        }
+        localOnlyOption={
+          deleteTarget && !isCorporateAsaasPaidStatus(deleteTarget.local_status)
+            ? {
+                label: 'Somente vínculo local (não cancelar no Asaas)',
+                checked: deleteLocalOnly,
+                onChange: setDeleteLocalOnly,
+              }
+            : deleteTarget && isCorporateAsaasPaidStatus(deleteTarget.local_status)
+              ? {
+                  label: 'Confirmar desvínculo local da cobrança paga (forceLocalUnlink)',
+                  checked: forceLocalUnlink,
+                  onChange: setForceLocalUnlink,
+                }
+              : null
+        }
+        busy={deleteBusy}
+        error={deleteError}
+        onClose={() => {
+          if (deleteBusy) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={(word) => void confirmSecureDelete(word)}
+      />
+
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            zIndex: 80,
+            maxWidth: 420,
+            padding: '0.85rem 1rem',
+            borderRadius: 10,
+            background: '#0f172a',
+            color: '#f8fafc',
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(15,23,42,0.35)',
+          }}
+        >
+          {toast}
+          <button
+            type="button"
+            style={{
+              marginLeft: 12,
+              background: 'transparent',
+              border: 'none',
+              color: '#93c5fd',
+              cursor: 'pointer',
+            }}
+            onClick={() => setToast(null)}
+          >
+            Fechar
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

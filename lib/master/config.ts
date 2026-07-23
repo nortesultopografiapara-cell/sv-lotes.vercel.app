@@ -80,5 +80,5 @@ export function shouldUseMasterExecutiveShell(options: {
   return flag;
 }
 
-/** Marcador de build para diagnóstico de deploy (visível no shell Master). */
-export const MASTER_EXECUTIVE_BUILD_MARKER = '079d3dd-scroll-v3' as const;
+/** Marcador discreto do shell Master (data-attribute; sem texto de diagnóstico). */
+export const MASTER_EXECUTIVE_BUILD_MARKER = 'master-shell-v1' as const;
