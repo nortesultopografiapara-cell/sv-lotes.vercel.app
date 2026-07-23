@@ -51,6 +51,7 @@ function main() {
   run('scripts/mandatory-master-corporate-finance-asaas-reconcile-tests.ts');
   run('scripts/mandatory-master-corporate-finance-asaas-create-no-settle-tests.ts');
   run('scripts/mandatory-master-corporate-finance-asaas-list-actions-tests.ts');
+  run('scripts/mandatory-master-corporate-finance-asaas-settle-fix-tests.ts');
   isolationGates();
   console.log('OK isolation gates');
   console.log('ALL PASS');

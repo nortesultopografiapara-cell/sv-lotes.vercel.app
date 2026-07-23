@@ -13,6 +13,8 @@ import {
 import {
   mapAsaasRemoteStatusToLocal,
   hasCorporateAsaasPaymentEvidence,
+  shouldSettleCorporateAsaasPayment,
+  resolveCorporateAsaasPaymentDate,
   type CorporateAsaasPaymentRemote,
 } from './client';
 import { mapCorporateAsaasChargeRow } from './mappers';
@@ -28,6 +30,18 @@ import {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function logCorporateAsaasWebhook(
+  step: string,
+  meta: Record<string, unknown> = {},
+): void {
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    if (value === undefined) continue;
+    safe[key] = value;
+  }
+  console.info(`[corporate-asaas-webhook] ${step}`, safe);
 }
 
 function extractPaymentFromWebhookBody(
@@ -75,6 +89,18 @@ async function findCharge(
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (data) return mapCorporateAsaasChargeRow(data as Record<string, unknown>);
+
+    const parsed = parseCorporateAsaasExternalReference(ext);
+    if (parsed?.suffix) {
+      const { data: byId, error: byIdError } = await supabase
+        .from('master_corporate_asaas_charges')
+        .select('*')
+        .eq('id', parsed.suffix)
+        .eq('receivable_id', parsed.receivableId)
+        .maybeSingle();
+      if (byIdError) throw new Error(byIdError.message);
+      if (byId) return mapCorporateAsaasChargeRow(byId as Record<string, unknown>);
+    }
   }
   return null;
 }
@@ -114,6 +140,28 @@ async function insertWebhookEvent(
   return { id: String(data.id), duplicate: false };
 }
 
+async function loadWebhookEventByEventId(
+  supabase: SupabaseClient,
+  eventId: string,
+): Promise<{
+  id: string;
+  processing_status: string;
+  attempts: number;
+} | null> {
+  const { data, error } = await supabase
+    .from('master_corporate_asaas_webhook_events')
+    .select('id, processing_status, attempts')
+    .eq('event_id', eventId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return {
+    id: String(data.id),
+    processing_status: String(data.processing_status || ''),
+    attempts: Number(data.attempts || 1),
+  };
+}
+
 /** Liquidação idempotente — usado por webhook e sync/conciliação. */
 export async function settleCorporateAsaasChargeFromRemote(
   supabase: SupabaseClient,
@@ -135,7 +183,7 @@ export async function settleCorporateAsaasChargeFromRemote(
   }
 
   const paymentDate = String(
-    payment.paymentDate || payment.clientPaymentDate || payment.confirmedDate || nowIso(),
+    resolveCorporateAsaasPaymentDate(payment) || nowIso(),
   ).slice(0, 10);
 
   const idempotencyKey = `ASAAS_CORP:${charge.asaas_payment_id}`;
@@ -282,10 +330,26 @@ export async function processCorporateAsaasWebhook(
   const eventId = resolveEventId(body, paymentId);
   const sanitized = sanitizeCorporateAsaasPayload(body);
 
+  logCorporateAsaasWebhook('event received', {
+    event: eventType,
+    asaas_payment_id: paymentId,
+    event_id: eventId,
+  });
+
   // Localiza cobrança corporativa — se não existir, REJECT (não é nosso domínio)
   let charge: MasterCorporateAsaasCharge | null = null;
   if (payment) {
     charge = await findCharge(supabase, payment);
+  }
+
+  if (charge) {
+    logCorporateAsaasWebhook('charge found', {
+      event: eventType,
+      asaas_payment_id: paymentId,
+      charge_id: charge.id,
+      receivable_id: charge.receivable_id,
+      local_status: charge.local_status,
+    });
   }
 
   if (!charge) {
@@ -331,8 +395,46 @@ export async function processCorporateAsaasWebhook(
     payload_sanitized: sanitized,
   });
 
+  let eventRowId = inserted.id;
   if (inserted.duplicate) {
-    return { ok: true, status: 200, result: 'DUPLICATE' };
+    const existing = await loadWebhookEventByEventId(supabase, eventId);
+    const priorStatus = existing?.processing_status || '';
+    const alreadySettled = Boolean(charge?.receivable_payment_id);
+    const canRetry =
+      !alreadySettled &&
+      (priorStatus === 'FAILED' || priorStatus === 'PENDING' || priorStatus === 'IGNORED');
+
+    if (!canRetry) {
+      logCorporateAsaasWebhook('duplicate event ignored', {
+        event: eventType,
+        asaas_payment_id: paymentId,
+        charge_id: charge?.id || null,
+        receivable_id: charge?.receivable_id || null,
+        prior_status: priorStatus,
+      });
+      return { ok: true, status: 200, result: 'DUPLICATE' };
+    }
+
+    eventRowId = existing?.id || '';
+    if (existing?.id) {
+      await supabase
+        .from('master_corporate_asaas_webhook_events')
+        .update({
+          processing_status: 'PENDING',
+          attempts: (existing.attempts || 1) + 1,
+          error_message: null,
+          payload_sanitized: sanitized,
+        })
+        .eq('id', existing.id);
+    }
+    logCorporateAsaasWebhook('duplicate event retry', {
+      event: eventType,
+      asaas_payment_id: paymentId,
+      charge_id: charge?.id || null,
+      receivable_id: charge?.receivable_id || null,
+      prior_status: priorStatus,
+      stage: 'retry_after_failed_or_pending',
+    });
   }
 
   if (!charge || !payment) {
@@ -344,6 +446,11 @@ export async function processCorporateAsaasWebhook(
         error_message: 'Cobrança corporativa não encontrada',
       })
       .eq('event_id', eventId);
+    logCorporateAsaasWebhook('charge missing', {
+      event: eventType,
+      asaas_payment_id: paymentId,
+      stage: 'lookup',
+    });
     return { ok: true, status: 200, result: 'IGNORED' };
   }
 
@@ -374,24 +481,42 @@ export async function processCorporateAsaasWebhook(
     }
 
     const isCreateOnly = eventType === 'PAYMENT_CREATED';
+    const shouldSettle =
+      !isCreateOnly &&
+      shouldSettleCorporateAsaasPayment({ payment, eventType }) &&
+      isCorporateAsaasPaidStatus(nextStatus);
 
     if (!canDowngradeCorporateAsaasStatus(charge.local_status, nextStatus)) {
-      await supabase
-        .from('master_corporate_asaas_webhook_events')
-        .update({
-          processing_status: 'IGNORED',
-          processed_at: nowIso(),
-          error_message: `Status protegido: ${charge.local_status} → ${nextStatus}`,
-        })
-        .eq('event_id', eventId);
-      return { ok: true, status: 200, result: 'IGNORED_NO_DOWNGRADE' };
+      // Já pago localmente + evento pago: tenta liquidar se AR ainda aberta
+      if (
+        isCorporateAsaasPaidStatus(charge.local_status) &&
+        shouldSettle &&
+        !charge.receivable_payment_id
+      ) {
+        nextStatus = charge.local_status;
+      } else {
+        await supabase
+          .from('master_corporate_asaas_webhook_events')
+          .update({
+            processing_status: 'IGNORED',
+            processed_at: nowIso(),
+            error_message: `Status protegido: ${charge.local_status} → ${nextStatus}`,
+          })
+          .eq('event_id', eventId);
+        return { ok: true, status: 200, result: 'IGNORED_NO_DOWNGRADE' };
+      }
     }
 
-    if (
-      isCorporateAsaasPaidStatus(nextStatus) &&
-      hasCorporateAsaasPaymentEvidence(payment) &&
-      !isCreateOnly
-    ) {
+    if (shouldSettle) {
+      logCorporateAsaasWebhook('payment evidence accepted', {
+        event: eventType,
+        asaas_payment_id: paymentId,
+        charge_id: charge.id,
+        receivable_id: charge.receivable_id,
+        asaas_status: payment.status || null,
+        payment_date: resolveCorporateAsaasPaymentDate(payment),
+      });
+
       const settled = await settleCorporateAsaasChargeFromRemote(
         supabase,
         charge,
@@ -405,6 +530,7 @@ export async function processCorporateAsaasWebhook(
           processed_at: nowIso(),
           charge_id: settled.charge.id,
           receivable_id: settled.charge.receivable_id,
+          error_message: null,
         })
         .eq('event_id', eventId);
 
@@ -420,11 +546,22 @@ export async function processCorporateAsaasWebhook(
         },
       });
 
+      logCorporateAsaasWebhook(
+        settled.settled ? 'receivable settled' : 'duplicate event ignored',
+        {
+          event: eventType,
+          asaas_payment_id: paymentId,
+          charge_id: settled.charge.id,
+          receivable_id: settled.charge.receivable_id,
+          settled: settled.settled,
+        },
+      );
+
       return { ok: true, status: 200, result: settled.settled ? 'SETTLED' : 'ALREADY_SETTLED' };
     }
 
-    // PAYMENT_CREATED ou status pago sem evidência: espelha aguardando — não liquida AR
-    if (isCorporateAsaasPaidStatus(nextStatus) && (isCreateOnly || !hasCorporateAsaasPaymentEvidence(payment))) {
+    // PAYMENT_CREATED ou status sem evidência: espelha aguardando — não liquida AR
+    if (isCorporateAsaasPaidStatus(nextStatus) && (isCreateOnly || !hasCorporateAsaasPaymentEvidence(payment, eventType))) {
       nextStatus = 'AWAITING_PAYMENT';
     }
 
@@ -458,12 +595,20 @@ export async function processCorporateAsaasWebhook(
     return { ok: true, status: 200, result: 'UPDATED' };
   } catch (err) {
     const msg = sanitizeCorporateAsaasErrorMessage(err);
+    logCorporateAsaasWebhook('settlement failed', {
+      event: eventType,
+      asaas_payment_id: paymentId,
+      charge_id: charge.id,
+      receivable_id: charge.receivable_id,
+      stage: 'settle_or_update',
+      error: msg,
+      event_row_id: eventRowId || null,
+    });
     await supabase
       .from('master_corporate_asaas_webhook_events')
       .update({
         processing_status: 'FAILED',
         error_message: msg,
-        attempts: 1,
       })
       .eq('event_id', eventId);
     await supabase

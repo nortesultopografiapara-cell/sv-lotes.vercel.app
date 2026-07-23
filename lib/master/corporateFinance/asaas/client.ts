@@ -222,19 +222,76 @@ export function mapAsaasRemoteStatusToLocal(
   return 'AWAITING_PAYMENT';
 }
 
+const CORPORATE_ASAAS_PAID_REMOTE_STATUSES = [
+  'RECEIVED',
+  'CONFIRMED',
+  'RECEIVED_IN_CASH',
+] as const;
+
+const CORPORATE_ASAAS_PAID_EVENTS = ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'] as const;
+
+export function isCorporateAsaasPaidRemoteStatus(status?: string | null): boolean {
+  return CORPORATE_ASAAS_PAID_REMOTE_STATUSES.includes(
+    String(status || '').trim().toUpperCase() as (typeof CORPORATE_ASAAS_PAID_REMOTE_STATUSES)[number],
+  );
+}
+
+export function isCorporateAsaasPaidEvent(eventType?: string | null): boolean {
+  const event = String(eventType || '').trim().toUpperCase();
+  return CORPORATE_ASAAS_PAID_EVENTS.includes(
+    event as (typeof CORPORATE_ASAAS_PAID_EVENTS)[number],
+  );
+}
+
+export function resolveCorporateAsaasPaymentDate(
+  payment: CorporateAsaasPaymentRemote | null | undefined,
+): string | null {
+  if (!payment) return null;
+  const raw =
+    payment.paymentDate ||
+    payment.clientPaymentDate ||
+    payment.confirmedDate ||
+    null;
+  const value = String(raw || '').trim();
+  return value || null;
+}
+
 /**
- * Evidência mínima de pagamento real no Asaas.
- * Status pago sozinho (sem data) NÃO basta para liquidar AR/caixa na criação.
+ * Evidência válida de pagamento para liquidar AR/caixa.
+ * Aceita status RECEIVED|CONFIRMED|RECEIVED_IN_CASH ou eventos
+ * PAYMENT_RECEIVED|PAYMENT_CONFIRMED.
+ * PAYMENT_CREATED nunca liquida. Data real é preferível; se ausente, settle usa now.
  */
 export function hasCorporateAsaasPaymentEvidence(
   payment: CorporateAsaasPaymentRemote | null | undefined,
+  eventType?: string | null,
 ): boolean {
   if (!payment) return false;
-  const status = String(payment.status || '').toUpperCase();
-  const paidStatus = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(status);
-  if (!paidStatus) return false;
-  const date =
-    payment.paymentDate || payment.clientPaymentDate || payment.confirmedDate || null;
-  return Boolean(String(date || '').trim());
+  if (String(eventType || '').trim().toUpperCase() === 'PAYMENT_CREATED') return false;
+  return (
+    isCorporateAsaasPaidRemoteStatus(payment.status) || isCorporateAsaasPaidEvent(eventType)
+  );
+}
+
+/**
+ * Decide se deve liquidar a partir do remoto + evento webhook.
+ * PENDING / AWAITING_PAYMENT / PAYMENT_CREATED → nunca (salvo evento pago tipado).
+ */
+export function shouldSettleCorporateAsaasPayment(options: {
+  payment: CorporateAsaasPaymentRemote | null | undefined;
+  eventType?: string | null;
+}): boolean {
+  const { payment, eventType } = options;
+  if (!payment) return false;
+  const event = String(eventType || '').trim().toUpperCase();
+  if (event === 'PAYMENT_CREATED') return false;
+  const status = String(payment.status || '').trim().toUpperCase();
+  if (
+    (status === 'PENDING' || status === 'AWAITING_PAYMENT') &&
+    !isCorporateAsaasPaidEvent(eventType)
+  ) {
+    return false;
+  }
+  return hasCorporateAsaasPaymentEvidence(payment, eventType);
 }
 

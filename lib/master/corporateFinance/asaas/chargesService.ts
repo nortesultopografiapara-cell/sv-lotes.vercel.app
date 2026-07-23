@@ -20,6 +20,8 @@ import {
   hasCorporateAsaasPaymentEvidence,
   mapAsaasRemoteStatusToLocal,
   normalizeCorporatePixQrImage,
+  resolveCorporateAsaasPaymentDate,
+  shouldSettleCorporateAsaasPayment,
 } from './client';
 import { mapCorporateAsaasChargeRow, mapCorporateAsaasCustomerRow } from './mappers';
 import type {
@@ -503,11 +505,11 @@ export async function syncCorporateAsaasCharge(
 
   let updated = mapCorporateAsaasChargeRow(data as Record<string, unknown>);
 
-  // Liquidação somente com evidência real de pagamento (data + status pago)
+  // Liquidação com evidência de status/evento pago (data preferível; sync usa now se ausente)
   if (
     isCorporateAsaasPaidStatus(updated.local_status) &&
     !updated.receivable_payment_id &&
-    hasCorporateAsaasPaymentEvidence(remote)
+    shouldSettleCorporateAsaasPayment({ payment: remote })
   ) {
     const settled = await settleCorporateAsaasChargeFromRemote(
       supabase,
@@ -520,19 +522,28 @@ export async function syncCorporateAsaasCharge(
     isCorporateAsaasPaidStatus(updated.local_status) &&
     !hasCorporateAsaasPaymentEvidence(remote)
   ) {
-    // Status ambíguo sem data de pagamento — mantém aguardando, não liquida AR
-    const { data: forced } = await supabase
+    // Status local pago sem evidência remota — não força AWAITING se Asaas já confirmou via map
+    // Mantém espelho; AR só liquida com evidência.
+    await supabase
       .from('master_corporate_asaas_charges')
       .update({
-        local_status: 'AWAITING_PAYMENT',
         last_sync_at: nowIso(),
-        last_error: 'Status Asaas sem evidência de pagamento — AR não liquidada',
+        last_error: 'Status Asaas pago sem evidência suficiente para liquidar AR',
         updated_at: nowIso(),
       })
-      .eq('id', charge.id)
+      .eq('id', charge.id);
+  }
+
+  // paid_at preferencial com data real do Asaas
+  if (isCorporateAsaasPaidStatus(updated.local_status) && !updated.paid_at) {
+    const paidAt = resolveCorporateAsaasPaymentDate(remote) || nowIso();
+    const { data: withPaidAt } = await supabase
+      .from('master_corporate_asaas_charges')
+      .update({ paid_at: paidAt, updated_at: nowIso() })
+      .eq('id', updated.id)
       .select('*')
       .single();
-    if (forced) updated = mapCorporateAsaasChargeRow(forced as Record<string, unknown>);
+    if (withPaidAt) updated = mapCorporateAsaasChargeRow(withPaidAt as Record<string, unknown>);
   }
 
   await updateReceivableAsaasMirror(supabase, charge.receivable_id, {

@@ -1,9 +1,8 @@
 /* Dashboard Executivo V2 — exclusivo do Master (tema claro na área de conteúdo). */
 
 .page {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
+  width: 100%;
   padding: 1.25rem 1.25rem 2rem;
   background: #f3f4f6;
   color: #0f172a;

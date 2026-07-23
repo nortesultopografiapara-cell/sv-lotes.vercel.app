@@ -1,6 +1,6 @@
 .page {
-  flex: 1;
-  min-height: 100%;
+  min-width: 0;
+  width: 100%;
   padding: 1.5rem;
   background: #f3f4f6;
 }
@@ -375,7 +375,7 @@
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 0.75rem;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
@@ -397,8 +397,11 @@
 }
 
 .tableWrap {
+  width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
+
 
 .table {
   width: 100%;
@@ -513,11 +516,15 @@
 .modal {
   width: 100%;
   max-width: 520px;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border-radius: 0.75rem;
   border: 1px solid #e2e8f0;
   box-shadow: 0 20px 40px rgb(15 23 42 / 18%);
   margin-top: 2rem;
+  overflow: hidden;
 }
 
 .modalHead {
@@ -526,6 +533,7 @@
   justify-content: space-between;
   padding: 1rem 1.15rem;
   border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
 .modalTitle {
@@ -539,6 +547,9 @@
   padding: 1.1rem 1.15rem;
   display: grid;
   gap: 0.85rem;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
 }
 
 .modalFoot {
@@ -547,6 +558,7 @@
   gap: 0.5rem;
   padding: 0.9rem 1.15rem;
   border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
 .label {

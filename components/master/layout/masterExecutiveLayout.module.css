@@ -14,9 +14,8 @@
 
 .shell {
   display: flex;
-  height: 100dvh;
+  min-height: 100dvh;
   width: 100%;
-  overflow: hidden;
   background: #f3f4f6;
   color: #0f172a;
 }
@@ -26,6 +25,10 @@
   flex-direction: column;
   flex-shrink: 0;
   z-index: 200;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100dvh;
   background: #0f172a;
   color: #e2e8f0;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -298,12 +301,14 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background: #f3f4f6;
 }
 
 .header {
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 40;
   height: 4rem;
   display: flex;
   align-items: center;
@@ -429,12 +434,15 @@
 .content {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: #f3f4f6;
+  -webkit-overflow-scrolling: touch;
 }
 
 .contentInner {
-  min-height: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .mobileHeader {

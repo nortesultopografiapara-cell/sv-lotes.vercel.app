@@ -67,7 +67,8 @@
     "test:master-corporate-finance-asaas-reconcile": "tsx scripts/mandatory-master-corporate-finance-asaas-reconcile-tests.ts",
     "test:master-corporate-finance-asaas-fase7": "tsx scripts/mandatory-master-corporate-finance-asaas-fase7-suite-tests.ts",
     "test:master-corporate-finance-asaas-create-no-settle": "tsx scripts/mandatory-master-corporate-finance-asaas-create-no-settle-tests.ts",
-    "test:master-corporate-finance-asaas-list-actions": "tsx scripts/mandatory-master-corporate-finance-asaas-list-actions-tests.ts"
+    "test:master-corporate-finance-asaas-list-actions": "tsx scripts/mandatory-master-corporate-finance-asaas-list-actions-tests.ts",
+    "test:master-corporate-finance-asaas-settle-fix": "tsx scripts/mandatory-master-corporate-finance-asaas-settle-fix-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

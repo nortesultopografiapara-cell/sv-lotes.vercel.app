@@ -293,8 +293,8 @@ function MasterReportsContent() {
             />
           </div>
 
-          <div className="rounded-xl border border-white/10 overflow-hidden">
-            <table className="w-full text-left text-sm">
+          <div className="rounded-xl border border-white/10 overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-max">
               <thead className="bg-[var(--color-surface)]/80 text-slate-500 text-xs uppercase">
                 <tr>
                   <th className="p-3">Empresa</th>

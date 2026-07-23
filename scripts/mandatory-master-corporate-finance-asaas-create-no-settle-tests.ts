@@ -44,8 +44,8 @@ function main() {
   assert(parseCorporateAsaasExternalReference('SAAS:x') === null, 'reject saas');
 
   assert(
-    !hasCorporateAsaasPaymentEvidence({ status: 'RECEIVED' }),
-    'RECEIVED sem data não liquida',
+    hasCorporateAsaasPaymentEvidence({ status: 'RECEIVED' }),
+    'RECEIVED (status) liquida mesmo sem data',
   );
   assert(
     hasCorporateAsaasPaymentEvidence({ status: 'RECEIVED', paymentDate: '2026-07-23' }),
@@ -54,6 +54,13 @@ function main() {
   assert(
     !hasCorporateAsaasPaymentEvidence({ status: 'PENDING', paymentDate: '2026-07-23' }),
     'PENDING não liquida',
+  );
+  assert(
+    !hasCorporateAsaasPaymentEvidence(
+      { status: 'RECEIVED', paymentDate: '2026-07-23' },
+      'PAYMENT_CREATED',
+    ),
+    'PAYMENT_CREATED nunca liquida',
   );
 
   const ui = read('components/master/corporateFinance/CorporateAsaasChargeSection.tsx');

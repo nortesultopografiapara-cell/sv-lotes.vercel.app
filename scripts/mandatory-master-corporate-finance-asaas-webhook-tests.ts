@@ -127,6 +127,14 @@ function testAccess() {
   );
 }
 
+function testSettleEvidence() {
+  const settle = read('lib/master/corporateFinance/asaas/webhookSettlement.ts');
+  assert(settle.includes('shouldSettleCorporateAsaasPayment'), 'webhook usa helper settle');
+  const client = read('lib/master/corporateFinance/asaas/client.ts');
+  assert(client.includes('shouldSettleCorporateAsaasPayment'), 'helper settle');
+  assert(client.includes('PAYMENT_CREATED'), 'bloqueia created');
+}
+
 function testSyncSettles() {
   const svc = read('lib/master/corporateFinance/asaas/chargesService.ts');
   assert(svc.includes('settleCorporateAsaasChargeFromRemote'), 'sync liquida se pago');
@@ -148,6 +156,8 @@ function main() {
   console.log('OK sanitize');
   testAccess();
   console.log('OK access');
+  testSettleEvidence();
+  console.log('OK settle evidence');
   testSyncSettles();
   console.log('OK sync settle');
   console.log('ALL PASS');
