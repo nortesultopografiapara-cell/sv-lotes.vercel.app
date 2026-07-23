@@ -2,10 +2,8 @@
 
 .editorPage {
   --budget-summary-height: 7.75rem;
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  min-width: 0;
+  width: 100%;
   padding: 1rem 1rem calc(var(--budget-summary-height) + 24px);
   background: #f3f4f6;
   color: #0f172a;
@@ -407,8 +405,13 @@
 }
 
 .tableWrap {
-  overflow: auto;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: auto;
   max-height: min(28rem, 55vh);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .itemsTable {

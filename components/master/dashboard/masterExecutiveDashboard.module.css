@@ -273,14 +273,23 @@
 .annualChartCard {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  height: 100%;
+  min-width: 0;
 }
 
 .chartBox {
   height: 15rem;
   width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   position: relative;
+}
+
+.chartBoxInner {
+  min-width: 44rem;
+  height: 100%;
+  width: 100%;
 }
 
 .emptyChart {
@@ -436,8 +445,13 @@
 }
 
 .tableWrap {
+  width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
+
 
 .table {
   width: 100%;
@@ -664,9 +678,8 @@
 }
 
 .skeletonPage {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
+  width: 100%;
   padding: 1.5rem;
   background: #f3f4f6;
 }

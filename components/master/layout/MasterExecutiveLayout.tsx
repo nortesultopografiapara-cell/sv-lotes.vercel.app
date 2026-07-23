@@ -60,7 +60,7 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
   };
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-master-scroll-strategy="document">
       <MasterExecutiveSidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -88,9 +88,9 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
           />
         )}
 
-        <div className={styles.content}>
+        <main className={styles.content}>
           <div className={styles.contentInner}>{children}</div>
-        </div>
+        </main>
 
         <footer className={styles.footerBar}>
           <span>

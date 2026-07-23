@@ -108,8 +108,7 @@ function testSyncRecoversLostPayment() {
 function testShellScrollNotBlocked() {
   const css = read('components/master/layout/masterExecutiveLayout.module.css');
   assert(css.includes('min-height: 100dvh'), 'shell min-height');
-  assert(!/^\.shell\s*\{[^}]*overflow:\s*hidden/m.test(css.replace(/\n/g, ' ')), 'shell sem overflow hidden global');
-  // More precise: shell block should not contain overflow:hidden
+  assert(css.includes('align-items: flex-start'), 'shell flex-start');
   const shellMatch = css.match(/\.shell\s*\{([^}]+)\}/);
   assert(shellMatch, 'shell rule');
   assert(!shellMatch![1].includes('overflow: hidden'), 'shell sem overflow:hidden');
@@ -118,8 +117,13 @@ function testShellScrollNotBlocked() {
   assert(!mainMatch![1].includes('overflow: hidden'), 'mainColumn sem overflow:hidden');
   const contentMatch = css.match(/\.content\s*\{([^}]+)\}/);
   assert(contentMatch, 'content rule');
-  assert(contentMatch![1].includes('overflow-y: auto'), 'content overflow-y auto');
-  assert(contentMatch![1].includes('min-height: 0'), 'content min-height 0');
+  assert(!contentMatch![1].includes('overflow-y: auto'), 'content sem scroll concorrente');
+  assert(
+    read('components/master/layout/MasterExecutiveLayout.tsx').includes(
+      'data-master-scroll-strategy="document"',
+    ),
+    'strategy document',
+  );
 }
 
 function testTableHorizontalWrappers() {

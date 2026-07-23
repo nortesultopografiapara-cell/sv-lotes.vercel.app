@@ -1,9 +1,8 @@
 /* Projetos e Serviços — Master Topografia (CSS exclusivo; sem globals). */
 
 .page {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
+  width: 100%;
   padding: 1.25rem 1.25rem 2rem;
   background: #f3f4f6;
   color: #0f172a;
@@ -350,7 +349,11 @@
 }
 
 .tableWrap {
+  width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
