@@ -1,7 +1,7 @@
 /**
  * Conciliação operacional Asaas Corporativo (Fase 7.5).
  * Localiza cobranças ativas/pagas remotas sem pagamento local e materializa de forma idempotente.
- * Sem OFX / importação bancária genérica.
+ * Sem importação bancária genérica.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logCorporateFinanceAudit } from '../service';

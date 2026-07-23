@@ -8,7 +8,7 @@ import { reconcileCorporateAsaasCharges } from '@/lib/master/corporateFinance/as
 
 /**
  * Conciliação operacional — cobranças pagas sem webhook.
- * Não importa OFX nem lançamentos bancários externos.
+ * Não importa extratos bancários nem lançamentos externos.
  */
 export async function POST(request: Request) {
   const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
