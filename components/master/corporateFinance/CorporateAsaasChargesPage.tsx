@@ -99,6 +99,37 @@ function AsaasChargesInner() {
     }
   }
 
+  async function runReconcile() {
+    if (
+      !window.confirm(
+        'Conciliar cobranças sem pagamento local? Sincroniza o Asaas e materializa recebimento/caixa somente se estiver paga (idempotente).',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await fetch('/api/master/corporate-finance/asaas/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...bodyAuth(), limit: 50 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha na conciliação.');
+      const r = data.result;
+      setInfo(
+        `Conciliação: ${r.scanned} analisada(s), ${r.settled} liquidada(s), ${r.alreadySettled} já ok, ${r.failed} falha(s).`,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro na conciliação.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const pages = Math.max(1, Math.ceil(total / limit));
 
   return (
@@ -166,6 +197,14 @@ function AsaasChargesInner() {
             onClick={() => void load()}
           >
             Atualizar
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={busy}
+            onClick={() => void runReconcile()}
+          >
+            Conciliar pagas
           </button>
         </div>
 

@@ -63,7 +63,8 @@
     "test:master-corporate-finance-asaas-foundation": "tsx scripts/mandatory-master-corporate-finance-asaas-foundation-tests.ts",
     "test:master-corporate-finance-asaas-charges": "tsx scripts/mandatory-master-corporate-finance-asaas-charges-tests.ts",
     "test:master-corporate-finance-asaas-webhook": "tsx scripts/mandatory-master-corporate-finance-asaas-webhook-tests.ts",
-    "test:master-corporate-finance-asaas-ui": "tsx scripts/mandatory-master-corporate-finance-asaas-ui-tests.ts"
+    "test:master-corporate-finance-asaas-ui": "tsx scripts/mandatory-master-corporate-finance-asaas-ui-tests.ts",
+    "test:master-corporate-finance-asaas-reconcile": "tsx scripts/mandatory-master-corporate-finance-asaas-reconcile-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
