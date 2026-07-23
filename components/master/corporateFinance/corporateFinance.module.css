@@ -662,3 +662,82 @@
   font-size: 0.78rem;
   color: #64748b;
 }
+
+.exportMenuRoot {
+  position: relative;
+  display: inline-flex;
+}
+
+.exportMenuPanel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  max-width: min(92vw, 280px);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+@media (max-width: 640px) {
+  .exportMenuPanel {
+    right: auto;
+    left: 0;
+  }
+}
+
+.exportMenuItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.exportMenuItem:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.exportMenuItem:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.exportMenuItem span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.exportMenuItem strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.exportMenuItem small {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.spin {
+  animation: corporateSpin 0.8s linear infinite;
+}
+
+@keyframes corporateSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+

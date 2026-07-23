@@ -234,7 +234,7 @@ export async function listPayables(
   kpis: MasterCorporatePayableKpis;
 }> {
   const page = Math.max(1, filters.page || 1);
-  const limit = Math.min(100, Math.max(1, filters.limit || 20));
+  const limit = Math.min(5000, Math.max(1, filters.limit || 20));
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 

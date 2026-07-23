@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  Download,
   Plus,
   RefreshCw,
   X,
@@ -30,6 +29,7 @@ import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
+import CorporateFinanceExportMenu from './CorporateFinanceExportMenu';
 import {
   CorporateFinanceSemanticBadge,
   CorporateFinanceSemanticKpi,
@@ -385,7 +385,7 @@ function CashFlowInner() {
     void runBackfill(false);
   }
 
-  function exportCsv() {
+  function buildExportQuery() {
     const p = new URLSearchParams(qs());
     if (q.trim()) p.set('q', q.trim());
     if (type) p.set('type', type);
@@ -397,8 +397,7 @@ function CashFlowInner() {
     if (fromDate) p.set('fromDate', fromDate);
     if (toDate) p.set('toDate', toDate);
     if (includeReversed) p.set('includeReversed', '1');
-    p.set('export', 'csv');
-    window.open(`/api/master/corporate-finance/cash-movements?${p}`, '_blank');
+    return p;
   }
 
   return (
@@ -424,10 +423,11 @@ function CashFlowInner() {
               <RefreshCw className="w-4 h-4" />
               Atualizar
             </button>
-            <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={exportCsv}>
-              <Download className="w-4 h-4" />
-              Exportar CSV
-            </button>
+            <CorporateFinanceExportMenu
+              endpoint="/api/master/corporate-finance/cash-movements/export"
+              buildQuery={buildExportQuery}
+              onError={(msg) => setError(msg)}
+            />
             <button
               type="button"
               className={`${styles.btn} ${styles.btnPrimary}`}

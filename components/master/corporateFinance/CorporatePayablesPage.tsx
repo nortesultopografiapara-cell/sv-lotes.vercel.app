@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, Download, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X } from 'lucide-react';
 import {
   CORPORATE_PAYMENT_METHODS,
   CORPORATE_PAYABLE_STATUSES,
@@ -21,6 +21,7 @@ import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
+import CorporateFinanceExportMenu from './CorporateFinanceExportMenu';
 import {
   CorporateFinanceSemanticBadge,
   CorporateFinanceSemanticKpi,
@@ -413,7 +414,7 @@ function PayablesInner() {
     }
   }
 
-  function exportCsv() {
+  function buildExportQuery() {
     const p = new URLSearchParams(qs());
     if (q.trim()) p.set('q', q.trim());
     if (status) p.set('status', status);
@@ -421,8 +422,7 @@ function PayablesInner() {
     if (toDate) p.set('toDate', toDate);
     if (overdueOnly) p.set('overdueOnly', '1');
     if (includeArchived) p.set('includeArchived', '1');
-    p.set('export', 'csv');
-    window.open(`/api/master/corporate-finance/payables?${p.toString()}`, '_blank');
+    return p;
   }
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -476,7 +476,7 @@ function PayablesInner() {
             <p className={styles.eyebrow}>Financeiro Corporativo</p>
             <h1 className={styles.title}>Contas a pagar</h1>
             <p className={styles.subtitle}>
-              Títulos a pagar do Master — liquidações, filtros e exportação CSV.
+              Títulos a pagar do Master — liquidações, filtros e exportações profissionais.
             </p>
           </div>
           <div className={styles.actions}>
@@ -484,10 +484,11 @@ function PayablesInner() {
               <ArrowLeft className="w-4 h-4" />
               Hub
             </Link>
-            <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={exportCsv}>
-              <Download className="w-4 h-4" />
-              CSV
-            </button>
+            <CorporateFinanceExportMenu
+              endpoint="/api/master/corporate-finance/payables/export"
+              buildQuery={buildExportQuery}
+              onError={(msg) => setError(msg)}
+            />
             <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={openCreate}>
               <Plus className="w-4 h-4" />
               Novo título
