@@ -10,7 +10,11 @@ import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
   assertSpouseReadyForSignatureSend,
+  hasRecantoSpouse,
+  contractHtmlHasSpouseAnuenteSlot,
+  contractHtmlLooksLikeRecanto,
   shouldCreateSpouseSignatureParty,
+  SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE,
 } from '@/lib/saleContractSignaturePartyRules';
 import {
   createPartiesForSignatureProcess,
@@ -68,6 +72,9 @@ export type SendPartiesResult = {
   spouseRequired: boolean;
 };
 
+const SPOUSE_PARTY_NOT_CREATED_MESSAGE =
+  'O contrato possui cônjuge anuente, mas o participante eletrônico do cônjuge não foi criado. Verifique os dados e tente novamente.';
+
 async function loadSaleAndCompanyForSignature(
   supabaseAdmin: SupabaseClient,
   contractRow: Record<string, unknown>,
@@ -75,31 +82,67 @@ async function loadSaleAndCompanyForSignature(
   sale: Record<string, unknown> | null;
   company: Record<string, unknown> | null;
   contractModel: string;
+  rawContractModel: string | null;
   customer: Record<string, unknown> | null;
+  companyLoadError: string | null;
+  saleLoadError: string | null;
 }> {
-  const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
+  // Preferir company_id da venda/contrato (mesma regra da regeneração).
+  const companyId = String(
+    contractRow.company_id || contractRow.tenant_id || '',
+  ).trim();
   const saleId = contractRow.sale_id ? String(contractRow.sale_id) : null;
   const customerId = contractRow.customer_id
     ? String(contractRow.customer_id)
     : null;
 
   let company: Record<string, unknown> | null = null;
-  if (tenantId) {
-    const { data } = await supabaseAdmin
+  let companyLoadError: string | null = null;
+  if (companyId) {
+    // select('*') — select enxuto com colunas inexistentes (ex.: legal_representative_name)
+    // falhava em silêncio e o modelo caía em PADRAO.
+    const { data, error } = await supabaseAdmin
       .from('companies')
-      .select('id, contract_model, fantasy_name, name, cnpj, email, phone, representative_name, representative_cpf, legal_representative_name, legal_representative_cpf')
-      .eq('id', tenantId)
+      .select('*')
+      .eq('id', companyId)
       .maybeSingle();
+    if (error) {
+      companyLoadError = error.message.slice(0, 160);
+      console.warn('[signature-parties] company_load_failed', {
+        companyId: companyId.slice(0, 8),
+        message: companyLoadError,
+      });
+    }
     company = (data as Record<string, unknown>) || null;
   }
 
   let sale: Record<string, unknown> | null = null;
+  let saleLoadError: string | null = null;
   if (saleId) {
-    const { data } = await supabaseAdmin
+    // Colunas de cônjuge explícitas + * via fallback se o schema cache rejeitar.
+    const spouseCols =
+      'id, company_id, tenant_id, customer_id, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
+    let { data, error } = await supabaseAdmin
       .from('sales')
-      .select('*')
+      .select(spouseCols)
       .eq('id', saleId)
       .maybeSingle();
+    if (error) {
+      const retry = await supabaseAdmin
+        .from('sales')
+        .select('*')
+        .eq('id', saleId)
+        .maybeSingle();
+      data = retry.data;
+      error = retry.error;
+    }
+    if (error) {
+      saleLoadError = error.message.slice(0, 160);
+      console.warn('[signature-parties] sale_load_failed', {
+        saleId: saleId.slice(0, 8),
+        message: saleLoadError,
+      });
+    }
     sale = (data as Record<string, unknown>) || null;
   }
 
@@ -113,11 +156,17 @@ async function loadSaleAndCompanyForSignature(
     customer = (data as Record<string, unknown>) || null;
   }
 
+  const rawContractModel =
+    company?.contract_model != null ? String(company.contract_model) : null;
+
   return {
     sale,
     company,
-    contractModel: normalizeSaleContractModel(company?.contract_model),
+    contractModel: normalizeSaleContractModel(rawContractModel),
+    rawContractModel,
     customer,
+    companyLoadError,
+    saleLoadError,
   };
 }
 
@@ -133,10 +182,36 @@ export async function createSignaturePartiesAfterSend(
     expiresAt: string;
   },
 ): Promise<SendPartiesResult> {
-  const { sale, company, contractModel, customer } =
-    await loadSaleAndCompanyForSignature(supabaseAdmin, params.contractRow);
+  const loaded = await loadSaleAndCompanyForSignature(
+    supabaseAdmin,
+    params.contractRow,
+  );
+  const { sale, company, customer, rawContractModel, companyLoadError, saleLoadError } =
+    loaded;
 
   const storedHtml = readStoredContractHtml(params.contractRow) || '';
+  const htmlLooksRecanto = contractHtmlLooksLikeRecanto(storedHtml);
+  // Modelo efetivo: company.contract_model, com fallback pelo HTML Recanto já gerado.
+  const contractModel =
+    loaded.contractModel === 'RECANTO_PRIMAVERA' || htmlLooksRecanto
+      ? 'RECANTO_PRIMAVERA'
+      : loaded.contractModel;
+
+  const spouseNamePresent = Boolean(
+    sale && String(sale.sale_spouse_name || '').trim(),
+  );
+  const spouseCpfPresent = Boolean(
+    sale && String(sale.sale_spouse_cpf || '').trim(),
+  );
+  const spousePhonePresent = Boolean(
+    sale && String(sale.sale_spouse_phone || '').trim(),
+  );
+  const spouseEmailPresent = Boolean(
+    sale && String(sale.sale_spouse_email || '').trim(),
+  );
+  const hasSpouse = hasRecantoSpouse(sale);
+  const htmlHasSpouseSlot = contractHtmlHasSpouseAnuenteSlot(storedHtml);
+
   const spouseRequired = shouldCreateSpouseSignatureParty({
     contractModel,
     sale,
@@ -148,19 +223,33 @@ export async function createSignaturePartiesAfterSend(
     contractHtml: storedHtml,
   });
 
+  const partiesRequested = ['BUYER'];
+  if (spouseRequired) partiesRequested.push('SPOUSE');
+  partiesRequested.push('VENDOR');
+
   console.log('[signature-parties] spouse_gate', {
-    contractId: params.signature.contract_id,
-    contractModel,
+    contractId: String(params.signature.contract_id || '').slice(0, 8),
     saleId: sale?.id ? String(sale.id).slice(0, 8) : null,
-    hasRecantoSpouse: Boolean(
-      sale &&
-        (String(sale.sale_spouse_name || '').trim() ||
-          String(sale.sale_spouse_cpf || '').trim()),
-    ),
-    spouseRequired,
+    companyId: company?.id ? String(company.id).slice(0, 8) : null,
+    rawContractModel: rawContractModel
+      ? String(rawContractModel).slice(0, 40)
+      : null,
+    normalizedContractModel: loaded.contractModel,
+    effectiveContractModel: contractModel,
+    isRecantoPrimavera: contractModel === 'RECANTO_PRIMAVERA',
+    htmlLooksRecanto,
+    saleSpouseNamePresent: spouseNamePresent,
+    saleSpouseCpfPresent: spouseCpfPresent,
+    saleSpousePhonePresent: spousePhonePresent,
+    saleSpouseEmailPresent: spouseEmailPresent,
+    hasRecantoSpouse: hasSpouse,
+    htmlHasSpouseSlot,
+    requiresSpouseSignature: spouseRequired,
+    partiesRequested,
+    companyLoadError: companyLoadError || null,
+    saleLoadError: saleLoadError || null,
     spouseCheckOk: spouseCheck.ok,
     spouseSkipped: 'skipped' in spouseCheck,
-    htmlLen: storedHtml.length,
   });
 
   if (!spouseCheck.ok) {
@@ -171,6 +260,13 @@ export async function createSignaturePartiesAfterSend(
     spouseRequired && spouseCheck.ok && !('skipped' in spouseCheck)
       ? spouseCheck
       : null;
+
+  if (spouseRequired && !spouseData) {
+    throw new SaleContractSignatureError(
+      SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE,
+      'validation',
+    );
+  }
 
   const seller = company
     ? normalizeSellerFromCompany(company)
@@ -190,6 +286,7 @@ export async function createSignaturePartiesAfterSend(
   const companyId = String(
     params.contractRow.company_id ||
       params.contractRow.tenant_id ||
+      company?.id ||
       params.signature.tenant_id,
   );
 
@@ -227,6 +324,19 @@ export async function createSignaturePartiesAfterSend(
       expiresAt: params.expiresAt,
     });
 
+    // Confirmar no banco — nunca devolver sucesso bilateral se SPOUSE era obrigatório.
+    const persisted = await listSignatureParties(
+      supabaseAdmin,
+      params.signature.id,
+    );
+    const createdRoles = persisted.map((p) => String(p.role).toUpperCase());
+    if (spouseRequired && !createdRoles.includes('SPOUSE')) {
+      throw new SaleContractSignatureError(
+        SPOUSE_PARTY_NOT_CREATED_MESSAGE,
+        'validation',
+      );
+    }
+
     await logSignatureEvent(supabaseAdmin, {
       signatureToken: params.buyerToken,
       signatureSource: 'SALE',
@@ -255,14 +365,26 @@ export async function createSignaturePartiesAfterSend(
       });
     }
 
+    console.log('[signature-parties] parties_created', {
+      contractId: String(params.signature.contract_id || '').slice(0, 8),
+      roles: createdRoles,
+      partyCount: persisted.length,
+    });
+
     return {
-      parties: created.parties,
+      parties: persisted.length > 0 ? persisted : created.parties,
       spouseSignUrl: created.spouseSignUrl,
       spouseRequired,
     };
   } catch (err) {
+    if (err instanceof SaleContractSignatureError) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    if (/contract_signature_parties|does not exist|schema cache/i.test(message)) {
+    // Só cair no legado se a TABELA não existir. Nunca engolir falha de SPOUSE.
+    if (
+      /relation ["']?contract_signature_parties["']? does not exist/i.test(
+        message,
+      )
+    ) {
       console.warn(
         '[signature-parties] tabela ausente — fluxo legado sem parties',
       );

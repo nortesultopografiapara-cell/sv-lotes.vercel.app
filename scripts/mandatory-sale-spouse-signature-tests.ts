@@ -91,6 +91,19 @@ function testModelGating() {
   );
 
   assert(
+    shouldCreateSpouseSignatureParty({
+      contractModel: 'PADRAO',
+      sale: {
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+      },
+      contractHtml:
+        '<div class="sv-contract-recanto-primavera">CÔNJUGE ANUENTE</div>',
+    }),
+    'HTML Recanto + sale_spouse_* obriga SPOUSE mesmo se company.model=PADRAO',
+  );
+
+  assert(
     !shouldCreateSpouseSignatureParty({
       contractModel: 'MENESES',
       sale: {

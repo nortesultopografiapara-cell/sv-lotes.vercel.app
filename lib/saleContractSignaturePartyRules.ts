@@ -61,6 +61,22 @@ export function contractHtmlHasSpouseAnuenteSlot(
   );
 }
 
+/**
+ * Detecta HTML gerado pelo template Recanto (classe ou slot de assinatura).
+ */
+export function contractHtmlLooksLikeRecanto(
+  contractHtml?: string | null,
+): boolean {
+  const raw = String(contractHtml || '');
+  if (!raw.trim()) return false;
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes('sv-contract-recanto-primavera') ||
+    contractHtmlHasSpouseAnuenteSlot(raw) ||
+    /cl[aá]usula primeira[\s\S]{0,80}declara/i.test(raw)
+  );
+}
+
 export function supportsSpouseElectronicSignature(
   contractModel: unknown,
 ): boolean {
@@ -69,7 +85,7 @@ export function supportsSpouseElectronicSignature(
 }
 
 /**
- * Cônjuge é signatário eletrônico quando o modelo é Recanto e a venda
+ * Cônjuge é signatário eletrônico quando o modelo efetivo é Recanto e a venda
  * (ou o HTML) indica presença do cônjuge — mesma base do PDF.
  */
 export function shouldCreateSpouseSignatureParty(params: {
@@ -77,7 +93,12 @@ export function shouldCreateSpouseSignatureParty(params: {
   sale: Record<string, unknown> | null | undefined;
   contractHtml?: string | null;
 }): boolean {
-  if (!supportsSpouseElectronicSignature(params.contractModel)) {
+  const model = normalizeSaleContractModel(params.contractModel);
+  const isRecanto =
+    model === 'RECANTO_PRIMAVERA' ||
+    contractHtmlLooksLikeRecanto(params.contractHtml);
+
+  if (!isRecanto) {
     return false;
   }
 
