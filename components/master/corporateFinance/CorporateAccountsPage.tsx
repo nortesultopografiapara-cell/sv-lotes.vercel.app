@@ -117,6 +117,16 @@ function AccountsInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const onCashUpdated = () => {
+      void load();
+    };
+    window.addEventListener('corporate-finance-cash-updated', onCashUpdated);
+    return () => {
+      window.removeEventListener('corporate-finance-cash-updated', onCashUpdated);
+    };
+  }, [load]);
+
   function openCreate() {
     setEditing(null);
     setForm(EMPTY);

@@ -556,58 +556,248 @@ export async function findMovementsByPaymentIds(
 
 export type BackfillReport = {
   dryRun: boolean;
+  found: number;
   receivablePaymentsFound: number;
   payablePaymentsFound: number;
+  eligible: number;
   created: number;
   skipped: number;
-  errors: Array<{ paymentId: string; error: string }>;
+  failed: number;
+  wouldCreate: number;
+  defaultAccountId: string | null;
+  defaultAccountName: string | null;
+  errors: Array<{ paymentId: string; kind: string; error: string }>;
 };
 
+async function resolveDefaultCorporateAccount(
+  supabase: SupabaseClient,
+): Promise<{ id: string; name: string } | null> {
+  const { data: def, error: dErr } = await supabase
+    .from('master_corporate_financial_accounts')
+    .select('id, name, is_active, is_default')
+    .eq('is_active', true)
+    .eq('is_default', true)
+    .maybeSingle();
+  if (dErr) throw new Error(dErr.message);
+  if (def) return { id: String(def.id), name: String(def.name) };
+
+  const { data: anyAcc, error: aErr } = await supabase
+    .from('master_corporate_financial_accounts')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (aErr) throw new Error(aErr.message);
+  if (!anyAcc) return null;
+  return { id: String(anyAcc.id), name: String(anyAcc.name) };
+}
+
+async function resolvePaymentAccountId(
+  supabase: SupabaseClient,
+  paymentAccountId: string | null | undefined,
+  defaultAccountId: string | null,
+): Promise<string> {
+  if (paymentAccountId) {
+    const { data, error } = await supabase
+      .from('master_corporate_financial_accounts')
+      .select('id, is_active')
+      .eq('id', paymentAccountId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.is_active) return String(data.id);
+  }
+  if (defaultAccountId) return defaultAccountId;
+  throw new Error(
+    'Nenhuma conta financeira ativa/padrão disponível para lançar o movimento.',
+  );
+}
+
+async function findMovementByReceivablePaymentId(
+  supabase: SupabaseClient,
+  paymentId: string,
+): Promise<MasterCorporateCashMovement | null> {
+  const { data, error } = await supabase
+    .from('master_corporate_cash_movements')
+    .select('*')
+    .eq('receivable_payment_id', paymentId)
+    .neq('origin', 'REVERSAL')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapCashMovementRow(data as Record<string, unknown>) : null;
+}
+
+async function findMovementByPayablePaymentId(
+  supabase: SupabaseClient,
+  paymentId: string,
+): Promise<MasterCorporateCashMovement | null> {
+  const { data, error } = await supabase
+    .from('master_corporate_cash_movements')
+    .select('*')
+    .eq('payable_payment_id', paymentId)
+    .neq('origin', 'REVERSAL')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapCashMovementRow(data as Record<string, unknown>) : null;
+}
+
+/**
+ * Materializa movimentos de caixa a partir de pagamentos AR/AP já existentes.
+ * Idempotente via RECEIVABLE_PAYMENT:<id> / PAYABLE_PAYMENT:<id>.
+ */
 export async function backfillCashMovements(
   supabase: SupabaseClient,
   opts: { dryRun: boolean; userId: string | null },
 ): Promise<BackfillReport> {
   const report: BackfillReport = {
     dryRun: opts.dryRun,
+    found: 0,
     receivablePaymentsFound: 0,
     payablePaymentsFound: 0,
+    eligible: 0,
     created: 0,
     skipped: 0,
+    failed: 0,
+    wouldCreate: 0,
+    defaultAccountId: null,
+    defaultAccountName: null,
     errors: [],
   };
 
+  // Garante que a tabela/RPC existem (erro claro se migration 6.3 não aplicada)
+  const { error: probeErr } = await supabase
+    .from('master_corporate_cash_movements')
+    .select('id')
+    .limit(1);
+  if (probeErr) {
+    throw new Error(
+      `Tabela de movimentos indisponível (${probeErr.message}). Aplique a migration 20260722190000_master_corporate_cash_movements.sql no Preview.`,
+    );
+  }
+
+  const defaultAccount = await resolveDefaultCorporateAccount(supabase);
+  report.defaultAccountId = defaultAccount?.id || null;
+  report.defaultAccountName = defaultAccount?.name || null;
+  if (!defaultAccount) {
+    throw new Error(
+      'Nenhuma conta financeira ativa encontrada. Cadastre/ative uma conta padrão antes do backfill.',
+    );
+  }
+
   const { data: recvPays, error: rErr } = await supabase
     .from('master_corporate_receivable_payments')
-    .select('*, receivable:master_corporate_receivables(*)')
+    .select(
+      'id, receivable_id, financial_account_id, payment_date, amount, payment_method, reference, notes, is_reversed',
+    )
     .eq('is_reversed', false);
-  if (rErr) throw new Error(rErr.message);
+  if (rErr) throw new Error(`Falha ao listar recebimentos: ${rErr.message}`);
 
   const { data: payPays, error: pErr } = await supabase
     .from('master_corporate_payable_payments')
-    .select('*, payable:master_corporate_payables(*)')
+    .select(
+      'id, payable_id, financial_account_id, payment_date, amount, payment_method, reference, notes, is_reversed',
+    )
     .eq('is_reversed', false);
-  if (pErr) throw new Error(pErr.message);
+  if (pErr) throw new Error(`Falha ao listar pagamentos: ${pErr.message}`);
 
   report.receivablePaymentsFound = (recvPays || []).length;
   report.payablePaymentsFound = (payPays || []).length;
+  report.found = report.receivablePaymentsFound + report.payablePaymentsFound;
+
+  const recvIds = Array.from(
+    new Set((recvPays || []).map((p) => String(p.receivable_id)).filter(Boolean)),
+  );
+  const payIds = Array.from(
+    new Set((payPays || []).map((p) => String(p.payable_id)).filter(Boolean)),
+  );
+
+  const receivableById = new Map<string, Record<string, unknown>>();
+  if (recvIds.length) {
+    const { data, error } = await supabase
+      .from('master_corporate_receivables')
+      .select(
+        'id, code, category_id, cost_center_id, project_id, quote_id, competence_date, customer_name',
+      )
+      .in('id', recvIds);
+    if (error) throw new Error(`Falha ao carregar recebíveis: ${error.message}`);
+    for (const row of data || []) {
+      receivableById.set(String(row.id), row as Record<string, unknown>);
+    }
+  }
+
+  const payableById = new Map<string, Record<string, unknown>>();
+  if (payIds.length) {
+    const { data, error } = await supabase
+      .from('master_corporate_payables')
+      .select(
+        'id, code, category_id, cost_center_id, project_id, competence_date, supplier_name, description',
+      )
+      .in('id', payIds);
+    if (error) throw new Error(`Falha ao carregar pagáveis: ${error.message}`);
+    for (const row of data || []) {
+      payableById.set(String(row.id), row as Record<string, unknown>);
+    }
+  }
 
   for (const pay of recvPays || []) {
-    const key = `RECEIVABLE_PAYMENT:${pay.id}`;
-    const existing = await findMovementByIdempotency(supabase, key);
-    if (existing) {
-      report.skipped += 1;
-      continue;
-    }
-    const receivable = pay.receivable as Record<string, unknown> | null;
-    if (!receivable) {
-      report.errors.push({ paymentId: String(pay.id), error: 'Recebível ausente' });
-      continue;
-    }
-    if (opts.dryRun) {
-      report.created += 1;
-      continue;
-    }
+    const paymentId = String(pay.id);
     try {
+      const key = `RECEIVABLE_PAYMENT:${paymentId}`;
+      const existing =
+        (await findMovementByIdempotency(supabase, key)) ||
+        (await findMovementByReceivablePaymentId(supabase, paymentId));
+      if (existing) {
+        report.skipped += 1;
+        continue;
+      }
+
+      const amount = Number(pay.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        report.failed += 1;
+        report.errors.push({
+          paymentId,
+          kind: 'RECEIVABLE',
+          error: 'Valor do recebimento inválido.',
+        });
+        continue;
+      }
+
+      const receivable = receivableById.get(String(pay.receivable_id));
+      if (!receivable) {
+        report.failed += 1;
+        report.errors.push({
+          paymentId,
+          kind: 'RECEIVABLE',
+          error: 'Recebível vinculado não encontrado.',
+        });
+        continue;
+      }
+      if (!receivable.category_id) {
+        report.failed += 1;
+        report.errors.push({
+          paymentId,
+          kind: 'RECEIVABLE',
+          error: 'Recebível sem categoria.',
+        });
+        continue;
+      }
+
+      report.eligible += 1;
+      if (opts.dryRun) {
+        report.wouldCreate += 1;
+        continue;
+      }
+
+      const accountId = await resolvePaymentAccountId(
+        supabase,
+        pay.financial_account_id ? String(pay.financial_account_id) : null,
+        defaultAccount.id,
+      );
+
       await createMovementFromReceivablePayment(supabase, {
         receivable: {
           id: String(receivable.id),
@@ -618,17 +808,20 @@ export async function backfillCashMovements(
             : null,
           project_id: receivable.project_id ? String(receivable.project_id) : null,
           quote_id: receivable.quote_id ? String(receivable.quote_id) : null,
-          competence_date: String(receivable.competence_date).slice(0, 10),
+          competence_date: String(receivable.competence_date || pay.payment_date).slice(
+            0,
+            10,
+          ),
           customer_name: receivable.customer_name
             ? String(receivable.customer_name)
             : undefined,
         },
         payment: {
-          id: String(pay.id),
-          amount: Number(pay.amount),
+          id: paymentId,
+          amount: roundMoney(amount),
           payment_date: String(pay.payment_date).slice(0, 10),
-          financial_account_id: String(pay.financial_account_id),
-          payment_method: String(pay.payment_method),
+          financial_account_id: accountId,
+          payment_method: String(pay.payment_method || 'OTHER'),
           reference: pay.reference ? String(pay.reference) : null,
           notes: pay.notes ? String(pay.notes) : null,
         },
@@ -637,30 +830,70 @@ export async function backfillCashMovements(
       });
       report.created += 1;
     } catch (err) {
+      report.failed += 1;
       report.errors.push({
-        paymentId: String(pay.id),
+        paymentId,
+        kind: 'RECEIVABLE',
         error: err instanceof Error ? err.message : 'erro',
       });
     }
   }
 
   for (const pay of payPays || []) {
-    const key = `PAYABLE_PAYMENT:${pay.id}`;
-    const existing = await findMovementByIdempotency(supabase, key);
-    if (existing) {
-      report.skipped += 1;
-      continue;
-    }
-    const payable = pay.payable as Record<string, unknown> | null;
-    if (!payable) {
-      report.errors.push({ paymentId: String(pay.id), error: 'Pagável ausente' });
-      continue;
-    }
-    if (opts.dryRun) {
-      report.created += 1;
-      continue;
-    }
+    const paymentId = String(pay.id);
     try {
+      const key = `PAYABLE_PAYMENT:${paymentId}`;
+      const existing =
+        (await findMovementByIdempotency(supabase, key)) ||
+        (await findMovementByPayablePaymentId(supabase, paymentId));
+      if (existing) {
+        report.skipped += 1;
+        continue;
+      }
+
+      const amount = Number(pay.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        report.failed += 1;
+        report.errors.push({
+          paymentId,
+          kind: 'PAYABLE',
+          error: 'Valor do pagamento inválido.',
+        });
+        continue;
+      }
+
+      const payable = payableById.get(String(pay.payable_id));
+      if (!payable) {
+        report.failed += 1;
+        report.errors.push({
+          paymentId,
+          kind: 'PAYABLE',
+          error: 'Pagável vinculado não encontrado.',
+        });
+        continue;
+      }
+      if (!payable.category_id) {
+        report.failed += 1;
+        report.errors.push({
+          paymentId,
+          kind: 'PAYABLE',
+          error: 'Pagável sem categoria.',
+        });
+        continue;
+      }
+
+      report.eligible += 1;
+      if (opts.dryRun) {
+        report.wouldCreate += 1;
+        continue;
+      }
+
+      const accountId = await resolvePaymentAccountId(
+        supabase,
+        pay.financial_account_id ? String(pay.financial_account_id) : null,
+        defaultAccount.id,
+      );
+
       await createMovementFromPayablePayment(supabase, {
         payable: {
           id: String(payable.id),
@@ -668,15 +901,19 @@ export async function backfillCashMovements(
           category_id: String(payable.category_id),
           cost_center_id: payable.cost_center_id ? String(payable.cost_center_id) : null,
           project_id: payable.project_id ? String(payable.project_id) : null,
-          competence_date: String(payable.competence_date).slice(0, 10),
-          supplier_name: payable.supplier_name ? String(payable.supplier_name) : undefined,
+          competence_date: String(payable.competence_date || pay.payment_date).slice(0, 10),
+          supplier_name: payable.supplier_name
+            ? String(payable.supplier_name)
+            : payable.description
+              ? String(payable.description)
+              : undefined,
         },
         payment: {
-          id: String(pay.id),
-          amount: Number(pay.amount),
+          id: paymentId,
+          amount: roundMoney(amount),
           payment_date: String(pay.payment_date).slice(0, 10),
-          financial_account_id: String(pay.financial_account_id),
-          payment_method: String(pay.payment_method),
+          financial_account_id: accountId,
+          payment_method: String(pay.payment_method || 'OTHER'),
           reference: pay.reference ? String(pay.reference) : null,
           notes: pay.notes ? String(pay.notes) : null,
         },
@@ -685,8 +922,10 @@ export async function backfillCashMovements(
       });
       report.created += 1;
     } catch (err) {
+      report.failed += 1;
       report.errors.push({
-        paymentId: String(pay.id),
+        paymentId,
+        kind: 'PAYABLE',
         error: err instanceof Error ? err.message : 'erro',
       });
     }
@@ -698,7 +937,7 @@ export async function backfillCashMovements(
       ? 'CORPORATE_CASH_BACKFILL_DRY_RUN'
       : 'CORPORATE_CASH_BACKFILL_EXECUTED',
     entityId: 'cash-backfill',
-    description: `Backfill caixa dryRun=${opts.dryRun} created=${report.created} skipped=${report.skipped}`,
+    description: `Backfill caixa dryRun=${opts.dryRun} created=${report.created} wouldCreate=${report.wouldCreate} skipped=${report.skipped} failed=${report.failed}`,
     newData: report,
   });
 

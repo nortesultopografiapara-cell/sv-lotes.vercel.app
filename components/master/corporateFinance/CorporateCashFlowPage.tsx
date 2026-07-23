@@ -107,6 +107,20 @@ function CashFlowInner() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+  const [backfillReport, setBackfillReport] = useState<{
+    dryRun: boolean;
+    found: number;
+    receivablePaymentsFound: number;
+    payablePaymentsFound: number;
+    eligible: number;
+    created: number;
+    skipped: number;
+    failed: number;
+    wouldCreate: number;
+    defaultAccountId: string | null;
+    defaultAccountName: string | null;
+    errors: Array<{ paymentId: string; kind: string; error: string }>;
+  } | null>(null);
 
   const [manual, setManual] = useState<ManualForm>({
     type: 'INCOME',
@@ -288,6 +302,32 @@ function CashFlowInner() {
     }
   }
 
+  function formatBackfillReport(r: NonNullable<typeof backfillReport>): string {
+    const lines = [
+      r.dryRun ? 'Dry-run (nenhuma escrita no banco)' : 'Backfill executado',
+      `Encontrados: ${r.found} (AR ${r.receivablePaymentsFound} / AP ${r.payablePaymentsFound})`,
+      `Elegíveis: ${r.eligible}`,
+      r.dryRun
+        ? `Seriam criados: ${r.wouldCreate}`
+        : `Criados: ${r.created}`,
+      `Ignorados (já materializados): ${r.skipped}`,
+      `Falhas: ${r.failed}`,
+      r.defaultAccountName
+        ? `Conta padrão: ${r.defaultAccountName}`
+        : 'Conta padrão: (nenhuma)',
+    ];
+    if (r.errors?.length) {
+      lines.push('Erros:');
+      for (const e of r.errors.slice(0, 20)) {
+        lines.push(`- [${e.kind}] ${e.paymentId}: ${e.error}`);
+      }
+      if (r.errors.length > 20) {
+        lines.push(`… e mais ${r.errors.length - 20} erro(s)`);
+      }
+    }
+    return lines.join('\n');
+  }
+
   async function runBackfill(dryRun: boolean) {
     setSaving(true);
     setBackfillMsg(null);
@@ -299,17 +339,50 @@ function CashFlowInner() {
         body: JSON.stringify({ ...bodyAuth(), dryRun }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha no backfill.');
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === 'string' && data.error.trim()
+            ? data.error
+            : `Falha no backfill (HTTP ${res.status}).`,
+        );
+      }
       const r = data.report;
-      setBackfillMsg(
-        `${dryRun ? 'Dry-run' : 'Backfill'}: encontrados AR ${r.receivablePaymentsFound} / AP ${r.payablePaymentsFound}; criados ${r.created}; ignorados ${r.skipped}; erros ${r.errors?.length || 0}.`,
-      );
-      if (!dryRun) await load();
+      if (!r || typeof r !== 'object') {
+        throw new Error('Resposta de backfill sem relatório.');
+      }
+      setBackfillReport(r);
+      setBackfillMsg(formatBackfillReport(r));
+      if (!dryRun) {
+        await load();
+        await loadLookups();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('corporate-finance-cash-updated', {
+              detail: { source: 'backfill', report: r },
+            }),
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro no backfill.');
     } finally {
       setSaving(false);
     }
+  }
+
+  function confirmAndExecuteBackfill() {
+    const preview = backfillReport?.dryRun ? backfillReport : null;
+    const detail = preview
+      ? `\n\nDry-run recente:\n• Encontrados: ${preview.found}\n• Elegíveis: ${preview.eligible}\n• Seriam criados: ${preview.wouldCreate}\n• Já materializados: ${preview.skipped}\n• Falhas: ${preview.failed}`
+      : '\n\n(Recomendado: rode o dry-run antes para ver o relatório.)';
+    if (
+      !window.confirm(
+        `Executar backfill REAL? Isso criará movimentos de caixa a partir dos pagamentos AR/AP elegíveis.${detail}`,
+      )
+    ) {
+      return;
+    }
+    void runBackfill(false);
   }
 
   function exportCsv() {
@@ -392,7 +465,11 @@ function CashFlowInner() {
         </div>
 
         {error ? <p className={styles.error}>{error}</p> : null}
-        {backfillMsg ? <p className={styles.muted}>{backfillMsg}</p> : null}
+        {backfillMsg ? (
+          <pre className={styles.muted} style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+            {backfillMsg}
+          </pre>
+        ) : null}
 
         <div className={styles.kpisWide}>
           <CorporateFinanceSemanticKpi
@@ -575,15 +652,7 @@ function CashFlowInner() {
                 type="button"
                 className={`${styles.btn} ${styles.btnGhost}`}
                 disabled={saving}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      'Executar backfill real dos recebimentos/pagamentos sem movimento?',
-                    )
-                  ) {
-                    void runBackfill(false);
-                  }
-                }}
+                onClick={confirmAndExecuteBackfill}
               >
                 Executar backfill
               </button>

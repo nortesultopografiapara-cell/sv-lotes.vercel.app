@@ -67,6 +67,16 @@ function CorporateFinanceHubInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const onCashUpdated = () => {
+      void load();
+    };
+    window.addEventListener('corporate-finance-cash-updated', onCashUpdated);
+    return () => {
+      window.removeEventListener('corporate-finance-cash-updated', onCashUpdated);
+    };
+  }, [load]);
+
   const dash = loading || !kpis;
 
   return (

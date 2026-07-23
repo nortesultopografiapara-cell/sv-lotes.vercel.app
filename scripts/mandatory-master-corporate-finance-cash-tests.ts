@@ -131,6 +131,14 @@ function testIsolationAndFiles() {
   assert(!cashSvc.includes('valor_recebido'), 'cash sem bridge valor_recebido');
   assert(cashSvc.includes('BACKFILL_RECEIVABLE'), 'backfill AR');
   assert(cashSvc.includes('dryRun'), 'dry-run backfill');
+  assert(cashSvc.includes('wouldCreate'), 'backfill wouldCreate');
+  assert(cashSvc.includes('eligible'), 'backfill eligible');
+  assert(cashSvc.includes('resolveDefaultCorporateAccount'), 'conta padrão no backfill');
+
+  const cashUi = read('components/master/corporateFinance/CorporateCashFlowPage.tsx');
+  assert(cashUi.includes('confirmAndExecuteBackfill'), 'UI confirma backfill');
+  assert(cashUi.includes('formatBackfillReport'), 'UI relatório backfill');
+
   // 6.4 bridge pode existir — Asaas ainda não
   assert(!exists('app/api/master/corporate-finance/asaas/route.ts'), 'Asaas ainda não');
 }

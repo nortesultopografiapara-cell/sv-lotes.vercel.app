@@ -271,6 +271,16 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
     };
   }, [user, router, loadData]);
 
+  useEffect(() => {
+    const onCashUpdated = () => {
+      void loadData();
+    };
+    window.addEventListener('corporate-finance-cash-updated', onCashUpdated);
+    return () => {
+      window.removeEventListener('corporate-finance-cash-updated', onCashUpdated);
+    };
+  }, [loadData]);
+
   const stats = dashboard?.stats;
 
   const handleExport = () => {

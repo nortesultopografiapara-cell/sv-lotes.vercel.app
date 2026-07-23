@@ -55,7 +55,10 @@
     "test:master-topography-quotes": "tsx scripts/mandatory-master-topography-quotes-tests.ts",
     "test:master-corporate-finance-foundation": "tsx scripts/mandatory-master-corporate-finance-foundation-tests.ts",
     "test:master-corporate-finance-arap": "tsx scripts/mandatory-master-corporate-finance-arap-tests.ts",
-    "test:master-corporate-finance-arap-autofill": "tsx scripts/mandatory-master-corporate-finance-arap-autofill-tests.ts"
+    "test:master-corporate-finance-arap-autofill": "tsx scripts/mandatory-master-corporate-finance-arap-autofill-tests.ts",
+    "test:master-corporate-finance-cash": "tsx scripts/mandatory-master-corporate-finance-cash-tests.ts",
+    "test:master-corporate-finance-cash-backfill": "tsx scripts/mandatory-master-corporate-finance-cash-backfill-tests.ts",
+    "test:master-corporate-finance-chart": "tsx scripts/mandatory-master-corporate-finance-chart-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
