@@ -36,6 +36,15 @@ import {
   resolveSalePublicSignPanel,
 } from '../lib/saleContractPublicSignUi';
 import { canShareViaWhatsApp } from '../lib/saasContractSignatureShare';
+import {
+  getSaleContractBucket,
+  buildSignedSaleContractStoragePath,
+  SALE_CONTRACT_STORAGE_BUCKET_DEFAULT,
+} from '../lib/saleContractStorage';
+import {
+  isVendorWaitingForBuyers,
+  saleAwaitingVendorPanelMessage,
+} from '../lib/saleContractSignaturePartyTypes';
 
 const ROOT = process.cwd();
 
@@ -264,6 +273,11 @@ function testAggregateStatusWithSpouse() {
     saleSignatureStatusLabel('PARTIALLY_SIGNED') === 'Parcialmente assinado',
     'label parcial',
   );
+  assert(
+    saleSignatureStatusLabel('CLIENT_SIGNED') ===
+      'Aguardando assinatura da vendedora',
+    'label client_signed',
+  );
 
   console.log('OK testAggregateStatusWithSpouse');
 }
@@ -370,6 +384,20 @@ function testMigrationAndWiring() {
   assert(service.includes('createSignaturePartiesAfterSend'), 'send parties');
   assert(service.includes('signPartyElectronically'), 'sign party');
   assert(service.includes('assertVendorCanSignWithParties'), 'vendor gate');
+  assert(service.includes('getSaleContractBucket') || service.includes('saleContractStorage'), 'bucket helper');
+  assert(!service.includes('SALE_CONTRACT_BUCKET'), 'sem SALE_CONTRACT_BUCKET quebrado');
+
+  const storage = read('lib/saleContractStorage.ts');
+  assert(storage.includes("company-assets"), 'bucket company-assets');
+  assert(storage.includes('getSaleContractBucket'), 'getSaleContractBucket');
+  assert(storage.includes('assertSaleContractBucketReady'), 'assert bucket');
+
+  const signVendor = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
+  assert(signVendor.includes('signSaleContractByVendor'), 'sign-vendor wiring');
+
+  const mw = read('middleware.ts');
+  assert(mw.includes("'/sign/sale'") || mw.includes("'/sign'"), 'middleware sign público');
+  assert(mw.includes("'/api/sign/sale'") || mw.includes("'/api/sign'"), 'middleware api sign');
 
   const flow = read('lib/saleContractSignaturePartyFlow.ts');
   assert(flow.includes('reissueExternalPartyLink'), 'reissue');
@@ -379,6 +407,8 @@ function testMigrationAndWiring() {
   assert(ui.includes('Assinaturas'), 'painel');
   assert(ui.includes('handleReissueParty'), 'reenvio UI');
   assert(ui.includes('buildSalePartySignatureShareMessage'), 'share party');
+  assert(ui.includes('saleAwaitingVendorPanelMessage'), 'mensagem vendedora');
+  assert(ui.includes('isVendorWaitingForBuyers'), 'vendor waiting gate');
 
   console.log('OK testMigrationAndWiring');
 }
@@ -621,6 +651,57 @@ function testPublicSignPanelUsesPartyNotAggregate() {
   console.log('OK testPublicSignPanelUsesPartyNotAggregate');
 }
 
+function testSaleContractBucketAndVendorPanel() {
+  assert(
+    getSaleContractBucket() === SALE_CONTRACT_STORAGE_BUCKET_DEFAULT,
+    'bucket default company-assets',
+  );
+  assert(
+    getSaleContractBucket() === 'company-assets',
+    'bucket company-assets',
+  );
+  const path = buildSignedSaleContractStoragePath('tenant-1', '000000022/2026');
+  assert(path.includes('contracts/sale-signed/tenant-1/'), 'path prefix');
+  assert(path.endsWith('.pdf'), 'pdf');
+  assert(path.includes('000000022_2026') || path.includes('000000022'), 'contract number sanitized');
+
+  const withSpouse = saleAwaitingVendorPanelMessage([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(withSpouse.includes('cônjuge anuente'), 'msg com cônjuge');
+  assert(withSpouse.includes('vendedora'), 'msg vendedora');
+
+  const withoutSpouse = saleAwaitingVendorPanelMessage([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(
+    withoutSpouse === 'Comprador assinou. Aguardando assinatura da vendedora.',
+    'msg sem cônjuge',
+  );
+
+  assert(
+    isVendorWaitingForBuyers([
+      { role: 'BUYER', status: 'SIGNED' },
+      { role: 'SPOUSE', status: 'VIEWED' },
+      { role: 'VENDOR', status: 'PENDING' },
+    ]),
+    'vendor waits spouse',
+  );
+  assert(
+    !isVendorWaitingForBuyers([
+      { role: 'BUYER', status: 'SIGNED' },
+      { role: 'SPOUSE', status: 'SIGNED' },
+      { role: 'VENDOR', status: 'PENDING' },
+    ]),
+    'vendor liberada',
+  );
+
+  console.log('OK testSaleContractBucketAndVendorPanel');
+}
+
 function main() {
   testModelGating();
   testSpouseValidation();
@@ -632,6 +713,7 @@ function main() {
   testMigrationAndWiring();
   testUnifiedSpouseRuleAndViews();
   testPublicSignPanelUsesPartyNotAggregate();
+  testSaleContractBucketAndVendorPanel();
   console.log('\nTodos os testes de cônjuge/assinatura passaram.');
 }
 

@@ -109,3 +109,33 @@ export function isPublicPartyRole(role?: string | null): boolean {
   const key = String(role || '').toUpperCase();
   return key === 'BUYER' || key === 'SPOUSE';
 }
+
+/** Banner do painel quando o processo está CLIENT_SIGNED. */
+export function saleAwaitingVendorPanelMessage(parties: {
+  role: string;
+  status: string;
+}[]): string {
+  const hasSpouse = parties.some(
+    (p) => String(p.role).toUpperCase() === 'SPOUSE',
+  );
+  if (hasSpouse) {
+    return 'Comprador e cônjuge anuente assinaram. Aguardando assinatura da vendedora para emitir o certificado final.';
+  }
+  return 'Comprador assinou. Aguardando assinatura da vendedora.';
+}
+
+/** VENDOR ainda bloqueada pelos compradores externos. */
+export function isVendorWaitingForBuyers(parties: {
+  role: string;
+  status: string;
+}[]): boolean {
+  const vendor = parties.find((p) => String(p.role).toUpperCase() === 'VENDOR');
+  if (!vendor) return false;
+  if (String(vendor.status).toUpperCase() === 'SIGNED') return false;
+
+  const external = parties.filter((p) =>
+    ['BUYER', 'SPOUSE'].includes(String(p.role).toUpperCase()),
+  );
+  if (external.length === 0) return false;
+  return external.some((p) => String(p.status).toUpperCase() !== 'SIGNED');
+}

@@ -15,7 +15,7 @@ const LABELS: Record<SaleSignatureStatus, string> = {
   PENDING: 'Enviado',
   VIEWED: 'Visualizado',
   PARTIALLY_SIGNED: 'Parcialmente assinado',
-  CLIENT_SIGNED: 'Aguardando assinatura do vendedor',
+  CLIENT_SIGNED: 'Aguardando assinatura da vendedora',
   SIGNED: 'Assinado',
   EXPIRED: 'Expirado',
   CANCELLED: 'Cancelado',

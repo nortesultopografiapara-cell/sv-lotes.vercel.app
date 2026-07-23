@@ -32,6 +32,10 @@ import {
 } from '@/lib/saleContractSignatureShare';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
 import {
+  isVendorWaitingForBuyers,
+  saleAwaitingVendorPanelMessage,
+} from '@/lib/saleContractSignaturePartyTypes';
+import {
   canResendSaleSignature,
   canSendSaleSignature,
   saleSignatureStatusEmoji,
@@ -587,9 +591,19 @@ export const SaleContractSignatureSection = forwardRef<
                       : email}
                   </p>
                 )}
-                {party.role === 'VENDOR' && party.status !== 'SIGNED' && (
+                {party.role === 'VENDOR' &&
+                  party.status !== 'SIGNED' &&
+                  isVendorWaitingForBuyers(parties) && (
                   <p className="text-[11px] text-amber-300/80">
                     Aguardando os compradores
+                  </p>
+                )}
+                {party.role === 'VENDOR' &&
+                  party.status !== 'SIGNED' &&
+                  !isVendorWaitingForBuyers(parties) &&
+                  String(status || '').toUpperCase() === 'CLIENT_SIGNED' && (
+                  <p className="text-[11px] text-emerald-300/80">
+                    Liberada para assinar
                   </p>
                 )}
                 {party.canShare && url && (
@@ -684,7 +698,7 @@ export const SaleContractSignatureSection = forwardRef<
         )}
         {isAwaitingVendor && (
           <p className="w-full text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-            Comprador assinou. Aguardando assinatura do vendedor para emitir o certificado final.
+            {saleAwaitingVendorPanelMessage(parties)}
           </p>
         )}
         {isElectronicallySigned ? (

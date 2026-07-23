@@ -65,6 +65,11 @@ import {
   buildRecantoElectronicStamps,
 } from '@/lib/saleContractSignaturePartySlots';
 import { SaleContractSignatureError } from '@/lib/saleContractSignatureErrors';
+import {
+  assertSaleContractBucketReady,
+  buildSignedSaleContractStoragePath,
+  getSaleContractBucket,
+} from '@/lib/saleContractStorage';
 
 export { SaleContractSignatureError } from '@/lib/saleContractSignatureErrors';
 export { resolveClientIp, isSignatureExpired };
@@ -182,29 +187,18 @@ function scheduleSignaturePostInsertWork(
   })();
 }
 
-function sanitizeContractFileName(contractNumber: string): string {
-  return contractNumber.replace(/[^\w-]+/g, '_');
-}
-
-function buildSignedSaleContractStoragePath(
-  tenantId: string,
-  contractNumber: string,
-): string {
-  const safeName = sanitizeContractFileName(contractNumber);
-  return `contracts/sale-signed/${tenantId}/${safeName}.pdf`;
-}
-
 async function uploadSignedSaleContractPdf(
   supabaseAdmin: SupabaseClient,
   tenantId: string,
   contractNumber: string,
   pdfBytes: Uint8Array,
-): Promise<string | null> {
+): Promise<string> {
+  const bucket = await assertSaleContractBucketReady(supabaseAdmin);
   const storagePath = buildSignedSaleContractStoragePath(tenantId, contractNumber);
   const fileBody = Buffer.from(pdfBytes);
 
   const { error: uploadError } = await supabaseAdmin.storage
-    .from(SALE_CONTRACT_BUCKET)
+    .from(bucket)
     .upload(storagePath, fileBody, {
       contentType: 'application/pdf',
       upsert: true,
@@ -212,19 +206,25 @@ async function uploadSignedSaleContractPdf(
     });
 
   if (uploadError) {
-    console.warn('[SALE_CONTRACT_SIGN] upload signed pdf', uploadError.message);
-    return null;
+    throw new SaleContractSignatureError(
+      `Falha ao salvar PDF assinado no Storage (${getSaleContractBucket()}): ${uploadError.message}`,
+      'storage',
+    );
   }
 
   const { data: signedData, error: signError } = await supabaseAdmin.storage
-    .from(SALE_CONTRACT_BUCKET)
+    .from(bucket)
     .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
 
   if (signError || !signedData?.signedUrl) {
     const { data: publicData } = supabaseAdmin.storage
-      .from(SALE_CONTRACT_BUCKET)
+      .from(bucket)
       .getPublicUrl(storagePath);
-    return publicData.publicUrl || null;
+    if (publicData?.publicUrl) return publicData.publicUrl;
+    throw new SaleContractSignatureError(
+      `PDF enviado, mas não foi possível gerar URL do arquivo (${getSaleContractBucket()}).`,
+      'storage',
+    );
   }
 
   return signedData.signedUrl;
@@ -1040,8 +1040,21 @@ export async function signSaleContractByVendor(
   if (['cancelado', 'cancelled', 'canceled'].includes(contractStatus)) {
     throw new SaleContractSignatureError('Contrato cancelado. Assinatura não permitida.');
   }
+  // Idempotência: já concluído com PDF → devolver sem duplicar eventos/certificado.
+  if (
+    String(signatureRow.signature_status || '').toUpperCase() === 'SIGNED' &&
+    contractRow.pdf_signed_url
+  ) {
+    return {
+      signature: signatureRow,
+      pdfSignedUrl: String(contractRow.pdf_signed_url),
+    };
+  }
   if (['assinado', 'signed'].includes(contractStatus) && contractRow.pdf_signed_url) {
-    throw new SaleContractSignatureError('Este contrato já possui PDF assinado final.');
+    return {
+      signature: signatureRow,
+      pdfSignedUrl: String(contractRow.pdf_signed_url),
+    };
   }
 
   const clientSignedAt = signatureRow.signed_at!;
@@ -1109,9 +1122,45 @@ export async function signSaleContractByVendor(
   );
 
   const contractNumber = String(contractRow.contract_number || '');
-  const pdfSignedUrl = tenantId
-    ? await uploadSignedSaleContractPdf(supabaseAdmin, tenantId, contractNumber, pdf)
-    : null;
+  if (!tenantId) {
+    throw new SaleContractSignatureError(
+      'Contrato sem empresa (tenant). Não é possível salvar o PDF assinado.',
+      'validation',
+    );
+  }
+
+  // PDF/Storage ANTES de marcar VENDOR/processo como SIGNED — falha não deixa estado parcial.
+  let pdfSignedUrl: string;
+  try {
+    pdfSignedUrl = await uploadSignedSaleContractPdf(
+      supabaseAdmin,
+      tenantId,
+      contractNumber,
+      pdf,
+    );
+  } catch (err) {
+    const message =
+      err instanceof SaleContractSignatureError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : 'Falha ao gerar/salvar PDF assinado.';
+    console.error('[SALE_CONTRACT_SIGN] vendor_pdf_or_storage_failed', {
+      contractId: contractId.slice(0, 8),
+      message,
+    });
+    throw err instanceof SaleContractSignatureError
+      ? err
+      : new SaleContractSignatureError(message, 'storage');
+  }
+
+  const alreadyProcessSigned =
+    String(signatureRow.signature_status || '').toUpperCase() === 'SIGNED';
+  const vendorAlreadyOnParties = partiesForVendor.some(
+    (p) =>
+      String(p.role).toUpperCase() === 'VENDOR' &&
+      String(p.status).toUpperCase() === 'SIGNED',
+  );
 
   const { data: updatedSignature, error: signErr } = await supabaseAdmin
     .from('contract_signatures')
@@ -1163,21 +1212,24 @@ export async function signSaleContractByVendor(
     signed_at: vendorSignedAt,
   });
 
-  await logSignatureEvent(supabaseAdmin, {
-    signatureToken: signatureRow.signature_token,
-    signatureSource: 'SALE',
-    signatureRecordId: signatureRow.id,
-    eventType: 'PROVIDER_SIGNED',
-    personName: vendorName,
-    personEmail: vendorEmail,
-    ipAddress: input.ipAddress || undefined,
-    userAgent: input.userAgent || undefined,
-    eventDescription: 'Assinatura eletrônica realizada pelo PROMITENTE VENDEDOR (imobiliária).',
-    occurredAt: vendorSignedAt,
-    metadata: { signature_event_id: vendorEvidencePatch.vendor_signature_event_id },
-  });
+  if (!alreadyProcessSigned) {
+    await logSignatureEvent(supabaseAdmin, {
+      signatureToken: signatureRow.signature_token,
+      signatureSource: 'SALE',
+      signatureRecordId: signatureRow.id,
+      eventType: 'PROVIDER_SIGNED',
+      personName: vendorName,
+      personEmail: vendorEmail,
+      ipAddress: input.ipAddress || undefined,
+      userAgent: input.userAgent || undefined,
+      eventDescription:
+        'Assinatura eletrônica realizada pelo PROMITENTE VENDEDOR (imobiliária).',
+      occurredAt: vendorSignedAt,
+      metadata: { signature_event_id: vendorEvidencePatch.vendor_signature_event_id },
+    });
+  }
 
-  if (partiesForVendor.length > 0) {
+  if (partiesForVendor.length > 0 && !vendorAlreadyOnParties) {
     await markVendorPartySigned(supabaseAdmin, partiesForVendor, {
       vendorName,
       vendorDocument,
@@ -1209,28 +1261,31 @@ export async function signSaleContractByVendor(
     });
   }
 
-  await logSignatureEvent(supabaseAdmin, {
-    signatureToken: signatureRow.signature_token,
-    signatureSource: 'SALE',
-    signatureRecordId: signatureRow.id,
-    eventType: 'CERTIFICATE_ISSUED',
-    personName: vendorName,
-    eventDescription: 'Certificado digital bilateral emitido e anexado ao PDF assinado.',
-    occurredAt: vendorSignedAt,
-  });
+  if (!alreadyProcessSigned) {
+    await logSignatureEvent(supabaseAdmin, {
+      signatureToken: signatureRow.signature_token,
+      signatureSource: 'SALE',
+      signatureRecordId: signatureRow.id,
+      eventType: 'CERTIFICATE_ISSUED',
+      personName: vendorName,
+      eventDescription:
+        'Certificado digital bilateral emitido e anexado ao PDF assinado.',
+      occurredAt: vendorSignedAt,
+    });
 
-  await recordSaleContractSignatureAudit(supabaseAdmin, {
-    tenantId,
-    contractId,
-    contractNumber,
-    signerName: vendorName,
-    signerDocument: vendorDocument,
-    signerEmail: vendorEmail,
-    ipAddress: input.ipAddress,
-    userAgent: input.userAgent,
-    signedAt: vendorSignedAt,
-    token: signatureRow.signature_token,
-  });
+    await recordSaleContractSignatureAudit(supabaseAdmin, {
+      tenantId,
+      contractId,
+      contractNumber,
+      signerName: vendorName,
+      signerDocument: vendorDocument,
+      signerEmail: vendorEmail,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      signedAt: vendorSignedAt,
+      token: signatureRow.signature_token,
+    });
+  }
 
   return { signature: finalSignature, pdfSignedUrl };
 }
