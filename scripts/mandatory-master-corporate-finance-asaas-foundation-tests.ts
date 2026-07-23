@@ -70,7 +70,6 @@ function testFiles() {
   assert(exists('lib/master/corporateFinance/asaas/types.ts'), 'types');
   assert(exists('lib/master/corporateFinance/asaas/validation.ts'), 'validation');
   assert(exists('lib/master/corporateFinance/asaas/mappers.ts'), 'mappers');
-  assert(!exists('app/api/master/corporate-finance/asaas/charges/route.ts'), '7.2 APIs ainda não');
 }
 
 function testAccess() {
