@@ -6,6 +6,7 @@ import { MasterExecutiveSidebar } from './MasterExecutiveSidebar';
 import styles from './masterExecutiveLayout.module.css';
 
 const COLLAPSE_STORAGE_KEY = 'master_executive_sidebar_collapsed';
+const MASTER_ROOT_CLASS = 'master-executive-root';
 
 type MasterExecutiveLayoutProps = {
   children: React.ReactNode;
@@ -29,7 +30,8 @@ function readCollapsedPreference(): boolean {
 
 /**
  * Shell exclusivo do Painel Master Executivo V2.
- * Não compartilhado com layouts de empresa.
+ * Estratégia: rolagem vertical SOMENTE no <main> (scrollport interno).
+ * Não compartilha chrome com layouts de empresa / SaaS legado.
  */
 export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecutiveLayoutProps) {
   const [collapsed, setCollapsed] = useState(readCollapsedPreference);
@@ -47,6 +49,25 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
     return () => window.removeEventListener('resize', syncViewport);
   }, []);
 
+  /**
+   * Garante que html/body não fiquem com overflow travado por efeitos
+   * residuais (ex.: drawer mobile) e marca o modo Master para CSS dedicado.
+   */
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.classList.add(MASTER_ROOT_CLASS);
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.classList.remove(MASTER_ROOT_CLASS);
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev;
@@ -60,7 +81,11 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
   };
 
   return (
-    <div className={styles.shell} data-master-scroll-strategy="document">
+    <div
+      className={styles.shell}
+      data-master-scroll-strategy="main"
+      data-testid="master-executive-shell"
+    >
       <MasterExecutiveSidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -88,17 +113,20 @@ export function MasterExecutiveLayout({ children, user, onLogout }: MasterExecut
           />
         )}
 
-        <main className={styles.content}>
+        <main
+          className={styles.content}
+          data-testid="master-executive-main"
+          id="master-executive-main"
+        >
           <div className={styles.contentInner}>{children}</div>
+          <footer className={styles.footerBar}>
+            <span>
+              © {new Date().getFullYear()} SV Topografia &amp; Projetos / SV LOTES. Todos os direitos
+              reservados.
+            </span>
+            <span>Versão 2.1.0 · Master Executivo</span>
+          </footer>
         </main>
-
-        <footer className={styles.footerBar}>
-          <span>
-            © {new Date().getFullYear()} SV Topografia &amp; Projetos / SV LOTES. Todos os direitos
-            reservados.
-          </span>
-          <span>Versão 2.1.0 · Master Executivo</span>
-        </footer>
       </div>
     </div>
   );
