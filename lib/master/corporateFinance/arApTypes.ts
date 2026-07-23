@@ -83,6 +83,11 @@ export type MasterCorporateReceivable = {
   canceled_at: string | null;
   canceled_by: string | null;
   cancellation_reason: string | null;
+  /** Espelho leve integração Asaas (Fase 7.1) */
+  asaas_integration_status: string | null;
+  asaas_active_charge_id: string | null;
+  asaas_last_sync_at: string | null;
+  asaas_last_error: string | null;
 };
 
 export type MasterCorporateReceivableInput = {

@@ -139,6 +139,14 @@ function mapReceivable(row: Record<string, unknown>): MasterCorporateReceivable 
     canceled_at: row.canceled_at ? String(row.canceled_at) : null,
     canceled_by: row.canceled_by ? String(row.canceled_by) : null,
     cancellation_reason: row.cancellation_reason ? String(row.cancellation_reason) : null,
+    asaas_integration_status: row.asaas_integration_status
+      ? String(row.asaas_integration_status)
+      : null,
+    asaas_active_charge_id: row.asaas_active_charge_id
+      ? String(row.asaas_active_charge_id)
+      : null,
+    asaas_last_sync_at: row.asaas_last_sync_at ? String(row.asaas_last_sync_at) : null,
+    asaas_last_error: row.asaas_last_error ? String(row.asaas_last_error) : null,
   };
 }
 
