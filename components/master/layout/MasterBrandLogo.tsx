@@ -17,7 +17,7 @@ type MasterBrandLogoProps = {
 export function MasterBrandLogo({ collapsed = false, onNavigate }: MasterBrandLogoProps) {
   return (
     <Link
-      href="/dashboard"
+      href="/master"
       className={collapsed ? styles.brandLinkCollapsed : styles.brandLink}
       onClick={onNavigate}
       aria-label="SV Topografia e Projetos — Painel Executivo"

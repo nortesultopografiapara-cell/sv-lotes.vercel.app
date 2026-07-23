@@ -10,7 +10,7 @@ import {
   normalizeUserRole,
 } from '@/lib/rolePermissions';
 
-export type LoginRedirectTarget = '/map' | '/dashboard';
+export type LoginRedirectTarget = '/map' | '/dashboard' | '/master';
 
 export function resolveEffectiveLoginRole(role?: string | null): string {
   const normalized = normalizeUserRole(role);
@@ -22,9 +22,15 @@ export function resolveEffectiveLoginRole(role?: string | null): string {
   return normalized || 'USER';
 }
 
+/**
+ * Destino pós-login por papel.
+ * SUPER_ADMIN → Painel Executivo (/master).
+ * Demais papéis de empresa → /dashboard ou /map (inalterados).
+ */
 export function resolveLoginRedirectPath(role?: string | null): LoginRedirectTarget {
   const effective = resolveEffectiveLoginRole(role);
   if (isBrokerRole(effective)) return '/map';
+  if (isMasterConsoleRole(effective)) return '/master';
   return '/dashboard';
 }
 

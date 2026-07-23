@@ -7,6 +7,7 @@ import {
   Wallet,
   Settings,
   ShieldCheck,
+  PanelsTopLeft,
 } from 'lucide-react';
 
 export type SuperAdminNavItem = {
@@ -31,7 +32,8 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
   {
     label: 'Principal',
     items: [
-      { name: 'Dashboard SaaS', href: '/dashboard', icon: LayoutDashboard },
+      { name: 'Painel Executivo', href: '/master', icon: LayoutDashboard },
+      { name: 'Dashboard SaaS', href: '/dashboard', icon: PanelsTopLeft },
       { name: 'Empresas', href: '/companies', icon: Building2 },
       { name: 'Assinaturas', href: '/plans', icon: CreditCard },
       { name: 'Usuários', href: '/users', icon: Users },
@@ -72,6 +74,9 @@ export function flattenSuperAdminNav(): SuperAdminNavItem[] {
 }
 
 export function isSuperAdminNavActive(pathname: string, href: string): boolean {
+  if (href === '/master') {
+    return pathname === '/master' || pathname === '/master/';
+  }
   if (href === '/dashboard') return pathname === '/dashboard';
   return pathname === href || pathname.startsWith(`${href}/`);
 }

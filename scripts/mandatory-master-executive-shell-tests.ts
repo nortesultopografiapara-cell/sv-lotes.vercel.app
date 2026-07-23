@@ -131,7 +131,9 @@ function testNavAndPlaceholders() {
     flat.some((i) => i.href === '/master/topography/budgets'),
     'rota Orçamentos',
   );
-  assert(flat.some((i) => i.href === '/dashboard'), 'dashboard legado');
+  assert(flat.some((i) => i.href === '/master'), 'hub executivo /master');
+  assert(flat.some((i) => i.name === 'Painel SaaS (legado)'), 'atalho Painel SaaS');
+  assert(flat.some((i) => i.href === '/dashboard'), 'dashboard legado SaaS');
   assert(flat.some((i) => i.href === '/companies'), 'companies legado');
   assert(flat.some((i) => i.href === '/plans'), 'plans legado');
   assert(flat.some((i) => i.href === '/saas-finance'), 'cobranças/saas-finance');
@@ -150,7 +152,9 @@ function testNavAndPlaceholders() {
     'não usa cobranças tenant',
   );
 
-  assert(isMasterExecutiveNavActive('/dashboard', '/dashboard'), 'dashboard active exact');
+  assert(isMasterExecutiveNavActive('/master', '/master'), 'master hub active exact');
+  assert(!isMasterExecutiveNavActive('/master/crm', '/master'), 'master hub not fuzzy');
+  assert(isMasterExecutiveNavActive('/dashboard', '/dashboard'), 'dashboard SaaS active exact');
   assert(!isMasterExecutiveNavActive('/companies', '/dashboard'), 'dashboard not fuzzy');
   assert(
     isMasterExecutiveNavActive('/saas-finance/cash', '/saas-finance/cash'),
@@ -172,6 +176,7 @@ function testNavAndPlaceholders() {
 function testLegacyNavUntouched() {
   const legacy = flattenSuperAdminNav();
   assert(legacy.some((i) => i.href === '/dashboard'), 'nav legado dashboard');
+  assert(legacy.some((i) => i.href === '/master'), 'nav legado link ao executivo');
   assert(!legacy.some((i) => i.href === '/master/reports'), 'reports ainda oculto no nav legado');
 }
 
@@ -213,6 +218,7 @@ function testLogoAsset() {
   assert(brand.includes('MASTER_TOPOGRAFIA_LOGO_PATH'), 'BrandLogo usa path oficial');
   assert(!brand.includes('logo-sv-lotes.png'), 'não usa logo SV LOTES produto');
   assert(brand.includes('Painel Executivo'), 'bloco institucional');
+  assert(brand.includes('href="/master"'), 'logo aponta para hub /master');
 }
 
 function testExecutiveDashboardV2() {
@@ -260,10 +266,19 @@ function testExecutiveDashboardV2() {
     'empty state de alertas',
   );
 
-  const page = read('app/dashboard/page.tsx');
-  assert(page.includes('MasterExecutiveDashboard'), 'page wire V2');
-  assert(page.includes('isMasterDashboardV2EnabledForUi'), 'page gated by flag');
-  assert(page.includes('SuperAdminDashboard'), 'legado preservado');
+  assert(dash.includes('Painel SaaS'), 'atalho claro ao Dashboard SaaS');
+  assert(dash.includes('href="/dashboard"'), 'link /dashboard no executivo');
+
+  const page = read('app/master/page.tsx');
+  assert(page.includes('MasterExecutiveDashboard'), 'hub /master wire V2');
+  assert(exists('app/master/page.tsx'), 'rota /master existe');
+
+  const dashPage = read('app/dashboard/page.tsx');
+  assert(dashPage.includes('SuperAdminDashboard'), 'legado preservado em /dashboard');
+  assert(
+    !dashPage.includes('MasterExecutiveDashboard'),
+    'executivo não compete em /dashboard',
+  );
 
   const data = read('lib/masterDashboardData.ts');
   assert(data.includes('trialCompanies'), 'empresas em teste');

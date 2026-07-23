@@ -45,7 +45,14 @@ export type MasterExecutiveNavSection = {
 export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
   {
     label: 'VISÃO GERAL',
-    items: [{ name: 'Dashboard Executivo', href: '/dashboard', icon: LayoutDashboard }],
+    items: [
+      { name: 'Dashboard Executivo', href: '/master', icon: LayoutDashboard },
+      {
+        name: 'Painel SaaS (legado)',
+        href: '/dashboard',
+        icon: Building2,
+      },
+    ],
   },
   {
     label: 'COMERCIAL',
@@ -168,6 +175,9 @@ export function flattenMasterExecutiveNav(): MasterExecutiveNavItem[] {
 }
 
 export function isMasterExecutiveNavActive(pathname: string, href: string): boolean {
+  if (href === '/master') {
+    return pathname === '/master' || pathname === '/master/';
+  }
   if (href === '/dashboard') return pathname === '/dashboard';
   if (href === '/saas-finance') {
     return pathname === '/saas-finance' || pathname.startsWith('/saas-finance?');

@@ -30,7 +30,7 @@ export function MasterModulePlaceholder({
           <p className="text-slate-600 text-sm leading-relaxed mb-2">Módulo em preparação</p>
           <p className="text-slate-500 text-sm leading-relaxed mb-8">{description}</p>
           <Link
-            href="/dashboard"
+            href="/master"
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
             <ArrowLeft className="w-4 h-4" aria-hidden />

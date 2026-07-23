@@ -146,7 +146,9 @@ function testLoginAdminPriority() {
   assert(!shouldLoginAsBroker('ADMIN_EMPRESA'), 'admin não entra como broker');
   assert(resolveLoginRedirectPath('ADMIN_EMPRESA') === '/dashboard', 'admin → dashboard');
   assert(resolveLoginRedirectPath('BROKER') === '/map', 'broker → map');
-  assert(resolveLoginRedirectPath('SUPER_ADMIN') === '/dashboard', 'super admin → dashboard');
+  assert(resolveLoginRedirectPath('SUPER_ADMIN') === '/master', 'super admin → painel executivo');
+  assert(resolveLoginRedirectPath('OWNER') === '/dashboard', 'owner → dashboard');
+  assert(resolveLoginRedirectPath('ADMIN') === '/dashboard', 'admin tenant → dashboard');
 }
 
 function testDeleteOnlyBrokersTable() {

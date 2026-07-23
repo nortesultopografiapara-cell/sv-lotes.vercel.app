@@ -43,8 +43,6 @@ import {
   formatEnterpriseCurrency,
 } from '@/lib/enterpriseValueSummary';
 import SuperAdminDashboard from './SuperAdminDashboard';
-import MasterExecutiveDashboard from '@/components/master/dashboard/MasterExecutiveDashboard';
-import { isMasterDashboardV2EnabledForUi } from '@/lib/master/config';
 import { motion } from 'motion/react';
 import './dashboard-premium.css';
 import {
@@ -98,9 +96,8 @@ export default function DashboardPage() {
   const { user } = useAuth();
   
   if (isMasterConsoleRole(user?.role)) {
-    if (isMasterDashboardV2EnabledForUi()) {
-      return <MasterExecutiveDashboard user={user} />;
-    }
+    // /dashboard permanece como Painel SaaS legado (empresas, assinaturas, cobranças SaaS).
+    // O Painel Executivo SV Topografia vive em /master.
     return <SuperAdminDashboard user={user} />;
   }
   
