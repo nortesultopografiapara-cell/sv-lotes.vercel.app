@@ -30,6 +30,12 @@ import { buildSalePartySignatureShareMessage } from '../lib/saleContractSignatur
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 import { saleSignatureStatusLabel } from '../lib/saleContractSignatureStatus';
 import { canVendorSignSaleContract } from '../lib/saleContractBilateralSignature';
+import {
+  enrichBuyerPartyPhone,
+  pickCustomerPhoneForSignature,
+  resolveSalePublicSignPanel,
+} from '../lib/saleContractPublicSignUi';
+import { canShareViaWhatsApp } from '../lib/saasContractSignatureShare';
 
 const ROOT = process.cwd();
 
@@ -514,6 +520,107 @@ function testUnifiedSpouseRuleAndViews() {
   console.log('OK testUnifiedSpouseRuleAndViews');
 }
 
+function testPublicSignPanelUsesPartyNotAggregate() {
+  // Cônjuge abre link com processo PARTIALLY_SIGNED → formulário, não "já assinei".
+  assert(
+    resolveSalePublicSignPanel({
+      processStatus: 'PARTIALLY_SIGNED',
+      partyStatus: 'VIEWED',
+      partyRole: 'SPOUSE',
+      canSign: true,
+      awaitingOtherBuyers: false,
+    }) === 'form',
+    'SPOUSE VIEWED + parcial → form',
+  );
+
+  assert(
+    resolveSalePublicSignPanel({
+      processStatus: 'PARTIALLY_SIGNED',
+      partyStatus: 'SIGNED',
+      partyRole: 'BUYER',
+      canSign: false,
+      awaitingOtherBuyers: true,
+    }) === 'awaiting_other_buyers',
+    'BUYER já assinou → aguarda demais',
+  );
+
+  assert(
+    resolveSalePublicSignPanel({
+      processStatus: 'PARTIALLY_SIGNED',
+      partyStatus: 'PENDING',
+      partyRole: 'SPOUSE',
+      canSign: true,
+      awaitingOtherBuyers: false,
+    }) === 'form',
+    'SPOUSE PENDING + parcial → form',
+  );
+
+  assert(
+    resolveSalePublicSignPanel({
+      processStatus: 'CLIENT_SIGNED',
+      partyStatus: 'SIGNED',
+      partyRole: 'SPOUSE',
+      canSign: false,
+      awaitingVendor: true,
+    }) === 'awaiting_vendor',
+    'SPOUSE assinou → aguarda vendedor',
+  );
+
+  // Flag incorreta do agregado sozinho não deve bastar se party não assinou
+  // (API corrigida envia false; UI também exige party SIGNED via awaitingOtherBuyers).
+  assert(
+    resolveSalePublicSignPanel({
+      processStatus: 'PARTIALLY_SIGNED',
+      partyStatus: 'VIEWED',
+      partyRole: 'SPOUSE',
+      canSign: true,
+      awaitingOtherBuyers: false,
+    }) !== 'awaiting_other_buyers',
+    'VIEWED nunca awaiting_other_buyers',
+  );
+
+  const phone = pickCustomerPhoneForSignature({
+    phone: '',
+    whatsapp: '11999887766',
+  });
+  assert(phone === '11999887766', 'pick whatsapp');
+
+  const enriched = enrichBuyerPartyPhone(
+    [
+      {
+        role: 'BUYER' as const,
+        signer_phone: null,
+        phone: null,
+      },
+      {
+        role: 'SPOUSE' as const,
+        signer_phone: '11911112222',
+        phone: '11911112222',
+      },
+    ],
+    '11988776655',
+  );
+  assert(enriched[0].signer_phone === '11988776655', 'buyer phone fallback');
+  assert(enriched[1].signer_phone === '11911112222', 'spouse intacto');
+  assert(canShareViaWhatsApp(enriched[0].signer_phone), 'buyer WhatsApp ok');
+
+  const page = read('app/sign/sale/[token]/page.tsx');
+  assert(page.includes('resolveSalePublicSignPanel'), 'página usa painel por party');
+  assert(
+    !page.includes("status === 'PARTIALLY_SIGNED'"),
+    'página não trata PARTIALLY_SIGNED como eu assinei',
+  );
+
+  const publicApi = read('app/api/sign/sale/[token]/route.ts');
+  assert(
+    publicApi.includes('thisPartySigned') &&
+      publicApi.includes('nunca herdar signed_at'),
+    'API awaitingOtherBuyers/signedAt por party',
+  );
+
+  console.log('OK testPublicSignPanelUsesPartyNotAggregate');
+}
+
 function main() {
   testModelGating();
   testSpouseValidation();
@@ -524,6 +631,7 @@ function main() {
   testSlotsAndCertificate();
   testMigrationAndWiring();
   testUnifiedSpouseRuleAndViews();
+  testPublicSignPanelUsesPartyNotAggregate();
   console.log('\nTodos os testes de cônjuge/assinatura passaram.');
 }
 

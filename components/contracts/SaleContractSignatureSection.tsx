@@ -47,6 +47,7 @@ import {
 } from '@/lib/fetchJsonWithTimeout';
 import { formatClientFetchError } from '@/lib/clientFetchError';
 import { buildContractApiTenantQueryString } from '@/lib/contractApiTenantQuery';
+import { enrichBuyerPartyPhone } from '@/lib/saleContractPublicSignUi';
 
 type SelectedContract = {
   id: string;
@@ -547,8 +548,8 @@ export const SaleContractSignatureSection = forwardRef<
               </p>
             )}
           </div>
-          {parties.map((party) => {
-            const phone = party.signer_phone;
+          {enrichBuyerPartyPhone(parties, buyerPhone).map((party) => {
+            const phone = party.signer_phone || party.phone;
             const email = party.signer_email;
             const url = party.signatureUrl || party.signature_url || null;
             const partyMessage =
@@ -731,7 +732,7 @@ export const SaleContractSignatureSection = forwardRef<
           contractNumber={String(contract.contract_number || '')}
           expiresAt={latest?.expires_at || new Date().toISOString()}
           status={status}
-          parties={parties}
+          parties={enrichBuyerPartyPhone(parties, buyerPhone)}
           legacySignatureUrl={parties.length === 0 ? signUrl : null}
           legacySignerName={buyerName}
           legacySignerPhone={buyerPhone}

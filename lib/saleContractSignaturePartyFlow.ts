@@ -33,12 +33,12 @@ import {
 import type { ContractSignaturePartyRow } from '@/lib/saleContractSignaturePartyTypes';
 import { saleSignaturePartyRoleLabel } from '@/lib/saleContractSignaturePartyTypes';
 import { maskSignatureTokenForLog } from '@/lib/saleContractSignaturePartyTokens';
+import { pickCustomerPhoneForSignature } from '@/lib/saleContractPublicSignUi';
 import {
   buildSignatureHashPayload,
   computeSignatureHash,
 } from '@/lib/saasContractSignaturePdf';
-import {
-  isValidSignerEmail,
+import {  isValidSignerEmail,
   normalizeSignerEmail,
 } from '@/lib/saleContractEmailValidation';
 import { logSignatureEvent, type SignatureEventType } from '@/lib/signatureEventService';
@@ -148,12 +148,24 @@ async function loadSaleAndCompanyForSignature(
 
   let customer: Record<string, unknown> | null = null;
   if (customerId) {
-    const { data } = await supabaseAdmin
+    const first = await supabaseAdmin
       .from('customers')
-      .select('id, name, cpf, cpf_cnpj, document, phone, email, contact_email')
+      .select(
+        'id, name, cpf, cpf_cnpj, document, phone, whatsapp, mobile, celular, contact_phone, telefone, email, contact_email',
+      )
       .eq('id', customerId)
       .maybeSingle();
-    customer = (data as Record<string, unknown>) || null;
+    if (!first.error && first.data) {
+      customer = first.data as Record<string, unknown>;
+    } else {
+      // Colunas opcionais (whatsapp/mobile…) podem falhar em schemas antigos.
+      const retry = await supabaseAdmin
+        .from('customers')
+        .select('id, name, cpf, cpf_cnpj, document, phone, email, contact_email')
+        .eq('id', customerId)
+        .maybeSingle();
+      customer = (retry.data as Record<string, unknown>) || null;
+    }
   }
 
   const rawContractModel =
@@ -279,7 +291,8 @@ export async function createSignaturePartiesAfterSend(
   const buyerCpf = onlyDigits(
     String(customer?.cpf || customer?.cpf_cnpj || customer?.document || ''),
   );
-  const buyerPhone = String(customer?.phone || '').trim() || null;
+  const buyerPhone =
+    pickCustomerPhoneForSignature(customer) || null;
   const buyerEmail =
     String(customer?.email || customer?.contact_email || '').trim() || null;
 

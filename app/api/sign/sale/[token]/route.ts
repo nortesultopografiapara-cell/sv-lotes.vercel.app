@@ -189,7 +189,10 @@ export async function GET(
     const aggregate = computeAggregateSaleSignatureStatus(
       toPartyStatusSnapshots(parties),
     );
-    awaitingOtherBuyers = aggregate === 'PARTIALLY_SIGNED';
+    // Só quem JÁ assinou vê "aguardando demais". Abrir o link ≠ assinado.
+    const thisPartySigned = String(partyStatus).toUpperCase() === 'SIGNED';
+    awaitingOtherBuyers =
+      thisPartySigned && aggregate === 'PARTIALLY_SIGNED';
   } else if (signature.signature_status === 'PENDING') {
     signature = await markSaleSignatureViewed(supabaseAdmin, signature, {
       ipAddress: resolveClientIp(request),
@@ -274,15 +277,28 @@ export async function GET(
       status: signature.signature_status,
       statusLabel: saleSignatureStatusLabel(signature.signature_status),
       expiresAt: party?.expires_at || signature.expires_at,
-      signedAt: party?.signed_at || signature.signed_at,
-      signerName: party?.signer_name || signature.signer_name,
-      signerDocument: (party?.signer_cpf || signature.signer_document)
-        ? formatCpfCnpj(String(party?.signer_cpf || signature.signer_document))
-        : null,
+      // Multi-party: nunca herdar signed_at/signer do processo (outro participante).
+      signedAt: party
+        ? party.signed_at
+        : signature.signed_at || null,
+      signerName: party
+        ? party.signer_name
+        : signature.signer_name || null,
+      signerDocument: party
+        ? party.signer_cpf
+          ? formatCpfCnpj(String(party.signer_cpf))
+          : null
+        : signature.signer_document
+          ? formatCpfCnpj(String(signature.signer_document))
+          : null,
       blocked,
-      canSign: party ? partyCanSign && !blocked : canPublicSaleSign(signature.signature_status),
+      canSign: party
+        ? partyCanSign && !blocked
+        : canPublicSaleSign(signature.signature_status),
       awaitingVendor: signature.signature_status === 'CLIENT_SIGNED',
       awaitingOtherBuyers,
+      partyStatus: party ? partyStatus : null,
+      partyRole: partyRole,
       title:
         partyRole === 'SPOUSE'
           ? 'Assinatura do cônjuge anuente'

@@ -23,6 +23,7 @@ import {
 } from '@/lib/saleContractSignatureShare';
 import { qrCodePayloadForSignatureUrl } from '@/lib/saasContractSignatureShare';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
+import { enrichBuyerPartyPhone } from '@/lib/saleContractPublicSignUi';
 import { maskEmailPublic, maskPhonePublic } from '@/lib/signaturePrivacy';
 import {
   signatureStatusEmoji,
@@ -319,8 +320,11 @@ export function SaleContractMultiPartyShareModal({
       return 9;
     };
     // Nunca filtrar por URL — VENDOR e SPOUSE sem link também aparecem.
-    return [...parties].sort((a, b) => rank(a.role) - rank(b.role));
-  }, [parties]);
+    // BUYER sem telefone na party: usa telefone do cliente (legado / cadastro).
+    return enrichBuyerPartyPhone([...parties], legacySignerPhone).sort(
+      (a, b) => rank(a.role) - rank(b.role),
+    );
+  }, [parties, legacySignerPhone]);
 
   const useLegacy = orderedParties.length === 0 && Boolean(legacySignatureUrl);
 
