@@ -1,0 +1,367 @@
+/**
+ * Testes — assinatura eletrônica com cônjuge (parties).
+ * npx tsx scripts/mandatory-sale-spouse-signature-tests.ts
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  computeAggregateSaleSignatureStatus,
+  canVendorSignFromParties,
+  countSignedParties,
+} from '../lib/saleContractSignaturePartyStatus';
+import {
+  shouldCreateSpouseSignatureParty,
+  supportsSpouseElectronicSignature,
+  validateSpouseForElectronicSignature,
+  SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE,
+} from '../lib/saleContractSignaturePartyRules';
+import {
+  createSaleSignaturePartyToken,
+  hashSaleSignaturePartyToken,
+  maskSignatureTokenForLog,
+  safeCompareTokenHash,
+} from '../lib/saleContractSignaturePartyTokens';
+import {
+  applyElectronicSignatureStampsToContractHtml,
+  buildRecantoElectronicStamps,
+} from '../lib/saleContractSignaturePartySlots';
+import { buildSalePartySignatureShareMessage } from '../lib/saleContractSignatureShare';
+import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
+import { saleSignatureStatusLabel } from '../lib/saleContractSignatureStatus';
+import { canVendorSignSaleContract } from '../lib/saleContractBilateralSignature';
+
+const ROOT = process.cwd();
+
+function assert(cond: boolean, msg: string) {
+  if (!cond) throw new Error(msg);
+}
+
+function read(rel: string): string {
+  return fs.readFileSync(path.join(ROOT, rel), 'utf8');
+}
+
+function testModelGating() {
+  assert(supportsSpouseElectronicSignature('RECANTO_PRIMAVERA'), 'recanto ok');
+  assert(!supportsSpouseElectronicSignature('MENESES'), 'meneses off');
+  assert(!supportsSpouseElectronicSignature('SV_LOTES_2'), 'sv2 off');
+  assert(!supportsSpouseElectronicSignature('PADRAO'), 'padrao off');
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {},
+    }),
+    'sem cônjuge',
+  );
+
+  assert(
+    shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+      },
+      contractHtml: '<div>CÔNJUGE ANUENTE</div>',
+    }),
+    'recanto com cônjuge e slot',
+  );
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+      },
+      contractHtml: '<div>sem slot</div>',
+    }),
+    'sem slot PDF bloqueia',
+  );
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'MENESES',
+      sale: {
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+      },
+    }),
+    'meneses sem party eletrônico',
+  );
+
+  console.log('OK testModelGating');
+}
+
+function testSpouseValidation() {
+  const incomplete = validateSpouseForElectronicSignature({
+    sale_spouse_name: 'Maria',
+    sale_spouse_cpf: '123',
+  });
+  assert(!incomplete.ok, 'cpf inválido');
+  if (!incomplete.ok) {
+    assert(
+      incomplete.message === SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE,
+      'mensagem padrão',
+    );
+  }
+
+  const noContact = validateSpouseForElectronicSignature({
+    sale_spouse_name: 'Maria Silva',
+    sale_spouse_cpf: '12345678901',
+  });
+  assert(!noContact.ok, 'sem contato');
+
+  const phoneOnly = validateSpouseForElectronicSignature({
+    sale_spouse_name: 'Maria Silva',
+    sale_spouse_cpf: '12345678901',
+    sale_spouse_phone: '94999998888',
+  });
+  assert(phoneOnly.ok, 'só telefone');
+
+  const emailOnly = validateSpouseForElectronicSignature({
+    sale_spouse_name: 'Maria Silva',
+    sale_spouse_cpf: '12345678901',
+    sale_spouse_email: 'maria@test.com',
+  });
+  assert(emailOnly.ok, 'só e-mail');
+
+  console.log('OK testSpouseValidation');
+}
+
+function testTokensDistinct() {
+  const a = createSaleSignaturePartyToken();
+  const b = createSaleSignaturePartyToken();
+  assert(a.token !== b.token, 'tokens diferentes');
+  assert(a.tokenHash !== b.tokenHash, 'hashes diferentes');
+  assert(
+    hashSaleSignaturePartyToken(a.token) === a.tokenHash,
+    'hash estável',
+  );
+  assert(safeCompareTokenHash(a.tokenHash, a.tokenHash), 'compare ok');
+  assert(!safeCompareTokenHash(a.tokenHash, b.tokenHash), 'compare fail');
+
+  const masked = maskSignatureTokenForLog(a.token);
+  assert(Boolean(masked && !masked.includes(a.token)), 'token não no log');
+  assert(!String(masked).includes(a.token.slice(10)), 'sem token completo');
+
+  console.log('OK testTokensDistinct');
+}
+
+function testAggregateStatusWithoutSpouse() {
+  const pending = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'PENDING' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(pending === 'PENDING', 'pending');
+
+  const client = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(client === 'CLIENT_SIGNED', 'client signed sem cônjuge');
+
+  const signed = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'SIGNED' },
+  ]);
+  assert(signed === 'SIGNED', 'fully signed');
+
+  console.log('OK testAggregateStatusWithoutSpouse');
+}
+
+function testAggregateStatusWithSpouse() {
+  const partialBuyer = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'PENDING' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(partialBuyer === 'PARTIALLY_SIGNED', 'só comprador');
+
+  const partialSpouse = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'PENDING' },
+    { role: 'SPOUSE', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(partialSpouse === 'PARTIALLY_SIGNED', 'só cônjuge');
+
+  const client = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(client === 'CLIENT_SIGNED', 'ambos externos');
+
+  const done = computeAggregateSaleSignatureStatus([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'SIGNED' },
+  ]);
+  assert(done === 'SIGNED', 'três assinaturas');
+
+  const vendorGatePartial = canVendorSignFromParties([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'PENDING' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(!vendorGatePartial.ok, 'vendor bloqueado');
+  assert(
+    String(vendorGatePartial.reason).includes('cônjuge'),
+    'mensagem cônjuge',
+  );
+
+  const vendorGateOk = canVendorSignFromParties([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'SIGNED' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(vendorGateOk.ok, 'vendor liberado');
+
+  assert(
+    !canVendorSignSaleContract('PARTIALLY_SIGNED'),
+    'bilateral legado bloqueia parcial',
+  );
+  assert(canVendorSignSaleContract('CLIENT_SIGNED'), 'bilateral ok');
+
+  const progress = countSignedParties([
+    { role: 'BUYER', status: 'SIGNED' },
+    { role: 'SPOUSE', status: 'PENDING' },
+    { role: 'VENDOR', status: 'PENDING' },
+  ]);
+  assert(progress.signed === 1 && progress.total === 3, 'progresso 1/3');
+
+  assert(
+    saleSignatureStatusLabel('PARTIALLY_SIGNED') === 'Parcialmente assinado',
+    'label parcial',
+  );
+
+  console.log('OK testAggregateStatusWithSpouse');
+}
+
+function testShareMessagesDistinct() {
+  const buyerMsg = buildSalePartySignatureShareMessage({
+    signerName: 'João da Silva',
+    role: 'BUYER',
+    projectName: 'Recanto',
+    quadra: '01',
+    lote: '02',
+    contractNumber: '000000001/2026',
+    signatureUrl: 'https://example.com/sign/sale/token-buyer',
+  });
+  const spouseMsg = buildSalePartySignatureShareMessage({
+    signerName: 'Maria da Silva',
+    role: 'SPOUSE',
+    projectName: 'Recanto',
+    quadra: '01',
+    lote: '02',
+    contractNumber: '000000001/2026',
+    signatureUrl: 'https://example.com/sign/sale/token-spouse',
+  });
+
+  assert(buyerMsg.includes('token-buyer'), 'link comprador');
+  assert(spouseMsg.includes('token-spouse'), 'link cônjuge');
+  assert(!buyerMsg.includes('token-spouse'), 'sem cruzamento');
+  assert(!spouseMsg.includes('token-buyer'), 'sem cruzamento 2');
+  assert(buyerMsg.includes('Comprador'), 'rótulo comprador');
+  assert(spouseMsg.includes('Cônjuge'), 'rótulo cônjuge');
+  assert(spouseMsg.includes('cônjuge anuente'), 'texto anuente');
+
+  console.log('OK testShareMessagesDistinct');
+}
+
+function testSlotsAndCertificate() {
+  const html = `
+    <div class="contract-signatures contract-signatures--recanto">
+      <div class="signature-slot"><div style="border-top: 1px solid #111"></div><p>VENDEDOR(A)</p></div>
+      <div class="signature-slot"><div style="border-top: 1px solid #111"></div><p>COMPRADOR(A)</p><p>João</p></div>
+      <div class="signature-slot"><div style="border-top: 1px solid #111"></div><p>CÔNJUGE ANUENTE</p><p>Maria</p></div>
+    </div>`;
+
+  const stamped = applyElectronicSignatureStampsToContractHtml(
+    html,
+    buildRecantoElectronicStamps({
+      buyerName: 'João',
+      buyerSignedAt: '2026-07-23T15:10:00.000Z',
+      buyerSigned: true,
+      spouseName: 'Maria',
+      spouseSignedAt: '2026-07-23T15:20:00.000Z',
+      spouseSigned: true,
+      vendorName: 'Ivanilde',
+      vendorSignedAt: '2026-07-23T16:00:00.000Z',
+      vendorSigned: true,
+    }),
+  );
+
+  assert(stamped.includes('Assinado eletronicamente'), 'stamp presente');
+  assert(
+    (stamped.match(/Assinado eletronicamente/g) || []).length === 3,
+    'três carimbos',
+  );
+  assert(stamped.includes('João'), 'nome comprador');
+  assert(stamped.includes('Maria'), 'nome cônjuge');
+
+  const cert = buildSaleContractSignatureCertificateHtml({
+    contractNumber: '000000001/2026',
+    projectName: 'Recanto',
+    quadra: '01',
+    lote: '02',
+    buyerName: 'João da Silva',
+    buyerDocument: '12345678901',
+    spouseName: 'Maria da Silva',
+    spouseDocument: '98765432100',
+    spouseSignedAt: '2026-07-23T15:20:00.000Z',
+    signatureStatus: 'SIGNED',
+    signedAt: '2026-07-23T15:10:00.000Z',
+    vendorSignedAt: '2026-07-23T16:00:00.000Z',
+    representativeName: 'Ivanilde',
+    companyName: 'Imobiliária',
+  });
+
+  assert(cert.includes('PROMISSÁRIO COMPRADOR'), 'cert comprador');
+  assert(cert.includes('CÔNJUGE ANUENTE'), 'cert cônjuge');
+  assert(cert.includes('Maria da Silva'), 'nome cônjuge no cert');
+  assert(cert.includes('PROMITENTE VENDEDOR') || cert.includes('VENDEDOR'), 'cert vendor');
+
+  console.log('OK testSlotsAndCertificate');
+}
+
+function testMigrationAndWiring() {
+  const migration = read(
+    'supabase/migrations/20260723140000_contract_signature_parties.sql',
+  );
+  assert(migration.includes('contract_signature_parties'), 'tabela');
+  assert(migration.includes('signature_token_hash'), 'hash');
+  assert(migration.includes('PARTIALLY_SIGNED'), 'status parcial');
+  assert(migration.includes('ROW LEVEL SECURITY'), 'rls');
+  assert(migration.includes("role IN ('BUYER', 'SPOUSE', 'VENDOR')"), 'roles');
+
+  const service = read('lib/saleContractSignatureService.ts');
+  assert(service.includes('createSignaturePartiesAfterSend'), 'send parties');
+  assert(service.includes('signPartyElectronically'), 'sign party');
+  assert(service.includes('assertVendorCanSignWithParties'), 'vendor gate');
+
+  const flow = read('lib/saleContractSignaturePartyFlow.ts');
+  assert(flow.includes('reissueExternalPartyLink'), 'reissue');
+  assert(flow.includes('BUYER_LINK_CREATED'), 'eventos');
+
+  const ui = read('components/contracts/SaleContractSignatureSection.tsx');
+  assert(ui.includes('Assinaturas'), 'painel');
+  assert(ui.includes('handleReissueParty'), 'reenvio UI');
+  assert(ui.includes('buildSalePartySignatureShareMessage'), 'share party');
+
+  console.log('OK testMigrationAndWiring');
+}
+
+function main() {
+  testModelGating();
+  testSpouseValidation();
+  testTokensDistinct();
+  testAggregateStatusWithoutSpouse();
+  testAggregateStatusWithSpouse();
+  testShareMessagesDistinct();
+  testSlotsAndCertificate();
+  testMigrationAndWiring();
+  console.log('\nTodos os testes de cônjuge/assinatura passaram.');
+}
+
+main();

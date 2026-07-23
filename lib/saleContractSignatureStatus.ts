@@ -5,6 +5,7 @@
 export type SaleSignatureStatus =
   | 'PENDING'
   | 'VIEWED'
+  | 'PARTIALLY_SIGNED'
   | 'CLIENT_SIGNED'
   | 'SIGNED'
   | 'EXPIRED'
@@ -13,6 +14,7 @@ export type SaleSignatureStatus =
 const LABELS: Record<SaleSignatureStatus, string> = {
   PENDING: 'Enviado',
   VIEWED: 'Visualizado',
+  PARTIALLY_SIGNED: 'Parcialmente assinado',
   CLIENT_SIGNED: 'Aguardando assinatura do vendedor',
   SIGNED: 'Assinado',
   EXPIRED: 'Expirado',
@@ -22,6 +24,7 @@ const LABELS: Record<SaleSignatureStatus, string> = {
 const EMOJI: Record<SaleSignatureStatus, string> = {
   PENDING: '📤',
   VIEWED: '👁️',
+  PARTIALLY_SIGNED: '🟡',
   CLIENT_SIGNED: '🟠',
   SIGNED: '✅',
   EXPIRED: '⏰',
@@ -47,7 +50,13 @@ export function canPublicSaleSign(status?: string | null): boolean {
 
 export function isSaleSignatureBlocked(status?: string | null): boolean {
   const key = String(status || '').toUpperCase();
-  return ['CLIENT_SIGNED', 'SIGNED', 'EXPIRED', 'CANCELLED'].includes(key);
+  return [
+    'PARTIALLY_SIGNED',
+    'CLIENT_SIGNED',
+    'SIGNED',
+    'EXPIRED',
+    'CANCELLED',
+  ].includes(key);
 }
 
 export function canSendSaleSignature(
@@ -61,7 +70,17 @@ export function canSendSaleSignature(
   if (['assinado', 'signed', 'client_signed'].includes(st)) return false;
   if (signatureStatus) {
     const sig = String(signatureStatus).toUpperCase();
-    if (['PENDING', 'VIEWED', 'CLIENT_SIGNED', 'SIGNED'].includes(sig)) return false;
+    if (
+      [
+        'PENDING',
+        'VIEWED',
+        'PARTIALLY_SIGNED',
+        'CLIENT_SIGNED',
+        'SIGNED',
+      ].includes(sig)
+    ) {
+      return false;
+    }
   }
   return true;
 }
@@ -70,5 +89,5 @@ export function canResendSaleSignature(
   signatureStatus?: string | null,
 ): boolean {
   const key = String(signatureStatus || '').toUpperCase();
-  return key === 'PENDING' || key === 'VIEWED';
+  return key === 'PENDING' || key === 'VIEWED' || key === 'PARTIALLY_SIGNED';
 }

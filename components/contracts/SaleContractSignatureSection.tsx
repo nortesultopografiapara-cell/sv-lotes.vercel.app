@@ -21,12 +21,16 @@ import type { ContractSignatureRow } from '@/lib/saleContractSignatureService';
 import {
   buildSaleSignatureEmailSubject,
   buildSaleSignatureShareMessage,
+  buildSalePartySignatureShareMessage,
   buildSignatureShareWhatsAppUrl,
+  buildSignatureShareMailtoUrl,
   canShareViaWhatsApp,
+  canShareViaEmail,
   formatSignatureTimelineDateTime,
   mergeSaleSignatureTimeline,
   type LocalSignatureTimelineEvent,
 } from '@/lib/saleContractSignatureShare';
+import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
 import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 import {
   canResendSaleSignature,
@@ -122,8 +126,11 @@ export const SaleContractSignatureSection = forwardRef<
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [latest, setLatest] = useState<ContractSignatureRow | null>(null);
+  const [parties, setParties] = useState<SaleSignaturePartyPublicView[]>([]);
+  const [progress, setProgress] = useState<{ signed: number; total: number } | null>(null);
   const [timeline, setTimeline] = useState<Array<{ at: string; event: string; details: string }>>([]);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareParty, setShareParty] = useState<SaleSignaturePartyPublicView | null>(null);
   const [signUrl, setSignUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
@@ -167,6 +174,8 @@ export const SaleContractSignatureSection = forwardRef<
         error?: string;
         latest?: ContractSignatureRow | null;
         history?: Array<{ at: string; event: string; details: string }>;
+        parties?: SaleSignaturePartyPublicView[];
+        progress?: { signed: number; total: number };
         vendorDefaults?: { name?: string; document?: string; email?: string; companyName?: string };
       }>(
         await buildSignatureApiUrl(contract.id),
@@ -178,6 +187,8 @@ export const SaleContractSignatureSection = forwardRef<
       }
       const json = data || {};
       setLatest(json.latest || null);
+      setParties(json.parties || []);
+      setProgress(json.progress || null);
       const token = json.latest?.signature_token;
       setSignUrl(
         token
@@ -325,6 +336,17 @@ export const SaleContractSignatureSection = forwardRef<
 
   const shareMessage = useMemo(() => {
     if (!signUrl || !contract) return '';
+    if (shareParty?.role === 'BUYER' || shareParty?.role === 'SPOUSE') {
+      return buildSalePartySignatureShareMessage({
+        signerName: shareParty.signer_name || buyerName,
+        role: shareParty.role,
+        projectName,
+        quadra,
+        lote,
+        contractNumber: String(contract.contract_number || ''),
+        signatureUrl: shareParty.signature_url || signUrl,
+      });
+    }
     return buildSaleSignatureShareMessage({
       buyerName,
       projectName,
@@ -333,7 +355,42 @@ export const SaleContractSignatureSection = forwardRef<
       contractNumber: String(contract.contract_number || ''),
       signatureUrl: signUrl,
     });
-  }, [signUrl, contract, buyerName, projectName, quadra, lote]);
+  }, [signUrl, contract, buyerName, projectName, quadra, lote, shareParty]);
+
+  const handleReissueParty = useCallback(
+    async (party: SaleSignaturePartyPublicView) => {
+      if (!contract?.id || !latest?.id || blockOwnerWriteOnClient(userRole)) return;
+      setError(null);
+      try {
+        const { ok, data, error: fetchError } = await fetchJsonWithTimeout<{
+          error?: string;
+          parties?: SaleSignaturePartyPublicView[];
+          signUrl?: string;
+        }>(
+          `/api/contracts/${contract.id}/signature/reissue-party`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signatureId: latest.id,
+              partyId: party.id,
+            }),
+          },
+          CONTRACTS_FETCH_TIMEOUT_MS,
+        );
+        if (!ok) {
+          throw new Error(fetchError || data?.error || 'Falha ao gerar novo link.');
+        }
+        if (data?.parties) setParties(data.parties);
+        await loadSignature();
+        setCopyFeedback(`Novo link gerado para ${party.roleLabel}.`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Falha ao reemitir link.');
+      }
+    },
+    [contract?.id, latest?.id, loadSignature, userRole],
+  );
 
   const handleSend = useCallback(async () => {
     if (!contract?.id || blockOwnerWriteOnClient(userRole)) return;
@@ -345,7 +402,9 @@ export const SaleContractSignatureSection = forwardRef<
         success?: boolean;
         error?: string;
         signUrl?: string;
+        spouseSignUrl?: string | null;
         signature?: ContractSignatureRow;
+        parties?: SaleSignaturePartyPublicView[];
       }>(
         apiUrl,
         { method: 'POST', credentials: 'include' },
@@ -363,12 +422,13 @@ export const SaleContractSignatureSection = forwardRef<
       if (!url) {
         throw new Error('Link de assinatura não retornado pelo servidor.');
       }
-      console.log('[contracts/signature-final] client_send_ok', {
-        contractId: contract.id,
-        hasSignUrl: true,
-      });
       setLatest(json.signature || null);
+      if (json.parties) setParties(json.parties as SaleSignaturePartyPublicView[]);
       setSignUrl(url);
+      const buyerParty = (json.parties as SaleSignaturePartyPublicView[] | undefined)?.find(
+        (p) => p.role === 'BUYER',
+      );
+      setShareParty(buyerParty || null);
       setShareOpen(true);
       const sentEvent = {
         at: new Date().toISOString(),
@@ -478,6 +538,111 @@ export const SaleContractSignatureSection = forwardRef<
         </p>
       )}
 
+      {parties.length > 0 && (
+        <div className="border border-[var(--border-color)] rounded-lg p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              Assinaturas
+            </p>
+            {progress && progress.total > 0 && (
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Progresso: {progress.signed} de {progress.total} assinaturas
+                concluídas.
+              </p>
+            )}
+          </div>
+          {parties.map((party) => {
+            const phone = party.signer_phone;
+            const email = party.signer_email;
+            const url = party.signature_url || null;
+            const partyMessage =
+              party.role === 'BUYER' || party.role === 'SPOUSE'
+                ? buildSalePartySignatureShareMessage({
+                    signerName: party.signer_name || party.roleLabel,
+                    role: party.role,
+                    projectName,
+                    quadra,
+                    lote,
+                    contractNumber: String(contract.contract_number || ''),
+                    signatureUrl: url || '',
+                  })
+                : '';
+            return (
+              <div
+                key={party.id}
+                className="rounded-md bg-[var(--bg-primary)]/40 px-3 py-2 space-y-1.5"
+              >
+                <p className="text-sm font-medium text-[var(--text-primary)]">
+                  {party.roleLabel}
+                  {party.signer_name ? ` — ${party.signer_name}` : ''}
+                </p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Status:{' '}
+                  {party.status === 'SIGNED' && party.signed_at
+                    ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
+                    : party.statusLabel}
+                </p>
+                {(phone || email) && party.role !== 'VENDOR' && (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Contato:{' '}
+                    {phone
+                      ? `WhatsApp final ${String(phone).replace(/\D/g, '').slice(-4)}`
+                      : email}
+                  </p>
+                )}
+                {party.role === 'VENDOR' && party.status !== 'SIGNED' && (
+                  <p className="text-[11px] text-amber-300/80">
+                    Aguardando os compradores
+                  </p>
+                )}
+                {party.canShare && url && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <ActionChip
+                      icon={MessageCircle}
+                      label="WhatsApp"
+                      disabled={!canShareViaWhatsApp(phone)}
+                      onClick={() => {
+                        const wa = buildSignatureShareWhatsAppUrl(phone, partyMessage);
+                        if (wa) window.open(wa, '_blank', 'noopener,noreferrer');
+                      }}
+                    />
+                    <ActionChip
+                      icon={Share2}
+                      label="E-mail"
+                      disabled={!canShareViaEmail(email)}
+                      onClick={() => {
+                        const mail = buildSignatureShareMailtoUrl(
+                          email,
+                          buildSaleSignatureEmailSubject(projectName),
+                          partyMessage,
+                        );
+                        if (mail) window.location.href = mail;
+                      }}
+                    />
+                    <ActionChip
+                      icon={Copy}
+                      label="Copiar link"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(url).then(() => {
+                          setCopyFeedback(`Link do ${party.roleLabel} copiado.`);
+                        });
+                      }}
+                    />
+                    {party.canResend && (
+                      <ActionChip
+                        icon={Send}
+                        label="Gerar novo link"
+                        onClick={() => void handleReissueParty(party)}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {vendorSignSuccess && (
         <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
           {vendorSignSuccess}
@@ -565,19 +730,30 @@ export const SaleContractSignatureSection = forwardRef<
       {shareOpen && signUrl && (
         <ContractSignatureShareModal
           isOpen={shareOpen}
-          onClose={() => setShareOpen(false)}
+          onClose={() => {
+            setShareOpen(false);
+            setShareParty(null);
+          }}
           companyName={projectName}
-          signerName={buyerName}
-          signerPhone={buyerPhone}
-          signerEmail={buyerEmail}
+          signerName={shareParty?.signer_name || buyerName}
+          signerPhone={shareParty?.signer_phone || buyerPhone}
+          signerEmail={shareParty?.signer_email || buyerEmail}
           contractNumber={String(contract.contract_number || '')}
-          signatureUrl={signUrl}
-          expiresAt={latest?.expires_at || new Date().toISOString()}
+          signatureUrl={shareParty?.signature_url || signUrl}
+          expiresAt={shareParty?.expires_at || latest?.expires_at || new Date().toISOString()}
           status={status}
           shareMessage={shareMessage}
           emailSubject={buildSaleSignatureEmailSubject(projectName)}
-          modalTitle="Contrato enviado para assinatura"
-          modalSubtitle="Compartilhe o link com o comprador por WhatsApp, e-mail ou QR Code."
+          modalTitle={
+            shareParty?.role === 'SPOUSE'
+              ? 'Link do cônjuge anuente'
+              : 'Contrato enviado para assinatura'
+          }
+          modalSubtitle={
+            shareParty?.role === 'SPOUSE'
+              ? 'Compartilhe o link individual do cônjuge por WhatsApp, e-mail ou QR Code.'
+              : 'Compartilhe o link com o comprador por WhatsApp, e-mail ou QR Code.'
+          }
         />
       )}
 

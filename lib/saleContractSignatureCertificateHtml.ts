@@ -57,6 +57,13 @@ export type SaleContractSignatureCertificateInput = {
   legacyAutoVendor?: boolean;
   vendorDocumentLabel?: 'CPF' | 'CNPJ';
   certificateTitle?: string | null;
+  spouseName?: string | null;
+  spouseDocument?: string | null;
+  spouseEmail?: string | null;
+  spousePhone?: string | null;
+  spouseSignedAt?: string | null;
+  spouseIpAddress?: string | null;
+  spouseSignatureHash?: string | null;
 };
 
 export type SaleContractElectronicSignaturesInput = {
@@ -459,6 +466,33 @@ function buildEvidenceFields(input: {
   return fields;
 }
 
+function buildSpouseCard(input: SaleContractSignatureCertificateInput): string {
+  const spouseName = String(input.spouseName || '').trim();
+  if (!spouseName) return '';
+
+  const spouseDoc =
+    formatCpfCnpj(input.spouseDocument || '') ||
+    input.spouseDocument ||
+    '—';
+
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '👤', label: 'Nome', value: spouseName },
+    { icon: '🪪', label: 'CPF', value: spouseDoc },
+    ...buildEvidenceFields({
+      email: input.spouseEmail,
+      phone: input.spousePhone,
+      ipAddress: input.spouseIpAddress,
+      signedAt: input.spouseSignedAt,
+      signatureEventId: null,
+    }),
+  ];
+
+  return buildOfficialSignatureCard({
+    role: 'CÔNJUGE ANUENTE',
+    fields,
+  });
+}
+
 function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
   const buyerDoc =
     formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
@@ -622,6 +656,11 @@ export function buildSaleContractSignatureCertificateHtml(
         ${buildVendorCard(input)}
         ${buildBuyerCard(input)}
       </div>
+      ${
+        input.spouseName
+          ? `<div class="sv-cert-cards" style="margin-top: 6px;">${buildSpouseCard(input)}</div>`
+          : ''
+      }
 
       <div class="sv-cert-validation">
         <div class="sv-cert-validation-inner">

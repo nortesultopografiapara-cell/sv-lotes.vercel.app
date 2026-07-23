@@ -17,6 +17,11 @@ import {
   type ContractSignatureRow,
 } from '@/lib/saleContractSignatureService';
 import {
+  listSignatureParties,
+  toPublicPartyViews,
+} from '@/lib/saleContractSignatureParties';
+import { countSignedParties } from '@/lib/saleContractSignaturePartyStatus';
+import {
   resolveSaleSignUrl,
   resolveSaleValidationPublicUrl,
 } from '@/lib/saleContractUrls';
@@ -136,6 +141,11 @@ export async function GET(
     const latestRaw = signatures[0] || null;
     const latest = await repairSaleSignaturePublicUrlsIfNeeded(supabase, latestRaw);
     const history = latest ? buildSaleSignatureHistory(latest) : [];
+    const partiesRaw = latest
+      ? await listSignatureParties(supabase, latest.id)
+      : [];
+    const parties = toPublicPartyViews(partiesRaw, { includeUrls: true });
+    const progress = countSignedParties(partiesRaw);
 
     const tenantId = String(contract.tenant_id || contract.company_id || '');
     let vendorDefaults = {
@@ -166,6 +176,8 @@ export async function GET(
       latest,
       history,
       signatures: signatures.map((row) => normalizeSaleSignaturePublicUrls(row) || row),
+      parties,
+      progress,
       vendorDefaults,
     });
   } catch (err) {
@@ -245,7 +257,9 @@ export async function POST(
     return NextResponse.json({
       success: true,
       signUrl: result.signUrl,
+      spouseSignUrl: result.spouseSignUrl,
       signature: result.signature,
+      parties: toPublicPartyViews(result.parties, { includeUrls: true }),
     });
   } catch (err) {
     const message =

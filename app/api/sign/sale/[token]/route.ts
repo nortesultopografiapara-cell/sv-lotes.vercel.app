@@ -26,6 +26,16 @@ import {
   SaleContractSignatureError,
   signSaleContractElectronically,
 } from '@/lib/saleContractSignatureService';
+import {
+  getPartyByPublicToken,
+  listSignatureParties,
+} from '@/lib/saleContractSignatureParties';
+import { markPartyOrLegacyViewed } from '@/lib/saleContractSignaturePartyFlow';
+import { saleSignaturePartyRoleLabel } from '@/lib/saleContractSignaturePartyTypes';
+import {
+  computeAggregateSaleSignatureStatus,
+  toPartyStatusSnapshots,
+} from '@/lib/saleContractSignaturePartyStatus';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -150,16 +160,62 @@ export async function GET(
     }
   }
 
-  if (signature.signature_status === 'PENDING') {
+  const party = await getPartyByPublicToken(supabaseAdmin, token);
+  let partyRole: string | null = null;
+  let partyCanSign = false;
+  let partyStatus: string = signature.signature_status;
+  let signerDisplayName: string | null = null;
+  let awaitingOtherBuyers = false;
+
+  if (party && party.contract_signature_id === signature.id) {
+    partyRole = party.role;
+    signerDisplayName = party.signer_name;
+    partyStatus = party.status;
+    partyCanSign = canPublicSaleSign(party.status);
+
+    if (String(party.status).toUpperCase() === 'PENDING') {
+      const viewed = await markPartyOrLegacyViewed(supabaseAdmin, token, signature, {
+        ipAddress: resolveClientIp(request),
+        userAgent: request.headers.get('user-agent'),
+      });
+      signature = viewed.signature as typeof signature;
+      if (viewed.party) {
+        partyStatus = viewed.party.status;
+        partyCanSign = canPublicSaleSign(viewed.party.status);
+      }
+    }
+
+    const parties = await listSignatureParties(supabaseAdmin, signature.id);
+    const aggregate = computeAggregateSaleSignatureStatus(
+      toPartyStatusSnapshots(parties),
+    );
+    awaitingOtherBuyers = aggregate === 'PARTIALLY_SIGNED';
+  } else if (signature.signature_status === 'PENDING') {
     signature = await markSaleSignatureViewed(supabaseAdmin, signature, {
       ipAddress: resolveClientIp(request),
       userAgent: request.headers.get('user-agent'),
     });
   }
 
-  const blocked = isSaleSignatureBlocked(signature.signature_status);
+  const processBlocked = isSaleSignatureBlocked(signature.signature_status);
+  const blocked = party
+    ? ['SIGNED', 'CANCELLED', 'EXPIRED', 'ERROR'].includes(
+        String(partyStatus).toUpperCase(),
+      ) || ['SIGNED', 'CANCELLED', 'EXPIRED'].includes(
+        String(signature.signature_status).toUpperCase(),
+      )
+    : processBlocked;
   const buyerName =
-    String(customer?.name || contract.signed_by_name || '').trim() || null;
+    String(
+      signerDisplayName ||
+        customer?.name ||
+        contract.signed_by_name ||
+        '',
+    ).trim() || null;
+
+  const roleLabel = partyRole
+    ? saleSignaturePartyRoleLabel(partyRole)
+    : 'Comprador';
 
   return NextResponse.json({
     success: true,
@@ -187,22 +243,50 @@ export async function GET(
     },
     buyer: {
       name: buyerName,
-      document: customer?.document || customer?.cpf || null,
+      document:
+        party?.signer_cpf ||
+        customer?.document ||
+        customer?.cpf ||
+        null,
       email:
-        String(customer?.email || customer?.contact_email || '').trim() || null,
+        String(
+          party?.signer_email ||
+            customer?.email ||
+            customer?.contact_email ||
+            '',
+        ).trim() || null,
     },
+    party: partyRole
+      ? {
+          role: partyRole,
+          roleLabel,
+          status: partyStatus,
+          statusLabel: saleSignatureStatusLabel(
+            partyRole === 'SPOUSE' || partyRole === 'BUYER'
+              ? partyStatus === 'SIGNED'
+                ? 'CLIENT_SIGNED'
+                : partyStatus
+              : partyStatus,
+          ),
+        }
+      : null,
     signature: {
       status: signature.signature_status,
       statusLabel: saleSignatureStatusLabel(signature.signature_status),
-      expiresAt: signature.expires_at,
-      signedAt: signature.signed_at,
-      signerName: signature.signer_name,
-      signerDocument: signature.signer_document
-        ? formatCpfCnpj(signature.signer_document)
+      expiresAt: party?.expires_at || signature.expires_at,
+      signedAt: party?.signed_at || signature.signed_at,
+      signerName: party?.signer_name || signature.signer_name,
+      signerDocument: (party?.signer_cpf || signature.signer_document)
+        ? formatCpfCnpj(String(party?.signer_cpf || signature.signer_document))
         : null,
       blocked,
-      canSign: canPublicSaleSign(signature.signature_status),
+      canSign: party ? partyCanSign && !blocked : canPublicSaleSign(signature.signature_status),
       awaitingVendor: signature.signature_status === 'CLIENT_SIGNED',
+      awaitingOtherBuyers,
+      title:
+        partyRole === 'SPOUSE'
+          ? 'Assinatura do cônjuge anuente'
+          : 'Assinatura do comprador',
     },
     pdfUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1`,
     pdfDownloadUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`,
@@ -233,7 +317,11 @@ export async function POST(
     return NextResponse.json({
       success: true,
       signature: result.signature,
-      awaitingVendor: result.signature.signature_status === 'CLIENT_SIGNED',
+      awaitingVendor:
+        result.awaitingVendor ??
+        result.signature.signature_status === 'CLIENT_SIGNED',
+      awaitingOtherBuyers: result.awaitingOtherBuyers ?? false,
+      partyRole: result.partyRole || null,
     });
   } catch (err) {
     const message =
