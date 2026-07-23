@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef, type ComponentProps } from "react";
 import {
   MapContainer,
   Polygon,
@@ -63,6 +63,10 @@ import {
   computeGisMapOverlayOpen,
 } from "@/lib/gisToolbarOverlay";
 import { GisBaseLayer } from "@/components/map/GisBaseLayer";
+import {
+  LotCanvasRendererProvider,
+  useLotCanvasRenderer,
+} from "@/components/map/LotCanvasRenderer";
 import {
   DEFAULT_GIS_BASE_LAYER,
   normalizeGisBaseLayer,
@@ -2700,6 +2704,12 @@ function MapZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
   return null;
 }
 
+/** Polígono de lote no Canvas compartilhado (não global preferCanvas). */
+function LotPolygonCanvas(props: ComponentProps<typeof Polygon>) {
+  const renderer = useLotCanvasRenderer();
+  return <Polygon {...props} renderer={renderer ?? undefined} />;
+}
+
 export default function GISMap({
   projectId,
   activeLayer = DEFAULT_GIS_BASE_LAYER,
@@ -3625,6 +3635,7 @@ export default function GISMap({
       const prioritize = new Set<string>();
       for (const l of polygonLots.slice(0, 80)) prioritize.add(String(l.id));
       const mounted = new Set<string>();
+      let batchCount = 0;
       progressiveCancelRef.current = scheduleProgressiveMount({
         items: polygonLots,
         signal: ac.signal,
@@ -3632,10 +3643,16 @@ export default function GISMap({
         getId: (l) => String(l.id),
         onBatch: (_batch, done, total) => {
           for (const lot of _batch) mounted.add(String(lot.id));
-          setMountedLotIds(new Set(mounted));
-          setMountProgress({ done, total });
+          batchCount += 1;
+          // Menos setState = menos long tasks React durante a carga
+          if (done >= total || batchCount % 3 === 0) {
+            setMountedLotIds(new Set(mounted));
+            setMountProgress({ done, total });
+          }
         },
         onComplete: () => {
+          setMountedLotIds(new Set(mounted));
+          setMountProgress({ done: polygonLots.length, total: polygonLots.length });
           gisPerfMark('interactive');
           gisPerfMeasure('time-to-interactive', 'fetch-start', 'interactive');
           gisPerfLog({ ...gisPerfCountDom(), lots: polygonLots.length });
@@ -4293,9 +4310,9 @@ export default function GISMap({
         maxZoom={22}
         zoomSnap={1}
         zoomDelta={1}
-        className="w-full h-full"
+        className="w-full h-full gis-map-root"
         zoomControl={false}
-        preferCanvas={true}
+        style={{ background: '#0b1220' }}
       >
         <GisBaseLayer
           layerId={normalizeGisBaseLayer(activeLayer)}
@@ -4303,7 +4320,7 @@ export default function GISMap({
         />
 
         <ZoomControl position="bottomright" />
-        <MapZoomTracker onZoom={setMapZoom} />
+        {/* Zoom via GisBaseLayer.onZoomChange — evita setState duplicado no zoom */}
         <MapController
           safeBounds={safeMapBounds}
           refreshKey={refreshKey}
@@ -4314,6 +4331,24 @@ export default function GISMap({
         <LocationController active={gpsActive} />
 
         <style>{`
+          .gis-map-root,
+          .gis-map-root .leaflet-container {
+            background: #0b1220;
+          }
+          /* Canvas dos lotes nunca cobre o satélite com fundo opaco */
+          .gis-map-root .leaflet-overlay-pane canvas,
+          .gis-map-root .leaflet-zoom-animated canvas {
+            background: transparent !important;
+          }
+          .gis-map-root .leaflet-tile-pane {
+            z-index: 200;
+          }
+          .gis-map-root .leaflet-overlay-pane {
+            z-index: 400;
+          }
+          .gis-map-root .leaflet-marker-pane {
+            z-index: 600;
+          }
           .lot-map-label-marker {
             background: transparent !important;
             border: none !important;
@@ -4340,10 +4375,15 @@ export default function GISMap({
           }
         `}</style>
 
+        <LotCanvasRendererProvider>
         <LotLabelsOverlay
           items={lotLabelItems}
           mapZoom={mapZoom}
-          enabled={showPermanentLabels && !sheetPickActive}
+          enabled={
+            showPermanentLabels &&
+            !sheetPickActive &&
+            (mountProgress.total === 0 || mountProgress.done >= mountProgress.total)
+          }
         />
 
         {renderedLots
@@ -4391,7 +4431,7 @@ export default function GISMap({
             return (
               <Fragment key={lot.id}>
                 <GisSanitizeDebugMarkers lotId={lot.id} validation={validation} />
-                <Polygon
+                <LotPolygonCanvas
                   key={`${lot.id}-hit-${lotHitTest ? 1 : 0}`}
                   positions={positions}
                   interactive={lotHitTest}
@@ -4525,7 +4565,7 @@ export default function GISMap({
                       />
                     </Popup>
                   )}
-                </Polygon>
+                </LotPolygonCanvas>
                 <LotBoundaryEdgePolylines
                   positions={positions}
                   lot={lot}
@@ -4795,6 +4835,7 @@ export default function GISMap({
           points={drawStreetPoints}
           setPoints={setDrawStreetPoints}
         />
+        </LotCanvasRendererProvider>
       </MapContainer>
 
       {/* Painel — Linha de Rua (polilinha) */}

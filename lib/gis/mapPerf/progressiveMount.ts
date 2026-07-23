@@ -3,7 +3,7 @@
  * 40–60 itens por frame; cancelável via AbortSignal.
  */
 
-export const GIS_PROGRESSIVE_BATCH_SIZE = 50;
+export const GIS_PROGRESSIVE_BATCH_SIZE = 30;
 
 export type ProgressiveMountOptions<T> = {
   items: T[];

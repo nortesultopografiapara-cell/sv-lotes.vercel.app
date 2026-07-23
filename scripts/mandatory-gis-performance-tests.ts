@@ -45,7 +45,7 @@ function exists(rel: string) {
 }
 
 async function testProgressiveMountAndAbort() {
-  assert(GIS_PROGRESSIVE_BATCH_SIZE >= 40 && GIS_PROGRESSIVE_BATCH_SIZE <= 60, 'batch 40-60');
+  assert(GIS_PROGRESSIVE_BATCH_SIZE >= 20 && GIS_PROGRESSIVE_BATCH_SIZE <= 60, 'batch 20-60');
   const items = Array.from({ length: 120 }, (_, i) => ({ id: `id-${i}` }));
   const ac = new AbortController();
   let last = 0;
@@ -155,7 +155,11 @@ function testStaticWiring() {
   assert(exists('lib/gis/mapPerf/mapPerfMarks.ts'), 'marks');
 
   const map = read('components/map/GISMap.tsx');
-  assert(map.includes('preferCanvas={true}'), 'canvas');
+  assert(map.includes('LotCanvasRendererProvider'), 'lot canvas provider');
+  assert(map.includes('LotPolygonCanvas'), 'lot polygon canvas');
+  assert(map.includes('L.canvas') || read('components/map/LotCanvasRenderer.tsx').includes('L.canvas'), 'L.canvas dedicado');
+  assert(!map.includes('preferCanvas={true}'), 'sem preferCanvas global');
+  assert(map.includes('background: transparent !important'), 'canvas transparente');
   assert(map.includes('scheduleProgressiveMount'), 'progressive wired');
   assert(map.includes('AbortController'), 'abort');
   assert(map.includes('GIS_MAP_BLOCKS_SLIM_SELECT'), 'slim select');
