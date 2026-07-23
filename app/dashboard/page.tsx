@@ -43,6 +43,8 @@ import {
   formatEnterpriseCurrency,
 } from '@/lib/enterpriseValueSummary';
 import SuperAdminDashboard from './SuperAdminDashboard';
+import MasterExecutiveDashboard from '@/components/master/dashboard/MasterExecutiveDashboard';
+import { isMasterDashboardV2EnabledForUi } from '@/lib/master/config';
 import { motion } from 'motion/react';
 import './dashboard-premium.css';
 import {
@@ -96,6 +98,9 @@ export default function DashboardPage() {
   const { user } = useAuth();
   
   if (isMasterConsoleRole(user?.role)) {
+    if (isMasterDashboardV2EnabledForUi()) {
+      return <MasterExecutiveDashboard user={user} />;
+    }
     return <SuperAdminDashboard user={user} />;
   }
   

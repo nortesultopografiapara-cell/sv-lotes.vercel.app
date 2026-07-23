@@ -42,6 +42,8 @@ const nextConfig: NextConfig = {
       process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED ?? 'false',
     NEXT_PUBLIC_CLIENT_PORTAL_ENABLED:
       process.env.NEXT_PUBLIC_CLIENT_PORTAL_ENABLED ?? 'false',
+    NEXT_PUBLIC_MASTER_DASHBOARD_V2_ENABLED:
+      process.env.NEXT_PUBLIC_MASTER_DASHBOARD_V2_ENABLED ?? 'false',
   },
   webpack: (config, { dev }) => {
     if (dev && process.env.DISABLE_HMR === 'true') {

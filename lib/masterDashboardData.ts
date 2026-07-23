@@ -14,7 +14,18 @@ import {
   getSaasCashStartAt,
   isSaasFinancialRecordAfterStartAt,
 } from '@/lib/saasFinanceSettings';
-import { sumSaasCashReceivedIncome } from '@/lib/saasCashMovements';
+import {
+  aggregateSaasCashMonthlyRevenueExpense,
+  buildEmptyMonthlyRevenueExpense,
+  SAAS_CASH_MONTH_LABELS,
+  sumSaasCashReceivedIncome,
+  type MonthlyRevenueExpense,
+} from '@/lib/saasCashMovements';
+import { aggregateCorporateCashMonthlyRevenueExpense } from '@/lib/master/corporateFinance/cashMath';
+import { computeTopographyProjectKpis } from '@/lib/master/topography/projectsService';
+import type { MasterTopographyProjectKpis } from '@/lib/master/topography/types';
+import { computeTopographyQuoteKpis } from '@/lib/master/topography/quotesService';
+import type { MasterTopographyQuoteKpis } from '@/lib/master/topography/quoteTypes';
 
 export type MasterPlanTier = 'BÁSICO' | 'BUSINESS' | 'PROFISSIONAL' | 'PERSONALIZADO';
 
@@ -49,6 +60,10 @@ export type MasterDashboardData = {
     activeCompanies: number;
     suspendedCompanies: number;
     inactiveCompanies: number;
+    /** Empresas com status_operacional = Teste (já carregadas na mesma query). */
+    trialCompanies: number;
+    /** Empresas criadas no mês civil atual (created_at). */
+    newCompaniesThisMonth: number;
     activeSubscriptions: number;
     mrr: number;
     receivedRevenue: number;
@@ -63,6 +78,28 @@ export type MasterDashboardData = {
     totalLots: number;
   };
   revenueByMonth: { month: string; label: string; value: number }[];
+  /** Jan–Dez do ano selecionado — Caixa SaaS (income/expense), sem dupla contagem. */
+  saasMonthlyFinancials: MonthlyRevenueExpense[];
+  /**
+   * Jan–Dez — Financeiro Corporativo MASTER (income/expense), sem transferências.
+   */
+  topographyMonthlyFinancials: MonthlyRevenueExpense[];
+  /** Contagens reais do módulo Projetos e Serviços. */
+  topographyProjectKpis: MasterTopographyProjectKpis;
+  topographyQuoteKpis: MasterTopographyQuoteKpis;
+  /** KPIs realizados do Financeiro Corporativo (Fase 6.4). */
+  corporateFinanceKpis: {
+    monthIncome: number;
+    monthExpense: number;
+    monthNet: number;
+    currentBalance: number;
+    receivableOpen: number;
+    payableOpen: number;
+    receivableOverdue: number;
+    payableOverdue: number;
+    receivedThisMonth: number;
+    paidThisMonth: number;
+  };
   planDistribution: {
     tier: MasterPlanTier;
     count: number;
@@ -73,6 +110,8 @@ export type MasterDashboardData = {
   recentCompanies: MasterRecentCompany[];
   cashStartAt: string | null;
   receivedRevenueSource: 'saas_cash_movements';
+  /** Ano usado em saasMonthlyFinancials / topographyMonthlyFinancials. */
+  financialYear: number;
   errors: string[];
 };
 
@@ -147,11 +186,16 @@ function isSubscriptionExpired(company: {
 
 export async function loadMasterDashboardData(
   supabase: SupabaseClient,
+  options: { financialYear?: number } = {},
 ): Promise<MasterDashboardData> {
   const errors: string[] = [];
   const monthTemplate = lastSixMonthKeys();
   const revenueMap = new Map(monthTemplate.map((m) => [m.key, 0]));
   const cashStartAt = await getSaasCashStartAt(supabase);
+  const financialYear =
+    options.financialYear && Number.isFinite(options.financialYear)
+      ? Math.trunc(options.financialYear)
+      : new Date().getFullYear();
 
   const [
     companiesRes,
@@ -224,6 +268,18 @@ export async function loadMasterDashboardData(
     (c) => (c.status_operacional || '').trim() === 'Suspensa',
   ).length;
   const inactiveCompanies = companies.filter((c) => c.active === false).length;
+  const trialCompanies = companies.filter(
+    (c) => (c.status_operacional || '').trim().toLowerCase() === 'teste',
+  ).length;
+
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const newCompaniesThisMonth = companies.filter((c) => {
+    if (!c.created_at) return false;
+    const created = new Date(c.created_at);
+    return !Number.isNaN(created.getTime()) && created >= monthStart;
+  }).length;
 
   const mrr = calculateMrrFromCompanies(companies);
   let activeSubscriptions = 0;
@@ -236,6 +292,116 @@ export async function loadMasterDashboardData(
     mrr,
     paymentsReceivedFromCash.visibleTotal,
   );
+
+  let saasMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
+  try {
+    saasMonthlyFinancials = await aggregateSaasCashMonthlyRevenueExpense(
+      supabase,
+      financialYear,
+      cashStartAt,
+    );
+  } catch (err) {
+    errors.push(
+      `saas_monthly_financials: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
+  let topographyMonthlyError: string | null = null;
+  try {
+    // Preferência: esta chamada funciona com service_role.
+    // No browser o Dashboard V2 sobrescreve via API Master (service role) —
+    // ver MasterExecutiveDashboard — porque RLS no client pode retornar [].
+    const corp = await aggregateCorporateCashMonthlyRevenueExpense(supabase, financialYear);
+    topographyMonthlyFinancials = corp.months.map((m) => ({
+      month: m.month,
+      label: SAAS_CASH_MONTH_LABELS[m.month - 1] || String(m.month),
+      revenue: Number(m.income) || 0,
+      expense: Number(m.expense) || 0,
+    }));
+  } catch (err) {
+    topographyMonthlyError =
+      err instanceof Error ? err.message : String(err);
+    errors.push(`topography_monthly_financials: ${topographyMonthlyError}`);
+  }
+
+  let topographyProjectKpis: MasterTopographyProjectKpis = {
+    active: 0,
+    inField: 0,
+    inProcessing: 0,
+    overdue: 0,
+    completedThisMonth: 0,
+    activeContractValue: 0,
+    totalContractValue: 0,
+    totalReceived: 0,
+    totalBalance: 0,
+  };
+  try {
+    topographyProjectKpis = await computeTopographyProjectKpis(supabase);
+  } catch (err) {
+    errors.push(
+      `topography_project_kpis: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let topographyQuoteKpis: MasterTopographyQuoteKpis = {
+    active: 0,
+    inNegotiation: 0,
+    approved: 0,
+    refused: 0,
+    totalQuotedValue: 0,
+    totalApprovedValue: 0,
+    approvalRate: 0,
+  };
+  try {
+    topographyQuoteKpis = await computeTopographyQuoteKpis(supabase);
+  } catch (err) {
+    errors.push(
+      `topography_quote_kpis: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let corporateFinanceKpis = {
+    monthIncome: 0,
+    monthExpense: 0,
+    monthNet: 0,
+    currentBalance: 0,
+    receivableOpen: 0,
+    payableOpen: 0,
+    receivableOverdue: 0,
+    payableOverdue: 0,
+    receivedThisMonth: 0,
+    paidThisMonth: 0,
+  };
+  try {
+    const [{ getCashHubKpis }, { computeReceivableKpis }, { computePayableKpis }] =
+      await Promise.all([
+        import('@/lib/master/corporateFinance/cashMovementsService'),
+        import('@/lib/master/corporateFinance/receivablesService'),
+        import('@/lib/master/corporateFinance/payablesService'),
+      ]);
+    const [cash, ar, ap] = await Promise.all([
+      getCashHubKpis(supabase),
+      computeReceivableKpis(supabase),
+      computePayableKpis(supabase),
+    ]);
+    corporateFinanceKpis = {
+      monthIncome: cash.monthIncome,
+      monthExpense: cash.monthExpense,
+      monthNet: cash.monthNet,
+      currentBalance: cash.currentBalance,
+      receivableOpen: ar.totalOpen,
+      payableOpen: ap.totalOpen,
+      receivableOverdue: ar.overdue,
+      payableOverdue: ap.overdue,
+      receivedThisMonth: ar.receivedThisMonth,
+      paidThisMonth: ap.paidThisMonth,
+    };
+  } catch (err) {
+    errors.push(
+      `corporate_finance_kpis: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   let totalLots = blocksRes.count ?? 0;
   if (blocksRes.error && lotsRes.count != null) {
@@ -408,6 +574,8 @@ export async function loadMasterDashboardData(
       activeCompanies,
       suspendedCompanies,
       inactiveCompanies,
+      trialCompanies,
+      newCompaniesThisMonth,
       activeSubscriptions,
       mrr,
       receivedRevenue: paymentsReceivedFromCash.visibleTotal,
@@ -422,11 +590,17 @@ export async function loadMasterDashboardData(
       totalLots,
     },
     revenueByMonth,
+    saasMonthlyFinancials,
+    topographyMonthlyFinancials,
+    topographyProjectKpis,
+    topographyQuoteKpis,
+    corporateFinanceKpis,
     planDistribution,
     alerts,
     recentCompanies,
     cashStartAt,
     receivedRevenueSource: 'saas_cash_movements',
+    financialYear,
     errors,
   };
 
@@ -440,6 +614,8 @@ export function exportMasterDashboardCsv(data: MasterDashboardData): string {
     `Empresas Ativas,${data.stats.activeCompanies}`,
     `Empresas Suspensas,${data.stats.suspendedCompanies}`,
     `Empresas Inativas,${data.stats.inactiveCompanies}`,
+    `Empresas em Teste,${data.stats.trialCompanies}`,
+    `Novos clientes (mês),${data.stats.newCompaniesThisMonth}`,
     `MRR,${data.stats.mrr.toFixed(2)}`,
     `Usuários,${data.stats.totalUsers}`,
     `Corretores,${data.stats.totalBrokers}`,

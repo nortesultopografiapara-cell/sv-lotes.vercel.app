@@ -41,6 +41,7 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { UserProfileModals } from './UserProfileModals';
 import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
 import { SuperAdminQuickActions } from './admin/SuperAdminQuickActions';
+import { MasterExecutiveLayout } from '@/components/master/layout/MasterExecutiveLayout';
 import { GisSelectedProjectProvider } from '@/contexts/GisSelectedProjectContext';
 import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
@@ -49,6 +50,10 @@ import { HelpCenterProfileMenuLink } from '@/components/ui/HelpCenterProfileMenu
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
+import {
+  isMasterDashboardV2EnabledForUi,
+  shouldUseMasterExecutiveShell,
+} from '@/lib/master/config';
 import { canAccessDataMigrationModule } from '@/lib/imports/permissions';
 import { DATA_MIGRATION_ROUTE } from '@/lib/imports/constants';
 import { canAccessLegacyContractsModule } from '@/lib/legacy-contracts/permissions';
@@ -385,7 +390,15 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   } | null>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
-  const isMasterConsole = shouldUseMasterConsoleLayout(user?.role);
+  const isPlatformMaster = shouldUseMasterConsoleLayout(user?.role);
+  const masterDashboardV2Enabled = isMasterDashboardV2EnabledForUi();
+  /**
+   * Chrome Master clássico.
+   * Com V2 + impersonation de tenant: usa chrome da empresa (não o shell Master).
+   * Com V2 desligado: comportamento legado intacto (Master mesmo em impersonation).
+   */
+  const isMasterConsole =
+    isPlatformMaster && !(masterDashboardV2Enabled && Boolean(impersonatingTenantId));
   const isDemoUser = isDemoProfile(user);
 
   useEffect(() => {
@@ -549,11 +562,32 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const menuItems = isOwnerRole(user?.role || '')
+  if (
+    shouldUseMasterExecutiveShell({
+      role: user?.role,
+      impersonatingTenant: Boolean(impersonatingTenantId),
+      flagEnabled: masterDashboardV2Enabled,
+    })
+  ) {
+    return (
+      <GisSelectedProjectProvider>
+        <MasterExecutiveLayout user={user} onLogout={handleLogout}>
+          {children}
+        </MasterExecutiveLayout>
+      </GisSelectedProjectProvider>
+    );
+  }
+
+  const menuRoleForTenantChrome =
+    isPlatformMaster && masterDashboardV2Enabled && impersonatingTenantId
+      ? 'ADMIN'
+      : user?.role || '';
+
+  const menuItems = isOwnerRole(menuRoleForTenantChrome)
     ? ownerAccess
       ? buildOwnerMenuItems(ownerAccess.rows, ownerAccess.permissions)
       : getMenuItems('OWNER')
-    : getMenuItems(user?.role || '');
+    : getMenuItems(menuRoleForTenantChrome);
 
   return (
     <GisSelectedProjectProvider>

@@ -130,6 +130,81 @@ export type SaasCashReceivedIncomeSummary = {
   hiddenCount: number;
 };
 
+/** Agregação anual Jan–Dez para gráficos Receita × Despesa (Caixa SaaS). */
+export type MonthlyRevenueExpense = {
+  month: number;
+  label: string;
+  revenue: number;
+  expense: number;
+};
+
+export const SAAS_CASH_MONTH_LABELS = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
+] as const;
+
+export function buildEmptyMonthlyRevenueExpense(): MonthlyRevenueExpense[] {
+  return SAAS_CASH_MONTH_LABELS.map((label, index) => ({
+    month: index + 1,
+    label,
+    revenue: 0,
+    expense: 0,
+  }));
+}
+
+/**
+ * Agrega receita e despesa mensais do Caixa SaaS (12 meses, zeros quando vazio).
+ * Fonte única: saas_cash_movements (já consolidado — evita dupla contagem com
+ * master_saas_payments, finance_receipts ou extrato Asaas).
+ */
+export async function aggregateSaasCashMonthlyRevenueExpense(
+  supabaseAdmin: SupabaseClient,
+  year: number,
+  cashStartAt?: string | null,
+): Promise<MonthlyRevenueExpense[]> {
+  const resolvedStartAt =
+    cashStartAt !== undefined ? cashStartAt : await getSaasCashStartAt(supabaseAdmin);
+  const fromDate = `${year}-01-01`;
+  const toDate = `${year}-12-31`;
+
+  const movements = await listSaasCashMovements(supabaseAdmin, {
+    fromDate,
+    toDate,
+    type: 'all',
+    cashStartAt: resolvedStartAt,
+  });
+
+  const months = buildEmptyMonthlyRevenueExpense();
+
+  for (const row of movements) {
+    const day = String(row.movement_date || '').split('T')[0] || '';
+    if (!day.startsWith(String(year))) continue;
+    const monthNum = Number(day.slice(5, 7));
+    if (!Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) continue;
+    const amount = Number(row.amount || 0);
+    if (!Number.isFinite(amount)) continue;
+    const bucket = months[monthNum - 1];
+    if (!bucket) continue;
+    if (row.type === 'expense') {
+      bucket.expense += amount;
+    } else {
+      bucket.revenue += amount;
+    }
+  }
+
+  return months;
+}
+
 export type SyncAsaasCashMovementsInput = {
   fromDate: string;
   toDate: string;
