@@ -149,14 +149,22 @@ html {
   font-family: var(--font-sans) !important;
 }
 
-/* GIS — tiles Google Mutant devem ficar visíveis acima do fundo escuro */
+/* GIS — tiles Google Mutant / Esri acima do fundo escuro do container */
+.leaflet-tile-pane {
+  z-index: 200 !important;
+}
+.leaflet-overlay-pane {
+  z-index: 400 !important;
+}
 .leaflet-tile-pane img {
   visibility: visible !important;
   opacity: 1 !important;
 }
 
+/* Mutant fica hidden; tiles copiados vão para o tilePane. Não forçar z-index negativo. */
 .leaflet-google-mutant {
-  z-index: 0 !important;
+  /* container auxiliar do plugin — visibility:hidden no plugin */
+  pointer-events: none !important;
 }
 .leaflet-popup-content-wrapper {
   background: var(--color-surface) !important;

@@ -418,6 +418,27 @@ export default function MapPage() {
     DEFAULT_GIS_BASE_LAYER,
   );
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
+
+  /**
+   * Preview/localhost: API key do Google costuma bloquear referrer *.vercel.app
+   * → fundo escuro sem tiles. Preferir Esri no primeiro paint; Google continua
+   * selecionável no menu e com fallback automático se falhar.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname.toLowerCase();
+    const isPreviewHost =
+      host.includes('vercel.app') ||
+      host === 'localhost' ||
+      host === '127.0.0.1';
+    if (!isPreviewHost) return;
+    setActiveLayer((prev) =>
+      prev === 'google_satellite' || prev === 'google_hybrid'
+        ? 'esri_satellite'
+        : prev,
+    );
+  }, []);
+
   const [gpsActive, setGpsActive] = useState(false);
   const [measureActive, setMeasureActive] = useState(false);
   const [areaMeasureActive, setAreaMeasureActive] = useState(false);

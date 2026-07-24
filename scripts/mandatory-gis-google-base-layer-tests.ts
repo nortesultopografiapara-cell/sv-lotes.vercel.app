@@ -94,6 +94,33 @@ function testRuntimeDiagnosticsShape() {
   console.log('OK testRuntimeDiagnosticsShape');
 }
 
+function testGoogleFallbackWiring() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const base = fs.readFileSync(
+    path.join(__dirname, '../components/map/GisBaseLayer.tsx'),
+    'utf8',
+  );
+  assert(base.includes('fallBackToEsri'), 'fallback Esri');
+  assert(base.includes('subscribeGoogleMapsAuthFailure'), 'auth failure hook');
+  assert(base.includes('google_tiles_missing'), 'tiles missing → fallback');
+  assert(base.includes("pane: 'tilePane'"), 'tilePane explícito');
+  const loader = fs.readFileSync(
+    path.join(__dirname, '../lib/gisGoogleMapsLoader.ts'),
+    'utf8',
+  );
+  assert(
+    loader.includes('subscribeGoogleMapsAuthFailure'),
+    'loader exporta subscribe',
+  );
+  const page = fs.readFileSync(
+    path.join(__dirname, '../app/map/page.tsx'),
+    'utf8',
+  );
+  assert(page.includes('vercel.app'), 'Preview usa Esri no 1º paint');
+  console.log('OK testGoogleFallbackWiring');
+}
+
 function main() {
   testDefaultLayerIsGoogleSatellite();
   testLayerSelectorOptions();
@@ -101,6 +128,7 @@ function main() {
   testMapMaxZoom();
   testGoogleMapsLoaderModuleExists();
   testRuntimeDiagnosticsShape();
+  testGoogleFallbackWiring();
   console.log('mandatory-gis-google-base-layer-tests: all passed');
 }
 

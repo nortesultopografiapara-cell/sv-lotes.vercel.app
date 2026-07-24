@@ -4,7 +4,10 @@ import { useEffect, useRef } from 'react';
 import { useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { ensureGisGoogleMutant } from '@/lib/gisGoogleMutant';
-import { loadGisGoogleMapsApi } from '@/lib/gisGoogleMapsLoader';
+import {
+  loadGisGoogleMapsApi,
+  subscribeGoogleMapsAuthFailure,
+} from '@/lib/gisGoogleMapsLoader';
 import {
   GIS_MAP_MAX_ZOOM,
   isGoogleBaseLayer,
@@ -41,10 +44,14 @@ function isEsriTileLayer(layer: L.Layer): boolean {
   );
 }
 
+/** Tiles Leaflet (inclui cópias do Google Mutant) + presença do container mutant. */
 function countVisibleBaseTiles(map: L.Map): number {
   const tilePane = map.getPane('tilePane');
-  if (!tilePane) return 0;
-  return tilePane.querySelectorAll('img').length;
+  const imgs = tilePane ? tilePane.querySelectorAll('img').length : 0;
+  const mutantImgs = map
+    .getContainer()
+    .querySelectorAll('.leaflet-google-mutant img').length;
+  return Math.max(imgs, mutantImgs);
 }
 
 function createGoogleMutantLayer(layerId: GisBaseLayerId): L.GridLayer | null {
@@ -53,6 +60,7 @@ function createGoogleMutantLayer(layerId: GisBaseLayerId): L.GridLayer | null {
   return L.gridLayer.googleMutant({
     type,
     maxZoom: GIS_MAP_MAX_ZOOM,
+    maxNativeZoom: 21,
   });
 }
 
@@ -62,8 +70,11 @@ function createEsriSatelliteLayer(): L.TileLayer {
     maxZoom: GIS_MAP_MAX_ZOOM,
     updateWhenZooming: true,
     keepBuffer: 4,
+    zIndex: 0,
+    pane: 'tilePane',
     errorTileUrl: TRANSPARENT_ERROR_TILE,
     attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
+    crossOrigin: true,
   });
 }
 
@@ -73,9 +84,12 @@ function createOsmLayer(): L.TileLayer {
     maxZoom: GIS_MAP_MAX_ZOOM,
     updateWhenZooming: true,
     keepBuffer: 4,
+    zIndex: 0,
+    pane: 'tilePane',
     errorTileUrl: TRANSPARENT_ERROR_TILE,
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+    crossOrigin: true,
   });
 }
 
@@ -127,6 +141,7 @@ export function GisBaseLayer({
 }: GisBaseLayerProps) {
   const map = useMap();
   const activeLayerRef = useRef<L.Layer | null>(null);
+  const fallbackAppliedRef = useRef(false);
   const runtimeRef = useRef({
     googleLayerMounted: false,
     esriFallbackActive: false,
@@ -179,6 +194,7 @@ export function GisBaseLayer({
   useEffect(() => {
     let cancelled = false;
     let verifyTimer: number | null = null;
+    fallbackAppliedRef.current = false;
 
     const clearLayer = () => {
       if (activeLayerRef.current) {
@@ -201,6 +217,15 @@ export function GisBaseLayer({
       purgeForeignBaseLayers(map, effective);
       tagBaseLayer(next, effective);
       next.addTo(map);
+      // Garantir tilePane abaixo dos overlays (lotes SVG).
+      const tilePane = map.getPane('tilePane');
+      if (tilePane) {
+        tilePane.style.zIndex = '200';
+      }
+      const overlayPane = map.getPane('overlayPane');
+      if (overlayPane) {
+        overlayPane.style.zIndex = '400';
+      }
       activeLayerRef.current = next;
       syncMapZoomLimits(map);
 
@@ -213,42 +238,68 @@ export function GisBaseLayer({
       emitDiagnostics(map.getZoom());
     };
 
+    const fallBackToEsri = (error: string) => {
+      if (cancelled || fallbackAppliedRef.current) return;
+      if (!isGoogleBaseLayer(layerId)) return;
+      fallbackAppliedRef.current = true;
+      runtimeRef.current.googleMutantError = error;
+      console.warn('GIS_GOOGLE_FALLBACK_ESRI', {
+        requested: layerId,
+        error,
+        host:
+          typeof window !== 'undefined' ? window.location.hostname : 'unknown',
+      });
+      mountLayer(createEsriSatelliteLayer(), 'esri_satellite', {
+        googleLayerMounted: false,
+        esriFallbackActive: true,
+        googleMutantError: error,
+      });
+    };
+
     const mountGoogleLayer = (googleLayer: L.GridLayer) => {
       const verifyTiles = (phase: string) => {
+        if (cancelled || fallbackAppliedRef.current) return;
         const count = countVisibleBaseTiles(map);
         runtimeRef.current.googleLayerMounted = count > 0;
         if (count === 0) {
-          runtimeRef.current.googleMutantError = `google_tiles_missing:${phase}`;
+          const error = `google_tiles_missing:${phase}`;
+          runtimeRef.current.googleMutantError = error;
           console.warn('GIS_GOOGLE_TILES_MISSING', {
             activeBaseLayer: layerId,
             phase,
             currentZoom: map.getZoom(),
           });
-        } else {
-          runtimeRef.current.googleMutantError = null;
+          emitDiagnostics(map.getZoom());
+          // Preview/referrer: Mutant monta mas não copia tiles → fundo escuro.
+          fallBackToEsri(error);
+          return;
         }
+        runtimeRef.current.googleMutantError = null;
         emitDiagnostics(map.getZoom());
       };
 
-      googleLayer.on('spawned', (event: L.LeafletEvent & { mapObject?: google.maps.Map }) => {
-        if (cancelled) return;
-        const gMap = event.mapObject;
-        runtimeRef.current.esriFallbackActive = false;
-        purgeForeignBaseLayers(map, layerId);
-        refreshGoogleLayer(map, googleLayer);
+      googleLayer.on(
+        'spawned',
+        (event: L.LeafletEvent & { mapObject?: google.maps.Map }) => {
+          if (cancelled) return;
+          const gMap = event.mapObject;
+          runtimeRef.current.esriFallbackActive = false;
+          purgeForeignBaseLayers(map, layerId);
+          refreshGoogleLayer(map, googleLayer);
 
-        if (gMap && window.google?.maps) {
-          window.google.maps.event.addListenerOnce(gMap, 'idle', () => {
-            if (cancelled) return;
-            refreshGoogleLayer(map, googleLayer);
-            verifyTiles('idle');
-          });
-        }
+          if (gMap && window.google?.maps) {
+            window.google.maps.event.addListenerOnce(gMap, 'idle', () => {
+              if (cancelled) return;
+              refreshGoogleLayer(map, googleLayer);
+              verifyTiles('idle');
+            });
+          }
 
-        verifyTimer = window.setTimeout(() => {
-          if (!cancelled) verifyTiles('timeout');
-        }, 2500);
-      });
+          verifyTimer = window.setTimeout(() => {
+            if (!cancelled) verifyTiles('timeout');
+          }, 2800);
+        },
+      );
 
       mountLayer(googleLayer, layerId, {
         googleLayerMounted: false,
@@ -260,6 +311,11 @@ export function GisBaseLayer({
         if (!cancelled) refreshGoogleLayer(map, googleLayer);
       });
     };
+
+    const unsubscribeAuth = subscribeGoogleMapsAuthFailure((error) => {
+      if (cancelled) return;
+      fallBackToEsri(error);
+    });
 
     const apply = async () => {
       clearLayer();
@@ -276,50 +332,18 @@ export function GisBaseLayer({
 
         if (!apiResult.ok) {
           const error = apiResult.error ?? 'google_maps_api_unavailable';
-          runtimeRef.current.googleMutantError = error;
-          console.warn('GIS_GOOGLE_LAYER_INIT_FAILED', {
-            requested: layerId,
-            error,
-            esriFallback: true,
-          });
-          mountLayer(createEsriSatelliteLayer(), 'esri_satellite', {
-            googleLayerMounted: false,
-            esriFallbackActive: true,
-            googleMutantError: error,
-          });
+          fallBackToEsri(error);
           return;
         }
 
         if (!mutantReady) {
-          const error = 'google_mutant_register_failed';
-          runtimeRef.current.googleMutantError = error;
-          console.warn('GIS_GOOGLE_LAYER_INIT_FAILED', {
-            requested: layerId,
-            error,
-            esriFallback: true,
-          });
-          mountLayer(createEsriSatelliteLayer(), 'esri_satellite', {
-            googleLayerMounted: false,
-            esriFallbackActive: true,
-            googleMutantError: error,
-          });
+          fallBackToEsri('google_mutant_register_failed');
           return;
         }
 
         const googleLayer = createGoogleMutantLayer(layerId);
         if (!googleLayer) {
-          const error = 'google_mutant_factory_unavailable';
-          runtimeRef.current.googleMutantError = error;
-          console.warn('GIS_GOOGLE_LAYER_INIT_FAILED', {
-            requested: layerId,
-            error,
-            esriFallback: true,
-          });
-          mountLayer(createEsriSatelliteLayer(), 'esri_satellite', {
-            googleLayerMounted: false,
-            esriFallbackActive: true,
-            googleMutantError: error,
-          });
+          fallBackToEsri('google_mutant_factory_unavailable');
           return;
         }
 
@@ -347,6 +371,7 @@ export function GisBaseLayer({
 
     return () => {
       cancelled = true;
+      unsubscribeAuth();
       if (verifyTimer != null) window.clearTimeout(verifyTimer);
       clearLayer();
     };

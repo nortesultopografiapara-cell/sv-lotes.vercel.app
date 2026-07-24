@@ -116,7 +116,13 @@ export function logGisBaseLayerDiagnostics(
   if (state.googleMutantError?.startsWith('gm_authFailure')) {
     console.error(
       'GIS_GOOGLE_CONSOLE_HINT',
-      'Verifique restrições HTTP Referrer da API key para https://www.svlotes.com.br e https://svlotes.com.br',
+      'Verifique restrições HTTP Referrer da API key para https://www.svlotes.com.br, https://svlotes.com.br e https://*.vercel.app/* (Previews).',
+    );
+  }
+  if (state.esriFallbackActive) {
+    console.warn(
+      'GIS_BASE_LAYER_ESRI_FALLBACK',
+      'Google indisponível neste host — World Imagery (Esri) ativo.',
     );
   }
 }
