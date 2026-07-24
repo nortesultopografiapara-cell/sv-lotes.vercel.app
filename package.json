@@ -71,7 +71,10 @@
     "test:master-corporate-finance-asaas-settle-fix": "tsx scripts/mandatory-master-corporate-finance-asaas-settle-fix-tests.ts",
     "test:master-global-scroll-layout": "tsx scripts/mandatory-master-global-scroll-layout-tests.ts",
     "test:master-corporate-delete-safety": "tsx scripts/mandatory-master-corporate-delete-safety-tests.ts",
-    "test:master-executive-scroll-browser": "tsx scripts/mandatory-master-executive-scroll-browser-tests.ts"
+    "test:master-executive-scroll-browser": "tsx scripts/mandatory-master-executive-scroll-browser-tests.ts",
+    "test:dashboard-company-aggregates": "tsx scripts/mandatory-dashboard-company-aggregates-tests.ts",
+    "test:enterprise-value-summary": "tsx scripts/mandatory-enterprise-value-summary-tests.ts",
+    "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

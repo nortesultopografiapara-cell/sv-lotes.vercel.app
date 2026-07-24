@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, DollarSign, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import { resolveRlsContext } from '@/lib/rls';
 import { useAuth } from '@/hooks/useAuth';
 import { canViewEnterpriseValues } from '@/lib/rolePermissions';
 import {
@@ -11,6 +11,7 @@ import {
   formatEnterpriseCurrency,
   type EnterpriseValueSummary,
 } from '@/lib/enterpriseValueSummary';
+import { fetchAllEnterpriseLotRows } from '@/lib/enterpriseValueFetch';
 
 type EnterpriseValueOverlayProps = {
   projectId: string;
@@ -62,15 +63,11 @@ function EnterpriseValueOverlayInner({
       setLoading(true);
       try {
         const rlsCtx = await resolveRlsContext(user);
-        let query = supabase
-          .from('blocks')
-          .select('project_id, status, price')
-          .eq('project_id', projectId);
-        query = applyTenantFilter(query, rlsCtx, 'blocks');
-        const { data, error } = await query;
-        if (error) throw error;
+        const lotFetch = await fetchAllEnterpriseLotRows(supabase, rlsCtx, {
+          projectId,
+        });
         if (cancelled) return;
-        setSummary(calculateEnterpriseValueSummary(data || []));
+        setSummary(calculateEnterpriseValueSummary(lotFetch.rows));
       } catch (error) {
         console.error('ENTERPRISE_VALUE_OVERLAY_ERROR', error);
         if (!cancelled) setSummary(EMPTY_SUMMARY);

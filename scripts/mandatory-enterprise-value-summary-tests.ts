@@ -109,8 +109,31 @@ function testMixedStatusesMartiniScenario() {
 
 function testParsePrice() {
   assert(parseEnterpriseLotPrice('125000.50') === 125000.5, 'parse string');
+  assert(parseEnterpriseLotPrice('1.234,56') === 1234.56, 'parse pt-BR');
   assert(parseEnterpriseLotPrice(undefined) === 0, 'undefined');
   console.log('OK testParsePrice');
+}
+
+function testDecimalsInIdentity() {
+  const summary = calculateEnterpriseValueSummary([
+    { project_id: 'p1', status: 'Disponível', price: 100.1 },
+    { project_id: 'p1', status: 'Reservado', price: 200.2 },
+    { project_id: 'p1', status: 'Vendido', price: 300.3 },
+  ]);
+  assert(
+    Math.abs(
+      summary.availableValue +
+        summary.reservedValue +
+        summary.soldValue -
+        summary.totalValue,
+    ) < 0.001,
+    'identity decimals',
+  );
+  assert(
+    formatEnterpriseCurrency(251932335.3).includes('251.932.335'),
+    'format millions',
+  );
+  console.log('OK testDecimalsInIdentity');
 }
 
 function main() {
@@ -124,6 +147,7 @@ function main() {
   testAllSoldProject();
   testMixedStatusesMartiniScenario();
   testParsePrice();
+  testDecimalsInIdentity();
   console.log('mandatory-enterprise-value-summary-tests: all passed');
 }
 

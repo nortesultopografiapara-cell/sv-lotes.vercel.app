@@ -10,7 +10,13 @@ export function coerceDashboardKpiNumber(value: unknown): number {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (!trimmed) return 0;
-    const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+    let normalized = trimmed;
+    // Aceita "1234.56" (DB) e "1.234,56" (pt-BR) — não remover todos os pontos.
+    if (trimmed.includes(',') && trimmed.includes('.')) {
+      normalized = trimmed.replace(/\./g, '').replace(',', '.');
+    } else if (trimmed.includes(',')) {
+      normalized = trimmed.replace(',', '.');
+    }
     const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : 0;
   }
@@ -27,7 +33,8 @@ export function formatDashboardKpiPrimaryValue(
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(safe);
   }
   return Math.round(safe).toLocaleString('pt-BR');
