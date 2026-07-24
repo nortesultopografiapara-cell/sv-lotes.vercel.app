@@ -29,6 +29,7 @@ import {
 } from '@/lib/saleContractBalloonFinance';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
+import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
 
 function toTitleCase(str: string): string {
   return toContractTitleCase(str);
@@ -184,6 +185,15 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
         netValueFmt: paymentBreakdown.netValueFmt,
       });
 
+  const buyerCpfFmt =
+    formatCpfCnpj(
+      String(customer?.document || customer?.cpf || customer?.cpf_cnpj || ''),
+    ) || base.clienteCpfCnpj;
+
+  const spouseCtx = resolveSaleSpouseContext(
+    sale as Record<string, unknown> | null | undefined,
+  );
+
   return {
     ...base,
     contractNumber,
@@ -245,8 +255,9 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     dataContratoFmt,
     dataContratoExtensoFmt,
     signatureDateLine,
-    buyerCpfFmt: formatCpfCnpj(
-      String(customer?.document || customer?.cpf || customer?.cpf_cnpj || ''),
-    ) || base.clienteCpfCnpj,
+    buyerCpfFmt,
+    // Cônjuge: fonte venda (sale_spouse_*), não cadastro do cliente.
+    hasSpouse: spouseCtx.hasSpouse,
+    spouse: spouseCtx.spouse,
   };
 }

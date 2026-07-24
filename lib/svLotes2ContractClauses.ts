@@ -13,6 +13,10 @@ import {
   buildSvLotes2ClauseSegundaHtml,
 } from '@/lib/svLotes2ContractTerms';
 import { buildSaleContractElectronicSignatureClauseHtml } from '@/lib/saleContractLegalTemplate';
+import {
+  buildSv2SpouseQualificationHtml,
+  buildSv2SpouseSignatureSlotHtml,
+} from '@/lib/saleSpouseContractHtml';
 
 export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
   // Resumo superior compacto (4 colunas) — só imóvel + partes.
@@ -95,9 +99,13 @@ export function buildSvLotes2BuyerQualificationHtml(
     `<strong>Profissão:</strong> ${ctx.clienteProfissao}`,
     ctx.clienteTelefone ? `<strong>Telefone:</strong> ${ctx.clienteTelefone}` : '',
     ctx.clienteEmail ? `<strong>E-mail:</strong> ${ctx.clienteEmail}` : '',
-    `<strong>Endereço:</strong> ${ctx.clienteEndereco}${ctx.clienteBairro ? `, ${ctx.clienteBairro}` : ''}${ctx.clienteCidade && ctx.clienteCidade !== 'cidade não informada' ? `, ${ctx.clienteCidade}-${ctx.clienteUf}` : ''}${ctx.clienteCep && ctx.clienteCep !== 'cep não informado' ? `, CEP ${ctx.clienteCep}` : ''}${ctx.clienteConjugeSuffix}`,
+    `<strong>Endereço:</strong> ${ctx.clienteEndereco}${ctx.clienteBairro ? `, ${ctx.clienteBairro}` : ''}${ctx.clienteCidade && ctx.clienteCidade !== 'cidade não informada' ? `, ${ctx.clienteCidade}-${ctx.clienteUf}` : ''}${ctx.clienteCep && ctx.clienteCep !== 'cep não informado' ? `, CEP ${ctx.clienteCep}` : ''}`,
   ].filter(Boolean);
-  return `<div class="sv2-party-block">${parts.map((p) => `<p>${p}</p>`).join('')}</div>`;
+  const buyerBlock = `<div class="sv2-party-block">${parts.map((p) => `<p>${p}</p>`).join('')}</div>`;
+  const spouseBlock = ctx.hasSpouse
+    ? buildSv2SpouseQualificationHtml(ctx.spouse)
+    : '';
+  return `${buyerBlock}${spouseBlock}`;
 }
 
 export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
@@ -239,18 +247,19 @@ export function buildSvLotes2SignaturesHtml(ctx: SvLotes2ContractContext): strin
     <div class="sv2-signatures">
       <p style="text-align:center; margin-bottom: 24px;">${signatureDateLine}</p>
       <div class="sv2-signatures-grid">
-        <div class="sv2-sign-line">
+        <div class="signature-slot sv2-sign-line" data-party-role="VENDOR">
           ${ctx.empresaAssinatura}
           <strong>${ctx.empresaNome}</strong><br/>
           ${SV2_VENDOR_LABEL}<br/>
           ${ctx.empresaDocumentoLabel}: ${ctx.empresaDocumentoFmt}
           ${ctx.representanteAssinaturaHtml}
         </div>
-        <div class="sv2-sign-line">
+        <div class="signature-slot sv2-sign-line" data-party-role="BUYER">
           <strong>${ctx.clienteNome}</strong><br/>
           ${SV2_BUYER_LABEL}<br/>
           CPF: ${ctx.buyerCpfFmt}
         </div>
       </div>
+      ${ctx.hasSpouse ? buildSv2SpouseSignatureSlotHtml(ctx.spouse) : ''}
     </div>`;
 }

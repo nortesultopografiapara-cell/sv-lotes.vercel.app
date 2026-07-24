@@ -385,9 +385,9 @@ function testContractWithSpouseCpfOnly() {
     },
     contractDate: '2026-06-17',
   });
-  assert(html.includes('111.222.333-44'), 'cpf cônjuge');
-  assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
-  assertNotIncludes(html, '<strong>Esposo(A)/Cônjuge:</strong>', 'sem label sem nome');
+  // Regra global: exige nome + CPF — só CPF não inclui cônjuge.
+  assertNotIncludes(html, 'CÔNJUGE ANUENTE', 'cpf sem nome não cria bloco');
+  assertNotIncludes(html, '<strong>Esposo(A)/Cônjuge:</strong>', 'sem label');
   console.log('OK testContractWithSpouseCpfOnly');
 }
 

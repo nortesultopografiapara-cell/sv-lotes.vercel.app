@@ -15,9 +15,15 @@ import {
 } from "@/lib/contractSeller";
 import {
   formatContractIdentityDocumentSuffix,
-  formatContractSpouseQualificationSuffix,
   formatSellerRepresentativeIdentitySuffix,
 } from "@/lib/contractIdentity";
+import {
+  resolveSaleSpouseContext,
+} from "@/lib/saleSpouseFields";
+import {
+  buildClassicSpouseQualificationHtml,
+  buildClassicSpouseSignatureSlotHtml,
+} from "@/lib/saleSpouseContractHtml";
 import {
   buildSaleContractClauseQuartaHtml,
   buildSaleContractClauseTerceiraHtml,
@@ -202,7 +208,14 @@ export function generateContractHTML({
   const clienteNome = toTitleCase(customer?.name || "cliente não informado");
   const clienteCpfCnpj = formatCNPJCPF(customer?.document || customer?.cpf || "cpf/cnpj não informado");
   const clienteIdentitySuffix = formatContractIdentityDocumentSuffix(customer);
-  const clienteConjugeSuffix = formatContractSpouseQualificationSuffix(customer);
+  // Fonte de verdade: venda (sale_spouse_*), não cadastro do cliente / estado civil.
+  const spouseCtx = resolveSaleSpouseContext(sale);
+  const spouseQualificationHtml = spouseCtx.hasSpouse
+    ? buildClassicSpouseQualificationHtml(spouseCtx.spouse)
+    : '';
+  const spouseSignatureSlotHtml = spouseCtx.hasSpouse
+    ? buildClassicSpouseSignatureSlotHtml(spouseCtx.spouse)
+    : '';
   const clienteProfissao = toTitleCase(
     customer?.profession || "profissão não informada",
   );
@@ -523,8 +536,9 @@ export function generateContractHTML({
                     <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
                 </p>
                 <p style="margin-bottom: 10px;">
-                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}${clienteConjugeSuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
+                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
                 </p>
+                ${spouseQualificationHtml}
             </div>
 
             <div class="contract-preamble">
@@ -608,7 +622,7 @@ export function generateContractHTML({
             </div>
 
             <div class="contract-signatures">
-                <div class="signature-slot">
+                <div class="signature-slot" data-party-role="VENDOR">
                     ${empresaAssinatura}
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
@@ -616,20 +630,22 @@ export function generateContractHTML({
                     ${representanteAssinaturaHtml}
                 </div>
 
-                <div class="signature-slot">
+                <div class="signature-slot" data-party-role="BUYER">
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}</p>
                 </div>
 
-                <div class="signature-slot">
+                ${spouseSignatureSlotHtml}
+
+                <div class="signature-slot" data-party-role="WITNESS">
                     <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
                     <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 1</p>
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
 
-                <div class="signature-slot">
+                <div class="signature-slot" data-party-role="WITNESS">
                     <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
                     <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 2</p>
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>

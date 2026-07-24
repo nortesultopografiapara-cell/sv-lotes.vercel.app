@@ -28,6 +28,7 @@ function buildRecantoPartyBlockLines(
 
 function buildSignatureSlot(params: {
   role: string;
+  partyRole: 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS';
   name?: string;
   docLines?: string[];
   signatureImage?: string;
@@ -42,7 +43,7 @@ function buildSignatureSlot(params: {
     .join('\n');
 
   return `
-      <div class="signature-slot" style="${SIGNATURE_SLOT_STYLE}">
+      <div class="signature-slot" data-party-role="${params.partyRole}" style="${SIGNATURE_SLOT_STYLE}">
         ${params.signatureImage || ''}
         <div style="${SIGNATURE_LINE_STYLE}"></div>
         <p style="${SIGNATURE_ROLE_STYLE}">${params.role}</p>
@@ -122,6 +123,7 @@ export function buildRecantoPrimaveraSignaturesHtml(
   const conjugeSignatureSlot = ctx.hasConjuge
     ? buildSignatureSlot({
         role: 'CÔNJUGE ANUENTE',
+        partyRole: 'SPOUSE',
         name: ctx.conjugeNome,
         docLines: [ctx.conjugeCpf ? `CPF: ${ctx.conjugeCpf}` : ''].filter(Boolean),
       })
@@ -141,6 +143,7 @@ export function buildRecantoPrimaveraSignaturesHtml(
     <div class="contract-signatures contract-signatures--recanto">
       ${buildSignatureSlot({
         role: 'VENDEDOR(A)',
+        partyRole: 'VENDOR',
         name: p.vendorName,
         docLines: vendorDocLine ? [vendorDocLine] : [],
         signatureImage: ctx.empresaAssinatura,
@@ -148,13 +151,14 @@ export function buildRecantoPrimaveraSignaturesHtml(
 
       ${buildSignatureSlot({
         role: 'COMPRADOR(A)',
+        partyRole: 'BUYER',
         name: ctx.clienteNome,
         docLines: buyerDocLines,
       })}
 
       ${conjugeSignatureSlot}
 
-      <div class="signature-slot" style="${SIGNATURE_SLOT_STYLE}">
+      <div class="signature-slot" data-party-role="WITNESS" style="${SIGNATURE_SLOT_STYLE}">
         <div style="${SIGNATURE_LINE_STYLE}"></div>
         <p style="${SIGNATURE_ROLE_STYLE}">Testemunhas</p>
         <p style="margin: 8px 0 4px 0; font-size: 10pt;">Nome: __________________________________________</p>

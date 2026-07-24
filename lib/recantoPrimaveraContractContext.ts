@@ -92,7 +92,7 @@ export type RecantoPrimaveraContractContext = {
   clienteUf: string;
   clienteCep: string;
   clienteEnderecoCompleto: string;
-  /** true quando sale_spouse_name ou sale_spouse_cpf está preenchido na venda */
+  /** true quando resolveSaleSpouseContext.hasSpouse */
   hasConjuge: boolean;
   conjugeNome: string;
   conjugeNacionalidade: string;

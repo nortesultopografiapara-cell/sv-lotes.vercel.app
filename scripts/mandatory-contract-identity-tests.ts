@@ -129,6 +129,13 @@ const html = generateContractHTML({
     down_payment: 5000,
     installments_count: 12,
     payment_type: 'Parcelada',
+    has_spouse: true,
+    sale_spouse_name: 'Esposa Teste',
+    sale_spouse_cpf: '333.333.333-33',
+    sale_spouse_rg: '7777777',
+    sale_spouse_rg_issuer: 'SSP/PA',
+    sale_spouse_nationality: 'Brasileira',
+    sale_spouse_profession: 'Professora',
   },
   contractSnapshot: { contract_number: '000000001/2026' },
   contractDate: '2026-05-01',
@@ -143,8 +150,9 @@ assert(
 
 assert(
   'HTML contém qualificação do cônjuge',
-  html.includes('casado(a) com Esposa Teste') &&
-    html.includes('RG nº 7777777, expedida pela SSP/PA'),
+  html.includes('CÔNJUGE ANUENTE') &&
+    html.includes('Esposa Teste') &&
+    html.includes('7777777'),
 );
 
 assert(

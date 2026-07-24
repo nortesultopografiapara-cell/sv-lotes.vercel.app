@@ -62,7 +62,7 @@ import {
 } from '@/lib/saleContractSignatureParties';
 import {
   applyElectronicSignatureStampsToContractHtml,
-  buildRecantoElectronicStamps,
+  buildElectronicStampsFromSignatureParties,
 } from '@/lib/saleContractSignaturePartySlots';
 import { SaleContractSignatureError } from '@/lib/saleContractSignatureErrors';
 import {
@@ -1458,19 +1458,22 @@ export async function loadSaleContractPdfForSign(
     const vendorParty = parties.find((p) => p.role === 'VENDOR');
 
     if (parties.length > 0) {
+      // Selos por papel (VENDOR/BUYER/SPOUSE) — nunca deduplicar por CPF.
       html = applyElectronicSignatureStampsToContractHtml(
         html,
-        buildRecantoElectronicStamps({
-          buyerName: buyerParty?.signer_name || buyerName,
-          buyerSignedAt: buyerParty?.signed_at || signature.signed_at,
-          buyerSigned: String(buyerParty?.status || '').toUpperCase() === 'SIGNED',
-          spouseName: spouseParty?.signer_name,
-          spouseSignedAt: spouseParty?.signed_at,
-          spouseSigned: String(spouseParty?.status || '').toUpperCase() === 'SIGNED',
-          vendorName:
-            signature.vendor_signer_name || vendorParty?.signer_name || seller.representative,
-          vendorSignedAt: signature.vendor_signed_at || vendorParty?.signed_at,
-          vendorSigned: Boolean(signature.vendor_signed_at),
+        buildElectronicStampsFromSignatureParties({
+          parties,
+          buyerNameFallback: buyerParty?.signer_name || buyerName,
+          vendorNameFallback:
+            signature.vendor_signer_name ||
+            vendorParty?.signer_name ||
+            seller.representative,
+          legacyBuyerSignedAt: signature.signed_at,
+          legacyVendorSignedAt: signature.vendor_signed_at,
+          legacyVendorSigned: Boolean(signature.vendor_signed_at),
+          legacyBuyerSigned:
+            String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
+            Boolean(signature.signed_at),
         }),
       );
     } else {
