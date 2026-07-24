@@ -8,6 +8,12 @@ import {
   getCompanyDisplayName,
 } from "@/lib/contractCompanyDisplay";
 import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import {
+  buildClassicContractPaginationCss,
+  buildRecantoContractPaginationCss,
+  CONTRACT_HTML2PDF_PAGINATION_AVOID,
+  RECANTO_HTML2PDF_PAGINATION_AVOID,
+} from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
@@ -29,161 +35,11 @@ export type ContractPdfChromeInput = {
   tenantCep?: string;
 };
 
-/** CSS embutido no HTML do contrato — evita página extra após assinaturas. */
-export const CONTRACT_PDF_PRINT_CSS = `
-<style type="text/css">
-  .sv-contract-document .contract-clause {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    margin-bottom: 22px;
-  }
-  .sv-contract-document .contract-clause--tight {
-    margin-bottom: 18px;
-  }
-  .sv-contract-document .contract-title {
-    text-align: center;
-    margin-bottom: 22px;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-  }
-  .sv-contract-document .contract-preamble {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    margin-bottom: 18px;
-  }
-  .sv-contract-document .contract-signatures {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    page-break-after: avoid !important;
-    break-after: avoid-page !important;
-    margin-top: 28px;
-    margin-bottom: 0 !important;
-    padding-bottom: 0 !important;
-    text-align: center;
-  }
-  .sv-contract-document .contract-signatures .signature-slot {
-    margin-bottom: 40px;
-  }
-  .sv-contract-document .contract-signatures .signature-slot:last-of-type {
-    margin-bottom: 8px;
-  }
-  .sv-contract-document .contract-signatures--recanto {
-    margin-top: 16px;
-    text-align: center;
-  }
-  .sv-contract-document .contract-signatures--recanto .signature-slot {
-    margin-bottom: 18px;
-    text-align: center;
-  }
-  .sv-contract-document .contract-signatures--recanto .signature-slot:last-of-type {
-    margin-bottom: 4px;
-  }
-  .sv-contract-document .contract-footer {
-    page-break-before: avoid;
-    break-before: avoid-page;
-    page-break-after: avoid !important;
-    break-after: avoid-page !important;
-    margin-top: 12px;
-    margin-bottom: 0 !important;
-    padding-bottom: 0 !important;
-    border-top: 1px solid #ccc;
-    padding-top: 10px;
-    font-size: 9pt;
-    color: #444;
-    text-align: center;
-  }
-  .sv-contract-document > *:last-child {
-    page-break-after: avoid !important;
-    break-after: avoid-page !important;
-    margin-bottom: 0 !important;
-  }
-  .sv-cert-official-block,
-  .sv-cert-official-inner,
-  .sv-cert-official,
-  .sv-cert-official .sv-cert-cards,
-  .sv-cert-official .sv-cert-card,
-  .sv-cert-official .sv-cert-validation,
-  .sv-cert-official .sv-cert-validation-inner {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    -webkit-column-break-inside: avoid !important;
-  }
-  .sv-cert-official-block {
-    display: block !important;
-    overflow: hidden;
-    page-break-before: always !important;
-    break-before: page !important;
-  }
-</style>
-`;
+/** CSS embutido no HTML do contrato — engine única de paginação. */
+export const CONTRACT_PDF_PRINT_CSS = buildClassicContractPaginationCss();
 
-/** CSS de impressão Recanto — fluxo contínuo nas cláusulas; blocos críticos permanecem juntos. */
-export const RECANTO_CONTRACT_PDF_PRINT_CSS = `
-<style type="text/css">
-  .sv-contract-recanto-primavera .contract-clause {
-    page-break-inside: auto;
-    break-inside: auto;
-    margin-bottom: 10px;
-  }
-  .sv-contract-recanto-primavera p {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    orphans: 2;
-    widows: 2;
-  }
-  .sv-contract-recanto-primavera .contract-payment-block,
-  .sv-contract-recanto-primavera .contract-clause--electronic-signature {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-  }
-  .sv-contract-recanto-primavera .contract-payment-block table,
-  .sv-contract-recanto-primavera .contract-payment-block tr {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-  }
-  .sv-contract-recanto-primavera .contract-signatures {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    page-break-after: avoid !important;
-    break-after: avoid-page !important;
-    margin-top: 16px;
-    margin-bottom: 0 !important;
-    padding-bottom: 0 !important;
-    text-align: center;
-  }
-  .sv-contract-recanto-primavera .contract-signatures .signature-slot {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    margin-bottom: 18px;
-    text-align: center;
-  }
-  .sv-contract-recanto-primavera .contract-signatures .signature-slot:last-of-type {
-    margin-bottom: 4px;
-  }
-  .sv-contract-recanto-primavera > *:last-child {
-    page-break-after: avoid !important;
-    break-after: avoid-page !important;
-    margin-bottom: 0 !important;
-  }
-  .sv-cert-official-block,
-  .sv-cert-official-inner,
-  .sv-cert-official,
-  .sv-cert-official .sv-cert-cards,
-  .sv-cert-official .sv-cert-card,
-  .sv-cert-official .sv-cert-validation,
-  .sv-cert-official .sv-cert-validation-inner {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    -webkit-column-break-inside: avoid !important;
-  }
-  .sv-cert-official-block {
-    display: block !important;
-    overflow: hidden;
-    page-break-before: always !important;
-    break-before: page !important;
-  }
-</style>
-`;
+/** CSS de impressão Recanto — mesma engine (fluxo de cláusulas + assinaturas indivisíveis). */
+export const RECANTO_CONTRACT_PDF_PRINT_CSS = buildRecantoContractPaginationCss();
 
 export type ContractHtml2pdfPagebreakOptions = {
   mode: string[];
@@ -204,20 +60,12 @@ export type ContractHtml2pdfOptions = {
   pagebreak: ContractHtml2pdfPagebreakOptions;
 };
 
-/** Seletores que o html2pdf deve manter inteiros (evita linha cortada ao rasterizar). */
-export const RECANTO_CONTRACT_HTML2PDF_AVOID_SELECTORS = [
-  '.sv-contract-recanto-primavera p',
-  '.sv-contract-recanto-primavera .contract-payment-block',
-  '.sv-contract-recanto-primavera .contract-signatures',
-  '.sv-contract-recanto-primavera .contract-clause--electronic-signature',
-  '.sv-contract-recanto-primavera .signature-slot',
-] as const;
+/** Seletores que o html2pdf deve manter inteiros (engine única). */
+export const RECANTO_CONTRACT_HTML2PDF_AVOID_SELECTORS =
+  RECANTO_HTML2PDF_PAGINATION_AVOID;
 
-export const CONTRACT_HTML2PDF_AVOID_SELECTORS = [
-  '.contract-balloon-finance',
-  '.contract-balloon-only-table',
-  '.contract-payment-block',
-] as const;
+export const CONTRACT_HTML2PDF_AVOID_SELECTORS =
+  CONTRACT_HTML2PDF_PAGINATION_AVOID;
 
 /** Opções html2pdf — sem avoid-all (evita página vazia extra no final). */
 export function getContractHtml2pdfOptions(

@@ -205,8 +205,10 @@ export const SV_LOTES_2_CONTRACT_CSS = `
   }
   .sv-contract-sv-lotes-2 .sv2-clause {
     margin-bottom: 7px;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
+    page-break-inside: auto;
+    break-inside: auto;
+    orphans: 3;
+    widows: 3;
   }
   .sv-contract-sv-lotes-2 .sv2-clause p {
     margin: 0 0 7px 0;
@@ -214,14 +216,15 @@ export const SV_LOTES_2_CONTRACT_CSS = `
     font-family: 'Times New Roman', Times, serif;
   }
   .sv-contract-sv-lotes-2 .sv2-signatures {
-    margin-top: 28px;
+    margin-top: 18px;
     page-break-inside: avoid;
+    break-inside: avoid-page;
   }
   .sv-contract-sv-lotes-2 .sv2-signatures-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-top: 40px;
+    gap: 14px;
+    margin-top: 16px;
   }
   .sv-contract-sv-lotes-2 .sv2-sign-line {
     border-top: 1px solid #334155;

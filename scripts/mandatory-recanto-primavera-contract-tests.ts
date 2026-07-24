@@ -18,6 +18,7 @@ import {
   normalizeSaleContractModel,
   resolveSaleContractModel,
 } from '../lib/contractModel';
+import { RECANTO_CONTRACT_PDF_PRINT_CSS } from '../lib/contractPdfPostProcess';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -332,7 +333,8 @@ function testLegalRepresentativeNameAlias() {
 
 function testRecantoPrintCssAllowsClauseFlow() {
   const template = fs.readFileSync('lib/recantoPrimaveraContractTemplate.ts', 'utf8');
-  const printCss = fs.readFileSync('lib/contractPdfPostProcess.ts', 'utf8');
+  const engineSrc = fs.readFileSync('lib/contractPaginationEngine.ts', 'utf8');
+  const printCss = RECANTO_CONTRACT_PDF_PRINT_CSS;
   assert(template.includes('RECANTO_CONTRACT_PDF_PRINT_CSS'), 'template usa CSS Recanto');
   assert(printCss.includes('sv-contract-recanto-primavera .contract-clause'), 'CSS Recanto');
   assert(
@@ -348,12 +350,16 @@ function testRecantoPrintCssAllowsClauseFlow() {
     'tabela financeira permanece junta',
   );
   assert(
-    printCss.includes('getRecantoContractHtml2pdfOptions'),
-    'opções html2pdf Recanto',
+    engineSrc.includes('decideIndivisibleBlockPlacement'),
+    'engine única de decisão de paginação',
   );
   assert(
-    printCss.includes("mode: ['css', 'legacy']"),
-    'html2pdf legacy+css para evitar corte de linha',
+    printCss.includes('page-break-before: auto'),
+    'certificado sem always-break padrão',
+  );
+  assert(
+    printCss.includes('sv-pagination-force-break'),
+    'quebra forçada só via classe de medição',
   );
   console.log('OK testRecantoPrintCssAllowsClauseFlow');
 }

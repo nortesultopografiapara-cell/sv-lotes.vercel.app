@@ -144,8 +144,8 @@ export function buildSv2SpouseSignatureSlotHtml(
   const cpf = formatCpfDisplay(spouse.cpf);
 
   return `
-        <div class="signature-slot sv2-sign-line" data-party-role="SPOUSE" style="text-align:center; margin-top: 18px;">
-          <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 70%; max-width: 280px;"></div>
+        <div class="signature-slot sv2-sign-line" data-party-role="SPOUSE" style="text-align:center; margin-top: 10px;">
+          <div style="border-top: 1px solid #111; margin: 0 auto 6px auto; width: 70%; max-width: 280px;"></div>
           <strong>${escapeHtml(name)}</strong><br/>
           CÔNJUGE ANUENTE<br/>
           ${cpf ? `CPF: ${escapeHtml(cpf)}` : ''}

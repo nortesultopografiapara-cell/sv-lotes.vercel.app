@@ -181,7 +181,9 @@ const contractHtml = generateContractHTML({
 const requiredSnippets = [
   'Cláusula Primeira',
   'Cláusula Quarta',
-  'Cláusula Décima Primeira',
+  'Cláusula Décima',
+  'Cláusula Décima Segunda',
+  'Cláusula Décima Terceira',
   'TESTEMUNHA 1',
   'TESTEMUNHA 2',
   'LOTEAMENTO NOVA CARAJÁS',

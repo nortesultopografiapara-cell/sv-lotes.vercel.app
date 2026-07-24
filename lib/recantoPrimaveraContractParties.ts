@@ -2,15 +2,16 @@
  * Blocos HTML do contrato Recanto — assinaturas e campos de partes.
  */
 
+import { CONTRACT_SIGNATURE_SPACING } from '@/lib/contractPaginationEngine';
 import { sanitizeContractField } from '@/lib/recantoPrimaveraCompanyProfile';
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
 
 const SIGNATURE_SLOT_STYLE =
-  'text-align: center; margin-bottom: 22px; page-break-inside: avoid;';
+  `text-align: center; margin-bottom: ${CONTRACT_SIGNATURE_SPACING.recantoSlotInlineMarginBottom}; page-break-inside: avoid;`;
 const SIGNATURE_LINE_STYLE =
-  'border-top: 1px solid #111; margin: 0 auto 8px auto; width: 55%; max-width: 320px;';
+  'border-top: 1px solid #111; margin: 0 auto 6px auto; width: 55%; max-width: 320px;';
 const SIGNATURE_ROLE_STYLE =
-  'margin: 0 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 11pt;';
+  'margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase; font-size: 11pt;';
 const SIGNATURE_NAME_STYLE = 'margin: 0 0 2px 0; font-weight: bold; font-size: 11pt;';
 const SIGNATURE_META_STYLE = 'margin: 0; font-size: 10pt; font-weight: normal;';
 
@@ -161,9 +162,9 @@ export function buildRecantoPrimaveraSignaturesHtml(
       <div class="signature-slot" data-party-role="WITNESS" style="${SIGNATURE_SLOT_STYLE}">
         <div style="${SIGNATURE_LINE_STYLE}"></div>
         <p style="${SIGNATURE_ROLE_STYLE}">Testemunhas</p>
-        <p style="margin: 8px 0 4px 0; font-size: 10pt;">Nome: __________________________________________</p>
-        <p style="margin: 0 0 12px 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
-        <p style="margin: 0 0 4px 0; font-size: 10pt;">Nome: __________________________________________</p>
+        <p style="margin: 4px 0 2px 0; font-size: 10pt;">Nome: __________________________________________</p>
+        <p style="margin: 0 0 8px 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
+        <p style="margin: 0 0 2px 0; font-size: 10pt;">Nome: __________________________________________</p>
         <p style="margin: 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
       </div>
     </div>`;
