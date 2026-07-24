@@ -79,13 +79,19 @@ export type SaleContractElectronicSignaturesInput = {
 
 const CERT_STYLES = `
 <style type="text/css">
+  /* Paginação: engine única (contractPaginationEngine) — sem page-break-before: always. */
   .sv-cert-official-block {
     display: block !important;
     width: 100%;
     overflow: hidden;
+    margin-top: 10px !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     -webkit-column-break-inside: avoid !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
+  }
+  .sv-cert-official-block.sv-pagination-force-break {
     page-break-before: always !important;
     break-before: page !important;
   }

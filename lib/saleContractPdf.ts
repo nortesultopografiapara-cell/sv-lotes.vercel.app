@@ -11,6 +11,10 @@ import {
   CONTRACT_PDF_PRINT_CSS,
   type ContractPdfChromeInput,
 } from '@/lib/contractPdfPostProcess';
+import {
+  CONTRACT_FOOTER_RESERVE_PX,
+  CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+} from '@/lib/contractPaginationEngine';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
 
 function escapeHtml(value: string): string {
@@ -209,6 +213,44 @@ export async function buildSaleContractPdfFromHtml(
     page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(documentHtml, { waitUntil: 'load', timeout: 45_000 });
+
+    // Engine única: mede espaço restante e só força quebra do certificado se não couber.
+    try {
+      await page.evaluate(
+        (pageH: number, footer: number) => {
+          const cert = document.querySelector('.sv-cert-official-block');
+          if (!cert) return { applied: false, reason: 'no-cert' };
+
+          const certH = Math.ceil(cert.getBoundingClientRect().height || 0);
+          const sig = document.querySelector('.contract-signatures, .sv2-signatures');
+          let remaining = pageH;
+
+          if (sig) {
+            const sigRect = sig.getBoundingClientRect();
+            const offsetInPage = ((sigRect.bottom % pageH) + pageH) % pageH;
+            remaining = Math.max(0, pageH - offsetInPage);
+          } else {
+            const certTop = cert.getBoundingClientRect().top;
+            const offsetInPage = ((certTop % pageH) + pageH) % pageH;
+            remaining = Math.max(0, pageH - offsetInPage);
+          }
+
+          const available = Math.max(0, remaining - footer);
+          if (certH > available) {
+            cert.classList.add('sv-pagination-force-break');
+            return { applied: true, decision: 'new-page', remaining, certH, available };
+          }
+          cert.classList.remove('sv-pagination-force-break');
+          return { applied: true, decision: 'same-page', remaining, certH, available };
+        },
+        CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+        CONTRACT_FOOTER_RESERVE_PX,
+      );
+    } catch (measureErr) {
+      console.warn('[sale-sign-pdf] pagination measure skipped', {
+        message: measureErr instanceof Error ? measureErr.message : String(measureErr),
+      });
+    }
 
     const pdfBuffer = await page.pdf({
       format: 'A4',

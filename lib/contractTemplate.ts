@@ -613,10 +613,10 @@ export function generateContractHTML({
             ${forumClauseHtml}
 
             <div class="contract-clause">
-                <p style="margin-bottom: 20px;">
+                <p style="margin-bottom: 10px;">
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
                 </p>
-                <div style="text-align: right; margin-bottom: 30px;">
+                <div style="text-align: right; margin-bottom: 14px;">
                     <p style="margin: 0;">${empresaCidade} - ${empresaUf}, ${dataContratoFmt}</p>
                 </div>
             </div>
@@ -639,16 +639,16 @@ export function generateContractHTML({
                 ${spouseSignatureSlotHtml}
 
                 <div class="signature-slot" data-party-role="WITNESS">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
-                    <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 1</p>
-                    <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
+                    <div style="border-top: 1px solid #111; margin: 0 auto 6px auto; width: 60%;"></div>
+                    <p style="margin: 0 0 4px 0; font-weight: bold;">TESTEMUNHA 1</p>
+                    <p style="margin: 0 0 3px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
 
                 <div class="signature-slot" data-party-role="WITNESS">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
-                    <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 2</p>
-                    <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
+                    <div style="border-top: 1px solid #111; margin: 0 auto 6px auto; width: 60%;"></div>
+                    <p style="margin: 0 0 4px 0; font-weight: bold;">TESTEMUNHA 2</p>
+                    <p style="margin: 0 0 3px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
 

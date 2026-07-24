@@ -245,7 +245,7 @@ export function buildSvLotes2SignaturesHtml(ctx: SvLotes2ContractContext): strin
 
   return `
     <div class="sv2-signatures">
-      <p style="text-align:center; margin-bottom: 24px;">${signatureDateLine}</p>
+      <p style="text-align:center; margin-bottom: 12px;">${signatureDateLine}</p>
       <div class="sv2-signatures-grid">
         <div class="signature-slot sv2-sign-line" data-party-role="VENDOR">
           ${ctx.empresaAssinatura}
