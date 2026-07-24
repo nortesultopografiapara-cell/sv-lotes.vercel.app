@@ -212,6 +212,10 @@ import {
   gisPerfManualFrontBegin,
   gisPerfManualFrontEnd,
   gisPerfManualFrontMark,
+  gisPerfNoteSetLots,
+  gisPerfNoteRealtimeEvent,
+  gisPerfNoteDuplicateRealtimeSuppressed,
+  gisPerfNoteEdgeRender,
   gisPerfSetLotCount,
   gisPerfSummarizeBlocksPayload,
   isGisPerfDiagnosticsEnabled,
@@ -223,6 +227,10 @@ import {
   normalizeBlockKeyForMap,
 } from "@/lib/gis/mapLotFromBlock";
 import { collectNearbyLotIds } from "@/lib/gis/nearbyLots";
+import {
+  filterStreetGuidesNearLot,
+  yieldToBrowser,
+} from "@/lib/gis/uiYield";
 import { buildAllPolysUtm } from "@/lib/lotSegmentConfrontation";
 
 /**
@@ -2896,6 +2904,14 @@ export default function GISMap({
     Boolean(insertConfrontantTool) ||
     Boolean(defineOfficialSideTool);
 
+  /** Arestas detalhadas só com zoom próximo ou ferramenta ativa (LOD). */
+  const showDetailedEdges =
+    mapZoom >= 16 ||
+    frontCorrectLotId != null ||
+    confrontEdit != null ||
+    defineOfficialSidePickLotId != null ||
+    liveStreetAudits;
+
   /** Foco pontual: só estes ids ( + vizinhos ) entram em rebuild de auditoria. */
   const scopedAuditFocusId =
     frontCorrectLotId ||
@@ -2970,6 +2986,12 @@ export default function GISMap({
       return confrontationAuditsPrevRef.current;
     }
 
+    // Sem ferramenta assistida/global e sem foco pontual: NÃO auditar 597 lotes no load.
+    if (!liveStreetAudits && !scopedAuditFocusId) {
+      gisPerfNoteAuditRebuild(0);
+      return confrontationAuditsPrevRef.current;
+    }
+
     const scopeIds = scopedAuditLotIds;
     const auditTargetLots =
       scopeIds && !liveStreetAudits
@@ -2985,7 +3007,12 @@ export default function GISMap({
           confrontationAuditsPrevRef.current = empty;
           return empty;
         }
-        const sharedPolys = buildAllPolysUtm(blocksForConfront);
+        // Candidatos: no escopo pontual, só foco+vizinhos; no global, todos.
+        const candidateBlocks =
+          scopeIds && !liveStreetAudits
+            ? blocksForConfront.filter((b) => scopeIds.has(String(b.id)))
+            : blocksForConfront;
+        const sharedPolys = buildAllPolysUtm(candidateBlocks);
         const map =
           scopeIds && !liveStreetAudits
             ? new Map(confrontationAuditsPrevRef.current)
@@ -3005,7 +3032,7 @@ export default function GISMap({
                   front_street_name: lot.frontStreetName,
                 }),
                 lot.id,
-                blocksForConfront,
+                candidateBlocks.length ? candidateBlocks : blocksForConfront,
                 streetGuides,
                 null,
                 sharedPolys,
@@ -3037,6 +3064,7 @@ export default function GISMap({
     streetsHydrateEpoch,
     perfToggles.confrontationAudits,
     scopedAuditLotIds,
+    scopedAuditFocusId,
     frontCorrectLotId,
     confrontEdit,
     defineOfficialSidePickLotId,
@@ -3206,26 +3234,41 @@ export default function GISMap({
     if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id) return;
     const lotId = String(lot.id);
+    const projectAtStart = String(projectId || '');
     const candidateEdges = Array.isArray(lot.bounds)
       ? Math.max(0, (lot.bounds as unknown[]).length)
       : 0;
-    const neighborIds = collectNearbyLotIds(lots, lotId, 40);
-
-    // Fecha o modo imediatamente — evita rebuild/reattach de 597 arestas durante o save.
-    setFrontCorrectLotId(null);
-    setFrontCorrectSaving(true);
 
     gisPerfManualFrontBegin({
       operation: 'manual_front',
       lotId: lotId.slice(0, 8),
+      blockId: lotId.slice(0, 8),
       edgeIndex: segmentIndex,
       candidateEdges,
-      evaluatedNeighbors: neighborIds.size,
     });
-    gisPerfLotEditBegin({
-      operation: 'front',
+    console.info('[GIS_PERF_MANUAL_FRONT] click', {
       lotId: lotId.slice(0, 8),
+      edgeIndex: segmentIndex,
     });
+
+    // Fecha modo + feedback local ANTES de qualquer cálculo pesado.
+    setFrontCorrectLotId(null);
+    setFrontCorrectSaving(true);
+    gisPerfManualFrontMark('mode_closed');
+
+    // Libera paint — pan/zoom e banner "Salvando" ficam responsivos.
+    await yieldToBrowser();
+
+    if (String(projectId || '') !== projectAtStart) {
+      gisPerfManualFrontEnd({
+        lotId: lotId.slice(0, 8),
+        edgeIndex: segmentIndex,
+        projectChangedDuringOperation: true,
+        fallbackFullReload: false,
+      });
+      setFrontCorrectSaving(false);
+      return;
+    }
 
     try {
       gisPerfManualFrontMark('compute_start');
@@ -3250,19 +3293,47 @@ export default function GISMap({
         front_segment_index: persistedFrontIdx,
         front_source: 'manual',
       };
+
       const measures = getOfficialLotMeasurements(block, lot.number);
-      const streetMatch = resolveFrontStreetGuideForLot(block, streetGuides);
-      const streetFields = streetFieldsFromGuideMatch(streetMatch);
       gisPerfManualFrontMark('compute_end');
+
+      gisPerfManualFrontMark('street_start');
+      const nearbyStreets = filterStreetGuidesNearLot(
+        lot.bounds as Array<[number, number]> | undefined,
+        streetGuides as Record<string, unknown>[],
+        80,
+      );
+      const streetMatch = resolveFrontStreetGuideForLot(
+        block,
+        nearbyStreets.length ? nearbyStreets : streetGuides,
+      );
+      const streetFields = streetFieldsFromGuideMatch(streetMatch);
+      gisPerfManualFrontMark('street_matched');
+
       console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lotId: lot.id,
         segmentIndex,
         persistedFrontIdx,
-        measures,
-        streetMatch,
+        candidateStreets: nearbyStreets.length,
+        streetMatch: streetMatch
+          ? { id: streetMatch.streetGuideId, name: streetMatch.streetGuideName }
+          : null,
       });
+
+      if (String(projectId || '') !== projectAtStart) {
+        gisPerfManualFrontEnd({
+          lotId: lotId.slice(0, 8),
+          edgeIndex: segmentIndex,
+          candidateStreets: nearbyStreets.length,
+          projectChangedDuringOperation: true,
+          fallbackFullReload: false,
+        });
+        setFrontCorrectSaving(false);
+        return;
+      }
+
+      markLocalPatchSuppress([lotId]);
       gisPerfManualFrontMark('db_start');
-      gisPerfLotEditMark('db_start');
       const { patch, frontSourcePersisted } = await persistManualLotFront(
         supabase,
         lot.id,
@@ -3270,16 +3341,29 @@ export default function GISMap({
         persistedFrontIdx,
         streetFields,
       );
-      gisPerfManualFrontMark('db_end');
-      gisPerfLotEditMark('db_end');
-      markLocalPatchSuppress([lotId]);
+      gisPerfManualFrontMark('db_complete');
+
       console.log("BLOCK_FRONT_SAVE_OK", {
         blockId: lot.id,
         lotNumber: lot.number,
         frontSegmentIndex: persistedFrontIdx,
         frontSourcePersisted,
-        patch,
+        patchKeys: Object.keys(patch || {}),
       });
+
+      if (String(projectId || '') !== projectAtStart) {
+        gisPerfManualFrontEnd({
+          lotId: lotId.slice(0, 8),
+          edgeIndex: segmentIndex,
+          candidateStreets: nearbyStreets.length,
+          projectChangedDuringOperation: true,
+          fallbackFullReload: false,
+        });
+        setFrontCorrectSaving(false);
+        return;
+      }
+
+      gisPerfManualFrontMark('popup_start');
       const updatedDisplay = resolveLotFrontStreetDisplay(
         {
           ...lot,
@@ -3288,49 +3372,47 @@ export default function GISMap({
           front_street_id: streetFields.front_street_id,
           front_street_type: streetFields.front_street_type,
         },
-        streetGuides,
+        nearbyStreets.length ? nearbyStreets : streetGuides,
       );
+      gisPerfManualFrontMark('popup_end');
+
       gisPerfManualFrontMark('patch_start');
-      gisPerfLotEditMark('patch_start');
+      gisPerfNoteSetLots();
       startTransition(() => {
-        setLots((prev) =>
-          prev.map((l) =>
-            l.id === lot.id
-              ? {
-                  ...l,
-                  frente: measures.frente,
-                  Fundo: measures.fundo,
-                  "Lado Dir.": measures.ladoDireito,
-                  "Lado Esq.": measures.ladoEsquerdo,
-                  front_segment_index: persistedFrontIdx,
-                  front_source: frontSourcePersisted ? "manual" : l.front_source,
-                  frontStreetName: streetFields.front_street_name,
-                  frontStreetId: streetFields.front_street_id,
-                  frontStreetType: streetFields.front_street_type,
-                  frontStreetDisplay: updatedDisplay,
-                }
-              : l,
-          ),
-        );
+        setLots((prev) => {
+          const idx = prev.findIndex((l) => l.id === lot.id);
+          if (idx < 0) return prev;
+          const next = prev.slice();
+          next[idx] = {
+            ...prev[idx],
+            frente: measures.frente,
+            Fundo: measures.fundo,
+            "Lado Dir.": measures.ladoDireito,
+            "Lado Esq.": measures.ladoEsquerdo,
+            front_segment_index: persistedFrontIdx,
+            front_source: frontSourcePersisted ? "manual" : prev[idx].front_source,
+            frontStreetName: streetFields.front_street_name,
+            frontStreetId: streetFields.front_street_id,
+            frontStreetType: streetFields.front_street_type,
+            frontStreetDisplay: updatedDisplay,
+          };
+          return next;
+        });
       });
-      gisPerfManualFrontMark('patch_end');
-      gisPerfLotEditMark('patch_end');
+      gisPerfManualFrontMark('local_patch_complete');
+
       gisPerfManualFrontEnd({
         lotId: lotId.slice(0, 8),
+        blockId: lotId.slice(0, 8),
         edgeIndex: segmentIndex,
         candidateEdges,
-        evaluatedNeighbors: neighborIds.size,
+        candidateStreets: nearbyStreets.length,
+        evaluatedNeighbors: 0,
         duplicateRealtimeSuppressed: true,
         fallbackFullReload: false,
-        loadLotsDelta: 0,
-        fitBoundsDelta: 0,
+        projectChangedDuringOperation: false,
       });
-      gisPerfLotEditEnd({
-        operation: 'front',
-        lotId: lotId.slice(0, 8),
-        duplicateRealtimeSuppressed: false,
-        fallbackFullReload: false,
-      });
+
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot, { projectId: lot.project_id }),
         userId: user?.id ?? null,
@@ -3346,19 +3428,10 @@ export default function GISMap({
         },
         source: "gis_map",
       });
-      alert("Frente atualizada com sucesso.");
     } catch (err: unknown) {
       gisPerfManualFrontEnd({
         lotId: lotId.slice(0, 8),
         edgeIndex: segmentIndex,
-        candidateEdges,
-        evaluatedNeighbors: neighborIds.size,
-        fallbackFullReload: false,
-        error: true,
-      });
-      gisPerfLotEditEnd({
-        operation: 'front',
-        lotId: lotId.slice(0, 8),
         fallbackFullReload: false,
         error: true,
       });
@@ -4079,21 +4152,33 @@ export default function GISMap({
             blockCount: blocksRes.data.length,
           });
           try {
-            gisPerfMarkStart('geometry_diagnostic');
-            const gisReport = runLotGeometryDiagnosticReport(
-              blocksRes.data as Record<string, unknown>[],
-              { projectId, context: 'GISMap-load' },
-            );
-            gisPerfMarkEnd('geometry_diagnostic', {
-              lotCount: blocksRes.data.length,
-            });
-            console.error('DIAGNOSTIC REPORT', gisReport);
+            // Diagnóstico geométrico completo só com ?gisPerf=1 (não no load normal).
+            if (isGisPerfDiagnosticsEnabled() && perfToggles.panelActive) {
+              gisPerfMarkStart('geometry_diagnostic');
+              const gisReport = runLotGeometryDiagnosticReport(
+                blocksRes.data as Record<string, unknown>[],
+                { projectId, context: 'GISMap-load' },
+              );
+              gisPerfMarkEnd('geometry_diagnostic', {
+                lotCount: blocksRes.data.length,
+              });
+              console.error('DIAGNOSTIC REPORT', gisReport);
+            } else {
+              gisPerfMarkStart('geometry_diagnostic');
+              gisPerfMarkEnd('geometry_diagnostic', {
+                skipped: true,
+                lotCount: blocksRes.data.length,
+              });
+            }
           } catch (diagErr: unknown) {
             console.error('[LOT GEOMETRY DEBUG] GISMap-load failed', diagErr);
             gisPerfMarkEnd('geometry_diagnostic', { error: true });
           }
 
           gisPerfMarkStart('gis_lots_normalization');
+          const memoryBefore = gisPerfMemorySnapshot();
+          // Yield antes da normalização pesada — mapa-base já pode pintar.
+          await yieldToBrowser();
           let dimsMs = 0;
           let dimsRuns = 0;
           let parseMs = 0;
@@ -4101,90 +4186,114 @@ export default function GISMap({
             .filter((b: any) => b.geometry && b.geometry.type === "Polygon" && b.geometry.coordinates)
             .map((b: any) => b.geometry.coordinates[0]);
 
-          const parsedBlocks = blocksRes.data
-            .map((b) => {
-              const tParse = performance.now();
-              let { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
-                b as Record<string, unknown>,
-                b.number,
-              );
-              parseMs += performance.now() - tParse;
+          const CHUNK = 80;
+          const parsedBlocks: any[] = [];
+          for (let i = 0; i < blocksRes.data.length; i++) {
+            const b = blocksRes.data[i];
+            const tParse = performance.now();
+            let { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
+              b as Record<string, unknown>,
+              b.number,
+            );
+            parseMs += performance.now() - tParse;
 
-              if (bounds.length === 0) {
-                console.log("GIS_LOT_WITHOUT_GEOMETRY", {
-                  lote: b.number,
-                  quadra: b.block_name || b.name,
-                  source_import: b.source_import ?? null,
-                });
-              }
+            if (bounds.length === 0) {
+              console.log("GIS_LOT_WITHOUT_GEOMETRY", {
+                lote: b.number,
+                quadra: b.block_name || b.name,
+                source_import: b.source_import ?? null,
+              });
+            }
 
-              let dimsFromGeo: any = null;
+            let dimsFromGeo: any = null;
 
-              if (
-                (geometryType === "Polygon" || geometryType === "MultiPolygon") &&
-                b.geometry?.coordinates
-              ) {
-                const ring =
-                  geometryType === "Polygon"
-                    ? b.geometry.coordinates[0]
-                    : b.geometry.coordinates[0]?.[0];
-                if (ring && b.source_import !== "TXT_CIVIL3D" && perfToggles.dimensions) {
-                  try {
-                    const tDim = performance.now();
-                    dimsFromGeo = calculateLotDimensions(
-                      ring,
-                      allPolygons,
-                      b.properties || {},
-                    );
-                    dimsMs += performance.now() - tDim;
-                    dimsRuns += 1;
-                  } catch (err) {
-                    console.error("Erro recálculo dimensões GISMap", err);
-                  }
+            if (
+              (geometryType === "Polygon" || geometryType === "MultiPolygon") &&
+              b.geometry?.coordinates
+            ) {
+              const ring =
+                geometryType === "Polygon"
+                  ? b.geometry.coordinates[0]
+                  : b.geometry.coordinates[0]?.[0];
+              if (ring && b.source_import !== "TXT_CIVIL3D" && perfToggles.dimensions) {
+                try {
+                  const tDim = performance.now();
+                  dimsFromGeo = calculateLotDimensions(
+                    ring,
+                    allPolygons,
+                    b.properties || {},
+                  );
+                  dimsMs += performance.now() - tDim;
+                  dimsRuns += 1;
+                } catch (err) {
+                  console.error("Erro recálculo dimensões GISMap", err);
                 }
               }
+            }
 
-              let lotMeasures: ReturnType<typeof resolveLotMeasuresFromBlock>;
-              try {
-                lotMeasures = resolveLotMeasuresFromBlock({
-                  ...b,
-                  frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
-                  Fundo:
-                    b.Fundo !== null && b.Fundo !== undefined
-                      ? b.Fundo
-                      : dimsFromGeo?.fundo,
-                  "Lado Dir.":
-                    b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
-                      ? b["Lado Dir."]
-                      : dimsFromGeo?.ladoDireito,
-                  "Lado Esq.":
-                    b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
-                      ? b["Lado Esq."]
-                      : dimsFromGeo?.ladoEsquerdo,
-                });
-              } catch (measureErr) {
-                console.warn('GISMAP_LOT_MEASURES_SKIP', b.number, measureErr);
-                lotMeasures = {
-                  sides: {
-                    frente: parseBlockSideLength(b.frente),
-                    fundo: parseBlockSideLength(b.Fundo ?? b.fundo),
-                    ladoDireito: parseBlockSideLength(b["Lado Dir."]),
-                    ladoEsquerdo: parseBlockSideLength(b["Lado Esq."]),
-                  },
-                  chanfre: null,
-                  curva: null,
-                };
-              }
+            let lotMeasures: ReturnType<typeof resolveLotMeasuresFromBlock>;
+            try {
+              lotMeasures = resolveLotMeasuresFromBlock({
+                ...b,
+                frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
+                Fundo:
+                  b.Fundo !== null && b.Fundo !== undefined
+                    ? b.Fundo
+                    : dimsFromGeo?.fundo,
+                "Lado Dir.":
+                  b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
+                    ? b["Lado Dir."]
+                    : dimsFromGeo?.ladoDireito,
+                "Lado Esq.":
+                  b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
+                    ? b["Lado Esq."]
+                    : dimsFromGeo?.ladoEsquerdo,
+              });
+            } catch (measureErr) {
+              console.warn('GISMAP_LOT_MEASURES_SKIP', b.number, measureErr);
+              lotMeasures = {
+                sides: {
+                  frente: parseBlockSideLength(b.frente),
+                  fundo: parseBlockSideLength(b.Fundo ?? b.fundo),
+                  ladoDireito: parseBlockSideLength(b["Lado Dir."]),
+                  ladoEsquerdo: parseBlockSideLength(b["Lado Esq."]),
+                },
+                chanfre: null,
+                curva: null,
+              };
+            }
 
-              const pendingManualPrice = pendingLotPricesRef.current.get(b.id);
-              const blockPrice =
-                pendingManualPrice !== undefined
-                  ? pendingManualPrice ?? 0
-                  : b.price !== null && b.price !== undefined
-                    ? Number(b.price)
-                    : 0;
+            const pendingManualPrice = pendingLotPricesRef.current.get(b.id);
+            const blockPrice =
+              pendingManualPrice !== undefined
+                ? pendingManualPrice ?? 0
+                : b.price !== null && b.price !== undefined
+                  ? Number(b.price)
+                  : 0;
 
-              return {
+            parsedBlocks.push({
+              raw: b,
+              bounds,
+              geometryType,
+              coordCount,
+              lotMeasures,
+              blockPrice,
+            });
+
+            if ((i + 1) % CHUNK === 0) {
+              await yieldToBrowser();
+            }
+          }
+
+          const normalizedLots = parsedBlocks
+            .map(({
+              raw: b,
+              bounds,
+              geometryType,
+              coordCount,
+              lotMeasures,
+              blockPrice,
+            }) => ({
                 id: b.id,
                 project_id: b.project_id,
                 block: b.block_name || b.name || "?",
@@ -4223,19 +4332,19 @@ export default function GISMap({
                   (b.front_street_name
                     ? formatStreetDisplay(b.front_street_type, b.front_street_name)
                     : null),
-              };
-            })
-            .filter((b) => b.bounds.length > 0);
-          const polygonLots = parsedBlocks.filter(
+              }))
+            .filter((b) => Array.isArray(b.bounds) && b.bounds.length > 0);
+          const polygonLots = normalizedLots.filter(
             (b) =>
               b.geometryType === "Polygon" ||
               b.geometryType === "MultiPolygon",
           );
-          const lineBlocks = parsedBlocks.filter(
+          const lineBlocks = normalizedLots.filter(
             (b) =>
               b.geometryType === "LineString" ||
               b.geometryType === "MultiLineString",
           );
+
           gisPerfNote('gis_coordinate_conversion', parseMs, {
             lotCount: blocksRes.data.length,
             alias: 'parse_bounds',
@@ -4248,9 +4357,11 @@ export default function GISMap({
           gisPerfMarkEnd('gis_lots_normalization', {
             polygonLots: polygonLots.length,
             lineBlocks: lineBlocks.length,
+            memoryBeforeMb: memoryBefore?.usedJsHeapMb ?? null,
           });
 
           gisPerfMarkStart('set_state');
+          gisPerfNoteSetLots();
           setLots(polygonLots);
           setBlocksData(lineBlocks);
           gisPerfMarkEnd('set_state');
@@ -4288,12 +4399,17 @@ export default function GISMap({
               gisPerfNote('gis_first_interactive', 0, {
                 memory: Boolean(gisPerfMemorySnapshot()),
               });
+              const memoryAfter = gisPerfMemorySnapshot();
               gisPerfFinishSession({
                 path: 'online',
                 renderer: 'svg_default',
                 boundaryLines: showBoundaryLines,
                 labelsAlwaysOn: showPermanentLabels,
                 perfPanel: perfToggles.panelActive,
+                memoryAfter,
+                auditsDeferredUntilAssistedTools: true,
+                geometryDiagnosticSkippedUnlessPanel: true,
+                progressiveNormalizeChunk: 80,
                 toggles: perfToggles.panelActive
                   ? {
                       polygons: perfToggles.polygons,
@@ -4337,6 +4453,8 @@ export default function GISMap({
       });
 
       if (isLocalPatchSuppressed(lotId)) {
+        gisPerfNoteRealtimeEvent();
+        gisPerfNoteDuplicateRealtimeSuppressed();
         gisPerfRealtimePatchEnd({
           operation: eventType,
           lotId: lotId.slice(0, 8),
@@ -4346,6 +4464,8 @@ export default function GISMap({
         });
         return;
       }
+
+      gisPerfNoteRealtimeEvent();
 
       const rowProject = String(rowNew.project_id || rowOld.project_id || '');
       if (rowProject && projectId && rowProject !== String(projectId)) {
@@ -5199,6 +5319,7 @@ export default function GISMap({
                     </Popup>
                   )}
                 </Polygon>
+                {showDetailedEdges ? (
                 <LotBoundaryEdgePolylinesMemo
                   positions={positions}
                   lot={lot}
@@ -5289,6 +5410,7 @@ export default function GISMap({
                       : undefined
                   }
                 />
+                ) : null}
               </Fragment>
             );
           })}
@@ -5538,6 +5660,13 @@ export default function GISMap({
           <p className="text-xs font-semibold text-amber-100 bg-[#11141a]/95 border border-amber-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
             Corrigir frente: clique no lado do lote no mapa (arestas em destaque) ou
             escolha o segmento no popup do lote.
+          </p>
+        </div>
+      )}
+      {!frontCorrectLotId && frontCorrectSaving && (
+        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
+          <p className="text-xs font-semibold text-sky-100 bg-[#11141a]/95 border border-sky-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
+            Salvando frente… pan e zoom liberados.
           </p>
         </div>
       )}

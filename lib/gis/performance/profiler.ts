@@ -413,6 +413,11 @@ type StreetSaveTrace = {
 let gismapRenderCount = 0;
 let confrontationAuditRebuildCount = 0;
 let loadLotsRunCount = 0;
+let setLotsRunCount = 0;
+let polygonRenderCount = 0;
+let edgeRenderCount = 0;
+let realtimeEventCount = 0;
+let duplicateRealtimeSuppressCount = 0;
 let streetSaveTrace: StreetSaveTrace | null = null;
 let identifyFrontsTrace: {
   startedAt: number;
@@ -441,6 +446,8 @@ export function gisPerfNoteGisMapRender(detail?: Record<string, number | string 
 
 export function gisPerfNoteAuditRebuild(lotCount: number): void {
   if (!isGisPerfDiagnosticsEnabled()) return;
+  // lotCount === 0 → skip contabilizado (não incrementa rebuilds)
+  if (lotCount <= 0) return;
   confrontationAuditRebuildCount += 1;
   if (streetSaveTrace) {
     console.info('[GIS_PERF_STREET] confrontation_audits_rebuild', {
@@ -456,6 +463,53 @@ export function gisPerfNoteLoadLots(): void {
   if (streetSaveTrace) {
     console.info('[GIS_PERF_STREET] loadLots', { runs: loadLotsRunCount });
   }
+}
+
+export function gisPerfNoteSetLots(): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  setLotsRunCount += 1;
+}
+
+export function gisPerfNotePolygonRender(n = 1): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  polygonRenderCount += n;
+}
+
+export function gisPerfNoteEdgeRender(n = 1): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  edgeRenderCount += n;
+}
+
+export function gisPerfNoteRealtimeEvent(): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  realtimeEventCount += 1;
+}
+
+export function gisPerfNoteDuplicateRealtimeSuppressed(): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  duplicateRealtimeSuppressCount += 1;
+}
+
+export function gisPerfGetCounters(): {
+  setLots: number;
+  loadLots: number;
+  audits: number;
+  gismapRenders: number;
+  polygons: number;
+  edges: number;
+  realtime: number;
+  duplicateRealtime: number;
+} {
+  return {
+    setLots: setLotsRunCount,
+    loadLots: loadLotsRunCount,
+    audits: confrontationAuditRebuildCount,
+    gismapRenders: gismapRenderCount,
+    polygons: polygonRenderCount,
+    edges: edgeRenderCount,
+    realtime: realtimeEventCount,
+    duplicateRealtime: duplicateRealtimeSuppressCount,
+  };
 }
 
 export function gisPerfStreetSaveBegin(meta?: Record<string, string | number | boolean | null>): void {
@@ -573,6 +627,11 @@ type OpTrace = {
   gismapRendersBefore: number;
   auditRebuildsBefore: number;
   loadLotsBefore: number;
+  setLotsBefore: number;
+  polygonRendersBefore: number;
+  edgeRendersBefore: number;
+  realtimeBefore: number;
+  duplicateRealtimeBefore: number;
 };
 
 let lotEditTrace: OpTrace | null = null;
@@ -597,6 +656,7 @@ function endOpTrace(
     gismapRendersDelta: gismapRenderCount - trace.gismapRendersBefore,
     auditsRebuildDelta: confrontationAuditRebuildCount - trace.auditRebuildsBefore,
     loadLotsDelta: loadLotsRunCount - trace.loadLotsBefore,
+    setLotsDelta: setLotsRunCount - trace.setLotsBefore,
     fitBoundsDelta: 0,
     ...extra,
   };
@@ -607,17 +667,26 @@ function endOpTrace(
   return summary;
 }
 
-export function gisPerfLotEditBegin(
-  meta?: Record<string, string | number | boolean | null>,
-): void {
-  if (!isGisPerfDiagnosticsEnabled()) return;
-  lotEditTrace = {
+function newOpTrace(): OpTrace {
+  return {
     startedAt: nowMs(),
     marks: {},
     gismapRendersBefore: gismapRenderCount,
     auditRebuildsBefore: confrontationAuditRebuildCount,
     loadLotsBefore: loadLotsRunCount,
+    setLotsBefore: setLotsRunCount,
+    polygonRendersBefore: polygonRenderCount,
+    edgeRendersBefore: edgeRenderCount,
+    realtimeBefore: realtimeEventCount,
+    duplicateRealtimeBefore: duplicateRealtimeSuppressCount,
   };
+}
+
+export function gisPerfLotEditBegin(
+  meta?: Record<string, string | number | boolean | null>,
+): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  lotEditTrace = newOpTrace();
   console.info('[GIS_PERF_LOT_EDIT] begin', meta || {});
 }
 
@@ -643,13 +712,7 @@ export function gisPerfRealtimePatchBegin(
   meta?: Record<string, string | number | boolean | null>,
 ): void {
   if (!isGisPerfDiagnosticsEnabled()) return;
-  realtimePatchTrace = {
-    startedAt: nowMs(),
-    marks: {},
-    gismapRendersBefore: gismapRenderCount,
-    auditRebuildsBefore: confrontationAuditRebuildCount,
-    loadLotsBefore: loadLotsRunCount,
-  };
+  realtimePatchTrace = newOpTrace();
   console.info('[GIS_PERF_REALTIME] begin', meta || {});
 }
 
@@ -686,19 +749,23 @@ export function gisPerfManualFrontBegin(
   meta?: Record<string, string | number | boolean | null>,
 ): void {
   if (!isGisPerfDiagnosticsEnabled()) return;
-  manualFrontTrace = {
-    startedAt: nowMs(),
-    marks: {},
-    gismapRendersBefore: gismapRenderCount,
-    auditRebuildsBefore: confrontationAuditRebuildCount,
-    loadLotsBefore: loadLotsRunCount,
-  };
-  console.info('[GIS_PERF_MANUAL_FRONT] begin', meta || {});
+  manualFrontTrace = newOpTrace();
+  console.info('[GIS_PERF_MANUAL_FRONT] click', meta || {});
 }
 
 export function gisPerfManualFrontMark(phase: string): void {
   if (!isGisPerfDiagnosticsEnabled() || !manualFrontTrace) return;
   manualFrontTrace.marks[phase] = nowMs();
+  if (
+    phase === 'mode_closed' ||
+    phase === 'street_matched' ||
+    phase === 'db_complete' ||
+    phase === 'local_patch_complete'
+  ) {
+    console.info(`[GIS_PERF_MANUAL_FRONT] ${phase}`, {
+      ms: Math.round((nowMs() - manualFrontTrace.startedAt) * 100) / 100,
+    });
+  }
 }
 
 export function gisPerfManualFrontEnd(
@@ -712,17 +779,26 @@ export function gisPerfManualFrontEnd(
     a != null && b != null ? Math.round((b - a) * 100) / 100 : null;
   const summary: Record<string, unknown> = {
     totalMs: Math.round((end - t0) * 100) / 100,
+    clickToModeCloseMs: msBetween(t0, marks.mode_closed),
+    streetMatchMs: msBetween(marks.street_start, marks.street_matched),
     computeMs: msBetween(marks.compute_start, marks.compute_end),
-    dbMs: msBetween(marks.db_start, marks.db_end),
-    patchMs: msBetween(marks.patch_start, marks.patch_end),
+    dbMs: msBetween(marks.db_start, marks.db_complete),
+    patchMs: msBetween(marks.patch_start, marks.local_patch_complete),
+    popupUpdateMs: msBetween(marks.popup_start, marks.popup_end),
     gismapRendersDelta: gismapRenderCount - manualFrontTrace.gismapRendersBefore,
     auditsRebuildDelta:
       confrontationAuditRebuildCount - manualFrontTrace.auditRebuildsBefore,
     loadLotsDelta: loadLotsRunCount - manualFrontTrace.loadLotsBefore,
+    setLotsDelta: setLotsRunCount - manualFrontTrace.setLotsBefore,
+    polygonRendersDelta: polygonRenderCount - manualFrontTrace.polygonRendersBefore,
+    edgeRendersDelta: edgeRenderCount - manualFrontTrace.edgeRendersBefore,
+    realtimeEventsReceived: realtimeEventCount - manualFrontTrace.realtimeBefore,
+    duplicateRealtimeSuppressed:
+      duplicateRealtimeSuppressCount - manualFrontTrace.duplicateRealtimeBefore,
     fitBoundsDelta: 0,
     ...extra,
   };
-  console.info('[GIS_PERF_MANUAL_FRONT] end', summary);
+  console.info('[GIS_PERF_MANUAL_FRONT] finished', summary);
   if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
     window.__SV_GIS_PERF__.lastManualFrontEdit = summary;
   }
@@ -734,13 +810,7 @@ export function gisPerfConfrontationBegin(
   meta?: Record<string, string | number | boolean | null>,
 ): void {
   if (!isGisPerfDiagnosticsEnabled()) return;
-  confrontationTrace = {
-    startedAt: nowMs(),
-    marks: {},
-    gismapRendersBefore: gismapRenderCount,
-    auditRebuildsBefore: confrontationAuditRebuildCount,
-    loadLotsBefore: loadLotsRunCount,
-  };
+  confrontationTrace = newOpTrace();
   console.info('[GIS_PERF_CONFRONTATION] begin', meta || {});
 }
 
@@ -768,6 +838,7 @@ export function gisPerfConfrontationEnd(
     auditsRebuildDelta:
       confrontationAuditRebuildCount - confrontationTrace.auditRebuildsBefore,
     loadLotsDelta: loadLotsRunCount - confrontationTrace.loadLotsBefore,
+    setLotsDelta: setLotsRunCount - confrontationTrace.setLotsBefore,
     fitBoundsDelta: 0,
     ...extra,
   };

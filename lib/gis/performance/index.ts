@@ -37,6 +37,10 @@ export {
   gisPerfConfrontationBegin,
   gisPerfConfrontationMark,
   gisPerfConfrontationEnd,
+  gisPerfNoteSetLots,
+  gisPerfNoteRealtimeEvent,
+  gisPerfNoteDuplicateRealtimeSuppressed,
+  gisPerfNoteEdgeRender,
 } from './profiler';
 
 export type {

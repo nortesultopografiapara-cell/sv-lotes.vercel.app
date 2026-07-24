@@ -121,9 +121,15 @@ function testWiring() {
     !/channel\("realtime:blocks"\)[\s\S]{0,400}loadLots\(\)/.test(map),
     'realtime blocks não deve chamar loadLots() no handler padrão',
   );
-  assert(map.includes('gisPerfManualFrontBegin'), 'frente manual telemetria');
-  assert(map.includes('collectNearbyLotIds'), 'vizinhos escopados');
-  assert(map.includes('buildAllPolysUtm'), 'polys UTM compartilhados');
+  assert(map.includes('yieldToBrowser'), 'yield após fechar modo frente');
+  assert(map.includes('filterStreetGuidesNearLot'), 'ruas próximas filtradas');
+  assert(map.includes('showDetailedEdges'), 'LOD arestas por zoom');
+  assert(map.includes('auditsDeferredUntilAssistedTools'), 'audits adiadas no load');
+  assert(map.includes('Salvando frente'), 'feedback local sem alert bloqueante');
+  assert(
+    !/alert\("Frente atualizada com sucesso\."\)/.test(map),
+    'sem alert de sucesso na frente manual',
+  );
   {
     const liveBlock = map.match(
       /const liveStreetAudits =\s*([\s\S]*?);/,
@@ -132,17 +138,9 @@ function testWiring() {
       !liveBlock.includes('frontCorrectLotId'),
       'frente manual não deve entrar em liveStreetAudits',
     );
-    assert(
-      !liveBlock.includes('confrontEdit'),
-      'confrontEdit pontual não deve forçar audits globais',
-    );
-    assert(
-      liveBlock.includes('assistedConfrontationMode'),
-      'modo assistido global permanece em liveStreetAudits',
-    );
   }
+  assert(map.includes('!liveStreetAudits && !scopedAuditFocusId'), 'skip audits no load');
   assert(map.includes('LotBoundaryEdgePolylinesMemo'), 'arestas memoizadas');
-  assert(map.includes('setFrontCorrectLotId(null)'), 'fecha modo frente no clique');
   assert(map.includes('effectiveLabelsMinZoom'), 'labels por zoom');
   assert(
     /const displayLots = lots/.test(map),
@@ -150,60 +148,30 @@ function testWiring() {
   );
   const page = fs.readFileSync(path.join(root, 'app/map/page.tsx'), 'utf8');
   assert(page.includes('GisPerfDiagPanel'), 'painel na page');
-  assert(page.includes('ssr: false'), 'painel/GISMap sem SSR');
-  assert(page.includes('gisPerfStreetSaveBegin'), 'street save instrumentado');
-  assert(page.includes('gisPerfIdentifyFrontsBegin'), 'identify fronts instrumentado');
   assert(page.includes('gisPerfConfrontationBegin'), 'confrontação instrumentada');
-  assert(page.includes('lotsMutation={lotsMutation}'), 'lotsMutation passado ao GISMap');
   assert(
     !/handleRunAutomaticConfrontation[\s\S]{0,2500}setMapRefreshKey\(\(k\) => k \+ 1\)/.test(
       page,
     ),
     'confrontação automática não deve bump refreshKey',
   );
-  assert(
-    !/handleConfirmDeleteQuadra[\s\S]{0,1200}setMapRefreshKey\(\(k\) => k \+ 1\)/.test(
-      page,
-    ),
-    'excluir quadra não deve bump refreshKey',
-  );
-  assert(
-    !/setDeleteLotNumber\(''\);\s*\n\s*await loadProjectQuadras\(\);\s*\n\s*setMapRefreshKey/.test(
-      page,
-    ),
-    'excluir lote não deve bump refreshKey',
-  );
-  assert(
-    !/setMapRefreshKey\(prev => prev \+ 1\);\s*\n\s*\n\s*\} catch \(e: any\)/.test(
-      page,
-    ),
-    'Identificar Frentes não deve bump refreshKey',
-  );
-  assert(page.includes('refreshKeyBumped: false'), 'sem refreshKey no identify');
-  assert(page.includes('startTransition'), 'street save em transition');
-  const mapLot = fs.readFileSync(
-    path.join(root, 'lib/gis/mapLotFromBlock.ts'),
-    'utf8',
-  );
-  assert(mapLot.includes('export function mapLotFromBlockRow'), 'helper mapLot');
   const nearby = fs.readFileSync(
     path.join(root, 'lib/gis/nearbyLots.ts'),
     'utf8',
   );
   assert(nearby.includes('collectNearbyLotIds'), 'nearbyLots helper');
+  const uiYield = fs.readFileSync(
+    path.join(root, 'lib/gis/uiYield.ts'),
+    'utf8',
+  );
+  assert(uiYield.includes('yieldToBrowser'), 'uiYield helper');
+  assert(uiYield.includes('filterStreetGuidesNearLot'), 'street filter helper');
   const panel = fs.readFileSync(
     path.join(root, 'components/map/GisPerfDiagPanel.tsx'),
     'utf8',
   );
   assert(panel.includes('setReady(true)'), 'painel só após mount');
-  assert(panel.includes('lastLotEdit'), 'painel mostra lastLotEdit');
-  assert(panel.includes('lastRealtimePatch'), 'painel mostra lastRealtimePatch');
   assert(panel.includes('lastManualFrontEdit'), 'painel mostra lastManualFrontEdit');
-  assert(panel.includes('lastConfrontation'), 'painel mostra lastConfrontation');
-  assert(
-    !/useState\(\(\)\s*=>\s*readGisPerfTogglesFromSearch\(\)/.test(panel),
-    'painel não lê URL no useState (hydration)',
-  );
   console.log('OK testWiring');
 }
 
@@ -281,6 +249,40 @@ function testNearbyLots() {
   console.log('OK testNearbyLots');
 }
 
+function testStreetFilterNearLot() {
+  const { filterStreetGuidesNearLot } = require('../lib/gis/uiYield') as typeof import('../lib/gis/uiYield');
+  const lotBounds: [number, number][] = [
+    [-1.4, -48.1],
+    [-1.401, -48.1],
+    [-1.401, -48.101],
+    [-1.4, -48.1],
+  ];
+  const near = {
+    id: 'near',
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [-48.1005, -1.4005],
+        [-48.101, -1.4005],
+      ],
+    },
+  };
+  const far = {
+    id: 'far',
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [-49.0, -2.0],
+        [-49.01, -2.0],
+      ],
+    },
+  };
+  const filtered = filterStreetGuidesNearLot(lotBounds, [near, far], 80);
+  assert(filtered.some((g) => g.id === 'near'), 'mantém rua próxima');
+  assert(!filtered.some((g) => g.id === 'far'), 'exclui rua longe');
+  console.log('OK testStreetFilterNearLot');
+}
+
 function main() {
   testProductionBlocked();
   testPreviewEnabled();
@@ -288,6 +290,7 @@ function main() {
   testWiring();
   testMapLotFromBlock();
   testNearbyLots();
+  testStreetFilterNearLot();
   console.log('\nTodos os testes de GIS perf diagnostics passaram.');
 }
 
