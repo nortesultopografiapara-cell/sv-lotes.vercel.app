@@ -1,10 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import {
+  gisPerfStreetSaveBegin,
+  gisPerfStreetSaveEnd,
+  gisPerfStreetSaveMark,
+  isGisPerfDiagnosticsEnabled,
+} from '@/lib/gis/performance';
 import {
   createProjectThroughApi,
   updateProjectThroughApi,
@@ -2615,50 +2621,85 @@ export default function MapPage() {
       coordinates,
     });
 
+    const mode = streetGuideModal.mode;
+    const perfOn = isGisPerfDiagnosticsEnabled();
+    if (perfOn) {
+      gisPerfStreetSaveBegin({
+        mode,
+        streetGuideCountBefore: streetGuides.length,
+      });
+    }
+
     console.log('STREET_GUIDE_SAVE_PAYLOAD', payload);
 
-    if (streetGuideModal.mode === 'edit' && streetGuideModal.guide?.id) {
+    const applyGuides = (updater: (prev: any[]) => any[]) => {
+      startTransition(() => {
+        setStreetGuides(updater);
+      });
+      if (perfOn) gisPerfStreetSaveMark('state_end');
+    };
+
+    if (mode === 'edit' && streetGuideModal.guide?.id) {
       const id = String(streetGuideModal.guide.id);
       if (id.startsWith('temp-')) {
-        setStreetGuides((prev) =>
+        applyGuides((prev) =>
           prev.map((g) =>
             g.id === id ? normalizeStreetGuideRow({ ...g, ...payload, id }) : g,
           ),
         );
+        if (perfOn) {
+          gisPerfStreetSaveMark('modal_close');
+          gisPerfStreetSaveEnd({ path: 'edit_temp' });
+        }
         return;
       }
+      if (perfOn) gisPerfStreetSaveMark('db_start');
       const { data, error } = await supabase
         .from('street_guides')
         .update(payload)
         .eq('id', id)
         .select()
         .single();
-      if (error) throw error;
+      if (perfOn) gisPerfStreetSaveMark('db_end');
+      if (error) {
+        if (perfOn) gisPerfStreetSaveEnd({ path: 'edit_error' });
+        throw error;
+      }
       if (data) {
-        setStreetGuides((prev) =>
+        applyGuides((prev) =>
           prev.map((g) =>
             g.id === id ? normalizeStreetGuideRow(data as Record<string, unknown>) : g,
           ),
         );
       }
+      if (perfOn) {
+        gisPerfStreetSaveMark('modal_close');
+        gisPerfStreetSaveEnd({ path: 'edit_ok' });
+      }
       return;
     }
 
+    // Create: optimistic + replace id (sem rebuild de audits/lotes — streetGuides não invalida mais).
     const tempId = `temp-${Date.now()}`;
-    const tempGuide = normalizeStreetGuideRow({
-      id: tempId,
-      ...payload,
-      visible: true,
-    });
-    setStreetGuides((prev) => [...prev, tempGuide]);
+    applyGuides((prev) => [
+      ...prev,
+      normalizeStreetGuideRow({
+        id: tempId,
+        ...payload,
+        visible: true,
+      }),
+    ]);
 
+    if (perfOn) gisPerfStreetSaveMark('db_start');
     const { data, error } = await supabase
       .from('street_guides')
       .insert(payload)
       .select();
+    if (perfOn) gisPerfStreetSaveMark('db_end');
 
     if (error) {
       console.error('Save street guide error:', error);
+      if (perfOn) gisPerfStreetSaveEnd({ path: 'create_error' });
       if (error.code === 'PGRST205') {
         alert(
           "Aviso: Tabela 'street_guides' não existe. Linha mantida localmente.",
@@ -2674,13 +2715,20 @@ export default function MapPage() {
 
     if (data?.length) {
       console.log('STREET_GUIDE_CREATED', { id: data[0].id });
-      setStreetGuides((prev) =>
+      applyGuides((prev) =>
         prev.map((g) =>
           g.id === tempId
             ? normalizeStreetGuideRow(data[0] as Record<string, unknown>)
             : g,
         ),
       );
+    }
+    if (perfOn) {
+      gisPerfStreetSaveMark('modal_close');
+      gisPerfStreetSaveEnd({
+        path: 'create_ok',
+        streetGuideCountAfter: streetGuides.length + 1,
+      });
     }
   };
 

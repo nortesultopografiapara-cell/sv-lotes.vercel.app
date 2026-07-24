@@ -107,9 +107,18 @@ function testWiring() {
   assert(map.includes('gisPerfBeginSession'), 'GISMap instrumentado');
   assert(map.includes('gis_fetch_request'), 'mark fetch');
   assert(map.includes('readGisPerfTogglesFromSearch'), 'toggles');
+  assert(map.includes('liveStreetAudits'), 'audits condicionais a ferramentas');
+  assert(map.includes('streetGuidesAuditDep'), 'streetGuides não invalida audits no save');
+  assert(map.includes('effectiveLabelsMinZoom'), 'labels por zoom');
+  assert(
+    /const displayLots = lots/.test(map),
+    'displayLots não remapeia em streetGuides',
+  );
   const page = fs.readFileSync(path.join(root, 'app/map/page.tsx'), 'utf8');
   assert(page.includes('GisPerfDiagPanel'), 'painel na page');
   assert(page.includes('ssr: false'), 'painel/GISMap sem SSR');
+  assert(page.includes('gisPerfStreetSaveBegin'), 'street save instrumentado');
+  assert(page.includes('startTransition'), 'street save em transition');
   const panel = fs.readFileSync(
     path.join(root, 'components/map/GisPerfDiagPanel.tsx'),
     'utf8',

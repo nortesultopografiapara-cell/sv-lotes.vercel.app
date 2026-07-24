@@ -200,6 +200,9 @@ import {
   gisPerfMeasureSync,
   gisPerfMemorySnapshot,
   gisPerfNote,
+  gisPerfNoteAuditRebuild,
+  gisPerfNoteGisMapRender,
+  gisPerfNoteLoadLots,
   gisPerfSetLotCount,
   gisPerfSummarizeBlocksPayload,
   isGisPerfDiagnosticsEnabled,
@@ -2784,8 +2787,11 @@ export default function GISMap({
     SHOW_BOUNDARY_LINES && perfToggles.boundaryLines;
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(18);
+  /** Labels/círculos só a partir deste zoom (padrão 17) — polígonos sempre visíveis. */
+  const effectiveLabelsMinZoom =
+    labelsMinZoom == null ? 17 : labelsMinZoom;
   const showPermanentLabels =
-    (labelsMinZoom == null || mapZoom >= labelsMinZoom) && perfToggles.labels;
+    mapZoom >= effectiveLabelsMinZoom && perfToggles.labels;
   const sheetPickActive = Boolean(lotSheetPickMode);
   const memorialPickActive = Boolean(memorialPickMode);
   const mapLotPickActive = sheetPickActive || memorialPickActive;
@@ -2810,27 +2816,24 @@ export default function GISMap({
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
 
-  const displayLots = useMemo(
-    () =>
-      lots.map((lot) => {
-        const frontStreetDisplay = resolveLotFrontStreetDisplay(
-          lot,
-          streetGuides,
-        );
-        if (
-          frontStreetDisplay === lot.frontStreetDisplay ||
-          (!frontStreetDisplay && !lot.frontStreetDisplay)
-        ) {
-          return lot;
-        }
-        return { ...lot, frontStreetDisplay: frontStreetDisplay ?? null };
-      }),
-    [lots, streetGuides],
-  );
+  /**
+   * Não remapear os 597 lotes quando streetGuides muda.
+   * Nome da rua no popup já resolve via resolveLotFrontStreetDisplay(lot, streetGuides).
+   * Remapear aqui invalidava displayLots → audits → re-render SVG em massa ao salvar logradouro.
+   */
+  const displayLots = lots;
+
+  const liveStreetAudits =
+    Boolean(assistedConfrontationMode) ||
+    Boolean(insertConfrontantTool) ||
+    Boolean(defineOfficialSideTool) ||
+    frontCorrectLotId != null ||
+    confrontEdit != null ||
+    defineOfficialSidePickLotId != null;
 
   const blocksForConfront = useMemo(
     () =>
-      displayLots.map((l) => ({
+      lots.map((l) => ({
         ...l,
         id: l.id,
         number: l.number,
@@ -2839,10 +2842,28 @@ export default function GISMap({
         front_segment_index: l.front_segment_index,
         front_street_name: l.frontStreetName,
       })) as Record<string, unknown>[],
-    [displayLots],
+    [lots],
   );
 
+  /** streetGuides só invalida audits quando ferramentas assistidas estão ativas. */
+  const streetGuidesAuditDep = liveStreetAudits ? streetGuides : null;
+
+  /** Uma única sincronização quando as ruas chegam após os lotes (sem rebuild a cada nova rua). */
+  const streetsHydratedRef = useRef(false);
+  const [streetsHydrateEpoch, setStreetsHydrateEpoch] = useState(0);
+  useEffect(() => {
+    streetsHydratedRef.current = false;
+    setStreetsHydrateEpoch(0);
+  }, [projectId]);
+  useEffect(() => {
+    if (!streetsHydratedRef.current && streetGuides.length > 0) {
+      streetsHydratedRef.current = true;
+      setStreetsHydrateEpoch((e) => e + 1);
+    }
+  }, [streetGuides.length]);
+
   const confrontationAudits = useMemo(() => {
+    gisPerfNoteAuditRebuild(lots.length);
     return gisPerfMeasureSync(
       'confrontation_audits',
       () => {
@@ -2850,7 +2871,7 @@ export default function GISMap({
           return new Map<string, LotConfrontationAudit>();
         }
         const map = new Map<string, LotConfrontationAudit>();
-        for (const lot of displayLots) {
+        for (const lot of lots) {
           if (!lot?.id) continue;
           try {
             map.set(
@@ -2874,15 +2895,32 @@ export default function GISMap({
         }
         return map;
       },
-      { lotCount: displayLots.length, enabled: perfToggles.confrontationAudits },
+      {
+        lotCount: lots.length,
+        enabled: perfToggles.confrontationAudits,
+        liveStreetAudits,
+        streetGuideCount: Array.isArray(streetGuides) ? streetGuides.length : 0,
+        streetsHydrateEpoch,
+      },
     );
+    // streetGuides omitido quando !liveStreetAudits — evita rebuild dos N audits ao salvar rua.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetGuidesAuditDep + streetsHydrateEpoch
   }, [
-    displayLots,
+    lots,
     blocksForConfront,
-    streetGuides,
+    streetGuidesAuditDep,
+    liveStreetAudits,
+    streetsHydrateEpoch,
     perfToggles.confrontationAudits,
   ]);
 
+  useEffect(() => {
+    gisPerfNoteGisMapRender({
+      lotCount: lots.length,
+      streetGuideCount: streetGuides.length,
+      liveStreetAudits,
+    });
+  });
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id) return;
@@ -3603,6 +3641,7 @@ export default function GISMap({
 
   useEffect(() => {
     async function loadLots() {
+      gisPerfNoteLoadLots();
       if (!user || !projectId) {
         setLoading(false);
         return;

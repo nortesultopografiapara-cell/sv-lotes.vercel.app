@@ -22,6 +22,11 @@ export type GisPerfPhase =
   | 'geometry_diagnostic'
   | 'geometry_validations'
   | 'confrontation_audits'
+  | 'street_save_total'
+  | 'street_save_db'
+  | 'street_save_state'
+  | 'street_save_react'
+  | 'gismap_render'
   | 'set_state'
   // aliases legados (instrumentação inicial)
   | 'load_total'
@@ -55,6 +60,7 @@ declare global {
       enabled: boolean;
       sessions: GisPerfSession[];
       lastSummary: Record<string, unknown> | null;
+      lastStreetSave?: Record<string, unknown> | null;
       getLast: () => GisPerfSession | null;
     };
   }
@@ -385,4 +391,106 @@ export function gisPerfMeasureSync<T>(
   } finally {
     gisPerfMarkEnd(phase, detail);
   }
+}
+
+/** Contadores de render / save de logradouro (Preview only). */
+type StreetSaveTrace = {
+  startedAt: number;
+  marks: Record<string, number>;
+  gismapRendersBefore: number;
+  gismapRendersAfter?: number;
+  auditsRebuilt?: number;
+  loadLotsRuns?: number;
+};
+
+let gismapRenderCount = 0;
+let confrontationAuditRebuildCount = 0;
+let loadLotsRunCount = 0;
+let streetSaveTrace: StreetSaveTrace | null = null;
+
+export function gisPerfNoteGisMapRender(detail?: Record<string, number | string | boolean | null>): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  gismapRenderCount += 1;
+  if (streetSaveTrace) {
+    console.info('[GIS_PERF_STREET] gismap_render', {
+      n: gismapRenderCount,
+      ...detail,
+    });
+  }
+}
+
+export function gisPerfNoteAuditRebuild(lotCount: number): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  confrontationAuditRebuildCount += 1;
+  if (streetSaveTrace) {
+    console.info('[GIS_PERF_STREET] confrontation_audits_rebuild', {
+      rebuilds: confrontationAuditRebuildCount,
+      lotCount,
+    });
+  }
+}
+
+export function gisPerfNoteLoadLots(): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  loadLotsRunCount += 1;
+  if (streetSaveTrace) {
+    console.info('[GIS_PERF_STREET] loadLots', { runs: loadLotsRunCount });
+  }
+}
+
+export function gisPerfStreetSaveBegin(meta?: Record<string, string | number | boolean | null>): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  streetSaveTrace = {
+    startedAt: nowMs(),
+    marks: {},
+    gismapRendersBefore: gismapRenderCount,
+  };
+  console.info('[GIS_PERF_STREET] begin', {
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+    ...meta,
+  });
+}
+
+export function gisPerfStreetSaveMark(phase: string): void {
+  if (!isGisPerfDiagnosticsEnabled() || !streetSaveTrace) return;
+  streetSaveTrace.marks[phase] = nowMs();
+}
+
+export function gisPerfStreetSaveEnd(
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  if (!isGisPerfDiagnosticsEnabled() || !streetSaveTrace) return null;
+  const end = nowMs();
+  const t0 = streetSaveTrace.startedAt;
+  const marks = streetSaveTrace.marks;
+  const dbStart = marks.db_start;
+  const dbEnd = marks.db_end;
+  const stateEnd = marks.state_end;
+  const summary = {
+    totalMs: Math.round((end - t0) * 100) / 100,
+    dbMs:
+      dbStart != null && dbEnd != null
+        ? Math.round((dbEnd - dbStart) * 100) / 100
+        : null,
+    stateAfterDbMs:
+      dbEnd != null && stateEnd != null
+        ? Math.round((stateEnd - dbEnd) * 100) / 100
+        : null,
+    closeModalMs:
+      marks.modal_close != null
+        ? Math.round((marks.modal_close - t0) * 100) / 100
+        : null,
+    gismapRendersDelta: gismapRenderCount - streetSaveTrace.gismapRendersBefore,
+    auditRebuildsTotal: confrontationAuditRebuildCount,
+    loadLotsTotal: loadLotsRunCount,
+    ...extra,
+  };
+  console.info('[GIS_PERF_STREET] end', summary);
+  if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
+    window.__SV_GIS_PERF__.lastStreetSave = summary;
+  }
+  streetSaveTrace = null;
+  return summary;
 }

@@ -16,6 +16,12 @@ export {
   gisPerfMemorySnapshot,
   gisPerfDeviceSnapshot,
   gisPerfSummarizeBlocksPayload,
+  gisPerfNoteGisMapRender,
+  gisPerfNoteAuditRebuild,
+  gisPerfNoteLoadLots,
+  gisPerfStreetSaveBegin,
+  gisPerfStreetSaveMark,
+  gisPerfStreetSaveEnd,
 } from './profiler';
 
 export type {

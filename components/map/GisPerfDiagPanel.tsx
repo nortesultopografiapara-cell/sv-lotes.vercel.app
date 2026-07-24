@@ -147,6 +147,18 @@ export function GisPerfDiagPanel({ onChange }: { onChange?: () => void }) {
                 heapMB: {String(memory.usedJsHeapMb ?? 'n/a')} /{' '}
                 {String(memory.jsHeapLimitMb ?? 'n/a')}
               </p>
+              {summary?.lastStreetSave ||
+              (typeof window !== 'undefined' &&
+                window.__SV_GIS_PERF__?.lastStreetSave) ? (
+                <p className="text-emerald-300/90">
+                  streetSave:{' '}
+                  {JSON.stringify(
+                    (typeof window !== 'undefined' &&
+                      window.__SV_GIS_PERF__?.lastStreetSave) ||
+                      {},
+                  ).slice(0, 180)}
+                </p>
+              ) : null}
               {Object.keys(byPhase).length > 0 && (
                 <ul className="mt-1 space-y-0.5 text-gray-300">
                   {Object.entries(byPhase)
