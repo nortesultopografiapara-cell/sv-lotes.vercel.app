@@ -26,6 +26,7 @@ function testCoerceUndefinedNullNaN() {
 function testCoerceStringNumber() {
   assert(coerceDashboardKpiNumber('345') === 345, 'string 345');
   assert(coerceDashboardKpiNumber('1.234,56') === 1234.56, 'string pt-BR decimal');
+  assert(coerceDashboardKpiNumber('214872705.90') === 214872705.9, 'string DB decimal');
   console.log('OK testCoerceStringNumber');
 }
 
@@ -46,6 +47,7 @@ function testFormatCurrencySafe() {
   const parsed = formatDashboardKpiPrimaryValue('20185000', true);
   assert(parsed.includes('R$'), 'string currency R$');
   assert(parsed.includes('20.185.000') || parsed.includes('20185000'), parsed);
+  assert(parsed.includes(',00'), `centavos: ${parsed}`);
   console.log('OK testFormatCurrencySafe');
 }
 

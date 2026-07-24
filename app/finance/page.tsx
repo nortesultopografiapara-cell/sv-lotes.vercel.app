@@ -65,6 +65,7 @@ import {
   calculateEnterpriseValueSummary,
   type EnterpriseValueSummary,
 } from '@/lib/enterpriseValueSummary';
+import { fetchAllEnterpriseLotRows } from '@/lib/enterpriseValueFetch';
 import { EnterpriseFinanceSummary } from '@/components/enterprise/EnterpriseFinanceSummary';
 import '@/components/enterprise/enterprise-value.css';
 import {
@@ -691,16 +692,10 @@ export default function FinancePage() {
 
       try {
         const rlsCtx = await resolveRlsContext(user);
-        let query = supabase
-          .from('blocks')
-          .select('project_id, status, price');
-        if (project?.id) {
-          query = query.eq('project_id', project.id);
-        }
-        query = applyTenantFilter(query, rlsCtx, 'blocks');
-        const { data, error } = await query;
-        if (error) throw error;
-        if (!cancelled) setEnterpriseBlocks(data || []);
+        const lotFetch = await fetchAllEnterpriseLotRows(supabase, rlsCtx, {
+          projectId: project?.id ?? null,
+        });
+        if (!cancelled) setEnterpriseBlocks(lotFetch.rows);
       } catch (error) {
         console.error('FINANCE_ENTERPRISE_BLOCKS_ERROR', error);
         if (!cancelled) setEnterpriseBlocks([]);
@@ -2391,29 +2386,42 @@ export default function FinancePage() {
 
   const prepareResumidoData = async () => {
     // Busca compacta agrupando lotes e somando faturamentos reais via map local.
-    let query = supabase.from('blocks').select(`
-      id,
-      block_name,
-      number,
-      status,
-      price,
-      projects(name),
-      sales(installments_count, down_payment, payment_type)
-    `);
+    if (!user) return [];
+    const rlsCtx = await resolveRlsContext(user);
+    const project =
+      projectFilter !== 'Todos os projetos'
+        ? financeProjects.find((p) => p.name === projectFilter)
+        : null;
 
-    if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-        query = query.eq('tenant_id', user.tenant_id);
+    let lotFetch;
+    try {
+      lotFetch = await fetchAllEnterpriseLotRows(supabase, rlsCtx, {
+        projectId: project?.id ?? null,
+        select:
+          'id, project_id, block_name, number, status, price, projects(name), sales(installments_count, down_payment, payment_type)',
+      });
+    } catch (error) {
+      console.error('Erro buscar resumido', error);
+      return [];
     }
-    
-    const { data: blocks, error } = await query;
-    if (error || !blocks) {
-        console.error("Erro buscar resumido", error);
-        return [];
-    }
+
+    const blocks = lotFetch.rows as Array<{
+      id: string;
+      block_name?: string | null;
+      number?: string | number | null;
+      status?: string | null;
+      price?: number | string | null;
+      projects?: { name?: string | null } | null;
+      sales?: Array<{
+        installments_count?: number | null;
+        down_payment?: number | null;
+        payment_type?: string | null;
+      }> | null;
+    }>;
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    const filteredBlocks = blocks.filter(b => {
+    const filteredBlocks = blocks.filter((b) => {
         if (projectFilter !== 'Todos os projetos') {
              const projName = b.projects?.name || 'Projeto Desconhecido';
              if (projName !== projectFilter) return false;

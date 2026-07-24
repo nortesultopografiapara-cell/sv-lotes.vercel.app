@@ -29,7 +29,19 @@ export function parseEnterpriseLotPrice(
   price: number | string | null | undefined,
 ): number {
   if (price === null || price === undefined || price === '') return 0;
-  const parsed = Number(price);
+  if (typeof price === 'number') {
+    return Number.isFinite(price) && price >= 0 ? price : 0;
+  }
+  const raw = String(price).trim();
+  if (!raw) return 0;
+  // Aceita "1234.56" (DB) e "1.234,56" (pt-BR).
+  let normalized = raw;
+  if (raw.includes(',') && raw.includes('.')) {
+    normalized = raw.replace(/\./g, '').replace(',', '.');
+  } else if (raw.includes(',')) {
+    normalized = raw.replace(',', '.');
+  }
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
@@ -122,5 +134,7 @@ export function formatEnterpriseCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(Number.isFinite(value) ? value : 0);
 }

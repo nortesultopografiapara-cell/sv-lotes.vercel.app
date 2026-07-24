@@ -42,6 +42,7 @@ import {
   filterEnterpriseLotsByProject,
   formatEnterpriseCurrency,
 } from '@/lib/enterpriseValueSummary';
+import { fetchAllEnterpriseLotRows } from '@/lib/enterpriseValueFetch';
 import SuperAdminDashboard from './SuperAdminDashboard';
 import { motion } from 'motion/react';
 import './dashboard-premium.css';
@@ -230,13 +231,13 @@ function OperationalDashboard({ user }: { user: any }) {
           return;
         }
 
-        let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
         let projectsQuery = supabase.from('projects').select('id, name');
-        query = applyTenantFilter(query, rlsCtx, 'blocks');
         projectsQuery = applyTenantFilter(projectsQuery, rlsCtx, 'projects');
 
-        const { data, error } = await query;
-        const { data: projectsData } = await projectsQuery;
+        const [{ data: projectsData }, lotFetch] = await Promise.all([
+          projectsQuery,
+          fetchAllEnterpriseLotRows(supabase, rlsCtx),
+        ]);
 
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
         const ownerDashboardProjectIds = ownerCtx.isOwner
@@ -254,9 +255,15 @@ function OperationalDashboard({ user }: { user: any }) {
           setProjects([]);
         }
 
-        if (error) throw error;
+        const allLots = lotFetch.rows;
+        if (lotFetch.wouldTruncateWithoutPagination) {
+          console.info('[DASHBOARD] enterprise lots paginated', {
+            rowsFetched: lotFetch.rowsFetched,
+            exactCount: lotFetch.exactCount,
+            pagesFetched: lotFetch.pagesFetched,
+          });
+        }
 
-        const allLots = data || [];
         const ownerScopedLots = filterRowsByOwnerProjects(
           allLots,
           ownerDashboardProjectIds,

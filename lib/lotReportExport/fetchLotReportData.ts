@@ -7,6 +7,7 @@ import {
   loadOwnerAccessContext,
 } from '@/lib/ownerProjectAccess';
 import { buildLotReport, filterBlocksByProjectIds } from '@/lib/lotReportExport/buildLotReport';
+import { fetchAllEnterpriseLotRows } from '@/lib/enterpriseValueFetch';
 import type {
   LotReportBlockRecord,
   LotReportBuildResult,
@@ -24,6 +25,9 @@ export type FetchLotReportResult = {
   allowedProjectIds: string[];
 };
 
+const LOT_REPORT_BLOCKS_SELECT =
+  'id, project_id, block_name, name, number, lot_number, area, price, status, projects(id, name)';
+
 export async function fetchLotReportForExport(
   supabase: SupabaseClient,
   user: Record<string, unknown>,
@@ -36,22 +40,10 @@ export async function fetchLotReportForExport(
     (user.company_id as string) ||
     null;
 
-  let blocksQuery = supabase
-    .from('blocks')
-    .select(
-      'project_id, block_name, name, number, lot_number, area, price, status, projects(id, name)',
-    );
   let projectsQuery = supabase.from('projects').select('id, name');
-
-  blocksQuery = applyTenantFilter(blocksQuery, rlsCtx, 'blocks');
   projectsQuery = applyTenantFilter(projectsQuery, rlsCtx, 'projects');
 
-  const [{ data: blocksData, error }, { data: projectsData }] = await Promise.all([
-    blocksQuery,
-    projectsQuery,
-  ]);
-
-  if (error) throw error;
+  const { data: projectsData } = await projectsQuery;
 
   const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
   const ownerDashboardProjectIds = ownerCtx.isOwner
@@ -69,16 +61,17 @@ export async function fetchLotReportForExport(
     visibleProjects.map((p) => [String(p.id), String(p.name || '')]),
   );
 
-  let blocks = (blocksData || []) as LotReportBlockRecord[];
+  const lotFetch = await fetchAllEnterpriseLotRows(supabase, rlsCtx, {
+    select: LOT_REPORT_BLOCKS_SELECT,
+    projectId: params.selectedProjectId || null,
+  });
+
+  let blocks = lotFetch.rows as unknown as LotReportBlockRecord[];
   blocks = filterRowsByOwnerProjects(
     blocks,
     ownerDashboardProjectIds,
     (row) => row.project_id as string | null | undefined,
   ) as LotReportBlockRecord[];
-
-  if (!ownerCtx.isOwner) {
-    // tenant filter already applied
-  }
 
   blocks = filterBlocksByProjectIds(
     blocks,

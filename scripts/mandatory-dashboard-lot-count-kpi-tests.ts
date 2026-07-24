@@ -32,6 +32,12 @@ function testCurrencyFormattedForFinancialKpis() {
   const value = formatDashboardKpiPrimaryValue(20_185_000, true);
   assert(value.includes('R$'), 'valor com R$');
   assert(value.includes('20.185.000'), `valor formatado: ${value}`);
+  assert(value.includes(',00'), `centavos obrigatórios: ${value}`);
+  const withCents = formatDashboardKpiPrimaryValue(251_932_335.3, true);
+  assert(
+    withCents.includes('251.932.335') && withCents.includes(',30'),
+    `centavos decimais: ${withCents}`,
+  );
   console.log('OK testCurrencyFormattedForFinancialKpis');
 }
 
