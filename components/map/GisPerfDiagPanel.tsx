@@ -159,6 +159,25 @@ export function GisPerfDiagPanel({ onChange }: { onChange?: () => void }) {
                   ).slice(0, 180)}
                 </p>
               ) : null}
+              {typeof window !== 'undefined' &&
+              window.__SV_GIS_PERF__?.lastLotEdit ? (
+                <p className="text-sky-300/90">
+                  lotEdit:{' '}
+                  {JSON.stringify(window.__SV_GIS_PERF__.lastLotEdit).slice(
+                    0,
+                    180,
+                  )}
+                </p>
+              ) : null}
+              {typeof window !== 'undefined' &&
+              window.__SV_GIS_PERF__?.lastRealtimePatch ? (
+                <p className="text-violet-300/90">
+                  realtime:{' '}
+                  {JSON.stringify(
+                    window.__SV_GIS_PERF__.lastRealtimePatch,
+                  ).slice(0, 180)}
+                </p>
+              ) : null}
               {Object.keys(byPhase).length > 0 && (
                 <ul className="mt-1 space-y-0.5 text-gray-300">
                   {Object.entries(byPhase)

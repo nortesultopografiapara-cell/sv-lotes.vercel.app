@@ -111,6 +111,16 @@ function testWiring() {
   assert(map.includes('streetGuidesAuditDep'), 'streetGuides não invalida audits no save');
   assert(map.includes('auditLotsKey'), 'audits estáveis em patch de frente');
   assert(map.includes('frontPatchBatch'), 'patch Identificar Frentes');
+  assert(map.includes('lotsMutation'), 'Fase A lotsMutation');
+  assert(map.includes('mapLotFromBlockRow'), 'mapLotFromBlockRow');
+  assert(map.includes('gisPerfLotEditBegin'), 'lot edit telemetria');
+  assert(map.includes('gisPerfRealtimePatchBegin'), 'realtime telemetria');
+  assert(map.includes('markLocalPatchSuppress'), 'suppress realtime após patch');
+  assert(map.includes('applyRealtimePayload'), 'realtime patch local');
+  assert(
+    !/channel\("realtime:blocks"\)[\s\S]{0,400}loadLots\(\)/.test(map),
+    'realtime blocks não deve chamar loadLots() no handler padrão',
+  );
   assert(map.includes('effectiveLabelsMinZoom'), 'labels por zoom');
   assert(
     /const displayLots = lots/.test(map),
@@ -121,6 +131,19 @@ function testWiring() {
   assert(page.includes('ssr: false'), 'painel/GISMap sem SSR');
   assert(page.includes('gisPerfStreetSaveBegin'), 'street save instrumentado');
   assert(page.includes('gisPerfIdentifyFrontsBegin'), 'identify fronts instrumentado');
+  assert(page.includes('lotsMutation={lotsMutation}'), 'lotsMutation passado ao GISMap');
+  assert(
+    !/handleConfirmDeleteQuadra[\s\S]{0,1200}setMapRefreshKey\(\(k\) => k \+ 1\)/.test(
+      page,
+    ),
+    'excluir quadra não deve bump refreshKey',
+  );
+  assert(
+    !/setDeleteLotNumber\(''\);\s*\n\s*await loadProjectQuadras\(\);\s*\n\s*setMapRefreshKey/.test(
+      page,
+    ),
+    'excluir lote não deve bump refreshKey',
+  );
   assert(
     !/setMapRefreshKey\(prev => prev \+ 1\);\s*\n\s*\n\s*\} catch \(e: any\)/.test(
       page,
@@ -129,11 +152,18 @@ function testWiring() {
   );
   assert(page.includes('refreshKeyBumped: false'), 'sem refreshKey no identify');
   assert(page.includes('startTransition'), 'street save em transition');
+  const mapLot = fs.readFileSync(
+    path.join(root, 'lib/gis/mapLotFromBlock.ts'),
+    'utf8',
+  );
+  assert(mapLot.includes('export function mapLotFromBlockRow'), 'helper mapLot');
   const panel = fs.readFileSync(
     path.join(root, 'components/map/GisPerfDiagPanel.tsx'),
     'utf8',
   );
   assert(panel.includes('setReady(true)'), 'painel só após mount');
+  assert(panel.includes('lastLotEdit'), 'painel mostra lastLotEdit');
+  assert(panel.includes('lastRealtimePatch'), 'painel mostra lastRealtimePatch');
   assert(
     !/useState\(\(\)\s*=>\s*readGisPerfTogglesFromSearch\(\)/.test(panel),
     'painel não lê URL no useState (hydration)',
@@ -141,11 +171,48 @@ function testWiring() {
   console.log('OK testWiring');
 }
 
+function testMapLotFromBlock() {
+  const { mapLotFromBlockRow, normalizeBlockKeyForMap } = require('../lib/gis/mapLotFromBlock') as typeof import('../lib/gis/mapLotFromBlock');
+  assert(normalizeBlockKeyForMap('Quadra A') === 'A', 'normalize block key');
+  const lot = mapLotFromBlockRow({
+    id: 'abc',
+    project_id: 'p1',
+    block_name: 'Q1',
+    number: '12',
+    status: 'Disponível',
+    area: 250,
+    price: 1000,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-48.1, -1.4],
+          [-48.11, -1.4],
+          [-48.11, -1.41],
+          [-48.1, -1.4],
+        ],
+      ],
+    },
+    frente: 10,
+    Fundo: 12,
+    'Lado Dir.': 20,
+    'Lado Esq.': 20,
+  });
+  assert(!!lot, 'mapLot returns lot');
+  assert(lot!.id === 'abc', 'id');
+  assert(Array.isArray(lot!.bounds) && (lot!.bounds as unknown[]).length >= 3, 'bounds');
+  assert(lot!.price === 1000, 'price');
+  const nullLot = mapLotFromBlockRow({ id: 'x' });
+  assert(nullLot === null, 'sem geometry → null');
+  console.log('OK testMapLotFromBlock');
+}
+
 function main() {
   testProductionBlocked();
   testPreviewEnabled();
   testPayloadSummaryNoPii();
   testWiring();
+  testMapLotFromBlock();
   console.log('\nTodos os testes de GIS perf diagnostics passaram.');
 }
 

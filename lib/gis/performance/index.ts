@@ -25,6 +25,12 @@ export {
   gisPerfIdentifyFrontsBegin,
   gisPerfIdentifyFrontsMark,
   gisPerfIdentifyFrontsEnd,
+  gisPerfLotEditBegin,
+  gisPerfLotEditMark,
+  gisPerfLotEditEnd,
+  gisPerfRealtimePatchBegin,
+  gisPerfRealtimePatchMark,
+  gisPerfRealtimePatchEnd,
 } from './profiler';
 
 export type {

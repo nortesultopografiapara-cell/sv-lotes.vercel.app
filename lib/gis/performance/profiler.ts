@@ -62,6 +62,9 @@ declare global {
       lastSummary: Record<string, unknown> | null;
       lastStreetSave?: Record<string, unknown> | null;
       lastIdentifyFronts?: Record<string, unknown> | null;
+      lastLotEdit?: Record<string, unknown> | null;
+      lastRealtimePatch?: Record<string, unknown> | null;
+      lastInitialLoad?: Record<string, unknown> | null;
       getLast: () => GisPerfSession | null;
     };
   }
@@ -371,6 +374,7 @@ export function gisPerfFinishSession(
   activeSession.summary = summary;
   if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
     window.__SV_GIS_PERF__.lastSummary = summary;
+    window.__SV_GIS_PERF__.lastInitialLoad = summary;
   }
 
   console.info('[GIS_PERF]', summary);
@@ -559,4 +563,116 @@ export function gisPerfIdentifyFrontsEnd(
   }
   identifyFrontsTrace = null;
   return summary;
+}
+
+type OpTrace = {
+  startedAt: number;
+  marks: Record<string, number>;
+  gismapRendersBefore: number;
+  auditRebuildsBefore: number;
+  loadLotsBefore: number;
+};
+
+let lotEditTrace: OpTrace | null = null;
+let realtimePatchTrace: OpTrace | null = null;
+
+function endOpTrace(
+  trace: OpTrace | null,
+  key: 'lastLotEdit' | 'lastRealtimePatch',
+  logTag: string,
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  if (!isGisPerfDiagnosticsEnabled() || !trace) return null;
+  const end = nowMs();
+  const t0 = trace.startedAt;
+  const marks = trace.marks;
+  const msBetween = (a?: number, b?: number) =>
+    a != null && b != null ? Math.round((b - a) * 100) / 100 : null;
+  const summary: Record<string, unknown> = {
+    totalMs: Math.round((end - t0) * 100) / 100,
+    dbMs: msBetween(marks.db_start, marks.db_end),
+    patchMs: msBetween(marks.patch_start, marks.patch_end),
+    gismapRendersDelta: gismapRenderCount - trace.gismapRendersBefore,
+    auditsRebuildDelta: confrontationAuditRebuildCount - trace.auditRebuildsBefore,
+    loadLotsDelta: loadLotsRunCount - trace.loadLotsBefore,
+    fitBoundsDelta: 0,
+    ...extra,
+  };
+  console.info(logTag, summary);
+  if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
+    window.__SV_GIS_PERF__[key] = summary;
+  }
+  return summary;
+}
+
+export function gisPerfLotEditBegin(
+  meta?: Record<string, string | number | boolean | null>,
+): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  lotEditTrace = {
+    startedAt: nowMs(),
+    marks: {},
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+  };
+  console.info('[GIS_PERF_LOT_EDIT] begin', meta || {});
+}
+
+export function gisPerfLotEditMark(phase: string): void {
+  if (!isGisPerfDiagnosticsEnabled() || !lotEditTrace) return;
+  lotEditTrace.marks[phase] = nowMs();
+}
+
+export function gisPerfLotEditEnd(
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  const summary = endOpTrace(
+    lotEditTrace,
+    'lastLotEdit',
+    '[GIS_PERF_LOT_EDIT] end',
+    extra,
+  );
+  lotEditTrace = null;
+  return summary;
+}
+
+export function gisPerfRealtimePatchBegin(
+  meta?: Record<string, string | number | boolean | null>,
+): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  realtimePatchTrace = {
+    startedAt: nowMs(),
+    marks: {},
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+  };
+  console.info('[GIS_PERF_REALTIME] begin', meta || {});
+}
+
+export function gisPerfRealtimePatchMark(phase: string): void {
+  if (!isGisPerfDiagnosticsEnabled() || !realtimePatchTrace) return;
+  realtimePatchTrace.marks[phase] = nowMs();
+}
+
+export function gisPerfRealtimePatchEnd(
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  const summary = endOpTrace(
+    realtimePatchTrace,
+    'lastRealtimePatch',
+    '[GIS_PERF_REALTIME] end',
+    extra,
+  );
+  realtimePatchTrace = null;
+  return summary;
+}
+
+/** Alias estável do load inicial. */
+export function gisPerfAliasInitialLoad(
+  summary: Record<string, unknown> | null,
+): void {
+  if (!summary || typeof window === 'undefined' || !window.__SV_GIS_PERF__) return;
+  window.__SV_GIS_PERF__.lastInitialLoad = summary;
 }

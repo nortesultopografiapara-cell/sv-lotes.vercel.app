@@ -499,6 +499,14 @@ export default function MapPage() {
       frontStreetDisplay?: string | null;
     }>;
   } | null>(null);
+  /** Fase A — mutações pontuais no mapa sem loadLots/fitBounds. */
+  const [lotsMutation, setLotsMutation] = useState<{
+    rev: number;
+    kind: 'remove' | 'removeBlock' | 'upsert';
+    ids?: string[];
+    blockName?: string;
+    blocks?: Record<string, unknown>[];
+  } | null>(null);
 
   useEffect(() => {
     if (!saasTenantId || user?.role === 'SUPER_ADMIN') {
@@ -830,7 +838,11 @@ export default function MapPage() {
       setDeleteLotConfirmStep(false);
       setDeleteLotNumber('');
       await loadProjectQuadras();
-      setMapRefreshKey((k) => k + 1);
+      setLotsMutation((prev) => ({
+        rev: (prev?.rev ?? 0) + 1,
+        kind: 'remove',
+        ids: [String(existing.id)],
+      }));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao excluir lote.';
       alert(msg);
@@ -1024,7 +1036,21 @@ export default function MapPage() {
       setIsUpdateLotModalOpen(false);
       setUpdateLotFile(null);
       setUpdateLotNumber('');
-      setMapRefreshKey((k) => k + 1);
+      const { data: patchedBlock } = await supabase
+        .from('blocks')
+        .select('*, projects(name), customers(name)')
+        .eq('id', result.blockId)
+        .maybeSingle();
+      if (patchedBlock) {
+        setLotsMutation((prev) => ({
+          rev: (prev?.rev ?? 0) + 1,
+          kind: 'upsert',
+          blocks: [patchedBlock as Record<string, unknown>],
+        }));
+      } else {
+        // Fallback excepcional — payload incompleto
+        setMapRefreshKey((k) => k + 1);
+      }
       await loadProjectQuadras();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido';
@@ -1055,7 +1081,11 @@ export default function MapPage() {
         setFocusBlockName(null);
       }
       await loadProjectQuadras();
-      setMapRefreshKey((k) => k + 1);
+      setLotsMutation((prev) => ({
+        rev: (prev?.rev ?? 0) + 1,
+        kind: 'removeBlock',
+        blockName: quadraName,
+      }));
       alert(
         lotsRemoved > 0
           ? `${formatQuadraLabel(quadraName)} excluída (${lotsRemoved} lotes).`
@@ -3398,6 +3428,7 @@ export default function MapPage() {
             focusBlockName={focusBlockName}
             focusBlockKey={focusBlockKey}
             frontPatchBatch={frontPatchBatch}
+            lotsMutation={lotsMutation}
             streetGuides={streetGuides}
             streetGuidesVisible={streetGuidesVisible}
             drawStreetActive={drawStreetActive}

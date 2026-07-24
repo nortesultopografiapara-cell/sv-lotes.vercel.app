@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useRef, startTransition } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef, startTransition, useCallback } from "react";
 import {
   MapContainer,
   Polygon,
@@ -203,12 +203,22 @@ import {
   gisPerfNoteAuditRebuild,
   gisPerfNoteGisMapRender,
   gisPerfNoteLoadLots,
+  gisPerfLotEditBegin,
+  gisPerfLotEditEnd,
+  gisPerfLotEditMark,
+  gisPerfRealtimePatchBegin,
+  gisPerfRealtimePatchEnd,
+  gisPerfRealtimePatchMark,
   gisPerfSetLotCount,
   gisPerfSummarizeBlocksPayload,
   isGisPerfDiagnosticsEnabled,
   readGisPerfTogglesFromSearch,
   type GisPerfToggleState,
 } from "@/lib/gis/performance";
+import {
+  mapLotFromBlockRow,
+  normalizeBlockKeyForMap,
+} from "@/lib/gis/mapLotFromBlock";
 
 /**
  * Linhas auxiliares no mapa (investigação visual):
@@ -2714,6 +2724,7 @@ export default function GISMap({
   onOverlayOpenChange,
   onEnterpriseValueRefresh,
   frontPatchBatch = null,
+  lotsMutation = null,
 }: {
   projectId?: string;
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
@@ -2793,6 +2804,17 @@ export default function GISMap({
       frontStreetDisplay?: string | null;
     }>;
   } | null;
+  /**
+   * Fase A — mutações pontuais sem loadLots/fitBounds.
+   * remove | removeBlock | upsert (blocks brutos normalizados no GISMap).
+   */
+  lotsMutation?: {
+    rev: number;
+    kind: 'remove' | 'removeBlock' | 'upsert';
+    ids?: string[];
+    blockName?: string;
+    blocks?: Record<string, unknown>[];
+  } | null;
 }) {
   const { user } = useAuth();
   const ownerMapWriteBlocked = isOwnerRole(user?.role);
@@ -2830,6 +2852,8 @@ export default function GISMap({
   const [defineOfficialSidePickLotId, setDefineOfficialSidePickLotId] =
     useState<string | null>(null);
   const pendingLotPricesRef = useRef<Map<string, number | null>>(new Map());
+  const streetGuidesRef = useRef(streetGuides);
+  streetGuidesRef.current = streetGuides;
   const [officialSideEdit, setOfficialSideEdit] = useState<{
     lot: any;
     segmentIndex: number;
@@ -2951,12 +2975,31 @@ export default function GISMap({
 
   /** Identificar Frentes: um setLots com patches, sem loadLots/fitBounds. */
   const lastFrontPatchRevRef = useRef(0);
+  /** Suprime realtime logo após patch otimista (evita load/duplicata). */
+  const localPatchSuppressRef = useRef<Map<string, number>>(new Map());
+  const markLocalPatchSuppress = useCallback((ids: string[], ms = 8000) => {
+    const until = Date.now() + ms;
+    for (const id of ids) {
+      if (id) localPatchSuppressRef.current.set(String(id), until);
+    }
+  }, []);
+  const isLocalPatchSuppressed = useCallback((id: string) => {
+    const until = localPatchSuppressRef.current.get(String(id));
+    if (until == null) return false;
+    if (Date.now() > until) {
+      localPatchSuppressRef.current.delete(String(id));
+      return false;
+    }
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!frontPatchBatch || frontPatchBatch.rev === lastFrontPatchRevRef.current) {
       return;
     }
     if (!frontPatchBatch.patches.length) return;
     lastFrontPatchRevRef.current = frontPatchBatch.rev;
+    markLocalPatchSuppress(frontPatchBatch.patches.map((p) => String(p.id)));
     const byId = new Map(
       frontPatchBatch.patches.map((p) => [String(p.id), p] as const),
     );
@@ -2986,7 +3029,102 @@ export default function GISMap({
         return changed > 0 ? next : prev;
       });
     });
-  }, [frontPatchBatch]);
+  }, [frontPatchBatch, markLocalPatchSuppress]);
+
+  const lastLotsMutationRevRef = useRef(0);
+  useEffect(() => {
+    if (!lotsMutation || lotsMutation.rev === lastLotsMutationRevRef.current) {
+      return;
+    }
+    lastLotsMutationRevRef.current = lotsMutation.rev;
+    const kind = lotsMutation.kind;
+    const opLotId =
+      lotsMutation.ids?.[0] ||
+      (lotsMutation.blocks?.[0]?.id != null
+        ? String(lotsMutation.blocks[0].id)
+        : lotsMutation.blockName || '');
+
+    gisPerfLotEditBegin({
+      operation: kind,
+      lotId: String(opLotId).slice(0, 12),
+    });
+
+    if (kind === 'remove' && lotsMutation.ids?.length) {
+      const idSet = new Set(lotsMutation.ids.map(String));
+      markLocalPatchSuppress([...idSet]);
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => prev.filter((l) => !idSet.has(String(l.id))));
+        setBlocksData((prev) => prev.filter((l) => !idSet.has(String(l.id))));
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'remove',
+        lotId: String(opLotId).slice(0, 12),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+      return;
+    }
+
+    if (kind === 'removeBlock' && lotsMutation.blockName) {
+      const key = normalizeBlockKeyForMap(lotsMutation.blockName);
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => {
+          const removedIds = prev
+            .filter((l) => normalizeBlockKeyForMap(l.block) === key)
+            .map((l) => String(l.id));
+          if (removedIds.length) markLocalPatchSuppress(removedIds);
+          return prev.filter((l) => normalizeBlockKeyForMap(l.block) !== key);
+        });
+        setBlocksData((prev) =>
+          prev.filter((l) => normalizeBlockKeyForMap(l.block) !== key),
+        );
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'removeBlock',
+        lotId: String(lotsMutation.blockName).slice(0, 12),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+      return;
+    }
+
+    if (kind === 'upsert' && lotsMutation.blocks?.length) {
+      const mapped = lotsMutation.blocks
+        .map((b) => mapLotFromBlockRow(b, streetGuidesRef.current))
+        .filter(Boolean) as Record<string, unknown>[];
+      if (!mapped.length) {
+        gisPerfLotEditEnd({
+          operation: 'upsert',
+          fallbackFullReload: true,
+        });
+        return;
+      }
+      markLocalPatchSuppress(mapped.map((l) => String(l.id)));
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => {
+          const byId = new Map(prev.map((l) => [String(l.id), l]));
+          for (const lot of mapped) {
+            const id = String(lot.id);
+            const prevLot = byId.get(id);
+            byId.set(id, prevLot ? { ...prevLot, ...lot } : lot);
+          }
+          return Array.from(byId.values());
+        });
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'upsert',
+        lotId: String(mapped[0].id).slice(0, 12),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+    }
+  }, [lotsMutation, markLocalPatchSuppress]);
 
   useEffect(() => {
     gisPerfNoteGisMapRender({
@@ -2999,6 +3137,11 @@ export default function GISMap({
     if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id) return;
     setFrontCorrectSaving(true);
+    const lotId = String(lot.id);
+    gisPerfLotEditBegin({
+      operation: 'front',
+      lotId: lotId.slice(0, 8),
+    });
     try {
       const blockBase = blockWithGeometryFromBounds({
         ...lot,
@@ -3031,6 +3174,7 @@ export default function GISMap({
         measures,
         streetMatch,
       });
+      gisPerfLotEditMark('db_start');
       const { patch, frontSourcePersisted } = await persistManualLotFront(
         supabase,
         lot.id,
@@ -3038,6 +3182,8 @@ export default function GISMap({
         persistedFrontIdx,
         streetFields,
       );
+      gisPerfLotEditMark('db_end');
+      markLocalPatchSuppress([lotId]);
       console.log("BLOCK_FRONT_SAVE_OK", {
         blockId: lot.id,
         lotNumber: lot.number,
@@ -3055,25 +3201,35 @@ export default function GISMap({
         },
         streetGuides,
       );
-      setLots((prev) =>
-        prev.map((l) =>
-          l.id === lot.id
-            ? {
-                ...l,
-                frente: measures.frente,
-                Fundo: measures.fundo,
-                "Lado Dir.": measures.ladoDireito,
-                "Lado Esq.": measures.ladoEsquerdo,
-                front_segment_index: persistedFrontIdx,
-                front_source: frontSourcePersisted ? "manual" : l.front_source,
-                frontStreetName: streetFields.front_street_name,
-                frontStreetId: streetFields.front_street_id,
-                frontStreetType: streetFields.front_street_type,
-                frontStreetDisplay: updatedDisplay,
-              }
-            : l,
-        ),
-      );
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) =>
+          prev.map((l) =>
+            l.id === lot.id
+              ? {
+                  ...l,
+                  frente: measures.frente,
+                  Fundo: measures.fundo,
+                  "Lado Dir.": measures.ladoDireito,
+                  "Lado Esq.": measures.ladoEsquerdo,
+                  front_segment_index: persistedFrontIdx,
+                  front_source: frontSourcePersisted ? "manual" : l.front_source,
+                  frontStreetName: streetFields.front_street_name,
+                  frontStreetId: streetFields.front_street_id,
+                  frontStreetType: streetFields.front_street_type,
+                  frontStreetDisplay: updatedDisplay,
+                }
+              : l,
+          ),
+        );
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'front',
+        lotId: lotId.slice(0, 8),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
       setFrontCorrectLotId(null);
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot, { projectId: lot.project_id }),
@@ -3092,6 +3248,12 @@ export default function GISMap({
       });
       alert("Frente atualizada com sucesso.");
     } catch (err: unknown) {
+      gisPerfLotEditEnd({
+        operation: 'front',
+        lotId: lotId.slice(0, 8),
+        fallbackFullReload: false,
+        error: true,
+      });
       logSupabaseFrontSaveFailure('GISMap.handlePickFrontSegment', err, {
         blockId: lot.id,
         frontSegmentIndex: segmentIndex,
@@ -3208,6 +3370,7 @@ export default function GISMap({
       );
       const rows = updated.segments_json as Record<string, unknown>[];
       await persistBlockSegmentsJson(supabase, t.blockId, rows);
+      markLocalPatchSuppress([String(t.blockId)]);
       setLots((prev) =>
         prev.map((l) =>
           l.id === t.blockId ? { ...l, segments_json: rows } : l,
@@ -4049,13 +4212,159 @@ export default function GISMap({
       return;
     }
 
+    const applyRealtimePayload = async (payload: {
+      eventType?: string;
+      new?: Record<string, unknown>;
+      old?: Record<string, unknown>;
+    }) => {
+      const eventType = String(payload.eventType || '').toUpperCase();
+      const rowNew = (payload.new || {}) as Record<string, unknown>;
+      const rowOld = (payload.old || {}) as Record<string, unknown>;
+      const lotId = String(rowNew.id || rowOld.id || '');
+      if (!lotId) return;
+
+      gisPerfRealtimePatchBegin({
+        operation: eventType || 'UNKNOWN',
+        lotId: lotId.slice(0, 8),
+      });
+
+      if (isLocalPatchSuppressed(lotId)) {
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          lotId: lotId.slice(0, 8),
+          duplicateRealtimeSuppressed: true,
+          fallbackFullReload: false,
+          loadLotsDelta: 0,
+        });
+        return;
+      }
+
+      const rowProject = String(rowNew.project_id || rowOld.project_id || '');
+      if (rowProject && projectId && rowProject !== String(projectId)) {
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          skipped: 'other_project',
+          fallbackFullReload: false,
+        });
+        return;
+      }
+
+      if (eventType === 'DELETE') {
+        gisPerfRealtimePatchMark('patch_start');
+        startTransition(() => {
+          setLots((prev) => prev.filter((l) => String(l.id) !== lotId));
+          setBlocksData((prev) => prev.filter((l) => String(l.id) !== lotId));
+        });
+        gisPerfRealtimePatchMark('patch_end');
+        gisPerfRealtimePatchEnd({
+          operation: 'DELETE',
+          lotId: lotId.slice(0, 8),
+          duplicateRealtimeSuppressed: false,
+          fallbackFullReload: false,
+        });
+        return;
+      }
+
+      let row: Record<string, unknown> = rowNew;
+      const needsFetch =
+        !row.geometry ||
+        (row.geometry as { coordinates?: unknown })?.coordinates == null;
+
+      if (needsFetch) {
+        gisPerfRealtimePatchMark('db_start');
+        const { data, error } = await supabase
+          .from('blocks')
+          .select('*, projects(name), customers(name)')
+          .eq('id', lotId)
+          .maybeSingle();
+        gisPerfRealtimePatchMark('db_end');
+        if (error || !data) {
+          console.warn('GIS_REALTIME_FETCH_FALLBACK_FULL', lotId, error);
+          gisPerfRealtimePatchEnd({
+            operation: eventType,
+            lotId: lotId.slice(0, 8),
+            fallbackFullReload: true,
+          });
+          void loadLots();
+          return;
+        }
+        row = data as Record<string, unknown>;
+      }
+
+      if (
+        row.project_id &&
+        projectId &&
+        String(row.project_id) !== String(projectId)
+      ) {
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          skipped: 'other_project',
+          fallbackFullReload: false,
+        });
+        return;
+      }
+
+      const pendingPrice = pendingLotPricesRef.current.get(lotId);
+      const mapped = mapLotFromBlockRow(row, streetGuidesRef.current, {
+        pendingPrice:
+          pendingPrice !== undefined ? pendingPrice : undefined,
+      });
+
+      if (!mapped) {
+        console.warn('GIS_REALTIME_MAP_LOT_FAILED', lotId);
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          lotId: lotId.slice(0, 8),
+          fallbackFullReload: true,
+        });
+        void loadLots();
+        return;
+      }
+
+      gisPerfRealtimePatchMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => {
+          const idx = prev.findIndex((l) => String(l.id) === lotId);
+          if (idx >= 0) {
+            const next = prev.slice();
+            next[idx] = { ...prev[idx], ...mapped };
+            return next;
+          }
+          if (eventType === 'INSERT') return [...prev, mapped];
+          return [...prev, mapped];
+        });
+      });
+      gisPerfRealtimePatchMark('patch_end');
+      gisPerfRealtimePatchEnd({
+        operation: eventType || 'UPDATE',
+        lotId: lotId.slice(0, 8),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+    };
+
     const channel = supabase
-      .channel("realtime:blocks")
+      .channel(`realtime:blocks:${projectId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "blocks" },
-        () => {
-          loadLots();
+        projectId
+          ? {
+              event: "*",
+              schema: "public",
+              table: "blocks",
+              filter: `project_id=eq.${projectId}`,
+            }
+          : {
+              event: "*",
+              schema: "public",
+              table: "blocks",
+            },
+        (payload) => {
+          void applyRealtimePayload({
+            eventType: payload.eventType,
+            new: payload.new as Record<string, unknown>,
+            old: payload.old as Record<string, unknown>,
+          });
         },
       )
       .subscribe();
@@ -4063,21 +4372,36 @@ export default function GISMap({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, projectId, refreshKey]);
+  }, [user, projectId, refreshKey, isLocalPatchSuppressed]);
 
   const handleLotPriceSaved = (lotId: string, price: number | null) => {
+    gisPerfLotEditBegin({
+      operation: 'price',
+      lotId: String(lotId).slice(0, 8),
+    });
+    markLocalPatchSuppress([String(lotId)]);
     pendingLotPricesRef.current.set(lotId, price);
     window.setTimeout(() => {
       pendingLotPricesRef.current.delete(lotId);
     }, 8000);
 
     const normalized = price ?? 0;
-    setLots((prev) =>
-      prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
-    );
-    setBlocksData((prev) =>
-      prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
-    );
+    gisPerfLotEditMark('patch_start');
+    startTransition(() => {
+      setLots((prev) =>
+        prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
+      );
+      setBlocksData((prev) =>
+        prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
+      );
+    });
+    gisPerfLotEditMark('patch_end');
+    gisPerfLotEditEnd({
+      operation: 'price',
+      lotId: String(lotId).slice(0, 8),
+      duplicateRealtimeSuppressed: false,
+      fallbackFullReload: false,
+    });
     onEnterpriseValueRefresh?.();
   };
 
@@ -4093,36 +4417,47 @@ export default function GISMap({
     setActionLoading(lot.id);
     const newStatus = newStatusString;
     const finalPrice = newPrice !== undefined ? newPrice : lot.price;
+    const lotId = String(lot.id);
+
+    gisPerfLotEditBegin({
+      operation: 'status',
+      lotId: lotId.slice(0, 8),
+    });
+    markLocalPatchSuppress([lotId]);
 
     // Optimistic UI updates
-    setLots((prev) =>
-      prev.map((l) =>
-        l.id === lot.id
-          ? {
-              ...l,
-              status: newStatus,
-              price: finalPrice,
-              ...(newStatus === "Disponível"
-                ? { customer_id: null, customerId: null, customerName: null }
-                : {}),
-            }
-          : l,
-      ),
-    );
-    setBlocksData((prev) =>
-      prev.map((l) =>
-        l.id === lot.id
-          ? {
-              ...l,
-              status: newStatus,
-              price: finalPrice,
-              ...(newStatus === "Disponível"
-                ? { customer_id: null, customerId: null, customerName: null }
-                : {}),
-            }
-          : l,
-      ),
-    );
+    gisPerfLotEditMark('patch_start');
+    startTransition(() => {
+      setLots((prev) =>
+        prev.map((l) =>
+          l.id === lot.id
+            ? {
+                ...l,
+                status: newStatus,
+                price: finalPrice,
+                ...(newStatus === "Disponível"
+                  ? { customer_id: null, customerId: null, customerName: null }
+                  : {}),
+              }
+            : l,
+        ),
+      );
+      setBlocksData((prev) =>
+        prev.map((l) =>
+          l.id === lot.id
+            ? {
+                ...l,
+                status: newStatus,
+                price: finalPrice,
+                ...(newStatus === "Disponível"
+                  ? { customer_id: null, customerId: null, customerName: null }
+                  : {}),
+              }
+            : l,
+        ),
+      );
+    });
+    gisPerfLotEditMark('patch_end');
 
     try {
       const updatePayload: any = { status: newStatus, price: finalPrice };
@@ -4130,10 +4465,12 @@ export default function GISMap({
         updatePayload.customer_id = null;
       }
 
+      gisPerfLotEditMark('db_start');
       const { error: updateError } = await supabase
         .from("blocks")
         .update(updatePayload)
         .eq("id", lot.id);
+      gisPerfLotEditMark('db_end');
 
       if (updateError) throw updateError;
 
@@ -4161,8 +4498,20 @@ export default function GISMap({
         newData: { status: newStatus, price: finalPrice },
         source: "gis_map",
       });
+      gisPerfLotEditEnd({
+        operation: 'status',
+        lotId: lotId.slice(0, 8),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
     } catch (e) {
       console.error("Action error:", e);
+      gisPerfLotEditEnd({
+        operation: 'status',
+        lotId: lotId.slice(0, 8),
+        fallbackFullReload: false,
+        error: true,
+      });
       alert("Erro ao realizar ação");
     } finally {
       setActionLoading(null);
@@ -4293,6 +4642,7 @@ export default function GISMap({
           );
         }
 
+        markLocalPatchSuppress([String(lot.id)]);
         setLots((prev) =>
           prev.map((l) =>
             l.id === lot.id
@@ -5196,6 +5546,7 @@ export default function GISMap({
                   .eq("id", customerForm.lot.id)
                   .maybeSingle();
                 if (refreshedBlock) {
+                  markLocalPatchSuppress([String(refreshedBlock.id)]);
                   setLots((prev) =>
                     prev.map((l) =>
                       l.id === refreshedBlock.id
