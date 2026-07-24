@@ -1,23 +1,43 @@
 /**
- * Carimba assinaturas eletrônicas nos slots do HTML por papel (Recanto).
- * Evita repetir a assinatura do comprador no campo do cônjuge.
+ * Carimba assinaturas eletrônicas nos slots do HTML por papel.
+ * Busca APENAS dentro de `.signature-slot` — evita falso positivo em cláusulas
+ * que repetem "VENDEDOR(A)" / "COMPRADOR(A)" no corpo do contrato.
  */
 
+import {
+  CONTRACT_PARTY_SLOT_MARKERS,
+  resolveContractPartySignature,
+  type ContractPartySignatureDisplayRole,
+  type ContractPartySignatureRecord,
+  type ResolvedContractPartySignature,
+} from '@/lib/saleContractPartySignatureStatus';
+
 export type ElectronicSlotStamp = {
+  /** Marcador principal (compat). */
   roleMarker: string;
+  /** Alternativas por modelo (Meneses / SV2 / Recanto). */
+  roleMarkers?: string[];
   signerName: string;
   signedAt?: string | null;
   signed: boolean;
+  role?: ContractPartySignatureDisplayRole;
 };
 
 function formatStampDate(iso?: string | null): string {
   if (!iso) return '';
   try {
     const d = new Date(iso);
-    return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', {
+    if (Number.isNaN(d.getTime())) return '';
+    const date = d.toLocaleDateString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+    });
+    const time = d.toLocaleTimeString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
       hour: '2-digit',
       minute: '2-digit',
-    })}`;
+      hour12: false,
+    });
+    return `${date} ${time}`;
   } catch {
     return '';
   }
@@ -31,34 +51,13 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Injeta carimbo eletrônico no slot cujo texto de papel contém roleMarker.
- * Cada papel é tratado isoladamente.
- */
-export function stampContractSignatureSlotByRole(
-  html: string,
-  stamp: ElectronicSlotStamp,
-): string {
-  if (!stamp.signed || !stamp.roleMarker) return html;
-
-  const marker = stamp.roleMarker;
-  const markerIdx = html.indexOf(marker);
-  if (markerIdx < 0) return html;
-
-  const slotStart = html.lastIndexOf('class="signature-slot"', markerIdx);
-  if (slotStart < 0) return html;
-
-  const divStart = html.lastIndexOf('<div', slotStart);
-  if (divStart < 0) return html;
-
+function findDivEnd(html: string, divStart: number): number {
   let depth = 1;
   let pos = divStart + 4;
-  let divEnd = -1;
-
   while (pos < html.length) {
     const openAt = html.indexOf('<div', pos);
     const closeAt = html.indexOf('</div>', pos);
-    if (closeAt === -1) break;
+    if (closeAt === -1) return -1;
     if (openAt !== -1 && openAt < closeAt) {
       depth += 1;
       pos = openAt + 4;
@@ -66,18 +65,79 @@ export function stampContractSignatureSlotByRole(
     }
     pos = closeAt + 6;
     depth -= 1;
-    if (depth === 0) {
-      divEnd = pos;
-      break;
+    if (depth === 0) return pos;
+  }
+  return -1;
+}
+
+type SignatureSlotRange = {
+  divStart: number;
+  divEnd: number;
+  html: string;
+};
+
+/** Extrai todos os blocos `.signature-slot` do HTML. */
+export function findContractSignatureSlots(html: string): SignatureSlotRange[] {
+  const slots: SignatureSlotRange[] = [];
+  const needle = 'class="signature-slot"';
+  let from = 0;
+  while (from < html.length) {
+    const classIdx = html.indexOf(needle, from);
+    if (classIdx < 0) break;
+    const divStart = html.lastIndexOf('<div', classIdx);
+    if (divStart < 0) {
+      from = classIdx + needle.length;
+      continue;
     }
+    const divEnd = findDivEnd(html, divStart);
+    if (divEnd < 0) break;
+    slots.push({
+      divStart,
+      divEnd,
+      html: html.slice(divStart, divEnd),
+    });
+    from = divEnd;
   }
+  return slots;
+}
 
-  if (divEnd < 0) return html;
+function markersForStamp(stamp: ElectronicSlotStamp): string[] {
+  const list = [
+    ...(stamp.roleMarkers || []),
+    stamp.roleMarker,
+    ...(stamp.role ? CONTRACT_PARTY_SLOT_MARKERS[stamp.role] || [] : []),
+  ]
+    .map((m) => String(m || '').trim())
+    .filter(Boolean);
+  return [...new Set(list)];
+}
 
-  const slotHtml = html.slice(divStart, divEnd);
-  if (slotHtml.includes('sv-esign-stamp')) {
-    return html;
-  }
+function slotMatchesRoleMarker(slotHtml: string, marker: string): boolean {
+  if (!marker || !slotHtml.includes(marker)) return false;
+  // Evita carimbar "Testemunhas" quando o marcador é só "VENDEDOR..." etc.
+  return true;
+}
+
+/**
+ * Injeta carimbo eletrônico no slot cujo texto de papel contém roleMarker.
+ * Cada papel é tratado isoladamente — não usa CPF para escolher o slot.
+ */
+export function stampContractSignatureSlotByRole(
+  html: string,
+  stamp: ElectronicSlotStamp,
+): string {
+  if (!stamp.signed || !stamp.roleMarker) return html;
+
+  const markers = markersForStamp(stamp);
+  if (markers.length === 0) return html;
+
+  const slots = findContractSignatureSlots(html);
+  const target = slots.find((slot) => {
+    if (slot.html.includes('sv-esign-stamp')) return false;
+    return markers.some((m) => slotMatchesRoleMarker(slot.html, m));
+  });
+
+  if (!target) return html;
 
   const when = formatStampDate(stamp.signedAt);
   const stampHtml = `
@@ -87,6 +147,7 @@ export function stampContractSignatureSlotByRole(
           ${when ? `<br/>${escapeHtml(when)}` : ''}
         </p>`;
 
+  const slotHtml = target.html;
   const lineIdx = slotHtml.indexOf('border-top: 1px solid');
   let stampedSlot = slotHtml;
   if (lineIdx >= 0) {
@@ -100,7 +161,7 @@ export function stampContractSignatureSlotByRole(
     stampedSlot = stampHtml + slotHtml;
   }
 
-  return html.slice(0, divStart) + stampedSlot + html.slice(divEnd);
+  return html.slice(0, target.divStart) + stampedSlot + html.slice(target.divEnd);
 }
 
 export function applyElectronicSignatureStampsToContractHtml(
@@ -112,6 +173,21 @@ export function applyElectronicSignatureStampsToContractHtml(
     result = stampContractSignatureSlotByRole(result, stamp);
   }
   return result;
+}
+
+function stampFromResolved(
+  resolved: ResolvedContractPartySignature,
+  markers: string[],
+): ElectronicSlotStamp {
+  const primary = markers[0] || '';
+  return {
+    role: resolved.role,
+    roleMarker: primary,
+    roleMarkers: markers,
+    signerName: String(resolved.signerName || '').trim(),
+    signedAt: resolved.signedAt,
+    signed: Boolean(resolved.signed && (resolved.signerName || resolved.signedAt)),
+  };
 }
 
 export function buildRecantoElectronicStamps(input: {
@@ -127,22 +203,83 @@ export function buildRecantoElectronicStamps(input: {
 }): ElectronicSlotStamp[] {
   return [
     {
+      role: 'SELLER',
       roleMarker: 'VENDEDOR(A)',
+      roleMarkers: CONTRACT_PARTY_SLOT_MARKERS.SELLER,
       signerName: String(input.vendorName || '').trim(),
       signedAt: input.vendorSignedAt,
       signed: Boolean(input.vendorSigned && input.vendorName),
     },
     {
+      role: 'BUYER',
       roleMarker: 'COMPRADOR(A)',
+      roleMarkers: CONTRACT_PARTY_SLOT_MARKERS.BUYER,
       signerName: String(input.buyerName || '').trim(),
       signedAt: input.buyerSignedAt,
       signed: Boolean(input.buyerSigned && input.buyerName),
     },
     {
+      role: 'SPOUSE',
       roleMarker: 'CÔNJUGE ANUENTE',
+      roleMarkers: CONTRACT_PARTY_SLOT_MARKERS.SPOUSE,
       signerName: String(input.spouseName || '').trim(),
       signedAt: input.spouseSignedAt,
       signed: Boolean(input.spouseSigned && input.spouseName),
     },
+  ];
+}
+
+/**
+ * Constrói carimbos a partir das parties (fonte preferencial) + legado do processo.
+ * Mesmo CPF em VENDOR e BUYER → dois selos independentes.
+ */
+export function buildElectronicStampsFromSignatureParties(input: {
+  parties: ContractPartySignatureRecord[];
+  buyerNameFallback?: string | null;
+  vendorNameFallback?: string | null;
+  legacyBuyerSignedAt?: string | null;
+  legacyVendorSignedAt?: string | null;
+  legacyVendorSigned?: boolean;
+  legacyBuyerSigned?: boolean;
+}): ElectronicSlotStamp[] {
+  const parties = input.parties || [];
+
+  const seller = resolveContractPartySignature({
+    role: 'SELLER',
+    signatures: parties,
+    legacyFallback: {
+      signed:
+        input.legacyVendorSigned ?? Boolean(input.legacyVendorSignedAt),
+      signerName: input.vendorNameFallback,
+      signedAt: input.legacyVendorSignedAt,
+    },
+  });
+
+  const buyer = resolveContractPartySignature({
+    role: 'BUYER',
+    signatures: parties,
+    legacyFallback: {
+      signed: input.legacyBuyerSigned ?? Boolean(input.legacyBuyerSignedAt),
+      signerName: input.buyerNameFallback,
+      signedAt: input.legacyBuyerSignedAt,
+    },
+  });
+
+  const spouse = resolveContractPartySignature({
+    role: 'SPOUSE',
+    signatures: parties,
+  });
+
+  if (!seller.signerName && input.vendorNameFallback) {
+    seller.signerName = String(input.vendorNameFallback).trim() || undefined;
+  }
+  if (!buyer.signerName && input.buyerNameFallback) {
+    buyer.signerName = String(input.buyerNameFallback).trim() || undefined;
+  }
+
+  return [
+    stampFromResolved(seller, CONTRACT_PARTY_SLOT_MARKERS.SELLER),
+    stampFromResolved(buyer, CONTRACT_PARTY_SLOT_MARKERS.BUYER),
+    stampFromResolved(spouse, CONTRACT_PARTY_SLOT_MARKERS.SPOUSE),
   ];
 }

@@ -74,7 +74,8 @@
     "test:master-executive-scroll-browser": "tsx scripts/mandatory-master-executive-scroll-browser-tests.ts",
     "test:dashboard-company-aggregates": "tsx scripts/mandatory-dashboard-company-aggregates-tests.ts",
     "test:enterprise-value-summary": "tsx scripts/mandatory-enterprise-value-summary-tests.ts",
-    "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts"
+    "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts",
+    "test:contract-inline-signature-status": "tsx scripts/mandatory-contract-inline-signature-status-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

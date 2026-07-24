@@ -315,7 +315,10 @@ function testShareMessagesDistinct() {
 }
 
 function testSlotsAndCertificate() {
+  // Cláusulas no corpo repetem VENDEDOR/COMPRADOR — bug antigo carimbava só o cônjuge.
   const html = `
+    <p>O(A) COMPRADOR(A) e o(a) VENDEDOR(A) firmam o presente.</p>
+    <p><strong>COMPRADOR(A):</strong> João</p>
     <div class="contract-signatures contract-signatures--recanto">
       <div class="signature-slot"><div style="border-top: 1px solid #111"></div><p>VENDEDOR(A)</p></div>
       <div class="signature-slot"><div style="border-top: 1px solid #111"></div><p>COMPRADOR(A)</p><p>João</p></div>
@@ -344,6 +347,11 @@ function testSlotsAndCertificate() {
   );
   assert(stamped.includes('João'), 'nome comprador');
   assert(stamped.includes('Maria'), 'nome cônjuge');
+  assert(stamped.includes('Ivanilde'), 'nome vendedor');
+  assert(
+    !stamped.slice(0, stamped.indexOf('contract-signatures')).includes('sv-esign-stamp'),
+    'sem stamp nas cláusulas',
+  );
 
   const cert = buildSaleContractSignatureCertificateHtml({
     contractNumber: '000000001/2026',
