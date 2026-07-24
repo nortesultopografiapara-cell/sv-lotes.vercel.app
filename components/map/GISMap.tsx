@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef, startTransition } from "react";
 import {
   MapContainer,
   Polygon,
@@ -2713,6 +2713,7 @@ export default function GISMap({
   defineOfficialSideTool = false,
   onOverlayOpenChange,
   onEnterpriseValueRefresh,
+  frontPatchBatch = null,
 }: {
   projectId?: string;
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
@@ -2772,6 +2773,26 @@ export default function GISMap({
   onOverlayOpenChange?: (open: boolean) => void;
   /** Atualiza card Valor do Empreendimento após salvar preço manual. */
   onEnterpriseValueRefresh?: () => void;
+  /**
+   * Patch leve após Identificar Frentes — um setLots, sem loadLots/fitBounds.
+   * rev sobe a cada lote de patches aplicado.
+   */
+  frontPatchBatch?: {
+    rev: number;
+    patches: Array<{
+      id: string;
+      frente?: number | null;
+      Fundo?: number | string | null;
+      'Lado Dir.'?: number | string | null;
+      'Lado Esq.'?: number | string | null;
+      front_segment_index?: number | null;
+      frontStreetName?: string | null;
+      frontStreetType?: string | null;
+      frontStreetWidth?: number | null;
+      frontStreetId?: string | null;
+      frontStreetDisplay?: string | null;
+    }>;
+  } | null;
 }) {
   const { user } = useAuth();
   const ownerMapWriteBlocked = isOwnerRole(user?.role);
@@ -2823,6 +2844,18 @@ export default function GISMap({
    */
   const displayLots = lots;
 
+  /**
+   * Chave estável de geometria — mudanças só de frente/rua NÃO disparam rebuild de audits.
+   * (Identificar Frentes atualiza metadados sem alterar bounds.)
+   */
+  const auditLotsKey = useMemo(
+    () =>
+      lots
+        .map((l) => `${l.id}:${l.bounds?.length ?? 0}:${l.coordCount ?? 0}`)
+        .join('|'),
+    [lots],
+  );
+
   const liveStreetAudits =
     Boolean(assistedConfrontationMode) ||
     Boolean(insertConfrontantTool) ||
@@ -2842,7 +2875,9 @@ export default function GISMap({
         front_segment_index: l.front_segment_index,
         front_street_name: l.frontStreetName,
       })) as Record<string, unknown>[],
-    [lots],
+    // Com ferramentas assistidas, usa lots; senão só geometria (patch de frente não rebuilda).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- auditLotsKey / liveStreetAudits
+    liveStreetAudits ? [lots, liveStreetAudits] : [auditLotsKey],
   );
 
   /** streetGuides só invalida audits quando ferramentas assistidas estão ativas. */
@@ -2903,16 +2938,55 @@ export default function GISMap({
         streetsHydrateEpoch,
       },
     );
-    // streetGuides omitido quando !liveStreetAudits — evita rebuild dos N audits ao salvar rua.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetGuidesAuditDep + streetsHydrateEpoch
+    // lots omitido: auditLotsKey cobre geometria; patch de frente não rebuilda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetGuidesAuditDep + auditLotsKey
   }, [
-    lots,
+    auditLotsKey,
     blocksForConfront,
     streetGuidesAuditDep,
     liveStreetAudits,
     streetsHydrateEpoch,
     perfToggles.confrontationAudits,
   ]);
+
+  /** Identificar Frentes: um setLots com patches, sem loadLots/fitBounds. */
+  const lastFrontPatchRevRef = useRef(0);
+  useEffect(() => {
+    if (!frontPatchBatch || frontPatchBatch.rev === lastFrontPatchRevRef.current) {
+      return;
+    }
+    if (!frontPatchBatch.patches.length) return;
+    lastFrontPatchRevRef.current = frontPatchBatch.rev;
+    const byId = new Map(
+      frontPatchBatch.patches.map((p) => [String(p.id), p] as const),
+    );
+    startTransition(() => {
+      setLots((prev) => {
+        let changed = 0;
+        const next = prev.map((lot) => {
+          const p = byId.get(String(lot.id));
+          if (!p) return lot;
+          changed += 1;
+          return {
+            ...lot,
+            frente: p.frente ?? lot.frente,
+            Fundo: p.Fundo ?? lot.Fundo,
+            'Lado Dir.': p['Lado Dir.'] ?? lot['Lado Dir.'],
+            'Lado Esq.': p['Lado Esq.'] ?? lot['Lado Esq.'],
+            front_segment_index:
+              p.front_segment_index ?? lot.front_segment_index,
+            frontStreetName: p.frontStreetName ?? lot.frontStreetName,
+            frontStreetType: p.frontStreetType ?? lot.frontStreetType,
+            frontStreetWidth: p.frontStreetWidth ?? lot.frontStreetWidth,
+            frontStreetId: p.frontStreetId ?? lot.frontStreetId,
+            frontStreetDisplay:
+              p.frontStreetDisplay ?? lot.frontStreetDisplay,
+          };
+        });
+        return changed > 0 ? next : prev;
+      });
+    });
+  }, [frontPatchBatch]);
 
   useEffect(() => {
     gisPerfNoteGisMapRender({

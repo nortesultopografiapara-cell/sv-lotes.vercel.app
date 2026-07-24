@@ -9,6 +9,9 @@ import {
   gisPerfStreetSaveBegin,
   gisPerfStreetSaveEnd,
   gisPerfStreetSaveMark,
+  gisPerfIdentifyFrontsBegin,
+  gisPerfIdentifyFrontsEnd,
+  gisPerfIdentifyFrontsMark,
   isGisPerfDiagnosticsEnabled,
 } from '@/lib/gis/performance';
 import {
@@ -479,6 +482,23 @@ export default function MapPage() {
   }, [isProjectFormOpen, saasTenantId]);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  /** Patch in-place no GISMap após Identificar Frentes (sem refreshKey/fitBounds). */
+  const [frontPatchBatch, setFrontPatchBatch] = useState<{
+    rev: number;
+    patches: Array<{
+      id: string;
+      frente?: number | null;
+      Fundo?: number | string | null;
+      'Lado Dir.'?: number | string | null;
+      'Lado Esq.'?: number | string | null;
+      front_segment_index?: number | null;
+      frontStreetName?: string | null;
+      frontStreetType?: string | null;
+      frontStreetWidth?: number | null;
+      frontStreetId?: string | null;
+      frontStreetDisplay?: string | null;
+    }>;
+  } | null>(null);
 
   useEffect(() => {
     if (!saasTenantId || user?.role === 'SUPER_ADMIN') {
@@ -1060,27 +1080,36 @@ export default function MapPage() {
        return;
     }
 
+    const perfOn = isGisPerfDiagnosticsEnabled();
+    if (perfOn) {
+      gisPerfIdentifyFrontsBegin({
+        streetGuideCount: visibleGuides.length,
+      });
+    }
+
     try {
        console.log('IDENTIFY_FRONTS_WITH_STREET_START', {
          guides: visibleGuides.length,
        });
        try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
        
-       // Only dynamically import turf logic to avoid SSR issues if necessary or just await import
        const turfHelpers = await import('@turf/helpers');
        const turfDistance = await import('@turf/distance');
        const { extractSegments, detectSides, normalizeDimensions } = await import('@/utils/calculateLotDimensions');
 
-       // 1. Load all blocks from this project
+       if (perfOn) gisPerfIdentifyFrontsMark('calc_start');
+
        let blocksQuery = supabase.from('blocks').select('*').eq('project_id', selectedProject.id);
        if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
            blocksQuery = blocksQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
        }
        const { data: blocks, error } = await blocksQuery;
        if (error) throw error;
-       if (!blocks || blocks.length === 0) return;
+       if (!blocks || blocks.length === 0) {
+         if (perfOn) gisPerfIdentifyFrontsEnd({ path: 'empty' });
+         return;
+       }
 
-       // 2. Prepare guide lines (polilinha completa — flatten para multiponto)
        const streetGuideLines: StreetGuideLineInput[] = visibleGuides
          .map((g) => {
            const geo = g.geometry_geojson || g.geometry;
@@ -1093,8 +1122,22 @@ export default function MapPage() {
          })
          .filter(Boolean) as StreetGuideLineInput[];
 
+       // Pré-cálculo dos anéis vizinhos (1×) — evita filter O(N) por lote no parse.
+       const allNeighborRings = blocks
+         .filter(
+           (b) =>
+             b.id &&
+             b.geometry?.type === 'Polygon' &&
+             b.geometry?.coordinates?.[0]?.length >= 4,
+         )
+         .map((b) => ({
+           id: String(b.id),
+           ring: closedRingLngLat(b.geometry.coordinates[0]),
+         }));
+
        const updates: Array<Record<string, unknown>> = [];
        let streetApplied = 0;
+       let skippedUnchanged = 0;
 
        for (const block of blocks) {
           if (!block.geometry || block.geometry.type !== 'Polygon') continue;
@@ -1105,15 +1148,9 @@ export default function MapPage() {
           const segments = extractSegments(coords, []);
           const officialSegs = parseOfficialSegmentsFromBlock(block);
 
-          const neighborRingsLngLat = blocks
-            .filter(
-              (b) =>
-                b.id &&
-                String(b.id) !== String(block.id) &&
-                b.geometry?.type === 'Polygon' &&
-                b.geometry?.coordinates?.[0]?.length >= 4,
-            )
-            .map((b) => closedRingLngLat(b.geometry.coordinates[0]));
+          const neighborRingsLngLat = allNeighborRings
+            .filter((r) => r.id !== String(block.id))
+            .map((r) => r.ring);
 
           const frontMatch = identifyLotFrontFromStreetGuides(
             coords,
@@ -1162,7 +1199,6 @@ export default function MapPage() {
                finalFundo = measures.fundo ?? finalFrente;
                finalDir = measures.ladoDireito ?? 0;
                finalEsq = measures.ladoEsquerdo ?? 0;
-               console.log('LOT_FRONT_SEGMENT', block.number, frontSegmentIndex);
              } else {
                const bestSegment =
                  segments.find(
@@ -1204,50 +1240,67 @@ export default function MapPage() {
                block,
                frontMatch.ringEdgeIndex,
              );
+             const nextFrontIdx =
+               persistedFrontIdx >= 0 ? persistedFrontIdx : frontSegmentIndex;
+             const nextStreetName = bestGuide
+               ? formatStreetDisplay(bestGuide.type, bestGuide.name)
+               : null;
+             const nextStreetId =
+               bestGuide?.id &&
+               typeof bestGuide.id === 'string' &&
+               !bestGuide.id.startsWith('temp-')
+                 ? bestGuide.id
+                 : null;
+
+             // Pula lotes cuja frente/rua já estão corretas.
+             const prevIdx = block.front_segment_index;
+             const prevStreet = block.front_street_name ?? null;
+             if (
+               Number(prevIdx) === Number(nextFrontIdx) &&
+               String(prevStreet || '') === String(nextStreetName || '')
+             ) {
+               skippedUnchanged += 1;
+               continue;
+             }
+
              const row: Record<string, unknown> = {
                  id: block.id,
                  frente: finalFrente,
                  fundo: finalFundo,
                  lado_direito: finalDir,
                  lado_esquerdo: finalEsq,
-                 front_segment_index:
-                   persistedFrontIdx >= 0 ? persistedFrontIdx : frontSegmentIndex,
+                 front_segment_index: nextFrontIdx,
                  front_source: bestGuide ? 'street_guide' : 'auto',
              };
              if (bestGuide) {
-               row.front_street_name = formatStreetDisplay(
-                 bestGuide.type,
-                 bestGuide.name,
-               );
+               row.front_street_name = nextStreetName;
                row.front_street_type = String(bestGuide.type || 'Rua');
                row.front_street_width =
                  bestGuide.width != null && bestGuide.width !== ''
                    ? Number(bestGuide.width)
                    : null;
-               if (
-                 bestGuide.id &&
-                 typeof bestGuide.id === 'string' &&
-                 !bestGuide.id.startsWith('temp-')
-               ) {
-                 row.front_street_id = bestGuide.id;
-               }
+               if (nextStreetId) row.front_street_id = nextStreetId;
                streetApplied += 1;
-               console.log('LOT_FRONT_STREET_UPDATED', {
-                 blockId: block.id,
-                 street: row.front_street_name,
-               });
              }
              updates.push(row);
           }
        }
 
+       if (perfOn) gisPerfIdentifyFrontsMark('calc_end');
+
        console.log('IDENTIFY_FRONTS_STREET_APPLIED', {
          lots: updates.length,
          withStreet: streetApplied,
+         skippedUnchanged,
        });
 
        if (updates.length > 0) {
-           const updatePromises = updates.map(async (updateObj) => {
+           if (perfOn) gisPerfIdentifyFrontsMark('db_start');
+           const CHUNK = 40;
+           for (let i = 0; i < updates.length; i += CHUNK) {
+             const chunk = updates.slice(i, i + CHUNK);
+             await Promise.all(
+               chunk.map(async (updateObj) => {
               if (!updateObj.id) return;
               const patch: Record<string, unknown> = {
                   frente: updateObj.frente !== null ? Number(updateObj.frente) : null,
@@ -1297,16 +1350,64 @@ export default function MapPage() {
                 },
                 source: 'gis_map',
               });
+               }),
+             );
+           }
+           if (perfOn) gisPerfIdentifyFrontsMark('db_end');
+
+           // Um único setLots no mapa — sem setMapRefreshKey (evita loadLots + fitBounds).
+           if (perfOn) gisPerfIdentifyFrontsMark('state_start');
+           const patches = updates.map((u) => ({
+             id: String(u.id),
+             frente: u.frente as number | null,
+             Fundo: u.fundo as number | string | null,
+             'Lado Dir.': u.lado_direito as number | string | null,
+             'Lado Esq.': u.lado_esquerdo as number | string | null,
+             front_segment_index: u.front_segment_index as number | null,
+             frontStreetName: (u.front_street_name as string | null) ?? null,
+             frontStreetType: (u.front_street_type as string | null) ?? null,
+             frontStreetWidth:
+               u.front_street_width != null
+                 ? Number(u.front_street_width)
+                 : null,
+             frontStreetId: (u.front_street_id as string | null) ?? null,
+             frontStreetDisplay: (u.front_street_name as string | null) ?? null,
+           }));
+           startTransition(() => {
+             setFrontPatchBatch((prev) => ({
+               rev: (prev?.rev ?? 0) + 1,
+               patches,
+             }));
            });
-           
-           await Promise.all(updatePromises);
+           if (perfOn) gisPerfIdentifyFrontsMark('state_end');
        }
 
-       alert(`Frentes identificadas e recalculadas para ${updates.length} lotes!`);
-       setMapRefreshKey(prev => prev + 1);
+       alert(
+         updates.length > 0
+           ? `Frentes identificadas e recalculadas para ${updates.length} lotes!${
+               skippedUnchanged > 0
+                 ? ` (${skippedUnchanged} já estavam corretos)`
+                 : ''
+             }`
+           : skippedUnchanged > 0
+             ? `Nenhuma frente nova — ${skippedUnchanged} lotes já estavam corretos.`
+             : 'Nenhuma frente identificada com as ruas visíveis.',
+       );
+
+       if (perfOn) {
+         gisPerfIdentifyFrontsEnd({
+           path: 'ok',
+           updates: updates.length,
+           skippedUnchanged,
+           streetApplied,
+           refreshKeyBumped: false,
+           fitBounds: false,
+         });
+       }
 
     } catch (e: any) {
        console.error(e);
+       if (perfOn) gisPerfIdentifyFrontsEnd({ path: 'error' });
        alert("Erro ao identificar frentes: " + e.message);
     }
   };
@@ -3296,6 +3397,7 @@ export default function MapPage() {
             refreshKey={mapRefreshKey}
             focusBlockName={focusBlockName}
             focusBlockKey={focusBlockKey}
+            frontPatchBatch={frontPatchBatch}
             streetGuides={streetGuides}
             streetGuidesVisible={streetGuidesVisible}
             drawStreetActive={drawStreetActive}

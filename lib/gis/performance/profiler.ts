@@ -61,6 +61,7 @@ declare global {
       sessions: GisPerfSession[];
       lastSummary: Record<string, unknown> | null;
       lastStreetSave?: Record<string, unknown> | null;
+      lastIdentifyFronts?: Record<string, unknown> | null;
       getLast: () => GisPerfSession | null;
     };
   }
@@ -407,12 +408,25 @@ let gismapRenderCount = 0;
 let confrontationAuditRebuildCount = 0;
 let loadLotsRunCount = 0;
 let streetSaveTrace: StreetSaveTrace | null = null;
+let identifyFrontsTrace: {
+  startedAt: number;
+  marks: Record<string, number>;
+  gismapRendersBefore: number;
+  auditRebuildsBefore: number;
+  loadLotsBefore: number;
+} | null = null;
 
 export function gisPerfNoteGisMapRender(detail?: Record<string, number | string | boolean | null>): void {
   if (!isGisPerfDiagnosticsEnabled()) return;
   gismapRenderCount += 1;
   if (streetSaveTrace) {
     console.info('[GIS_PERF_STREET] gismap_render', {
+      n: gismapRenderCount,
+      ...detail,
+    });
+  }
+  if (identifyFrontsTrace) {
+    console.info('[GIS_PERF_FRONTS] gismap_render', {
       n: gismapRenderCount,
       ...detail,
     });
@@ -492,5 +506,57 @@ export function gisPerfStreetSaveEnd(
     window.__SV_GIS_PERF__.lastStreetSave = summary;
   }
   streetSaveTrace = null;
+  return summary;
+}
+
+export function gisPerfIdentifyFrontsBegin(
+  meta?: Record<string, string | number | boolean | null>,
+): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  identifyFrontsTrace = {
+    startedAt: nowMs(),
+    marks: {},
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+  };
+  console.info('[GIS_PERF_FRONTS] begin', {
+    ...meta,
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+  });
+}
+
+export function gisPerfIdentifyFrontsMark(phase: string): void {
+  if (!isGisPerfDiagnosticsEnabled() || !identifyFrontsTrace) return;
+  identifyFrontsTrace.marks[phase] = nowMs();
+}
+
+export function gisPerfIdentifyFrontsEnd(
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  if (!isGisPerfDiagnosticsEnabled() || !identifyFrontsTrace) return null;
+  const end = nowMs();
+  const t0 = identifyFrontsTrace.startedAt;
+  const marks = identifyFrontsTrace.marks;
+  const msBetween = (a?: number, b?: number) =>
+    a != null && b != null ? Math.round((b - a) * 100) / 100 : null;
+  const summary = {
+    totalMs: Math.round((end - t0) * 100) / 100,
+    calcMs: msBetween(marks.calc_start, marks.calc_end),
+    dbMs: msBetween(marks.db_start, marks.db_end),
+    stateMs: msBetween(marks.state_start, marks.state_end),
+    gismapRendersDelta: gismapRenderCount - identifyFrontsTrace.gismapRendersBefore,
+    auditRebuildsDelta:
+      confrontationAuditRebuildCount - identifyFrontsTrace.auditRebuildsBefore,
+    loadLotsDelta: loadLotsRunCount - identifyFrontsTrace.loadLotsBefore,
+    ...extra,
+  };
+  console.info('[GIS_PERF_FRONTS] end', summary);
+  if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
+    window.__SV_GIS_PERF__.lastIdentifyFronts = summary;
+  }
+  identifyFrontsTrace = null;
   return summary;
 }

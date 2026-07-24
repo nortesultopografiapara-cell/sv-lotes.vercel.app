@@ -22,6 +22,9 @@ export {
   gisPerfStreetSaveBegin,
   gisPerfStreetSaveMark,
   gisPerfStreetSaveEnd,
+  gisPerfIdentifyFrontsBegin,
+  gisPerfIdentifyFrontsMark,
+  gisPerfIdentifyFrontsEnd,
 } from './profiler';
 
 export type {
