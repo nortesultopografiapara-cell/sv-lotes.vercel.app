@@ -1,5 +1,6 @@
 /**
  * Pacote de diagnóstico de desempenho do Mapa GIS (Preview only).
+ * Re-exports relativos — evita ciclo com alias @/lib/gis/performance/*.
  */
 
 export {
@@ -15,19 +16,19 @@ export {
   gisPerfMemorySnapshot,
   gisPerfDeviceSnapshot,
   gisPerfSummarizeBlocksPayload,
-} from '@/lib/gis/performance/profiler';
+} from './profiler';
 
 export type {
   GisPerfPhase,
   GisPerfMark,
   GisPerfSession,
-} from '@/lib/gis/performance/profiler';
+} from './profiler';
 
 export {
   readGisPerfTogglesFromSearch,
   writeGisPerfTogglesToUrl,
   clearGisPerfQueryFromUrl,
   GIS_PERF_TOGGLE_DEFAULTS,
-} from '@/lib/gis/performance/toggles';
+} from './toggles';
 
-export type { GisPerfToggleState } from '@/lib/gis/performance/toggles';
+export type { GisPerfToggleState } from './toggles';

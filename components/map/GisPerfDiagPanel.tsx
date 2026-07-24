@@ -6,6 +6,7 @@ import {
   isGisPerfDiagnosticsEnabled,
   readGisPerfTogglesFromSearch,
   writeGisPerfTogglesToUrl,
+  GIS_PERF_TOGGLE_DEFAULTS,
   type GisPerfToggleState,
 } from '@/lib/gis/performance';
 
@@ -13,15 +14,35 @@ type Summary = Record<string, unknown> | null;
 
 /**
  * Painel flutuante de diagnóstico — só com ?gisPerf=1 em Preview/Dev.
+ * Monta só após hydrate (evita mismatch SSR vs window.location.search).
  * Não monta em Production.
  */
 export function GisPerfDiagPanel({ onChange }: { onChange?: () => void }) {
-  const [enabled] = useState(() => isGisPerfDiagnosticsEnabled());
-  const [toggles, setToggles] = useState<GisPerfToggleState>(() =>
-    readGisPerfTogglesFromSearch(),
+  const [ready, setReady] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [toggles, setToggles] = useState<GisPerfToggleState>(
+    GIS_PERF_TOGGLE_DEFAULTS,
   );
   const [summary, setSummary] = useState<Summary>(null);
   const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    // Client-only: lê URL após mount para não divergir do SSR (null).
+    try {
+      const on = typeof isGisPerfDiagnosticsEnabled === 'function'
+        ? isGisPerfDiagnosticsEnabled()
+        : false;
+      setEnabled(on);
+      if (on) {
+        setToggles(readGisPerfTogglesFromSearch());
+      }
+    } catch (err) {
+      console.error('[GIS_PERF_PANEL]', err);
+      setEnabled(false);
+    } finally {
+      setReady(true);
+    }
+  }, []);
 
   const refreshSummary = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -29,13 +50,13 @@ export function GisPerfDiagPanel({ onChange }: { onChange?: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!ready || !enabled || !toggles.panelActive) return;
     refreshSummary();
     const id = window.setInterval(refreshSummary, 1500);
     return () => window.clearInterval(id);
-  }, [enabled, refreshSummary]);
+  }, [ready, enabled, toggles.panelActive, refreshSummary]);
 
-  if (!enabled || !toggles.panelActive) return null;
+  if (!ready || !enabled || !toggles.panelActive) return null;
 
   const setToggle = (key: keyof GisPerfToggleState, value: boolean) => {
     const next = { ...toggles, [key]: value, panelActive: true };

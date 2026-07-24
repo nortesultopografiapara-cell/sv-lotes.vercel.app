@@ -3,7 +3,7 @@
  * Não alteram o comportamento padrão (sem query).
  */
 
-import { isGisPerfDiagnosticsEnabled } from '@/lib/gis/performance/profiler';
+import { isGisPerfDiagnosticsEnabled } from './profiler';
 
 export type GisPerfToggleState = {
   /** Painel ativo (?gisPerf=1 e ambiente não-prod). */

@@ -109,6 +109,16 @@ function testWiring() {
   assert(map.includes('readGisPerfTogglesFromSearch'), 'toggles');
   const page = fs.readFileSync(path.join(root, 'app/map/page.tsx'), 'utf8');
   assert(page.includes('GisPerfDiagPanel'), 'painel na page');
+  assert(page.includes('ssr: false'), 'painel/GISMap sem SSR');
+  const panel = fs.readFileSync(
+    path.join(root, 'components/map/GisPerfDiagPanel.tsx'),
+    'utf8',
+  );
+  assert(panel.includes('setReady(true)'), 'painel só após mount');
+  assert(
+    !/useState\(\(\)\s*=>\s*readGisPerfTogglesFromSearch\(\)/.test(panel),
+    'painel não lê URL no useState (hydration)',
+  );
   console.log('OK testWiring');
 }
 
