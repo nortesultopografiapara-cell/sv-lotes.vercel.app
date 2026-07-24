@@ -58,9 +58,9 @@ function read(rel: string): string {
 
 function testModelGating() {
   assert(supportsSpouseElectronicSignature('RECANTO_PRIMAVERA'), 'recanto ok');
-  assert(!supportsSpouseElectronicSignature('MENESES'), 'meneses off');
-  assert(!supportsSpouseElectronicSignature('SV_LOTES_2'), 'sv2 off');
-  assert(!supportsSpouseElectronicSignature('PADRAO'), 'padrao off');
+  assert(supportsSpouseElectronicSignature('MENESES'), 'meneses ok');
+  assert(supportsSpouseElectronicSignature('SV_LOTES_2'), 'sv2 ok');
+  assert(supportsSpouseElectronicSignature('PADRAO'), 'padrao ok');
 
   assert(
     !shouldCreateSpouseSignatureParty({
@@ -119,14 +119,26 @@ function testModelGating() {
   );
 
   assert(
-    !shouldCreateSpouseSignatureParty({
+    shouldCreateSpouseSignatureParty({
       contractModel: 'MENESES',
       sale: {
         sale_spouse_name: 'Maria Silva',
         sale_spouse_cpf: '12345678901',
       },
     }),
-    'meneses sem party eletrônico',
+    'meneses com sale_spouse_* cria party eletrônico',
+  );
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'MENESES',
+      sale: {
+        has_spouse: false,
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+      },
+    }),
+    'checkbox desmarcado não cria party',
   );
 
   console.log('OK testModelGating');

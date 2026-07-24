@@ -112,33 +112,35 @@ function markersForStamp(stamp: ElectronicSlotStamp): string[] {
   return [...new Set(list)];
 }
 
+function displayRoleToDataPartyRole(
+  role?: ContractPartySignatureDisplayRole,
+): 'VENDOR' | 'BUYER' | 'SPOUSE' | null {
+  if (role === 'SELLER' || role === 'COMPANY_REPRESENTATIVE') return 'VENDOR';
+  if (role === 'BUYER') return 'BUYER';
+  if (role === 'SPOUSE') return 'SPOUSE';
+  return null;
+}
+
+function slotMatchesDataPartyRole(
+  slotHtml: string,
+  partyRole: string,
+): boolean {
+  const re = new RegExp(
+    `data-party-role\\s*=\\s*["']${partyRole}["']`,
+    'i',
+  );
+  return re.test(slotHtml);
+}
+
 function slotMatchesRoleMarker(slotHtml: string, marker: string): boolean {
   if (!marker || !slotHtml.includes(marker)) return false;
-  // Evita carimbar "Testemunhas" quando o marcador é só "VENDEDOR..." etc.
   return true;
 }
 
-/**
- * Injeta carimbo eletrônico no slot cujo texto de papel contém roleMarker.
- * Cada papel é tratado isoladamente — não usa CPF para escolher o slot.
- */
-export function stampContractSignatureSlotByRole(
-  html: string,
+function injectStampIntoSlotHtml(
+  slotHtml: string,
   stamp: ElectronicSlotStamp,
 ): string {
-  if (!stamp.signed || !stamp.roleMarker) return html;
-
-  const markers = markersForStamp(stamp);
-  if (markers.length === 0) return html;
-
-  const slots = findContractSignatureSlots(html);
-  const target = slots.find((slot) => {
-    if (slot.html.includes('sv-esign-stamp')) return false;
-    return markers.some((m) => slotMatchesRoleMarker(slot.html, m));
-  });
-
-  if (!target) return html;
-
   const when = formatStampDate(stamp.signedAt);
   const stampHtml = `
         <p class="sv-esign-stamp" style="margin: 0 0 6px 0; font-size: 9pt; color: #166534; font-weight: 700;">
@@ -147,20 +149,48 @@ export function stampContractSignatureSlotByRole(
           ${when ? `<br/>${escapeHtml(when)}` : ''}
         </p>`;
 
-  const slotHtml = target.html;
   const lineIdx = slotHtml.indexOf('border-top: 1px solid');
-  let stampedSlot = slotHtml;
   if (lineIdx >= 0) {
     const insertAt = slotHtml.lastIndexOf('<div', lineIdx);
     if (insertAt >= 0) {
-      stampedSlot = slotHtml.slice(0, insertAt) + stampHtml + slotHtml.slice(insertAt);
-    } else {
-      stampedSlot = stampHtml + slotHtml;
+      return slotHtml.slice(0, insertAt) + stampHtml + slotHtml.slice(insertAt);
     }
-  } else {
-    stampedSlot = stampHtml + slotHtml;
+  }
+  return stampHtml + slotHtml;
+}
+
+/**
+ * Injeta carimbo eletrônico no slot.
+ * Preferência: data-party-role; fallback: marcadores de texto só dentro de .signature-slot.
+ */
+export function stampContractSignatureSlotByRole(
+  html: string,
+  stamp: ElectronicSlotStamp,
+): string {
+  if (!stamp.signed || (!stamp.roleMarker && !stamp.role)) return html;
+
+  const slots = findContractSignatureSlots(html);
+  const dataRole = displayRoleToDataPartyRole(stamp.role);
+  const markers = markersForStamp(stamp);
+
+  let target = dataRole
+    ? slots.find(
+        (slot) =>
+          !slot.html.includes('sv-esign-stamp') &&
+          slotMatchesDataPartyRole(slot.html, dataRole),
+      )
+    : undefined;
+
+  if (!target) {
+    target = slots.find((slot) => {
+      if (slot.html.includes('sv-esign-stamp')) return false;
+      return markers.some((m) => slotMatchesRoleMarker(slot.html, m));
+    });
   }
 
+  if (!target) return html;
+
+  const stampedSlot = injectStampIntoSlotHtml(target.html, stamp);
   return html.slice(0, target.divStart) + stampedSlot + html.slice(target.divEnd);
 }
 
