@@ -65,6 +65,8 @@ declare global {
       lastLotEdit?: Record<string, unknown> | null;
       lastRealtimePatch?: Record<string, unknown> | null;
       lastInitialLoad?: Record<string, unknown> | null;
+      lastManualFrontEdit?: Record<string, unknown> | null;
+      lastConfrontation?: Record<string, unknown> | null;
       getLast: () => GisPerfSession | null;
     };
   }
@@ -675,4 +677,104 @@ export function gisPerfAliasInitialLoad(
 ): void {
   if (!summary || typeof window === 'undefined' || !window.__SV_GIS_PERF__) return;
   window.__SV_GIS_PERF__.lastInitialLoad = summary;
+}
+
+let manualFrontTrace: OpTrace | null = null;
+let confrontationTrace: OpTrace | null = null;
+
+export function gisPerfManualFrontBegin(
+  meta?: Record<string, string | number | boolean | null>,
+): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  manualFrontTrace = {
+    startedAt: nowMs(),
+    marks: {},
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+  };
+  console.info('[GIS_PERF_MANUAL_FRONT] begin', meta || {});
+}
+
+export function gisPerfManualFrontMark(phase: string): void {
+  if (!isGisPerfDiagnosticsEnabled() || !manualFrontTrace) return;
+  manualFrontTrace.marks[phase] = nowMs();
+}
+
+export function gisPerfManualFrontEnd(
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  if (!isGisPerfDiagnosticsEnabled() || !manualFrontTrace) return null;
+  const end = nowMs();
+  const t0 = manualFrontTrace.startedAt;
+  const marks = manualFrontTrace.marks;
+  const msBetween = (a?: number, b?: number) =>
+    a != null && b != null ? Math.round((b - a) * 100) / 100 : null;
+  const summary: Record<string, unknown> = {
+    totalMs: Math.round((end - t0) * 100) / 100,
+    computeMs: msBetween(marks.compute_start, marks.compute_end),
+    dbMs: msBetween(marks.db_start, marks.db_end),
+    patchMs: msBetween(marks.patch_start, marks.patch_end),
+    gismapRendersDelta: gismapRenderCount - manualFrontTrace.gismapRendersBefore,
+    auditsRebuildDelta:
+      confrontationAuditRebuildCount - manualFrontTrace.auditRebuildsBefore,
+    loadLotsDelta: loadLotsRunCount - manualFrontTrace.loadLotsBefore,
+    fitBoundsDelta: 0,
+    ...extra,
+  };
+  console.info('[GIS_PERF_MANUAL_FRONT] end', summary);
+  if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
+    window.__SV_GIS_PERF__.lastManualFrontEdit = summary;
+  }
+  manualFrontTrace = null;
+  return summary;
+}
+
+export function gisPerfConfrontationBegin(
+  meta?: Record<string, string | number | boolean | null>,
+): void {
+  if (!isGisPerfDiagnosticsEnabled()) return;
+  confrontationTrace = {
+    startedAt: nowMs(),
+    marks: {},
+    gismapRendersBefore: gismapRenderCount,
+    auditRebuildsBefore: confrontationAuditRebuildCount,
+    loadLotsBefore: loadLotsRunCount,
+  };
+  console.info('[GIS_PERF_CONFRONTATION] begin', meta || {});
+}
+
+export function gisPerfConfrontationMark(phase: string): void {
+  if (!isGisPerfDiagnosticsEnabled() || !confrontationTrace) return;
+  confrontationTrace.marks[phase] = nowMs();
+}
+
+export function gisPerfConfrontationEnd(
+  extra?: Record<string, number | string | boolean | null>,
+): Record<string, unknown> | null {
+  if (!isGisPerfDiagnosticsEnabled() || !confrontationTrace) return null;
+  const end = nowMs();
+  const t0 = confrontationTrace.startedAt;
+  const marks = confrontationTrace.marks;
+  const msBetween = (a?: number, b?: number) =>
+    a != null && b != null ? Math.round((b - a) * 100) / 100 : null;
+  const summary: Record<string, unknown> = {
+    totalMs: Math.round((end - t0) * 100) / 100,
+    computeMs: msBetween(marks.compute_start, marks.compute_end),
+    dbMs: msBetween(marks.db_start, marks.db_end),
+    patchMs: msBetween(marks.patch_start, marks.patch_end),
+    gismapRendersDelta:
+      gismapRenderCount - confrontationTrace.gismapRendersBefore,
+    auditsRebuildDelta:
+      confrontationAuditRebuildCount - confrontationTrace.auditRebuildsBefore,
+    loadLotsDelta: loadLotsRunCount - confrontationTrace.loadLotsBefore,
+    fitBoundsDelta: 0,
+    ...extra,
+  };
+  console.info('[GIS_PERF_CONFRONTATION] end', summary);
+  if (typeof window !== 'undefined' && window.__SV_GIS_PERF__) {
+    window.__SV_GIS_PERF__.lastConfrontation = summary;
+  }
+  confrontationTrace = null;
+  return summary;
 }

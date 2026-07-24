@@ -178,6 +178,24 @@ export function GisPerfDiagPanel({ onChange }: { onChange?: () => void }) {
                   ).slice(0, 180)}
                 </p>
               ) : null}
+              {typeof window !== 'undefined' &&
+              window.__SV_GIS_PERF__?.lastManualFrontEdit ? (
+                <p className="text-amber-300/90">
+                  manualFront:{' '}
+                  {JSON.stringify(
+                    window.__SV_GIS_PERF__.lastManualFrontEdit,
+                  ).slice(0, 180)}
+                </p>
+              ) : null}
+              {typeof window !== 'undefined' &&
+              window.__SV_GIS_PERF__?.lastConfrontation ? (
+                <p className="text-cyan-300/90">
+                  confrontation:{' '}
+                  {JSON.stringify(
+                    window.__SV_GIS_PERF__.lastConfrontation,
+                  ).slice(0, 180)}
+                </p>
+              ) : null}
               {Object.keys(byPhase).length > 0 && (
                 <ul className="mt-1 space-y-0.5 text-gray-300">
                   {Object.entries(byPhase)

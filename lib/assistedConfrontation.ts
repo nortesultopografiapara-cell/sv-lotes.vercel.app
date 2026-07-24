@@ -320,9 +320,12 @@ export function buildLotConfrontationAudit(
   allBlocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
   project?: Record<string, unknown> | null,
+  sharedAllPolysUtm?: number[][][],
 ): LotConfrontationAudit {
   const official = getOfficialConfrontationRing(block, project);
   const ring = official.ok ? official.ring : [];
+  const allPolysUtm =
+    sharedAllPolysUtm ?? buildAllPolysUtm(allBlocks, project);
   const built = buildSideConfrontantsWithSources(
     block,
     blockId,
@@ -330,6 +333,7 @@ export function buildLotConfrontationAudit(
     allBlocks,
     streetGuides,
     project,
+    allPolysUtm,
   );
 
   const blockResolved =
@@ -363,7 +367,6 @@ export function buildLotConfrontationAudit(
     };
   }
 
-  const allPolysUtm = buildAllPolysUtm(allBlocks, project);
   const guides = asStreetGuideList(streetGuides);
 
   const segmentEdges: SegmentEdgeAudit[] = [];

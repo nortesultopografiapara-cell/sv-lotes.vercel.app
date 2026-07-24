@@ -31,6 +31,12 @@ export {
   gisPerfRealtimePatchBegin,
   gisPerfRealtimePatchMark,
   gisPerfRealtimePatchEnd,
+  gisPerfManualFrontBegin,
+  gisPerfManualFrontMark,
+  gisPerfManualFrontEnd,
+  gisPerfConfrontationBegin,
+  gisPerfConfrontationMark,
+  gisPerfConfrontationEnd,
 } from './profiler';
 
 export type {

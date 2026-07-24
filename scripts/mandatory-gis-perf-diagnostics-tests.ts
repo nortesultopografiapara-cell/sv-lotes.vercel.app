@@ -121,6 +121,28 @@ function testWiring() {
     !/channel\("realtime:blocks"\)[\s\S]{0,400}loadLots\(\)/.test(map),
     'realtime blocks não deve chamar loadLots() no handler padrão',
   );
+  assert(map.includes('gisPerfManualFrontBegin'), 'frente manual telemetria');
+  assert(map.includes('collectNearbyLotIds'), 'vizinhos escopados');
+  assert(map.includes('buildAllPolysUtm'), 'polys UTM compartilhados');
+  {
+    const liveBlock = map.match(
+      /const liveStreetAudits =\s*([\s\S]*?);/,
+    )?.[1] || '';
+    assert(
+      !liveBlock.includes('frontCorrectLotId'),
+      'frente manual não deve entrar em liveStreetAudits',
+    );
+    assert(
+      !liveBlock.includes('confrontEdit'),
+      'confrontEdit pontual não deve forçar audits globais',
+    );
+    assert(
+      liveBlock.includes('assistedConfrontationMode'),
+      'modo assistido global permanece em liveStreetAudits',
+    );
+  }
+  assert(map.includes('LotBoundaryEdgePolylinesMemo'), 'arestas memoizadas');
+  assert(map.includes('setFrontCorrectLotId(null)'), 'fecha modo frente no clique');
   assert(map.includes('effectiveLabelsMinZoom'), 'labels por zoom');
   assert(
     /const displayLots = lots/.test(map),
@@ -131,7 +153,14 @@ function testWiring() {
   assert(page.includes('ssr: false'), 'painel/GISMap sem SSR');
   assert(page.includes('gisPerfStreetSaveBegin'), 'street save instrumentado');
   assert(page.includes('gisPerfIdentifyFrontsBegin'), 'identify fronts instrumentado');
+  assert(page.includes('gisPerfConfrontationBegin'), 'confrontação instrumentada');
   assert(page.includes('lotsMutation={lotsMutation}'), 'lotsMutation passado ao GISMap');
+  assert(
+    !/handleRunAutomaticConfrontation[\s\S]{0,2500}setMapRefreshKey\(\(k\) => k \+ 1\)/.test(
+      page,
+    ),
+    'confrontação automática não deve bump refreshKey',
+  );
   assert(
     !/handleConfirmDeleteQuadra[\s\S]{0,1200}setMapRefreshKey\(\(k\) => k \+ 1\)/.test(
       page,
@@ -157,6 +186,11 @@ function testWiring() {
     'utf8',
   );
   assert(mapLot.includes('export function mapLotFromBlockRow'), 'helper mapLot');
+  const nearby = fs.readFileSync(
+    path.join(root, 'lib/gis/nearbyLots.ts'),
+    'utf8',
+  );
+  assert(nearby.includes('collectNearbyLotIds'), 'nearbyLots helper');
   const panel = fs.readFileSync(
     path.join(root, 'components/map/GisPerfDiagPanel.tsx'),
     'utf8',
@@ -164,6 +198,8 @@ function testWiring() {
   assert(panel.includes('setReady(true)'), 'painel só após mount');
   assert(panel.includes('lastLotEdit'), 'painel mostra lastLotEdit');
   assert(panel.includes('lastRealtimePatch'), 'painel mostra lastRealtimePatch');
+  assert(panel.includes('lastManualFrontEdit'), 'painel mostra lastManualFrontEdit');
+  assert(panel.includes('lastConfrontation'), 'painel mostra lastConfrontation');
   assert(
     !/useState\(\(\)\s*=>\s*readGisPerfTogglesFromSearch\(\)/.test(panel),
     'painel não lê URL no useState (hydration)',
@@ -207,12 +243,51 @@ function testMapLotFromBlock() {
   console.log('OK testMapLotFromBlock');
 }
 
+function testNearbyLots() {
+  const { collectNearbyLotIds } = require('../lib/gis/nearbyLots') as typeof import('../lib/gis/nearbyLots');
+  const lots = [
+    {
+      id: 'a',
+      bounds: [
+        [-1.4, -48.1],
+        [-1.401, -48.1],
+        [-1.401, -48.101],
+        [-1.4, -48.1],
+      ] as [number, number][],
+    },
+    {
+      id: 'b',
+      bounds: [
+        [-1.4005, -48.1005],
+        [-1.4015, -48.1005],
+        [-1.4015, -48.1015],
+        [-1.4005, -48.1005],
+      ] as [number, number][],
+    },
+    {
+      id: 'far',
+      bounds: [
+        [-2.0, -49.0],
+        [-2.01, -49.0],
+        [-2.01, -49.01],
+        [-2.0, -49.0],
+      ] as [number, number][],
+    },
+  ];
+  const near = collectNearbyLotIds(lots, 'a', 40);
+  assert(near.has('a'), 'inclui foco');
+  assert(near.has('b'), 'inclui vizinho');
+  assert(!near.has('far'), 'exclui longe');
+  console.log('OK testNearbyLots');
+}
+
 function main() {
   testProductionBlocked();
   testPreviewEnabled();
   testPayloadSummaryNoPii();
   testWiring();
   testMapLotFromBlock();
+  testNearbyLots();
   console.log('\nTodos os testes de GIS perf diagnostics passaram.');
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useRef, startTransition, useCallback } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef, startTransition, useCallback, memo } from "react";
 import {
   MapContainer,
   Polygon,
@@ -209,6 +209,9 @@ import {
   gisPerfRealtimePatchBegin,
   gisPerfRealtimePatchEnd,
   gisPerfRealtimePatchMark,
+  gisPerfManualFrontBegin,
+  gisPerfManualFrontEnd,
+  gisPerfManualFrontMark,
   gisPerfSetLotCount,
   gisPerfSummarizeBlocksPayload,
   isGisPerfDiagnosticsEnabled,
@@ -219,6 +222,8 @@ import {
   mapLotFromBlockRow,
   normalizeBlockKeyForMap,
 } from "@/lib/gis/mapLotFromBlock";
+import { collectNearbyLotIds } from "@/lib/gis/nearbyLots";
+import { buildAllPolysUtm } from "@/lib/lotSegmentConfrontation";
 
 /**
  * Linhas auxiliares no mapa (investigação visual):
@@ -885,6 +890,8 @@ function LotBoundaryEdgePolylines({
 
   return <>{lines}</>;
 }
+
+const LotBoundaryEdgePolylinesMemo = memo(LotBoundaryEdgePolylines);
 
 /** Deslocamento do número para dentro do lote (frente identificada). */
 const LABEL_INWARD_OFFSET_METERS = 2.5;
@@ -2880,13 +2887,38 @@ export default function GISMap({
     [lots],
   );
 
+  /**
+   * Auditorias “ao vivo” só para ferramentas que precisam colorir TODOS os lotes.
+   * Frente manual / editor pontual NÃO entram aqui (evita O(N²) nos 597 lotes).
+   */
   const liveStreetAudits =
     Boolean(assistedConfrontationMode) ||
     Boolean(insertConfrontantTool) ||
-    Boolean(defineOfficialSideTool) ||
-    frontCorrectLotId != null ||
-    confrontEdit != null ||
-    defineOfficialSidePickLotId != null;
+    Boolean(defineOfficialSideTool);
+
+  /** Foco pontual: só estes ids ( + vizinhos ) entram em rebuild de auditoria. */
+  const scopedAuditFocusId =
+    frontCorrectLotId ||
+    (confrontEdit?.lot?.id != null ? String(confrontEdit.lot.id) : null) ||
+    defineOfficialSidePickLotId ||
+    null;
+
+  const scopedAuditLotIds = useMemo(() => {
+    if (!scopedAuditFocusId || liveStreetAudits) return null;
+    // Frente manual não precisa de auditoria de confrontação nas arestas.
+    if (frontCorrectLotId && !confrontEdit && !defineOfficialSidePickLotId) {
+      return new Set<string>([String(frontCorrectLotId)]);
+    }
+    return collectNearbyLotIds(lots, String(scopedAuditFocusId), 40);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lots via auditLotsKey + focus
+  }, [
+    scopedAuditFocusId,
+    frontCorrectLotId,
+    confrontEdit?.lot?.id,
+    defineOfficialSidePickLotId,
+    liveStreetAudits,
+    auditLotsKey,
+  ]);
 
   const blocksForConfront = useMemo(
     () =>
@@ -2899,12 +2931,12 @@ export default function GISMap({
         front_segment_index: l.front_segment_index,
         front_street_name: l.frontStreetName,
       })) as Record<string, unknown>[],
-    // Com ferramentas assistidas, usa lots; senão só geometria (patch de frente não rebuilda).
+    // Com ferramentas assistidas globais, usa lots; senão só geometria.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- auditLotsKey / liveStreetAudits
     liveStreetAudits ? [lots, liveStreetAudits] : [auditLotsKey],
   );
 
-  /** streetGuides só invalida audits quando ferramentas assistidas estão ativas. */
+  /** streetGuides só invalida audits quando ferramentas assistidas globais estão ativas. */
   const streetGuidesAuditDep = liveStreetAudits ? streetGuides : null;
 
   /** Uma única sincronização quando as ruas chegam após os lotes (sem rebuild a cada nova rua). */
@@ -2921,16 +2953,45 @@ export default function GISMap({
     }
   }, [streetGuides.length]);
 
+  const confrontationAuditsPrevRef = useRef<Map<string, LotConfrontationAudit>>(
+    new Map(),
+  );
+
   const confrontationAudits = useMemo(() => {
-    gisPerfNoteAuditRebuild(lots.length);
+    const focusOnlyFront =
+      Boolean(frontCorrectLotId) &&
+      !liveStreetAudits &&
+      !confrontEdit &&
+      !defineOfficialSidePickLotId;
+
+    // Frente manual: não recalcular auditorias — reutiliza mapa anterior.
+    if (focusOnlyFront) {
+      gisPerfNoteAuditRebuild(0);
+      return confrontationAuditsPrevRef.current;
+    }
+
+    const scopeIds = scopedAuditLotIds;
+    const auditTargetLots =
+      scopeIds && !liveStreetAudits
+        ? lots.filter((l) => l?.id && scopeIds.has(String(l.id)))
+        : lots;
+
+    gisPerfNoteAuditRebuild(auditTargetLots.length);
     return gisPerfMeasureSync(
       'confrontation_audits',
       () => {
         if (!perfToggles.confrontationAudits) {
-          return new Map<string, LotConfrontationAudit>();
+          const empty = new Map<string, LotConfrontationAudit>();
+          confrontationAuditsPrevRef.current = empty;
+          return empty;
         }
-        const map = new Map<string, LotConfrontationAudit>();
-        for (const lot of lots) {
+        const sharedPolys = buildAllPolysUtm(blocksForConfront);
+        const map =
+          scopeIds && !liveStreetAudits
+            ? new Map(confrontationAuditsPrevRef.current)
+            : new Map<string, LotConfrontationAudit>();
+
+        for (const lot of auditTargetLots) {
           if (!lot?.id) continue;
           try {
             map.set(
@@ -2946,23 +3007,27 @@ export default function GISMap({
                 lot.id,
                 blocksForConfront,
                 streetGuides,
+                null,
+                sharedPolys,
               ),
             );
           } catch (err) {
             console.warn('CONFRONTATION_AUDIT_SKIP', lot.id, err);
           }
         }
+        confrontationAuditsPrevRef.current = map;
         return map;
       },
       {
-        lotCount: lots.length,
+        lotCount: auditTargetLots.length,
+        totalLots: lots.length,
+        scoped: Boolean(scopeIds && !liveStreetAudits),
         enabled: perfToggles.confrontationAudits,
         liveStreetAudits,
         streetGuideCount: Array.isArray(streetGuides) ? streetGuides.length : 0,
         streetsHydrateEpoch,
       },
     );
-    // lots omitido: auditLotsKey cobre geometria; patch de frente não rebuilda.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- streetGuidesAuditDep + auditLotsKey
   }, [
     auditLotsKey,
@@ -2971,6 +3036,10 @@ export default function GISMap({
     liveStreetAudits,
     streetsHydrateEpoch,
     perfToggles.confrontationAudits,
+    scopedAuditLotIds,
+    frontCorrectLotId,
+    confrontEdit,
+    defineOfficialSidePickLotId,
   ]);
 
   /** Identificar Frentes: um setLots com patches, sem loadLots/fitBounds. */
@@ -3136,13 +3205,30 @@ export default function GISMap({
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id) return;
-    setFrontCorrectSaving(true);
     const lotId = String(lot.id);
+    const candidateEdges = Array.isArray(lot.bounds)
+      ? Math.max(0, (lot.bounds as unknown[]).length)
+      : 0;
+    const neighborIds = collectNearbyLotIds(lots, lotId, 40);
+
+    // Fecha o modo imediatamente — evita rebuild/reattach de 597 arestas durante o save.
+    setFrontCorrectLotId(null);
+    setFrontCorrectSaving(true);
+
+    gisPerfManualFrontBegin({
+      operation: 'manual_front',
+      lotId: lotId.slice(0, 8),
+      edgeIndex: segmentIndex,
+      candidateEdges,
+      evaluatedNeighbors: neighborIds.size,
+    });
     gisPerfLotEditBegin({
       operation: 'front',
       lotId: lotId.slice(0, 8),
     });
+
     try {
+      gisPerfManualFrontMark('compute_start');
       const blockBase = blockWithGeometryFromBounds({
         ...lot,
         segments_json: lot.segments_json,
@@ -3167,6 +3253,7 @@ export default function GISMap({
       const measures = getOfficialLotMeasurements(block, lot.number);
       const streetMatch = resolveFrontStreetGuideForLot(block, streetGuides);
       const streetFields = streetFieldsFromGuideMatch(streetMatch);
+      gisPerfManualFrontMark('compute_end');
       console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lotId: lot.id,
         segmentIndex,
@@ -3174,6 +3261,7 @@ export default function GISMap({
         measures,
         streetMatch,
       });
+      gisPerfManualFrontMark('db_start');
       gisPerfLotEditMark('db_start');
       const { patch, frontSourcePersisted } = await persistManualLotFront(
         supabase,
@@ -3182,6 +3270,7 @@ export default function GISMap({
         persistedFrontIdx,
         streetFields,
       );
+      gisPerfManualFrontMark('db_end');
       gisPerfLotEditMark('db_end');
       markLocalPatchSuppress([lotId]);
       console.log("BLOCK_FRONT_SAVE_OK", {
@@ -3201,6 +3290,7 @@ export default function GISMap({
         },
         streetGuides,
       );
+      gisPerfManualFrontMark('patch_start');
       gisPerfLotEditMark('patch_start');
       startTransition(() => {
         setLots((prev) =>
@@ -3223,14 +3313,24 @@ export default function GISMap({
           ),
         );
       });
+      gisPerfManualFrontMark('patch_end');
       gisPerfLotEditMark('patch_end');
+      gisPerfManualFrontEnd({
+        lotId: lotId.slice(0, 8),
+        edgeIndex: segmentIndex,
+        candidateEdges,
+        evaluatedNeighbors: neighborIds.size,
+        duplicateRealtimeSuppressed: true,
+        fallbackFullReload: false,
+        loadLotsDelta: 0,
+        fitBoundsDelta: 0,
+      });
       gisPerfLotEditEnd({
         operation: 'front',
         lotId: lotId.slice(0, 8),
         duplicateRealtimeSuppressed: false,
         fallbackFullReload: false,
       });
-      setFrontCorrectLotId(null);
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot, { projectId: lot.project_id }),
         userId: user?.id ?? null,
@@ -3248,6 +3348,14 @@ export default function GISMap({
       });
       alert("Frente atualizada com sucesso.");
     } catch (err: unknown) {
+      gisPerfManualFrontEnd({
+        lotId: lotId.slice(0, 8),
+        edgeIndex: segmentIndex,
+        candidateEdges,
+        evaluatedNeighbors: neighborIds.size,
+        fallbackFullReload: false,
+        error: true,
+      });
       gisPerfLotEditEnd({
         operation: 'front',
         lotId: lotId.slice(0, 8),
@@ -5091,74 +5199,94 @@ export default function GISMap({
                     </Popup>
                   )}
                 </Polygon>
-                <LotBoundaryEdgePolylines
+                <LotBoundaryEdgePolylinesMemo
                   positions={positions}
                   lot={lot}
                   strokeColor={strokeColor}
                   suspendLotHitTest={!lotHitTest}
                   boundaryEnabled={showBoundaryLines}
                   frontCorrectActive={frontCorrectLotId === lot.id}
-                  onEdgePick={(edgeIndex) =>
-                    void handlePickFrontSegment(lot, edgeIndex)
+                  onEdgePick={
+                    frontCorrectLotId === lot.id
+                      ? (edgeIndex) =>
+                          void handlePickFrontSegment(lot, edgeIndex)
+                      : undefined
                   }
                   officialSidePickActive={
                     (defineOfficialSideTool ||
                       defineOfficialSidePickLotId === lot.id) &&
                     frontCorrectLotId !== lot.id
                   }
-                  onOfficialSideEdgePick={(edgeIndex) =>
-                    handleOfficialSideEdgePick(lot, edgeIndex)
+                  onOfficialSideEdgePick={
+                    defineOfficialSideTool ||
+                    defineOfficialSidePickLotId === lot.id
+                      ? (edgeIndex) =>
+                          handleOfficialSideEdgePick(lot, edgeIndex)
+                      : undefined
                   }
-                  officialSideLabelByEdge={(() => {
-                    const manual = readManualOfficialSideMap({
-                      ...lot,
-                      segments_json: lot.segments_json,
-                    });
-                    if (manual.size === 0) return undefined;
-                    const block = {
-                      ...lot,
-                      block_name: lot.block,
-                      segments_json: lot.segments_json,
-                      front_segment_index: lot.front_segment_index,
-                    };
-                    const isRing = positions.length >= 3;
-                    const edgeCount = isRing
-                      ? positions.length
-                      : positions.length - 1;
-                    const labelMap = new Map<number, string>();
-                    for (let i = 0; i < edgeCount; i++) {
-                      const segIdx = utmSegmentIndexFromWgs84RingEdge(
-                        block,
-                        i,
-                      );
-                      const label = officialSideDisplayLabel(
-                        manual.get(segIdx) ?? null,
-                      );
-                      if (label) labelMap.set(i, label);
-                    }
-                    return labelMap.size > 0 ? labelMap : undefined;
-                  })()}
+                  officialSideLabelByEdge={
+                    defineOfficialSideTool ||
+                    defineOfficialSidePickLotId === lot.id
+                      ? (() => {
+                          const manual = readManualOfficialSideMap({
+                            ...lot,
+                            segments_json: lot.segments_json,
+                          });
+                          if (manual.size === 0) return undefined;
+                          const block = {
+                            ...lot,
+                            block_name: lot.block,
+                            segments_json: lot.segments_json,
+                            front_segment_index: lot.front_segment_index,
+                          };
+                          const isRing = positions.length >= 3;
+                          const edgeCount = isRing
+                            ? positions.length
+                            : positions.length - 1;
+                          const labelMap = new Map<number, string>();
+                          for (let i = 0; i < edgeCount; i++) {
+                            const segIdx = utmSegmentIndexFromWgs84RingEdge(
+                              block,
+                              i,
+                            );
+                            const label = officialSideDisplayLabel(
+                              manual.get(segIdx) ?? null,
+                            );
+                            if (label) labelMap.set(i, label);
+                          }
+                          return labelMap.size > 0 ? labelMap : undefined;
+                        })()
+                      : undefined
+                  }
                   assistedConfrontationActive={
                     (assistedConfrontationMode || insertConfrontantTool) &&
                     frontCorrectLotId !== lot.id &&
                     !defineOfficialSideTool &&
                     defineOfficialSidePickLotId !== lot.id
                   }
-                  onConfrontEdgePick={(edgeIndex) =>
-                    handleConfrontEdgePick(lot, edgeIndex)
+                  onConfrontEdgePick={
+                    (assistedConfrontationMode || insertConfrontantTool) &&
+                    frontCorrectLotId !== lot.id &&
+                    !defineOfficialSideTool &&
+                    defineOfficialSidePickLotId !== lot.id
+                      ? (edgeIndex) => handleConfrontEdgePick(lot, edgeIndex)
+                      : undefined
                   }
                   segmentEdgeByIndex={
-                    new Map(
-                      (confrontationAudits.get(lot.id)?.segmentEdges ?? []).map(
-                        (e) => [
-                          e.ringEdgeIndex,
-                          {
-                            status: e.status,
-                            confrontant: e.confrontant,
-                          },
-                        ],
-                      ),
-                    )
+                    assistedConfrontationMode || insertConfrontantTool
+                      ? new Map(
+                          (
+                            confrontationAudits.get(lot.id)?.segmentEdges ??
+                            []
+                          ).map((e) => [
+                            e.ringEdgeIndex,
+                            {
+                              status: e.status,
+                              confrontant: e.confrontant,
+                            },
+                          ]),
+                        )
+                      : undefined
                   }
                 />
               </Fragment>

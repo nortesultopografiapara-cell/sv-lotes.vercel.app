@@ -12,6 +12,9 @@ import {
   gisPerfIdentifyFrontsBegin,
   gisPerfIdentifyFrontsEnd,
   gisPerfIdentifyFrontsMark,
+  gisPerfConfrontationBegin,
+  gisPerfConfrontationEnd,
+  gisPerfConfrontationMark,
   isGisPerfDiagnosticsEnabled,
 } from '@/lib/gis/performance';
 import {
@@ -630,16 +633,22 @@ export default function MapPage() {
       return;
     }
     setConfrontationRunning(true);
+    gisPerfConfrontationBegin({
+      operation: 'automatic',
+      projectId: String(selectedProject.id).slice(0, 8),
+    });
     try {
       const tenantId = String(
         saasTenantId || user?.tenant_id || selectedProject.tenant_id || '',
       ).trim();
+      gisPerfConfrontationMark('compute_start');
       const result = await runAutomaticConfrontation(selectedProject.id, {
         tenantId: tenantId || undefined,
         userId: user?.id ?? null,
         project: selectedProject as Record<string, unknown>,
         streetGuides,
       });
+      gisPerfConfrontationMark('compute_end');
       const totalLots = result.processed + result.skipped;
       const src = result.sourceCounts || {};
       const sourceLines = [
@@ -666,11 +675,29 @@ export default function MapPage() {
           skipSummary +
           errLines,
       );
-      setAssistedConfrontationMode(true);
-      setMapRefreshKey((k) => k + 1);
+      // Ativa revisão assistida sem loadLots/fitBounds (sem setMapRefreshKey).
+      gisPerfConfrontationMark('patch_start');
+      startTransition(() => {
+        setAssistedConfrontationMode(true);
+      });
+      gisPerfConfrontationMark('patch_end');
+      gisPerfConfrontationEnd({
+        operation: 'automatic',
+        processed: result.processed,
+        skipped: result.skipped,
+        refreshKeyBumped: false,
+        loadLotsDelta: 0,
+        fitBoundsDelta: 0,
+        fallbackFullReload: false,
+      });
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : 'Erro na confrontação automática';
+      gisPerfConfrontationEnd({
+        operation: 'automatic',
+        error: true,
+        fallbackFullReload: false,
+      });
       alert(msg);
       console.error('[Confrontação automática]', err);
     } finally {
@@ -680,6 +707,7 @@ export default function MapPage() {
     selectedProject,
     saasTenantId,
     user?.tenant_id,
+    user?.id,
     streetGuides,
   ]);
 
