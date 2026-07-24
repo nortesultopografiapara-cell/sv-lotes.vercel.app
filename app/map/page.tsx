@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
+import { GisPerfDiagPanel } from '@/components/map/GisPerfDiagPanel';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -3264,6 +3265,7 @@ export default function MapPage() {
               setEnterpriseRefreshKey((k) => k + 1)
             }
           />
+          <GisPerfDiagPanel />
         </div>
 
         {lotSheetPickMode && !lotSheetTarget && (
