@@ -5,7 +5,10 @@
 import { supabase } from '@/lib/supabase';
 import { applyAutoFrontStreetToBlockSegments } from '@/lib/autoFrontStreetSegments';
 import { buildLotConfrontationAudit } from '@/lib/assistedConfrontation';
-import { buildSideConfrontantsWithSources } from '@/lib/lotSegmentConfrontation';
+import {
+  buildAllPolysUtm,
+  buildSideConfrontantsWithSources,
+} from '@/lib/lotSegmentConfrontation';
 import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';
 import { validateConfrontationLot } from '@/lib/lotGeometryNormalize';
 import {
@@ -104,6 +107,7 @@ export async function runAutomaticConfrontation(
   let processed = 0;
   let skipped = 0;
   const batchAt = new Date().toISOString();
+  const sharedPolys = buildAllPolysUtm(blocks, project);
 
   for (const block of blocks) {
     const blockId = String(block.id || '');
@@ -135,6 +139,7 @@ export async function runAutomaticConfrontation(
         blocks,
         streetGuides,
         project,
+        sharedPolys,
       );
 
       const source = validation.ringSource ?? 'segments_json';
@@ -158,6 +163,7 @@ export async function runAutomaticConfrontation(
         blocks,
         streetGuides,
         project,
+        sharedPolys,
       );
 
       lots.push({

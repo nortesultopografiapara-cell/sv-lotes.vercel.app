@@ -738,11 +738,13 @@ export function buildSideConfrontantsWithSources(
   blocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
   project?: Record<string, unknown> | null,
+  sharedAllPolysUtm?: number[][][],
 ): BuildSideConfrontantsWithSourcesResult {
   const guides = asStreetGuideList(streetGuides);
   const official = getOfficialConfrontationRing(block, project);
   const utmRing = official.ok ? official.ring : targetRing;
-  const allPolysUtm = buildAllPolysUtm(blocks, project);
+  const allPolysUtm =
+    sharedAllPolysUtm ?? buildAllPolysUtm(blocks, project);
 
   const { segments, sides } = resolveSideSegmentIndexes(
     block,

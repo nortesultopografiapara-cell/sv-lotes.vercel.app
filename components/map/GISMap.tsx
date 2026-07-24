@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef, startTransition, useCallback, memo } from "react";
 import {
   MapContainer,
   Polygon,
@@ -191,6 +191,47 @@ import {
   queueOfflineReservation,
 } from "@/lib/offline/lotReservationOffline";
 import { runLotGeometryDiagnosticReport } from "@/lib/lotGeometryDiagnostic";
+import {
+  gisPerfBeginSession,
+  gisPerfFinishSession,
+  gisPerfMarkEnd,
+  gisPerfMarkStart,
+  gisPerfMeasurePayloadBytes,
+  gisPerfMeasureSync,
+  gisPerfMemorySnapshot,
+  gisPerfNote,
+  gisPerfNoteAuditRebuild,
+  gisPerfNoteGisMapRender,
+  gisPerfNoteLoadLots,
+  gisPerfLotEditBegin,
+  gisPerfLotEditEnd,
+  gisPerfLotEditMark,
+  gisPerfRealtimePatchBegin,
+  gisPerfRealtimePatchEnd,
+  gisPerfRealtimePatchMark,
+  gisPerfManualFrontBegin,
+  gisPerfManualFrontEnd,
+  gisPerfManualFrontMark,
+  gisPerfNoteSetLots,
+  gisPerfNoteRealtimeEvent,
+  gisPerfNoteDuplicateRealtimeSuppressed,
+  gisPerfNoteEdgeRender,
+  gisPerfSetLotCount,
+  gisPerfSummarizeBlocksPayload,
+  isGisPerfDiagnosticsEnabled,
+  readGisPerfTogglesFromSearch,
+  type GisPerfToggleState,
+} from "@/lib/gis/performance";
+import {
+  mapLotFromBlockRow,
+  normalizeBlockKeyForMap,
+} from "@/lib/gis/mapLotFromBlock";
+import { collectNearbyLotIds } from "@/lib/gis/nearbyLots";
+import {
+  filterStreetGuidesNearLot,
+  yieldToBrowser,
+} from "@/lib/gis/uiYield";
+import { buildAllPolysUtm } from "@/lib/lotSegmentConfrontation";
 
 /**
  * Linhas auxiliares no mapa (investigação visual):
@@ -732,6 +773,7 @@ function LotBoundaryEdgePolylines({
   onConfrontEdgePick,
   segmentEdgeByIndex,
   suspendLotHitTest = false,
+  boundaryEnabled = true,
 }: {
   positions: LatLngPair[];
   lot: { id?: string; number?: string; geometryType?: string };
@@ -752,10 +794,12 @@ function LotBoundaryEdgePolylines({
   >;
   /** Medição / desenho de rua: arestas não capturam clique. */
   suspendLotHitTest?: boolean;
+  /** Diagnóstico Preview (?gisPerf): desliga arestas SVG. */
+  boundaryEnabled?: boolean;
 }) {
   const hasOfficialSideLabels = (officialSideLabelByEdge?.size ?? 0) > 0;
   const showEdges =
-    SHOW_BOUNDARY_LINES ||
+    (boundaryEnabled && SHOW_BOUNDARY_LINES) ||
     frontCorrectActive ||
     officialSidePickActive ||
     assistedConfrontationActive ||
@@ -854,6 +898,8 @@ function LotBoundaryEdgePolylines({
 
   return <>{lines}</>;
 }
+
+const LotBoundaryEdgePolylinesMemo = memo(LotBoundaryEdgePolylines);
 
 /** Deslocamento do número para dentro do lote (frente identificada). */
 const LABEL_INWARD_OFFSET_METERS = 2.5;
@@ -1316,12 +1362,15 @@ function MapController({
   projectId,
   focusBlockName,
   focusBlockKey = 0,
+  enableFitBounds = true,
 }: {
   safeBounds: LatLngPair[];
   refreshKey?: number;
   projectId?: string;
   focusBlockName?: string | null;
   focusBlockKey?: number;
+  /** Diagnóstico: desliga fitBounds para medir impacto. */
+  enableFitBounds?: boolean;
 }) {
   const map = useMap();
   const lastFitBoundsKey = useRef<{
@@ -1332,6 +1381,7 @@ function MapController({
   }>({});
 
   useEffect(() => {
+    if (!enableFitBounds) return;
     if (safeBounds.length === 0) return;
 
     const needFitBounds =
@@ -1342,17 +1392,27 @@ function MapController({
 
     if (!needFitBounds) return;
 
+    gisPerfMarkStart('gis_fit_bounds');
     map.fitBounds(L.latLngBounds(safeBounds), {
       padding: [50, 50],
       maxZoom: 20,
     });
+    gisPerfMarkEnd('gis_fit_bounds', { points: safeBounds.length });
     lastFitBoundsKey.current = {
       projectId,
       refreshKey,
       focusBlockName,
       focusBlockKey,
     };
-  }, [safeBounds, map, refreshKey, projectId, focusBlockName, focusBlockKey]);
+  }, [
+    safeBounds,
+    map,
+    refreshKey,
+    projectId,
+    focusBlockName,
+    focusBlockKey,
+    enableFitBounds,
+  ]);
   return null;
 }
 
@@ -2678,6 +2738,8 @@ export default function GISMap({
   defineOfficialSideTool = false,
   onOverlayOpenChange,
   onEnterpriseValueRefresh,
+  frontPatchBatch = null,
+  lotsMutation = null,
 }: {
   projectId?: string;
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
@@ -2737,6 +2799,37 @@ export default function GISMap({
   onOverlayOpenChange?: (open: boolean) => void;
   /** Atualiza card Valor do Empreendimento após salvar preço manual. */
   onEnterpriseValueRefresh?: () => void;
+  /**
+   * Patch leve após Identificar Frentes — um setLots, sem loadLots/fitBounds.
+   * rev sobe a cada lote de patches aplicado.
+   */
+  frontPatchBatch?: {
+    rev: number;
+    patches: Array<{
+      id: string;
+      frente?: number | null;
+      Fundo?: number | string | null;
+      'Lado Dir.'?: number | string | null;
+      'Lado Esq.'?: number | string | null;
+      front_segment_index?: number | null;
+      frontStreetName?: string | null;
+      frontStreetType?: string | null;
+      frontStreetWidth?: number | null;
+      frontStreetId?: string | null;
+      frontStreetDisplay?: string | null;
+    }>;
+  } | null;
+  /**
+   * Fase A — mutações pontuais sem loadLots/fitBounds.
+   * remove | removeBlock | upsert (blocks brutos normalizados no GISMap).
+   */
+  lotsMutation?: {
+    rev: number;
+    kind: 'remove' | 'removeBlock' | 'upsert';
+    ids?: string[];
+    blockName?: string;
+    blocks?: Record<string, unknown>[];
+  } | null;
 }) {
   const { user } = useAuth();
   const ownerMapWriteBlocked = isOwnerRole(user?.role);
@@ -2744,10 +2837,19 @@ export default function GISMap({
   const [lots, setLots] = useState<any[]>([]);
   const [blocksData, setBlocksData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Toggles só com ?gisPerf=1 (Preview). Sem query = comportamento idêntico ao atual. */
+  const [perfToggles] = useState<GisPerfToggleState>(() =>
+    readGisPerfTogglesFromSearch(),
+  );
+  const showBoundaryLines =
+    SHOW_BOUNDARY_LINES && perfToggles.boundaryLines;
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(18);
+  /** Labels/círculos só a partir deste zoom (padrão 17) — polígonos sempre visíveis. */
+  const effectiveLabelsMinZoom =
+    labelsMinZoom == null ? 17 : labelsMinZoom;
   const showPermanentLabels =
-    labelsMinZoom == null || mapZoom >= labelsMinZoom;
+    mapZoom >= effectiveLabelsMinZoom && perfToggles.labels;
   const sheetPickActive = Boolean(lotSheetPickMode);
   const memorialPickActive = Boolean(memorialPickMode);
   const mapLotPickActive = sheetPickActive || memorialPickActive;
@@ -2765,6 +2867,8 @@ export default function GISMap({
   const [defineOfficialSidePickLotId, setDefineOfficialSidePickLotId] =
     useState<string | null>(null);
   const pendingLotPricesRef = useRef<Map<string, number | null>>(new Map());
+  const streetGuidesRef = useRef(streetGuides);
+  streetGuidesRef.current = streetGuides;
   const [officialSideEdit, setOfficialSideEdit] = useState<{
     lot: any;
     segmentIndex: number;
@@ -2772,27 +2876,69 @@ export default function GISMap({
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
 
-  const displayLots = useMemo(
+  /**
+   * Não remapear os 597 lotes quando streetGuides muda.
+   * Nome da rua no popup já resolve via resolveLotFrontStreetDisplay(lot, streetGuides).
+   * Remapear aqui invalidava displayLots → audits → re-render SVG em massa ao salvar logradouro.
+   */
+  const displayLots = lots;
+
+  /**
+   * Chave estável de geometria — mudanças só de frente/rua NÃO disparam rebuild de audits.
+   * (Identificar Frentes atualiza metadados sem alterar bounds.)
+   */
+  const auditLotsKey = useMemo(
     () =>
-      lots.map((lot) => {
-        const frontStreetDisplay = resolveLotFrontStreetDisplay(
-          lot,
-          streetGuides,
-        );
-        if (
-          frontStreetDisplay === lot.frontStreetDisplay ||
-          (!frontStreetDisplay && !lot.frontStreetDisplay)
-        ) {
-          return lot;
-        }
-        return { ...lot, frontStreetDisplay: frontStreetDisplay ?? null };
-      }),
-    [lots, streetGuides],
+      lots
+        .map((l) => `${l.id}:${l.bounds?.length ?? 0}:${l.coordCount ?? 0}`)
+        .join('|'),
+    [lots],
   );
+
+  /**
+   * Auditorias “ao vivo” só para ferramentas que precisam colorir TODOS os lotes.
+   * Frente manual / editor pontual NÃO entram aqui (evita O(N²) nos 597 lotes).
+   */
+  const liveStreetAudits =
+    Boolean(assistedConfrontationMode) ||
+    Boolean(insertConfrontantTool) ||
+    Boolean(defineOfficialSideTool);
+
+  /** Arestas detalhadas só com zoom próximo ou ferramenta ativa (LOD). */
+  const showDetailedEdges =
+    mapZoom >= 16 ||
+    frontCorrectLotId != null ||
+    confrontEdit != null ||
+    defineOfficialSidePickLotId != null ||
+    liveStreetAudits;
+
+  /** Foco pontual: só estes ids ( + vizinhos ) entram em rebuild de auditoria. */
+  const scopedAuditFocusId =
+    frontCorrectLotId ||
+    (confrontEdit?.lot?.id != null ? String(confrontEdit.lot.id) : null) ||
+    defineOfficialSidePickLotId ||
+    null;
+
+  const scopedAuditLotIds = useMemo(() => {
+    if (!scopedAuditFocusId || liveStreetAudits) return null;
+    // Frente manual não precisa de auditoria de confrontação nas arestas.
+    if (frontCorrectLotId && !confrontEdit && !defineOfficialSidePickLotId) {
+      return new Set<string>([String(frontCorrectLotId)]);
+    }
+    return collectNearbyLotIds(lots, String(scopedAuditFocusId), 40);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lots via auditLotsKey + focus
+  }, [
+    scopedAuditFocusId,
+    frontCorrectLotId,
+    confrontEdit?.lot?.id,
+    defineOfficialSidePickLotId,
+    liveStreetAudits,
+    auditLotsKey,
+  ]);
 
   const blocksForConfront = useMemo(
     () =>
-      displayLots.map((l) => ({
+      lots.map((l) => ({
         ...l,
         id: l.id,
         number: l.number,
@@ -2801,45 +2947,331 @@ export default function GISMap({
         front_segment_index: l.front_segment_index,
         front_street_name: l.frontStreetName,
       })) as Record<string, unknown>[],
-    [displayLots],
+    // Com ferramentas assistidas globais, usa lots; senão só geometria.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- auditLotsKey / liveStreetAudits
+    liveStreetAudits ? [lots, liveStreetAudits] : [auditLotsKey],
+  );
+
+  /** streetGuides só invalida audits quando ferramentas assistidas globais estão ativas. */
+  const streetGuidesAuditDep = liveStreetAudits ? streetGuides : null;
+
+  /** Uma única sincronização quando as ruas chegam após os lotes (sem rebuild a cada nova rua). */
+  const streetsHydratedRef = useRef(false);
+  const [streetsHydrateEpoch, setStreetsHydrateEpoch] = useState(0);
+  useEffect(() => {
+    streetsHydratedRef.current = false;
+    setStreetsHydrateEpoch(0);
+  }, [projectId]);
+  useEffect(() => {
+    if (!streetsHydratedRef.current && streetGuides.length > 0) {
+      streetsHydratedRef.current = true;
+      setStreetsHydrateEpoch((e) => e + 1);
+    }
+  }, [streetGuides.length]);
+
+  const confrontationAuditsPrevRef = useRef<Map<string, LotConfrontationAudit>>(
+    new Map(),
   );
 
   const confrontationAudits = useMemo(() => {
-    const map = new Map<string, LotConfrontationAudit>();
-    for (const lot of displayLots) {
-      if (!lot?.id) continue;
-      try {
-        map.set(
-          lot.id,
-          buildLotConfrontationAudit(
-            blockWithGeometryFromBounds({
-              ...lot,
-              block_name: lot.block,
-              segments_json: lot.segments_json,
-              front_segment_index: lot.front_segment_index,
-              front_street_name: lot.frontStreetName,
-            }),
-            lot.id,
-            blocksForConfront,
-            streetGuides,
-          ),
-        );
-      } catch (err) {
-        console.warn('CONFRONTATION_AUDIT_SKIP', lot.id, err);
-      }
+    const focusOnlyFront =
+      Boolean(frontCorrectLotId) &&
+      !liveStreetAudits &&
+      !confrontEdit &&
+      !defineOfficialSidePickLotId;
+
+    // Frente manual: não recalcular auditorias — reutiliza mapa anterior.
+    if (focusOnlyFront) {
+      gisPerfNoteAuditRebuild(0);
+      return confrontationAuditsPrevRef.current;
     }
-    return map;
+
+    // Sem ferramenta assistida/global e sem foco pontual: NÃO auditar 597 lotes no load.
+    if (!liveStreetAudits && !scopedAuditFocusId) {
+      gisPerfNoteAuditRebuild(0);
+      return confrontationAuditsPrevRef.current;
+    }
+
+    const scopeIds = scopedAuditLotIds;
+    const auditTargetLots =
+      scopeIds && !liveStreetAudits
+        ? lots.filter((l) => l?.id && scopeIds.has(String(l.id)))
+        : lots;
+
+    gisPerfNoteAuditRebuild(auditTargetLots.length);
+    return gisPerfMeasureSync(
+      'confrontation_audits',
+      () => {
+        if (!perfToggles.confrontationAudits) {
+          const empty = new Map<string, LotConfrontationAudit>();
+          confrontationAuditsPrevRef.current = empty;
+          return empty;
+        }
+        // Candidatos: no escopo pontual, só foco+vizinhos; no global, todos.
+        const candidateBlocks =
+          scopeIds && !liveStreetAudits
+            ? blocksForConfront.filter((b) => scopeIds.has(String(b.id)))
+            : blocksForConfront;
+        const sharedPolys = buildAllPolysUtm(candidateBlocks);
+        const map =
+          scopeIds && !liveStreetAudits
+            ? new Map(confrontationAuditsPrevRef.current)
+            : new Map<string, LotConfrontationAudit>();
+
+        for (const lot of auditTargetLots) {
+          if (!lot?.id) continue;
+          try {
+            map.set(
+              lot.id,
+              buildLotConfrontationAudit(
+                blockWithGeometryFromBounds({
+                  ...lot,
+                  block_name: lot.block,
+                  segments_json: lot.segments_json,
+                  front_segment_index: lot.front_segment_index,
+                  front_street_name: lot.frontStreetName,
+                }),
+                lot.id,
+                candidateBlocks.length ? candidateBlocks : blocksForConfront,
+                streetGuides,
+                null,
+                sharedPolys,
+              ),
+            );
+          } catch (err) {
+            console.warn('CONFRONTATION_AUDIT_SKIP', lot.id, err);
+          }
+        }
+        confrontationAuditsPrevRef.current = map;
+        return map;
+      },
+      {
+        lotCount: auditTargetLots.length,
+        totalLots: lots.length,
+        scoped: Boolean(scopeIds && !liveStreetAudits),
+        enabled: perfToggles.confrontationAudits,
+        liveStreetAudits,
+        streetGuideCount: Array.isArray(streetGuides) ? streetGuides.length : 0,
+        streetsHydrateEpoch,
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetGuidesAuditDep + auditLotsKey
   }, [
-    displayLots,
+    auditLotsKey,
     blocksForConfront,
-    streetGuides,
+    streetGuidesAuditDep,
+    liveStreetAudits,
+    streetsHydrateEpoch,
+    perfToggles.confrontationAudits,
+    scopedAuditLotIds,
+    scopedAuditFocusId,
+    frontCorrectLotId,
+    confrontEdit,
+    defineOfficialSidePickLotId,
   ]);
 
+  /** Identificar Frentes: um setLots com patches, sem loadLots/fitBounds. */
+  const lastFrontPatchRevRef = useRef(0);
+  /** Suprime realtime logo após patch otimista (evita load/duplicata). */
+  const localPatchSuppressRef = useRef<Map<string, number>>(new Map());
+  const markLocalPatchSuppress = useCallback((ids: string[], ms = 8000) => {
+    const until = Date.now() + ms;
+    for (const id of ids) {
+      if (id) localPatchSuppressRef.current.set(String(id), until);
+    }
+  }, []);
+  const isLocalPatchSuppressed = useCallback((id: string) => {
+    const until = localPatchSuppressRef.current.get(String(id));
+    if (until == null) return false;
+    if (Date.now() > until) {
+      localPatchSuppressRef.current.delete(String(id));
+      return false;
+    }
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!frontPatchBatch || frontPatchBatch.rev === lastFrontPatchRevRef.current) {
+      return;
+    }
+    if (!frontPatchBatch.patches.length) return;
+    lastFrontPatchRevRef.current = frontPatchBatch.rev;
+    markLocalPatchSuppress(frontPatchBatch.patches.map((p) => String(p.id)));
+    const byId = new Map(
+      frontPatchBatch.patches.map((p) => [String(p.id), p] as const),
+    );
+    startTransition(() => {
+      setLots((prev) => {
+        let changed = 0;
+        const next = prev.map((lot) => {
+          const p = byId.get(String(lot.id));
+          if (!p) return lot;
+          changed += 1;
+          return {
+            ...lot,
+            frente: p.frente ?? lot.frente,
+            Fundo: p.Fundo ?? lot.Fundo,
+            'Lado Dir.': p['Lado Dir.'] ?? lot['Lado Dir.'],
+            'Lado Esq.': p['Lado Esq.'] ?? lot['Lado Esq.'],
+            front_segment_index:
+              p.front_segment_index ?? lot.front_segment_index,
+            frontStreetName: p.frontStreetName ?? lot.frontStreetName,
+            frontStreetType: p.frontStreetType ?? lot.frontStreetType,
+            frontStreetWidth: p.frontStreetWidth ?? lot.frontStreetWidth,
+            frontStreetId: p.frontStreetId ?? lot.frontStreetId,
+            frontStreetDisplay:
+              p.frontStreetDisplay ?? lot.frontStreetDisplay,
+          };
+        });
+        return changed > 0 ? next : prev;
+      });
+    });
+  }, [frontPatchBatch, markLocalPatchSuppress]);
+
+  const lastLotsMutationRevRef = useRef(0);
+  useEffect(() => {
+    if (!lotsMutation || lotsMutation.rev === lastLotsMutationRevRef.current) {
+      return;
+    }
+    lastLotsMutationRevRef.current = lotsMutation.rev;
+    const kind = lotsMutation.kind;
+    const opLotId =
+      lotsMutation.ids?.[0] ||
+      (lotsMutation.blocks?.[0]?.id != null
+        ? String(lotsMutation.blocks[0].id)
+        : lotsMutation.blockName || '');
+
+    gisPerfLotEditBegin({
+      operation: kind,
+      lotId: String(opLotId).slice(0, 12),
+    });
+
+    if (kind === 'remove' && lotsMutation.ids?.length) {
+      const idSet = new Set(lotsMutation.ids.map(String));
+      markLocalPatchSuppress([...idSet]);
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => prev.filter((l) => !idSet.has(String(l.id))));
+        setBlocksData((prev) => prev.filter((l) => !idSet.has(String(l.id))));
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'remove',
+        lotId: String(opLotId).slice(0, 12),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+      return;
+    }
+
+    if (kind === 'removeBlock' && lotsMutation.blockName) {
+      const key = normalizeBlockKeyForMap(lotsMutation.blockName);
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => {
+          const removedIds = prev
+            .filter((l) => normalizeBlockKeyForMap(l.block) === key)
+            .map((l) => String(l.id));
+          if (removedIds.length) markLocalPatchSuppress(removedIds);
+          return prev.filter((l) => normalizeBlockKeyForMap(l.block) !== key);
+        });
+        setBlocksData((prev) =>
+          prev.filter((l) => normalizeBlockKeyForMap(l.block) !== key),
+        );
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'removeBlock',
+        lotId: String(lotsMutation.blockName).slice(0, 12),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+      return;
+    }
+
+    if (kind === 'upsert' && lotsMutation.blocks?.length) {
+      const mapped = lotsMutation.blocks
+        .map((b) => mapLotFromBlockRow(b, streetGuidesRef.current))
+        .filter(Boolean) as Record<string, unknown>[];
+      if (!mapped.length) {
+        gisPerfLotEditEnd({
+          operation: 'upsert',
+          fallbackFullReload: true,
+        });
+        return;
+      }
+      markLocalPatchSuppress(mapped.map((l) => String(l.id)));
+      gisPerfLotEditMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => {
+          const byId = new Map(prev.map((l) => [String(l.id), l]));
+          for (const lot of mapped) {
+            const id = String(lot.id);
+            const prevLot = byId.get(id);
+            byId.set(id, prevLot ? { ...prevLot, ...lot } : lot);
+          }
+          return Array.from(byId.values());
+        });
+      });
+      gisPerfLotEditMark('patch_end');
+      gisPerfLotEditEnd({
+        operation: 'upsert',
+        lotId: String(mapped[0].id).slice(0, 12),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+    }
+  }, [lotsMutation, markLocalPatchSuppress]);
+
+  useEffect(() => {
+    gisPerfNoteGisMapRender({
+      lotCount: lots.length,
+      streetGuideCount: streetGuides.length,
+      liveStreetAudits,
+    });
+  });
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id) return;
+    const lotId = String(lot.id);
+    const projectAtStart = String(projectId || '');
+    const candidateEdges = Array.isArray(lot.bounds)
+      ? Math.max(0, (lot.bounds as unknown[]).length)
+      : 0;
+
+    gisPerfManualFrontBegin({
+      operation: 'manual_front',
+      lotId: lotId.slice(0, 8),
+      blockId: lotId.slice(0, 8),
+      edgeIndex: segmentIndex,
+      candidateEdges,
+    });
+    console.info('[GIS_PERF_MANUAL_FRONT] click', {
+      lotId: lotId.slice(0, 8),
+      edgeIndex: segmentIndex,
+    });
+
+    // Fecha modo + feedback local ANTES de qualquer cálculo pesado.
+    setFrontCorrectLotId(null);
     setFrontCorrectSaving(true);
+    gisPerfManualFrontMark('mode_closed');
+
+    // Libera paint — pan/zoom e banner "Salvando" ficam responsivos.
+    await yieldToBrowser();
+
+    if (String(projectId || '') !== projectAtStart) {
+      gisPerfManualFrontEnd({
+        lotId: lotId.slice(0, 8),
+        edgeIndex: segmentIndex,
+        projectChangedDuringOperation: true,
+        fallbackFullReload: false,
+      });
+      setFrontCorrectSaving(false);
+      return;
+    }
+
     try {
+      gisPerfManualFrontMark('compute_start');
       const blockBase = blockWithGeometryFromBounds({
         ...lot,
         segments_json: lot.segments_json,
@@ -2861,16 +3293,47 @@ export default function GISMap({
         front_segment_index: persistedFrontIdx,
         front_source: 'manual',
       };
+
       const measures = getOfficialLotMeasurements(block, lot.number);
-      const streetMatch = resolveFrontStreetGuideForLot(block, streetGuides);
+      gisPerfManualFrontMark('compute_end');
+
+      gisPerfManualFrontMark('street_start');
+      const nearbyStreets = filterStreetGuidesNearLot(
+        lot.bounds as Array<[number, number]> | undefined,
+        streetGuides as Record<string, unknown>[],
+        80,
+      );
+      const streetMatch = resolveFrontStreetGuideForLot(
+        block,
+        nearbyStreets.length ? nearbyStreets : streetGuides,
+      );
       const streetFields = streetFieldsFromGuideMatch(streetMatch);
+      gisPerfManualFrontMark('street_matched');
+
       console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lotId: lot.id,
         segmentIndex,
         persistedFrontIdx,
-        measures,
-        streetMatch,
+        candidateStreets: nearbyStreets.length,
+        streetMatch: streetMatch
+          ? { id: streetMatch.streetGuideId, name: streetMatch.streetGuideName }
+          : null,
       });
+
+      if (String(projectId || '') !== projectAtStart) {
+        gisPerfManualFrontEnd({
+          lotId: lotId.slice(0, 8),
+          edgeIndex: segmentIndex,
+          candidateStreets: nearbyStreets.length,
+          projectChangedDuringOperation: true,
+          fallbackFullReload: false,
+        });
+        setFrontCorrectSaving(false);
+        return;
+      }
+
+      markLocalPatchSuppress([lotId]);
+      gisPerfManualFrontMark('db_start');
       const { patch, frontSourcePersisted } = await persistManualLotFront(
         supabase,
         lot.id,
@@ -2878,13 +3341,29 @@ export default function GISMap({
         persistedFrontIdx,
         streetFields,
       );
+      gisPerfManualFrontMark('db_complete');
+
       console.log("BLOCK_FRONT_SAVE_OK", {
         blockId: lot.id,
         lotNumber: lot.number,
         frontSegmentIndex: persistedFrontIdx,
         frontSourcePersisted,
-        patch,
+        patchKeys: Object.keys(patch || {}),
       });
+
+      if (String(projectId || '') !== projectAtStart) {
+        gisPerfManualFrontEnd({
+          lotId: lotId.slice(0, 8),
+          edgeIndex: segmentIndex,
+          candidateStreets: nearbyStreets.length,
+          projectChangedDuringOperation: true,
+          fallbackFullReload: false,
+        });
+        setFrontCorrectSaving(false);
+        return;
+      }
+
+      gisPerfManualFrontMark('popup_start');
       const updatedDisplay = resolveLotFrontStreetDisplay(
         {
           ...lot,
@@ -2893,28 +3372,47 @@ export default function GISMap({
           front_street_id: streetFields.front_street_id,
           front_street_type: streetFields.front_street_type,
         },
-        streetGuides,
+        nearbyStreets.length ? nearbyStreets : streetGuides,
       );
-      setLots((prev) =>
-        prev.map((l) =>
-          l.id === lot.id
-            ? {
-                ...l,
-                frente: measures.frente,
-                Fundo: measures.fundo,
-                "Lado Dir.": measures.ladoDireito,
-                "Lado Esq.": measures.ladoEsquerdo,
-                front_segment_index: persistedFrontIdx,
-                front_source: frontSourcePersisted ? "manual" : l.front_source,
-                frontStreetName: streetFields.front_street_name,
-                frontStreetId: streetFields.front_street_id,
-                frontStreetType: streetFields.front_street_type,
-                frontStreetDisplay: updatedDisplay,
-              }
-            : l,
-        ),
-      );
-      setFrontCorrectLotId(null);
+      gisPerfManualFrontMark('popup_end');
+
+      gisPerfManualFrontMark('patch_start');
+      gisPerfNoteSetLots();
+      startTransition(() => {
+        setLots((prev) => {
+          const idx = prev.findIndex((l) => l.id === lot.id);
+          if (idx < 0) return prev;
+          const next = prev.slice();
+          next[idx] = {
+            ...prev[idx],
+            frente: measures.frente,
+            Fundo: measures.fundo,
+            "Lado Dir.": measures.ladoDireito,
+            "Lado Esq.": measures.ladoEsquerdo,
+            front_segment_index: persistedFrontIdx,
+            front_source: frontSourcePersisted ? "manual" : prev[idx].front_source,
+            frontStreetName: streetFields.front_street_name,
+            frontStreetId: streetFields.front_street_id,
+            frontStreetType: streetFields.front_street_type,
+            frontStreetDisplay: updatedDisplay,
+          };
+          return next;
+        });
+      });
+      gisPerfManualFrontMark('local_patch_complete');
+
+      gisPerfManualFrontEnd({
+        lotId: lotId.slice(0, 8),
+        blockId: lotId.slice(0, 8),
+        edgeIndex: segmentIndex,
+        candidateEdges,
+        candidateStreets: nearbyStreets.length,
+        evaluatedNeighbors: 0,
+        duplicateRealtimeSuppressed: true,
+        fallbackFullReload: false,
+        projectChangedDuringOperation: false,
+      });
+
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot, { projectId: lot.project_id }),
         userId: user?.id ?? null,
@@ -2930,8 +3428,13 @@ export default function GISMap({
         },
         source: "gis_map",
       });
-      alert("Frente atualizada com sucesso.");
     } catch (err: unknown) {
+      gisPerfManualFrontEnd({
+        lotId: lotId.slice(0, 8),
+        edgeIndex: segmentIndex,
+        fallbackFullReload: false,
+        error: true,
+      });
       logSupabaseFrontSaveFailure('GISMap.handlePickFrontSegment', err, {
         blockId: lot.id,
         frontSegmentIndex: segmentIndex,
@@ -3048,6 +3551,7 @@ export default function GISMap({
       );
       const rows = updated.segments_json as Record<string, unknown>[];
       await persistBlockSegmentsJson(supabase, t.blockId, rows);
+      markLocalPatchSuppress([String(t.blockId)]);
       setLots((prev) =>
         prev.map((l) =>
           l.id === t.blockId ? { ...l, segments_json: rows } : l,
@@ -3264,18 +3768,24 @@ export default function GISMap({
   );
 
   const lotGeometryValidations = useMemo(() => {
-    const map = new Map<string, ValidateLotGeometryResult>();
-    for (const lot of lots) {
-      if (!lot.bounds?.length) continue;
-      map.set(
-        lot.id,
-        validateLotGeometry(
-          lot,
-          blockBoundingBoxes.get(normalizeBlockKey(lot.block)) ?? null,
-        ),
-      );
-    }
-    return map;
+    return gisPerfMeasureSync(
+      'geometry_validations',
+      () => {
+        const map = new Map<string, ValidateLotGeometryResult>();
+        for (const lot of lots) {
+          if (!lot.bounds?.length) continue;
+          map.set(
+            lot.id,
+            validateLotGeometry(
+              lot,
+              blockBoundingBoxes.get(normalizeBlockKey(lot.block)) ?? null,
+            ),
+          );
+        }
+        return map;
+      },
+      { lotCount: lots.length },
+    );
   }, [lots, blockBoundingBoxes]);
 
   const safeMapBounds = useMemo(() => {
@@ -3308,20 +3818,26 @@ export default function GISMap({
   }, [lots, lotGeometryValidations, blockBoundingBoxes, focusBlockName]);
 
   const lotLabelItems = useMemo((): LotLabelItem[] => {
-    const items: LotLabelItem[] = [];
-    for (const lot of lots) {
-      const validation = lotGeometryValidations.get(lot.id);
-      if (!validation?.valid || validation.cleanedCoords.length < 3) continue;
-      const displayNum = normalizeLotDisplayNum(lot.number);
-      if (!displayNum || displayNum === "0") continue;
-      items.push({
-        id: lot.id,
-        bounds: validation.cleanedCoords,
-        displayNum,
-        lot,
-      });
-    }
-    return items;
+    return gisPerfMeasureSync(
+      'gis_labels_preparation',
+      () => {
+        const items: LotLabelItem[] = [];
+        for (const lot of lots) {
+          const validation = lotGeometryValidations.get(lot.id);
+          if (!validation?.valid || validation.cleanedCoords.length < 3) continue;
+          const displayNum = normalizeLotDisplayNum(lot.number);
+          if (!displayNum || displayNum === "0") continue;
+          items.push({
+            id: lot.id,
+            bounds: validation.cleanedCoords,
+            displayNum,
+            lot,
+          });
+        }
+        return items;
+      },
+      { lotCount: lots.length },
+    );
   }, [lots, lotGeometryValidations]);
 
   // Medição de distância / área
@@ -3543,14 +4059,20 @@ export default function GISMap({
 
   useEffect(() => {
     async function loadLots() {
+      gisPerfNoteLoadLots();
       if (!user || !projectId) {
         setLoading(false);
         return;
       }
 
+      gisPerfBeginSession(projectId);
+
       if (!isBrowserOnline()) {
         try {
+          gisPerfMarkStart('supabase_fetch');
           const { lots, blocksData } = await loadOfflineMapGeometries(projectId);
+          gisPerfMarkEnd('supabase_fetch', { source: 'offline_cache' });
+          gisPerfSetLotCount(lots.length);
           setLots(lots as any[]);
           setBlocksData(blocksData as any[]);
           console.log('GIS_MAP_OFFLINE_CACHE_USED', {
@@ -3559,12 +4081,15 @@ export default function GISMap({
             blocksData: blocksData.length,
           });
           try {
+            gisPerfMarkStart('geometry_diagnostic');
             runLotGeometryDiagnosticReport(blocksData as Record<string, unknown>[], {
               projectId,
               context: 'GISMap-offline',
             });
+            gisPerfMarkEnd('geometry_diagnostic');
           } catch (diagErr: unknown) {
             console.error('[LOT GEOMETRY DEBUG] GISMap-offline failed', diagErr);
+            gisPerfMarkEnd('geometry_diagnostic', { error: true });
           }
         } catch (e) {
           console.error('[OFFLINE] erro ao carregar mapa', e);
@@ -3572,6 +4097,7 @@ export default function GISMap({
           setBlocksData([]);
         } finally {
           setLoading(false);
+          gisPerfFinishSession({ path: 'offline' });
         }
         return;
       }
@@ -3588,10 +4114,16 @@ export default function GISMap({
           // Bloquear se não tiver tenant
           setLots([]);
           setLoading(false);
+          gisPerfFinishSession({ path: 'blocked_no_tenant' });
           return;
         }
 
+        gisPerfMarkStart('gis_fetch_request');
         const blocksRes = await blocksQuery;
+        gisPerfMarkEnd('gis_fetch_request', {
+          rowCount: blocksRes.data?.length ?? 0,
+          hasError: Boolean(blocksRes.error),
+        });
         if (blocksRes.error) throw blocksRes.error;
 
         console.group('[SECURITY] GISMap Load');
@@ -3602,102 +4134,166 @@ export default function GISMap({
         console.groupEnd();
 
         if (blocksRes.data) {
+          gisPerfSetLotCount(blocksRes.data.length);
+          gisPerfMarkStart('gis_fetch_response_parse');
+          const payload = gisPerfMeasurePayloadBytes(blocksRes.data);
+          const structural = gisPerfSummarizeBlocksPayload(
+            blocksRes.data as Record<string, unknown>[],
+          );
+          gisPerfMarkEnd('gis_fetch_response_parse', {
+            bytes: payload.bytes,
+            approxKb: payload.approxKb,
+            approxMb: payload.approxMb,
+            ...structural,
+          });
+
           console.error('GISMAP DIAGNOSTIC START', {
             projectId,
             blockCount: blocksRes.data.length,
           });
           try {
-            const gisReport = runLotGeometryDiagnosticReport(
-              blocksRes.data as Record<string, unknown>[],
-              { projectId, context: 'GISMap-load' },
-            );
-            console.error('DIAGNOSTIC REPORT', gisReport);
+            // Diagnóstico geométrico completo só com ?gisPerf=1 (não no load normal).
+            if (isGisPerfDiagnosticsEnabled() && perfToggles.panelActive) {
+              gisPerfMarkStart('geometry_diagnostic');
+              const gisReport = runLotGeometryDiagnosticReport(
+                blocksRes.data as Record<string, unknown>[],
+                { projectId, context: 'GISMap-load' },
+              );
+              gisPerfMarkEnd('geometry_diagnostic', {
+                lotCount: blocksRes.data.length,
+              });
+              console.error('DIAGNOSTIC REPORT', gisReport);
+            } else {
+              gisPerfMarkStart('geometry_diagnostic');
+              gisPerfMarkEnd('geometry_diagnostic', {
+                skipped: true,
+                lotCount: blocksRes.data.length,
+              });
+            }
           } catch (diagErr: unknown) {
             console.error('[LOT GEOMETRY DEBUG] GISMap-load failed', diagErr);
+            gisPerfMarkEnd('geometry_diagnostic', { error: true });
           }
+
+          gisPerfMarkStart('gis_lots_normalization');
+          const memoryBefore = gisPerfMemorySnapshot();
+          // Yield antes da normalização pesada — mapa-base já pode pintar.
+          await yieldToBrowser();
+          let dimsMs = 0;
+          let dimsRuns = 0;
+          let parseMs = 0;
           const allPolygons = blocksRes.data
             .filter((b: any) => b.geometry && b.geometry.type === "Polygon" && b.geometry.coordinates)
             .map((b: any) => b.geometry.coordinates[0]);
 
-          const parsedBlocks = blocksRes.data
-            .map((b) => {
-              let { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
-                b as Record<string, unknown>,
-                b.number,
-              );
+          const CHUNK = 80;
+          const parsedBlocks: any[] = [];
+          for (let i = 0; i < blocksRes.data.length; i++) {
+            const b = blocksRes.data[i];
+            const tParse = performance.now();
+            let { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
+              b as Record<string, unknown>,
+              b.number,
+            );
+            parseMs += performance.now() - tParse;
 
-              if (bounds.length === 0) {
-                console.log("GIS_LOT_WITHOUT_GEOMETRY", {
-                  lote: b.number,
-                  quadra: b.block_name || b.name,
-                  source_import: b.source_import ?? null,
-                });
-              }
+            if (bounds.length === 0) {
+              console.log("GIS_LOT_WITHOUT_GEOMETRY", {
+                lote: b.number,
+                quadra: b.block_name || b.name,
+                source_import: b.source_import ?? null,
+              });
+            }
 
-              let dimsFromGeo: any = null;
+            let dimsFromGeo: any = null;
 
-              if (
-                (geometryType === "Polygon" || geometryType === "MultiPolygon") &&
-                b.geometry?.coordinates
-              ) {
-                const ring =
-                  geometryType === "Polygon"
-                    ? b.geometry.coordinates[0]
-                    : b.geometry.coordinates[0]?.[0];
-                if (ring && b.source_import !== "TXT_CIVIL3D") {
-                  try {
-                    dimsFromGeo = calculateLotDimensions(
-                      ring,
-                      allPolygons,
-                      b.properties || {},
-                    );
-                  } catch (err) {
-                    console.error("Erro recálculo dimensões GISMap", err);
-                  }
+            if (
+              (geometryType === "Polygon" || geometryType === "MultiPolygon") &&
+              b.geometry?.coordinates
+            ) {
+              const ring =
+                geometryType === "Polygon"
+                  ? b.geometry.coordinates[0]
+                  : b.geometry.coordinates[0]?.[0];
+              if (ring && b.source_import !== "TXT_CIVIL3D" && perfToggles.dimensions) {
+                try {
+                  const tDim = performance.now();
+                  dimsFromGeo = calculateLotDimensions(
+                    ring,
+                    allPolygons,
+                    b.properties || {},
+                  );
+                  dimsMs += performance.now() - tDim;
+                  dimsRuns += 1;
+                } catch (err) {
+                  console.error("Erro recálculo dimensões GISMap", err);
                 }
               }
+            }
 
-              let lotMeasures: ReturnType<typeof resolveLotMeasuresFromBlock>;
-              try {
-                lotMeasures = resolveLotMeasuresFromBlock({
-                  ...b,
-                  frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
-                  Fundo:
-                    b.Fundo !== null && b.Fundo !== undefined
-                      ? b.Fundo
-                      : dimsFromGeo?.fundo,
-                  "Lado Dir.":
-                    b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
-                      ? b["Lado Dir."]
-                      : dimsFromGeo?.ladoDireito,
-                  "Lado Esq.":
-                    b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
-                      ? b["Lado Esq."]
-                      : dimsFromGeo?.ladoEsquerdo,
-                });
-              } catch (measureErr) {
-                console.warn('GISMAP_LOT_MEASURES_SKIP', b.number, measureErr);
-                lotMeasures = {
-                  sides: {
-                    frente: parseBlockSideLength(b.frente),
-                    fundo: parseBlockSideLength(b.Fundo ?? b.fundo),
-                    ladoDireito: parseBlockSideLength(b["Lado Dir."]),
-                    ladoEsquerdo: parseBlockSideLength(b["Lado Esq."]),
-                  },
-                  chanfre: null,
-                  curva: null,
-                };
-              }
+            let lotMeasures: ReturnType<typeof resolveLotMeasuresFromBlock>;
+            try {
+              lotMeasures = resolveLotMeasuresFromBlock({
+                ...b,
+                frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
+                Fundo:
+                  b.Fundo !== null && b.Fundo !== undefined
+                    ? b.Fundo
+                    : dimsFromGeo?.fundo,
+                "Lado Dir.":
+                  b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
+                    ? b["Lado Dir."]
+                    : dimsFromGeo?.ladoDireito,
+                "Lado Esq.":
+                  b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
+                    ? b["Lado Esq."]
+                    : dimsFromGeo?.ladoEsquerdo,
+              });
+            } catch (measureErr) {
+              console.warn('GISMAP_LOT_MEASURES_SKIP', b.number, measureErr);
+              lotMeasures = {
+                sides: {
+                  frente: parseBlockSideLength(b.frente),
+                  fundo: parseBlockSideLength(b.Fundo ?? b.fundo),
+                  ladoDireito: parseBlockSideLength(b["Lado Dir."]),
+                  ladoEsquerdo: parseBlockSideLength(b["Lado Esq."]),
+                },
+                chanfre: null,
+                curva: null,
+              };
+            }
 
-              const pendingManualPrice = pendingLotPricesRef.current.get(b.id);
-              const blockPrice =
-                pendingManualPrice !== undefined
-                  ? pendingManualPrice ?? 0
-                  : b.price !== null && b.price !== undefined
-                    ? Number(b.price)
-                    : 0;
+            const pendingManualPrice = pendingLotPricesRef.current.get(b.id);
+            const blockPrice =
+              pendingManualPrice !== undefined
+                ? pendingManualPrice ?? 0
+                : b.price !== null && b.price !== undefined
+                  ? Number(b.price)
+                  : 0;
 
-              return {
+            parsedBlocks.push({
+              raw: b,
+              bounds,
+              geometryType,
+              coordCount,
+              lotMeasures,
+              blockPrice,
+            });
+
+            if ((i + 1) % CHUNK === 0) {
+              await yieldToBrowser();
+            }
+          }
+
+          const normalizedLots = parsedBlocks
+            .map(({
+              raw: b,
+              bounds,
+              geometryType,
+              coordCount,
+              lotMeasures,
+              blockPrice,
+            }) => ({
                 id: b.id,
                 project_id: b.project_id,
                 block: b.block_name || b.name || "?",
@@ -3736,21 +4332,39 @@ export default function GISMap({
                   (b.front_street_name
                     ? formatStreetDisplay(b.front_street_type, b.front_street_name)
                     : null),
-              };
-            })
-            .filter((b) => b.bounds.length > 0);
-          const polygonLots = parsedBlocks.filter(
+              }))
+            .filter((b) => Array.isArray(b.bounds) && b.bounds.length > 0);
+          const polygonLots = normalizedLots.filter(
             (b) =>
               b.geometryType === "Polygon" ||
               b.geometryType === "MultiPolygon",
           );
-          const lineBlocks = parsedBlocks.filter(
+          const lineBlocks = normalizedLots.filter(
             (b) =>
               b.geometryType === "LineString" ||
               b.geometryType === "MultiLineString",
           );
+
+          gisPerfNote('gis_coordinate_conversion', parseMs, {
+            lotCount: blocksRes.data.length,
+            alias: 'parse_bounds',
+          });
+          gisPerfNote('gis_dimensions_calculation', dimsMs, {
+            runs: dimsRuns,
+            skippedTxtCivil: blocksRes.data.length - dimsRuns,
+            enabled: perfToggles.dimensions,
+          });
+          gisPerfMarkEnd('gis_lots_normalization', {
+            polygonLots: polygonLots.length,
+            lineBlocks: lineBlocks.length,
+            memoryBeforeMb: memoryBefore?.usedJsHeapMb ?? null,
+          });
+
+          gisPerfMarkStart('set_state');
+          gisPerfNoteSetLots();
           setLots(polygonLots);
           setBlocksData(lineBlocks);
+          gisPerfMarkEnd('set_state');
 
           if (isBrowserOnline()) {
             const projectName =
@@ -3774,6 +4388,45 @@ export default function GISMap({
         console.error("Error loading map geometries:", e);
       } finally {
         setLoading(false);
+        // React/Leaflet mount is measured on next paint after loading=false
+        if (typeof window !== 'undefined' && isGisPerfDiagnosticsEnabled()) {
+          gisPerfMarkStart('gis_react_elements_creation');
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              gisPerfMarkEnd('gis_react_elements_creation');
+              gisPerfMarkStart('gis_map_layer_mount');
+              gisPerfMarkEnd('gis_map_layer_mount');
+              gisPerfNote('gis_first_interactive', 0, {
+                memory: Boolean(gisPerfMemorySnapshot()),
+              });
+              const memoryAfter = gisPerfMemorySnapshot();
+              gisPerfFinishSession({
+                path: 'online',
+                renderer: 'svg_default',
+                boundaryLines: showBoundaryLines,
+                labelsAlwaysOn: showPermanentLabels,
+                perfPanel: perfToggles.panelActive,
+                memoryAfter,
+                auditsDeferredUntilAssistedTools: true,
+                geometryDiagnosticSkippedUnlessPanel: true,
+                progressiveNormalizeChunk: 80,
+                toggles: perfToggles.panelActive
+                  ? {
+                      polygons: perfToggles.polygons,
+                      labels: perfToggles.labels,
+                      popups: perfToggles.popups,
+                      events: perfToggles.events,
+                      dimensions: perfToggles.dimensions,
+                      audits: perfToggles.confrontationAudits,
+                      fitBounds: perfToggles.fitBounds,
+                    }
+                  : null,
+              });
+            });
+          });
+        } else {
+          gisPerfFinishSession({ path: 'online_no_diag' });
+        }
       }
     }
 
@@ -3783,13 +4436,163 @@ export default function GISMap({
       return;
     }
 
+    const applyRealtimePayload = async (payload: {
+      eventType?: string;
+      new?: Record<string, unknown>;
+      old?: Record<string, unknown>;
+    }) => {
+      const eventType = String(payload.eventType || '').toUpperCase();
+      const rowNew = (payload.new || {}) as Record<string, unknown>;
+      const rowOld = (payload.old || {}) as Record<string, unknown>;
+      const lotId = String(rowNew.id || rowOld.id || '');
+      if (!lotId) return;
+
+      gisPerfRealtimePatchBegin({
+        operation: eventType || 'UNKNOWN',
+        lotId: lotId.slice(0, 8),
+      });
+
+      if (isLocalPatchSuppressed(lotId)) {
+        gisPerfNoteRealtimeEvent();
+        gisPerfNoteDuplicateRealtimeSuppressed();
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          lotId: lotId.slice(0, 8),
+          duplicateRealtimeSuppressed: true,
+          fallbackFullReload: false,
+          loadLotsDelta: 0,
+        });
+        return;
+      }
+
+      gisPerfNoteRealtimeEvent();
+
+      const rowProject = String(rowNew.project_id || rowOld.project_id || '');
+      if (rowProject && projectId && rowProject !== String(projectId)) {
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          skipped: 'other_project',
+          fallbackFullReload: false,
+        });
+        return;
+      }
+
+      if (eventType === 'DELETE') {
+        gisPerfRealtimePatchMark('patch_start');
+        startTransition(() => {
+          setLots((prev) => prev.filter((l) => String(l.id) !== lotId));
+          setBlocksData((prev) => prev.filter((l) => String(l.id) !== lotId));
+        });
+        gisPerfRealtimePatchMark('patch_end');
+        gisPerfRealtimePatchEnd({
+          operation: 'DELETE',
+          lotId: lotId.slice(0, 8),
+          duplicateRealtimeSuppressed: false,
+          fallbackFullReload: false,
+        });
+        return;
+      }
+
+      let row: Record<string, unknown> = rowNew;
+      const needsFetch =
+        !row.geometry ||
+        (row.geometry as { coordinates?: unknown })?.coordinates == null;
+
+      if (needsFetch) {
+        gisPerfRealtimePatchMark('db_start');
+        const { data, error } = await supabase
+          .from('blocks')
+          .select('*, projects(name), customers(name)')
+          .eq('id', lotId)
+          .maybeSingle();
+        gisPerfRealtimePatchMark('db_end');
+        if (error || !data) {
+          console.warn('GIS_REALTIME_FETCH_FALLBACK_FULL', lotId, error);
+          gisPerfRealtimePatchEnd({
+            operation: eventType,
+            lotId: lotId.slice(0, 8),
+            fallbackFullReload: true,
+          });
+          void loadLots();
+          return;
+        }
+        row = data as Record<string, unknown>;
+      }
+
+      if (
+        row.project_id &&
+        projectId &&
+        String(row.project_id) !== String(projectId)
+      ) {
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          skipped: 'other_project',
+          fallbackFullReload: false,
+        });
+        return;
+      }
+
+      const pendingPrice = pendingLotPricesRef.current.get(lotId);
+      const mapped = mapLotFromBlockRow(row, streetGuidesRef.current, {
+        pendingPrice:
+          pendingPrice !== undefined ? pendingPrice : undefined,
+      });
+
+      if (!mapped) {
+        console.warn('GIS_REALTIME_MAP_LOT_FAILED', lotId);
+        gisPerfRealtimePatchEnd({
+          operation: eventType,
+          lotId: lotId.slice(0, 8),
+          fallbackFullReload: true,
+        });
+        void loadLots();
+        return;
+      }
+
+      gisPerfRealtimePatchMark('patch_start');
+      startTransition(() => {
+        setLots((prev) => {
+          const idx = prev.findIndex((l) => String(l.id) === lotId);
+          if (idx >= 0) {
+            const next = prev.slice();
+            next[idx] = { ...prev[idx], ...mapped };
+            return next;
+          }
+          if (eventType === 'INSERT') return [...prev, mapped];
+          return [...prev, mapped];
+        });
+      });
+      gisPerfRealtimePatchMark('patch_end');
+      gisPerfRealtimePatchEnd({
+        operation: eventType || 'UPDATE',
+        lotId: lotId.slice(0, 8),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
+    };
+
     const channel = supabase
-      .channel("realtime:blocks")
+      .channel(`realtime:blocks:${projectId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "blocks" },
-        () => {
-          loadLots();
+        projectId
+          ? {
+              event: "*",
+              schema: "public",
+              table: "blocks",
+              filter: `project_id=eq.${projectId}`,
+            }
+          : {
+              event: "*",
+              schema: "public",
+              table: "blocks",
+            },
+        (payload) => {
+          void applyRealtimePayload({
+            eventType: payload.eventType,
+            new: payload.new as Record<string, unknown>,
+            old: payload.old as Record<string, unknown>,
+          });
         },
       )
       .subscribe();
@@ -3797,21 +4600,36 @@ export default function GISMap({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, projectId, refreshKey]);
+  }, [user, projectId, refreshKey, isLocalPatchSuppressed]);
 
   const handleLotPriceSaved = (lotId: string, price: number | null) => {
+    gisPerfLotEditBegin({
+      operation: 'price',
+      lotId: String(lotId).slice(0, 8),
+    });
+    markLocalPatchSuppress([String(lotId)]);
     pendingLotPricesRef.current.set(lotId, price);
     window.setTimeout(() => {
       pendingLotPricesRef.current.delete(lotId);
     }, 8000);
 
     const normalized = price ?? 0;
-    setLots((prev) =>
-      prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
-    );
-    setBlocksData((prev) =>
-      prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
-    );
+    gisPerfLotEditMark('patch_start');
+    startTransition(() => {
+      setLots((prev) =>
+        prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
+      );
+      setBlocksData((prev) =>
+        prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
+      );
+    });
+    gisPerfLotEditMark('patch_end');
+    gisPerfLotEditEnd({
+      operation: 'price',
+      lotId: String(lotId).slice(0, 8),
+      duplicateRealtimeSuppressed: false,
+      fallbackFullReload: false,
+    });
     onEnterpriseValueRefresh?.();
   };
 
@@ -3827,36 +4645,47 @@ export default function GISMap({
     setActionLoading(lot.id);
     const newStatus = newStatusString;
     const finalPrice = newPrice !== undefined ? newPrice : lot.price;
+    const lotId = String(lot.id);
+
+    gisPerfLotEditBegin({
+      operation: 'status',
+      lotId: lotId.slice(0, 8),
+    });
+    markLocalPatchSuppress([lotId]);
 
     // Optimistic UI updates
-    setLots((prev) =>
-      prev.map((l) =>
-        l.id === lot.id
-          ? {
-              ...l,
-              status: newStatus,
-              price: finalPrice,
-              ...(newStatus === "Disponível"
-                ? { customer_id: null, customerId: null, customerName: null }
-                : {}),
-            }
-          : l,
-      ),
-    );
-    setBlocksData((prev) =>
-      prev.map((l) =>
-        l.id === lot.id
-          ? {
-              ...l,
-              status: newStatus,
-              price: finalPrice,
-              ...(newStatus === "Disponível"
-                ? { customer_id: null, customerId: null, customerName: null }
-                : {}),
-            }
-          : l,
-      ),
-    );
+    gisPerfLotEditMark('patch_start');
+    startTransition(() => {
+      setLots((prev) =>
+        prev.map((l) =>
+          l.id === lot.id
+            ? {
+                ...l,
+                status: newStatus,
+                price: finalPrice,
+                ...(newStatus === "Disponível"
+                  ? { customer_id: null, customerId: null, customerName: null }
+                  : {}),
+              }
+            : l,
+        ),
+      );
+      setBlocksData((prev) =>
+        prev.map((l) =>
+          l.id === lot.id
+            ? {
+                ...l,
+                status: newStatus,
+                price: finalPrice,
+                ...(newStatus === "Disponível"
+                  ? { customer_id: null, customerId: null, customerName: null }
+                  : {}),
+              }
+            : l,
+        ),
+      );
+    });
+    gisPerfLotEditMark('patch_end');
 
     try {
       const updatePayload: any = { status: newStatus, price: finalPrice };
@@ -3864,10 +4693,12 @@ export default function GISMap({
         updatePayload.customer_id = null;
       }
 
+      gisPerfLotEditMark('db_start');
       const { error: updateError } = await supabase
         .from("blocks")
         .update(updatePayload)
         .eq("id", lot.id);
+      gisPerfLotEditMark('db_end');
 
       if (updateError) throw updateError;
 
@@ -3895,8 +4726,20 @@ export default function GISMap({
         newData: { status: newStatus, price: finalPrice },
         source: "gis_map",
       });
+      gisPerfLotEditEnd({
+        operation: 'status',
+        lotId: lotId.slice(0, 8),
+        duplicateRealtimeSuppressed: false,
+        fallbackFullReload: false,
+      });
     } catch (e) {
       console.error("Action error:", e);
+      gisPerfLotEditEnd({
+        operation: 'status',
+        lotId: lotId.slice(0, 8),
+        fallbackFullReload: false,
+        error: true,
+      });
       alert("Erro ao realizar ação");
     } finally {
       setActionLoading(null);
@@ -4027,6 +4870,7 @@ export default function GISMap({
           );
         }
 
+        markLocalPatchSuppress([String(lot.id)]);
         setLots((prev) =>
           prev.map((l) =>
             l.id === lot.id
@@ -4236,10 +5080,12 @@ export default function GISMap({
         className="w-full h-full"
         zoomControl={false}
       >
-        <GisBaseLayer
-          layerId={normalizeGisBaseLayer(activeLayer)}
-          onZoomChange={setMapZoom}
-        />
+        {perfToggles.baseMap ? (
+          <GisBaseLayer
+            layerId={normalizeGisBaseLayer(activeLayer)}
+            onZoomChange={setMapZoom}
+          />
+        ) : null}
 
         <ZoomControl position="bottomright" />
         <MapZoomTracker onZoom={setMapZoom} />
@@ -4249,6 +5095,7 @@ export default function GISMap({
           projectId={projectId}
           focusBlockName={focusBlockName}
           focusBlockKey={focusBlockKey}
+          enableFitBounds={perfToggles.fitBounds}
         />
         <LocationController active={gpsActive} />
 
@@ -4288,6 +5135,7 @@ export default function GISMap({
         {displayLots
           .filter((lot) => lot.bounds.length > 0)
           .map((lot) => {
+            if (!perfToggles.polygons) return null;
             const color = getStatusColor(lot.status);
             const displayNum = normalizeLotDisplayNum(lot.number);
             const validation = lotGeometryValidations.get(lot.id);
@@ -4308,24 +5156,26 @@ export default function GISMap({
               console.log("GIS_LOT_RENDER", {
                 lote: lot.number,
                 maxEdgeM: maxRingEdgeMeters(positions),
-                polygonFillOnly: !SHOW_BOUNDARY_LINES,
+                polygonFillOnly: !showBoundaryLines,
                 noSegmentPolyline: true,
               });
             }
 
             const strokeColor = sheetPickActive ? "#4999e9" : "#000000";
-            const borderWeight = SHOW_BOUNDARY_LINES
+            const borderWeight = showBoundaryLines
               ? sheetPickActive
                 ? 2
                 : 1
               : 0;
 
-            const lotHitTest = isLotPolygonHitTestEnabled({
-              mapLotPickActive,
-              drawStreetActive,
-              measureActive,
-              areaMeasureActive,
-            });
+            const lotHitTest =
+              perfToggles.events &&
+              isLotPolygonHitTestEnabled({
+                mapLotPickActive,
+                drawStreetActive,
+                measureActive,
+                areaMeasureActive,
+              });
 
             return (
               <Fragment key={lot.id}>
@@ -4338,10 +5188,12 @@ export default function GISMap({
                     color: strokeColor,
                     fillColor: mapLotPickActive ? "#4999e9" : color,
                     fillOpacity: mapLotPickActive ? 0.35 : 0.75,
-                    stroke: SHOW_BOUNDARY_LINES,
+                    stroke: showBoundaryLines,
                     weight: borderWeight,
                   }}
-                  eventHandlers={{
+                  eventHandlers={
+                    perfToggles.events
+                      ? {
                     click: () => {
                       if (gisMeasureToolActiveRef.current) return;
                       const pick = {
@@ -4361,7 +5213,7 @@ export default function GISMap({
                       const layer = e.target;
                       layer.setStyle({
                         fillOpacity: 1,
-                        weight: SHOW_BOUNDARY_LINES ? 2 : 0,
+                        weight: showBoundaryLines ? 2 : 0,
                       });
                     },
                     mouseout: (e) => {
@@ -4372,10 +5224,12 @@ export default function GISMap({
                         weight: borderWeight,
                       });
                     },
-                  }}
+                  }
+                      : undefined
+                  }
                 >
                   <SyncPathHitTest interactive={lotHitTest} />
-                  {!mapLotPickActive && lotHitTest && (
+                  {perfToggles.popups && !mapLotPickActive && lotHitTest && (
                     <Popup>
                       <LotPopupContent
                         lot={lot}
@@ -4465,75 +5319,98 @@ export default function GISMap({
                     </Popup>
                   )}
                 </Polygon>
-                <LotBoundaryEdgePolylines
+                {showDetailedEdges ? (
+                <LotBoundaryEdgePolylinesMemo
                   positions={positions}
                   lot={lot}
                   strokeColor={strokeColor}
                   suspendLotHitTest={!lotHitTest}
+                  boundaryEnabled={showBoundaryLines}
                   frontCorrectActive={frontCorrectLotId === lot.id}
-                  onEdgePick={(edgeIndex) =>
-                    void handlePickFrontSegment(lot, edgeIndex)
+                  onEdgePick={
+                    frontCorrectLotId === lot.id
+                      ? (edgeIndex) =>
+                          void handlePickFrontSegment(lot, edgeIndex)
+                      : undefined
                   }
                   officialSidePickActive={
                     (defineOfficialSideTool ||
                       defineOfficialSidePickLotId === lot.id) &&
                     frontCorrectLotId !== lot.id
                   }
-                  onOfficialSideEdgePick={(edgeIndex) =>
-                    handleOfficialSideEdgePick(lot, edgeIndex)
+                  onOfficialSideEdgePick={
+                    defineOfficialSideTool ||
+                    defineOfficialSidePickLotId === lot.id
+                      ? (edgeIndex) =>
+                          handleOfficialSideEdgePick(lot, edgeIndex)
+                      : undefined
                   }
-                  officialSideLabelByEdge={(() => {
-                    const manual = readManualOfficialSideMap({
-                      ...lot,
-                      segments_json: lot.segments_json,
-                    });
-                    if (manual.size === 0) return undefined;
-                    const block = {
-                      ...lot,
-                      block_name: lot.block,
-                      segments_json: lot.segments_json,
-                      front_segment_index: lot.front_segment_index,
-                    };
-                    const isRing = positions.length >= 3;
-                    const edgeCount = isRing
-                      ? positions.length
-                      : positions.length - 1;
-                    const labelMap = new Map<number, string>();
-                    for (let i = 0; i < edgeCount; i++) {
-                      const segIdx = utmSegmentIndexFromWgs84RingEdge(
-                        block,
-                        i,
-                      );
-                      const label = officialSideDisplayLabel(
-                        manual.get(segIdx) ?? null,
-                      );
-                      if (label) labelMap.set(i, label);
-                    }
-                    return labelMap.size > 0 ? labelMap : undefined;
-                  })()}
+                  officialSideLabelByEdge={
+                    defineOfficialSideTool ||
+                    defineOfficialSidePickLotId === lot.id
+                      ? (() => {
+                          const manual = readManualOfficialSideMap({
+                            ...lot,
+                            segments_json: lot.segments_json,
+                          });
+                          if (manual.size === 0) return undefined;
+                          const block = {
+                            ...lot,
+                            block_name: lot.block,
+                            segments_json: lot.segments_json,
+                            front_segment_index: lot.front_segment_index,
+                          };
+                          const isRing = positions.length >= 3;
+                          const edgeCount = isRing
+                            ? positions.length
+                            : positions.length - 1;
+                          const labelMap = new Map<number, string>();
+                          for (let i = 0; i < edgeCount; i++) {
+                            const segIdx = utmSegmentIndexFromWgs84RingEdge(
+                              block,
+                              i,
+                            );
+                            const label = officialSideDisplayLabel(
+                              manual.get(segIdx) ?? null,
+                            );
+                            if (label) labelMap.set(i, label);
+                          }
+                          return labelMap.size > 0 ? labelMap : undefined;
+                        })()
+                      : undefined
+                  }
                   assistedConfrontationActive={
                     (assistedConfrontationMode || insertConfrontantTool) &&
                     frontCorrectLotId !== lot.id &&
                     !defineOfficialSideTool &&
                     defineOfficialSidePickLotId !== lot.id
                   }
-                  onConfrontEdgePick={(edgeIndex) =>
-                    handleConfrontEdgePick(lot, edgeIndex)
+                  onConfrontEdgePick={
+                    (assistedConfrontationMode || insertConfrontantTool) &&
+                    frontCorrectLotId !== lot.id &&
+                    !defineOfficialSideTool &&
+                    defineOfficialSidePickLotId !== lot.id
+                      ? (edgeIndex) => handleConfrontEdgePick(lot, edgeIndex)
+                      : undefined
                   }
                   segmentEdgeByIndex={
-                    new Map(
-                      (confrontationAudits.get(lot.id)?.segmentEdges ?? []).map(
-                        (e) => [
-                          e.ringEdgeIndex,
-                          {
-                            status: e.status,
-                            confrontant: e.confrontant,
-                          },
-                        ],
-                      ),
-                    )
+                    assistedConfrontationMode || insertConfrontantTool
+                      ? new Map(
+                          (
+                            confrontationAudits.get(lot.id)?.segmentEdges ??
+                            []
+                          ).map((e) => [
+                            e.ringEdgeIndex,
+                            {
+                              status: e.status,
+                              confrontant: e.confrontant,
+                            },
+                          ]),
+                        )
+                      : undefined
                   }
                 />
+                ) : null}
               </Fragment>
             );
           })}
@@ -4786,6 +5663,13 @@ export default function GISMap({
           </p>
         </div>
       )}
+      {!frontCorrectLotId && frontCorrectSaving && (
+        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
+          <p className="text-xs font-semibold text-sky-100 bg-[#11141a]/95 border border-sky-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
+            Salvando frente… pan e zoom liberados.
+          </p>
+        </div>
+      )}
 
       {(assistedConfrontationMode || insertConfrontantTool) && (
         <div className="absolute bottom-4 left-4 z-[500] pointer-events-none max-w-xs">
@@ -4919,6 +5803,7 @@ export default function GISMap({
                   .eq("id", customerForm.lot.id)
                   .maybeSingle();
                 if (refreshedBlock) {
+                  markLocalPatchSuppress([String(refreshedBlock.id)]);
                   setLots((prev) =>
                     prev.map((l) =>
                       l.id === refreshedBlock.id
