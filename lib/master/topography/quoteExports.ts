@@ -19,10 +19,14 @@ import {
   buildQuotePdfFooterContactLine,
   buildQuotePdfNarrativeSections,
   buildQuotePdfProposalSummary,
+  buildQuotePdfSummaryGridRows,
   formatQuotePdfMoney,
+  preserveQuotePdfUserText,
   QUOTE_PDF_CLIENT_TABLE_HEADERS,
+  QUOTE_PDF_TABLE_WIDTH_FRACTIONS,
   resolveQuotePdfDisplayUnitPrice,
   type QuotePdfCompositionRow,
+  type QuotePdfSummaryField,
 } from './quotePdfSyntheticLayout';
 import type {
   MasterTopographyQuote,
@@ -233,7 +237,7 @@ async function tryLoadLogo(doc: jsPDF): Promise<boolean> {
       reader.readAsDataURL(blob);
     });
     if (!dataUrl) return false;
-    doc.addImage(dataUrl, 'PNG', 14, 8, 28, 14);
+    doc.addImage(dataUrl, 'PNG', 12, 6, 24, 12);
     return true;
   } catch {
     return false;
@@ -254,7 +258,8 @@ function compositionRowsToAutoTableBody(
             fillColor: [226, 232, 240],
             textColor: [15, 23, 42],
             fontStyle: 'bold',
-            fontSize: 9,
+            fontSize: 8,
+            cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 },
           },
         },
       ];
@@ -273,7 +278,7 @@ function ensureSpace(doc: jsPDF, y: number, needed: number, marginBottom: number
   const pageHeight = doc.internal.pageSize.getHeight();
   if (y + needed <= pageHeight - marginBottom) return y;
   doc.addPage();
-  return 18;
+  return 14;
 }
 
 function drawWrappedText(
@@ -285,7 +290,8 @@ function drawWrappedText(
   lineHeight: number,
   marginBottom: number,
 ): number {
-  const lines = doc.splitTextToSize(text, maxWidth) as string[];
+  const safe = preserveQuotePdfUserText(text);
+  const lines = doc.splitTextToSize(safe, maxWidth) as string[];
   let cursor = y;
   for (const line of lines) {
     cursor = ensureSpace(doc, cursor, lineHeight, marginBottom);
@@ -295,14 +301,119 @@ function drawWrappedText(
   return cursor;
 }
 
-/** PDF Sintético — paisagem, profissional (layout cliente). */
-export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
+function drawSummaryGrid(
+  doc: jsPDF,
+  fields: QuotePdfSummaryField[],
+  startY: number,
+  marginLeft: number,
+  contentWidth: number,
+  columns: number,
+): number {
+  if (!fields.length) return startY;
+  const rows = buildQuotePdfSummaryGridRows(fields, columns);
+  const gap = 2;
+  const colW = (contentWidth - gap * (columns - 1)) / columns;
+  let y = startY;
+
+  doc.setFontSize(9);
+  doc.setTextColor(29, 78, 216);
+  doc.text('RESUMO DA PROPOSTA', marginLeft, y);
+  y += 3.5;
+
+  for (const row of rows) {
+    let x = marginLeft;
+    let rowHeight = 7;
+    const cells: Array<{ field: QuotePdfSummaryField; x: number; w: number }> = [];
+
+    for (const field of row) {
+      const span = Math.min(field.span ?? 1, columns);
+      const w = colW * span + gap * (span - 1);
+      const valueLines = doc.splitTextToSize(
+        preserveQuotePdfUserText(field.value),
+        w - 1,
+      ) as string[];
+      rowHeight = Math.max(rowHeight, 3 + 2.6 + valueLines.length * 3.1);
+      cells.push({ field, x, w });
+      x += w + gap;
+    }
+
+    for (const cell of cells) {
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(cell.field.label, cell.x, y);
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      const valueLines = doc.splitTextToSize(
+        preserveQuotePdfUserText(cell.field.value),
+        cell.w - 1,
+      ) as string[];
+      doc.text(valueLines, cell.x, y + 3.2);
+    }
+    y += rowHeight;
+  }
+
+  return y + 1;
+}
+
+function drawCommercialGrid(
+  doc: jsPDF,
+  fields: QuotePdfSummaryField[],
+  startY: number,
+  marginLeft: number,
+  contentWidth: number,
+  marginBottom: number,
+): number {
+  if (!fields.length) return startY;
+  let y = ensureSpace(doc, startY, 10, marginBottom);
+  doc.setFontSize(9);
+  doc.setTextColor(29, 78, 216);
+  doc.text('CONDIÇÕES COMERCIAIS', marginLeft, y);
+  y += 3.5;
+
+  const columns = Math.min(4, Math.max(2, fields.length));
+  const rows = buildQuotePdfSummaryGridRows(
+    fields.map((f) => ({
+      ...f,
+      span: f.span && f.span > 1 ? 2 : 1,
+    })),
+    columns,
+  );
+  const gap = 2.5;
+  const colW = (contentWidth - gap * (columns - 1)) / columns;
+
+  for (const row of rows) {
+    y = ensureSpace(doc, y, 8, marginBottom);
+    let x = marginLeft;
+    let rowHeight = 7;
+    for (const field of row) {
+      const span = Math.min(field.span ?? 1, columns);
+      const w = colW * span + gap * (span - 1);
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(field.label, x, y);
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      const valueLines = doc.splitTextToSize(
+        preserveQuotePdfUserText(field.value),
+        w - 1,
+      ) as string[];
+      doc.text(valueLines, x, y + 3.2);
+      rowHeight = Math.max(rowHeight, 3.2 + valueLines.length * 3.1);
+      x += w + gap;
+    }
+    y += rowHeight + 0.5;
+  }
+  return y;
+}
+
+/** PDF Sintético — paisagem compacta (orçamentos pequenos em 1 página). */
+async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginLeft = 14;
-  const marginRight = 14;
-  const marginBottom = 14;
+  const marginLeft = 12;
+  const marginRight = 12;
+  const marginBottom = 11;
   const contentWidth = pageWidth - marginLeft - marginRight;
 
   const tradeName = 'SV Topografia & Projetos';
@@ -316,84 +427,64 @@ export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
   );
 
   const drawFooter = (page: number) => {
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setTextColor(100, 116, 139);
     const left = footerContact
       ? `${SAAS_PROVIDER.legalName} · ${footerContact}`
       : `${SAAS_PROVIDER.legalName} — Orçamento sintético`;
-    doc.text(left, marginLeft, pageHeight - 8);
+    doc.text(left, marginLeft, pageHeight - 6);
     doc.text(
       `${payload.quote.code} · página ${page}`,
       pageWidth - marginRight,
-      pageHeight - 8,
+      pageHeight - 6,
       { align: 'right' },
     );
   };
 
   await tryLoadLogo(doc);
 
-  doc.setFontSize(14);
-  doc.setTextColor(15, 23, 42);
-  doc.text(tradeName, 48, 14);
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
-  doc.text(SAAS_PROVIDER.legalName, 48, 19);
-  doc.text(`CNPJ ${SAAS_PROVIDER.cnpj}`, 48, 24);
-  doc.text(addressLine, 48, 28);
-
   doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text(tradeName, 44, 11);
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(SAAS_PROVIDER.legalName, 44, 15.5);
+  doc.text(`CNPJ ${SAAS_PROVIDER.cnpj} · ${addressLine}`, 44, 19.5);
+
+  doc.setFontSize(11);
   doc.setTextColor(29, 78, 216);
-  doc.text(`Orçamento ${payload.quote.code}`, pageWidth - marginRight, 14, {
+  doc.text(`Orçamento ${payload.quote.code}`, pageWidth - marginRight, 11, {
     align: 'right',
   });
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Emitido em ${new Date().toLocaleString('pt-BR')}`, pageWidth - marginRight, 19, {
+  doc.text(`Emitido em ${new Date().toLocaleString('pt-BR')}`, pageWidth - marginRight, 15.5, {
     align: 'right',
   });
 
   doc.setDrawColor(226, 232, 240);
-  doc.line(marginLeft, 32, pageWidth - marginRight, 32);
+  doc.line(marginLeft, 22, pageWidth - marginRight, 22);
 
-  let y = 38;
-  doc.setFontSize(10);
+  let y = 26.5;
+  doc.setFontSize(9);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Cliente: ${payload.quote.client_name}`, marginLeft, y);
-  y += 5;
-  doc.text(`Objeto: ${payload.quote.title || '—'}`, marginLeft, y);
-  y += 5;
+  doc.text(`Cliente: ${preserveQuotePdfUserText(payload.quote.client_name)}`, marginLeft, y);
+  y += 4;
+  doc.text(
+    `Objeto: ${preserveQuotePdfUserText(payload.quote.title) || '—'}`,
+    marginLeft,
+    y,
+  );
+  y += 4;
   const local = [payload.quote.city, payload.quote.state].filter(Boolean).join('/');
   if (local) {
     doc.text(`Local: ${local}`, marginLeft, y);
-    y += 5;
+    y += 3.5;
   }
 
   const summary = buildQuotePdfProposalSummary(payload.quote);
   if (summary.length) {
-    y += 2;
-    doc.setFontSize(10);
-    doc.setTextColor(29, 78, 216);
-    doc.text('RESUMO DA PROPOSTA', marginLeft, y);
-    y += 2;
-    const summaryBody = summary.map((f) => [f.label, f.value]);
-    autoTable(doc, {
-      startY: y,
-      head: [],
-      body: summaryBody,
-      theme: 'plain',
-      styles: { fontSize: 8, cellPadding: 1.2, textColor: [15, 23, 42] },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 42, textColor: [51, 65, 85] },
-        1: { cellWidth: 'auto' },
-      },
-      margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
-      didDrawPage: (data) => drawFooter(data.pageNumber),
-    });
-    y =
-      ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) +
-      6;
-  } else {
-    y += 2;
+    y = drawSummaryGrid(doc, summary, y + 1, marginLeft, contentWidth, 5) + 1.5;
   }
 
   const composition = buildQuotePdfCompositionRows(
@@ -405,23 +496,39 @@ export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
     payload.quote.bdi_percent,
   );
 
+  const fr = QUOTE_PDF_TABLE_WIDTH_FRACTIONS;
+  const wDesc = contentWidth * fr.description;
+  const wQty = contentWidth * fr.quantity;
+  const wUn = contentWidth * fr.unit;
+  const wUnit = contentWidth * fr.unitPrice;
+  const wTotal = contentWidth * fr.total;
+
   autoTable(doc, {
     startY: y,
     head: [Array.from(QUOTE_PDF_CLIENT_TABLE_HEADERS)],
     body: tableBody,
-    styles: { fontSize: 8, cellPadding: 1.6, overflow: 'linebreak', valign: 'middle' },
+    tableWidth: contentWidth,
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 1.1,
+      overflow: 'linebreak',
+      valign: 'middle',
+      minCellHeight: 4.5,
+    },
     headStyles: {
       fillColor: [29, 78, 216],
       textColor: 255,
       fontStyle: 'bold',
+      fontSize: 7.5,
+      cellPadding: 1.2,
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
-      0: { cellWidth: 120 },
-      1: { cellWidth: 18, halign: 'right' },
-      2: { cellWidth: 16, halign: 'center' },
-      3: { cellWidth: 32, halign: 'right' },
-      4: { cellWidth: 32, halign: 'right' },
+      0: { cellWidth: wDesc, halign: 'left' },
+      1: { cellWidth: wQty, halign: 'right' },
+      2: { cellWidth: wUn, halign: 'center' },
+      3: { cellWidth: wUnit, halign: 'right' },
+      4: { cellWidth: wTotal, halign: 'right' },
     },
     rowPageBreak: 'avoid',
     margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
@@ -429,24 +536,25 @@ export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
   });
 
   let finalY =
-    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) + 6;
+    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) +
+    3.5;
 
   const breakdown = buildQuotePdfFinancialBreakdown(payload.financials);
   const boxHeight =
-    18 + (breakdown.showBdi || breakdown.showDiscount || breakdown.showMargin ? 8 : 0);
-  finalY = ensureSpace(doc, finalY, boxHeight + 4, marginBottom);
+    11 + (breakdown.showBdi || breakdown.showDiscount || breakdown.showMargin ? 5 : 0);
+  finalY = ensureSpace(doc, finalY, boxHeight + 2, marginBottom);
 
   doc.setDrawColor(29, 78, 216);
   doc.setFillColor(239, 246, 255);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(marginLeft, finalY, contentWidth, boxHeight, 2, 2, 'FD');
+  doc.setLineWidth(0.35);
+  doc.roundedRect(marginLeft, finalY, contentWidth, boxHeight, 1.5, 1.5, 'FD');
 
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(29, 78, 216);
-  doc.text('VALOR GLOBAL DA PROPOSTA', marginLeft + 4, finalY + 7);
-  doc.setFontSize(14);
+  doc.text('VALOR GLOBAL DA PROPOSTA', marginLeft + 3, finalY + 5);
+  doc.setFontSize(12);
   doc.setTextColor(15, 23, 42);
-  doc.text(breakdown.totalGeralFormatted, pageWidth - marginRight - 4, finalY + 8, {
+  doc.text(breakdown.totalGeralFormatted, pageWidth - marginRight - 3, finalY + 6, {
     align: 'right',
   });
 
@@ -461,21 +569,34 @@ export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
     if (breakdown.showMargin) {
       bits.push(`Margem ${breakdown.marginPercent}%: ${money(breakdown.marginValue)}`);
     }
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setTextColor(71, 85, 105);
-    doc.text(bits.join(' · '), marginLeft + 4, finalY + 15);
+    doc.text(bits.join(' · '), marginLeft + 3, finalY + 10);
   }
 
-  finalY += boxHeight + 8;
+  finalY += boxHeight + 4;
 
   const sections = buildQuotePdfNarrativeSections(payload.quote);
   for (const section of sections) {
-    finalY = ensureSpace(doc, finalY, 14, marginBottom);
-    doc.setFontSize(10);
+    if (section.layout === 'commercial-grid' && section.fields?.length) {
+      finalY = drawCommercialGrid(
+        doc,
+        section.fields,
+        finalY,
+        marginLeft,
+        contentWidth,
+        marginBottom,
+      );
+      finalY += 2;
+      continue;
+    }
+
+    finalY = ensureSpace(doc, finalY, 8, marginBottom);
+    doc.setFontSize(9);
     doc.setTextColor(29, 78, 216);
     doc.text(section.title, marginLeft, finalY);
-    finalY += 5;
-    doc.setFontSize(8);
+    finalY += 3.5;
+    doc.setFontSize(7.5);
     doc.setTextColor(15, 23, 42);
     finalY = drawWrappedText(
       doc,
@@ -483,10 +604,10 @@ export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
       marginLeft,
       finalY,
       contentWidth,
-      4,
+      3.4,
       marginBottom,
     );
-    finalY += 4;
+    finalY += 2.5;
   }
 
   const totalPages = doc.getNumberOfPages();
@@ -495,7 +616,28 @@ export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
     drawFooter(p);
   }
 
+  return doc;
+}
+
+export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
+  const doc = await renderQuotePdfSynthetic(payload);
   doc.save(`${payload.quote.code}-sintetico.pdf`);
+}
+
+/** Gera bytes do PDF sintético (testes) sem download no browser. */
+export async function buildQuotePdfSyntheticBytes(
+  payload: QuoteExportPayload,
+): Promise<{ bytes: Uint8Array; pageCount: number }> {
+  const prevFetch = globalThis.fetch;
+  // @ts-expect-error stub fetch em Node para evitar logo
+  globalThis.fetch = async () => ({ ok: false });
+  try {
+    const doc = await renderQuotePdfSynthetic(payload);
+    const bytes = new Uint8Array(doc.output('arraybuffer') as ArrayBuffer);
+    return { bytes, pageCount: doc.getNumberOfPages() };
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
 }
 
 /** Preparado para Fase 5.3 — não implementa o layout analítico completo. */

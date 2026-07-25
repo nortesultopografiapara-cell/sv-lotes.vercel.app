@@ -156,7 +156,7 @@ export function validateTopographyQuoteInput(
     bdi_percent,
     margin_percent,
     final_value,
-    payment_method: cleanText(raw.payment_method ?? raw.paymentMethod, 120),
+    payment_method: cleanText(raw.payment_method ?? raw.paymentMethod, 500),
     payment_terms: cleanText(raw.payment_terms ?? raw.paymentTerms, 500),
     internal_manager: cleanText(raw.internal_manager ?? raw.internalManager, 160),
     internal_notes: cleanText(raw.internal_notes ?? raw.internalNotes, 4000),

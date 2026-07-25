@@ -1,9 +1,5 @@
 /**
- * Layout do PDF sintético de orçamento (cliente) — puro e testável.
- * Não altera cálculos financeiros; apenas organiza o que já vem em QuoteExportPayload.
- *
- * Preparado para futuro campo estruturado de “produtos entregues” sem migration agora:
- * use `deliveredProducts` opcional no modelo quando existir.
+ * Layout compacto do PDF sintético — grade, prosa técnica e preservação de texto.
  */
 
 import { topographyCategoryLabel } from './categories';
@@ -18,7 +14,12 @@ import type {
   MasterTopographyQuoteStageWithItems,
 } from './quoteTypes';
 
-export type QuotePdfSummaryField = { label: string; value: string };
+export type QuotePdfSummaryField = {
+  label: string;
+  value: string;
+  /** Largura relativa na grade (1 = coluna simples; 2 = campo largo). */
+  span?: 1 | 2;
+};
 
 export type QuotePdfCompositionItemRow = {
   kind: 'item';
@@ -28,7 +29,6 @@ export type QuotePdfCompositionItemRow = {
   unit: string;
   unitPrice: number;
   total: number;
-  /** Interno — nunca renderizar no PDF cliente */
   code?: string;
   bank?: string;
 };
@@ -45,6 +45,9 @@ export type QuotePdfCompositionRow =
 export type QuotePdfTextSection = {
   title: string;
   body: string;
+  /** commercial = grade; prose = texto corrido */
+  layout?: 'prose' | 'commercial-grid';
+  fields?: QuotePdfSummaryField[];
 };
 
 export type QuotePdfFinancialBreakdown = {
@@ -70,6 +73,21 @@ export function isMeaningfulQuotePdfText(value: unknown): boolean {
   if (!text) return false;
   if (/^(null|undefined|n\/a|na|-|—|–)$/i.test(text)) return false;
   return true;
+}
+
+/**
+ * Preserva texto cadastrado (incl. percentuais como "50%") sem interpolação/printf.
+ * Não altera o conteúdo — apenas normaliza espaços e remove caracteres de controle.
+ */
+export function preserveQuotePdfUserText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  // NFKC normaliza dígitos/percentuais fullwidth e evita glifos que somem na fonte PDF.
+  return String(value)
+    .normalize('NFKC')
+    .replace(/\u0000/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
 }
 
 export function formatQuotePdfMoney(n: number): string {
@@ -98,7 +116,51 @@ function formatDistanceKm(km: number | null | undefined): string {
 }
 
 /**
- * RESUMO DA PROPOSTA — somente campos preenchidos.
+ * Converte listas curtas (uma por linha) em texto corrido com ponto e vírgula.
+ * Listas longas / parágrafos reais permanecem como estão.
+ */
+export function compactListTextToProse(raw: string): string {
+  const text = preserveQuotePdfUserText(raw);
+  if (!text) return '';
+
+  const lines = text
+    .split('\n')
+    .map((l) => l.replace(/^[\s•\-\*]+/, '').trim())
+    .filter(Boolean);
+
+  if (lines.length <= 1) {
+    return text.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const avgLen = lines.reduce((a, l) => a + l.length, 0) / lines.length;
+  const looksLikeShortList =
+    lines.length <= 14 &&
+    avgLen <= 72 &&
+    lines.filter((l) => l.length > 120).length === 0;
+
+  if (!looksLikeShortList) {
+    return text;
+  }
+
+  const first = lines[0].replace(/[:;.\s]+$/, '');
+  const rest = lines.slice(1).map((l) => l.replace(/[;.\s]+$/, ''));
+
+  if (rest.length === 0) return first;
+
+  // "Equipamentos previstos" + itens → "Equipamentos previstos: a; b; c."
+  const introLooksLikeHeader =
+    first.length <= 48 && !/[.!?]$/.test(lines[0]) && rest.every((r) => r.length < 90);
+
+  if (introLooksLikeHeader) {
+    return `${first}: ${rest.join('; ')}.`;
+  }
+
+  return `${lines.map((l) => l.replace(/[;.\s]+$/, '')).join('; ')}.`;
+}
+
+/**
+ * RESUMO DA PROPOSTA — somente campos preenchidos (para grade horizontal).
+ * Forma de pagamento ocupa span 2 (texto geralmente maior).
  */
 export function buildQuotePdfProposalSummary(
   quote: MasterTopographyQuote,
@@ -118,13 +180,16 @@ export function buildQuotePdfProposalSummary(
     });
   }
   if (isMeaningfulQuotePdfText(quote.estimated_deadline)) {
-    fields.push({ label: 'Prazo estimado', value: String(quote.estimated_deadline).trim() });
-  }
-  if (isMeaningfulQuotePdfText(quote.payment_method)) {
-    fields.push({ label: 'Forma de pagamento', value: String(quote.payment_method).trim() });
+    fields.push({
+      label: 'Prazo estimado',
+      value: preserveQuotePdfUserText(quote.estimated_deadline),
+    });
   }
   if (isMeaningfulQuotePdfText(quote.internal_manager)) {
-    fields.push({ label: 'Responsável', value: String(quote.internal_manager).trim() });
+    fields.push({
+      label: 'Responsável',
+      value: preserveQuotePdfUserText(quote.internal_manager),
+    });
   }
 
   const cityUf = [quote.city, quote.state]
@@ -147,16 +212,50 @@ export function buildQuotePdfProposalSummary(
 
   const validity = formatQuotePdfDateBr(quote.expiration_date);
   if (validity) {
-    fields.push({ label: 'Validade da proposta', value: validity });
+    fields.push({ label: 'Validade', value: validity });
+  }
+
+  // Preferir o texto completo cadastrado — sem reinterpretar percentuais.
+  const paymentMethod = preserveQuotePdfUserText(quote.payment_method);
+  if (isMeaningfulQuotePdfText(paymentMethod)) {
+    fields.push({
+      label: 'Forma de pagamento',
+      value: paymentMethod,
+      span: 2,
+    });
   }
 
   return fields;
 }
 
-/**
- * Composição: etapa como faixa (uma vez) + itens sem Código/Banco.
- * Ordem = ordem das etapas no editor.
- */
+/** Monta linhas da grade (5 colunas padrão; span 2 para campos largos). */
+export function buildQuotePdfSummaryGridRows(
+  fields: QuotePdfSummaryField[],
+  columns = 5,
+): QuotePdfSummaryField[][] {
+  const rows: QuotePdfSummaryField[][] = [];
+  let current: QuotePdfSummaryField[] = [];
+  let used = 0;
+
+  for (const field of fields) {
+    const span = Math.min(field.span ?? 1, columns);
+    if (used + span > columns && current.length) {
+      rows.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push({ ...field, span });
+    used += span;
+    if (used >= columns) {
+      rows.push(current);
+      current = [];
+      used = 0;
+    }
+  }
+  if (current.length) rows.push(current);
+  return rows;
+}
+
 export function buildQuotePdfCompositionRows(
   stages: MasterTopographyQuoteStageWithItems[],
   bdiPercent: number,
@@ -190,7 +289,6 @@ export function buildQuotePdfCompositionRows(
   return rows;
 }
 
-/** Colunas visíveis no PDF do cliente (sem Código/Banco). */
 export const QUOTE_PDF_CLIENT_TABLE_HEADERS = [
   'Descrição',
   'Qtd.',
@@ -199,16 +297,48 @@ export const QUOTE_PDF_CLIENT_TABLE_HEADERS = [
   'Total',
 ] as const;
 
+/** Frações da largura útil (somam ~1). */
+export const QUOTE_PDF_TABLE_WIDTH_FRACTIONS = {
+  description: 0.62,
+  quantity: 0.06,
+  unit: 0.06,
+  unitPrice: 0.13,
+  total: 0.13,
+} as const;
+
 export function quotePdfCompositionUsesClientColumnsOnly(
   rows: QuotePdfCompositionRow[],
 ): boolean {
-  // Garantia estrutural: itens não carregam código/banco como colunas renderizadas.
   return rows.every((row) => row.kind === 'stage' || row.kind === 'item');
+}
+
+export function buildQuotePdfCommercialFields(
+  quote: MasterTopographyQuote,
+): QuotePdfSummaryField[] {
+  const fields: QuotePdfSummaryField[] = [];
+  const paymentMethod = preserveQuotePdfUserText(quote.payment_method);
+  if (isMeaningfulQuotePdfText(paymentMethod)) {
+    fields.push({ label: 'Forma de pagamento', value: paymentMethod, span: 2 });
+  }
+  const paymentTerms = preserveQuotePdfUserText(quote.payment_terms);
+  if (isMeaningfulQuotePdfText(paymentTerms)) {
+    fields.push({ label: 'Condições de pagamento', value: paymentTerms, span: 2 });
+  }
+  if (isMeaningfulQuotePdfText(quote.estimated_deadline)) {
+    fields.push({
+      label: 'Prazo',
+      value: preserveQuotePdfUserText(quote.estimated_deadline),
+    });
+  }
+  const validity = formatQuotePdfDateBr(quote.expiration_date);
+  if (validity) {
+    fields.push({ label: 'Validade', value: validity });
+  }
+  return fields;
 }
 
 /**
  * Seções pós-tabela — Observações internas NUNCA entram no PDF do cliente.
- * `deliveredProducts` reservado para futuro campo estruturado (sem migration agora).
  */
 export function buildQuotePdfNarrativeSections(
   quote: MasterTopographyQuote,
@@ -219,53 +349,39 @@ export function buildQuotePdfNarrativeSections(
   if (isMeaningfulQuotePdfText(quote.description)) {
     sections.push({
       title: 'DESCRIÇÃO DOS SERVIÇOS',
-      body: String(quote.description).trim(),
+      body: preserveQuotePdfUserText(quote.description).replace(/\n{3,}/g, '\n\n'),
+      layout: 'prose',
     });
   }
 
   const technicalParts: string[] = [];
   if (isMeaningfulQuotePdfText(quote.technical_notes)) {
-    technicalParts.push(String(quote.technical_notes).trim());
+    technicalParts.push(compactListTextToProse(String(quote.technical_notes)));
   }
-  // Futuro: campo próprio de produtos entregues — hoje só se passado explicitamente.
   if (isMeaningfulQuotePdfText(options?.deliveredProducts)) {
-    technicalParts.push(String(options?.deliveredProducts).trim());
+    technicalParts.push(compactListTextToProse(String(options?.deliveredProducts)));
   }
   if (technicalParts.length) {
     sections.push({
       title: 'INFORMAÇÕES TÉCNICAS',
-      body: technicalParts.join('\n\n'),
+      body: technicalParts.join(' '),
+      layout: 'prose',
     });
   }
 
-  const commercialLines: string[] = [];
-  if (isMeaningfulQuotePdfText(quote.payment_method)) {
-    commercialLines.push(`Forma de pagamento: ${String(quote.payment_method).trim()}`);
-  }
-  if (isMeaningfulQuotePdfText(quote.payment_terms)) {
-    commercialLines.push(`Condições de pagamento: ${String(quote.payment_terms).trim()}`);
-  }
-  if (isMeaningfulQuotePdfText(quote.estimated_deadline)) {
-    commercialLines.push(`Prazo estimado: ${String(quote.estimated_deadline).trim()}`);
-  }
-  const validity = formatQuotePdfDateBr(quote.expiration_date);
-  if (validity) {
-    commercialLines.push(`Validade da proposta: ${validity}`);
-  }
-  if (commercialLines.length) {
+  const commercial = buildQuotePdfCommercialFields(quote);
+  if (commercial.length) {
     sections.push({
       title: 'CONDIÇÕES COMERCIAIS',
-      body: commercialLines.join('\n'),
+      body: commercial.map((f) => `${f.label}: ${f.value}`).join(' · '),
+      layout: 'commercial-grid',
+      fields: commercial,
     });
   }
 
   return sections;
 }
 
-/**
- * Destaque do valor global — usa exatamente totalGeral já calculado.
- * BDI/desconto/margem só quando ≠ 0.
- */
 export function buildQuotePdfFinancialBreakdown(
   financials: QuoteFinancialSummary,
 ): QuotePdfFinancialBreakdown {
@@ -286,7 +402,6 @@ export function buildQuotePdfFinancialBreakdown(
   };
 }
 
-/** Contato institucional opcional — só se já existir na config. */
 export function buildQuotePdfFooterContactLine(provider: {
   phone?: string | null;
   email?: string | null;
@@ -301,7 +416,6 @@ export function buildQuotePdfFooterContactLine(provider: {
   return parts.join(' · ');
 }
 
-/** Garante que internal_notes não vaze para nenhum texto do PDF cliente. */
 export function quotePdfClientTextExcludesInternalNotes(
   quote: MasterTopographyQuote,
   renderedTexts: string[],
@@ -311,15 +425,26 @@ export function quotePdfClientTextExcludesInternalNotes(
   return !renderedTexts.some((t) => t.includes(notes));
 }
 
-/** Unitário exibido: sem BDI no preço unitário quando BDI=0; com BDI no total (já calculado). */
 export function resolveQuotePdfDisplayUnitPrice(
   adopted: number,
   bdiPercent: number,
 ): number {
-  // No PDF cliente: "Valor unitário" = preço adotado (sem reembalar BDI na coluna),
-  // alinhado ao pedido Descrição / Qtd / Un / Valor unitário / Total.
-  // O Total da linha continua sendo qty × unit c/ BDI (cálculo oficial).
   void bdiPercent;
   void itemUnitWithBdi;
   return adopted;
+}
+
+/**
+ * Heurística: orçamento “pequeno” (poucos itens / poucas etapas) deve caber em 1 página
+ * com o layout compacto — usada em testes e documentação; o PDF não força escala de fonte.
+ */
+export function isCompactSinglePageQuoteCandidate(input: {
+  itemCount: number;
+  stageCount: number;
+  hasLongNarrative?: boolean;
+}): boolean {
+  if (input.itemCount <= 0) return true;
+  if (input.itemCount <= 8 && input.stageCount <= 2 && !input.hasLongNarrative) return true;
+  if (input.itemCount <= 12 && input.stageCount <= 1 && !input.hasLongNarrative) return true;
+  return false;
 }

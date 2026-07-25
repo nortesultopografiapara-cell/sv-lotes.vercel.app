@@ -257,8 +257,16 @@ function testUiExports() {
   assert(exportsLib.includes('quotePdfSyntheticLayout'), 'layout sintético compartilhado');
   assert(exportsLib.includes('VALOR GLOBAL DA PROPOSTA'), 'destaque valor global');
   assert(exportsLib.includes('RESUMO DA PROPOSTA'), 'resumo da proposta');
+  assert(exportsLib.includes('drawSummaryGrid'), 'resumo em grade compacta');
+  assert(exportsLib.includes('tableWidth: contentWidth'), 'tabela largura total');
   assert(exists('lib/master/topography/quotePdfSyntheticLayout.ts'), 'módulo layout PDF');
   assert(exists('scripts/mandatory-master-topography-quote-pdf-tests.ts'), 'suite PDF sintético');
+  assert(
+    read('lib/master/topography/quoteValidation.ts').includes(
+      'payment_method: cleanText(raw.payment_method ?? raw.paymentMethod, 500)',
+    ),
+    'payment_method sem truncamento curto',
+  );
 
   const dash = read('components/master/dashboard/MasterExecutiveDashboard.tsx');
   assert(dash.includes('topographyQuoteKpis'), 'KPIs dashboard');
