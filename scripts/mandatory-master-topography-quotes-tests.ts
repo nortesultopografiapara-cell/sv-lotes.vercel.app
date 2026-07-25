@@ -254,6 +254,11 @@ function testUiExports() {
   assert(exportsLib.includes('orientation: \'landscape\''), 'PDF paisagem');
   assert(exportsLib.includes('SV Topografia'), 'marca SV');
   assert(exportsLib.includes('Fase 5.3'), 'analítico 5.3');
+  assert(exportsLib.includes('quotePdfSyntheticLayout'), 'layout sintético compartilhado');
+  assert(exportsLib.includes('VALOR GLOBAL DA PROPOSTA'), 'destaque valor global');
+  assert(exportsLib.includes('RESUMO DA PROPOSTA'), 'resumo da proposta');
+  assert(exists('lib/master/topography/quotePdfSyntheticLayout.ts'), 'módulo layout PDF');
+  assert(exists('scripts/mandatory-master-topography-quote-pdf-tests.ts'), 'suite PDF sintético');
 
   const dash = read('components/master/dashboard/MasterExecutiveDashboard.tsx');
   assert(dash.includes('topographyQuoteKpis'), 'KPIs dashboard');

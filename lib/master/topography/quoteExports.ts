@@ -13,6 +13,17 @@ import {
   itemUnitWithBdi,
   type QuoteFinancialSummary,
 } from './quoteFinancials';
+import {
+  buildQuotePdfCompositionRows,
+  buildQuotePdfFinancialBreakdown,
+  buildQuotePdfFooterContactLine,
+  buildQuotePdfNarrativeSections,
+  buildQuotePdfProposalSummary,
+  formatQuotePdfMoney,
+  QUOTE_PDF_CLIENT_TABLE_HEADERS,
+  resolveQuotePdfDisplayUnitPrice,
+  type QuotePdfCompositionRow,
+} from './quotePdfSyntheticLayout';
 import type {
   MasterTopographyQuote,
   MasterTopographyQuoteStageWithItems,
@@ -25,7 +36,7 @@ export type QuoteExportPayload = {
 };
 
 function money(n: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0);
+  return formatQuotePdfMoney(n);
 }
 
 function flatRows(payload: QuoteExportPayload) {
@@ -229,91 +240,260 @@ async function tryLoadLogo(doc: jsPDF): Promise<boolean> {
   }
 }
 
-/** PDF Sintético — paisagem, profissional. */
+function compositionRowsToAutoTableBody(
+  rows: QuotePdfCompositionRow[],
+  bdiPercent: number,
+): Array<Array<string | { content: string; colSpan: number; styles: Record<string, unknown> }>> {
+  return rows.map((row) => {
+    if (row.kind === 'stage') {
+      return [
+        {
+          content: row.stageName,
+          colSpan: 5,
+          styles: {
+            fillColor: [226, 232, 240],
+            textColor: [15, 23, 42],
+            fontStyle: 'bold',
+            fontSize: 9,
+          },
+        },
+      ];
+    }
+    return [
+      row.description,
+      row.quantity,
+      row.unit,
+      money(resolveQuotePdfDisplayUnitPrice(row.unitPrice, bdiPercent)),
+      money(row.total),
+    ];
+  });
+}
+
+function ensureSpace(doc: jsPDF, y: number, needed: number, marginBottom: number): number {
+  const pageHeight = doc.internal.pageSize.getHeight();
+  if (y + needed <= pageHeight - marginBottom) return y;
+  doc.addPage();
+  return 18;
+}
+
+function drawWrappedText(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  marginBottom: number,
+): number {
+  const lines = doc.splitTextToSize(text, maxWidth) as string[];
+  let cursor = y;
+  for (const line of lines) {
+    cursor = ensureSpace(doc, cursor, lineHeight, marginBottom);
+    doc.text(line, x, cursor);
+    cursor += lineHeight;
+  }
+  return cursor;
+}
+
+/** PDF Sintético — paisagem, profissional (layout cliente). */
 export async function exportQuotePdfSynthetic(payload: QuoteExportPayload) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const marginLeft = 14;
+  const marginRight = 14;
+  const marginBottom = 14;
+  const contentWidth = pageWidth - marginLeft - marginRight;
+
+  const tradeName = 'SV Topografia & Projetos';
+  const addressLine = `${SAAS_PROVIDER.address}, ${SAAS_PROVIDER.neighborhood} — ${SAAS_PROVIDER.city}/${SAAS_PROVIDER.state}`;
+  const footerContact = buildQuotePdfFooterContactLine(
+    SAAS_PROVIDER as {
+      phone?: string | null;
+      email?: string | null;
+      website?: string | null;
+    },
+  );
+
+  const drawFooter = (page: number) => {
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    const left = footerContact
+      ? `${SAAS_PROVIDER.legalName} · ${footerContact}`
+      : `${SAAS_PROVIDER.legalName} — Orçamento sintético`;
+    doc.text(left, marginLeft, pageHeight - 8);
+    doc.text(
+      `${payload.quote.code} · página ${page}`,
+      pageWidth - marginRight,
+      pageHeight - 8,
+      { align: 'right' },
+    );
+  };
 
   await tryLoadLogo(doc);
 
   doc.setFontSize(14);
   doc.setTextColor(15, 23, 42);
-  doc.text('SV Topografia & Projetos', 48, 14);
+  doc.text(tradeName, 48, 14);
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
   doc.text(SAAS_PROVIDER.legalName, 48, 19);
-  doc.text(
-    `CNPJ ${SAAS_PROVIDER.cnpj} · ${SAAS_PROVIDER.address}, ${SAAS_PROVIDER.neighborhood} — ${SAAS_PROVIDER.city}/${SAAS_PROVIDER.state}`,
-    48,
-    24,
-  );
+  doc.text(`CNPJ ${SAAS_PROVIDER.cnpj}`, 48, 24);
+  doc.text(addressLine, 48, 28);
 
   doc.setFontSize(12);
   doc.setTextColor(29, 78, 216);
-  doc.text(`Orçamento ${payload.quote.code}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Orçamento ${payload.quote.code}`, pageWidth - marginRight, 14, {
+    align: 'right',
+  });
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Emitido em ${new Date().toLocaleString('pt-BR')}`, pageWidth - 14, 19, {
+  doc.text(`Emitido em ${new Date().toLocaleString('pt-BR')}`, pageWidth - marginRight, 19, {
     align: 'right',
   });
 
   doc.setDrawColor(226, 232, 240);
-  doc.line(14, 28, pageWidth - 14, 28);
+  doc.line(marginLeft, 32, pageWidth - marginRight, 32);
 
+  let y = 38;
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Cliente: ${payload.quote.client_name}`, 14, 36);
-  doc.text(`Objeto: ${payload.quote.title || '—'}`, 14, 42);
-  doc.text(
-    `Local: ${[payload.quote.city, payload.quote.state].filter(Boolean).join('/') || '—'}`,
-    14,
-    48,
-  );
-  doc.text(`BDI: ${payload.quote.bdi_percent}%`, pageWidth / 2, 36);
-  doc.text(`Desconto: ${payload.quote.discount_percent}%`, pageWidth / 2, 42);
-  doc.text(`Margem: ${payload.quote.margin_percent}%`, pageWidth / 2, 48);
+  doc.text(`Cliente: ${payload.quote.client_name}`, marginLeft, y);
+  y += 5;
+  doc.text(`Objeto: ${payload.quote.title || '—'}`, marginLeft, y);
+  y += 5;
+  const local = [payload.quote.city, payload.quote.state].filter(Boolean).join('/');
+  if (local) {
+    doc.text(`Local: ${local}`, marginLeft, y);
+    y += 5;
+  }
 
-  const body = flatRows(payload).map((r) => [
-    r.stage,
-    r.code,
-    r.bank,
-    r.description,
-    String(r.quantity),
-    r.unit,
-    money(r.adopted),
-    money(r.unitBdi),
-    money(r.total),
-  ]);
+  const summary = buildQuotePdfProposalSummary(payload.quote);
+  if (summary.length) {
+    y += 2;
+    doc.setFontSize(10);
+    doc.setTextColor(29, 78, 216);
+    doc.text('RESUMO DA PROPOSTA', marginLeft, y);
+    y += 2;
+    const summaryBody = summary.map((f) => [f.label, f.value]);
+    autoTable(doc, {
+      startY: y,
+      head: [],
+      body: summaryBody,
+      theme: 'plain',
+      styles: { fontSize: 8, cellPadding: 1.2, textColor: [15, 23, 42] },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 42, textColor: [51, 65, 85] },
+        1: { cellWidth: 'auto' },
+      },
+      margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+      didDrawPage: (data) => drawFooter(data.pageNumber),
+    });
+    y =
+      ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) +
+      6;
+  } else {
+    y += 2;
+  }
+
+  const composition = buildQuotePdfCompositionRows(
+    payload.stages,
+    payload.quote.bdi_percent,
+  );
+  const tableBody = compositionRowsToAutoTableBody(
+    composition,
+    payload.quote.bdi_percent,
+  );
 
   autoTable(doc, {
-    startY: 54,
-    head: [['Etapa', 'Código', 'Banco', 'Descrição', 'Qtd', 'Un', 'Unit.', 'c/ BDI', 'Total']],
-    body,
-    styles: { fontSize: 7, cellPadding: 1.5 },
-    headStyles: { fillColor: [29, 78, 216], textColor: 255 },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    margin: { left: 14, right: 14 },
-    didDrawPage: (data) => {
-      const page = data.pageNumber;
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(
-        `${SAAS_PROVIDER.legalName} — Orçamento sintético · página ${page}`,
-        14,
-        pageHeight - 8,
-      );
-      doc.text(payload.quote.code, pageWidth - 14, pageHeight - 8, { align: 'right' });
+    startY: y,
+    head: [Array.from(QUOTE_PDF_CLIENT_TABLE_HEADERS)],
+    body: tableBody,
+    styles: { fontSize: 8, cellPadding: 1.6, overflow: 'linebreak', valign: 'middle' },
+    headStyles: {
+      fillColor: [29, 78, 216],
+      textColor: 255,
+      fontStyle: 'bold',
     },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 120 },
+      1: { cellWidth: 18, halign: 'right' },
+      2: { cellWidth: 16, halign: 'center' },
+      3: { cellWidth: 32, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
+    },
+    rowPageBreak: 'avoid',
+    margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+    didDrawPage: (data) => drawFooter(data.pageNumber),
   });
 
-  const finalY =
-    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 54) + 8;
+  let finalY =
+    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) + 6;
+
+  const breakdown = buildQuotePdfFinancialBreakdown(payload.financials);
+  const boxHeight =
+    18 + (breakdown.showBdi || breakdown.showDiscount || breakdown.showMargin ? 8 : 0);
+  finalY = ensureSpace(doc, finalY, boxHeight + 4, marginBottom);
+
+  doc.setDrawColor(29, 78, 216);
+  doc.setFillColor(239, 246, 255);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(marginLeft, finalY, contentWidth, boxHeight, 2, 2, 'FD');
+
   doc.setFontSize(9);
+  doc.setTextColor(29, 78, 216);
+  doc.text('VALOR GLOBAL DA PROPOSTA', marginLeft + 4, finalY + 7);
+  doc.setFontSize(14);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Total sem BDI: ${money(payload.financials.totalWithoutBdi)}`, 14, finalY);
-  doc.text(`BDI: ${money(payload.financials.bdiAmount)}`, 80, finalY);
-  doc.text(`Total Geral: ${money(payload.financials.totalGeral)}`, 150, finalY);
+  doc.text(breakdown.totalGeralFormatted, pageWidth - marginRight - 4, finalY + 8, {
+    align: 'right',
+  });
+
+  if (breakdown.showBdi || breakdown.showDiscount || breakdown.showMargin) {
+    const bits: string[] = [];
+    if (breakdown.showBdi) {
+      bits.push(`BDI ${breakdown.bdiPercent}%: ${money(breakdown.bdiAmount)}`);
+    }
+    if (breakdown.showDiscount) {
+      bits.push(`Desconto ${breakdown.discountPercent}%: ${money(breakdown.discountValue)}`);
+    }
+    if (breakdown.showMargin) {
+      bits.push(`Margem ${breakdown.marginPercent}%: ${money(breakdown.marginValue)}`);
+    }
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(bits.join(' · '), marginLeft + 4, finalY + 15);
+  }
+
+  finalY += boxHeight + 8;
+
+  const sections = buildQuotePdfNarrativeSections(payload.quote);
+  for (const section of sections) {
+    finalY = ensureSpace(doc, finalY, 14, marginBottom);
+    doc.setFontSize(10);
+    doc.setTextColor(29, 78, 216);
+    doc.text(section.title, marginLeft, finalY);
+    finalY += 5;
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    finalY = drawWrappedText(
+      doc,
+      section.body,
+      marginLeft,
+      finalY,
+      contentWidth,
+      4,
+      marginBottom,
+    );
+    finalY += 4;
+  }
+
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    drawFooter(p);
+  }
 
   doc.save(`${payload.quote.code}-sintetico.pdf`);
 }
