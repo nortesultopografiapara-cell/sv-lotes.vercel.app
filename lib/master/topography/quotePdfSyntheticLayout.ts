@@ -297,7 +297,10 @@ export const QUOTE_PDF_CLIENT_TABLE_HEADERS = [
   'Total',
 ] as const;
 
-/** Frações da largura útil (somam ~1). */
+/**
+ * Frações da largura útil da tabela financeira (somam 1).
+ * Usadas tanto no cabeçalho quanto nas linhas — nunca duplicar medidas.
+ */
 export const QUOTE_PDF_TABLE_WIDTH_FRACTIONS = {
   description: 0.62,
   quantity: 0.06,
@@ -306,39 +309,50 @@ export const QUOTE_PDF_TABLE_WIDTH_FRACTIONS = {
   total: 0.13,
 } as const;
 
+export type QuotePdfTableColumnWidths = {
+  description: number;
+  quantity: number;
+  unit: number;
+  unitPrice: number;
+  total: number;
+};
+
+/** Larguras absolutas (mm) a partir da largura útil — cabeçalho e corpo compartilham. */
+export function resolveQuotePdfTableColumnWidths(
+  contentWidth: number,
+): QuotePdfTableColumnWidths {
+  const fr = QUOTE_PDF_TABLE_WIDTH_FRACTIONS;
+  const description = contentWidth * fr.description;
+  const quantity = contentWidth * fr.quantity;
+  const unit = contentWidth * fr.unit;
+  const unitPrice = contentWidth * fr.unitPrice;
+  // Absorve residual de ponto flutuante na última coluna.
+  const total = contentWidth - description - quantity - unit - unitPrice;
+  return { description, quantity, unit, unitPrice, total };
+}
+
 export function quotePdfCompositionUsesClientColumnsOnly(
   rows: QuotePdfCompositionRow[],
 ): boolean {
   return rows.every((row) => row.kind === 'stage' || row.kind === 'item');
 }
 
+/**
+ * Campos exclusivos de CONDIÇÕES COMERCIAIS (sem repetir o RESUMO).
+ * Pagamento, prazo, validade e condições de pagamento ficam só no resumo
+ * (ou ocultos no sintético) — esta função não os inclui.
+ */
 export function buildQuotePdfCommercialFields(
-  quote: MasterTopographyQuote,
+  _quote: MasterTopographyQuote,
 ): QuotePdfSummaryField[] {
-  const fields: QuotePdfSummaryField[] = [];
-  const paymentMethod = preserveQuotePdfUserText(quote.payment_method);
-  if (isMeaningfulQuotePdfText(paymentMethod)) {
-    fields.push({ label: 'Forma de pagamento', value: paymentMethod, span: 2 });
-  }
-  const paymentTerms = preserveQuotePdfUserText(quote.payment_terms);
-  if (isMeaningfulQuotePdfText(paymentTerms)) {
-    fields.push({ label: 'Condições de pagamento', value: paymentTerms, span: 2 });
-  }
-  if (isMeaningfulQuotePdfText(quote.estimated_deadline)) {
-    fields.push({
-      label: 'Prazo',
-      value: preserveQuotePdfUserText(quote.estimated_deadline),
-    });
-  }
-  const validity = formatQuotePdfDateBr(quote.expiration_date);
-  if (validity) {
-    fields.push({ label: 'Validade', value: validity });
-  }
-  return fields;
+  // Modelo sintético: sem bloco comercial duplicado. Mantém a API para extensão futura.
+  void _quote;
+  return [];
 }
 
 /**
  * Seções pós-tabela — Observações internas NUNCA entram no PDF do cliente.
+ * CONDIÇÕES COMERCIAIS só aparece se houver campos comerciais úteis (hoje: nenhum).
  */
 export function buildQuotePdfNarrativeSections(
   quote: MasterTopographyQuote,

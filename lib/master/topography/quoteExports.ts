@@ -23,8 +23,8 @@ import {
   formatQuotePdfMoney,
   preserveQuotePdfUserText,
   QUOTE_PDF_CLIENT_TABLE_HEADERS,
-  QUOTE_PDF_TABLE_WIDTH_FRACTIONS,
   resolveQuotePdfDisplayUnitPrice,
+  resolveQuotePdfTableColumnWidths,
   type QuotePdfCompositionRow,
   type QuotePdfSummaryField,
 } from './quotePdfSyntheticLayout';
@@ -484,7 +484,7 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
 
   const summary = buildQuotePdfProposalSummary(payload.quote);
   if (summary.length) {
-    y = drawSummaryGrid(doc, summary, y + 1, marginLeft, contentWidth, 5) + 1.5;
+    y = drawSummaryGrid(doc, summary, y + 0.5, marginLeft, contentWidth, 5) + 0.8;
   }
 
   const composition = buildQuotePdfCompositionRows(
@@ -496,12 +496,7 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
     payload.quote.bdi_percent,
   );
 
-  const fr = QUOTE_PDF_TABLE_WIDTH_FRACTIONS;
-  const wDesc = contentWidth * fr.description;
-  const wQty = contentWidth * fr.quantity;
-  const wUn = contentWidth * fr.unit;
-  const wUnit = contentWidth * fr.unitPrice;
-  const wTotal = contentWidth * fr.total;
+  const colW = resolveQuotePdfTableColumnWidths(contentWidth);
 
   autoTable(doc, {
     startY: y,
@@ -521,14 +516,40 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
       fontStyle: 'bold',
       fontSize: 7.5,
       cellPadding: 1.2,
+      halign: 'center',
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
+    // Larguras únicas compartilhadas entre cabeçalho e corpo.
     columnStyles: {
-      0: { cellWidth: wDesc, halign: 'left' },
-      1: { cellWidth: wQty, halign: 'right' },
-      2: { cellWidth: wUn, halign: 'center' },
-      3: { cellWidth: wUnit, halign: 'right' },
-      4: { cellWidth: wTotal, halign: 'right' },
+      0: { cellWidth: colW.description, halign: 'left' },
+      1: { cellWidth: colW.quantity, halign: 'center' },
+      2: { cellWidth: colW.unit, halign: 'center' },
+      3: { cellWidth: colW.unitPrice, halign: 'right' },
+      4: { cellWidth: colW.total,halign: 'right' },
+    },
+    didParseCell: (data) => {
+      // Cabeçalho: títulos centralizados sobre a mesma largura das células.
+      if (data.section === 'head') {
+        data.cell.styles.halign = 'center';
+        const widths = [
+          colW.description,
+          colW.quantity,
+          colW.unit,
+          colW.unitPrice,
+          colW.total,
+        ];
+        data.cell.styles.cellWidth = widths[data.column.index];
+        return;
+      }
+      // Corpo: alinhamentos por coluna (mesmas larguras).
+      const alignByCol: Array<'left' | 'center' | 'right'> = [
+        'left',
+        'center',
+        'center',
+        'right',
+        'right',
+      ];
+      data.cell.styles.halign = alignByCol[data.column.index] ?? 'left';
     },
     rowPageBreak: 'avoid',
     margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
@@ -537,7 +558,7 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
 
   let finalY =
     ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) +
-    3.5;
+    2.5;
 
   const breakdown = buildQuotePdfFinancialBreakdown(payload.financials);
   const boxHeight =
@@ -574,7 +595,7 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
     doc.text(bits.join(' · '), marginLeft + 3, finalY + 10);
   }
 
-  finalY += boxHeight + 4;
+  finalY += boxHeight + 2.5;
 
   const sections = buildQuotePdfNarrativeSections(payload.quote);
   for (const section of sections) {
@@ -587,15 +608,15 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
         contentWidth,
         marginBottom,
       );
-      finalY += 2;
+      finalY += 1.5;
       continue;
     }
 
-    finalY = ensureSpace(doc, finalY, 8, marginBottom);
+    finalY = ensureSpace(doc, finalY, 7, marginBottom);
     doc.setFontSize(9);
     doc.setTextColor(29, 78, 216);
     doc.text(section.title, marginLeft, finalY);
-    finalY += 3.5;
+    finalY += 3;
     doc.setFontSize(7.5);
     doc.setTextColor(15, 23, 42);
     finalY = drawWrappedText(
@@ -604,10 +625,10 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
       marginLeft,
       finalY,
       contentWidth,
-      3.4,
+      3.3,
       marginBottom,
     );
-    finalY += 2.5;
+    finalY += 1.5;
   }
 
   const totalPages = doc.getNumberOfPages();

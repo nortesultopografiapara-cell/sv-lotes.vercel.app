@@ -21,6 +21,7 @@ import {
   QUOTE_PDF_CLIENT_TABLE_HEADERS,
   QUOTE_PDF_TABLE_WIDTH_FRACTIONS,
   quotePdfClientTextExcludesInternalNotes,
+  resolveQuotePdfTableColumnWidths,
 } from '../lib/master/topography/quotePdfSyntheticLayout';
 import type {
   MasterTopographyQuote,
@@ -184,6 +185,18 @@ assert(
   'frações cobrem a largura',
   Math.abs(fr.description + fr.quantity + fr.unit + fr.unitPrice + fr.total - 1) < 0.02,
 );
+const widths = resolveQuotePdfTableColumnWidths(273);
+assert(
+  'larguras absolutas somam contentWidth',
+  Math.abs(
+    widths.description +
+      widths.quantity +
+      widths.unit +
+      widths.unitPrice +
+      widths.total -
+      273,
+  ) < 0.001,
+);
 assert(
   'headers cliente corretos',
   QUOTE_PDF_CLIENT_TABLE_HEADERS.join('|') ===
@@ -203,16 +216,21 @@ assert(
   sections.some((s) => s.title === 'INFORMAÇÕES TÉCNICAS' && s.body.includes(';')),
 );
 assert(
-  'comerciais em grade',
-  sections.some((s) => s.title === 'CONDIÇÕES COMERCIAIS' && s.layout === 'commercial-grid'),
+  'sem bloco CONDIÇÕES COMERCIAIS (sem duplicidade)',
+  !sections.some((s) => s.title === 'CONDIÇÕES COMERCIAIS'),
 );
 assert(
-  'pagamento 50% nas condições',
-  sections.some(
+  'sem condições de pagamento no PDF sintético',
+  !sections.some(
     (s) =>
-      s.fields?.some(
-        (f) => f.value.includes('50% na contratação') && !f.value.startsWith('0%'),
-      ),
+      s.body.includes('PIX ou transferência') ||
+      s.fields?.some((f) => f.label === 'Condições de pagamento'),
+  ),
+);
+assert(
+  'parte inferior só descrição/técnicas',
+  sections.every(
+    (s) => s.title === 'DESCRIÇÃO DOS SERVIÇOS' || s.title === 'INFORMAÇÕES TÉCNICAS',
   ),
 );
 
@@ -264,7 +282,6 @@ async function runPdfChecks() {
   const outPath = path.join(outDir, 'orc-2026-0010-sintetico-1pagina.pdf');
   fs.writeFileSync(outPath, Buffer.from(bytes));
   assert('artefato 1 página gravado', fs.existsSync(outPath));
-  void latin;
 
   const largeItems = Array.from({ length: 35 }, (_, i) => ({
     ...ynnovareItems()[0],
@@ -306,7 +323,20 @@ async function runPdfChecks() {
   );
   assert('usa grade de resumo', exportsSrc.includes('drawSummaryGrid'));
   assert('tabela full width', exportsSrc.includes('tableWidth: contentWidth'));
+  assert(
+    'larguras compartilhadas cabeçalho/corpo',
+    exportsSrc.includes('resolveQuotePdfTableColumnWidths'),
+  );
+  assert(
+    'cabeçalho centralizado na mesma largura',
+    exportsSrc.includes("data.section === 'head'") &&
+      exportsSrc.includes("data.cell.styles.halign = 'center'"),
+  );
   assert('sem lista vertical autoTable de resumo', !exportsSrc.includes('summaryBody'));
+  assert(
+    'PDF sem PIX/transferência (condições de pagamento ocultas)',
+    !latin.includes('PIX ou transfer') && !latin.includes('PIX ou transfer\u00eancia'),
+  );
 
   const breakdown = buildQuotePdfFinancialBreakdown(financials);
   assert('global = totalGeral', breakdown.totalGeral === 9580.85);
