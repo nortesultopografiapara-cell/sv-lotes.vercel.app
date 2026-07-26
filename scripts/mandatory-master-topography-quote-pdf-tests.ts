@@ -259,6 +259,10 @@ assert(
   ),
 );
 assert(
+  'sem bullet unicode quebrado',
+  !sections.some((s) => (s.body || '').includes('✓') || (s.checklistItems || []).some((i) => i.startsWith('✓'))),
+);
+assert(
   'produtos entregues no PDF',
   sections.some(
     (s) =>
@@ -395,6 +399,32 @@ async function runPdfChecks() {
 
   const breakdown = buildQuotePdfFinancialBreakdown(financials);
   assert('global = totalGeral', breakdown.totalGeral === 9580.85);
+
+  const { buildQuotePdfAnalyticalBytes } = await import(
+    '../lib/master/topography/quotePdfAnalytical'
+  );
+  const { buildQuotePdfMemorialBytes } = await import(
+    '../lib/master/topography/quotePdfMemorial'
+  );
+  const anal = await buildQuotePdfAnalyticalBytes({ quote, stages, financials });
+  assert('PDF analítico gera páginas', anal.pageCount >= 1 && anal.bytes.byteLength > 1000);
+  const mem = await buildQuotePdfMemorialBytes({ quote, stages, financials });
+  assert('PDF memorial gera páginas', mem.pageCount >= 1 && mem.bytes.byteLength > 1000);
+
+  const dupQuote = baseQuote({
+    technical_notes:
+      'Equipamentos previstos\nDJI Matrice 350 RTK\nDJI Zenmuse L2\nPrecisão relativa 5 cm.',
+  });
+  const deduped = buildQuotePdfNarrativeSections(dupQuote);
+  const tech = deduped.find((s) => s.title === 'INFORMAÇÕES TÉCNICAS');
+  assert('deduplica equipamentos no texto complementar', !!tech);
+  assert(
+    'mantém complementar útil',
+    !!tech && tech.body.includes('Precisão relativa'),
+  );
+  // A lista estruturada aparece uma vez; o texto livre não deve reintroduzir o mesmo item como bloco.
+  const matriceCount = (tech?.body.match(/DJI Matrice 350 RTK/g) || []).length;
+  assert('Matrice não duplicada excessivamente', matriceCount <= 2);
 
   console.log(`\nTotal: ${pass} PASSOU / ${total - pass} FALHOU de ${total}`);
   process.exit(pass === total ? 0 : 1);

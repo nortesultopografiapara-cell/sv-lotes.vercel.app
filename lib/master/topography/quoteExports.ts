@@ -1,6 +1,5 @@
 /**
- * Exportações reais de orçamento Master Topografia.
- * PDF Analítico permanece preparado para Fase 5.3.
+ * Exportações reais de orçamento Master Topografia (sintético, analítico, memorial).
  */
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
@@ -8,11 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { SAAS_PROVIDER } from '@/lib/saasContractContent';
 import { MASTER_TOPOGRAFIA_LOGO_PATH } from '@/lib/master/config';
 import { topographyPriceBankLabel } from './priceBanks';
-import {
-  itemTotalWithBdi,
-  itemUnitWithBdi,
-  type QuoteFinancialSummary,
-} from './quoteFinancials';
+import { itemTotalWithBdi, itemUnitWithBdi } from './quoteFinancials';
 import {
   buildQuotePdfCompositionRows,
   buildQuotePdfFinancialBreakdown,
@@ -28,16 +23,28 @@ import {
   type QuotePdfCompositionRow,
   type QuotePdfSummaryField,
 } from './quotePdfSyntheticLayout';
-import type {
-  MasterTopographyQuote,
-  MasterTopographyQuoteStageWithItems,
-} from './quoteTypes';
+import type { QuoteExportPayload } from './quoteExportTypes';
+import {
+  exportQuotePdfAnalytical,
+  buildQuotePdfAnalyticalBytes,
+} from './quotePdfAnalytical';
+import {
+  exportQuotePdfMemorial,
+  buildQuotePdfMemorialBytes,
+} from './quotePdfMemorial';
 
-export type QuoteExportPayload = {
-  quote: MasterTopographyQuote;
-  stages: MasterTopographyQuoteStageWithItems[];
-  financials: QuoteFinancialSummary;
+export type { QuoteExportPayload } from './quoteExportTypes';
+export {
+  exportQuotePdfAnalytical,
+  buildQuotePdfAnalyticalBytes,
+  exportQuotePdfMemorial,
+  buildQuotePdfMemorialBytes,
 };
+
+/** @deprecated use exportQuotePdfAnalytical — mantido para compatibilidade de imports. */
+export async function exportQuotePdfAnalyticalPrepared(payload: QuoteExportPayload) {
+  await exportQuotePdfAnalytical(payload);
+}
 
 function money(n: number) {
   return formatQuotePdfMoney(n);
@@ -92,7 +99,7 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function exportQuoteCsv(payload: QuoteExportPayload) {
+export function buildQuoteCsvText(payload: QuoteExportPayload): string {
   const rows = flatRows(payload);
   const header = [
     'Etapa',
@@ -138,13 +145,17 @@ export function exportQuoteCsv(payload: QuoteExportPayload) {
     `"Total Geral";"${payload.financials.totalGeral}"`,
     `"Margem (${payload.financials.marginPercent}%)";"${payload.financials.marginValue}"`,
   ];
-  const blob = new Blob([`\uFEFF${lines.join('\n')}`], {
+  return `\uFEFF${lines.join('\n')}`;
+}
+
+export function exportQuoteCsv(payload: QuoteExportPayload) {
+  const blob = new Blob([buildQuoteCsvText(payload)], {
     type: 'text/csv;charset=utf-8;',
   });
   downloadBlob(blob, `${payload.quote.code}-orcamento.csv`);
 }
 
-export async function exportQuoteExcel(payload: QuoteExportPayload) {
+export async function buildQuoteExcelBuffer(payload: QuoteExportPayload): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'SV Topografia & Projetos';
   const sheet = wb.addWorksheet('Orçamento');
@@ -183,6 +194,11 @@ export async function exportQuoteExcel(payload: QuoteExportPayload) {
   ]);
 
   const buffer = await wb.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+export async function exportQuoteExcel(payload: QuoteExportPayload) {
+  const buffer = await buildQuoteExcelBuffer(payload);
   downloadBlob(
     new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -191,7 +207,7 @@ export async function exportQuoteExcel(payload: QuoteExportPayload) {
   );
 }
 
-export function exportQuoteMemorial(payload: QuoteExportPayload) {
+export function exportQuoteMemorialTxt(payload: QuoteExportPayload) {
   const lines: string[] = [];
   lines.push(`MEMORIAL DE CÁLCULO — ${payload.quote.code}`);
   lines.push(`Cliente: ${payload.quote.client_name}`);
@@ -223,6 +239,11 @@ export function exportQuoteMemorial(payload: QuoteExportPayload) {
 
   const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
   downloadBlob(blob, `${payload.quote.code}-memorial-calculo.txt`);
+}
+
+/** Memorial de cálculo em PDF (padrão Fase 5.3). */
+export async function exportQuoteMemorial(payload: QuoteExportPayload) {
+  await exportQuotePdfMemorial(payload);
 }
 
 async function tryLoadLogo(doc: jsPDF): Promise<boolean> {
@@ -385,7 +406,7 @@ function drawChecklistGrid(
     }
     const x = marginLeft + col * (colW + gap);
     const lineY = y;
-    const label = `✓ ${preserveQuotePdfUserText(items[i])}`;
+    const label = `- ${preserveQuotePdfUserText(items[i])}`;
     const lines = doc.splitTextToSize(label, colW - 1) as string[];
     doc.text(lines[0] || label, x, lineY);
     if (col === columns - 1 || i === items.length - 1) {
@@ -716,9 +737,4 @@ export async function buildQuotePdfSyntheticBytes(
   }
 }
 
-/** Preparado para Fase 5.3 — não implementa o layout analítico completo. */
-export function exportQuotePdfAnalyticalPrepared(_payload: QuoteExportPayload) {
-  window.alert(
-    'PDF Analítico está preparado para a Fase 5.3 e será liberado na próxima entrega.',
-  );
-}
+// Re-export analítico/memorial bytes já feitos nos módulos dedicados.

@@ -358,9 +358,55 @@ export function buildQuotePdfCommercialFields(
 
 /**
  * Seções pós-tabela — Observações internas NUNCA entram no PDF do cliente.
- * Equipamentos estruturados entram em INFORMAÇÕES TÉCNICAS; produtos em seção própria.
- * Não faz parsing/migração automática do texto livre antigo (evita duplicação).
+ * Equipamentos estruturados têm prioridade; texto livre só entra como complementar
+ * (linhas que repetem rótulos estruturados são omitidas na renderização, sem apagar o banco).
  */
+export function filterComplementaryTechnicalNotes(
+  technicalNotes: string | null | undefined,
+  resources: QuoteScopeSelectedItem[],
+): string {
+  const raw = preserveQuotePdfUserText(technicalNotes);
+  if (!raw) return '';
+  if (!resources.length) return compactListTextToProse(raw);
+
+  const resourceKeys = new Set(
+    resources.map((r) =>
+      String(r.label || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim(),
+    ),
+  );
+
+  const lines = raw
+    .split('\n')
+    .map((l) => l.replace(/^[\s•\-\*]+/, '').trim())
+    .filter(Boolean);
+
+  const kept: string[] = [];
+  for (const line of lines) {
+    const key = line
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[:;.\s]+$/g, '')
+      .trim();
+    // Cabeçalho genérico de equipamentos + linhas que só listam o mesmo item.
+    if (/^equipamentos?\b/.test(key) && key.length < 48) continue;
+    if (resourceKeys.has(key)) continue;
+    if ([...resourceKeys].some((rk) => rk && key.includes(rk) && key.length <= rk.length + 8)) {
+      continue;
+    }
+    kept.push(line);
+  }
+
+  if (!kept.length) return '';
+  return compactListTextToProse(kept.join('\n'));
+}
+
 export function buildQuotePdfNarrativeSections(
   quote: MasterTopographyQuote,
   options?: { deliveredProducts?: string | null },
@@ -376,15 +422,16 @@ export function buildQuotePdfNarrativeSections(
   }
 
   const resources = Array.isArray(quote.technical_resources)
-    ? quote.technical_resources
+    ? (quote.technical_resources as QuoteScopeSelectedItem[])
     : [];
-  const resourcesProse = formatQuoteScopeLabelsProse(resources as QuoteScopeSelectedItem[]);
+  const resourcesProse = formatQuoteScopeLabelsProse(resources);
 
   const technicalParts: string[] = [];
   if (resourcesProse) {
     technicalParts.push(`Equipamentos e recursos previstos: ${resourcesProse}.`);
-  }
-  if (isMeaningfulQuotePdfText(quote.technical_notes)) {
+    const complementary = filterComplementaryTechnicalNotes(quote.technical_notes, resources);
+    if (complementary) technicalParts.push(complementary);
+  } else if (isMeaningfulQuotePdfText(quote.technical_notes)) {
     technicalParts.push(compactListTextToProse(String(quote.technical_notes)));
   }
   if (isMeaningfulQuotePdfText(options?.deliveredProducts)) {
@@ -405,7 +452,8 @@ export function buildQuotePdfNarrativeSections(
   if (deliverableLabels.length) {
     sections.push({
       title: 'PRODUTOS E DADOS ENTREGUES',
-      body: deliverableLabels.map((l) => `✓ ${l}`).join('\n'),
+      // Bullet ASCII compatível com Helvetica/WinAnsi (evita ✓ quebrado).
+      body: deliverableLabels.map((l) => `- ${l}`).join('\n'),
       layout: 'checklist',
       checklistItems: deliverableLabels,
     });

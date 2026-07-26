@@ -49,6 +49,7 @@ import {
   type QuoteScopeSelectedItem,
 } from '@/lib/master/topography/quoteScopeCatalog';
 import QuoteScopeMultiSelect from './QuoteScopeMultiSelect';
+import QuoteSendEmailModal from './QuoteSendEmailModal';
 import {
   computeQuoteFinancials,
   itemTotalWithBdi,
@@ -517,6 +518,7 @@ function EditInner() {
   const [generalOpen, setGeneralOpen] = useState(true);
   const [financeOpen, setFinanceOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [dragStageKey, setDragStageKey] = useState<string | null>(null);
@@ -1061,7 +1063,7 @@ function EditInner() {
                     className={styles.exportItem}
                     onClick={() => void runExport('memorial')}
                   >
-                    Memorial de cálculo
+                    Memória de cálculo (PDF)
                   </button>
                   <button
                     type="button"
@@ -1069,6 +1071,16 @@ function EditInner() {
                     onClick={() => void runExport('pdf-anal')}
                   >
                     PDF Analítico
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.exportItem}
+                    onClick={() => {
+                      setExportOpen(false);
+                      setEmailOpen(true);
+                    }}
+                  >
+                    Enviar orçamento por e-mail
                   </button>
                 </div>
               ) : null}
@@ -1619,6 +1631,17 @@ function EditInner() {
         }}
         onConfirm={(typed) => void handleHardDelete(typed)}
       />
+
+      {user?.id && id ? (
+        <QuoteSendEmailModal
+          open={emailOpen}
+          quoteCode={quoteMeta.code}
+          defaultTo={draft?.email || ''}
+          userId={user.id}
+          quoteId={String(id)}
+          onClose={() => setEmailOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -234,6 +234,8 @@ function testUiExports() {
   assert(edit.includes('exportQuoteCsv'), 'CSV');
   assert(edit.includes('exportQuoteMemorial'), 'Memorial');
   assert(edit.includes('exportQuotePdfAnalyticalPrepared'), 'PDF analítico preparado');
+  assert(edit.includes('Enviar orçamento por e-mail'), 'envio por e-mail');
+  assert(edit.includes('QuoteSendEmailModal'), 'modal e-mail');
   assert(!edit.includes('Em desenvolvimento'), 'sem placeholder export');
   assert(edit.includes('reference_price'), 'preço referência');
   assert(edit.includes('adopted_price'), 'preço adotado');
@@ -253,7 +255,15 @@ function testUiExports() {
   const exportsLib = read('lib/master/topography/quoteExports.ts');
   assert(exportsLib.includes('orientation: \'landscape\''), 'PDF paisagem');
   assert(exportsLib.includes('SV Topografia'), 'marca SV');
-  assert(exportsLib.includes('Fase 5.3'), 'analítico 5.3');
+  assert(exportsLib.includes('exportQuotePdfAnalytical'), 'export analítico real');
+  assert(exportsLib.includes('exportQuotePdfMemorial'), 'export memorial PDF');
+  assert(exists('lib/master/topography/quotePdfAnalytical.ts'), 'módulo analítico');
+  assert(exists('lib/master/topography/quotePdfMemorial.ts'), 'módulo memorial');
+  assert(exists('lib/email/resendSend.ts'), 'resend compartilhado');
+  assert(
+    exists('app/api/master/topography/quotes/[id]/send-email/route.ts'),
+    'rota send-email',
+  );
   assert(exportsLib.includes('quotePdfSyntheticLayout'), 'layout sintético compartilhado');
   assert(exportsLib.includes('VALOR GLOBAL DA PROPOSTA'), 'destaque valor global');
   assert(exportsLib.includes('RESUMO DA PROPOSTA'), 'resumo da proposta');
