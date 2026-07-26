@@ -832,3 +832,162 @@
 .actionsMenuItemDanger:hover {
   background: #fff1f2;
 }
+
+/* Escopo técnico e entregáveis */
+.scopeSection {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+}
+
+.scopeSectionTitle {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  letter-spacing: 0.02em;
+}
+
+.scopeBlock {
+  margin-bottom: 0.75rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.scopeToggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 0;
+  background: #eff6ff;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1e40af;
+  cursor: pointer;
+  text-align: left;
+}
+
+.scopeCount {
+  font-style: normal;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.scopeBody {
+  padding: 0.65rem 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scopeChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.scopeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #312e81;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.scopeChipRemove {
+  border: 0;
+  background: transparent;
+  color: #4338ca;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.1rem;
+}
+
+.scopeSearch {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.scopeList {
+  max-height: 9.5rem;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.4rem;
+  padding: 0.25rem;
+}
+
+.scopeOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.28rem 0.35rem;
+  font-size: 0.75rem;
+  color: #334155;
+  cursor: pointer;
+  border-radius: 0.3rem;
+}
+
+.scopeOption:hover {
+  background: #f8fafc;
+}
+
+.scopeCategory {
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
+.scopeEmpty {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.scopeAddCustom {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.scopeCustomRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.scopeCustomRow input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.scopeError {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #be123c;
+  font-weight: 600;
+}

@@ -262,10 +262,20 @@ function testUiExports() {
   assert(exists('lib/master/topography/quotePdfSyntheticLayout.ts'), 'módulo layout PDF');
   assert(exists('scripts/mandatory-master-topography-quote-pdf-tests.ts'), 'suite PDF sintético');
   assert(
+    exists('supabase/migrations/20260830120000_master_topography_quotes_scope_deliverables.sql'),
+    'migration escopo/entregáveis',
+  );
+  assert(exists('lib/master/topography/quoteScopeCatalog.ts'), 'catálogo escopo tipado');
+  assert(exists('components/master/topography/quotes/QuoteScopeMultiSelect.tsx'), 'UI multi-select');
+  assert(
     read('lib/master/topography/quoteValidation.ts').includes(
       'payment_method: cleanText(raw.payment_method ?? raw.paymentMethod, 500)',
     ),
     'payment_method sem truncamento curto',
+  );
+  assert(
+    read('lib/master/topography/quotesService.ts').includes('technical_resources, deliverables'),
+    'service persiste escopo',
   );
 
   const dash = read('components/master/dashboard/MasterExecutiveDashboard.tsx');

@@ -2,6 +2,11 @@ import { isTopographyCategory } from './categories';
 import { isTopographyQuoteStatus } from './quoteStatuses';
 import { isTopographyServiceType } from './serviceTypes';
 import { isTopographyPriceBank } from './priceBanks';
+import {
+  parseQuoteScopeSelectedList,
+  QUOTE_SCOPE_MAX_DELIVERABLES,
+  QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES,
+} from './quoteScopeCatalog';
 import type {
   MasterTopographyQuoteInput,
   MasterTopographyQuoteItemInput,
@@ -161,6 +166,20 @@ export function validateTopographyQuoteInput(
     internal_manager: cleanText(raw.internal_manager ?? raw.internalManager, 160),
     internal_notes: cleanText(raw.internal_notes ?? raw.internalNotes, 4000),
     technical_notes: cleanText(raw.technical_notes ?? raw.technicalNotes, 4000),
+    technical_resources: parseQuoteScopeSelectedList(
+      raw.technical_resources ?? raw.technicalResources ?? [],
+      {
+        maxItems: QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES,
+        fieldLabel: 'Equipamentos e recursos técnicos',
+      },
+    ),
+    deliverables: parseQuoteScopeSelectedList(
+      raw.deliverables ?? [],
+      {
+        maxItems: QUOTE_SCOPE_MAX_DELIVERABLES,
+        fieldLabel: 'Produtos e dados entregues',
+      },
+    ),
   };
 }
 

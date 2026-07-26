@@ -14,10 +14,15 @@ import type {
   MasterTopographyQuoteListResult,
 } from './quoteTypes';
 import { canPermanentlyDeleteTopographyQuote } from './quoteDeletePolicy';
+import {
+  parseQuoteScopeSelectedList,
+  QUOTE_SCOPE_MAX_DELIVERABLES,
+  QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES,
+} from './quoteScopeCatalog';
 
 export { canPermanentlyDeleteTopographyQuote } from './quoteDeletePolicy';
 
-export const QUOTE_SELECT_COLUMNS = `
+export const QUOTE_SELECT_COLUMNS_CORE = `
   id, code, title, client_name, contact_name, phone, email,
   city, state, address, distance_km, category, service_type, description, status,
   proposal_date, expiration_date, estimated_deadline,
@@ -27,9 +32,40 @@ export const QUOTE_SELECT_COLUMNS = `
   is_archived, created_by, created_at, updated_at
 `.replace(/\s+/g, ' ').trim();
 
+export const QUOTE_SELECT_COLUMNS = `
+  ${QUOTE_SELECT_COLUMNS_CORE},
+  technical_resources, deliverables
+`.replace(/\s+/g, ' ').trim();
+
 const SELECT_COLUMNS = QUOTE_SELECT_COLUMNS;
 
+function isMissingScopeColumnError(message: string): boolean {
+  const m = String(message || '').toLowerCase();
+  return (
+    (m.includes('technical_resources') || m.includes('deliverables')) &&
+    (m.includes('column') || m.includes('schema cache') || m.includes('does not exist'))
+  );
+}
+
 export function parseQuoteRow(row: Record<string, unknown>): MasterTopographyQuote {
+  const safeParseList = (raw: unknown, maxItems: number, fieldLabel: string) => {
+    try {
+      return parseQuoteScopeSelectedList(raw ?? [], { maxItems, fieldLabel });
+    } catch {
+      return [];
+    }
+  };
+  const technical_resources = safeParseList(
+    row.technical_resources,
+    QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES,
+    'Equipamentos e recursos técnicos',
+  );
+  const deliverables = safeParseList(
+    row.deliverables,
+    QUOTE_SCOPE_MAX_DELIVERABLES,
+    'Produtos e dados entregues',
+  );
+
   return {
     id: String(row.id),
     code: String(row.code || ''),
@@ -60,6 +96,8 @@ export function parseQuoteRow(row: Record<string, unknown>): MasterTopographyQuo
     internal_manager: row.internal_manager ? String(row.internal_manager) : null,
     internal_notes: row.internal_notes ? String(row.internal_notes) : null,
     technical_notes: row.technical_notes ? String(row.technical_notes) : null,
+    technical_resources,
+    deliverables,
     approved_at: row.approved_at ? String(row.approved_at) : null,
     approved_by: row.approved_by ? String(row.approved_by) : null,
     converted_project_id: row.converted_project_id ? String(row.converted_project_id) : null,
@@ -103,6 +141,8 @@ function inputToRow(input: MasterTopographyQuoteInput) {
     internal_manager: input.internal_manager ?? null,
     internal_notes: input.internal_notes ?? null,
     technical_notes: input.technical_notes ?? null,
+    technical_resources: input.technical_resources ?? [],
+    deliverables: input.deliverables ?? [],
   };
 }
 
@@ -228,10 +268,23 @@ export async function listTopographyQuotes(
   query = applyListFilters(query, filters);
   query = query.order(sort, { ascending }).range(from, to);
 
-  const [{ data, error, count }, kpis] = await Promise.all([
+  let [{ data, error, count }, kpis] = await Promise.all([
     query,
     computeTopographyQuoteKpis(supabase, filters),
   ]);
+
+  if (error && isMissingScopeColumnError(error.message)) {
+    let fallback = supabase
+      .from('master_topography_quotes')
+      .select(QUOTE_SELECT_COLUMNS_CORE, { count: 'exact' });
+    fallback = applyListFilters(fallback, filters);
+    fallback = fallback.order(sort, { ascending }).range(from, to);
+    const fb = await fallback;
+    data = fb.data;
+    error = fb.error;
+    count = fb.count;
+  }
+
   if (error) throw new Error(error.message || 'Falha ao listar orçamentos.');
 
   return {
@@ -247,11 +300,18 @@ export async function getTopographyQuoteById(
   supabase: SupabaseClient,
   id: string,
 ): Promise<MasterTopographyQuote | null> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('master_topography_quotes')
     .select(SELECT_COLUMNS)
     .eq('id', id)
     .maybeSingle();
+  if (error && isMissingScopeColumnError(error.message)) {
+    ({ data, error } = await supabase
+      .from('master_topography_quotes')
+      .select(QUOTE_SELECT_COLUMNS_CORE)
+      .eq('id', id)
+      .maybeSingle());
+  }
   if (error) throw new Error(error.message || 'Falha ao carregar orçamento.');
   if (!data) return null;
   return parseRow(data as Record<string, unknown>);
@@ -277,6 +337,21 @@ export async function createTopographyQuote(
     .insert(payload)
     .select(SELECT_COLUMNS)
     .single();
+  if (error && isMissingScopeColumnError(error.message)) {
+    const { technical_resources: _tr, deliverables: _dl, ...core } = payload as Record<
+      string,
+      unknown
+    >;
+    void _tr;
+    void _dl;
+    const retry = await supabase
+      .from('master_topography_quotes')
+      .insert(core)
+      .select(QUOTE_SELECT_COLUMNS_CORE)
+      .single();
+    if (retry.error) throw new Error(retry.error.message || 'Falha ao criar orçamento.');
+    return parseRow(retry.data as Record<string, unknown>);
+  }
   if (error) throw new Error(error.message || 'Falha ao criar orçamento.');
   // Orçamento em branco: sem etapas/itens automáticos (Fase correção cirúrgica).
   return parseRow(data as Record<string, unknown>);
@@ -309,6 +384,19 @@ export async function updateTopographyQuote(
     .eq('id', id)
     .select(SELECT_COLUMNS)
     .single();
+  if (error && isMissingScopeColumnError(error.message)) {
+    const { technical_resources: _tr, deliverables: _dl, ...core } = payload;
+    void _tr;
+    void _dl;
+    const retry = await supabase
+      .from('master_topography_quotes')
+      .update(core)
+      .eq('id', id)
+      .select(QUOTE_SELECT_COLUMNS_CORE)
+      .single();
+    if (retry.error) throw new Error(retry.error.message || 'Falha ao atualizar orçamento.');
+    return parseRow(retry.data as Record<string, unknown>);
+  }
   if (error) throw new Error(error.message || 'Falha ao atualizar orçamento.');
   return parseRow(data as Record<string, unknown>);
 }
@@ -407,6 +495,8 @@ export async function duplicateTopographyQuote(
         ? `Cópia de ${source.code}\n${source.internal_notes}`
         : `Cópia de ${source.code}`,
       technical_notes: source.technical_notes,
+      technical_resources: source.technical_resources ?? [],
+      deliverables: source.deliverables ?? [],
     }),
     code,
     created_by: createdBy,

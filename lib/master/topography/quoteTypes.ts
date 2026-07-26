@@ -3,6 +3,7 @@ import type { TopographyServiceTypeCode } from './serviceTypes';
 import type { TopographyQuoteStatusCode } from './quoteStatuses';
 import type { TopographyPriceBankCode } from './priceBanks';
 import type { QuoteFinancialSummary } from './quoteFinancials';
+import type { QuoteScopeSelectedItem } from './quoteScopeCatalog';
 
 export type MasterTopographyQuote = {
   id: string;
@@ -34,6 +35,10 @@ export type MasterTopographyQuote = {
   internal_manager: string | null;
   internal_notes: string | null;
   technical_notes: string | null;
+  /** Snapshot ordenado — equipamentos/recursos técnicos. */
+  technical_resources: QuoteScopeSelectedItem[];
+  /** Snapshot ordenado — produtos/dados entregues. */
+  deliverables: QuoteScopeSelectedItem[];
   approved_at: string | null;
   approved_by: string | null;
   converted_project_id: string | null;
@@ -71,6 +76,8 @@ export type MasterTopographyQuoteInput = {
   internal_manager?: string | null;
   internal_notes?: string | null;
   technical_notes?: string | null;
+  technical_resources?: QuoteScopeSelectedItem[];
+  deliverables?: QuoteScopeSelectedItem[];
 };
 
 export type MasterTopographyQuoteItem = {

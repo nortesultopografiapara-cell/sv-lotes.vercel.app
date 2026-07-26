@@ -69,7 +69,45 @@ function baseQuote(overrides: Partial<MasterTopographyQuote> = {}): MasterTopogr
     internal_manager: 'Severino José de França',
     internal_notes: 'SEGREDÓ INTERNO NÃO VAI PARA O CLIENTE',
     technical_notes:
-      'Equipamentos previstos;\nDJI Matrice 350 RTK;\nDJI Zenmuse L2;\nReceptor GNSS RTK;\nDJI Terra.',
+      'Precisão e metodologia conforme projeto executivo; densificação conforme área.',
+    technical_resources: [
+      { id: 'tr-dji-matrice-350-rtk', label: 'DJI Matrice 350 RTK', source: 'catalog' },
+      { id: 'tr-dji-zenmuse-l2', label: 'DJI Zenmuse L2', source: 'catalog' },
+      { id: 'tr-gnss-rtk', label: 'Receptor GNSS RTK', source: 'catalog' },
+      { id: 'tr-dji-terra', label: 'DJI Terra', source: 'catalog' },
+      {
+        id: 'custom-soft',
+        label: 'Softwares especializados para processamento',
+        source: 'custom',
+      },
+    ],
+    deliverables: [
+      { id: 'dl-dados-brutos', label: 'Dados brutos do levantamento', source: 'catalog' },
+      { id: 'dl-nuvem-las', label: 'Nuvem de pontos LAS', source: 'catalog' },
+      { id: 'dl-nuvem-laz', label: 'Nuvem de pontos LAZ', source: 'catalog' },
+      {
+        id: 'dl-nuvem-classificada',
+        label: 'Nuvem de pontos classificada',
+        source: 'catalog',
+      },
+      {
+        id: 'dl-mdt',
+        label: 'Modelo Digital do Terreno — MDT',
+        source: 'catalog',
+      },
+      {
+        id: 'dl-mds',
+        label: 'Modelo Digital de Superfície — MDS',
+        source: 'catalog',
+      },
+      { id: 'dl-curvas-nivel', label: 'Curvas de nível', source: 'catalog' },
+      {
+        id: 'custom-orto',
+        label: 'Ortoimagem, quando aplicável',
+        source: 'custom',
+      },
+      { id: 'dl-relatorio-tec', label: 'Relatório técnico', source: 'catalog' },
+    ],
     approved_at: null,
     approved_by: null,
     converted_project_id: null,
@@ -212,8 +250,22 @@ assert('técnicas sem muitas quebras', !prose.includes('\nDJI'));
 
 const sections = buildQuotePdfNarrativeSections(baseQuote());
 assert(
-  'técnicas compactadas na seção',
-  sections.some((s) => s.title === 'INFORMAÇÕES TÉCNICAS' && s.body.includes(';')),
+  'técnicas com equipamentos estruturados',
+  sections.some(
+    (s) =>
+      s.title === 'INFORMAÇÕES TÉCNICAS' &&
+      s.body.includes('Equipamentos e recursos previstos') &&
+      s.body.includes('DJI Matrice 350 RTK'),
+  ),
+);
+assert(
+  'produtos entregues no PDF',
+  sections.some(
+    (s) =>
+      s.title === 'PRODUTOS E DADOS ENTREGUES' &&
+      s.layout === 'checklist' &&
+      (s.checklistItems?.length || 0) >= 5,
+  ),
 );
 assert(
   'sem bloco CONDIÇÕES COMERCIAIS (sem duplicidade)',
@@ -228,9 +280,12 @@ assert(
   ),
 );
 assert(
-  'parte inferior só descrição/técnicas',
+  'parte inferior descrição/técnicas/produtos',
   sections.every(
-    (s) => s.title === 'DESCRIÇÃO DOS SERVIÇOS' || s.title === 'INFORMAÇÕES TÉCNICAS',
+    (s) =>
+      s.title === 'DESCRIÇÃO DOS SERVIÇOS' ||
+      s.title === 'INFORMAÇÕES TÉCNICAS' ||
+      s.title === 'PRODUTOS E DADOS ENTREGUES',
   ),
 );
 

@@ -42,6 +42,14 @@ import {
 import type { MasterTopographyPriceItem } from '@/lib/master/topography/priceCatalogService';
 import { canPermanentlyDeleteTopographyQuote } from '@/lib/master/topography/quoteDeletePolicy';
 import {
+  deliverablesCatalog,
+  technicalResourcesCatalog,
+  QUOTE_SCOPE_MAX_DELIVERABLES,
+  QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES,
+  type QuoteScopeSelectedItem,
+} from '@/lib/master/topography/quoteScopeCatalog';
+import QuoteScopeMultiSelect from './QuoteScopeMultiSelect';
+import {
   computeQuoteFinancials,
   itemTotalWithBdi,
   itemUnitWithBdi,
@@ -96,6 +104,8 @@ type DraftQuote = {
   internal_manager: string;
   internal_notes: string;
   technical_notes: string;
+  technical_resources: QuoteScopeSelectedItem[];
+  deliverables: QuoteScopeSelectedItem[];
   bdi_percent: string;
   discount_percent: string;
   margin_percent: string;
@@ -145,6 +155,10 @@ function quoteToDraft(quote: MasterTopographyQuote): DraftQuote {
     internal_manager: quote.internal_manager || '',
     internal_notes: quote.internal_notes || '',
     technical_notes: quote.technical_notes || '',
+    technical_resources: Array.isArray(quote.technical_resources)
+      ? quote.technical_resources
+      : [],
+    deliverables: Array.isArray(quote.deliverables) ? quote.deliverables : [],
     bdi_percent: String(quote.bdi_percent ?? 0),
     discount_percent: String(quote.discount_percent ?? 0),
     margin_percent: String(quote.margin_percent ?? 0),
@@ -620,6 +634,8 @@ function EditInner() {
       internal_manager: draft.internal_manager || null,
       internal_notes: draft.internal_notes || null,
       technical_notes: draft.technical_notes || null,
+      technical_resources: draft.technical_resources,
+      deliverables: draft.deliverables,
       bdi_percent: bdiPercent,
       discount_percent: discountPercent,
       margin_percent: marginPercent,
@@ -1307,13 +1323,36 @@ function EditInner() {
                 />
               </div>
               <div className={styles.field}>
-                <label>Informações técnicas</label>
+                <label>Informações técnicas complementares</label>
                 <textarea
                   value={draft.technical_notes}
                   disabled={readOnly}
                   onChange={(e) => patchDraft({ technical_notes: e.target.value })}
+                  placeholder="Precisão, GSD, datum, metodologia, limitações… (sem repetir a lista de equipamentos)"
                 />
               </div>
+            </div>
+
+            <div className={styles.scopeSection}>
+              <h3 className={styles.scopeSectionTitle}>ESCOPO TÉCNICO E ENTREGÁVEIS</h3>
+              <QuoteScopeMultiSelect
+                title="Equipamentos e recursos técnicos"
+                searchPlaceholder="Pesquisar equipamento ou software…"
+                catalog={technicalResourcesCatalog}
+                selected={draft.technical_resources}
+                maxItems={QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES}
+                disabled={readOnly}
+                onChange={(technical_resources) => patchDraft({ technical_resources })}
+              />
+              <QuoteScopeMultiSelect
+                title="Produtos e dados entregues"
+                searchPlaceholder="Pesquisar produto entregue…"
+                catalog={deliverablesCatalog}
+                selected={draft.deliverables}
+                maxItems={QUOTE_SCOPE_MAX_DELIVERABLES}
+                disabled={readOnly}
+                onChange={(deliverables) => patchDraft({ deliverables })}
+              />
             </div>
           </div>
         ) : null}

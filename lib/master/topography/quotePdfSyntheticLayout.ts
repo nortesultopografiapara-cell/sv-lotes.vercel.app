@@ -9,6 +9,10 @@ import {
   itemUnitWithBdi,
   type QuoteFinancialSummary,
 } from './quoteFinancials';
+import {
+  formatQuoteScopeLabelsProse,
+  type QuoteScopeSelectedItem,
+} from './quoteScopeCatalog';
 import type {
   MasterTopographyQuote,
   MasterTopographyQuoteStageWithItems,
@@ -45,9 +49,11 @@ export type QuotePdfCompositionRow =
 export type QuotePdfTextSection = {
   title: string;
   body: string;
-  /** commercial = grade; prose = texto corrido */
-  layout?: 'prose' | 'commercial-grid';
+  /** commercial = grade; prose = texto corrido; checklist = produtos em colunas */
+  layout?: 'prose' | 'commercial-grid' | 'checklist';
   fields?: QuotePdfSummaryField[];
+  /** Itens de checklist (produtos entregues). */
+  checklistItems?: string[];
 };
 
 export type QuotePdfFinancialBreakdown = {
@@ -352,7 +358,8 @@ export function buildQuotePdfCommercialFields(
 
 /**
  * Seções pós-tabela — Observações internas NUNCA entram no PDF do cliente.
- * CONDIÇÕES COMERCIAIS só aparece se houver campos comerciais úteis (hoje: nenhum).
+ * Equipamentos estruturados entram em INFORMAÇÕES TÉCNICAS; produtos em seção própria.
+ * Não faz parsing/migração automática do texto livre antigo (evita duplicação).
  */
 export function buildQuotePdfNarrativeSections(
   quote: MasterTopographyQuote,
@@ -368,7 +375,15 @@ export function buildQuotePdfNarrativeSections(
     });
   }
 
+  const resources = Array.isArray(quote.technical_resources)
+    ? quote.technical_resources
+    : [];
+  const resourcesProse = formatQuoteScopeLabelsProse(resources as QuoteScopeSelectedItem[]);
+
   const technicalParts: string[] = [];
+  if (resourcesProse) {
+    technicalParts.push(`Equipamentos e recursos previstos: ${resourcesProse}.`);
+  }
   if (isMeaningfulQuotePdfText(quote.technical_notes)) {
     technicalParts.push(compactListTextToProse(String(quote.technical_notes)));
   }
@@ -380,6 +395,19 @@ export function buildQuotePdfNarrativeSections(
       title: 'INFORMAÇÕES TÉCNICAS',
       body: technicalParts.join(' '),
       layout: 'prose',
+    });
+  }
+
+  const deliverables = Array.isArray(quote.deliverables) ? quote.deliverables : [];
+  const deliverableLabels = deliverables
+    .map((d) => preserveQuotePdfUserText(d?.label))
+    .filter((l) => isMeaningfulQuotePdfText(l));
+  if (deliverableLabels.length) {
+    sections.push({
+      title: 'PRODUTOS E DADOS ENTREGUES',
+      body: deliverableLabels.map((l) => `✓ ${l}`).join('\n'),
+      layout: 'checklist',
+      checklistItems: deliverableLabels,
     });
   }
 

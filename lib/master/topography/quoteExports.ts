@@ -355,6 +355,47 @@ function drawSummaryGrid(
   return y + 1;
 }
 
+function drawChecklistGrid(
+  doc: jsPDF,
+  title: string,
+  items: string[],
+  startY: number,
+  marginLeft: number,
+  contentWidth: number,
+  marginBottom: number,
+): number {
+  if (!items.length) return startY;
+  let y = ensureSpace(doc, startY, 8, marginBottom);
+  doc.setFontSize(9);
+  doc.setTextColor(29, 78, 216);
+  doc.text(title, marginLeft, y);
+  y += 3.2;
+
+  const columns = items.length <= 6 ? 2 : 3;
+  const gap = 2.5;
+  const colW = (contentWidth - gap * (columns - 1)) / columns;
+  const rowH = 4.2;
+  doc.setFontSize(7.5);
+  doc.setTextColor(15, 23, 42);
+
+  for (let i = 0; i < items.length; i++) {
+    const col = i % columns;
+    if (col === 0) {
+      y = ensureSpace(doc, y, rowH + 0.5, marginBottom);
+    }
+    const x = marginLeft + col * (colW + gap);
+    const lineY = y;
+    const label = `✓ ${preserveQuotePdfUserText(items[i])}`;
+    const lines = doc.splitTextToSize(label, colW - 1) as string[];
+    doc.text(lines[0] || label, x, lineY);
+    if (col === columns - 1 || i === items.length - 1) {
+      // Altura da linha = máx. das células desta fileira (aprox. 1 linha compacta).
+      y += rowH;
+    }
+  }
+  return y + 1;
+}
+
 function drawCommercialGrid(
   doc: jsPDF,
   fields: QuotePdfSummaryField[],
@@ -609,6 +650,20 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
         marginBottom,
       );
       finalY += 1.5;
+      continue;
+    }
+
+    if (section.layout === 'checklist' && section.checklistItems?.length) {
+      finalY = drawChecklistGrid(
+        doc,
+        section.title,
+        section.checklistItems,
+        finalY,
+        marginLeft,
+        contentWidth,
+        marginBottom,
+      );
+      finalY += 1.2;
       continue;
     }
 
