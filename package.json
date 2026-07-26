@@ -84,7 +84,8 @@
     "test:enterprise-value-summary": "tsx scripts/mandatory-enterprise-value-summary-tests.ts",
     "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts",
     "test:contract-inline-signature-status": "tsx scripts/mandatory-contract-inline-signature-status-tests.ts",
-    "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts"
+    "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts",
+    "test:sale-spouse-cpf-reuse": "tsx scripts/mandatory-sale-spouse-cpf-reuse-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

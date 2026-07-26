@@ -27,6 +27,17 @@ import {
   type SaleSpouseFormFields,
 } from '@/lib/saleSpouseFields';
 import {
+  formatSpouseCpf,
+  getSpouseCpfValidationState,
+} from '@/lib/saleSpouseCpf';
+import {
+  applySpouseSuggestionToForm,
+  clearSpouseFormFields,
+  saleSpouseFormHasContent,
+  type CustomerSpouseSuggestion,
+} from '@/lib/customerSpouses';
+import { listCustomerSpouseSuggestions } from '@/lib/customerSpousesService';
+import {
   computeInstallmentDisplayValue,
   downPaymentReducesInstallmentBase,
   resolveInstallmentPrincipal,
@@ -111,6 +122,8 @@ export type LotFormState = CustomerFormValues &
   use_balloon_installments?: boolean;
   balloon_config?: SaleBalloonFormConfig | null;
   balloon_locked?: boolean;
+  /** Atualiza customer_spouses para compras futuras (não altera vendas antigas). */
+  update_spouse_registry?: boolean;
 };
 
 export type LotFormConfirmPayload = LotFormState & {
@@ -151,6 +164,7 @@ function emptyLotFormState(): LotFormState {
     use_balloon_installments: false,
     balloon_config: emptyBalloonFormConfig(),
     balloon_locked: false,
+    update_spouse_registry: false,
   };
 }
 
@@ -216,6 +230,9 @@ export function CustomerLotFormModal({
   const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
   const [financialAccountsLoading, setFinancialAccountsLoading] = useState(false);
   const [financialAccountsUnavailable, setFinancialAccountsUnavailable] = useState(false);
+  const [spouseSuggestions, setSpouseSuggestions] = useState<CustomerSpouseSuggestion[]>([]);
+  const [spouseSuggestionsLoading, setSpouseSuggestionsLoading] = useState(false);
+  const [spouseReuseFromPrior, setSpouseReuseFromPrior] = useState(false);
   const canEditFinancialAccount =
     isSuperAdmin || isTenantEnterpriseAdminRole(userRole);
 
@@ -284,6 +301,41 @@ export function CustomerLotFormModal({
       cancelled = true;
     };
   }, [tenantId, lot.project_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSpouseSuggestions() {
+      const customerId = String(
+        formData.selected_customer_id || lot.customerId || '',
+      ).trim();
+      if (!tenantId || !customerId || !(actionName === 'Vendido' || isEditMode)) {
+        setSpouseSuggestions([]);
+        return;
+      }
+      setSpouseSuggestionsLoading(true);
+      try {
+        const list = await listCustomerSpouseSuggestions(supabase, {
+          companyId: tenantId,
+          customerId,
+        });
+        if (!cancelled) setSpouseSuggestions(list);
+      } catch {
+        if (!cancelled) setSpouseSuggestions([]);
+      } finally {
+        if (!cancelled) setSpouseSuggestionsLoading(false);
+      }
+    }
+    void loadSpouseSuggestions();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    tenantId,
+    formData.selected_customer_id,
+    lot.customerId,
+    actionName,
+    isEditMode,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -738,6 +790,36 @@ export function CustomerLotFormModal({
     setFormData((prev) => ({ ...prev, ...patch }));
   };
 
+  const setSpouseField = (patch: Partial<SaleSpouseFormFields>) => {
+    setFormData((prev) => ({
+      ...prev,
+      ...patch,
+      update_spouse_registry: true,
+    }));
+    setSpouseReuseFromPrior(false);
+  };
+
+  const handleSpouseCpfChange = (raw: string) => {
+    setSpouseField({ sale_spouse_cpf: formatSpouseCpf(raw) });
+  };
+
+  const spouseCpfValidation = getSpouseCpfValidationState(formData.sale_spouse_cpf);
+
+  const applySpouseSuggestion = (suggestion: CustomerSpouseSuggestion) => {
+    if (saleSpouseFormHasContent(formData)) {
+      const ok = window.confirm(
+        'Substituir os dados atuais pelos dados cadastrados anteriormente?',
+      );
+      if (!ok) return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      ...applySpouseSuggestionToForm(suggestion),
+      update_spouse_registry: false,
+    }));
+    setSpouseReuseFromPrior(true);
+  };
+
   const {
     cpfCnpjValidation,
     cepValidation,
@@ -1022,7 +1104,7 @@ export function CustomerLotFormModal({
                           ...emptySaleSpouseFormFields(),
                         }));
                       } else {
-                        setField({ has_spouse: true });
+                        setField({ has_spouse: true, update_spouse_registry: true });
                       }
                     }}
                     disabled={submitting || prefillLoading}
@@ -1033,15 +1115,85 @@ export function CustomerLotFormModal({
 
                 {formData.has_spouse && (
                   <div className="space-y-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <h4 className="text-sm font-bold text-gray-900 border-b pb-1">
-                      DADOS DO CÔNJUGE
-                    </h4>
+                    <div className="flex items-center justify-between gap-2 border-b pb-1">
+                      <h4 className="text-sm font-bold text-gray-900">
+                        DADOS DO CÔNJUGE
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            ...clearSpouseFormFields(),
+                            has_spouse: true,
+                            update_spouse_registry: false,
+                          }));
+                          setSpouseReuseFromPrior(false);
+                        }}
+                        disabled={submitting || prefillLoading}
+                        className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 underline"
+                      >
+                        Limpar dados
+                      </button>
+                    </div>
+
+                    {spouseSuggestionsLoading ? (
+                      <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Buscando cônjuge já cadastrado...
+                      </p>
+                    ) : null}
+
+                    {!spouseSuggestionsLoading && spouseSuggestions.length > 0 ? (
+                      <div className="rounded-lg border border-teal-200 bg-teal-50/80 p-3 space-y-2">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-teal-800">
+                          Cônjuge já cadastrado
+                        </p>
+                        {spouseSuggestions.slice(0, 4).map((suggestion) => (
+                          <div
+                            key={suggestion.key}
+                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-slate-800"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold truncate">{suggestion.name}</div>
+                              <div className="text-xs text-slate-600 font-mono">
+                                CPF: {suggestion.cpfMasked}
+                                {suggestion.lastUsedLabel
+                                  ? ` · Última utilização: ${suggestion.lastUsedLabel}`
+                                  : ''}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => applySpouseSuggestion(suggestion)}
+                              disabled={submitting || prefillLoading}
+                              className="shrink-0 px-3 py-1.5 rounded-md text-xs font-bold bg-teal-600 text-white hover:bg-teal-500 disabled:opacity-50"
+                            >
+                              Usar estes dados
+                            </button>
+                          </div>
+                        ))}
+                        <p className="text-[10px] text-teal-900/70">
+                          Não preenche automaticamente — confirme com o botão acima.
+                          {isEditMode
+                            ? ' Na edição, a venda mantém o snapshot próprio até você escolher reutilizar.'
+                            : ''}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {spouseReuseFromPrior ? (
+                      <p className="text-[11px] text-slate-500">
+                        Dados carregados de cadastro anterior — você pode editar livremente.
+                      </p>
+                    ) : null}
+
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Nome</label>
                       <input
                         type="text"
                         value={formData.sale_spouse_name}
-                        onChange={(e) => setField({ sale_spouse_name: e.target.value })}
+                        onChange={(e) => setSpouseField({ sale_spouse_name: e.target.value })}
                         className={GIS_INPUT}
                       />
                     </div>
@@ -1051,7 +1203,7 @@ export function CustomerLotFormModal({
                         <input
                           type="text"
                           value={formData.sale_spouse_nationality}
-                          onChange={(e) => setField({ sale_spouse_nationality: e.target.value })}
+                          onChange={(e) => setSpouseField({ sale_spouse_nationality: e.target.value })}
                           className={GIS_INPUT}
                         />
                       </div>
@@ -1059,7 +1211,7 @@ export function CustomerLotFormModal({
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil</label>
                         <select
                           value={formData.sale_spouse_marital_status}
-                          onChange={(e) => setField({ sale_spouse_marital_status: e.target.value })}
+                          onChange={(e) => setSpouseField({ sale_spouse_marital_status: e.target.value })}
                           className={GIS_INPUT}
                         >
                           <option value="">Selecione...</option>
@@ -1076,7 +1228,7 @@ export function CustomerLotFormModal({
                       <input
                         type="text"
                         value={formData.sale_spouse_profession}
-                        onChange={(e) => setField({ sale_spouse_profession: e.target.value })}
+                        onChange={(e) => setSpouseField({ sale_spouse_profession: e.target.value })}
                         className={GIS_INPUT}
                       />
                     </div>
@@ -1086,7 +1238,7 @@ export function CustomerLotFormModal({
                         <input
                           type="text"
                           value={formData.sale_spouse_rg}
-                          onChange={(e) => setField({ sale_spouse_rg: e.target.value })}
+                          onChange={(e) => setSpouseField({ sale_spouse_rg: e.target.value })}
                           className={GIS_INPUT}
                         />
                       </div>
@@ -1095,7 +1247,7 @@ export function CustomerLotFormModal({
                         <input
                           type="text"
                           value={formData.sale_spouse_rg_issuer}
-                          onChange={(e) => setField({ sale_spouse_rg_issuer: e.target.value })}
+                          onChange={(e) => setSpouseField({ sale_spouse_rg_issuer: e.target.value })}
                           className={GIS_INPUT}
                         />
                       </div>
@@ -1105,9 +1257,16 @@ export function CustomerLotFormModal({
                         <label className="block text-xs font-semibold text-gray-700 mb-1">CPF</label>
                         <input
                           type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
                           value={formData.sale_spouse_cpf}
-                          onChange={(e) => setField({ sale_spouse_cpf: e.target.value })}
-                          className={GIS_INPUT}
+                          onChange={(e) => handleSpouseCpfChange(e.target.value)}
+                          className={documentFieldInputClass(GIS_INPUT, spouseCpfValidation.tone)}
+                          placeholder="000.000.000-00"
+                        />
+                        <DocumentFieldFeedback
+                          message={spouseCpfValidation.message}
+                          tone={spouseCpfValidation.tone}
                         />
                       </div>
                       <div>
@@ -1115,7 +1274,7 @@ export function CustomerLotFormModal({
                         <input
                           type="tel"
                           value={formData.sale_spouse_phone}
-                          onChange={(e) => setField({ sale_spouse_phone: e.target.value })}
+                          onChange={(e) => setSpouseField({ sale_spouse_phone: e.target.value })}
                           className={GIS_INPUT}
                         />
                       </div>
@@ -1125,7 +1284,7 @@ export function CustomerLotFormModal({
                       <input
                         type="email"
                         value={formData.sale_spouse_email}
-                        onChange={(e) => setField({ sale_spouse_email: e.target.value })}
+                        onChange={(e) => setSpouseField({ sale_spouse_email: e.target.value })}
                         className={GIS_INPUT}
                       />
                     </div>
@@ -1134,10 +1293,28 @@ export function CustomerLotFormModal({
                       <input
                         type="text"
                         value={formData.sale_spouse_address}
-                        onChange={(e) => setField({ sale_spouse_address: e.target.value })}
+                        onChange={(e) => setSpouseField({ sale_spouse_address: e.target.value })}
                         className={GIS_INPUT}
                       />
                     </div>
+
+                    <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded border-gray-300"
+                        checked={Boolean(formData.update_spouse_registry)}
+                        onChange={(e) =>
+                          setField({ update_spouse_registry: e.target.checked })
+                        }
+                        disabled={submitting || prefillLoading}
+                      />
+                      <span>
+                        Atualizar cadastro do cônjuge para compras futuras
+                        <span className="block text-[10px] text-slate-500 mt-0.5">
+                          Não altera contratos ou vendas já geradas — só o cadastro reutilizável.
+                        </span>
+                      </span>
+                    </label>
                   </div>
                 )}
               </div>
