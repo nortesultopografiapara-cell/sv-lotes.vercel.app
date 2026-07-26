@@ -5770,6 +5770,11 @@ export default function GISMap({
           prefillFromReservation={customerForm.prefillFromReservation}
           mode={customerForm.mode}
           initialFormData={customerForm.editContext?.form}
+          saleId={
+            customerForm.editContext?.saleId ||
+            customerForm.lot.saleId ||
+            null
+          }
           brokers={brokersList}
           contractModel={tenantContractModel}
           onClose={() => setCustomerForm(null)}
