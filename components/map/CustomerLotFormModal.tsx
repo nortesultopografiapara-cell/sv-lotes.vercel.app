@@ -38,6 +38,12 @@ import {
   type SignalRemainingPaymentMode,
 } from '@/lib/recantoSignalRemaining';
 import {
+  formatRecantoLotInstallmentPreview,
+  normalizeRecantoInstallmentDefinitionMode,
+  resolveRecantoLotInstallmentPlan,
+  validateRecantoLotInstallmentPlan,
+} from '@/lib/recantoFixedInstallmentPlan';
+import {
   applyBalloonToInstallmentAmounts,
   emptyBalloonFormConfig,
   resolveSaleBalloonPlan,
@@ -94,6 +100,12 @@ export type LotFormState = CustomerFormValues &
   signal_remaining_payment_mode?: SignalRemainingPaymentMode | '';
   /** Recanto: qtd de parcelas para o restante (primeiras parcelas). */
   signal_remaining_installments?: string;
+  /** Recanto: BY_COUNT | FIXED_AMOUNT */
+  installment_definition_mode?: string;
+  /** Recanto FIXED_AMOUNT: valor fixo da parcela regular (string currency). */
+  regular_installment_amount?: string;
+  /** Recanto: gerar parcela final de ajuste. */
+  generate_residual_installment?: boolean;
   /** Parcelas balão (opcional) — desligado = fluxo idêntico ao atual. */
   use_balloon_installments?: boolean;
   balloon_config?: SaleBalloonFormConfig | null;
@@ -132,6 +144,9 @@ function emptyLotFormState(): LotFormState {
     signal_paid_at_sale: '',
     signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
     signal_remaining_installments: '',
+    installment_definition_mode: 'BY_COUNT',
+    regular_installment_amount: '',
+    generate_residual_installment: true,
     use_balloon_installments: false,
     balloon_config: emptyBalloonFormConfig(),
     balloon_locked: false,
@@ -390,6 +405,14 @@ export function CustomerLotFormModal({
         totalInstallments: installmentsCount,
       })
     : null;
+  const installmentDefinitionMode = isRecantoSinal
+    ? normalizeRecantoInstallmentDefinitionMode(formData.installment_definition_mode)
+    : 'BY_COUNT';
+  const regularInstallmentAmountFixed = parseCurrencyBRLNumber(
+    formData.regular_installment_amount || '',
+  );
+  const generateResidualInstallment = formData.generate_residual_installment !== false;
+
   const balloonPlan = resolveSaleBalloonPlan({
     useBalloon: Boolean(formData.use_balloon_installments),
     installmentsCount,
@@ -404,8 +427,25 @@ export function CustomerLotFormModal({
           contractModel,
         })
       : 0;
+
+  const recantoLotPlan =
+    isRecantoSinal && installmentsCount > 0
+      ? resolveRecantoLotInstallmentPlan({
+          lotValue: finalValue,
+          regularCount: installmentsCount,
+          mode: installmentDefinitionMode,
+          regularAmount:
+            installmentDefinitionMode === 'FIXED_AMOUNT'
+              ? regularInstallmentAmountFixed
+              : null,
+          generateResidual: generateResidualInstallment,
+          useBalloon: balloonPlan.enabled,
+        })
+      : null;
+
   const balloonComps =
-    installmentsCount > 0
+    installmentsCount > 0 &&
+    !(isRecantoSinal && installmentDefinitionMode === 'FIXED_AMOUNT')
       ? applyBalloonToInstallmentAmounts(
           installmentPrincipal,
           installmentsCount,
@@ -414,25 +454,35 @@ export function CustomerLotFormModal({
       : [];
   const installmentValue =
     installmentsCount > 0
-      ? balloonPlan.enabled && balloonPlan.items.length > 0
-        ? balloonComps[0]?.baseAmount ?? 0
-        : computeInstallmentDisplayValue({
-            finalValue,
-            downPayment: isRecantoSinal ? signalContractValue : downPayment,
-            installmentsCount,
-            contractModel,
-          })
+      ? isRecantoSinal && installmentDefinitionMode === 'FIXED_AMOUNT'
+        ? recantoLotPlan?.regularAmount ?? 0
+        : balloonPlan.enabled && balloonPlan.items.length > 0
+          ? balloonComps[0]?.baseAmount ?? 0
+          : computeInstallmentDisplayValue({
+              finalValue,
+              downPayment: isRecantoSinal ? signalContractValue : downPayment,
+              installmentsCount,
+              contractModel,
+            })
       : 0;
+  const lotBaseAmountsForPreview =
+    isRecantoSinal && recantoLotPlan
+      ? recantoLotPlan.baseAmounts.slice(0, recantoLotPlan.regularCount)
+      : balloonPlan.enabled && balloonPlan.items.length > 0
+        ? balloonComps.map((c) => c.amount)
+        : splitInstallmentAmounts(installmentPrincipal, installmentsCount);
   const recantoInstallmentPreview =
     isRecantoSinal && installmentsCount > 0 && recantoSignalPlan
       ? applySignalAddonToInstallmentAmounts(
-          balloonPlan.enabled && balloonPlan.items.length > 0
-            ? balloonComps.map((c) => c.amount)
-            : splitInstallmentAmounts(installmentPrincipal, installmentsCount),
+          lotBaseAmountsForPreview,
           recantoSignalPlan,
         )
       : null;
   const installmentValueFmt = formatCurrencyBRL(installmentValue);
+  const recantoPreviewLines =
+    recantoLotPlan && installmentDefinitionMode === 'FIXED_AMOUNT'
+      ? formatRecantoLotInstallmentPreview(recantoLotPlan)
+      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -492,14 +542,33 @@ export function CustomerLotFormModal({
           return;
         }
         confirmedInstallmentsCount = String(installmentsResult.value);
-        confirmedInstallmentValue = computeInstallmentDisplayValue({
-          finalValue,
-          downPayment: effectiveDownPayment,
-          installmentsCount: installmentsResult.value,
-          contractModel,
-        });
+        confirmedInstallmentValue =
+          isRecantoSinal &&
+          normalizeRecantoInstallmentDefinitionMode(formData.installment_definition_mode) ===
+            'FIXED_AMOUNT'
+            ? parseCurrencyBRLNumber(formData.regular_installment_amount || '')
+            : computeInstallmentDisplayValue({
+                finalValue,
+                downPayment: effectiveDownPayment,
+                installmentsCount: installmentsResult.value,
+                contractModel,
+              });
 
         if (isRecantoSinal) {
+          const lotValidation = validateRecantoLotInstallmentPlan({
+            lotValue: finalValue,
+            regularCount: installmentsResult.value,
+            mode: formData.installment_definition_mode,
+            regularAmount: parseCurrencyBRLNumber(
+              formData.regular_installment_amount || '',
+            ),
+            generateResidual: formData.generate_residual_installment !== false,
+            useBalloon: Boolean(formData.use_balloon_installments),
+          });
+          if (!lotValidation.valid) {
+            alert(lotValidation.message);
+            return;
+          }
           const signalValidation = validateRecantoSignalPlan({
             contractValue: signalContractValue,
             paidAtSale: signalPaidAtSale,
@@ -593,6 +662,25 @@ export function CustomerLotFormModal({
         signal_remaining_installments: isRecantoSinal
           ? formData.signal_remaining_installments || ''
           : '',
+        installment_definition_mode: isRecantoSinal
+          ? normalizeRecantoInstallmentDefinitionMode(
+              formData.installment_definition_mode,
+            )
+          : 'BY_COUNT',
+        regular_installment_amount:
+          isRecantoSinal &&
+          normalizeRecantoInstallmentDefinitionMode(
+            formData.installment_definition_mode,
+          ) === 'FIXED_AMOUNT'
+            ? serializeCurrencyBRL(formData.regular_installment_amount || '0')
+            : '',
+        generate_residual_installment:
+          isRecantoSinal &&
+          normalizeRecantoInstallmentDefinitionMode(
+            formData.installment_definition_mode,
+          ) === 'FIXED_AMOUNT'
+            ? formData.generate_residual_installment !== false
+            : false,
         installments_count: paymentMode.isInstallment
           ? confirmedInstallmentsCount
           : '1',
@@ -602,9 +690,23 @@ export function CustomerLotFormModal({
           ? confirmedInstallmentValue
           : finalValue,
         use_balloon_installments:
-          paymentMode.isInstallment && Boolean(formData.use_balloon_installments),
+          paymentMode.isInstallment &&
+          Boolean(formData.use_balloon_installments) &&
+          !(
+            isRecantoSinal &&
+            normalizeRecantoInstallmentDefinitionMode(
+              formData.installment_definition_mode,
+            ) === 'FIXED_AMOUNT'
+          ),
         balloon_config:
-          paymentMode.isInstallment && formData.use_balloon_installments
+          paymentMode.isInstallment &&
+          formData.use_balloon_installments &&
+          !(
+            isRecantoSinal &&
+            normalizeRecantoInstallmentDefinitionMode(
+              formData.installment_definition_mode,
+            ) === 'FIXED_AMOUNT'
+          )
             ? formData.balloon_config || emptyBalloonFormConfig()
             : null,
         installment_correction_type: isStandardSaleForm
@@ -1370,6 +1472,35 @@ export function CustomerLotFormModal({
                         </div>
                       </>
                     )}
+                    {isRecantoSinal ? (
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          Forma de definir o parcelamento
+                        </label>
+                        <select
+                          value={installmentDefinitionMode}
+                          disabled={submitting || prefillLoading}
+                          onChange={(e) => {
+                            const mode = normalizeRecantoInstallmentDefinitionMode(
+                              e.target.value,
+                            );
+                            setField({
+                              installment_definition_mode: mode,
+                              ...(mode === 'FIXED_AMOUNT'
+                                ? {
+                                    use_balloon_installments: false,
+                                    generate_residual_installment: true,
+                                  }
+                                : {}),
+                            });
+                          }}
+                          className={GIS_INPUT}
+                        >
+                          <option value="BY_COUNT">Calcular valor pela quantidade</option>
+                          <option value="FIXED_AMOUNT">Fixar valor da parcela</option>
+                        </select>
+                      </div>
+                    ) : null}
                     <InstallmentsCountCombobox
                       value={installmentsCountStr}
                       onChange={(nextValue) => setField({ installments_count: nextValue })}
@@ -1379,16 +1510,116 @@ export function CustomerLotFormModal({
                     />
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Valor da Parcela
+                        {isRecantoSinal && installmentDefinitionMode === 'FIXED_AMOUNT'
+                          ? 'Valor fixo da parcela'
+                          : 'Valor da Parcela'}
                       </label>
-                      <CurrencyInput
-                        readOnly
-                        value={installmentsCount > 0 ? String(installmentValue) : ''}
-                        onChange={() => {}}
-                        placeholder="—"
-                        className={`${GIS_INPUT_READONLY} font-semibold text-blue-800`}
-                      />
+                      {isRecantoSinal && installmentDefinitionMode === 'FIXED_AMOUNT' ? (
+                        <CurrencyInput
+                          value={formData.regular_installment_amount || ''}
+                          onChange={(next) =>
+                            setField({
+                              regular_installment_amount: next,
+                              generate_residual_installment: true,
+                            })
+                          }
+                          placeholder="0,00"
+                          className={`${GIS_INPUT} font-semibold text-blue-800`}
+                          disabled={submitting || prefillLoading}
+                        />
+                      ) : (
+                        <CurrencyInput
+                          readOnly
+                          value={installmentsCount > 0 ? String(installmentValue) : ''}
+                          onChange={() => {}}
+                          placeholder="—"
+                          className={`${GIS_INPUT_READONLY} font-semibold text-blue-800`}
+                        />
+                      )}
                       {isRecantoSinal &&
+                      installmentDefinitionMode === 'FIXED_AMOUNT' &&
+                      recantoLotPlan ? (
+                        <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-700 leading-snug space-y-1">
+                          <p className="font-semibold text-slate-800">Prévia do parcelamento</p>
+                          <p>{recantoPreviewLines?.regularLine}</p>
+                          <p>
+                            Subtotal regular:{' '}
+                            {formatCurrencyBRL(recantoLotPlan.regularSubtotal)}
+                          </p>
+                          {recantoLotPlan.hasResidual ? (
+                            <p>{recantoPreviewLines?.residualLine}</p>
+                          ) : null}
+                          <p>{recantoPreviewLines?.totalLine}</p>
+                          <p>{recantoPreviewLines?.dueDatesLine}</p>
+                          {recantoInstallmentPreview && recantoSignalPlan?.hasRemaining ? (
+                            <>
+                              <p className="pt-1 font-semibold text-amber-900">
+                                Com complemento do sinal
+                              </p>
+                              <p>
+                                Parcelas 1 a {recantoSignalPlan.remainingInstallments}:{' '}
+                                {formatCurrencyBRL(
+                                  recantoInstallmentPreview[0]?.amount ?? 0,
+                                )}
+                              </p>
+                              {(recantoSignalPlan.remainingInstallments || 0) <
+                              recantoLotPlan.regularCount ? (
+                                <p>
+                                  Parcelas {(recantoSignalPlan.remainingInstallments || 0) + 1} a{' '}
+                                  {recantoLotPlan.regularCount}:{' '}
+                                  {formatCurrencyBRL(recantoLotPlan.regularAmount)}
+                                </p>
+                              ) : null}
+                              {recantoLotPlan.hasResidual ? (
+                                <p>
+                                  Parcela final de ajuste:{' '}
+                                  {formatCurrencyBRL(recantoLotPlan.residualAmount)}
+                                </p>
+                              ) : null}
+                            </>
+                          ) : null}
+                          {recantoLotPlan.alerts.map((a) => (
+                            <p key={a} className="text-amber-800">
+                              {a}
+                            </p>
+                          ))}
+                          {recantoLotPlan.errors.map((err) => (
+                            <p key={err} className="text-red-700">
+                              {err}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                      {isRecantoSinal &&
+                      installmentDefinitionMode === 'FIXED_AMOUNT' &&
+                      recantoLotPlan &&
+                      recantoLotPlan.residualAmount > 0 ? (
+                        <label className="mt-2 flex items-start gap-2 text-[11px] text-slate-700">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={generateResidualInstallment}
+                            disabled={submitting || prefillLoading}
+                            onChange={(e) =>
+                              setField({
+                                generate_residual_installment: e.target.checked,
+                              })
+                            }
+                          />
+                          <span>
+                            Gerar parcela final com o saldo residual (
+                            {formatCurrencyBRL(
+                              Math.max(
+                                0,
+                                finalValue - recantoLotPlan.regularSubtotal,
+                              ),
+                            )}
+                            )
+                          </span>
+                        </label>
+                      ) : null}
+                      {isRecantoSinal &&
+                      installmentDefinitionMode === 'BY_COUNT' &&
                       recantoInstallmentPreview &&
                       recantoSignalPlan?.hasRemaining ? (
                         <p className="mt-1 text-[11px] text-amber-800 leading-snug">
@@ -1437,6 +1668,11 @@ export function CustomerLotFormModal({
                       />
                     </div>
                     <div className="md:col-span-2">
+                      {isRecantoSinal && installmentDefinitionMode === 'FIXED_AMOUNT' ? (
+                        <p className="text-[11px] text-slate-600">
+                          Parcelas balão ficam indisponíveis no modo de valor fixo.
+                        </p>
+                      ) : (
                       <SaleBalloonInstallmentsPanel
                         enabled={Boolean(formData.use_balloon_installments)}
                         locked={Boolean(formData.balloon_locked)}
@@ -1457,6 +1693,7 @@ export function CustomerLotFormModal({
                           setField({ balloon_config: nextConfig })
                         }
                       />
+                      )}
                     </div>
                   </div>
                 )}

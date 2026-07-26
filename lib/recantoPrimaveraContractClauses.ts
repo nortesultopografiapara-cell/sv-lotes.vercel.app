@@ -109,9 +109,13 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
 
   const saldoLine = hasBalloon
     ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt}), com parcelas balão discriminadas no Quadro Financeiro`
-    : ctx.hasSignalRemaining
-      ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt})`
-      : `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaFmt} FIXAS`;
+    : ctx.hasResidualInstallment
+      ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaBaseFmt} e uma parcela final de ajuste de ${ctx.valorResidualFmt}`
+      : ctx.installmentDefinitionMode === 'FIXED_AMOUNT' && ctx.lotParcelamentoClauseText
+        ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.lotParcelamentoClauseText}`
+        : ctx.hasSignalRemaining
+          ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt})`
+          : `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaFmt} FIXAS`;
 
   const sinalDetail = ctx.signalPaidFullyAtSale
     ? `${ctx.valorSinalFmt}<br/><span style="font-size: 9.5pt;">Pago integralmente no ato</span>`

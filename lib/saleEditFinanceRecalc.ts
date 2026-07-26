@@ -16,6 +16,10 @@ import {
   resolveRecantoSignalPlan,
 } from '@/lib/recantoSignalRemaining';
 import {
+  normalizeRecantoInstallmentDefinitionMode,
+  resolveRecantoLotInstallmentPlan,
+} from '@/lib/recantoFixedInstallmentPlan';
+import {
   applyBalloonToInstallmentAmounts,
   resolveSaleBalloonPlan,
   type SaleBalloonFormConfig,
@@ -202,49 +206,103 @@ export function buildSaleEditFinancePayloads(
         contractModel: options?.contractModel,
       });
 
-      // Camada opcional: balão só altera valores quando use_balloon_installments=true.
-      // Sem balão, applyBalloonToInstallmentAmounts == splitInstallmentAmounts.
-      const balloonPlan = resolveSaleBalloonPlan({
-        useBalloon: Boolean(data.use_balloon_installments),
-        installmentsCount: instCount,
-        contractValue: fValue,
-        config: (data.balloon_config as SaleBalloonFormConfig | null | undefined) ?? null,
-      });
-      const balloonComps = applyBalloonToInstallmentAmounts(
-        principal,
-        instCount,
-        balloonPlan,
-      );
-      const amountsBeforeSignal = balloonComps.map((c) => c.amount);
+      const installmentMode = isRecanto
+        ? normalizeRecantoInstallmentDefinitionMode(data.installment_definition_mode)
+        : 'BY_COUNT';
+      const fixedAmount =
+        installmentMode === 'FIXED_AMOUNT'
+          ? parseCurrencyBRLNumber(String(data.regular_installment_amount || ''))
+          : 0;
+      const generateResidual = data.generate_residual_installment !== false;
 
-      let compositions = amountsBeforeSignal.map((amount, index) => ({
-        baseAmount: amount,
-        signalAddonAmount: 0,
-        amount,
-        dueDateOverride: balloonComps[index]?.dueDateOverride ?? null,
-      }));
+      let compositions: Array<{
+        baseAmount: number;
+        signalAddonAmount: number;
+        amount: number;
+        dueDateOverride: string | null;
+        isResidual?: boolean;
+      }> = [];
 
-      if (recantoSignalPlan && hasExplicitSignalPaidAtSale) {
-        const withSignal = applySignalAddonToInstallmentAmounts(
-          amountsBeforeSignal,
-          recantoSignalPlan,
-        );
-        compositions = withSignal.map((row, index) => ({
-          baseAmount: row.baseAmount,
-          signalAddonAmount: row.signalAddonAmount,
-          amount: row.amount,
-          dueDateOverride: balloonComps[index]?.dueDateOverride ?? null,
+      if (isRecanto && installmentMode === 'FIXED_AMOUNT') {
+        const lotPlan = resolveRecantoLotInstallmentPlan({
+          lotValue: fValue,
+          regularCount: instCount,
+          mode: 'FIXED_AMOUNT',
+          regularAmount: fixedAmount,
+          generateResidual,
+          useBalloon: Boolean(data.use_balloon_installments),
+        });
+        if (!lotPlan.ok) {
+          throw new Error(lotPlan.errors[0] || 'Parcelamento fixo inválido.');
+        }
+        const regularBases = lotPlan.baseAmounts.slice(0, lotPlan.regularCount);
+        let withSignal = regularBases.map((baseAmount) => ({
+          baseAmount,
+          signalAddonAmount: 0,
+          amount: baseAmount,
         }));
+        if (recantoSignalPlan && hasExplicitSignalPaidAtSale) {
+          withSignal = applySignalAddonToInstallmentAmounts(
+            regularBases,
+            recantoSignalPlan,
+          );
+        }
+        compositions = withSignal.map((row) => ({
+          ...row,
+          dueDateOverride: null,
+          isResidual: false,
+        }));
+        if (lotPlan.hasResidual) {
+          compositions.push({
+            baseAmount: lotPlan.residualAmount,
+            signalAddonAmount: 0,
+            amount: lotPlan.residualAmount,
+            dueDateOverride: null,
+            isResidual: true,
+          });
+        }
+      } else {
+        // Camada opcional: balão só altera valores quando use_balloon_installments=true.
+        // Sem balão, applyBalloonToInstallmentAmounts == splitInstallmentAmounts.
+        const balloonPlan = resolveSaleBalloonPlan({
+          useBalloon: Boolean(data.use_balloon_installments),
+          installmentsCount: instCount,
+          contractValue: fValue,
+          config: (data.balloon_config as SaleBalloonFormConfig | null | undefined) ?? null,
+        });
+        const balloonComps = applyBalloonToInstallmentAmounts(
+          principal,
+          instCount,
+          balloonPlan,
+        );
+        const amountsBeforeSignal = balloonComps.map((c) => c.amount);
+
+        compositions = amountsBeforeSignal.map((amount, index) => ({
+          baseAmount: amount,
+          signalAddonAmount: 0,
+          amount,
+          dueDateOverride: balloonComps[index]?.dueDateOverride ?? null,
+          isResidual: false,
+        }));
+
+        if (recantoSignalPlan && hasExplicitSignalPaidAtSale) {
+          const withSignal = applySignalAddonToInstallmentAmounts(
+            amountsBeforeSignal,
+            recantoSignalPlan,
+          );
+          compositions = withSignal.map((row, index) => ({
+            baseAmount: row.baseAmount,
+            signalAddonAmount: row.signalAddonAmount,
+            amount: row.amount,
+            dueDateOverride: balloonComps[index]?.dueDateOverride ?? null,
+            isResidual: false,
+          }));
+        }
       }
 
       let cDate = new Date(data.first_installment_due_date + 'T12:00:00Z');
-      for (let i = 0; i < instCount; i++) {
-        const row = compositions[i] ?? {
-          baseAmount: amountsBeforeSignal[i] ?? 0,
-          signalAddonAmount: 0,
-          amount: amountsBeforeSignal[i] ?? 0,
-          dueDateOverride: null as string | null,
-        };
+      for (let i = 0; i < compositions.length; i++) {
+        const row = compositions[i]!;
         const dueOverride = row.dueDateOverride
           ? String(row.dueDateOverride).split('T')[0]
           : null;

@@ -37,6 +37,9 @@ import {
 } from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
 import { normalizeSaleContractModel } from '@/lib/contractModel';
+import {
+  buildRecantoInstallmentSalesSnapshot,
+} from '@/lib/recantoFixedInstallmentPlan';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -375,6 +378,21 @@ export async function executeGisSaleCreate(
 
   const balloonSalesFields = balloonSalesPatchFromPlan(balloonPlan);
 
+  const recantoInstallmentSnapshot = buildRecantoInstallmentSalesSnapshot({
+    contractModel: saleContractModel,
+    mode: customerData.installment_definition_mode,
+    lotValue: customerData.final_value || finalPrice,
+    regularCount: instCount,
+    regularAmount: parseCurrencyBRLNumber(
+      String(customerData.regular_installment_amount || ''),
+    ),
+    generateResidual: customerData.generate_residual_installment !== false,
+    useBalloon: balloonPlan.enabled,
+  });
+  if (recantoInstallmentSnapshot.error) {
+    throw new Error(recantoInstallmentSnapshot.error);
+  }
+
   const salePayload: Record<string, unknown> = {
     tenant_id: tenantId,
     company_id: tenantId,
@@ -408,6 +426,14 @@ export async function executeGisSaleCreate(
     signal_remaining_payment_mode: recantoSignalMode,
     signal_remaining_installments: recantoSignalInstallments,
     signal_remaining_installment_value: recantoSignalInstallmentValue,
+    installment_definition_mode:
+      recantoInstallmentSnapshot.installment_definition_mode,
+    regular_installment_amount:
+      recantoInstallmentSnapshot.regular_installment_amount,
+    has_residual_installment:
+      recantoInstallmentSnapshot.has_residual_installment,
+    residual_installment_amount:
+      recantoInstallmentSnapshot.residual_installment_amount,
     ...balloonSalesFields,
     ...(financialAccountId ? { financial_account_id: financialAccountId } : {}),
     ...buildSaleSpouseDbPatch(customerData),

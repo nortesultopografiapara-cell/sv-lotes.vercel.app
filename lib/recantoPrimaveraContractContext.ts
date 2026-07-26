@@ -58,6 +58,11 @@ import {
   resolveSaleContractBalloonFinance,
   type SaleContractBalloonFinanceSummary,
 } from '@/lib/saleContractBalloonFinance';
+import {
+  buildRecantoLotParcelamentoClauseText,
+  normalizeRecantoInstallmentDefinitionMode,
+  resolveRecantoLotInstallmentPlan,
+} from '@/lib/recantoFixedInstallmentPlan';
 
 export type RecantoPrimaveraContractParams = {
   tenant: Record<string, unknown>;
@@ -144,6 +149,10 @@ export type RecantoPrimaveraContractContext = {
   valorParcelaFmt: string;
   valorParcelaExtenso: string;
   qtdParcelas: number;
+  installmentDefinitionMode: 'BY_COUNT' | 'FIXED_AMOUNT';
+  hasResidualInstallment: boolean;
+  valorResidualFmt: string;
+  lotParcelamentoClauseText: string;
   paymentMode: SalePaymentMode;
   isCashPayment: boolean;
   singleFutureDueLongFmt: string;
@@ -467,28 +476,68 @@ export function buildRecantoPrimaveraContractContext(
   });
 
   // Recanto: parcela base = valor total da chácara / parcelas (sinal NÃO abate).
+  // FIXED_AMOUNT: N × valor fixo + residual opcional (parcela final de ajuste).
+  const installmentDefinitionMode = normalizeRecantoInstallmentDefinitionMode(
+    sale?.installment_definition_mode as string | null | undefined,
+  );
+  const generateResidual =
+    sale?.has_residual_installment === true ||
+    (sale?.residual_installment_amount != null &&
+      Number(sale.residual_installment_amount) > 0);
+  const fixedRegularAmount =
+    installmentDefinitionMode === 'FIXED_AMOUNT'
+      ? Number(sale?.regular_installment_amount) || 0
+      : 0;
+
+  const lotPlan =
+    !isSinglePayment && installmentDefinitionMode === 'FIXED_AMOUNT'
+      ? resolveRecantoLotInstallmentPlan({
+          lotValue: valTotal,
+          regularCount: qtdParcelas,
+          mode: 'FIXED_AMOUNT',
+          regularAmount: fixedRegularAmount,
+          generateResidual,
+          useBalloon: Boolean(sale?.use_balloon_installments),
+        })
+      : !isSinglePayment
+        ? resolveRecantoLotInstallmentPlan({
+            lotValue: valTotal,
+            regularCount: qtdParcelas,
+            mode: 'BY_COUNT',
+          })
+        : null;
+
+  const hasResidualInstallment = Boolean(lotPlan?.hasResidual);
+  const residualAmount = lotPlan?.residualAmount ?? 0;
+  const lotParcelamentoClauseText = lotPlan
+    ? buildRecantoLotParcelamentoClauseText(lotPlan)
+    : '';
+
   const valorParcelaBase =
     !isSinglePayment && qtdParcelas > 0
-      ? resolveInstallmentPrincipal({
+      ? lotPlan?.regularAmount ??
+        resolveInstallmentPrincipal({
           totalValue: valTotal,
           downPayment: valSinal,
           contractModel: 'RECANTO_PRIMAVERA',
         }) / qtdParcelas
       : 0;
-  const baseAmounts = !isSinglePayment
-      ? splitInstallmentAmounts(
-        resolveInstallmentPrincipal({
-          totalValue: valTotal,
-          downPayment: valSinal,
-          contractModel: 'RECANTO_PRIMAVERA',
-        }),
-        qtdParcelas,
-      )
+  const regularBaseAmounts = !isSinglePayment
+    ? installmentDefinitionMode === 'FIXED_AMOUNT' && lotPlan
+      ? lotPlan.baseAmounts.slice(0, lotPlan.regularCount)
+      : splitInstallmentAmounts(
+          resolveInstallmentPrincipal({
+            totalValue: valTotal,
+            downPayment: valSinal,
+            contractModel: 'RECANTO_PRIMAVERA',
+          }),
+          qtdParcelas,
+        )
     : [];
   const compositions =
     hasExplicitSignalPaid && !isSinglePayment
-      ? applySignalAddonToInstallmentAmounts(baseAmounts, signalPlan)
-      : baseAmounts.map((baseAmount) => ({
+      ? applySignalAddonToInstallmentAmounts(regularBaseAmounts, signalPlan)
+      : regularBaseAmounts.map((baseAmount) => ({
           baseAmount,
           signalAddonAmount: 0,
           amount: baseAmount,
@@ -500,14 +549,17 @@ export function buildRecantoPrimaveraContractContext(
     ? buildRecantoSignalClauseText(signalPlan, qtdParcelas)
     : '';
 
-  const baseDisplay = baseAmounts[0] ?? valorParcelaBase;
+  const baseDisplay = regularBaseAmounts[0] ?? valorParcelaBase;
   const addonDisplay = signalPlan.remainingInstallmentValue;
   const totalComAddonDisplay =
     compositions.find((c) => c.signalAddonAmount > 0)?.amount ??
     valorParcelaComAcrescimo;
 
   let parcelasResumoSinalHtml = '';
-  if (!isSinglePayment && signalPlan.hasRemaining && hasExplicitSignalPaid) {
+  const shouldShowPaymentQuadro =
+    !isSinglePayment &&
+    ((signalPlan.hasRemaining && hasExplicitSignalPaid) || hasResidualInstallment);
+  if (shouldShowPaymentQuadro) {
     const row = (
       range: string,
       baseFmt: string,
@@ -522,30 +574,48 @@ export function buildRecantoPrimaveraContractContext(
       </tr>`;
 
     let bodyRows = '';
-    if (signalPlan.paymentMode === 'ALL_INSTALLMENTS') {
-      bodyRows = row(
-        `1 a ${qtdParcelas}`,
-        formatBRL(baseDisplay),
-        formatBRL(addonDisplay),
-        formatBRL(totalComAddonDisplay),
-      );
-    } else {
-      const n = signalPlan.remainingInstallments || 0;
-      bodyRows =
-        row(
-          `1 a ${n}`,
+    if (signalPlan.hasRemaining && hasExplicitSignalPaid) {
+      if (signalPlan.paymentMode === 'ALL_INSTALLMENTS') {
+        bodyRows = row(
+          `1 a ${qtdParcelas}`,
           formatBRL(baseDisplay),
           formatBRL(addonDisplay),
           formatBRL(totalComAddonDisplay),
-        ) +
-        (n < qtdParcelas
-          ? row(
-              `${n + 1} a ${qtdParcelas}`,
-              formatBRL(baseDisplay),
-              formatBRL(0),
-              formatBRL(baseDisplay),
-            )
-          : '');
+        );
+      } else {
+        const n = signalPlan.remainingInstallments || 0;
+        bodyRows =
+          row(
+            `1 a ${n}`,
+            formatBRL(baseDisplay),
+            formatBRL(addonDisplay),
+            formatBRL(totalComAddonDisplay),
+          ) +
+          (n < qtdParcelas
+            ? row(
+                `${n + 1} a ${qtdParcelas}`,
+                formatBRL(baseDisplay),
+                formatBRL(0),
+                formatBRL(baseDisplay),
+              )
+            : '');
+      }
+    } else {
+      bodyRows = row(
+        `1 a ${qtdParcelas}`,
+        formatBRL(baseDisplay),
+        formatBRL(0),
+        formatBRL(baseDisplay),
+      );
+    }
+
+    if (hasResidualInstallment) {
+      bodyRows += row(
+        'Parcela final de ajuste',
+        formatBRL(residualAmount),
+        formatBRL(0),
+        formatBRL(residualAmount),
+      );
     }
 
     parcelasResumoSinalHtml = `
@@ -703,6 +773,10 @@ export function buildRecantoPrimaveraContractContext(
     valorParcelaFmt: formatBRL(valorParcela),
     valorParcelaExtenso: formatExtensoCurrency(valorParcela),
     qtdParcelas,
+    installmentDefinitionMode,
+    hasResidualInstallment,
+    valorResidualFmt: formatBRL(residualAmount),
+    lotParcelamentoClauseText,
     paymentMode,
     isCashPayment,
     singleFutureDueLongFmt,

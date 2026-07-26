@@ -55,6 +55,10 @@ import {
   resolveInstallmentPrincipal,
 } from '@/lib/saleInstallmentCalc';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
+import {
+  buildRecantoInstallmentSalesSnapshot,
+  normalizeRecantoInstallmentDefinitionMode,
+} from '@/lib/recantoFixedInstallmentPlan';
 
 export function canEditCompletedSale(role?: string | null): boolean {
   return isPartnerPanelAdmin(role);
@@ -79,6 +83,9 @@ export type SaleEditLoadedContext = {
     signal_paid_at_sale?: string;
     signal_remaining_payment_mode?: 'FIRST_INSTALLMENTS' | 'ALL_INSTALLMENTS' | '';
     signal_remaining_installments?: string;
+    installment_definition_mode?: string;
+    regular_installment_amount?: string;
+    generate_residual_installment?: boolean;
     use_balloon_installments?: boolean;
     balloon_config?: SaleBalloonFormConfig | null;
     balloon_locked?: boolean;
@@ -289,6 +296,18 @@ export async function loadSaleEditContext(
       sale.signal_remaining_installments != null
         ? String(sale.signal_remaining_installments)
         : '',
+    installment_definition_mode: normalizeRecantoInstallmentDefinitionMode(
+      sale.installment_definition_mode as string | null | undefined,
+    ),
+    regular_installment_amount:
+      sale.regular_installment_amount != null &&
+      Number(sale.regular_installment_amount) > 0
+        ? formatCurrencyBRL(Number(sale.regular_installment_amount) || 0)
+        : '',
+    generate_residual_installment:
+      sale.has_residual_installment === true ||
+      (sale.residual_installment_amount != null &&
+        Number(sale.residual_installment_amount) > 0),
     down_payment_due_date: downPaymentDue ? String(downPaymentDue) : '',
     installments_count: String(sale.installments_count ?? 1),
     first_installment_due_date: firstInstDue ? String(firstInstDue) : '',
@@ -432,28 +451,6 @@ export async function updateSaleFromEdit(
     JSON.stringify(saleBefore.balloon_mode ?? null) !==
       JSON.stringify(balloonPlan.enabled ? balloonPlan.mode : null);
 
-  const financePlanChanged =
-    String(saleBefore.payment_type || '') !== String(data.payment_type || '') ||
-    Number(saleBefore.installments_count || 0) !== installmentsCount ||
-    Math.abs(
-      Number(saleBefore.total_value || saleBefore.agreed_price || 0) -
-        Number(data.final_value || 0),
-    ) > 0.009 ||
-    Math.abs(
-      Number(saleBefore.down_payment || 0) -
-        Number(
-          signalContractValue ?? parseCurrencyBRLNumber(data.down_payment),
-        ),
-    ) > 0.009 ||
-    Math.abs(
-      Number(saleBefore.discount || 0) -
-        parseCurrencyBRLNumber(data.discount_value),
-    ) > 0.009;
-
-  if (balloonLocked && (balloonChanged || financePlanChanged)) {
-    throw new Error(BALLOON_EDIT_LOCKED_MESSAGE);
-  }
-
   if (balloonPlan.enabled) {
     const schemaOk = await probeBalloonSchemaAvailable(supabase);
     if (!schemaOk) {
@@ -485,6 +482,60 @@ export async function updateSaleFromEdit(
   const previousBalloonRows = await loadSaleBalloonRows(supabase, saleId);
   const balloonSalesFields = balloonSalesPatchFromPlan(balloonPlan);
 
+  const recantoInstallmentSnapshot = buildRecantoInstallmentSalesSnapshot({
+    contractModel,
+    mode: data.installment_definition_mode,
+    lotValue: data.final_value,
+    regularCount: installmentsCount,
+    regularAmount: parseCurrencyBRLNumber(
+      String(data.regular_installment_amount || ''),
+    ),
+    generateResidual: data.generate_residual_installment !== false,
+    useBalloon: balloonPlan.enabled,
+  });
+  if (recantoInstallmentSnapshot.error) {
+    throw new Error(recantoInstallmentSnapshot.error);
+  }
+
+  const previousInstallmentMode = normalizeRecantoInstallmentDefinitionMode(
+    saleBefore.installment_definition_mode as string | null | undefined,
+  );
+  const nextInstallmentMode =
+    recantoInstallmentSnapshot.installment_definition_mode || 'BY_COUNT';
+
+  const financePlanChanged =
+    String(saleBefore.payment_type || '') !== String(data.payment_type || '') ||
+    Number(saleBefore.installments_count || 0) !== installmentsCount ||
+    Math.abs(
+      Number(saleBefore.total_value || saleBefore.agreed_price || 0) -
+        Number(data.final_value || 0),
+    ) > 0.009 ||
+    Math.abs(
+      Number(saleBefore.down_payment || 0) -
+        Number(
+          signalContractValue ?? parseCurrencyBRLNumber(data.down_payment),
+        ),
+    ) > 0.009 ||
+    Math.abs(
+      Number(saleBefore.discount || 0) -
+        parseCurrencyBRLNumber(data.discount_value),
+    ) > 0.009 ||
+    previousInstallmentMode !== nextInstallmentMode ||
+    Math.abs(
+      Number(saleBefore.regular_installment_amount || 0) -
+        Number(recantoInstallmentSnapshot.regular_installment_amount || 0),
+    ) > 0.009 ||
+    Boolean(saleBefore.has_residual_installment) !==
+      recantoInstallmentSnapshot.has_residual_installment ||
+    Math.abs(
+      Number(saleBefore.residual_installment_amount || 0) -
+        Number(recantoInstallmentSnapshot.residual_installment_amount || 0),
+    ) > 0.009;
+
+  if (balloonLocked && (balloonChanged || financePlanChanged)) {
+    throw new Error(BALLOON_EDIT_LOCKED_MESSAGE);
+  }
+
   const salePatch = buildOfficialSalesUpdatePatch({
     customerId,
     agreedPrice: data.final_value,
@@ -511,6 +562,14 @@ export async function updateSaleFromEdit(
     useBalloonInstallments: balloonSalesFields.use_balloon_installments,
     balloonMode: balloonSalesFields.balloon_mode,
     balloonConfig: balloonSalesFields.balloon_config as Record<string, unknown> | null,
+    installmentDefinitionMode:
+      recantoInstallmentSnapshot.installment_definition_mode,
+    regularInstallmentAmount:
+      recantoInstallmentSnapshot.regular_installment_amount,
+    hasResidualInstallment:
+      recantoInstallmentSnapshot.has_residual_installment,
+    residualInstallmentAmount:
+      recantoInstallmentSnapshot.residual_installment_amount,
     spouse: {
       has_spouse: data.has_spouse,
       sale_spouse_name: data.sale_spouse_name,
@@ -530,7 +589,7 @@ export async function updateSaleFromEdit(
   {
     let patchToApply: Record<string, unknown> = { ...salePatch };
     let saleUpdErr: { message?: string } | null = null;
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; attempt < 8; attempt++) {
       const { error } = await supabase
         .from('sales')
         .update(patchToApply)
@@ -557,7 +616,11 @@ export async function updateSaleFromEdit(
         (missing === 'use_balloon_installments' ||
           missing === 'balloon_mode' ||
           missing === 'balloon_config' ||
-          missing === 'financial_account_id') &&
+          missing === 'financial_account_id' ||
+          missing === 'installment_definition_mode' ||
+          missing === 'regular_installment_amount' ||
+          missing === 'has_residual_installment' ||
+          missing === 'residual_installment_amount') &&
         missing in patchToApply
       ) {
         const { [missing]: _drop, ...rest } = patchToApply;
