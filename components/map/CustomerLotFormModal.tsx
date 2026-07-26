@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
+import { SaleDocumentsPanel } from '@/components/sales/SaleDocumentsPanel';
 import {
   customerToFormValues,
   emptyCustomerFormValues,
@@ -146,6 +147,7 @@ type Props = {
     status?: string;
     customerId?: string | null;
     project_id?: string | null;
+    saleId?: string | null;
     signal_amount?: number | null;
     signal_date?: string | null;
     signal_payment_method?: string | null;
@@ -161,6 +163,8 @@ type Props = {
   initialFormData?: Partial<LotFormState>;
   brokers?: { id: string; name: string }[];
   contractModel?: SaleContractModel | string | null;
+  /** Venda existente — necessário para a aba Documentos. */
+  saleId?: string | null;
   onClose: () => void;
   onConfirm: (data: LotFormConfirmPayload) => Promise<void>;
   onCustomerValidationFailed?: (validation: CustomerContractValidation) => void;
@@ -178,11 +182,13 @@ export function CustomerLotFormModal({
   initialFormData,
   brokers = [],
   contractModel = 'PADRAO',
+  saleId = null,
   onClose,
   onConfirm,
   onCustomerValidationFailed,
 }: Props) {
   const isEditMode = mode === 'edit';
+  const [activeTab, setActiveTab] = useState<'dados' | 'documentos'>('dados');
   const [formData, setFormData] = useState<LotFormState>(() => ({
     ...emptyLotFormState(),
     ...initialFormData,
@@ -698,6 +704,37 @@ export function CustomerLotFormModal({
             </div>
           )}
 
+          <div className="mb-4 flex gap-1 border-b border-gray-200">
+            <button
+              type="button"
+              onClick={() => setActiveTab('dados')}
+              className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                activeTab === 'dados'
+                  ? 'border-emerald-700 text-emerald-800'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              Dados
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('documentos')}
+              className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                activeTab === 'documentos'
+                  ? 'border-emerald-700 text-emerald-800'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              Documentos da Venda
+            </button>
+          </div>
+
+          {activeTab === 'documentos' ? (
+            <SaleDocumentsPanel
+              saleId={isEditMode ? saleId : null}
+              disabled={submitting || prefillLoading}
+            />
+          ) : (
           <form id="customer-lot-form" onSubmit={handleSubmit} className="space-y-6">
             {!isEditMode && (
               <CustomerSearchPicker
@@ -1522,6 +1559,7 @@ export function CustomerLotFormModal({
               </div>
             )}
           </form>
+          )}
         </div>
 
         <div className="sv-modal-footer sticky bottom-0 z-20 p-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3 bg-white">
@@ -1530,8 +1568,9 @@ export function CustomerLotFormModal({
             onClick={onClose}
             className="w-full sm:w-1/2 px-4 py-3 bg-gray-100 text-gray-700 font-semibold rounded-lg text-sm"
           >
-            Cancelar
+            {activeTab === 'documentos' ? 'Fechar' : 'Cancelar'}
           </button>
+          {activeTab === 'dados' ? (
           <button
             type="submit"
             form="customer-lot-form"
@@ -1550,6 +1589,15 @@ export function CustomerLotFormModal({
               'Confirmar Reserva'
             )}
           </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setActiveTab('dados')}
+              className="w-full sm:w-1/2 px-4 py-3 bg-emerald-700 text-white font-semibold rounded-lg text-sm"
+            >
+              Voltar aos dados
+            </button>
+          )}
         </div>
       </div>
     </div>
