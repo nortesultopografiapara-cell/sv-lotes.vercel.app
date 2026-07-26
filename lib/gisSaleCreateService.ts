@@ -427,6 +427,27 @@ export async function executeGisSaleCreate(
     }
     saleId = saleData.id as string;
 
+    if (
+      customerData.update_spouse_registry === true &&
+      customerData.has_spouse &&
+      customerId
+    ) {
+      const { upsertCustomerSpouseFromSaleForm } = await import(
+        '@/lib/customerSpousesService'
+      );
+      const registryResult = await upsertCustomerSpouseFromSaleForm(supabase, {
+        companyId: tenantId,
+        customerId,
+        fields: customerData,
+        saleId,
+      });
+      if (!registryResult.ok && registryResult.error) {
+        warnings.push(
+          `Cônjuge salvo na venda; cadastro reutilizável não atualizado: ${registryResult.error}`,
+        );
+      }
+    }
+
     const { data: tenantContractRow } = await supabase
       .from('companies')
       .select('contract_model')

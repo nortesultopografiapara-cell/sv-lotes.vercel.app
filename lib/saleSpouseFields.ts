@@ -4,6 +4,10 @@
  */
 
 import { onlyDigits } from '@/lib/inputMasks';
+import {
+  formatSpouseCpf,
+  normalizeSpouseCpfForStorage,
+} from '@/lib/saleSpouseCpf';
 
 export const SALE_SPOUSE_DB_FIELDS = [
   'sale_spouse_name',
@@ -176,7 +180,7 @@ export function saleSpouseFormFieldsFromSale(
     sale_spouse_profession: ctx.spouse.profession || '',
     sale_spouse_rg: ctx.spouse.rg || '',
     sale_spouse_rg_issuer: ctx.spouse.issuer || '',
-    sale_spouse_cpf: ctx.spouse.cpf || '',
+    sale_spouse_cpf: formatSpouseCpf(ctx.spouse.cpf),
     sale_spouse_phone: ctx.spouse.phone || '',
     sale_spouse_email: ctx.spouse.email || '',
     sale_spouse_address: ctx.spouse.address || '',
@@ -217,7 +221,7 @@ export function buildSaleSpouseDbPatch(
     sale_spouse_profession: clean(ctx.spouse.profession) || null,
     sale_spouse_rg: clean(ctx.spouse.rg) || null,
     sale_spouse_rg_issuer: clean(ctx.spouse.issuer) || null,
-    sale_spouse_cpf: clean(ctx.spouse.cpf) || null,
+    sale_spouse_cpf: normalizeSpouseCpfForStorage(ctx.spouse.cpf),
     sale_spouse_phone: clean(ctx.spouse.phone) || null,
     sale_spouse_email: clean(ctx.spouse.email) || null,
     sale_spouse_address: clean(ctx.spouse.address) || null,

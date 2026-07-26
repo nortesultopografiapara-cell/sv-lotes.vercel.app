@@ -832,6 +832,22 @@ export async function updateSaleFromEdit(
     });
   }
 
+  if (
+    (data as { update_spouse_registry?: boolean }).update_spouse_registry === true &&
+    data.has_spouse &&
+    customerId
+  ) {
+    const { upsertCustomerSpouseFromSaleForm } = await import(
+      '@/lib/customerSpousesService'
+    );
+    await upsertCustomerSpouseFromSaleForm(supabase, {
+      companyId: tenantId,
+      customerId,
+      fields: data,
+      saleId,
+    });
+  }
+
   return { contractId: lot.contractId || null, financeChanged };
 }
 
