@@ -56,6 +56,7 @@
     "test:master-topography-quotes": "tsx scripts/mandatory-master-topography-quotes-tests.ts",
     "test:master-topography-quote-pdf": "tsx scripts/mandatory-master-topography-quote-pdf-tests.ts",
     "test:master-topography-quote-scope": "tsx scripts/mandatory-master-topography-quote-scope-tests.ts",
+    "test:master-topography-quote-email": "tsx scripts/mandatory-master-topography-quote-email-tests.ts",
     "test:master-corporate-finance-foundation": "tsx scripts/mandatory-master-corporate-finance-foundation-tests.ts",
     "test:master-corporate-finance-arap": "tsx scripts/mandatory-master-corporate-finance-arap-tests.ts",
     "test:master-corporate-finance-arap-autofill": "tsx scripts/mandatory-master-corporate-finance-arap-autofill-tests.ts",

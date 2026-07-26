@@ -1,5 +1,5 @@
 /**
- * PDF Analítico — orçamento detalhado (Fase 5.3).
+ * PDF Analítico — orçamento detalhado (Fase 5.3 revisão final).
  */
 
 import jsPDF from 'jspdf';
@@ -20,7 +20,13 @@ import {
   preserveQuotePdfUserText,
   filterComplementaryTechnicalNotes,
 } from './quotePdfSyntheticLayout';
-import { formatQuoteScopeLabelsProse } from './quoteScopeCatalog';
+import {
+  buildProfessionalIdentityLines,
+  buildQuoteScheduleRows,
+  formatQuotePercentBr,
+  resolveEquipmentCategory,
+  resolveProductCategory,
+} from './quotePdfPresentation';
 import { topographyCategoryLabel } from './categories';
 import { topographyServiceTypeLabel } from './serviceTypes';
 import type { QuoteExportPayload } from './quoteExportTypes';
@@ -51,7 +57,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
     pageWidth,
   });
 
-  // Capa / identificação
+  y = ensureQuotePdfSpace(doc, y, 28, marginBottom);
   y = drawQuotePdfSectionTitle(doc, 'IDENTIFICAÇÃO', marginLeft, y);
   doc.setFontSize(8);
   doc.setTextColor(...QUOTE_PDF_BRAND.ink);
@@ -64,7 +70,6 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
     ['Responsável', preserveQuotePdfUserText(q.internal_manager)],
     ['Data da proposta', formatQuotePdfDateBr(q.proposal_date)],
     ['Validade', formatQuotePdfDateBr(q.expiration_date)],
-    ['Prazo estimado', preserveQuotePdfUserText(q.estimated_deadline)],
   ].filter(([, v]) => isMeaningfulQuotePdfText(v)) as Array<[string, string]>;
 
   autoTable(doc, {
@@ -82,12 +87,13 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
 
   const objeto = preserveQuotePdfUserText(q.title) || preserveQuotePdfUserText(q.description);
   if (objeto) {
+    y = ensureQuotePdfSpace(doc, y, 14, marginBottom);
     y = drawQuotePdfSectionTitle(doc, 'OBJETO', marginLeft, y);
     y = drawQuotePdfWrapped(doc, objeto, marginLeft, y, contentWidth, 4, marginBottom) + 4;
   }
 
-  if (isMeaningfulQuotePdfText(q.description)) {
-    y = ensureQuotePdfSpace(doc, y, 12, marginBottom);
+  if (isMeaningfulQuotePdfText(q.description) && preserveQuotePdfUserText(q.title)) {
+    y = ensureQuotePdfSpace(doc, y, 14, marginBottom);
     y = drawQuotePdfSectionTitle(doc, 'OBJETIVO DO SERVIÇO', marginLeft, y);
     y =
       drawQuotePdfWrapped(
@@ -101,11 +107,10 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
       ) + 4;
   }
 
-  // Escopo por etapas
-  y = ensureQuotePdfSpace(doc, y, 16, marginBottom);
+  y = ensureQuotePdfSpace(doc, y, 20, marginBottom);
   y = drawQuotePdfSectionTitle(doc, 'ESCOPO DOS SERVIÇOS', marginLeft, y);
   for (const stage of [...payload.stages].sort((a, b) => a.sort_order - b.sort_order)) {
-    y = ensureQuotePdfSpace(doc, y, 20, marginBottom);
+    y = ensureQuotePdfSpace(doc, y, 24, marginBottom);
     doc.setFillColor(...QUOTE_PDF_BRAND.stageFill);
     doc.rect(marginLeft, y - 3.5, contentWidth, 6, 'F');
     doc.setFontSize(9);
@@ -140,7 +145,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         columnStyles: {
           0: { cellWidth: contentWidth * 0.42 },
           1: { cellWidth: contentWidth * 0.08, halign: 'center' },
-          2: { cellWidth: contentWidth * 0.08, halign: 'center' },
+          2: { cellWidth: contentWidth * 0.08,halign: 'center' },
           3: { cellWidth: contentWidth * 0.14,halign: 'right' },
           4: { cellWidth: contentWidth * 0.14,halign: 'right' },
           5: { cellWidth: contentWidth * 0.14,halign: 'right' },
@@ -151,7 +156,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
       doc.setFontSize(8);
       doc.setTextColor(...QUOTE_PDF_BRAND.muted);
       doc.text(
-        `Subtotal da etapa: ${quotePdfMoney(stage.subtotal)} (${stage.percentOfBudget.toFixed(1)}%)`,
+        `Subtotal da etapa: ${quotePdfMoney(stage.subtotal)} (${formatQuotePercentBr(stage.percentOfBudget, 1)})`,
         marginLeft,
         y,
       );
@@ -159,17 +164,16 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
     }
   }
 
-  // Equipamentos
   const resources = Array.isArray(q.technical_resources) ? q.technical_resources : [];
   if (resources.length) {
-    y = ensureQuotePdfSpace(doc, y, 16, marginBottom);
+    y = ensureQuotePdfSpace(doc, y, 20, marginBottom);
     y = drawQuotePdfSectionTitle(doc, 'EQUIPAMENTOS UTILIZADOS', marginLeft, y);
     autoTable(doc, {
       startY: y,
-      head: [['Equipamento / recurso', 'Origem']],
+      head: [['Equipamento / recurso', 'Categoria']],
       body: resources.map((r) => [
         preserveQuotePdfUserText(r.label),
-        r.source === 'catalog' ? 'Catálogo' : 'Personalizado',
+        resolveEquipmentCategory(r),
       ]),
       styles: { fontSize: 8, cellPadding: 1.2 },
       headStyles: { fillColor: QUOTE_PDF_BRAND.primary, textColor: 255, fontStyle: 'bold' },
@@ -177,22 +181,21 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         0: { cellWidth: contentWidth * 0.72 },
         1: { cellWidth: contentWidth * 0.28 },
       },
-      margin: { left: marginLeft, right: marginRight },
+      margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
     });
     y = lastY(doc, y) + 6;
   }
 
-  // Produtos
   const deliverables = Array.isArray(q.deliverables) ? q.deliverables : [];
   if (deliverables.length) {
-    y = ensureQuotePdfSpace(doc, y, 16, marginBottom);
+    y = ensureQuotePdfSpace(doc, y, 20, marginBottom);
     y = drawQuotePdfSectionTitle(doc, 'PRODUTOS ENTREGUES', marginLeft, y);
     autoTable(doc, {
       startY: y,
-      head: [['Produto / dado', 'Origem']],
+      head: [['Produto / dado', 'Categoria']],
       body: deliverables.map((d) => [
         preserveQuotePdfUserText(d.label),
-        d.source === 'catalog' ? 'Catálogo' : 'Personalizado',
+        resolveProductCategory(d),
       ]),
       styles: { fontSize: 8, cellPadding: 1.2 },
       headStyles: { fillColor: QUOTE_PDF_BRAND.primary, textColor: 255, fontStyle: 'bold' },
@@ -200,16 +203,15 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         0: { cellWidth: contentWidth * 0.72 },
         1: { cellWidth: contentWidth * 0.28 },
       },
-      margin: { left: marginLeft, right: marginRight },
+      margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
     });
     y = lastY(doc, y) + 6;
   }
 
-  // Metodologia / técnicas
   const complementary = filterComplementaryTechnicalNotes(q.technical_notes, resources);
   if (complementary || (!resources.length && isMeaningfulQuotePdfText(q.technical_notes))) {
-    y = ensureQuotePdfSpace(doc, y, 14, marginBottom);
-    y = drawQuotePdfSectionTitle(doc, 'INFORMAÇÕES TÉCNICAS / METODOLOGIA', marginLeft, y);
+    y = ensureQuotePdfSpace(doc, y, 16, marginBottom);
+    y = drawQuotePdfSectionTitle(doc, 'INFORMAÇÕES TÉCNICAS', marginLeft, y);
     y =
       drawQuotePdfWrapped(
         doc,
@@ -222,42 +224,49 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
       ) + 4;
   }
 
-  // Cronograma derivado (sem campo dedicado)
-  y = ensureQuotePdfSpace(doc, y, 20, marginBottom);
-  y = drawQuotePdfSectionTitle(doc, 'CRONOGRAMA PREVISTO', marginLeft, y);
-  const prazo = preserveQuotePdfUserText(q.estimated_deadline) || 'Conforme planejamento';
-  autoTable(doc, {
-    startY: y,
-    head: [['Fase', 'Previsão']],
-    body: [
-      ['Mobilização', prazo],
-      ['Campo / aquisição', prazo],
-      ['Processamento', prazo],
-      ['Entrega', prazo],
-    ],
-    styles: { fontSize: 8, cellPadding: 1.2 },
-    headStyles: { fillColor: QUOTE_PDF_BRAND.primary, textColor: 255, fontStyle: 'bold' },
-    columnStyles: {
-      0: { cellWidth: contentWidth * 0.4 },
-      1: { cellWidth: contentWidth * 0.6 },
-    },
-    margin: { left: marginLeft, right: marginRight },
-  });
-  y = lastY(doc, y) + 6;
+  if (isMeaningfulQuotePdfText(q.methodology_notes)) {
+    y = ensureQuotePdfSpace(doc, y, 16, marginBottom);
+    y = drawQuotePdfSectionTitle(doc, 'METODOLOGIA', marginLeft, y);
+    y =
+      drawQuotePdfWrapped(
+        doc,
+        String(q.methodology_notes),
+        marginLeft,
+        y,
+        contentWidth,
+        4,
+        marginBottom,
+      ) + 4;
+  }
 
-  // Condições comerciais (somente preenchidas)
+  const scheduleRows = buildQuoteScheduleRows(q);
+  if (scheduleRows.length) {
+    y = ensureQuotePdfSpace(doc, y, 18, marginBottom);
+    y = drawQuotePdfSectionTitle(doc, 'CRONOGRAMA PREVISTO', marginLeft, y);
+    autoTable(doc, {
+      startY: y,
+      head: [['Fase', 'Previsão']],
+      body: scheduleRows.map((r) => [r.phase, r.prevision]),
+      styles: { fontSize: 8, cellPadding: 1.2 },
+      headStyles: { fillColor: QUOTE_PDF_BRAND.primary, textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: contentWidth * 0.4 },
+        1: { cellWidth: contentWidth * 0.6 },
+      },
+      margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+    });
+    y = lastY(doc, y) + 6;
+  }
+
   const commercial: Array<[string, string]> = [];
   if (isMeaningfulQuotePdfText(q.payment_method)) {
     commercial.push(['Forma de pagamento', preserveQuotePdfUserText(q.payment_method)]);
-  }
-  if (isMeaningfulQuotePdfText(q.estimated_deadline)) {
-    commercial.push(['Prazo estimado', preserveQuotePdfUserText(q.estimated_deadline)]);
   }
   if (formatQuotePdfDateBr(q.expiration_date)) {
     commercial.push(['Validade', formatQuotePdfDateBr(q.expiration_date)]);
   }
   if (commercial.length) {
-    y = ensureQuotePdfSpace(doc, y, 14, marginBottom);
+    y = ensureQuotePdfSpace(doc, y, 16, marginBottom);
     y = drawQuotePdfSectionTitle(doc, 'CONDIÇÕES COMERCIAIS', marginLeft, y);
     autoTable(doc, {
       startY: y,
@@ -273,49 +282,54 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
     y = lastY(doc, y) + 6;
   }
 
-  // Composição financeira
-  y = ensureQuotePdfSpace(doc, y, 30, marginBottom);
+  y = ensureQuotePdfSpace(doc, y, 36, marginBottom);
   y = drawQuotePdfSectionTitle(doc, 'COMPOSIÇÃO FINANCEIRA', marginLeft, y);
   const f = payload.financials;
   autoTable(doc, {
     startY: y,
     body: [
       ['Subtotal sem BDI', quotePdfMoney(f.totalWithoutBdi)],
-      [`BDI (${f.bdiPercent}%)`, quotePdfMoney(f.bdiAmount)],
+      [`BDI (${formatQuotePercentBr(f.bdiPercent, 0)})`, quotePdfMoney(f.bdiAmount)],
       ['Total com BDI', quotePdfMoney(f.totalWithBdi)],
-      [`Desconto (${f.discountPercent}%)`, quotePdfMoney(f.discountValue)],
+      [`Desconto (${formatQuotePercentBr(f.discountPercent, 0)})`, quotePdfMoney(f.discountValue)],
       ['TOTAL GERAL', quotePdfMoney(f.totalGeral)],
-      [`Margem (${f.marginPercent}%)`, quotePdfMoney(f.marginValue)],
+      [
+        `Margem (${formatQuotePercentBr(f.marginPercent, 0)}) — informativa`,
+        quotePdfMoney(f.marginValue),
+      ],
     ],
     theme: 'grid',
     styles: { fontSize: 8, cellPadding: 1.4 },
     columnStyles: {
       0: { cellWidth: contentWidth * 0.55, fontStyle: 'bold' },
-      1: { cellWidth: contentWidth * 0.45,halign: 'right' },
+      1: { cellWidth: contentWidth * 0.45, halign: 'right' },
     },
-    margin: { left: marginLeft, right: marginRight },
+    margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
   });
-  y = lastY(doc, y) + 14;
+  y = lastY(doc, y) + 12;
 
-  // Assinatura
-  y = ensureQuotePdfSpace(doc, y, 28, marginBottom);
+  y = ensureQuotePdfSpace(doc, y, 32, marginBottom);
   y = drawQuotePdfSectionTitle(doc, 'ASSINATURA', marginLeft, y);
   doc.setFontSize(8);
   doc.setTextColor(...QUOTE_PDF_BRAND.ink);
   doc.text(QUOTE_PDF_BRAND.tradeName, marginLeft, y);
   y += 5;
-  if (isMeaningfulQuotePdfText(q.internal_manager)) {
+
+  const proLines = buildProfessionalIdentityLines(q);
+  for (const line of proLines) {
+    doc.text(line, marginLeft, y);
+    y += 4.5;
+  }
+  if (!proLines.length && isMeaningfulQuotePdfText(q.internal_manager)) {
     doc.text(`Responsável: ${preserveQuotePdfUserText(q.internal_manager)}`, marginLeft, y);
     y += 5;
   }
-  doc.setTextColor(...QUOTE_PDF_BRAND.muted);
-  doc.text('CREA: _________________________ (quando informado)', marginLeft, y);
-  y += 12;
+
+  y += 6;
   doc.setDrawColor(...QUOTE_PDF_BRAND.line);
   doc.line(marginLeft, y, marginLeft + 70, y);
+  doc.setTextColor(...QUOTE_PDF_BRAND.muted);
   doc.text('Assinatura / carimbo', marginLeft, y + 4);
-
-  void formatQuoteScopeLabelsProse;
 
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {

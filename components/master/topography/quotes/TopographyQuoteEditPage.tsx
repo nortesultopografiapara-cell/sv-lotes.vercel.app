@@ -48,6 +48,7 @@ import {
   QUOTE_SCOPE_MAX_TECHNICAL_RESOURCES,
   type QuoteScopeSelectedItem,
 } from '@/lib/master/topography/quoteScopeCatalog';
+import { SUGGESTED_METHODOLOGY_TEMPLATE } from '@/lib/master/topography/quotePdfPresentation';
 import QuoteScopeMultiSelect from './QuoteScopeMultiSelect';
 import QuoteSendEmailModal from './QuoteSendEmailModal';
 import {
@@ -100,6 +101,17 @@ type DraftQuote = {
   proposal_date: string;
   expiration_date: string;
   estimated_deadline: string;
+  mobilization_deadline_text: string;
+  field_duration_text: string;
+  processing_deadline_text: string;
+  delivery_deadline_text: string;
+  total_deadline_text: string;
+  methodology_notes: string;
+  professional_name: string;
+  professional_title: string;
+  professional_council: string;
+  professional_registration: string;
+  professional_registration_uf: string;
   payment_method: string;
   payment_terms: string;
   internal_manager: string;
@@ -151,6 +163,17 @@ function quoteToDraft(quote: MasterTopographyQuote): DraftQuote {
     proposal_date: quote.proposal_date || '',
     expiration_date: quote.expiration_date || '',
     estimated_deadline: quote.estimated_deadline || '',
+    mobilization_deadline_text: quote.mobilization_deadline_text || '',
+    field_duration_text: quote.field_duration_text || '',
+    processing_deadline_text: quote.processing_deadline_text || '',
+    delivery_deadline_text: quote.delivery_deadline_text || '',
+    total_deadline_text: quote.total_deadline_text || '',
+    methodology_notes: quote.methodology_notes || '',
+    professional_name: quote.professional_name || '',
+    professional_title: quote.professional_title || '',
+    professional_council: quote.professional_council || '',
+    professional_registration: quote.professional_registration || '',
+    professional_registration_uf: quote.professional_registration_uf || '',
     payment_method: quote.payment_method || '',
     payment_terms: quote.payment_terms || '',
     internal_manager: quote.internal_manager || '',
@@ -180,6 +203,7 @@ function normalizeDraftItem(item: MasterTopographyQuoteItem, localKey?: string):
     competence: item.competence ?? null,
     uf: item.uf ?? null,
     notes: item.notes ?? null,
+    calculation_notes: item.calculation_notes ?? null,
     catalog_item_id: item.catalog_item_id ?? null,
     custom_item_id: item.custom_item_id ?? null,
   };
@@ -428,13 +452,16 @@ function VirtualItemsBody({
                     <td className={styles.numCell} style={{ width: 96 }}>
                       {formatCurrency(total)}
                     </td>
-                    <td style={{ width: 90 }}>
+                    <td style={{ width: 110 }}>
                       <input
-                        value={item.notes || ''}
+                        value={item.calculation_notes || ''}
                         disabled={readOnly}
-                        placeholder="Obs."
+                        placeholder="Justificativa"
+                        title="Justificativa de cálculo (memória)"
                         onChange={(e) =>
-                          onChangeItem(item.localKey, { notes: e.target.value || null })
+                          onChangeItem(item.localKey, {
+                            calculation_notes: e.target.value || null,
+                          })
                         }
                         style={{ fontSize: '0.72rem' }}
                       />
@@ -631,6 +658,17 @@ function EditInner() {
       proposal_date: draft.proposal_date || null,
       expiration_date: draft.expiration_date || null,
       estimated_deadline: draft.estimated_deadline || null,
+      mobilization_deadline_text: draft.mobilization_deadline_text || null,
+      field_duration_text: draft.field_duration_text || null,
+      processing_deadline_text: draft.processing_deadline_text || null,
+      delivery_deadline_text: draft.delivery_deadline_text || null,
+      total_deadline_text: draft.total_deadline_text || null,
+      methodology_notes: draft.methodology_notes || null,
+      professional_name: draft.professional_name || null,
+      professional_title: draft.professional_title || null,
+      professional_council: draft.professional_council || null,
+      professional_registration: draft.professional_registration || null,
+      professional_registration_uf: draft.professional_registration_uf || null,
       payment_method: draft.payment_method || null,
       payment_terms: draft.payment_terms || null,
       internal_manager: draft.internal_manager || null,
@@ -738,6 +776,7 @@ function EditInner() {
             competence: item.competence,
             uf: item.uf,
             notes: item.notes,
+            calculation_notes: item.calculation_notes,
             catalog_item_id: item.catalog_item_id,
             custom_item_id: item.custom_item_id,
             sort_order: itemIndex,
@@ -857,6 +896,7 @@ function EditInner() {
           competence: partial.competence ?? null,
           uf: partial.uf ?? null,
           notes: partial.notes ?? null,
+          calculation_notes: partial.calculation_notes ?? null,
           catalog_item_id: partial.catalog_item_id ?? null,
           custom_item_id: partial.custom_item_id ?? null,
           sort_order: stage.items.length,
@@ -885,6 +925,7 @@ function EditInner() {
       catalog_item_id: catalogItem.source === 'catalog' ? catalogItem.id : null,
       custom_item_id: catalogItem.source === 'custom' ? catalogItem.id : null,
       notes: null,
+      calculation_notes: null,
     });
   };
 
@@ -907,6 +948,7 @@ function EditInner() {
       catalog_item_id: null,
       custom_item_id: custom.id,
       notes: null,
+      calculation_notes: null,
     });
   };
 
@@ -1340,7 +1382,139 @@ function EditInner() {
                   value={draft.technical_notes}
                   disabled={readOnly}
                   onChange={(e) => patchDraft({ technical_notes: e.target.value })}
-                  placeholder="Precisão, GSD, datum, metodologia, limitações… (sem repetir a lista de equipamentos)"
+                  placeholder="Precisão, GSD, datum, limitações… (sem repetir a lista de equipamentos)"
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Metodologia</label>
+                <textarea
+                  value={draft.methodology_notes}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ methodology_notes: e.target.value })}
+                  placeholder="Descreva a metodologia (opcional). Não é inventada no PDF."
+                />
+                {!readOnly ? (
+                  <button
+                    type="button"
+                    className={styles.btnGhost}
+                    style={{ marginTop: 6, fontSize: '0.78rem' }}
+                    onClick={() => {
+                      if (
+                        draft.methodology_notes.trim() &&
+                        !window.confirm('Substituir o texto atual de metodologia pelo modelo sugerido?')
+                      ) {
+                        return;
+                      }
+                      patchDraft({ methodology_notes: SUGGESTED_METHODOLOGY_TEMPLATE });
+                    }}
+                  >
+                    Aplicar modelo sugerido
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <h3 style={{ marginTop: '1rem', fontSize: '0.95rem', color: '#1e3a8a' }}>
+              Cronograma previsto
+            </h3>
+            <div className={styles.formGrid}>
+              <div className={styles.field}>
+                <label>Mobilização</label>
+                <input
+                  value={draft.mobilization_deadline_text}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ mobilization_deadline_text: e.target.value })}
+                  placeholder="Ex.: 1 dia"
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Campo / aquisição</label>
+                <input
+                  value={draft.field_duration_text}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ field_duration_text: e.target.value })}
+                  placeholder="Ex.: 2 dias"
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Processamento</label>
+                <input
+                  value={draft.processing_deadline_text}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ processing_deadline_text: e.target.value })}
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Entrega</label>
+                <input
+                  value={draft.delivery_deadline_text}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ delivery_deadline_text: e.target.value })}
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Prazo global (estruturado)</label>
+                <input
+                  value={draft.total_deadline_text}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ total_deadline_text: e.target.value })}
+                  placeholder="Se vazio, usa o prazo estimado"
+                />
+              </div>
+            </div>
+
+            <h3 style={{ marginTop: '1rem', fontSize: '0.95rem', color: '#1e3a8a' }}>
+              Identificação profissional (PDF)
+            </h3>
+            <div className={styles.formGrid}>
+              <div className={styles.field}>
+                <label>Nome</label>
+                <input
+                  value={draft.professional_name}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ professional_name: e.target.value })}
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Título / função</label>
+                <input
+                  value={draft.professional_title}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ professional_title: e.target.value })}
+                  placeholder="Ex.: Engenheiro Agrimensor"
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Conselho</label>
+                <select
+                  value={draft.professional_council}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ professional_council: e.target.value })}
+                >
+                  <option value="">—</option>
+                  <option value="CREA">CREA</option>
+                  <option value="CFT/CRT">CFT/CRT</option>
+                  <option value="CAU">CAU</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Registro</label>
+                <input
+                  value={draft.professional_registration}
+                  disabled={readOnly}
+                  onChange={(e) => patchDraft({ professional_registration: e.target.value })}
+                />
+              </div>
+              <div className={styles.field}>
+                <label>UF do registro</label>
+                <input
+                  value={draft.professional_registration_uf}
+                  disabled={readOnly}
+                  maxLength={2}
+                  onChange={(e) =>
+                    patchDraft({ professional_registration_uf: e.target.value.toUpperCase() })
+                  }
                 />
               </div>
             </div>

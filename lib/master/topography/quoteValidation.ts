@@ -155,6 +155,32 @@ export function validateTopographyQuoteInput(
       raw.estimated_deadline ?? raw.estimatedDeadline,
       200,
     ),
+    mobilization_deadline_text: cleanText(
+      raw.mobilization_deadline_text ?? raw.mobilizationDeadlineText,
+      200,
+    ),
+    field_duration_text: cleanText(raw.field_duration_text ?? raw.fieldDurationText, 200),
+    processing_deadline_text: cleanText(
+      raw.processing_deadline_text ?? raw.processingDeadlineText,
+      200,
+    ),
+    delivery_deadline_text: cleanText(
+      raw.delivery_deadline_text ?? raw.deliveryDeadlineText,
+      200,
+    ),
+    total_deadline_text: cleanText(raw.total_deadline_text ?? raw.totalDeadlineText, 200),
+    methodology_notes: cleanText(raw.methodology_notes ?? raw.methodologyNotes, 8000),
+    professional_name: cleanText(raw.professional_name ?? raw.professionalName, 160),
+    professional_title: cleanText(raw.professional_title ?? raw.professionalTitle, 160),
+    professional_council: cleanText(raw.professional_council ?? raw.professionalCouncil, 80),
+    professional_registration: cleanText(
+      raw.professional_registration ?? raw.professionalRegistration,
+      80,
+    ),
+    professional_registration_uf: cleanText(
+      raw.professional_registration_uf ?? raw.professionalRegistrationUf,
+      2,
+    )?.toUpperCase() ?? null,
     estimated_value,
     discount_value,
     discount_percent,
@@ -219,6 +245,10 @@ export function validateQuoteItemInput(raw: Record<string, unknown>): MasterTopo
     competence: cleanText(raw.competence, 40),
     uf: cleanText(raw.uf, 2)?.toUpperCase() ?? null,
     notes: cleanText(raw.notes ?? raw.observations, 2000),
+    calculation_notes: cleanText(
+      raw.calculation_notes ?? raw.calculationNotes ?? raw.item_calculation_notes,
+      2000,
+    ),
     catalog_item_id: catalogId || null,
     custom_item_id: customId || null,
     sort_order: Math.max(0, Math.trunc(Number(raw.sort_order ?? raw.sortOrder ?? 0) || 0)),

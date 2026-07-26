@@ -58,6 +58,17 @@ function baseQuote(overrides: Partial<MasterTopographyQuote> = {}): MasterTopogr
     proposal_date: '2026-07-25',
     expiration_date: '2026-08-10',
     estimated_deadline: '5 dias',
+    mobilization_deadline_text: null,
+    field_duration_text: null,
+    processing_deadline_text: null,
+    delivery_deadline_text: null,
+    total_deadline_text: null,
+    methodology_notes: null,
+    professional_name: null,
+    professional_title: null,
+    professional_council: null,
+    professional_registration: null,
+    professional_registration_uf: null,
     estimated_value: 9580.85,
     discount_value: 0,
     discount_percent: 0,
@@ -144,6 +155,7 @@ function ynnovareItems() {
     competence: null,
     uf: null,
     notes: null,
+    calculation_notes: null,
     catalog_item_id: null,
     custom_item_id: null,
     sort_order: idx + 1,
@@ -408,12 +420,121 @@ async function runPdfChecks() {
   );
   const anal = await buildQuotePdfAnalyticalBytes({ quote, stages, financials });
   assert('PDF analítico gera páginas', anal.pageCount >= 1 && anal.bytes.byteLength > 1000);
+  const analLatin = Buffer.from(anal.bytes).toString('latin1');
+  assert('analítico sem coluna Origem', !/Origem/i.test(analLatin));
+  assert(
+    'analítico sem CREA fixo vazio',
+    !analLatin.includes('quando informado') && !analLatin.includes('CREA: ____'),
+  );
+  assert(
+    'analítico total preservado',
+    analLatin.includes('9.580,85') || analLatin.includes('9580,85'),
+  );
+
+  const scheduleFallback = await buildQuotePdfAnalyticalBytes({
+    quote: baseQuote(),
+    stages,
+    financials,
+  });
+  const schedLatin = Buffer.from(scheduleFallback.bytes).toString('latin1');
+  const prazoCount = (schedLatin.match(/5 dias/g) || []).length;
+  assert(
+    'cronograma não repete prazo global em todas as fases',
+    prazoCount <= 2,
+  );
+
+  const schedulePhases = await buildQuotePdfAnalyticalBytes({
+    quote: baseQuote({
+      mobilization_deadline_text: '1 dia',
+      field_duration_text: '2 dias',
+      processing_deadline_text: '1 dia',
+      delivery_deadline_text: '1 dia',
+      total_deadline_text: '5 dias',
+      estimated_deadline: '5 dias',
+    }),
+    stages,
+    financials,
+  });
+  const phaseLatin = Buffer.from(schedulePhases.bytes).toString('latin1');
+  assert('cronograma com fases distintas', phaseLatin.includes('Mobiliza') && phaseLatin.includes('1 dia'));
+
+  const proAnal = await buildQuotePdfAnalyticalBytes({
+    quote: baseQuote({
+      professional_name: 'Severino José de França',
+      professional_title: 'Engenheiro Agrimensor',
+      professional_council: 'CFT/CRT',
+      professional_registration: '12345',
+      professional_registration_uf: 'PA',
+    }),
+    stages,
+    financials,
+  });
+  const proLatin = Buffer.from(proAnal.bytes).toString('latin1');
+  assert('identificação CFT/CRT configurável', proLatin.includes('CFT/CRT') && proLatin.includes('12345'));
+
   const mem = await buildQuotePdfMemorialBytes({ quote, stages, financials });
   assert('PDF memorial gera páginas', mem.pageCount >= 1 && mem.bytes.byteLength > 1000);
+  assert('memória ORC preferencialmente 1 página', mem.pageCount === 1);
+  const memLatin = Buffer.from(mem.bytes).toString('latin1');
+  assert('memória numeração sem pular 4→6', !/6\.\s*ETAPA/i.test(memLatin) || /5\.\s/i.test(memLatin));
+  assert(
+    'memória com fórmulas',
+    memLatin.includes('Quantidade') && memLatin.toLowerCase().includes('bdi'),
+  );
+  assert('memória percentual BR', memLatin.includes('100,00%'));
+  assert(
+    'memória total preservado',
+    memLatin.includes('9.580,85') || memLatin.includes('9580,85'),
+  );
+  assert('memória margem informativa', /informativ/i.test(memLatin));
+
+  const memEmptyNotes = await buildQuotePdfMemorialBytes({
+    quote: baseQuote({ technical_notes: null }),
+    stages,
+    financials,
+  });
+  const memEmptyLatin = Buffer.from(memEmptyNotes.bytes).toString('latin1');
+  assert(
+    'Observações ausentes quando vazias',
+    !/OBSERVA/i.test(memEmptyLatin),
+  );
+
+  const stagesWithJust = singleStage().map((s) => ({
+    ...s,
+    items: s.items.map((it, idx) =>
+      idx === 0
+        ? { ...it, calculation_notes: 'Equipe 2 técnicos; deslocamento 210 km.' }
+        : it,
+    ),
+  }));
+  const memJust = await buildQuotePdfMemorialBytes({
+    quote,
+    stages: stagesWithJust,
+    financials,
+  });
+  const justLatin = Buffer.from(memJust.bytes).toString('latin1');
+  assert('justificativa específica do item', justLatin.includes('210 km'));
+
+  const { buildQuoteScheduleRows, formatQuotePercentBr, resolveEquipmentCategory } =
+    await import('../lib/master/topography/quotePdfPresentation');
+  assert('format percent BR', formatQuotePercentBr(100) === '100,00%');
+  assert(
+    'categoria Aeronave',
+    resolveEquipmentCategory({
+      id: 'tr-dji-matrice-350-rtk',
+      label: 'DJI Matrice 350 RTK',
+      source: 'catalog',
+    }) === 'Aeronave',
+  );
+  const onlyGlobal = buildQuoteScheduleRows(baseQuote());
+  assert(
+    'fallback prazo global único',
+    onlyGlobal.length === 1 && onlyGlobal[0].phase === 'Prazo global',
+  );
 
   const dupQuote = baseQuote({
     technical_notes:
-      'Equipamentos previstos\nDJI Matrice 350 RTK\nDJI Zenmuse L2\nPrecisão relativa 5 cm.',
+      'Equipamentos previstos\nDJI Matrice 350 RTK\nDJI Zenmuse L2\nDJI Terra e softwares especializados para processamento.\nPrecisão relativa 5 cm.',
   });
   const deduped = buildQuotePdfNarrativeSections(dupQuote);
   const tech = deduped.find((s) => s.title === 'INFORMAÇÕES TÉCNICAS');
@@ -422,9 +543,24 @@ async function runPdfChecks() {
     'mantém complementar útil',
     !!tech && tech.body.includes('Precisão relativa'),
   );
+  assert(
+    'sem repetição DJI Terra no complementar',
+    !!tech && !/DJI Terra e softwares/i.test(tech.body),
+  );
   // A lista estruturada aparece uma vez; o texto livre não deve reintroduzir o mesmo item como bloco.
   const matriceCount = (tech?.body.match(/DJI Matrice 350 RTK/g) || []).length;
   assert('Matrice não duplicada excessivamente', matriceCount <= 2);
+
+  const keepDifferent = buildQuotePdfNarrativeSections(
+    baseQuote({
+      technical_notes: 'Densidade mínima de 50 pts/m² e GSD compatível com o projeto.',
+    }),
+  );
+  const keepTech = keepDifferent.find((s) => s.title === 'INFORMAÇÕES TÉCNICAS');
+  assert(
+    'preserva texto técnico diferente',
+    !!keepTech && keepTech.body.includes('50 pts'),
+  );
 
   console.log(`\nTotal: ${pass} PASSOU / ${total - pass} FALHOU de ${total}`);
   process.exit(pass === total ? 0 : 1);

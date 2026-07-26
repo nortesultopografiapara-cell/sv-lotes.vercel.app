@@ -35,6 +35,7 @@ export default function QuoteSendEmailModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [lastProviderId, setLastProviderId] = useState<string | null>(null);
 
   const canSend = useMemo(
     () => Object.values(atts).some(Boolean) && to.trim().includes('@') && subject.trim(),
@@ -54,6 +55,7 @@ export default function QuoteSendEmailModal({
     setSending(true);
     setError(null);
     setOkMsg(null);
+    setLastProviderId(null);
     try {
       const res = await fetch(`/api/master/topography/quotes/${quoteId}/send-email`, {
         method: 'POST',
@@ -67,8 +69,15 @@ export default function QuoteSendEmailModal({
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Falha ao enviar.');
-      setOkMsg(`Enviado para ${to.trim()} em ${new Date().toLocaleString('pt-BR')}.`);
+      if (!res.ok) {
+        const msg =
+          typeof data.error === 'string' && data.error.trim()
+            ? data.error
+            : 'Não foi possível enviar o e-mail. Tente novamente.';
+        throw new Error(msg);
+      }
+      if (data.providerId) setLastProviderId(String(data.providerId));
+      setOkMsg(`E-mail enviado com sucesso para ${to.trim()}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao enviar.');
     } finally {
@@ -122,7 +131,11 @@ export default function QuoteSendEmailModal({
         </fieldset>
 
         {error ? <p className={styles.scopeError}>{error}</p> : null}
-        {okMsg ? <p className={styles.savedMsg}>{okMsg}</p> : null}
+        {okMsg ? (
+          <p className={styles.savedMsg} data-provider-id={lastProviderId || undefined}>
+            {okMsg}
+          </p>
+        ) : null}
 
         <div className={styles.modalActions}>
           <button type="button" className={styles.btnGhost} onClick={onClose} disabled={sending}>

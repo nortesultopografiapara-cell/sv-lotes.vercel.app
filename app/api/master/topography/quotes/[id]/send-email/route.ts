@@ -16,6 +16,22 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function statusForErrorCode(code: string | undefined): number {
+  switch (code) {
+    case 'API_KEY_MISSING':
+    case 'FROM_MISSING':
+      return 503;
+    case 'RECIPIENT_INVALID':
+      return 400;
+    case 'ATTACHMENT_TOO_LARGE':
+      return 413;
+    case 'DOMAIN_UNVERIFIED':
+      return 502;
+    default:
+      return 502;
+  }
+}
+
 export async function POST(request: Request, context: Ctx) {
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
   if (!supabaseAdmin) {
@@ -23,21 +39,56 @@ export async function POST(request: Request, context: Ctx) {
   }
 
   const { id } = await context.params;
+  let auditUserId: string | null = null;
+  let auditTo: string | null = null;
+  let quoteCode = id;
+
   try {
     const body = await request.json();
+    auditUserId = body.userId ? String(body.userId) : null;
     const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
 
     if (!isResendEmailConfigured()) {
+      await logTopographyQuoteAudit(supabaseAdmin, {
+        userId: auditUserId,
+        action: 'QUOTE_EMAIL_FAILED',
+        entityId: id,
+        description: `Falha ao enviar orçamento ${quoteCode}: API key ausente`,
+        newData: {
+          to: null,
+          errorCode: 'API_KEY_MISSING',
+          failedAt: new Date().toISOString(),
+        },
+      });
       return NextResponse.json(
-        { error: 'Envio de e-mail não configurado (RESEND_API_KEY).' },
+        {
+          error:
+            'O serviço de e-mail não está configurado. Defina RESEND_API_KEY no ambiente de produção.',
+          errorCode: 'API_KEY_MISSING',
+        },
         { status: 503 },
       );
     }
 
     const to = String(body.to || '').trim();
+    auditTo = to;
     if (!EMAIL_RE.test(to)) {
-      return NextResponse.json({ error: 'Destinatário inválido.' }, { status: 400 });
+      await logTopographyQuoteAudit(supabaseAdmin, {
+        userId: auditUserId,
+        action: 'QUOTE_EMAIL_FAILED',
+        entityId: id,
+        description: `Falha ao enviar orçamento ${quoteCode}: destinatário inválido`,
+        newData: {
+          to,
+          errorCode: 'RECIPIENT_INVALID',
+          failedAt: new Date().toISOString(),
+        },
+      });
+      return NextResponse.json(
+        { error: 'O destinatário informado é inválido.', errorCode: 'RECIPIENT_INVALID' },
+        { status: 400 },
+      );
     }
 
     const subject = String(body.subject || '').trim();
@@ -66,6 +117,7 @@ export async function POST(request: Request, context: Ctx) {
       return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
     }
 
+    quoteCode = structure.quote.code;
     const payload = {
       quote: structure.quote,
       stages: structure.stages,
@@ -134,11 +186,29 @@ export async function POST(request: Request, context: Ctx) {
     });
 
     if (!send.ok) {
-      return NextResponse.json({ error: send.error || 'Falha no envio.' }, { status: 502 });
+      await logTopographyQuoteAudit(supabaseAdmin, {
+        userId: auditUserId,
+        action: 'QUOTE_EMAIL_FAILED',
+        entityId: id,
+        description: `Falha ao enviar orçamento ${payload.quote.code} para ${to}`,
+        newData: {
+          to,
+          errorCode: send.errorCode || 'PROVIDER_ERROR',
+          providerMessageSafe: send.providerMessageSafe || null,
+          failedAt: new Date().toISOString(),
+        },
+      });
+      return NextResponse.json(
+        {
+          error: send.error || 'Falha no envio.',
+          errorCode: send.errorCode || 'PROVIDER_ERROR',
+        },
+        { status: statusForErrorCode(send.errorCode) },
+      );
     }
 
     await logTopographyQuoteAudit(supabaseAdmin, {
-      userId: body.userId ? String(body.userId) : null,
+      userId: auditUserId,
       action: 'QUOTE_EMAIL_SENT',
       entityId: id,
       description: `Orçamento ${payload.quote.code} enviado para ${to}`,
@@ -161,7 +231,30 @@ export async function POST(request: Request, context: Ctx) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao enviar orçamento.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    try {
+      await logTopographyQuoteAudit(supabaseAdmin, {
+        userId: auditUserId,
+        action: 'QUOTE_EMAIL_FAILED',
+        entityId: id,
+        description: `Falha ao enviar orçamento ${quoteCode}`,
+        newData: {
+          to: auditTo,
+          errorCode: 'PROVIDER_ERROR',
+          failedAt: new Date().toISOString(),
+        },
+      });
+    } catch {
+      /* auditoria best-effort */
+    }
+    return NextResponse.json(
+      {
+        error:
+          'Não foi possível enviar o e-mail neste momento. Tente novamente em alguns minutos.',
+        errorCode: 'PROVIDER_ERROR',
+        detail: process.env.NODE_ENV === 'development' ? message : undefined,
+      },
+      { status: 500 },
+    );
   }
 }
 

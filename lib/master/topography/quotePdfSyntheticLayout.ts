@@ -356,10 +356,76 @@ export function buildQuotePdfCommercialFields(
   return [];
 }
 
+/** Normalização segura para comparar texto livre × recursos estruturados (sem IA). */
+export function normalizeQuoteTextKey(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitTechnicalNotesUnits(raw: string): string[] {
+  const fromLines = raw
+    .split(/\n+/)
+    .map((l) => l.replace(/^[\s•\-\*]+/, '').trim())
+    .filter(Boolean);
+  const units: string[] = [];
+  for (const line of fromLines) {
+    const sentences = line
+      .split(/(?<=[.!;])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (sentences.length > 1) units.push(...sentences);
+    else units.push(line);
+  }
+  return units;
+}
+
+/**
+ * True quando a unidade de texto só repete (quase) integralmente um ou mais rótulos
+ * já presentes nos recursos estruturados — ex.: "DJI Terra e softwares especializados…".
+ */
+export function isTechnicalNotesUnitRedundant(
+  unit: string,
+  resourceKeys: string[],
+): boolean {
+  const key = normalizeQuoteTextKey(unit);
+  if (!key) return true;
+  if (/^equipamentos?\b/.test(key) && key.length < 48) return true;
+  if (resourceKeys.includes(key)) return true;
+
+  // Unidade curta que contém exatamente um rótulo estruturado (quase igual).
+  for (const rk of resourceKeys) {
+    if (!rk) continue;
+    if (key === rk) return true;
+    if (key.includes(rk) && key.length <= rk.length + 12) return true;
+  }
+
+  // Frase composta só por rótulos estruturados unidos por "e"/vírgulas/"para processamento".
+  let remainder = key;
+  const sorted = [...resourceKeys].filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const rk of sorted) {
+    if (remainder.includes(rk)) {
+      remainder = remainder.replace(rk, ' ').replace(/\s+/g, ' ').trim();
+    }
+  }
+  remainder = remainder
+    .replace(/\b(e|ou|com|para|de|do|da|dos|das|processamento|especializados?|softwares?)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Se após remover rótulos + conectores sobra pouco/nada → redundante.
+  if (remainder.length <= 2) return true;
+
+  return false;
+}
+
 /**
  * Seções pós-tabela — Observações internas NUNCA entram no PDF do cliente.
  * Equipamentos estruturados têm prioridade; texto livre só entra como complementar
- * (linhas que repetem rótulos estruturados são omitidas na renderização, sem apagar o banco).
+ * (sentenças que repetem rótulos estruturados são omitidas na renderização, sem apagar o banco).
  */
 export function filterComplementaryTechnicalNotes(
   technicalNotes: string | null | undefined,
@@ -369,42 +435,18 @@ export function filterComplementaryTechnicalNotes(
   if (!raw) return '';
   if (!resources.length) return compactListTextToProse(raw);
 
-  const resourceKeys = new Set(
-    resources.map((r) =>
-      String(r.label || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .trim(),
-    ),
-  );
-
-  const lines = raw
-    .split('\n')
-    .map((l) => l.replace(/^[\s•\-\*]+/, '').trim())
+  const resourceKeys = resources
+    .map((r) => normalizeQuoteTextKey(String(r.label || '')))
     .filter(Boolean);
 
   const kept: string[] = [];
-  for (const line of lines) {
-    const key = line
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/\s+/g, ' ')
-      .replace(/[:;.\s]+$/g, '')
-      .trim();
-    // Cabeçalho genérico de equipamentos + linhas que só listam o mesmo item.
-    if (/^equipamentos?\b/.test(key) && key.length < 48) continue;
-    if (resourceKeys.has(key)) continue;
-    if ([...resourceKeys].some((rk) => rk && key.includes(rk) && key.length <= rk.length + 8)) {
-      continue;
-    }
-    kept.push(line);
+  for (const unit of splitTechnicalNotesUnits(raw)) {
+    if (isTechnicalNotesUnitRedundant(unit, resourceKeys)) continue;
+    kept.push(unit);
   }
 
   if (!kept.length) return '';
-  return compactListTextToProse(kept.join('\n'));
+  return compactListTextToProse(kept.join(' '));
 }
 
 export function buildQuotePdfNarrativeSections(

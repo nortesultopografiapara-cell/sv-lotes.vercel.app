@@ -32,19 +32,55 @@ export const QUOTE_SELECT_COLUMNS_CORE = `
   is_archived, created_by, created_at, updated_at
 `.replace(/\s+/g, ' ').trim();
 
-export const QUOTE_SELECT_COLUMNS = `
+export const QUOTE_SELECT_COLUMNS_EXTENDED = `
   ${QUOTE_SELECT_COLUMNS_CORE},
-  technical_resources, deliverables
+  technical_resources, deliverables,
+  mobilization_deadline_text, field_duration_text, processing_deadline_text,
+  delivery_deadline_text, total_deadline_text, methodology_notes,
+  professional_name, professional_title, professional_council,
+  professional_registration, professional_registration_uf
 `.replace(/\s+/g, ' ').trim();
+
+export const QUOTE_SELECT_COLUMNS = QUOTE_SELECT_COLUMNS_EXTENDED;
 
 const SELECT_COLUMNS = QUOTE_SELECT_COLUMNS;
 
-function isMissingScopeColumnError(message: string): boolean {
+const OPTIONAL_QUOTE_COLUMN_MARKERS = [
+  'technical_resources',
+  'deliverables',
+  'mobilization_deadline_text',
+  'field_duration_text',
+  'processing_deadline_text',
+  'delivery_deadline_text',
+  'total_deadline_text',
+  'methodology_notes',
+  'professional_name',
+  'professional_title',
+  'professional_council',
+  'professional_registration',
+  'professional_registration_uf',
+];
+
+function isMissingOptionalQuoteColumnError(message: string): boolean {
   const m = String(message || '').toLowerCase();
-  return (
-    (m.includes('technical_resources') || m.includes('deliverables')) &&
-    (m.includes('column') || m.includes('schema cache') || m.includes('does not exist'))
-  );
+  if (!(m.includes('column') || m.includes('schema cache') || m.includes('does not exist'))) {
+    return false;
+  }
+  return OPTIONAL_QUOTE_COLUMN_MARKERS.some((col) => m.includes(col));
+}
+
+function stripOptionalQuoteFields<T extends Record<string, unknown>>(payload: T): Record<string, unknown> {
+  const next = { ...payload };
+  for (const key of OPTIONAL_QUOTE_COLUMN_MARKERS) {
+    delete next[key];
+  }
+  return next;
+}
+
+function textOrNull(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s ? s : null;
 }
 
 export function parseQuoteRow(row: Record<string, unknown>): MasterTopographyQuote {
@@ -85,6 +121,17 @@ export function parseQuoteRow(row: Record<string, unknown>): MasterTopographyQuo
     proposal_date: row.proposal_date ? String(row.proposal_date).slice(0, 10) : null,
     expiration_date: row.expiration_date ? String(row.expiration_date).slice(0, 10) : null,
     estimated_deadline: row.estimated_deadline ? String(row.estimated_deadline) : null,
+    mobilization_deadline_text: textOrNull(row.mobilization_deadline_text),
+    field_duration_text: textOrNull(row.field_duration_text),
+    processing_deadline_text: textOrNull(row.processing_deadline_text),
+    delivery_deadline_text: textOrNull(row.delivery_deadline_text),
+    total_deadline_text: textOrNull(row.total_deadline_text),
+    methodology_notes: textOrNull(row.methodology_notes),
+    professional_name: textOrNull(row.professional_name),
+    professional_title: textOrNull(row.professional_title),
+    professional_council: textOrNull(row.professional_council),
+    professional_registration: textOrNull(row.professional_registration),
+    professional_registration_uf: textOrNull(row.professional_registration_uf),
     estimated_value: row.estimated_value == null ? null : Number(row.estimated_value),
     discount_value: Number(row.discount_value || 0),
     discount_percent: Number(row.discount_percent || 0),
@@ -130,6 +177,17 @@ function inputToRow(input: MasterTopographyQuoteInput) {
     proposal_date: input.proposal_date ?? null,
     expiration_date: input.expiration_date ?? null,
     estimated_deadline: input.estimated_deadline ?? null,
+    mobilization_deadline_text: input.mobilization_deadline_text ?? null,
+    field_duration_text: input.field_duration_text ?? null,
+    processing_deadline_text: input.processing_deadline_text ?? null,
+    delivery_deadline_text: input.delivery_deadline_text ?? null,
+    total_deadline_text: input.total_deadline_text ?? null,
+    methodology_notes: input.methodology_notes ?? null,
+    professional_name: input.professional_name ?? null,
+    professional_title: input.professional_title ?? null,
+    professional_council: input.professional_council ?? null,
+    professional_registration: input.professional_registration ?? null,
+    professional_registration_uf: input.professional_registration_uf ?? null,
     estimated_value: input.estimated_value ?? null,
     discount_value: input.discount_value ?? 0,
     discount_percent: input.discount_percent ?? 0,
@@ -273,7 +331,7 @@ export async function listTopographyQuotes(
     computeTopographyQuoteKpis(supabase, filters),
   ]);
 
-  if (error && isMissingScopeColumnError(error.message)) {
+  if (error && isMissingOptionalQuoteColumnError(error.message)) {
     let fallback = supabase
       .from('master_topography_quotes')
       .select(QUOTE_SELECT_COLUMNS_CORE, { count: 'exact' });
@@ -305,7 +363,7 @@ export async function getTopographyQuoteById(
     .select(SELECT_COLUMNS)
     .eq('id', id)
     .maybeSingle();
-  if (error && isMissingScopeColumnError(error.message)) {
+  if (error && isMissingOptionalQuoteColumnError(error.message)) {
     ({ data, error } = await supabase
       .from('master_topography_quotes')
       .select(QUOTE_SELECT_COLUMNS_CORE)
@@ -337,13 +395,8 @@ export async function createTopographyQuote(
     .insert(payload)
     .select(SELECT_COLUMNS)
     .single();
-  if (error && isMissingScopeColumnError(error.message)) {
-    const { technical_resources: _tr, deliverables: _dl, ...core } = payload as Record<
-      string,
-      unknown
-    >;
-    void _tr;
-    void _dl;
+  if (error && isMissingOptionalQuoteColumnError(error.message)) {
+    const core = stripOptionalQuoteFields(payload as Record<string, unknown>);
     const retry = await supabase
       .from('master_topography_quotes')
       .insert(core)
@@ -384,10 +437,8 @@ export async function updateTopographyQuote(
     .eq('id', id)
     .select(SELECT_COLUMNS)
     .single();
-  if (error && isMissingScopeColumnError(error.message)) {
-    const { technical_resources: _tr, deliverables: _dl, ...core } = payload;
-    void _tr;
-    void _dl;
+  if (error && isMissingOptionalQuoteColumnError(error.message)) {
+    const core = stripOptionalQuoteFields(payload);
     const retry = await supabase
       .from('master_topography_quotes')
       .update(core)
@@ -497,6 +548,17 @@ export async function duplicateTopographyQuote(
       technical_notes: source.technical_notes,
       technical_resources: source.technical_resources ?? [],
       deliverables: source.deliverables ?? [],
+      mobilization_deadline_text: source.mobilization_deadline_text,
+      field_duration_text: source.field_duration_text,
+      processing_deadline_text: source.processing_deadline_text,
+      delivery_deadline_text: source.delivery_deadline_text,
+      total_deadline_text: source.total_deadline_text,
+      methodology_notes: source.methodology_notes,
+      professional_name: source.professional_name,
+      professional_title: source.professional_title,
+      professional_council: source.professional_council,
+      professional_registration: source.professional_registration,
+      professional_registration_uf: source.professional_registration_uf,
     }),
     code,
     created_by: createdBy,

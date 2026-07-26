@@ -24,6 +24,18 @@ export type MasterTopographyQuote = {
   proposal_date: string | null;
   expiration_date: string | null;
   estimated_deadline: string | null;
+  /** Cronograma estruturado (opcional) — não replica prazo global nas fases. */
+  mobilization_deadline_text: string | null;
+  field_duration_text: string | null;
+  processing_deadline_text: string | null;
+  delivery_deadline_text: string | null;
+  total_deadline_text: string | null;
+  methodology_notes: string | null;
+  professional_name: string | null;
+  professional_title: string | null;
+  professional_council: string | null;
+  professional_registration: string | null;
+  professional_registration_uf: string | null;
   estimated_value: number | null;
   discount_value: number;
   discount_percent: number;
@@ -65,6 +77,17 @@ export type MasterTopographyQuoteInput = {
   proposal_date?: string | null;
   expiration_date?: string | null;
   estimated_deadline?: string | null;
+  mobilization_deadline_text?: string | null;
+  field_duration_text?: string | null;
+  processing_deadline_text?: string | null;
+  delivery_deadline_text?: string | null;
+  total_deadline_text?: string | null;
+  methodology_notes?: string | null;
+  professional_name?: string | null;
+  professional_title?: string | null;
+  professional_council?: string | null;
+  professional_registration?: string | null;
+  professional_registration_uf?: string | null;
   estimated_value?: number | null;
   discount_value?: number;
   discount_percent?: number;
@@ -96,6 +119,8 @@ export type MasterTopographyQuoteItem = {
   competence: string | null;
   uf: string | null;
   notes: string | null;
+  /** Justificativa/premissas do item (memória de cálculo). */
+  calculation_notes: string | null;
   catalog_item_id: string | null;
   custom_item_id: string | null;
   sort_order: number;
@@ -139,6 +164,7 @@ export type MasterTopographyQuoteItemInput = {
   competence?: string | null;
   uf?: string | null;
   notes?: string | null;
+  calculation_notes?: string | null;
   catalog_item_id?: string | null;
   custom_item_id?: string | null;
   sort_order: number;

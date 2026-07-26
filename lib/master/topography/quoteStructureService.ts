@@ -22,9 +22,23 @@ const STAGE_SELECT =
   'id, quote_id, name, sort_order, is_system, created_at, updated_at';
 const ITEM_SELECT = `
   id, quote_id, stage_id, code, price_bank, description, unit, quantity, unit_value,
+  reference_price, adopted_price, competence, uf, notes, calculation_notes,
+  catalog_item_id, custom_item_id, sort_order, created_at, updated_at
+`.replace(/\s+/g, ' ').trim();
+
+const ITEM_SELECT_CORE = `
+  id, quote_id, stage_id, code, price_bank, description, unit, quantity, unit_value,
   reference_price, adopted_price, competence, uf, notes, catalog_item_id, custom_item_id,
   sort_order, created_at, updated_at
 `.replace(/\s+/g, ' ').trim();
+
+function isMissingCalculationNotesColumn(message: string): boolean {
+  const m = String(message || '').toLowerCase();
+  return (
+    m.includes('calculation_notes') &&
+    (m.includes('column') || m.includes('schema cache') || m.includes('does not exist'))
+  );
+}
 
 function parseStage(row: Record<string, unknown>): MasterTopographyQuoteStage {
   return {
@@ -60,6 +74,7 @@ function parseItem(row: Record<string, unknown>): MasterTopographyQuoteItem {
     competence: row.competence ? String(row.competence) : null,
     uf: row.uf ? String(row.uf) : null,
     notes: row.notes ? String(row.notes) : null,
+    calculation_notes: row.calculation_notes ? String(row.calculation_notes) : null,
     catalog_item_id: row.catalog_item_id ? String(row.catalog_item_id) : null,
     custom_item_id: row.custom_item_id ? String(row.custom_item_id) : null,
     sort_order: Number(row.sort_order || 0),
@@ -141,11 +156,18 @@ export async function listQuoteItems(
   supabase: SupabaseClient,
   quoteId: string,
 ): Promise<MasterTopographyQuoteItem[]> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('master_topography_quote_items')
     .select(ITEM_SELECT)
     .eq('quote_id', quoteId)
     .order('sort_order', { ascending: true });
+  if (error && isMissingCalculationNotesColumn(error.message)) {
+    ({ data, error } = await supabase
+      .from('master_topography_quote_items')
+      .select(ITEM_SELECT_CORE)
+      .eq('quote_id', quoteId)
+      .order('sort_order', { ascending: true }));
+  }
   if (error) throw new Error(error.message || 'Falha ao listar itens.');
   return (data || []).map((row) => parseItem(row as Record<string, unknown>));
 }
@@ -205,6 +227,7 @@ function itemRow(
     competence: item.competence ?? null,
     uf: item.uf ?? null,
     notes: item.notes ?? null,
+    calculation_notes: item.calculation_notes ?? null,
     catalog_item_id: item.catalog_item_id ?? null,
     custom_item_id: item.custom_item_id ?? null,
     sort_order: item.sort_order,
@@ -334,14 +357,28 @@ export async function saveTopographyQuoteStructure(
     for (const item of stage.items) {
       const row = itemRow(quoteId, stageId, item, now);
       if (item.id) {
-        const { error } = await supabase
+        let { error } = await supabase
           .from('master_topography_quote_items')
           .update(row)
           .eq('id', item.id)
           .eq('quote_id', quoteId);
+        if (error && isMissingCalculationNotesColumn(error.message)) {
+          const { calculation_notes: _cn, ...core } = row;
+          void _cn;
+          ({ error } = await supabase
+            .from('master_topography_quote_items')
+            .update(core)
+            .eq('id', item.id)
+            .eq('quote_id', quoteId));
+        }
         if (error) throw new Error(error.message || 'Falha ao atualizar item.');
       } else {
-        const { error } = await supabase.from('master_topography_quote_items').insert(row);
+        let { error } = await supabase.from('master_topography_quote_items').insert(row);
+        if (error && isMissingCalculationNotesColumn(error.message)) {
+          const { calculation_notes: _cn, ...core } = row;
+          void _cn;
+          ({ error } = await supabase.from('master_topography_quote_items').insert(core));
+        }
         if (error) throw new Error(error.message || 'Falha ao criar item.');
       }
     }
@@ -414,6 +451,7 @@ export async function duplicateQuoteStructure(
       competence: item.competence,
       uf: item.uf,
       notes: item.notes,
+      calculation_notes: item.calculation_notes,
       catalog_item_id: item.catalog_item_id,
       custom_item_id: item.custom_item_id,
       sort_order: item.sort_order,

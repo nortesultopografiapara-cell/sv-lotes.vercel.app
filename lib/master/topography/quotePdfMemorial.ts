@@ -1,5 +1,5 @@
 /**
- * Memória de Cálculo em PDF — gerada automaticamente (Fase 5.3).
+ * Memória de Cálculo em PDF — gerada automaticamente (Fase 5.3 revisão final).
  */
 
 import jsPDF from 'jspdf';
@@ -20,6 +20,7 @@ import {
   preserveQuotePdfUserText,
 } from './quotePdfSyntheticLayout';
 import { formatQuoteScopeLabelsProse } from './quoteScopeCatalog';
+import { formatQuotePercentBr } from './quotePdfPresentation';
 import { itemTotalWithBdi, itemUnitWithBdi } from './quoteFinancials';
 import type { QuoteExportPayload } from './quoteExportTypes';
 
@@ -33,14 +34,19 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginLeft = 14;
-  const marginRight = 14;
-  const marginBottom = 16;
+  const marginLeft = 12;
+  const marginRight = 12;
+  const marginBottom = 14;
   const contentWidth = pageWidth - marginLeft - marginRight;
   const q = payload.quote;
   const f = payload.financials;
+  let sectionNo = 0;
+  const nextSection = (title: string) => {
+    sectionNo += 1;
+    return `${sectionNo}. ${title}`;
+  };
 
-  await loadQuotePdfLogo(doc, 14, 10, 28, 14);
+  await loadQuotePdfLogo(doc, 12, 8, 24, 12);
   let y = drawQuotePdfBrandHeader(doc, {
     code: q.code,
     subtitle: 'Memória de Cálculo',
@@ -48,8 +54,15 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
     marginRight,
     pageWidth,
   });
+  // Cabeçalho padrão deixa y=36; compactar um pouco para caber em 1 página.
+  if (y > 34) y = 34;
 
-  y = drawQuotePdfSectionTitle(doc, '1. IDENTIFICAÇÃO', marginLeft, y);
+  const beginSection = (needed: number) => {
+    y = ensureQuotePdfSpace(doc, y, needed, marginBottom, 14);
+  };
+
+  beginSection(16);
+  y = drawQuotePdfSectionTitle(doc, nextSection('IDENTIFICAÇÃO'), marginLeft, y);
   y = drawQuotePdfWrapped(
     doc,
     `Cliente: ${preserveQuotePdfUserText(q.client_name)}. Orçamento ${q.code}. Objeto: ${
@@ -58,12 +71,13 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
     marginLeft,
     y,
     contentWidth,
-    4,
+    3.6,
     marginBottom,
   );
-  y += 4;
+  y += 3;
 
-  y = drawQuotePdfSectionTitle(doc, '2. OBJETIVO', marginLeft, y);
+  beginSection(14);
+  y = drawQuotePdfSectionTitle(doc, nextSection('OBJETIVO'), marginLeft, y);
   y = drawQuotePdfWrapped(
     doc,
     isMeaningfulQuotePdfText(q.description)
@@ -72,29 +86,57 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
     marginLeft,
     y,
     contentWidth,
-    4,
+    3.6,
     marginBottom,
   );
-  y += 4;
+  y += 3;
 
-  y = drawQuotePdfSectionTitle(doc, '3. METODOLOGIA DE COMPOSIÇÃO', marginLeft, y);
+  beginSection(22);
+  y = drawQuotePdfSectionTitle(doc, nextSection('FÓRMULAS DE COMPOSIÇÃO'), marginLeft, y);
   y = drawQuotePdfWrapped(
     doc,
-    `Os valores foram obtidos pela fórmula: Quantidade × Preço adotado × (1 + BDI/100). ` +
-      `BDI aplicado: ${f.bdiPercent}%. Desconto: ${f.discountPercent}%. Margem informativa: ${f.marginPercent}%. ` +
-      `O total geral corresponde ao total com BDI menos o desconto.`,
+    [
+      'Subtotal do item = Quantidade × Valor unitário',
+      'BDI = Subtotal × BDI%',
+      'Total com BDI = Subtotal + BDI',
+      'Desconto = Total com BDI × Desconto%',
+      'Total geral = Total com BDI − Desconto',
+      `BDI aplicado: ${formatQuotePercentBr(f.bdiPercent, 0)}. Desconto: ${formatQuotePercentBr(f.discountPercent, 0)}.`,
+      `Margem (${formatQuotePercentBr(f.marginPercent, 0)}): apenas informativa — não entra no total geral.`,
+    ].join('\n'),
     marginLeft,
     y,
     contentWidth,
-    4,
+    3.5,
     marginBottom,
   );
-  y += 4;
+  y += 3;
+
+  if (isMeaningfulQuotePdfText(q.methodology_notes)) {
+    beginSection(16);
+    y = drawQuotePdfSectionTitle(doc, nextSection('METODOLOGIA'), marginLeft, y);
+    y = drawQuotePdfWrapped(
+      doc,
+      String(q.methodology_notes),
+      marginLeft,
+      y,
+      contentWidth,
+      3.6,
+      marginBottom,
+    );
+    y += 3;
+  }
 
   const resources = Array.isArray(q.technical_resources) ? q.technical_resources : [];
   const deliverables = Array.isArray(q.deliverables) ? q.deliverables : [];
   if (resources.length || deliverables.length) {
-    y = drawQuotePdfSectionTitle(doc, '4. RECURSOS E ENTREGÁVEIS CONSIDERADOS', marginLeft, y);
+    beginSection(18);
+    y = drawQuotePdfSectionTitle(
+      doc,
+      nextSection('RECURSOS E ENTREGÁVEIS CONSIDERADOS'),
+      marginLeft,
+      y,
+    );
     if (resources.length) {
       y = drawQuotePdfWrapped(
         doc,
@@ -102,10 +144,10 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
         marginLeft,
         y,
         contentWidth,
-        4,
+        3.6,
         marginBottom,
       );
-      y += 2;
+      y += 1.5;
     }
     if (deliverables.length) {
       y = drawQuotePdfWrapped(
@@ -114,34 +156,38 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
         marginLeft,
         y,
         contentWidth,
-        4,
+        3.6,
         marginBottom,
       );
-      y += 2;
+      y += 1.5;
     }
     y += 2;
   }
 
-  let stageIndex = 0;
   for (const stage of [...payload.stages].sort((a, b) => a.sort_order - b.sort_order)) {
-    stageIndex += 1;
-    y = ensureQuotePdfSpace(doc, y, 24, marginBottom);
+    beginSection(28);
     y = drawQuotePdfSectionTitle(
       doc,
-      `${4 + (resources.length || deliverables.length ? 1 : 0) + stageIndex}. ETAPA — ${preserveQuotePdfUserText(stage.name) || 'Etapa'}`,
+      nextSection(`ETAPA — ${preserveQuotePdfUserText(stage.name) || 'Etapa'}`),
       marginLeft,
       y,
     );
-    y = drawQuotePdfWrapped(
-      doc,
-      `Justificativa: composição dos serviços e insumos necessários à execução desta etapa do objeto orçado.`,
-      marginLeft,
-      y,
-      contentWidth,
-      4,
-      marginBottom,
+
+    const stageHasItemNotes = (stage.items || []).some((it) =>
+      isMeaningfulQuotePdfText(it.calculation_notes),
     );
-    y += 2;
+    if (!stageHasItemNotes) {
+      y = drawQuotePdfWrapped(
+        doc,
+        'Premissa da etapa: valores conforme itens cadastrados (quantidade × preço adotado, com BDI).',
+        marginLeft,
+        y,
+        contentWidth,
+        3.5,
+        marginBottom,
+      );
+      y += 1.5;
+    }
 
     const body = (stage.items || []).map((item) => {
       const adopted = item.adopted_price ?? item.unit_value;
@@ -149,7 +195,8 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
       const total = itemTotalWithBdi(item.quantity, adopted, q.bdi_percent);
       return [
         item.description || '',
-        `${item.quantity} ${item.unit || 'UN'}`,
+        String(item.quantity),
+        item.unit || 'UN',
         quotePdfMoney(adopted),
         quotePdfMoney(unitBdi),
         quotePdfMoney(total),
@@ -159,73 +206,102 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
     if (body.length) {
       autoTable(doc, {
         startY: y,
-        head: [['Item', 'Qtd/Un', 'Adotado', 'c/ BDI', 'Total']],
+        head: [['Item', 'Qtd.', 'Un.', 'Unitário', 'c/ BDI', 'Total']],
         body,
-        styles: { fontSize: 7.5, cellPadding: 1.1, overflow: 'linebreak' },
+        styles: { fontSize: 7, cellPadding: 0.9, overflow: 'linebreak' },
         headStyles: {
           fillColor: QUOTE_PDF_BRAND.primary,
           textColor: 255,
           fontStyle: 'bold',
-          fontSize: 7.5,
+          fontSize: 7,
         },
         columnStyles: {
-          0: { cellWidth: contentWidth * 0.4 },
-          1: { cellWidth: contentWidth * 0.14,halign: 'center' },
-          2: { cellWidth: contentWidth * 0.15,halign: 'right' },
+          0: { cellWidth: contentWidth * 0.38 },
+          1: { cellWidth: contentWidth * 0.09, halign: 'center' },
+          2: { cellWidth: contentWidth * 0.08, halign: 'center' },
           3: { cellWidth: contentWidth * 0.15,halign: 'right' },
-          4: { cellWidth: contentWidth * 0.16,halign: 'right' },
+          4: { cellWidth: contentWidth * 0.15,halign: 'right' },
+          5: { cellWidth: contentWidth * 0.15,halign: 'right' },
         },
         margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
       });
-      y = lastY(doc, y) + 3;
+      y = lastY(doc, y) + 2;
     }
+
+    for (const item of stage.items || []) {
+      if (!isMeaningfulQuotePdfText(item.calculation_notes)) continue;
+      beginSection(10);
+      doc.setFontSize(7);
+      doc.setTextColor(...QUOTE_PDF_BRAND.muted);
+      y = drawQuotePdfWrapped(
+        doc,
+        `Justificativa — ${preserveQuotePdfUserText(item.description) || 'item'}: ${preserveQuotePdfUserText(item.calculation_notes)}`,
+        marginLeft,
+        y,
+        contentWidth,
+        3.3,
+        marginBottom,
+      );
+      y += 1.5;
+    }
+
     doc.setFontSize(8);
     doc.setTextColor(...QUOTE_PDF_BRAND.ink);
     doc.text(
-      `Valor da etapa: ${quotePdfMoney(stage.subtotal)} (${stage.percentOfBudget.toFixed(2)}% do orçamento)`,
+      `Subtotal da etapa: ${quotePdfMoney(stage.subtotal)} (${formatQuotePercentBr(stage.percentOfBudget)} do orçamento)`,
       marginLeft,
       y,
     );
-    y += 7;
+    y += 5.5;
   }
 
-  y = ensureQuotePdfSpace(doc, y, 36, marginBottom);
-  y = drawQuotePdfSectionTitle(doc, 'RESUMO FINANCEIRO', marginLeft, y);
+  beginSection(34);
+  y = drawQuotePdfSectionTitle(doc, nextSection('RESUMO FINANCEIRO'), marginLeft, y);
   autoTable(doc, {
     startY: y,
     body: [
       ['Subtotal sem BDI', quotePdfMoney(f.totalWithoutBdi)],
-      [`BDI (${f.bdiPercent}%)`, quotePdfMoney(f.bdiAmount)],
+      [`BDI (${formatQuotePercentBr(f.bdiPercent, 0)})`, quotePdfMoney(f.bdiAmount)],
       ['Total com BDI', quotePdfMoney(f.totalWithBdi)],
-      [`Desconto (${f.discountPercent}%)`, quotePdfMoney(f.discountValue)],
+      [`Desconto (${formatQuotePercentBr(f.discountPercent, 0)})`, quotePdfMoney(f.discountValue)],
       ['TOTAL GERAL', quotePdfMoney(f.totalGeral)],
-      [`Margem (${f.marginPercent}%)`, quotePdfMoney(f.marginValue)],
+      [
+        `Margem (${formatQuotePercentBr(f.marginPercent, 0)}) — informativa`,
+        quotePdfMoney(f.marginValue),
+      ],
     ],
     theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 1.4 },
+    styles: { fontSize: 7.5, cellPadding: 1.1 },
     columnStyles: {
       0: { cellWidth: contentWidth * 0.55, fontStyle: 'bold' },
       1: { cellWidth: contentWidth * 0.45,halign: 'right' },
     },
-    margin: { left: marginLeft, right: marginRight },
+    margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
   });
-  y = lastY(doc, y) + 6;
+  y = lastY(doc, y) + 4;
 
-  y = drawQuotePdfSectionTitle(doc, 'PREMISSAS UTILIZADAS', marginLeft, y);
+  const premissasParts: string[] = [];
+  premissasParts.push(`Preços adotados conforme cadastro do orçamento; BDI ${formatQuotePercentBr(f.bdiPercent, 0)}.`);
+  const prazo =
+    preserveQuotePdfUserText(q.total_deadline_text) ||
+    preserveQuotePdfUserText(q.estimated_deadline);
+  if (prazo) premissasParts.push(`Prazo global: ${prazo}.`);
+  premissasParts.push('Escopo limitado aos itens e entregáveis selecionados.');
+  beginSection(14);
+  y = drawQuotePdfSectionTitle(doc, nextSection('PREMISSAS UTILIZADAS'), marginLeft, y);
   y = drawQuotePdfWrapped(
     doc,
-    `Preços adotados conforme cadastro do orçamento; BDI ${f.bdiPercent}%; ` +
-      `prazo estimado ${preserveQuotePdfUserText(q.estimated_deadline) || 'conforme proposta'}; ` +
-      `escopo limitado aos itens e entregáveis selecionados.`,
+    premissasParts.join(' '),
     marginLeft,
     y,
     contentWidth,
-    4,
+    3.5,
     marginBottom,
   );
-  y += 4;
+  y += 3;
 
-  y = drawQuotePdfSectionTitle(doc, 'LIMITAÇÕES', marginLeft, y);
+  beginSection(14);
+  y = drawQuotePdfSectionTitle(doc, nextSection('LIMITAÇÕES'), marginLeft, y);
   y = drawQuotePdfWrapped(
     doc,
     'Esta memória descreve a composição financeira do orçamento. Alterações de escopo, ' +
@@ -234,15 +310,16 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
     marginLeft,
     y,
     contentWidth,
-    4,
+    3.5,
     marginBottom,
   );
-  y += 4;
+  y += 3;
 
   const notes = filterComplementaryTechnicalNotes(q.technical_notes, resources);
   if (notes) {
-    y = drawQuotePdfSectionTitle(doc, 'OBSERVAÇÕES', marginLeft, y);
-    y = drawQuotePdfWrapped(doc, notes, marginLeft, y, contentWidth, 4, marginBottom);
+    beginSection(12);
+    y = drawQuotePdfSectionTitle(doc, nextSection('OBSERVAÇÕES'), marginLeft, y);
+    y = drawQuotePdfWrapped(doc, notes, marginLeft, y, contentWidth, 3.5, marginBottom);
   }
 
   const totalPages = doc.getNumberOfPages();
