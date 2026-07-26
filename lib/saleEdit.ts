@@ -25,6 +25,7 @@ import {
   isPaidFinanceReceipt,
   planFullFinanceRecalc,
   planPartialFinanceRecalc,
+  resolveFinanceScheduleEditLock,
 } from '@/lib/saleEditFinanceRecalc';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import {
@@ -532,8 +533,35 @@ export async function updateSaleFromEdit(
         Number(recantoInstallmentSnapshot.residual_installment_amount || 0),
     ) > 0.009;
 
-  if (balloonLocked && (balloonChanged || financePlanChanged)) {
+  if (balloonLocked && balloonChanged) {
     throw new Error(BALLOON_EDIT_LOCKED_MESSAGE);
+  }
+
+  const { data: existingReceipts, error: existingReceiptsErr } = await supabase
+    .from('finance_receipts')
+    .select('id, status, paid_at, installment_number, amount, due_date')
+    .eq('sale_id', saleId);
+
+  if (existingReceiptsErr) {
+    throw new Error(`Erro ao carregar parcelas: ${existingReceiptsErr.message}`);
+  }
+
+  const receiptRows = (existingReceipts || []) as Array<{
+    id: string;
+    status?: string | null;
+    paid_at?: string | null;
+    installment_number: number | string;
+    amount?: number | string | null;
+    due_date?: string | null;
+  }>;
+
+  const scheduleLock = resolveFinanceScheduleEditLock({
+    financePlanChanged,
+    hasAsaasCharges: balloonLocked,
+    receipts: receiptRows,
+  });
+  if (scheduleLock.blocked) {
+    throw new Error(scheduleLock.message || BALLOON_EDIT_LOCKED_MESSAGE);
   }
 
   const salePatch = buildOfficialSalesUpdatePatch({
@@ -641,24 +669,6 @@ export async function updateSaleFromEdit(
       .eq('sale_id', saleId)
       .in('status', ['pendente', 'pending']);
   }
-
-  const { data: receipts, error: receiptsErr } = await supabase
-    .from('finance_receipts')
-    .select('id, status, paid_at, installment_number, amount, due_date')
-    .eq('sale_id', saleId);
-
-  if (receiptsErr) {
-    throw new Error(`Erro ao carregar parcelas: ${receiptsErr.message}`);
-  }
-
-  const receiptRows = (receipts || []) as Array<{
-    id: string;
-    status?: string | null;
-    paid_at?: string | null;
-    installment_number: number | string;
-    amount?: number | string | null;
-    due_date?: string | null;
-  }>;
 
   const newPayloads = buildSaleEditFinancePayloads(
     tenantId,

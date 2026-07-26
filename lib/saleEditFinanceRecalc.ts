@@ -395,3 +395,103 @@ export function planFullFinanceRecalc(
 ): { toInsert: FinanceReceiptPayload[] } {
   return { toInsert: newPayloads };
 }
+
+/**
+ * Parcela do cronograma mensal (1..N), excluindo sinal/reserva (0 / -1).
+ * Usado para bloquear regeneração do plano quando já há quitação no cronograma.
+ */
+export function isPaidScheduleInstallment(r: {
+  status?: string | null;
+  paid_at?: string | null;
+  installment_number?: number | string | null;
+}): boolean {
+  return installmentKey(r.installment_number) >= 1 && isPaidFinanceReceipt(r);
+}
+
+export function hasPaidScheduleInstallments(
+  receipts: Array<{
+    status?: string | null;
+    paid_at?: string | null;
+    installment_number?: number | string | null;
+  }>,
+): boolean {
+  return receipts.some(isPaidScheduleInstallment);
+}
+
+export const FINANCE_SCHEDULE_EDIT_LOCKED_MESSAGE =
+  'Não é possível alterar o cronograma de parcelamento desta venda: já existem parcelas mensais pagas/liquidadas ou cobranças Asaas vinculadas. Cancele as cobranças e mantenha o plano atual para preservar a integridade financeira.';
+
+/**
+ * Bloqueia regeneração do cronograma quando há Asaas ou parcela mensal paga.
+ * Sinal/reserva pagos (installment_number <= 0) NÃO bloqueiam — o recalc parcial
+ * preserva essas linhas e substitui apenas as mensais pendentes.
+ */
+export function resolveFinanceScheduleEditLock(input: {
+  financePlanChanged: boolean;
+  hasAsaasCharges: boolean;
+  receipts: Array<{
+    status?: string | null;
+    paid_at?: string | null;
+    installment_number?: number | string | null;
+  }>;
+}): { blocked: boolean; message: string | null } {
+  if (!input.financePlanChanged) {
+    return { blocked: false, message: null };
+  }
+  if (input.hasAsaasCharges || hasPaidScheduleInstallments(input.receipts)) {
+    return { blocked: true, message: FINANCE_SCHEDULE_EDIT_LOCKED_MESSAGE };
+  }
+  return { blocked: false, message: null };
+}
+
+/**
+ * Simula o resultado pós-edição sem DB: remove pendentes (ou tudo no full),
+ * preserva pagas, insere novos payloads sem colidir com números pagos.
+ */
+export function simulateSaleFinanceEditReplace(input: {
+  existing: FinanceReceiptRow[];
+  newPayloads: FinanceReceiptPayload[];
+  finalValue: number;
+  options?: {
+    contractModel?: unknown;
+    grossDownPayment?: number;
+    paymentType?: string;
+  };
+}): {
+  mode: 'full' | 'partial';
+  keptPaid: FinanceReceiptRow[];
+  deletedIds: string[];
+  inserted: FinanceReceiptPayload[];
+  resultingInstallmentNumbers: number[];
+} {
+  const paid = input.existing.filter(isPaidFinanceReceipt);
+  if (paid.length === 0) {
+    const inserted = planFullFinanceRecalc(input.newPayloads).toInsert;
+    return {
+      mode: 'full',
+      keptPaid: [],
+      deletedIds: input.existing.map((r) => r.id),
+      inserted,
+      resultingInstallmentNumbers: inserted.map((p) =>
+        installmentKey(p.installment_number),
+      ),
+    };
+  }
+  const plan = planPartialFinanceRecalc(
+    input.existing,
+    input.newPayloads,
+    input.finalValue,
+    input.options,
+  );
+  const resultingInstallmentNumbers = [
+    ...plan.paid.map((r) => installmentKey(r.installment_number)),
+    ...plan.toInsert.map((p) => installmentKey(p.installment_number)),
+  ].sort((a, b) => a - b);
+  return {
+    mode: 'partial',
+    keptPaid: plan.paid,
+    deletedIds: plan.toDeleteIds,
+    inserted: plan.toInsert,
+    resultingInstallmentNumbers,
+  };
+}

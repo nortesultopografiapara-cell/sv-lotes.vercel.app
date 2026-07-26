@@ -6,12 +6,17 @@
 import type { LotFormConfirmPayload } from '../components/map/CustomerLotFormModal';
 import {
   buildSaleEditFinancePayloads,
+  FINANCE_SCHEDULE_EDIT_LOCKED_MESSAGE,
   isPaidFinanceReceipt,
   isPendingFinanceReceipt,
   planFullFinanceRecalc,
   planPartialFinanceRecalc,
+  resolveFinanceScheduleEditLock,
+  simulateSaleFinanceEditReplace,
   type FinanceReceiptRow,
 } from '../lib/saleEditFinanceRecalc';
+import { expectedSaleFinanceTotal } from '../lib/saleInstallmentCalc';
+import { generateContractHTML } from '../lib/contractTemplate';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -260,6 +265,345 @@ function testPendingEntryRecalculatedWhenNotPaid() {
   console.log('OK testPendingEntryRecalculatedWhenNotPaid');
 }
 
+function receiptsFromPayloads(
+  payloads: ReturnType<typeof buildSaleEditFinancePayloads>,
+  prefix: string,
+): FinanceReceiptRow[] {
+  return payloads.map((p, i) => ({
+    id: `${prefix}-${i}`,
+    installment_number: Number(p.installment_number),
+    amount: Number(p.amount),
+    status: String(p.status || 'pendente'),
+    paid_at: p.paid_at ? String(p.paid_at) : null,
+  }));
+}
+
+function assertUniqueInstallmentNumbers(nums: number[], msg: string) {
+  assert(new Set(nums).size === nums.length, msg);
+}
+
+/** BY_COUNT → FIXED_AMOUNT (+ residual) sem parcelas mensais pagas. */
+function testRecantoEditByCountToFixedNoDuplicates() {
+  const LOT = 73296.99;
+  const SIGNAL = 3500;
+  const PAID_SIGNAL = 1750;
+  const byCountForm = {
+    ...baseForm(),
+    lot_value: LOT,
+    final_value: LOT,
+    down_payment: String(SIGNAL),
+    signal_contract_value: String(SIGNAL),
+    signal_paid_at_sale: String(PAID_SIGNAL),
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS' as const,
+    signal_remaining_installments: '20',
+    installments_count: '122',
+    installment_definition_mode: 'BY_COUNT',
+    regular_installment_amount: '',
+    generate_residual_installment: false,
+  };
+  const byCountPayloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-edit-1',
+    'cust-1',
+    null,
+    lot,
+    byCountForm,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const existing = receiptsFromPayloads(byCountPayloads, 'old').map((r) =>
+    Number(r.installment_number) === 0
+      ? { ...r, status: 'pago', paid_at: '2026-01-01T00:00:00Z' }
+      : r,
+  );
+  assert(
+    existing.filter((r) => Number(r.installment_number) >= 1).length === 122,
+    'BY_COUNT gera 122 mensais',
+  );
+
+  const fixedForm = {
+    ...byCountForm,
+    installment_definition_mode: 'FIXED_AMOUNT',
+    regular_installment_amount: '597.97',
+    generate_residual_installment: true,
+  };
+  const fixedPayloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-edit-1',
+    'cust-1',
+    null,
+    lot,
+    fixedForm,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const sim = simulateSaleFinanceEditReplace({
+    existing,
+    newPayloads: fixedPayloads,
+    finalValue: LOT,
+    options: {
+      contractModel: 'RECANTO_PRIMAVERA',
+      grossDownPayment: SIGNAL,
+      paymentType: 'Parcelado',
+    },
+  });
+
+  assert(sim.mode === 'partial', 'sinal pago → partial');
+  assert(sim.keptPaid.length === 1, 'preserva só sinal pago');
+  assert(Number(sim.keptPaid[0]!.installment_number) === 0, 'sinal = 0');
+  assert(sim.deletedIds.length === 122, 'remove 122 mensais antigas');
+  assert(sim.inserted.length === 123, 'insere 122 + residual');
+  assertUniqueInstallmentNumbers(
+    sim.resultingInstallmentNumbers,
+    'sem installment_number duplicado após FIXED',
+  );
+  assert(
+    sim.resultingInstallmentNumbers.filter((n) => n >= 1).length === 123,
+    '123 vencimentos mensais',
+  );
+  assert(
+    sim.inserted.filter((p) => Number(p.installment_number) === 123).length === 1,
+    'residual #123 uma única vez',
+  );
+  const residual = sim.inserted.find((p) => Number(p.installment_number) === 123)!;
+  assert(Math.abs(Number(residual.amount) - 344.65) < 0.01, 'residual 344,65');
+  assert(Number(residual.signal_addon_amount || 0) === 0, 'residual sem addon');
+
+  const monthly = sim.inserted
+    .filter((p) => Number(p.installment_number) >= 1)
+    .sort(
+      (a, b) => Number(a.installment_number) - Number(b.installment_number),
+    );
+  for (let i = 0; i < 20; i++) {
+    assert(Math.abs(Number(monthly[i]!.amount) - 685.47) < 0.01, `p${i + 1}=685,47`);
+  }
+  for (let i = 20; i < 122; i++) {
+    assert(Math.abs(Number(monthly[i]!.amount) - 597.97) < 0.01, `p${i + 1}=597,97`);
+  }
+
+  const basesSum = monthly.reduce((s, p) => s + Number(p.base_amount || 0), 0);
+  assert(Math.abs(basesSum - LOT) < 0.01, 'soma bases = lote');
+
+  const expected = expectedSaleFinanceTotal({
+    finalValue: LOT,
+    grossDownPayment: SIGNAL,
+    contractModel: 'RECANTO_PRIMAVERA',
+    paymentType: 'Parcelado',
+  });
+  const total =
+    Number(sim.keptPaid[0]!.amount) +
+    sim.inserted.reduce((s, p) => s + Number(p.amount || 0), 0);
+  assert(Math.abs(total - expected) < 0.02, 'total financeiro consistente');
+  assert(Number(fixedForm.installments_count) === 122, 'installments_count = 122');
+
+  const html = generateContractHTML({
+    tenant: {
+      name: 'IVANILDE',
+      contract_model: 'RECANTO_PRIMAVERA',
+      cnpj: '32641281104',
+    },
+    customer: { name: 'Cliente', document: '12345678901', cpf: '12345678901' },
+    project: { name: 'Recanto', city: 'Parauapebas', uf: 'PA' },
+    block: { quadra: '01', lot: '01', area: 300 },
+    sale: {
+      payment_type: 'Parcelado',
+      total_value: LOT,
+      down_payment: SIGNAL,
+      signal_contract_value: SIGNAL,
+      signal_paid_at_sale: PAID_SIGNAL,
+      signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
+      signal_remaining_installments: 20,
+      installments_count: 122,
+      installment_definition_mode: 'FIXED_AMOUNT',
+      regular_installment_amount: 597.97,
+      has_residual_installment: true,
+      residual_installment_amount: 344.65,
+      first_installment_due_date: '2026-03-01',
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(/parcela final de ajuste/i.test(html), 'contrato com residual');
+
+  console.log('OK testRecantoEditByCountToFixedNoDuplicates');
+}
+
+/** FIXED_AMOUNT → BY_COUNT remove residual e recria média. */
+function testRecantoEditFixedToByCountRemovesResidual() {
+  const LOT = 73296.99;
+  const SIGNAL = 3500;
+  const PAID_SIGNAL = 1750;
+  const fixedForm = {
+    ...baseForm(),
+    lot_value: LOT,
+    final_value: LOT,
+    down_payment: String(SIGNAL),
+    signal_contract_value: String(SIGNAL),
+    signal_paid_at_sale: String(PAID_SIGNAL),
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS' as const,
+    signal_remaining_installments: '20',
+    installments_count: '122',
+    installment_definition_mode: 'FIXED_AMOUNT',
+    regular_installment_amount: '597.97',
+    generate_residual_installment: true,
+  };
+  const fixedPayloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-edit-2',
+    'cust-1',
+    null,
+    lot,
+    fixedForm,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const existing = receiptsFromPayloads(fixedPayloads, 'fx').map((r) =>
+    Number(r.installment_number) === 0
+      ? { ...r, status: 'pago', paid_at: '2026-01-01T00:00:00Z' }
+      : r,
+  );
+  assert(
+    existing.some((r) => Number(r.installment_number) === 123),
+    'estado FIXED tem #123',
+  );
+
+  const byCountForm = {
+    ...fixedForm,
+    installment_definition_mode: 'BY_COUNT',
+    regular_installment_amount: '',
+    generate_residual_installment: false,
+  };
+  const byCountPayloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-edit-2',
+    'cust-1',
+    null,
+    lot,
+    byCountForm,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const sim = simulateSaleFinanceEditReplace({
+    existing,
+    newPayloads: byCountPayloads,
+    finalValue: LOT,
+    options: {
+      contractModel: 'RECANTO_PRIMAVERA',
+      grossDownPayment: SIGNAL,
+      paymentType: 'Parcelado',
+    },
+  });
+
+  assert(sim.deletedIds.length === 123, 'remove 122 + residual');
+  assert(
+    !sim.inserted.some((p) => Number(p.installment_number) === 123),
+    'BY_COUNT sem residual #123',
+  );
+  assert(
+    sim.inserted.filter((p) => Number(p.installment_number) >= 1).length === 122,
+    'recria exatamente 122 mensais',
+  );
+  assertUniqueInstallmentNumbers(
+    sim.resultingInstallmentNumbers,
+    'sem duplicidade no retorno a BY_COUNT',
+  );
+  assert(
+    !sim.resultingInstallmentNumbers.includes(123),
+    'nenhum resíduo #123 no resultado',
+  );
+
+  console.log('OK testRecantoEditFixedToByCountRemovesResidual');
+}
+
+function testFinanceScheduleLockBlocksPaidMonthlyAndAsaas() {
+  const unlocked = resolveFinanceScheduleEditLock({
+    financePlanChanged: true,
+    hasAsaasCharges: false,
+    receipts: [
+      receipt('s0', 0, 1750, 'pago', '2026-01-01'),
+      receipt('p1', 1, 600, 'pendente'),
+    ],
+  });
+  assert(!unlocked.blocked, 'sinal pago não bloqueia');
+
+  const paidMonthly = resolveFinanceScheduleEditLock({
+    financePlanChanged: true,
+    hasAsaasCharges: false,
+    receipts: [
+      receipt('s0', 0, 1750, 'pago', '2026-01-01'),
+      receipt('p1', 1, 600, 'pago', '2026-02-01'),
+    ],
+  });
+  assert(paidMonthly.blocked, 'parcela mensal paga bloqueia');
+  assert(
+    paidMonthly.message === FINANCE_SCHEDULE_EDIT_LOCKED_MESSAGE,
+    'mensagem clara de lock',
+  );
+
+  const asaas = resolveFinanceScheduleEditLock({
+    financePlanChanged: true,
+    hasAsaasCharges: true,
+    receipts: [receipt('p1', 1, 600, 'pendente')],
+  });
+  assert(asaas.blocked, 'Asaas bloqueia regeneração');
+
+  const noPlanChange = resolveFinanceScheduleEditLock({
+    financePlanChanged: false,
+    hasAsaasCharges: true,
+    receipts: [receipt('p1', 1, 600, 'pago', '2026-02-01')],
+  });
+  assert(!noPlanChange.blocked, 'sem mudança de plano não bloqueia por esta trava');
+
+  console.log('OK testFinanceScheduleLockBlocksPaidMonthlyAndAsaas');
+}
+
+function testFullRecalcNoOrphansWhenNothingPaid() {
+  const LOT = 1000;
+  const formA = {
+    ...baseForm(),
+    lot_value: LOT,
+    final_value: LOT,
+    down_payment: '0',
+    signal_contract_value: '0',
+    signal_paid_at_sale: '0',
+    installments_count: '10',
+    installment_definition_mode: 'FIXED_AMOUNT',
+    regular_installment_amount: '100',
+    generate_residual_installment: true,
+  };
+  const payloadsA = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-full',
+    'cust-1',
+    null,
+    lot,
+    formA,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const existing = receiptsFromPayloads(payloadsA, 'a');
+  const formB = {
+    ...formA,
+    installment_definition_mode: 'BY_COUNT',
+    regular_installment_amount: '',
+  };
+  const payloadsB = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-full',
+    'cust-1',
+    null,
+    lot,
+    formB,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+  const sim = simulateSaleFinanceEditReplace({
+    existing,
+    newPayloads: payloadsB,
+    finalValue: LOT,
+  });
+  assert(sim.mode === 'full', 'sem pagas → full replace');
+  assert(sim.deletedIds.length === existing.length, 'apaga todas antigas');
+  assertUniqueInstallmentNumbers(
+    sim.resultingInstallmentNumbers,
+    'full replace sem duplicidade',
+  );
+  console.log('OK testFullRecalcNoOrphansWhenNothingPaid');
+}
+
 function main() {
   testNoPaidFullRecalc();
   testPaidEntryPreservesAndRecalcsPending();
@@ -269,6 +613,10 @@ function main() {
   testPaidStatusVariants();
   testInstallmentNumberCoercion();
   testPendingEntryRecalculatedWhenNotPaid();
+  testRecantoEditByCountToFixedNoDuplicates();
+  testRecantoEditFixedToByCountRemovesResidual();
+  testFinanceScheduleLockBlocksPaidMonthlyAndAsaas();
+  testFullRecalcNoOrphansWhenNothingPaid();
   console.log('mandatory-sale-edit-installment-recalculation-tests: all passed');
 }
 
