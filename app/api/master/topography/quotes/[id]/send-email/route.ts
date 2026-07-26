@@ -9,7 +9,11 @@ import {
   buildQuotePdfMemorialBytes,
   buildQuotePdfSyntheticBytes,
 } from '@/lib/master/topography/quoteExports';
-import { isResendEmailConfigured, sendResendEmail } from '@/lib/email/resendSend';
+import {
+  isResendEmailConfigured,
+  resolveResendFromAddress,
+  sendResendEmail,
+} from '@/lib/email/resendSend';
 import { QUOTE_PDF_BRAND } from '@/lib/master/topography/quotePdfBrand';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -20,6 +24,7 @@ function statusForErrorCode(code: string | undefined): number {
   switch (code) {
     case 'API_KEY_MISSING':
     case 'FROM_MISSING':
+    case 'SENDER_NOT_CONFIGURED':
       return 503;
     case 'RECIPIENT_INVALID':
       return 400;
@@ -66,6 +71,28 @@ export async function POST(request: Request, context: Ctx) {
           error:
             'O serviço de e-mail não está configurado. Defina RESEND_API_KEY no ambiente de produção.',
           errorCode: 'API_KEY_MISSING',
+        },
+        { status: 503 },
+      );
+    }
+
+    if (!resolveResendFromAddress()) {
+      await logTopographyQuoteAudit(supabaseAdmin, {
+        userId: auditUserId,
+        action: 'QUOTE_EMAIL_FAILED',
+        entityId: id,
+        description: `Falha ao enviar orçamento ${quoteCode}: remetente não configurado`,
+        newData: {
+          to: null,
+          errorCode: 'SENDER_NOT_CONFIGURED',
+          failedAt: new Date().toISOString(),
+        },
+      });
+      return NextResponse.json(
+        {
+          error:
+            'O remetente de e-mail não está configurado. Defina RESEND_FROM no ambiente de produção (domínio verificado no Resend).',
+          errorCode: 'SENDER_NOT_CONFIGURED',
         },
         { status: 503 },
       );
