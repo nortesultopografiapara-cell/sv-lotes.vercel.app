@@ -7,14 +7,21 @@ import { supabase } from '@/lib/supabase';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
-  BROKER_COMMISSION_DEFAULT_PERCENT,
-  calculateCommissionAmount,
   defaultBrokerCommissionPercentForCreate,
   readBrokerCommissionPercent,
   resolveSaleValueForCommission,
-  shouldAutoCreatePendingCommission,
-  withBrokerCommissionMonetaryFields,
 } from '@/lib/brokerCommission';
+import {
+  buildBrokerDefaultCommissionFields,
+  buildCommissionSnapshotFields,
+  calculateBrokerCommissionPlan,
+  normalizeBrokerCommissionMode,
+  resolveBrokerDefaultCommissionPlan,
+  shouldCreatePendingCommissionFromPlan,
+  type BrokerCommissionMode,
+} from '@/lib/brokerCommissionMode';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { parseCurrencyBRLNumber, serializeCurrencyBRL } from '@/lib/currencyBrl';
 import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
 import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
@@ -94,7 +101,9 @@ export default function CorretoresPage() {
     cpf: '',
     creci: '',
     role: 'BROKER',
+    commission_mode: 'PERCENT' as BrokerCommissionMode,
     commission_percent: 5,
+    commission_fixed_amount: '',
     password: '',
     confirmPassword: ''
   });
@@ -226,18 +235,22 @@ export default function CorretoresPage() {
                   const broker = safeBrokers.find(fb => fb.id === sale.broker_id);
                   if (broker) {
                        try {
-                           const percent = readBrokerCommissionPercent(broker.commission_percent);
-                           if (!shouldAutoCreatePendingCommission(percent)) continue;
+                           const defaults = resolveBrokerDefaultCommissionPlan(broker);
                            const saleValue = resolveSaleValueForCommission(sale);
-                           const val = calculateCommissionAmount(saleValue, percent);
+                           const plan = calculateBrokerCommissionPlan({
+                             mode: defaults.mode,
+                             percent: defaults.percent,
+                             fixedAmount: defaults.fixedAmount,
+                             saleValue,
+                           });
+                           if (!shouldCreatePendingCommissionFromPlan(plan)) continue;
                            
                            const newComm = {
                                company_id: resolvedTenantId,
                                tenant_id: resolvedTenantId,
                                broker_id: broker.id,
                                sale_id: sale.id,
-                               ...withBrokerCommissionMonetaryFields(val),
-                               commission_percent: percent,
+                               ...buildCommissionSnapshotFields(plan),
                                status: 'pendente'
                            };
                            
@@ -628,7 +641,12 @@ export default function CorretoresPage() {
         cpf: broker.cpf || '',
         creci: broker.creci || '',
         role: sanitizeBrokerAccessLevel(broker.role),
+        commission_mode: normalizeBrokerCommissionMode(broker.commission_mode),
         commission_percent: readBrokerCommissionPercent(broker.commission_percent),
+        commission_fixed_amount:
+          broker.commission_fixed_amount != null && Number(broker.commission_fixed_amount) > 0
+            ? serializeCurrencyBRL(String(broker.commission_fixed_amount))
+            : '',
         password: '',
         confirmPassword: ''
      });
@@ -666,12 +684,17 @@ export default function CorretoresPage() {
         setError('');
         try {
             const brokerAccessLevel = sanitizeBrokerAccessLevel(formData.role);
+            const commissionFields = buildBrokerDefaultCommissionFields({
+              mode: formData.commission_mode,
+              percent: formData.commission_percent,
+              fixedAmount: parseCurrencyBRLNumber(formData.commission_fixed_amount),
+            });
             const { error: upErr } = await supabase.from('brokers').update({
                 name: formData.fullName,
                 phone: formData.phone,
                 creci: formData.creci,
                 cpf: formData.cpf,
-                commission_percent: readBrokerCommissionPercent(formData.commission_percent),
+                ...commissionFields,
                 role: brokerAccessLevel
             }).eq('id', selectedBroker.id);
             if (upErr) throw upErr;
@@ -765,6 +788,15 @@ export default function CorretoresPage() {
 
       // Tentativa de inserção usando os nomes de coluna antigos e novos (o q não falhar)
       // Neste caso, se a migration já passou, tenant_id e name serão os corretos
+      const commissionFields = buildBrokerDefaultCommissionFields({
+        mode: formData.commission_mode,
+        percent:
+          formData.commission_mode === 'PERCENT'
+            ? defaultBrokerCommissionPercentForCreate(formData.commission_percent)
+            : formData.commission_percent,
+        fixedAmount: parseCurrencyBRLNumber(formData.commission_fixed_amount),
+      });
+
       let payload: any = withTenantFields({
          id: result.userId,
          auth_user_id: result.userId,
@@ -774,7 +806,7 @@ export default function CorretoresPage() {
          email: formData.email,
          role: brokerAccessLevel,
          level: 'broker',
-         commission_percent: defaultBrokerCommissionPercentForCreate(formData.commission_percent),
+         ...commissionFields,
          name: formData.fullName,
          full_name: formData.fullName,
          active: true,
@@ -808,7 +840,9 @@ export default function CorretoresPage() {
         role: 'BROKER',
         password: '',
         confirmPassword: '',
-        commission_percent: 5
+        commission_mode: 'PERCENT',
+        commission_percent: 5,
+        commission_fixed_amount: '',
       });
 
       await loadBrokers();
@@ -1003,18 +1037,22 @@ export default function CorretoresPage() {
            
            for (const sale of brokerSales) {
                if (!exSalesIds.includes(sale.id)) {
-                   const percent = readBrokerCommissionPercent(c.commission_percent);
-                   if (!shouldAutoCreatePendingCommission(percent)) continue;
+                   const defaults = resolveBrokerDefaultCommissionPlan(c);
                    const saleValue = resolveSaleValueForCommission(sale);
-                   const val = calculateCommissionAmount(saleValue, percent);
+                   const plan = calculateBrokerCommissionPlan({
+                     mode: defaults.mode,
+                     percent: defaults.percent,
+                     fixedAmount: defaults.fixedAmount,
+                     saleValue,
+                   });
+                   if (!shouldCreatePendingCommissionFromPlan(plan)) continue;
                    
                    const newComm = {
                        company_id: resolvedTenantId,
                        tenant_id: resolvedTenantId,
                        broker_id: c.id,
                        sale_id: sale.id,
-                       ...withBrokerCommissionMonetaryFields(val),
-                       commission_percent: percent,
+                       ...buildCommissionSnapshotFields(plan),
                        status: 'pendente'
                    };
                    
@@ -1026,7 +1064,7 @@ export default function CorretoresPage() {
                        throw new Error("Erro DB ao criar comissão: " + insErr.message);
                    }
                    if (insComm) {
-                       pendentes.push({...insComm, amount: val});
+                       pendentes.push({...insComm, amount: plan.amount});
                    }
                }
            }
@@ -1139,7 +1177,9 @@ export default function CorretoresPage() {
                    cpf: '',
                    creci: '',
                    role: 'BROKER',
+                   commission_mode: 'PERCENT',
                    commission_percent: 5,
+                   commission_fixed_amount: '',
                    password: '',
                    confirmPassword: ''
                 });
@@ -1735,8 +1775,28 @@ export default function CorretoresPage() {
                           </select>
                        </div>
 
+                       <div className="space-y-1.5 md:col-span-2">
+                          <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Tipo de Comissão Padrão</label>
+                          <select
+                            value={formData.commission_mode}
+                            disabled={modalMode === 'view'}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                commission_mode: e.target.value as BrokerCommissionMode,
+                              })
+                            }
+                            className="w-full bg-[var(--bg-main)] border border-[var(--border-color)] rounded-lg py-2.5 px-4 text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500/50 transition-colors appearance-none"
+                          >
+                            <option value="PERCENT">Percentual sobre a venda</option>
+                            <option value="FIXED">Valor fixo por venda</option>
+                            <option value="NONE">Sem comissão</option>
+                          </select>
+                       </div>
+
+                       {formData.commission_mode === 'PERCENT' ? (
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Comissão Padrão (%)</label>
+                          <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Comissão padrão (%)</label>
                           <div className="relative">
                              <input 
                                type="number"
@@ -1757,6 +1817,27 @@ export default function CorretoresPage() {
                              <span className="absolute right-4 top-2.5 text-[var(--text-muted)] text-sm">%</span>
                           </div>
                        </div>
+                       ) : null}
+
+                       {formData.commission_mode === 'FIXED' ? (
+                       <div className="space-y-1.5">
+                          <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Valor fixo por venda</label>
+                          <CurrencyInput
+                            disabled={modalMode === 'view'}
+                            value={formData.commission_fixed_amount}
+                            onChange={(v) =>
+                              setFormData({ ...formData, commission_fixed_amount: v })
+                            }
+                            className="w-full bg-[var(--bg-main)] border border-[var(--border-color)] rounded-lg py-2.5 px-4 text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500/50 transition-colors"
+                          />
+                       </div>
+                       ) : null}
+
+                       {formData.commission_mode === 'NONE' ? (
+                       <div className="md:col-span-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-main)] px-4 py-3 text-xs text-[var(--text-secondary)]">
+                          Comissão padrão zerada. Novas vendas não gerarão valor pendente positivo.
+                       </div>
+                       ) : null}
                    </div>
 
                    {(modalMode === 'create' || modalMode === 'reset') && (

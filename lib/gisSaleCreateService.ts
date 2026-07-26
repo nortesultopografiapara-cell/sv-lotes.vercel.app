@@ -37,9 +37,12 @@ import {
 } from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
 import { normalizeSaleContractModel } from '@/lib/contractModel';
+import { buildRecantoInstallmentSalesSnapshot } from '@/lib/recantoFixedInstallmentPlan';
 import {
-  buildRecantoInstallmentSalesSnapshot,
-} from '@/lib/recantoFixedInstallmentPlan';
+  buildCommissionSnapshotFields,
+  resolveSaleCommissionPlan,
+  shouldCreatePendingCommissionFromPlan,
+} from '@/lib/brokerCommissionMode';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -667,17 +670,40 @@ export async function executeGisSaleCreate(
       warnings.push(`Contrato não gerado: ${msg}`);
     }
 
-    if (input.userRole === 'BROKER' && brokerId && saleId) {
+    // Comissão: snapshot na época da venda (não depende só do role BROKER).
+    if (brokerId && saleId) {
       try {
         const { data: brokerData } = await supabase
           .from('brokers')
-          .select('commission_percent')
+          .select('commission_percent, commission_mode, commission_fixed_amount')
           .eq('id', brokerId)
-          .single();
-        const pct = Number(brokerData?.commission_percent) || 0;
-        if (pct > 0) {
-          const saleVal = Number(customerData.final_value || finalPrice) || 0;
-          const cv = (saleVal * pct) / 100;
+          .maybeSingle();
+
+        const saleVal = Number(customerData.final_value || finalPrice) || 0;
+        const useDefault =
+          customerData.use_broker_default_commission === undefined ||
+          customerData.use_broker_default_commission === null ||
+          customerData.use_broker_default_commission === true ||
+          customerData.use_broker_default_commission === 'true';
+
+        const plan = resolveSaleCommissionPlan({
+          broker: brokerData,
+          useBrokerDefault: Boolean(useDefault),
+          saleCommissionMode: customerData.sale_commission_mode as string | null | undefined,
+          saleCommissionPercent: customerData.sale_commission_percent as
+            | number
+            | string
+            | null
+            | undefined,
+          saleCommissionFixedAmount: customerData.sale_commission_fixed_amount as
+            | number
+            | string
+            | null
+            | undefined,
+          saleValue: saleVal,
+        });
+
+        if (shouldCreatePendingCommissionFromPlan(plan)) {
           await supabase.from('broker_commissions').insert([
             {
               company_id: tenantId,
@@ -686,8 +712,7 @@ export async function executeGisSaleCreate(
               sale_id: saleId,
               contract_id: contractId,
               customer_id: customerId || clientId,
-              commission_percent: pct,
-              amount: cv,
+              ...buildCommissionSnapshotFields(plan),
               status: 'pendente',
             },
           ]);

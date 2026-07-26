@@ -2,13 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Percent, X } from 'lucide-react';
-import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { formatCurrencyBRL, parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import {
   BULK_ADJUST_CONFIRM_APPLY,
   BULK_ADJUST_CONFIRM_ZERO,
   requiredConfirmText,
   type BulkAdjustPreviewSummary,
 } from '@/lib/brokerCommissionBulkAdjust';
+import {
+  commissionModeLabel,
+  type BrokerCommissionMode,
+} from '@/lib/brokerCommissionMode';
 
 type BrokerOption = {
   id: string;
@@ -32,6 +37,31 @@ type BulkAdjustBrokerCommissionsModalProps = {
   onSuccess: () => void;
 };
 
+function formatModeAmount(row: {
+  current_mode?: BrokerCommissionMode;
+  new_mode?: BrokerCommissionMode;
+  current_percent?: number;
+  new_percent?: number;
+  current_fixed_amount?: number;
+  new_fixed_amount?: number;
+  current_amount: number;
+  new_amount?: number;
+  which: 'current' | 'new';
+}) {
+  const mode = row.which === 'current' ? row.current_mode : row.new_mode;
+  const amount = row.which === 'current' ? row.current_amount : (row.new_amount ?? 0);
+  if (mode === 'FIXED') {
+    const fixed =
+      row.which === 'current' ? row.current_fixed_amount : row.new_fixed_amount;
+    return `Fixo ${formatCurrencyBRL(fixed || amount)}`;
+  }
+  if (mode === 'NONE') {
+    return `Sem · ${formatCurrencyBRL(0)}`;
+  }
+  const pct = row.which === 'current' ? row.current_percent : row.new_percent;
+  return `${pct ?? 0}% · ${formatCurrencyBRL(amount)}`;
+}
+
 export function BulkAdjustBrokerCommissionsModal({
   open,
   onClose,
@@ -48,7 +78,10 @@ export function BulkAdjustBrokerCommissionsModal({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [pendingOnly, setPendingOnly] = useState(true);
+  const [commissionMode, setCommissionMode] =
+    useState<BrokerCommissionMode>('PERCENT');
   const [newPercent, setNewPercent] = useState(0);
+  const [newFixedAmount, setNewFixedAmount] = useState('');
   const [preview, setPreview] = useState<BulkAdjustPreviewSummary | null>(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -64,29 +97,33 @@ export function BulkAdjustBrokerCommissionsModal({
     setPreview(null);
     setConfirmChecked(false);
     setConfirmText('');
+    setAllBrokers(true);
+    setSelectedBrokerIds([]);
+    setProjectId('');
+    setDateFrom('');
+    setDateTo('');
+    setPendingOnly(true);
     if (initialPreset === 'zero_pending_all') {
-      setAllBrokers(true);
-      setSelectedBrokerIds([]);
-      setProjectId('');
-      setDateFrom('');
-      setDateTo('');
-      setPendingOnly(true);
+      setCommissionMode('NONE');
       setNewPercent(0);
+      setNewFixedAmount('');
     } else {
-      setAllBrokers(true);
-      setSelectedBrokerIds([]);
-      setProjectId('');
-      setDateFrom('');
-      setDateTo('');
-      setPendingOnly(true);
+      setCommissionMode('PERCENT');
       setNewPercent(0);
+      setNewFixedAmount('');
     }
   }, [open, initialPreset]);
 
-  const expectedConfirm = useMemo(
-    () => requiredConfirmText(newPercent),
-    [newPercent],
+  const target = useMemo(
+    () => ({
+      mode: commissionMode,
+      percent: Number(newPercent) || 0,
+      fixedAmount: parseCurrencyBRLNumber(newFixedAmount),
+    }),
+    [commissionMode, newPercent, newFixedAmount],
   );
+
+  const expectedConfirm = useMemo(() => requiredConfirmText(target), [target]);
 
   const eligibleRows = useMemo(
     () => (preview?.rows || []).filter((r) => r.eligible),
@@ -114,7 +151,9 @@ export function BulkAdjustBrokerCommissionsModal({
           body: JSON.stringify({
             mode: 'preview',
             activeTenantId,
+            commission_mode: commissionMode,
             new_percent: Number(newPercent) || 0,
+            new_fixed_amount: parseCurrencyBRLNumber(newFixedAmount),
             filters: {
               brokerIds: allBrokers ? null : selectedBrokerIds,
               projectId: projectId || null,
@@ -149,7 +188,9 @@ export function BulkAdjustBrokerCommissionsModal({
           body: JSON.stringify({
             mode: 'apply',
             activeTenantId,
+            commission_mode: commissionMode,
             new_percent: Number(newPercent) || 0,
+            new_fixed_amount: parseCurrencyBRLNumber(newFixedAmount),
             confirmed: true,
             confirm_text: confirmText.trim(),
             filters: {
@@ -179,9 +220,9 @@ export function BulkAdjustBrokerCommissionsModal({
   if (!open) return null;
 
   const applyLabel =
-    Number(newPercent) === 0
+    expectedConfirm === BULK_ADJUST_CONFIRM_ZERO
       ? `Zerar comissão de ${preview?.eligible_count || 0} venda(s)`
-      : `Aplicar ${newPercent}% em ${preview?.eligible_count || 0} venda(s)`;
+      : `Aplicar ${commissionModeLabel(commissionMode)} em ${preview?.eligible_count || 0} venda(s)`;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
@@ -219,9 +260,9 @@ export function BulkAdjustBrokerCommissionsModal({
                   com saída de caixa ativa são preservadas.
                 </p>
                 <p>
-                  Se o cadastro do corretor ainda tiver % &gt; 0, o backfill da
-                  página de Corretores pode recriar comissão — mantenha o padrão
-                  do corretor em 0% quando quiser zerar de forma permanente.
+                  Alterar o cadastro padrão do corretor não muda vendas já
+                  registradas — use este ajuste para aplicar o novo modelo nas
+                  pendentes.
                 </p>
               </div>
 
@@ -305,18 +346,48 @@ export function BulkAdjustBrokerCommissionsModal({
                   </div>
                   <div>
                     <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase">
-                      Novo percentual (%)
+                      Novo modelo de comissão
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={0.01}
-                      value={newPercent}
-                      onChange={(e) => setNewPercent(Number(e.target.value))}
+                    <select
+                      value={commissionMode}
+                      onChange={(e) =>
+                        setCommissionMode(e.target.value as BrokerCommissionMode)
+                      }
                       className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] px-3 py-2 text-sm"
-                    />
+                    >
+                      <option value="PERCENT">Percentual</option>
+                      <option value="FIXED">Valor fixo</option>
+                      <option value="NONE">Sem comissão</option>
+                    </select>
                   </div>
+                  {commissionMode === 'PERCENT' ? (
+                    <div>
+                      <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase">
+                        Novo percentual (%)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={newPercent}
+                        onChange={(e) => setNewPercent(Number(e.target.value))}
+                        className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] px-3 py-2 text-sm"
+                      />
+                    </div>
+                  ) : null}
+                  {commissionMode === 'FIXED' ? (
+                    <div>
+                      <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase">
+                        Novo valor fixo
+                      </label>
+                      <CurrencyInput
+                        value={newFixedAmount}
+                        onChange={setNewFixedAmount}
+                        className="mt-1 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] px-3 py-2 text-sm"
+                      />
+                    </div>
+                  ) : null}
                   <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
                     <input
                       type="checkbox"
@@ -355,7 +426,7 @@ export function BulkAdjustBrokerCommissionsModal({
 
               {preview ? (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                     <div className="rounded-lg border border-[var(--border-color)] p-3">
                       <div className="text-[10px] uppercase font-mono text-[var(--text-muted)]">
                         Elegíveis
@@ -384,6 +455,14 @@ export function BulkAdjustBrokerCommissionsModal({
                         {formatCurrencyBRL(preview.new_total)}
                       </div>
                     </div>
+                    <div className="rounded-lg border border-[var(--border-color)] p-3">
+                      <div className="text-[10px] uppercase font-mono text-[var(--text-muted)]">
+                        Diferença
+                      </div>
+                      <div className="text-lg font-bold">
+                        {formatCurrencyBRL(preview.difference_total || 0)}
+                      </div>
+                    </div>
                   </div>
 
                   {preview.warnings.map((w) => (
@@ -403,7 +482,7 @@ export function BulkAdjustBrokerCommissionsModal({
                           <th className="p-2">Lote</th>
                           <th className="p-2 text-right">Atual</th>
                           <th className="p-2 text-right">Novo</th>
-                          <th className="p-2">Status</th>
+                          <th className="p-2 text-right">Dif.</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -414,12 +493,14 @@ export function BulkAdjustBrokerCommissionsModal({
                               {r.lot_label || r.customer_name || r.sale_id?.slice(0, 8)}
                             </td>
                             <td className="p-2 text-right">
-                              {r.current_percent}% · {formatCurrencyBRL(r.current_amount)}
+                              {formatModeAmount({ ...r, which: 'current' })}
                             </td>
                             <td className="p-2 text-right">
-                              {r.new_percent}% · {formatCurrencyBRL(r.new_amount)}
+                              {formatModeAmount({ ...r, which: 'new' })}
                             </td>
-                            <td className="p-2 text-emerald-400">elegível</td>
+                            <td className="p-2 text-right">
+                              {formatCurrencyBRL(r.difference || 0)}
+                            </td>
                           </tr>
                         ))}
                         {eligibleRows.length === 0 ? (
@@ -454,7 +535,7 @@ export function BulkAdjustBrokerCommissionsModal({
                           value={confirmText}
                           onChange={(e) => setConfirmText(e.target.value)}
                           placeholder={
-                            Number(newPercent) === 0
+                            expectedConfirm === BULK_ADJUST_CONFIRM_ZERO
                               ? BULK_ADJUST_CONFIRM_ZERO
                               : BULK_ADJUST_CONFIRM_APPLY
                           }

@@ -8,6 +8,8 @@ import {
   resolveManageBrokerCommissionRole,
 } from '@/lib/brokerCommissionAccess';
 import { readBrokerCommissionPercent } from '@/lib/brokerCommission';
+import { normalizeBulkAdjustTarget } from '@/lib/brokerCommissionBulkAdjust';
+import { readCommissionFixedAmount } from '@/lib/brokerCommissionMode';
 import { runBulkBrokerCommissionAdjust } from '@/lib/brokerCommissionBulkService';
 import { SaleBrokerCommissionError } from '@/lib/saleBrokerCommissionManage';
 import {
@@ -27,7 +29,10 @@ type Body = {
     dateTo?: string | null;
     pendingOnly?: boolean;
   };
+  /** PERCENT | FIXED | NONE */
+  commission_mode?: string | null;
   new_percent?: number;
+  new_fixed_amount?: number;
   confirmed?: boolean;
   confirm_text?: string | null;
   activeTenantId?: string | null;
@@ -124,19 +129,36 @@ export async function POST(request: Request) {
     if ('error' in auth && auth.error) return auth.error;
 
     const mode = body.mode === 'apply' ? 'apply' : 'preview';
-    const newPercent = readBrokerCommissionPercent(body.new_percent);
-    if (!Number.isFinite(newPercent) || newPercent < 0 || newPercent > 100) {
-      return NextResponse.json(
-        { error: 'new_percent inválido (0–100).' },
-        { status: 400 },
-      );
+    const target = normalizeBulkAdjustTarget({
+      mode: body.commission_mode,
+      newPercent: body.new_percent,
+      newFixedAmount: body.new_fixed_amount,
+    });
+
+    if (target.mode === 'PERCENT') {
+      const p = readBrokerCommissionPercent(target.percent);
+      if (!Number.isFinite(p) || p < 0 || p > 100) {
+        return NextResponse.json(
+          { error: 'new_percent inválido (0–100).' },
+          { status: 400 },
+        );
+      }
+    }
+    if (target.mode === 'FIXED') {
+      const fixed = readCommissionFixedAmount(target.fixedAmount);
+      if (!Number.isFinite(fixed) || fixed < 0) {
+        return NextResponse.json(
+          { error: 'new_fixed_amount inválido.' },
+          { status: 400 },
+        );
+      }
     }
 
     const result = await runBulkBrokerCommissionAdjust(auth.admin, {
       tenantId: auth.tenantId,
       actorUserId: auth.user.id,
       mode,
-      newPercent,
+      target,
       filters: {
         brokerIds: body.filters?.brokerIds ?? null,
         projectId: body.filters?.projectId ?? null,

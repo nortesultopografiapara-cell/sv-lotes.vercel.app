@@ -11,8 +11,10 @@ import {
   BULK_ADJUST_AUDIT_ACTION,
   eligibleIdsFromPreview,
   groupEligiblePatches,
+  normalizeBulkAdjustTarget,
   type BulkAdjustFilters,
   type BulkAdjustPreviewSummary,
+  type BulkAdjustTarget,
   type BulkCommissionCandidate,
 } from '@/lib/brokerCommissionBulkAdjust';
 import { BROKER_COMMISSION_API_SELECT } from '@/lib/brokerCommissionSchema';
@@ -31,11 +33,24 @@ export type BulkAdjustServiceInput = {
   tenantId: string;
   actorUserId: string;
   filters: BulkAdjustFilters;
-  newPercent: number;
+  /** Preferir `target`. newPercent mantido para compat. */
+  target?: BulkAdjustTarget;
+  newPercent?: number;
+  newFixedAmount?: number;
+  commissionMode?: string | null;
   mode: 'preview' | 'apply';
   confirmed?: boolean;
   confirmText?: string | null;
 };
+
+function resolveTarget(input: BulkAdjustServiceInput): BulkAdjustTarget {
+  if (input.target) return input.target;
+  return normalizeBulkAdjustTarget({
+    mode: input.commissionMode,
+    newPercent: input.newPercent,
+    newFixedAmount: input.newFixedAmount,
+  });
+}
 
 function normalizeFilters(filters: BulkAdjustFilters): BulkAdjustFilters {
   return {
@@ -203,6 +218,13 @@ async function loadTenantCommissionCandidates(
       broker_id: brokerId,
       amount: row.amount as number | string | null,
       commission_percent: row.commission_percent as number | string | null,
+      commission_mode: row.commission_mode as string | null | undefined,
+      commission_fixed_amount: row.commission_fixed_amount as
+        | number
+        | string
+        | null
+        | undefined,
+      calculation_base: row.calculation_base as number | string | null | undefined,
       status: row.status as string | null,
       paid_at: row.paid_at as string | null,
       company_id: row.company_id as string | null,
@@ -256,10 +278,11 @@ export async function previewBulkBrokerCommissionAdjust(
   ];
   const cashOverlapKeys = await loadCashOverlapKeys(admin, input.tenantId, saleIds);
 
+  const target = resolveTarget(input as BulkAdjustServiceInput);
   return buildBulkAdjustPreview({
     rows: candidates,
     filters,
-    newPercent: input.newPercent,
+    target,
     cashOverlapKeys,
   });
 }
@@ -273,8 +296,9 @@ export async function applyBulkBrokerCommissionAdjust(
   updated_count: number;
   updated_ids: string[];
 }> {
+  const target = resolveTarget(input);
   assertBulkAdjustConfirm({
-    newPercent: input.newPercent,
+    target,
     confirmText: input.confirmText,
     confirmed: input.confirmed,
   });
@@ -283,7 +307,7 @@ export async function applyBulkBrokerCommissionAdjust(
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
     filters: input.filters,
-    newPercent: input.newPercent,
+    target,
   });
 
   const eligibleIds = eligibleIdsFromPreview(preview);
@@ -324,8 +348,19 @@ export async function applyBulkBrokerCommissionAdjust(
       id: r.id,
       sale_id: r.sale_id,
       broker_id: r.broker_id,
-      before: { percent: r.current_percent, amount: r.current_amount },
-      after: { percent: r.new_percent, amount: r.new_amount, status: r.new_status },
+      before: {
+        mode: r.current_mode,
+        percent: r.current_percent,
+        fixed: r.current_fixed_amount,
+        amount: r.current_amount,
+      },
+      after: {
+        mode: r.new_mode,
+        percent: r.new_percent,
+        fixed: r.new_fixed_amount,
+        amount: r.new_amount,
+        status: r.new_status,
+      },
     }));
 
   try {
@@ -338,7 +373,7 @@ export async function applyBulkBrokerCommissionAdjust(
       reference_id: batchId,
       description: JSON.stringify({
         batch_id: batchId,
-        new_percent: input.newPercent,
+        target,
         filters: normalizeFilters(input.filters),
         eligible_count: preview.eligible_count,
         ignored_count: preview.ignored_count,

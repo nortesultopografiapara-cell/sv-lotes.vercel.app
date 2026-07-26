@@ -117,9 +117,17 @@ export function ManageSaleBrokerCommissionModal({
     } else if (mode === 'cancel') {
       payload = { action: 'cancel_commission' };
     } else if (mode === 'percent') {
-      payload = { action: 'update_commission', commission_percent: commissionPercent };
+      payload = {
+        action: 'update_commission',
+        commission_mode: 'PERCENT',
+        commission_percent: commissionPercent,
+      };
     } else if (mode === 'fixed') {
-      payload = { action: 'update_commission', fixed_amount: parseCurrencyBRLNumber(fixedAmount) };
+      payload = {
+        action: 'update_commission',
+        commission_mode: 'FIXED',
+        fixed_amount: parseCurrencyBRLNumber(fixedAmount),
+      };
     }
 
     if (activeTenantId) {

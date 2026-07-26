@@ -12,7 +12,6 @@ import {
 import {
   getSalePendingCommissionTotal,
   isPendingBrokerCommission,
-  buildBrokerCommissionAmountField,
   resolveSaleValueForCommission,
 } from '@/lib/brokerCommission';
 import { BROKER_COMMISSION_API_SELECT } from '@/lib/brokerCommissionSchema';
@@ -312,6 +311,7 @@ export async function executeManageSaleBrokerCommission(
       sale,
       commission_percent: params.input.commission_percent,
       fixed_amount: params.input.fixed_amount,
+      commission_mode: params.input.commission_mode,
     });
 
     if (pendingRows.length > 0) {
@@ -319,9 +319,7 @@ export async function executeManageSaleBrokerCommission(
         const { error } = await admin
           .from('broker_commissions')
           .update({
-            ...buildBrokerCommissionAmountField(patch.amount),
-            commission_percent: patch.commission_percent,
-            status: patch.status,
+            ...patch,
             paid_at: null,
           })
           .eq('id', row.id);
@@ -339,13 +337,10 @@ export async function executeManageSaleBrokerCommission(
         customerId: (sale.customer_id as string | null) ?? null,
         saleValue: resolveSaleValueForCommission(sale),
         commissionPercent: patch.commission_percent,
+        commissionMode: patch.commission_mode,
+        commissionFixedAmount: patch.commission_fixed_amount,
       });
       if (insertPayload) {
-        Object.assign(
-          insertPayload,
-          buildBrokerCommissionAmountField(patch.amount),
-          { commission_percent: patch.commission_percent },
-        );
         const { data: inserted, error: insErr } = await admin
           .from('broker_commissions')
           .insert([insertPayload])
