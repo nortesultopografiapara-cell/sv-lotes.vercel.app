@@ -10,6 +10,7 @@ import {
   formatQuotePdfMoney,
   preserveQuotePdfUserText,
 } from './quotePdfSyntheticLayout';
+import { sanitizeQuotePdfText } from './quotePdfText';
 
 export const QUOTE_PDF_BRAND = {
   tradeName: 'SV Topografia & Projetos',
@@ -20,6 +21,19 @@ export const QUOTE_PDF_BRAND = {
   softFill: [239, 246, 255] as [number, number, number],
   stageFill: [226, 232, 240] as [number, number, number],
 };
+
+/** Hook autoTable: sanitiza células antes da renderização Helvetica. */
+export function quotePdfAutoTableSanitizeCell(data: {
+  cell?: { text?: string | string[]; raw?: unknown };
+}): void {
+  const cell = data.cell;
+  if (!cell) return;
+  if (Array.isArray(cell.text)) {
+    cell.text = cell.text.map((t) => sanitizeQuotePdfText(t));
+  } else if (typeof cell.text === 'string') {
+    cell.text = sanitizeQuotePdfText(cell.text);
+  }
+}
 
 export function quotePdfMoney(n: number): string {
   return formatQuotePdfMoney(n);
@@ -141,7 +155,7 @@ export function drawQuotePdfSectionTitle(
 ): number {
   doc.setFontSize(10);
   doc.setTextColor(...QUOTE_PDF_BRAND.primary);
-  doc.text(title, x, y);
+  doc.text(sanitizeQuotePdfText(title), x, y);
   return y + 5;
 }
 
@@ -154,7 +168,7 @@ export function drawQuotePdfWrapped(
   lineHeight: number,
   marginBottom: number,
 ): number {
-  const safe = preserveQuotePdfUserText(text);
+  const safe = sanitizeQuotePdfText(preserveQuotePdfUserText(text));
   if (!safe) return y;
   const lines = doc.splitTextToSize(safe, maxWidth) as string[];
   let cursor = y;
@@ -162,7 +176,7 @@ export function drawQuotePdfWrapped(
   doc.setTextColor(...QUOTE_PDF_BRAND.ink);
   for (const line of lines) {
     cursor = ensureQuotePdfSpace(doc, cursor, lineHeight, marginBottom);
-    doc.text(line, x, cursor);
+    doc.text(sanitizeQuotePdfText(line), x, cursor);
     cursor += lineHeight;
   }
   return cursor;

@@ -24,6 +24,8 @@ import {
   type QuotePdfSummaryField,
 } from './quotePdfSyntheticLayout';
 import type { QuoteExportPayload } from './quoteExportTypes';
+import { sanitizeQuotePdfText } from './quotePdfText';
+import { quotePdfAutoTableSanitizeCell } from './quotePdfBrand';
 import {
   exportQuotePdfAnalytical,
   buildQuotePdfAnalyticalBytes,
@@ -311,12 +313,12 @@ function drawWrappedText(
   lineHeight: number,
   marginBottom: number,
 ): number {
-  const safe = preserveQuotePdfUserText(text);
+  const safe = sanitizeQuotePdfText(preserveQuotePdfUserText(text));
   const lines = doc.splitTextToSize(safe, maxWidth) as string[];
   let cursor = y;
   for (const line of lines) {
     cursor = ensureSpace(doc, cursor, lineHeight, marginBottom);
-    doc.text(line, x, cursor);
+    doc.text(sanitizeQuotePdfText(line), x, cursor);
     cursor += lineHeight;
   }
   return cursor;
@@ -590,6 +592,7 @@ async function renderQuotePdfSynthetic(payload: QuoteExportPayload): Promise<jsP
       4: { cellWidth: colW.total,halign: 'right' },
     },
     didParseCell: (data) => {
+      quotePdfAutoTableSanitizeCell(data);
       // Cabeçalho: títulos centralizados sobre a mesma largura das células.
       if (data.section === 'head') {
         data.cell.styles.halign = 'center';

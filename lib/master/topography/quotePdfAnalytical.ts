@@ -11,6 +11,7 @@ import {
   drawQuotePdfWrapped,
   ensureQuotePdfSpace,
   loadQuotePdfLogo,
+  quotePdfAutoTableSanitizeCell,
   quotePdfMoney,
   QUOTE_PDF_BRAND,
 } from './quotePdfBrand';
@@ -82,6 +83,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
       1: { cellWidth: contentWidth - 40 },
     },
     margin: { left: marginLeft, right: marginRight },
+    didParseCell: quotePdfAutoTableSanitizeCell,
   });
   y = lastY(doc, y) + 6;
 
@@ -151,6 +153,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
           5: { cellWidth: contentWidth * 0.14,halign: 'right' },
         },
         margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+        didParseCell: quotePdfAutoTableSanitizeCell,
       });
       y = lastY(doc, y) + 3;
       doc.setFontSize(8);
@@ -182,6 +185,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         1: { cellWidth: contentWidth * 0.28 },
       },
       margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+      didParseCell: quotePdfAutoTableSanitizeCell,
     });
     y = lastY(doc, y) + 6;
   }
@@ -204,6 +208,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         1: { cellWidth: contentWidth * 0.28 },
       },
       margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+      didParseCell: quotePdfAutoTableSanitizeCell,
     });
     y = lastY(doc, y) + 6;
   }
@@ -254,6 +259,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         1: { cellWidth: contentWidth * 0.6 },
       },
       margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+      didParseCell: quotePdfAutoTableSanitizeCell,
     });
     y = lastY(doc, y) + 6;
   }
@@ -278,6 +284,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
         1: { cellWidth: contentWidth - 45 },
       },
       margin: { left: marginLeft, right: marginRight },
+      didParseCell: quotePdfAutoTableSanitizeCell,
     });
     y = lastY(doc, y) + 6;
   }
@@ -294,7 +301,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
       [`Desconto (${formatQuotePercentBr(f.discountPercent, 0)})`, quotePdfMoney(f.discountValue)],
       ['TOTAL GERAL', quotePdfMoney(f.totalGeral)],
       [
-        `Margem (${formatQuotePercentBr(f.marginPercent, 0)}) — informativa`,
+        `Margem (${formatQuotePercentBr(f.marginPercent, 0)}) - informativa`,
         quotePdfMoney(f.marginValue),
       ],
     ],
@@ -305,6 +312,7 @@ export async function renderQuotePdfAnalytical(payload: QuoteExportPayload): Pro
       1: { cellWidth: contentWidth * 0.45, halign: 'right' },
     },
     margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+    didParseCell: quotePdfAutoTableSanitizeCell,
   });
   y = lastY(doc, y) + 12;
 

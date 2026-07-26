@@ -481,12 +481,46 @@ async function runPdfChecks() {
     'memória com fórmulas',
     memLatin.includes('Quantidade') && memLatin.toLowerCase().includes('bdi'),
   );
+  assert(
+    'fórmula Total geral com hífen ASCII',
+    /Total geral = Total com BDI - Desconto/.test(memLatin),
+  );
+  assert('fórmulas sem minus tipográfico U+2212', !memLatin.includes('\u2212'));
+  assert('memória sem caracteres de controle', !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(memLatin));
   assert('memória percentual BR', memLatin.includes('100,00%'));
   assert(
     'memória total preservado',
     memLatin.includes('9.580,85') || memLatin.includes('9580,85'),
   );
   assert('memória margem informativa', /informativ/i.test(memLatin));
+
+  const {
+    QUOTE_PDF_MEMORIAL_FORMULA_LINES,
+    sanitizeQuotePdfText,
+    quotePdfTextHasInvalidChars,
+  } = await import('../lib/master/topography/quotePdfText');
+  for (const line of QUOTE_PDF_MEMORIAL_FORMULA_LINES) {
+    assert(
+      `fórmula canônica sem inválidos: ${line.slice(0, 24)}`,
+      !quotePdfTextHasInvalidChars(line),
+    );
+  }
+  assert(
+    'sanitiza minus tipográfico',
+    sanitizeQuotePdfText('Total com BDI \u2212 Desconto') === 'Total com BDI - Desconto',
+  );
+  assert(
+    'preserva acentos PT',
+    sanitizeQuotePdfText('Composição financeira').includes('Composição'),
+  );
+  assert(
+    'analítico sem inválidos de controle',
+    !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(analLatin),
+  );
+  assert(
+    'sintético sem inválidos de controle',
+    !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(latin),
+  );
 
   const memEmptyNotes = await buildQuotePdfMemorialBytes({
     quote: baseQuote({ technical_notes: null }),

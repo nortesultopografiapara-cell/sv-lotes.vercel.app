@@ -11,6 +11,7 @@ import {
   drawQuotePdfWrapped,
   ensureQuotePdfSpace,
   loadQuotePdfLogo,
+  quotePdfAutoTableSanitizeCell,
   quotePdfMoney,
   QUOTE_PDF_BRAND,
 } from './quotePdfBrand';
@@ -21,6 +22,9 @@ import {
 } from './quotePdfSyntheticLayout';
 import { formatQuoteScopeLabelsProse } from './quoteScopeCatalog';
 import { formatQuotePercentBr } from './quotePdfPresentation';
+import {
+  QUOTE_PDF_MEMORIAL_FORMULA_LINES,
+} from './quotePdfText';
 import { itemTotalWithBdi, itemUnitWithBdi } from './quoteFinancials';
 import type { QuoteExportPayload } from './quoteExportTypes';
 
@@ -96,13 +100,9 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
   y = drawQuotePdfWrapped(
     doc,
     [
-      'Subtotal do item = Quantidade × Valor unitário',
-      'BDI = Subtotal × BDI%',
-      'Total com BDI = Subtotal + BDI',
-      'Desconto = Total com BDI × Desconto%',
-      'Total geral = Total com BDI − Desconto',
+      ...QUOTE_PDF_MEMORIAL_FORMULA_LINES,
       `BDI aplicado: ${formatQuotePercentBr(f.bdiPercent, 0)}. Desconto: ${formatQuotePercentBr(f.discountPercent, 0)}.`,
-      `Margem (${formatQuotePercentBr(f.marginPercent, 0)}): apenas informativa — não entra no total geral.`,
+      `Margem (${formatQuotePercentBr(f.marginPercent, 0)}): apenas informativa - não entra no total geral.`,
     ].join('\n'),
     marginLeft,
     y,
@@ -168,7 +168,7 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
     beginSection(28);
     y = drawQuotePdfSectionTitle(
       doc,
-      nextSection(`ETAPA — ${preserveQuotePdfUserText(stage.name) || 'Etapa'}`),
+      nextSection(`ETAPA - ${preserveQuotePdfUserText(stage.name) || 'Etapa'}`),
       marginLeft,
       y,
     );
@@ -224,6 +224,7 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
           5: { cellWidth: contentWidth * 0.15,halign: 'right' },
         },
         margin: { left: marginLeft, right: marginRight, bottom: marginBottom },
+        didParseCell: quotePdfAutoTableSanitizeCell,
       });
       y = lastY(doc, y) + 2;
     }
@@ -235,7 +236,7 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
       doc.setTextColor(...QUOTE_PDF_BRAND.muted);
       y = drawQuotePdfWrapped(
         doc,
-        `Justificativa — ${preserveQuotePdfUserText(item.description) || 'item'}: ${preserveQuotePdfUserText(item.calculation_notes)}`,
+        `Justificativa - ${preserveQuotePdfUserText(item.description) || 'item'}: ${preserveQuotePdfUserText(item.calculation_notes)}`,
         marginLeft,
         y,
         contentWidth,
@@ -266,12 +267,13 @@ export async function renderQuotePdfMemorial(payload: QuoteExportPayload): Promi
       [`Desconto (${formatQuotePercentBr(f.discountPercent, 0)})`, quotePdfMoney(f.discountValue)],
       ['TOTAL GERAL', quotePdfMoney(f.totalGeral)],
       [
-        `Margem (${formatQuotePercentBr(f.marginPercent, 0)}) — informativa`,
+        `Margem (${formatQuotePercentBr(f.marginPercent, 0)}) - informativa`,
         quotePdfMoney(f.marginValue),
       ],
     ],
     theme: 'grid',
     styles: { fontSize: 7.5, cellPadding: 1.1 },
+    didParseCell: quotePdfAutoTableSanitizeCell,
     columnStyles: {
       0: { cellWidth: contentWidth * 0.55, fontStyle: 'bold' },
       1: { cellWidth: contentWidth * 0.45,halign: 'right' },

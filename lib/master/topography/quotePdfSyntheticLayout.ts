@@ -72,6 +72,10 @@ export type QuotePdfFinancialBreakdown = {
   totalWithBdi: number;
 };
 
+import {
+  sanitizeQuotePdfText,
+} from './quotePdfText';
+
 /** Texto útil para o PDF do cliente (sem null/undefined/traços vazios). */
 export function isMeaningfulQuotePdfText(value: unknown): boolean {
   if (value === null || value === undefined) return false;
@@ -83,17 +87,11 @@ export function isMeaningfulQuotePdfText(value: unknown): boolean {
 
 /**
  * Preserva texto cadastrado (incl. percentuais como "50%") sem interpolação/printf.
- * Não altera o conteúdo — apenas normaliza espaços e remove caracteres de controle.
+ * Normaliza para Helvetica/WinAnsi (ex.: − → -) sem alterar o sentido técnico.
  */
 export function preserveQuotePdfUserText(value: unknown): string {
   if (value === null || value === undefined) return '';
-  // NFKC normaliza dígitos/percentuais fullwidth e evita glifos que somem na fonte PDF.
-  return String(value)
-    .normalize('NFKC')
-    .replace(/\u0000/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
+  return sanitizeQuotePdfText(value).trim();
 }
 
 export function formatQuotePdfMoney(n: number): string {
