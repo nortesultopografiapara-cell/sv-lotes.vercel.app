@@ -18,6 +18,7 @@ import {
 import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
 import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
+import { BulkAdjustBrokerCommissionsModal } from '@/components/brokers/BulkAdjustBrokerCommissionsModal';
 import {
   fetchCompanySaasByTenantId,
   getCompanySaasPlan,
@@ -65,6 +66,9 @@ export default function CorretoresPage() {
     brokerName: string;
     pendingTotal: number;
   } | null>(null);
+  const [bulkAdjustOpen, setBulkAdjustOpen] = useState(false);
+  const [bulkAdjustPreset, setBulkAdjustPreset] = useState<'zero_pending_all' | null>(null);
+  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -196,6 +200,12 @@ export default function CorretoresPage() {
         'projects',
       );
       const projectsData = prj || [];
+      setProjectOptions(
+        (projectsData as Array<{ id: string; name?: string | null }>).map((p) => ({
+          id: p.id,
+          name: p.name || 'Empreendimento',
+        })),
+      );
 
       const { data: cust } = await applyTenantFilter(
         supabase.from('customers').select('id, name'),
@@ -1144,6 +1154,43 @@ export default function CorretoresPage() {
         </div>
       </header>
 
+      {canManageBrokerCommission ? (
+        <section className="mb-6 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 md:p-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">
+                Ações administrativas
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                Ajuste em massa de comissões pendentes em vendas existentes (prévia obrigatória).
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkAdjustPreset(null);
+                  setBulkAdjustOpen(true);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-bold border border-teal-500/40 text-teal-400 hover:bg-teal-500/10 transition-colors"
+              >
+                Ajustar comissões de vendas existentes
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkAdjustPreset('zero_pending_all');
+                  setBulkAdjustOpen(true);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-500/15 border border-amber-500/40 text-amber-400 hover:bg-amber-500/25 transition-colors"
+              >
+                Zerar comissões pendentes
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {/* Top Cards Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 min-w-0">
          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative overflow-hidden">
@@ -1848,6 +1895,23 @@ export default function CorretoresPage() {
           name: b.name,
           commission_percent: b.commission_percent,
         }))}
+        onSuccess={() => loadBrokers()}
+      />
+
+      <BulkAdjustBrokerCommissionsModal
+        open={bulkAdjustOpen}
+        onClose={() => {
+          setBulkAdjustOpen(false);
+          setBulkAdjustPreset(null);
+        }}
+        activeTenantId={activeTenantId}
+        canManage={canManageBrokerCommission}
+        brokers={filterBrokersForActiveList(corretores).map((b) => ({
+          id: b.id,
+          name: b.name,
+        }))}
+        projects={projectOptions}
+        initialPreset={bulkAdjustPreset}
         onSuccess={() => loadBrokers()}
       />
     </div>
