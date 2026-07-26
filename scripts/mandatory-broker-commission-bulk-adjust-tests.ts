@@ -20,7 +20,12 @@ import {
   type BulkCommissionCandidate,
 } from '../lib/brokerCommissionBulkAdjust';
 import { canManageSaleBrokerCommission } from '../lib/brokerCommissionAccess';
-import { isPendingBrokerCommission } from '../lib/brokerCommission';
+import {
+  isPendingBrokerCommission,
+  resolveSaleValueForCommission,
+} from '../lib/brokerCommission';
+import { BULK_ADJUST_SALES_SELECT } from '../lib/brokerCommissionBulkService';
+import { SALES_OFFICIAL_UPDATE_FIELDS } from '../lib/salesWriteSchema';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -38,7 +43,9 @@ function candidate(
     sale: {
       id: 'sale-1',
       project_id: 'proj-1',
-      total_amount: 75000,
+      agreed_price: 75000,
+      lot_price: 75000,
+      total_value: 75000,
       sale_date: '2026-06-01',
       broker_id: 'broker-1',
     },
@@ -93,7 +100,7 @@ function testConfirmGate() {
 
 function testPatchZeroCancels() {
   const patch = buildBulkCommissionPatch({
-    sale: { total_amount: 75000 },
+    sale: { agreed_price: 75000, lot_price: 75000, total_value: 75000 },
     newPercent: 0,
   });
   assert(patch.amount === 0, 'amount 0');
@@ -104,7 +111,7 @@ function testPatchZeroCancels() {
 
 function testPatchRecalculatesPercent() {
   const patch = buildBulkCommissionPatch({
-    sale: { total_amount: 100000 },
+    sale: { agreed_price: 100000, lot_price: 100000, total_value: 100000 },
     newPercent: 2,
   });
   assert(patch.amount === 2000, '2% de 100k');
@@ -215,7 +222,7 @@ function testFilterProject() {
   const row = classifyBulkCommissionRow({
     row: candidate({
       id: 'c1',
-      sale: { id: 'sale-1', project_id: 'proj-other', total_amount: 75000, sale_date: '2026-06-01' },
+      sale: { id: 'sale-1', project_id: 'proj-other', agreed_price: 75000, sale_date: '2026-06-01' },
     }),
     filters: { projectId: 'proj-1', pendingOnly: true },
     newPercent: 0,
@@ -275,8 +282,8 @@ function testPreviewSummaryCounts() {
 function testGroupPatchesAtomicZero() {
   const preview = buildBulkAdjustPreview({
     rows: [
-      candidate({ id: 'a', sale_id: 's1', sale: { id: 's1', total_amount: 10000, sale_date: '2026-06-01', project_id: 'proj-1' } }),
-      candidate({ id: 'b', sale_id: 's2', sale: { id: 's2', total_amount: 20000, sale_date: '2026-06-01', project_id: 'proj-1' } }),
+      candidate({ id: 'a', sale_id: 's1', sale: { id: 's1', agreed_price: 10000, sale_date: '2026-06-01', project_id: 'proj-1' } }),
+      candidate({ id: 'b', sale_id: 's2', sale: { id: 's2', agreed_price: 20000, sale_date: '2026-06-01', project_id: 'proj-1' } }),
     ],
     filters: { pendingOnly: true },
     newPercent: 0,
@@ -367,6 +374,83 @@ function testPendingHelperStillTrueForAliases() {
   console.log('OK testPendingHelperStillTrueForAliases');
 }
 
+/** Regressão: PostgREST quebra se o SELECT pedir coluna inexistente. */
+function testSalesSelectUsesRealSchemaColumnsOnly() {
+  assert(!BULK_ADJUST_SALES_SELECT.includes('total_amount'), 'sem total_amount');
+  assert(!BULK_ADJUST_SALES_SELECT.includes(', amount'), 'sem sales.amount');
+  assert(BULK_ADJUST_SALES_SELECT.includes('agreed_price'), 'usa agreed_price');
+  assert(BULK_ADJUST_SALES_SELECT.includes('lot_price'), 'usa lot_price');
+  assert(BULK_ADJUST_SALES_SELECT.includes('total_value'), 'usa total_value');
+
+  const service = fs.readFileSync(
+    path.join(process.cwd(), 'lib/brokerCommissionBulkService.ts'),
+    'utf8',
+  );
+  assert(!/\btotal_amount\b/.test(BULK_ADJUST_SALES_SELECT), 'select sem total_amount');
+  assert(!/\btotal_amount\b/.test(service), 'service sem total_amount');
+  assert(service.includes('BULK_ADJUST_SALES_SELECT'), 'usa constante select');
+  assert(
+    (SALES_OFFICIAL_UPDATE_FIELDS as readonly string[]).includes('agreed_price'),
+    'agreed_price oficial',
+  );
+  assert(
+    (SALES_OFFICIAL_UPDATE_FIELDS as readonly string[]).includes('lot_price'),
+    'lot_price oficial',
+  );
+  assert(
+    (SALES_OFFICIAL_UPDATE_FIELDS as readonly string[]).includes('total_value'),
+    'total_value oficial',
+  );
+  console.log('OK testSalesSelectUsesRealSchemaColumnsOnly');
+}
+
+function testPreviewUsesStoredCommissionAmount() {
+  const preview = buildBulkAdjustPreview({
+    rows: [
+      candidate({
+        id: 'c1',
+        amount: 4123.45,
+        commission_percent: 5,
+        sale: {
+          id: 'sale-1',
+          project_id: 'proj-1',
+          agreed_price: 99999,
+          sale_date: '2026-06-01',
+        },
+      }),
+    ],
+    filters: { pendingOnly: true },
+    newPercent: 0,
+    cashOverlapKeys: new Set(),
+  });
+  assert(preview.rows[0].current_amount === 4123.45, 'usa amount gravado');
+  assert(preview.rows[0].current_percent === 5, 'usa percent gravado');
+  assert(preview.rows[0].new_amount === 0, '0% → R$ 0');
+  assert(preview.rows[0].broker_id === 'broker-1', 'broker_id preservado no preview');
+  console.log('OK testPreviewUsesStoredCommissionAmount');
+}
+
+function testNewPercentUsesCanonicalSaleBase() {
+  const sale = { agreed_price: 80000, lot_price: 75000, total_value: 80000 };
+  const base = resolveSaleValueForCommission(sale);
+  const patch = buildBulkCommissionPatch({ sale, newPercent: 5 });
+  assert(base === 80000 || base === 75000, 'base canônica via helper');
+  assert(patch.amount === Math.round(((base * 5) / 100) * 100) / 100, 'mesmo helper');
+  console.log('OK testNewPercentUsesCanonicalSaleBase');
+}
+
+function testPreserveBrokerIdOnPreviewRows() {
+  const preview = buildBulkAdjustPreview({
+    rows: [candidate({ id: 'c1', broker_id: 'broker-keep' })],
+    filters: { pendingOnly: true },
+    newPercent: 0,
+    cashOverlapKeys: new Set(),
+  });
+  assert(preview.rows[0].eligible, 'elegível');
+  assert(preview.rows[0].broker_id === 'broker-keep', 'broker_id intacto');
+  console.log('OK testPreserveBrokerIdOnPreviewRows');
+}
+
 function main() {
   testConfirmTexts();
   testConfirmGate();
@@ -390,6 +474,10 @@ function main() {
   testUiDoesNotAutoApply();
   testDoesNotTouchSalesFinanceContract();
   testPendingHelperStillTrueForAliases();
+  testSalesSelectUsesRealSchemaColumnsOnly();
+  testPreviewUsesStoredCommissionAmount();
+  testNewPercentUsesCanonicalSaleBase();
+  testPreserveBrokerIdOnPreviewRows();
   console.log('\nALL mandatory-broker-commission-bulk-adjust-tests PASSED');
 }
 

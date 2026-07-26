@@ -18,6 +18,15 @@ import {
 import { BROKER_COMMISSION_API_SELECT } from '@/lib/brokerCommissionSchema';
 import { SaleBrokerCommissionError } from '@/lib/saleBrokerCommissionManage';
 
+/**
+ * Colunas reais de public.sales usadas no bulk adjust.
+ * Evitar colunas fantasma no SELECT (PostgREST rejeita).
+ * Base comercial canônica: agreed_price → lot_price → total_value
+ * (via resolveSaleValueForCommission).
+ */
+export const BULK_ADJUST_SALES_SELECT =
+  'id, project_id, customer_id, broker_id, lot_id, block_id, sale_date, created_at, agreed_price, lot_price, total_value, status' as const;
+
 export type BulkAdjustServiceInput = {
   tenantId: string;
   actorUserId: string;
@@ -79,13 +88,11 @@ async function loadTenantCommissionCandidates(
     saleIds.length
       ? admin
           .from('sales')
-          .select(
-            'id, project_id, customer_id, broker_id, lot_id, block_id, sale_date, created_at, total_amount, agreed_price, lot_price, amount, status',
-          )
+          .select(BULK_ADJUST_SALES_SELECT)
           .in('id', saleIds)
       : Promise.resolve({ data: [], error: null }),
     brokerIds.length
-      ? admin.from('brokers').select('id, name, full_name').in('id', brokerIds)
+      ? admin.from('brokers').select('id, name').in('id', brokerIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -124,10 +131,10 @@ async function loadTenantCommissionCandidates(
 
   const [customersRes, projectsRes, blocksRes] = await Promise.all([
     customerIds.length
-      ? admin.from('customers').select('id, full_name, name').in('id', customerIds)
+      ? admin.from('customers').select('id, name').in('id', customerIds)
       : Promise.resolve({ data: [], error: null }),
     projectIds.length
-      ? admin.from('projects').select('id, name, title').in('id', projectIds)
+      ? admin.from('projects').select('id, name').in('id', projectIds)
       : Promise.resolve({ data: [], error: null }),
     saleIds.length
       ? admin
@@ -142,19 +149,19 @@ async function loadTenantCommissionCandidates(
   const customerById = new Map(
     ((customersRes.data || []) as Array<Record<string, unknown>>).map((c) => [
       String(c.id),
-      String(c.full_name || c.name || ''),
+      String(c.name || ''),
     ]),
   );
   const projectById = new Map(
     ((projectsRes.data || []) as Array<Record<string, unknown>>).map((p) => [
       String(p.id),
-      String(p.name || p.title || ''),
+      String(p.name || ''),
     ]),
   );
   const brokerById = new Map(
     ((brokersRes.data || []) as Array<Record<string, unknown>>).map((b) => [
       String(b.id),
-      String(b.name || b.full_name || ''),
+      String(b.name || ''),
     ]),
   );
   const blockData = (blocksRes.data || []) as Array<{
