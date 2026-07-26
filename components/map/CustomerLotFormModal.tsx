@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
@@ -80,6 +80,13 @@ import {
   salePaymentModeSelectOptions,
 } from '@/lib/salePaymentMode';
 import { formatContractDueDateBr } from '@/lib/contractPaymentDates';
+import {
+  formatBrokerCommissionPreview,
+  normalizeBrokerCommissionMode,
+  resolveBrokerDefaultCommissionPlan,
+  resolveSaleCommissionPlan,
+  type BrokerCommissionMode,
+} from '@/lib/brokerCommissionMode';
 
 export type LotFormState = CustomerFormValues &
   SaleSpouseFormFields & {
@@ -90,6 +97,11 @@ export type LotFormState = CustomerFormValues &
   installments_count: string;
   first_installment_due_date: string;
   broker_id: string;
+  /** true = herda modelo do cadastro do corretor */
+  use_broker_default_commission: boolean;
+  sale_commission_mode: BrokerCommissionMode;
+  sale_commission_percent: number;
+  sale_commission_fixed_amount: string;
   financial_account_id: string;
   notes: string;
   installment_correction_type: string;
@@ -139,6 +151,10 @@ function emptyLotFormState(): LotFormState {
     installments_count: '',
     first_installment_due_date: '',
     broker_id: '',
+    use_broker_default_commission: true,
+    sale_commission_mode: 'PERCENT',
+    sale_commission_percent: 0,
+    sale_commission_fixed_amount: '',
     financial_account_id: '',
     notes: '',
     installment_correction_type: DEFAULT_INSTALLMENT_CORRECTION_TYPE,
@@ -175,7 +191,13 @@ type Props = {
   prefillFromReservation?: boolean;
   mode?: 'create' | 'edit';
   initialFormData?: Partial<LotFormState>;
-  brokers?: { id: string; name: string }[];
+  brokers?: {
+    id: string;
+    name: string;
+    commission_percent?: number | string | null;
+    commission_mode?: string | null;
+    commission_fixed_amount?: number | string | null;
+  }[];
   contractModel?: SaleContractModel | string | null;
   /** Venda existente — necessário para a aba Documentos. */
   saleId?: string | null;
@@ -425,6 +447,61 @@ export function CustomerLotFormModal({
 
   const finalValue = Math.max(0, price - discountValue);
   const downPayment = parseCurrencyBRLNumber(downPaymentStr);
+
+  const selectedBroker = useMemo(
+    () => brokers.find((b) => b.id === formData.broker_id) || null,
+    [brokers, formData.broker_id],
+  );
+
+  const commissionPreview = useMemo(() => {
+    if (!formData.broker_id || !selectedBroker) return null;
+    const plan = resolveSaleCommissionPlan({
+      broker: selectedBroker,
+      useBrokerDefault: formData.use_broker_default_commission,
+      saleCommissionMode: formData.sale_commission_mode,
+      saleCommissionPercent: formData.sale_commission_percent,
+      saleCommissionFixedAmount: parseCurrencyBRLNumber(
+        formData.sale_commission_fixed_amount,
+      ),
+      saleValue: finalValue,
+    });
+    return {
+      plan,
+      ...formatBrokerCommissionPreview(plan),
+      brokerName: selectedBroker.name,
+    };
+  }, [
+    formData.broker_id,
+    formData.use_broker_default_commission,
+    formData.sale_commission_mode,
+    formData.sale_commission_percent,
+    formData.sale_commission_fixed_amount,
+    selectedBroker,
+    finalValue,
+  ]);
+
+  const applyBrokerDefaultCommission = (brokerId: string) => {
+    const broker = brokers.find((b) => b.id === brokerId);
+    if (!broker) {
+      setField({
+        broker_id: brokerId,
+        sale_commission_mode: 'NONE',
+        sale_commission_percent: 0,
+        sale_commission_fixed_amount: '',
+      });
+      return;
+    }
+    const defaults = resolveBrokerDefaultCommissionPlan(broker);
+    setField({
+      broker_id: brokerId,
+      sale_commission_mode: defaults.mode,
+      sale_commission_percent: defaults.percent,
+      sale_commission_fixed_amount:
+        defaults.mode === 'FIXED'
+          ? serializeCurrencyBRL(String(defaults.fixedAmount))
+          : '',
+    });
+  };
   const installmentsCount =
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
   const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
@@ -670,6 +747,9 @@ export function CustomerLotFormModal({
             ? normalizeInstallmentCorrectionType(formData.installment_correction_type)
             : DEFAULT_INSTALLMENT_CORRECTION_TYPE
           : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+        sale_commission_fixed_amount: String(
+          parseCurrencyBRLNumber(formData.sale_commission_fixed_amount) || 0,
+        ),
       });
     } catch (err) {
       console.error('CUSTOMER_LOT_FORM_SUBMIT_ERROR', err);
@@ -1711,7 +1791,14 @@ export function CustomerLotFormModal({
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Corretor</label>
                     <select
                       value={formData.broker_id}
-                      onChange={(e) => setField({ broker_id: e.target.value })}
+                      onChange={(e) => {
+                        const brokerId = e.target.value;
+                        if (formData.use_broker_default_commission || !formData.broker_id) {
+                          applyBrokerDefaultCommission(brokerId);
+                        } else {
+                          setField({ broker_id: brokerId });
+                        }
+                      }}
                       className={GIS_INPUT}
                     >
                       <option value="">Nenhum / não informado</option>
@@ -1722,6 +1809,100 @@ export function CustomerLotFormModal({
                       ))}
                     </select>
                   </div>
+                  {formData.broker_id ? (
+                    <div className="md:col-span-2 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <label className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={formData.use_broker_default_commission}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            if (checked) {
+                              applyBrokerDefaultCommission(formData.broker_id);
+                              setField({ use_broker_default_commission: true });
+                            } else {
+                              setField({ use_broker_default_commission: false });
+                            }
+                          }}
+                        />
+                        Usar comissão padrão do corretor
+                      </label>
+                      {!formData.use_broker_default_commission ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">
+                              Modelo desta venda
+                            </label>
+                            <select
+                              value={formData.sale_commission_mode}
+                              onChange={(e) =>
+                                setField({
+                                  sale_commission_mode: normalizeBrokerCommissionMode(
+                                    e.target.value,
+                                  ),
+                                })
+                              }
+                              className={GIS_INPUT}
+                            >
+                              <option value="PERCENT">Percentual sobre a venda</option>
+                              <option value="FIXED">Valor fixo por venda</option>
+                              <option value="NONE">Sem comissão</option>
+                            </select>
+                          </div>
+                          {formData.sale_commission_mode === 'PERCENT' ? (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                Percentual (%)
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={0.01}
+                                value={formData.sale_commission_percent}
+                                onChange={(e) =>
+                                  setField({
+                                    sale_commission_percent: Number(e.target.value) || 0,
+                                  })
+                                }
+                                className={GIS_INPUT}
+                              />
+                            </div>
+                          ) : null}
+                          {formData.sale_commission_mode === 'FIXED' ? (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                Valor fixo
+                              </label>
+                              <CurrencyInput
+                                value={formData.sale_commission_fixed_amount}
+                                onChange={(v) =>
+                                  setField({ sale_commission_fixed_amount: v })
+                                }
+                                className={GIS_INPUT}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {commissionPreview ? (
+                        <div className="text-xs text-gray-700 space-y-0.5">
+                          <p>
+                            <span className="font-semibold">Corretor:</span>{' '}
+                            {commissionPreview.brokerName}
+                          </p>
+                          <p>
+                            <span className="font-semibold">Modelo:</span>{' '}
+                            {commissionPreview.modelLabel}
+                          </p>
+                          <p>
+                            <span className="font-semibold">Comissão desta venda:</span>{' '}
+                            {commissionPreview.amountLabel}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="md:col-span-2">
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Observações</label>
                     <textarea

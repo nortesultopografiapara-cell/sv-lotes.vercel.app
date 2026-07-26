@@ -4,10 +4,15 @@ import {
   isPendingBrokerCommission,
   readBrokerCommissionPercent,
   resolveSaleValueForCommission,
-  shouldAutoCreatePendingCommission,
   withBrokerCommissionMonetaryFields,
   type BrokerCommissionRow,
 } from '@/lib/brokerCommission';
+import {
+  buildCommissionSnapshotFields,
+  calculateBrokerCommissionPlan,
+  resolveBrokerDefaultCommissionPlan,
+  shouldCreatePendingCommissionFromPlan,
+} from '@/lib/brokerCommissionMode';
 
 export type SaleBrokerCommissionAction =
   | 'remove_broker'
@@ -22,6 +27,7 @@ export type ManageSaleBrokerCommissionInput =
       action: 'update_commission';
       commission_percent?: number;
       fixed_amount?: number;
+      commission_mode?: string;
     }
   | { action: 'cancel_commission' };
 
@@ -54,6 +60,9 @@ export function buildCanceledCommissionPatch() {
     status: 'cancelado',
     ...withBrokerCommissionMonetaryFields(0),
     commission_percent: 0,
+    commission_mode: 'NONE',
+    commission_fixed_amount: null,
+    calculation_base: null,
     paid_at: null,
   };
 }
@@ -65,14 +74,18 @@ export function buildPendingCommissionInsert(params: {
   contractId?: string | null;
   customerId?: string | null;
   saleValue: number;
-  commissionPercent: number;
+  commissionPercent?: number;
+  commissionMode?: string | null;
+  commissionFixedAmount?: number | null;
 }) {
-  const amount = calculateCommissionAmount(
-    params.saleValue,
-    params.commissionPercent,
-  );
+  const plan = calculateBrokerCommissionPlan({
+    mode: params.commissionMode ?? 'PERCENT',
+    percent: params.commissionPercent ?? 0,
+    fixedAmount: params.commissionFixedAmount ?? 0,
+    saleValue: params.saleValue,
+  });
 
-  if (!shouldAutoCreatePendingCommission(params.commissionPercent)) {
+  if (!shouldCreatePendingCommissionFromPlan(plan)) {
     return null;
   }
 
@@ -83,32 +96,48 @@ export function buildPendingCommissionInsert(params: {
     sale_id: params.saleId,
     contract_id: params.contractId ?? null,
     customer_id: params.customerId ?? null,
-    ...withBrokerCommissionMonetaryFields(amount),
-    commission_percent: params.commissionPercent,
+    ...buildCommissionSnapshotFields(plan),
     status: 'pendente',
   };
 }
 
 export function resolveTransferCommissionPlan(params: {
   sale: Record<string, unknown>;
-  targetBroker: { id: string; commission_percent?: number | string | null };
+  targetBroker: {
+    id: string;
+    commission_percent?: number | string | null;
+    commission_mode?: string | null;
+    commission_fixed_amount?: number | string | null;
+  };
 }) {
   const saleValue = resolveSaleValueForCommission(params.sale);
-  const percent = readBrokerCommissionPercent(params.targetBroker.commission_percent);
+  const defaults = resolveBrokerDefaultCommissionPlan(params.targetBroker);
+  const plan = calculateBrokerCommissionPlan({
+    mode: defaults.mode,
+    percent: defaults.percent,
+    fixedAmount: defaults.fixedAmount,
+    saleValue,
+  });
+
+  const snapshot = shouldCreatePendingCommissionFromPlan(plan)
+    ? {
+        company_id: String(params.sale.tenant_id || params.sale.company_id || ''),
+        tenant_id: String(params.sale.tenant_id || params.sale.company_id || ''),
+        broker_id: params.targetBroker.id,
+        sale_id: String(params.sale.id || ''),
+        contract_id: (params.sale.contract_id as string | null | undefined) ?? null,
+        customer_id: (params.sale.customer_id as string | null | undefined) ?? null,
+        ...buildCommissionSnapshotFields(plan),
+        status: 'pendente',
+      }
+    : null;
 
   return {
     brokerId: params.targetBroker.id,
     saleValue,
-    commissionPercent: percent,
-    pendingInsert: buildPendingCommissionInsert({
-      tenantId: String(params.sale.tenant_id || params.sale.company_id || ''),
-      brokerId: params.targetBroker.id,
-      saleId: String(params.sale.id || ''),
-      contractId: (params.sale.contract_id as string | null | undefined) ?? null,
-      customerId: (params.sale.customer_id as string | null | undefined) ?? null,
-      saleValue,
-      commissionPercent: percent,
-    }),
+    commissionPercent: plan.percent,
+    commissionMode: plan.mode,
+    pendingInsert: snapshot,
   };
 }
 
@@ -116,38 +145,63 @@ export function resolveManualCommissionUpdate(params: {
   sale: Record<string, unknown>;
   commission_percent?: number;
   fixed_amount?: number;
+  commission_mode?: string;
 }) {
   const saleValue = resolveSaleValueForCommission(params.sale);
 
-  if (params.fixed_amount != null && Number.isFinite(params.fixed_amount)) {
-    const amount = Math.max(0, Number(params.fixed_amount));
+  if (params.commission_mode === 'NONE') {
     return {
-      amount,
-      commission_percent:
-        params.commission_percent != null
-          ? readBrokerCommissionPercent(params.commission_percent)
-          : amount > 0 && saleValue > 0
-            ? Math.round((amount / saleValue) * 10000) / 100
-            : 0,
-      status: amount > 0 ? 'pendente' : 'cancelado',
+      ...buildCommissionSnapshotFields(
+        calculateBrokerCommissionPlan({
+          mode: 'NONE',
+          percent: 0,
+          fixedAmount: 0,
+          saleValue,
+        }),
+      ),
+      status: 'cancelado' as const,
+    };
+  }
+
+  if (
+    params.commission_mode === 'FIXED' ||
+    (params.fixed_amount != null && Number.isFinite(params.fixed_amount))
+  ) {
+    const plan = calculateBrokerCommissionPlan({
+      mode: 'FIXED',
+      fixedAmount: params.fixed_amount ?? 0,
+      saleValue,
+    });
+    return {
+      ...buildCommissionSnapshotFields(plan),
+      status: plan.amount > 0 ? ('pendente' as const) : ('cancelado' as const),
     };
   }
 
   const percent = readBrokerCommissionPercent(params.commission_percent);
-  const amount = calculateCommissionAmount(saleValue, percent);
+  const plan = calculateBrokerCommissionPlan({
+    mode: 'PERCENT',
+    percent,
+    saleValue,
+  });
 
-  if (percent <= 0 || amount <= 0) {
+  if (percent <= 0 || plan.amount <= 0) {
     return {
-      amount: 0,
-      commission_percent: 0,
-      status: 'cancelado',
+      ...buildCommissionSnapshotFields(
+        calculateBrokerCommissionPlan({
+          mode: 'NONE',
+          percent: 0,
+          fixedAmount: 0,
+          saleValue,
+        }),
+      ),
+      status: 'cancelado' as const,
     };
   }
 
   return {
-    amount,
-    commission_percent: percent,
-    status: 'pendente',
+    ...buildCommissionSnapshotFields(plan),
+    status: 'pendente' as const,
   };
 }
 

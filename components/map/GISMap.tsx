@@ -3867,9 +3867,15 @@ export default function GISMap({
     mode?: "create" | "edit";
     editContext?: SaleEditLoadedContext;
   } | null>(null);
-  const [brokersList, setBrokersList] = useState<{ id: string; name: string }[]>(
-    [],
-  );
+  const [brokersList, setBrokersList] = useState<
+    {
+      id: string;
+      name: string;
+      commission_percent?: number | null;
+      commission_mode?: string | null;
+      commission_fixed_amount?: number | null;
+    }[]
+  >([]);
   const [tenantContractModel, setTenantContractModel] = useState<string>("PADRAO");
   const [editSaleLoading, setEditSaleLoading] = useState<string | null>(null);
 
@@ -3881,7 +3887,7 @@ export default function GISMap({
       const [{ data: brokers }, { data: company }] = await Promise.all([
         supabase
           .from("brokers")
-          .select("id, name")
+          .select("id, name, commission_percent, commission_mode, commission_fixed_amount")
           .eq("tenant_id", user.tenant_id)
           .eq("active", true)
           .order("name"),
@@ -3892,7 +3898,13 @@ export default function GISMap({
           .maybeSingle(),
       ]);
       setBrokersList(
-        (brokers || []).map((b) => ({ id: b.id, name: b.name || "Corretor" })),
+        (brokers || []).map((b) => ({
+          id: b.id,
+          name: b.name || "Corretor",
+          commission_percent: b.commission_percent ?? null,
+          commission_mode: b.commission_mode ?? null,
+          commission_fixed_amount: b.commission_fixed_amount ?? null,
+        })),
       );
       setTenantContractModel(
         normalizeSaleContractModel(company?.contract_model),
