@@ -5,6 +5,7 @@ import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
 import { SaleDocumentsPanel } from '@/components/sales/SaleDocumentsPanel';
+import { SaleChargesPanel } from '@/components/sales/SaleChargesPanel';
 import {
   customerToFormValues,
   emptyCustomerFormValues,
@@ -239,7 +240,7 @@ export function CustomerLotFormModal({
   onCustomerValidationFailed,
 }: Props) {
   const isEditMode = mode === 'edit';
-  const [activeTab, setActiveTab] = useState<'dados' | 'documentos'>('dados');
+  const [activeTab, setActiveTab] = useState<'dados' | 'cobrancas' | 'documentos'>('dados');
   const [formData, setFormData] = useState<LotFormState>(() => ({
     ...emptyLotFormState(),
     ...initialFormData,
@@ -968,7 +969,7 @@ export function CustomerLotFormModal({
             </div>
           )}
 
-          <div className="mb-4 flex gap-1 border-b border-gray-200">
+          <div className="mb-4 flex flex-wrap gap-1 border-b border-gray-200">
             <button
               type="button"
               onClick={() => setActiveTab('dados')}
@@ -980,6 +981,19 @@ export function CustomerLotFormModal({
             >
               Dados
             </button>
+            {isEditMode && saleId ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('cobrancas')}
+                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                  activeTab === 'cobrancas'
+                    ? 'border-emerald-700 text-emerald-800'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Cobranças
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setActiveTab('documentos')}
@@ -995,6 +1009,11 @@ export function CustomerLotFormModal({
 
           {activeTab === 'documentos' ? (
             <SaleDocumentsPanel
+              saleId={isEditMode ? saleId : null}
+              disabled={submitting || prefillLoading}
+            />
+          ) : activeTab === 'cobrancas' ? (
+            <SaleChargesPanel
               saleId={isEditMode ? saleId : null}
               disabled={submitting || prefillLoading}
             />
@@ -2163,7 +2182,7 @@ export function CustomerLotFormModal({
             onClick={onClose}
             className="w-full sm:w-1/2 px-4 py-3 bg-gray-100 text-gray-700 font-semibold rounded-lg text-sm"
           >
-            {activeTab === 'documentos' ? 'Fechar' : 'Cancelar'}
+            {activeTab === 'documentos' || activeTab === 'cobrancas' ? 'Fechar' : 'Cancelar'}
           </button>
           {activeTab === 'dados' ? (
           <button
