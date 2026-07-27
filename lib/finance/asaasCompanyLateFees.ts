@@ -28,13 +28,32 @@ export function buildCompanyAsaasLateFeePayload(): {
   };
 }
 
+/** Linha digitável Febraban (47 dígitos). Nunca confundir com nosso número. */
+export function isOfficialDigitableLine(value: string | null | undefined): boolean {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 47;
+}
+
+export function normalizeDigitableLineDigits(value: string | null | undefined): string | null {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 47 ? digits : null;
+}
+
+export function isOfficialBarcode44(value: string | null | undefined): boolean {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 44;
+}
+
+/**
+ * Extrai somente a linha digitável oficial.
+ * NÃO usa nossoNumero como fallback (isso gerava linhas curtas no carnê).
+ */
 export function extractCompanyAsaasBankSlipIdentification(
-  payment: Pick<AsaasCompanyPayment, 'identificationField' | 'nossoNumero'>,
+  payment: Pick<AsaasCompanyPayment, 'identificationField' | 'nossoNumero'> & {
+    barCode?: string | null;
+  },
 ): string | null {
-  const idField = String(payment.identificationField || '').trim();
-  if (idField) return idField;
-  const nosso = String(payment.nossoNumero || '').trim();
-  return nosso || null;
+  return normalizeDigitableLineDigits(payment.identificationField);
 }
 
 /** PIX explícito permanece só PIX; demais fluxos usam boleto + pix (UNDEFINED no Asaas). */

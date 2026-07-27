@@ -9,7 +9,10 @@ import {
   CompanyAsaasCustomerDocumentMissingError,
   CompanyAsaasIntegrationInactiveError,
 } from '@/lib/finance/asaasCompanyChargeService';
-import { listCompanyAsaasChargesForInstallments } from '@/lib/finance/companyAsaasChargeRepository';
+import {
+  listCompanyAsaasChargesForInstallments,
+  updateCompanyAsaasCharge,
+} from '@/lib/finance/companyAsaasChargeRepository';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import {
   resolveFinancialAccountForInstallment,
@@ -17,11 +20,15 @@ import {
 } from '@/lib/finance/companyFinancialAccountResolver';
 import { bulkUpdateCompanyChargeStatuses } from '@/lib/finance/companyAsaasBulkStatusUpdate';
 import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
+import { loadAsaasApiKeyForFinancialAccount } from '@/lib/finance/companyFinancialAccountRepository';
+import { asaasCompanyEnrichPaymentArtifacts } from '@/lib/finance/asaasCompanyClient';
+import { isOfficialDigitableLine } from '@/lib/finance/asaasCompanyLateFees';
 import {
   SALE_CHARGES_AUDIT_GENERATE,
   SALE_CHARGES_AUDIT_SYNC,
   SALE_CHARGES_GENERATE_BATCH_LIMIT,
   buildSaleChargesSummaryFromRows,
+  chargeHasOfficialBoletoLine,
   isPrintablePendingCharge,
   type SaleChargeInstallmentRow,
   type SaleChargesSummary,
@@ -390,4 +397,108 @@ export async function listPrintableSaleCharges(
   );
   const printable = charges.filter(isPrintablePendingCharge);
   return { summary, charges: printable, installments };
+}
+
+/**
+ * Garante linha digitável / barcode / nosso número oficiais via
+ * GET /payments/{id}/identificationField antes de montar o carnê.
+ */
+export async function enrichSaleChargesForCarnePdf(
+  admin: SupabaseClient,
+  companyId: string,
+  charges: CompanyAsaasChargeResponse[],
+): Promise<CompanyAsaasChargeResponse[]> {
+  const out: CompanyAsaasChargeResponse[] = [];
+
+  for (const charge of charges) {
+    if (chargeHasOfficialBoletoLine(charge) && charge.nossoNumero) {
+      out.push(charge);
+      continue;
+    }
+
+    const accountId = charge.financialAccountId;
+    if (!accountId || !charge.asaasPaymentId) {
+      out.push(charge);
+      continue;
+    }
+
+    try {
+      const { apiKey, environment } = await loadAsaasApiKeyForFinancialAccount(
+        admin,
+        accountId,
+        companyId,
+      );
+      const enriched = await asaasCompanyEnrichPaymentArtifacts(
+        apiKey,
+        environment,
+        charge.asaasPaymentId,
+        {
+          billingType: charge.billingType,
+          existingPixCopy: charge.pixCopyPaste,
+        },
+      );
+
+      const digitable =
+        enriched.bankSlipIdentification ||
+        (isOfficialDigitableLine(charge.bankSlipIdentification)
+          ? charge.bankSlipIdentification
+          : null);
+
+      const rawPayload = {
+        ...(enriched.payment as Record<string, unknown>),
+        identificationField: enriched.payment.identificationField,
+        nossoNumero: enriched.payment.nossoNumero,
+        barCode: enriched.payment.barCode,
+        invoiceNumber: enriched.payment.invoiceNumber,
+      };
+
+      const updated = await updateCompanyAsaasCharge(admin, charge.id, companyId, {
+        bankSlipIdentification: digitable,
+        bankSlipUrl: enriched.payment.bankSlipUrl ?? charge.bankSlipUrl,
+        invoiceUrl: enriched.payment.invoiceUrl ?? charge.invoiceUrl,
+        pixQrCode: enriched.pixQrCode || charge.pixQrCode,
+        pixCopyPaste: enriched.pixCopyPaste || charge.pixCopyPaste,
+        rawPayload,
+      });
+      out.push(updated);
+    } catch (err) {
+      console.warn('[sale-charges] enrich carne', charge.id, err);
+      out.push(charge);
+    }
+  }
+
+  return out.filter(chargeHasOfficialBoletoLine);
+}
+
+export async function loadSaleCarnePayerInfo(
+  admin: SupabaseClient,
+  _companyId: string,
+  customerId: string | null | undefined,
+): Promise<{
+  name: string;
+  document: string;
+  address?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+} | null> {
+  if (!customerId) return null;
+  const { data, error } = await admin
+    .from('customers')
+    .select('name, cpf_cnpj, document, address, city, state, cep, zip_code')
+    .eq('id', customerId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    name: String(row.name || '').trim(),
+    document: String(row.cpf_cnpj || row.document || '').trim(),
+    address: row.address ? String(row.address) : null,
+    neighborhood: null,
+    city: row.city ? String(row.city) : null,
+    state: row.state ? String(row.state) : null,
+    zip: String(row.cep || row.zip_code || '') || null,
+  };
 }

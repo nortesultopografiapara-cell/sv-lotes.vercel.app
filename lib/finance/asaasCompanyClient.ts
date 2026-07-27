@@ -17,6 +17,8 @@ export type AsaasCompanyPayment = {
   bankSlipUrl?: string;
   identificationField?: string;
   nossoNumero?: string;
+  barCode?: string;
+  invoiceNumber?: string | number;
   paymentDate?: string;
   clientPaymentDate?: string;
   billingType?: string;
@@ -28,6 +30,12 @@ export type AsaasCompanyPayment = {
 export type AsaasCompanyPixQrCode = {
   encodedImage?: string;
   payload?: string;
+};
+
+export type AsaasCompanyIdentificationField = {
+  identificationField?: string;
+  nossoNumero?: string;
+  barCode?: string;
 };
 
 export type AsaasCompanyCreateBillingType = 'PIX' | 'BOLETO' | 'UNDEFINED';
@@ -100,6 +108,52 @@ export async function asaasCompanyFetchPixQrCode(
     if (attempt < maxAttempts) await sleep(400 * attempt);
   }
   throw lastError || new Error('Asaas Company pixQrCode indisponível.');
+}
+
+/**
+ * GET /payments/{id}/identificationField — linha digitável, nosso número e código de barras oficiais.
+ * A cobrança POST/GET sozinha frequentemente não traz identificationField completo.
+ */
+export async function asaasCompanyFetchIdentificationField(
+  apiKey: string,
+  environment: BankEnvironment,
+  paymentId: string,
+): Promise<AsaasCompanyIdentificationField> {
+  const maxAttempts = 6;
+  let lastError: Error | null = null;
+  let last: AsaasCompanyIdentificationField = {};
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const data = await asaasCompanyFetch<AsaasCompanyIdentificationField>(
+        apiKey,
+        environment,
+        `/payments/${encodeURIComponent(paymentId)}/identificationField`,
+      );
+      last = data || {};
+      const digitable = String(data?.identificationField || '').replace(/\D/g, '');
+      if (digitable.length === 47) return data;
+      lastError = new Error('Asaas ainda não retornou linha digitável completa.');
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+    if (attempt < maxAttempts) await sleep(450 * attempt);
+  }
+  if (String(last.identificationField || '').replace(/\D/g, '').length === 47) return last;
+  throw lastError || new Error('Linha digitável Asaas indisponível.');
+}
+
+function mergePaymentIdentification(
+  payment: AsaasCompanyPayment,
+  idField: AsaasCompanyIdentificationField | null,
+): AsaasCompanyPayment {
+  if (!idField) return payment;
+  return {
+    ...payment,
+    identificationField:
+      String(idField.identificationField || '').trim() || payment.identificationField,
+    nossoNumero: String(idField.nossoNumero || '').trim() || payment.nossoNumero,
+    barCode: String(idField.barCode || '').trim() || payment.barCode,
+  };
 }
 
 async function asaasCompanyPollPaymentBoleto(
@@ -222,6 +276,16 @@ export async function asaasCompanyCreatePayment(
         'Asaas não retornou boleto/fatura. Verifique se a conta Asaas tem boleto habilitado.',
       );
     }
+    try {
+      const idField = await asaasCompanyFetchIdentificationField(
+        apiKey,
+        environment,
+        payment.id,
+      );
+      paymentFull = mergePaymentIdentification(paymentFull, idField);
+    } catch {
+      /* linha digitável pode ficar pendente — enrich/carnê rebusca */
+    }
   }
 
   const bankSlipIdentification = extractCompanyAsaasBankSlipIdentification(paymentFull);
@@ -257,6 +321,16 @@ export async function asaasCompanyEnrichPaymentArtifacts(
 
   if (billing !== 'PIX') {
     payment = await asaasCompanyPollPaymentBoleto(apiKey, environment, paymentId);
+    try {
+      const idField = await asaasCompanyFetchIdentificationField(
+        apiKey,
+        environment,
+        paymentId,
+      );
+      payment = mergePaymentIdentification(payment, idField);
+    } catch {
+      /* mantém o que já existir no payment */
+    }
   }
 
   let pixQrCode = '';

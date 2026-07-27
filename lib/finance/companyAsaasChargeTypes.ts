@@ -61,6 +61,12 @@ export type CompanyAsaasChargeResponse = {
   asaasRemoteStatus?: string | null;
   /** Comprovante oficial Asaas (raw_payload.transactionReceiptUrl) — sem inventar URL. */
   transactionReceiptUrl?: string | null;
+  /** Nosso número bancário oficial (não é UUID / pay_). */
+  nossoNumero?: string | null;
+  /** Código de barras 44 dígitos oficial Asaas. */
+  barCode?: string | null;
+  /** Número do documento bancário (invoiceNumber). */
+  invoiceNumber?: string | null;
 };
 
 export type CreateCompanyInstallmentChargeInput = {
@@ -96,7 +102,33 @@ function extractAsaasTransactionReceiptUrl(
   return null;
 }
 
+function pickRawString(
+  raw: Record<string, unknown> | null | undefined,
+  keys: string[],
+): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  for (const key of keys) {
+    const v = raw[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  const nested = raw.identificationFieldMeta;
+  if (nested && typeof nested === 'object') {
+    for (const key of keys) {
+      const v = (nested as Record<string, unknown>)[key];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+    }
+  }
+  return null;
+}
+
 export function mapCompanyAsaasChargeRow(row: CompanyAsaasChargeRow): CompanyAsaasChargeResponse {
+  const raw = row.raw_payload || {};
+  const digitable =
+    row.bank_slip_identification ||
+    pickRawString(raw, ['identificationField']) ||
+    null;
   return {
     id: row.id,
     companyId: row.company_id,
@@ -110,7 +142,7 @@ export function mapCompanyAsaasChargeRow(row: CompanyAsaasChargeRow): CompanyAsa
     dueDate: row.due_date,
     invoiceUrl: row.invoice_url,
     bankSlipUrl: row.bank_slip_url,
-    bankSlipIdentification: row.bank_slip_identification ?? null,
+    bankSlipIdentification: digitable,
     pixQrCode: row.pix_qr_code,
     pixCopyPaste: row.pix_copy_paste,
     financialAccountId: row.financial_account_id ?? null,
@@ -120,6 +152,9 @@ export function mapCompanyAsaasChargeRow(row: CompanyAsaasChargeRow): CompanyAsa
     updatedAt: row.updated_at,
     asaasRemoteStatus: extractAsaasRemoteStatus(row.raw_payload),
     transactionReceiptUrl: extractAsaasTransactionReceiptUrl(row.raw_payload),
+    nossoNumero: pickRawString(raw, ['nossoNumero']),
+    barCode: pickRawString(raw, ['barCode']),
+    invoiceNumber: pickRawString(raw, ['invoiceNumber']),
   };
 }
 

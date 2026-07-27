@@ -10,7 +10,9 @@ import {
 } from '@/lib/email/resendSend';
 import {
   SALE_CHARGES_AUDIT_CARNE_EMAIL,
+  enrichSaleChargesForCarnePdf,
   listPrintableSaleCharges,
+  loadSaleCarnePayerInfo,
 } from '@/lib/finance/saleChargesService';
 import {
   buildSaleCarneFilename,
@@ -69,21 +71,43 @@ export async function POST(request: Request) {
       );
     }
 
+    const enrichedCharges = await enrichSaleChargesForCarnePdf(
+      auth.admin,
+      auth.tenantId,
+      charges,
+    );
+    if (enrichedCharges.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Não foi possível obter a linha digitável oficial do Asaas para as cobranças. Atualize a situação e tente novamente.',
+          summary,
+        },
+        { status: 409 },
+      );
+    }
+
     const byId = new Map(installments.map((r) => [String(r.id), r]));
     const eligibleCount = Math.max(1, summary.eligibleInstallments);
-    const items: SaleCarneBoletoItem[] = charges.map((charge) => {
-      const installment = byId.get(String(charge.installmentId)) || null;
-      const n = installment?.installment_number;
-      return {
-        charge,
-        installment,
-        parcelLabel:
-          n === 0
-            ? `Entrada de ${eligibleCount}`
-            : `Parcela ${n ?? '?'} de ${eligibleCount}`,
-        totalParcels: eligibleCount,
-      };
-    });
+    const items: SaleCarneBoletoItem[] = enrichedCharges
+      .map((charge) => {
+        const installment = byId.get(String(charge.installmentId)) || null;
+        const n = installment?.installment_number;
+        return {
+          charge,
+          installment,
+          parcelLabel:
+            n === 0
+              ? `Entrada de ${eligibleCount}`
+              : `Parcela ${n ?? '?'} de ${eligibleCount}`,
+          totalParcels: eligibleCount,
+        };
+      })
+      .sort((a, b) => {
+        const an = Number(a.installment?.installment_number ?? 9999);
+        const bn = Number(b.installment?.installment_number ?? 9999);
+        return an - bn;
+      });
 
     let beneficiaryName = summary.financialAccountName;
     let beneficiaryDocument: string | null = null;
@@ -99,11 +123,32 @@ export async function POST(request: Request) {
       }
     }
 
+    const customerId =
+      installments.find((r) => r.customer_id)?.customer_id ||
+      enrichedCharges.find((c) => c.customerId)?.customerId ||
+      null;
+    const payer = await loadSaleCarnePayerInfo(auth.admin, auth.tenantId, customerId);
+
     const bytes = await buildSaleCarnePdfBytes({
       summary,
       items,
       beneficiaryName,
       beneficiaryDocument,
+      payer: payer
+        ? {
+            name: payer.name || summary.customerName || 'Pagador',
+            document: payer.document,
+            address: payer.address,
+            neighborhood: payer.neighborhood,
+            city: payer.city,
+            state: payer.state,
+            zip: payer.zip,
+          }
+        : {
+            name: summary.customerName || 'Pagador',
+            document: '',
+          },
+      agencyCedente: '0001',
     });
     const filename = buildSaleCarneFilename(summary);
 

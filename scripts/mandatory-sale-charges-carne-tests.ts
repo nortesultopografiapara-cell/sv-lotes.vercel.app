@@ -9,6 +9,8 @@ import {
   buildSaleChargesSummaryFromRows,
   chargeHasCarneArtifacts,
   digitableLineToBarcode44,
+  formatDateBr,
+  formatDigitableLineDisplay,
   installmentHasBlockingCharge,
   installmentNeedsAsaasCharge,
   isCanceledFinanceReceipt,
@@ -18,6 +20,7 @@ import {
   type SaleChargeInstallmentRow,
 } from '../lib/finance/saleChargesShared';
 import { buildSaleCarneFilename } from '../lib/finance/saleChargesShared';
+import { extractCompanyAsaasBankSlipIdentification } from '../lib/finance/asaasCompanyLateFees';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import { ASAAS_BOLETO_MIN_AMOUNT } from '../lib/saasMasterConfig';
 
@@ -254,7 +257,20 @@ function testCarneArtifacts() {
         bankSlipIdentification: '1'.repeat(47),
       }),
     ),
-    'com linha digitável',
+    'com linha digitável 47',
+  );
+  assert(
+    !chargeHasCarneArtifacts(
+      charge({
+        installmentId: 'p1',
+        bankSlipIdentification: '466692372',
+        bankSlipUrl: null,
+        invoiceUrl: null,
+        pixQrCode: null,
+        pixCopyPaste: null,
+      }),
+    ),
+    'nosso número curto sozinho não basta',
   );
   assert(
     !chargeHasCarneArtifacts(
@@ -416,7 +432,17 @@ function testPdfThreePerPageSource() {
   assert(pdf.includes('SLOT_H'), 'altura slot');
   assert(pdf.includes('/ 3'), '3 por folha');
   assert(pdf.includes('digitableLineToBarcode44'), 'barcode oficial');
-  assert(pdf.includes('pixQrCode') || pdf.includes('resolvePixImage'), 'PIX');
+  assert(pdf.includes('RECIBO DO PAGADOR'), 'recibo pagador');
+  assert(pdf.includes('ASAAS_BANK_CODE'), 'código banco');
+  assert(pdf.includes('461'), '461 Asaas');
+  assert(pdf.includes('formatDateBr'), 'datas BR');
+  assert(pdf.includes('pay_'), 'menciona filtro pay_');
+  assert(!pdf.includes('Nº cobrança'), 'sem id interno no layout');
+  assert(pdf.includes('pixQrCode') || pdf.includes('resolveOfficialPixImage'), 'PIX oficial');
+  const client = fs.readFileSync(path.join(root, 'lib/finance/asaasCompanyClient.ts'), 'utf8');
+  assert(client.includes('identificationField'), 'endpoint identificationField');
+  const late = fs.readFileSync(path.join(root, 'lib/finance/asaasCompanyLateFees.ts'), 'utf8');
+  assert(late.includes('NÃO usa nossoNumero'), 'não fallback nossoNumero');
   console.log('OK testPdfThreePerPageSource');
 }
 

@@ -124,9 +124,17 @@ export function installmentNeedsAsaasCharge(params: {
 
 export function chargeHasCarneArtifacts(charge: CompanyAsaasChargeResponse): boolean {
   const digitable = String(charge.bankSlipIdentification || '').replace(/\D/g, '');
+  const barcode = String(charge.barCode || '').replace(/\D/g, '');
   const hasPix = Boolean(String(charge.pixQrCode || charge.pixCopyPaste || '').trim());
   const hasUrl = Boolean(String(charge.bankSlipUrl || charge.invoiceUrl || '').trim());
-  return digitable.length >= 44 || hasPix || (hasUrl && digitable.length >= 40);
+  // Linha digitável oficial = 47 dígitos; barcode oficial = 44. Não aceitar nosso número curto.
+  return digitable.length === 47 || barcode.length === 44 || hasPix || hasUrl;
+}
+
+export function chargeHasOfficialBoletoLine(charge: CompanyAsaasChargeResponse): boolean {
+  const digitable = String(charge.bankSlipIdentification || '').replace(/\D/g, '');
+  const barcode = String(charge.barCode || '').replace(/\D/g, '');
+  return digitable.length === 47 || barcode.length === 44;
 }
 
 export function isPrintablePendingCharge(charge: CompanyAsaasChargeResponse): boolean {
@@ -134,6 +142,23 @@ export function isPrintablePendingCharge(charge: CompanyAsaasChargeResponse): bo
   if (charge.status === 'CANCELLED') return false;
   if (!isActiveCompanyAsaasChargeStatus(charge.status)) return false;
   return chargeHasCarneArtifacts(charge);
+}
+
+export function formatDigitableLineDisplay(raw: string): string {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (d.length !== 47) return String(raw || '').trim();
+  return `${d.slice(0, 5)}.${d.slice(5, 10)} ${d.slice(10, 15)}.${d.slice(15, 21)} ${d.slice(21, 26)}.${d.slice(26, 32)} ${d.slice(32, 33)} ${d.slice(33)}`;
+}
+
+export function formatDateBr(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const iso = raw.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  if (br) return raw;
+  return raw;
 }
 
 export function digitableLineToBarcode44(digitable: string): string | null {
