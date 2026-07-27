@@ -51,7 +51,7 @@ async function loadSaleScopedInstallments(
   const { data, error } = await admin
     .from('finance_receipts')
     .select(
-      'id, sale_id, company_id, tenant_id, customer_id, project_id, block_id, financial_account_id, installment_number, due_date, amount, status, paid_at, deleted_at',
+      'id, sale_id, company_id, tenant_id, customer_id, project_id, block_id, financial_account_id, installment_number, due_date, amount, status, paid_at',
     )
     .eq('sale_id', saleId)
     .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)

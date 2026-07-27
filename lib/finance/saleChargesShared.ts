@@ -39,7 +39,6 @@ export type SaleChargeInstallmentRow = {
   amount: number | string | null;
   status: string | null;
   paid_at?: string | null;
-  deleted_at?: string | null;
 };
 
 export type SaleChargesSummary = {
@@ -88,15 +87,14 @@ function money(value: number | string | null | undefined): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Cancelamento em finance_receipts = status (sem soft-delete / deleted_at). */
 export function isCanceledFinanceReceipt(row: {
   status?: string | null;
-  deleted_at?: string | null;
 }): boolean {
-  if (row.deleted_at) return true;
   const s = String(row.status || '')
     .trim()
     .toLowerCase();
-  return s === 'cancelado' || s === 'canceled' || s === 'cancelled' || s === 'excluido';
+  return s === 'cancelado' || s === 'canceled' || s === 'cancelled';
 }
 
 export function isEligibleInstallmentForAsaasCharge(row: SaleChargeInstallmentRow): boolean {

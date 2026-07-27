@@ -393,6 +393,22 @@ function testUiAndRoutesExist() {
   console.log('OK testUiAndRoutesExist');
 }
 
+function testFinanceReceiptsSelectHasNoDeletedAt() {
+  const root = process.cwd();
+  const service = fs.readFileSync(
+    path.join(root, 'lib/finance/saleChargesService.ts'),
+    'utf8',
+  );
+  const shared = fs.readFileSync(
+    path.join(root, 'lib/finance/saleChargesShared.ts'),
+    'utf8',
+  );
+  assert(!/,\s*deleted_at|\.deleted_at|deleted_at\?:/.test(service), 'service sem coluna deleted_at');
+  assert(!/deleted_at\?:|\.deleted_at|row\.deleted_at/.test(shared), 'shared sem campo deleted_at');
+  assert(shared.includes("=== 'cancelado'"), 'cancelamento via status');
+  console.log('OK testFinanceReceiptsSelectHasNoDeletedAt');
+}
+
 function testPdfThreePerPageSource() {
   const root = process.cwd();
   assert(fs.existsSync(path.join(root, 'lib/finance/saleChargesShared.ts')), 'shared');
@@ -418,6 +434,7 @@ function main() {
   testFilenameSanitize();
   testOver100ParcelsSummary();
   testUiAndRoutesExist();
+  testFinanceReceiptsSelectHasNoDeletedAt();
   testPdfThreePerPageSource();
   console.log('\nALL mandatory-sale-charges-carne-tests PASSED');
 }
