@@ -9,7 +9,10 @@ import {
   subscribeGoogleMapsAuthFailure,
 } from '@/lib/gisGoogleMapsLoader';
 import {
+  GIS_ESRI_MAX_NATIVE_ZOOM,
+  GIS_GOOGLE_MAX_NATIVE_ZOOM,
   GIS_MAP_MAX_ZOOM,
+  GIS_OSM_MAX_NATIVE_ZOOM,
   isGoogleBaseLayer,
   logGisBaseLayerDiagnostics,
   type GisBaseLayerId,
@@ -60,13 +63,13 @@ function createGoogleMutantLayer(layerId: GisBaseLayerId): L.GridLayer | null {
   return L.gridLayer.googleMutant({
     type,
     maxZoom: GIS_MAP_MAX_ZOOM,
-    maxNativeZoom: 21,
+    maxNativeZoom: GIS_GOOGLE_MAX_NATIVE_ZOOM,
   });
 }
 
 function createEsriSatelliteLayer(): L.TileLayer {
   return L.tileLayer(ESRI_SATELLITE_URL, {
-    maxNativeZoom: 19,
+    maxNativeZoom: GIS_ESRI_MAX_NATIVE_ZOOM,
     maxZoom: GIS_MAP_MAX_ZOOM,
     updateWhenZooming: true,
     keepBuffer: 4,
@@ -80,7 +83,7 @@ function createEsriSatelliteLayer(): L.TileLayer {
 
 function createOsmLayer(): L.TileLayer {
   return L.tileLayer(OSM_URL, {
-    maxNativeZoom: 19,
+    maxNativeZoom: GIS_OSM_MAX_NATIVE_ZOOM,
     maxZoom: GIS_MAP_MAX_ZOOM,
     updateWhenZooming: true,
     keepBuffer: 4,

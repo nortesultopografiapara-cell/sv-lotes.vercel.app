@@ -8,6 +8,11 @@ export type GisBaseLayerId =
 
 export const GIS_MAP_MAX_ZOOM = 22;
 
+/** Último zoom com tiles nativos por provedor (acima disso Leaflet estica). */
+export const GIS_GOOGLE_MAX_NATIVE_ZOOM = 20;
+export const GIS_ESRI_MAX_NATIVE_ZOOM = 17;
+export const GIS_OSM_MAX_NATIVE_ZOOM = 19;
+
 export const GIS_BASE_LAYER_ORDER: GisBaseLayerId[] = [
   'google_satellite',
   'google_hybrid',

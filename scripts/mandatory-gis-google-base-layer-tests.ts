@@ -7,7 +7,10 @@ import {
   DEFAULT_GIS_BASE_LAYER,
   GIS_BASE_LAYER_LABELS,
   GIS_BASE_LAYER_ORDER,
+  GIS_ESRI_MAX_NATIVE_ZOOM,
+  GIS_GOOGLE_MAX_NATIVE_ZOOM,
   GIS_MAP_MAX_ZOOM,
+  GIS_OSM_MAX_NATIVE_ZOOM,
   getGisBaseLayerRuntimeState,
   isGoogleBaseLayer,
   logGisBaseLayerDiagnostics,
@@ -59,10 +62,28 @@ function testLegacyLayerNormalization() {
 
 function testMapMaxZoom() {
   assert(GIS_MAP_MAX_ZOOM === 22, 'maxZoom 22');
+  assert(GIS_GOOGLE_MAX_NATIVE_ZOOM === 20, 'Google maxNativeZoom 20');
+  assert(GIS_ESRI_MAX_NATIVE_ZOOM === 17, 'Esri maxNativeZoom 17');
+  assert(GIS_OSM_MAX_NATIVE_ZOOM === 19, 'OSM maxNativeZoom 19');
   assert(isGoogleBaseLayer('google_satellite'), 'google_satellite é google');
   assert(isGoogleBaseLayer('google_hybrid'), 'google_hybrid é google');
   assert(!isGoogleBaseLayer('esri_satellite'), 'esri não é google');
   console.log('OK testMapMaxZoom');
+}
+
+function testBaseLayerNativeZoomWiring() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const base = fs.readFileSync(
+    path.join(__dirname, '../components/map/GisBaseLayer.tsx'),
+    'utf8',
+  );
+  assert(base.includes('GIS_GOOGLE_MAX_NATIVE_ZOOM'), 'Google usa constante');
+  assert(base.includes('GIS_ESRI_MAX_NATIVE_ZOOM'), 'Esri usa constante');
+  assert(base.includes('GIS_OSM_MAX_NATIVE_ZOOM'), 'OSM usa constante');
+  assert(!base.includes('maxNativeZoom: 21'), 'Google não usa 21');
+  assert(!/maxNativeZoom:\s*19/.test(base), 'Esri/OSM não hardcodam 19');
+  console.log('OK testBaseLayerNativeZoomWiring');
 }
 
 function testGoogleMapsLoaderModuleExists() {
@@ -126,6 +147,7 @@ function main() {
   testLayerSelectorOptions();
   testLegacyLayerNormalization();
   testMapMaxZoom();
+  testBaseLayerNativeZoomWiring();
   testGoogleMapsLoaderModuleExists();
   testRuntimeDiagnosticsShape();
   testGoogleFallbackWiring();
