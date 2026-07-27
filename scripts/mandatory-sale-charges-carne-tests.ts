@@ -21,6 +21,17 @@ import {
 } from '../lib/finance/saleChargesShared';
 import { buildSaleCarneFilename } from '../lib/finance/saleChargesShared';
 import { extractCompanyAsaasBankSlipIdentification } from '../lib/finance/asaasCompanyLateFees';
+import {
+  formatCarneTaxDocument,
+  normalizeCarneTaxDocument,
+  resolveSaleCarneBeneficiaryFromSources,
+  SALE_CARNE_BENEFICIARY_DIVERGENCE_WARNING,
+  SALE_CARNE_BENEFICIARY_MISSING_DOC_WARNING,
+} from '../lib/finance/saleCarneBeneficiary';
+import {
+  formatPayerAddressForCarne,
+  normalizeFreeformStreetForCarne,
+} from '../lib/finance/saleCarnePayerAddress';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import { ASAAS_BOLETO_MIN_AMOUNT } from '../lib/saasMasterConfig';
 
@@ -425,6 +436,103 @@ function testFinanceReceiptsSelectHasNoDeletedAt() {
   console.log('OK testFinanceReceiptsSelectHasNoDeletedAt');
 }
 
+function testBeneficiaryResolution() {
+  const asaas = resolveSaleCarneBeneficiaryFromSources({
+    asaas: { cpfCnpj: '12631238000102', companyName: 'ASAAS NOME OFICIAL' },
+    financialAccount: {
+      document: '11144477735',
+      beneficiaryName: 'Conta Local',
+      name: 'Conta X',
+    },
+    company: {
+      cnpj: '00000000000191',
+      razaoSocial: 'EMPRESA LOCAL',
+      fantasyName: 'Fantasia',
+    },
+  });
+  assert(asaas.documentSource === 'asaas', 'prioridade asaas doc');
+  assert(asaas.documentDigits === '12631238000102', 'digitos asaas');
+  assert(asaas.name === 'ASAAS NOME OFICIAL', 'nome asaas');
+  assert(asaas.companyDocumentDivergence, 'divergencia asaas x empresa');
+  assert(
+    asaas.warnings.includes(SALE_CARNE_BENEFICIARY_DIVERGENCE_WARNING),
+    'aviso divergencia',
+  );
+
+  const account = resolveSaleCarneBeneficiaryFromSources({
+    asaas: null,
+    financialAccount: {
+      document: '12.631.238/0001-02',
+      beneficiaryName: 'Titular Conta',
+      name: 'Conta',
+    },
+    company: { cnpj: '00000000000191', razaoSocial: 'Empresa' },
+  });
+  assert(account.documentSource === 'financial_account', 'fallback conta');
+  assert(account.documentFormatted === '12.631.238/0001-02', 'mascara cnpj conta');
+  assert(account.name === 'Titular Conta', 'nome conta');
+
+  const company = resolveSaleCarneBeneficiaryFromSources({
+    asaas: null,
+    financialAccount: { document: null, beneficiaryName: null, name: 'Conta Sem Doc' },
+    company: {
+      cnpj: '529.982.247-25',
+      razaoSocial: 'Razao Empresa',
+      fantasyName: 'Fantasia',
+    },
+  });
+  assert(company.documentSource === 'company', 'fallback empresa');
+  assert(company.documentDigits === '52998224725', 'cpf empresa');
+  assert(company.nameSource === 'financial_account_name' || company.name === 'Conta Sem Doc', 'nome conta antes empresa');
+
+  const none = resolveSaleCarneBeneficiaryFromSources({
+    asaas: { cpfCnpj: '123', companyName: '' },
+    financialAccount: { document: 'abc', name: '' },
+    company: { cnpj: null },
+  });
+  assert(none.missingDocument, 'sem documento');
+  assert(none.warnings.includes(SALE_CARNE_BENEFICIARY_MISSING_DOC_WARNING), 'aviso missing');
+  assert(normalizeCarneTaxDocument('12.345') === null, 'invalido curto');
+  assert(formatCarneTaxDocument('11144477735') === '111.444.777-35', 'mascara cpf');
+  assert(formatCarneTaxDocument('12631238000102') === '12.631.238/0001-02', 'mascara cnpj');
+  console.log('OK testBeneficiaryResolution');
+}
+
+function testPayerAddressFormatting() {
+  const street = normalizeFreeformStreetForCarne('RUA 02QUADRA 123 LOTE 05, S');
+  assert(street.includes('RUA 02, QUADRA'), 'separa QUADRA');
+  assert(street.includes('S/N'), 'S isolado vira S/N');
+  assert(!street.endsWith(', S'), 'nao termina com , S');
+
+  const full = formatPayerAddressForCarne({
+    address: 'RUA 02QUADRA 123 LOTE 05, S',
+    neighborhood: 'CENTRO',
+    city: 'Parauapebas',
+    stateUf: 'PA',
+    cep: '68515000',
+  });
+  assert(full.includes('PARAUAPEBAS/PA'), 'cidade/uf');
+  assert(full.includes('CEP 68.515-000'), 'cep mascarado');
+  assert(full.includes('CENTRO'), 'bairro');
+  assert(full.includes('—'), 'separador blocos');
+
+  assert(
+    formatPayerAddressForCarne({ address: 'RUA DAS FLORES', city: 'Belem' }) ===
+      'RUA DAS FLORES — BELEM',
+    'sem uf/cep',
+  );
+  assert(
+    normalizeFreeformStreetForCarne('TRAVESSA DOS SANTOS').includes('SANTOS'),
+    'preserva S em nomes',
+  );
+  assert(
+    !normalizeFreeformStreetForCarne('TRAVESSA DOS SANTOS').includes('S/N'),
+    'nao converte S de nomes',
+  );
+  assert(formatPayerAddressForCarne({ address: '', city: '', state: '' }) === '', 'vazio');
+  console.log('OK testPayerAddressFormatting');
+}
+
 function testPdfThreePerPageSource() {
   const root = process.cwd();
   assert(fs.existsSync(path.join(root, 'lib/finance/saleChargesShared.ts')), 'shared');
@@ -439,10 +547,14 @@ function testPdfThreePerPageSource() {
   assert(pdf.includes('pay_'), 'menciona filtro pay_');
   assert(!pdf.includes('Nº cobrança'), 'sem id interno no layout');
   assert(pdf.includes('pixQrCode') || pdf.includes('resolveOfficialPixImage'), 'PIX oficial');
+  assert(pdf.includes('formatPayerAddressForCarne'), 'endereco formatado');
   const client = fs.readFileSync(path.join(root, 'lib/finance/asaasCompanyClient.ts'), 'utf8');
   assert(client.includes('identificationField'), 'endpoint identificationField');
+  assert(client.includes('commercialInfo'), 'endpoint commercialInfo');
   const late = fs.readFileSync(path.join(root, 'lib/finance/asaasCompanyLateFees.ts'), 'utf8');
   assert(late.includes('NÃO usa nossoNumero'), 'não fallback nossoNumero');
+  const panel = fs.readFileSync(path.join(root, 'components/sales/SaleChargesPanel.tsx'), 'utf8');
+  assert(panel.includes('beneficiaryWarnings'), 'avisos UI');
   console.log('OK testPdfThreePerPageSource');
 }
 
@@ -461,6 +573,8 @@ function main() {
   testOver100ParcelsSummary();
   testUiAndRoutesExist();
   testFinanceReceiptsSelectHasNoDeletedAt();
+  testBeneficiaryResolution();
+  testPayerAddressFormatting();
   testPdfThreePerPageSource();
   console.log('\nALL mandatory-sale-charges-carne-tests PASSED');
 }

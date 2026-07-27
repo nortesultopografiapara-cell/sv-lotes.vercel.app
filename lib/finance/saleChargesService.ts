@@ -20,9 +20,20 @@ import {
 } from '@/lib/finance/companyFinancialAccountResolver';
 import { bulkUpdateCompanyChargeStatuses } from '@/lib/finance/companyAsaasBulkStatusUpdate';
 import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
-import { loadAsaasApiKeyForFinancialAccount } from '@/lib/finance/companyFinancialAccountRepository';
-import { asaasCompanyEnrichPaymentArtifacts } from '@/lib/finance/asaasCompanyClient';
+import {
+  getCompanyFinancialAccountById,
+  loadAsaasApiKeyForFinancialAccount,
+} from '@/lib/finance/companyFinancialAccountRepository';
+import {
+  asaasCompanyEnrichPaymentArtifacts,
+  asaasCompanyFetchCommercialInfo,
+} from '@/lib/finance/asaasCompanyClient';
 import { isOfficialDigitableLine } from '@/lib/finance/asaasCompanyLateFees';
+import {
+  resolveSaleCarneBeneficiaryFromSources,
+  type SaleCarneBeneficiaryResolved,
+} from '@/lib/finance/saleCarneBeneficiary';
+import { formatPayerAddressForCarne } from '@/lib/finance/saleCarnePayerAddress';
 import {
   SALE_CHARGES_AUDIT_GENERATE,
   SALE_CHARGES_AUDIT_SYNC,
@@ -183,6 +194,7 @@ export async function getSaleChargesSummary(
   let hasFinancialAccount = false;
   let financialAccountName: string | null = null;
   let financialAccountBlockReason: string | null = null;
+  let resolvedAccountId: string | null = context.financialAccountId;
 
   const resolvedSale = await resolveFinancialAccountForSaleOptional(admin, companyId, {
     financialAccountId: context.financialAccountId,
@@ -191,6 +203,7 @@ export async function getSaleChargesSummary(
   if (resolvedSale?.account) {
     hasFinancialAccount = true;
     financialAccountName = resolvedSale.account.name || null;
+    resolvedAccountId = resolvedSale.account.id || resolvedAccountId;
   }
 
   if (!hasFinancialAccount && installments.length > 0) {
@@ -204,6 +217,7 @@ export async function getSaleChargesSummary(
       });
       hasFinancialAccount = true;
       financialAccountName = resolved.account.name || null;
+      resolvedAccountId = resolved.account.id || resolvedAccountId;
     } catch (err) {
       financialAccountBlockReason =
         err instanceof Error
@@ -217,6 +231,20 @@ export async function getSaleChargesSummary(
       'Esta venda não possui conta financeira configurada. Defina a conta recebedora na aba Dados (ou conta padrão da empresa) antes de gerar cobranças.';
   }
 
+  const beneficiary = resolvedAccountId
+    ? await resolveSaleCarneBeneficiary(admin, companyId, resolvedAccountId)
+    : resolveSaleCarneBeneficiaryFromSources({});
+
+  if (beneficiary.warnings.length) {
+    console.warn('[sale-charges] beneficiary cadastral', {
+      sale_id: saleId,
+      company_id: companyId,
+      document_source: beneficiary.documentSource,
+      missing_document: beneficiary.missingDocument,
+      divergence: beneficiary.companyDocumentDivergence,
+    });
+  }
+
   return buildSaleChargesSummaryFromRows({
     saleId,
     companyId,
@@ -226,6 +254,88 @@ export async function getSaleChargesSummary(
     financialAccountName,
     hasFinancialAccount,
     financialAccountBlockReason,
+    beneficiaryDocumentMissing: beneficiary.missingDocument,
+    beneficiaryDocumentDivergence: beneficiary.companyDocumentDivergence,
+    beneficiaryWarnings: beneficiary.warnings,
+    beneficiaryDocumentSource: beneficiary.documentSource,
+  });
+}
+
+/**
+ * Resolve nome/CPF-CNPJ do beneficiário (Asaas commercialInfo → conta → empresa).
+ * Não persiste retorno do Asaas. Uma chamada commercialInfo por conta/request.
+ */
+export async function resolveSaleCarneBeneficiary(
+  admin: SupabaseClient,
+  companyId: string,
+  financialAccountId: string,
+): Promise<SaleCarneBeneficiaryResolved> {
+  let asaas: { cpfCnpj?: string | null; companyName?: string | null } | null = null;
+  let financialAccount: {
+    document?: string | null;
+    beneficiaryName?: string | null;
+    name?: string | null;
+  } | null = null;
+
+  try {
+    const account = await getCompanyFinancialAccountById(
+      admin,
+      companyId,
+      financialAccountId,
+    );
+    if (account) {
+      financialAccount = {
+        document: account.document,
+        beneficiaryName: account.beneficiaryName,
+        name: account.name,
+      };
+      try {
+        const { apiKey, environment } = await loadAsaasApiKeyForFinancialAccount(
+          admin,
+          financialAccountId,
+          companyId,
+        );
+        const commercial = await asaasCompanyFetchCommercialInfo(apiKey, environment);
+        if (commercial) {
+          asaas = {
+            cpfCnpj: commercial.cpfCnpj || null,
+            companyName: commercial.companyName || commercial.name || null,
+          };
+        }
+      } catch (err) {
+        console.warn(
+          '[sale-charges] commercialInfo fallback',
+          err instanceof Error ? err.message : 'erro',
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(
+      '[sale-charges] financial account load',
+      err instanceof Error ? err.message : 'erro',
+    );
+  }
+
+  const { data: company } = await admin
+    .from('companies')
+    .select('id, cnpj, razao_social, fantasy_name, name')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  return resolveSaleCarneBeneficiaryFromSources({
+    asaas,
+    financialAccount,
+    company: company
+      ? {
+          cnpj: company.cnpj ? String(company.cnpj) : null,
+          razaoSocial: company.razao_social
+            ? String(company.razao_social)
+            : company.name
+              ? String(company.name)
+              : null,
+          fantasyName: company.fantasy_name ? String(company.fantasy_name) : null,
+        }
+      : null,
   });
 }
 
@@ -482,23 +592,40 @@ export async function loadSaleCarnePayerInfo(
   city?: string | null;
   state?: string | null;
   zip?: string | null;
+  formattedAddress?: string;
 } | null> {
   if (!customerId) return null;
   const { data, error } = await admin
     .from('customers')
-    .select('name, cpf_cnpj, document, address, city, state, cep, zip_code')
+    .select(
+      'name, cpf_cnpj, document, address, neighborhood, city, state, state_uf, cep, zip_code',
+    )
     .eq('id', customerId)
     .maybeSingle();
 
   if (error || !data) return null;
   const row = data as Record<string, unknown>;
+  const address = row.address ? String(row.address) : null;
+  const neighborhood = row.neighborhood ? String(row.neighborhood) : null;
+  const city = row.city ? String(row.city) : null;
+  const state = String(row.state_uf || row.state || '') || null;
+  const zip = String(row.cep || row.zip_code || '') || null;
   return {
     name: String(row.name || '').trim(),
     document: String(row.cpf_cnpj || row.document || '').trim(),
-    address: row.address ? String(row.address) : null,
-    neighborhood: null,
-    city: row.city ? String(row.city) : null,
-    state: row.state ? String(row.state) : null,
-    zip: String(row.cep || row.zip_code || '') || null,
+    address,
+    neighborhood,
+    city,
+    state,
+    zip,
+    formattedAddress: formatPayerAddressForCarne({
+      address,
+      neighborhood,
+      city,
+      state,
+      stateUf: row.state_uf ? String(row.state_uf) : state,
+      cep: zip,
+      zipCode: row.zip_code ? String(row.zip_code) : zip,
+    }),
   };
 }

@@ -72,6 +72,10 @@ export type SaleChargesSummary = {
   errorInstallmentIds: string[];
   carneReady: boolean;
   carneBlockReason: string | null;
+  beneficiaryDocumentMissing?: boolean;
+  beneficiaryDocumentDivergence?: boolean;
+  beneficiaryWarnings?: string[];
+  beneficiaryDocumentSource?: string | null;
   uiState:
     | 'none'
     | 'partial'
@@ -206,6 +210,10 @@ export function buildSaleChargesSummaryFromRows(params: {
   financialAccountName: string | null;
   hasFinancialAccount: boolean;
   financialAccountBlockReason: string | null;
+  beneficiaryDocumentMissing?: boolean;
+  beneficiaryDocumentDivergence?: boolean;
+  beneficiaryWarnings?: string[];
+  beneficiaryDocumentSource?: string | null;
 }): SaleChargesSummary {
   const byInstallment = latestChargeByInstallment(params.charges);
   const installments = params.installments.filter((r) => r.sale_id === params.saleId);
@@ -313,6 +321,10 @@ export function buildSaleChargesSummaryFromRows(params: {
           : eligible === 0
             ? 'Não há parcelas elegíveis para carnê nesta venda.'
             : null,
+    beneficiaryDocumentMissing: params.beneficiaryDocumentMissing ?? false,
+    beneficiaryDocumentDivergence: params.beneficiaryDocumentDivergence ?? false,
+    beneficiaryWarnings: params.beneficiaryWarnings ?? [],
+    beneficiaryDocumentSource: params.beneficiaryDocumentSource ?? null,
     uiState,
   };
 }

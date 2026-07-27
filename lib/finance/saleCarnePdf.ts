@@ -6,7 +6,6 @@
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
-import { formatCpfCnpj } from '@/lib/inputMasks';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import {
   COMPANY_ASAAS_FINE_PERCENT,
@@ -18,6 +17,8 @@ import {
   formatDateBr,
   formatDigitableLineDisplay,
 } from '@/lib/finance/saleChargesShared';
+import { formatCarneTaxDocument } from '@/lib/finance/saleCarneBeneficiary';
+import { formatPayerAddressForCarne } from '@/lib/finance/saleCarnePayerAddress';
 
 export type SaleCarneBoletoItem = {
   charge: CompanyAsaasChargeResponse;
@@ -34,6 +35,8 @@ export type SaleCarnePayerInfo = {
   city?: string | null;
   state?: string | null;
   zip?: string | null;
+  /** Endereço já formatado para impressão no carnê. */
+  formattedAddress?: string | null;
 };
 
 export type SaleCarnePdfInput = {
@@ -158,9 +161,7 @@ function resolveDocumentNumber(charge: CompanyAsaasChargeResponse): string {
 }
 
 function formatDoc(value: string | null | undefined): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  return formatCpfCnpj(raw) || raw;
+  return formatCarneTaxDocument(value) || '';
 }
 
 function drawLabeledBox(
@@ -458,16 +459,19 @@ async function drawBoletoSlot(
   doc.setFontSize(6);
   const payerLine = payerDoc ? `${payerName}, CPF/CNPJ: ${payerDoc}` : payerName;
   doc.text(payerLine, xRight + 0.7, ry + 4.6, { maxWidth: rightW - 1.4 });
-  const addrParts = [
-    input.payer?.address,
-    input.payer?.neighborhood,
-    [input.payer?.city, input.payer?.state].filter(Boolean).join(' / '),
-    input.payer?.zip ? `CEP ${input.payer.zip}` : '',
-  ].filter((p) => String(p || '').trim());
-  if (addrParts.length) {
+  const addrLine =
+    String(input.payer?.formattedAddress || '').trim() ||
+    formatPayerAddressForCarne({
+      address: input.payer?.address,
+      neighborhood: input.payer?.neighborhood,
+      city: input.payer?.city,
+      state: input.payer?.state,
+      cep: input.payer?.zip,
+    });
+  if (addrLine) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
-    doc.text(addrParts.join(' — '), xRight + 0.7, ry + 7.2, { maxWidth: rightW - 1.4 });
+    doc.text(addrLine, xRight + 0.7, ry + 7.2, { maxWidth: rightW - 1.4 });
   }
   ry += payerH;
 

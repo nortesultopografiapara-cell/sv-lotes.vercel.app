@@ -38,6 +38,19 @@ export type AsaasCompanyIdentificationField = {
   barCode?: string;
 };
 
+export type AsaasCompanyCommercialInfo = {
+  cpfCnpj?: string;
+  companyName?: string;
+  name?: string;
+  email?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  postalCode?: string;
+  city?: string | { name?: string; state?: string };
+};
+
 export type AsaasCompanyCreateBillingType = 'PIX' | 'BOLETO' | 'UNDEFINED';
 
 export function asaasCompanyBaseUrl(environment: BankEnvironment): string {
@@ -140,6 +153,31 @@ export async function asaasCompanyFetchIdentificationField(
   }
   if (String(last.identificationField || '').replace(/\D/g, '').length === 47) return last;
   throw lastError || new Error('Linha digitável Asaas indisponível.');
+}
+
+/**
+ * GET /myAccount/commercialInfo — CPF/CNPJ e razão social oficiais da conta recebedora.
+ * Não lança em falha transitória: retorna null para permitir fallback local.
+ */
+export async function asaasCompanyFetchCommercialInfo(
+  apiKey: string,
+  environment: BankEnvironment,
+): Promise<AsaasCompanyCommercialInfo | null> {
+  try {
+    const data = await asaasCompanyFetch<AsaasCompanyCommercialInfo>(
+      apiKey,
+      environment,
+      '/myAccount/commercialInfo',
+    );
+    if (!data || typeof data !== 'object') return null;
+    return data;
+  } catch (err) {
+    console.warn(
+      '[asaasCompany] commercialInfo indisponível',
+      err instanceof Error ? err.message : 'erro',
+    );
+    return null;
+  }
 }
 
 function mergePaymentIdentification(

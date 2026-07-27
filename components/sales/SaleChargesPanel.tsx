@@ -381,6 +381,18 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </div>
           ) : null}
 
+          {Array.isArray(kpi.beneficiaryWarnings) && kpi.beneficiaryWarnings.length > 0
+            ? kpi.beneficiaryWarnings.map((warning) => (
+                <div
+                  key={warning.slice(0, 48)}
+                  className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+                >
+                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                  <p className="text-xs leading-relaxed">{warning}</p>
+                </div>
+              ))
+            : null}
+
           <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200 p-2">
               <div className="text-[10px] uppercase text-gray-500">Cliente</div>

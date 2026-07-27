@@ -3,7 +3,6 @@ import { authorizeCompanyAsaasRoute } from '@/lib/banking/bankingRouteGuard';
 import {
   CompanyAsaasIntegrationInactiveError,
 } from '@/lib/finance/asaasCompanyChargeService';
-import { getCompanyFinancialAccountById } from '@/lib/finance/companyFinancialAccountRepository';
 import {
   isResendEmailConfigured,
   sendResendEmail,
@@ -13,6 +12,7 @@ import {
   enrichSaleChargesForCarnePdf,
   listPrintableSaleCharges,
   loadSaleCarnePayerInfo,
+  resolveSaleCarneBeneficiary,
 } from '@/lib/finance/saleChargesService';
 import {
   buildSaleCarneFilename,
@@ -111,16 +111,18 @@ export async function POST(request: Request) {
 
     let beneficiaryName = summary.financialAccountName;
     let beneficiaryDocument: string | null = null;
-    if (summary.financialAccountId) {
-      const account = await getCompanyFinancialAccountById(
+    const accountId =
+      summary.financialAccountId ||
+      enrichedCharges.find((c) => c.financialAccountId)?.financialAccountId ||
+      null;
+    if (accountId) {
+      const beneficiary = await resolveSaleCarneBeneficiary(
         auth.admin,
         auth.tenantId,
-        summary.financialAccountId,
+        accountId,
       );
-      if (account) {
-        beneficiaryName = account.beneficiaryName || account.name || beneficiaryName;
-        beneficiaryDocument = account.document || null;
-      }
+      beneficiaryName = beneficiary.name || beneficiaryName;
+      beneficiaryDocument = beneficiary.documentFormatted;
     }
 
     const customerId =
@@ -143,6 +145,7 @@ export async function POST(request: Request) {
             city: payer.city,
             state: payer.state,
             zip: payer.zip,
+            formattedAddress: payer.formattedAddress,
           }
         : {
             name: summary.customerName || 'Pagador',
