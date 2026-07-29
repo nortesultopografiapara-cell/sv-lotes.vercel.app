@@ -18,6 +18,7 @@ import {
 import {
   buildStreetLabelPlacementsOnSheet,
   rotatedTextOccupiedBox,
+  STREET_LABEL_FONT_MIN,
   STREET_LABEL_RGB,
   type OccupiedBox,
   type StreetLabelSheetPlacement,
@@ -796,9 +797,21 @@ function drawStreetLabelPlacements(
   const { layout } = payload;
   const box = layout.mapBoxMm;
   let drawn = 0;
+  const perStreet: import('@/lib/enterpriseOverviewStreets').StreetLabelBuildDiag[] =
+    [];
+  let requestedLabels = 0;
+  let candidatesGenerated = 0;
+  let rejectedTooClose = 0;
+  let rejectedLotCollision = 0;
+  let rejectedHardCollision = 0;
+  let rejectedOutOfBounds = 0;
+  let streetsWithoutAnyLabel = 0;
 
-  for (const street of layout.streets) {
-    if (street.unnamed || !street.labelPlacements?.length) continue;
+  const validStreets = layout.streets.filter(
+    (s) => !s.unnamed && s.lengthAvailable && (s.lines?.length || s.line?.length),
+  );
+
+  for (const street of validStreets) {
     const grouped = {
       id: street.id,
       type: street.type,
@@ -820,9 +833,22 @@ function drawStreetLabelPlacements(
       issues: [] as [],
     };
 
+    const seedPlacements =
+      street.labelPlacements?.length > 0
+        ? street.labelPlacements
+        : [
+            {
+              point: (street.line?.[0] || [0, 0]) as [number, number],
+              angleDeg: 0,
+              fontSize: STREET_LABEL_FONT_MIN,
+              text: street.displayName,
+              segmentLengthM: street.lengthM,
+            },
+          ];
+
     const { placements, diag } = buildStreetLabelPlacementsOnSheet({
       street: grouped,
-      placements: street.labelPlacements,
+      placements: seedPlacements,
       projectPoint: (p) => projectEnterprisePointToPdf(p, layout),
       hardOccupied,
       softOccupied,
@@ -830,11 +856,14 @@ function drawStreetLabelPlacements(
       mapBox: box,
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      if (/avenida\s*07|rua\s*07/i.test(street.displayName)) {
-        console.info('[enterprise-overview-streets] placement diag', diag);
-      }
-    }
+    perStreet.push(diag);
+    requestedLabels += diag.requestedRepetitions;
+    candidatesGenerated += diag.candidatesGenerated;
+    rejectedTooClose += diag.rejectedTooClose;
+    rejectedLotCollision += diag.rejectedLotCollision;
+    rejectedHardCollision += diag.rejectedHardCollision;
+    rejectedOutOfBounds += diag.rejectedOutOfBounds;
+    if (placements.length === 0) streetsWithoutAnyLabel += 1;
 
     for (const place of placements) {
       drawStreetLabelPlacement(doc, place);
@@ -848,6 +877,40 @@ function drawStreetLabelPlacements(
         ),
       );
       drawn += 1;
+    }
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    const batch = {
+      totalStreets: validStreets.length,
+      requestedLabels,
+      candidatesGenerated,
+      accepted: drawn,
+      rejectedTooClose,
+      rejectedLotCollision,
+      rejectedHardCollision,
+      rejectedOutOfBounds,
+      streetsWithoutAnyLabel,
+      perStreet: perStreet.map((d) => ({
+        streetName: d.streetName,
+        requested: d.requestedRepetitions,
+        candidates: d.candidatesGenerated,
+        accepted: d.acceptedPlacements,
+        rejectedTooClose: d.rejectedTooClose,
+        rejectedLotCollision: d.rejectedLotCollision,
+        rejectedHardCollision: d.rejectedHardCollision,
+        usedFallback: d.usedFallback,
+      })),
+    };
+    console.info('[enterprise-overview-streets] batch label diag', batch);
+    if (
+      validStreets.length > 0 &&
+      streetsWithoutAnyLabel / validStreets.length > 0.25
+    ) {
+      console.warn(
+        '[enterprise-overview-streets] more than 25% of streets without label',
+        { streetsWithoutAnyLabel, total: validStreets.length },
+      );
     }
   }
 
@@ -907,7 +970,7 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
         bold: true,
         align: 'center',
       });
-      softOccupied.push({ x: x - 4, y: y - 3, w: 8, h: 5 });
+      softOccupied.push({ x: x - 2.5, y: y - 2, w: 5, h: 3.5 });
     }
   }
 

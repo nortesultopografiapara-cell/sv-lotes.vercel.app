@@ -30,6 +30,7 @@ import {
   streetCoordsToLocalMeters,
   buildStreetLabelPlacementsOnSheet,
   getReadableSegmentAndUpperNormal,
+  sameStreetLabelMinDistanceMm,
   type EnterpriseStreetGrouped,
 } from '../lib/enterpriseOverviewStreets';
 
@@ -626,6 +627,9 @@ function testUniformFontAndDedupe() {
   const fonts = new Set(places.map((p) => p.fontSize));
   assert(fonts.size === 1, 'fonte uniforme nos candidatos');
 
+  const dMin = sameStreetLabelMinDistanceMm('Avenida 07', places[0].fontSize);
+  assert(dMin >= 10 && dMin <= 20, `minDist proporcional ${dMin}`);
+
   const { placements } = buildStreetLabelPlacementsOnSheet({
     street,
     placements: places,
@@ -634,7 +638,7 @@ function testUniformFontAndDedupe() {
     softOccupied: [],
     mapScaleMmPerM: 0.05,
   });
-  assert(placements.length >= 1, 'aceita ≥1');
+  assert(placements.length >= 2, `aceita ≥2 distantes, got ${placements.length}`);
   const sheetFonts = new Set(placements.map((p) => p.fontSize));
   assert(sheetFonts.size === 1, 'fonte uniforme na folha');
   for (let i = 0; i < placements.length; i++) {
@@ -643,18 +647,130 @@ function testUniformFontAndDedupe() {
         placements[i].x - placements[j].x,
         placements[i].y - placements[j].y,
       );
-      assert(d >= 20, `repetições distantes d=${d}`);
+      assert(d >= 8, `repetições distantes d=${d}`);
     }
   }
   assert(
-    placements.every((p) => Math.abs(p.y) > 0.5),
-    'deslocado da linha',
+    placements.every((p) => Math.abs(p.y) >= 0.5 && Math.abs(p.y) <= 2.0),
+    'offset discreto acima da linha',
   );
   console.log('OK testUniformFontAndDedupe', {
     requested: places.length,
     accepted: placements.length,
     font: placements[0]?.fontSize,
+    minDist: dMin,
   });
+}
+
+function testManyStreetsGetLabels() {
+  const streets: EnterpriseStreetGrouped[] = Array.from({ length: 17 }, (_, i) => {
+    const y = i * 40;
+    return {
+      id: `s${i}`,
+      type: i === 0 ? 'Rodovia' : i < 7 ? 'Avenida' : 'Rua',
+      name: String(i + 1).padStart(2, '0'),
+      displayName:
+        i === 0
+          ? 'Rodovia PA-160'
+          : i < 7
+            ? `Avenida ${String(i).padStart(2, '0')}`
+            : `Rua ${String(i - 6).padStart(2, '0')}`,
+      unnamed: false,
+      segments: [
+        {
+          lineIndex: 0,
+          line: [
+            [0, y],
+            [500, y],
+          ],
+          lengthM: 500,
+        },
+      ],
+      lengthM: 500,
+      lengthAvailable: true,
+      issues: [],
+    };
+  });
+
+  // Soft boxes densos simulando números de lote no corredor
+  const soft: { x: number; y: number; w: number; h: number }[] = [];
+  for (let i = 0; i < 17; i++) {
+    for (let k = 0; k < 8; k++) {
+      soft.push({
+        x: 20 + k * 25,
+        y: -(i * 40) * 0.05 - 1.5,
+        w: 5,
+        h: 3.5,
+      });
+    }
+  }
+
+  let accepted = 0;
+  let without = 0;
+  for (const street of streets) {
+    const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.05 });
+    const { placements } = buildStreetLabelPlacementsOnSheet({
+      street,
+      placements: places,
+      projectPoint: (p) => [p[0] * 0.05, -p[1] * 0.05],
+      hardOccupied: [],
+      softOccupied: soft,
+      mapScaleMmPerM: 0.05,
+    });
+    accepted += placements.length;
+    if (placements.length === 0) without += 1;
+  }
+  assert(accepted >= 14, `≥14 labels em 17 vias, got ${accepted}`);
+  assert(without <= 3, `poucas vias sem label, got ${without}`);
+  assert(accepted > 2, 'não termina com só 2 labels');
+  console.log('OK testManyStreetsGetLabels', { accepted, without });
+}
+
+function testSoftFallbackVsHardBlock() {
+  const street: EnterpriseStreetGrouped = {
+    id: 'r1',
+    type: 'Rua',
+    name: '01',
+    displayName: 'Rua 01',
+    unnamed: false,
+    segments: [
+      {
+        lineIndex: 0,
+        line: [
+          [0, 0],
+          [200, 0],
+        ],
+        lengthM: 200,
+      },
+    ],
+    lengthM: 200,
+    lengthAvailable: true,
+    issues: [],
+  };
+  const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.1 });
+  const softAll = [{ x: -500, y: -500, w: 1000, h: 1000 }];
+  const softOk = buildStreetLabelPlacementsOnSheet({
+    street,
+    placements: places,
+    projectPoint: (p) => [p[0] * 0.1, -p[1] * 0.1],
+    hardOccupied: [],
+    softOccupied: softAll,
+    mapScaleMmPerM: 0.1,
+  });
+  assert(softOk.placements.length >= 1, 'fallback aceita colisão leve');
+  assert(softOk.diag.usedFallback || softOk.placements.length >= 1, 'fallback/soft');
+
+  const hardAll = [{ x: -500, y: -500, w: 1000, h: 1000 }];
+  const hardBlocked = buildStreetLabelPlacementsOnSheet({
+    street,
+    placements: places,
+    projectPoint: (p) => [p[0] * 0.1, -p[1] * 0.1],
+    hardOccupied: hardAll,
+    softOccupied: [],
+    mapScaleMmPerM: 0.1,
+  });
+  assert(hardBlocked.placements.length === 0, 'colisão forte bloqueia');
+  console.log('OK testSoftFallbackVsHardBlock');
 }
 
 function testNormalPerpendicularAndReadable() {
@@ -725,6 +841,8 @@ function main() {
   testEmptyStreetsStillWorks();
   testCollisionFallbackKeepsLabel();
   testUniformFontAndDedupe();
+  testManyStreetsGetLabels();
+  testSoftFallbackVsHardBlock();
   testNormalPerpendicularAndReadable();
   testSingleLabelPipelineSource();
   testSourceWiring();
