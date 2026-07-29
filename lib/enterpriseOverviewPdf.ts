@@ -15,6 +15,11 @@ import {
   projectGeographicPointToPdf,
   computeEnterpriseMapContentRectMm,
 } from '@/lib/enterpriseOverviewLayout';
+import {
+  resolveStreetLabelCollisions,
+  rotatedTextOccupiedBox,
+  type OccupiedBox,
+} from '@/lib/enterpriseOverviewStreets';
 import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
 
 export {
@@ -332,9 +337,11 @@ function drawTextWithHalo(
     fontSize: number;
     align?: 'left' | 'center' | 'right';
     bold?: boolean;
+    angle?: number;
   },
 ) {
   const align = opts.align ?? 'center';
+  const angle = opts.angle ?? 0;
   doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
   doc.setFontSize(opts.fontSize);
   const halo = 0.18;
@@ -349,10 +356,10 @@ function drawTextWithHalo(
     [-halo, halo],
     [halo, halo],
   ]) {
-    doc.text(text, x + dx, y + dy, { align });
+    doc.text(text, x + dx, y + dy, { align, angle });
   }
   doc.setTextColor(...BLACK);
-  doc.text(text, x, y, { align });
+  doc.text(text, x, y, { align, angle });
 }
 
 function drawLabelPlate(
@@ -572,6 +579,208 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
     }
     y += 0.5;
   }
+
+  if (
+    options.showStreetNamesAndTable &&
+    layout.streetTable.mode !== 'extra_page'
+  ) {
+    y = drawStreetTableInPanel(doc, payload, y + 3);
+  } else if (
+    options.showStreetNamesAndTable &&
+    layout.streetTable.mode === 'extra_page'
+  ) {
+    y += 4;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(5);
+    doc.setTextColor(...GRAY);
+    doc.text('Quadro de vias: ver página seguinte.', panel.x + 3, y);
+  }
+
+  const warnings = layout.streetWarnings;
+  if (
+    options.showStreetNamesAndTable &&
+    (warnings.unnamedCount > 0 ||
+      warnings.noGeometryCount > 0 ||
+      warnings.invalidGeometryCount > 0)
+  ) {
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(4.5);
+    doc.setTextColor(...GRAY);
+    const notes = [
+      warnings.unnamedCount > 0
+        ? `${warnings.unnamedCount} via(s) sem nome`
+        : null,
+      warnings.noGeometryCount > 0
+        ? `${warnings.noGeometryCount} via(s) sem geometria`
+        : null,
+      warnings.invalidGeometryCount > 0
+        ? `${warnings.invalidGeometryCount} geometria(s) inválida(s)`
+        : null,
+    ].filter(Boolean);
+    for (const note of notes) {
+      doc.text(String(note), panel.x + 3, y);
+      y += 3.2;
+    }
+  }
+}
+
+function drawStreetTableInPanel(
+  doc: jsPDF,
+  payload: EnterpriseOverviewPdfPayload,
+  startY: number,
+): number {
+  const { layout } = payload;
+  const panel = layout.sidePanelMm;
+  const table = layout.streetTable;
+  let y = startY;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(...BLACK);
+  doc.text('QUADRO DE VIAS', panel.x + 3, y);
+  y += 4;
+
+  const fontSize = table.fontSize;
+  const rowH = fontSize < 5 ? 3.4 : 3.8;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(fontSize);
+  doc.text('Nº', panel.x + 3, y);
+  doc.text('Via', panel.x + 10, y);
+  doc.text('Comp.', panel.x + panel.w - 3, y, { align: 'right' });
+  y += rowH;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(fontSize);
+
+  const drawRow = (
+    row: { number: string; name: string; lengthLabel: string },
+    x: number,
+    colW: number,
+  ) => {
+    doc.text(row.number, x, y);
+    const nameMax = colW - 22;
+    const nameLines = doc.splitTextToSize(row.name, nameMax) as string[];
+    doc.text(nameLines[0] || row.name, x + 7, y);
+    doc.text(row.lengthLabel, x + colW - 3, y, { align: 'right' });
+  };
+
+  if (table.mode === 'two_columns') {
+    const mid = Math.ceil(table.rows.length / 2);
+    const left = table.rows.slice(0, mid);
+    const right = table.rows.slice(mid);
+    const colW = (panel.w - 4) / 2;
+    const y0 = y;
+    for (const row of left) {
+      drawRow(row, panel.x + 3, colW);
+      y += rowH;
+    }
+    let yRight = y0;
+    for (const row of right) {
+      const saveY = y;
+      y = yRight;
+      drawRow(row, panel.x + 3 + colW, colW);
+      yRight = y + rowH;
+      y = saveY;
+    }
+    y = Math.max(y, yRight);
+  } else {
+    for (const row of table.rows) {
+      if (y > panel.y + panel.h - 12) break;
+      drawRow(row, panel.x + 3, panel.w - 4);
+      y += rowH;
+    }
+  }
+
+  y += 2;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(Math.max(4.5, fontSize));
+  doc.text(`Total de vias: ${table.streetCount}`, panel.x + 3, y);
+  y += rowH;
+  doc.text(`Comprimento total: ${table.totalLengthLabel}`, panel.x + 3, y);
+  y += rowH + 1;
+
+  if (table.pendingRows.length > 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(4.5);
+    doc.setTextColor(...GRAY);
+    doc.text(
+      `Pendências: ${table.pendingRows.length} via(s)`,
+      panel.x + 3,
+      y,
+    );
+    y += 3.2;
+    doc.setTextColor(...BLACK);
+  }
+
+  return y;
+}
+
+function drawStreetTableExtraPage(
+  doc: jsPDF,
+  payload: EnterpriseOverviewPdfPayload,
+) {
+  const { layout, company } = payload;
+  const table = layout.streetTable;
+  const pageW = layout.pageSizeMm.width;
+  const pageH = layout.pageSizeMm.height;
+
+  doc.addPage();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(...BLACK);
+  doc.text('QUADRO DE VIAS', 14, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...GRAY);
+  doc.text(layout.statistics.projectName, 14, 24);
+  doc.text(company.fantasyName || company.name, 14, 29);
+
+  let y = 38;
+  const fontSize = 8;
+  const rowH = 5.2;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(fontSize);
+  doc.setTextColor(...BLACK);
+  doc.text('Nº', 14, y);
+  doc.text('Via', 28, y);
+  doc.text('Comprimento', pageW - 14, y, { align: 'right' });
+  y += rowH;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.2);
+  doc.line(14, y - 3, pageW - 14, y - 3);
+
+  doc.setFont('helvetica', 'normal');
+  for (const row of table.rows) {
+    if (y > pageH - 24) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.text(row.number, 14, y);
+    doc.text(row.name, 28, y);
+    doc.text(row.lengthLabel, pageW - 14, y, { align: 'right' });
+    y += rowH;
+  }
+
+  y += 4;
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total de vias: ${table.streetCount}`, 14, y);
+  y += rowH;
+  doc.text(`Comprimento total: ${table.totalLengthLabel}`, 14, y);
+
+  if (table.pendingRows.length > 0) {
+    y += rowH + 2;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7);
+    doc.setTextColor(...GRAY);
+    doc.text('Pendências', 14, y);
+    y += rowH;
+    doc.setFont('helvetica', 'normal');
+    for (const row of table.pendingRows) {
+      doc.text(`${row.name} — ${row.lengthLabel}`, 14, y);
+      y += rowH;
+    }
+  }
 }
 
 function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
@@ -585,17 +794,23 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   // 2. Preenchimento 50% dos lotes
   drawEnterpriseLotsOnMap(doc, layout, 'fills');
 
-  // 5. Ruas
+  // 5. Ruas (todos os trechos)
   if (options.showStreets) {
     for (const street of layout.streets) {
-      const pts = street.line.map((p) => projectEnterprisePointToPdf(p, layout));
-      drawPolyline(doc, pts, [210, 210, 210], 0.55, [3, 2]);
-      drawPolyline(doc, pts, [140, 140, 140], 0.22);
+      const lines =
+        street.lines?.length > 0 ? street.lines : street.line ? [street.line] : [];
+      for (const line of lines) {
+        const pts = line.map((p) => projectEnterprisePointToPdf(p, layout));
+        drawPolyline(doc, pts, [210, 210, 210], 0.55, [3, 2]);
+        drawPolyline(doc, pts, [140, 140, 140], 0.22);
+      }
     }
   }
 
   // 6. Divisas ciano dos lotes (por cima das ruas)
   drawEnterpriseLotsOnMap(doc, layout, 'strokes');
+
+  const occupied: OccupiedBox[] = [];
 
   // 7. Números dos lotes
   if (options.showLotNumbers) {
@@ -606,6 +821,7 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
         bold: true,
         align: 'center',
       });
+      occupied.push({ x: x - 4, y: y - 3, w: 8, h: 5 });
     }
   }
 
@@ -617,10 +833,82 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
       bold: true,
       align: 'center',
     });
+    occupied.push({ x: x - 10, y: y - 4, w: 20, h: 7 });
+  }
+
+  // Norte / escala — reservar caixas antes dos rótulos de via
+  if (options.showNorth) {
+    occupied.push({ x: box.x + box.w - 18, y: box.y + 2, w: 16, h: 16 });
+  }
+  if (options.showGraphicScale) {
+    occupied.push({ x: box.x + 4, y: box.y + box.h - 12, w: 90, h: 10 });
   }
 
   // 9. Nomes das ruas
-  if (options.showStreets) {
+  if (options.showStreetNamesAndTable) {
+    for (const street of layout.streets) {
+      if (street.unnamed || !street.labelPlacements?.length) continue;
+      const grouped = {
+        id: street.id,
+        type: street.type,
+        name: street.name,
+        displayName: street.displayName,
+        unnamed: street.unnamed,
+        segments: (street.lines || []).map((line, lineIndex) => ({
+          lineIndex,
+          line,
+          lengthM: 0,
+        })),
+        lengthM: street.lengthM,
+        lengthAvailable: street.lengthAvailable,
+        issues: [] as [],
+      };
+      // Recalcular length por segmento para colisão
+      for (const seg of grouped.segments) {
+        let len = 0;
+        for (let i = 1; i < seg.line.length; i++) {
+          const dx = seg.line[i][0] - seg.line[i - 1][0];
+          const dy = seg.line[i][1] - seg.line[i - 1][1];
+          len += Math.hypot(dx, dy);
+        }
+        seg.lengthM = len;
+      }
+      const resolved = resolveStreetLabelCollisions(
+        street.labelPlacements,
+        (p) => projectEnterprisePointToPdf(p, layout),
+        occupied,
+        grouped,
+        layout.mapScaleMmPerM,
+      );
+      for (const place of resolved) {
+        const [x, y] = projectEnterprisePointToPdf(place.point, layout);
+        if (
+          x < box.x + 2 ||
+          x > box.x + box.w - 2 ||
+          y < box.y + 2 ||
+          y > box.y + box.h - 2
+        ) {
+          continue;
+        }
+        drawTextWithHalo(doc, place.text, x, y, {
+          fontSize: place.fontSize,
+          bold: true,
+          align: 'center',
+          angle: place.angleDeg,
+        });
+        occupied.push(
+          rotatedTextOccupiedBox(
+            x,
+            y,
+            place.text,
+            place.fontSize,
+            place.angleDeg,
+          ),
+        );
+      }
+    }
+  } else if (options.showStreets) {
+    // Comportamento legado: placa horizontal no ponto médio
     for (const street of layout.streets) {
       const pts = street.line.map((p) => projectEnterprisePointToPdf(p, layout));
       if (pts.length >= 2) {
@@ -682,9 +970,28 @@ export async function generateEnterpriseOverviewPdf(
   drawHeader(doc, payload, logoBase64);
   if (payload.options.showLegend) {
     drawSidePanel(doc, payload);
+  } else if (payload.options.showStreetNamesAndTable) {
+    // Painel mínimo só com quadro de vias
+    drawSidePanel(doc, payload);
   }
   lastEnterpriseLotDrawStats = null;
   drawMapArea(doc, payload);
+
+  if (
+    payload.options.showStreetNamesAndTable &&
+    layout.streetTable.mode === 'extra_page'
+  ) {
+    drawStreetTableExtraPage(doc, payload);
+  }
+
+  if (
+    payload.options.showStreetNamesAndTable &&
+    (layout.streetWarnings.unnamedCount > 0 ||
+      layout.streetWarnings.noGeometryCount > 0 ||
+      layout.streetWarnings.invalidGeometryCount > 0)
+  ) {
+    console.info('[enterprise-overview] street warnings', layout.streetWarnings);
+  }
 
   return doc;
 }

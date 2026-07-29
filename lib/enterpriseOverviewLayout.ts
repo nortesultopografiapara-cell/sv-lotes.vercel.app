@@ -5,6 +5,18 @@
 import proj4 from 'proj4';
 import { resolveRealCoordinateRing, latLngRingFromBlockForConversion } from '@/lib/lotSheetCoordinates';
 import { readStreetGuideLineCoordinates } from '@/lib/streetGuide';
+import {
+  computePolylineLengthM,
+  extractAllPolylineParts,
+  formatLengthMetersPtBr,
+  groupEnterpriseStreets,
+  normalizeLocalPolyline,
+  pickStreetLabelPlacements,
+  planStreetTableLayout,
+  type EnterpriseStreetGrouped,
+  type EnterpriseStreetLabelPlacement,
+  type StreetTablePlan,
+} from '@/lib/enterpriseOverviewStreets';
 export type EnterprisePrintFormat = 'a4_landscape' | 'a3_landscape' | 'a3_portrait';
 
 export type GeographicBounds = {
@@ -22,6 +34,8 @@ export type EnterpriseOverviewOptions = {
   showNorth: boolean;
   showStreets: boolean;
   showLotNumbers: boolean;
+  /** Nomes alinhados ao eixo + quadro de vias (aditivo; default true). */
+  showStreetNamesAndTable: boolean;
 };
 
 export const ENTERPRISE_LOT_FILL_OPACITY = 0.5;
@@ -40,6 +54,7 @@ export const DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS: EnterpriseOverviewOptions = {
   showNorth: true,
   showStreets: true,
   showLotNumbers: true,
+  showStreetNamesAndTable: true,
 };
 
 export type EnterpriseStatistics = {
@@ -65,9 +80,25 @@ export type EnterpriseLotPrint = {
 };
 
 export type EnterpriseStreetPrint = {
+  id: string;
   name: string;
   displayName: string;
+  type: string;
+  /** Polilinha principal (maior trecho) para desenho do eixo. */
   line: [number, number][];
+  /** Todos os trechos da via (metros locais). */
+  lines: [number, number][][];
+  lengthM: number;
+  lengthAvailable: boolean;
+  lengthLabel: string;
+  unnamed: boolean;
+  labelPlacements: EnterpriseStreetLabelPlacement[];
+};
+
+export type EnterpriseStreetWarnings = {
+  unnamedCount: number;
+  noGeometryCount: number;
+  invalidGeometryCount: number;
 };
 
 export type EnterpriseQuadraLabel = {
@@ -91,6 +122,8 @@ export type EnterpriseGraphicScale = {
 export type EnterpriseOverviewLayout = {
   lots: EnterpriseLotPrint[];
   streets: EnterpriseStreetPrint[];
+  streetTable: StreetTablePlan;
+  streetWarnings: EnterpriseStreetWarnings;
   quadraLabels: EnterpriseQuadraLabel[];
   bbox: EnterpriseBbox;
   rotatedBbox: EnterpriseBbox;
@@ -401,6 +434,8 @@ export type FitEnterpriseResult = {
   streets: EnterpriseStreetPrint[];
   quadraLabels: EnterpriseQuadraLabel[];
   bbox: EnterpriseBbox;
+  streetWarnings: EnterpriseStreetWarnings;
+  groupedStreets: EnterpriseStreetGrouped[];
 };
 
 /** Localiza todos os lotes, calcula bbox geral com margem — ignora viewport do usuário. */
@@ -462,32 +497,74 @@ export function fitEnterpriseForPrint(input: FitEnterpriseInput): FitEnterpriseR
     bbox = bboxWithMargin(bbox);
   }
 
-  const streets: EnterpriseStreetPrint[] = [];
+  const localLinesByGuideId = new Map<string, [number, number][][]>();
   for (const guide of streetGuides) {
-    const coords = readStreetGuideLineCoordinates(guide);
-    if (!coords?.length) continue;
-    const first = coords[0];
-    const isLatLng =
-      first &&
-      isLikelyLatLng(Number(first[0]), Number(first[1]));
-    let localLine: [number, number][] | null = null;
-    if (isLatLng) {
-      localLine = latLngRingToLocalMeters(coords, project, originE, originN);
-    } else {
-      localLine = coords.map(
-        (c) =>
-          [Number(c[0]) - originE, Number(c[1]) - originN] as [number, number],
-      );
+    const id = String(guide.id || '').trim();
+    if (!id) continue;
+    const geo =
+      (guide.geometry_geojson as { coordinates?: unknown } | null) ||
+      (guide.geometry as { coordinates?: unknown } | null) ||
+      null;
+    let parts = extractAllPolylineParts(geo?.coordinates);
+    if (!parts.length) {
+      const single = readStreetGuideLineCoordinates(guide);
+      parts = single ? [single] : [];
     }
-    if (!localLine || localLine.length < 2) continue;
-    bbox = expandBbox(bbox, localLine);
-    const name = String(guide.name || '').trim() || 'Rua';
-    streets.push({
-      name,
-      displayName: String(guide.displayName || name),
-      line: localLine,
-    });
+    const localParts: [number, number][][] = [];
+    for (const coords of parts) {
+      if (!coords?.length) continue;
+      const first = coords[0];
+      const isLatLng =
+        first && isLikelyLatLng(Number(first[0]), Number(first[1]));
+      let localLine: [number, number][] | null = null;
+      if (isLatLng) {
+        localLine = latLngRingToLocalMeters(coords, project, originE, originN);
+      } else {
+        localLine = normalizeLocalPolyline(
+          coords.map(
+            (c) =>
+              [Number(c[0]) - originE, Number(c[1]) - originN] as [
+                number,
+                number,
+              ],
+          ),
+        );
+      }
+      if (localLine && localLine.length >= 2) {
+        localParts.push(localLine);
+        bbox = expandBbox(bbox, localLine);
+      }
+    }
+    if (localParts.length) localLinesByGuideId.set(id, localParts);
   }
+
+  const grouped = groupEnterpriseStreets({
+    guides: streetGuides,
+    localLinesByGuideId,
+  });
+
+  const streets: EnterpriseStreetPrint[] = grouped.streets.map((g) => {
+    const lines = g.segments.map((s) => s.line);
+    const main =
+      lines.slice().sort((a, b) => computePolylineLengthM(b) - computePolylineLengthM(a))[0] ||
+      lines[0] ||
+      [];
+    return {
+      id: g.id,
+      name: g.name,
+      displayName: g.displayName,
+      type: g.type,
+      line: main,
+      lines,
+      lengthM: g.lengthM,
+      lengthAvailable: g.lengthAvailable,
+      lengthLabel: g.lengthAvailable
+        ? formatLengthMetersPtBr(g.lengthM)
+        : 'Não calculado',
+      unnamed: g.unnamed,
+      labelPlacements: [],
+    };
+  });
 
   const quadraMap = new Map<string, [number, number][]>();
   for (const lot of lots) {
@@ -502,7 +579,20 @@ export function fitEnterpriseForPrint(input: FitEnterpriseInput): FitEnterpriseR
     quadraLabels.push({ quadra, position });
   }
 
-  return { originE, originN, lots, streets, quadraLabels, bbox };
+  return {
+    originE,
+    originN,
+    lots,
+    streets,
+    quadraLabels,
+    bbox,
+    streetWarnings: {
+      unnamedCount: grouped.unnamedCount,
+      noGeometryCount: grouped.noGeometryCount,
+      invalidGeometryCount: grouped.invalidGeometryCount,
+    },
+    groupedStreets: grouped.streets,
+  };
 }
 
 /** Lat/lng → coordenadas locais pós-rotação (mesmo pipeline dos lotes). */
@@ -702,10 +792,15 @@ export function buildEnterpriseOverviewLayout(
     centroid: rotatePointAround(lot.centroid, center, rotationDeg),
   }));
 
-  const streets = fit.streets.map((street) => ({
-    ...street,
-    line: rotateRing(street.line, center, rotationDeg),
-  }));
+  const streetsRotated = fit.streets.map((street) => {
+    const lines = street.lines.map((line) => rotateRing(line, center, rotationDeg));
+    const main =
+      lines
+        .slice()
+        .sort((a, b) => computePolylineLengthM(b) - computePolylineLengthM(a))[0] ||
+      rotateRing(street.line, center, rotationDeg);
+    return { ...street, line: main, lines };
+  });
 
   const quadraLabels = fit.quadraLabels.map((q) => ({
     ...q,
@@ -714,7 +809,9 @@ export function buildEnterpriseOverviewLayout(
 
   const allPts: [number, number][] = [];
   for (const lot of lots) allPts.push(...lot.ring);
-  for (const street of streets) allPts.push(...street.line);
+  for (const street of streetsRotated) {
+    for (const line of street.lines) allPts.push(...line);
+  }
   const rotatedBbox = bboxWithMargin(
     bboxFromPoints(allPts) ?? fit.bbox,
     0.04,
@@ -744,9 +841,40 @@ export function buildEnterpriseOverviewLayout(
       input.project,
     ) ?? computeGeographicBoundsFromBlocks(input.blocks);
 
+  const streets: EnterpriseStreetPrint[] = streetsRotated.map((street) => {
+    const grouped = fit.groupedStreets.find((g) => g.id === street.id);
+    const rotatedGrouped: EnterpriseStreetGrouped | null = grouped
+      ? {
+          ...grouped,
+          segments: street.lines.map((line, lineIndex) => ({
+            lineIndex,
+            line,
+            lengthM: computePolylineLengthM(line),
+          })),
+          lengthM: street.lines.reduce(
+            (s, line) => s + computePolylineLengthM(line),
+            0,
+          ),
+        }
+      : null;
+    const labelPlacements =
+      input.options.showStreetNamesAndTable && rotatedGrouped
+        ? pickStreetLabelPlacements(rotatedGrouped, { mapScaleMmPerM })
+        : [];
+    return { ...street, labelPlacements };
+  });
+
+  const streetTable = planStreetTableLayout(
+    fit.groupedStreets,
+    sidePanelMm,
+    input.options.showLegend ? 72 : 28,
+  );
+
   return {
     lots,
     streets,
+    streetTable,
+    streetWarnings: fit.streetWarnings,
     quadraLabels,
     bbox: fit.bbox,
     rotatedBbox,
