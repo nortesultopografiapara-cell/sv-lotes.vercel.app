@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
 import { SaleDocumentsPanel } from '@/components/sales/SaleDocumentsPanel';
 import { SaleChargesPanel } from '@/components/sales/SaleChargesPanel';
+import { SaleCarneCoverPanel } from '@/components/sales/SaleCarneCoverPanel';
 import {
   customerToFormValues,
   emptyCustomerFormValues,
@@ -240,7 +241,9 @@ export function CustomerLotFormModal({
   onCustomerValidationFailed,
 }: Props) {
   const isEditMode = mode === 'edit';
-  const [activeTab, setActiveTab] = useState<'dados' | 'cobrancas' | 'documentos'>('dados');
+  const [activeTab, setActiveTab] = useState<
+    'dados' | 'cobrancas' | 'capa_carne' | 'documentos'
+  >('dados');
   const [formData, setFormData] = useState<LotFormState>(() => ({
     ...emptyLotFormState(),
     ...initialFormData,
@@ -969,11 +972,11 @@ export function CustomerLotFormModal({
             </div>
           )}
 
-          <div className="mb-4 flex flex-wrap gap-1 border-b border-gray-200">
+          <div className="mb-4 flex flex-nowrap gap-1 border-b border-gray-200 overflow-x-auto">
             <button
               type="button"
               onClick={() => setActiveTab('dados')}
-              className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'dados'
                   ? 'border-emerald-700 text-emerald-800'
                   : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -985,7 +988,7 @@ export function CustomerLotFormModal({
               <button
                 type="button"
                 onClick={() => setActiveTab('cobrancas')}
-                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'cobrancas'
                     ? 'border-emerald-700 text-emerald-800'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -994,10 +997,23 @@ export function CustomerLotFormModal({
                 Cobranças
               </button>
             ) : null}
+            {isEditMode && saleId ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('capa_carne')}
+                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
+                  activeTab === 'capa_carne'
+                    ? 'border-emerald-700 text-emerald-800'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Capa do Carnê
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setActiveTab('documentos')}
-              className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'documentos'
                   ? 'border-emerald-700 text-emerald-800'
                   : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -1014,6 +1030,11 @@ export function CustomerLotFormModal({
             />
           ) : activeTab === 'cobrancas' ? (
             <SaleChargesPanel
+              saleId={isEditMode ? saleId : null}
+              disabled={submitting || prefillLoading}
+            />
+          ) : activeTab === 'capa_carne' ? (
+            <SaleCarneCoverPanel
               saleId={isEditMode ? saleId : null}
               disabled={submitting || prefillLoading}
             />

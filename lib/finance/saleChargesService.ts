@@ -61,7 +61,7 @@ export type GenerateMissingSaleChargesResult = {
   progressTotal: number;
 };
 
-async function loadSaleScopedInstallments(
+export async function loadSaleScopedInstallments(
   admin: SupabaseClient,
   companyId: string,
   saleId: string,
@@ -79,7 +79,7 @@ async function loadSaleScopedInstallments(
   return (data || []) as SaleChargeInstallmentRow[];
 }
 
-async function loadSaleContext(
+export async function loadSaleContext(
   admin: SupabaseClient,
   companyId: string,
   saleId: string,
