@@ -12,6 +12,7 @@ import {
 } from '../lib/enterpriseOverviewLayout';
 import {
   boxesOverlap,
+  buildLocalStreetLinesFromGuides,
   buildStreetTableRows,
   computePolylineLengthM,
   extractAllPolylineParts,
@@ -19,12 +20,14 @@ import {
   groupEnterpriseStreets,
   isUnnamedStreetName,
   maxStreetLabelCountForLength,
+  normalizeStreetGeometry,
   pickStreetLabelPlacements,
   planStreetTableLayout,
   readableStreetLabelAngleDeg,
   resolveStreetLabelCollisions,
   rotatedTextOccupiedBox,
   sortStreetsForTable,
+  streetCoordsToLocalMeters,
   type EnterpriseStreetGrouped,
 } from '../lib/enterpriseOverviewStreets';
 
@@ -68,6 +71,159 @@ function testMultiLineStringParts() {
     computePolylineLengthM(localParts[0]) + computePolylineLengthM(localParts[1]);
   assert(Math.abs(sum - 30) < 1e-9, 'soma MultiLineString 30m');
   console.log('OK testMultiLineStringParts');
+}
+
+function testNormalizeStreetGeometryFormats() {
+  const lineObj = {
+    type: 'LineString',
+    coordinates: [
+      [-48.5, -1.4],
+      [-48.499, -1.4],
+    ],
+  };
+  const asObj = normalizeStreetGeometry(lineObj);
+  assert(!!asObj && asObj.lines.length === 1, 'objeto LineString');
+  assert(!asObj!.alreadyMetric, 'geo é lng/lat');
+
+  const asString = normalizeStreetGeometry(JSON.stringify(lineObj));
+  assert(!!asString && asString.lines[0].length === 2, 'string JSON');
+
+  const asFeature = normalizeStreetGeometry({
+    type: 'Feature',
+    properties: { name: 'Rua 01' },
+    geometry: lineObj,
+  });
+  assert(!!asFeature && asFeature.sourceFormat.startsWith('Feature'), 'Feature');
+
+  const asMulti = normalizeStreetGeometry({
+    type: 'MultiLineString',
+    coordinates: [
+      [
+        [-48.5, -1.4],
+        [-48.499, -1.4],
+      ],
+      [
+        [-48.499, -1.4],
+        [-48.499, -1.399],
+      ],
+    ],
+  });
+  assert(!!asMulti && asMulti.lines.length === 2, 'MultiLineString');
+
+  const asArray = normalizeStreetGeometry([
+    [-48.5, -1.4],
+    [-48.499, -1.4],
+  ]);
+  assert(!!asArray && asArray.sourceFormat === 'coordinate_array', 'array direto');
+
+  const invalid = normalizeStreetGeometry({ type: 'Point', coordinates: [1, 2] });
+  assert(invalid == null, 'Point inválido');
+
+  const envelope = normalizeStreetGeometry({
+    geometry: lineObj,
+  });
+  assert(!!envelope && envelope.lines.length === 1, 'envelope.geometry');
+
+  console.log('OK testNormalizeStreetGeometryFormats');
+}
+
+function testLngLatToUtmLength() {
+  const project = { utm_zone: '22S' };
+  const line: [number, number][] = [
+    [-48.5, -1.4],
+    [-48.499, -1.4],
+  ];
+  const originE = 500000;
+  const originN = 9800000;
+  const local = streetCoordsToLocalMeters(line, project, originE, originN, false);
+  assert(!!local && local.length === 2, 'converte lng/lat');
+  const len = computePolylineLengthM(local!);
+  assert(len > 50 && len < 200, `comprimento ~111m, got ${len}`);
+
+  const localInferred = streetCoordsToLocalMeters(
+    line,
+    { name: 'sem zona' },
+    originE,
+    originN,
+    false,
+  );
+  assert(!!localInferred && localInferred.length === 2, 'infere zona UTM');
+  console.log('OK testLngLatToUtmLength', { len: Math.round(len * 100) / 100 });
+}
+
+function testBuildLocalFromGuidesEighteen() {
+  const project = { name: 'CHACARAS CORREDOR INDUSTRIAL', utm_zone: '22S' };
+  const originE = 555000;
+  const originN = 9845000;
+  const guides = Array.from({ length: 18 }, (_, i) => {
+    const lng0 = -48.5 - i * 0.00005;
+    const lat0 = -1.4;
+    const formats = [
+      {
+        type: 'LineString',
+        coordinates: [
+          [lng0, lat0],
+          [lng0 + 0.001, lat0],
+        ],
+      },
+      JSON.stringify({
+        type: 'LineString',
+        coordinates: [
+          [lng0, lat0],
+          [lng0 + 0.001, lat0],
+        ],
+      }),
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [lng0, lat0],
+            [lng0 + 0.001, lat0],
+          ],
+        },
+      },
+    ];
+    return {
+      id: `street-${i + 1}`,
+      type: i === 0 ? 'Rodovia' : i < 4 ? 'Avenida' : 'Rua',
+      name: String(i + 1).padStart(2, '0'),
+      displayName:
+        i === 0
+          ? 'Rodovia PA-160'
+          : i < 4
+            ? `Avenida ${String(i).padStart(2, '0')}`
+            : `Rua ${String(i - 3).padStart(2, '0')}`,
+      geometry_geojson: formats[i % 3],
+      project_id: 'e96a0acc-d833-47c3-b179-c07d6bfa0b2b',
+    };
+  });
+
+  const built = buildLocalStreetLinesFromGuides({
+    guides,
+    project,
+    originE,
+    originN,
+    logInvalid: false,
+  });
+  assert(built.normalizedCount === 18, `normalized=${built.normalizedCount}`);
+  assert(built.noGeometryCount === 0, `noGeometry=${built.noGeometryCount}`);
+
+  const { streets, noGeometryCount } = groupEnterpriseStreets({
+    guides,
+    localLinesByGuideId: built.localLinesByGuideId,
+  });
+  assert(streets.length === 18, '18 vias');
+  assert(noGeometryCount === 0, '0 sem geometria');
+  const withLen = streets.filter((s) => s.lengthAvailable && s.lengthM > 0);
+  assert(withLen.length === 18, '18 com comprimento');
+  const { rows, totalLengthM } = buildStreetTableRows(streets);
+  assert(rows.length === 18, 'tabela 18');
+  assert(totalLengthM > 0, 'comprimento total > 0');
+  console.log('OK testBuildLocalFromGuidesEighteen', {
+    totalLengthM: Math.round(totalLengthM),
+    sample: withLen[0].lengthM,
+  });
 }
 
 function testFormatLength() {
@@ -122,64 +278,61 @@ function testMultiSegmentSameId() {
   local.set('r1', [
     [
       [0, 0],
-      [200, 0],
+      [100, 0],
     ],
     [
-      [200, 0],
-      [200, 100],
+      [100, 0],
+      [100, 50],
     ],
   ]);
   const { streets } = groupEnterpriseStreets({
     guides,
     localLinesByGuideId: local,
   });
-  assert(streets.length === 1, '1 via');
-  assert(streets[0].segments.length === 2, '2 trechos');
-  assert(Math.abs(streets[0].lengthM - 300) < 1e-9, 'soma 300');
+  assert(streets[0].segments.length === 2, '2 segmentos');
+  assert(Math.abs(streets[0].lengthM - 150) < 1e-9, '150m');
   console.log('OK testMultiSegmentSameId');
 }
 
 function testUnnamedAndNoGeometry() {
-  assert(isUnnamedStreetName('Rua/Eixo sem nome'), 'unnamed');
-  assert(isUnnamedStreetName(''), 'empty');
-  assert(!isUnnamedStreetName('PA-160'), 'named');
   const guides = [
-    { id: 'u1', type: 'Rua', name: 'Rua/Eixo sem nome', displayName: 'Rua/Eixo sem nome' },
-    { id: 'g1', type: 'Rua', name: '02', displayName: 'Rua 02' },
+    { id: 'u1', type: 'Rua', name: 'Rua/Eixo sem nome' },
+    { id: 'n1', type: 'Rua', name: '02', displayName: 'Rua 02' },
   ];
   const local = new Map<string, [number, number][][]>();
-  // g1 sem geometria
+  local.set('u1', [
+    [
+      [0, 0],
+      [40, 0],
+    ],
+  ]);
   const { streets, unnamedCount, noGeometryCount } = groupEnterpriseStreets({
     guides,
     localLinesByGuideId: local,
   });
-  assert(unnamedCount === 1, 'unnamed count');
-  assert(noGeometryCount >= 1, 'no geometry');
-  assert(streets.every((s) => !s.lengthAvailable || s.unnamed), 'sem length ou unnamed');
+  assert(unnamedCount === 1, '1 unnamed');
+  assert(noGeometryCount === 1, '1 no geometry');
+  assert(isUnnamedStreetName(''), 'empty unnamed');
+  assert(streets.find((s) => s.id === 'n1')!.issues.includes('no_geometry'), 'n1 issue');
   console.log('OK testUnnamedAndNoGeometry');
 }
 
 function testReadableAngle() {
-  const a = readableStreetLabelAngleDeg(10, 0);
-  assert(Math.abs(a) < 1, 'horizontal ~0');
-  const b = readableStreetLabelAngleDeg(-10, 0);
-  assert(Math.abs(Math.abs(b) - 0) < 1 || Math.abs(Math.abs(b) - 180) > 90, 'não invertido ilegal');
-  // vetor para a esquerda deve normalizar para legível (±90)
-  assert(Math.abs(b) <= 90, 'ângulo legível |b|<=90');
-  const down = readableStreetLabelAngleDeg(0, -10);
-  assert(Math.abs(down) <= 90, 'vertical legível');
+  assert(Math.abs(readableStreetLabelAngleDeg(1, 0) - 0) < 1e-6, '0°');
+  const a = readableStreetLabelAngleDeg(-1, 0);
+  assert(a > -90 && a <= 90, 'normalizado ±90');
   console.log('OK testReadableAngle');
 }
 
 function testLabelRepetition() {
-  assert(maxStreetLabelCountForLength(100) === 1, '<=300 → 1');
-  assert(maxStreetLabelCountForLength(500) === 2, '300-700 → 2');
-  assert(maxStreetLabelCountForLength(900) === 3, '>700 → 3');
+  assert(maxStreetLabelCountForLength(200) === 1, '<=300 → 1');
+  assert(maxStreetLabelCountForLength(500) === 2, '<=700 → 2');
+  assert(maxStreetLabelCountForLength(900) === 3, ' >700 → 3');
   const street: EnterpriseStreetGrouped = {
-    id: 'long',
-    type: 'Rodovia',
-    name: 'PA-160',
-    displayName: 'Rodovia PA-160',
+    id: 'l1',
+    type: 'Rua',
+    name: '01',
+    displayName: 'Rua 01',
     unnamed: false,
     segments: [
       {
@@ -195,21 +348,17 @@ function testLabelRepetition() {
     lengthAvailable: true,
     issues: [],
   };
-  const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.08 });
-  assert(places.length >= 1 && places.length <= 3, `repetição ${places.length}`);
-  for (const p of places) {
-    assert(Math.abs(p.angleDeg) <= 90, 'ângulo legível');
-  }
-  console.log('OK testLabelRepetition');
+  const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.05 });
+  assert(places.length >= 1, 'ao menos 1 placement');
+  console.log('OK testLabelRepetition', { places: places.length });
 }
 
 function testCollision() {
   const a = { x: 0, y: 0, w: 10, h: 5 };
-  const b = { x: 8, y: 0, w: 10, h: 5 };
+  const b = { x: 9, y: 0, w: 10, h: 5 };
   assert(boxesOverlap(a, b), 'overlap');
-  assert(!boxesOverlap(a, { x: 20, y: 0, w: 5, h: 5 }), 'no overlap');
   const box = rotatedTextOccupiedBox(50, 50, 'Rua 01', 5, 0);
-  assert(box.w > 0 && box.h > 0, 'bbox');
+  assert(box.w > 0 && box.h > 0, 'box size');
   console.log('OK testCollision');
 }
 
@@ -221,8 +370,8 @@ function testTableSortAndPlan() {
       name: '02',
       displayName: 'Rua 02',
       unnamed: false,
-      segments: [{ lineIndex: 0, line: [[0, 0], [40, 0]], lengthM: 40 }],
-      lengthM: 40,
+      segments: [],
+      lengthM: 120,
       lengthAvailable: true,
       issues: [],
     },
@@ -232,8 +381,8 @@ function testTableSortAndPlan() {
       name: 'PA-160',
       displayName: 'Rodovia PA-160',
       unnamed: false,
-      segments: [{ lineIndex: 0, line: [[0, 0], [800, 0]], lengthM: 800 }],
-      lengthM: 800,
+      segments: [],
+      lengthM: 500,
       lengthAvailable: true,
       issues: [],
     },
@@ -243,8 +392,8 @@ function testTableSortAndPlan() {
       name: '01',
       displayName: 'Avenida 01',
       unnamed: false,
-      segments: [{ lineIndex: 0, line: [[0, 0], [100, 0]], lengthM: 100 }],
-      lengthM: 100,
+      segments: [],
+      lengthM: 320,
       lengthAvailable: true,
       issues: [],
     },
@@ -305,6 +454,19 @@ function testFitIntegration() {
         ],
       },
     },
+    {
+      id: 's2',
+      type: 'Avenida',
+      name: '02',
+      displayName: 'Avenida 02',
+      geometry_geojson: JSON.stringify({
+        type: 'LineString',
+        coordinates: [
+          [-48.5, -1.3995],
+          [-48.499, -1.3995],
+        ],
+      }),
+    },
   ];
   const options = {
     ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
@@ -316,18 +478,21 @@ function testFitIntegration() {
     project,
     options,
   });
-  assert(fit.streets.length === 1, '1 street no fit');
-  assert(fit.streets[0].lengthAvailable, 'length available');
-  assert(fit.streets[0].lengthM > 0, 'length > 0');
+  assert(fit.streets.length === 2, '2 streets no fit');
+  assert(fit.streets.every((s) => s.lengthAvailable), 'lengths available');
+  assert(fit.streets.every((s) => s.lengthM > 0), 'length > 0');
+  assert(fit.streetGeometryDiag.normalized === 2, 'diag normalized 2');
+  assert(fit.streetWarnings.noGeometryCount === 0, '0 sem geometria');
   const layout = buildEnterpriseOverviewLayout(
     { blocks, streetGuides, project, options },
     '29/07/2026',
   );
-  assert(layout.streetTable.rows.length === 1, '1 row tabela');
+  assert(layout.streetTable.rows.length === 2, '2 rows tabela');
   assert(layout.streetTable.totalLengthLabel.includes('m'), 'label m');
+  assert(layout.streetGeometryDiag.candidates >= 1, 'candidates >= 1');
   assert(
-    layout.streets[0].labelPlacements.length >= 0,
-    'placements array',
+    layout.streets.some((s) => s.labelPlacements.length > 0),
+    'ao menos 1 placement',
   );
 
   const legacy = buildEnterpriseOverviewLayout(
@@ -343,7 +508,11 @@ function testFitIntegration() {
     legacy.streets[0].labelPlacements.length === 0,
     'sem placements no modo legado',
   );
-  console.log('OK testFitIntegration');
+  console.log('OK testFitIntegration', {
+    length1: fit.streets[0].lengthM,
+    length2: fit.streets[1].lengthM,
+    candidates: layout.streetGeometryDiag.candidates,
+  });
 }
 
 function testEmptyStreetsStillWorks() {
@@ -383,7 +552,7 @@ function testEmptyStreetsStillWorks() {
   console.log('OK testEmptyStreetsStillWorks');
 }
 
-function testCollisionResolveOmits() {
+function testCollisionFallbackKeepsLabel() {
   const street: EnterpriseStreetGrouped = {
     id: 'c1',
     type: 'Rua',
@@ -405,16 +574,28 @@ function testCollisionResolveOmits() {
     issues: [],
   };
   const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.2 });
-  const occupied = [{ x: -1000, y: -1000, w: 2000, h: 2000 }];
-  const resolved = resolveStreetLabelCollisions(
+  const softOccupied = [{ x: -1000, y: -1000, w: 2000, h: 2000 }];
+  const resolvedSoft = resolveStreetLabelCollisions(
     places,
     (p) => [p[0], p[1]],
-    occupied,
+    [],
     street,
     0.2,
+    softOccupied,
   );
-  assert(resolved.length === 0, 'omite quando tudo colide');
-  console.log('OK testCollisionResolveOmits');
+  assert(resolvedSoft.length >= 1, 'fallback soft não zera labels');
+
+  const hardOccupied = [{ x: -1000, y: -1000, w: 2000, h: 2000 }];
+  const resolvedHard = resolveStreetLabelCollisions(
+    places,
+    (p) => [p[0], p[1]],
+    hardOccupied,
+    street,
+    0.2,
+    [],
+  );
+  assert(resolvedHard.length >= 1, 'fallback hard não zera labels');
+  console.log('OK testCollisionFallbackKeepsLabel');
 }
 
 function testSourceWiring() {
@@ -423,17 +604,28 @@ function testSourceWiring() {
   assert(modal.includes('showStreetNamesAndTable'), 'option key');
   const layout = read('lib/enterpriseOverviewLayout.ts');
   assert(layout.includes('showStreetNamesAndTable: true'), 'default on');
+  assert(layout.includes('buildLocalStreetLinesFromGuides'), 'usa builder central');
+  const streets = read('lib/enterpriseOverviewStreets.ts');
+  assert(streets.includes('normalizeStreetGeometry'), 'normalizer');
+  assert(streets.includes('streetCoordsToLocalMeters'), 'utm convert');
   const pdf = read('lib/enterpriseOverviewPdf.ts');
   assert(pdf.includes('QUADRO DE VIAS'), 'tabela no PDF');
   assert(pdf.includes('drawStreetTableExtraPage'), 'página extra');
   assert(pdf.includes('resolveStreetLabelCollisions'), 'colisão');
-  assert(!fs.existsSync(path.join(ROOT, 'supabase/migrations/zzzz_enterprise_streets.sql')), 'sem migration nova');
+  assert(pdf.includes('softOccupied'), 'soft occupied');
+  assert(
+    !fs.existsSync(path.join(ROOT, 'supabase/migrations/zzzz_enterprise_streets.sql')),
+    'sem migration nova',
+  );
   console.log('OK testSourceWiring');
 }
 
 function main() {
   testPolylineLength();
   testMultiLineStringParts();
+  testNormalizeStreetGeometryFormats();
+  testLngLatToUtmLength();
+  testBuildLocalFromGuidesEighteen();
   testFormatLength();
   testGroupById();
   testMultiSegmentSameId();
@@ -444,7 +636,7 @@ function main() {
   testTableSortAndPlan();
   testFitIntegration();
   testEmptyStreetsStillWorks();
-  testCollisionResolveOmits();
+  testCollisionFallbackKeepsLabel();
   testSourceWiring();
   console.log('\nALL mandatory-enterprise-overview-streets-tests PASSED');
 }

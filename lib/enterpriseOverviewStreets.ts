@@ -3,8 +3,11 @@
  * Sem jsPDF/Supabase: seguro para testes Node.
  */
 
-import { formatStreetDisplay } from '@/lib/streetGuide';
+import proj4 from 'proj4';
+import { resolveUtmProj4FromProject } from '@/lib/civil3dTxtParser';
+import { haversineDistanceM } from '@/lib/gis/distanceMeasure';
 import { planarDistanceM } from '@/lib/officialConfrontationRing';
+import { formatStreetDisplay } from '@/lib/streetGuide';
 
 export const STREET_TYPE_SORT_ORDER: Record<string, number> = {
   Rodovia: 0,
@@ -20,9 +23,7 @@ export const STREET_TYPE_SORT_ORDER: Record<string, number> = {
 
 export const STREET_LABEL_FONT_MAX = 6.5;
 export const STREET_LABEL_FONT_MIN = 3.5;
-/** Comprimento mínimo do trecho (m) para aceitar um rótulo. */
 export const STREET_LABEL_MIN_SEGMENT_M = 25;
-/** Distância mínima entre rótulos repetidos (m reais). */
 export const STREET_LABEL_REPEAT_GAP_M = 180;
 
 export type EnterpriseStreetIssue =
@@ -31,22 +32,23 @@ export type EnterpriseStreetIssue =
   | 'invalid_geometry'
   | 'length_unavailable';
 
+export type NormalizedStreetGeometry = {
+  lines: Array<Array<[number, number]>>;
+  alreadyMetric: boolean;
+  sourceFormat: string;
+};
+
 export type EnterpriseStreetSegment = {
-  /** Índice do trecho dentro da via. */
   lineIndex: number;
-  /** Pontos em metros locais (UTM − origem), já no espaço do fit. */
   line: [number, number][];
   lengthM: number;
 };
 
 export type EnterpriseStreetLabelPlacement = {
-  /** Ponto em metros locais (mesmo CRS da linha). */
   point: [number, number];
-  /** Ângulo em graus para jsPDF.text (sentido legível). */
   angleDeg: number;
   fontSize: number;
   text: string;
-  /** Comprimento do trecho usado (m). */
   segmentLengthM: number;
 };
 
@@ -57,7 +59,6 @@ export type EnterpriseStreetGrouped = {
   displayName: string;
   unnamed: boolean;
   segments: EnterpriseStreetSegment[];
-  /** Soma exata antes do arredondamento de exibição. */
   lengthM: number;
   lengthAvailable: boolean;
   issues: EnterpriseStreetIssue[];
@@ -91,7 +92,16 @@ export type OccupiedBox = {
   h: number;
 };
 
-/** Soma comprimento planar de uma polilinha em metros. */
+export type StreetGeometryDiag = {
+  loaded: number;
+  normalized: number;
+  candidates: number;
+  drawn: number;
+  omittedByCollision: number;
+  noGeometry: number;
+  invalidGeometry: number;
+};
+
 export function computePolylineLengthM(line: [number, number][]): number {
   if (!line || line.length < 2) return 0;
   let sum = 0;
@@ -101,7 +111,20 @@ export function computePolylineLengthM(line: [number, number][]): number {
   return sum;
 }
 
-/** Formata metros com 2 casas, pt-BR. Arredonda só na exibição. */
+export function computePolylineLengthHaversineM(
+  lineLngLat: [number, number][],
+): number {
+  if (!lineLngLat || lineLngLat.length < 2) return 0;
+  let sum = 0;
+  for (let i = 1; i < lineLngLat.length; i++) {
+    sum += haversineDistanceM(
+      { lng: lineLngLat[i - 1][0], lat: lineLngLat[i - 1][1] },
+      { lng: lineLngLat[i][0], lat: lineLngLat[i][1] },
+    );
+  }
+  return sum;
+}
+
 export function formatLengthMetersPtBr(meters: number): string {
   if (!Number.isFinite(meters) || meters < 0) return 'Não calculado';
   const rounded = Math.round(meters * 100) / 100;
@@ -120,37 +143,323 @@ export function isUnnamedStreetName(name?: string | null): boolean {
   return false;
 }
 
-/**
- * Extrai todas as polilinhas de coordenadas GeoJSON
- * (LineString ou MultiLineString).
- */
+function isFinitePair(c: unknown): c is [number, number] {
+  if (!Array.isArray(c) || c.length < 2) return false;
+  return Number.isFinite(Number(c[0])) && Number.isFinite(Number(c[1]));
+}
+
+function asLngLatPair(c: unknown): [number, number] | null {
+  if (!isFinitePair(c)) return null;
+  return [Number(c[0]), Number(c[1])];
+}
+
+function looksLikeMetricPair(a: number, b: number): boolean {
+  return Math.abs(a) > 180 || Math.abs(b) > 90;
+}
+
+function looksLikeLngLatPair(a: number, b: number): boolean {
+  return Math.abs(a) <= 180 && Math.abs(b) <= 90;
+}
+
 export function extractAllPolylineParts(coords: unknown): number[][][] {
   if (!Array.isArray(coords) || coords.length < 1) return [];
   const first = coords[0];
-  if (
-    Array.isArray(first) &&
-    first.length >= 2 &&
-    typeof first[0] === 'number' &&
-    typeof first[1] === 'number'
-  ) {
+  if (isFinitePair(first) && coords.length >= 2 && isFinitePair(coords[1])) {
     return [coords as number[][]];
   }
   const parts: number[][][] = [];
   for (const part of coords) {
     if (!Array.isArray(part) || part.length < 2) continue;
-    const p0 = part[0];
-    if (
-      Array.isArray(p0) &&
-      p0.length >= 2 &&
-      typeof p0[0] === 'number' &&
-      typeof p0[1] === 'number'
-    ) {
+    if (isFinitePair(part[0]) && isFinitePair(part[1])) {
       parts.push(part as number[][]);
       continue;
     }
     parts.push(...extractAllPolylineParts(part));
   }
   return parts;
+}
+
+function parseMaybeJson(input: unknown): unknown {
+  if (typeof input !== 'string') return input;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normaliza geometry_geojson / geometry de street_guides.
+ * Aceita objeto, string JSON, Feature, FeatureCollection, LineString,
+ * MultiLineString, array direto e envelopes com `.geometry`.
+ */
+export function normalizeStreetGeometry(
+  input: unknown,
+): NormalizedStreetGeometry | null {
+  const parsed = parseMaybeJson(input);
+  if (parsed == null) return null;
+
+  if (Array.isArray(parsed) && parsed.length >= 2 && isFinitePair(parsed[0])) {
+    const line = parsed
+      .map(asLngLatPair)
+      .filter((p): p is [number, number] => p != null);
+    if (line.length < 2) return null;
+    return {
+      lines: [line],
+      alreadyMetric: looksLikeMetricPair(line[0][0], line[0][1]),
+      sourceFormat: 'coordinate_array',
+    };
+  }
+
+  if (
+    Array.isArray(parsed) &&
+    parsed.length >= 1 &&
+    Array.isArray(parsed[0]) &&
+    !isFinitePair(parsed[0]) &&
+    isFinitePair((parsed[0] as unknown[])[0])
+  ) {
+    const lines: Array<Array<[number, number]>> = [];
+    for (const part of parsed) {
+      if (!Array.isArray(part)) continue;
+      const line = part
+        .map(asLngLatPair)
+        .filter((p): p is [number, number] => p != null);
+      if (line.length >= 2) lines.push(line);
+    }
+    if (!lines.length) return null;
+    return {
+      lines,
+      alreadyMetric: looksLikeMetricPair(lines[0][0][0], lines[0][0][1]),
+      sourceFormat: 'multiline_array',
+    };
+  }
+
+  if (typeof parsed !== 'object') return null;
+  const obj = parsed as Record<string, unknown>;
+
+  if (obj.type === 'Feature' && obj.geometry) {
+    const inner = normalizeStreetGeometry(obj.geometry);
+    if (!inner) return null;
+    return { ...inner, sourceFormat: `Feature>${inner.sourceFormat}` };
+  }
+
+  if (obj.type === 'FeatureCollection' && Array.isArray(obj.features)) {
+    const lines: Array<Array<[number, number]>> = [];
+    let alreadyMetric = false;
+    let sourceFormat = 'FeatureCollection';
+    for (const feat of obj.features) {
+      const inner = normalizeStreetGeometry(feat);
+      if (!inner) continue;
+      lines.push(...inner.lines);
+      alreadyMetric = alreadyMetric || inner.alreadyMetric;
+      sourceFormat = `FeatureCollection>${inner.sourceFormat}`;
+    }
+    if (!lines.length) return null;
+    return { lines, alreadyMetric, sourceFormat };
+  }
+
+  if (obj.geometry && typeof obj.geometry === 'object') {
+    const inner = normalizeStreetGeometry(obj.geometry);
+    if (inner) {
+      return { ...inner, sourceFormat: `envelope>${inner.sourceFormat}` };
+    }
+  }
+
+  const type = String(obj.type || '').trim();
+  const coords = obj.coordinates;
+  if (coords == null) return null;
+
+  const parts = extractAllPolylineParts(coords);
+  const lines = parts
+    .map((part) =>
+      part.map(asLngLatPair).filter((p): p is [number, number] => p != null),
+    )
+    .filter((line) => line.length >= 2);
+  if (!lines.length) return null;
+  const alreadyMetric = looksLikeMetricPair(lines[0][0][0], lines[0][0][1]);
+  return {
+    lines,
+    alreadyMetric,
+    sourceFormat: type || (parts.length > 1 ? 'MultiLineString' : 'LineString'),
+  };
+}
+
+export function diagnoseStreetGeometryRaw(raw: unknown): {
+  valueType: string;
+  keys: string[];
+  reason?: string;
+} {
+  const valueType = raw === null ? 'null' : typeof raw;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { valueType, keys: Object.keys(raw as object).slice(0, 12) };
+  }
+  if (typeof raw === 'string') {
+    return { valueType: 'string', keys: [], reason: `string_len=${raw.length}` };
+  }
+  if (Array.isArray(raw)) {
+    return { valueType: 'array', keys: [], reason: `array_len=${raw.length}` };
+  }
+  return { valueType, keys: [] };
+}
+
+/**
+ * GeoJSON [lng, lat] → metros locais UTM − origem.
+ * Infere zona UTM pelo longitude se o projeto não tiver utm_zone.
+ */
+export function streetCoordsToLocalMeters(
+  line: [number, number][],
+  project: Record<string, unknown> | null | undefined,
+  originE: number,
+  originN: number,
+  alreadyMetricHint?: boolean,
+): [number, number][] | null {
+  if (!line || line.length < 2) return null;
+  const a0 = Number(line[0][0]);
+  const b0 = Number(line[0][1]);
+  if (!Number.isFinite(a0) || !Number.isFinite(b0)) return null;
+
+  const alreadyMetric =
+    alreadyMetricHint === true || looksLikeMetricPair(a0, b0);
+
+  if (alreadyMetric) {
+    const out: [number, number][] = [];
+    for (const c of line) {
+      const x = Number(c[0]) - originE;
+      const y = Number(c[1]) - originN;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      out.push([x, y]);
+    }
+    return out.length >= 2 ? out : null;
+  }
+
+  if (!looksLikeLngLatPair(a0, b0)) return null;
+
+  // GeoJSON oficial: [lng, lat]. Inverte só se 2º valor claramente longitude.
+  let sampleLng = a0;
+  let sampleLat = b0;
+  if (Math.abs(a0) <= 90 && Math.abs(b0) > 90) {
+    sampleLat = a0;
+    sampleLng = b0;
+  }
+
+  let projDef = resolveUtmProj4FromProject(project);
+  if (!projDef) {
+    const zone = Math.floor((sampleLng + 180) / 6) + 1;
+    if (zone < 1 || zone > 60) return null;
+    const south = sampleLat < 0;
+    projDef = `+proj=utm +zone=${zone} +${south ? 'south' : 'north'} +datum=WGS84 +units=m +no_defs`;
+  }
+
+  try {
+    const out: [number, number][] = [];
+    for (const c of line) {
+      let lng = Number(c[0]);
+      let lat = Number(c[1]);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+      if (Math.abs(lng) <= 90 && Math.abs(lat) > 90) {
+        const t = lng;
+        lng = lat;
+        lat = t;
+      }
+      const [e, n] = proj4('EPSG:4326', projDef, [lng, lat]) as [
+        number,
+        number,
+      ];
+      if (!Number.isFinite(e) || !Number.isFinite(n)) continue;
+      out.push([e - originE, n - originN]);
+    }
+    return out.length >= 2 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildLocalStreetLinesFromGuides(params: {
+  guides: Array<Record<string, unknown>>;
+  project: Record<string, unknown>;
+  originE: number;
+  originN: number;
+  logInvalid?: boolean;
+}): {
+  localLinesByGuideId: Map<string, [number, number][][]>;
+  haversineLengthByGuideId: Map<string, number>;
+  normalizedCount: number;
+  noGeometryCount: number;
+  invalidGeometryCount: number;
+} {
+  const { guides, project, originE, originN, logInvalid = true } = params;
+  const localLinesByGuideId = new Map<string, [number, number][][]>();
+  const haversineLengthByGuideId = new Map<string, number>();
+  let normalizedCount = 0;
+  let noGeometryCount = 0;
+  let invalidGeometryCount = 0;
+
+  for (const guide of guides) {
+    const id = String(guide.id || '').trim();
+    if (!id) continue;
+    const raw = guide.geometry_geojson ?? guide.geometry ?? null;
+    const normalized = normalizeStreetGeometry(raw);
+    if (!normalized || !normalized.lines.length) {
+      noGeometryCount += 1;
+      if (logInvalid) {
+        console.warn('[enterprise-overview-streets] invalid geometry', {
+          streetId: id.slice(0, 8),
+          name: String(guide.name || '').slice(0, 40),
+          ...diagnoseStreetGeometryRaw(raw),
+          reason: 'normalize_failed',
+        });
+      }
+      continue;
+    }
+
+    const localParts: [number, number][][] = [];
+    let haverSum = 0;
+    for (const line of normalized.lines) {
+      if (!normalized.alreadyMetric) {
+        haverSum += computePolylineLengthHaversineM(line);
+      }
+      const local = streetCoordsToLocalMeters(
+        line,
+        project,
+        originE,
+        originN,
+        normalized.alreadyMetric,
+      );
+      if (local && local.length >= 2) {
+        localParts.push(local);
+      } else {
+        invalidGeometryCount += 1;
+        if (logInvalid) {
+          console.warn('[enterprise-overview-streets] convert failed', {
+            streetId: id.slice(0, 8),
+            name: String(guide.name || '').slice(0, 40),
+            sourceFormat: normalized.sourceFormat,
+            alreadyMetric: normalized.alreadyMetric,
+            sample: line[0],
+            reason: 'utm_or_metric_convert_failed',
+          });
+        }
+      }
+    }
+
+    if (localParts.length) {
+      localLinesByGuideId.set(id, localParts);
+      normalizedCount += 1;
+      if (haverSum > 0) haversineLengthByGuideId.set(id, haverSum);
+    } else {
+      noGeometryCount += 1;
+    }
+  }
+
+  return {
+    localLinesByGuideId,
+    haversineLengthByGuideId,
+    normalizedCount,
+    noGeometryCount,
+    invalidGeometryCount,
+  };
 }
 
 export function normalizeLocalPolyline(
@@ -168,7 +477,6 @@ export function normalizeLocalPolyline(
   return out.length >= 2 ? out : null;
 }
 
-/** Ângulo legível: esquerda→direita ou baixo→cima (evita cabeça para baixo). */
 export function readableStreetLabelAngleDeg(dx: number, dy: number): number {
   let angleDeg = (-Math.atan2(dy, dx) * 180) / Math.PI;
   while (angleDeg > 90) angleDeg -= 180;
@@ -222,11 +530,10 @@ export function maxStreetLabelCountForLength(lengthM: number): number {
 }
 
 export function estimateTextWidthMm(text: string, fontSize: number): number {
-  // Helvetica aproximado: ~0.5 × fontSize por caractere em mm (jsPDF unit mm).
   return Math.max(4, String(text || '').length * fontSize * 0.42);
 }
 
-export function boxesOverlap(a: OccupiedBox, b: OccupiedBox, pad = 0.6): boolean {
+export function boxesOverlap(a: OccupiedBox, b: OccupiedBox, pad = 0.4): boolean {
   return !(
     a.x + a.w + pad < b.x ||
     b.x + b.w + pad < a.x ||
@@ -235,7 +542,6 @@ export function boxesOverlap(a: OccupiedBox, b: OccupiedBox, pad = 0.6): boolean
   );
 }
 
-/** Bounding box aproximada de texto rotacionado (centro do texto). */
 export function rotatedTextOccupiedBox(
   cx: number,
   cy: number,
@@ -267,20 +573,17 @@ export function sortStreetsForTable(
   });
 }
 
-/**
- * Agrupa vias por id de street_guides (não funde IDs distintos com mesmo nome).
- * `localLinesByGuideId` deve conter polilinhas já convertidas para metros locais.
- */
 export function groupEnterpriseStreets(params: {
   guides: Array<Record<string, unknown>>;
   localLinesByGuideId: Map<string, [number, number][][]>;
+  haversineLengthByGuideId?: Map<string, number>;
 }): {
   streets: EnterpriseStreetGrouped[];
   unnamedCount: number;
   noGeometryCount: number;
   invalidGeometryCount: number;
 } {
-  const { guides, localLinesByGuideId } = params;
+  const { guides, localLinesByGuideId, haversineLengthByGuideId } = params;
   const byId = new Map<string, EnterpriseStreetGrouped>();
   let unnamedCount = 0;
   let noGeometryCount = 0;
@@ -348,9 +651,13 @@ export function groupEnterpriseStreets(params: {
     if (added > 0) {
       base.lengthAvailable = true;
       base.issues = base.issues.filter((i) => i !== 'no_geometry');
-    } else if (!base.lengthAvailable && !base.issues.includes('length_unavailable')) {
+    } else if (
+      !base.lengthAvailable &&
+      !base.issues.includes('length_unavailable')
+    ) {
       base.issues.push('length_unavailable');
     }
+    void haversineLengthByGuideId;
     byId.set(id, base);
   }
 
@@ -372,10 +679,6 @@ function pickLongestSegment(
   return best;
 }
 
-/**
- * Posições de rótulo ao longo da via (metros locais).
- * Colisão/fonte são refinados depois com caixas em mm PDF.
- */
 export function pickStreetLabelPlacements(
   street: EnterpriseStreetGrouped,
   opts?: { mapScaleMmPerM?: number },
@@ -396,11 +699,13 @@ export function pickStreetLabelPlacements(
   for (const t of tSlots) {
     let placed: EnterpriseStreetLabelPlacement | null = null;
     for (const seg of sortedSegs) {
-      if (seg.lengthM < STREET_LABEL_MIN_SEGMENT_M) continue;
+      if (seg.lengthM < STREET_LABEL_MIN_SEGMENT_M && sortedSegs.length > 1) {
+        continue;
+      }
       const sample = interpolateAlongPolyline(seg.line, t);
       if (!sample) continue;
       const angleDeg = readableStreetLabelAngleDeg(sample.dx, sample.dy);
-      const availableMm = seg.lengthM * scale * 0.85;
+      const availableMm = Math.max(seg.lengthM * scale * 0.85, 12);
       let fontSize = STREET_LABEL_FONT_MAX;
       while (
         fontSize >= STREET_LABEL_FONT_MIN &&
@@ -408,11 +713,10 @@ export function pickStreetLabelPlacements(
       ) {
         fontSize -= 0.25;
       }
-      if (estimateTextWidthMm(text, fontSize) > availableMm) continue;
       placed = {
         point: sample.point,
         angleDeg,
-        fontSize,
+        fontSize: Math.max(fontSize, STREET_LABEL_FONT_MIN),
         text,
         segmentLengthM: seg.lengthM,
       };
@@ -421,39 +725,28 @@ export function pickStreetLabelPlacements(
     if (placed) candidates.push(placed);
   }
 
-  // Distância mínima entre rótulos (metros reais).
   const filtered: EnterpriseStreetLabelPlacement[] = [];
   for (const c of candidates) {
-    const tooClose = filtered.some((f) => {
-      const d = planarDistanceM(f.point, c.point);
-      return d < STREET_LABEL_REPEAT_GAP_M;
-    });
+    const tooClose = filtered.some(
+      (f) => planarDistanceM(f.point, c.point) < STREET_LABEL_REPEAT_GAP_M,
+    );
     if (!tooClose) filtered.push(c);
   }
 
   if (filtered.length === 0) {
     const longest = pickLongestSegment(sortedSegs);
-    if (longest && longest.lengthM >= STREET_LABEL_MIN_SEGMENT_M) {
-      const mid = interpolateAlongPolyline(longest.line, 0.5);
-      if (mid) {
-        const angleDeg = readableStreetLabelAngleDeg(mid.dx, mid.dy);
-        const availableMm = longest.lengthM * scale * 0.85;
-        let fontSize = STREET_LABEL_FONT_MAX;
-        while (
-          fontSize >= STREET_LABEL_FONT_MIN &&
-          estimateTextWidthMm(text, fontSize) > availableMm
-        ) {
-          fontSize -= 0.25;
-        }
-        if (estimateTextWidthMm(text, fontSize) <= availableMm) {
-          filtered.push({
-            point: mid.point,
-            angleDeg,
-            fontSize,
-            text,
-            segmentLengthM: longest.lengthM,
-          });
-        }
+    if (longest) {
+      for (const t of [0.5, 0.25, 0.75]) {
+        const mid = interpolateAlongPolyline(longest.line, t);
+        if (!mid) continue;
+        filtered.push({
+          point: mid.point,
+          angleDeg: readableStreetLabelAngleDeg(mid.dx, mid.dy),
+          fontSize: STREET_LABEL_FONT_MIN + 0.5,
+          text,
+          segmentLengthM: longest.lengthM,
+        });
+        break;
       }
     }
   }
@@ -462,42 +755,42 @@ export function pickStreetLabelPlacements(
 }
 
 /**
- * Filtra colocações que colidem com caixas ocupadas (em mm PDF).
- * Tenta deslocar t ao longo do eixo; se falhar, omite.
+ * hardOccupied = norte/escala/QD; softOccupied = números de lote.
+ * Se tudo colidir com soft, ainda permite desenhar (último recurso).
  */
 export function resolveStreetLabelCollisions(
   placements: EnterpriseStreetLabelPlacement[],
   projectPoint: (p: [number, number]) => [number, number],
-  occupied: OccupiedBox[],
+  hardOccupied: OccupiedBox[],
   street: EnterpriseStreetGrouped,
   mapScaleMmPerM: number,
+  softOccupied: OccupiedBox[] = [],
 ): EnterpriseStreetLabelPlacement[] {
   const accepted: EnterpriseStreetLabelPlacement[] = [];
-  const boxes = [...occupied];
+  const hardBoxes = [...hardOccupied];
+  const softBoxes = [...softOccupied];
+  const tryTs = [0.5, 0.35, 0.65, 0.25, 0.75, 0.4, 0.6];
+  const segs = [...street.segments].sort((a, b) => b.lengthM - a.lengthM);
 
   for (const place of placements) {
     let chosen: EnterpriseStreetLabelPlacement | null = null;
-    const tryTs = [0.5, 0.35, 0.65, 0.25, 0.75, 0.4, 0.6];
-    const segs = [...street.segments].sort((a, b) => b.lengthM - a.lengthM);
-
     const attempts: EnterpriseStreetLabelPlacement[] = [place];
     for (const seg of segs.slice(0, 3)) {
       for (const t of tryTs) {
         const sample = interpolateAlongPolyline(seg.line, t);
         if (!sample) continue;
         let fontSize = place.fontSize;
-        const availableMm = seg.lengthM * mapScaleMmPerM * 0.85;
+        const availableMm = Math.max(seg.lengthM * mapScaleMmPerM * 0.85, 10);
         while (
           fontSize >= STREET_LABEL_FONT_MIN &&
           estimateTextWidthMm(place.text, fontSize) > availableMm
         ) {
           fontSize -= 0.25;
         }
-        if (estimateTextWidthMm(place.text, fontSize) > availableMm) continue;
         attempts.push({
           point: sample.point,
           angleDeg: readableStreetLabelAngleDeg(sample.dx, sample.dy),
-          fontSize,
+          fontSize: Math.max(fontSize, STREET_LABEL_FONT_MIN),
           text: place.text,
           segmentLengthM: seg.lengthM,
         });
@@ -513,21 +806,53 @@ export function resolveStreetLabelCollisions(
         attempt.fontSize,
         attempt.angleDeg,
       );
-      const hit = boxes.some((b) => boxesOverlap(box, b));
-      if (!hit) {
+      if (
+        !hardBoxes.some((b) => boxesOverlap(box, b, 0.5)) &&
+        !softBoxes.some((b) => boxesOverlap(box, b, 0.2))
+      ) {
         chosen = attempt;
-        boxes.push(box);
+        hardBoxes.push(box);
         break;
       }
     }
+
+    if (!chosen) {
+      for (const attempt of attempts) {
+        const [cx, cy] = projectPoint(attempt.point);
+        const box = rotatedTextOccupiedBox(
+          cx,
+          cy,
+          attempt.text,
+          attempt.fontSize,
+          attempt.angleDeg,
+        );
+        if (!hardBoxes.some((b) => boxesOverlap(box, b, 0.5))) {
+          chosen = attempt;
+          hardBoxes.push(box);
+          break;
+        }
+      }
+    }
+
+    if (!chosen && segs[0]) {
+      const mid = interpolateAlongPolyline(segs[0].line, 0.5);
+      if (mid) {
+        chosen = {
+          point: mid.point,
+          angleDeg: readableStreetLabelAngleDeg(mid.dx, mid.dy),
+          fontSize: STREET_LABEL_FONT_MIN,
+          text: place.text,
+          segmentLengthM: segs[0].lengthM,
+        };
+      }
+    }
+
     if (chosen) accepted.push(chosen);
   }
   return accepted;
 }
 
-export function buildStreetTableRows(
-  streets: EnterpriseStreetGrouped[],
-): {
+export function buildStreetTableRows(streets: EnterpriseStreetGrouped[]): {
   rows: EnterpriseStreetTableRow[];
   pendingRows: EnterpriseStreetTableRow[];
   totalLengthM: number;
@@ -567,10 +892,6 @@ export function buildStreetTableRows(
   return { rows, pendingRows, totalLengthM };
 }
 
-/**
- * Planeja layout da tabela no painel lateral.
- * Capacidade aproximada: ~ (panelH - reserved) / rowH linhas por coluna.
- */
 export function planStreetTableLayout(
   streets: EnterpriseStreetGrouped[],
   panel: { w: number; h: number },

@@ -4,17 +4,16 @@
 
 import proj4 from 'proj4';
 import { resolveRealCoordinateRing, latLngRingFromBlockForConversion } from '@/lib/lotSheetCoordinates';
-import { readStreetGuideLineCoordinates } from '@/lib/streetGuide';
 import {
+  buildLocalStreetLinesFromGuides,
   computePolylineLengthM,
-  extractAllPolylineParts,
   formatLengthMetersPtBr,
   groupEnterpriseStreets,
-  normalizeLocalPolyline,
   pickStreetLabelPlacements,
   planStreetTableLayout,
   type EnterpriseStreetGrouped,
   type EnterpriseStreetLabelPlacement,
+  type StreetGeometryDiag,
   type StreetTablePlan,
 } from '@/lib/enterpriseOverviewStreets';
 export type EnterprisePrintFormat = 'a4_landscape' | 'a3_landscape' | 'a3_portrait';
@@ -124,6 +123,7 @@ export type EnterpriseOverviewLayout = {
   streets: EnterpriseStreetPrint[];
   streetTable: StreetTablePlan;
   streetWarnings: EnterpriseStreetWarnings;
+  streetGeometryDiag: StreetGeometryDiag;
   quadraLabels: EnterpriseQuadraLabel[];
   bbox: EnterpriseBbox;
   rotatedBbox: EnterpriseBbox;
@@ -178,41 +178,6 @@ function parseUtmZone(project: Record<string, unknown> | null | undefined): {
   if (!Number.isFinite(zone) || zone < 1 || zone > 60) return null;
   const south = !m[2] || m[2].toUpperCase() === 'S';
   return { zone, south };
-}
-
-function isLikelyLatLng(a: number, b: number): boolean {
-  return Math.abs(a) <= 180 && Math.abs(b) <= 90;
-}
-
-function latLngRingToLocalMeters(
-  coords: number[][],
-  project: Record<string, unknown> | null | undefined,
-  originE: number,
-  originN: number,
-): [number, number][] | null {
-  const zoneInfo = parseUtmZone(project);
-  if (!zoneInfo || coords.length < 2) return null;
-  try {
-    const def = `+proj=utm +zone=${zoneInfo.zone} +${zoneInfo.south ? 'south' : 'north'} +datum=WGS84 +units=m +no_defs`;
-    const out: [number, number][] = [];
-    for (const c of coords) {
-      if (!Array.isArray(c) || c.length < 2) continue;
-      const a = Number(c[0]);
-      const b = Number(c[1]);
-      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-      let lat = a;
-      let lng = b;
-      if (Math.abs(a) > 90) {
-        lng = a;
-        lat = b;
-      }
-      const [e, n] = proj4('EPSG:4326', def, [lng, lat]) as [number, number];
-      out.push([e - originE, n - originN]);
-    }
-    return out.length >= 2 ? out : null;
-  } catch {
-    return null;
-  }
 }
 
 export function normalizeLotStatus(status: unknown): string {
@@ -436,6 +401,7 @@ export type FitEnterpriseResult = {
   bbox: EnterpriseBbox;
   streetWarnings: EnterpriseStreetWarnings;
   groupedStreets: EnterpriseStreetGrouped[];
+  streetGeometryDiag: StreetGeometryDiag;
 };
 
 /** Localiza todos os lotes, calcula bbox geral com margem — ignora viewport do usuário. */
@@ -497,50 +463,24 @@ export function fitEnterpriseForPrint(input: FitEnterpriseInput): FitEnterpriseR
     bbox = bboxWithMargin(bbox);
   }
 
-  const localLinesByGuideId = new Map<string, [number, number][][]>();
-  for (const guide of streetGuides) {
-    const id = String(guide.id || '').trim();
-    if (!id) continue;
-    const geo =
-      (guide.geometry_geojson as { coordinates?: unknown } | null) ||
-      (guide.geometry as { coordinates?: unknown } | null) ||
-      null;
-    let parts = extractAllPolylineParts(geo?.coordinates);
-    if (!parts.length) {
-      const single = readStreetGuideLineCoordinates(guide);
-      parts = single ? [single] : [];
+  const streetBuild = buildLocalStreetLinesFromGuides({
+    guides: streetGuides,
+    project,
+    originE,
+    originN,
+    logInvalid: process.env.NODE_ENV !== 'production',
+  });
+  const localLinesByGuideId = streetBuild.localLinesByGuideId;
+  for (const parts of localLinesByGuideId.values()) {
+    for (const line of parts) {
+      bbox = expandBbox(bbox, line);
     }
-    const localParts: [number, number][][] = [];
-    for (const coords of parts) {
-      if (!coords?.length) continue;
-      const first = coords[0];
-      const isLatLng =
-        first && isLikelyLatLng(Number(first[0]), Number(first[1]));
-      let localLine: [number, number][] | null = null;
-      if (isLatLng) {
-        localLine = latLngRingToLocalMeters(coords, project, originE, originN);
-      } else {
-        localLine = normalizeLocalPolyline(
-          coords.map(
-            (c) =>
-              [Number(c[0]) - originE, Number(c[1]) - originN] as [
-                number,
-                number,
-              ],
-          ),
-        );
-      }
-      if (localLine && localLine.length >= 2) {
-        localParts.push(localLine);
-        bbox = expandBbox(bbox, localLine);
-      }
-    }
-    if (localParts.length) localLinesByGuideId.set(id, localParts);
   }
 
   const grouped = groupEnterpriseStreets({
     guides: streetGuides,
     localLinesByGuideId,
+    haversineLengthByGuideId: streetBuild.haversineLengthByGuideId,
   });
 
   const streets: EnterpriseStreetPrint[] = grouped.streets.map((g) => {
@@ -592,6 +532,15 @@ export function fitEnterpriseForPrint(input: FitEnterpriseInput): FitEnterpriseR
       invalidGeometryCount: grouped.invalidGeometryCount,
     },
     groupedStreets: grouped.streets,
+    streetGeometryDiag: {
+      loaded: streetGuides.filter((g) => String(g.id || '').trim()).length,
+      normalized: streetBuild.normalizedCount,
+      candidates: 0,
+      drawn: 0,
+      omittedByCollision: 0,
+      noGeometry: streetBuild.noGeometryCount,
+      invalidGeometry: streetBuild.invalidGeometryCount,
+    },
   };
 }
 
@@ -864,6 +813,11 @@ export function buildEnterpriseOverviewLayout(
     return { ...street, labelPlacements };
   });
 
+  const candidates = streets.reduce(
+    (n, s) => n + (s.labelPlacements?.length ?? 0),
+    0,
+  );
+
   const streetTable = planStreetTableLayout(
     fit.groupedStreets,
     sidePanelMm,
@@ -875,6 +829,10 @@ export function buildEnterpriseOverviewLayout(
     streets,
     streetTable,
     streetWarnings: fit.streetWarnings,
+    streetGeometryDiag: {
+      ...fit.streetGeometryDiag,
+      candidates,
+    },
     quadraLabels,
     bbox: fit.bbox,
     rotatedBbox,

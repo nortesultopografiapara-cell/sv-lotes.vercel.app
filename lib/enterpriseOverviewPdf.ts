@@ -338,10 +338,12 @@ function drawTextWithHalo(
     align?: 'left' | 'center' | 'right';
     bold?: boolean;
     angle?: number;
+    color?: [number, number, number];
   },
 ) {
   const align = opts.align ?? 'center';
   const angle = opts.angle ?? 0;
+  const color = opts.color ?? BLACK;
   doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
   doc.setFontSize(opts.fontSize);
   const halo = 0.18;
@@ -358,7 +360,7 @@ function drawTextWithHalo(
   ]) {
     doc.text(text, x + dx, y + dy, { align, angle });
   }
-  doc.setTextColor(...BLACK);
+  doc.setTextColor(...color);
   doc.text(text, x, y, { align, angle });
 }
 
@@ -810,9 +812,10 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   // 6. Divisas ciano dos lotes (por cima das ruas)
   drawEnterpriseLotsOnMap(doc, layout, 'strokes');
 
-  const occupied: OccupiedBox[] = [];
+  const softOccupied: OccupiedBox[] = [];
+  const hardOccupied: OccupiedBox[] = [];
 
-  // 7. Números dos lotes
+  // 7. Números dos lotes (ocupação soft — não deve zerar rótulos de via)
   if (options.showLotNumbers) {
     for (const lot of layout.lots) {
       const [x, y] = projectEnterprisePointToPdf(lot.centroid, layout);
@@ -821,11 +824,11 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
         bold: true,
         align: 'center',
       });
-      occupied.push({ x: x - 4, y: y - 3, w: 8, h: 5 });
+      softOccupied.push({ x: x - 4, y: y - 3, w: 8, h: 5 });
     }
   }
 
-  // 8. Nomes das quadras
+  // 8. Nomes das quadras (ocupação hard)
   for (const q of layout.quadraLabels) {
     const [x, y] = projectEnterprisePointToPdf(q.position, layout);
     drawTextWithHalo(doc, `QD ${q.quadra}`, x, y, {
@@ -833,21 +836,24 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
       bold: true,
       align: 'center',
     });
-    occupied.push({ x: x - 10, y: y - 4, w: 20, h: 7 });
+    hardOccupied.push({ x: x - 10, y: y - 4, w: 20, h: 7 });
   }
 
   // Norte / escala — reservar caixas antes dos rótulos de via
   if (options.showNorth) {
-    occupied.push({ x: box.x + box.w - 18, y: box.y + 2, w: 16, h: 16 });
+    hardOccupied.push({ x: box.x + box.w - 18, y: box.y + 2, w: 16, h: 16 });
   }
   if (options.showGraphicScale) {
-    occupied.push({ x: box.x + 4, y: box.y + box.h - 12, w: 90, h: 10 });
+    hardOccupied.push({ x: box.x + 4, y: box.y + box.h - 12, w: 90, h: 10 });
   }
 
   // 9. Nomes das ruas
+  let drawnLabels = 0;
+  let candidateLabels = 0;
   if (options.showStreetNamesAndTable) {
     for (const street of layout.streets) {
       if (street.unnamed || !street.labelPlacements?.length) continue;
+      candidateLabels += street.labelPlacements.length;
       const grouped = {
         id: street.id,
         type: street.type,
@@ -863,7 +869,6 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
         lengthAvailable: street.lengthAvailable,
         issues: [] as [],
       };
-      // Recalcular length por segmento para colisão
       for (const seg of grouped.segments) {
         let len = 0;
         for (let i = 1; i < seg.line.length; i++) {
@@ -876,9 +881,10 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
       const resolved = resolveStreetLabelCollisions(
         street.labelPlacements,
         (p) => projectEnterprisePointToPdf(p, layout),
-        occupied,
+        hardOccupied,
         grouped,
         layout.mapScaleMmPerM,
+        softOccupied,
       );
       for (const place of resolved) {
         const [x, y] = projectEnterprisePointToPdf(place.point, layout);
@@ -895,17 +901,33 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
           bold: true,
           align: 'center',
           angle: place.angleDeg,
+          color: [4, 78, 52],
         });
-        occupied.push(
-          rotatedTextOccupiedBox(
-            x,
-            y,
-            place.text,
-            place.fontSize,
-            place.angleDeg,
-          ),
+        const boxLabel = rotatedTextOccupiedBox(
+          x,
+          y,
+          place.text,
+          place.fontSize,
+          place.angleDeg,
         );
+        hardOccupied.push(boxLabel);
+        drawnLabels += 1;
       }
+    }
+    layout.streetGeometryDiag.candidates = Math.max(
+      layout.streetGeometryDiag.candidates,
+      candidateLabels,
+    );
+    layout.streetGeometryDiag.drawn = drawnLabels;
+    layout.streetGeometryDiag.omittedByCollision = Math.max(
+      0,
+      candidateLabels - drawnLabels,
+    );
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(
+        '[enterprise-overview-streets] label diag',
+        layout.streetGeometryDiag,
+      );
     }
   } else if (options.showStreets) {
     // Comportamento legado: placa horizontal no ponto médio
@@ -988,9 +1010,14 @@ export async function generateEnterpriseOverviewPdf(
     payload.options.showStreetNamesAndTable &&
     (layout.streetWarnings.unnamedCount > 0 ||
       layout.streetWarnings.noGeometryCount > 0 ||
-      layout.streetWarnings.invalidGeometryCount > 0)
+      layout.streetWarnings.invalidGeometryCount > 0 ||
+      layout.streetGeometryDiag.normalized > 0)
   ) {
     console.info('[enterprise-overview] street warnings', layout.streetWarnings);
+    console.info(
+      '[enterprise-overview] street geometry diag',
+      layout.streetGeometryDiag,
+    );
   }
 
   return doc;
