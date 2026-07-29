@@ -466,7 +466,6 @@ export function getOwnerMenuItemsFromPermissions(
   }
   if (rows.length === 0 || permissions.can_view_contracts) {
     items.push({ name: 'Contratos', href: '/contracts' });
-    items.push({ name: 'Contratos Antigos', href: '/legacy-contracts' });
   }
   return items;
 }

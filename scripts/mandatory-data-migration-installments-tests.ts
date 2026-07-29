@@ -28,8 +28,9 @@ function assert(cond: boolean, msg: string) {
 
 function testModuleUi() {
   const modules = listImportModules();
-  assert(modules.length === 5, '5 módulos visíveis');
+  assert(modules.length === 4, '4 módulos visíveis');
   assert(!modules.some((m) => m.id === 'attachments'), 'anexos oculto na UI');
+  assert(!modules.some((m) => m.id === 'legacy_contracts'), 'contratos antigos oculto na UI');
   assert(
     modules.some(
       (m) =>

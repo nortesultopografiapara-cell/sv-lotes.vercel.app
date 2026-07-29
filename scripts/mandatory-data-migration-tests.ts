@@ -50,10 +50,16 @@ function testSidebarMenu() {
   assert(layout.includes('DatabaseBackup'), 'ícone migração');
   assert(layout.includes('canAccessDataMigrationModule'), 'guard menu');
   assert(layout.includes("href: DATA_MIGRATION_ROUTE"), 'rota menu');
+  assert(!layout.includes("name: 'Contratos Antigos'"), 'sem Contratos Antigos');
+  assert(!layout.includes('/legacy-contracts'), 'sem href legacy no menu');
+  const contractsIdx = layout.indexOf("name: 'Contratos'");
+  const ownersIdx = layout.indexOf('Sócios / Proprietários');
   const offlineIdx = layout.indexOf('Sincronização Offline');
   const migrationIdx = layout.indexOf('Migração de Dados');
   const settingsIdx = layout.indexOf("name: 'Configurações'");
-  assert(offlineIdx > 0 && migrationIdx > offlineIdx, 'após offline sync');
+  assert(contractsIdx > 0 && ownersIdx > contractsIdx, 'sócios após contratos');
+  assert(offlineIdx > ownersIdx, 'offline após sócios');
+  assert(migrationIdx > offlineIdx, 'após offline sync');
   assert(settingsIdx > migrationIdx, 'antes de configurações');
   console.log('OK testSidebarMenu');
 }
@@ -108,7 +114,7 @@ function testWizardSteps() {
 
 function testImportTypeCards() {
   const modules = listImportModules();
-  assert(modules.length === 5, '5 módulos visíveis');
+  assert(modules.length === 4, '4 módulos visíveis');
   assert(modules.some((m) => m.id === 'customers' && m.status === 'available'), 'clientes disponível');
   assert(modules.some((m) => m.id === 'brokers' && m.status === 'available'), 'corretores disponível');
   assert(modules.some((m) => m.id === 'sales' && m.status === 'available'), 'vendas disponível');
@@ -117,8 +123,8 @@ function testImportTypeCards() {
     'parcelas disponível',
   );
   assert(
-    modules.some((m) => m.id === 'legacy_contracts' && m.status === 'available'),
-    'contratos antigos disponível',
+    !modules.some((m) => m.id === 'legacy_contracts'),
+    'contratos antigos oculto na seleção de nova migração',
   );
   assert(!modules.some((m) => m.id === 'attachments'), 'anexos oculto na UI');
   assert(
@@ -128,6 +134,18 @@ function testImportTypeCards() {
 
   const card = read('components/imports/ImportTypeCard.tsx');
   assert(card.includes('import-type-card-'), 'testid card');
+
+  const layout = read('components/Layout.tsx');
+  assert(!layout.includes("name: 'Contratos Antigos'"), 'sem item Contratos Antigos no menu');
+  assert(!layout.includes('/legacy-contracts'), 'sem link /legacy-contracts no menu');
+  assert(fs.existsSync(path.join(ROOT, 'app/legacy-contracts/page.tsx')), 'rota /legacy-contracts preservada');
+
+  const wizard = read('components/imports/DataMigrationWizard.tsx');
+  assert(
+    !wizard.includes('e Contratos Antigos está disponível'),
+    'texto welcome sem Contratos Antigos',
+  );
+
   console.log('OK testImportTypeCards');
 }
 

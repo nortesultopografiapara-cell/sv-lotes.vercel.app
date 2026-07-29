@@ -163,13 +163,16 @@ function testRoutesAndUi() {
   );
 
   const layout = read('components/Layout.tsx');
-  assert(layout.includes('Contratos Antigos'), 'menu lateral');
-  assert(layout.includes(LEGACY_CONTRACTS_ROUTE), 'rota no menu');
+  assert(!layout.includes("name: 'Contratos Antigos'"), 'menu lateral sem Contratos Antigos');
+  assert(!layout.includes(LEGACY_CONTRACTS_ROUTE), 'rota não listada no menu');
+  assert(fs.existsSync(path.join(ROOT, 'app/legacy-contracts/page.tsx')), 'página preservada');
+  assert(LEGACY_CONTRACTS_ROUTE === '/legacy-contracts', 'constante de rota preservada');
 
   const pageClient = read('components/legacy-contracts/LegacyContractsPageClient.tsx');
   assert(pageClient.includes('LegacyContractSummaryCards'), 'cards resumo');
   assert(pageClient.includes('LegacyContractsFilters'), 'filtros');
   assert(pageClient.includes('LegacyContractsTable'), 'tabela');
+  assert(pageClient.includes('Contratos Antigos'), 'título da página preservado');
 
   const migration = read('supabase/migrations/20260706120000_legacy_contract_documents_module.sql');
   assert(migration.includes('link_type'), 'migration link_type');
