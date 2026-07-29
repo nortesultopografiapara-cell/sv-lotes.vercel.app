@@ -25,8 +25,12 @@ export function countCarneCoverInstallments(
 
 export type SaleCarneCoverCompanyInfo = {
   companyId: string;
+  /** companies.name — razão social / nome principal */
   legalName: string;
+  /** companies.fantasy_name — nome fantasia (pode ser null) */
   tradeName: string | null;
+  /** fantasy_name preenchido, senão name */
+  displayName: string;
   documentDigits: string | null;
   documentFormatted: string | null;
   logoUrl: string | null;
@@ -34,6 +38,86 @@ export type SaleCarneCoverCompanyInfo = {
   phoneFormatted: string | null;
   email: string | null;
 };
+
+/** Colunas reais de `companies` usadas pela capa do carnê. */
+export const SALE_CARNE_COVER_COMPANY_SELECT =
+  'id, name, fantasy_name, cnpj, phone, email, logo_url' as const;
+
+export const SALE_CARNE_COVER_NEUTRAL_COMPANY_NAME = 'Empresa' as const;
+
+export type SaleCarneCoverCompanyRow = {
+  id?: string | null;
+  name?: string | null;
+  fantasy_name?: string | null;
+  cnpj?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  logo_url?: string | null;
+};
+
+/** Nome visual: fantasy_name → name → fallback neutro. */
+export function resolveCoverDisplayName(
+  fantasyName?: string | null,
+  name?: string | null,
+): string {
+  const fantasy = String(fantasyName || '').trim();
+  if (fantasy) return fantasy;
+  const legal = String(name || '').trim();
+  if (legal) return legal;
+  return SALE_CARNE_COVER_NEUTRAL_COMPANY_NAME;
+}
+
+/** Nome principal documental: name → fantasy → fallback neutro. */
+export function resolveCoverLegalName(
+  name?: string | null,
+  fantasyName?: string | null,
+): string {
+  const legal = String(name || '').trim();
+  if (legal) return legal;
+  const fantasy = String(fantasyName || '').trim();
+  if (fantasy) return fantasy;
+  return SALE_CARNE_COVER_NEUTRAL_COMPANY_NAME;
+}
+
+/** Linha do cabeçalho: `NOME | CNPJ xx` (sem undefined). */
+export function buildCoverCompanyHeaderLine(
+  legalName: string,
+  documentFormatted?: string | null,
+): string {
+  const name = String(legalName || '').trim() || SALE_CARNE_COVER_NEUTRAL_COMPANY_NAME;
+  const doc = String(documentFormatted || '').trim();
+  if (!doc) return name;
+  const digits = doc.replace(/\D/g, '');
+  const label = digits.length === 11 ? 'CPF' : 'CNPJ';
+  return `${name} | ${label} ${doc}`;
+}
+
+export function mapCompanyRowToCoverInfo(
+  row: SaleCarneCoverCompanyRow,
+): SaleCarneCoverCompanyInfo {
+  const legalName = resolveCoverLegalName(row.name, row.fantasy_name);
+  const tradeRaw = String(row.fantasy_name || '').trim();
+  const tradeName = tradeRaw || null;
+  const documentDigits = row.cnpj
+    ? String(row.cnpj).replace(/\D/g, '') || null
+    : null;
+  const phoneRaw = row.phone ? String(row.phone).trim() || null : null;
+  const email = row.email ? String(row.email).trim() || null : null;
+  const logoUrl = row.logo_url ? String(row.logo_url).trim() || null : null;
+
+  return {
+    companyId: String(row.id || ''),
+    legalName,
+    tradeName,
+    displayName: resolveCoverDisplayName(row.fantasy_name, row.name),
+    documentDigits,
+    documentFormatted: formatCoverCompanyDocument(documentDigits),
+    logoUrl,
+    phoneRaw,
+    phoneFormatted: formatCoverCompanyPhone(phoneRaw),
+    email,
+  };
+}
 
 export type SaleCarneCoverSummary = {
   saleId: string;

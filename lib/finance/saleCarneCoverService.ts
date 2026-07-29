@@ -11,8 +11,8 @@ import {
   buildCoverStatusMessage,
   collectCoverMissingFields,
   countCarneCoverInstallments,
-  formatCoverCompanyDocument,
-  formatCoverCompanyPhone,
+  mapCompanyRowToCoverInfo,
+  SALE_CARNE_COVER_COMPANY_SELECT,
   type SaleCarneCoverCompanyInfo,
   type SaleCarneCoverSummary,
 } from '@/lib/finance/saleCarneCoverShared';
@@ -33,7 +33,7 @@ async function loadCompanyForCover(
 ): Promise<SaleCarneCoverCompanyInfo> {
   const { data, error } = await admin
     .from('companies')
-    .select('id, name, fantasy_name, razao_social, cnpj, phone, email, logo_url')
+    .select(SALE_CARNE_COVER_COMPANY_SELECT)
     .eq('id', companyId)
     .maybeSingle();
 
@@ -44,28 +44,7 @@ async function loadCompanyForCover(
     throw new SaleCarneCoverError('Empresa da venda não encontrada.', 404);
   }
 
-  const legalName = String(
-    data.razao_social || data.name || data.fantasy_name || '',
-  ).trim();
-  const tradeName = data.fantasy_name ? String(data.fantasy_name).trim() : null;
-  const documentDigits = data.cnpj
-    ? String(data.cnpj).replace(/\D/g, '') || null
-    : null;
-  const phoneRaw = data.phone ? String(data.phone).trim() || null : null;
-  const email = data.email ? String(data.email).trim() || null : null;
-  const logoUrl = data.logo_url ? String(data.logo_url).trim() || null : null;
-
-  return {
-    companyId: String(data.id),
-    legalName,
-    tradeName,
-    documentDigits,
-    documentFormatted: formatCoverCompanyDocument(documentDigits),
-    logoUrl,
-    phoneRaw,
-    phoneFormatted: formatCoverCompanyPhone(phoneRaw),
-    email,
-  };
+  return mapCompanyRowToCoverInfo(data);
 }
 
 export async function getSaleCarneCoverSummary(

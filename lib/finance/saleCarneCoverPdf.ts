@@ -6,7 +6,11 @@
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
 import type { SaleCarneCoverPdfInput } from '@/lib/finance/saleCarneCoverShared';
-import { fitFontSizeForWidth, wrapTextToLines } from '@/lib/finance/saleCarneCoverShared';
+import {
+  buildCoverCompanyHeaderLine,
+  fitFontSizeForWidth,
+  wrapTextToLines,
+} from '@/lib/finance/saleCarneCoverShared';
 
 export {
   buildSaleCarneCoverFilename,
@@ -134,11 +138,10 @@ function drawFrontCard(doc: jsPDF, input: SaleCarneCoverPdfInput, y: number): vo
   const x = MARGIN_X;
   drawDashedRect(doc, x, y, CARD_W, CARD_H);
 
-  const docDigits = (input.companyDocumentFormatted || '').replace(/\D/g, '');
-  const docLabel = docDigits.length === 11 ? 'CPF' : 'CNPJ';
-  const headerSub = input.companyDocumentFormatted
-    ? `${input.companyLegalName} | ${docLabel} ${input.companyDocumentFormatted}`
-    : input.companyLegalName;
+  const headerSub = buildCoverCompanyHeaderLine(
+    input.companyLegalName,
+    input.companyDocumentFormatted,
+  );
 
   drawHeaderBar(
     doc,

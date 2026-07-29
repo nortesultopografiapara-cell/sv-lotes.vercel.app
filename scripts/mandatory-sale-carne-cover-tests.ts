@@ -6,9 +6,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  SALE_CARNE_COVER_COMPANY_SELECT,
   SALE_CARNE_COVER_FORBIDDEN_FALLBACKS,
   buildClientPortalAbsoluteUrl,
   buildClientPortalDisplayUrl,
+  buildCoverCompanyHeaderLine,
   buildCoverStatusMessage,
   buildSaleCarneCoverFilename,
   collectCoverMissingFields,
@@ -16,6 +18,9 @@ import {
   fitFontSizeForWidth,
   formatCoverCompanyDocument,
   formatCoverCompanyPhone,
+  mapCompanyRowToCoverInfo,
+  resolveCoverDisplayName,
+  resolveCoverLegalName,
   wrapTextToLines,
 } from '../lib/finance/saleCarneCoverShared';
 import { buildSaleCarneCoverPdfBytes } from '../lib/finance/saleCarneCoverPdf';
@@ -183,12 +188,86 @@ function testApiIsReadOnly() {
 
 function testServiceLoadsCompanyFields() {
   const service = read('lib/finance/saleCarneCoverService.ts');
-  assert(service.includes('phone'), 'seleciona phone');
-  assert(service.includes('email'), 'seleciona email');
-  assert(service.includes('logo_url'), 'seleciona logo_url');
-  assert(service.includes('cnpj'), 'seleciona cnpj');
-  assert(service.includes('loadSvLotesLogoDataUrl'), 'fallback institucional');
+  assert(service.includes('SALE_CARNE_COVER_COMPANY_SELECT'), 'usa select constante');
+  assert(service.includes('mapCompanyRowToCoverInfo'), 'mapeia row → info');
+  assert(!service.includes('razao_social'), 'service sem razao_social');
+  assert(!service.includes('razaoSocial'), 'service sem razaoSocial');
   console.log('OK testServiceLoadsCompanyFields');
+}
+
+function testCompanySelectHasNoRazaoSocial() {
+  assert(
+    SALE_CARNE_COVER_COMPANY_SELECT ===
+      'id, name, fantasy_name, cnpj, phone, email, logo_url',
+    'select exato',
+  );
+  assert(!SALE_CARNE_COVER_COMPANY_SELECT.includes('razao_social'), 'sem razao_social');
+  assert(!SALE_CARNE_COVER_COMPANY_SELECT.includes('nome_fantasia'), 'sem nome_fantasia');
+
+  const files = [
+    'lib/finance/saleCarneCoverShared.ts',
+    'lib/finance/saleCarneCoverPdf.ts',
+    'lib/finance/saleCarneCoverService.ts',
+    'components/sales/SaleCarneCoverPanel.tsx',
+    'app/api/sales/[saleId]/carne-cover/route.ts',
+  ];
+  for (const file of files) {
+    const src = read(file);
+    assert(!src.includes('razao_social'), `${file} sem razao_social`);
+    assert(!src.includes('razaoSocial'), `${file} sem razaoSocial`);
+  }
+  console.log('OK testCompanySelectHasNoRazaoSocial');
+}
+
+function testCompanyNameMapping() {
+  const withFantasy = mapCompanyRowToCoverInfo({
+    id: 'c1',
+    name: 'MENESES IMOBILIARIA LTDA',
+    fantasy_name: 'Meneses Imobiliária',
+    cnpj: '64435850000103',
+    phone: '94991955918',
+    email: 'contato@empresa.com',
+    logo_url: 'https://example.com/logo.png',
+  });
+  assert(withFantasy.legalName === 'MENESES IMOBILIARIA LTDA', 'legalName = name');
+  assert(withFantasy.tradeName === 'Meneses Imobiliária', 'tradeName = fantasy');
+  assert(withFantasy.displayName === 'Meneses Imobiliária', 'display = fantasy');
+  assert(withFantasy.documentFormatted === '64.435.850/0001-03', 'cnpj formatado');
+
+  const withoutFantasy = mapCompanyRowToCoverInfo({
+    id: 'c2',
+    name: 'EMPRESA SEM FANTASIA LTDA',
+    fantasy_name: null,
+    cnpj: null,
+    phone: null,
+    email: null,
+    logo_url: null,
+  });
+  assert(withoutFantasy.legalName === 'EMPRESA SEM FANTASIA LTDA', 'name principal');
+  assert(withoutFantasy.tradeName === null, 'trade null');
+  assert(
+    withoutFantasy.displayName === 'EMPRESA SEM FANTASIA LTDA',
+    'display cai para name',
+  );
+  assert(resolveCoverDisplayName(null, 'ACME') === 'ACME', 'display sem fantasy');
+  assert(resolveCoverLegalName('ACME LTDA', 'ACME') === 'ACME LTDA', 'legal = name');
+  assert(
+    buildCoverCompanyHeaderLine('MENESES IMOBILIARIA LTDA', '64.435.850/0001-03') ===
+      'MENESES IMOBILIARIA LTDA | CNPJ 64.435.850/0001-03',
+    'linha documental',
+  );
+  console.log('OK testCompanyNameMapping');
+}
+
+function testNoMigrationCreated() {
+  const migrationsDir = path.join(__dirname, '../supabase/migrations');
+  if (fs.existsSync(migrationsDir)) {
+    const recent = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => /carne.?cover|capa.?carne|razao_social/i.test(f));
+    assert(recent.length === 0, 'nenhuma migration de capa/razao_social');
+  }
+  console.log('OK testNoMigrationCreated');
 }
 
 async function testPdfSinglePageNoForbidden() {
@@ -250,6 +329,9 @@ async function main() {
   testNoFixedMenezesFallbacksInSource();
   testApiIsReadOnly();
   testServiceLoadsCompanyFields();
+  testCompanySelectHasNoRazaoSocial();
+  testCompanyNameMapping();
+  testNoMigrationCreated();
   testPdfLayoutGuards();
   await testPdfSinglePageNoForbidden();
   console.log('mandatory-sale-carne-cover-tests: all passed');

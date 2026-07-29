@@ -194,7 +194,11 @@ export function SaleCarneCoverPanel({ saleId, disabled = false }: SaleCarneCover
             />
             <SummaryRow
               label="Empresa responsável"
-              value={summary.company.legalName || ''}
+              value={
+                summary.company.displayName ||
+                summary.company.legalName ||
+                ''
+              }
             />
             <SummaryRow
               label="Telefone / E-mail"
