@@ -37,9 +37,23 @@ import { cancelOpenSaleSignatures } from '@/lib/saleContractSignatureService';
 import { resolveCallerProfile } from '@/lib/supabase/server';
 
 export type { ReleaseLotPreview };
+export type ReleaseLotStage =
+  | 'auth'
+  | 'load_preview'
+  | 'validate_motive'
+  | 'cancel_asaas'
+  | 'cancel_receipts'
+  | 'cancel_commissions'
+  | 'cancel_signatures'
+  | 'cancel_contract'
+  | 'cancel_sale'
+  | 'clear_lot'
+  | 'audit';
+
 export class ReleaseLotError extends Error {
   status: number;
   code?: string;
+  stage?: ReleaseLotStage;
   details?: Record<string, unknown>;
 
   constructor(
@@ -47,13 +61,25 @@ export class ReleaseLotError extends Error {
     status = 400,
     code?: string,
     details?: Record<string, unknown>,
+    stage?: ReleaseLotStage,
   ) {
     super(message);
     this.name = 'ReleaseLotError';
     this.status = status;
     this.code = code;
     this.details = details;
+    this.stage = stage;
   }
+}
+
+function releaseErr(
+  message: string,
+  status: number,
+  code: string,
+  stage: ReleaseLotStage,
+  details?: Record<string, unknown>,
+): ReleaseLotError {
+  return new ReleaseLotError(message, status, code, details, stage);
 }
 
 export type ReleaseLotExecuteInput = {
@@ -121,10 +147,11 @@ function assertCanReleaseLot(role?: string | null): void {
   if (isPlatformAdmin(normalized) || isTenantEnterpriseAdminRole(normalized)) {
     return;
   }
-  throw new ReleaseLotError(
+  throw releaseErr(
     'Apenas administradores da empresa podem liberar lote e encerrar venda.',
     403,
     'FORBIDDEN',
+    'auth',
   );
 }
 
@@ -132,20 +159,39 @@ async function loadBlock(
   admin: SupabaseClient,
   lotId: string,
 ): Promise<BlockRow> {
-  const { data, error } = await admin
+  const full = await admin
     .from('blocks')
     .select(
       'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block, number, lot_number',
     )
     .eq('id', lotId)
     .maybeSingle();
-  if (error) {
-    throw new ReleaseLotError(`Erro ao carregar lote: ${error.message}`, 500);
+
+  if (!full.error && full.data) {
+    return full.data as BlockRow;
   }
-  if (!data) {
-    throw new ReleaseLotError('Lote não encontrado.', 404, 'LOT_NOT_FOUND');
+
+  // Fallback sem colunas opcionais (ambientes com schema parcial).
+  const lean = await admin
+    .from('blocks')
+    .select(
+      'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, block, number',
+    )
+    .eq('id', lotId)
+    .maybeSingle();
+
+  if (lean.error) {
+    throw releaseErr(
+      `Erro ao carregar lote: ${lean.error.message || full.error?.message || 'desconhecido'}`,
+      500,
+      'LOAD_LOT_FAILED',
+      'load_preview',
+    );
   }
-  return data as BlockRow;
+  if (!lean.data) {
+    throw releaseErr('Lote não encontrado.', 404, 'LOT_NOT_FOUND', 'load_preview');
+  }
+  return lean.data as BlockRow;
 }
 
 async function assertLotTenantAccess(
@@ -155,13 +201,13 @@ async function assertLotTenantAccess(
 ): Promise<{ companyId: string; role: string }> {
   const profile = await resolveCallerProfile(admin, userId);
   if (!profile) {
-    throw new ReleaseLotError('Perfil de usuário não encontrado.', 403);
+    throw releaseErr('Perfil de usuário não encontrado.', 403, 'NO_PROFILE', 'auth');
   }
   assertCanReleaseLot(profile.role);
 
   const companyId = String(block.tenant_id || block.company_id || '').trim();
   if (!companyId) {
-    throw new ReleaseLotError('Lote sem empresa vinculada.', 400, 'LOT_NO_TENANT');
+    throw releaseErr('Lote sem empresa vinculada.', 400, 'LOT_NO_TENANT', 'auth');
   }
 
   const callerTenant = String(
@@ -169,7 +215,7 @@ async function assertLotTenantAccess(
   ).trim();
   const role = normalizeUserRole(profile.role);
   if (!isPlatformAdmin(role) && callerTenant && callerTenant !== companyId) {
-    throw new ReleaseLotError('Sem permissão para este lote.', 403, 'CROSS_TENANT');
+    throw releaseErr('Sem permissão para este lote.', 403, 'CROSS_TENANT', 'auth');
   }
 
   return { companyId, role };
@@ -231,16 +277,19 @@ async function loadSaleContext(
 
   const { data: sale, error: saleErr } = await admin
     .from('sales')
-    .select(
-      'id, status, customer_id, contract_id, block_id, tenant_id, company_id, total_value, sale_date, created_at',
-    )
+    .select('id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at')
     .eq('id', saleId)
     .maybeSingle();
   if (saleErr) {
-    throw new ReleaseLotError(`Erro ao carregar venda: ${saleErr.message}`, 500);
+    throw releaseErr(
+      `Erro ao carregar venda: ${saleErr.message}`,
+      500,
+      'LOAD_SALE_FAILED',
+      'load_preview',
+    );
   }
   if (!sale) {
-    throw new ReleaseLotError('Venda vinculada não encontrada.', 404, 'SALE_NOT_FOUND');
+    throw releaseErr('Venda vinculada não encontrada.', 404, 'SALE_NOT_FOUND', 'load_preview');
   }
 
   const saleTenant = String(
@@ -249,29 +298,50 @@ async function loadSaleContext(
       '',
   );
   if (saleTenant && saleTenant !== companyId) {
-    throw new ReleaseLotError('Venda não pertence à empresa do lote.', 403, 'SALE_TENANT_MISMATCH');
+    throw releaseErr(
+      'Venda não pertence à empresa do lote.',
+      403,
+      'SALE_TENANT_MISMATCH',
+      'load_preview',
+    );
   }
 
   let contract: Record<string, unknown> | null = null;
   const contractId =
     String((sale as { contract_id?: string }).contract_id || '').trim() || null;
-  if (contractId) {
-    const { data } = await admin
+
+  async function loadContractBy(
+    filter: { column: 'id' | 'sale_id'; value: string },
+  ): Promise<Record<string, unknown> | null> {
+    // Preferência: campos de assinatura; fallback se coluna não existir no ambiente.
+    const full = await admin
       .from('contracts')
       .select('id, status, contract_number, sale_id, signed_at, signature_status')
-      .eq('id', contractId)
-      .maybeSingle();
-    contract = (data as Record<string, unknown>) || null;
-  }
-  if (!contract) {
-    const { data } = await admin
-      .from('contracts')
-      .select('id, status, contract_number, sale_id, signed_at, signature_status')
-      .eq('sale_id', saleId)
+      .eq(filter.column, filter.value)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    contract = (data as Record<string, unknown>) || null;
+    if (!full.error && full.data) return full.data as Record<string, unknown>;
+
+    const lean = await admin
+      .from('contracts')
+      .select('id, status, contract_number, sale_id')
+      .eq(filter.column, filter.value)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lean.error) {
+      console.warn('[releaseLot] load contract', lean.error.message);
+      return null;
+    }
+    return (lean.data as Record<string, unknown>) || null;
+  }
+
+  if (contractId) {
+    contract = await loadContractBy({ column: 'id', value: contractId });
+  }
+  if (!contract) {
+    contract = await loadContractBy({ column: 'sale_id', value: saleId });
   }
 
   const { data: receiptRows, error: receiptErr } = await admin
@@ -280,7 +350,12 @@ async function loadSaleContext(
     .eq('sale_id', saleId)
     .or(tenantOrClause(companyId));
   if (receiptErr) {
-    throw new ReleaseLotError(`Erro ao carregar parcelas: ${receiptErr.message}`, 500);
+    throw releaseErr(
+      `Erro ao carregar parcelas: ${receiptErr.message}`,
+      500,
+      'LOAD_RECEIPTS_FAILED',
+      'load_preview',
+    );
   }
   const receipts = (receiptRows || []) as ReceiptRow[];
 
@@ -296,15 +371,10 @@ async function loadSaleContext(
   if (customerId) {
     const { data: customer } = await admin
       .from('customers')
-      .select('id, name, full_name')
+      .select('id, name')
       .eq('id', customerId)
       .maybeSingle();
-    customerName =
-      String(
-        (customer as { name?: string })?.name ||
-          (customer as { full_name?: string })?.full_name ||
-          '',
-      ).trim() || null;
+    customerName = String((customer as { name?: string })?.name || '').trim() || null;
   }
 
   let documentsPreserved = 0;
@@ -430,15 +500,11 @@ export async function getReleaseLotPreview(
   if (!ctx.customerName && block.customer_id) {
     const { data: customer } = await admin
       .from('customers')
-      .select('name, full_name')
+      .select('name')
       .eq('id', block.customer_id)
       .maybeSingle();
     ctx.customerName =
-      String(
-        (customer as { name?: string })?.name ||
-          (customer as { full_name?: string })?.full_name ||
-          '',
-      ).trim() || null;
+      String((customer as { name?: string })?.name || '').trim() || null;
   }
 
   return buildPreviewFromContext({
@@ -516,7 +582,12 @@ async function applyLocalRelease(
       .in('id', preview.unpaidReceiptIds)
       .select('id');
     if (error) {
-      throw new ReleaseLotError(`Erro ao cancelar parcelas: ${error.message}`, 500);
+      throw releaseErr(
+        `Erro ao cancelar parcelas: ${error.message}`,
+        500,
+        'CANCEL_RECEIPTS_FAILED',
+        'cancel_receipts',
+      );
     }
     cancelledUnpaidReceipts = (updated || []).length;
 
@@ -527,10 +598,11 @@ async function applyLocalRelease(
         .in('id', preview.paidReceiptIds);
       for (const row of stillPaidCheck || []) {
         if (!isPaidFinanceReceiptStatus(row as ReceiptRow)) {
-          throw new ReleaseLotError(
+          throw releaseErr(
             'Inconsistência: parcela paga foi alterada indevidamente.',
             500,
             'PAID_RECEIPT_CORRUPTED',
+            'cancel_receipts',
           );
         }
       }
@@ -551,10 +623,13 @@ async function applyLocalRelease(
       .map((c) => String((c as { id: string }).id));
 
     if (toCancel.length > 0) {
-      await admin
+      const { error: commissionErr } = await admin
         .from('broker_commissions')
         .update({ status: 'cancelado' })
         .in('id', toCancel);
+      if (commissionErr) {
+        console.warn('[releaseLot] cancel commissions', commissionErr.message);
+      }
     }
   }
 
@@ -571,7 +646,12 @@ async function applyLocalRelease(
         .update({ status: CONTRACT_CANCELLED_STATUS })
         .eq('id', preview.contractId);
       if (contractErr) {
-        throw new ReleaseLotError(`Erro ao cancelar contrato: ${contractErr.message}`, 500);
+        throw releaseErr(
+          `Erro ao cancelar contrato: ${contractErr.message}`,
+          500,
+          'CANCEL_CONTRACT_FAILED',
+          'cancel_contract',
+        );
       }
     }
   }
@@ -582,28 +662,50 @@ async function applyLocalRelease(
       .update({ status: SALE_CANCELLED_STATUS })
       .eq('id', preview.saleId);
     if (saleErr) {
-      throw new ReleaseLotError(`Erro ao encerrar venda: ${saleErr.message}`, 500);
+      throw releaseErr(
+        `Erro ao encerrar venda: ${saleErr.message}`,
+        500,
+        'CANCEL_SALE_FAILED',
+        'cancel_sale',
+      );
     }
   }
 
-  const { error: blockErr } = await admin
-    .from('blocks')
-    .update({
-      status: LOT_AVAILABLE_STATUS,
-      customer_id: null,
-      sale_id: null,
-      contract_id: null,
-      broker_id: null,
-      reservation_expires_at: null,
-      reservation_date: null,
-      signal_amount: null,
-      signal_date: null,
-      signal_payment_method: null,
-      signal_notes: null,
-    })
-    .eq('id', block.id);
+  const clearCore = {
+    status: LOT_AVAILABLE_STATUS,
+    customer_id: null,
+    sale_id: null,
+    contract_id: null,
+    broker_id: null,
+    reservation_expires_at: null,
+    reservation_date: null,
+  };
+
+  let blockErr = (
+    await admin
+      .from('blocks')
+      .update({
+        ...clearCore,
+        signal_amount: null,
+        signal_date: null,
+        signal_payment_method: null,
+        signal_notes: null,
+      })
+      .eq('id', block.id)
+  ).error;
+
+  if (blockErr && /signal_|column/i.test(blockErr.message)) {
+    // Schema sem campos de sinal — limpa só vínculos comerciais.
+    blockErr = (await admin.from('blocks').update(clearCore).eq('id', block.id)).error;
+  }
+
   if (blockErr) {
-    throw new ReleaseLotError(`Erro ao liberar lote: ${blockErr.message}`, 500);
+    throw releaseErr(
+      `Erro ao liberar lote: ${blockErr.message}`,
+      500,
+      'CLEAR_LOT_FAILED',
+      'clear_lot',
+    );
   }
 
   const auditPayload = {
@@ -680,10 +782,11 @@ export async function executeReleaseLot(
   input: ReleaseLotExecuteInput,
 ): Promise<ReleaseLotExecuteResult> {
   if (!input.acknowledged) {
-    throw new ReleaseLotError(
+    throw releaseErr(
       'Confirme que está ciente de que o lote será liberado e as obrigações não pagas serão canceladas.',
       400,
       'ACK_REQUIRED',
+      'validate_motive',
     );
   }
 
@@ -692,7 +795,7 @@ export async function executeReleaseLot(
     motiveDetail: input.motiveDetail,
   });
   if (!motive.ok) {
-    throw new ReleaseLotError(motive.error, 400, 'MOTIVE_REQUIRED');
+    throw releaseErr(motive.error, 400, 'MOTIVE_REQUIRED', 'validate_motive');
   }
 
   const preview = await getReleaseLotPreview(admin, input.lotId, input.userId);
@@ -733,10 +836,11 @@ export async function executeReleaseLot(
     !isSoldOrReservedLotStatus(preview.status) &&
     !preview.saleId
   ) {
-    throw new ReleaseLotError(
+    throw releaseErr(
       'Status do lote não permite liberação comercial neste fluxo.',
       409,
       'INVALID_STATUS',
+      'load_preview',
     );
   }
 
@@ -758,11 +862,12 @@ export async function executeReleaseLot(
     );
 
     if (failedAsaasCharges.length > 0) {
-      throw new ReleaseLotError(
+      throw releaseErr(
         `Não foi possível cancelar ${failedAsaasCharges.length} cobrança(s) no Asaas. A limpeza local não foi aplicada. Reprocesse após corrigir.`,
         502,
         'ASAAS_CANCEL_FAILED',
-        { failedAsaasCharges, preview },
+        'cancel_asaas',
+        { failedAsaasCharges },
       );
     }
   }

@@ -141,16 +141,32 @@ function testGisWiring() {
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
   assert(gis.includes('ReleaseLotConfirmModal'), 'modal importado no GIS');
   assert(gis.includes('lotNeedsReleaseConfirm'), 'helper de gatilho');
-  assert(gis.includes('/api/lots/') === false || modal.includes('/api/lots/'), 'API no modal');
+  assert(modal.includes('/api/lots/'), 'API no modal');
   assert(modal.includes('Liberar lote e encerrar venda?'), 'título modal');
   assert(modal.includes('Liberar lote e encerrar venda'), 'botão destrutivo');
   assert(modal.includes('Estou ciente de que o lote será liberado'), 'checkbox');
   assert(modal.includes('Motivo da liberação'), 'motivo obrigatório');
   assert(modal.includes('pagamentos preservados'), 'alerta pagamentos');
   assert(modal.includes('submittingRef'), 'anti double-click');
+  assert(modal.includes('form-input-light'), 'contraste inputs GIS');
+  assert(modal.includes('createPortal'), 'portal no body');
+  assert(modal.includes('WebkitTextFillColor'), 'senha com cor forçada');
   assert(gis.includes('Liberação comercial'), 'handleLotAction bloqueia bypass');
   assert(!gis.includes('Confirmar limpeza do lote'), 'modal antigo removido');
   console.log('OK testGisWiring');
+}
+
+function testApiErrorShape() {
+  const route = read('app/api/lots/[lotId]/release/route.ts');
+  assert(route.includes('success: false'), 'success false');
+  assert(route.includes('RELEASE_LOT_FAILED'), 'code padrão');
+  assert(route.includes('stage:'), 'stage no payload');
+  assert(route.includes('[lots/release POST]'), 'log estruturado');
+  const svc = read('lib/finance/releaseLotService.ts');
+  assert(svc.includes('ReleaseLotStage'), 'stages tipados');
+  assert(svc.includes('cancel_asaas'), 'stage asaas');
+  assert(svc.includes('clear_lot'), 'stage clear_lot');
+  console.log('OK testApiErrorShape');
 }
 
 function testPaidNeverDeletedGuards() {
@@ -182,6 +198,7 @@ function main() {
   testServiceOrchestrationSource();
   testApiRoute();
   testGisWiring();
+  testApiErrorShape();
   testPaidNeverDeletedGuards();
   console.log('\nALL mandatory-release-lot-tests PASSED');
 }

@@ -10,12 +10,32 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+function errorResponse(err: ReleaseLotError) {
+  return NextResponse.json(
+    {
+      success: false,
+      code: err.code || 'RELEASE_LOT_FAILED',
+      message: err.message || 'Não foi possível liberar o lote.',
+      error: err.message,
+      stage: err.stage || null,
+      details: err.details || null,
+    },
+    { status: err.status },
+  );
+}
+
 async function authorizeRelease(request: Request) {
   const { user, configError } = await getRequestAuthUser(request);
   if (configError || !user) {
     return {
       error: NextResponse.json(
-        { error: configError || 'Não autenticado' },
+        {
+          success: false,
+          code: 'UNAUTHORIZED',
+          message: configError || 'Não autenticado',
+          error: configError || 'Não autenticado',
+          stage: 'auth',
+        },
         { status: 401 },
       ),
     };
@@ -25,7 +45,13 @@ async function authorizeRelease(request: Request) {
   if (!admin || adminError) {
     return {
       error: NextResponse.json(
-        { error: adminError || 'Supabase não configurado' },
+        {
+          success: false,
+          code: 'SUPABASE_CONFIG',
+          message: adminError || 'Supabase não configurado',
+          error: adminError || 'Supabase não configurado',
+          stage: 'auth',
+        },
         { status: 503 },
       ),
     };
@@ -43,23 +69,39 @@ export async function GET(
     const { lotId: raw } = await params;
     const lotId = String(raw || '').trim();
     if (!lotId) {
-      return NextResponse.json({ error: 'lotId obrigatório.' }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'LOT_ID_REQUIRED',
+          message: 'lotId obrigatório.',
+          error: 'lotId obrigatório.',
+          stage: 'load_preview',
+        },
+        { status: 400 },
+      );
     }
 
     const auth = await authorizeRelease(request);
     if ('error' in auth) return auth.error;
 
     const preview = await getReleaseLotPreview(auth.admin, lotId, auth.userId);
-    return NextResponse.json({ preview });
+    return NextResponse.json({ success: true, preview });
   } catch (err) {
     if (err instanceof ReleaseLotError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code, details: err.details },
-        { status: err.status },
-      );
+      console.error('[lots/release GET]', err.code, err.stage, err.message);
+      return errorResponse(err);
     }
     console.error('[lots/release GET]', err);
-    return NextResponse.json({ error: 'Erro ao carregar prévia da liberação.' }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        code: 'RELEASE_LOT_FAILED',
+        message: 'Erro ao carregar prévia da liberação.',
+        error: 'Erro ao carregar prévia da liberação.',
+        stage: 'load_preview',
+      },
+      { status: 500 },
+    );
   }
 }
 
@@ -75,13 +117,28 @@ export async function POST(
     const { lotId: raw } = await params;
     const lotId = String(raw || '').trim();
     if (!lotId) {
-      return NextResponse.json({ error: 'lotId obrigatório.' }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'LOT_ID_REQUIRED',
+          message: 'lotId obrigatório.',
+          error: 'lotId obrigatório.',
+          stage: 'load_preview',
+        },
+        { status: 400 },
+      );
     }
 
     const auth = await authorizeRelease(request);
     if ('error' in auth) return auth.error;
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    console.log('[lots/release POST] start', {
+      lotId: lotId.slice(0, 8),
+      motiveCode: body.motiveCode,
+      userId: auth.userId.slice(0, 8),
+    });
+
     const result = await executeReleaseLot(auth.admin, {
       lotId,
       userId: auth.userId,
@@ -93,19 +150,28 @@ export async function POST(
       retry: body.retry === true,
     });
 
-    return NextResponse.json(result);
+    console.log('[lots/release POST] ok', {
+      lotId: result.lotId.slice(0, 8),
+      saleId: result.saleId?.slice(0, 8),
+      alreadyReleased: result.alreadyReleased,
+    });
+
+    return NextResponse.json({ success: true, ...result });
   } catch (err) {
     if (err instanceof ReleaseLotError) {
-      return NextResponse.json(
-        {
-          error: err.message,
-          code: err.code,
-          details: err.details,
-        },
-        { status: err.status },
-      );
+      console.error('[lots/release POST]', err.code, err.stage, err.message, err.details);
+      return errorResponse(err);
     }
     console.error('[lots/release POST]', err);
-    return NextResponse.json({ error: 'Erro ao liberar lote.' }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        code: 'RELEASE_LOT_FAILED',
+        message: 'Não foi possível liberar o lote.',
+        error: 'Não foi possível liberar o lote.',
+        stage: null,
+      },
+      { status: 500 },
+    );
   }
 }
