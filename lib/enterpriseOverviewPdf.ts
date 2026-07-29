@@ -18,6 +18,7 @@ import {
 import {
   resolveStreetLabelCollisions,
   rotatedTextOccupiedBox,
+  STREET_LABEL_RGB,
   type OccupiedBox,
 } from '@/lib/enterpriseOverviewStreets';
 import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
@@ -901,7 +902,7 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
           bold: true,
           align: 'center',
           angle: place.angleDeg,
-          color: [4, 78, 52],
+          color: STREET_LABEL_RGB,
         });
         const boxLabel = rotatedTextOccupiedBox(
           x,

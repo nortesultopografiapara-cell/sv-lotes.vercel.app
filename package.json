@@ -87,7 +87,8 @@
     "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts",
     "test:sale-spouse-cpf-reuse": "tsx scripts/mandatory-sale-spouse-cpf-reuse-tests.ts",
     "test:release-lot": "tsx scripts/mandatory-release-lot-tests.ts",
-    "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts"
+    "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts",
+    "test:street-guides-report": "tsx scripts/mandatory-street-guides-report-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

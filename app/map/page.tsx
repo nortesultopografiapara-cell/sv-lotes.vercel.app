@@ -74,11 +74,17 @@ import {
   EnterpriseOverviewModal,
   DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
 } from '@/components/map/EnterpriseOverviewModal';
+import { StreetGuidesReportModal } from '@/components/map/StreetGuidesReportModal';
 import {
   downloadEnterpriseOverviewPdf,
   generateEnterpriseOverviewFromInput,
 } from '@/lib/enterpriseOverviewPdf';
 import type { EnterpriseOverviewOptions } from '@/lib/enterpriseOverviewLayout';
+import {
+  buildStreetGuidesReportData,
+  downloadStreetGuidesReportExcel,
+  downloadStreetGuidesReportPdf,
+} from '@/lib/streetGuidesReport';
 import {
   clearGisMapProjectPersistence,
   GIS_MAP_PROJECT_ID_KEY,
@@ -413,6 +419,12 @@ export default function MapPage() {
     useState<EnterpriseOverviewOptions>(DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS);
   const [enterpriseOverviewGenerating, setEnterpriseOverviewGenerating] =
     useState(false);
+  const [isStreetGuidesReportModalOpen, setIsStreetGuidesReportModalOpen] =
+    useState(false);
+  const [streetGuidesReportPdfLoading, setStreetGuidesReportPdfLoading] =
+    useState(false);
+  const [streetGuidesReportExcelLoading, setStreetGuidesReportExcelLoading] =
+    useState(false);
 
   const [isImportShpModalOpen, setIsImportShpModalOpen] = useState(false);
   const [importShpFile, setImportShpFile] = useState<File | null>(null);
@@ -584,6 +596,7 @@ export default function MapPage() {
         isUpdateLotModalOpen,
         isDeleteLotModalOpen,
         isEnterpriseOverviewModalOpen,
+        isStreetGuidesReportModalOpen,
         deleteQuadraConfirm: Boolean(deleteQuadraConfirm),
         gisMapOverlayOpen,
       }),
@@ -597,6 +610,7 @@ export default function MapPage() {
       isUpdateLotModalOpen,
       isDeleteLotModalOpen,
       isEnterpriseOverviewModalOpen,
+      isStreetGuidesReportModalOpen,
       deleteQuadraConfirm,
       gisMapOverlayOpen,
     ],
@@ -928,6 +942,94 @@ export default function MapPage() {
       );
     } finally {
       setEnterpriseOverviewGenerating(false);
+    }
+  };
+
+  const streetGuidesReportSummary = useMemo(() => {
+    if (!selectedProject) {
+      return { streetCount: 0, totalLengthM: 0 };
+    }
+    const data = buildStreetGuidesReportData({
+      guides: streetGuides as Record<string, unknown>[],
+      project: selectedProject as Record<string, unknown>,
+    });
+    return {
+      streetCount: data.streetCount,
+      totalLengthM: data.totalLengthM,
+    };
+  }, [selectedProject, streetGuides]);
+
+  const buildStreetReportExportPayload = useCallback(() => {
+    if (!selectedProject || !user) return null;
+    const data = buildStreetGuidesReportData({
+      guides: streetGuides as Record<string, unknown>[],
+      project: selectedProject as Record<string, unknown>,
+    });
+    const companyName =
+      String(
+        (saasCompany as { fantasy_name?: string; name?: string } | null)
+          ?.fantasy_name ||
+          (saasCompany as { name?: string } | null)?.name ||
+          '',
+      ).trim() || '—';
+    const userName =
+      String(
+        (user as { name?: string; full_name?: string; email?: string }).name ||
+          (user as { full_name?: string }).full_name ||
+          user.email ||
+          '',
+      ).trim() || '—';
+    return {
+      data,
+      meta: {
+        projectName: String(selectedProject.name || ''),
+        companyName,
+        companyLogoUrl:
+          (saasCompany as { logo_url?: string | null } | null)?.logo_url ?? null,
+        userName,
+        emittedAt: new Date().toLocaleDateString('pt-BR'),
+        emittedAtIso: new Date().toISOString(),
+      },
+    };
+  }, [selectedProject, streetGuides, saasCompany, user]);
+
+  const handleExportStreetGuidesPdf = async () => {
+    const payload = buildStreetReportExportPayload();
+    if (!payload) return;
+    if (payload.data.streetCount === 0) {
+      alert('Nenhuma via com geometria válida para exportar.');
+      return;
+    }
+    setStreetGuidesReportPdfLoading(true);
+    try {
+      await downloadStreetGuidesReportPdf(payload);
+    } catch (err: unknown) {
+      console.error('STREET_GUIDES_REPORT_PDF_ERROR', err);
+      alert(
+        err instanceof Error ? err.message : 'Erro ao exportar PDF de vias.',
+      );
+    } finally {
+      setStreetGuidesReportPdfLoading(false);
+    }
+  };
+
+  const handleExportStreetGuidesExcel = async () => {
+    const payload = buildStreetReportExportPayload();
+    if (!payload) return;
+    if (payload.data.streetCount === 0) {
+      alert('Nenhuma via com geometria válida para exportar.');
+      return;
+    }
+    setStreetGuidesReportExcelLoading(true);
+    try {
+      await downloadStreetGuidesReportExcel(payload);
+    } catch (err: unknown) {
+      console.error('STREET_GUIDES_REPORT_EXCEL_ERROR', err);
+      alert(
+        err instanceof Error ? err.message : 'Erro ao exportar Excel de vias.',
+      );
+    } finally {
+      setStreetGuidesReportExcelLoading(false);
     }
   };
 
@@ -3333,6 +3435,22 @@ export default function MapPage() {
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha Geral</span>
              </button>
 
+             {/* Relatório de Vias */}
+             <button
+                type="button"
+                onClick={() => {
+                  if (!selectedProject) {
+                    alert('Selecione um empreendimento.');
+                    return;
+                  }
+                  setIsStreetGuidesReportModalOpen(true);
+                }}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${isStreetGuidesReportModalOpen ? 'bg-sky-600/20 text-sky-300' : 'bg-transparent text-sky-400/80 hover:bg-sky-600/15 hover:text-sky-300'}`}
+             >
+                <Route className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Relatório de Vias</span>
+             </button>
+
              {/* Prancha PDF */}
              <button
                 type="button"
@@ -3815,6 +3933,18 @@ export default function MapPage() {
           onClose={() => setIsEnterpriseOverviewModalOpen(false)}
           onOptionsChange={setEnterpriseOverviewOptions}
           onSubmit={handleGenerateEnterpriseOverview}
+        />
+
+        <StreetGuidesReportModal
+          open={isStreetGuidesReportModalOpen}
+          projectName={selectedProject?.name || ''}
+          streetCount={streetGuidesReportSummary.streetCount}
+          totalLengthM={streetGuidesReportSummary.totalLengthM}
+          loadingPdf={streetGuidesReportPdfLoading}
+          loadingExcel={streetGuidesReportExcelLoading}
+          onClose={() => setIsStreetGuidesReportModalOpen(false)}
+          onExportPdf={() => void handleExportStreetGuidesPdf()}
+          onExportExcel={() => void handleExportStreetGuidesExcel()}
         />
 
         {isImportShpModalOpen && (

@@ -613,6 +613,8 @@ function testSourceWiring() {
   assert(pdf.includes('drawStreetTableExtraPage'), 'página extra');
   assert(pdf.includes('resolveStreetLabelCollisions'), 'colisão');
   assert(pdf.includes('softOccupied'), 'soft occupied');
+  assert(pdf.includes('STREET_LABEL_RGB'), 'cor institucional');
+  assert(streets.includes('streetLabelAngleOnSheet'), 'ângulo na folha');
   assert(
     !fs.existsSync(path.join(ROOT, 'supabase/migrations/zzzz_enterprise_streets.sql')),
     'sem migration nova',
