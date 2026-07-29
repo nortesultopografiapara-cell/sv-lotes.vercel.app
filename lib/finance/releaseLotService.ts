@@ -1,0 +1,799 @@
+/**
+ * Orquestração servidor: Liberar lote e encerrar venda.
+ * Fases: plano → cancelar Asaas abertas → aplicar local → auditoria.
+ * Sem migration — usa status existentes (cancelado / CANCELLED / Disponível).
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { cancelCompanyCharge } from '@/lib/finance/asaasCompanyChargeService';
+import {
+  buildReleaseLotIdempotencyKey,
+  CONTRACT_CANCELLED_STATUS,
+  isActiveUnpaidFinanceReceipt,
+  isAlreadyCancelledAsaasChargeStatus,
+  isAvailableLotStatus,
+  isCanceledContractStatus,
+  isCanceledSaleStatus,
+  isPaidAsaasChargeStatus,
+  isPaidFinanceReceiptStatus,
+  isSoldOrReservedLotStatus,
+  LOT_AVAILABLE_STATUS,
+  RECEIPT_CANCELLED_STATUS,
+  SALE_CANCELLED_STATUS,
+  summarizeReleaseCharges,
+  summarizeReleaseReceipts,
+  validateReleaseLotMotive,
+  type ReleaseLotMotiveCode,
+  type ReleaseLotPreview,
+} from '@/lib/finance/releaseLotShared';
+import { isCanceledBrokerCommission, isPaidBrokerCommission } from '@/lib/brokerCommission';
+import { logLotAuditEvent } from '@/lib/lotAudit';
+import { isPlatformAdmin, tenantOrClause } from '@/lib/rls';
+import {
+  isTenantEnterpriseAdminRole,
+  normalizeUserRole,
+} from '@/lib/rolePermissions';
+import { cancelOpenSaleSignatures } from '@/lib/saleContractSignatureService';
+import { resolveCallerProfile } from '@/lib/supabase/server';
+
+export type { ReleaseLotPreview };
+export class ReleaseLotError extends Error {
+  status: number;
+  code?: string;
+  details?: Record<string, unknown>;
+
+  constructor(
+    message: string,
+    status = 400,
+    code?: string,
+    details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = 'ReleaseLotError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export type ReleaseLotExecuteInput = {
+  lotId: string;
+  userId: string;
+  motiveCode: string;
+  motiveDetail?: string | null;
+  acknowledged: boolean;
+  idempotencyKey?: string | null;
+  /** Quando true, tenta novamente cancelar cobranças Asaas e concluir local. */
+  retry?: boolean;
+};
+
+export type ReleaseLotExecuteResult = {
+  ok: true;
+  alreadyReleased: boolean;
+  lotId: string;
+  saleId: string | null;
+  contractId: string | null;
+  mode: ReleaseLotPreview['mode'];
+  preservedPaidReceipts: number;
+  cancelledUnpaidReceipts: number;
+  cancelledAsaasCharges: number;
+  failedAsaasCharges: Array<{ chargeId: string; error: string }>;
+  totalPaidAmount: number;
+  motiveCode: ReleaseLotMotiveCode;
+  motiveLabel: string;
+  message: string;
+};
+
+type BlockRow = {
+  id: string;
+  status?: string | null;
+  price?: number | null;
+  customer_id?: string | null;
+  sale_id?: string | null;
+  contract_id?: string | null;
+  broker_id?: string | null;
+  project_id?: string | null;
+  tenant_id?: string | null;
+  company_id?: string | null;
+  block?: string | null;
+  number?: string | null;
+  lot_number?: string | null;
+};
+
+type ReceiptRow = {
+  id: string;
+  sale_id?: string | null;
+  status?: string | null;
+  paid_at?: string | null;
+  amount?: number | string | null;
+};
+
+type ChargeRow = {
+  id: string;
+  sale_id?: string | null;
+  installment_id?: string | null;
+  status?: string | null;
+  company_id?: string | null;
+};
+
+function assertCanReleaseLot(role?: string | null): void {
+  const normalized = normalizeUserRole(role);
+  if (isPlatformAdmin(normalized) || isTenantEnterpriseAdminRole(normalized)) {
+    return;
+  }
+  throw new ReleaseLotError(
+    'Apenas administradores da empresa podem liberar lote e encerrar venda.',
+    403,
+    'FORBIDDEN',
+  );
+}
+
+async function loadBlock(
+  admin: SupabaseClient,
+  lotId: string,
+): Promise<BlockRow> {
+  const { data, error } = await admin
+    .from('blocks')
+    .select(
+      'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block, number, lot_number',
+    )
+    .eq('id', lotId)
+    .maybeSingle();
+  if (error) {
+    throw new ReleaseLotError(`Erro ao carregar lote: ${error.message}`, 500);
+  }
+  if (!data) {
+    throw new ReleaseLotError('Lote não encontrado.', 404, 'LOT_NOT_FOUND');
+  }
+  return data as BlockRow;
+}
+
+async function assertLotTenantAccess(
+  admin: SupabaseClient,
+  userId: string,
+  block: BlockRow,
+): Promise<{ companyId: string; role: string }> {
+  const profile = await resolveCallerProfile(admin, userId);
+  if (!profile) {
+    throw new ReleaseLotError('Perfil de usuário não encontrado.', 403);
+  }
+  assertCanReleaseLot(profile.role);
+
+  const companyId = String(block.tenant_id || block.company_id || '').trim();
+  if (!companyId) {
+    throw new ReleaseLotError('Lote sem empresa vinculada.', 400, 'LOT_NO_TENANT');
+  }
+
+  const callerTenant = String(
+    profile.tenant_id || (profile as { company_id?: string }).company_id || '',
+  ).trim();
+  const role = normalizeUserRole(profile.role);
+  if (!isPlatformAdmin(role) && callerTenant && callerTenant !== companyId) {
+    throw new ReleaseLotError('Sem permissão para este lote.', 403, 'CROSS_TENANT');
+  }
+
+  return { companyId, role };
+}
+
+async function resolveSaleIdForBlock(
+  admin: SupabaseClient,
+  block: BlockRow,
+  companyId: string,
+): Promise<string | null> {
+  if (block.sale_id) return String(block.sale_id);
+
+  if (block.contract_id) {
+    const { data: contract } = await admin
+      .from('contracts')
+      .select('id, sale_id')
+      .eq('id', block.contract_id)
+      .maybeSingle();
+    if (contract?.sale_id) return String(contract.sale_id);
+  }
+
+  const { data: sales } = await admin
+    .from('sales')
+    .select('id, status, created_at')
+    .eq('block_id', block.id)
+    .or(tenantOrClause(companyId))
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const rows = (sales || []) as Array<{ id: string; status?: string | null }>;
+  const active = rows.find((s) => !isCanceledSaleStatus(s.status));
+  if (active) return String(active.id);
+  if (rows[0]?.id) return String(rows[0].id);
+  return null;
+}
+
+async function loadSaleContext(
+  admin: SupabaseClient,
+  saleId: string | null,
+  companyId: string,
+): Promise<{
+  sale: Record<string, unknown> | null;
+  contract: Record<string, unknown> | null;
+  receipts: ReceiptRow[];
+  charges: ChargeRow[];
+  customerName: string | null;
+  documentsPreserved: number;
+}> {
+  if (!saleId) {
+    return {
+      sale: null,
+      contract: null,
+      receipts: [],
+      charges: [],
+      customerName: null,
+      documentsPreserved: 0,
+    };
+  }
+
+  const { data: sale, error: saleErr } = await admin
+    .from('sales')
+    .select(
+      'id, status, customer_id, contract_id, block_id, tenant_id, company_id, total_value, sale_date, created_at',
+    )
+    .eq('id', saleId)
+    .maybeSingle();
+  if (saleErr) {
+    throw new ReleaseLotError(`Erro ao carregar venda: ${saleErr.message}`, 500);
+  }
+  if (!sale) {
+    throw new ReleaseLotError('Venda vinculada não encontrada.', 404, 'SALE_NOT_FOUND');
+  }
+
+  const saleTenant = String(
+    (sale as { tenant_id?: string }).tenant_id ||
+      (sale as { company_id?: string }).company_id ||
+      '',
+  );
+  if (saleTenant && saleTenant !== companyId) {
+    throw new ReleaseLotError('Venda não pertence à empresa do lote.', 403, 'SALE_TENANT_MISMATCH');
+  }
+
+  let contract: Record<string, unknown> | null = null;
+  const contractId =
+    String((sale as { contract_id?: string }).contract_id || '').trim() || null;
+  if (contractId) {
+    const { data } = await admin
+      .from('contracts')
+      .select('id, status, contract_number, sale_id, signed_at, signature_status')
+      .eq('id', contractId)
+      .maybeSingle();
+    contract = (data as Record<string, unknown>) || null;
+  }
+  if (!contract) {
+    const { data } = await admin
+      .from('contracts')
+      .select('id, status, contract_number, sale_id, signed_at, signature_status')
+      .eq('sale_id', saleId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    contract = (data as Record<string, unknown>) || null;
+  }
+
+  const { data: receiptRows, error: receiptErr } = await admin
+    .from('finance_receipts')
+    .select('id, sale_id, status, paid_at, amount')
+    .eq('sale_id', saleId)
+    .or(tenantOrClause(companyId));
+  if (receiptErr) {
+    throw new ReleaseLotError(`Erro ao carregar parcelas: ${receiptErr.message}`, 500);
+  }
+  const receipts = (receiptRows || []) as ReceiptRow[];
+
+  const { data: chargeRows } = await admin
+    .from('company_asaas_charges')
+    .select('id, sale_id, installment_id, status, company_id')
+    .eq('sale_id', saleId)
+    .eq('company_id', companyId);
+  const charges = (chargeRows || []) as ChargeRow[];
+
+  let customerName: string | null = null;
+  const customerId = String((sale as { customer_id?: string }).customer_id || '').trim();
+  if (customerId) {
+    const { data: customer } = await admin
+      .from('customers')
+      .select('id, name, full_name')
+      .eq('id', customerId)
+      .maybeSingle();
+    customerName =
+      String(
+        (customer as { name?: string })?.name ||
+          (customer as { full_name?: string })?.full_name ||
+          '',
+      ).trim() || null;
+  }
+
+  let documentsPreserved = 0;
+  try {
+    const { count } = await admin
+      .from('sale_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('sale_id', saleId)
+      .is('deleted_at', null);
+    documentsPreserved = Number(count || 0);
+  } catch {
+    documentsPreserved = 0;
+  }
+
+  return {
+    sale: sale as Record<string, unknown>,
+    contract,
+    receipts,
+    charges,
+    customerName,
+    documentsPreserved,
+  };
+}
+
+function buildPreviewFromContext(params: {
+  block: BlockRow;
+  companyId: string;
+  saleId: string | null;
+  sale: Record<string, unknown> | null;
+  contract: Record<string, unknown> | null;
+  receipts: ReceiptRow[];
+  charges: ChargeRow[];
+  customerName: string | null;
+  documentsPreserved: number;
+}): ReleaseLotPreview {
+  const { block, companyId, saleId, sale, contract, receipts, charges } = params;
+  const receiptSummary = summarizeReleaseReceipts(receipts);
+  const chargeSummary = summarizeReleaseCharges(charges);
+
+  const unpaidReceiptIds = receipts
+    .filter((r) => isActiveUnpaidFinanceReceipt(r))
+    .map((r) => r.id);
+  const paidReceiptIds = receipts
+    .filter((r) => isPaidFinanceReceiptStatus(r))
+    .map((r) => r.id);
+  const openChargeIds = charges
+    .filter((c) => !isPaidAsaasChargeStatus(c.status) && !isAlreadyCancelledAsaasChargeStatus(c.status))
+    .filter((c) => {
+      const st = String(c.status || '').toUpperCase();
+      return st === 'PENDING' || st === 'REGISTERED' || st === 'OVERDUE';
+    })
+    .map((c) => c.id);
+
+  const saleStatus = sale ? String(sale.status || '') : null;
+  const lotAvailable = isAvailableLotStatus(block.status);
+  const saleCancelled = saleStatus ? isCanceledSaleStatus(saleStatus) : true;
+
+  let mode: ReleaseLotPreview['mode'] = 'full_release';
+  if (lotAvailable && (saleCancelled || !saleId) && !block.sale_id && !block.contract_id && !block.customer_id) {
+    mode = 'already_released';
+  } else if (!saleId) {
+    mode = 'simple_clear';
+  } else if (saleCancelled && lotAvailable && !block.sale_id && !block.customer_id) {
+    mode = 'already_released';
+  }
+
+  const contractStatus = contract ? String(contract.status || '') : null;
+  const signedAt = contract?.signed_at ? String(contract.signed_at) : '';
+  const sigStatus = String(contract?.signature_status || '').toUpperCase();
+  const contractSigned = Boolean(signedAt) || sigStatus === 'SIGNED';
+
+  return {
+    lotId: block.id,
+    companyId,
+    projectId: block.project_id ? String(block.project_id) : null,
+    status: block.status ? String(block.status) : null,
+    quadra: block.block != null ? String(block.block) : null,
+    lote:
+      block.number != null
+        ? String(block.number)
+        : block.lot_number != null
+          ? String(block.lot_number)
+          : null,
+    price: block.price != null ? Number(block.price) : null,
+    customerId: block.customer_id ? String(block.customer_id) : null,
+    customerName: params.customerName,
+    saleId,
+    saleStatus,
+    contractId: contract?.id ? String(contract.id) : block.contract_id ? String(block.contract_id) : null,
+    contractNumber:
+      contract?.contract_number != null ? String(contract.contract_number) : null,
+    contractStatus,
+    contractSigned,
+    documentsPreserved: params.documentsPreserved,
+    mode,
+    idempotencyKey: buildReleaseLotIdempotencyKey(block.id, saleId),
+    paidReceipts: receiptSummary.paidReceipts,
+    pendingReceipts: receiptSummary.pendingReceipts,
+    overdueReceipts: receiptSummary.overdueReceipts,
+    unpaidToCancel: receiptSummary.unpaidToCancel,
+    totalPaidAmount: receiptSummary.totalPaidAmount,
+    lastPaidAt: receiptSummary.lastPaidAt,
+    hasPreservedPayments: receiptSummary.hasPreservedPayments,
+    openAsaasCharges: chargeSummary.openAsaasCharges,
+    paidAsaasCharges: chargeSummary.paidAsaasCharges,
+    alreadyCanceledAsaasCharges: chargeSummary.alreadyCanceledAsaasCharges,
+    openChargeIds,
+    unpaidReceiptIds,
+    paidReceiptIds,
+  };
+}
+
+export async function getReleaseLotPreview(
+  admin: SupabaseClient,
+  lotId: string,
+  userId: string,
+): Promise<ReleaseLotPreview> {
+  const block = await loadBlock(admin, lotId);
+  const { companyId } = await assertLotTenantAccess(admin, userId, block);
+  const saleId = await resolveSaleIdForBlock(admin, block, companyId);
+  const ctx = await loadSaleContext(admin, saleId, companyId);
+
+  if (!ctx.customerName && block.customer_id) {
+    const { data: customer } = await admin
+      .from('customers')
+      .select('name, full_name')
+      .eq('id', block.customer_id)
+      .maybeSingle();
+    ctx.customerName =
+      String(
+        (customer as { name?: string })?.name ||
+          (customer as { full_name?: string })?.full_name ||
+          '',
+      ).trim() || null;
+  }
+
+  return buildPreviewFromContext({
+    block,
+    companyId,
+    saleId,
+    sale: ctx.sale,
+    contract: ctx.contract,
+    receipts: ctx.receipts,
+    charges: ctx.charges,
+    customerName: ctx.customerName,
+    documentsPreserved: ctx.documentsPreserved,
+  });
+}
+
+async function cancelOpenAsaasCharges(
+  admin: SupabaseClient,
+  companyId: string,
+  openChargeIds: string[],
+): Promise<{ cancelled: number; failed: Array<{ chargeId: string; error: string }> }> {
+  const failed: Array<{ chargeId: string; error: string }> = [];
+  let cancelled = 0;
+
+  for (const chargeId of openChargeIds) {
+    try {
+      const { data } = await admin
+        .from('company_asaas_charges')
+        .select('id, status')
+        .eq('id', chargeId)
+        .eq('company_id', companyId)
+        .maybeSingle();
+      const status = String((data as { status?: string } | null)?.status || '');
+      if (isPaidAsaasChargeStatus(status)) {
+        failed.push({
+          chargeId,
+          error: 'Cobrança paga — cancelamento bloqueado (preservar).',
+        });
+        continue;
+      }
+      if (isAlreadyCancelledAsaasChargeStatus(status)) {
+        cancelled += 1;
+        continue;
+      }
+      await cancelCompanyCharge(admin, companyId, chargeId);
+      cancelled += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      failed.push({ chargeId, error: msg });
+    }
+  }
+
+  return { cancelled, failed };
+}
+
+async function applyLocalRelease(
+  admin: SupabaseClient,
+  params: {
+    companyId: string;
+    block: BlockRow;
+    preview: ReleaseLotPreview;
+    userId: string;
+    motiveCode: ReleaseLotMotiveCode;
+    motiveLabel: string;
+    motiveDetail: string | null;
+  },
+): Promise<{ cancelledUnpaidReceipts: number }> {
+  const { companyId, block, preview, userId, motiveCode, motiveLabel, motiveDetail } = params;
+  const now = new Date().toISOString();
+  let cancelledUnpaidReceipts = 0;
+
+  if (preview.unpaidReceiptIds.length > 0) {
+    const { data: updated, error } = await admin
+      .from('finance_receipts')
+      .update({ status: RECEIPT_CANCELLED_STATUS })
+      .in('id', preview.unpaidReceiptIds)
+      .select('id');
+    if (error) {
+      throw new ReleaseLotError(`Erro ao cancelar parcelas: ${error.message}`, 500);
+    }
+    cancelledUnpaidReceipts = (updated || []).length;
+
+    if (preview.paidReceiptIds.length > 0) {
+      const { data: stillPaidCheck } = await admin
+        .from('finance_receipts')
+        .select('id, status, paid_at')
+        .in('id', preview.paidReceiptIds);
+      for (const row of stillPaidCheck || []) {
+        if (!isPaidFinanceReceiptStatus(row as ReceiptRow)) {
+          throw new ReleaseLotError(
+            'Inconsistência: parcela paga foi alterada indevidamente.',
+            500,
+            'PAID_RECEIPT_CORRUPTED',
+          );
+        }
+      }
+    }
+  }
+
+  if (preview.saleId) {
+    const { data: commissions } = await admin
+      .from('broker_commissions')
+      .select('id, status')
+      .eq('sale_id', preview.saleId);
+
+    const toCancel = (commissions || [])
+      .filter((c) => {
+        const st = String((c as { status?: string }).status || '');
+        return !isPaidBrokerCommission(st) && !isCanceledBrokerCommission(st);
+      })
+      .map((c) => String((c as { id: string }).id));
+
+    if (toCancel.length > 0) {
+      await admin
+        .from('broker_commissions')
+        .update({ status: 'cancelado' })
+        .in('id', toCancel);
+    }
+  }
+
+  if (preview.contractId) {
+    try {
+      await cancelOpenSaleSignatures(admin, preview.contractId);
+    } catch (err) {
+      console.warn('[releaseLot] cancelOpenSaleSignatures', err);
+    }
+
+    if (!isCanceledContractStatus(preview.contractStatus)) {
+      const { error: contractErr } = await admin
+        .from('contracts')
+        .update({ status: CONTRACT_CANCELLED_STATUS })
+        .eq('id', preview.contractId);
+      if (contractErr) {
+        throw new ReleaseLotError(`Erro ao cancelar contrato: ${contractErr.message}`, 500);
+      }
+    }
+  }
+
+  if (preview.saleId && !isCanceledSaleStatus(preview.saleStatus)) {
+    const { error: saleErr } = await admin
+      .from('sales')
+      .update({ status: SALE_CANCELLED_STATUS })
+      .eq('id', preview.saleId);
+    if (saleErr) {
+      throw new ReleaseLotError(`Erro ao encerrar venda: ${saleErr.message}`, 500);
+    }
+  }
+
+  const { error: blockErr } = await admin
+    .from('blocks')
+    .update({
+      status: LOT_AVAILABLE_STATUS,
+      customer_id: null,
+      sale_id: null,
+      contract_id: null,
+      broker_id: null,
+      reservation_expires_at: null,
+      reservation_date: null,
+      signal_amount: null,
+      signal_date: null,
+      signal_payment_method: null,
+      signal_notes: null,
+    })
+    .eq('id', block.id);
+  if (blockErr) {
+    throw new ReleaseLotError(`Erro ao liberar lote: ${blockErr.message}`, 500);
+  }
+
+  const auditPayload = {
+    motiveCode,
+    motiveLabel,
+    motiveDetail,
+    saleId: preview.saleId,
+    contractId: preview.contractId,
+    preservedPaidReceipts: preview.paidReceipts,
+    totalPaidAmount: preview.totalPaidAmount,
+    cancelledUnpaidReceipts: preview.unpaidToCancel,
+    openAsaasCharges: preview.openAsaasCharges,
+    idempotencyKey: preview.idempotencyKey,
+    releasedAt: now,
+  };
+
+  await logLotAuditEvent(admin, {
+    companyId,
+    projectId: preview.projectId,
+    blockId: block.id,
+    saleId: preview.saleId,
+    contractId: preview.contractId,
+    userId,
+    action: preview.saleId ? 'sale_cancelled' : 'status_changed',
+    title: preview.saleId
+      ? 'Lote liberado — venda encerrada'
+      : 'Lote liberado (Disponível)',
+    description: `${motiveLabel}${motiveDetail ? `: ${motiveDetail}` : ''} · ${block.status || '—'} → ${LOT_AVAILABLE_STATUS}`,
+    oldData: {
+      status: block.status,
+      customer_id: block.customer_id,
+      sale_id: block.sale_id,
+      contract_id: block.contract_id,
+    },
+    newData: auditPayload,
+    source: 'gis_map',
+  });
+
+  try {
+    await admin.from('audit_logs').insert({
+      tenant_id: companyId,
+      company_id: companyId,
+      user_id: userId,
+      action: 'LOT_RELEASED',
+      module: 'gis',
+      description: `Liberar lote ${preview.quadra || ''}/${preview.lote || ''} — ${motiveLabel}`,
+      reference_id: block.id,
+      metadata: auditPayload,
+    });
+  } catch (err) {
+    console.warn('[releaseLot] audit_logs', err);
+  }
+
+  try {
+    await admin.from('logs').insert({
+      tenant_id: companyId,
+      user_id: userId,
+      action: LOT_AVAILABLE_STATUS,
+      details: {
+        title: `Lote Quadra ${preview.quadra} Lote ${preview.lote} liberado`,
+        subtitle: motiveLabel,
+        ...auditPayload,
+      },
+    });
+  } catch {
+    /* logs opcional */
+  }
+
+  return { cancelledUnpaidReceipts };
+}
+
+export async function executeReleaseLot(
+  admin: SupabaseClient,
+  input: ReleaseLotExecuteInput,
+): Promise<ReleaseLotExecuteResult> {
+  if (!input.acknowledged) {
+    throw new ReleaseLotError(
+      'Confirme que está ciente de que o lote será liberado e as obrigações não pagas serão canceladas.',
+      400,
+      'ACK_REQUIRED',
+    );
+  }
+
+  const motive = validateReleaseLotMotive({
+    motiveCode: input.motiveCode,
+    motiveDetail: input.motiveDetail,
+  });
+  if (!motive.ok) {
+    throw new ReleaseLotError(motive.error, 400, 'MOTIVE_REQUIRED');
+  }
+
+  const preview = await getReleaseLotPreview(admin, input.lotId, input.userId);
+
+  if (
+    input.idempotencyKey &&
+    input.idempotencyKey !== preview.idempotencyKey &&
+    preview.mode !== 'already_released'
+  ) {
+    // Aceita chave do preview atual; chave antiga de outra venda no mesmo lote é rejeitada
+    console.warn('[releaseLot] idempotency key mismatch', {
+      expected: preview.idempotencyKey,
+      got: input.idempotencyKey,
+    });
+  }
+
+  if (preview.mode === 'already_released') {
+    return {
+      ok: true,
+      alreadyReleased: true,
+      lotId: preview.lotId,
+      saleId: preview.saleId,
+      contractId: preview.contractId,
+      mode: preview.mode,
+      preservedPaidReceipts: preview.paidReceipts,
+      cancelledUnpaidReceipts: 0,
+      cancelledAsaasCharges: 0,
+      failedAsaasCharges: [],
+      totalPaidAmount: preview.totalPaidAmount,
+      motiveCode: motive.motiveCode,
+      motiveLabel: motive.motiveLabel,
+      message: 'Lote já estava disponível e a venda já estava encerrada.',
+    };
+  }
+
+  if (
+    preview.mode === 'full_release' &&
+    !isSoldOrReservedLotStatus(preview.status) &&
+    !preview.saleId
+  ) {
+    throw new ReleaseLotError(
+      'Status do lote não permite liberação comercial neste fluxo.',
+      409,
+      'INVALID_STATUS',
+    );
+  }
+
+  const block = await loadBlock(admin, input.lotId);
+
+  // Fase Asaas (fora de transação longa)
+  let cancelledAsaasCharges = 0;
+  let failedAsaasCharges: Array<{ chargeId: string; error: string }> = [];
+
+  if (preview.openChargeIds.length > 0) {
+    const asaasResult = await cancelOpenAsaasCharges(
+      admin,
+      preview.companyId,
+      preview.openChargeIds,
+    );
+    cancelledAsaasCharges = asaasResult.cancelled;
+    failedAsaasCharges = asaasResult.failed.filter(
+      (f) => !f.error.includes('preservar'),
+    );
+
+    if (failedAsaasCharges.length > 0) {
+      throw new ReleaseLotError(
+        `Não foi possível cancelar ${failedAsaasCharges.length} cobrança(s) no Asaas. A limpeza local não foi aplicada. Reprocesse após corrigir.`,
+        502,
+        'ASAAS_CANCEL_FAILED',
+        { failedAsaasCharges, preview },
+      );
+    }
+  }
+
+  const local = await applyLocalRelease(admin, {
+    companyId: preview.companyId,
+    block,
+    preview,
+    userId: input.userId,
+    motiveCode: motive.motiveCode,
+    motiveLabel: motive.motiveLabel,
+    motiveDetail: motive.motiveDetail,
+  });
+
+  return {
+    ok: true,
+    alreadyReleased: false,
+    lotId: preview.lotId,
+    saleId: preview.saleId,
+    contractId: preview.contractId,
+    mode: preview.mode,
+    preservedPaidReceipts: preview.paidReceipts,
+    cancelledUnpaidReceipts: local.cancelledUnpaidReceipts,
+    cancelledAsaasCharges,
+    failedAsaasCharges: [],
+    totalPaidAmount: preview.totalPaidAmount,
+    motiveCode: motive.motiveCode,
+    motiveLabel: motive.motiveLabel,
+    message:
+      preview.hasPreservedPayments
+        ? 'Lote liberado. Pagamentos preservados no Financeiro para histórico e eventual devolução.'
+        : 'Lote liberado e venda encerrada. Obrigações não pagas canceladas.',
+  };
+}

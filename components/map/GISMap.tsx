@@ -125,6 +125,7 @@ import {
   readOfficialSideFromSegmentRow,
 } from "@/lib/officialSidePersist";
 import { DefineOfficialSideModal } from "@/components/map/DefineOfficialSideModal";
+import { ReleaseLotConfirmModal } from "@/components/map/ReleaseLotConfirmModal";
 import {
   calculateLotDimensions,
   classifyLotSidesFromSegments,
@@ -1263,6 +1264,34 @@ const isLotSold = (status?: string) => {
   return ["vendido", "sold", "venda", "sold_out"].includes(normalized);
 };
 
+const isLotReserved = (status?: string) => {
+  const normalized = String(status || "").toLowerCase().trim();
+  return normalized === "reservado" || normalized === "reserved";
+};
+
+/** Vendido/reservado ou vínculo comercial — exige fluxo servidor de liberação. */
+const lotNeedsReleaseConfirm = (lot: {
+  status?: string | null;
+  saleId?: string | null;
+  sale_id?: string | null;
+  contractId?: string | null;
+  contract_id?: string | null;
+  customerId?: string | null;
+  customer_id?: string | null;
+}) => {
+  if (isLotSold(lot.status || undefined) || isLotReserved(lot.status || undefined)) {
+    return true;
+  }
+  return Boolean(
+    lot.saleId ||
+      lot.sale_id ||
+      lot.contractId ||
+      lot.contract_id ||
+      lot.customerId ||
+      lot.customer_id,
+  );
+};
+
 const isVendidoStatus = (status: string) => {
   const s = String(status || "").toLowerCase().trim();
   return s === "vendido" || s === "sold";
@@ -2279,7 +2308,7 @@ function LotPopupContent({
           <div className="flex gap-1">
             <button
               onClick={() => {
-                if (isSold) {
+                if (lotNeedsReleaseConfirm(lot)) {
                   onRequestClear(lot, currentPrice ?? 0);
                 } else {
                   onAction(lot, "Disponível", currentPrice ?? 0);
@@ -2526,171 +2555,6 @@ function DrawStreetInteraction({
         />
       ))}
     </>
-  );
-}
-
-function ClearConfirmModal({
-  lot,
-  price,
-  userEmail,
-  userRole,
-  onClose,
-  onConfirm,
-}: {
-  lot: any;
-  price: number;
-  userEmail: string | undefined;
-  userRole: string | undefined;
-  onClose: () => void;
-  onConfirm: (password: string) => void;
-}) {
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const passwordInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setTimeout(() => passwordInputRef.current?.focus(), 100);
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password) {
-      setError("Informe sua senha para continuar.");
-      return;
-    }
-
-    if (!userRole || !userRole.toUpperCase().includes("ADMIN")) {
-      setError("Apenas administradores podem limpar lotes vendidos ou reservados.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: userEmail || "",
-        password: password,
-      });
-
-      if (signInError) {
-        setError("Senha inválida. A limpeza foi bloqueada.");
-        return;
-      }
-      
-      // If signed in but no user or session
-      if (!data.user) {
-        setError("Erro de autenticação.");
-        return;
-      }
-
-      onConfirm(password);
-    } catch (err) {
-      setError("Erro ao validar senha.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div 
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans pointer-events-auto"
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <div className="bg-white w-full max-w-md rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 z-[10000]">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-bold text-lg text-gray-900">Confirmar limpeza do lote</h3>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="p-5">
-          <p className="text-sm text-gray-600 leading-relaxed mb-4">
-            Esta ação irá remover o cliente vinculado, limpar o status de venda/reserva e devolver o lote para <strong>DISPONÍVEL</strong>. Esta ação não pode ser desfeita.
-          </p>
-          
-          <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-1 mb-5 text-sm">
-            <div className="flex justify-between blur-0">
-              <span className="text-gray-500">Projeto:</span>
-              <span className="font-medium text-gray-900 truncate max-w-[150px]">{lot.projectName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Quadra / Lote:</span>
-              <span className="font-medium text-gray-900">{lot.block} / {lot.number}</span>
-            </div>
-            {lot.customerName && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Cliente atual:</span>
-                <span className="font-medium text-gray-900 truncate max-w-[150px]">{lot.customerName}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-gray-500">Status atual:</span>
-              <span className="font-medium text-gray-900">{lot.status}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Valor:</span>
-              <span className="font-medium text-gray-900">
-                {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(price)}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs mb-5">
-            <strong>Aviso:</strong> Este lote possui venda/contrato/financeiro vinculado. A limpeza do lote <strong>não</strong> apaga esses registros. Para cancelar oficialmente, use o módulo Contratos ou Financeiro.
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <div className="mb-1 relative">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Digite sua senha de administrador para confirmar:
-              </label>
-              <div className="relative">
-                <input
-                  ref={passwordInputRef}
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                  placeholder="Senha de acesso"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            {error && <p className="text-red-500 text-sm mt-1 mb-2 font-medium">{error}</p>}
-
-            <div className="flex gap-3 pt-4 mt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold rounded-lg transition-colors text-sm"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={loading || password.trim().length === 0}
-                className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-colors text-sm flex justify-center items-center gap-2 ${loading || password.trim().length === 0 ? 'bg-red-400 cursor-not-allowed text-white' : 'bg-red-600 text-white hover:bg-red-700'}`}
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar Limpeza"}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -4654,6 +4518,16 @@ export default function GISMap({
     if (blockOwnerWriteOnClient(user.role)) {
       return;
     }
+
+    // Liberação comercial (vendido/reservado → Disponível) só via API /release
+    if (
+      newStatusString === "Disponível" &&
+      lotNeedsReleaseConfirm(lot)
+    ) {
+      setClearConfirmModal({ lot, price: newPrice !== undefined ? newPrice : lot.price });
+      return;
+    }
+
     setActionLoading(lot.id);
     const newStatus = newStatusString;
     const finalPrice = newPrice !== undefined ? newPrice : lot.price;
@@ -4703,6 +4577,11 @@ export default function GISMap({
       const updatePayload: any = { status: newStatus, price: finalPrice };
       if (newStatus === "Disponível") {
         updatePayload.customer_id = null;
+        updatePayload.sale_id = null;
+        updatePayload.contract_id = null;
+        updatePayload.broker_id = null;
+        updatePayload.reservation_expires_at = null;
+        updatePayload.reservation_date = null;
       }
 
       gisPerfLotEditMark('db_start');
@@ -5885,15 +5764,55 @@ export default function GISMap({
       />
 
       {clearConfirmModal && (
-        <ClearConfirmModal
+        <ReleaseLotConfirmModal
           lot={clearConfirmModal.lot}
           price={clearConfirmModal.price}
           userEmail={user?.email}
           userRole={user?.role}
           onClose={() => setClearConfirmModal(null)}
-          onConfirm={async () => {
-            await handleLotAction(clearConfirmModal.lot, "Disponível", clearConfirmModal.price);
+          onSuccess={(result) => {
+            const lot = clearConfirmModal.lot;
+            startTransition(() => {
+              setLots((prev) =>
+                prev.map((l) =>
+                  l.id === lot.id
+                    ? {
+                        ...l,
+                        status: "Disponível",
+                        customer_id: null,
+                        customerId: null,
+                        customerName: null,
+                        sale_id: null,
+                        saleId: null,
+                        contract_id: null,
+                        contractId: null,
+                        broker_id: null,
+                      }
+                    : l,
+                ),
+              );
+              setBlocksData((prev) =>
+                prev.map((l) =>
+                  l.id === lot.id
+                    ? {
+                        ...l,
+                        status: "Disponível",
+                        customer_id: null,
+                        customerId: null,
+                        customerName: null,
+                        sale_id: null,
+                        saleId: null,
+                        contract_id: null,
+                        contractId: null,
+                        broker_id: null,
+                      }
+                    : l,
+                ),
+              );
+            });
             setClearConfirmModal(null);
+            onEnterpriseValueRefresh?.();
+            alert(result.message);
           }}
         />
       )}
