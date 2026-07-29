@@ -19,11 +19,17 @@ import {
   formatCoverCompanyDocument,
   formatCoverCompanyPhone,
   mapCompanyRowToCoverInfo,
+  resolveCarneCoverPortalBaseUrl,
   resolveCoverDisplayName,
   resolveCoverLegalName,
   wrapTextToLines,
 } from '../lib/finance/saleCarneCoverShared';
-import { buildSaleCarneCoverPdfBytes } from '../lib/finance/saleCarneCoverPdf';
+import {
+  INFO_CARD_H,
+  assertFrontFooterSpacing,
+  buildSaleCarneCoverPdfBytes,
+  computeFrontFooterLayout,
+} from '../lib/finance/saleCarneCoverPdf';
 import { CLIENT_PORTAL_PATH } from '../lib/portal-cliente/config';
 
 function assert(cond: boolean, msg: string) {
@@ -126,7 +132,61 @@ function testPortalUrl() {
     buildClientPortalDisplayUrl(url) === 'www.svlotes.com.br/portal-cliente',
     'display sem protocolo',
   );
+  assert(
+    resolveCarneCoverPortalBaseUrl() === 'https://www.svlotes.com.br' ||
+      !resolveCarneCoverPortalBaseUrl().includes('vercel.app'),
+    'base sem vercel.app',
+  );
   console.log('OK testPortalUrl');
+}
+
+function testPortalUrlNeverHardcodesVercelDeploy() {
+  const shared = read('lib/finance/saleCarneCoverShared.ts');
+  const service = read('lib/finance/saleCarneCoverService.ts');
+  const pdf = read('lib/finance/saleCarneCoverPdf.ts');
+  for (const src of [shared, service, pdf]) {
+    assert(!/sv-lotes-vercel-[a-z0-9]+\.vercel\.app/i.test(src), 'sem deploy Vercel fixo');
+    assert(!src.includes('VERCEL_URL'), 'capa não usa VERCEL_URL no PDF');
+  }
+  assert(shared.includes('resolveCarneCoverPortalBaseUrl'), 'resolver dedicado');
+  assert(shared.includes('SALE_CARNE_COVER_CANONICAL_ORIGIN'), 'origem canônica');
+  assert(service.includes('resolveCarneCoverPortalBaseUrl'), 'service usa resolver');
+  console.log('OK testPortalUrlNeverHardcodesVercelDeploy');
+}
+
+function testFrontFooterSpacing() {
+  const layout = computeFrontFooterLayout(8);
+  assert(assertFrontFooterSpacing(layout), 'espaçamento cards/frase/ouro');
+  assert(layout.infoCardH === INFO_CARD_H, 'altura cards exportada');
+  assert(layout.infoCardH < 14, 'cards menores que 14mm anteriores');
+  assert(
+    layout.messageY >= layout.cardsBottomY + layout.marginBelowCards - 0.05,
+    'margem abaixo dos cards',
+  );
+  assert(
+    layout.messageY <= layout.goldLineY - layout.marginAboveGold + 0.05,
+    'margem acima do ouro',
+  );
+  assert(layout.cardsBottomY < layout.messageY, 'frase abaixo dos cards');
+  assert(layout.messageY < layout.goldLineY, 'frase acima do ouro');
+  console.log('OK testFrontFooterSpacing');
+}
+
+function testSvLotesTechCredit() {
+  const pdf = read('lib/finance/saleCarneCoverPdf.ts');
+  assert(pdf.includes('Tecnologia fornecida por SV LOTES'), 'crédito presente');
+  assert(pdf.includes('www.svlotes.com.br'), 'domínio presente');
+  assert(pdf.includes('loadSvLotesLogoDataUrl'), 'carrega logo institucional');
+  assert(pdf.includes('SV_LOTES_COVER_LOGO_ASSET'), 'asset exportado');
+  assert(pdf.includes("'/logo-sv-lotes.png'") || pdf.includes('SV_LOTES_LOGO_PATH'), 'asset existente');
+  assert(pdf.includes('drawSvLotesTechCredit'), 'função de assinatura');
+  assert(!pdf.includes('Experimente agora'), 'sem CTA comercial');
+  assert(!pdf.includes('99195-5918'), 'sem telefone comercial SV');
+  // Logo da empresa continua no header via input.logoDataUrl
+  assert(pdf.includes('input.logoDataUrl'), 'logo da empresa preservado');
+  const logoFile = path.join(__dirname, '../public/logo-sv-lotes.png');
+  assert(fs.existsSync(logoFile), 'public/logo-sv-lotes.png existe');
+  console.log('OK testSvLotesTechCredit');
 }
 
 function testFilenameSanitize() {
@@ -314,6 +374,10 @@ function testPdfLayoutGuards() {
   assert(pdf.includes('ÁREA EM BRANCO'), 'área em branco');
   assert(pdf.includes('deletePage'), 'remove página extra');
   assert(pdf.includes('QRCode'), 'QR Code');
+  assert(pdf.includes('computeFrontFooterLayout'), 'layout footer explícito');
+  assert(pdf.includes('messageY'), 'messageY explícito');
+  assert(pdf.includes('cardsBottomY'), 'cardsBottomY explícito');
+  assert(pdf.includes('goldLineY'), 'goldLineY explícito');
   console.log('OK testPdfLayoutGuards');
 }
 
@@ -324,6 +388,7 @@ async function main() {
   testCompanyFormatting();
   testMissingFieldsAndStatus();
   testPortalUrl();
+  testPortalUrlNeverHardcodesVercelDeploy();
   testFilenameSanitize();
   testLongTextHelpers();
   testNoFixedMenezesFallbacksInSource();
@@ -332,6 +397,8 @@ async function main() {
   testCompanySelectHasNoRazaoSocial();
   testCompanyNameMapping();
   testNoMigrationCreated();
+  testFrontFooterSpacing();
+  testSvLotesTechCredit();
   testPdfLayoutGuards();
   await testPdfSinglePageNoForbidden();
   console.log('mandatory-sale-carne-cover-tests: all passed');

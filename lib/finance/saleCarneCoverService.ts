@@ -12,6 +12,7 @@ import {
   collectCoverMissingFields,
   countCarneCoverInstallments,
   mapCompanyRowToCoverInfo,
+  resolveCarneCoverPortalBaseUrl,
   SALE_CARNE_COVER_COMPANY_SELECT,
   type SaleCarneCoverCompanyInfo,
   type SaleCarneCoverSummary,
@@ -57,7 +58,7 @@ export async function getSaleCarneCoverSummary(
   const installmentsCount = countCarneCoverInstallments(installments);
   const company = await loadCompanyForCover(admin, companyId);
 
-  const portalUrl = buildClientPortalAbsoluteUrl();
+  const portalUrl = buildClientPortalAbsoluteUrl(resolveCarneCoverPortalBaseUrl());
   const portalDisplayUrl = buildClientPortalDisplayUrl(portalUrl);
 
   const missingFields = collectCoverMissingFields({

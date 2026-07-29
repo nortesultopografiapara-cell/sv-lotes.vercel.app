@@ -180,24 +180,43 @@ export function formatCoverCompanyDocument(
   return formatted || null;
 }
 
+/** Origem canônica do Portal no PDF imprimível (não usa deploy Vercel). */
+export const SALE_CARNE_COVER_CANONICAL_ORIGIN = 'https://www.svlotes.com.br' as const;
+
+/**
+ * Base URL do Portal para a capa do carnê.
+ * 1) NEXT_PUBLIC_PUBLIC_APP_URL / NEXT_PUBLIC_SITE_URL (se não for *.vercel.app / localhost)
+ * 2) domínio canônico www.svlotes.com.br
+ * Nunca embute URL de um deploy Preview específico no PDF.
+ */
+export function resolveCarneCoverPortalBaseUrl(): string {
+  const candidates = [
+    process.env.NEXT_PUBLIC_PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+  ];
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim().replace(/\/$/, '');
+    if (!raw) continue;
+    const base = raw.startsWith('http') ? raw : `https://${raw}`;
+    try {
+      const host = new URL(base).hostname.toLowerCase();
+      if (host.endsWith('vercel.app')) continue;
+      if (host === 'localhost' || host === '127.0.0.1') continue;
+      return base;
+    } catch {
+      continue;
+    }
+  }
+  return SALE_CARNE_COVER_CANONICAL_ORIGIN;
+}
+
+/** @deprecated Preferir resolveCarneCoverPortalBaseUrl para PDFs imprimíveis. */
 export function resolvePublicAppBaseUrl(): string {
-  const explicit =
-    process.env.NEXT_PUBLIC_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    '';
-  const raw = String(explicit || '').trim().replace(/\/$/, '');
-  if (raw) {
-    return raw.startsWith('http') ? raw : `https://${raw}`;
-  }
-  const vercel = String(process.env.VERCEL_URL || '').trim().replace(/\/$/, '');
-  if (vercel) {
-    return vercel.startsWith('http') ? vercel : `https://${vercel}`;
-  }
-  return 'https://www.svlotes.com.br';
+  return resolveCarneCoverPortalBaseUrl();
 }
 
 export function buildClientPortalAbsoluteUrl(baseUrl?: string): string {
-  const base = String(baseUrl || resolvePublicAppBaseUrl()).replace(/\/$/, '');
+  const base = String(baseUrl || resolveCarneCoverPortalBaseUrl()).replace(/\/$/, '');
   return `${base}${CLIENT_PORTAL_PATH}`;
 }
 
