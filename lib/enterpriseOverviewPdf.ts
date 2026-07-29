@@ -16,10 +16,11 @@ import {
   computeEnterpriseMapContentRectMm,
 } from '@/lib/enterpriseOverviewLayout';
 import {
-  resolveStreetLabelCollisions,
+  buildStreetLabelPlacementsOnSheet,
   rotatedTextOccupiedBox,
   STREET_LABEL_RGB,
   type OccupiedBox,
+  type StreetLabelSheetPlacement,
 } from '@/lib/enterpriseOverviewStreets';
 import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
 
@@ -786,6 +787,87 @@ function drawStreetTableExtraPage(
   }
 }
 
+function drawStreetLabelPlacements(
+  doc: jsPDF,
+  payload: EnterpriseOverviewPdfPayload,
+  softOccupied: OccupiedBox[],
+  hardOccupied: OccupiedBox[],
+): number {
+  const { layout } = payload;
+  const box = layout.mapBoxMm;
+  let drawn = 0;
+
+  for (const street of layout.streets) {
+    if (street.unnamed || !street.labelPlacements?.length) continue;
+    const grouped = {
+      id: street.id,
+      type: street.type,
+      name: street.name,
+      displayName: street.displayName,
+      unnamed: street.unnamed,
+      segments: (street.lines || []).map((line, lineIndex) => {
+        let lengthM = 0;
+        for (let i = 1; i < line.length; i++) {
+          lengthM += Math.hypot(
+            line[i][0] - line[i - 1][0],
+            line[i][1] - line[i - 1][1],
+          );
+        }
+        return { lineIndex, line, lengthM };
+      }),
+      lengthM: street.lengthM,
+      lengthAvailable: street.lengthAvailable,
+      issues: [] as [],
+    };
+
+    const { placements, diag } = buildStreetLabelPlacementsOnSheet({
+      street: grouped,
+      placements: street.labelPlacements,
+      projectPoint: (p) => projectEnterprisePointToPdf(p, layout),
+      hardOccupied,
+      softOccupied,
+      mapScaleMmPerM: layout.mapScaleMmPerM,
+      mapBox: box,
+    });
+
+    if (process.env.NODE_ENV !== 'production') {
+      if (/avenida\s*07|rua\s*07/i.test(street.displayName)) {
+        console.info('[enterprise-overview-streets] placement diag', diag);
+      }
+    }
+
+    for (const place of placements) {
+      drawStreetLabelPlacement(doc, place);
+      hardOccupied.push(
+        rotatedTextOccupiedBox(
+          place.x,
+          place.y,
+          place.text,
+          place.fontSize,
+          place.angleDeg,
+        ),
+      );
+      drawn += 1;
+    }
+  }
+
+  return drawn;
+}
+
+/** Única função que desenha texto de nome de via no mapa (estilo institucional). */
+function drawStreetLabelPlacement(
+  doc: jsPDF,
+  place: StreetLabelSheetPlacement,
+) {
+  drawTextWithHalo(doc, place.text, place.x, place.y, {
+    fontSize: place.fontSize,
+    bold: true,
+    align: 'center',
+    angle: place.angleDeg,
+    color: STREET_LABEL_RGB,
+  });
+}
+
 function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   const { layout, options } = payload;
   const box = layout.mapBoxMm;
@@ -848,73 +930,15 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
     hardOccupied.push({ x: box.x + 4, y: box.y + box.h - 12, w: 90, h: 10 });
   }
 
-  // 9. Nomes das ruas
+  // 9. Nomes das ruas — única pipeline (buildStreetLabelPlacementsOnSheet)
   let drawnLabels = 0;
   let candidateLabels = 0;
   if (options.showStreetNamesAndTable) {
-    for (const street of layout.streets) {
-      if (street.unnamed || !street.labelPlacements?.length) continue;
-      candidateLabels += street.labelPlacements.length;
-      const grouped = {
-        id: street.id,
-        type: street.type,
-        name: street.name,
-        displayName: street.displayName,
-        unnamed: street.unnamed,
-        segments: (street.lines || []).map((line, lineIndex) => ({
-          lineIndex,
-          line,
-          lengthM: 0,
-        })),
-        lengthM: street.lengthM,
-        lengthAvailable: street.lengthAvailable,
-        issues: [] as [],
-      };
-      for (const seg of grouped.segments) {
-        let len = 0;
-        for (let i = 1; i < seg.line.length; i++) {
-          const dx = seg.line[i][0] - seg.line[i - 1][0];
-          const dy = seg.line[i][1] - seg.line[i - 1][1];
-          len += Math.hypot(dx, dy);
-        }
-        seg.lengthM = len;
-      }
-      const resolved = resolveStreetLabelCollisions(
-        street.labelPlacements,
-        (p) => projectEnterprisePointToPdf(p, layout),
-        hardOccupied,
-        grouped,
-        layout.mapScaleMmPerM,
-        softOccupied,
-      );
-      for (const place of resolved) {
-        const [x, y] = projectEnterprisePointToPdf(place.point, layout);
-        if (
-          x < box.x + 2 ||
-          x > box.x + box.w - 2 ||
-          y < box.y + 2 ||
-          y > box.y + box.h - 2
-        ) {
-          continue;
-        }
-        drawTextWithHalo(doc, place.text, x, y, {
-          fontSize: place.fontSize,
-          bold: true,
-          align: 'center',
-          angle: place.angleDeg,
-          color: STREET_LABEL_RGB,
-        });
-        const boxLabel = rotatedTextOccupiedBox(
-          x,
-          y,
-          place.text,
-          place.fontSize,
-          place.angleDeg,
-        );
-        hardOccupied.push(boxLabel);
-        drawnLabels += 1;
-      }
-    }
+    drawnLabels = drawStreetLabelPlacements(doc, payload, softOccupied, hardOccupied);
+    candidateLabels = layout.streets.reduce(
+      (n, s) => n + (s.labelPlacements?.length ?? 0),
+      0,
+    );
     layout.streetGeometryDiag.candidates = Math.max(
       layout.streetGeometryDiag.candidates,
       candidateLabels,
@@ -931,7 +955,7 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
       );
     }
   } else if (options.showStreets) {
-    // Comportamento legado: placa horizontal no ponto médio
+    // Comportamento legado: placa horizontal no ponto médio (opção desligada)
     for (const street of layout.streets) {
       const pts = street.line.map((p) => projectEnterprisePointToPdf(p, layout));
       if (pts.length >= 2) {

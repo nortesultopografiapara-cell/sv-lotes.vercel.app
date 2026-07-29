@@ -28,6 +28,8 @@ import {
   rotatedTextOccupiedBox,
   sortStreetsForTable,
   streetCoordsToLocalMeters,
+  buildStreetLabelPlacementsOnSheet,
+  getReadableSegmentAndUpperNormal,
   type EnterpriseStreetGrouped,
 } from '../lib/enterpriseOverviewStreets';
 
@@ -574,28 +576,110 @@ function testCollisionFallbackKeepsLabel() {
     issues: [],
   };
   const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.2 });
-  const softOccupied = [{ x: -1000, y: -1000, w: 2000, h: 2000 }];
+  const softOccupied = [{ x: 48, y: -1, w: 4, h: 2 }];
   const resolvedSoft = resolveStreetLabelCollisions(
     places,
-    (p) => [p[0], p[1]],
+    (p) => [p[0], -p[1]],
     [],
     street,
     0.2,
     softOccupied,
   );
-  assert(resolvedSoft.length >= 1, 'fallback soft não zera labels');
+  assert(resolvedSoft.length >= 1, 'com soft local ainda desenha');
 
-  const hardOccupied = [{ x: -1000, y: -1000, w: 2000, h: 2000 }];
+  const hardAll = [{ x: -1000, y: -1000, w: 2000, h: 2000 }];
   const resolvedHard = resolveStreetLabelCollisions(
     places,
-    (p) => [p[0], p[1]],
-    hardOccupied,
+    (p) => [p[0], -p[1]],
+    hardAll,
     street,
     0.2,
     [],
   );
-  assert(resolvedHard.length >= 1, 'fallback hard não zera labels');
+  assert(resolvedHard.length === 0, 'hard total → omite');
   console.log('OK testCollisionFallbackKeepsLabel');
+}
+
+function testUniformFontAndDedupe() {
+  const street: EnterpriseStreetGrouped = {
+    id: 'av07',
+    type: 'Avenida',
+    name: '07',
+    displayName: 'Avenida 07',
+    unnamed: false,
+    segments: [
+      {
+        lineIndex: 0,
+        line: [
+          [0, 0],
+          [800, 0],
+        ],
+        lengthM: 800,
+      },
+    ],
+    lengthM: 800,
+    lengthAvailable: true,
+    issues: [],
+  };
+  const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.05 });
+  assert(places.length >= 2, 'via longa → ≥2 candidatos');
+  const fonts = new Set(places.map((p) => p.fontSize));
+  assert(fonts.size === 1, 'fonte uniforme nos candidatos');
+
+  const { placements } = buildStreetLabelPlacementsOnSheet({
+    street,
+    placements: places,
+    projectPoint: (p) => [p[0] * 0.05, -p[1] * 0.05],
+    hardOccupied: [],
+    softOccupied: [],
+    mapScaleMmPerM: 0.05,
+  });
+  assert(placements.length >= 1, 'aceita ≥1');
+  const sheetFonts = new Set(placements.map((p) => p.fontSize));
+  assert(sheetFonts.size === 1, 'fonte uniforme na folha');
+  for (let i = 0; i < placements.length; i++) {
+    for (let j = i + 1; j < placements.length; j++) {
+      const d = Math.hypot(
+        placements[i].x - placements[j].x,
+        placements[i].y - placements[j].y,
+      );
+      assert(d >= 20, `repetições distantes d=${d}`);
+    }
+  }
+  assert(
+    placements.every((p) => Math.abs(p.y) > 0.5),
+    'deslocado da linha',
+  );
+  console.log('OK testUniformFontAndDedupe', {
+    requested: places.length,
+    accepted: placements.length,
+    font: placements[0]?.fontSize,
+  });
+}
+
+function testNormalPerpendicularAndReadable() {
+  const a = getReadableSegmentAndUpperNormal([0, 0], [10, 0]);
+  assert(Math.abs(a.angleDeg) < 1e-6, 'horizontal');
+  assert(Math.abs(a.nx * a.ux + a.ny * a.uy) < 1e-9, 'normal ⊥ eixo');
+  assert(a.ny < 0, 'upper aponta para topo (Y↓)');
+
+  const flipped = getReadableSegmentAndUpperNormal([10, 0], [0, 0]);
+  assert(Math.abs(flipped.angleDeg) < 1e-6, 'invertido ainda 0°');
+  assert(flipped.ny < 0, 'mesmo lado visual após inversão');
+  console.log('OK testNormalPerpendicularAndReadable');
+}
+
+function testSingleLabelPipelineSource() {
+  const pdf = read('lib/enterpriseOverviewPdf.ts');
+  assert(pdf.includes('drawStreetLabelPlacements'), 'pipeline draw');
+  assert(pdf.includes('drawStreetLabelPlacement'), 'draw unitário');
+  assert(pdf.includes('buildStreetLabelPlacementsOnSheet'), 'build sheet');
+  const idxNew = pdf.indexOf('if (options.showStreetNamesAndTable)');
+  const idxLegacy = pdf.indexOf('} else if (options.showStreets)');
+  assert(idxNew > 0 && idxLegacy > idxNew, 'legado só no else');
+  const newBlock = pdf.slice(idxNew, idxLegacy);
+  assert(!newBlock.includes('drawLabelPlate'), 'sem placa legada no branch novo');
+  console.log('OK testSingleLabelPipelineSource');
 }
 
 function testSourceWiring() {
@@ -608,10 +692,11 @@ function testSourceWiring() {
   const streets = read('lib/enterpriseOverviewStreets.ts');
   assert(streets.includes('normalizeStreetGeometry'), 'normalizer');
   assert(streets.includes('streetCoordsToLocalMeters'), 'utm convert');
+  assert(streets.includes('buildStreetLabelPlacementsOnSheet'), 'sheet pipeline');
   const pdf = read('lib/enterpriseOverviewPdf.ts');
   assert(pdf.includes('QUADRO DE VIAS'), 'tabela no PDF');
   assert(pdf.includes('drawStreetTableExtraPage'), 'página extra');
-  assert(pdf.includes('resolveStreetLabelCollisions'), 'colisão');
+  assert(pdf.includes('buildStreetLabelPlacementsOnSheet'), 'colisão via sheet');
   assert(pdf.includes('softOccupied'), 'soft occupied');
   assert(pdf.includes('STREET_LABEL_RGB'), 'cor institucional');
   assert(streets.includes('streetLabelAngleOnSheet'), 'ângulo na folha');
@@ -639,6 +724,9 @@ function main() {
   testFitIntegration();
   testEmptyStreetsStillWorks();
   testCollisionFallbackKeepsLabel();
+  testUniformFontAndDedupe();
+  testNormalPerpendicularAndReadable();
+  testSingleLabelPipelineSource();
   testSourceWiring();
   console.log('\nALL mandatory-enterprise-overview-streets-tests PASSED');
 }

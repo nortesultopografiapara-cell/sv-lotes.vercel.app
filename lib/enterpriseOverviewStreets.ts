@@ -28,7 +28,11 @@ export const STREET_LABEL_RGB: [number, number, number] = [11, 58, 102];
 export const STREET_LABEL_FONT_MAX = 7.8;
 export const STREET_LABEL_FONT_MIN = 4.2;
 export const STREET_LABEL_MIN_SEGMENT_M = 25;
-export const STREET_LABEL_REPEAT_GAP_M = 180;
+/** Distância mínima entre repetições da mesma via (metros locais). */
+export const STREET_LABEL_REPEAT_GAP_M = 220;
+/** Offset perpendicular mínimo/máximo na folha (mm). */
+export const STREET_LABEL_OFFSET_MIN_MM = 1.0;
+export const STREET_LABEL_OFFSET_MAX_MM = 2.5;
 
 export type EnterpriseStreetIssue =
   | 'unnamed'
@@ -54,6 +58,29 @@ export type EnterpriseStreetLabelPlacement = {
   fontSize: number;
   text: string;
   segmentLengthM: number;
+};
+
+/** Placement final já em mm da folha — única coleção desenhável no PDF. */
+export type StreetLabelSheetPlacement = {
+  streetId: string;
+  text: string;
+  x: number;
+  y: number;
+  angleDeg: number;
+  fontSize: number;
+  repetitionIndex: number;
+  side: 'upper' | 'lower';
+};
+
+export type StreetLabelBuildDiag = {
+  streetId: string;
+  streetName: string;
+  requestedRepetitions: number;
+  candidatesGenerated: number;
+  acceptedPlacements: number;
+  rejectedTooClose: number;
+  rejectedCollision: number;
+  sidesUsed: Array<'upper' | 'lower'>;
 };
 
 export type EnterpriseStreetGrouped = {
@@ -485,7 +512,7 @@ export function normalizeLocalPolyline(
 /**
  * Ângulo de leitura a partir de um delta em coordenadas da folha (jsPDF mm).
  * Y do PDF cresce para baixo — usa atan2(-dy, dx) como em CAD sobre a folha.
- * Normaliza para ±90° (nunca de cabeça para baixo).
+ * Normalização ±90° (nunca de cabeça para baixo).
  */
 export function sheetAngleFromPdfDelta(pdfDx: number, pdfDy: number): number {
   let angleDeg = (Math.atan2(-pdfDy, pdfDx) * 180) / Math.PI;
@@ -494,14 +521,66 @@ export function sheetAngleFromPdfDelta(pdfDx: number, pdfDy: number): number {
   return angleDeg;
 }
 
-/** @deprecated Preferir sheetAngleFromPdfDelta após projetar na folha. */
+/** @deprecated Preferir sheetAngleFromPdfDelta / getReadableSegmentAndUpperNormal. */
 export function readableStreetLabelAngleDeg(dx: number, dy: number): number {
   return sheetAngleFromPdfDelta(dx, -dy);
 }
 
 /**
+ * Orienta o segmento para leitura e devolve normal “superior” estável.
+ * Se o segmento for invertido para tornar o texto legível, inverte o normal junto.
+ */
+export function getReadableSegmentAndUpperNormal(
+  start: [number, number],
+  end: [number, number],
+): {
+  start: [number, number];
+  end: [number, number];
+  angleDeg: number;
+  ux: number;
+  uy: number;
+  nx: number;
+  ny: number;
+} {
+  let a: [number, number] = [start[0], start[1]];
+  let b: [number, number] = [end[0], end[1]];
+  let dx = b[0] - a[0];
+  let dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy) || 1;
+
+  // Ângulo bruto (antes da normalização ±90) — se |ângulo| > 90, inverte o segmento
+  let rawDeg = (Math.atan2(-dy, dx) * 180) / Math.PI;
+  if (rawDeg > 90 || rawDeg <= -90) {
+    a = [end[0], end[1]];
+    b = [start[0], start[1]];
+    dx = b[0] - a[0];
+    dy = b[1] - a[1];
+    rawDeg = (Math.atan2(-dy, dx) * 180) / Math.PI;
+  }
+  const angleDeg = sheetAngleFromPdfDelta(dx, dy);
+  const ux = dx / len;
+  const uy = dy / len;
+  // Normal à esquerda do sentido orientado; em folha Y↓ isso aponta “acima” visual
+  // quando o texto está na orientação legível.
+  let nx = -uy;
+  let ny = ux;
+  // Preferir normal que aponta para Y menor (topo da página) em média
+  if (ny > 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  return { start: a, end: b, angleDeg, ux, uy, nx, ny };
+}
+
+export function streetLabelOffsetMm(fontSize: number): number {
+  return Math.min(
+    STREET_LABEL_OFFSET_MAX_MM,
+    Math.max(STREET_LABEL_OFFSET_MIN_MM, fontSize * 0.55),
+  );
+}
+
+/**
  * Calcula o ângulo do rótulo no espaço da folha a partir do tangente local (UTM/rota).
- * Nunca usa lat/lng — projeta dois pontos ao longo do eixo e mede o delta em mm.
  */
 export function streetLabelAngleOnSheet(
   localPoint: [number, number],
@@ -520,7 +599,14 @@ export function streetLabelAngleOnSheet(
   ];
   const [ax, ay] = projectPoint(a);
   const [bx, by] = projectPoint(b);
-  return sheetAngleFromPdfDelta(bx - ax, by - ay);
+  return getReadableSegmentAndUpperNormal([ax, ay], [bx, by]).angleDeg;
+}
+
+export function sameStreetLabelMinDistanceMm(
+  text: string,
+  fontSize: number,
+): number {
+  return Math.max(estimateTextWidthMm(text, fontSize) * 1.8, 28);
 }
 
 export function interpolateAlongPolyline(
@@ -718,6 +804,23 @@ function pickLongestSegment(
   return best;
 }
 
+/** Fonte única por via — todas as repetições usam o mesmo tamanho. */
+export function computeUniformStreetLabelFontSize(
+  text: string,
+  lengthM: number,
+  mapScaleMmPerM: number,
+): number {
+  const availableMm = Math.max(lengthM * mapScaleMmPerM * 0.55, 14);
+  let fontSize = STREET_LABEL_FONT_MAX;
+  while (
+    fontSize > STREET_LABEL_FONT_MIN &&
+    estimateTextWidthMm(text, fontSize) > availableMm
+  ) {
+    fontSize -= 0.25;
+  }
+  return Math.max(fontSize, STREET_LABEL_FONT_MIN);
+}
+
 export function pickStreetLabelPlacements(
   street: EnterpriseStreetGrouped,
   opts?: { mapScaleMmPerM?: number },
@@ -730,40 +833,39 @@ export function pickStreetLabelPlacements(
   const maxCount = maxStreetLabelCountForLength(street.lengthM);
   if (maxCount < 1) return [];
 
-  // Preferir o trecho mais longo (eixo representativo); evitar pedaços curtos.
   const sortedSegs = [...street.segments]
-    .filter((s) => s.lengthM >= STREET_LABEL_MIN_SEGMENT_M || street.segments.length === 1)
+    .filter(
+      (s) =>
+        s.lengthM >= STREET_LABEL_MIN_SEGMENT_M || street.segments.length === 1,
+    )
     .sort((a, b) => b.lengthM - a.lengthM);
-  const segs = sortedSegs.length ? sortedSegs : [...street.segments].sort((a, b) => b.lengthM - a.lengthM);
+  const segs = sortedSegs.length
+    ? sortedSegs
+    : [...street.segments].sort((a, b) => b.lengthM - a.lengthM);
+
+  const fontSize = computeUniformStreetLabelFontSize(
+    text,
+    street.lengthM,
+    scale,
+  );
+
+  const tSlots =
+    maxCount === 1 ? [0.5] : maxCount === 2 ? [0.33, 0.67] : [0.25, 0.5, 0.75];
 
   const candidates: EnterpriseStreetLabelPlacement[] = [];
-  const tSlots =
-    maxCount === 1 ? [0.5] : maxCount === 2 ? [0.28, 0.72] : [0.2, 0.5, 0.8];
+  const longest = segs[0];
+  if (!longest) return [];
 
   for (const t of tSlots) {
-    let placed: EnterpriseStreetLabelPlacement | null = null;
-    for (const seg of segs) {
-      const sample = interpolateAlongPolyline(seg.line, t);
-      if (!sample) continue;
-      const availableMm = Math.max(seg.lengthM * scale * 0.85, 12);
-      let fontSize = STREET_LABEL_FONT_MAX;
-      while (
-        fontSize >= STREET_LABEL_FONT_MIN &&
-        estimateTextWidthMm(text, fontSize) > availableMm
-      ) {
-        fontSize -= 0.25;
-      }
-      // Ângulo provisional; o ângulo final é calculado na folha em resolveStreetLabelCollisions.
-      placed = {
-        point: sample.point,
-        angleDeg: readableStreetLabelAngleDeg(sample.dx, sample.dy),
-        fontSize: Math.max(fontSize, STREET_LABEL_FONT_MIN),
-        text,
-        segmentLengthM: seg.lengthM,
-      };
-      break;
-    }
-    if (placed) candidates.push(placed);
+    const sample = interpolateAlongPolyline(longest.line, t);
+    if (!sample) continue;
+    candidates.push({
+      point: sample.point,
+      angleDeg: readableStreetLabelAngleDeg(sample.dx, sample.dy),
+      fontSize,
+      text,
+      segmentLengthM: longest.lengthM,
+    });
   }
 
   const filtered: EnterpriseStreetLabelPlacement[] = [];
@@ -774,31 +876,232 @@ export function pickStreetLabelPlacements(
     if (!tooClose) filtered.push(c);
   }
 
-  if (filtered.length === 0) {
-    const longest = pickLongestSegment(segs);
-    if (longest) {
-      for (const t of [0.5, 0.25, 0.75]) {
-        const mid = interpolateAlongPolyline(longest.line, t);
-        if (!mid) continue;
-        filtered.push({
-          point: mid.point,
-          angleDeg: readableStreetLabelAngleDeg(mid.dx, mid.dy),
-          fontSize: STREET_LABEL_FONT_MIN + 0.5,
-          text,
-          segmentLengthM: longest.lengthM,
-        });
-        break;
-      }
+  if (filtered.length === 0 && longest) {
+    const mid = interpolateAlongPolyline(longest.line, 0.5);
+    if (mid) {
+      filtered.push({
+        point: mid.point,
+        angleDeg: readableStreetLabelAngleDeg(mid.dx, mid.dy),
+        fontSize,
+        text,
+        segmentLengthM: longest.lengthM,
+      });
     }
   }
 
   return filtered;
 }
 
+function sheetDistance(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 /**
- * hardOccupied = norte/escala/QD; softOccupied = números de lote.
- * Colisão só desloca ao longo do eixo (t ∈ [0,1]) — nunca perpendicular para dentro do lote.
- * Ângulo sempre recalculado nas coordenadas da folha.
+ * Pipeline única: placements finais em mm da folha.
+ * Offset perpendicular acima da via; fonte uniforme; dedupe; colisão com lotes.
+ */
+export function buildStreetLabelPlacementsOnSheet(params: {
+  street: EnterpriseStreetGrouped;
+  placements: EnterpriseStreetLabelPlacement[];
+  projectPoint: (p: [number, number]) => [number, number];
+  hardOccupied: OccupiedBox[];
+  softOccupied?: OccupiedBox[];
+  mapScaleMmPerM: number;
+  mapBox?: { x: number; y: number; w: number; h: number };
+}): {
+  placements: StreetLabelSheetPlacement[];
+  diag: StreetLabelBuildDiag;
+} {
+  const {
+    street,
+    placements,
+    projectPoint,
+    hardOccupied,
+    softOccupied = [],
+    mapScaleMmPerM,
+    mapBox,
+  } = params;
+
+  const fontSize = computeUniformStreetLabelFontSize(
+    street.displayName,
+    street.lengthM,
+    mapScaleMmPerM,
+  );
+  const offset = streetLabelOffsetMm(fontSize);
+  const minDist = sameStreetLabelMinDistanceMm(street.displayName, fontSize);
+
+  const segs = [...street.segments]
+    .filter(
+      (s) =>
+        s.lengthM >= STREET_LABEL_MIN_SEGMENT_M || street.segments.length === 1,
+    )
+    .sort((a, b) => b.lengthM - a.lengthM);
+  const useSegs = segs.length
+    ? segs
+    : [...street.segments].sort((a, b) => b.lengthM - a.lengthM);
+
+  const diag: StreetLabelBuildDiag = {
+    streetId: street.id,
+    streetName: street.displayName,
+    requestedRepetitions: placements.length,
+    candidatesGenerated: 0,
+    acceptedPlacements: 0,
+    rejectedTooClose: 0,
+    rejectedCollision: 0,
+    sidesUsed: [],
+  };
+
+  const accepted: StreetLabelSheetPlacement[] = [];
+  const occupied = [...hardOccupied, ...softOccupied];
+
+  const inMap = (x: number, y: number) => {
+    if (!mapBox) return true;
+    return (
+      x >= mapBox.x + 2 &&
+      x <= mapBox.x + mapBox.w - 2 &&
+      y >= mapBox.y + 2 &&
+      y <= mapBox.y + mapBox.h - 2
+    );
+  };
+
+  const tryCandidate = (
+    localPoint: [number, number],
+    localDx: number,
+    localDy: number,
+    repetitionIndex: number,
+  ): StreetLabelSheetPlacement | null => {
+    const len = Math.hypot(localDx, localDy) || 1;
+    const stepLocal = 1;
+    const ux = localDx / len;
+    const uy = localDy / len;
+    const localB: [number, number] = [
+      localPoint[0] + ux * stepLocal,
+      localPoint[1] + uy * stepLocal,
+    ];
+    const [ax, ay] = projectPoint(localPoint);
+    const [bx, by] = projectPoint(localB);
+    const oriented = getReadableSegmentAndUpperNormal([ax, ay], [bx, by]);
+
+    const sides: Array<{ side: 'upper' | 'lower'; nx: number; ny: number }> = [
+      { side: 'upper', nx: oriented.nx, ny: oriented.ny },
+      { side: 'lower', nx: -oriented.nx, ny: -oriented.ny },
+    ];
+    const longOffsets = [0, 4, -4, 8, -8];
+
+    for (const side of sides) {
+      for (const along of longOffsets) {
+        diag.candidatesGenerated += 1;
+        const x = ax + side.nx * offset + oriented.ux * along;
+        const y = ay + side.ny * offset + oriented.uy * along;
+        if (!inMap(x, y)) continue;
+
+        const box = rotatedTextOccupiedBox(
+          x,
+          y,
+          street.displayName,
+          fontSize,
+          oriented.angleDeg,
+        );
+        const padded: OccupiedBox = {
+          x: box.x - 0.3,
+          y: box.y - 0.3,
+          w: box.w + 0.6,
+          h: box.h + 0.6,
+        };
+
+        const tooClose = accepted.some(
+          (p) => sheetDistance(p, { x, y }) < minDist,
+        );
+        if (tooClose) {
+          diag.rejectedTooClose += 1;
+          continue;
+        }
+
+        if (occupied.some((b) => boxesOverlap(padded, b, 0.35))) {
+          diag.rejectedCollision += 1;
+          continue;
+        }
+
+        return {
+          streetId: street.id,
+          text: street.displayName,
+          x,
+          y,
+          angleDeg: oriented.angleDeg,
+          fontSize,
+          repetitionIndex,
+          side: side.side,
+        };
+      }
+    }
+    return null;
+  };
+
+  const extraTs = [0, 0.08, -0.08, 0.15, -0.15];
+  const longest = useSegs[0];
+
+  for (let i = 0; i < placements.length; i++) {
+    const place = placements[i];
+    let chosen: StreetLabelSheetPlacement | null = null;
+
+    if (longest) {
+      const baseT =
+        placements.length === 1
+          ? 0.5
+          : placements.length === 2
+            ? i === 0
+              ? 0.33
+              : 0.67
+            : [0.25, 0.5, 0.75][i] ?? 0.5;
+      for (const dt of extraTs) {
+        const t = Math.max(0.05, Math.min(0.95, baseT + dt));
+        const sample = interpolateAlongPolyline(longest.line, t);
+        if (!sample) continue;
+        chosen = tryCandidate(sample.point, sample.dx, sample.dy, i);
+        if (chosen) break;
+      }
+    }
+
+    if (!chosen) {
+      const sampleNear = interpolateAlongPolyline(
+        longest?.line ??
+          ([place.point, [place.point[0] + 1, place.point[1]]] as [
+            number,
+            number,
+          ][]),
+        0.5,
+      );
+      if (sampleNear) {
+        chosen = tryCandidate(place.point, sampleNear.dx, sampleNear.dy, i);
+      }
+    }
+
+    if (chosen) {
+      accepted.push(chosen);
+      occupied.push(
+        rotatedTextOccupiedBox(
+          chosen.x,
+          chosen.y,
+          chosen.text,
+          chosen.fontSize,
+          chosen.angleDeg,
+        ),
+      );
+      if (!diag.sidesUsed.includes(chosen.side)) {
+        diag.sidesUsed.push(chosen.side);
+      }
+    }
+  }
+
+  diag.acceptedPlacements = accepted.length;
+  return { placements: accepted, diag };
+}
+
+/**
+ * Compat: usa a pipeline única e devolve formato legado para testes.
  */
 export function resolveStreetLabelCollisions(
   placements: EnterpriseStreetLabelPlacement[],
@@ -808,125 +1111,25 @@ export function resolveStreetLabelCollisions(
   mapScaleMmPerM: number,
   softOccupied: OccupiedBox[] = [],
 ): EnterpriseStreetLabelPlacement[] {
-  const accepted: EnterpriseStreetLabelPlacement[] = [];
-  const hardBoxes = [...hardOccupied];
-  const softBoxes = [...softOccupied];
-  // Somente ao longo do eixo
-  const tryTs = [0.5, 0.35, 0.65, 0.25, 0.75, 0.4, 0.6, 0.15, 0.85];
-  const segs = [...street.segments]
-    .filter((s) => s.lengthM >= STREET_LABEL_MIN_SEGMENT_M || street.segments.length === 1)
-    .sort((a, b) => b.lengthM - a.lengthM);
-  const useSegs = segs.length ? segs : [...street.segments].sort((a, b) => b.lengthM - a.lengthM);
-
-  for (const place of placements) {
-    let chosen: EnterpriseStreetLabelPlacement | null = null;
-    const attempts: EnterpriseStreetLabelPlacement[] = [];
-
-    const pushAttempt = (
-      sample: { point: [number, number]; dx: number; dy: number },
-      lengthM: number,
-      fontSize: number,
-    ) => {
-      attempts.push({
-        point: sample.point,
-        angleDeg: streetLabelAngleOnSheet(
-          sample.point,
-          sample.dx,
-          sample.dy,
-          projectPoint,
-        ),
-        fontSize,
-        text: place.text,
-        segmentLengthM: lengthM,
-      });
-    };
-
-    // Recalcula ângulo do placement original na folha
-    {
-      const sample = interpolateAlongPolyline(
-        useSegs[0]?.line ??
-          ([place.point, [place.point[0] + 1, place.point[1]]] as [number, number][]),
-        0.5,
-      );
-      if (sample) {
-        pushAttempt(sample, place.segmentLengthM, place.fontSize);
-      }
-    }
-
-    for (const seg of useSegs.slice(0, 2)) {
-      for (const t of tryTs) {
-        const sample = interpolateAlongPolyline(seg.line, t);
-        if (!sample) continue;
-        let fontSize = place.fontSize;
-        const availableMm = Math.max(seg.lengthM * mapScaleMmPerM * 0.85, 10);
-        while (
-          fontSize >= STREET_LABEL_FONT_MIN &&
-          estimateTextWidthMm(place.text, fontSize) > availableMm
-        ) {
-          fontSize -= 0.25;
-        }
-        pushAttempt(sample, seg.lengthM, Math.max(fontSize, STREET_LABEL_FONT_MIN));
-      }
-    }
-
-    for (const attempt of attempts) {
-      const [cx, cy] = projectPoint(attempt.point);
-      const box = rotatedTextOccupiedBox(
-        cx,
-        cy,
-        attempt.text,
-        attempt.fontSize,
-        attempt.angleDeg,
-      );
-      if (
-        !hardBoxes.some((b) => boxesOverlap(box, b, 0.5)) &&
-        !softBoxes.some((b) => boxesOverlap(box, b, 0.15))
-      ) {
-        chosen = attempt;
-        hardBoxes.push(box);
-        break;
-      }
-    }
-
-    if (!chosen) {
-      for (const attempt of attempts) {
-        const [cx, cy] = projectPoint(attempt.point);
-        const box = rotatedTextOccupiedBox(
-          cx,
-          cy,
-          attempt.text,
-          attempt.fontSize,
-          attempt.angleDeg,
-        );
-        if (!hardBoxes.some((b) => boxesOverlap(box, b, 0.5))) {
-          chosen = attempt;
-          hardBoxes.push(box);
-          break;
-        }
-      }
-    }
-
-    if (!chosen && useSegs[0]) {
-      const mid = interpolateAlongPolyline(useSegs[0].line, 0.5);
-      if (mid) {
-        chosen = {
-          point: mid.point,
-          angleDeg: streetLabelAngleOnSheet(
-            mid.point,
-            mid.dx,
-            mid.dy,
-            projectPoint,
-          ),
-          fontSize: STREET_LABEL_FONT_MIN,
-          text: place.text,
-          segmentLengthM: useSegs[0].lengthM,
-        };
-      }
-    }
-
-    if (chosen) accepted.push(chosen);
-  }
-  return accepted;
+  const { placements: sheet } = buildStreetLabelPlacementsOnSheet({
+    street,
+    placements,
+    projectPoint,
+    hardOccupied,
+    softOccupied,
+    mapScaleMmPerM,
+  });
+  return sheet.map((s, idx) => ({
+    point: placements[Math.min(idx, placements.length - 1)]?.point ?? [
+      s.x,
+      s.y,
+    ],
+    angleDeg: s.angleDeg,
+    fontSize: s.fontSize,
+    text: s.text,
+    segmentLengthM:
+      placements[Math.min(idx, placements.length - 1)]?.segmentLengthM ?? 0,
+  }));
 }
 
 export function buildStreetTableRows(streets: EnterpriseStreetGrouped[]): {
