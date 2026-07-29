@@ -20,6 +20,8 @@ import {
   LOT_AVAILABLE_STATUS,
   RECEIPT_CANCELLED_STATUS,
   SALE_CANCELLED_STATUS,
+  resolveBlockLotLabel,
+  resolveBlockQuadraLabel,
   summarizeReleaseCharges,
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
@@ -37,8 +39,10 @@ import { cancelOpenSaleSignatures } from '@/lib/saleContractSignatureService';
 import { resolveCallerProfile } from '@/lib/supabase/server';
 
 export type { ReleaseLotPreview };
+export { resolveBlockLotLabel, resolveBlockQuadraLabel };
 export type ReleaseLotStage =
   | 'auth'
+  | 'load_lot'
   | 'load_preview'
   | 'validate_motive'
   | 'cancel_asaas'
@@ -121,7 +125,10 @@ type BlockRow = {
   project_id?: string | null;
   tenant_id?: string | null;
   company_id?: string | null;
-  block?: string | null;
+  /** Quadra — coluna real: block_name (fallback name). */
+  block_name?: string | null;
+  name?: string | null;
+  /** Lote — coluna real: number (fallback lot_number). */
   number?: string | null;
   lot_number?: string | null;
 };
@@ -155,43 +162,42 @@ function assertCanReleaseLot(role?: string | null): void {
   );
 }
 
+/**
+ * Carrega o lote (registro em `blocks`) com colunas reais do schema.
+ * Quadra = block_name || name; Lote = number || lot_number.
+ * Não seleciona `blocks.block` (coluna inexistente).
+ */
 async function loadBlock(
   admin: SupabaseClient,
   lotId: string,
 ): Promise<BlockRow> {
-  const full = await admin
+  const { data, error } = await admin
     .from('blocks')
     .select(
-      'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block, number, lot_number',
+      'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block_name, name, number, lot_number',
     )
     .eq('id', lotId)
     .maybeSingle();
 
-  if (!full.error && full.data) {
-    return full.data as BlockRow;
-  }
-
-  // Fallback sem colunas opcionais (ambientes com schema parcial).
-  const lean = await admin
-    .from('blocks')
-    .select(
-      'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, block, number',
-    )
-    .eq('id', lotId)
-    .maybeSingle();
-
-  if (lean.error) {
+  if (error) {
+    console.error('[releaseLot] LOAD_LOT_FAILED', {
+      lotId: lotId.slice(0, 8),
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
     throw releaseErr(
-      `Erro ao carregar lote: ${lean.error.message || full.error?.message || 'desconhecido'}`,
+      'Não foi possível carregar os dados do lote.',
       500,
-      'LOAD_LOT_FAILED',
-      'load_preview',
+      'LOT_CONTEXT_LOAD_FAILED',
+      'load_lot',
     );
   }
-  if (!lean.data) {
-    throw releaseErr('Lote não encontrado.', 404, 'LOT_NOT_FOUND', 'load_preview');
+  if (!data) {
+    throw releaseErr('Lote não encontrado.', 404, 'LOT_NOT_FOUND', 'load_lot');
   }
-  return lean.data as BlockRow;
+  return data as BlockRow;
 }
 
 async function assertLotTenantAccess(
@@ -281,8 +287,9 @@ async function loadSaleContext(
     .eq('id', saleId)
     .maybeSingle();
   if (saleErr) {
+    console.error('[releaseLot] LOAD_SALE_FAILED', saleErr.message);
     throw releaseErr(
-      `Erro ao carregar venda: ${saleErr.message}`,
+      'Não foi possível carregar os dados da venda.',
       500,
       'LOAD_SALE_FAILED',
       'load_preview',
@@ -350,8 +357,9 @@ async function loadSaleContext(
     .eq('sale_id', saleId)
     .or(tenantOrClause(companyId));
   if (receiptErr) {
+    console.error('[releaseLot] LOAD_RECEIPTS_FAILED', receiptErr.message);
     throw releaseErr(
-      `Erro ao carregar parcelas: ${receiptErr.message}`,
+      'Não foi possível carregar as parcelas do lote.',
       500,
       'LOAD_RECEIPTS_FAILED',
       'load_preview',
@@ -451,13 +459,8 @@ function buildPreviewFromContext(params: {
     companyId,
     projectId: block.project_id ? String(block.project_id) : null,
     status: block.status ? String(block.status) : null,
-    quadra: block.block != null ? String(block.block) : null,
-    lote:
-      block.number != null
-        ? String(block.number)
-        : block.lot_number != null
-          ? String(block.lot_number)
-          : null,
+    quadra: resolveBlockQuadraLabel(block),
+    lote: resolveBlockLotLabel(block),
     price: block.price != null ? Number(block.price) : null,
     customerId: block.customer_id ? String(block.customer_id) : null,
     customerName: params.customerName,
@@ -582,8 +585,9 @@ async function applyLocalRelease(
       .in('id', preview.unpaidReceiptIds)
       .select('id');
     if (error) {
+      console.error('[releaseLot] CANCEL_RECEIPTS_FAILED', error.message);
       throw releaseErr(
-        `Erro ao cancelar parcelas: ${error.message}`,
+        'Não foi possível cancelar as parcelas pendentes.',
         500,
         'CANCEL_RECEIPTS_FAILED',
         'cancel_receipts',
@@ -646,8 +650,9 @@ async function applyLocalRelease(
         .update({ status: CONTRACT_CANCELLED_STATUS })
         .eq('id', preview.contractId);
       if (contractErr) {
+        console.error('[releaseLot] CANCEL_CONTRACT_FAILED', contractErr.message);
         throw releaseErr(
-          `Erro ao cancelar contrato: ${contractErr.message}`,
+          'Não foi possível cancelar o contrato.',
           500,
           'CANCEL_CONTRACT_FAILED',
           'cancel_contract',
@@ -662,8 +667,9 @@ async function applyLocalRelease(
       .update({ status: SALE_CANCELLED_STATUS })
       .eq('id', preview.saleId);
     if (saleErr) {
+      console.error('[releaseLot] CANCEL_SALE_FAILED', saleErr.message);
       throw releaseErr(
-        `Erro ao encerrar venda: ${saleErr.message}`,
+        'Não foi possível encerrar a venda.',
         500,
         'CANCEL_SALE_FAILED',
         'cancel_sale',
@@ -700,8 +706,9 @@ async function applyLocalRelease(
   }
 
   if (blockErr) {
+    console.error('[releaseLot] CLEAR_LOT_FAILED', blockErr.message);
     throw releaseErr(
-      `Erro ao liberar lote: ${blockErr.message}`,
+      'Não foi possível liberar o lote.',
       500,
       'CLEAR_LOT_FAILED',
       'clear_lot',

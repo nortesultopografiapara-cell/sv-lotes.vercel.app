@@ -14,6 +14,8 @@ import {
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   RELEASE_LOT_MOTIVE_OPTIONS,
+  resolveBlockLotLabel,
+  resolveBlockQuadraLabel,
   summarizeReleaseCharges,
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
@@ -106,6 +108,44 @@ function testSaleAndLotStatusHelpers() {
   console.log('OK testSaleAndLotStatusHelpers');
 }
 
+function testBlocksColumnMapping() {
+  assert(
+    resolveBlockQuadraLabel({ block_name: '12', name: 'Ignorado' }) === '12',
+    'quadra via block_name',
+  );
+  assert(
+    resolveBlockQuadraLabel({ block_name: null, name: 'A' }) === 'A',
+    'quadra via name',
+  );
+  assert(resolveBlockLotLabel({ number: '05', lot_number: '99' }) === '05', 'lote via number');
+  assert(
+    resolveBlockLotLabel({ number: null, lot_number: '26' }) === '26',
+    'lote via lot_number',
+  );
+
+  const svc = read('lib/finance/releaseLotService.ts');
+  // SELECT principal: nunca incluir a coluna inexistente `block`
+  assert(
+    svc.includes(
+      "'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, company_id, block_name, name, number, lot_number'",
+    ),
+    'select usa block_name/name/number/lot_number',
+  );
+  assert(!svc.includes(', block, number'), 'não seleciona coluna block');
+  assert(!svc.includes('company_id, block,'), 'não seleciona block após company_id');
+  assert(svc.includes('resolveBlockQuadraLabel'), 'mapeia quadra');
+  assert(svc.includes('resolveBlockLotLabel'), 'mapeia lote');
+  assert(svc.includes('LOT_CONTEXT_LOAD_FAILED'), 'código LOT_CONTEXT_LOAD_FAILED');
+  assert(svc.includes("'load_lot'"), 'stage load_lot');
+  assert(
+    svc.includes('Não foi possível carregar os dados do lote.'),
+    'mensagem amigável sem SQL',
+  );
+  // Sem fallback que tenta primeiro a query inválida com `block`
+  assert(!svc.includes("'id, status, price, customer_id, sale_id, contract_id, broker_id, project_id, tenant_id, block, number'"), 'sem fallback com coluna block');
+  console.log('OK testBlocksColumnMapping');
+}
+
 function testServiceOrchestrationSource() {
   const svc = read('lib/finance/releaseLotService.ts');
   assert(svc.includes('cancelCompanyCharge'), 'cancela Asaas via serviço oficial');
@@ -195,6 +235,7 @@ function main() {
   testReceiptClassification();
   testAsaasClassification();
   testSaleAndLotStatusHelpers();
+  testBlocksColumnMapping();
   testServiceOrchestrationSource();
   testApiRoute();
   testGisWiring();

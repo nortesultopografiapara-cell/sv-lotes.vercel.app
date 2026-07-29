@@ -278,6 +278,32 @@ export function summarizeReleaseCharges(
   return { openAsaasCharges, paidAsaasCharges, alreadyCanceledAsaasCharges };
 }
 
+/**
+ * Identificação de quadra/lote a partir das colunas reais de `blocks`.
+ * Espelha GISMap + saleChargesService: block_name || name ; number || lot_number.
+ * A coluna `blocks.block` NÃO existe — nunca usá-la em SELECT.
+ */
+export function resolveBlockQuadraLabel(row: {
+  block_name?: string | null;
+  name?: string | null;
+}): string | null {
+  const value = String(row.block_name || row.name || '').trim();
+  return value || null;
+}
+
+export function resolveBlockLotLabel(row: {
+  number?: string | number | null;
+  lot_number?: string | number | null;
+}): string | null {
+  const primary =
+    row.number != null && String(row.number).trim() !== ''
+      ? String(row.number).trim()
+      : '';
+  if (primary) return primary;
+  const fallback = String(row.lot_number || '').trim();
+  return fallback || null;
+}
+
 /** Preview serializado pela API GET /api/lots/[lotId]/release (seguro no client). */
 export type ReleaseLotPreview = {
   lotId: string;
