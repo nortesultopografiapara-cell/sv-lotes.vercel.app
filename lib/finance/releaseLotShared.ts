@@ -25,8 +25,82 @@ const CANCELED_RECEIPT_STATUSES = new Set(['cancelado', 'canceled', 'cancelled']
 const OVERDUE_RECEIPT_STATUSES = new Set(['atrasado', 'overdue', 'vencido']);
 
 const ACTIVE_ASAAS_STATUSES = new Set(['PENDING', 'REGISTERED', 'OVERDUE']);
-const PAID_ASAAS_STATUSES = new Set(['PAID', 'RECEIVED', 'CONFIRMED']);
-const TERMINAL_ASAAS_CANCEL_STATUSES = new Set(['CANCELLED', 'EXPIRED', 'FAILED']);
+/** Somente estes status remotos Asaas aceitam DELETE /payments/{id}. */
+const ASAAS_REMOTE_CANCELABLE = new Set(['PENDING', 'OVERDUE']);
+const PAID_ASAAS_STATUSES = new Set([
+  'PAID',
+  'RECEIVED',
+  'CONFIRMED',
+  'RECEIVED_IN_CASH',
+]);
+const TERMINAL_ASAAS_CANCEL_STATUSES = new Set([
+  'CANCELLED',
+  'CANCELED',
+  'DELETED',
+  'EXPIRED',
+  'FAILED',
+]);
+const REFUNDED_ASAAS_STATUSES = new Set([
+  'REFUNDED',
+  'REFUND_REQUESTED',
+  'REFUND_IN_PROGRESS',
+]);
+
+export function normalizeAsaasRemoteStatus(status?: string | null): string {
+  return String(status || '')
+    .toUpperCase()
+    .trim();
+}
+
+export function isActiveOpenAsaasChargeStatus(status?: string | null): boolean {
+  return ACTIVE_ASAAS_STATUSES.has(normalizeAsaasRemoteStatus(status));
+}
+
+/** Candidata local a revisão Asaas (status local pode estar desatualizado). */
+export function isLocalAsaasCancelCandidateStatus(status?: string | null): boolean {
+  const st = normalizeAsaasRemoteStatus(status);
+  return st === 'PENDING' || st === 'REGISTERED' || st === 'OVERDUE';
+}
+
+/** Removível via DELETE no Asaas — só pendente ou vencida. */
+export function isAsaasRemoteCancelableStatus(status?: string | null): boolean {
+  return ASAAS_REMOTE_CANCELABLE.has(normalizeAsaasRemoteStatus(status));
+}
+
+export function isPaidAsaasChargeStatus(status?: string | null): boolean {
+  return PAID_ASAAS_STATUSES.has(normalizeAsaasRemoteStatus(status));
+}
+
+export function isAlreadyCancelledAsaasChargeStatus(status?: string | null): boolean {
+  return TERMINAL_ASAAS_CANCEL_STATUSES.has(normalizeAsaasRemoteStatus(status));
+}
+
+export function isRefundedAsaasChargeStatus(status?: string | null): boolean {
+  return REFUNDED_ASAAS_STATUSES.has(normalizeAsaasRemoteStatus(status));
+}
+
+/**
+ * Decisão após consultar o status real no Asaas.
+ * Não tenta DELETE cegamente em status não removíveis.
+ */
+export type ReleaseAsaasDisposition =
+  | 'cancel'
+  | 'preserve_paid'
+  | 'preserve_refunded'
+  | 'already_cancelled'
+  | 'block_non_removable';
+
+export function classifyRemoteAsaasStatusForRelease(
+  remoteStatus?: string | null,
+): ReleaseAsaasDisposition {
+  const st = normalizeAsaasRemoteStatus(remoteStatus);
+  if (!st) return 'block_non_removable';
+  if (isAsaasRemoteCancelableStatus(st)) return 'cancel';
+  if (isPaidAsaasChargeStatus(st)) return 'preserve_paid';
+  if (isRefundedAsaasChargeStatus(st)) return 'preserve_refunded';
+  if (isAlreadyCancelledAsaasChargeStatus(st)) return 'already_cancelled';
+  return 'block_non_removable';
+}
 
 export function isPaidFinanceReceiptStatus(row: {
   status?: string | null;
@@ -65,18 +139,6 @@ export function isActiveUnpaidFinanceReceipt(row: {
   if (isPaidFinanceReceiptStatus(row)) return false;
   if (isCanceledFinanceReceiptStatus(row)) return false;
   return true;
-}
-
-export function isActiveOpenAsaasChargeStatus(status?: string | null): boolean {
-  return ACTIVE_ASAAS_STATUSES.has(String(status || '').toUpperCase().trim());
-}
-
-export function isPaidAsaasChargeStatus(status?: string | null): boolean {
-  return PAID_ASAAS_STATUSES.has(String(status || '').toUpperCase().trim());
-}
-
-export function isAlreadyCancelledAsaasChargeStatus(status?: string | null): boolean {
-  return TERMINAL_ASAAS_CANCEL_STATUSES.has(String(status || '').toUpperCase().trim());
 }
 
 export function isCanceledSaleStatus(status?: string | null): boolean {
@@ -131,7 +193,9 @@ export function isAvailableLotStatus(status?: string | null): boolean {
 export function validateReleaseLotMotive(input: {
   motiveCode?: string | null;
   motiveDetail?: string | null;
-}): { ok: true; motiveCode: ReleaseLotMotiveCode; motiveLabel: string; motiveDetail: string | null } | { ok: false; error: string } {
+}):
+  | { ok: true; motiveCode: ReleaseLotMotiveCode; motiveLabel: string; motiveDetail: string | null }
+  | { ok: false; error: string } {
   const code = String(input.motiveCode || '').trim() as ReleaseLotMotiveCode;
   const option = RELEASE_LOT_MOTIVE_OPTIONS.find((o) => o.value === code);
   if (!option) {
@@ -165,11 +229,14 @@ export function classifyFinanceReceiptForRelease(row: {
   return 'other_unpaid';
 }
 
-export type ReleaseChargeBucket = 'paid' | 'open' | 'cancelled' | 'other';
+export type ReleaseChargeBucket = 'paid' | 'open' | 'cancelled' | 'refunded' | 'other';
 
 export function classifyAsaasChargeForRelease(status?: string | null): ReleaseChargeBucket {
   if (isPaidAsaasChargeStatus(status)) return 'paid';
-  if (isActiveOpenAsaasChargeStatus(status)) return 'open';
+  if (isRefundedAsaasChargeStatus(status)) return 'refunded';
+  // Contagem "aberta cancelável" local: só PENDING/OVERDUE (REGISTERED exige sync remoto)
+  const st = normalizeAsaasRemoteStatus(status);
+  if (st === 'PENDING' || st === 'OVERDUE') return 'open';
   if (isAlreadyCancelledAsaasChargeStatus(status)) return 'cancelled';
   return 'other';
 }
@@ -201,7 +268,11 @@ export type ReleaseLotPlanSummary = {
 };
 
 export function summarizeReleaseReceipts(
-  receipts: Array<{ status?: string | null; paid_at?: string | null; amount?: number | string | null }>,
+  receipts: Array<{
+    status?: string | null;
+    paid_at?: string | null;
+    amount?: number | string | null;
+  }>,
 ): Pick<
   ReleaseLotPlanSummary,
   | 'paidReceipts'
@@ -273,7 +344,9 @@ export function summarizeReleaseCharges(
     const bucket = classifyAsaasChargeForRelease(c.status);
     if (bucket === 'open') openAsaasCharges += 1;
     else if (bucket === 'paid') paidAsaasCharges += 1;
-    else if (bucket === 'cancelled') alreadyCanceledAsaasCharges += 1;
+    else if (bucket === 'cancelled' || bucket === 'refunded') {
+      alreadyCanceledAsaasCharges += 1;
+    }
   }
   return { openAsaasCharges, paidAsaasCharges, alreadyCanceledAsaasCharges };
 }
@@ -334,6 +407,14 @@ export type ReleaseLotPreview = {
   openAsaasCharges: number;
   paidAsaasCharges: number;
   alreadyCanceledAsaasCharges: number;
+  /** Cobranças com status remoto não removível (não PENDING/OVERDUE) — bloqueiam limpeza local. */
+  asaasBlockedCharges: number;
+  asaasBlockedDetails: Array<{
+    chargeId: string;
+    error: string;
+    localStatus?: string | null;
+    remoteStatus?: string | null;
+  }>;
   openChargeIds: string[];
   unpaidReceiptIds: string[];
   paidReceiptIds: string[];

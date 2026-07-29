@@ -5,19 +5,28 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { cancelCompanyCharge } from '@/lib/finance/asaasCompanyChargeService';
+import {
+  cancelCompanyCharge,
+  getCompanyChargeStatus,
+} from '@/lib/finance/asaasCompanyChargeService';
+import {
+  CompanyAsaasEnvironmentMismatchError,
+} from '@/lib/finance/companyAsaasChargeLinkGuards';
 import {
   buildReleaseLotIdempotencyKey,
+  classifyRemoteAsaasStatusForRelease,
   CONTRACT_CANCELLED_STATUS,
   isActiveUnpaidFinanceReceipt,
   isAlreadyCancelledAsaasChargeStatus,
   isAvailableLotStatus,
   isCanceledContractStatus,
   isCanceledSaleStatus,
+  isLocalAsaasCancelCandidateStatus,
   isPaidAsaasChargeStatus,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   LOT_AVAILABLE_STATUS,
+  normalizeAsaasRemoteStatus,
   RECEIPT_CANCELLED_STATUS,
   SALE_CANCELLED_STATUS,
   resolveBlockLotLabel,
@@ -25,6 +34,7 @@ import {
   summarizeReleaseCharges,
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
+  type ReleaseAsaasDisposition,
   type ReleaseLotMotiveCode,
   type ReleaseLotPreview,
 } from '@/lib/finance/releaseLotShared';
@@ -428,12 +438,10 @@ function buildPreviewFromContext(params: {
   const paidReceiptIds = receipts
     .filter((r) => isPaidFinanceReceiptStatus(r))
     .map((r) => r.id);
-  const openChargeIds = charges
-    .filter((c) => !isPaidAsaasChargeStatus(c.status) && !isAlreadyCancelledAsaasChargeStatus(c.status))
-    .filter((c) => {
-      const st = String(c.status || '').toUpperCase();
-      return st === 'PENDING' || st === 'REGISTERED' || st === 'OVERDUE';
-    })
+  // Candidatas locais (PENDING/REGISTERED/OVERDUE) — a contagem cancelável
+  // efetiva vem após sync remoto em resolveCancelableAsaasCharges.
+  const candidateChargeIds = charges
+    .filter((c) => isLocalAsaasCancelCandidateStatus(c.status))
     .map((c) => c.id);
 
   const saleStatus = sale ? String(sale.status || '') : null;
@@ -484,7 +492,9 @@ function buildPreviewFromContext(params: {
     openAsaasCharges: chargeSummary.openAsaasCharges,
     paidAsaasCharges: chargeSummary.paidAsaasCharges,
     alreadyCanceledAsaasCharges: chargeSummary.alreadyCanceledAsaasCharges,
-    openChargeIds,
+    asaasBlockedCharges: 0,
+    asaasBlockedDetails: [],
+    openChargeIds: candidateChargeIds,
     unpaidReceiptIds,
     paidReceiptIds,
   };
@@ -510,7 +520,7 @@ export async function getReleaseLotPreview(
       String((customer as { name?: string })?.name || '').trim() || null;
   }
 
-  return buildPreviewFromContext({
+  const preview = buildPreviewFromContext({
     block,
     companyId,
     saleId,
@@ -521,6 +531,253 @@ export async function getReleaseLotPreview(
     customerName: ctx.customerName,
     documentsPreserved: ctx.documentsPreserved,
   });
+
+  // Sync Asaas: conta apenas cobranças realmente canceláveis (PENDING/OVERDUE remoto).
+  if (preview.openChargeIds.length > 0) {
+    const asaasPlan = await resolveAsaasChargesForRelease(
+      admin,
+      companyId,
+      preview.openChargeIds,
+      { executeCancel: false },
+    );
+    preview.openChargeIds = asaasPlan.cancelableIds;
+    preview.openAsaasCharges = asaasPlan.cancelableIds.length;
+    preview.paidAsaasCharges += asaasPlan.preservedPaid;
+    preview.alreadyCanceledAsaasCharges +=
+      asaasPlan.alreadyCancelled + asaasPlan.preservedRefunded;
+    preview.asaasBlockedCharges = asaasPlan.failed.length;
+    preview.asaasBlockedDetails = asaasPlan.failed.map((f) => ({
+      chargeId: f.chargeId,
+      error: f.error,
+      localStatus: f.localStatus ?? null,
+      remoteStatus: f.remoteStatus ?? null,
+    }));
+    if (asaasPlan.preservedPaid > 0) {
+      preview.hasPreservedPayments = true;
+    }
+  }
+
+  return preview;
+}
+
+type AsaasReleaseProcessResult = {
+  cancelableIds: string[];
+  cancelled: number;
+  preservedPaid: number;
+  preservedRefunded: number;
+  alreadyCancelled: number;
+  failed: Array<{
+    chargeId: string;
+    error: string;
+    localStatus?: string | null;
+    remoteStatus?: string | null;
+    disposition?: ReleaseAsaasDisposition;
+  }>;
+};
+
+/**
+ * Consulta o status real no Asaas antes de decidir.
+ * - PENDING/OVERDUE → cancelável (DELETE)
+ * - RECEIVED/CONFIRMED → preservar paga (atualiza local)
+ * - REFUNDED → preservar estornada
+ * - DELETED/CANCELLED → já cancelada
+ * - demais não removíveis → falha crítica (não limpa local)
+ */
+async function resolveAsaasChargesForRelease(
+  admin: SupabaseClient,
+  companyId: string,
+  candidateIds: string[],
+  options?: { executeCancel?: boolean },
+): Promise<AsaasReleaseProcessResult> {
+  const executeCancel = options?.executeCancel === true;
+  const cancelableIds: string[] = [];
+  const failed: AsaasReleaseProcessResult['failed'] = [];
+  let cancelled = 0;
+  let preservedPaid = 0;
+  let preservedRefunded = 0;
+  let alreadyCancelled = 0;
+
+  for (const chargeId of candidateIds) {
+    const { data: localRow } = await admin
+      .from('company_asaas_charges')
+      .select('id, status, asaas_payment_id')
+      .eq('id', chargeId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!localRow) {
+      alreadyCancelled += 1;
+      continue;
+    }
+
+    const localBefore = String((localRow as { status?: string }).status || '');
+    const asaasPaymentId = String(
+      (localRow as { asaas_payment_id?: string }).asaas_payment_id || '',
+    );
+
+    if (isPaidAsaasChargeStatus(localBefore)) {
+      preservedPaid += 1;
+      console.log('[releaseLot][asaas] preserve_paid_local', {
+        chargeId: chargeId.slice(0, 8),
+        localBefore,
+        asaasPaymentId,
+      });
+      continue;
+    }
+    if (isAlreadyCancelledAsaasChargeStatus(localBefore)) {
+      alreadyCancelled += 1;
+      continue;
+    }
+
+    let remoteStatus: string | null = null;
+    let disposition: ReleaseAsaasDisposition = 'block_non_removable';
+
+    try {
+      const synced = await getCompanyChargeStatus(admin, companyId, chargeId);
+      remoteStatus =
+        normalizeAsaasRemoteStatus(synced.asaasRemoteStatus) ||
+        normalizeAsaasRemoteStatus(synced.status);
+      disposition = classifyRemoteAsaasStatusForRelease(
+        synced.asaasRemoteStatus || synced.status,
+      );
+
+      console.log('[releaseLot][asaas] synced', {
+        chargeId: chargeId.slice(0, 8),
+        asaasPaymentId,
+        localBefore,
+        localAfter: synced.status,
+        remoteStatus,
+        disposition,
+      });
+    } catch (err) {
+      // 404 / mismatch de ambiente: NÃO marcar CANCELLED cegamente — falha crítica.
+      const msg = err instanceof Error ? err.message : String(err);
+      const isMismatch = err instanceof CompanyAsaasEnvironmentMismatchError;
+      failed.push({
+        chargeId,
+        error: isMismatch
+          ? `Cobrança não encontrada no ambiente Asaas atual (possível mismatch de chave/ambiente). Local=${localBefore}. ${msg}`
+          : msg,
+        localStatus: localBefore,
+        remoteStatus: null,
+        disposition: 'block_non_removable',
+      });
+      console.warn('[releaseLot][asaas] sync_failed', {
+        chargeId: chargeId.slice(0, 8),
+        asaasPaymentId,
+        localBefore,
+        isMismatch,
+        error: msg,
+      });
+      continue;
+    }
+
+    if (disposition === 'preserve_paid') {
+      preservedPaid += 1;
+      continue;
+    }
+    if (disposition === 'preserve_refunded') {
+      preservedRefunded += 1;
+      continue;
+    }
+    if (disposition === 'already_cancelled') {
+      alreadyCancelled += 1;
+      continue;
+    }
+    if (disposition === 'block_non_removable') {
+      failed.push({
+        chargeId,
+        error: `Cobrança Asaas com status remoto "${remoteStatus || 'desconhecido'}" não é removível (só PENDING/OVERDUE). Local era ${localBefore}.`,
+        localStatus: localBefore,
+        remoteStatus,
+        disposition,
+      });
+      continue;
+    }
+
+    // disposition === 'cancel' — só PENDING/OVERDUE remoto
+    cancelableIds.push(chargeId);
+    if (!executeCancel) continue;
+
+    try {
+      await cancelCompanyCharge(admin, companyId, chargeId);
+      cancelled += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Não repetir DELETE: reconsultar Asaas e reclassificar uma vez.
+      if (/não pode ser removida|nao pode ser removida|pendentes ou vencidas/i.test(msg)) {
+        try {
+          const resynced = await getCompanyChargeStatus(admin, companyId, chargeId);
+          const remoteAfter =
+            normalizeAsaasRemoteStatus(resynced.asaasRemoteStatus) ||
+            normalizeAsaasRemoteStatus(resynced.status);
+          const dispositionAfter = classifyRemoteAsaasStatusForRelease(
+            resynced.asaasRemoteStatus || resynced.status,
+          );
+          console.log('[releaseLot][asaas] delete_rejected_reclassified', {
+            chargeId: chargeId.slice(0, 8),
+            localBefore,
+            remoteAfter,
+            dispositionAfter,
+            asaasMessage: msg,
+          });
+          if (dispositionAfter === 'preserve_paid') {
+            preservedPaid += 1;
+            continue;
+          }
+          if (dispositionAfter === 'preserve_refunded') {
+            preservedRefunded += 1;
+            continue;
+          }
+          if (dispositionAfter === 'already_cancelled') {
+            alreadyCancelled += 1;
+            continue;
+          }
+          failed.push({
+            chargeId,
+            error: `Asaas recusou remoção (status remoto ${remoteAfter || 'desconhecido'}). Local era ${localBefore}. ${msg}`,
+            localStatus: localBefore,
+            remoteStatus: remoteAfter,
+            disposition: 'block_non_removable',
+          });
+        } catch (reErr) {
+          const reMsg = reErr instanceof Error ? reErr.message : String(reErr);
+          failed.push({
+            chargeId,
+            error: `${msg} (reconsulta falhou: ${reMsg})`,
+            localStatus: localBefore,
+            remoteStatus,
+            disposition: 'block_non_removable',
+          });
+        }
+      } else if (/404|not found/i.test(msg)) {
+        failed.push({
+          chargeId,
+          error: `Cobrança Asaas não encontrada ao cancelar (não marcar local). Local=${localBefore}. ${msg}`,
+          localStatus: localBefore,
+          remoteStatus,
+          disposition: 'block_non_removable',
+        });
+      } else {
+        failed.push({
+          chargeId,
+          error: msg,
+          localStatus: localBefore,
+          remoteStatus,
+          disposition: 'cancel',
+        });
+      }
+    }
+  }
+
+  return {
+    cancelableIds,
+    cancelled,
+    preservedPaid,
+    preservedRefunded,
+    alreadyCancelled,
+    failed,
+  };
 }
 
 async function cancelOpenAsaasCharges(
@@ -528,38 +785,18 @@ async function cancelOpenAsaasCharges(
   companyId: string,
   openChargeIds: string[],
 ): Promise<{ cancelled: number; failed: Array<{ chargeId: string; error: string }> }> {
-  const failed: Array<{ chargeId: string; error: string }> = [];
-  let cancelled = 0;
-
-  for (const chargeId of openChargeIds) {
-    try {
-      const { data } = await admin
-        .from('company_asaas_charges')
-        .select('id, status')
-        .eq('id', chargeId)
-        .eq('company_id', companyId)
-        .maybeSingle();
-      const status = String((data as { status?: string } | null)?.status || '');
-      if (isPaidAsaasChargeStatus(status)) {
-        failed.push({
-          chargeId,
-          error: 'Cobrança paga — cancelamento bloqueado (preservar).',
-        });
-        continue;
-      }
-      if (isAlreadyCancelledAsaasChargeStatus(status)) {
-        cancelled += 1;
-        continue;
-      }
-      await cancelCompanyCharge(admin, companyId, chargeId);
-      cancelled += 1;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      failed.push({ chargeId, error: msg });
-    }
-  }
-
-  return { cancelled, failed };
+  const result = await resolveAsaasChargesForRelease(admin, companyId, openChargeIds, {
+    executeCancel: true,
+  });
+  return {
+    cancelled: result.cancelled + result.alreadyCancelled,
+    failed: result.failed.map((f) => ({
+      chargeId: f.chargeId,
+      error: f.error,
+      ...(f.localStatus ? { localStatus: f.localStatus } : {}),
+      ...(f.remoteStatus ? { remoteStatus: f.remoteStatus } : {}),
+    })) as Array<{ chargeId: string; error: string }>,
+  };
 }
 
 async function applyLocalRelease(
@@ -853,24 +1090,58 @@ export async function executeReleaseLot(
 
   const block = await loadBlock(admin, input.lotId);
 
-  // Fase Asaas (fora de transação longa)
+  // Fase Asaas: reconsulta TODAS as candidatas locais (não só IDs da prévia).
+  // Sync remoto antes de qualquer DELETE; falha crítica bloqueia limpeza local.
   let cancelledAsaasCharges = 0;
-  let failedAsaasCharges: Array<{ chargeId: string; error: string }> = [];
+  let failedAsaasCharges: Array<{
+    chargeId: string;
+    error: string;
+    localStatus?: string | null;
+    remoteStatus?: string | null;
+  }> = [];
 
-  if (preview.openChargeIds.length > 0) {
+  if (preview.saleId) {
+    const liveCtx = await loadSaleContext(admin, preview.saleId, preview.companyId);
+    const candidateIds = liveCtx.charges
+      .filter((c) => isLocalAsaasCancelCandidateStatus(c.status))
+      .map((c) => c.id);
+
+    if (candidateIds.length > 0) {
+      const asaasResult = await resolveAsaasChargesForRelease(
+        admin,
+        preview.companyId,
+        candidateIds,
+        { executeCancel: true },
+      );
+      cancelledAsaasCharges = asaasResult.cancelled + asaasResult.alreadyCancelled;
+      failedAsaasCharges = asaasResult.failed.map((f) => ({
+        chargeId: f.chargeId,
+        error: f.error,
+        localStatus: f.localStatus ?? null,
+        remoteStatus: f.remoteStatus ?? null,
+      }));
+
+      if (failedAsaasCharges.length > 0) {
+        throw releaseErr(
+          `Não foi possível concluir o Asaas para ${failedAsaasCharges.length} cobrança(s). A limpeza local não foi aplicada. Reprocesse após corrigir.`,
+          502,
+          'ASAAS_CANCEL_FAILED',
+          'cancel_asaas',
+          { failedAsaasCharges },
+        );
+      }
+    }
+  } else if (preview.openChargeIds.length > 0) {
     const asaasResult = await cancelOpenAsaasCharges(
       admin,
       preview.companyId,
       preview.openChargeIds,
     );
     cancelledAsaasCharges = asaasResult.cancelled;
-    failedAsaasCharges = asaasResult.failed.filter(
-      (f) => !f.error.includes('preservar'),
-    );
-
+    failedAsaasCharges = asaasResult.failed;
     if (failedAsaasCharges.length > 0) {
       throw releaseErr(
-        `Não foi possível cancelar ${failedAsaasCharges.length} cobrança(s) no Asaas. A limpeza local não foi aplicada. Reprocesse após corrigir.`,
+        `Não foi possível concluir o Asaas para ${failedAsaasCharges.length} cobrança(s). A limpeza local não foi aplicada. Reprocesse após corrigir.`,
         502,
         'ASAAS_CANCEL_FAILED',
         'cancel_asaas',

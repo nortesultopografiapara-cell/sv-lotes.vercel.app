@@ -9,8 +9,11 @@ import {
   buildReleaseLotIdempotencyKey,
   classifyAsaasChargeForRelease,
   classifyFinanceReceiptForRelease,
+  classifyRemoteAsaasStatusForRelease,
   isActiveUnpaidFinanceReceipt,
+  isAsaasRemoteCancelableStatus,
   isCanceledSaleStatus,
+  isLocalAsaasCancelCandidateStatus,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   RELEASE_LOT_MOTIVE_OPTIONS,
@@ -76,19 +79,41 @@ function testReceiptClassification() {
 function testAsaasClassification() {
   assert(classifyAsaasChargeForRelease('PENDING') === 'open', 'PENDING');
   assert(classifyAsaasChargeForRelease('OVERDUE') === 'open', 'OVERDUE');
-  assert(classifyAsaasChargeForRelease('REGISTERED') === 'open', 'REGISTERED');
+  // REGISTERED local ≠ cancelável: exige sync remoto (não entra na contagem "aberta")
+  assert(classifyAsaasChargeForRelease('REGISTERED') === 'other', 'REGISTERED other');
   assert(classifyAsaasChargeForRelease('PAID') === 'paid', 'PAID');
   assert(classifyAsaasChargeForRelease('RECEIVED') === 'paid', 'RECEIVED');
   assert(classifyAsaasChargeForRelease('CONFIRMED') === 'paid', 'CONFIRMED');
   assert(classifyAsaasChargeForRelease('CANCELLED') === 'cancelled', 'CANCELLED');
-  assert(classifyAsaasChargeForRelease('REFUNDED') === 'other', 'REFUNDED other');
+  assert(classifyAsaasChargeForRelease('REFUNDED') === 'refunded', 'REFUNDED');
+  assert(isLocalAsaasCancelCandidateStatus('REGISTERED'), 'REGISTERED é candidata a sync');
+  assert(isLocalAsaasCancelCandidateStatus('PENDING'), 'PENDING candidata');
+  assert(!isLocalAsaasCancelCandidateStatus('PAID'), 'PAID não candidata');
+  assert(isAsaasRemoteCancelableStatus('PENDING'), 'remoto PENDING cancelável');
+  assert(isAsaasRemoteCancelableStatus('OVERDUE'), 'remoto OVERDUE cancelável');
+  assert(!isAsaasRemoteCancelableStatus('RECEIVED'), 'RECEIVED não cancelável');
+  assert(!isAsaasRemoteCancelableStatus('REGISTERED'), 'REGISTERED remoto não DELETE');
+
+  assert(classifyRemoteAsaasStatusForRelease('PENDING') === 'cancel', 'disp PENDING');
+  assert(classifyRemoteAsaasStatusForRelease('OVERDUE') === 'cancel', 'disp OVERDUE');
+  assert(classifyRemoteAsaasStatusForRelease('RECEIVED') === 'preserve_paid', 'disp RECEIVED');
+  assert(classifyRemoteAsaasStatusForRelease('CONFIRMED') === 'preserve_paid', 'disp CONFIRMED');
+  assert(classifyRemoteAsaasStatusForRelease('REFUNDED') === 'preserve_refunded', 'disp REFUNDED');
+  assert(classifyRemoteAsaasStatusForRelease('DELETED') === 'already_cancelled', 'disp DELETED');
+  assert(classifyRemoteAsaasStatusForRelease('CANCELLED') === 'already_cancelled', 'disp CANCELLED');
+  assert(
+    classifyRemoteAsaasStatusForRelease('AWAITING_RISK_ANALYSIS') === 'block_non_removable',
+    'disp outros bloqueia',
+  );
+
   const s = summarizeReleaseCharges([
     { status: 'PENDING' },
     { status: 'OVERDUE' },
+    { status: 'REGISTERED' },
     { status: 'PAID' },
     { status: 'CANCELLED' },
   ]);
-  assert(s.openAsaasCharges === 2, '2 open');
+  assert(s.openAsaasCharges === 2, '2 open canceláveis locais (sem REGISTERED)');
   assert(s.paidAsaasCharges === 1, '1 paid');
   assert(s.alreadyCanceledAsaasCharges === 1, '1 cancelled');
   console.log('OK testAsaasClassification');
@@ -149,6 +174,11 @@ function testBlocksColumnMapping() {
 function testServiceOrchestrationSource() {
   const svc = read('lib/finance/releaseLotService.ts');
   assert(svc.includes('cancelCompanyCharge'), 'cancela Asaas via serviço oficial');
+  assert(svc.includes('getCompanyChargeStatus'), 'consulta status Asaas antes de cancelar');
+  assert(svc.includes('resolveAsaasChargesForRelease'), 'resolve com sync remoto');
+  assert(svc.includes('classifyRemoteAsaasStatusForRelease'), 'classifica status remoto');
+  assert(svc.includes('executeCancel: false'), 'preview só sync sem DELETE cego');
+  assert(svc.includes('executeCancel: true'), 'execute cancela após sync');
   assert(svc.includes("status: RECEIPT_CANCELLED_STATUS"), 'cancela parcelas unpaid');
   assert(svc.includes("status: SALE_CANCELLED_STATUS"), 'encerra venda CANCELLED');
   assert(svc.includes("status: CONTRACT_CANCELLED_STATUS"), 'cancela contrato');
@@ -157,6 +187,8 @@ function testServiceOrchestrationSource() {
   assert(svc.includes("customer_id: null"), 'limpa customer_id');
   assert(svc.includes("action: preview.saleId ? 'sale_cancelled'"), 'audit sale_cancelled');
   assert(svc.includes('ASAAS_CANCEL_FAILED'), 'falha Asaas bloqueia local');
+  assert(svc.includes('asaasBlockedCharges'), 'preview expõe bloqueadas');
+  assert(svc.includes('delete_rejected_reclassified'), 'reclassifica se DELETE recusado');
   assert(svc.includes('alreadyReleased'), 'idempotência alreadyReleased');
   assert(svc.includes('isPaidFinanceReceiptStatus'), 'preserva pagas');
   assert(svc.includes('isTenantEnterpriseAdminRole'), 'admin only');
@@ -186,6 +218,8 @@ function testGisWiring() {
   assert(modal.includes('Liberar lote e encerrar venda'), 'botão destrutivo');
   assert(modal.includes('Estou ciente de que o lote será liberado'), 'checkbox');
   assert(modal.includes('Motivo da liberação'), 'motivo obrigatório');
+  assert(modal.includes('Cobranças Asaas canceláveis'), 'conta só canceláveis');
+  assert(modal.includes('asaasBlockedCharges'), 'bloqueia submit se Asaas bloqueado');
   assert(modal.includes('pagamentos preservados'), 'alerta pagamentos');
   assert(modal.includes('submittingRef'), 'anti double-click');
   assert(modal.includes('form-input-light'), 'contraste inputs GIS');
