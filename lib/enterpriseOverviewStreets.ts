@@ -7,6 +7,13 @@ import proj4 from 'proj4';
 import { resolveUtmProj4FromProject } from '@/lib/civil3dTxtParser';
 import { haversineDistanceM } from '@/lib/gis/distanceMeasure';
 import { planarDistanceM } from '@/lib/officialConfrontationRing';
+import {
+  diagnoseOfficialStreetName,
+  resolveOfficialStreetLabel,
+} from '@/lib/streetGuide';
+
+export { resolveOfficialStreetLabel, diagnoseOfficialStreetName };
+
 export const STREET_TYPE_SORT_ORDER: Record<string, number> = {
   Rodovia: 0,
   Avenida: 1,
@@ -599,24 +606,6 @@ export function streetLabelOffsetMm(fontSize: number): number {
 }
 
 /**
- * Nome oficial para prancha/relatório — nunca reconstrói tipo+nome.
- * Usa displayName/name já cadastrados na entidade da via.
- */
-export function resolveOfficialStreetLabel(
-  guide: Record<string, unknown>,
-): string {
-  const fromDisplay = String(guide.displayName || '').trim();
-  if (fromDisplay && !isUnnamedStreetName(fromDisplay)) {
-    return fromDisplay;
-  }
-  const fromName = String(guide.name || '').trim();
-  if (fromName && !isUnnamedStreetName(fromName)) {
-    return fromName;
-  }
-  return 'Via sem identificação';
-}
-
-/**
  * Calcula o ângulo do rótulo no espaço da folha a partir do tangente local (UTM/rota).
  */
 export function streetLabelAngleOnSheet(
@@ -758,7 +747,21 @@ export function groupEnterpriseStreets(params: {
     if (!id) continue;
     const type = String(guide.type || 'Rua').trim() || 'Rua';
     const name = String(guide.name || '').trim();
-    const displayName = resolveOfficialStreetLabel(guide);
+    const diagnosed = diagnoseOfficialStreetName(guide);
+    if (diagnosed.divergence && diagnosed.divergenceDetail) {
+      console.info('[street-official-name]', {
+        id: diagnosed.id,
+        type: diagnosed.type,
+        name: diagnosed.name,
+        code: diagnosed.code,
+        incomingDisplayName: diagnosed.incomingDisplayName,
+        prefixInName: diagnosed.prefixInName,
+        label: diagnosed.label,
+        source: diagnosed.source,
+        divergence: diagnosed.divergenceDetail,
+      });
+    }
+    const displayName = diagnosed.label;
     const unnamed =
       displayName === 'Via sem identificação' || isUnnamedStreetName(name);
 

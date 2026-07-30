@@ -785,7 +785,7 @@ function testOfficialStreetNameNoRebuild() {
       id: 'a',
       type: 'Avenida',
       name: 'Avenida 04',
-      displayName: 'Avenida 04',
+      displayName: 'Alameda 04', // sintético/errado — deve ser ignorado
     },
     {
       id: 'b',
@@ -797,7 +797,18 @@ function testOfficialStreetNameNoRebuild() {
       id: 'c',
       type: 'Rua',
       name: 'Rua 08',
-      // sem displayName — usa name cadastrado, sem prefixar tipo de novo
+    },
+    {
+      id: 'd',
+      type: 'Alameda', // type divergente
+      name: 'Avenida 04',
+      displayName: 'Alameda 04',
+    },
+    {
+      id: 'e',
+      type: 'Avenida',
+      name: '04',
+      displayName: 'Alameda 04', // stale — type+name oficiais vencem
     },
   ];
   const local = new Map<string, [number, number][][]>();
@@ -815,7 +826,7 @@ function testOfficialStreetNameNoRebuild() {
   });
   assert(
     streets.find((s) => s.id === 'a')!.displayName === 'Avenida 04',
-    'Avenida 04 intacta',
+    'Avenida 04 do name; ignora displayName Alameda',
   );
   assert(
     streets.find((s) => s.id === 'b')!.displayName === 'Rodovia PA-160',
@@ -826,17 +837,178 @@ function testOfficialStreetNameNoRebuild() {
     'Rua 08 do name cadastrado',
   );
   assert(
-    resolveOfficialStreetLabel({ type: 'Avenida', name: '04', displayName: 'Avenida 04' }) ===
-      'Avenida 04',
-    'prefer displayName',
+    streets.find((s) => s.id === 'd')!.displayName === 'Avenida 04',
+    'name com prefixo vence type Alameda',
+  );
+  assert(
+    streets.find((s) => s.id === 'e')!.displayName === 'Avenida 04',
+    'type+name vence displayName stale Alameda 04',
+  );
+  assert(
+    resolveOfficialStreetLabel({
+      type: 'Avenida',
+      name: '04',
+      displayName: 'Alameda 04',
+    }) === 'Avenida 04',
+    'nunca transforma Avenida 04 em Alameda 04',
   );
   assert(
     resolveOfficialStreetLabel({ type: 'Rua', name: 'Rua 01' }) === 'Rua 01',
-    'não reconstrói',
+    'não reconstrói prefixo já no name',
   );
-  const src = read('lib/enterpriseOverviewStreets.ts');
-  assert(!src.includes("from '@/lib/streetGuide'"), 'sem formatStreetDisplay na prancha');
+  assert(
+    resolveOfficialStreetLabel({
+      type: 'Alameda',
+      name: 'Avenida 04',
+      displayName: 'Alameda 04',
+    }) === 'Avenida 04',
+    'prefixo em name não é trocado por type',
+  );
+
+  // MapGIS / Quadro / Relatório — mesma função
+  const sg = read('lib/streetGuide.ts');
+  assert(sg.includes('export function resolveOfficialStreetLabel'), 'função canônica');
+  assert(sg.includes('export function diagnoseOfficialStreetName'), 'diagnóstico');
+  const map = read('components/map/GISMap.tsx');
+  assert(map.includes('resolveOfficialStreetLabel'), 'MapGIS usa função única');
+  const streetsSrc = read('lib/enterpriseOverviewStreets.ts');
+  assert(
+    streetsSrc.includes('diagnoseOfficialStreetName'),
+    'diagnóstico de divergência',
+  );
+  assert(
+    !streetsSrc.includes('formatStreetDisplay'),
+    'prancha não usa formatStreetDisplay',
+  );
+  const guideNorm = read('lib/streetGuide.ts');
+  assert(
+    guideNorm.includes('displayName = resolveOfficialStreetLabel'),
+    'normalize usa resolução oficial',
+  );
   console.log('OK testOfficialStreetNameNoRebuild');
+}
+
+function testCorredorSeventeenLabelsAndParity() {
+  // Fixture alinhada ao Quadro Corredor (17 vias / total 15166.26 m).
+  const names: Array<{ type: string; name: string; lengthM: number }> = [
+    { type: 'Rodovia', name: 'Rodovia PA-160', lengthM: 1700 },
+    { type: 'Avenida', name: '01', lengthM: 900 },
+    { type: 'Avenida', name: '02', lengthM: 900 },
+    { type: 'Avenida', name: '03', lengthM: 900 },
+    { type: 'Avenida', name: '04', lengthM: 900 },
+    { type: 'Avenida', name: '05', lengthM: 900 },
+    { type: 'Avenida', name: '06', lengthM: 900 },
+    { type: 'Avenida', name: '07', lengthM: 866.26 },
+    { type: 'Rua', name: '01', lengthM: 800 },
+    { type: 'Rua', name: '02', lengthM: 800 },
+    { type: 'Rua', name: '03', lengthM: 800 },
+    { type: 'Rua', name: '04', lengthM: 800 },
+    { type: 'Rua', name: '05', lengthM: 800 },
+    { type: 'Rua', name: '06', lengthM: 800 },
+    { type: 'Rua', name: '07', lengthM: 800 },
+    { type: 'Rua', name: '08', lengthM: 800 },
+    { type: 'Rua', name: '09', lengthM: 800 },
+  ];
+  assert(names.length === 17, 'fixture 17 vias');
+  const total = names.reduce((s, n) => s + n.lengthM, 0);
+  assert(Math.abs(total - 15166.26) < 0.001, `total ${total}`);
+
+  const guides = names.map((n, i) => ({
+    id: `c${i}`,
+    type: n.type,
+    // Caso crítico: Avenida 04 com displayName stale Alameda
+    name: n.name,
+    displayName:
+      n.type === 'Avenida' && n.name === '04' ? 'Alameda 04' : undefined,
+  }));
+  const local = new Map<string, [number, number][][]>();
+  names.forEach((n, i) => {
+    const y = i * 40;
+    local.set(`c${i}`, [
+      [
+        [0, y],
+        [n.lengthM, y],
+      ],
+    ]);
+  });
+
+  const { streets } = groupEnterpriseStreets({
+    guides,
+    localLinesByGuideId: local,
+  });
+  const { rows, totalLengthM } = buildStreetTableRows(streets);
+  assert(rows.length === 17, `quadro 17 got ${rows.length}`);
+  assert(Math.abs(totalLengthM - 15166.26) < 0.01, `len ${totalLengthM}`);
+
+  const av04 = streets.find(
+    (s) => s.type === 'Avenida' && (s.name === '04' || s.displayName === 'Avenida 04'),
+  );
+  assert(!!av04, 'Avenida 04 no group');
+  assert(av04!.displayName === 'Avenida 04', 'Avenida 04 nunca Alameda');
+  assert(!rows.some((r) => /Alameda\s*04/i.test(r.name)), 'quadro sem Alameda 04');
+  assert(
+    rows.some((r) => r.name === 'Avenida 04'),
+    'quadro tem Avenida 04',
+  );
+  assert(
+    rows.some((r) => r.name === 'Avenida 05'),
+    'quadro tem Avenida 05',
+  );
+
+  // Paridade relatório
+  const report = buildStreetGuidesReportDataFromStreets(streets);
+  assert(report.streetCount === 17, 'relatório 17');
+  assert(
+    report.rows.every((r, i) => r.name === rows[i].name && r.lengthLabel === rows[i].lengthLabel),
+    'relatório ≡ quadro',
+  );
+
+  // ≥1 rótulo por via válida (inclui Avenida 05)
+  const soft: { x: number; y: number; w: number; h: number }[] = [];
+  for (let i = 0; i < 17; i++) {
+    for (let k = 0; k < 6; k++) {
+      soft.push({
+        x: 15 + k * 30,
+        y: -(i * 40) * 0.05 - 1.2,
+        w: 4,
+        h: 3,
+      });
+    }
+  }
+  let without = 0;
+  let av05Labels = 0;
+  for (const street of streets) {
+    const places = pickStreetLabelPlacements(street, { mapScaleMmPerM: 0.05 });
+    const { placements } = buildStreetLabelPlacementsOnSheet({
+      street,
+      placements: places,
+      projectPoint: (p) => [p[0] * 0.05, -p[1] * 0.05],
+      hardOccupied: [],
+      softOccupied: soft,
+      mapScaleMmPerM: 0.05,
+    });
+    if (placements.length === 0) without += 1;
+    if (street.displayName === 'Avenida 05') av05Labels = placements.length;
+  }
+  assert(without === 0, `todas as 17 vias com rótulo, sem=${without}`);
+  assert(av05Labels >= 1, 'Avenida 05 visível no mapa');
+  console.log('OK testCorredorSeventeenLabelsAndParity', {
+    totalLengthM,
+    av05Labels,
+  });
+}
+
+/** Helpers locais — espelha buildStreetGuidesReportData sem UTM. */
+function buildStreetGuidesReportDataFromStreets(
+  streets: EnterpriseStreetGrouped[],
+) {
+  const { rows, pendingRows, totalLengthM } = buildStreetTableRows(streets);
+  return {
+    rows,
+    pendingRows,
+    streetCount: rows.length,
+    totalLengthM,
+  };
 }
 
 function testNormalPerpendicularAndReadable() {
@@ -916,6 +1088,7 @@ function main() {
   testManyStreetsGetLabels();
   testSoftFallbackVsHardBlock();
   testOfficialStreetNameNoRebuild();
+  testCorredorSeventeenLabelsAndParity();
   testNormalPerpendicularAndReadable();
   testSingleLabelPipelineSource();
   testSourceWiring();

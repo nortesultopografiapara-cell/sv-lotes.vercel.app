@@ -134,7 +134,7 @@ import {
   mergeCurvedSegments,
   type Segment,
 } from "@/utils/calculateLotDimensions";
-import { formatStreetDisplay } from "@/lib/streetGuide";
+import { formatStreetDisplay, resolveOfficialStreetLabel } from "@/lib/streetGuide";
 import { flattenLineStringCoordinates } from "@/lib/streetGuideConfrontation";
 import { computeOfficialLotLabelPosition } from "@/lib/lotLabelPosition";
 import {
@@ -5396,9 +5396,9 @@ export default function GISMap({
             const line = flattenLineStringCoordinates(geo?.coordinates);
             if (!line) return null;
             const pts = line.map((c: number[]) => [c[1], c[0]]);
-            const label =
-              guide.displayName ||
-              formatStreetDisplay(guide.type, guide.name);
+            const label = resolveOfficialStreetLabel(
+              guide as Record<string, unknown>,
+            );
             const widthLabel =
               guide.width != null && guide.width !== ''
                 ? `${Number(guide.width).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
