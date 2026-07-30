@@ -12,6 +12,7 @@ import {
   defaultNewCompanySubscriptionDates,
 } from '@/lib/companySubscriptionDates';
 import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
+import { describeCompanyAsaasProvision } from '@/lib/finance/companyAsaasAccess';
 
 function generateSlug(name: string) {
   return name
@@ -214,6 +215,13 @@ export async function POST(req: Request) {
       } else {
         console.log('[SAAS_SUBSCRIPTION] Assinatura e contrato (se dados completos) provisionados.', subResult.subscription?.id);
       }
+    }
+
+    // Integração financeira Asaas Company: acesso liberado por política multi-tenant.
+    // Contas/tokens NÃO são pré-criados — a empresa cadastra credenciais próprias.
+    if (newCompanyId) {
+      const asaasProvision = describeCompanyAsaasProvision(newCompanyId);
+      console.log('[ASAAS_COMPANY_PROVISION]', asaasProvision);
     }
 
     console.log(`[ETAPA 5] Conclusão...`);
