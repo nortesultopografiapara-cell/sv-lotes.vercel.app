@@ -424,6 +424,7 @@ function testOwnerNavigationRoutesStayOnAllowedModules() {
   assert(menu.some((item) => item.href === '/dashboard'), 'menu inclui dashboard');
   assert(menu.some((item) => item.href === '/contracts'), 'menu inclui contratos');
   assert(!menu.some((item) => item.href === '/legacy-contracts'), 'menu sem Contratos Antigos');
+  assert(!menu.some((item) => item.name === 'Contratos Antigos'), 'menu sem label Contratos Antigos');
   console.log('OK testOwnerNavigationRoutesStayOnAllowedModules');
 }
 

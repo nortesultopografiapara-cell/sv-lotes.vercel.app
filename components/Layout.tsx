@@ -297,14 +297,13 @@ const getMenuItems = (role: string) => {
   }
 
   if (isOwnerRole(role)) {
-    const ownerItems = [
+    return [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Cobranças', href: '/charges', icon: Banknote, color: 'text-violet-400' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
     ];
-    return ownerItems;
   }
   return [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
