@@ -8,6 +8,7 @@ export type GisMapPageOverlayFlags = {
   isUpdateLotModalOpen?: boolean;
   isDeleteLotModalOpen?: boolean;
   isEnterpriseOverviewModalOpen?: boolean;
+  isStreetGuidesReportModalOpen?: boolean;
   deleteQuadraConfirm?: boolean;
   gisMapOverlayOpen?: boolean;
 };
@@ -17,7 +18,6 @@ export type GisMapOverlayFlags = {
   customerContractValidation?: boolean;
   clearConfirmModal?: boolean;
   confrontEdit?: boolean;
-  officialSideEdit?: boolean;
 };
 
 export function computeGisMapPageOverlayOpen(
@@ -33,6 +33,7 @@ export function computeGisMapPageOverlayOpen(
       flags.isUpdateLotModalOpen ||
       flags.isDeleteLotModalOpen ||
       flags.isEnterpriseOverviewModalOpen ||
+      flags.isStreetGuidesReportModalOpen ||
       flags.deleteQuadraConfirm ||
       flags.gisMapOverlayOpen,
   );
@@ -43,8 +44,7 @@ export function computeGisMapOverlayOpen(flags: GisMapOverlayFlags): boolean {
     flags.customerForm ||
       flags.customerContractValidation ||
       flags.clearConfirmModal ||
-      flags.confrontEdit ||
-      flags.officialSideEdit,
+      flags.confrontEdit,
   );
 }
 

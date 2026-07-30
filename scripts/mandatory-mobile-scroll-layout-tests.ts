@@ -103,6 +103,8 @@ function testGisMapMobileToolbarCss() {
   assert(mapPage.includes('gis-toolbar-desktop-only'), 'toolbar marca ferramentas desktop-only');
   assert(mapPage.includes('data-testid="map-status-legend"'), 'legenda com testid map-status-legend');
   assert(mapPage.includes('gis-tools-toolbar'), 'toolbar com classe gis-tools-toolbar');
+  assert(mapPage.includes('GIS TOOLS VERTICAL BAR'), 'toolbar vertical lateral');
+  assert(!mapPage.includes('GIS TOOLS HORIZONTAL BAR'), 'sem toolbar horizontal');
 }
 
 function testGlobalsImport() {

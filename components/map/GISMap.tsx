@@ -115,16 +115,7 @@ import {
 import {
   getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
-  officialSideDisplayLabel,
-  readManualOfficialSideMap,
-  type OfficialSideKind,
 } from "@/lib/officialLotMeasurements";
-import {
-  officialSideAuditDescription,
-  persistOfficialSideForSegment,
-  readOfficialSideFromSegmentRow,
-} from "@/lib/officialSidePersist";
-import { DefineOfficialSideModal } from "@/components/map/DefineOfficialSideModal";
 import { ReleaseLotConfirmModal } from "@/components/map/ReleaseLotConfirmModal";
 import {
   calculateLotDimensions,
@@ -134,7 +125,7 @@ import {
   mergeCurvedSegments,
   type Segment,
 } from "@/utils/calculateLotDimensions";
-import { formatStreetDisplay } from "@/lib/streetGuide";
+import { formatStreetDisplay, resolveOfficialStreetLabel } from "@/lib/streetGuide";
 import { flattenLineStringCoordinates } from "@/lib/streetGuideConfrontation";
 import { computeOfficialLotLabelPosition } from "@/lib/lotLabelPosition";
 import {
@@ -153,7 +144,6 @@ import {
 import {
   applyManualConfrontantToBlock,
   buildLotConfrontationAudit,
-  buildOfficialLotConfrontationSegmentRows,
   clearManualConfrontantFromBlock,
   findPropagationTargets,
   officialSegmentIndexesForSide,
@@ -170,6 +160,8 @@ import {
   persistBlockSegmentsJson,
 } from "@/lib/segmentConfrontantPersist";
 import { InformConfrontantModal } from "@/components/map/InformConfrontantModal";
+import { LotConfrontationsPanel } from "@/components/map/LotConfrontationsPanel";
+import { loadLotConfrontations } from "@/lib/lotConfrontationsPanel";
 import {
   DistanceMeasureMapContent,
   DistanceMeasureOverlay,
@@ -767,9 +759,6 @@ function LotBoundaryEdgePolylines({
   strokeColor,
   frontCorrectActive,
   onEdgePick,
-  officialSidePickActive,
-  onOfficialSideEdgePick,
-  officialSideLabelByEdge,
   assistedConfrontationActive,
   onConfrontEdgePick,
   segmentEdgeByIndex,
@@ -781,9 +770,6 @@ function LotBoundaryEdgePolylines({
   strokeColor: string;
   frontCorrectActive?: boolean;
   onEdgePick?: (segmentIndex: number) => void;
-  officialSidePickActive?: boolean;
-  onOfficialSideEdgePick?: (segmentIndex: number) => void;
-  officialSideLabelByEdge?: Map<number, string>;
   assistedConfrontationActive?: boolean;
   onConfrontEdgePick?: (segmentIndex: number) => void;
   segmentEdgeByIndex?: Map<
@@ -798,13 +784,10 @@ function LotBoundaryEdgePolylines({
   /** Diagnóstico Preview (?gisPerf): desliga arestas SVG. */
   boundaryEnabled?: boolean;
 }) {
-  const hasOfficialSideLabels = (officialSideLabelByEdge?.size ?? 0) > 0;
   const showEdges =
     (boundaryEnabled && SHOW_BOUNDARY_LINES) ||
     frontCorrectActive ||
-    officialSidePickActive ||
-    assistedConfrontationActive ||
-    hasOfficialSideLabels;
+    assistedConfrontationActive;
   if (!showEdges || positions.length < 2) return null;
 
   const lines: React.ReactNode[] = [];
@@ -817,25 +800,16 @@ function LotBoundaryEdgePolylines({
     const seg: LatLngPair[] = [a, b];
     logGeometryRender("Polyline", { ...lot, geometryType: "boundary-edge" }, seg.length);
     const edgeMeta = segmentEdgeByIndex?.get(i);
-    const pickOfficialSide = Boolean(
-      officialSidePickActive && onOfficialSideEdgePick,
-    );
     const pickConfront = Boolean(
-      assistedConfrontationActive && onConfrontEdgePick && !pickOfficialSide,
+      assistedConfrontationActive && onConfrontEdgePick,
     );
-    const pickFront = Boolean(frontCorrectActive && onEdgePick && !pickOfficialSide);
-    const color = pickOfficialSide
-      ? "#a78bfa"
-      : pickConfront
-        ? edgeColorForConfrontStatus(edgeMeta?.status)
-        : frontCorrectActive
-          ? "#f59e0b"
-          : strokeColor;
+    const pickFront = Boolean(frontCorrectActive && onEdgePick);
+    const color = pickConfront
+      ? edgeColorForConfrontStatus(edgeMeta?.status)
+      : frontCorrectActive
+        ? "#f59e0b"
+        : strokeColor;
     const tooltipParts: string[] = [];
-    const officialLabel = officialSideLabelByEdge?.get(i);
-    if (officialLabel) {
-      tooltipParts.push(`Lado oficial: ${officialLabel}`);
-    }
     if (edgeMeta?.status === 'manual' && edgeMeta.confrontant) {
       tooltipParts.push(`Confrontação manual: ${edgeMeta.confrontant}`);
     } else if (edgeMeta?.status === 'pending') {
@@ -845,10 +819,8 @@ function LotBoundaryEdgePolylines({
     }
     const tooltipText =
       tooltipParts.length > 0 ? tooltipParts.join(" · ") : undefined;
-    const showOfficialTooltip = Boolean(officialLabel) && !suspendLotHitTest;
     const edgeInteractive =
-      !suspendLotHitTest &&
-      (pickOfficialSide || pickConfront || pickFront || showOfficialTooltip);
+      !suspendLotHitTest && (pickConfront || pickFront);
     lines.push(
       <Polyline
         key={`${lot.id ?? lot.number}-edge-${i}-hit-${edgeInteractive ? 1 : 0}`}
@@ -856,20 +828,12 @@ function LotBoundaryEdgePolylines({
         interactive={edgeInteractive}
         pathOptions={{
           color,
-          weight: pickOfficialSide || pickConfront || frontCorrectActive ? 5 : 1,
-          opacity:
-            pickOfficialSide || pickConfront || frontCorrectActive ? 1 : 0.9,
+          weight: pickConfront || frontCorrectActive ? 5 : 1,
+          opacity: pickConfront || frontCorrectActive ? 1 : 0.9,
         }}
         eventHandlers={
           suspendLotHitTest
             ? undefined
-            : pickOfficialSide
-            ? {
-                click: (e) => {
-                  L.DomEvent.stopPropagation(e);
-                  onOfficialSideEdgePick!(i);
-                },
-              }
             : pickConfront
               ? {
                   click: (e) => {
@@ -1686,16 +1650,10 @@ function LotPopupContent({
   onPickFrontSegment,
   frontCorrectSaving,
   confrontationAudit,
-  assistedConfrontationMode,
   onEditConfrontationSide,
   onEditConfrontationSegment,
   allBlocksForConfront = [],
   onGenerateMemorial,
-  defineOfficialSideActive,
-  onStartDefineOfficialSide,
-  onCancelDefineOfficialSide,
-  onPickOfficialSideSegment,
-  onEditOfficialSideSegment,
   onPriceSaved,
   canEditLotPrice = false,
 }: {
@@ -1717,8 +1675,8 @@ function LotPopupContent({
   onCancelCorrectFront?: () => void;
   onPickFrontSegment?: (lot: any, segmentIndex: number) => void;
   frontCorrectSaving?: boolean;
+  /** Opcional — usado só como fallback de rótulo; a aba Confrontações carrega sozinha. */
   confrontationAudit?: LotConfrontationAudit | null;
-  assistedConfrontationMode?: boolean;
   onEditConfrontationSide?: (lot: any, side: SideRole) => void;
   onEditConfrontationSegment?: (
     lot: any,
@@ -1727,11 +1685,6 @@ function LotPopupContent({
   ) => void;
   allBlocksForConfront?: Record<string, unknown>[];
   onGenerateMemorial?: (lot: any) => void;
-  defineOfficialSideActive?: boolean;
-  onStartDefineOfficialSide?: (lot: any) => void;
-  onCancelDefineOfficialSide?: () => void;
-  onPickOfficialSideSegment?: (lot: any, segmentIndex: number) => void;
-  onEditOfficialSideSegment?: (lot: any, segmentIndex: number) => void;
   /** Atualiza blocks.price no estado do mapa após salvar manualmente. */
   onPriceSaved?: (lotId: string, price: number | null) => void;
   /** ADMIN / SUPER_ADMIN — OWNER e corretor não editam preço. */
@@ -2039,50 +1992,7 @@ function LotPopupContent({
           <div className="py-0.5 space-y-0.5">
             <div className="flex justify-between items-center gap-2">
               <span className="text-gray-500 font-semibold">Medidas:</span>
-              {userRole !== "BROKER" && !ownerReadOnly &&
-                onStartDefineOfficialSide &&
-                Array.isArray(lot.segments_json) &&
-                lot.segments_json.length >= 3 && (
-                  <button
-                    type="button"
-                    onClick={() => onStartDefineOfficialSide(lot)}
-                    className="text-[9px] font-bold text-violet-700 hover:text-violet-900 hover:underline shrink-0"
-                  >
-                    Editar medidas
-                  </button>
-                )}
             </div>
-            {defineOfficialSideActive && onPickOfficialSideSegment && (
-              <div className="rounded border border-violet-200 bg-violet-50/80 px-2 py-1.5 space-y-1">
-                <p className="text-[10px] font-semibold text-violet-900 leading-snug">
-                  Clique no segmento no mapa ou escolha abaixo:
-                </p>
-                <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
-                  {txtSegments.map((seg) => (
-                    <button
-                      key={`meas-${seg.segment_index}`}
-                      type="button"
-                      onClick={() =>
-                        onPickOfficialSideSegment(lot, seg.segment_index)
-                      }
-                      className="text-left px-2 py-1 rounded border border-violet-200 bg-white hover:bg-violet-50 text-[10px] font-medium text-gray-900"
-                    >
-                      Seg. {seg.segment_index + 1} —{" "}
-                      {seg.distanceLabel ?? `${seg.distance.toFixed(2)} m`}
-                    </button>
-                  ))}
-                </div>
-                {onCancelDefineOfficialSide && (
-                  <button
-                    type="button"
-                    onClick={onCancelDefineOfficialSide}
-                    className="w-full text-[10px] font-semibold text-gray-600 hover:text-gray-900 py-0.5"
-                  >
-                    Cancelar
-                  </button>
-                )}
-              </div>
-            )}
             {(
               [
                 ["Frente", officialMeasures.frente],
@@ -2197,66 +2107,25 @@ function LotPopupContent({
       )}
 
       {popupTab === "confrontacoes" && (
-        <div className="space-y-1 text-[11px]">
-          {confrontationAudit ? (
-            confrontationSegmentRows.map(
-              ({ key, sideLabel, segmentIndex, text, origin }) => (
-                <div
-                  key={`${key}-${segmentIndex}`}
-                  className="flex items-center justify-between gap-1 py-0.5 border-b border-gray-50 last:border-0"
-                >
-                  <span className="text-gray-500 shrink-0 w-[88px] leading-tight">
-                    {sideLabel}
-                    {segmentIndex >= 0 ? (
-                      <span className="block text-[9px] text-gray-400">
-                        Seg. {segmentIndex + 1}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="flex-1 text-gray-900 font-medium text-right leading-tight min-w-0">
-                    <span className="block truncate">{text}</span>
-                    <span className="text-[9px] text-gray-400 font-normal">
-                      ({origin})
-                    </span>
-                  </span>
-                  <div className="shrink-0 flex flex-col items-end gap-0.5">
-                    {!ownerReadOnly && onEditOfficialSideSegment && segmentIndex >= 0 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onEditOfficialSideSegment(lot, segmentIndex)
-                        }
-                        className="text-[9px] font-bold text-violet-600 hover:underline px-1"
-                      >
-                        Medida
-                      </button>
-                    )}
-                    {!ownerReadOnly &&
-                      (onEditConfrontationSegment || onEditConfrontationSide) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onEditConfrontationSegment && segmentIndex >= 0) {
-                            onEditConfrontationSegment(lot, key, [segmentIndex]);
-                          } else if (onEditConfrontationSide) {
-                            onEditConfrontationSide(lot, key);
-                          }
-                        }}
-                        className="text-[9px] font-bold text-blue-600 hover:underline px-1"
-                      >
-                        Editar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ),
-            )
-          ) : (
-            <p className="text-[10px] text-gray-500 py-2 text-center leading-snug">
-              Carregando confrontações…
-            </p>
-          )}
-        </div>
+        <LotConfrontationsPanel
+          lot={lot}
+          streetGuides={streetGuides}
+          allBlocks={allBlocksForConfront}
+          frenteConfrontLabel={frenteConfrontLabel}
+          frontStreetLabel={frontStreetLabel}
+          canEdit={!ownerReadOnly}
+          onEditSide={
+            onEditConfrontationSide
+              ? (l, side) => onEditConfrontationSide(l, side)
+              : undefined
+          }
+          onEditSegment={
+            onEditConfrontationSegment
+              ? (l, side, indexes) =>
+                  onEditConfrontationSegment(l, side, indexes)
+              : undefined
+          }
+        />
       )}
 
       {popupTab === "comercial" && (
@@ -2598,8 +2467,6 @@ export default function GISMap({
   focusBlockName = null,
   focusBlockKey = 0,
   assistedConfrontationMode = false,
-  insertConfrontantTool = false,
-  defineOfficialSideTool = false,
   onOverlayOpenChange,
   onEnterpriseValueRefresh,
   frontPatchBatch = null,
@@ -2656,9 +2523,6 @@ export default function GISMap({
   }) => void;
   /** Modo revisão pós confrontação automática (GIS-005). */
   assistedConfrontationMode?: boolean;
-  insertConfrontantTool?: boolean;
-  /** Ferramenta para definir official_side por segmento (medida oficial). */
-  defineOfficialSideTool?: boolean;
   /** Notifica o container quando modais/popups do GIS estão abertos (SVL-UI-029). */
   onOverlayOpenChange?: (open: boolean) => void;
   /** Atualiza card Valor do Empreendimento após salvar preço manual. */
@@ -2728,15 +2592,9 @@ export default function GISMap({
     currentConfrontant?: string | null;
     currentSource?: import('@/lib/confrontantTypes').ConfrontantSource | null;
   } | null>(null);
-  const [defineOfficialSidePickLotId, setDefineOfficialSidePickLotId] =
-    useState<string | null>(null);
   const pendingLotPricesRef = useRef<Map<string, number | null>>(new Map());
   const streetGuidesRef = useRef(streetGuides);
   streetGuidesRef.current = streetGuides;
-  const [officialSideEdit, setOfficialSideEdit] = useState<{
-    lot: any;
-    segmentIndex: number;
-  } | null>(null);
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
 
@@ -2763,30 +2621,25 @@ export default function GISMap({
    * Auditorias “ao vivo” só para ferramentas que precisam colorir TODOS os lotes.
    * Frente manual / editor pontual NÃO entram aqui (evita O(N²) nos 597 lotes).
    */
-  const liveStreetAudits =
-    Boolean(assistedConfrontationMode) ||
-    Boolean(insertConfrontantTool) ||
-    Boolean(defineOfficialSideTool);
+  const liveStreetAudits = Boolean(assistedConfrontationMode);
 
   /** Arestas detalhadas só com zoom próximo ou ferramenta ativa (LOD). */
   const showDetailedEdges =
     mapZoom >= 16 ||
     frontCorrectLotId != null ||
     confrontEdit != null ||
-    defineOfficialSidePickLotId != null ||
     liveStreetAudits;
 
   /** Foco pontual: só estes ids ( + vizinhos ) entram em rebuild de auditoria. */
   const scopedAuditFocusId =
     frontCorrectLotId ||
     (confrontEdit?.lot?.id != null ? String(confrontEdit.lot.id) : null) ||
-    defineOfficialSidePickLotId ||
     null;
 
   const scopedAuditLotIds = useMemo(() => {
     if (!scopedAuditFocusId || liveStreetAudits) return null;
     // Frente manual não precisa de auditoria de confrontação nas arestas.
-    if (frontCorrectLotId && !confrontEdit && !defineOfficialSidePickLotId) {
+    if (frontCorrectLotId && !confrontEdit) {
       return new Set<string>([String(frontCorrectLotId)]);
     }
     return collectNearbyLotIds(lots, String(scopedAuditFocusId), 40);
@@ -2795,7 +2648,6 @@ export default function GISMap({
     scopedAuditFocusId,
     frontCorrectLotId,
     confrontEdit?.lot?.id,
-    defineOfficialSidePickLotId,
     liveStreetAudits,
     auditLotsKey,
   ]);
@@ -2811,9 +2663,7 @@ export default function GISMap({
         front_segment_index: l.front_segment_index,
         front_street_name: l.frontStreetName,
       })) as Record<string, unknown>[],
-    // Com ferramentas assistidas globais, usa lots; senão só geometria.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- auditLotsKey / liveStreetAudits
-    liveStreetAudits ? [lots, liveStreetAudits] : [auditLotsKey],
+    [lots],
   );
 
   /** streetGuides só invalida audits quando ferramentas assistidas globais estão ativas. */
@@ -2841,8 +2691,7 @@ export default function GISMap({
     const focusOnlyFront =
       Boolean(frontCorrectLotId) &&
       !liveStreetAudits &&
-      !confrontEdit &&
-      !defineOfficialSidePickLotId;
+      !confrontEdit;
 
     // Frente manual: não recalcular auditorias — reutiliza mapa anterior.
     if (focusOnlyFront) {
@@ -2931,7 +2780,6 @@ export default function GISMap({
     scopedAuditFocusId,
     frontCorrectLotId,
     confrontEdit,
-    defineOfficialSidePickLotId,
   ]);
 
   /** Identificar Frentes: um setLots com patches, sem loadLots/fitBounds. */
@@ -3327,7 +3175,14 @@ export default function GISMap({
       segmentIndexes?.length
         ? segmentIndexes
         : officialSegmentIndexesForSide(block, blocksForConfront, side);
-    const audit = confrontationAudits.get(lot.id);
+    // Prefer auditoria global (Revisar Confrontações); senão carrega só este lote.
+    const audit =
+      confrontationAudits.get(lot.id) ??
+      loadLotConfrontations({
+        lot,
+        allBlocks: blocksForConfront,
+        streetGuides,
+      }).audit;
     const primaryIdx = indexes[0];
     const edge =
       primaryIdx != null
@@ -3350,7 +3205,7 @@ export default function GISMap({
 
   const handleConfrontEdgePick = (lot: any, edgeIndex: number) => {
     if (ownerMapWriteBlocked) return;
-    if (!assistedConfrontationMode && !insertConfrontantTool) return;
+    if (!assistedConfrontationMode) return;
     let side: SideRole = "fundo";
     const block = {
       ...lot,
@@ -3443,127 +3298,6 @@ export default function GISMap({
         });
       }
     }
-  };
-
-  const openOfficialSideEditor = (lot: any, segmentIndex: number) => {
-    if (blockOwnerWriteOnClient(user?.role)) return;
-    if (!lot?.id || segmentIndex < 0) return;
-    setOfficialSideEdit({ lot, segmentIndex });
-  };
-
-  const handleOfficialSideEdgePick = (lot: any, edgeIndex: number) => {
-    if (ownerMapWriteBlocked) return;
-    if (
-      !defineOfficialSideTool &&
-      defineOfficialSidePickLotId !== lot?.id
-    ) {
-      return;
-    }
-    const block = {
-      ...lot,
-      block_name: lot.block,
-      segments_json: lot.segments_json,
-      front_segment_index: lot.front_segment_index,
-    };
-    const segmentIndex = utmSegmentIndexFromWgs84RingEdge(block, edgeIndex);
-    openOfficialSideEditor(lot, segmentIndex);
-  };
-
-  const readSavedOfficialSide = (
-    lot: Record<string, unknown>,
-    segmentIndex: number,
-  ): OfficialSideKind | null => {
-    const rows = lot.segments_json;
-    if (!Array.isArray(rows)) return null;
-    const row = rows.find((r, i) => {
-      if (r == null || typeof r !== "object") return false;
-      const idx =
-        typeof (r as Record<string, unknown>).segment_index === "number"
-          ? (r as Record<string, unknown>).segment_index
-          : i;
-      return idx === segmentIndex;
-    });
-    if (!row || typeof row !== "object") return null;
-    return readOfficialSideFromSegmentRow(row as Record<string, unknown>);
-  };
-
-  const handleSaveOfficialSide = async (side: OfficialSideKind) => {
-    if (blockOwnerWriteOnClient(user?.role)) return;
-    if (!officialSideEdit?.lot?.id || !projectId) return;
-    const lot = officialSideEdit.lot;
-    const segmentIndex = officialSideEdit.segmentIndex;
-    const oldSide = readSavedOfficialSide(lot, segmentIndex);
-    const block = {
-      ...lot,
-      block_name: lot.block,
-      segments_json: lot.segments_json,
-    };
-    const rows = await persistOfficialSideForSegment(
-      supabase,
-      lot.id,
-      block,
-      segmentIndex,
-      side,
-    );
-    setLots((prev) =>
-      prev.map((l) => (l.id === lot.id ? { ...l, segments_json: rows } : l)),
-    );
-    void logLotAuditEvent(supabase, {
-      ...lotAuditContextFromBlock(lot, { projectId }),
-      userId: user?.id ?? null,
-      action: "official_measure_side_changed",
-      title: "Lado oficial da medida alterado",
-      description: officialSideAuditDescription(segmentIndex, side),
-      oldData: {
-        segment_index: segmentIndex,
-        official_side: oldSide,
-      },
-      newData: {
-        segment_index: segmentIndex,
-        official_side: side,
-      },
-      source: "gis_map",
-    });
-  };
-
-  const handleClearOfficialSide = async () => {
-    if (blockOwnerWriteOnClient(user?.role)) return;
-    if (!officialSideEdit?.lot?.id || !projectId) return;
-    const lot = officialSideEdit.lot;
-    const segmentIndex = officialSideEdit.segmentIndex;
-    const oldSide = readSavedOfficialSide(lot, segmentIndex);
-    const block = {
-      ...lot,
-      block_name: lot.block,
-      segments_json: lot.segments_json,
-    };
-    const rows = await persistOfficialSideForSegment(
-      supabase,
-      lot.id,
-      block,
-      segmentIndex,
-      null,
-    );
-    setLots((prev) =>
-      prev.map((l) => (l.id === lot.id ? { ...l, segments_json: rows } : l)),
-    );
-    void logLotAuditEvent(supabase, {
-      ...lotAuditContextFromBlock(lot, { projectId }),
-      userId: user?.id ?? null,
-      action: "official_measure_side_changed",
-      title: "Lado oficial da medida alterado",
-      description: officialSideAuditDescription(segmentIndex, null),
-      oldData: {
-        segment_index: segmentIndex,
-        official_side: oldSide,
-      },
-      newData: {
-        segment_index: segmentIndex,
-        official_side: null,
-        cleared: true,
-      },
-      source: "gis_map",
-    });
   };
 
   const handleClearManualConfrontant = async (
@@ -3909,7 +3643,6 @@ export default function GISMap({
     setCustomerForm(null);
     setClearConfirmModal(null);
     setFrontCorrectLotId(null);
-    setDefineOfficialSidePickLotId(null);
   }, [gisMeasureToolActive]);
 
   const gisOverlayOpen = computeGisMapOverlayOpen({
@@ -3917,7 +3650,6 @@ export default function GISMap({
     customerContractValidation: Boolean(customerContractValidation),
     clearConfirmModal: Boolean(clearConfirmModal),
     confrontEdit: Boolean(confrontEdit),
-    officialSideEdit: Boolean(officialSideEdit),
   });
 
   useEffect(() => {
@@ -5158,10 +4890,6 @@ export default function GISMap({
                         confrontationAudit={
                           confrontationAudits.get(lot.id) ?? null
                         }
-                        assistedConfrontationMode={
-                          !ownerMapWriteBlocked &&
-                          (assistedConfrontationMode || insertConfrontantTool)
-                        }
                         onEditConfrontationSide={
                           ownerMapWriteBlocked
                             ? undefined
@@ -5178,33 +4906,6 @@ export default function GISMap({
                           ownerMapWriteBlocked || !onGenerateMemorialFromPopup
                             ? undefined
                             : (l) => onGenerateMemorialFromPopup(l)
-                        }
-                        defineOfficialSideActive={
-                          !ownerMapWriteBlocked &&
-                          (defineOfficialSideTool ||
-                            defineOfficialSidePickLotId === lot.id)
-                        }
-                        onStartDefineOfficialSide={
-                          ownerMapWriteBlocked
-                            ? undefined
-                            : (l) => setDefineOfficialSidePickLotId(l.id)
-                        }
-                        onCancelDefineOfficialSide={
-                          ownerMapWriteBlocked
-                            ? undefined
-                            : () => setDefineOfficialSidePickLotId(null)
-                        }
-                        onPickOfficialSideSegment={
-                          ownerMapWriteBlocked
-                            ? undefined
-                            : (l, segmentIndex) =>
-                                openOfficialSideEditor(l, segmentIndex)
-                        }
-                        onEditOfficialSideSegment={
-                          ownerMapWriteBlocked
-                            ? undefined
-                            : (l, segmentIndex) =>
-                                openOfficialSideEditor(l, segmentIndex)
                         }
                       />
                     </Popup>
@@ -5224,68 +4925,18 @@ export default function GISMap({
                           void handlePickFrontSegment(lot, edgeIndex)
                       : undefined
                   }
-                  officialSidePickActive={
-                    (defineOfficialSideTool ||
-                      defineOfficialSidePickLotId === lot.id) &&
+                  assistedConfrontationActive={
+                    assistedConfrontationMode &&
                     frontCorrectLotId !== lot.id
                   }
-                  onOfficialSideEdgePick={
-                    defineOfficialSideTool ||
-                    defineOfficialSidePickLotId === lot.id
-                      ? (edgeIndex) =>
-                          handleOfficialSideEdgePick(lot, edgeIndex)
-                      : undefined
-                  }
-                  officialSideLabelByEdge={
-                    defineOfficialSideTool ||
-                    defineOfficialSidePickLotId === lot.id
-                      ? (() => {
-                          const manual = readManualOfficialSideMap({
-                            ...lot,
-                            segments_json: lot.segments_json,
-                          });
-                          if (manual.size === 0) return undefined;
-                          const block = {
-                            ...lot,
-                            block_name: lot.block,
-                            segments_json: lot.segments_json,
-                            front_segment_index: lot.front_segment_index,
-                          };
-                          const isRing = positions.length >= 3;
-                          const edgeCount = isRing
-                            ? positions.length
-                            : positions.length - 1;
-                          const labelMap = new Map<number, string>();
-                          for (let i = 0; i < edgeCount; i++) {
-                            const segIdx = utmSegmentIndexFromWgs84RingEdge(
-                              block,
-                              i,
-                            );
-                            const label = officialSideDisplayLabel(
-                              manual.get(segIdx) ?? null,
-                            );
-                            if (label) labelMap.set(i, label);
-                          }
-                          return labelMap.size > 0 ? labelMap : undefined;
-                        })()
-                      : undefined
-                  }
-                  assistedConfrontationActive={
-                    (assistedConfrontationMode || insertConfrontantTool) &&
-                    frontCorrectLotId !== lot.id &&
-                    !defineOfficialSideTool &&
-                    defineOfficialSidePickLotId !== lot.id
-                  }
                   onConfrontEdgePick={
-                    (assistedConfrontationMode || insertConfrontantTool) &&
-                    frontCorrectLotId !== lot.id &&
-                    !defineOfficialSideTool &&
-                    defineOfficialSidePickLotId !== lot.id
+                    assistedConfrontationMode &&
+                    frontCorrectLotId !== lot.id
                       ? (edgeIndex) => handleConfrontEdgePick(lot, edgeIndex)
                       : undefined
                   }
                   segmentEdgeByIndex={
-                    assistedConfrontationMode || insertConfrontantTool
+                    assistedConfrontationMode
                       ? new Map(
                           (
                             confrontationAudits.get(lot.id)?.segmentEdges ??
@@ -5396,9 +5047,9 @@ export default function GISMap({
             const line = flattenLineStringCoordinates(geo?.coordinates);
             if (!line) return null;
             const pts = line.map((c: number[]) => [c[1], c[0]]);
-            const label =
-              guide.displayName ||
-              formatStreetDisplay(guide.type, guide.name);
+            const label = resolveOfficialStreetLabel(
+              guide as Record<string, unknown>,
+            );
             const widthLabel =
               guide.width != null && guide.width !== ''
                 ? `${Number(guide.width).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
@@ -5562,7 +5213,7 @@ export default function GISMap({
         </div>
       )}
 
-      {(assistedConfrontationMode || insertConfrontantTool) && (
+      {assistedConfrontationMode && (
         <div className="absolute bottom-4 left-4 z-[500] pointer-events-none max-w-xs">
           <div className="bg-[#11141a]/95 border border-[var(--color-border)] rounded-lg px-3 py-2 text-[10px] text-gray-200 space-y-1 shadow-lg">
             <p className="font-bold text-white">Confrontação assistida</p>
@@ -5584,39 +5235,6 @@ export default function GISMap({
             </p>
           </div>
         </div>
-      )}
-
-      {!ownerMapWriteBlocked && insertConfrontantTool && !frontCorrectLotId && !defineOfficialSideTool && (
-        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-lg w-full">
-          <p className="text-xs font-semibold text-sky-100 bg-[#11141a]/95 border border-sky-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
-            Editar Confrontação: clique na divisa do lote (arestas coloridas) ou
-            use Editar na aba Confrontações do popup.
-          </p>
-        </div>
-      )}
-
-      {!ownerMapWriteBlocked && defineOfficialSideTool && !frontCorrectLotId && (
-        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-lg w-full">
-          <p className="text-xs font-semibold text-violet-100 bg-[#11141a]/95 border border-violet-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
-            Definir Medida Oficial: clique no segmento do lote (arestas roxas)
-            ou use Editar medidas no popup.
-          </p>
-        </div>
-      )}
-
-      {!ownerMapWriteBlocked && officialSideEdit && projectId && (
-        <DefineOfficialSideModal
-          blockId={officialSideEdit.lot.id}
-          block={{
-            ...officialSideEdit.lot,
-            block_name: officialSideEdit.lot.block,
-            segments_json: officialSideEdit.lot.segments_json,
-          }}
-          segmentIndex={officialSideEdit.segmentIndex}
-          onClose={() => setOfficialSideEdit(null)}
-          onSave={handleSaveOfficialSide}
-          onClear={handleClearOfficialSide}
-        />
       )}
 
       {!ownerMapWriteBlocked && confrontEdit && projectId && (

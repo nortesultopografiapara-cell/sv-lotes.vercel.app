@@ -22,7 +22,7 @@ import {
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route, ClipboardList } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
@@ -74,11 +74,17 @@ import {
   EnterpriseOverviewModal,
   DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
 } from '@/components/map/EnterpriseOverviewModal';
+import { StreetGuidesReportModal } from '@/components/map/StreetGuidesReportModal';
 import {
   downloadEnterpriseOverviewPdf,
   generateEnterpriseOverviewFromInput,
 } from '@/lib/enterpriseOverviewPdf';
 import type { EnterpriseOverviewOptions } from '@/lib/enterpriseOverviewLayout';
+import {
+  buildStreetGuidesReportData,
+  downloadStreetGuidesReportExcel,
+  downloadStreetGuidesReportPdf,
+} from '@/lib/streetGuidesReport';
 import {
   clearGisMapProjectPersistence,
   GIS_MAP_PROJECT_ID_KEY,
@@ -413,6 +419,12 @@ export default function MapPage() {
     useState<EnterpriseOverviewOptions>(DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS);
   const [enterpriseOverviewGenerating, setEnterpriseOverviewGenerating] =
     useState(false);
+  const [isStreetGuidesReportModalOpen, setIsStreetGuidesReportModalOpen] =
+    useState(false);
+  const [streetGuidesReportPdfLoading, setStreetGuidesReportPdfLoading] =
+    useState(false);
+  const [streetGuidesReportExcelLoading, setStreetGuidesReportExcelLoading] =
+    useState(false);
 
   const [isImportShpModalOpen, setIsImportShpModalOpen] = useState(false);
   const [importShpFile, setImportShpFile] = useState<File | null>(null);
@@ -545,8 +557,6 @@ export default function MapPage() {
   const [confrontationRunning, setConfrontationRunning] = useState(false);
   const [assistedConfrontationMode, setAssistedConfrontationMode] =
     useState(false);
-  const [insertConfrontantTool, setInsertConfrontantTool] = useState(false);
-  const [defineOfficialSideTool, setDefineOfficialSideTool] = useState(false);
   const [memorialPickMode, setMemorialPickMode] = useState(false);
   const [memorialTarget, setMemorialTarget] = useState<{
     id: string;
@@ -584,6 +594,7 @@ export default function MapPage() {
         isUpdateLotModalOpen,
         isDeleteLotModalOpen,
         isEnterpriseOverviewModalOpen,
+        isStreetGuidesReportModalOpen,
         deleteQuadraConfirm: Boolean(deleteQuadraConfirm),
         gisMapOverlayOpen,
       }),
@@ -597,6 +608,7 @@ export default function MapPage() {
       isUpdateLotModalOpen,
       isDeleteLotModalOpen,
       isEnterpriseOverviewModalOpen,
+      isStreetGuidesReportModalOpen,
       deleteQuadraConfirm,
       gisMapOverlayOpen,
     ],
@@ -928,6 +940,86 @@ export default function MapPage() {
       );
     } finally {
       setEnterpriseOverviewGenerating(false);
+    }
+  };
+
+  const streetGuidesReportSummary = useMemo(() => {
+    if (!selectedProject) {
+      return { streetCount: 0, totalLengthM: 0 };
+    }
+    const data = buildStreetGuidesReportData({
+      guides: streetGuides as Record<string, unknown>[],
+      project: selectedProject as Record<string, unknown>,
+    });
+    return {
+      streetCount: data.streetCount,
+      totalLengthM: data.totalLengthM,
+    };
+  }, [selectedProject, streetGuides]);
+
+  const buildStreetReportExportPayload = useCallback(() => {
+    if (!selectedProject || !user) return null;
+    const data = buildStreetGuidesReportData({
+      guides: streetGuides as Record<string, unknown>[],
+      project: selectedProject as Record<string, unknown>,
+    });
+    const companyName =
+      String(
+        (saasCompany as { fantasy_name?: string; name?: string } | null)
+          ?.fantasy_name ||
+          (saasCompany as { name?: string } | null)?.name ||
+          '',
+      ).trim() || '—';
+    const userName =
+      String(
+        (user as { name?: string; full_name?: string; email?: string }).name ||
+          (user as { full_name?: string }).full_name ||
+          user.email ||
+          '',
+      ).trim() || '—';
+    return {
+      data,
+      meta: {
+        projectName: String(selectedProject.name || ''),
+        companyName,
+        companyLogoUrl:
+          (saasCompany as { logo_url?: string | null } | null)?.logo_url ?? null,
+        userName,
+        emittedAt: new Date().toLocaleDateString('pt-BR'),
+        emittedAtIso: new Date().toISOString(),
+      },
+    };
+  }, [selectedProject, streetGuides, saasCompany, user]);
+
+  const handleExportStreetGuidesPdf = async () => {
+    const payload = buildStreetReportExportPayload();
+    if (!payload) return;
+    setStreetGuidesReportPdfLoading(true);
+    try {
+      await downloadStreetGuidesReportPdf(payload);
+    } catch (err: unknown) {
+      console.error('STREET_GUIDES_REPORT_PDF_ERROR', err);
+      alert(
+        err instanceof Error ? err.message : 'Erro ao exportar PDF de vias.',
+      );
+    } finally {
+      setStreetGuidesReportPdfLoading(false);
+    }
+  };
+
+  const handleExportStreetGuidesExcel = async () => {
+    const payload = buildStreetReportExportPayload();
+    if (!payload) return;
+    setStreetGuidesReportExcelLoading(true);
+    try {
+      await downloadStreetGuidesReportExcel(payload);
+    } catch (err: unknown) {
+      console.error('STREET_GUIDES_REPORT_EXCEL_ERROR', err);
+      alert(
+        err instanceof Error ? err.message : 'Erro ao exportar Excel de vias.',
+      );
+    } finally {
+      setStreetGuidesReportExcelLoading(false);
     }
   };
 
@@ -3188,7 +3280,6 @@ export default function MapPage() {
                    type="button"
                    onClick={() => {
                      setAssistedConfrontationMode((v) => !v);
-                     setInsertConfrontantTool(false);
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                      assistedConfrontationMode
@@ -3199,45 +3290,6 @@ export default function MapPage() {
                    <Eye className="w-4 h-4 md:w-5 md:h-5" />
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
                      Revisar Confrontações
-                   </span>
-                 </button>
-
-                 <button
-                   type="button"
-                   onClick={() => {
-                     setInsertConfrontantTool((v) => !v);
-                     setAssistedConfrontationMode(true);
-                     if (!insertConfrontantTool) setDefineOfficialSideTool(false);
-                   }}
-                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
-                     insertConfrontantTool
-                       ? 'bg-emerald-500/20 text-emerald-400'
-                       : 'bg-transparent text-emerald-400/75 hover:bg-emerald-500/15 hover:text-emerald-400'
-                   }`}
-                 >
-                   <PenTool className="w-4 h-4 md:w-5 md:h-5" />
-                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
-                     Editar Confrontação
-                   </span>
-                 </button>
-
-                 <button
-                   type="button"
-                   onClick={() => {
-                     setDefineOfficialSideTool((v) => !v);
-                     if (!defineOfficialSideTool) {
-                       setInsertConfrontantTool(false);
-                     }
-                   }}
-                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
-                     defineOfficialSideTool
-                       ? 'bg-yellow-400/20 text-yellow-300'
-                       : 'bg-transparent text-yellow-400/75 hover:bg-yellow-400/15 hover:text-yellow-300'
-                   }`}
-                 >
-                   <Ruler className="w-4 h-4 md:w-5 md:h-5" />
-                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
-                     Definir Medida Oficial
                    </span>
                  </button>
 
@@ -3331,6 +3383,25 @@ export default function MapPage() {
              >
                 <MapPinned className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha Geral</span>
+             </button>
+
+             {/* Relatório de Vias */}
+             <button
+                type="button"
+                data-testid="gis-street-guides-report-btn"
+                title="Relatório de Vias"
+                aria-label="Relatório de Vias"
+                onClick={() => {
+                  if (!selectedProject) {
+                    alert('Selecione um empreendimento.');
+                    return;
+                  }
+                  setIsStreetGuidesReportModalOpen(true);
+                }}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${isStreetGuidesReportModalOpen ? 'bg-sky-600/20 text-sky-300' : 'bg-transparent text-sky-400/80 hover:bg-sky-600/15 hover:text-sky-300'}`}
+             >
+                <ClipboardList className="w-4 h-4 md:w-5 md:h-5" aria-hidden />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Relatório de Vias</span>
              </button>
 
              {/* Prancha PDF */}
@@ -3494,8 +3565,6 @@ export default function MapPage() {
               setMemorialPickMode(false);
             }}
             assistedConfrontationMode={assistedConfrontationMode}
-            insertConfrontantTool={insertConfrontantTool}
-            defineOfficialSideTool={defineOfficialSideTool}
             onOverlayOpenChange={setGisMapOverlayOpen}
             onEnterpriseValueRefresh={() =>
               setEnterpriseRefreshKey((k) => k + 1)
@@ -3815,6 +3884,18 @@ export default function MapPage() {
           onClose={() => setIsEnterpriseOverviewModalOpen(false)}
           onOptionsChange={setEnterpriseOverviewOptions}
           onSubmit={handleGenerateEnterpriseOverview}
+        />
+
+        <StreetGuidesReportModal
+          open={isStreetGuidesReportModalOpen}
+          projectName={selectedProject?.name || ''}
+          streetCount={streetGuidesReportSummary.streetCount}
+          totalLengthM={streetGuidesReportSummary.totalLengthM}
+          loadingPdf={streetGuidesReportPdfLoading}
+          loadingExcel={streetGuidesReportExcelLoading}
+          onClose={() => setIsStreetGuidesReportModalOpen(false)}
+          onExportPdf={() => void handleExportStreetGuidesPdf()}
+          onExportExcel={() => void handleExportStreetGuidesExcel()}
         />
 
         {isImportShpModalOpen && (

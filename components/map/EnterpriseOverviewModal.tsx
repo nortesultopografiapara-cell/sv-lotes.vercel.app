@@ -109,6 +109,7 @@ export function EnterpriseOverviewModal({
                   ['showNorth', 'Mostrar norte'],
                   ['showStreets', 'Mostrar ruas'],
                   ['showLotNumbers', 'Mostrar numeração dos lotes'],
+                  ['showStreetNamesAndTable', 'Incluir nomes e quadro de vias'],
                 ] as const
               ).map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 cursor-pointer">

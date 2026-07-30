@@ -69,7 +69,7 @@ export function streetGuideFromRecord(g: StreetGuideRecord): StreetGuideFormValu
   };
 }
 
-/** Nome exibido no mapa / prancha / contrato. */
+/** Nome legado para endereços de lote / memorial (compõe type+name). */
 export function formatStreetDisplay(
   type?: string | null,
   name?: string | null,
@@ -89,6 +89,155 @@ export function formatStreetDisplay(
   return `${t} ${raw}`;
 }
 
+export type StreetOfficialNameSource =
+  | 'name_with_prefix'
+  | 'type_and_name'
+  | 'name_only'
+  | 'unnamed';
+
+export type StreetOfficialNameDiagnosis = {
+  id: string | null;
+  type: string;
+  name: string;
+  code: string | null;
+  notes: string | null;
+  /** displayName de entrada (pode ser sintético/stale — NÃO é fonte oficial). */
+  incomingDisplayName: string | null;
+  prefixInName: string | null;
+  label: string;
+  source: StreetOfficialNameSource;
+  divergence: boolean;
+  divergenceDetail: string | null;
+};
+
+function isBlankOrUnnamedStreetName(name: string): boolean {
+  const raw = name.trim();
+  if (!raw) return true;
+  return (
+    /^rua\/eixo/i.test(raw) ||
+    /sem nome/i.test(raw) ||
+    /^via sem identifica/i.test(raw)
+  );
+}
+
+/** Prefixo de tipo presente no próprio campo name (ex.: "Avenida 04"). */
+export function detectStreetTypePrefixInName(name: string): string | null {
+  const raw = String(name || '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  const sorted = [...STREET_TYPES].sort((a, b) => b.length - a.length);
+  for (const t of sorted) {
+    const tl = t.toLowerCase();
+    if (lower === tl || lower.startsWith(`${tl} `)) return t;
+  }
+  return null;
+}
+
+/**
+ * Nome oficial único para MapGIS, Prancha Geral, Quadro e Relatório de Vias.
+ * Nunca usa displayName sintético. Nunca troca prefixo já presente em `name`.
+ */
+export function diagnoseOfficialStreetName(
+  guide: Record<string, unknown>,
+): StreetOfficialNameDiagnosis {
+  const id = guide.id != null ? String(guide.id) : null;
+  const type = String(guide.type || '').trim();
+  const name = String(guide.name || '').trim();
+  const code =
+    guide.code != null && String(guide.code).trim()
+      ? String(guide.code).trim()
+      : null;
+  const notes =
+    guide.notes != null && String(guide.notes).trim()
+      ? String(guide.notes).trim()
+      : null;
+  const incomingDisplayName =
+    guide.displayName != null && String(guide.displayName).trim()
+      ? String(guide.displayName).trim()
+      : null;
+  const prefixInName = detectStreetTypePrefixInName(name);
+
+  if (isBlankOrUnnamedStreetName(name)) {
+    return {
+      id,
+      type,
+      name,
+      code,
+      notes,
+      incomingDisplayName,
+      prefixInName,
+      label: 'Via sem identificação',
+      source: 'unnamed',
+      divergence: false,
+      divergenceDetail: null,
+    };
+  }
+
+  if (prefixInName) {
+    const divergence = !!(
+      type && type.toLowerCase() !== prefixInName.toLowerCase()
+    );
+    return {
+      id,
+      type,
+      name,
+      code,
+      notes,
+      incomingDisplayName,
+      prefixInName,
+      label: name,
+      source: 'name_with_prefix',
+      divergence,
+      divergenceDetail: divergence
+        ? `type="${type}" diverge do prefixo em name="${name}"; usando name cadastrado`
+        : null,
+    };
+  }
+
+  if (type) {
+    const label = `${type} ${name}`;
+    const staleRebuild =
+      !!incomingDisplayName &&
+      incomingDisplayName !== label &&
+      !isBlankOrUnnamedStreetName(incomingDisplayName);
+    return {
+      id,
+      type,
+      name,
+      code,
+      notes,
+      incomingDisplayName,
+      prefixInName,
+      label,
+      source: 'type_and_name',
+      divergence: staleRebuild,
+      divergenceDetail: staleRebuild
+        ? `displayName sintético/stale "${incomingDisplayName}" ignorado; oficial="${label}"`
+        : null,
+    };
+  }
+
+  return {
+    id,
+    type,
+    name,
+    code,
+    notes,
+    incomingDisplayName,
+    prefixInName,
+    label: name,
+    source: 'name_only',
+    divergence: false,
+    divergenceDetail: null,
+  };
+}
+
+export function resolveOfficialStreetLabel(
+  guide: Record<string, unknown>,
+): string {
+  return diagnoseOfficialStreetName(guide).label;
+}
+
 export function normalizeStreetGuideRow(
   g: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -98,13 +247,14 @@ export function normalizeStreetGuideRow(
     null;
   const name = String(g.name || '').trim() || 'Rua/Eixo sem nome';
   const type = String(g.type || 'Rua');
+  const displayName = resolveOfficialStreetLabel({ ...g, name, type });
   return {
     ...g,
     geometry_geojson: geo,
     geometry: geo,
     name,
     type,
-    displayName: formatStreetDisplay(type, name),
+    displayName,
     visible: g.visible !== false,
     active: g.active !== false,
   };
