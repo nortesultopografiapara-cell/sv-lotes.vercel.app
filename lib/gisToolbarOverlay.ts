@@ -18,7 +18,6 @@ export type GisMapOverlayFlags = {
   customerContractValidation?: boolean;
   clearConfirmModal?: boolean;
   confrontEdit?: boolean;
-  officialSideEdit?: boolean;
 };
 
 export function computeGisMapPageOverlayOpen(
@@ -45,8 +44,7 @@ export function computeGisMapOverlayOpen(flags: GisMapOverlayFlags): boolean {
     flags.customerForm ||
       flags.customerContractValidation ||
       flags.clearConfirmModal ||
-      flags.confrontEdit ||
-      flags.officialSideEdit,
+      flags.confrontEdit,
   );
 }
 

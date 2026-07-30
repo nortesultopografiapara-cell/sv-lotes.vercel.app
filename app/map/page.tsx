@@ -22,7 +22,7 @@ import {
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route, ClipboardList } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route, ClipboardList } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
@@ -557,8 +557,6 @@ export default function MapPage() {
   const [confrontationRunning, setConfrontationRunning] = useState(false);
   const [assistedConfrontationMode, setAssistedConfrontationMode] =
     useState(false);
-  const [insertConfrontantTool, setInsertConfrontantTool] = useState(false);
-  const [defineOfficialSideTool, setDefineOfficialSideTool] = useState(false);
   const [memorialPickMode, setMemorialPickMode] = useState(false);
   const [memorialTarget, setMemorialTarget] = useState<{
     id: string;
@@ -3282,7 +3280,6 @@ export default function MapPage() {
                    type="button"
                    onClick={() => {
                      setAssistedConfrontationMode((v) => !v);
-                     setInsertConfrontantTool(false);
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                      assistedConfrontationMode
@@ -3293,45 +3290,6 @@ export default function MapPage() {
                    <Eye className="w-4 h-4 md:w-5 md:h-5" />
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
                      Revisar Confrontações
-                   </span>
-                 </button>
-
-                 <button
-                   type="button"
-                   onClick={() => {
-                     setInsertConfrontantTool((v) => !v);
-                     setAssistedConfrontationMode(true);
-                     if (!insertConfrontantTool) setDefineOfficialSideTool(false);
-                   }}
-                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
-                     insertConfrontantTool
-                       ? 'bg-emerald-500/20 text-emerald-400'
-                       : 'bg-transparent text-emerald-400/75 hover:bg-emerald-500/15 hover:text-emerald-400'
-                   }`}
-                 >
-                   <PenTool className="w-4 h-4 md:w-5 md:h-5" />
-                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
-                     Editar Confrontação
-                   </span>
-                 </button>
-
-                 <button
-                   type="button"
-                   onClick={() => {
-                     setDefineOfficialSideTool((v) => !v);
-                     if (!defineOfficialSideTool) {
-                       setInsertConfrontantTool(false);
-                     }
-                   }}
-                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
-                     defineOfficialSideTool
-                       ? 'bg-yellow-400/20 text-yellow-300'
-                       : 'bg-transparent text-yellow-400/75 hover:bg-yellow-400/15 hover:text-yellow-300'
-                   }`}
-                 >
-                   <Ruler className="w-4 h-4 md:w-5 md:h-5" />
-                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
-                     Definir Medida Oficial
                    </span>
                  </button>
 
@@ -3607,8 +3565,6 @@ export default function MapPage() {
               setMemorialPickMode(false);
             }}
             assistedConfrontationMode={assistedConfrontationMode}
-            insertConfrontantTool={insertConfrontantTool}
-            defineOfficialSideTool={defineOfficialSideTool}
             onOverlayOpenChange={setGisMapOverlayOpen}
             onEnterpriseValueRefresh={() =>
               setEnterpriseRefreshKey((k) => k + 1)

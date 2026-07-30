@@ -353,9 +353,12 @@ function testToolbarKeepsTools() {
     'Importar TXT',
     'Confrontação Automática',
     'Revisar Confrontações',
-    'Editar Confrontação',
-    'Definir Medida Oficial',
   ];
+  assert(!page.includes('Editar Confrontação'), 'tool removed: Editar Confrontação');
+  assert(!page.includes('Definir Medida Oficial'), 'tool removed: Definir Medida Oficial');
+  assert(!page.includes('insertConfrontantTool'), 'state removed: insertConfrontantTool');
+  assert(!page.includes('defineOfficialSideTool'), 'state removed: defineOfficialSideTool');
+  assert(!page.includes('PenTool'), 'icon removed: PenTool');
   for (const t of tools) {
     assert(page.includes(t), `tool kept: ${t}`);
   }
