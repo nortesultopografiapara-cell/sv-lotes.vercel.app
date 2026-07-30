@@ -37,26 +37,25 @@ export function ProjectQuadrasPanel({
   onRequestDelete,
 }: ProjectQuadrasPanelProps) {
   return (
-    <div className="relative shrink-0">
+    <>
       <button
         type="button"
         onClick={onToggleOpen}
-        className={`w-9 h-9 md:w-10 md:h-10 shrink-0 flex items-center justify-center rounded-md transition-colors group relative ${
+        className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
           open
             ? 'bg-blue-500/20 text-blue-400'
             : 'bg-transparent text-blue-400/75 hover:bg-blue-500/15 hover:text-blue-400'
         }`}
         title="Quadras do Projeto"
-        aria-label="Quadras do Projeto"
       >
         <LayoutGrid className="w-4 h-4 md:w-5 md:h-5" />
-        <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 z-[50] px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+        <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
           Quadras do Projeto
         </span>
       </button>
 
       {open && (
-        <div className="gis-shell-panel absolute top-full right-0 mt-2 w-[min(100vw-5rem,300px)] max-h-[min(70vh,420px)] flex flex-col bg-[var(--bg-card)]/98 backdrop-blur-md border border-[var(--border-color)] rounded-lg shadow-2xl overflow-hidden">
+        <div className="gis-shell-panel absolute top-0 right-full mr-2 w-[min(100vw-5rem,300px)] max-h-[min(70vh,420px)] flex flex-col bg-[var(--bg-card)]/98 backdrop-blur-md border border-[var(--border-color)] rounded-lg shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[var(--border-color)] shrink-0">
             <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
               Quadras do Projeto
@@ -149,6 +148,6 @@ export function ProjectQuadrasPanel({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

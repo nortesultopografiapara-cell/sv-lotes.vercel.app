@@ -1,10 +1,11 @@
 /**
- * Mapa GIS — toolbar horizontal no topo + layout mobile (<=767px).
+ * Mapa GIS — toolbar reduzida, zoom e layout no mobile (<=767px).
+ * Desktop: inalterado (regras só dentro de @media max-width: 767px).
  */
 
-/* Painéis de medição — canto inferior direito (toolbar agora é horizontal no topo) */
+/* Painel Medir Distância — à esquerda da toolbar vertical direita */
 .gis-project-map-view {
-  --gis-measure-panel-right: max(1rem, calc(env(safe-area-inset-right, 0px) + 1rem));
+  --gis-measure-panel-right: max(5.5rem, calc(env(safe-area-inset-right, 0px) + 5.5rem));
 }
 
 .gis-distance-measure-panel-anchor,
@@ -26,65 +27,45 @@
   cursor: crosshair !important;
 }
 
-/* Toolbar horizontal — desktop e mobile */
-.gis-project-map-view .gis-tools-toolbar,
-.gis-project-map-view [data-testid='gis-tools-toolbar'] {
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-end;
-  align-items: flex-start;
-  max-width: calc(100% - 3.5rem);
-}
-
-.gis-project-map-view .gis-tools-toolbar > .gis-shell-panel {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
-  -webkit-overflow-scrolling: touch;
-}
-
 @media (max-width: 767px) {
   .gis-toolbar-desktop-only {
     display: none !important;
   }
 
+  /*
+   * Toolbar mobile enxuta (~6 ferramentas visíveis).
+   * top-16 (4rem) + altura estimada da rail + folga uniforme.
+   */
   .gis-project-map-view {
-    --gis-mobile-toolbar-top: 0.5rem;
-    --sv-mobile-toolbar-top: 0.5rem;
-    --gis-mobile-toolbar-item: 2.25rem;
+    --gis-mobile-toolbar-top: 4rem;
+    --sv-mobile-toolbar-top: 4rem;
+    --gis-mobile-toolbar-item: 2.5rem;
     --gis-mobile-toolbar-gap: 0.375rem;
     --gis-mobile-toolbar-pad-y: 0.375rem;
-    --gis-mobile-toolbar-visible-count: 1;
+    --gis-mobile-toolbar-visible-count: 6;
     --gis-mobile-toolbar-height: calc(
       var(--gis-mobile-toolbar-pad-y) * 2
-        + var(--gis-mobile-toolbar-item)
-        + 0.25rem
+        + var(--gis-mobile-toolbar-visible-count) * var(--gis-mobile-toolbar-item)
+        + (var(--gis-mobile-toolbar-visible-count) - 1) * var(--gis-mobile-toolbar-gap)
     );
-    --gis-measure-panel-right: max(1rem, calc(env(safe-area-inset-right, 0px) + 1rem));
+    --gis-measure-panel-right: max(4.5rem, calc(env(safe-area-inset-right, 0px) + 4.5rem));
   }
 
-  /* Toolbar GIS — topo horizontal, sem rail vertical à direita */
+  /* Toolbar GIS — colada na lateral direita */
   .gis-project-map-view .gis-tools-toolbar,
   .gis-project-map-view [data-testid='gis-tools-toolbar'] {
-    top: max(0.5rem, env(safe-area-inset-top, 0px)) !important;
-    left: 3.25rem !important;
     right: 6px !important;
-    bottom: auto !important;
-    margin: 0 !important;
-    max-width: none !important;
+    left: auto !important;
+    margin-right: 0 !important;
   }
 
   /*
-   * Zoom Leaflet — canto inferior direito (toolbar não ocupa mais a lateral).
+   * Zoom Leaflet — alinhado à toolbar, abaixo dela, lateral direita.
+   * Sobrescreve mobile-layout.css (bottom global) apenas neste escopo.
    */
   .gis-project-map-view .leaflet-bottom.leaflet-right {
-    top: auto !important;
-    bottom: max(5.5rem, calc(env(safe-area-inset-bottom, 0px) + 5.5rem)) !important;
+    top: calc(var(--gis-mobile-toolbar-top) + var(--gis-mobile-toolbar-height) + 8px) !important;
+    bottom: auto !important;
     right: 6px !important;
     left: auto !important;
     margin: 0 !important;

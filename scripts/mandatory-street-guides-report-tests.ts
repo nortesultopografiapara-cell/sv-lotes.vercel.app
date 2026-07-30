@@ -296,9 +296,9 @@ function testSourceWiring() {
   assert(page.includes('ClipboardList'), 'ícone relatório');
   assert(page.includes('StreetGuidesReportModal'), 'modal wired');
   assert(page.includes('downloadStreetGuidesReportPdf'), 'pdf export');
-  assert(page.includes('flex-row flex-wrap'), 'toolbar horizontal');
-  assert(!page.includes('GIS TOOLS VERTICAL BAR'), 'sem barra vertical');
-  assert(page.includes('GIS TOOLS HORIZONTAL BAR'), 'barra horizontal');
+  assert(page.includes('flex-col gap-1.5 w-10'), 'toolbar vertical estreita');
+  assert(page.includes('GIS TOOLS VERTICAL BAR'), 'barra vertical');
+  assert(!page.includes('GIS TOOLS HORIZONTAL BAR'), 'sem barra horizontal');
 
   const report = read('lib/streetGuidesReport.ts');
   assert(report.includes("head: [['Nº', 'Via', 'Comprimento']]"), 'cols quadro');
@@ -318,7 +318,8 @@ function testSourceWiring() {
   );
 
   const css = read('app/map/gis-map-mobile.css');
-  assert(css.includes('flex-direction: row'), 'css horizontal');
+  assert(css.includes('lateral direita') || css.includes('--gis-measure-panel-right'), 'css toolbar lateral');
+  assert(!css.includes('flex-direction: row'), 'sem css horizontal de toolbar');
 
   assert(
     !fs.existsSync(path.join(ROOT, 'supabase/migrations/zzzz_street_report.sql')),
@@ -360,8 +361,9 @@ function testToolbarKeepsTools() {
   }
   assert(quadras.includes('Quadras do Projeto'), 'tool kept: Quadras do Projeto');
   assert(page.includes('ProjectQuadrasPanel'), 'quadras panel wired');
-  assert(page.includes('flex-row'), 'orientação horizontal');
-  assert(!page.includes('flex-col gap-1.5 w-10'), 'não vertical estreita');
+  assert(page.includes('flex-col gap-1.5'), 'orientação vertical');
+  assert(page.includes('w-10 md:w-12'), 'rail vertical');
+  assert(!page.includes('GIS TOOLS HORIZONTAL BAR'), 'sem toolbar horizontal');
   console.log('OK testToolbarKeepsTools', { count: tools.length + 1 });
 }
 

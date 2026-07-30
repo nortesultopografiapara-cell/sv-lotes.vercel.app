@@ -92,8 +92,7 @@ function testGisMapMobileToolbarCss() {
   assert(css.includes('.gis-project-map-view'), 'escopo mapa GIS mobile');
   assert(css.includes('.leaflet-bottom.leaflet-right'), 'reposiciona zoom Leaflet no mobile');
   assert(css.includes('--gis-mobile-toolbar-height'), 'altura toolbar reduzida');
-  assert(css.includes('.gis-tools-toolbar'), 'toolbar GIS no mobile');
-  assert(css.includes('flex-direction: row'), 'toolbar horizontal no CSS');
+  assert(css.includes('.gis-tools-toolbar'), 'toolbar colada na lateral direita no mobile');
   assert(css.includes('.leaflet-control-attribution'), 'oculta créditos Leaflet no mobile');
   assert(css.includes('.gis-map-legend-anchor'), 'oculta legenda status no mobile');
   assert(css.includes('max-width: 767px'), 'breakpoint mobile exclusivo');
@@ -104,8 +103,8 @@ function testGisMapMobileToolbarCss() {
   assert(mapPage.includes('gis-toolbar-desktop-only'), 'toolbar marca ferramentas desktop-only');
   assert(mapPage.includes('data-testid="map-status-legend"'), 'legenda com testid map-status-legend');
   assert(mapPage.includes('gis-tools-toolbar'), 'toolbar com classe gis-tools-toolbar');
-  assert(mapPage.includes('GIS TOOLS HORIZONTAL BAR'), 'toolbar horizontal no topo');
-  assert(!mapPage.includes('GIS TOOLS VERTICAL BAR'), 'sem toolbar vertical');
+  assert(mapPage.includes('GIS TOOLS VERTICAL BAR'), 'toolbar vertical lateral');
+  assert(!mapPage.includes('GIS TOOLS HORIZONTAL BAR'), 'sem toolbar horizontal');
 }
 
 function testGlobalsImport() {
