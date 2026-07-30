@@ -144,7 +144,6 @@ import {
 import {
   applyManualConfrontantToBlock,
   buildLotConfrontationAudit,
-  buildOfficialLotConfrontationSegmentRows,
   clearManualConfrontantFromBlock,
   findPropagationTargets,
   officialSegmentIndexesForSide,
@@ -161,6 +160,8 @@ import {
   persistBlockSegmentsJson,
 } from "@/lib/segmentConfrontantPersist";
 import { InformConfrontantModal } from "@/components/map/InformConfrontantModal";
+import { LotConfrontationsPanel } from "@/components/map/LotConfrontationsPanel";
+import { loadLotConfrontations } from "@/lib/lotConfrontationsPanel";
 import {
   DistanceMeasureMapContent,
   DistanceMeasureOverlay,
@@ -1649,7 +1650,6 @@ function LotPopupContent({
   onPickFrontSegment,
   frontCorrectSaving,
   confrontationAudit,
-  assistedConfrontationMode,
   onEditConfrontationSide,
   onEditConfrontationSegment,
   allBlocksForConfront = [],
@@ -1675,8 +1675,8 @@ function LotPopupContent({
   onCancelCorrectFront?: () => void;
   onPickFrontSegment?: (lot: any, segmentIndex: number) => void;
   frontCorrectSaving?: boolean;
+  /** Opcional — usado só como fallback de rótulo; a aba Confrontações carrega sozinha. */
   confrontationAudit?: LotConfrontationAudit | null;
-  assistedConfrontationMode?: boolean;
   onEditConfrontationSide?: (lot: any, side: SideRole) => void;
   onEditConfrontationSegment?: (
     lot: any,
@@ -2107,55 +2107,25 @@ function LotPopupContent({
       )}
 
       {popupTab === "confrontacoes" && (
-        <div className="space-y-1 text-[11px]">
-          {confrontationAudit ? (
-            confrontationSegmentRows.map(
-              ({ key, sideLabel, segmentIndex, text, origin }) => (
-                <div
-                  key={`${key}-${segmentIndex}`}
-                  className="flex items-center justify-between gap-1 py-0.5 border-b border-gray-50 last:border-0"
-                >
-                  <span className="text-gray-500 shrink-0 w-[88px] leading-tight">
-                    {sideLabel}
-                    {segmentIndex >= 0 ? (
-                      <span className="block text-[9px] text-gray-400">
-                        Seg. {segmentIndex + 1}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="flex-1 text-gray-900 font-medium text-right leading-tight min-w-0">
-                    <span className="block truncate">{text}</span>
-                    <span className="text-[9px] text-gray-400 font-normal">
-                      ({origin})
-                    </span>
-                  </span>
-                  <div className="shrink-0 flex flex-col items-end gap-0.5">
-                    {!ownerReadOnly &&
-                      (onEditConfrontationSegment || onEditConfrontationSide) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onEditConfrontationSegment && segmentIndex >= 0) {
-                            onEditConfrontationSegment(lot, key, [segmentIndex]);
-                          } else if (onEditConfrontationSide) {
-                            onEditConfrontationSide(lot, key);
-                          }
-                        }}
-                        className="text-[9px] font-bold text-blue-600 hover:underline px-1"
-                      >
-                        Editar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ),
-            )
-          ) : (
-            <p className="text-[10px] text-gray-500 py-2 text-center leading-snug">
-              Carregando confrontações…
-            </p>
-          )}
-        </div>
+        <LotConfrontationsPanel
+          lot={lot}
+          streetGuides={streetGuides}
+          allBlocks={allBlocksForConfront}
+          frenteConfrontLabel={frenteConfrontLabel}
+          frontStreetLabel={frontStreetLabel}
+          canEdit={!ownerReadOnly}
+          onEditSide={
+            onEditConfrontationSide
+              ? (l, side) => onEditConfrontationSide(l, side)
+              : undefined
+          }
+          onEditSegment={
+            onEditConfrontationSegment
+              ? (l, side, indexes) =>
+                  onEditConfrontationSegment(l, side, indexes)
+              : undefined
+          }
+        />
       )}
 
       {popupTab === "comercial" && (
@@ -2693,9 +2663,7 @@ export default function GISMap({
         front_segment_index: l.front_segment_index,
         front_street_name: l.frontStreetName,
       })) as Record<string, unknown>[],
-    // Com ferramentas assistidas globais, usa lots; senão só geometria.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- auditLotsKey / liveStreetAudits
-    liveStreetAudits ? [lots, liveStreetAudits] : [auditLotsKey],
+    [lots],
   );
 
   /** streetGuides só invalida audits quando ferramentas assistidas globais estão ativas. */
@@ -3207,7 +3175,14 @@ export default function GISMap({
       segmentIndexes?.length
         ? segmentIndexes
         : officialSegmentIndexesForSide(block, blocksForConfront, side);
-    const audit = confrontationAudits.get(lot.id);
+    // Prefer auditoria global (Revisar Confrontações); senão carrega só este lote.
+    const audit =
+      confrontationAudits.get(lot.id) ??
+      loadLotConfrontations({
+        lot,
+        allBlocks: blocksForConfront,
+        streetGuides,
+      }).audit;
     const primaryIdx = indexes[0];
     const edge =
       primaryIdx != null
@@ -4914,9 +4889,6 @@ export default function GISMap({
                         frontCorrectSaving={frontCorrectSaving}
                         confrontationAudit={
                           confrontationAudits.get(lot.id) ?? null
-                        }
-                        assistedConfrontationMode={
-                          !ownerMapWriteBlocked && assistedConfrontationMode
                         }
                         onEditConfrontationSide={
                           ownerMapWriteBlocked
