@@ -51,6 +51,7 @@
     "test:data-migration-sales": "tsx scripts/mandatory-data-migration-sales-tests.ts",
     "test:data-migration-legacy-contracts": "tsx scripts/mandatory-data-migration-legacy-contracts-tests.ts",
     "test:legacy-contracts-module": "tsx scripts/mandatory-legacy-contracts-module-tests.ts",
+    "test:company-menu-no-legacy-contracts": "tsx scripts/mandatory-company-menu-no-legacy-contracts-tests.ts",
     "test:client-portal-stage1": "tsx scripts/mandatory-client-portal-stage1-tests.ts",
     "test:client-portal-lookup": "tsx scripts/mandatory-client-portal-lookup-tests.ts",
     "test:client-portal-otp": "tsx scripts/mandatory-client-portal-otp-tests.ts",

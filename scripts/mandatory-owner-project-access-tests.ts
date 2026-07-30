@@ -420,8 +420,11 @@ function testOwnerNavigationRoutesStayOnAllowedModules() {
   assert(shouldRedirectOwnerFromRoute('/finance', ownerRows, perms) === null, 'financeiro ok');
   assert(shouldRedirectOwnerFromRoute('/contracts', ownerRows, perms) === null, 'contratos ok');
   const menu = getOwnerMenuItemsFromPermissions(perms, ownerRows);
-  assert(menu.length === 4, 'menu com 4 módulos');
+  assert(menu.length === 5, 'menu com 5 módulos');
   assert(menu.some((item) => item.href === '/dashboard'), 'menu inclui dashboard');
+  assert(menu.some((item) => item.href === '/contracts'), 'menu inclui contratos');
+  assert(!menu.some((item) => item.href === '/legacy-contracts'), 'menu sem Contratos Antigos');
+  assert(!menu.some((item) => item.name === 'Contratos Antigos'), 'menu sem label Contratos Antigos');
   console.log('OK testOwnerNavigationRoutesStayOnAllowedModules');
 }
 

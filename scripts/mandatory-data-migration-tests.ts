@@ -50,10 +50,16 @@ function testSidebarMenu() {
   assert(layout.includes('DatabaseBackup'), 'ícone migração');
   assert(layout.includes('canAccessDataMigrationModule'), 'guard menu');
   assert(layout.includes("href: DATA_MIGRATION_ROUTE"), 'rota menu');
+  assert(!layout.includes("name: 'Contratos Antigos'"), 'sem Contratos Antigos');
+  assert(!layout.includes('/legacy-contracts'), 'sem href legacy no menu');
+  const contractsIdx = layout.indexOf("name: 'Contratos'");
+  const ownersIdx = layout.indexOf('Sócios / Proprietários');
   const offlineIdx = layout.indexOf('Sincronização Offline');
   const migrationIdx = layout.indexOf('Migração de Dados');
   const settingsIdx = layout.indexOf("name: 'Configurações'");
-  assert(offlineIdx > 0 && migrationIdx > offlineIdx, 'após offline sync');
+  assert(contractsIdx > 0 && ownersIdx > contractsIdx, 'sócios após contratos');
+  assert(offlineIdx > ownersIdx, 'offline após sócios');
+  assert(migrationIdx > offlineIdx, 'após offline sync');
   assert(settingsIdx > migrationIdx, 'antes de configurações');
   console.log('OK testSidebarMenu');
 }
