@@ -108,6 +108,7 @@ export async function generateStreetGuidesReportPdf(params: {
   const { data, meta } = params;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const margin = 14;
   let y = 14;
 
@@ -131,43 +132,46 @@ export async function generateStreetGuidesReportPdf(params: {
     }
   }
 
+  const headerX = margin + (logoBase64 ? 22 : 0);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(15);
   doc.setTextColor(11, 58, 102);
-  doc.text('Relatório de Vias', margin + (logoBase64 ? 22 : 0), y + 4);
+  doc.text('RELATÓRIO DE VIAS', headerX, y + 4);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(40, 40, 40);
-  const headerX = margin + (logoBase64 ? 22 : 0);
-  doc.text(meta.companyName || '—', headerX, y + 10);
-  doc.text(`Empreendimento: ${meta.projectName || '—'}`, headerX, y + 15);
-  doc.text(`Data: ${meta.emittedAt}`, headerX, y + 20);
-  doc.text(`Usuário: ${meta.userName || '—'}`, headerX, y + 25);
+  doc.text(meta.companyName || '—', headerX, y + 11);
+  doc.text(`Empreendimento: ${meta.projectName || '—'}`, headerX, y + 16);
+  doc.text(`Emissão: ${meta.emittedAt}`, headerX, y + 21);
+  if (meta.userName) {
+    doc.text(`Usuário: ${meta.userName}`, headerX, y + 26);
+  }
 
-  y = 44;
+  y = meta.userName ? 44 : 40;
   doc.setDrawColor(11, 58, 102);
   doc.setLineWidth(0.4);
   doc.line(margin, y, pageW - margin, y);
   y += 6;
 
-  const body = data.rows.map((r) => [
-    r.number,
-    r.name,
-    r.type || '—',
-    r.lengthLabel,
-  ]);
+  // Mesmas colunas do Quadro de Vias da Prancha Geral: Nº | Via | Comprimento
+  const body =
+    data.rows.length > 0
+      ? data.rows.map((r) => [r.number, r.name, r.lengthLabel])
+      : [['—', 'Nenhuma via com geometria válida', '—']];
 
   autoTable(doc, {
     startY: y,
-    head: [['Nº', 'Via', 'Tipo', 'Comprimento']],
+    head: [['Nº', 'Via', 'Comprimento']],
     body,
-    margin: { left: margin, right: margin },
+    margin: { left: margin, right: margin, bottom: 18 },
     styles: {
       font: 'helvetica',
       fontSize: 9,
-      cellPadding: 2,
+      cellPadding: 2.2,
       textColor: [30, 30, 30],
+      overflow: 'linebreak',
+      valign: 'middle',
     },
     headStyles: {
       fillColor: [11, 58, 102],
@@ -177,16 +181,24 @@ export async function generateStreetGuidesReportPdf(params: {
     },
     alternateRowStyles: { fillColor: [245, 248, 252] },
     columnStyles: {
-      0: { cellWidth: 14, halign: 'center' },
+      0: { cellWidth: 16, halign: 'center' },
       1: { cellWidth: 'auto' },
-      2: { cellWidth: 28 },
-      3: { cellWidth: 32, halign: 'right' },
+      2: { cellWidth: 36, halign: 'right' },
+    },
+    showHead: 'everyPage',
+    rowPageBreak: 'avoid',
+    didDrawPage: () => {
+      /* footer aplicado depois — evita duplicar em didDrawPage */
     },
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const finalY = ((doc as any).lastAutoTable?.finalY as number) || y + 10;
   let footerY = finalY + 10;
+  if (footerY > pageH - 28) {
+    doc.addPage();
+    footerY = 20;
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -216,7 +228,7 @@ export async function generateStreetGuidesReportPdf(params: {
     doc.text(
       `SV LOTES — Relatório de Vias — pág. ${p}/${pageCount}`,
       pageW / 2,
-      doc.internal.pageSize.getHeight() - 8,
+      pageH - 8,
       { align: 'center' },
     );
   }
@@ -224,13 +236,28 @@ export async function generateStreetGuidesReportPdf(params: {
   return doc;
 }
 
+export function streetGuidesReportFileSlug(
+  projectName: string,
+  emittedAtIso?: string,
+): { project: string; date: string } {
+  const project = safeFileSlug(projectName);
+  const d = emittedAtIso ? new Date(emittedAtIso) : new Date();
+  const date = Number.isFinite(d.getTime())
+    ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    : new Date().toISOString().slice(0, 10);
+  return { project, date };
+}
+
 export async function downloadStreetGuidesReportPdf(params: {
   data: StreetGuidesReportData;
   meta: StreetGuidesReportMeta;
 }): Promise<void> {
   const doc = await generateStreetGuidesReportPdf(params);
-  const slug = safeFileSlug(params.meta.projectName);
-  doc.save(`relatorio_vias_${slug}.pdf`);
+  const { project, date } = streetGuidesReportFileSlug(
+    params.meta.projectName,
+    params.meta.emittedAtIso,
+  );
+  doc.save(`relatorio_de_vias_${project}_${date}.pdf`);
 }
 
 export async function generateStreetGuidesReportExcelBuffer(params: {
@@ -312,6 +339,9 @@ export async function downloadStreetGuidesReportExcel(params: {
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
-  const slug = safeFileSlug(params.meta.projectName);
-  downloadBlob(blob, `relatorio_vias_${slug}.xlsx`);
+  const { project, date } = streetGuidesReportFileSlug(
+    params.meta.projectName,
+    params.meta.emittedAtIso,
+  );
+  downloadBlob(blob, `relatorio_de_vias_${project}_${date}.xlsx`);
 }

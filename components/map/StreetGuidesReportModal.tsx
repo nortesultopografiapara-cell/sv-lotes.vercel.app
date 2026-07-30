@@ -1,6 +1,6 @@
 'use client';
 
-import { FileSpreadsheet, FileText, Loader2, Route, X } from 'lucide-react';
+import { ClipboardList, FileSpreadsheet, FileText, Loader2, X } from 'lucide-react';
 import { formatLengthMetersPtBr } from '@/lib/enterpriseOverviewStreets';
 
 export type StreetGuidesReportModalProps = {
@@ -31,12 +31,20 @@ export function StreetGuidesReportModal({
   const busy = loadingPdf || loadingExcel;
 
   return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pointer-events-auto">
+    <div
+      className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pointer-events-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="street-guides-report-title"
+    >
       <div className="bg-[#1a1f29] border border-[#2d3340] rounded-xl w-full max-w-md shadow-2xl text-white">
         <div className="flex items-center justify-between p-4 border-b border-[#2d3340]">
           <div className="flex items-center gap-2">
-            <Route className="w-5 h-5 text-sky-400" />
-            <h3 className="font-bold text-sm uppercase tracking-wide">
+            <ClipboardList className="w-5 h-5 text-sky-400" aria-hidden />
+            <h3
+              id="street-guides-report-title"
+              className="font-bold text-sm uppercase tracking-wide"
+            >
               Relatório de Vias
             </h3>
           </div>
@@ -45,7 +53,7 @@ export function StreetGuidesReportModal({
             onClick={onClose}
             disabled={busy}
             className="p-1 rounded hover:bg-white/10 text-[var(--text-secondary)] disabled:opacity-50"
-            aria-label="Fechar"
+            aria-label="Fechar relatório de vias"
           >
             <X className="w-5 h-5" />
           </button>
@@ -81,11 +89,16 @@ export function StreetGuidesReportModal({
             </div>
           </div>
 
+          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+            Gera um PDF separado com a mesma tabela do Quadro de Vias da Prancha
+            Geral (sem mapa, lotes ou legendas).
+          </p>
+
           <div className="flex flex-col gap-2 pt-1">
             <button
               type="button"
               onClick={onExportPdf}
-              disabled={busy || streetCount === 0}
+              disabled={busy}
               className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#0B3A66] hover:bg-[#0d4a82] disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-bold"
             >
               {loadingPdf ? (
@@ -93,12 +106,12 @@ export function StreetGuidesReportModal({
               ) : (
                 <FileText className="w-4 h-4" />
               )}
-              Exportar PDF
+              Gerar PDF
             </button>
             <button
               type="button"
               onClick={onExportExcel}
-              disabled={busy || streetCount === 0}
+              disabled={busy}
               className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-bold text-emerald-300"
             >
               {loadingExcel ? (
