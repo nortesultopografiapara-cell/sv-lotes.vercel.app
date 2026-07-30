@@ -30,6 +30,7 @@ import {
   streetCoordsToLocalMeters,
   buildStreetLabelPlacementsOnSheet,
   getReadableSegmentAndUpperNormal,
+  resolveOfficialStreetLabel,
   sameStreetLabelMinDistanceMm,
   type EnterpriseStreetGrouped,
 } from '../lib/enterpriseOverviewStreets';
@@ -651,8 +652,13 @@ function testUniformFontAndDedupe() {
     }
   }
   assert(
-    placements.every((p) => Math.abs(p.y) >= 0.5 && Math.abs(p.y) <= 2.0),
-    'offset discreto acima da linha',
+    placements.every((p) => Math.abs(p.y) >= 0.2 && Math.abs(p.y) <= 0.7),
+    'texto centrado no eixo com offset mínimo',
+  );
+  // Eixo horizontal: x sobre a centerline; y só nudge perpendicular (sem offset lateral).
+  assert(
+    placements.every((p) => p.x >= 0 && p.x <= 800 * 0.05),
+    'âncora sobre o trecho da via',
   );
   console.log('OK testUniformFontAndDedupe', {
     requested: places.length,
@@ -773,6 +779,66 @@ function testSoftFallbackVsHardBlock() {
   console.log('OK testSoftFallbackVsHardBlock');
 }
 
+function testOfficialStreetNameNoRebuild() {
+  const guides = [
+    {
+      id: 'a',
+      type: 'Avenida',
+      name: 'Avenida 04',
+      displayName: 'Avenida 04',
+    },
+    {
+      id: 'b',
+      type: 'Rodovia',
+      name: 'Rodovia PA-160',
+      displayName: 'Rodovia PA-160',
+    },
+    {
+      id: 'c',
+      type: 'Rua',
+      name: 'Rua 08',
+      // sem displayName — usa name cadastrado, sem prefixar tipo de novo
+    },
+  ];
+  const local = new Map<string, [number, number][][]>();
+  for (const g of guides) {
+    local.set(g.id, [
+      [
+        [0, 0],
+        [50, 0],
+      ],
+    ]);
+  }
+  const { streets } = groupEnterpriseStreets({
+    guides,
+    localLinesByGuideId: local,
+  });
+  assert(
+    streets.find((s) => s.id === 'a')!.displayName === 'Avenida 04',
+    'Avenida 04 intacta',
+  );
+  assert(
+    streets.find((s) => s.id === 'b')!.displayName === 'Rodovia PA-160',
+    'Rodovia PA-160 intacta',
+  );
+  assert(
+    streets.find((s) => s.id === 'c')!.displayName === 'Rua 08',
+    'Rua 08 do name cadastrado',
+  );
+  assert(
+    resolveOfficialStreetLabel({ type: 'Avenida', name: '04', displayName: 'Avenida 04' }) ===
+      'Avenida 04',
+    'prefer displayName',
+  );
+  assert(
+    resolveOfficialStreetLabel({ type: 'Rua', name: 'Rua 01' }) === 'Rua 01',
+    'não reconstrói',
+  );
+  const src = read('lib/enterpriseOverviewStreets.ts');
+  assert(!src.includes("from '@/lib/streetGuide'"), 'sem formatStreetDisplay na prancha');
+  console.log('OK testOfficialStreetNameNoRebuild');
+}
+
 function testNormalPerpendicularAndReadable() {
   const a = getReadableSegmentAndUpperNormal([0, 0], [10, 0]);
   assert(Math.abs(a.angleDeg) < 1e-6, 'horizontal');
@@ -816,6 +882,12 @@ function testSourceWiring() {
   assert(pdf.includes('softOccupied'), 'soft occupied');
   assert(pdf.includes('STREET_LABEL_RGB'), 'cor institucional');
   assert(streets.includes('streetLabelAngleOnSheet'), 'ângulo na folha');
+  const page = read('app/map/page.tsx');
+  assert(page.includes('Relatório de Vias'), 'botão relatório no GIS');
+  assert(page.includes('StreetGuidesReportModal'), 'modal relatório');
+  const report = read('lib/streetGuidesReport.ts');
+  assert(report.includes('buildStreetTableRows'), 'relatório reusa quadro');
+  assert(report.includes('groupEnterpriseStreets'), 'mesma agregação');
   assert(
     !fs.existsSync(path.join(ROOT, 'supabase/migrations/zzzz_enterprise_streets.sql')),
     'sem migration nova',
@@ -843,6 +915,7 @@ function main() {
   testUniformFontAndDedupe();
   testManyStreetsGetLabels();
   testSoftFallbackVsHardBlock();
+  testOfficialStreetNameNoRebuild();
   testNormalPerpendicularAndReadable();
   testSingleLabelPipelineSource();
   testSourceWiring();

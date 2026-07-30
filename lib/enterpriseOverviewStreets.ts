@@ -7,8 +7,6 @@ import proj4 from 'proj4';
 import { resolveUtmProj4FromProject } from '@/lib/civil3dTxtParser';
 import { haversineDistanceM } from '@/lib/gis/distanceMeasure';
 import { planarDistanceM } from '@/lib/officialConfrontationRing';
-import { formatStreetDisplay } from '@/lib/streetGuide';
-
 export const STREET_TYPE_SORT_ORDER: Record<string, number> = {
   Rodovia: 0,
   Avenida: 1,
@@ -30,9 +28,12 @@ export const STREET_LABEL_FONT_MIN = 4.2;
 export const STREET_LABEL_MIN_SEGMENT_M = 25;
 /** Distância mínima entre repetições da mesma via (metros locais). */
 export const STREET_LABEL_REPEAT_GAP_M = 140;
-/** Offset perpendicular mínimo/máximo na folha (mm). */
-export const STREET_LABEL_OFFSET_MIN_MM = 0.6;
-export const STREET_LABEL_OFFSET_MAX_MM = 1.5;
+/**
+ * Deslocamento perpendicular mínimo — só para a linha não cortar as letras.
+ * Texto permanece centrado no eixo (centerline); sem offset lateral.
+ */
+export const STREET_LABEL_OFFSET_MIN_MM = 0.25;
+export const STREET_LABEL_OFFSET_MAX_MM = 0.55;
 
 export type EnterpriseStreetIssue =
   | 'unnamed'
@@ -589,11 +590,30 @@ export function getReadableSegmentAndUpperNormal(
   return { start: a, end: b, angleDeg, ux, uy, nx, ny };
 }
 
+/** Offset perpendicular discreto no eixo (não desloca para o lote). */
 export function streetLabelOffsetMm(fontSize: number): number {
   return Math.min(
     STREET_LABEL_OFFSET_MAX_MM,
-    Math.max(STREET_LABEL_OFFSET_MIN_MM, fontSize * 0.3),
+    Math.max(STREET_LABEL_OFFSET_MIN_MM, fontSize * 0.08),
   );
+}
+
+/**
+ * Nome oficial para prancha/relatório — nunca reconstrói tipo+nome.
+ * Usa displayName/name já cadastrados na entidade da via.
+ */
+export function resolveOfficialStreetLabel(
+  guide: Record<string, unknown>,
+): string {
+  const fromDisplay = String(guide.displayName || '').trim();
+  if (fromDisplay && !isUnnamedStreetName(fromDisplay)) {
+    return fromDisplay;
+  }
+  const fromName = String(guide.name || '').trim();
+  if (fromName && !isUnnamedStreetName(fromName)) {
+    return fromName;
+  }
+  return 'Via sem identificação';
 }
 
 /**
@@ -738,10 +758,9 @@ export function groupEnterpriseStreets(params: {
     if (!id) continue;
     const type = String(guide.type || 'Rua').trim() || 'Rua';
     const name = String(guide.name || '').trim();
-    const unnamed = isUnnamedStreetName(name);
-    const displayName = unnamed
-      ? 'Via sem identificação'
-      : String(guide.displayName || formatStreetDisplay(type, name));
+    const displayName = resolveOfficialStreetLabel(guide);
+    const unnamed =
+      displayName === 'Via sem identificação' || isUnnamedStreetName(name);
 
     const existing = byId.get(id);
     const base: EnterpriseStreetGrouped =
@@ -749,7 +768,7 @@ export function groupEnterpriseStreets(params: {
       ({
         id,
         type,
-        name: name || 'Rua/Eixo sem nome',
+        name: name || displayName,
         displayName,
         unnamed,
         segments: [],
@@ -1012,10 +1031,9 @@ export function buildStreetLabelPlacementsOnSheet(params: {
       { side: 'upper', nx: oriented.nx, ny: oriented.ny },
       { side: 'lower', nx: -oriented.nx, ny: -oriented.ny },
     ];
-    const longOffsets =
-      mode === 'fallback'
-        ? [0, 3, -3, 6, -6, 10, -10, 14, -14]
-        : [0, 3, -3, 6, -6, 9, -9];
+    // Sem deslocamento lateral/tangencial: ponto médio do texto = ponto médio do trecho.
+    // Fallback extremo pode deslizar pouco no eixo só para ainda rotular a via.
+    const longOffsets = mode === 'fallback' ? [0, 4, -4, 8, -8] : [0];
 
     let bestSoft: StreetLabelSheetPlacement | null = null;
 
@@ -1093,11 +1111,7 @@ export function buildStreetLabelPlacementsOnSheet(params: {
     return mode === 'prefer_clear' ? null : bestSoft;
   };
 
-  const offsetsToTry = [
-    offsetIdeal,
-    Math.max(STREET_LABEL_OFFSET_MIN_MM, offsetIdeal * 0.7),
-    STREET_LABEL_OFFSET_MIN_MM,
-  ];
+  const offsetsToTry = [offsetIdeal, STREET_LABEL_OFFSET_MIN_MM];
 
   const sampleAt = (t: number) => {
     const longest = useSegs[0];
