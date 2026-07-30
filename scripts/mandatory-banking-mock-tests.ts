@@ -370,9 +370,9 @@ function testMockRouteGuardsInSource(): void {
   }
 
   const settingsShell = read('components/settings/CompanySettingsV2Shell.tsx');
-  assert(settingsShell.includes('bankingUiEnabled'), 'aba condicionada à prop bankingUiEnabled');
   assert(settingsShell.includes('Integração Financeira'), 'label da aba presente');
   assert(settingsShell.includes('FinancialIntegrationPanel'), 'painel financeiro integrado');
+  assert(settingsShell.includes("id: 'financeiro'"), 'aba financeiro no menu v2');
 
   const settingsPage = read('app/settings/page.tsx');
   assert(settingsPage.includes('resolveBankingUiEnabled'), 'settings resolve flag em runtime (RSC)');
@@ -641,8 +641,13 @@ function testFinancialIntegrationSource(): void {
   assert(wizard.includes('buildDefaultAsaasWebhookUrl'), 'wizard gera URL webhook');
 
   const financeShell = read('components/finance/FinancialIntegrationPanel.tsx');
-  assert(financeShell.includes('ASAAS (Principal)'), 'aba ASAAS principal');
+  assert(
+    financeShell.includes('ASAAS (Conta padrão)') || financeShell.includes('ASAAS (Principal)'),
+    'aba ASAAS presente',
+  );
   assert(financeShell.includes('Bancos (Em desenvolvimento)'), 'aba bancos em dev');
+  assert(financeShell.includes('Contas Financeiras'), 'aba contas financeiras');
+  assert(financeShell.includes('FinancialAccountsPanel'), 'painel de contas');
 
   const banksPanel = read('components/finance/BanksDevelopmentPanel.tsx');
   assert(banksPanel.includes('Em desenvolvimento'), 'bancos marcados em desenvolvimento');
@@ -664,7 +669,8 @@ function testFinancialIntegrationSource(): void {
   assert(bankingPanel.includes('/api/banking/integration'), 'painel bancário legado preservado');
 
   const dashboard = read('app/dashboard/page.tsx');
-  assert(dashboard.includes('isCompanyAsaasEnabled'), 'dashboard valida whitelist company');
+  assert(!dashboard.includes('isCompanyAsaasEnabled'), 'dashboard sem gate client whitelist');
+  assert(dashboard.includes('asaasAccessAvailable'), 'dashboard usa disponibilidade via API');
   assert(dashboard.includes('FinancialIntegrationDashboardCard'), 'card dashboard financeiro');
 
   const webhookUrl = buildDefaultAsaasWebhookUrl('https://preview.example.com', 'company-uuid');
@@ -717,8 +723,12 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(masterProvider.includes('process.env.ASAAS_API_KEY'), 'Master Asaas preservado');
 
   const service = read('lib/finance/asaasCompanyChargeService.ts');
-  assert(service.includes('assertCompanyAsaasEnabled'), 'service valida whitelist company');
-  assert(service.includes('loadAsaasApiKeyForEnvironment'), 'service usa credencial da empresa');
+  assert(service.includes('assertCompanyAsaasEnabled'), 'service valida acesso company');
+  assert(
+    service.includes('resolveCompanyAsaasCredentials') ||
+      service.includes('loadAsaasApiKeyForEnvironment'),
+    'service usa credencial da empresa',
+  );
   assert(service.includes('createCompanyPixCharge'), 'createCompanyPixCharge definido');
   assert(service.includes('createCompanyBoletoCharge'), 'createCompanyBoletoCharge definido');
   assert(service.includes('executeCompanyAsaasPaymentReconciliation'), 'service delega reconciliação');
@@ -763,7 +773,8 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(summaryRoute.includes('getCompanyAsaasChargeDashboardSummary'), 'rota charge-summary');
 
   const financePage = read('app/finance/page.tsx');
-  assert(financePage.includes('isCompanyAsaasEnabled'), 'finance page valida whitelist company');
+  assert(!financePage.includes('isCompanyAsaasEnabled'), 'finance page sem gate client whitelist');
+  assert(financePage.includes('asaasAccessAvailable'), 'finance page usa disponibilidade via API');
   assert(financePage.includes('companyAsaasActive'), 'finance page carrega contexto Asaas');
   assert(financePage.includes('isCompanyAsaasIntegrationReady'), 'finance page valida integração ativa');
   assert(financePage.includes('asaasChargeSummary'), 'finance page dashboard Asaas');
@@ -1011,24 +1022,37 @@ function testCompanyAsaasWebhookAuth(): void {
 }
 
 function testCompanyAsaasAccessWhitelist(): void {
+  // Padrão multi-tenant: qualquer companyId válido libera cadastro próprio (sem copiar token).
   assert(isCompanyAsaasEnabled(TOPOGRAFIA_COMPANY_ID), 'SV Topografia autorizada');
-  assert(!isCompanyAsaasEnabled('00000000-0000-0000-0000-000000000000'), 'empresa aleatória bloqueada');
+  assert(
+    isCompanyAsaasEnabled('00000000-0000-0000-0000-000000000099'),
+    'empresa nova autorizada no modo padrão',
+  );
   assert(!isCompanyAsaasEnabled(null), 'companyId vazio bloqueado');
   assert(!isCompanyAsaasEnabled(''), 'companyId vazio bloqueado');
 
   const accessModule = read('lib/finance/companyAsaasAccess.ts');
   assert(accessModule.includes(ASAAS_COMPANY_ALLOWED_COMPANY_IDS_ENV), 'env ASAAS_COMPANY_ALLOWED_COMPANY_IDS');
+  assert(accessModule.includes('ASAAS_COMPANY_RESTRICT_TO_ALLOWLIST'), 'env modo restrito documentado');
   assert(accessModule.includes('isCompanyAsaasEnabled'), 'helper isCompanyAsaasEnabled');
   assert(accessModule.includes('TOPOGRAFIA_COMPANY_ID'), 'fallback SV Topografia');
+  assert(accessModule.includes('describeCompanyAsaasProvision'), 'provisionamento na criação');
+  assert(accessModule.includes('MENESES_COMPANY_ID'), 'Meneses na allowlist de referência');
+
+  const createRoute = read('app/api/companies/create/route.ts');
+  assert(createRoute.includes('describeCompanyAsaasProvision'), 'create empresa registra provision Asaas');
+  assert(!createRoute.includes('sandboxApiKey'), 'create não inventa token sandbox');
+  assert(!createRoute.includes('productionApiKey'), 'create não inventa token production');
 
   const routeGuard = read('lib/banking/bankingRouteGuard.ts');
   assert(routeGuard.includes('authorizeCompanyAsaasRoute'), 'guard authorizeCompanyAsaasRoute');
   assert(routeGuard.includes('assertCompanyAsaasTenantEnabled'), 'guard assertCompanyAsaasTenantEnabled');
   assert(routeGuard.includes('status: 403'), 'whitelist retorna 403');
 
+  // Settings não usa mais gate client-side; UI deriva disponibilidade da API.
   const settingsClient = read('app/settings/SettingsPageClient.tsx');
-  assert(settingsClient.includes('isCompanyAsaasEnabled'), 'settings valida whitelist company');
-  assert(settingsClient.includes('bankingAsaasUiEnabled'), 'settings combina flag banking + whitelist');
+  assert(settingsClient.includes('bankingUiEnabled'), 'settings recebe flag banking');
+  assert(!settingsClient.includes('isCompanyAsaasEnabled'), 'settings sem gate client whitelist');
 
   for (const routePath of [
     'app/api/finance/asaas/integration/route.ts',
@@ -1043,7 +1067,7 @@ function testCompanyAsaasAccessWhitelist(): void {
     'app/api/finance/asaas/reprocess-payments/route.ts',
   ]) {
     const source = read(routePath);
-    assert(source.includes('authorizeCompanyAsaasRoute'), `${routePath} exige whitelist Asaas Company`);
+    assert(source.includes('authorizeCompanyAsaasRoute'), `${routePath} exige auth Asaas Company`);
   }
 
   const masterProvider = read('lib/payments/providers/asaas.ts');
