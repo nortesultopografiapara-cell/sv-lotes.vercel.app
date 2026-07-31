@@ -1,12 +1,12 @@
 'use client';
 
-import { MasterModulePlaceholder } from '@/components/master/MasterModulePlaceholder';
+import { Suspense } from 'react';
+import EquipmentPage from '@/components/master/topography/equipment/EquipmentPage';
 
-export default function MasterTopographyEquipmentPage() {
+export default function MasterTopographyEquipmentRoute() {
   return (
-    <MasterModulePlaceholder
-      title="Equipamentos"
-      description="Controle de equipamentos da SV Topografia e Projetos. Em preparação."
-    />
+    <Suspense fallback={<div style={{ padding: '1.5rem', color: '#64748b' }}>Carregando…</div>}>
+      <EquipmentPage />
+    </Suspense>
   );
 }

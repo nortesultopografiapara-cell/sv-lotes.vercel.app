@@ -56,7 +56,7 @@ export async function PATCH(request: Request, context: Ctx) {
       return NextResponse.json({ error: 'Equipamento não encontrado.' }, { status: 404 });
     }
 
-    // Patch parcial: status / localização / horas
+    // Patch parcial: status / localização / horas / arquivamento lógico
     if (body.patchOnly) {
       const fields: Record<string, unknown> = {};
       if (body.status != null) {
@@ -76,6 +76,9 @@ export async function PATCH(request: Request, context: Ctx) {
         }
         fields.usage_hours = Math.round(n * 100) / 100;
       }
+      if (body.is_archived != null || body.isArchived != null) {
+        fields.is_archived = Boolean(body.is_archived ?? body.isArchived);
+      }
       if (Object.keys(fields).length === 0) {
         return NextResponse.json({ error: 'Nada para atualizar.' }, { status: 400 });
       }
@@ -90,6 +93,24 @@ export async function PATCH(request: Request, context: Ctx) {
           description: `Status ${existing.code}: ${existing.status} → ${fields.status}`,
           oldData: { status: existing.status },
           newData: { status: fields.status },
+        });
+      }
+
+      if (
+        fields.is_archived != null &&
+        Boolean(fields.is_archived) !== Boolean(existing.is_archived)
+      ) {
+        await logTopographyEquipmentAudit(supabaseAdmin, {
+          userId: body.userId ? String(body.userId) : null,
+          action: fields.is_archived
+            ? 'TOPOGRAPHY_EQUIPMENT_ARCHIVED'
+            : 'TOPOGRAPHY_EQUIPMENT_RESTORED',
+          entityId: id,
+          description: fields.is_archived
+            ? `Equipamento ${existing.code} arquivado`
+            : `Equipamento ${existing.code} restaurado`,
+          oldData: { is_archived: existing.is_archived },
+          newData: { is_archived: fields.is_archived },
         });
       }
 

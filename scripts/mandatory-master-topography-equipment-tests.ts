@@ -1,9 +1,9 @@
 /**
- * Testes obrigatórios — Equipamentos (Master Topografia) Fase 1A.
+ * Testes obrigatórios — Equipamentos (Master Topografia) Fase 1A + 1B.
  * npm run test:master-topography-equipment
  *
  * Cobre: migration, RLS, RPC EQP-, constraints, validation, contratos CRUD,
- * serial único, isolamento de outros módulos. Sem UI nesta fase.
+ * serial único, UI listagem/detalhe, nav ativo, isolamento de outros módulos.
  */
 import fs from 'fs';
 import path from 'path';
@@ -70,7 +70,10 @@ function testCategoriesAndStatuses() {
   assert(!isEquipmentCategory('VEHICLE'), 'sem frota neste módulo');
   assert(isEquipmentStatus('AVAILABLE'), 'AVAILABLE');
   assert(isEquipmentStatus('DECOMMISSIONED'), 'DECOMMISSIONED');
-  assert(EQUIPMENT_STATUSES.every((s) => s.label && s.code), 'labels status');
+  assert(
+    EQUIPMENT_STATUSES.every((s) => s.label && s.code),
+    'labels status',
+  );
   console.log('OK testCategoriesAndStatuses');
 }
 
@@ -202,6 +205,8 @@ function testServiceAndApiContracts() {
   assert(idApi.includes('assertSuperAdmin'), 'id assertSuperAdmin');
   assert(idApi.includes('export async function GET'), 'GET id');
   assert(idApi.includes('export async function PATCH'), 'PATCH');
+  assert(idApi.includes('is_archived'), 'archive/restore via PATCH');
+  assert(idApi.includes('TOPOGRAPHY_EQUIPMENT_ARCHIVED'), 'audit archive');
   assert(!idApi.includes('documents'), 'sem documents API');
   assert(!idApi.includes('maintenance'), 'sem maintenance API');
   assert(!idApi.includes('assign'), 'sem assignment API');
@@ -209,27 +214,85 @@ function testServiceAndApiContracts() {
   console.log('OK testServiceAndApiContracts');
 }
 
-function testPhase1aDoesNotTouchUiOrOtherModules() {
-  const stub = read('app/master/topography/equipment/page.tsx');
-  assert(stub.includes('MasterModulePlaceholder'), 'UI ainda stub (fase 1A)');
+function testPhase1bUiAndNavigation() {
+  const page = read('app/master/topography/equipment/page.tsx');
+  assert(!page.includes('MasterModulePlaceholder'), 'página deixa de ser placeholder');
+  assert(page.includes('EquipmentPage'), 'usa EquipmentPage');
+  assert(exists('app/master/topography/equipment/[id]/page.tsx'), 'rota detalhe');
+  assert(exists('components/master/topography/equipment/EquipmentPage.tsx'), 'lista UI');
+  assert(exists('components/master/topography/equipment/EquipmentDetailPage.tsx'), 'detalhe UI');
+  assert(exists('components/master/topography/equipment/EquipmentFormModal.tsx'), 'form modal');
+  assert(exists('components/master/topography/equipment/EquipmentKpiRow.tsx'), 'KPIs');
+  assert(exists('components/master/topography/equipment/EquipmentFilters.tsx'), 'filtros');
+  assert(exists('components/master/topography/equipment/EquipmentStatusBadge.tsx'), 'badge status');
+  assert(exists('components/master/topography/equipment/equipment.module.css'), 'CSS módulo');
+
+  const listUi = read('components/master/topography/equipment/EquipmentPage.tsx');
+  assert(listUi.includes('MasterSuperAdminGuard'), 'lista com guard');
+  assert(listUi.includes('Novo equipamento'), 'botão criar');
+  assert(listUi.includes('emptyState') || listUi.includes('Nenhum equipamento'), 'estado vazio');
+  assert(listUi.includes('Arquivar'), 'ação arquivar');
+  assert(listUi.includes('Restaurar'), 'ação restaurar');
+  assert(listUi.includes('Editar'), 'ação editar');
+  assert(listUi.includes('Detalhes'), 'ação detalhes');
+  assert(listUi.includes('EquipmentKpiRow'), 'KPIs na listagem');
+  assert(listUi.includes('EquipmentFilters'), 'filtros na listagem');
+  assert(listUi.includes('includeArchived'), 'filtro arquivados');
+  assert(listUi.includes('/api/master/topography/equipment'), 'consome API listagem');
+
+  const formUi = read('components/master/topography/equipment/EquipmentFormModal.tsx');
+  assert(formUi.includes('Dados gerais') || formUi.includes('geral'), 'aba gerais');
+  assert(formUi.includes('Aquisição') || formUi.includes('aquisicao'), 'aba aquisição');
+  assert(formUi.includes('Controle') || formUi.includes('controle'), 'aba controle');
+  assert(formUi.includes('Centro de custo'), 'campo centro de custo');
+  assert(
+    formUi.includes('Não foi possível carregar centros') ||
+      formUi.includes('Nenhum centro de custo'),
+    'feedback centro de custo sem mascarar',
+  );
+
+  const detailUi = read('components/master/topography/equipment/EquipmentDetailPage.tsx');
+  assert(detailUi.includes('MasterSuperAdminGuard'), 'detalhe com guard');
+  assert(detailUi.includes('Documentos — Em breve'), 'docs em breve');
+  assert(detailUi.includes('Manutenções — Em breve'), 'manutenção em breve');
+  assert(detailUi.includes('QR Code — Em breve'), 'QR em breve');
+  assert(detailUi.includes('Voltar à lista'), 'voltar lista');
 
   const nav = read('lib/master/executiveNav.ts');
   const equipBlock = nav.slice(
     nav.indexOf("name: 'Equipamentos'"),
     nav.indexOf("name: 'Veículos'"),
   );
-  assert(equipBlock.includes('comingSoon: true'), 'nav ainda Em breve nesta fase');
+  assert(!equipBlock.includes('comingSoon: true'), 'Equipamentos sem Em breve');
+  assert(equipBlock.includes("/master/topography/equipment"), 'href equipamentos');
 
-  // Não criar subtabelas / exports nesta fase
+  assert(
+    /name:\s*'Operação'[\s\S]*?comingSoon:\s*true[\s\S]*?name:\s*'Equipamentos'/.test(nav),
+    'Operação permanece Em breve',
+  );
+  assert(
+    /name:\s*'Veículos'[\s\S]*?comingSoon:\s*true[\s\S]*?name:\s*'Relatórios'/.test(nav),
+    'Veículos permanece Em breve',
+  );
+  assert(
+    /name:\s*'Relatórios'[\s\S]*?comingSoon:\s*true[\s\S]*?FINANCEIRO CORPORATIVO/.test(nav),
+    'Relatórios permanece Em breve',
+  );
+
+  // Sem documentos/manutenção services nesta fase
   assert(!exists('lib/master/topography/equipmentDocumentsService.ts'), 'sem documents service');
   assert(!exists('lib/master/topography/equipmentMaintenanceService.ts'), 'sem maintenance service');
-  assert(!exists('components/master/topography/equipment/EquipmentPage.tsx'), 'sem UI lista');
 
-  // Isolamento: não alterar projetos/orçamentos/saas no escopo desta entrega
+  // Isolamento
   assert(exists('lib/master/topography/projectsService.ts'), 'projetos intacto');
   assert(exists('lib/master/topography/quotesService.ts'), 'orçamentos intacto');
+  assert(exists('lib/gisSaleCreateService.ts') || exists('app/gis/page.tsx'), 'GIS presente');
+  assert(
+    exists('lib/contracts') || exists('app/contracts') || exists('components/contracts'),
+    'contratos presentes',
+  );
 
-  console.log('OK testPhase1aDoesNotTouchUiOrOtherModules');
+  console.log('OK testPhase1bUiAndNavigation');
 }
 
 function main() {
@@ -237,7 +300,7 @@ function main() {
   testCategoriesAndStatuses();
   testValidation();
   testServiceAndApiContracts();
-  testPhase1aDoesNotTouchUiOrOtherModules();
+  testPhase1bUiAndNavigation();
   console.log('\nmandatory-master-topography-equipment-tests: all passed');
 }
 
