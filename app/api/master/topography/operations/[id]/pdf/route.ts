@@ -1,8 +1,17 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { getTopographyClientById } from '@/lib/master/topography/clientsService';
+import { listOperationDocuments } from '@/lib/master/topography/operationDocumentsService';
+import { listOperationEquipment } from '@/lib/master/topography/operationEquipmentService';
+import { listOperationExpenses } from '@/lib/master/topography/operationExpenseService';
+import { listOperationOccurrences } from '@/lib/master/topography/operationOccurrenceService';
 import { buildOperationPdfBytes } from '@/lib/master/topography/operationPdf';
-import { getTopographyOperationById } from '@/lib/master/topography/operationService';
+import {
+  getTopographyOperationById,
+  logTopographyOperationAudit,
+} from '@/lib/master/topography/operationService';
+import { listOperationTasks } from '@/lib/master/topography/operationTaskService';
+import { listOperationTeam } from '@/lib/master/topography/operationTeamService';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,10 +25,14 @@ export async function GET(request: Request, context: Ctx) {
   }
 
   const { searchParams } = new URL(request.url);
-  const auth = await assertSuperAdmin(supabaseAdmin, searchParams.get('userId'));
+  const userId = searchParams.get('userId');
+  const auth = await assertSuperAdmin(supabaseAdmin, userId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: 403 });
   }
+
+  const disposition =
+    searchParams.get('disposition') === 'inline' ? 'inline' : 'attachment';
 
   const { id } = await context.params;
   try {
@@ -31,7 +44,6 @@ export async function GET(request: Request, context: Ctx) {
     let client = null;
     if (operation.client_id) {
       client = await getTopographyClientById(supabaseAdmin, operation.client_id);
-      // Cliente arquivado/excluído (SET NULL) não quebra — usa snapshot client_name
     }
 
     let projectLabel: string | null = null;
@@ -55,18 +67,42 @@ export async function GET(request: Request, context: Ctx) {
       }
     }
 
+    const [team, equipment, tasks, occurrences, expenses, documents] =
+      await Promise.all([
+        listOperationTeam(supabaseAdmin, id),
+        listOperationEquipment(supabaseAdmin, id),
+        listOperationTasks(supabaseAdmin, id),
+        listOperationOccurrences(supabaseAdmin, id),
+        listOperationExpenses(supabaseAdmin, id),
+        listOperationDocuments(supabaseAdmin, id),
+      ]);
+
     const { bytes, filename } = await buildOperationPdfBytes({
       operation,
       client,
       projectLabel,
       quoteLabel,
+      team,
+      equipment,
+      tasks,
+      occurrences,
+      expenses,
+      documents,
+    });
+
+    await logTopographyOperationAudit(supabaseAdmin, {
+      userId: userId ? String(userId) : null,
+      action: 'TOPOGRAPHY_OPERATION_PDF_GENERATED',
+      entityId: id,
+      description: `PDF gerado (${disposition}): ${filename}`,
+      newData: { filename, disposition },
     });
 
     return new NextResponse(Buffer.from(bytes), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `${disposition}; filename="${filename}"`,
         'Cache-Control': 'no-store',
       },
     });

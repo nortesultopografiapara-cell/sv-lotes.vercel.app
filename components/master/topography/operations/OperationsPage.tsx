@@ -13,6 +13,7 @@ import type {
 import {
   OperationFilters,
   type OperationFiltersState,
+  type EquipmentFilterOption,
   type ProjectOption,
 } from './OperationFilters';
 import {
@@ -40,6 +41,10 @@ const EMPTY_KPIS: MasterTopographyOperationKpis = {
   overdue: 0,
   estimatedCostSum: 0,
   actualCostSum: 0,
+  costDeviation: 0,
+  equipmentInUse: 0,
+  openOccurrences: 0,
+  pendingChecklist: 0,
 };
 
 function formatCurrency(val: number | null | undefined) {
@@ -75,14 +80,18 @@ function OperationsPageInner() {
     priority: '',
     projectId: '',
     responsible: '',
+    equipmentId: '',
     scheduledFrom: '',
     scheduledTo: '',
     includeArchived: false,
+    openOccurrence: false,
+    pendingChecklist: false,
   });
   const [qDebounced, setQDebounced] = useState('');
   const [responsibleDebounced, setResponsibleDebounced] = useState('');
 
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [equipmentOptions, setEquipmentOptions] = useState<EquipmentFilterOption[]>([]);
   const [quotes, setQuotes] = useState<ProjectQuoteOption[]>([]);
   const [projectMap, setProjectMap] = useState<Record<string, string>>({});
 
@@ -95,6 +104,7 @@ function OperationsPageInner() {
   const [statusTarget, setStatusTarget] = useState<MasterTopographyOperation | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusRequiresOverride, setStatusRequiresOverride] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(filters.q.trim()), 300);
@@ -121,12 +131,14 @@ function OperationsPageInner() {
     void (async () => {
       try {
         const qs = `userId=${encodeURIComponent(user.id)}&limit=100`;
-        const [pRes, qRes] = await Promise.all([
+        const [pRes, qRes, eRes] = await Promise.all([
           fetch(`/api/master/topography/projects?${qs}`),
           fetch(`/api/master/topography/quotes?${qs}`),
+          fetch(`/api/master/topography/equipment?${qs}&includeArchived=0&limit=100`),
         ]);
         const pData = await pRes.json().catch(() => ({}));
         const qData = await qRes.json().catch(() => ({}));
+        const eData = await eRes.json().catch(() => ({}));
         if (cancelled) return;
 
         const projectOpts: ProjectOption[] = (pData.projects || []).map(
@@ -139,6 +151,13 @@ function OperationsPageInner() {
         for (const p of projectOpts) map[p.id] = p.label;
         setProjects(projectOpts);
         setProjectMap(map);
+
+        setEquipmentOptions(
+          (eData.equipment || []).map((eq: { id: string; code?: string; name?: string }) => ({
+            id: String(eq.id),
+            label: `${eq.code || ''} — ${eq.name || ''}`.trim(),
+          })),
+        );
 
         setQuotes(
           (qData.quotes || []).map((q: { id: string; code?: string; title?: string }) => ({
@@ -169,6 +188,7 @@ function OperationsPageInner() {
       if (filters.status) params.set('status', filters.status);
       if (filters.priority) params.set('priority', filters.priority);
       if (filters.projectId) params.set('projectId', filters.projectId);
+      if (filters.equipmentId) params.set('equipmentId', filters.equipmentId);
       if (responsibleDebounced) params.set('responsible', responsibleDebounced);
       if (filters.scheduledFrom) {
         params.set('scheduledFrom', `${filters.scheduledFrom}T00:00:00.000Z`);
@@ -177,6 +197,8 @@ function OperationsPageInner() {
         params.set('scheduledTo', `${filters.scheduledTo}T23:59:59.999Z`);
       }
       if (filters.includeArchived) params.set('includeArchived', '1');
+      if (filters.openOccurrence) params.set('openOccurrence', '1');
+      if (filters.pendingChecklist) params.set('pendingChecklist', '1');
 
       const res = await fetch(`/api/master/topography/operations?${params.toString()}`);
       const data = await res.json();
@@ -198,9 +220,12 @@ function OperationsPageInner() {
     filters.status,
     filters.priority,
     filters.projectId,
+    filters.equipmentId,
     filters.scheduledFrom,
     filters.scheduledTo,
     filters.includeArchived,
+    filters.openOccurrence,
+    filters.pendingChecklist,
     responsibleDebounced,
   ]);
 
@@ -285,6 +310,8 @@ function OperationsPageInner() {
   const handleStatusChange = async (payload: {
     status: string;
     actual_end?: string | null;
+    reopenConfirmed?: boolean;
+    overrideReason?: string;
   }) => {
     if (!user?.id || !statusTarget) return;
     setStatusSaving(true);
@@ -298,11 +325,17 @@ function OperationsPageInner() {
           patchOnly: true,
           status: payload.status,
           actual_end: payload.actual_end,
+          reopenConfirmed: payload.reopenConfirmed,
+          overrideReason: payload.overrideReason,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao alterar status.');
+      if (!res.ok) {
+        if (data.requiresOverride) setStatusRequiresOverride(true);
+        throw new Error(data.error || 'Falha ao alterar status.');
+      }
       setStatusTarget(null);
+      setStatusRequiresOverride(false);
       setToast(`Status de ${statusTarget.code} atualizado.`);
       await load();
     } catch (err) {
@@ -340,6 +373,7 @@ function OperationsPageInner() {
       <OperationFilters
         value={filters}
         projects={projects}
+        equipment={equipmentOptions}
         onChange={(next) => {
           setPage(1);
           setFilters(next);
@@ -433,6 +467,8 @@ function OperationsPageInner() {
                             className={styles.btnGhost}
                             onClick={() => {
                               setStatusError(null);
+                              setStatusError(null);
+                              setStatusRequiresOverride(false);
                               setStatusTarget(row);
                             }}
                             disabled={busyId === row.id}
@@ -512,8 +548,12 @@ function OperationsPageInner() {
         operation={statusTarget}
         saving={statusSaving}
         error={statusError}
+        requiresOverride={statusRequiresOverride}
         onClose={() => {
-          if (!statusSaving) setStatusTarget(null);
+          if (!statusSaving) {
+            setStatusTarget(null);
+            setStatusRequiresOverride(false);
+          }
         }}
         onSubmit={handleStatusChange}
       />

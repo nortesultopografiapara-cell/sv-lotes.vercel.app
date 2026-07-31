@@ -25,12 +25,14 @@ export function OperationShareModal({
 }: Props) {
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
+  const [messageCopied, setMessageCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!open || !operation) return;
     setMessage(buildOperationShareMessage(operation));
     setCopied(false);
+    setMessageCopied(false);
   }, [open, operation]);
 
   const waUrl = useMemo(() => {
@@ -51,6 +53,15 @@ export function OperationShareModal({
       setCopied(true);
     } catch {
       setCopied(false);
+    }
+  };
+
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setMessageCopied(true);
+    } catch {
+      setMessageCopied(false);
     }
   };
 
@@ -108,6 +119,9 @@ export function OperationShareModal({
           </div>
 
           <div className={styles.modalFooter} style={{ flexWrap: 'wrap' }}>
+            <button type="button" className={styles.btnSecondary} onClick={() => void handleCopyMessage()}>
+              {messageCopied ? 'Mensagem copiada' : 'Copiar mensagem'}
+            </button>
             <button type="button" className={styles.btnSecondary} onClick={() => void handleCopyLink()}>
               {copied ? 'Link copiado' : 'Copiar link'}
             </button>

@@ -63,6 +63,7 @@
     "test:master-topography-equipment-form-docs": "tsx scripts/mandatory-master-topography-equipment-form-docs-tests.ts",
     "test:master-topography-operations": "tsx scripts/mandatory-master-topography-operations-tests.ts",
     "test:master-topography-operations-client-pdf": "tsx scripts/mandatory-master-topography-operations-client-pdf-tests.ts",
+    "test:master-topography-operations-complete": "tsx scripts/mandatory-master-topography-operations-complete-tests.ts",
     "test:master-topography-quotes": "tsx scripts/mandatory-master-topography-quotes-tests.ts",
     "test:master-topography-quote-pdf": "tsx scripts/mandatory-master-topography-quote-pdf-tests.ts",
     "test:master-topography-quote-scope": "tsx scripts/mandatory-master-topography-quote-scope-tests.ts",

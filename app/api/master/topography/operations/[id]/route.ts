@@ -87,6 +87,33 @@ export async function PATCH(request: Request, context: Ctx) {
             fields.actual_end = new Date(ms).toISOString();
           }
         }
+
+        const { evaluateOperationStatusGates } = await import(
+          '@/lib/master/topography/operationStatusGates'
+        );
+        const gate = await evaluateOperationStatusGates(supabaseAdmin, id, {
+          to: nextStatus,
+          actualEnd:
+            (fields.actual_end as string | undefined) ||
+            existing.actual_end,
+          overrideReason:
+            body.overrideReason ?? body.override_reason ?? body.completion_override_reason,
+          userId: body.userId ? String(body.userId) : null,
+        });
+        if (!gate.ok) {
+          return NextResponse.json(
+            {
+              error: gate.message,
+              requiresOverride: gate.requiresOverride,
+              warnings: gate.warnings,
+            },
+            { status: 400 },
+          );
+        }
+        if (gate.patchFields) Object.assign(fields, gate.patchFields);
+        if (gate.warnings?.length) {
+          (body as { __warnings?: string[] }).__warnings = gate.warnings;
+        }
       }
 
       if (body.is_archived != null || body.isArchived != null) {
@@ -143,7 +170,10 @@ export async function PATCH(request: Request, context: Ctx) {
         });
       }
 
-      return NextResponse.json({ operation });
+      return NextResponse.json({
+        operation,
+        warnings: (body as { __warnings?: string[] }).__warnings,
+      });
     }
 
     const input = validateTopographyOperationInput(body, {

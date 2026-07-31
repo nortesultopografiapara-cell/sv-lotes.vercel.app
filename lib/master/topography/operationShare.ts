@@ -25,7 +25,7 @@ export function buildOperationShareMessage(operation: MasterTopographyOperation)
     ? formatDateTimeBr(operation.scheduled_start)
     : 'a definir';
   const local = operation.location_name || operation.address || 'a definir';
-  return `Olá, ${nome}. Segue a Ordem de Serviço ${operation.code} referente a ${operation.title}. Data prevista: ${data}. Local: ${local}.`;
+  return `Olá, ${nome}. Segue a Ordem de Serviço ${operation.code}, referente a ${operation.title}. Serviço previsto para ${data}, no local ${local}.`;
 }
 
 export function buildWhatsAppShareUrl(

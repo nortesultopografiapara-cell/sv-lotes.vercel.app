@@ -41,6 +41,37 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  flex: 1 1 100%;
+  justify-content: flex-start;
+}
+
+@media (min-width: 768px) {
+  .headerActions {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+    max-width: 100%;
+  }
+}
+
+.headerMain {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.detailTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 0.85rem;
+}
+
+.tabPanel {
+  min-width: 0;
+}
+
+.hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
 }
 
 .btnPrimary,

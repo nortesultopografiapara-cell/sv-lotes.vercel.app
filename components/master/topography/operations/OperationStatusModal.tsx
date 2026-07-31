@@ -18,11 +18,14 @@ type Props = {
   operation: MasterTopographyOperation | null;
   saving: boolean;
   error: string | null;
+  /** Quando a API retorna requiresOverride, exibir campo de justificativa SUPER_ADMIN. */
+  requiresOverride?: boolean;
   onClose: () => void;
   onSubmit: (payload: {
     status: OperationStatusCode;
     actual_end?: string | null;
     reopenConfirmed?: boolean;
+    overrideReason?: string;
   }) => Promise<void> | void;
 };
 
@@ -31,12 +34,14 @@ export function OperationStatusModal({
   operation,
   saving,
   error,
+  requiresOverride = false,
   onClose,
   onSubmit,
 }: Props) {
   const [nextStatus, setNextStatus] = useState('');
   const [actualEnd, setActualEnd] = useState('');
   const [reopenConfirmed, setReopenConfirmed] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
 
   useEffect(() => {
     if (!open || !operation) return;
@@ -47,6 +52,7 @@ export function OperationStatusModal({
         : '',
     );
     setReopenConfirmed(false);
+    setOverrideReason('');
   }, [open, operation]);
 
   const options = useMemo(() => {
@@ -82,10 +88,14 @@ export function OperationStatusModal({
       actual_end = new Date(actualEnd).toISOString();
     }
 
+    const override = overrideReason.trim();
+    if (requiresOverride && !override) return;
+
     await onSubmit({
       status: to,
       actual_end,
       reopenConfirmed: isReopen ? reopenConfirmed : undefined,
+      overrideReason: requiresOverride ? override : undefined,
     });
   };
 
@@ -160,6 +170,23 @@ export function OperationStatusModal({
             </label>
           ) : null}
 
+          {requiresOverride ? (
+            <div className={styles.field}>
+              <label htmlFor="op-override-reason">Justificativa de override (SUPER_ADMIN) *</label>
+              <textarea
+                id="op-override-reason"
+                className={styles.textarea}
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="Descreva o motivo para prosseguir sem atender todos os requisitos."
+                required
+              />
+              <span className={styles.hint}>
+                Necessário quando a transição exige equipe/equipamento ou checklist crítico pendente.
+              </span>
+            </div>
+          ) : null}
+
           <div className={styles.modalFooter}>
             <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={saving}>
               Cancelar
@@ -171,7 +198,8 @@ export function OperationStatusModal({
                 saving ||
                 !nextStatus ||
                 (nextStatus === 'COMPLETED' && !actualEnd) ||
-                (isReopen && !reopenConfirmed)
+                (isReopen && !reopenConfirmed) ||
+                (requiresOverride && !overrideReason.trim())
               }
             >
               {saving ? 'Salvando…' : 'Confirmar'}

@@ -360,12 +360,12 @@ function testIsolationIntactModules() {
   );
 
   assert(
-    !exists('app/api/master/topography/operations/[id]/team/route.ts'),
-    'sem API equipe',
+    exists('app/api/master/topography/operations/[id]/team/route.ts'),
+    'API equipe presente (fase completa)',
   );
   assert(
-    !exists('app/api/master/topography/operations/[id]/checklist/route.ts'),
-    'sem API checklist',
+    exists('app/api/master/topography/operations/[id]/tasks/route.ts'),
+    'API checklist/tasks presente (fase completa)',
   );
   assert(exists('app/gis/page.tsx') || exists('lib/gisSaleCreateService.ts'), '20. GIS clientes intacto');
   assert(
@@ -427,10 +427,10 @@ function testPhase1bUiAndNavigation() {
   const detailUi = read('components/master/topography/operations/OperationDetailPage.tsx');
   assert(detailUi.includes('MasterSuperAdminGuard'), 'segurança detalhe');
   assert(detailUi.includes('Voltar à lista'), 'voltar lista');
-  assert(detailUi.includes('Equipe') && detailUi.includes('Em breve'), 'reserva equipe');
-  assert(detailUi.includes('Checklist') && detailUi.includes('Em breve'), 'reserva checklist');
-  assert(detailUi.includes('Documentos') && detailUi.includes('Em breve'), 'reserva documentos');
-  assert(detailUi.includes('Timeline') && detailUi.includes('Em breve'), 'reserva timeline');
+  assert(detailUi.includes('Equipe') && !detailUi.includes('Em breve'), 'equipe real');
+  assert(detailUi.includes('Checklist') && detailUi.includes('OperationChecklistPanel'), 'checklist real');
+  assert(detailUi.includes('Documentos') && detailUi.includes('OperationDocumentsPanel'), 'documentos real');
+  assert(detailUi.includes('Timeline') && detailUi.includes('OperationTimelinePanel'), 'timeline real');
   assert(!detailUi.includes('/api/master/topography/operations/') || detailUi.includes('operations/${'), 'detalhe API');
 
   const kpiUi = read('components/master/topography/operations/OperationKpiRow.tsx');

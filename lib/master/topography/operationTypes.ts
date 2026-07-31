@@ -31,6 +31,12 @@ export type MasterTopographyOperation = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  completion_override_reason?: string | null;
+  completion_override_by?: string | null;
+  completion_override_at?: string | null;
+  field_requirements_override_reason?: string | null;
+  field_requirements_override_by?: string | null;
+  field_requirements_override_at?: string | null;
 };
 
 export type MasterTopographyOperationInput = {
@@ -65,7 +71,14 @@ export type MasterTopographyOperationListFilters = {
   status?: string;
   priority?: string;
   projectId?: string;
+  quoteId?: string;
+  clientId?: string;
   responsible?: string;
+  equipmentId?: string;
+  openOccurrence?: boolean;
+  pendingChecklist?: boolean;
+  /** IDs pré-resolvidos por filtros de filhos (interno). */
+  operationIds?: string[];
   scheduledFrom?: string;
   scheduledTo?: string;
   includeArchived?: boolean;
@@ -91,6 +104,10 @@ export type MasterTopographyOperationKpis = {
   overdue: number;
   estimatedCostSum: number;
   actualCostSum: number;
+  costDeviation: number;
+  equipmentInUse: number;
+  openOccurrences: number;
+  pendingChecklist: number;
 };
 
 export type MasterTopographyOperationListResult = {
