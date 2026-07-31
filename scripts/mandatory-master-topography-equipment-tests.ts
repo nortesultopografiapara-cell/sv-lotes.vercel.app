@@ -58,8 +58,9 @@ function testMigrationAndRls() {
   assert(migration.includes('asset_number'), 'patrimônio');
   assert(!migration.includes('REFERENCES public.customers'), 'sem FK customers');
   assert(!migration.includes('REFERENCES public.projects'), 'sem FK projects tenant');
-  assert(!migration.includes('master_equipment_documents'), 'sem documents nesta fase');
-  assert(!migration.includes('master_equipment_maintenance'), 'sem maintenance nesta fase');
+  // Nomes curtos proibidos (Fase 2 usa master_topography_equipment_*)
+  assert(!migration.includes('master_equipment_documents'), 'sem nome curto documents');
+  assert(!migration.includes('master_equipment_maintenance'), 'sem nome curto maintenance');
   console.log('OK testMigrationAndRls');
 }
 
@@ -207,9 +208,10 @@ function testServiceAndApiContracts() {
   assert(idApi.includes('export async function PATCH'), 'PATCH');
   assert(idApi.includes('is_archived'), 'archive/restore via PATCH');
   assert(idApi.includes('TOPOGRAPHY_EQUIPMENT_ARCHIVED'), 'audit archive');
-  assert(!idApi.includes('documents'), 'sem documents API');
-  assert(!idApi.includes('maintenance'), 'sem maintenance API');
-  assert(!idApi.includes('assign'), 'sem assignment API');
+  assert(
+    idApi.includes('recordAssignmentFromEquipmentEdit'),
+    'PATCH form gera assignment (Fase 2)',
+  );
 
   console.log('OK testServiceAndApiContracts');
 }
@@ -253,8 +255,10 @@ function testPhase1bUiAndNavigation() {
 
   const detailUi = read('components/master/topography/equipment/EquipmentDetailPage.tsx');
   assert(detailUi.includes('MasterSuperAdminGuard'), 'detalhe com guard');
-  assert(detailUi.includes('Documentos — Em breve'), 'docs em breve');
-  assert(detailUi.includes('Manutenções — Em breve'), 'manutenção em breve');
+  assert(detailUi.includes('EquipmentDocumentsPanel'), 'painel documentos Fase 2');
+  assert(detailUi.includes('EquipmentMaintenancePanel'), 'painel manutenção Fase 2');
+  assert(detailUi.includes('EquipmentAssignmentsPanel'), 'painel movimentações Fase 2');
+  assert(detailUi.includes('EquipmentTimelinePanel'), 'timeline Fase 2');
   assert(detailUi.includes('QR Code — Em breve'), 'QR em breve');
   assert(detailUi.includes('Voltar à lista'), 'voltar lista');
 
@@ -279,9 +283,10 @@ function testPhase1bUiAndNavigation() {
     'Relatórios permanece Em breve',
   );
 
-  // Sem documentos/manutenção services nesta fase
-  assert(!exists('lib/master/topography/equipmentDocumentsService.ts'), 'sem documents service');
-  assert(!exists('lib/master/topography/equipmentMaintenanceService.ts'), 'sem maintenance service');
+  // Fase 2 services presentes
+  assert(exists('lib/master/topography/equipmentDocumentsService.ts'), 'documents service');
+  assert(exists('lib/master/topography/equipmentMaintenanceService.ts'), 'maintenance service');
+  assert(exists('lib/master/topography/equipmentAssignmentsService.ts'), 'assignments service');
 
   // Isolamento
   assert(exists('lib/master/topography/projectsService.ts'), 'projetos intacto');

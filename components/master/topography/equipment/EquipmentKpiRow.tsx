@@ -49,6 +49,10 @@ export function EquipmentKpiRow({ kpis }: Props) {
           {formatCurrency(kpis.patrimonialValue)}
         </p>
       </div>
+      <div className={styles.kpiCard}>
+        <p className={styles.kpiLabel}>Calibração ≤ 30 dias</p>
+        <p className={styles.kpiValue}>{kpis.calibrationDueSoon}</p>
+      </div>
     </section>
   );
 }
