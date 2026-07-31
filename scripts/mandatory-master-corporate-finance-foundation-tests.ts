@@ -126,8 +126,23 @@ function testValidation() {
     is_default: true,
   });
   assert(account.name === 'Conta Principal', 'account name trim');
+  assert(account.business_unit === 'SV_TOPOGRAFIA', 'unidade padrão Topografia');
   assert(account.opening_balance === 1500.5, 'opening balance');
   assert(account.opening_balance_date === '2026-01-01', 'opening date');
+
+  const lotsAccount = validateCorporateAccountInput({
+    name: 'Asaas SV LOTES',
+    account_type: 'DIGITAL_WALLET',
+    business_unit: 'SV_LOTES',
+    opening_balance: 0,
+  });
+  assert(lotsAccount.business_unit === 'SV_LOTES', 'unidade SV LOTES');
+
+  const buMigration = read(
+    'supabase/migrations/20260731121000_corporate_accounts_business_unit.sql',
+  );
+  assert(buMigration.includes('business_unit'), 'migration business_unit');
+  assert(buMigration.includes('SV_TOPOGRAFIA'), 'seed unidade topografia');
 
   let threw = false;
   try {

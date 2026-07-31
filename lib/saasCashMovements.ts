@@ -1052,15 +1052,21 @@ export async function computeSaasCashHiddenByMarcoInPeriod(
   return computeSaasCashHiddenByMarcoFromRows(rows, options.cashStartAt ?? null);
 }
 
-/** Receita recebida visível/oculta — mesma fonte do Caixa SaaS (entradas). */
+/** Receita recebida visível/oculta — mesma fonte do Caixa SaaS (entradas type=income). */
 export async function sumSaasCashReceivedIncome(
   supabaseAdmin: SupabaseClient,
   cashStartAt: string | null,
+  options: { fromDate?: string; toDate?: string } = {},
 ): Promise<SaasCashReceivedIncomeSummary> {
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('saas_cash_movements')
     .select('type, amount, movement_date, created_at')
     .eq('type', 'income');
+
+  if (options.fromDate) query = query.gte('movement_date', options.fromDate);
+  if (options.toDate) query = query.lte('movement_date', options.toDate);
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(error.message || 'Falha ao somar entradas do caixa SaaS');
@@ -1087,6 +1093,48 @@ export async function sumSaasCashReceivedIncome(
   }
 
   return { visibleTotal, hiddenTotal, hiddenCount };
+}
+
+/** Totais do período no Caixa SaaS (income/expense/transfer separados). */
+export async function sumSaasCashPeriodTotals(
+  supabaseAdmin: SupabaseClient,
+  cashStartAt: string | null,
+  options: { fromDate: string; toDate: string },
+): Promise<{
+  periodIncome: number;
+  periodExpense: number;
+  periodTransfer: number;
+  netResult: number;
+}> {
+  let query = supabaseAdmin
+    .from('saas_cash_movements')
+    .select('type, amount, movement_date, created_at')
+    .gte('movement_date', options.fromDate)
+    .lte('movement_date', options.toDate);
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message || 'Falha ao agregar caixa SaaS do período');
+  }
+
+  const visible = (data || []).filter((row) =>
+    movementRowVisibility(
+      {
+        movement_date: String(row.movement_date || '').split('T')[0],
+        created_at: row.created_at ? String(row.created_at) : null,
+        type: String(row.type || 'income') as SaasCashMovementType,
+        amount: Number(row.amount || 0),
+      },
+      cashStartAt,
+    ),
+  );
+
+  return computeSaasCashSummaryFromRows(
+    visible.map((row) => ({
+      type: String(row.type || 'income') as SaasCashMovementType,
+      amount: Number(row.amount || 0),
+    })),
+  );
 }
 
 export async function reprocessSaasCashForPaidCharges(

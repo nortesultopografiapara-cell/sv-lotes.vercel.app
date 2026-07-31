@@ -190,9 +190,14 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
       const year = data.financialYear;
       const userId = user?.id ? String(user.id) : '';
 
-      // Série e KPIs corporativos via API Master (service_role) — evita RLS vazio no browser.
+      // Série e KPIs Topografia via API Master (service_role) — evita RLS vazio no browser.
+      // businessUnit=SV_TOPOGRAFIA: AR/AP/caixa SV_LOTES não inflacionam este bloco.
       if (userId) {
-        const qs = new URLSearchParams({ userId, year: String(year) });
+        const qs = new URLSearchParams({
+          userId,
+          year: String(year),
+          businessUnit: 'SV_TOPOGRAFIA',
+        });
         const [monthlyRes, summaryRes] = await Promise.all([
           fetch(`/api/master/corporate-finance/cash-movements/monthly?${qs}`),
           fetch(`/api/master/corporate-finance/summary?${qs}`),
@@ -317,12 +322,13 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <div className={styles.welcome}>
-          <p className={styles.welcomeEyebrow}>Painel Executivo · SV Topografia &amp; Projetos</p>
+          <p className={styles.welcomeEyebrow}>Painel Executivo · Master</p>
           <h2 className={styles.welcomeTitle}>
             {greetingPrefix()}, {firstName(user?.name)}!
           </h2>
           <p className={styles.welcomeSub}>
-            Resumo do SaaS SV LOTES e visão institucional da SV Topografia &amp; Projetos.
+            Indicadores segregados: SaaS SV LOTES e financeiro corporativo SV Topografia &amp;
+            Projetos — sem misturar unidades.
           </p>
           <p className={styles.welcomeSub} style={{ marginTop: 8 }}>
             <Link href="/dashboard" className={styles.linkAll}>
@@ -346,7 +352,14 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
 
       <SaasFinanceStartAtBanner cashStartAt={dashboard.cashStartAt} />
 
-      <section className={styles.kpiRow} aria-label="Indicadores principais">
+      <div className={styles.blockHeader}>
+        <h3 className={styles.blockTitle}>Indicadores SV LOTES — SaaS</h3>
+        <p className={styles.blockHint}>
+          Operação de assinaturas · Caixa SaaS · transferências fora do resultado
+        </p>
+      </div>
+
+      <section className={styles.kpiRow} aria-label="Indicadores SV LOTES (SaaS)">
         <KpiCard
           title="Empresas Ativas"
           value={stats.activeCompanies}
@@ -364,7 +377,11 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="Receita Mensal (MRR)"
           value={formatCurrency(stats.mrr)}
-          hint={stats.mrr === 0 ? 'Sem assinaturas ativas' : 'Recorrente mensal'}
+          hint={
+            stats.mrr === 0
+              ? 'Sem assinaturas ativas'
+              : 'Recorrente contratada — não é caixa'
+          }
           icon={<DollarSign />}
           iconClass={styles.iconPurple}
           currency
@@ -374,8 +391,8 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           value={formatCurrency(stats.receivedRevenue)}
           hint={
             dashboard.cashStartAt && stats.receivedRevenueHiddenCount > 0
-              ? `${stats.receivedRevenueHiddenCount} oculta(s) pelo marco`
-              : 'Caixa SaaS'
+              ? `Mês atual · ${stats.receivedRevenueHiddenCount} oculta(s) pelo marco`
+              : 'Mês atual · income no Caixa SaaS (sem transfer)'
           }
           icon={<Banknote />}
           iconClass={styles.iconGreen}
@@ -384,18 +401,18 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="Receita a Receber"
           value={formatCurrency(stats.revenueToReceive)}
-          hint="Dentro do prazo"
+          hint="Faturas SaaS pendentes — não é saldo de caixa"
           icon={<Wallet />}
           iconClass={styles.iconSky}
           currency
         />
       </section>
 
-      <section className={styles.kpiRow} aria-label="Indicadores operacionais">
+      <section className={styles.kpiRow} aria-label="Indicadores operacionais SV LOTES">
         <KpiCard
           title="Inadimplência"
           value={formatCurrency(stats.delinquencyAmount)}
-          hint="Valores vencidos"
+          hint="Faturas SaaS vencidas"
           icon={<Lock />}
           iconClass={styles.iconRose}
           currency
@@ -406,6 +423,14 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           hint={pct(stats.suspendedCompanies, stats.totalCompanies)}
           icon={<AlertTriangle />}
           iconClass={styles.iconOrange}
+        />
+        <KpiCard
+          title="Transferências no período"
+          value={formatCurrency(stats.periodTransfer || 0)}
+          hint="Informativo · mês atual · fora do resultado/MRR"
+          icon={<CreditCard />}
+          iconClass={styles.iconSlate}
+          currency
         />
         <KpiCard
           title="Alertas"
@@ -432,6 +457,13 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
 
       <MasterCompactAlerts alerts={dashboard.alerts} maxVisible={3} detailsHref="/companies" />
 
+      <div className={styles.blockHeader}>
+        <h3 className={styles.blockTitle}>Gráficos anuais — ano {dashboard.financialYear}</h3>
+        <p className={styles.blockHint}>
+          Critério: income/expense por data de movimento · transferências excluídas do P&amp;L
+        </p>
+      </div>
+
       <section className={styles.chartsRow} aria-label="Gráficos anuais Receita × Despesa">
         <MasterAnnualRevenueExpenseChart
           title={`Receita × Despesa — SV LOTES (${dashboard.financialYear})`}
@@ -440,17 +472,25 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         />
 
         <MasterAnnualRevenueExpenseChart
-          title={`Receita × Despesa — SV Topografia e Projetos (${dashboard.financialYear})`}
+          title={`Receita × Despesa — SV Topografia (${dashboard.financialYear})`}
           data={dashboard.topographyMonthlyFinancials}
-          emptyMessage="Sem movimentação financeira corporativa neste período."
+          emptyMessage="Sem movimentação SV_TOPOGRAFIA neste período."
         />
       </section>
 
-      <section className={styles.kpiRow} aria-label="Financeiro corporativo SV Topografia">
+      <div className={styles.blockHeader}>
+        <h3 className={styles.blockTitle}>Indicadores SV Topografia e Projetos</h3>
+        <p className={styles.blockHint}>
+          Financeiro corporativo · filtro business_unit = SV_TOPOGRAFIA · cards = mês atual ·
+          saldo = posição nas contas
+        </p>
+      </div>
+
+      <section className={styles.kpiRow} aria-label="Financeiro corporativo SV Topografia e Projetos">
         <KpiCard
           title="Receita do mês"
           value={formatCurrency(dashboard.corporateFinanceKpis.monthIncome)}
-          hint="Caixa corporativo"
+          hint="Mês atual · entradas econômicas recebidas"
           icon={<Banknote />}
           iconClass={styles.iconGreen}
           currency
@@ -460,7 +500,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="Despesa do mês"
           value={formatCurrency(dashboard.corporateFinanceKpis.monthExpense)}
-          hint="Caixa corporativo"
+          hint="Mês atual · saídas econômicas pagas"
           icon={<Wallet />}
           iconClass={styles.iconRose}
           currency
@@ -470,7 +510,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="Resultado do mês"
           value={formatCurrency(dashboard.corporateFinanceKpis.monthNet)}
-          hint="Receita − despesa"
+          hint="Resultado operacional · receita − despesa (sem transfer)"
           icon={<DollarSign />}
           iconClass={
             dashboard.corporateFinanceKpis.monthNet >= 0 ? styles.iconGreen : styles.iconRose
@@ -490,7 +530,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="Saldo corporativo"
           value={formatCurrency(dashboard.corporateFinanceKpis.currentBalance)}
-          hint="Contas financeiras"
+          hint="Saldo em contas · posição atual (≠ resultado)"
           icon={<Briefcase />}
           iconClass={styles.iconSky}
           currency
@@ -508,7 +548,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="A receber"
           value={formatCurrency(dashboard.corporateFinanceKpis.receivableOpen)}
-          hint="Títulos em aberto"
+          hint="Títulos pendentes Topografia · por vencimento"
           icon={<Banknote />}
           iconClass={styles.iconCyan}
           currency
@@ -518,7 +558,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
         <KpiCard
           title="A pagar"
           value={formatCurrency(dashboard.corporateFinanceKpis.payableOpen)}
-          hint="Títulos em aberto"
+          hint="Títulos pendentes Topografia · por vencimento"
           icon={<CreditCard />}
           iconClass={styles.iconOrange}
           currency

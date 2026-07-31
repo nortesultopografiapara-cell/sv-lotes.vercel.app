@@ -335,15 +335,23 @@ export async function listReceivables(
 
 export async function computeReceivableKpis(
   supabase: SupabaseClient,
+  opts: { businessUnit?: string | null } = {},
 ): Promise<MasterCorporateReceivableKpis> {
   const { from, to } = monthBounds();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('master_corporate_receivables')
-    .select('status, remaining_amount, due_date, received_amount, is_archived, canceled_at')
+    .select('id, status, remaining_amount, due_date, received_amount, is_archived, canceled_at')
     .eq('is_archived', false)
     .is('canceled_at', null);
+
+  if (opts.businessUnit) {
+    const { corporateBusinessUnitOrFilter } = await import('./businessUnitScope');
+    query = query.or(corporateBusinessUnitOrFilter(opts.businessUnit));
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
 
   const rows = data || [];
@@ -353,8 +361,10 @@ export async function computeReceivableKpis(
   let openCount = 0;
   let partialCount = 0;
   let receivedCount = 0;
+  const receivableIds: string[] = [];
 
   for (const r of rows) {
+    receivableIds.push(String(r.id));
     const remaining = Number(r.remaining_amount || 0);
     const status = String(r.status);
     if (status === 'OPEN') openCount += 1;
@@ -368,16 +378,23 @@ export async function computeReceivableKpis(
     }
   }
 
-  const { data: pays, error: pErr } = await supabase
-    .from('master_corporate_receivable_payments')
-    .select('amount, payment_date, is_reversed')
-    .eq('is_reversed', false)
-    .gte('payment_date', from)
-    .lte('payment_date', to);
-  if (pErr) throw new Error(pErr.message);
-  const receivedThisMonth = roundMoney(
-    (pays || []).reduce((s, p) => s + Number(p.amount || 0), 0),
-  );
+  let receivedThisMonth = 0;
+  if (!opts.businessUnit || receivableIds.length > 0) {
+    let paysQuery = supabase
+      .from('master_corporate_receivable_payments')
+      .select('amount, payment_date, is_reversed, receivable_id')
+      .eq('is_reversed', false)
+      .gte('payment_date', from)
+      .lte('payment_date', to);
+    if (opts.businessUnit) {
+      paysQuery = paysQuery.in('receivable_id', receivableIds);
+    }
+    const { data: pays, error: pErr } = await paysQuery;
+    if (pErr) throw new Error(pErr.message);
+    receivedThisMonth = roundMoney(
+      (pays || []).reduce((s, p) => s + Number(p.amount || 0), 0),
+    );
+  }
 
   return {
     totalOpen,

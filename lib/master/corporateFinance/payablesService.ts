@@ -259,15 +259,23 @@ export async function listPayables(
 
 export async function computePayableKpis(
   supabase: SupabaseClient,
+  opts: { businessUnit?: string | null } = {},
 ): Promise<MasterCorporatePayableKpis> {
   const { from, to } = monthBounds();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('master_corporate_payables')
-    .select('status, remaining_amount, due_date, paid_amount, is_archived, canceled_at')
+    .select('id, status, remaining_amount, due_date, paid_amount, is_archived, canceled_at')
     .eq('is_archived', false)
     .is('canceled_at', null);
+
+  if (opts.businessUnit) {
+    const { corporateBusinessUnitOrFilter } = await import('./businessUnitScope');
+    query = query.or(corporateBusinessUnitOrFilter(opts.businessUnit));
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
 
   const rows = data || [];
@@ -277,8 +285,10 @@ export async function computePayableKpis(
   let openCount = 0;
   let partialCount = 0;
   let paidCount = 0;
+  const payableIds: string[] = [];
 
   for (const r of rows) {
+    payableIds.push(String(r.id));
     const remaining = Number(r.remaining_amount || 0);
     const status = String(r.status);
     if (status === 'OPEN') openCount += 1;
@@ -292,16 +302,23 @@ export async function computePayableKpis(
     }
   }
 
-  const { data: pays, error: pErr } = await supabase
-    .from('master_corporate_payable_payments')
-    .select('amount, payment_date, is_reversed')
-    .eq('is_reversed', false)
-    .gte('payment_date', from)
-    .lte('payment_date', to);
-  if (pErr) throw new Error(pErr.message);
-  const paidThisMonth = roundMoney(
-    (pays || []).reduce((s, p) => s + Number(p.amount || 0), 0),
-  );
+  let paidThisMonth = 0;
+  if (!opts.businessUnit || payableIds.length > 0) {
+    let paysQuery = supabase
+      .from('master_corporate_payable_payments')
+      .select('amount, payment_date, is_reversed, payable_id')
+      .eq('is_reversed', false)
+      .gte('payment_date', from)
+      .lte('payment_date', to);
+    if (opts.businessUnit) {
+      paysQuery = paysQuery.in('payable_id', payableIds);
+    }
+    const { data: pays, error: pErr } = await paysQuery;
+    if (pErr) throw new Error(pErr.message);
+    paidThisMonth = roundMoney(
+      (pays || []).reduce((s, p) => s + Number(p.amount || 0), 0),
+    );
+  }
 
   return {
     totalOpen,

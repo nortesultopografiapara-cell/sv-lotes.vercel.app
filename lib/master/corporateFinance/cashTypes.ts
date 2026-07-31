@@ -86,6 +86,8 @@ export type MasterCorporateCashListFilters = {
   type?: string;
   origin?: string;
   financialAccountId?: string;
+  /** Filtra movimentos pelas contas da unidade (via financial_account_id). */
+  businessUnit?: string | null;
   categoryId?: string;
   costCenterId?: string;
   projectId?: string;
