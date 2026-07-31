@@ -32,7 +32,7 @@ import {
 } from './cashMovementsService';
 import { assertReceivableProvisionLimit } from './projectContextService';
 import { logCorporateFinanceAudit } from './service';
-import type { CorporateBusinessUnit } from './types';
+import type { CorporateBusinessUnit } from './businessUnit';
 
 function nowIso() {
   return new Date().toISOString();

@@ -1,6 +1,6 @@
 /** Tipos — Contas a Receber / Pagar (Fase 6.2). */
 
-import type { CorporateBusinessUnit } from './types';
+import type { CorporateBusinessUnit } from './businessUnit';
 
 export type { CorporateBusinessUnit };
 

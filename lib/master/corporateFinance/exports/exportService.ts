@@ -20,6 +20,7 @@ import { pnlCashEffect } from '../cashMath';
 import { listPayables } from '../payablesService';
 import { listReceivables } from '../receivablesService';
 import { logCorporateFinanceAudit } from '../service';
+import { corporateBusinessUnitLabel } from '../businessUnit';
 import {
   CORPORATE_BRAND,
   formatCorporateDateBr,
@@ -320,7 +321,7 @@ export async function exportCorporateReceivables(
 
   const rows: CorporateReceivableExportRow[] = list.receivables.map((r) => ({
     code: r.code,
-    businessUnit: r.business_unit || 'SV_TOPOGRAFIA',
+    businessUnit: corporateBusinessUnitLabel(r.business_unit),
     customer: r.customer_name,
     project: mapName(maps.projects, r.project_id),
     quote: mapName(maps.quotes, r.quote_id),

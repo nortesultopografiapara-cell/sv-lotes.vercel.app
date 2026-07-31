@@ -7,7 +7,7 @@ import {
   type MasterCorporateReceivableInput,
   type MasterCorporateSettlementInput,
 } from './arApTypes';
-import { CORPORATE_BUSINESS_UNITS, type CorporateBusinessUnit } from './types';
+import { CORPORATE_BUSINESS_UNITS, type CorporateBusinessUnit } from './businessUnit';
 import { computeNetAmount, roundMoney } from './arApMath';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

@@ -8,6 +8,7 @@ import {
   validateReceivableInput,
   validateSettlementInput,
 } from '../lib/master/corporateFinance/arApValidation';
+import { corporateBusinessUnitLabel } from '../lib/master/corporateFinance/businessUnit';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -99,6 +100,57 @@ function testSettlementAsaasIdempotency() {
   console.log('OK testSettlementAsaasIdempotency');
 }
 
+function testBusinessUnitLabel() {
+  assert(typeof corporateBusinessUnitLabel === 'function', 'é função');
+  assert(corporateBusinessUnitLabel('SV_LOTES') === 'SV LOTES', 'label lotes');
+  assert(
+    corporateBusinessUnitLabel('SV_TOPOGRAFIA') === 'SV Topografia e Projetos',
+    'label topo',
+  );
+  assert(
+    corporateBusinessUnitLabel('') === 'SV Topografia e Projetos',
+    'vazio → topo',
+  );
+  assert(
+    corporateBusinessUnitLabel(null) === 'SV Topografia e Projetos',
+    'null → topo',
+  );
+  assert(
+    corporateBusinessUnitLabel('XYZ') === 'SV Topografia e Projetos',
+    'desconhecido → topo',
+  );
+
+  const util = read('lib/master/corporateFinance/businessUnit.ts');
+  assert(util.includes('export function corporateBusinessUnitLabel'), 'fonte canônica');
+
+  const page = read('components/master/corporateFinance/CorporateReceivablesPage.tsx');
+  assert(
+    page.includes("from '@/lib/master/corporateFinance/businessUnit'"),
+    'listagem importa util',
+  );
+  assert(page.includes('corporateBusinessUnitLabel'), 'listagem usa label');
+
+  const detail = read('components/master/corporateFinance/CorporateReceivableDetailPage.tsx');
+  assert(
+    detail.includes("from '@/lib/master/corporateFinance/businessUnit'"),
+    'detalhe importa util',
+  );
+
+  const form = read('components/master/corporateFinance/ReceivableFormModal.tsx');
+  assert(
+    form.includes("from '@/lib/master/corporateFinance/businessUnit'"),
+    'form importa util',
+  );
+
+  const types = read('lib/master/corporateFinance/types.ts');
+  assert(types.includes("from './businessUnit'"), 'types reexporta businessUnit');
+  assert(!types.includes('export function corporateBusinessUnitLabel'), 'sem duplicata em types');
+
+  const exportsSvc = read('lib/master/corporateFinance/exports/exportService.ts');
+  assert(exportsSvc.includes('corporateBusinessUnitLabel'), 'export usa label');
+  console.log('OK testBusinessUnitLabel');
+}
+
 function testUiAndServiceContracts() {
   const page = read('components/master/corporateFinance/CorporateReceivablesPage.tsx');
   assert(!page.includes('businessUnit=SV_TOPOGRAFIA'), 'sem hardcode Topografia no load');
@@ -138,6 +190,7 @@ function main() {
   testValidationBusinessUnitRequired();
   testAlreadyReceivedSettlement();
   testSettlementAsaasIdempotency();
+  testBusinessUnitLabel();
   testUiAndServiceContracts();
   testTenantFinanceUntouched();
   console.log('\nTodos os testes da Etapa 2 (AR unidade) passaram.');

@@ -12,13 +12,15 @@ import {
   type MasterCorporateReceivable,
   type MasterCorporateReceivableKpis,
 } from '@/lib/master/corporateFinance/arApTypes';
+import {
+  corporateBusinessUnitLabel,
+  type CorporateBusinessUnit,
+} from '@/lib/master/corporateFinance/businessUnit';
 import type {
-  CorporateBusinessUnit,
   MasterCorporateCostCenter,
   MasterCorporateFinancialAccount,
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
-import { corporateBusinessUnitLabel } from '@/lib/master/corporateFinance/types';
 import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,

@@ -9,13 +9,15 @@ import {
   type MasterCorporateReceivable,
 } from '@/lib/master/corporateFinance/arApTypes';
 import type { ReceivableProjectContext } from '@/lib/master/corporateFinance/projectContextService';
+import {
+  corporateBusinessUnitLabel,
+  type CorporateBusinessUnit,
+} from '@/lib/master/corporateFinance/businessUnit';
 import type {
-  CorporateBusinessUnit,
   MasterCorporateCostCenter,
   MasterCorporateFinancialAccount,
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
-import { corporateBusinessUnitLabel } from '@/lib/master/corporateFinance/types';
 import { computeLiveNet, formatCurrency, todayISO } from './format';
 import styles from './corporateFinance.module.css';
 

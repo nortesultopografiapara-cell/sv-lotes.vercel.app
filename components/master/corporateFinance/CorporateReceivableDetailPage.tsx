@@ -17,7 +17,7 @@ import type {
   MasterCorporateFinancialAccount,
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
-import { corporateBusinessUnitLabel } from '@/lib/master/corporateFinance/types';
+import { corporateBusinessUnitLabel } from '@/lib/master/corporateFinance/businessUnit';
 import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import {
   CorporateFinanceGuard,
