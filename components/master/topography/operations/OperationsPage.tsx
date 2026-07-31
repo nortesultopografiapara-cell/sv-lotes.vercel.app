@@ -498,6 +498,7 @@ function OperationsPageInner() {
         initial={editTarget}
         saving={saving}
         error={formError}
+        userId={user?.id || ''}
         projects={projects}
         quotes={quotes}
         onClose={() => {

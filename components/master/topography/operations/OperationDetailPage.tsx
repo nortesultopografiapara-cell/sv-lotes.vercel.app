@@ -13,6 +13,7 @@ import {
   type ProjectQuoteOption,
 } from './OperationFormModal';
 import { OperationPriorityBadge } from './OperationPriorityBadge';
+import { OperationShareModal } from './OperationShareModal';
 import { OperationStatusBadge } from './OperationStatusBadge';
 import { OperationStatusModal } from './OperationStatusModal';
 import styles from './operation.module.css';
@@ -48,6 +49,8 @@ function OperationDetailInner() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.id || !id) return;
@@ -174,6 +177,38 @@ function OperationDetailInner() {
     }
   };
 
+  const downloadPdf = async () => {
+    if (!user?.id || !operation) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/master/topography/operations/${operation.id}/pdf?userId=${encodeURIComponent(user.id)}`,
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao gerar PDF.');
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match?.[1] || `${operation.code}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setToast('PDF gerado.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao gerar PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const handleStatusChange = async (payload: {
     status: string;
     actual_end?: string | null;
@@ -251,7 +286,7 @@ function OperationDetailInner() {
               setFormError(null);
               setModalOpen(true);
             }}
-            disabled={busy}
+            disabled={busy || pdfBusy}
           >
             Editar
           </button>
@@ -262,16 +297,32 @@ function OperationDetailInner() {
               setStatusError(null);
               setStatusOpen(true);
             }}
-            disabled={busy}
+            disabled={busy || pdfBusy}
           >
             Alterar status
+          </button>
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => void downloadPdf()}
+            disabled={busy || pdfBusy}
+          >
+            {pdfBusy ? 'Gerando PDF…' : 'Gerar PDF'}
+          </button>
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => setShareOpen(true)}
+            disabled={busy || pdfBusy}
+          >
+            Enviar ao colaborador
           </button>
           {operation.is_archived ? (
             <button
               type="button"
               className={styles.btnSecondary}
               onClick={() => void setArchived(false)}
-              disabled={busy}
+              disabled={busy || pdfBusy}
             >
               Restaurar
             </button>
@@ -280,7 +331,7 @@ function OperationDetailInner() {
               type="button"
               className={styles.btnDanger}
               onClick={() => void setArchived(true)}
-              disabled={busy}
+              disabled={busy || pdfBusy}
             >
               Arquivar
             </button>
@@ -308,6 +359,8 @@ function OperationDetailInner() {
             </dd>
             <dt>Cliente</dt>
             <dd>{operation.client_name || '—'}</dd>
+            <dt>Vínculo cliente</dt>
+            <dd>{operation.client_id ? 'Vinculado ao cadastro Master' : 'Somente snapshot'}</dd>
             <dt>Tipo de serviço</dt>
             <dd>{operation.service_type || '—'}</dd>
             <dt>Projeto</dt>
@@ -318,6 +371,10 @@ function OperationDetailInner() {
             <dd>{operation.description || '—'}</dd>
             <dt>Responsável</dt>
             <dd>{operation.responsible_name || '—'}</dd>
+            <dt>Tel. responsável</dt>
+            <dd>{operation.responsible_phone || '—'}</dd>
+            <dt>E-mail responsável</dt>
+            <dd>{operation.responsible_email || '—'}</dd>
           </dl>
         </div>
 
@@ -386,6 +443,7 @@ function OperationDetailInner() {
         initial={operation}
         saving={busy}
         error={formError}
+        userId={user?.id || ''}
         projects={projects}
         quotes={quotes}
         onClose={() => {
@@ -403,6 +461,14 @@ function OperationDetailInner() {
           if (!statusSaving) setStatusOpen(false);
         }}
         onSubmit={handleStatusChange}
+      />
+
+      <OperationShareModal
+        open={shareOpen}
+        operation={operation}
+        userId={user?.id || ''}
+        onClose={() => setShareOpen(false)}
+        onDownloadPdf={downloadPdf}
       />
 
       {toast ? (

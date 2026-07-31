@@ -9,9 +9,10 @@ import type {
 } from './operationTypes';
 
 const SELECT_COLUMNS = `
-  id, code, title, description, project_id, quote_id, client_name, service_type,
+  id, code, title, description, project_id, quote_id, client_id, client_name, service_type,
   status, priority, scheduled_start, scheduled_end, actual_start, actual_end,
   location_name, address, latitude, longitude, responsible_user_id, responsible_name,
+  responsible_phone, responsible_email,
   estimated_cost, actual_cost, notes, is_archived, created_by, created_at, updated_at
 `
   .replace(/\s+/g, ' ')
@@ -25,6 +26,7 @@ function parseRow(row: Record<string, unknown>): MasterTopographyOperation {
     description: row.description ? String(row.description) : null,
     project_id: row.project_id ? String(row.project_id) : null,
     quote_id: row.quote_id ? String(row.quote_id) : null,
+    client_id: row.client_id ? String(row.client_id) : null,
     client_name: row.client_name ? String(row.client_name) : null,
     service_type: row.service_type ? String(row.service_type) : null,
     status: row.status as OperationStatusCode,
@@ -39,6 +41,8 @@ function parseRow(row: Record<string, unknown>): MasterTopographyOperation {
     longitude: row.longitude == null ? null : Number(row.longitude),
     responsible_user_id: row.responsible_user_id ? String(row.responsible_user_id) : null,
     responsible_name: row.responsible_name ? String(row.responsible_name) : null,
+    responsible_phone: row.responsible_phone ? String(row.responsible_phone) : null,
+    responsible_email: row.responsible_email ? String(row.responsible_email) : null,
     estimated_cost: row.estimated_cost == null ? null : Number(row.estimated_cost),
     actual_cost: row.actual_cost == null ? null : Number(row.actual_cost),
     notes: row.notes ? String(row.notes) : null,
@@ -55,6 +59,7 @@ function inputToRow(input: MasterTopographyOperationInput) {
     description: input.description ?? null,
     project_id: input.project_id ?? null,
     quote_id: input.quote_id ?? null,
+    client_id: input.client_id ?? null,
     client_name: input.client_name ?? null,
     service_type: input.service_type ?? null,
     status: input.status,
@@ -69,6 +74,8 @@ function inputToRow(input: MasterTopographyOperationInput) {
     longitude: input.longitude ?? null,
     responsible_user_id: input.responsible_user_id ?? null,
     responsible_name: input.responsible_name ?? null,
+    responsible_phone: input.responsible_phone ?? null,
+    responsible_email: input.responsible_email ?? null,
     estimated_cost: input.estimated_cost ?? null,
     actual_cost: input.actual_cost ?? null,
     notes: input.notes ?? null,

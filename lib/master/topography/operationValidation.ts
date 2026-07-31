@@ -122,6 +122,7 @@ export function validateTopographyOperationInput(
     description: cleanText(raw.description, 8000),
     project_id: parseOptionalUuid(raw.project_id ?? raw.projectId, 'Projeto'),
     quote_id: parseOptionalUuid(raw.quote_id ?? raw.quoteId, 'Orçamento'),
+    client_id: parseOptionalUuid(raw.client_id ?? raw.clientId, 'Cliente'),
     client_name: cleanText(raw.client_name ?? raw.clientName, 200),
     service_type: cleanText(raw.service_type ?? raw.serviceType, 160),
     status: statusRaw,
@@ -139,6 +140,8 @@ export function validateTopographyOperationInput(
       'Responsável',
     ),
     responsible_name: cleanText(raw.responsible_name ?? raw.responsibleName, 160),
+    responsible_phone: cleanText(raw.responsible_phone ?? raw.responsiblePhone, 40),
+    responsible_email: cleanText(raw.responsible_email ?? raw.responsibleEmail, 200),
     estimated_cost: parseOptionalMoney(
       raw.estimated_cost ?? raw.estimatedCost,
       'Custo estimado',

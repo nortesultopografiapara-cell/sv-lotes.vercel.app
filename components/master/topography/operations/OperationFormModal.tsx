@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import type { MasterTopographyClient } from '@/lib/master/topography/clientTypes';
 import {
   OPERATION_PRIORITIES,
   OPERATION_STATUSES,
 } from '@/lib/master/topography/operationStatuses';
 import type { MasterTopographyOperation } from '@/lib/master/topography/operationTypes';
+import { OperationClientCreateModal } from './OperationClientCreateModal';
+import { OperationClientPicker } from './OperationClientPicker';
 import styles from './operation.module.css';
 
 export type OperationFormState = {
@@ -13,6 +16,7 @@ export type OperationFormState = {
   description: string;
   project_id: string;
   quote_id: string;
+  client_id: string;
   client_name: string;
   service_type: string;
   status: string;
@@ -26,6 +30,8 @@ export type OperationFormState = {
   latitude: string;
   longitude: string;
   responsible_name: string;
+  responsible_phone: string;
+  responsible_email: string;
   estimated_cost: string;
   actual_cost: string;
   notes: string;
@@ -39,6 +45,7 @@ export function emptyOperationForm(): OperationFormState {
     description: '',
     project_id: '',
     quote_id: '',
+    client_id: '',
     client_name: '',
     service_type: '',
     status: 'DRAFT',
@@ -52,6 +59,8 @@ export function emptyOperationForm(): OperationFormState {
     latitude: '',
     longitude: '',
     responsible_name: '',
+    responsible_phone: '',
+    responsible_email: '',
     estimated_cost: '',
     actual_cost: '',
     notes: '',
@@ -80,6 +89,7 @@ export function operationToForm(row: MasterTopographyOperation): OperationFormSt
     description: row.description || '',
     project_id: row.project_id || '',
     quote_id: row.quote_id || '',
+    client_id: row.client_id || '',
     client_name: row.client_name || '',
     service_type: row.service_type || '',
     status: row.status,
@@ -93,6 +103,8 @@ export function operationToForm(row: MasterTopographyOperation): OperationFormSt
     latitude: row.latitude == null ? '' : String(row.latitude),
     longitude: row.longitude == null ? '' : String(row.longitude),
     responsible_name: row.responsible_name || '',
+    responsible_phone: row.responsible_phone || '',
+    responsible_email: row.responsible_email || '',
     estimated_cost: row.estimated_cost == null ? '' : String(row.estimated_cost),
     actual_cost: row.actual_cost == null ? '' : String(row.actual_cost),
     notes: row.notes || '',
@@ -105,6 +117,7 @@ export function formToOperationPayload(form: OperationFormState) {
     description: form.description || null,
     project_id: form.project_id || null,
     quote_id: form.quote_id || null,
+    client_id: form.client_id || null,
     client_name: form.client_name || null,
     service_type: form.service_type || null,
     status: form.status,
@@ -118,6 +131,8 @@ export function formToOperationPayload(form: OperationFormState) {
     latitude: form.latitude === '' ? null : Number(form.latitude),
     longitude: form.longitude === '' ? null : Number(form.longitude),
     responsible_name: form.responsible_name || null,
+    responsible_phone: form.responsible_phone || null,
+    responsible_email: form.responsible_email || null,
     estimated_cost: form.estimated_cost === '' ? null : Number(form.estimated_cost),
     actual_cost: form.actual_cost === '' ? null : Number(form.actual_cost),
     notes: form.notes || null,
@@ -132,6 +147,7 @@ type Props = {
   initial?: MasterTopographyOperation | null;
   saving: boolean;
   error: string | null;
+  userId: string;
   projects: ProjectQuoteOption[];
   quotes: ProjectQuoteOption[];
   onClose: () => void;
@@ -144,6 +160,7 @@ export function OperationFormModal({
   initial,
   saving,
   error,
+  userId,
   projects,
   quotes,
   onClose,
@@ -151,12 +168,37 @@ export function OperationFormModal({
 }: Props) {
   const [tab, setTab] = useState<TabId>('geral');
   const [form, setForm] = useState<OperationFormState>(emptyOperationForm());
+  const [selectedClient, setSelectedClient] = useState<MasterTopographyClient | null>(null);
+  const [createClientOpen, setCreateClientOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setTab('geral');
     setForm(initial ? operationToForm(initial) : emptyOperationForm());
+    setSelectedClient(null);
+    setCreateClientOpen(false);
   }, [open, initial]);
+
+  useEffect(() => {
+    if (!open || !userId || !initial?.client_id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/master/topography/clients/${initial.client_id}?userId=${encodeURIComponent(userId)}`,
+        );
+        const data = await res.json();
+        if (!cancelled && res.ok && data.client) {
+          setSelectedClient(data.client);
+        }
+      } catch {
+        /* snapshot client_name ainda vale */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, userId, initial?.client_id]);
 
   if (!open) return null;
 
@@ -165,8 +207,24 @@ export function OperationFormModal({
       setForm((prev) => ({ ...prev, [key]: value }));
     };
 
+  const applyClient = (client: MasterTopographyClient | null) => {
+    setSelectedClient(client);
+    setForm((prev) => ({
+      ...prev,
+      client_id: client?.id || '',
+      client_name: client?.name || '',
+    }));
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!form.client_id) {
+      // Permite edição legada com apenas snapshot, mas criação deve ter cliente vinculado
+      if (mode === 'create') {
+        setTab('geral');
+        return;
+      }
+    }
     await onSubmit(formToOperationPayload(form));
   };
 
@@ -189,6 +247,11 @@ export function OperationFormModal({
 
         <form className={styles.modalBody} onSubmit={(e) => void handleSubmit(e)}>
           {error ? <div className={styles.formError}>{error}</div> : null}
+          {mode === 'create' && !form.client_id ? (
+            <div className={styles.infoBanner}>
+              Selecione ou cadastre um cliente antes de criar a Ordem de Serviço.
+            </div>
+          ) : null}
 
           <div className={styles.tabs}>
             {(
@@ -232,6 +295,15 @@ export function OperationFormModal({
                   onChange={(e) => set('description', e.target.value)}
                 />
               </div>
+
+              <OperationClientPicker
+                userId={userId}
+                selected={selectedClient}
+                clientNameSnapshot={form.client_name}
+                onSelect={applyClient}
+                onRequestCreate={() => setCreateClientOpen(true)}
+              />
+
               <div className={styles.field}>
                 <label htmlFor="op-project">Projeto (opcional)</label>
                 <select
@@ -263,15 +335,6 @@ export function OperationFormModal({
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className={styles.field}>
-                <label htmlFor="op-client">Cliente</label>
-                <input
-                  id="op-client"
-                  className={styles.input}
-                  value={form.client_name}
-                  onChange={(e) => set('client_name', e.target.value)}
-                />
               </div>
               <div className={styles.field}>
                 <label htmlFor="op-service">Tipo de serviço</label>
@@ -313,8 +376,7 @@ export function OperationFormModal({
                   ))}
                 </select>
                 <span className={styles.hint}>
-                  Transições inválidas são bloqueadas na API. Preferir “Alterar status” para fluxo
-                  controlado.
+                  Preferir “Alterar status” para fluxo controlado de transições.
                 </span>
               </div>
             </div>
@@ -361,15 +423,34 @@ export function OperationFormModal({
                   value={form.actual_end}
                   onChange={(e) => set('actual_end', e.target.value)}
                 />
-                <span className={styles.hint}>Obrigatório para status Concluída.</span>
               </div>
               <div className={styles.field}>
-                <label htmlFor="op-resp">Responsável</label>
+                <label htmlFor="op-resp">Responsável / colaborador</label>
                 <input
                   id="op-resp"
                   className={styles.input}
                   value={form.responsible_name}
                   onChange={(e) => set('responsible_name', e.target.value)}
+                />
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="op-resp-phone">Telefone do responsável</label>
+                <input
+                  id="op-resp-phone"
+                  className={styles.input}
+                  value={form.responsible_phone}
+                  onChange={(e) => set('responsible_phone', e.target.value)}
+                  placeholder="Para WhatsApp"
+                />
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="op-resp-email">E-mail do responsável</label>
+                <input
+                  id="op-resp-email"
+                  className={styles.input}
+                  type="email"
+                  value={form.responsible_email}
+                  onChange={(e) => set('responsible_email', e.target.value)}
                 />
               </div>
               <div className={styles.field}>
@@ -461,12 +542,24 @@ export function OperationFormModal({
             <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={saving}>
               Cancelar
             </button>
-            <button type="submit" className={styles.btnPrimary} disabled={saving}>
+            <button
+              type="submit"
+              className={styles.btnPrimary}
+              disabled={saving || (mode === 'create' && !form.client_id)}
+            >
               {saving ? 'Salvando…' : mode === 'create' ? 'Criar OS' : 'Salvar'}
             </button>
           </div>
         </form>
       </div>
+
+      <OperationClientCreateModal
+        open={createClientOpen}
+        userId={userId}
+        saving={false}
+        onClose={() => setCreateClientOpen(false)}
+        onCreated={(client) => applyClient(client)}
+      />
     </div>
   );
 }
