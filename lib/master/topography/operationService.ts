@@ -13,7 +13,9 @@ const SELECT_COLUMNS = `
   status, priority, scheduled_start, scheduled_end, actual_start, actual_end,
   location_name, address, latitude, longitude, responsible_user_id, responsible_name,
   responsible_phone, responsible_email,
-  estimated_cost, actual_cost, notes, is_archived, created_by, created_at, updated_at
+  estimated_cost, actual_cost, notes, is_archived, created_by, created_at, updated_at,
+  completion_override_reason, completion_override_by, completion_override_at,
+  field_requirements_override_reason, field_requirements_override_by, field_requirements_override_at
 `
   .replace(/\s+/g, ' ')
   .trim();
@@ -50,6 +52,24 @@ function parseRow(row: Record<string, unknown>): MasterTopographyOperation {
     created_by: row.created_by ? String(row.created_by) : null,
     created_at: String(row.created_at || ''),
     updated_at: String(row.updated_at || ''),
+    completion_override_reason: row.completion_override_reason
+      ? String(row.completion_override_reason)
+      : null,
+    completion_override_by: row.completion_override_by
+      ? String(row.completion_override_by)
+      : null,
+    completion_override_at: row.completion_override_at
+      ? String(row.completion_override_at)
+      : null,
+    field_requirements_override_reason: row.field_requirements_override_reason
+      ? String(row.field_requirements_override_reason)
+      : null,
+    field_requirements_override_by: row.field_requirements_override_by
+      ? String(row.field_requirements_override_by)
+      : null,
+    field_requirements_override_at: row.field_requirements_override_at
+      ? String(row.field_requirements_override_at)
+      : null,
   };
 }
 
@@ -97,6 +117,10 @@ function emptyKpis(): MasterTopographyOperationKpis {
     overdue: 0,
     estimatedCostSum: 0,
     actualCostSum: 0,
+    costDeviation: 0,
+    equipmentInUse: 0,
+    openOccurrences: 0,
+    pendingChecklist: 0,
   };
 }
 
@@ -127,6 +151,11 @@ function applyListFilters(
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.priority) query = query.eq('priority', filters.priority);
   if (filters.projectId) query = query.eq('project_id', filters.projectId);
+  if (filters.quoteId) query = query.eq('quote_id', filters.quoteId);
+  if (filters.clientId) query = query.eq('client_id', filters.clientId);
+  if (filters.operationIds && filters.operationIds.length > 0) {
+    query = query.in('id', filters.operationIds);
+  }
   if (filters.responsible) {
     const escaped = filters.responsible.replace(/[%_,]/g, '');
     query = query.or(
@@ -224,7 +253,73 @@ export async function computeTopographyOperationKpis(
 
   kpis.estimatedCostSum = Math.round(kpis.estimatedCostSum * 100) / 100;
   kpis.actualCostSum = Math.round(kpis.actualCostSum * 100) / 100;
+  kpis.costDeviation = Math.round((kpis.actualCostSum - kpis.estimatedCostSum) * 100) / 100;
+
+  const [{ count: equipInUse }, { count: openOcc }, { count: pendingTasks }] =
+    await Promise.all([
+      supabase
+        .from('master_topography_operation_equipment')
+        .select('id', { count: 'exact', head: true })
+        .not('checked_out_at', 'is', null)
+        .is('returned_at', null),
+      supabase
+        .from('master_topography_operation_occurrences')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['OPEN', 'IN_ANALYSIS']),
+      supabase
+        .from('master_topography_operation_tasks')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['PENDING', 'IN_PROGRESS']),
+    ]);
+
+  kpis.equipmentInUse = equipInUse ?? 0;
+  kpis.openOccurrences = openOcc ?? 0;
+  kpis.pendingChecklist = pendingTasks ?? 0;
+
   return kpis;
+}
+
+async function resolveChildFilterIds(
+  supabase: SupabaseClient,
+  filters: MasterTopographyOperationListFilters,
+): Promise<string[] | null> {
+  const sets: string[][] = [];
+
+  if (filters.equipmentId) {
+    const { data, error } = await supabase
+      .from('master_topography_operation_equipment')
+      .select('operation_id')
+      .eq('equipment_id', filters.equipmentId);
+    if (error) throw new Error(error.message);
+    sets.push([...(new Set((data || []).map((r) => String(r.operation_id))))]);
+  }
+
+  if (filters.openOccurrence) {
+    const { data, error } = await supabase
+      .from('master_topography_operation_occurrences')
+      .select('operation_id')
+      .in('status', ['OPEN', 'IN_ANALYSIS']);
+    if (error) throw new Error(error.message);
+    sets.push([...(new Set((data || []).map((r) => String(r.operation_id))))]);
+  }
+
+  if (filters.pendingChecklist) {
+    const { data, error } = await supabase
+      .from('master_topography_operation_tasks')
+      .select('operation_id')
+      .in('status', ['PENDING', 'IN_PROGRESS']);
+    if (error) throw new Error(error.message);
+    sets.push([...(new Set((data || []).map((r) => String(r.operation_id))))]);
+  }
+
+  if (sets.length === 0) return null;
+
+  let ids = sets[0];
+  for (let i = 1; i < sets.length; i += 1) {
+    const set = new Set(sets[i]);
+    ids = ids.filter((id) => set.has(id));
+  }
+  return ids;
 }
 
 export async function listTopographyOperations(
@@ -238,22 +333,32 @@ export async function listTopographyOperations(
   const sort = filters.sort || 'created_at';
   const ascending = (filters.order || 'desc') === 'asc';
 
+  const childIds = await resolveChildFilterIds(supabase, filters);
+  const effective: MasterTopographyOperationListFilters = { ...filters };
+  if (childIds) {
+    if (childIds.length === 0) {
+      const kpis = await computeTopographyOperationKpis(supabase, filters);
+      return { operations: [], total: 0, page, limit, kpis };
+    }
+    effective.operationIds = childIds;
+  }
+
   let query = supabase
     .from('master_topography_operations')
     .select(SELECT_COLUMNS, { count: 'exact' });
 
-  query = applyListFilters(query, filters);
+  query = applyListFilters(query, effective);
   query = query.order(sort, { ascending }).range(from, to);
 
   const [{ data, error, count }, kpis] = await Promise.all([
     query,
-    computeTopographyOperationKpis(supabase, filters),
+    computeTopographyOperationKpis(supabase, effective),
   ]);
 
   if (error) throw new Error(error.message || 'Falha ao listar operações.');
 
   return {
-    operations: (data || []).map((row) => parseRow(row as Record<string, unknown>)),
+    operations: (data || []).map((row) => parseRow(row as unknown as Record<string, unknown>)),
     total: count ?? 0,
     page,
     limit,
@@ -272,7 +377,7 @@ export async function getTopographyOperationById(
     .maybeSingle();
   if (error) throw new Error(error.message || 'Falha ao carregar operação.');
   if (!data) return null;
-  return parseRow(data as Record<string, unknown>);
+  return parseRow(data as unknown as Record<string, unknown>);
 }
 
 function mapOperationWriteError(error: { message?: string; code?: string }): never {
@@ -306,7 +411,7 @@ export async function createTopographyOperation(
     .single();
 
   if (error) mapOperationWriteError(error);
-  return parseRow(data as Record<string, unknown>);
+  return parseRow(data as unknown as Record<string, unknown>);
 }
 
 /**
@@ -331,7 +436,7 @@ export async function updateTopographyOperation(
     .single();
 
   if (error) mapOperationWriteError(error);
-  return parseRow(data as Record<string, unknown>);
+  return parseRow(data as unknown as Record<string, unknown>);
 }
 
 export async function patchTopographyOperationFields(
@@ -347,7 +452,7 @@ export async function patchTopographyOperationFields(
     .single();
 
   if (error) mapOperationWriteError(error);
-  return parseRow(data as Record<string, unknown>);
+  return parseRow(data as unknown as Record<string, unknown>);
 }
 
 export async function logTopographyOperationAudit(

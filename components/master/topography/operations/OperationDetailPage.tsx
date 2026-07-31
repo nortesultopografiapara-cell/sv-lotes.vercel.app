@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import type { MasterTopographyOperation } from '@/lib/master/topography/operationTypes';
+import type { OperationStatusCode } from '@/lib/master/topography/operationStatuses';
 import {
   OperationFormModal,
   formToOperationPayload,
@@ -16,7 +17,35 @@ import { OperationPriorityBadge } from './OperationPriorityBadge';
 import { OperationShareModal } from './OperationShareModal';
 import { OperationStatusBadge } from './OperationStatusBadge';
 import { OperationStatusModal } from './OperationStatusModal';
+import { OperationChecklistPanel } from './panels/OperationChecklistPanel';
+import { OperationDocumentsPanel } from './panels/OperationDocumentsPanel';
+import { OperationEquipmentPanel } from './panels/OperationEquipmentPanel';
+import { OperationExpensesPanel } from './panels/OperationExpensesPanel';
+import { OperationOccurrencesPanel } from './panels/OperationOccurrencesPanel';
+import { OperationTeamPanel } from './panels/OperationTeamPanel';
+import { OperationTimelinePanel } from './panels/OperationTimelinePanel';
 import styles from './operation.module.css';
+
+type DetailTab =
+  | 'overview'
+  | 'team'
+  | 'equipment'
+  | 'checklist'
+  | 'occurrences'
+  | 'expenses'
+  | 'documents'
+  | 'timeline';
+
+const TAB_ITEMS: { id: DetailTab; label: string }[] = [
+  { id: 'overview', label: 'Visão geral' },
+  { id: 'team', label: 'Equipe' },
+  { id: 'equipment', label: 'Equipamentos' },
+  { id: 'checklist', label: 'Checklist' },
+  { id: 'occurrences', label: 'Ocorrências' },
+  { id: 'expenses', label: 'Despesas' },
+  { id: 'documents', label: 'Documentos' },
+  { id: 'timeline', label: 'Timeline' },
+];
 
 function formatCurrency(val: number | null | undefined) {
   if (val == null || !Number.isFinite(val)) return '—';
@@ -42,6 +71,7 @@ function OperationDetailInner() {
   const [quoteLabel, setQuoteLabel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [panelError, setPanelError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -49,8 +79,12 @@ function OperationDetailInner() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusRequiresOverride, setStatusRequiresOverride] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [tab, setTab] = useState<DetailTab>('overview');
+
+  const userId = user?.id || '';
 
   const load = useCallback(async () => {
     if (!user?.id || !id) return;
@@ -128,6 +162,96 @@ function OperationDetailInner() {
     );
   }, [operation, projects, quotes]);
 
+  const fetchPdfBlob = async (disposition: 'inline' | 'attachment') => {
+    if (!user?.id || !operation) throw new Error('Operação indisponível.');
+    const res = await fetch(
+      `/api/master/topography/operations/${operation.id}/pdf?userId=${encodeURIComponent(user.id)}&disposition=${disposition}`,
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Falha ao gerar PDF.');
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="([^"]+)"/);
+    const filename = match?.[1] || `${operation.code}.pdf`;
+    return { blob, filename };
+  };
+
+  const openPdfInline = async () => {
+    if (!operation) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const { blob } = await fetchPdfBlob('inline');
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 120_000);
+      setToast('PDF aberto em nova aba.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao gerar PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!operation) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const { blob, filename } = await fetchPdfBlob('attachment');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setToast('PDF baixado.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao baixar PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const printPdf = async () => {
+    if (!operation) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const { blob } = await fetchPdfBlob('inline');
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          window.open(`/master/topography/operations/${operation.id}/print`, '_blank');
+        }
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          iframe.remove();
+        }, 60_000);
+      };
+      setToast('Diálogo de impressão aberto.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao imprimir.');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const handleSave = async (payload: ReturnType<typeof formToOperationPayload>) => {
     if (!user?.id || !operation) return;
     setBusy(true);
@@ -177,41 +301,11 @@ function OperationDetailInner() {
     }
   };
 
-  const downloadPdf = async () => {
-    if (!user?.id || !operation) return;
-    setPdfBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/master/topography/operations/${operation.id}/pdf?userId=${encodeURIComponent(user.id)}`,
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Falha ao gerar PDF.');
-      }
-      const blob = await res.blob();
-      const cd = res.headers.get('Content-Disposition') || '';
-      const match = cd.match(/filename="([^"]+)"/);
-      const filename = match?.[1] || `${operation.code}.pdf`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setToast('PDF gerado.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao gerar PDF.');
-    } finally {
-      setPdfBusy(false);
-    }
-  };
-
   const handleStatusChange = async (payload: {
-    status: string;
+    status: OperationStatusCode;
     actual_end?: string | null;
+    reopenConfirmed?: boolean;
+    overrideReason?: string;
   }) => {
     if (!user?.id || !operation) return;
     setStatusSaving(true);
@@ -225,12 +319,20 @@ function OperationDetailInner() {
           patchOnly: true,
           status: payload.status,
           actual_end: payload.actual_end,
+          reopenConfirmed: payload.reopenConfirmed,
+          overrideReason: payload.overrideReason,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao alterar status.');
+      if (!res.ok) {
+        if (data.requiresOverride) {
+          setStatusRequiresOverride(true);
+        }
+        throw new Error(data.error || 'Falha ao alterar status.');
+      }
       setOperation(data.operation);
       setStatusOpen(false);
+      setStatusRequiresOverride(false);
       setToast('Status atualizado.');
       void load();
     } catch (err) {
@@ -239,6 +341,16 @@ function OperationDetailInner() {
       setStatusSaving(false);
     }
   };
+
+  const panelProps = useMemo(
+    () => ({
+      operationId: id,
+      userId,
+      onToast: (msg: string) => setToast(msg),
+      onError: (msg: string | null) => setPanelError(msg),
+    }),
+    [id, userId],
+  );
 
   if (loading) {
     return <div className={styles.loading}>Carregando detalhe…</div>;
@@ -259,7 +371,7 @@ function OperationDetailInner() {
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <div>
+        <div className={styles.headerMain}>
           <Link className={styles.btnGhost} href="/master/topography/operations">
             <ArrowLeft width={14} height={14} />
             Voltar à lista
@@ -295,6 +407,7 @@ function OperationDetailInner() {
             className={styles.btnSecondary}
             onClick={() => {
               setStatusError(null);
+              setStatusRequiresOverride(false);
               setStatusOpen(true);
             }}
             disabled={busy || pdfBusy}
@@ -304,10 +417,26 @@ function OperationDetailInner() {
           <button
             type="button"
             className={styles.btnSecondary}
-            onClick={() => void downloadPdf()}
+            onClick={() => void openPdfInline()}
             disabled={busy || pdfBusy}
           >
             {pdfBusy ? 'Gerando PDF…' : 'Gerar PDF'}
+          </button>
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => void downloadPdf()}
+            disabled={busy || pdfBusy}
+          >
+            Baixar PDF
+          </button>
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => void printPdf()}
+            disabled={busy || pdfBusy}
+          >
+            Imprimir
           </button>
           <button
             type="button"
@@ -340,101 +469,110 @@ function OperationDetailInner() {
       </div>
 
       {error ? <div className={styles.errorBanner}>{error}</div> : null}
+      {panelError ? <div className={styles.errorBanner}>{panelError}</div> : null}
 
-      <div className={styles.detailGrid}>
-        <div className={styles.card}>
-          <h3>Dados gerais</h3>
-          <dl className={styles.dl}>
-            <dt>Código</dt>
-            <dd className={styles.codeCell}>{operation.code}</dd>
-            <dt>Título</dt>
-            <dd>{operation.title}</dd>
-            <dt>Status</dt>
-            <dd>
-              <OperationStatusBadge status={operation.status} />
-            </dd>
-            <dt>Prioridade</dt>
-            <dd>
-              <OperationPriorityBadge priority={operation.priority} />
-            </dd>
-            <dt>Cliente</dt>
-            <dd>{operation.client_name || '—'}</dd>
-            <dt>Vínculo cliente</dt>
-            <dd>{operation.client_id ? 'Vinculado ao cadastro Master' : 'Somente snapshot'}</dd>
-            <dt>Tipo de serviço</dt>
-            <dd>{operation.service_type || '—'}</dd>
-            <dt>Projeto</dt>
-            <dd>{projectLabel || '—'}</dd>
-            <dt>Orçamento</dt>
-            <dd>{quoteLabel || '—'}</dd>
-            <dt>Descrição</dt>
-            <dd>{operation.description || '—'}</dd>
-            <dt>Responsável</dt>
-            <dd>{operation.responsible_name || '—'}</dd>
-            <dt>Tel. responsável</dt>
-            <dd>{operation.responsible_phone || '—'}</dd>
-            <dt>E-mail responsável</dt>
-            <dd>{operation.responsible_email || '—'}</dd>
-          </dl>
-        </div>
+      <nav className={styles.detailTabs} aria-label="Seções da operação">
+        {TAB_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`${styles.tabBtn} ${tab === item.id ? styles.tabBtnActive : ''}`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
-        <div className={styles.card}>
-          <h3>Planejamento e custos</h3>
-          <dl className={styles.dl}>
-            <dt>Início previsto</dt>
-            <dd>{formatDateTime(operation.scheduled_start)}</dd>
-            <dt>Término previsto</dt>
-            <dd>{formatDateTime(operation.scheduled_end)}</dd>
-            <dt>Início real</dt>
-            <dd>{formatDateTime(operation.actual_start)}</dd>
-            <dt>Término real</dt>
-            <dd>{formatDateTime(operation.actual_end)}</dd>
-            <dt>Local</dt>
-            <dd>{operation.location_name || '—'}</dd>
-            <dt>Endereço</dt>
-            <dd>{operation.address || '—'}</dd>
-            <dt>Coordenadas</dt>
-            <dd>
-              {operation.latitude != null && operation.longitude != null
-                ? `${operation.latitude}, ${operation.longitude}`
-                : '—'}
-            </dd>
-            <dt>Custo estimado</dt>
-            <dd>{formatCurrency(operation.estimated_cost)}</dd>
-            <dt>Custo realizado</dt>
-            <dd>{formatCurrency(operation.actual_cost)}</dd>
-            <dt>Criado em</dt>
-            <dd>{formatDateTime(operation.created_at)}</dd>
-            <dt>Atualizado em</dt>
-            <dd>{formatDateTime(operation.updated_at)}</dd>
-          </dl>
-        </div>
-      </div>
-
-      <div className={styles.card} style={{ marginTop: '0.85rem' }}>
-        <h3>Observações</h3>
-        <p style={{ margin: 0, fontSize: '0.85rem', color: '#334155', whiteSpace: 'pre-wrap' }}>
-          {operation.notes || '—'}
-        </p>
-      </div>
-
-      <div className={styles.card} style={{ marginTop: '0.85rem' }}>
-        <h3>Módulos futuros</h3>
-        <div className={styles.soonGrid}>
-          {[
-            'Equipe',
-            'Equipamentos',
-            'Checklist',
-            'Ocorrências',
-            'Despesas',
-            'Documentos',
-            'Timeline',
-          ].map((label) => (
-            <div key={label} className={styles.comingSoonBox}>
-              {label} — Em breve
+      {tab === 'overview' ? (
+        <>
+          <div className={styles.detailGrid}>
+            <div className={styles.card}>
+              <h3>Dados gerais</h3>
+              <dl className={styles.dl}>
+                <dt>Código</dt>
+                <dd className={styles.codeCell}>{operation.code}</dd>
+                <dt>Título</dt>
+                <dd>{operation.title}</dd>
+                <dt>Status</dt>
+                <dd>
+                  <OperationStatusBadge status={operation.status} />
+                </dd>
+                <dt>Prioridade</dt>
+                <dd>
+                  <OperationPriorityBadge priority={operation.priority} />
+                </dd>
+                <dt>Cliente</dt>
+                <dd>{operation.client_name || '—'}</dd>
+                <dt>Vínculo cliente</dt>
+                <dd>{operation.client_id ? 'Vinculado ao cadastro Master' : 'Somente snapshot'}</dd>
+                <dt>Tipo de serviço</dt>
+                <dd>{operation.service_type || '—'}</dd>
+                <dt>Projeto</dt>
+                <dd>{projectLabel || '—'}</dd>
+                <dt>Orçamento</dt>
+                <dd>{quoteLabel || '—'}</dd>
+                <dt>Descrição</dt>
+                <dd>{operation.description || '—'}</dd>
+                <dt>Responsável</dt>
+                <dd>{operation.responsible_name || '—'}</dd>
+                <dt>Tel. responsável</dt>
+                <dd>{operation.responsible_phone || '—'}</dd>
+                <dt>E-mail responsável</dt>
+                <dd>{operation.responsible_email || '—'}</dd>
+              </dl>
             </div>
-          ))}
-        </div>
+
+            <div className={styles.card}>
+              <h3>Planejamento e custos</h3>
+              <dl className={styles.dl}>
+                <dt>Início previsto</dt>
+                <dd>{formatDateTime(operation.scheduled_start)}</dd>
+                <dt>Término previsto</dt>
+                <dd>{formatDateTime(operation.scheduled_end)}</dd>
+                <dt>Início real</dt>
+                <dd>{formatDateTime(operation.actual_start)}</dd>
+                <dt>Término real</dt>
+                <dd>{formatDateTime(operation.actual_end)}</dd>
+                <dt>Local</dt>
+                <dd>{operation.location_name || '—'}</dd>
+                <dt>Endereço</dt>
+                <dd>{operation.address || '—'}</dd>
+                <dt>Coordenadas</dt>
+                <dd>
+                  {operation.latitude != null && operation.longitude != null
+                    ? `${operation.latitude}, ${operation.longitude}`
+                    : '—'}
+                </dd>
+                <dt>Custo estimado</dt>
+                <dd>{formatCurrency(operation.estimated_cost)}</dd>
+                <dt>Custo realizado</dt>
+                <dd>{formatCurrency(operation.actual_cost)}</dd>
+                <dt>Criado em</dt>
+                <dd>{formatDateTime(operation.created_at)}</dd>
+                <dt>Atualizado em</dt>
+                <dd>{formatDateTime(operation.updated_at)}</dd>
+              </dl>
+            </div>
+          </div>
+
+          <div className={styles.card} style={{ marginTop: '0.85rem' }}>
+            <h3>Observações</h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: '#334155', whiteSpace: 'pre-wrap' }}>
+              {operation.notes || '—'}
+            </p>
+          </div>
+        </>
+      ) : null}
+
+      <div className={styles.tabPanel}>
+        <OperationTeamPanel {...panelProps} active={tab === 'team'} />
+        <OperationEquipmentPanel {...panelProps} active={tab === 'equipment'} />
+        <OperationChecklistPanel {...panelProps} active={tab === 'checklist'} />
+        <OperationOccurrencesPanel {...panelProps} active={tab === 'occurrences'} />
+        <OperationExpensesPanel {...panelProps} active={tab === 'expenses'} />
+        <OperationDocumentsPanel {...panelProps} active={tab === 'documents'} />
+        <OperationTimelinePanel {...panelProps} active={tab === 'timeline'} />
       </div>
 
       <OperationFormModal
@@ -443,7 +581,7 @@ function OperationDetailInner() {
         initial={operation}
         saving={busy}
         error={formError}
-        userId={user?.id || ''}
+        userId={userId}
         projects={projects}
         quotes={quotes}
         onClose={() => {
@@ -457,8 +595,12 @@ function OperationDetailInner() {
         operation={operation}
         saving={statusSaving}
         error={statusError}
+        requiresOverride={statusRequiresOverride}
         onClose={() => {
-          if (!statusSaving) setStatusOpen(false);
+          if (!statusSaving) {
+            setStatusOpen(false);
+            setStatusRequiresOverride(false);
+          }
         }}
         onSubmit={handleStatusChange}
       />
@@ -466,7 +608,7 @@ function OperationDetailInner() {
       <OperationShareModal
         open={shareOpen}
         operation={operation}
-        userId={user?.id || ''}
+        userId={userId}
         onClose={() => setShareOpen(false)}
         onDownloadPdf={downloadPdf}
       />

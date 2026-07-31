@@ -9,6 +9,13 @@ import autoTable from 'jspdf-autotable';
 import { SAAS_PROVIDER } from '@/lib/saasContractContent';
 import { MASTER_TOPOGRAFIA_LOGO_PATH } from '@/lib/master/config';
 import type { MasterTopographyClient } from './clientTypes';
+import type { MasterTopographyOperationDocument } from './operationDocumentTypes';
+import type { MasterTopographyOperationEquipmentLink } from './operationEquipmentTypes';
+import type { MasterTopographyOperationExpense } from './operationExpenseTypes';
+import { operationExpenseCategoryLabel } from './operationExpenseTypes';
+import type { MasterTopographyOperationOccurrence } from './operationOccurrenceTypes';
+import type { MasterTopographyOperationTask } from './operationTaskTypes';
+import type { MasterTopographyOperationTeamMember } from './operationTeamTypes';
 import {
   operationPriorityLabel,
   operationStatusLabel,
@@ -28,6 +35,12 @@ export type OperationPdfContext = {
   client?: MasterTopographyClient | null;
   projectLabel?: string | null;
   quoteLabel?: string | null;
+  team?: MasterTopographyOperationTeamMember[];
+  equipment?: MasterTopographyOperationEquipmentLink[];
+  tasks?: MasterTopographyOperationTask[];
+  occurrences?: MasterTopographyOperationOccurrence[];
+  expenses?: MasterTopographyOperationExpense[];
+  documents?: MasterTopographyOperationDocument[];
 };
 
 export { buildOperationPdfFilename } from './operationShare';
@@ -203,11 +216,95 @@ export async function buildOperationPdfBytes(
     y += 4;
   }
 
-  if (y > pageHeight - 50) {
-    doc.addPage();
-    y = 20;
-  }
+  const ensureSpace = (need: number) => {
+    if (y > pageHeight - need) {
+      doc.addPage();
+      y = 20;
+    }
+  };
 
+  const sectionTable = (title: string, head: string[], body: string[][]) => {
+    if (body.length === 0) return;
+    ensureSpace(30);
+    doc.setFontSize(9);
+    doc.setTextColor(...primary);
+    doc.text(title, marginLeft, y);
+    y += 2;
+    autoTable(doc, {
+      startY: y,
+      head: [head],
+      body: body.map((row) => row.map((c) => sanitizeQuotePdfText(c))),
+      theme: 'grid',
+      styles: { fontSize: 7, cellPadding: 1 },
+      headStyles: { fillColor: primary, textColor: [255, 255, 255] },
+      margin: { left: marginLeft, right: marginRight },
+      didParseCell: quotePdfAutoTableSanitizeCell,
+    });
+    y =
+      (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y;
+    y += 6;
+  };
+
+  sectionTable(
+    'Equipe',
+    ['Nome', 'Função', 'Presença', 'Líder'],
+    (ctx.team || []).map((m) => [
+      m.name,
+      m.role || '—',
+      m.attendance_status,
+      m.is_lead ? 'Sim' : 'Não',
+    ]),
+  );
+
+  sectionTable(
+    'Equipamentos',
+    ['Código', 'Nome', 'Reserva', 'Retirada', 'Devolução'],
+    (ctx.equipment || []).map((e) => [
+      e.equipment_code || e.equipment_id.slice(0, 8),
+      e.equipment_name || '—',
+      formatDateTimeBr(e.reserved_at),
+      formatDateTimeBr(e.checked_out_at),
+      formatDateTimeBr(e.returned_at),
+    ]),
+  );
+
+  sectionTable(
+    'Checklist',
+    ['Item', 'Status', 'Obrig.', 'Crítico'],
+    (ctx.tasks || []).map((t) => [
+      t.title,
+      t.status,
+      t.is_required ? 'Sim' : 'Não',
+      t.is_critical ? 'Sim' : 'Não',
+    ]),
+  );
+
+  sectionTable(
+    'Ocorrências',
+    ['Título', 'Tipo', 'Severidade', 'Status'],
+    (ctx.occurrences || []).map((o) => [o.title, o.type, o.severity, o.status]),
+  );
+
+  sectionTable(
+    'Despesas',
+    ['Data', 'Categoria', 'Descrição', 'Valor'],
+    (ctx.expenses || []).map((e) => [
+      e.expense_date,
+      operationExpenseCategoryLabel(e.category),
+      e.description,
+      quotePdfMoney(e.amount),
+    ]),
+  );
+
+  sectionTable(
+    'Documentos vinculados',
+    ['Tipo', 'Título', 'Arquivo'],
+    (ctx.documents || [])
+      .filter((d) => !d.deleted_at)
+      .map((d) => [d.type, d.title, d.file_name]),
+  );
+
+  ensureSpace(50);
   doc.setFontSize(9);
   doc.setTextColor(...primary);
   doc.text('Ciência / assinatura do colaborador', marginLeft, y);

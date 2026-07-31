@@ -9,20 +9,25 @@ export type OperationFiltersState = {
   priority: string;
   projectId: string;
   responsible: string;
+  equipmentId: string;
   scheduledFrom: string;
   scheduledTo: string;
   includeArchived: boolean;
+  openOccurrence: boolean;
+  pendingChecklist: boolean;
 };
 
 export type ProjectOption = { id: string; label: string };
+export type EquipmentFilterOption = { id: string; label: string };
 
 type Props = {
   value: OperationFiltersState;
   onChange: (next: OperationFiltersState) => void;
   projects: ProjectOption[];
+  equipment: EquipmentFilterOption[];
 };
 
-export function OperationFilters({ value, onChange, projects }: Props) {
+export function OperationFilters({ value, onChange, projects, equipment }: Props) {
   const set = <K extends keyof OperationFiltersState>(key: K, v: OperationFiltersState[K]) => {
     onChange({ ...value, [key]: v });
   };
@@ -72,6 +77,20 @@ export function OperationFilters({ value, onChange, projects }: Props) {
           </option>
         ))}
       </select>
+      <select
+        className={styles.select}
+        value={value.equipmentId}
+        onChange={(e) => set('equipmentId', e.target.value)}
+        style={{ minWidth: '11rem' }}
+        title="Filtrar OS com equipamento vinculado"
+      >
+        <option value="">Equipamento</option>
+        {equipment.map((eq) => (
+          <option key={eq.id} value={eq.id}>
+            {eq.label}
+          </option>
+        ))}
+      </select>
       <input
         className={styles.input}
         placeholder="Responsável"
@@ -100,6 +119,22 @@ export function OperationFilters({ value, onChange, projects }: Props) {
           onChange={(e) => set('includeArchived', e.target.checked)}
         />
         Incluir arquivadas
+      </label>
+      <label className={styles.checkboxLabel}>
+        <input
+          type="checkbox"
+          checked={value.openOccurrence}
+          onChange={(e) => set('openOccurrence', e.target.checked)}
+        />
+        Com ocorrência aberta
+      </label>
+      <label className={styles.checkboxLabel}>
+        <input
+          type="checkbox"
+          checked={value.pendingChecklist}
+          onChange={(e) => set('pendingChecklist', e.target.checked)}
+        />
+        Checklist pendente
       </label>
     </div>
   );
