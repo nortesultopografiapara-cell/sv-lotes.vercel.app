@@ -208,6 +208,7 @@ function testValidation() {
     description: 'Serviço topográfico',
     customer_name: 'Cliente X',
     category_id: '11111111-1111-1111-1111-111111111111',
+    business_unit: 'SV_TOPOGRAFIA',
     issue_date: '2026-07-01',
     competence_date: '2026-07-01',
     due_date: '2026-07-15',
@@ -217,6 +218,7 @@ function testValidation() {
     fine_amount: 0,
   });
   assert(ar.customer_name === 'Cliente X', 'AR customer');
+  assert(ar.business_unit === 'SV_TOPOGRAFIA', 'AR business_unit');
 
   const ap = validatePayableInput({
     description: 'Combustível',

@@ -74,6 +74,7 @@ export type CorporateArApExportSummary = {
 
 export type CorporateReceivableExportRow = {
   code: string;
+  businessUnit: string;
   customer: string;
   project: string;
   quote: string;

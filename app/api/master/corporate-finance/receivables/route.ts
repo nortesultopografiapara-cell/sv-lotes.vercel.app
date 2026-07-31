@@ -84,6 +84,7 @@ export async function POST(request: Request) {
         code: receivable.code,
         net_amount: receivable.net_amount,
         status: receivable.status,
+        business_unit: receivable.business_unit,
       },
     });
 

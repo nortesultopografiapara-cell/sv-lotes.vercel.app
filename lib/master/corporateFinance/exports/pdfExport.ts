@@ -184,9 +184,10 @@ export async function buildReceivablesPdfBuffer(params: {
 
   autoTable(doc, {
     startY: 40,
-    head: [['Código', 'Cliente', 'Descrição', 'Vencimento', 'Líquido', 'Recebido', 'Saldo', 'Status']],
+    head: [['Código', 'Unidade', 'Cliente', 'Descrição', 'Vencimento', 'Líquido', 'Recebido', 'Saldo', 'Status']],
     body: params.rows.map((r) => [
       r.code,
+      r.businessUnit,
       r.customer,
       r.description,
       r.dueDate,
@@ -199,10 +200,10 @@ export async function buildReceivablesPdfBuffer(params: {
     headStyles: { fillColor: COLOR.head, textColor: 255 },
     alternateRowStyles: { fillColor: COLOR.alt },
     columnStyles: {
-      3: { halign: 'center' },
-      4: { halign: 'right' },
+      4: { halign: 'center' },
       5: { halign: 'right' },
       6: { halign: 'right' },
+      7: { halign: 'right' },
     },
     margin: { left: 14, right: 14, top: 40, bottom: 14 },
     didDrawPage: () => {

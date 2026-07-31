@@ -10,6 +10,10 @@ export function parseArApListFilters(searchParams: URLSearchParams): MasterCorpo
   return {
     q: searchParams.get('q') || undefined,
     status: searchParams.get('status') || undefined,
+    businessUnit:
+      searchParams.get('businessUnit') ||
+      searchParams.get('business_unit') ||
+      undefined,
     projectId: searchParams.get('projectId') || undefined,
     quoteId: searchParams.get('quoteId') || undefined,
     categoryId: searchParams.get('categoryId') || undefined,

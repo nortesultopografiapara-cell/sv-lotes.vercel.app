@@ -10,10 +10,12 @@ import {
 } from '@/lib/master/corporateFinance/arApTypes';
 import type { ReceivableProjectContext } from '@/lib/master/corporateFinance/projectContextService';
 import type {
+  CorporateBusinessUnit,
   MasterCorporateCostCenter,
   MasterCorporateFinancialAccount,
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
+import { corporateBusinessUnitLabel } from '@/lib/master/corporateFinance/types';
 import { computeLiveNet, formatCurrency, todayISO } from './format';
 import styles from './corporateFinance.module.css';
 
@@ -35,6 +37,7 @@ type ClientSuggestion = {
 };
 
 type FormState = {
+  business_unit: '' | CorporateBusinessUnit;
   description: string;
   customer_name: string;
   customer_document: string;
@@ -55,6 +58,11 @@ type FormState = {
   payment_method: string;
   notes: string;
   status: 'DRAFT' | 'OPEN';
+  already_received: boolean;
+  payment_date: string;
+  external_reference: string;
+  asaas_payment_id: string;
+  settlement_notes: string;
 };
 
 type DirtyKey = keyof FormState;
@@ -65,7 +73,6 @@ type Props = {
   open: boolean;
   editing: MasterCorporateReceivable | null;
   categories: MasterCorporateFinancialCategory[];
-  accounts: MasterCorporateFinancialAccount[];
   costCenters: MasterCorporateCostCenter[];
   projects: LookupProject[];
   initialProjectId?: string | null;
@@ -92,6 +99,7 @@ const AUTOFILL_KEYS: DirtyKey[] = [
 const EMPTY_FORM = (): FormState => {
   const t = todayISO();
   return {
+    business_unit: '',
     description: '',
     customer_name: '',
     customer_document: '',
@@ -112,11 +120,18 @@ const EMPTY_FORM = (): FormState => {
     payment_method: '',
     notes: '',
     status: 'OPEN',
+    already_received: false,
+    payment_date: t,
+    external_reference: '',
+    asaas_payment_id: '',
+    settlement_notes: '',
   };
 };
 
 function fromReceivable(r: MasterCorporateReceivable): FormState {
+  const t = todayISO();
   return {
+    business_unit: r.business_unit || 'SV_TOPOGRAFIA',
     description: r.description || '',
     customer_name: r.customer_name || '',
     customer_document: r.customer_document || '',
@@ -127,9 +142,9 @@ function fromReceivable(r: MasterCorporateReceivable): FormState {
     quote_id: r.quote_id || '',
     cost_center_id: r.cost_center_id || '',
     financial_account_id: r.financial_account_id || '',
-    issue_date: r.issue_date?.slice(0, 10) || todayISO(),
-    competence_date: r.competence_date?.slice(0, 10) || todayISO(),
-    due_date: r.due_date?.slice(0, 10) || todayISO(),
+    issue_date: r.issue_date?.slice(0, 10) || t,
+    competence_date: r.competence_date?.slice(0, 10) || t,
+    due_date: r.due_date?.slice(0, 10) || t,
     original_amount: String(r.original_amount ?? 0),
     discount_amount: String(r.discount_amount ?? 0),
     interest_amount: String(r.interest_amount ?? 0),
@@ -137,6 +152,11 @@ function fromReceivable(r: MasterCorporateReceivable): FormState {
     payment_method: r.payment_method || '',
     notes: r.notes || '',
     status: r.status === 'DRAFT' ? 'DRAFT' : 'OPEN',
+    already_received: false,
+    payment_date: t,
+    external_reference: '',
+    asaas_payment_id: '',
+    settlement_notes: '',
   };
 }
 
@@ -149,7 +169,6 @@ export default function ReceivableFormModal({
   open,
   editing,
   categories,
-  accounts,
   costCenters,
   projects,
   initialProjectId,
@@ -170,6 +189,8 @@ export default function ReceivableFormModal({
   const [overProvisionReason, setOverProvisionReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unitAccounts, setUnitAccounts] = useState<MasterCorporateFinancialAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
 
   const [clientMode, setClientMode] = useState<'search' | 'manual'>('search');
   const [clientQuery, setClientQuery] = useState('');
@@ -182,6 +203,50 @@ export default function ReceivableFormModal({
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
+
+  const loadUnitAccounts = useCallback(
+    async (unit: CorporateBusinessUnit | '') => {
+      if (!unit) {
+        setUnitAccounts([]);
+        return;
+      }
+      setAccountsLoading(true);
+      try {
+        const res = await fetch(
+          `/api/master/corporate-finance/accounts?${qs()}&businessUnit=${encodeURIComponent(unit)}`,
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao carregar contas.');
+        setUnitAccounts(
+          ((data.accounts || []) as MasterCorporateFinancialAccount[]).filter((a) => a.is_active),
+        );
+      } catch {
+        setUnitAccounts([]);
+      } finally {
+        setAccountsLoading(false);
+      }
+    },
+    [qs],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    void loadUnitAccounts(form.business_unit);
+  }, [open, form.business_unit, loadUnitAccounts]);
+
+  function setBusinessUnit(unit: '' | CorporateBusinessUnit) {
+    setForm((f) => ({
+      ...f,
+      business_unit: unit,
+      financial_account_id: '',
+    }));
+    setDirty((prev) => {
+      const next = new Set(prev);
+      next.add('business_unit');
+      next.add('financial_account_id');
+      return next;
+    });
+  }
 
   const liveNet = useMemo(
     () =>
@@ -248,6 +313,7 @@ export default function ReceivableFormModal({
           next.cost_center_id = ctx.suggested_cost_center_id;
         }
         if (can('financial_account_id') && ctx.suggested_financial_account_id) {
+          // Só aplica se a conta sugerida pertencer à unidade já escolhida (quando houver).
           next.financial_account_id = ctx.suggested_financial_account_id;
         }
         if (can('payment_method') && ctx.suggested_payment_method) {
@@ -452,8 +518,9 @@ export default function ReceivableFormModal({
     setSaving(true);
     setError(null);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...bodyAuth(),
+        business_unit: form.business_unit,
         description: form.description,
         customer_name: form.customer_name,
         customer_document: form.customer_document || null,
@@ -478,6 +545,35 @@ export default function ReceivableFormModal({
         over_provision_reason:
           showOverProvision && allowOverProvision ? overProvisionReason.trim() || null : null,
       };
+
+      if (!editing && form.already_received) {
+        payload.already_received = true;
+        payload.settlement = {
+          financial_account_id: form.financial_account_id,
+          payment_date: form.payment_date,
+          amount: liveNet,
+          payment_method: form.payment_method,
+          reference: form.external_reference || null,
+          asaas_payment_id: form.asaas_payment_id || null,
+          notes: form.settlement_notes || null,
+        };
+      }
+
+      if (!form.business_unit) {
+        throw new Error('Selecione a unidade de negócio.');
+      }
+      if (!editing && form.already_received) {
+        if (!form.financial_account_id) {
+          throw new Error('Conta financeira é obrigatória para título já recebido.');
+        }
+        if (!form.payment_method) {
+          throw new Error('Forma de pagamento é obrigatória para título já recebido.');
+        }
+        if (!form.payment_date) {
+          throw new Error('Data de recebimento é obrigatória.');
+        }
+      }
+
       const url = editing
         ? `/api/master/corporate-finance/receivables/${editing.id}`
         : '/api/master/corporate-finance/receivables';
@@ -518,6 +614,31 @@ export default function ReceivableFormModal({
         <div className={styles.modalBody}>
           {error ? <p className={styles.error}>{error}</p> : null}
           {contextError ? <p className={styles.error}>{contextError}</p> : null}
+
+          <div>
+            <label className={styles.label}>Unidade de negócio *</label>
+            <select
+              className={styles.select}
+              value={form.business_unit}
+              disabled={Boolean(editing)}
+              onChange={(e) =>
+                setBusinessUnit(
+                  e.target.value === 'SV_LOTES' || e.target.value === 'SV_TOPOGRAFIA'
+                    ? e.target.value
+                    : '',
+                )
+              }
+            >
+              <option value="">Selecione…</option>
+              <option value="SV_LOTES">{corporateBusinessUnitLabel('SV_LOTES')}</option>
+              <option value="SV_TOPOGRAFIA">
+                {corporateBusinessUnitLabel('SV_TOPOGRAFIA')}
+              </option>
+            </select>
+            {editing ? (
+              <p className={styles.dirtyHint}>A unidade não pode ser alterada após a criação.</p>
+            ) : null}
+          </div>
 
           {/* Origem */}
           <div>
@@ -752,19 +873,35 @@ export default function ReceivableFormModal({
             </div>
           </div>
           <div>
-            <label className={styles.label}>Conta financeira</label>
+            <label className={styles.label}>
+              Conta financeira{form.already_received ? ' *' : ''}
+            </label>
             <select
               className={styles.select}
               value={form.financial_account_id}
+              disabled={!form.business_unit || accountsLoading}
               onChange={(e) => setField('financial_account_id', e.target.value)}
             >
-              <option value="">—</option>
-              {accounts.map((a) => (
+              <option value="">
+                {!form.business_unit
+                  ? 'Selecione a unidade primeiro'
+                  : accountsLoading
+                    ? 'Carregando contas…'
+                    : '—'}
+              </option>
+              {unitAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
               ))}
             </select>
+            {form.business_unit && !accountsLoading && unitAccounts.length === 0 ? (
+              <p className={styles.dirtyHint}>
+                Nenhuma conta financeira ativa para{' '}
+                {corporateBusinessUnitLabel(form.business_unit)}. Cadastre em Contas
+                Financeiras antes de continuar.
+              </p>
+            ) : null}
           </div>
 
           {/* Datas */}
@@ -897,17 +1034,92 @@ export default function ReceivableFormModal({
 
           {!editing ? (
             <div>
-              <label className={styles.label}>Status inicial</label>
+              <label className={styles.label}>Situação do lançamento</label>
               <select
                 className={styles.select}
-                value={form.status}
-                onChange={(e) =>
-                  setField('status', e.target.value === 'DRAFT' ? 'DRAFT' : 'OPEN')
-                }
+                value={form.already_received ? 'RECEIVED' : form.status}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === 'RECEIVED') {
+                    setForm((f) => ({
+                      ...f,
+                      already_received: true,
+                      status: 'OPEN',
+                      payment_method: f.payment_method || 'PIX',
+                      payment_date: f.payment_date || todayISO(),
+                    }));
+                    return;
+                  }
+                  setForm((f) => ({
+                    ...f,
+                    already_received: false,
+                    status: v === 'DRAFT' ? 'DRAFT' : 'OPEN',
+                  }));
+                }}
               >
-                <option value="OPEN">Em aberto</option>
+                <option value="OPEN">Pendente (em aberto)</option>
                 <option value="DRAFT">Rascunho</option>
+                <option value="RECEIVED">Já recebido</option>
               </select>
+            </div>
+          ) : null}
+
+          {!editing && form.already_received ? (
+            <div className={styles.grid2}>
+              <div>
+                <label className={styles.label}>Data de recebimento *</label>
+                <input
+                  className={styles.input}
+                  type="date"
+                  value={form.payment_date}
+                  onChange={(e) => setField('payment_date', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={styles.label}>Forma de pagamento *</label>
+                <select
+                  className={styles.select}
+                  value={form.payment_method}
+                  onChange={(e) => setField('payment_method', e.target.value)}
+                >
+                  <option value="">—</option>
+                  {CORPORATE_PAYMENT_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {corporatePaymentMethodLabel(m)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={styles.label}>Referência externa</label>
+                <input
+                  className={styles.input}
+                  value={form.external_reference}
+                  onChange={(e) => setField('external_reference', e.target.value)}
+                  placeholder="Opcional"
+                />
+              </div>
+              <div>
+                <label className={styles.label}>ID Asaas</label>
+                <input
+                  className={styles.input}
+                  value={form.asaas_payment_id}
+                  onChange={(e) => setField('asaas_payment_id', e.target.value)}
+                  placeholder="pay_… (opcional)"
+                />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label className={styles.label}>Observações do recebimento</label>
+                <textarea
+                  className={styles.textarea}
+                  value={form.settlement_notes}
+                  onChange={(e) => setField('settlement_notes', e.target.value)}
+                />
+                <p className={styles.dirtyHint}>
+                  Título em Contas a Receber; liquidação em caixa corporativo
+                  (RECEIVABLE_PAYMENT). Não cria receita duplicada no Caixa SaaS.
+                </p>
+              </div>
             </div>
           ) : null}
 
