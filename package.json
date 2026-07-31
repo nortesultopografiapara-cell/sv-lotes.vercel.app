@@ -58,6 +58,7 @@
     "test:client-portal-dashboard": "tsx scripts/mandatory-client-portal-dashboard-tests.ts",
     "test:master-executive-shell": "tsx scripts/mandatory-master-executive-shell-tests.ts",
     "test:master-topography-projects": "tsx scripts/mandatory-master-topography-projects-tests.ts",
+    "test:master-topography-equipment": "tsx scripts/mandatory-master-topography-equipment-tests.ts",
     "test:master-topography-quotes": "tsx scripts/mandatory-master-topography-quotes-tests.ts",
     "test:master-topography-quote-pdf": "tsx scripts/mandatory-master-topography-quote-pdf-tests.ts",
     "test:master-topography-quote-scope": "tsx scripts/mandatory-master-topography-quote-scope-tests.ts",
