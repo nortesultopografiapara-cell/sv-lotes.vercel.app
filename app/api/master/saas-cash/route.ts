@@ -27,7 +27,11 @@ export async function GET(request: Request) {
 
   try {
     const companyId = searchParams.get('companyId') || undefined;
-    const type = (searchParams.get('type') || 'all') as 'income' | 'expense' | 'all';
+    const type = (searchParams.get('type') || 'all') as
+      | 'income'
+      | 'expense'
+      | 'transfer'
+      | 'all';
     const fromDate = searchParams.get('fromDate') || undefined;
     const toDate = searchParams.get('toDate') || undefined;
     const cashStartAt = await perf.timeSupabase('lib.getSaasCashStartAt', () =>

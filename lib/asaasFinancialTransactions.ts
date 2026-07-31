@@ -28,12 +28,10 @@ const WEBHOOK_INCOME_TYPES = new Set([
   'PARTIAL_PAYMENT',
 ]);
 
-/** Saques, transferências bancárias e Pix enviado para chave/conta externa. */
+/** Saques/transferências bancárias explícitas (fora do P&L — type transfer). */
 const WITHDRAWAL_TYPES = new Set([
   'TRANSFER',
   'BACEN_JUDICIAL_TRANSFER',
-  'PIX_TRANSACTION_DEBIT',
-  'BILL_PAYMENT',
 ]);
 
 const TRANSFER_TYPES = new Set(['INTERNAL_TRANSFER_DEBIT']);
@@ -90,6 +88,11 @@ const SKIP_NEUTRAL_TYPES = new Set([
   'REFUND_REQUEST_CANCELLED',
 ]);
 
+const TRANSFER_DESC_RE =
+  /\b(saque|transfer[eê]ncia|retirada|resgate|para\s+conta|conta\s+pr[oó]pria|ted|doc)\b/i;
+const EXPENSE_PIX_DESC_RE =
+  /\b(pagamento|pagto|boleto|conta\s+de|fornecedor|compra|assinatura|aluguel|sal[aá]rio|despesa)\b/i;
+
 function normalizeAsaasType(type?: string | null): string {
   return String(type || '').trim().toUpperCase();
 }
@@ -130,11 +133,65 @@ function isBalanceAdjustmentType(type: string): boolean {
 }
 
 function isPixDebitType(type: string): boolean {
-  return type.includes('PIX') && type.includes('DEBIT') && !type.includes('REFUND');
+  return type.includes('PIX') && type.includes('DEBIT') && !type.includes('REFUND') && !type.includes('FEE');
 }
 
 function isPixCreditType(type: string): boolean {
-  return type.includes('PIX') && type.includes('CREDIT') && !type.includes('REFUND');
+  return type.includes('PIX') && type.includes('CREDIT') && !type.includes('REFUND') && !type.includes('FEE');
+}
+
+/**
+ * PIX de saída NÃO vira transfer automaticamente.
+ * Evidências: transferId Asaas, descrição de saque/transferência, ou descrição de pagamento.
+ * Ambíguo: transfer com needs_classification (afeta saldo, fora do P&L) para revisão.
+ */
+function classifyPixDebit(tx: AsaasFinancialTransaction): MappedAsaasCashMovement {
+  const desc = String(tx.description || '');
+  const hasTransferId = Boolean(String(tx.transferId || '').trim());
+  const absAmount = Math.abs(Number(tx.value || 0));
+
+  if (hasTransferId || TRANSFER_DESC_RE.test(desc)) {
+    return buildMappedMovement(tx, {
+      type: 'transfer',
+      source: 'asaas_transfer',
+      category: 'Transferência Pix',
+      description: 'Transação via Pix (transferência/saque)',
+      amount: absAmount,
+      movement_date: tx.date,
+      metadata: {
+        classification_rule: hasTransferId
+          ? 'pix_debit+transferId'
+          : 'pix_debit+description_transfer',
+      },
+    });
+  }
+
+  if (EXPENSE_PIX_DESC_RE.test(desc)) {
+    return buildMappedMovement(tx, {
+      type: 'expense',
+      source: 'asaas_transfer',
+      category: 'Pagamento Pix',
+      description: 'Pagamento via Pix',
+      amount: absAmount,
+      movement_date: tx.date,
+      metadata: {
+        classification_rule: 'pix_debit+description_expense',
+      },
+    });
+  }
+
+  return buildMappedMovement(tx, {
+    type: 'transfer',
+    source: 'asaas_transfer',
+    category: 'Saída Pix (a classificar)',
+    description: 'Saída Pix — classificação pendente',
+    amount: absAmount,
+    movement_date: tx.date,
+    metadata: {
+      classification_rule: 'pix_debit+pending_review',
+      needs_classification: true,
+    },
+  });
 }
 
 function buildMappedMovement(
@@ -201,39 +258,66 @@ export function mapAsaasFinancialTransaction(
     return { skip: true, skipReason: 'neutral_type' };
   }
 
-  if (WITHDRAWAL_TYPES.has(asaasType) || isPixDebitType(asaasType)) {
-    const isPix = asaasType === 'PIX_TRANSACTION_DEBIT' || isPixDebitType(asaasType);
+  // BILL_PAYMENT = pagamento de boleto/conta (despesa operacional).
+  if (asaasType === 'BILL_PAYMENT') {
     return buildMappedMovement(tx, {
       type: 'expense',
       source: 'asaas_transfer',
-      category: isPix ? 'Transferência Pix' : 'Saque',
-      description: isPix
-        ? 'Transação via Pix'
-        : 'Saque / transferência bancária Asaas',
+      category: 'Pagamento de conta',
+      description: 'Pagamento de conta via Asaas',
       amount: absAmount,
       movement_date: tx.date,
+      metadata: { classification_rule: 'bill_payment' },
+    });
+  }
+
+  // Saques/transferências bancárias explícitas (reduzem saldo, fora do resultado).
+  if (WITHDRAWAL_TYPES.has(asaasType)) {
+    return buildMappedMovement(tx, {
+      type: 'transfer',
+      source: 'asaas_transfer',
+      category: 'Saque',
+      description: 'Saque / transferência bancária Asaas',
+      amount: absAmount,
+      movement_date: tx.date,
+      metadata: { classification_rule: 'withdrawal_type' },
     });
   }
 
   if (TRANSFER_TYPES.has(asaasType)) {
     return buildMappedMovement(tx, {
-      type: 'expense',
+      type: 'transfer',
       source: 'asaas_transfer',
       category: 'Transferência',
       description: 'Transferência Asaas',
       amount: absAmount,
       movement_date: tx.date,
+      metadata: { classification_rule: 'internal_transfer_debit' },
     });
+  }
+
+  // PIX debit: classificar por evidência (não automático).
+  if (asaasType === 'PIX_TRANSACTION_DEBIT' || isPixDebitType(asaasType)) {
+    return classifyPixDebit(tx);
   }
 
   if (SYNC_INCOME_TYPES.has(asaasType) || isPixCreditType(asaasType)) {
     return buildMappedMovement(tx, {
       type: 'income',
       source: 'asaas_webhook',
-      category: 'Entrada Pix',
-      description: 'Pix recebido',
+      category: String(tx.paymentId || '').trim()
+        ? 'Entrada Pix'
+        : 'Crédito Pix (a conciliar)',
+      description: String(tx.paymentId || '').trim()
+        ? 'Pix recebido'
+        : 'Pix recebido sem cobrança SaaS vinculada',
       amount: absAmount,
       movement_date: tx.date,
+      metadata: {
+        classification_rule: 'pix_credit',
+        needs_classification: !String(tx.paymentId || '').trim(),
+        orphan_credit: !String(tx.paymentId || '').trim(),
+      },
     });
   }
 
@@ -257,6 +341,7 @@ export function mapAsaasFinancialTransaction(
       description: 'Tarifa Asaas',
       amount: absAmount,
       movement_date: tx.date,
+      metadata: { classification_rule: 'fee_type' },
     });
   }
 
@@ -269,6 +354,10 @@ export function mapAsaasFinancialTransaction(
       description: movementType === 'income' ? 'Estorno/ajuste Asaas' : 'Estorno Asaas',
       amount: absAmount,
       movement_date: tx.date,
+      metadata: {
+        classification_rule: 'refund_type',
+        related_asaas_payment_id: tx.paymentId || null,
+      },
     });
   }
 
@@ -292,6 +381,7 @@ export function mapAsaasFinancialTransaction(
       asaas_type: asaasType,
       asaas_value: value,
       asaas_description: tx.description || null,
+      needs_classification: true,
     },
   };
 }
@@ -302,8 +392,20 @@ export function isAsaasCashSyncExpenseMapping(
   return !mapped.skip && mapped.type === 'expense';
 }
 
+export function isAsaasCashSyncTransferMapping(
+  mapped: MappedAsaasCashMovement,
+): boolean {
+  return !mapped.skip && mapped.type === 'transfer';
+}
+
 export function isAsaasCashSyncIncomeMapping(
   mapped: MappedAsaasCashMovement,
 ): boolean {
   return !mapped.skip && mapped.type === 'income';
+}
+
+/** Contribui para receita/despesa do resultado (exclui transferências). */
+export function saasCashAffectsPnl(type?: string | null): boolean {
+  const t = String(type || '').toLowerCase();
+  return t === 'income' || t === 'expense';
 }

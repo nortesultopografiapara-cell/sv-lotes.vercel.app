@@ -77,19 +77,26 @@ const TRANSFER_CATEGORIES = new Set([
   'Saque',
   'Transferência',
   'Transferência Pix',
+  'Saída Pix (a classificar)',
 ]);
 
+/** Tipos Asaas que, sozinhos, indicam transfer (PIX debit exige evidência extra). */
 const TRANSFER_ASAAS_TYPES = new Set([
   'TRANSFER',
   'BACEN_JUDICIAL_TRANSFER',
-  'PIX_TRANSACTION_DEBIT',
   'INTERNAL_TRANSFER_DEBIT',
 ]);
+
+const PIX_TRANSFER_DESC_RE =
+  /\b(saque|transfer[eê]ncia|retirada|resgate|para\s+conta|conta\s+pr[oó]pria|ted|doc)\b/i;
 
 type CandidateRule =
   | 'source_asaas_transfer+category'
   | 'source_asaas_transfer+asaas_type'
-  | 'source_asaas_transfer+fallback';
+  | 'source_asaas_transfer+fallback'
+  | 'pix_debit+transferId'
+  | 'pix_debit+description_transfer'
+  | 'pix_debit+pending_review';
 
 type Row = {
   id: string;
@@ -109,12 +116,17 @@ function classifyCandidate(row: Row): {
   skipReason: string | null;
 } {
   const cat = String(row.category || '');
-  const asaasType = String(
-    ((row.metadata || {}) as Record<string, unknown>).asaas_type || '',
-  ).toUpperCase();
+  const meta = (row.metadata || {}) as Record<string, unknown>;
+  const asaasType = String(meta.asaas_type || '').toUpperCase();
+  const desc = String(row.description || meta.asaas_description || '');
+  const hasTransferId = Boolean(String(meta.asaas_transfer_id || '').trim());
 
-  if (cat === 'Pagamento de conta' || asaasType === 'BILL_PAYMENT') {
-    return { ok: false, rule: null, skipReason: 'bill_payment_is_expense' };
+  if (
+    cat === 'Pagamento de conta' ||
+    cat === 'Pagamento Pix' ||
+    asaasType === 'BILL_PAYMENT'
+  ) {
+    return { ok: false, rule: null, skipReason: 'bill_or_pix_payment_is_expense' };
   }
 
   if (TRANSFER_CATEGORIES.has(cat)) {
@@ -123,6 +135,21 @@ function classifyCandidate(row: Row): {
   if (TRANSFER_ASAAS_TYPES.has(asaasType)) {
     return { ok: true, rule: 'source_asaas_transfer+asaas_type', skipReason: null };
   }
+
+  if (
+    asaasType === 'PIX_TRANSACTION_DEBIT' ||
+    (asaasType.includes('PIX') && asaasType.includes('DEBIT'))
+  ) {
+    if (hasTransferId) {
+      return { ok: true, rule: 'pix_debit+transferId', skipReason: null };
+    }
+    if (PIX_TRANSFER_DESC_RE.test(desc)) {
+      return { ok: true, rule: 'pix_debit+description_transfer', skipReason: null };
+    }
+    // Ambíguo: reclassificar para transfer (fora do P&L) com revisão posterior
+    return { ok: true, rule: 'pix_debit+pending_review', skipReason: null };
+  }
+
   if (String(row.source || '') === 'asaas_transfer') {
     return { ok: true, rule: 'source_asaas_transfer+fallback', skipReason: null };
   }

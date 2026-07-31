@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownCircle, ArrowUpCircle, CloudDownload, FileSpreadsheet, FileText, RefreshCw, RotateCcw, Wallet, X, Zap } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { ArrowDownCircle, ArrowUpCircle, CloudDownload, FileSpreadsheet, FileText, Plus, RefreshCw, RotateCcw, Wallet, X, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import {
@@ -97,15 +98,17 @@ function sourceBadgeClass(source: string): string {
 
 export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const defaultRange = useMemo(() => currentMonthRange(), []);
   const [fromDate, setFromDate] = useState(defaultRange.from);
   const [toDate, setToDate] = useState(defaultRange.to);
-  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [companyFilter, setCompanyFilter] = useState('all');
   const [movements, setMovements] = useState<SaasCashMovement[]>([]);
   const [summary, setSummary] = useState<SaasCashSummary>({
     periodIncome: 0,
     periodExpense: 0,
+    periodTransfer: 0,
     netResult: 0,
     movementCount: 0,
   });
@@ -122,8 +125,28 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
   const [startAtMode, setStartAtMode] = useState<'now' | 'custom'>('now');
   const [customStartAt, setCustomStartAt] = useState('2026-06-01T00:00');
   const [reprocessing, setReprocessing] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    amount: '',
+    movementDate: defaultRange.to,
+    description: '',
+    category: 'Receita extraordinária',
+    clientName: '',
+    asaasPaymentId: '',
+    externalReference: '',
+    paymentMethod: 'PIX',
+    notes: '',
+    companyId: '',
+  });
 
   const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
+
+  useEffect(() => {
+    if (searchParams.get('extraordinary') === '1') {
+      setManualOpen(true);
+    }
+  }, [searchParams]);
 
   const loadCash = useCallback(async () => {
     if (!user?.id) return;
@@ -150,6 +173,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       setSummary({
         periodIncome: 0,
         periodExpense: 0,
+        periodTransfer: 0,
         netResult: 0,
         movementCount: 0,
       });
@@ -201,6 +225,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         body.summary || {
           periodIncome: 0,
           periodExpense: 0,
+          periodTransfer: 0,
           netResult: 0,
           movementCount: 0,
         },
@@ -356,6 +381,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         body.summary || {
           periodIncome: 0,
           periodExpense: 0,
+          periodTransfer: 0,
           netResult: 0,
           movementCount: 0,
         },
@@ -385,6 +411,51 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
 
   const canConfirmStartAt = startAtConfirmText.trim() === FINANCE_START_CONFIRMATION;
 
+  const handleManualIncome = useCallback(async () => {
+    if (!user?.id || !isSuperAdmin) return;
+    setManualSaving(true);
+    setError(null);
+    try {
+      const body = await fetchJsonWithTimeout<{
+        error?: string;
+        created?: boolean;
+        movement?: SaasCashMovement;
+      }>(
+        '/api/master/saas-cash/manual-income',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            amount: Number(manualForm.amount),
+            movementDate: manualForm.movementDate,
+            description: manualForm.description,
+            category: manualForm.category,
+            clientName: manualForm.clientName || null,
+            asaasPaymentId: manualForm.asaasPaymentId || null,
+            externalReference: manualForm.externalReference || null,
+            paymentMethod: manualForm.paymentMethod || null,
+            notes: manualForm.notes || null,
+            companyId: manualForm.companyId || null,
+          }),
+        },
+        MASTER_POST_TIMEOUT_MS,
+      );
+      if (body.error) throw new Error(body.error);
+      setManualOpen(false);
+      setSyncMessage(
+        body.created
+          ? 'Receita extraordinária lançada no Caixa SaaS (SV LOTES).'
+          : 'Receita já existia (idempotente por ID Asaas ou referência externa).',
+      );
+      await loadCash();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao lançar receita extraordinária');
+    } finally {
+      setManualSaving(false);
+    }
+  }, [user?.id, isSuperAdmin, manualForm, loadCash]);
+
   const formatCurrency = (value: number) => formatSaasCurrency(value);
 
   return (
@@ -404,12 +475,22 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
             Caixa SaaS
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            Entradas via webhook e saídas importadas do extrato Asaas (saques, tarifas, transferências).
+            Entradas (webhook/manual), despesas (tarifas) e transferências/saques Asaas (fora do
+            resultado).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {isSuperAdmin ? (
             <>
+              <button
+                type="button"
+                onClick={() => setManualOpen(true)}
+                disabled={loading || syncing || !!exporting || settingStartAt}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-emerald-500/30 bg-emerald-600/20 text-sm text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                Receita extraordinária
+              </button>
               <button
                 type="button"
                 onClick={() => void handleExportExcel()}
@@ -492,30 +573,30 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <SaasMetricCard
-          title="Saldo do período"
+          title="Resultado do período"
           value={formatCurrency(summary.netResult)}
-          description={`${formatDateBr(fromDate)} — ${formatDateBr(toDate)}`}
+          description={`Entradas − despesas (sem transferências) · ${formatDateBr(fromDate)} — ${formatDateBr(toDate)}`}
           icon={<Wallet className="w-5 h-5" />}
           tone={summary.netResult >= 0 ? 'green' : 'red'}
         />
         <SaasMetricCard
           title="Entradas do período"
           value={formatCurrency(summary.periodIncome)}
-          description="Recebimentos confirmados"
+          description="Recebimentos confirmados (SV LOTES)"
           icon={<ArrowDownCircle className="w-5 h-5" />}
           tone="teal"
         />
         <SaasMetricCard
-          title="Saídas do período"
+          title="Despesas do período"
           value={formatCurrency(summary.periodExpense)}
-          description="Despesas e estornos"
+          description="Tarifas e despesas (sem saques)"
           icon={<ArrowUpCircle className="w-5 h-5" />}
           tone="amber"
         />
         <SaasMetricCard
-          title="Resultado líquido"
-          value={formatCurrency(summary.netResult)}
-          description={`${summary.movementCount} movimentação(ões)`}
+          title="Transferências / saques"
+          value={formatCurrency(summary.periodTransfer || 0)}
+          description={`Fora do resultado · ${summary.movementCount} movimentação(ões)`}
           icon={<Wallet className="w-5 h-5" />}
           tone="blue"
         />
@@ -545,13 +626,14 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
           <select
             value={typeFilter}
             onChange={(e) =>
-              setTypeFilter(e.target.value as 'all' | 'income' | 'expense')
+              setTypeFilter(e.target.value as 'all' | 'income' | 'expense' | 'transfer')
             }
             className="bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-w-[140px]"
           >
             <option value="all">Todos</option>
             <option value="income">Entradas</option>
-            <option value="expense">Saídas</option>
+            <option value="expense">Despesas</option>
+            <option value="transfer">Transferências</option>
           </select>
         </label>
         {companies.length > 0 ? (
@@ -623,7 +705,9 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
                         className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
                           row.type === 'expense'
                             ? 'bg-rose-500/15 text-rose-300'
-                            : 'bg-emerald-500/15 text-emerald-300'
+                            : row.type === 'transfer'
+                              ? 'bg-violet-500/15 text-violet-300'
+                              : 'bg-emerald-500/15 text-emerald-300'
                         }`}
                       >
                         {saasCashTypeLabel(row.type)}
@@ -642,10 +726,14 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-medium whitespace-nowrap ${
-                        row.type === 'expense' ? 'text-rose-300' : 'text-emerald-300'
+                        row.type === 'expense'
+                          ? 'text-rose-300'
+                          : row.type === 'transfer'
+                            ? 'text-violet-300'
+                            : 'text-emerald-300'
                       }`}
                     >
-                      {row.type === 'expense' ? '−' : '+'}
+                      {row.type === 'expense' || row.type === 'transfer' ? '−' : '+'}
                       {formatCurrency(row.amount)}
                     </td>
                   </tr>
@@ -747,6 +835,142 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
                 className="px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-sm font-semibold text-white"
               >
                 {settingStartAt ? 'Aplicando…' : 'Confirmar marco financeiro'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {manualOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+          <div className="w-full max-w-lg rounded-xl border border-white/10 bg-[#151a22] shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Receita extraordinária — SV LOTES</h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Use para consultoria, link Asaas avulso ou entradas fora de mensalidade. Idempotente
+                  por ID Asaas.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualOpen(false)}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <label className="block text-xs text-gray-400">
+                Valor *
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={manualForm.amount}
+                  onChange={(e) => setManualForm((f) => ({ ...f, amount: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Data do recebimento *
+                <input
+                  type="date"
+                  value={manualForm.movementDate}
+                  onChange={(e) => setManualForm((f) => ({ ...f, movementDate: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Descrição *
+                <input
+                  type="text"
+                  value={manualForm.description}
+                  onChange={(e) => setManualForm((f) => ({ ...f, description: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  placeholder="Ex.: Consultoria Meneses Imobiliária"
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Categoria
+                <input
+                  type="text"
+                  value={manualForm.category}
+                  onChange={(e) => setManualForm((f) => ({ ...f, category: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Cliente / pagador (opcional)
+                <input
+                  type="text"
+                  value={manualForm.clientName}
+                  onChange={(e) => setManualForm((f) => ({ ...f, clientName: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Forma de pagamento
+                <select
+                  value={manualForm.paymentMethod}
+                  onChange={(e) => setManualForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  <option value="PIX">PIX</option>
+                  <option value="TED">TED</option>
+                  <option value="BOLETO">Boleto</option>
+                  <option value="CARTAO">Cartão</option>
+                  <option value="DINHEIRO">Dinheiro</option>
+                  <option value="OUTRO">Outro</option>
+                </select>
+              </label>
+              <label className="block text-xs text-gray-400">
+                ID pagamento Asaas (opcional)
+                <input
+                  type="text"
+                  value={manualForm.asaasPaymentId}
+                  onChange={(e) => setManualForm((f) => ({ ...f, asaasPaymentId: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  placeholder="pay_..."
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Referência externa (opcional)
+                <input
+                  type="text"
+                  value={manualForm.externalReference}
+                  onChange={(e) =>
+                    setManualForm((f) => ({ ...f, externalReference: e.target.value }))
+                  }
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  placeholder="NF, protocolo, link avulso…"
+                />
+              </label>
+              <label className="block text-xs text-gray-400">
+                Observações
+                <textarea
+                  value={manualForm.notes}
+                  onChange={(e) => setManualForm((f) => ({ ...f, notes: e.target.value }))}
+                  className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white min-h-[72px]"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-white/10 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setManualOpen(false)}
+                className="px-4 py-2.5 rounded-lg border border-white/10 text-sm text-gray-300 hover:bg-white/5"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleManualIncome()}
+                disabled={manualSaving}
+                className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-semibold text-white"
+              >
+                {manualSaving ? 'Salvando…' : 'Lançar receita'}
               </button>
             </div>
           </div>

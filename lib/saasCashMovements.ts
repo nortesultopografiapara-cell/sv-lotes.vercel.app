@@ -1,5 +1,18 @@
 /**
  * Caixa SaaS Master — movimentações automáticas e consultas.
+ *
+ * Fontes de evento financeiro (anti-duplicidade Etapa 3):
+ * | Evento                         | Fonte principal              | Tabela / destino              |
+ * |--------------------------------|------------------------------|-------------------------------|
+ * | Mensalidade SaaS paga          | Webhook Asaas / charge paid  | saas_cash_movements (income)  |
+ * | Extrato Asaas (taxa/saque/pix) | Sync financialTransactions   | saas_cash_movements           |
+ * | Receita extraordinária SV      | Manual Caixa SaaS            | saas_cash_movements (manual)  |
+ * | AR SV LOTES / Topografia       | Contas a Receber Master      | master_corporate_receivables  |
+ * | Pagamentos corporativos        | Caixa / settle corporativo   | master_corporate_*            |
+ *
+ * Dedup Caixa SaaS: asaas_payment_id, saas_charge_id, metadata.asaas_movement_id,
+ * metadata.external_reference (receita extraordinária).
+ * NÃO há ponte automática AR SV LOTES ↔ saas_cash_movements nesta etapa.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -22,7 +35,10 @@ import {
 } from '@/lib/payments/providers/asaas';
 import { logMasterApiStep } from '@/lib/masterApiPerfLog';
 
-export type SaasCashMovementType = 'income' | 'expense';
+/** Origem explícita de receita extraordinária (metadata; source DB permanece `manual`). */
+export const MANUAL_EXTRAORDINARY_INCOME_ORIGIN = 'MANUAL_EXTRAORDINARY_INCOME';
+
+export type SaasCashMovementType = 'income' | 'expense' | 'transfer';
 
 export type SaasCashMovementSource =
   | 'asaas_webhook'
@@ -51,6 +67,7 @@ export type SaasCashMovement = {
 export type SaasCashSummary = {
   periodIncome: number;
   periodExpense: number;
+  periodTransfer: number;
   netResult: number;
   movementCount: number;
 };
@@ -197,9 +214,10 @@ export async function aggregateSaasCashMonthlyRevenueExpense(
     if (!bucket) continue;
     if (row.type === 'expense') {
       bucket.expense += amount;
-    } else {
+    } else if (row.type === 'income') {
       bucket.revenue += amount;
     }
+    // transfer: fora do P&L (não altera receita/despesa do gráfico)
   }
 
   return months;
@@ -217,6 +235,7 @@ export type SyncAsaasCashMovementsResult = {
   created: number;
   incomeCreated: number;
   expenseCreated: number;
+  transferCreated: number;
   skipped: number;
   skippedDuplicate: number;
   skippedBeforeStartAt: number;
@@ -290,7 +309,10 @@ export function saasCashSourceLabel(source: SaasCashMovementSource | string): st
 }
 
 export function saasCashTypeLabel(type: SaasCashMovementType | string): string {
-  return String(type || '').toLowerCase() === 'expense' ? 'Saída' : 'Entrada';
+  const t = String(type || '').toLowerCase();
+  if (t === 'expense') return 'Saída';
+  if (t === 'transfer') return 'Transferência';
+  return 'Entrada';
 }
 
 export function computeSaasCashSummaryFromRows(
@@ -298,12 +320,15 @@ export function computeSaasCashSummaryFromRows(
 ): SaasCashSummary {
   let periodIncome = 0;
   let periodExpense = 0;
+  let periodTransfer = 0;
 
   for (const row of movements) {
     const amount = Number(row.amount || 0);
     if (row.type === 'expense') {
       periodExpense += amount;
-    } else {
+    } else if (row.type === 'transfer') {
+      periodTransfer += amount;
+    } else if (row.type === 'income') {
       periodIncome += amount;
     }
   }
@@ -311,6 +336,7 @@ export function computeSaasCashSummaryFromRows(
   return {
     periodIncome,
     periodExpense,
+    periodTransfer,
     netResult: periodIncome - periodExpense,
     movementCount: movements.length,
   };
@@ -444,9 +470,10 @@ export function computeSaasCashHiddenByMarcoFromRows(
     const amount = Number(row.amount || 0);
     if (row.type === 'expense') {
       hiddenExpense += amount;
-    } else {
+    } else if (row.type === 'income') {
       hiddenIncome += amount;
     }
+    // transfer: fora do P&L oculto
 
     const instant =
       parseFinancialInstant(String(row.created_at || '')) ??
@@ -1103,6 +1130,279 @@ export async function reprocessSaasCashForPaidCharges(
   return { backfill, sync, cashStartAt };
 }
 
+export type CreateExtraordinarySaasIncomeInput = {
+  amount: number;
+  movementDate: string;
+  description: string;
+  category?: string;
+  companyId?: string | null;
+  asaasPaymentId?: string | null;
+  externalReference?: string | null;
+  clientName?: string | null;
+  paymentMethod?: string | null;
+  notes?: string | null;
+  createdBy?: string | null;
+};
+
+export type UpdateExtraordinarySaasIncomeInput = {
+  id: string;
+  description?: string;
+  category?: string;
+  clientName?: string | null;
+  paymentMethod?: string | null;
+  notes?: string | null;
+  movementDate?: string;
+  /** Não permite alterar type, amount, source ou transformar em transfer/expense. */
+  updatedBy?: string | null;
+};
+
+async function findIncomeByExternalReference(
+  supabaseAdmin: SupabaseClient,
+  externalReference: string,
+): Promise<SaasCashMovement | null> {
+  const ref = String(externalReference || '').trim();
+  if (!ref) return null;
+  const { data } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .select('*')
+    .eq('type', 'income')
+    .eq('source', 'manual')
+    .contains('metadata', { external_reference: ref })
+    .maybeSingle();
+  return data ? parseMovementRow(data as Record<string, unknown>) : null;
+}
+
+async function auditSaasCashExtraordinary(
+  supabaseAdmin: SupabaseClient,
+  action: 'CREATE' | 'UPDATE',
+  movementId: string,
+  actorId: string | null | undefined,
+  details: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      user_id: actorId || null,
+      module: 'SAAS_CASH',
+      action: `SAAS_CASH_EXTRAORDINARY_${action}`,
+      description:
+        action === 'CREATE'
+          ? `Receita extraordinária SV LOTES criada — ${movementId.slice(0, 8)}`
+          : `Receita extraordinária SV LOTES atualizada — ${movementId.slice(0, 8)}`,
+      reference_id: movementId,
+      new_data: {
+        ...details,
+        origin: MANUAL_EXTRAORDINARY_INCOME_ORIGIN,
+        business_unit: 'SV_LOTES',
+      },
+    });
+  } catch (err) {
+    console.warn('[saas-cash-extraordinary] audit_logs falhou:', err);
+  }
+}
+
+/**
+ * Receita extraordinária SV LOTES (ex.: link Asaas avulso / consultoria).
+ * business_unit implícita = SV_LOTES; source = manual; origin metadata = MANUAL_EXTRAORDINARY_INCOME.
+ * Idempotente por asaas_payment_id e por external_reference quando informados.
+ */
+export async function createExtraordinarySaasIncome(
+  supabaseAdmin: SupabaseClient,
+  input: CreateExtraordinarySaasIncomeInput,
+): Promise<{ movement: SaasCashMovement; created: boolean }> {
+  const amount = Math.round(Number(input.amount) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Valor da receita deve ser maior que zero.');
+  }
+  const movementDate = normalizeMovementDate(input.movementDate);
+  const description = String(input.description || '').trim();
+  if (!description) {
+    throw new Error('Descrição é obrigatória.');
+  }
+  const asaasPaymentId = input.asaasPaymentId
+    ? String(input.asaasPaymentId).trim() || null
+    : null;
+  const externalReference = input.externalReference
+    ? String(input.externalReference).trim() || null
+    : null;
+
+  if (asaasPaymentId) {
+    const { data: existing } = await supabaseAdmin
+      .from('saas_cash_movements')
+      .select('*')
+      .eq('asaas_payment_id', asaasPaymentId)
+      .eq('type', 'income')
+      .maybeSingle();
+    if (existing) {
+      return {
+        movement: parseMovementRow(existing as Record<string, unknown>),
+        created: false,
+      };
+    }
+  }
+
+  if (externalReference) {
+    const byRef = await findIncomeByExternalReference(supabaseAdmin, externalReference);
+    if (byRef) {
+      return { movement: byRef, created: false };
+    }
+  }
+
+  const insertRow = {
+    company_id: input.companyId ? String(input.companyId) : null,
+    saas_charge_id: null,
+    asaas_payment_id: asaasPaymentId,
+    type: 'income' as const,
+    category:
+      String(input.category || 'Receita extraordinária').trim() ||
+      'Receita extraordinária',
+    description,
+    amount,
+    movement_date: movementDate,
+    source: 'manual' as const,
+    metadata: {
+      extraordinary: true,
+      origin: MANUAL_EXTRAORDINARY_INCOME_ORIGIN,
+      business_unit: 'SV_LOTES',
+      client_name: input.clientName ?? null,
+      payment_method: input.paymentMethod ?? null,
+      notes: input.notes ?? null,
+      asaas_payment_id: asaasPaymentId,
+      external_reference: externalReference,
+    },
+    created_by: input.createdBy ?? null,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error) {
+    if (error.code === '23505' && asaasPaymentId) {
+      const { data: dup } = await supabaseAdmin
+        .from('saas_cash_movements')
+        .select('*')
+        .eq('asaas_payment_id', asaasPaymentId)
+        .eq('type', 'income')
+        .maybeSingle();
+      if (dup) {
+        return {
+          movement: parseMovementRow(dup as Record<string, unknown>),
+          created: false,
+        };
+      }
+    }
+    throw new Error(error.message || 'Falha ao lançar receita extraordinária.');
+  }
+
+  const movement = parseMovementRow(data as Record<string, unknown>);
+  await auditSaasCashExtraordinary(supabaseAdmin, 'CREATE', movement.id, input.createdBy, {
+    amount: movement.amount,
+    movement_date: movement.movement_date,
+    asaas_payment_id: asaasPaymentId,
+    external_reference: externalReference,
+  });
+
+  return { movement, created: true };
+}
+
+/**
+ * Edição segura de receita extraordinária: só campos descritivos/data.
+ * Impede alterar type/amount/source (não vira transfer nem expense).
+ */
+export async function updateExtraordinarySaasIncome(
+  supabaseAdmin: SupabaseClient,
+  input: UpdateExtraordinarySaasIncomeInput,
+): Promise<SaasCashMovement> {
+  const id = String(input.id || '').trim();
+  if (!id) throw new Error('ID da movimentação é obrigatório.');
+
+  const { data: existing, error: loadError } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (loadError) throw new Error(loadError.message);
+  if (!existing) throw new Error('Movimentação não encontrada.');
+
+  const row = parseMovementRow(existing as Record<string, unknown>);
+  const meta = row.metadata || {};
+  const isExtraordinary =
+    row.source === 'manual' &&
+    (meta.extraordinary === true || meta.origin === MANUAL_EXTRAORDINARY_INCOME_ORIGIN);
+
+  if (!isExtraordinary || row.type !== 'income') {
+    throw new Error('Somente receita extraordinária manual pode ser editada por este fluxo.');
+  }
+
+  const nextDescription =
+    input.description !== undefined
+      ? String(input.description).trim()
+      : row.description || '';
+  if (!nextDescription) throw new Error('Descrição é obrigatória.');
+
+  const nextCategory =
+    input.category !== undefined
+      ? String(input.category).trim() || row.category
+      : row.category;
+
+  const nextDate =
+    input.movementDate !== undefined
+      ? normalizeMovementDate(input.movementDate)
+      : row.movement_date;
+
+  const nextMeta = {
+    ...meta,
+    extraordinary: true,
+    origin: MANUAL_EXTRAORDINARY_INCOME_ORIGIN,
+    business_unit: 'SV_LOTES',
+    client_name:
+      input.clientName !== undefined ? input.clientName : (meta.client_name ?? null),
+    payment_method:
+      input.paymentMethod !== undefined
+        ? input.paymentMethod
+        : (meta.payment_method ?? null),
+    notes: input.notes !== undefined ? input.notes : (meta.notes ?? null),
+    last_edited_at: new Date().toISOString(),
+    last_edited_by: input.updatedBy ?? null,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .update({
+      description: nextDescription,
+      category: nextCategory,
+      movement_date: nextDate,
+      metadata: nextMeta,
+      // type/amount/source intencionalmente omitidos
+    })
+    .eq('id', id)
+    .eq('type', 'income')
+    .eq('source', 'manual')
+    .select('*')
+    .single();
+
+  if (error) throw new Error(error.message || 'Falha ao atualizar receita extraordinária.');
+
+  const movement = parseMovementRow(data as Record<string, unknown>);
+  await auditSaasCashExtraordinary(supabaseAdmin, 'UPDATE', movement.id, input.updatedBy, {
+    before: {
+      description: row.description,
+      category: row.category,
+      movement_date: row.movement_date,
+    },
+    after: {
+      description: movement.description,
+      category: movement.category,
+      movement_date: movement.movement_date,
+    },
+  });
+
+  return movement;
+}
+
 export async function listSaasCashMovements(
   supabaseAdmin: SupabaseClient,
   options: ListSaasCashMovementsOptions = {},
@@ -1295,6 +1595,26 @@ async function insertMappedAsaasCashMovement(
     return { movement: existing, created: false };
   }
 
+  // Extrato não pode duplicar receita já criada por webhook/charge/manual.
+  const paymentId = mapped.asaas_payment_id
+    ? String(mapped.asaas_payment_id).trim()
+    : '';
+  if (mapped.type === 'income' && paymentId) {
+    const { data: existingIncome } = await supabaseAdmin
+      .from('saas_cash_movements')
+      .select('*')
+      .eq('asaas_payment_id', paymentId)
+      .eq('type', 'income')
+      .limit(1)
+      .maybeSingle();
+    if (existingIncome) {
+      return {
+        movement: parseMovementRow(existingIncome as Record<string, unknown>),
+        created: false,
+      };
+    }
+  }
+
   const companyId = await resolveCompanyIdFromAsaasPayment(
     supabaseAdmin,
     mapped.asaas_payment_id,
@@ -1361,6 +1681,7 @@ export async function syncAsaasCashMovements(
   let created = 0;
   let incomeCreated = 0;
   let expenseCreated = 0;
+  let transferCreated = 0;
   let skipped = 0;
   let skippedDuplicate = 0;
   let skippedBeforeStartAt = 0;
@@ -1414,6 +1735,8 @@ export async function syncAsaasCashMovements(
         incomeCreated += 1;
       } else if (mapped.type === 'expense') {
         expenseCreated += 1;
+      } else if (mapped.type === 'transfer') {
+        transferCreated += 1;
       }
     } else {
       skipped += 1;
@@ -1432,6 +1755,7 @@ export async function syncAsaasCashMovements(
     created,
     incomeCreated,
     expenseCreated,
+    transferCreated,
     skipped,
     skippedDuplicate,
     skippedBeforeStartAt,
@@ -1448,6 +1772,7 @@ export async function syncAsaasCashMovements(
     created,
     incomeCreated,
     expenseCreated,
+    transferCreated,
     skipped,
     skippedDuplicate,
     skippedBeforeStartAt,
