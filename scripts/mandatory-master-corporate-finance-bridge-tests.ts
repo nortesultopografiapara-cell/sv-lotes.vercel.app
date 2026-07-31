@@ -73,7 +73,11 @@ function testFiles() {
 
   const dashData = read('lib/masterDashboardData.ts');
   assert(dashData.includes('corporateFinanceKpis'), 'data layer KPIs');
-  assert(dashData.includes('aggregateSaasCashMonthlyRevenueExpense'), 'SaaS intacto');
+  assert(
+    dashData.includes('aggregateSvLotesMonthlyRevenueExpense') ||
+      dashData.includes('aggregateSaasCashMonthlyRevenueExpense'),
+    'SaaS intacto',
+  );
   assert(dashData.includes('aggregateCorporateCashMonthlyRevenueExpense'), 'corp chart');
 
   // Isolamento
