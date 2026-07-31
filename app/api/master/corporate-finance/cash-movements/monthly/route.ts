@@ -4,6 +4,7 @@ import {
   getCorporateFinanceServiceClient,
 } from '@/lib/master/corporateFinance/apiAuth';
 import { aggregateCorporateCashMonthlyRevenueExpense } from '@/lib/master/corporateFinance/cashMath';
+import { CORPORATE_BUSINESS_UNITS } from '@/lib/master/corporateFinance/businessUnit';
 
 export async function GET(request: Request) {
   const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
@@ -23,8 +24,18 @@ export async function GET(request: Request) {
     if (!Number.isFinite(year) || year < 2000 || year > 2100) {
       throw new Error('Ano inválido.');
     }
-    const data = await aggregateCorporateCashMonthlyRevenueExpense(supabaseAdmin, year);
-    return NextResponse.json(data);
+    const rawUnit = (searchParams.get('businessUnit') || searchParams.get('business_unit') || '')
+      .trim()
+      .toUpperCase();
+    const businessUnit =
+      rawUnit && (CORPORATE_BUSINESS_UNITS as readonly string[]).includes(rawUnit)
+        ? rawUnit
+        : null;
+
+    const data = await aggregateCorporateCashMonthlyRevenueExpense(supabaseAdmin, year, {
+      businessUnit,
+    });
+    return NextResponse.json({ ...data, businessUnit: businessUnit || 'ALL' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha na agregação mensal.';
     return NextResponse.json({ error: message }, { status: 400 });

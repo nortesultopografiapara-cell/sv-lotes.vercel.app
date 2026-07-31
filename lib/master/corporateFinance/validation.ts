@@ -7,6 +7,10 @@ import {
   type MasterCorporateFinancialAccountInput,
   type MasterCorporateFinancialCategoryInput,
 } from './types';
+import {
+  CORPORATE_BUSINESS_UNITS,
+  type CorporateBusinessUnit,
+} from './businessUnit';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -53,6 +57,14 @@ function parseAccountType(value: unknown): CorporateAccountType {
   return s as CorporateAccountType;
 }
 
+function parseBusinessUnit(value: unknown): CorporateBusinessUnit {
+  const s = String(value || 'SV_TOPOGRAFIA').trim().toUpperCase();
+  if (!(CORPORATE_BUSINESS_UNITS as readonly string[]).includes(s)) {
+    throw new Error('Unidade de negócio inválida.');
+  }
+  return s as CorporateBusinessUnit;
+}
+
 function parseCategoryType(value: unknown): CorporateCategoryType {
   const s = String(value || '').trim().toUpperCase();
   if (!(CORPORATE_CATEGORY_TYPES as readonly string[]).includes(s)) {
@@ -83,6 +95,7 @@ export function validateCorporateAccountInput(
   return {
     name,
     account_type,
+    business_unit: parseBusinessUnit(raw.business_unit ?? raw.businessUnit),
     institution_name: cleanText(raw.institution_name ?? raw.institutionName, 200),
     branch: cleanText(raw.branch, 50),
     account_number: cleanText(raw.account_number ?? raw.accountNumber, 80),

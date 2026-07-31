@@ -19,13 +19,40 @@ import {
   buildEmptyMonthlyRevenueExpense,
   SAAS_CASH_MONTH_LABELS,
   sumSaasCashReceivedIncome,
+  sumSaasCashPeriodTotals,
   type MonthlyRevenueExpense,
 } from '@/lib/saasCashMovements';
 import { aggregateCorporateCashMonthlyRevenueExpense } from '@/lib/master/corporateFinance/cashMath';
+import { DASHBOARD_CORPORATE_BUSINESS_UNIT } from '@/lib/master/corporateFinance/businessUnitScope';
 import { computeTopographyProjectKpis } from '@/lib/master/topography/projectsService';
 import type { MasterTopographyProjectKpis } from '@/lib/master/topography/types';
 import { computeTopographyQuoteKpis } from '@/lib/master/topography/quotesService';
 import type { MasterTopographyQuoteKpis } from '@/lib/master/topography/quoteTypes';
+
+/**
+ * Mapeamento de fontes — Dashboard Executivo (Etapa 4)
+ *
+ * SV LOTES (SaaS):
+ * | KPI                 | Fonte                         | Função / critério                          |
+ * |---------------------|-------------------------------|--------------------------------------------|
+ * | Empresas ativas     | companies                     | status_operacional / active                |
+ * | Assinaturas         | companies                     | isBillableCompany                          |
+ * | MRR                 | companies + pricing           | calculateMrrFromCompanies (recorrente)     |
+ * | Receita Recebida    | saas_cash_movements           | type=income, mês civil atual, sem transfer |
+ * | Receita a Receber   | master_saas_invoices          | computeSaasBillingMetrics                  |
+ * | Inadimplência       | master_saas_invoices          | faturas vencidas                           |
+ * | Transferências      | saas_cash_movements           | type=transfer, mês atual (informativo)     |
+ * | Gráfico R x D       | saas_cash_movements           | aggregateSaasCashMonthly (exclui transfer) |
+ *
+ * SV Topografia:
+ * | KPI                 | Fonte                                      | Filtro                |
+ * |---------------------|--------------------------------------------|-----------------------|
+ * | Receita/Despesa/mês | master_corporate_cash_movements + contas   | business_unit=TOPO    |
+ * | Resultado           | income − expense (sem transferências)      | idem                  |
+ * | Saldo               | contas financeiras ativas da unidade       | idem                  |
+ * | A receber / A pagar | master_corporate_receivables / payables    | business_unit=TOPO    |
+ * | Gráfico R x D       | aggregateCorporateCashMonthly…             | business_unit=TOPO    |
+ */
 
 export type MasterPlanTier = 'BÁSICO' | 'BUSINESS' | 'PROFISSIONAL' | 'PERSONALIZADO';
 
@@ -69,6 +96,8 @@ export type MasterDashboardData = {
     receivedRevenue: number;
     receivedRevenueHiddenCount: number;
     receivedRevenueHiddenTotal: number;
+    /** Transferências Asaas no mês atual — informativo, fora do P&L/MRR. */
+    periodTransfer: number;
     revenueToReceive: number;
     delinquencyAmount: number;
     totalUsers: number;
@@ -286,7 +315,32 @@ export async function loadMasterDashboardData(
   companies.forEach((c) => {
     if (isBillableCompany(c)) activeSubscriptions++;
   });
-  const paymentsReceivedFromCash = await sumSaasCashReceivedIncome(supabase, cashStartAt);
+
+  const now = new Date();
+  const monthFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
+  const monthTo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
+    .toISOString()
+    .slice(0, 10);
+
+  const paymentsReceivedFromCash = await sumSaasCashReceivedIncome(supabase, cashStartAt, {
+    fromDate: monthFrom,
+    toDate: monthTo,
+  });
+  let periodTransfer = 0;
+  try {
+    const periodTotals = await sumSaasCashPeriodTotals(supabase, cashStartAt, {
+      fromDate: monthFrom,
+      toDate: monthTo,
+    });
+    periodTransfer = periodTotals.periodTransfer;
+  } catch (err) {
+    errors.push(
+      `saas_period_transfer: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   const billingMetrics = computeSaasBillingMetrics(
     invoices as Parameters<typeof computeSaasBillingMetrics>[0],
     mrr,
@@ -309,10 +363,11 @@ export async function loadMasterDashboardData(
   let topographyMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
   let topographyMonthlyError: string | null = null;
   try {
-    // Preferência: esta chamada funciona com service_role.
-    // No browser o Dashboard V2 sobrescreve via API Master (service role) —
-    // ver MasterExecutiveDashboard — porque RLS no client pode retornar [].
-    const corp = await aggregateCorporateCashMonthlyRevenueExpense(supabase, financialYear);
+    const corp = await aggregateCorporateCashMonthlyRevenueExpense(
+      supabase,
+      financialYear,
+      { businessUnit: DASHBOARD_CORPORATE_BUSINESS_UNIT },
+    );
     topographyMonthlyFinancials = corp.months.map((m) => ({
       month: m.month,
       label: SAAS_CASH_MONTH_LABELS[m.month - 1] || String(m.month),
@@ -381,9 +436,9 @@ export async function loadMasterDashboardData(
         import('@/lib/master/corporateFinance/payablesService'),
       ]);
     const [cash, ar, ap] = await Promise.all([
-      getCashHubKpis(supabase),
-      computeReceivableKpis(supabase),
-      computePayableKpis(supabase),
+      getCashHubKpis(supabase, { businessUnit: DASHBOARD_CORPORATE_BUSINESS_UNIT }),
+      computeReceivableKpis(supabase, { businessUnit: DASHBOARD_CORPORATE_BUSINESS_UNIT }),
+      computePayableKpis(supabase, { businessUnit: DASHBOARD_CORPORATE_BUSINESS_UNIT }),
     ]);
     corporateFinanceKpis = {
       monthIncome: cash.monthIncome,
@@ -581,6 +636,7 @@ export async function loadMasterDashboardData(
       receivedRevenue: paymentsReceivedFromCash.visibleTotal,
       receivedRevenueHiddenCount: paymentsReceivedFromCash.hiddenCount,
       receivedRevenueHiddenTotal: paymentsReceivedFromCash.hiddenTotal,
+      periodTransfer,
       revenueToReceive: billingMetrics.revenueToReceive,
       delinquencyAmount: billingMetrics.delinquencyAmount,
       totalUsers: usersRes.count ?? 0,

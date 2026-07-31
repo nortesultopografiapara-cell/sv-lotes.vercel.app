@@ -7,6 +7,7 @@ import {
   type MasterCorporateReceivableInput,
   type MasterCorporateSettlementInput,
 } from './arApTypes';
+import { CORPORATE_BUSINESS_UNITS, type CorporateBusinessUnit } from './businessUnit';
 import { computeNetAmount, roundMoney } from './arApMath';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -78,6 +79,18 @@ function parseOrigin(value: unknown): CorporatePaymentOrigin {
   return s as CorporatePaymentOrigin;
 }
 
+function parseBusinessUnit(value: unknown, required = true): CorporateBusinessUnit {
+  if (value == null || value === '') {
+    if (required) throw new Error('Unidade de negócio é obrigatória.');
+    return 'SV_TOPOGRAFIA';
+  }
+  const s = String(value).trim().toUpperCase();
+  if (!(CORPORATE_BUSINESS_UNITS as readonly string[]).includes(s)) {
+    throw new Error('Unidade de negócio inválida.');
+  }
+  return s as CorporateBusinessUnit;
+}
+
 function parseOptionalEmail(value: unknown): string | null {
   const s = cleanText(value, 200);
   if (!s) return null;
@@ -137,6 +150,63 @@ export function validateReceivableInput(
   const installments = parseInstallments(raw);
   const statusRaw = String(raw.status || 'OPEN').trim().toUpperCase();
   const status = statusRaw === 'DRAFT' ? 'DRAFT' : 'OPEN';
+  const business_unit = parseBusinessUnit(raw.business_unit ?? raw.businessUnit, true);
+  const already_received = Boolean(
+    raw.already_received ?? raw.alreadyReceived ?? raw.received_on_create,
+  );
+
+  let settlement: MasterCorporateSettlementInput | null = null;
+  if (already_received) {
+    const settleRaw =
+      (raw.settlement as Record<string, unknown> | undefined) ||
+      (raw.settlement_payload as Record<string, unknown> | undefined) ||
+      raw;
+    settlement = validateSettlementInput({
+      financial_account_id:
+        settleRaw.financial_account_id ??
+        settleRaw.financialAccountId ??
+        raw.financial_account_id ??
+        raw.financialAccountId,
+      payment_date:
+        settleRaw.payment_date ??
+        settleRaw.paymentDate ??
+        raw.payment_date ??
+        raw.paymentDate ??
+        raw.issue_date ??
+        raw.issueDate,
+      amount:
+        settleRaw.amount ??
+        computeNetAmount({
+          original_amount: amounts.original_amount,
+          discount_amount: amounts.discount_amount,
+          interest_amount: amounts.interest_amount,
+          fine_amount: amounts.fine_amount,
+        }),
+      payment_method:
+        settleRaw.payment_method ??
+        settleRaw.paymentMethod ??
+        raw.payment_method ??
+        raw.paymentMethod,
+      reference: settleRaw.reference ?? raw.reference ?? null,
+      notes: settleRaw.notes ?? null,
+      origin: settleRaw.origin ?? 'MANUAL',
+      idempotency_key: settleRaw.idempotency_key ?? settleRaw.idempotencyKey ?? null,
+      asaas_payment_id:
+        settleRaw.asaas_payment_id ??
+        settleRaw.asaasPaymentId ??
+        raw.asaas_payment_id ??
+        raw.asaasPaymentId ??
+        null,
+    });
+  }
+
+  const financial_account_id = parseOptionalUuid(
+    raw.financial_account_id ?? raw.financialAccountId,
+    'Conta financeira',
+  );
+  if (already_received && !financial_account_id && !settlement?.financial_account_id) {
+    throw new Error('Conta financeira é obrigatória para recebível já recebido.');
+  }
 
   return {
     description: cleanRequired(raw.description, 'Descrição', 500),
@@ -152,10 +222,9 @@ export function validateReceivableInput(
     quote_id: parseOptionalUuid(raw.quote_id ?? raw.quoteId, 'Orçamento'),
     category_id: cleanRequired(raw.category_id ?? raw.categoryId, 'Categoria', 64),
     cost_center_id: parseOptionalUuid(raw.cost_center_id ?? raw.costCenterId, 'Centro'),
-    financial_account_id: parseOptionalUuid(
-      raw.financial_account_id ?? raw.financialAccountId,
-      'Conta financeira',
-    ),
+    financial_account_id:
+      financial_account_id || settlement?.financial_account_id || null,
+    business_unit,
     issue_date: parseDate(raw.issue_date ?? raw.issueDate, 'Data de emissão'),
     competence_date: parseDate(
       raw.competence_date ?? raw.competenceDate,
@@ -163,10 +232,15 @@ export function validateReceivableInput(
     ),
     due_date: parseDate(raw.due_date ?? raw.dueDate, 'Data de vencimento'),
     ...amounts,
-    payment_method: parsePaymentMethod(raw.payment_method ?? raw.paymentMethod, false),
+    payment_method: parsePaymentMethod(
+      raw.payment_method ?? raw.paymentMethod ?? settlement?.payment_method,
+      already_received,
+    ),
     ...installments,
     notes: cleanText(raw.notes, 4000),
-    status,
+    status: already_received ? 'OPEN' : status,
+    already_received,
+    settlement,
   };
 }
 
@@ -213,6 +287,16 @@ export function validateSettlementInput(
   const amount = parseMoney(raw.amount, 'Valor');
   if (amount <= 0) throw new Error('Valor deve ser maior que zero.');
 
+  const asaas_payment_id = cleanText(
+    raw.asaas_payment_id ?? raw.asaasPaymentId,
+    120,
+  );
+  const reference =
+    cleanText(raw.reference, 200) || asaas_payment_id;
+  const idempotency_key =
+    cleanText(raw.idempotency_key ?? raw.idempotencyKey, 120) ||
+    (asaas_payment_id ? `ASAAS_PAY:${asaas_payment_id}` : null);
+
   return {
     financial_account_id: cleanRequired(
       raw.financial_account_id ?? raw.financialAccountId,
@@ -225,9 +309,10 @@ export function validateSettlementInput(
       raw.payment_method ?? raw.paymentMethod,
       true,
     ) as CorporatePaymentMethod,
-    reference: cleanText(raw.reference, 200),
+    reference,
     notes: cleanText(raw.notes, 2000),
     origin: parseOrigin(raw.origin),
-    idempotency_key: cleanText(raw.idempotency_key ?? raw.idempotencyKey, 120),
+    idempotency_key,
+    asaas_payment_id,
   };
 }

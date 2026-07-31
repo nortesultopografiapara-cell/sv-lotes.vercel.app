@@ -50,7 +50,10 @@ export function buildSaasCashExportFilename(ext: 'xlsx' | 'pdf', at: Date = new 
 
 export function mapMovementsToExportRows(movements: SaasCashMovement[]): SaasCashExportRow[] {
   return movements.map((movement) => {
-    const signed = movement.type === 'expense' ? -movement.amount : movement.amount;
+    const signed =
+      movement.type === 'expense' || movement.type === 'transfer'
+        ? -movement.amount
+        : movement.amount;
     return {
       date: formatDateBr(movement.movement_date),
       company: movement.company_name || '—',
@@ -141,9 +144,11 @@ export async function exportSaasCashExcel(params: SaasCashExportParams): Promise
   ws.addRow([
     'Entradas',
     formatSaasCurrency(params.summary.periodIncome),
-    'Saídas',
+    'Despesas',
     formatSaasCurrency(params.summary.periodExpense),
-    'Saldo',
+    'Transferências',
+    formatSaasCurrency(params.summary.periodTransfer || 0),
+    'Resultado',
     formatSaasCurrency(params.summary.netResult),
     `${params.summary.movementCount} mov.`,
   ]).font = { bold: true };
@@ -266,9 +271,13 @@ export async function exportSaasCashPdf(params: SaasCashExportParams): Promise<v
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text(`Entradas: ${formatSaasCurrency(params.summary.periodIncome)}`, margin, y);
-    doc.text(`Saídas: ${formatSaasCurrency(params.summary.periodExpense)}`, margin + 170, y);
-    doc.text(`Saldo: ${formatSaasCurrency(params.summary.netResult)}`, margin + 320, y);
-    doc.text(`Movimentações: ${params.summary.movementCount}`, margin + 470, y);
+    doc.text(`Despesas: ${formatSaasCurrency(params.summary.periodExpense)}`, margin + 130, y);
+    doc.text(
+      `Transfer.: ${formatSaasCurrency(params.summary.periodTransfer || 0)}`,
+      margin + 260,
+      y,
+    );
+    doc.text(`Resultado: ${formatSaasCurrency(params.summary.netResult)}`, margin + 390, y);
     y += 20;
     return y;
   };

@@ -52,7 +52,9 @@ function CorporateFinanceHubInner() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/master/corporate-finance/summary?${qs()}`);
+      const res = await fetch(
+        `/api/master/corporate-finance/summary?${qs()}&businessUnit=SV_TOPOGRAFIA`,
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar resumo.');
       setKpis(data.kpis);

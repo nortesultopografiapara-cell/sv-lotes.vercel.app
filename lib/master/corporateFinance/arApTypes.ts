@@ -1,5 +1,9 @@
 /** Tipos — Contas a Receber / Pagar (Fase 6.2). */
 
+import type { CorporateBusinessUnit } from './businessUnit';
+
+export type { CorporateBusinessUnit };
+
 export const CORPORATE_PAYMENT_METHODS = [
   'PIX',
   'TED',
@@ -60,6 +64,8 @@ export type MasterCorporateReceivable = {
   category_id: string;
   cost_center_id: string | null;
   financial_account_id: string | null;
+  /** Unidade do título (SV_LOTES | SV_TOPOGRAFIA). Backfill histórico = SV_TOPOGRAFIA. */
+  business_unit: CorporateBusinessUnit;
   issue_date: string;
   competence_date: string;
   due_date: string;
@@ -101,6 +107,7 @@ export type MasterCorporateReceivableInput = {
   category_id: string;
   cost_center_id: string | null;
   financial_account_id: string | null;
+  business_unit: CorporateBusinessUnit;
   issue_date: string;
   competence_date: string;
   due_date: string;
@@ -113,6 +120,12 @@ export type MasterCorporateReceivableInput = {
   installment_total: number | null;
   notes: string | null;
   status?: 'DRAFT' | 'OPEN';
+  /**
+   * Se true na criação, exige settlement e liquida o título logo após o insert
+   * (1 pagamento + no máximo 1 movimento RECEIVABLE_PAYMENT).
+   */
+  already_received?: boolean;
+  settlement?: MasterCorporateSettlementInput | null;
 };
 
 export type MasterCorporateReceivablePayment = {
@@ -143,6 +156,8 @@ export type MasterCorporateSettlementInput = {
   notes: string | null;
   origin?: CorporatePaymentOrigin;
   idempotency_key?: string | null;
+  /** ID Asaas opcional — usado para idempotência; NÃO cria receita em saas_cash_movements. */
+  asaas_payment_id?: string | null;
 };
 
 export type MasterCorporatePayable = {
@@ -228,6 +243,7 @@ export type MasterCorporatePayablePayment = {
 export type MasterCorporateArApListFilters = {
   q?: string;
   status?: string;
+  businessUnit?: CorporateBusinessUnit | string;
   projectId?: string;
   quoteId?: string;
   categoryId?: string;

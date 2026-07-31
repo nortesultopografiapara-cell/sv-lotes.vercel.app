@@ -1,3 +1,16 @@
+/**
+ * Contas a Receber corporativas (Master).
+ *
+ * Fontes (não misturar no resultado):
+ * - Título / previsão: `master_corporate_receivables`
+ * - Liquidação: `master_corporate_receivable_payments` +
+ *   `master_corporate_cash_movements` (origin=`RECEIVABLE_PAYMENT`, 1x por payment.id)
+ * - Extrato / mensalidade / receita extraordinária SaaS: `saas_cash_movements`
+ *
+ * Liquidar um AR NÃO escreve em `saas_cash_movements`. Se `asaas_payment_id` já existir
+ * no Caixa SaaS, a liquidação corporativa ainda gera no máximo um movimento
+ * RECEIVABLE_PAYMENT (ledger corporativo), sem segunda receita SaaS.
+ */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   computeNetAmount,
@@ -19,6 +32,7 @@ import {
 } from './cashMovementsService';
 import { assertReceivableProvisionLimit } from './projectContextService';
 import { logCorporateFinanceAudit } from './service';
+import type { CorporateBusinessUnit } from './businessUnit';
 
 function nowIso() {
   return new Date().toISOString();
@@ -94,11 +108,33 @@ async function assertOptionalRefs(
   if (input.financial_account_id) {
     const { data, error } = await supabase
       .from('master_corporate_financial_accounts')
-      .select('id, is_active')
+      .select('id, is_active, business_unit')
       .eq('id', input.financial_account_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data || !data.is_active) throw new Error('Conta financeira inválida.');
+    const accountUnit = String(data.business_unit || 'SV_TOPOGRAFIA');
+    if (accountUnit !== input.business_unit) {
+      throw new Error('Conta financeira não pertence à unidade de negócio selecionada.');
+    }
+  }
+}
+
+async function assertAccountMatchesUnit(
+  supabase: SupabaseClient,
+  accountId: string,
+  businessUnit: CorporateBusinessUnit,
+) {
+  const { data, error } = await supabase
+    .from('master_corporate_financial_accounts')
+    .select('id, is_active, business_unit')
+    .eq('id', accountId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || !data.is_active) throw new Error('Conta financeira inválida.');
+  const accountUnit = String(data.business_unit || 'SV_TOPOGRAFIA');
+  if (accountUnit !== businessUnit) {
+    throw new Error('Conta financeira não pertence à unidade de negócio do título.');
   }
 }
 
@@ -116,6 +152,9 @@ function mapReceivable(row: Record<string, unknown>): MasterCorporateReceivable 
     category_id: String(row.category_id),
     cost_center_id: row.cost_center_id ? String(row.cost_center_id) : null,
     financial_account_id: row.financial_account_id ? String(row.financial_account_id) : null,
+    business_unit: (String(row.business_unit || 'SV_TOPOGRAFIA') === 'SV_LOTES'
+      ? 'SV_LOTES'
+      : 'SV_TOPOGRAFIA') as CorporateBusinessUnit,
     issue_date: String(row.issue_date).slice(0, 10),
     competence_date: String(row.competence_date).slice(0, 10),
     due_date: String(row.due_date).slice(0, 10),
@@ -228,6 +267,7 @@ function applyReceivableFilters(query: any, filters: MasterCorporateArApListFilt
   const dateField = filters.dateField || 'due_date';
   if (!filters.includeArchived) query = query.eq('is_archived', false);
   if (filters.status) query = query.eq('status', filters.status);
+  if (filters.businessUnit) query = query.eq('business_unit', filters.businessUnit);
   if (filters.projectId) query = query.eq('project_id', filters.projectId);
   if (filters.quoteId) query = query.eq('quote_id', filters.quoteId);
   if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
@@ -295,15 +335,23 @@ export async function listReceivables(
 
 export async function computeReceivableKpis(
   supabase: SupabaseClient,
+  opts: { businessUnit?: string | null } = {},
 ): Promise<MasterCorporateReceivableKpis> {
   const { from, to } = monthBounds();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('master_corporate_receivables')
-    .select('status, remaining_amount, due_date, received_amount, is_archived, canceled_at')
+    .select('id, status, remaining_amount, due_date, received_amount, is_archived, canceled_at')
     .eq('is_archived', false)
     .is('canceled_at', null);
+
+  if (opts.businessUnit) {
+    const { corporateBusinessUnitOrFilter } = await import('./businessUnitScope');
+    query = query.or(corporateBusinessUnitOrFilter(opts.businessUnit));
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
 
   const rows = data || [];
@@ -313,8 +361,10 @@ export async function computeReceivableKpis(
   let openCount = 0;
   let partialCount = 0;
   let receivedCount = 0;
+  const receivableIds: string[] = [];
 
   for (const r of rows) {
+    receivableIds.push(String(r.id));
     const remaining = Number(r.remaining_amount || 0);
     const status = String(r.status);
     if (status === 'OPEN') openCount += 1;
@@ -328,16 +378,23 @@ export async function computeReceivableKpis(
     }
   }
 
-  const { data: pays, error: pErr } = await supabase
-    .from('master_corporate_receivable_payments')
-    .select('amount, payment_date, is_reversed')
-    .eq('is_reversed', false)
-    .gte('payment_date', from)
-    .lte('payment_date', to);
-  if (pErr) throw new Error(pErr.message);
-  const receivedThisMonth = roundMoney(
-    (pays || []).reduce((s, p) => s + Number(p.amount || 0), 0),
-  );
+  let receivedThisMonth = 0;
+  if (!opts.businessUnit || receivableIds.length > 0) {
+    let paysQuery = supabase
+      .from('master_corporate_receivable_payments')
+      .select('amount, payment_date, is_reversed, receivable_id')
+      .eq('is_reversed', false)
+      .gte('payment_date', from)
+      .lte('payment_date', to);
+    if (opts.businessUnit) {
+      paysQuery = paysQuery.in('receivable_id', receivableIds);
+    }
+    const { data: pays, error: pErr } = await paysQuery;
+    if (pErr) throw new Error(pErr.message);
+    receivedThisMonth = roundMoney(
+      (pays || []).reduce((s, p) => s + Number(p.amount || 0), 0),
+    );
+  }
 
   return {
     totalOpen,
@@ -371,7 +428,7 @@ export async function createReceivable(
   });
 
   const code = await nextReceivableCode(supabase);
-  const preferDraft = input.status === 'DRAFT';
+  const preferDraft = input.status === 'DRAFT' && !input.already_received;
   const status = computeReceivableStatus({
     net_amount,
     received_amount: 0,
@@ -395,6 +452,7 @@ export async function createReceivable(
       category_id: input.category_id,
       cost_center_id: input.cost_center_id,
       financial_account_id: input.financial_account_id,
+      business_unit: input.business_unit,
       issue_date: input.issue_date,
       competence_date: input.competence_date,
       due_date: input.due_date,
@@ -418,7 +476,28 @@ export async function createReceivable(
     .single();
 
   if (error) throw new Error(error.message);
-  return mapReceivable(data as Record<string, unknown>);
+  let receivable = mapReceivable(data as Record<string, unknown>);
+
+  if (input.already_received && input.settlement) {
+    const settleAmount =
+      input.settlement.amount > 0 ? input.settlement.amount : receivable.net_amount;
+    const settled = await receiveReceivable(
+      supabase,
+      receivable.id,
+      {
+        ...input.settlement,
+        amount: settleAmount,
+        financial_account_id:
+          input.settlement.financial_account_id ||
+          input.financial_account_id ||
+          '',
+      },
+      userId,
+    );
+    receivable = settled.receivable;
+  }
+
+  return receivable;
 }
 
 export async function updateReceivable(
@@ -440,15 +519,20 @@ export async function updateReceivable(
   }
 
   await assertCategoryIncome(supabase, input.category_id);
-  await assertOptionalRefs(supabase, input);
+  // Unidade é imutável após criação — preserva a do título.
+  const lockedInput: MasterCorporateReceivableInput = {
+    ...input,
+    business_unit: existing.business_unit,
+  };
+  await assertOptionalRefs(supabase, lockedInput);
 
-  const net_amount = computeNetAmount(input);
+  const net_amount = computeNetAmount(lockedInput);
   if (existing.received_amount > net_amount) {
     throw new Error('Novo valor líquido menor que o já recebido.');
   }
 
   await assertReceivableProvisionLimit(supabase, {
-    projectId: input.project_id,
+    projectId: lockedInput.project_id,
     netAmount: net_amount,
     excludeReceivableId: id,
     allowOverProvision: options?.allowOverProvision,
@@ -459,39 +543,40 @@ export async function updateReceivable(
   const status = computeReceivableStatus({
     net_amount,
     received_amount: existing.received_amount,
-    due_date: input.due_date,
+    due_date: lockedInput.due_date,
     is_archived: false,
     canceled_at: null,
-    preferDraft: input.status === 'DRAFT' && existing.received_amount === 0,
+    preferDraft: lockedInput.status === 'DRAFT' && existing.received_amount === 0,
   });
 
   const { data, error } = await supabase
     .from('master_corporate_receivables')
     .update({
-      description: input.description,
-      customer_name: input.customer_name,
-      customer_document: input.customer_document,
-      customer_phone: input.customer_phone,
-      customer_email: input.customer_email,
-      project_id: input.project_id,
-      quote_id: input.quote_id,
-      category_id: input.category_id,
-      cost_center_id: input.cost_center_id,
-      financial_account_id: input.financial_account_id,
-      issue_date: input.issue_date,
-      competence_date: input.competence_date,
-      due_date: input.due_date,
-      original_amount: input.original_amount,
-      discount_amount: input.discount_amount,
-      interest_amount: input.interest_amount,
-      fine_amount: input.fine_amount,
+      description: lockedInput.description,
+      customer_name: lockedInput.customer_name,
+      customer_document: lockedInput.customer_document,
+      customer_phone: lockedInput.customer_phone,
+      customer_email: lockedInput.customer_email,
+      project_id: lockedInput.project_id,
+      quote_id: lockedInput.quote_id,
+      category_id: lockedInput.category_id,
+      cost_center_id: lockedInput.cost_center_id,
+      financial_account_id: lockedInput.financial_account_id,
+      business_unit: existing.business_unit,
+      issue_date: lockedInput.issue_date,
+      competence_date: lockedInput.competence_date,
+      due_date: lockedInput.due_date,
+      original_amount: lockedInput.original_amount,
+      discount_amount: lockedInput.discount_amount,
+      interest_amount: lockedInput.interest_amount,
+      fine_amount: lockedInput.fine_amount,
       net_amount,
       remaining_amount,
       status,
-      payment_method: input.payment_method,
-      installment_number: input.installment_number,
-      installment_total: input.installment_total,
-      notes: input.notes,
+      payment_method: lockedInput.payment_method,
+      installment_number: lockedInput.installment_number,
+      installment_total: lockedInput.installment_total,
+      notes: lockedInput.notes,
       updated_by: userId,
       updated_at: nowIso(),
     })
@@ -518,21 +603,69 @@ export async function receiveReceivable(
     throw new Error('Valor maior que o saldo pendente.');
   }
 
-  const { data: account, error: aErr } = await supabase
-    .from('master_corporate_financial_accounts')
-    .select('id, is_active')
-    .eq('id', input.financial_account_id)
-    .maybeSingle();
-  if (aErr) throw new Error(aErr.message);
-  if (!account || !account.is_active) throw new Error('Conta financeira inválida.');
+  await assertAccountMatchesUnit(
+    supabase,
+    input.financial_account_id,
+    existing.business_unit,
+  );
 
-  if (input.idempotency_key) {
+  const asaasPaymentId = input.asaas_payment_id
+    ? String(input.asaas_payment_id).trim()
+    : '';
+  const idempotencyKey =
+    input.idempotency_key ||
+    (asaasPaymentId ? `ASAAS_PAY:${asaasPaymentId}` : null);
+  const reference = input.reference || asaasPaymentId || null;
+
+  if (idempotencyKey) {
     const { data: dup } = await supabase
       .from('master_corporate_receivable_payments')
       .select('id')
-      .eq('idempotency_key', input.idempotency_key)
+      .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
     if (dup) throw new Error('Recebimento duplicado (idempotência).');
+  }
+
+  if (reference) {
+    const { data: dupRef } = await supabase
+      .from('master_corporate_receivable_payments')
+      .select('id')
+      .eq('receivable_id', id)
+      .eq('reference', reference)
+      .eq('is_reversed', false)
+      .maybeSingle();
+    if (dupRef) {
+      throw new Error('Recebimento duplicado (referência externa já usada neste título).');
+    }
+  }
+
+  if (asaasPaymentId) {
+    const { data: byRef } = await supabase
+      .from('master_corporate_receivable_payments')
+      .select('id')
+      .eq('is_reversed', false)
+      .eq('reference', asaasPaymentId)
+      .limit(1)
+      .maybeSingle();
+    if (byRef) {
+      throw new Error(
+        'Referência Asaas já liquidada em Contas a Receber. Não gera nova receita.',
+      );
+    }
+    const { data: byKey } = await supabase
+      .from('master_corporate_receivable_payments')
+      .select('id')
+      .eq('is_reversed', false)
+      .eq('idempotency_key', `ASAAS_PAY:${asaasPaymentId}`)
+      .limit(1)
+      .maybeSingle();
+    if (byKey) {
+      throw new Error(
+        'Referência Asaas já liquidada em Contas a Receber. Não gera nova receita.',
+      );
+    }
+    // Ledger SaaS: se já houver movimento com o mesmo asaas_payment_id, NÃO criamos
+    // segunda receita em saas_cash_movements (este fluxo nunca escreve no Caixa SaaS).
   }
 
   const { data: paymentRow, error: pErr } = await supabase
@@ -543,10 +676,10 @@ export async function receiveReceivable(
       payment_date: input.payment_date,
       amount: input.amount,
       payment_method: input.payment_method,
-      reference: input.reference,
+      reference,
       notes: input.notes,
-      origin: input.origin || 'MANUAL',
-      idempotency_key: input.idempotency_key || null,
+      origin: input.origin || (asaasPaymentId ? 'ASAAS' : 'MANUAL'),
+      idempotency_key: idempotencyKey,
       created_by: userId,
     })
     .select('*')
@@ -571,6 +704,7 @@ export async function receiveReceivable(
       else if (proj?.code) projectLabel = `Projeto ${String(proj.code)}`;
     }
 
+    // No máximo 1 movimento de caixa corporativo (idempotente por RECEIVABLE_PAYMENT:<payment.id>).
     await createMovementFromReceivablePayment(supabase, {
       receivable: {
         id: existing.id,
@@ -610,7 +744,13 @@ export async function receiveReceivable(
         : 'CORPORATE_RECEIVABLE_RECEIVED_PARTIAL',
     entityId: id,
     description: `Recebimento ${receivable.status === 'RECEIVED' ? 'total' : 'parcial'} ${receivable.code}: ${input.amount}`,
-    newData: { paymentId: payment.id, amount: input.amount, status: receivable.status },
+    newData: {
+      paymentId: payment.id,
+      amount: input.amount,
+      status: receivable.status,
+      business_unit: existing.business_unit,
+      asaas_payment_id: asaasPaymentId || null,
+    },
   });
 
   return { receivable, payment };
@@ -790,6 +930,7 @@ export async function restoreReceivable(
 export function receivablesToCsv(rows: MasterCorporateReceivable[]): string {
   const header = [
     'code',
+    'business_unit',
     'customer_name',
     'description',
     'issue_date',
@@ -804,6 +945,7 @@ export function receivablesToCsv(rows: MasterCorporateReceivable[]): string {
     lines.push(
       [
         r.code,
+        r.business_unit,
         JSON.stringify(r.customer_name),
         JSON.stringify(r.description),
         r.issue_date,

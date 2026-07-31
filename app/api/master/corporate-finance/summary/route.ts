@@ -7,6 +7,7 @@ import { getCashHubKpis } from '@/lib/master/corporateFinance/cashMovementsServi
 import { computePayableKpis } from '@/lib/master/corporateFinance/payablesService';
 import { computeReceivableKpis } from '@/lib/master/corporateFinance/receivablesService';
 import { getCorporateFinanceFoundationKpis } from '@/lib/master/corporateFinance/service';
+import { CORPORATE_BUSINESS_UNITS } from '@/lib/master/corporateFinance/businessUnit';
 
 export async function GET(request: Request) {
   const { client: supabaseAdmin, error: configError } = getCorporateFinanceServiceClient();
@@ -21,14 +22,24 @@ export async function GET(request: Request) {
   });
   if (!auth.ok) return auth.response;
 
+  const rawUnit = (searchParams.get('businessUnit') || searchParams.get('business_unit') || '')
+    .trim()
+    .toUpperCase();
+  const businessUnit =
+    rawUnit && (CORPORATE_BUSINESS_UNITS as readonly string[]).includes(rawUnit)
+      ? rawUnit
+      : null;
+
   try {
+    const unitOpts = businessUnit ? { businessUnit } : {};
     const [foundation, receivables, payables, cash] = await Promise.all([
       getCorporateFinanceFoundationKpis(supabaseAdmin),
-      computeReceivableKpis(supabaseAdmin),
-      computePayableKpis(supabaseAdmin),
-      getCashHubKpis(supabaseAdmin),
+      computeReceivableKpis(supabaseAdmin, unitOpts),
+      computePayableKpis(supabaseAdmin, unitOpts),
+      getCashHubKpis(supabaseAdmin, unitOpts),
     ]);
     return NextResponse.json({
+      businessUnit: businessUnit || 'ALL',
       kpis: {
         ...foundation,
         receivableOpen: receivables.totalOpen,

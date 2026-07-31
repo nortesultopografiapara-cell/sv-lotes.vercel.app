@@ -9,6 +9,10 @@ import {
   type MasterCorporateFinancialAccount,
 } from '@/lib/master/corporateFinance/types';
 import {
+  CORPORATE_BUSINESS_UNITS,
+  corporateBusinessUnitLabel,
+} from '@/lib/master/corporateFinance/businessUnit';
+import {
   CorporateFinanceGuard,
   useCorporateFinanceAuthParams,
 } from './CorporateFinanceGuard';
@@ -32,6 +36,7 @@ function formatDate(iso: string | null) {
 type FormState = {
   name: string;
   account_type: string;
+  business_unit: string;
   institution_name: string;
   branch: string;
   account_number: string;
@@ -46,6 +51,7 @@ type FormState = {
 const EMPTY: FormState = {
   name: '',
   account_type: 'CHECKING',
+  business_unit: 'SV_TOPOGRAFIA',
   institution_name: '',
   branch: '',
   account_number: '',
@@ -61,6 +67,7 @@ function fromAccount(a: MasterCorporateFinancialAccount): FormState {
   return {
     name: a.name,
     account_type: a.account_type,
+    business_unit: a.business_unit || 'SV_TOPOGRAFIA',
     institution_name: a.institution_name || '',
     branch: a.branch || '',
     account_number: a.account_number || '',
@@ -224,6 +231,7 @@ function AccountsInner() {
                 <thead>
                   <tr>
                     <th>Nome</th>
+                    <th>Unidade</th>
                     <th>Tipo</th>
                     <th>Saldo inicial</th>
                     <th>Entradas</th>
@@ -247,6 +255,7 @@ function AccountsInner() {
                           </span>
                         ) : null}
                       </td>
+                      <td>{corporateBusinessUnitLabel(a.business_unit || 'SV_TOPOGRAFIA')}</td>
                       <td>{corporateAccountTypeLabel(a.account_type)}</td>
                       <td>{formatCurrency(Number(a.balance?.openingBalance ?? a.opening_balance))}</td>
                       <td className={corporateFinanceValueClass('income')}>
@@ -333,6 +342,22 @@ function AccountsInner() {
                   </select>
                 </div>
                 <div>
+                  <label className={styles.label}>Unidade de negócio</label>
+                  <select
+                    className={styles.select}
+                    value={form.business_unit}
+                    onChange={(e) => setForm((f) => ({ ...f, business_unit: e.target.value }))}
+                  >
+                    {CORPORATE_BUSINESS_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {corporateBusinessUnitLabel(u)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className={styles.grid2}>
+                <div>
                   <label className={styles.label}>Instituição</label>
                   <input
                     className={styles.input}
@@ -340,8 +365,6 @@ function AccountsInner() {
                     onChange={(e) => setForm((f) => ({ ...f, institution_name: e.target.value }))}
                   />
                 </div>
-              </div>
-              <div className={styles.grid2}>
                 <div>
                   <label className={styles.label}>Agência</label>
                   <input
@@ -350,6 +373,8 @@ function AccountsInner() {
                     onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
                   />
                 </div>
+              </div>
+              <div className={styles.grid2}>
                 <div>
                   <label className={styles.label}>Número da conta</label>
                   <input

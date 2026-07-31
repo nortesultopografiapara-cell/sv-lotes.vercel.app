@@ -253,6 +253,7 @@ export async function buildReceivablesExcelBuffer(params: {
   const headerRowIdx = row;
   const headers = [
     'Código',
+    'Unidade',
     'Cliente',
     'Projeto',
     'Orçamento',
@@ -278,40 +279,41 @@ export async function buildReceivablesExcelBuffer(params: {
 
   for (const r of params.rows) {
     ws.getCell(row, 1).value = r.code;
-    ws.getCell(row, 2).value = r.customer;
-    ws.getCell(row, 3).value = r.project;
-    ws.getCell(row, 4).value = r.quote;
-    ws.getCell(row, 5).value = r.description;
-    ws.getCell(row, 5).alignment = { wrapText: true };
-    ws.getCell(row, 6).value = r.issueDate;
-    ws.getCell(row, 6).alignment = { horizontal: 'center' };
-    ws.getCell(row, 7).value = r.dueDate;
+    ws.getCell(row, 2).value = r.businessUnit;
+    ws.getCell(row, 3).value = r.customer;
+    ws.getCell(row, 4).value = r.project;
+    ws.getCell(row, 5).value = r.quote;
+    ws.getCell(row, 6).value = r.description;
+    ws.getCell(row, 6).alignment = { wrapText: true };
+    ws.getCell(row, 7).value = r.issueDate;
     ws.getCell(row, 7).alignment = { horizontal: 'center' };
-    applyMoney(ws.getCell(row, 8), r.originalAmount);
-    applyMoney(ws.getCell(row, 9), r.discount);
-    applyMoney(ws.getCell(row, 10), r.interest);
-    applyMoney(ws.getCell(row, 11), r.fine);
-    applyMoney(ws.getCell(row, 12), r.netAmount);
-    applyMoney(ws.getCell(row, 13), r.received);
-    applyMoney(ws.getCell(row, 14), r.remaining);
-    ws.getCell(row, 15).value = r.status;
-    ws.getCell(row, 16).value = r.account;
-    ws.getCell(row, 17).value = r.paymentMethod;
+    ws.getCell(row, 8).value = r.dueDate;
+    ws.getCell(row, 8).alignment = { horizontal: 'center' };
+    applyMoney(ws.getCell(row, 9), r.originalAmount);
+    applyMoney(ws.getCell(row, 10), r.discount);
+    applyMoney(ws.getCell(row, 11), r.interest);
+    applyMoney(ws.getCell(row, 12), r.fine);
+    applyMoney(ws.getCell(row, 13), r.netAmount);
+    applyMoney(ws.getCell(row, 14), r.received);
+    applyMoney(ws.getCell(row, 15), r.remaining);
+    ws.getCell(row, 16).value = r.status;
+    ws.getCell(row, 17).value = r.account;
+    ws.getCell(row, 18).value = r.paymentMethod;
     row += 1;
   }
 
   ws.getCell(row, 1).value = 'TOTAIS';
   ws.getCell(row, 1).font = { bold: true };
   applyMoney(
-    ws.getCell(row, 12),
+    ws.getCell(row, 13),
     params.rows.reduce((s, x) => s + x.netAmount, 0),
   );
   applyMoney(
-    ws.getCell(row, 13),
+    ws.getCell(row, 14),
     params.rows.reduce((s, x) => s + x.received, 0),
   );
   applyMoney(
-    ws.getCell(row, 14),
+    ws.getCell(row, 15),
     params.rows.reduce((s, x) => s + x.remaining, 0),
   );
 
@@ -320,7 +322,7 @@ export async function buildReceivablesExcelBuffer(params: {
     from: { row: headerRowIdx, column: 1 },
     to: { row: Math.max(headerRowIdx, row - 1), column: headers.length },
   };
-  const widths = [14, 24, 18, 12, 32, 12, 12, 14, 12, 12, 12, 14, 14, 14, 12, 18, 14];
+  const widths = [14, 16, 24, 18, 12, 32, 12, 12, 14, 12, 12, 12, 14, 14, 14, 12, 18, 14];
   widths.forEach((w, i) => {
     ws.getColumn(i + 1).width = w;
   });

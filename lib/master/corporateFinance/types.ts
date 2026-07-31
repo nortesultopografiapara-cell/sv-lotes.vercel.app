@@ -1,5 +1,15 @@
 /** Tipos — Financeiro Corporativo Master (Fase 6.1 — fundação). */
 
+import type { CorporateBusinessUnit } from './businessUnit';
+
+export {
+  CORPORATE_BUSINESS_UNITS,
+  CORPORATE_BUSINESS_UNIT_LABELS,
+  corporateBusinessUnitLabel,
+  isCorporateBusinessUnit,
+  type CorporateBusinessUnit,
+} from './businessUnit';
+
 export const CORPORATE_ACCOUNT_TYPES = [
   'CHECKING',
   'SAVINGS',
@@ -17,6 +27,7 @@ export type MasterCorporateFinancialAccount = {
   id: string;
   name: string;
   account_type: CorporateAccountType;
+  business_unit: CorporateBusinessUnit;
   institution_name: string | null;
   branch: string | null;
   account_number: string | null;
@@ -34,6 +45,7 @@ export type MasterCorporateFinancialAccount = {
 export type MasterCorporateFinancialAccountInput = {
   name: string;
   account_type: CorporateAccountType;
+  business_unit: CorporateBusinessUnit;
   institution_name: string | null;
   branch: string | null;
   account_number: string | null;

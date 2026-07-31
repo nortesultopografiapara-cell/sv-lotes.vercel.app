@@ -12,6 +12,10 @@ import {
   type MasterCorporateReceivable,
   type MasterCorporateReceivableKpis,
 } from '@/lib/master/corporateFinance/arApTypes';
+import {
+  corporateBusinessUnitLabel,
+  type CorporateBusinessUnit,
+} from '@/lib/master/corporateFinance/businessUnit';
 import type {
   MasterCorporateCostCenter,
   MasterCorporateFinancialAccount,
@@ -56,6 +60,7 @@ type SettleForm = {
   amount: string;
   payment_method: string;
   reference: string;
+  asaas_payment_id: string;
   notes: string;
 };
 
@@ -105,6 +110,7 @@ function ReceivablesInner() {
 
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
+  const [businessUnitFilter, setBusinessUnitFilter] = useState('');
   const [projectId, setProjectId] = useState(initialProjectId);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -130,6 +136,7 @@ function ReceivablesInner() {
     amount: '',
     payment_method: 'PIX',
     reference: '',
+    asaas_payment_id: '',
     notes: '',
   });
   const [settleSaving, setSettleSaving] = useState(false);
@@ -207,6 +214,7 @@ function ReceivablesInner() {
       const p = new URLSearchParams(qs());
       if (q.trim()) p.set('q', q.trim());
       if (status) p.set('status', status);
+      if (businessUnitFilter) p.set('businessUnit', businessUnitFilter);
       if (projectId) p.set('projectId', projectId);
       if (fromDate) p.set('fromDate', fromDate);
       if (toDate) p.set('toDate', toDate);
@@ -226,7 +234,7 @@ function ReceivablesInner() {
     } finally {
       setLoading(false);
     }
-  }, [userId, qs, q, status, projectId, fromDate, toDate, overdueOnly, includeArchived, page, limit]);
+  }, [userId, qs, q, status, businessUnitFilter, projectId, fromDate, toDate, overdueOnly, includeArchived, page, limit]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial
@@ -258,16 +266,29 @@ function ReceivablesInner() {
     setModalOpen(true);
   }
 
+  function accountsForUnit(unit: CorporateBusinessUnit | string | undefined) {
+    const u = unit || 'SV_TOPOGRAFIA';
+    return accounts.filter((a) => (a.business_unit || 'SV_TOPOGRAFIA') === u);
+  }
+
   function openSettle(r: MasterCorporateReceivable) {
     setSettling(r);
+    const unitAccounts = accountsForUnit(r.business_unit);
     const defaultAccount =
-      r.financial_account_id || accounts.find((a) => a.is_default)?.id || accounts[0]?.id || '';
+      (r.financial_account_id &&
+      unitAccounts.some((a) => a.id === r.financial_account_id)
+        ? r.financial_account_id
+        : '') ||
+      unitAccounts.find((a) => a.is_default)?.id ||
+      unitAccounts[0]?.id ||
+      '';
     setSettleForm({
       financial_account_id: defaultAccount,
       payment_date: todayISO(),
       amount: String(r.remaining_amount ?? 0),
       payment_method: r.payment_method || 'PIX',
       reference: '',
+      asaas_payment_id: '',
       notes: '',
     });
     setSettleOpen(true);
@@ -288,6 +309,7 @@ function ReceivablesInner() {
           amount: Number(settleForm.amount || 0),
           payment_method: settleForm.payment_method,
           reference: settleForm.reference || null,
+          asaas_payment_id: settleForm.asaas_payment_id || null,
           notes: settleForm.notes || null,
         }),
       });
@@ -380,6 +402,7 @@ function ReceivablesInner() {
     const p = new URLSearchParams(qs());
     if (q.trim()) p.set('q', q.trim());
     if (status) p.set('status', status);
+    if (businessUnitFilter) p.set('businessUnit', businessUnitFilter);
     if (fromDate) p.set('fromDate', fromDate);
     if (toDate) p.set('toDate', toDate);
     if (overdueOnly) p.set('overdueOnly', '1');
@@ -567,6 +590,23 @@ function ReceivablesInner() {
                 </select>
               </div>
               <div>
+                <label className={styles.label}>Unidade</label>
+                <select
+                  className={styles.select}
+                  value={businessUnitFilter}
+                  onChange={(e) => {
+                    setPage(1);
+                    setBusinessUnitFilter(e.target.value);
+                  }}
+                >
+                  <option value="">Todas</option>
+                  <option value="SV_LOTES">{corporateBusinessUnitLabel('SV_LOTES')}</option>
+                  <option value="SV_TOPOGRAFIA">
+                    {corporateBusinessUnitLabel('SV_TOPOGRAFIA')}
+                  </option>
+                </select>
+              </div>
+              <div>
                 <label className={styles.label}>Projeto</label>
                 <select
                   className={styles.select}
@@ -646,6 +686,7 @@ function ReceivablesInner() {
                   <thead>
                     <tr>
                       <th>Código</th>
+                      <th>Unidade</th>
                       <th>Cliente</th>
                       <th>Descrição</th>
                       <th>Vencimento</th>
@@ -660,6 +701,11 @@ function ReceivablesInner() {
                     {rows.map((r) => (
                       <tr key={r.id}>
                         <td>{r.code}</td>
+                        <td>
+                          <span className={styles.muted} style={{ padding: 0, fontSize: '0.8rem' }}>
+                            {corporateBusinessUnitLabel(r.business_unit || 'SV_TOPOGRAFIA')}
+                          </span>
+                        </td>
                         <td>{r.customer_name}</td>
                         <td>{r.description}</td>
                         <td>{formatDate(r.due_date)}</td>
@@ -684,6 +730,7 @@ function ReceivablesInner() {
                       <StatusBadge status={r.status} />
                     </div>
                     <p className={styles.cardMeta}>
+                      {corporateBusinessUnitLabel(r.business_unit || 'SV_TOPOGRAFIA')} ·{' '}
                       {r.customer_name} — {r.description}
                     </p>
                     <div className={styles.cardRow}>
@@ -731,7 +778,6 @@ function ReceivablesInner() {
         open={modalOpen}
         editing={editing}
         categories={categories}
-        accounts={accounts}
         costCenters={costCenters}
         projects={projects}
         initialProjectId={formInitialProjectId}
@@ -759,12 +805,16 @@ function ReceivablesInner() {
               </button>
             </div>
             <div className={styles.modalBody}>
+              <p className={styles.muted}>
+                Unidade:{' '}
+                {corporateBusinessUnitLabel(settling.business_unit || 'SV_TOPOGRAFIA')}
+              </p>
               <p className={styles.netHint}>
                 Saldo antes: {formatCurrency(settleRemainingBefore)} → depois:{' '}
                 {formatCurrency(settleRemainingAfter)}
               </p>
               <div>
-                <label className={styles.label}>Conta *</label>
+                <label className={styles.label}>Conta financeira *</label>
                 <select
                   className={styles.select}
                   value={settleForm.financial_account_id}
@@ -773,7 +823,7 @@ function ReceivablesInner() {
                   }
                 >
                   <option value="">Selecione…</option>
-                  {accounts.map((a) => (
+                  {accountsForUnit(settling.business_unit).map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
                     </option>
@@ -821,11 +871,22 @@ function ReceivablesInner() {
                 </select>
               </div>
               <div>
-                <label className={styles.label}>Referência</label>
+                <label className={styles.label}>Referência externa</label>
                 <input
                   className={styles.input}
                   value={settleForm.reference}
                   onChange={(e) => setSettleForm((f) => ({ ...f, reference: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={styles.label}>ID Asaas</label>
+                <input
+                  className={styles.input}
+                  value={settleForm.asaas_payment_id}
+                  onChange={(e) =>
+                    setSettleForm((f) => ({ ...f, asaas_payment_id: e.target.value }))
+                  }
+                  placeholder="pay_ (opcional)"
                 />
               </div>
               <div>
@@ -861,7 +922,11 @@ function ReceivablesInner() {
       {asaasGenerateFor ? (
         <CorporateAsaasGenerateModal
           receivable={asaasGenerateFor}
-          accounts={accounts}
+          accounts={accounts.filter(
+            (a) =>
+              (a.business_unit || 'SV_TOPOGRAFIA') ===
+              (asaasGenerateFor.business_unit || 'SV_TOPOGRAFIA'),
+          )}
           onClose={() => setAsaasGenerateFor(null)}
           onCreated={() => void load()}
         />

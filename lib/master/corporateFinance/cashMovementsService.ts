@@ -387,10 +387,14 @@ async function dayBeforeIso(dateIso: string): Promise<string> {
 async function consolidatedOpeningAsOf(
   supabase: SupabaseClient,
   asOfDate?: string,
+  accountIds?: string[] | null,
 ): Promise<number> {
-  const { data, error } = await supabase
-    .from('master_corporate_financial_accounts')
-    .select('id');
+  if (accountIds && accountIds.length === 0) return 0;
+
+  let query = supabase.from('master_corporate_financial_accounts').select('id');
+  if (accountIds) query = query.in('id', accountIds);
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   let total = 0;
   for (const a of data || []) {
@@ -413,6 +417,29 @@ export async function listCashMovementsWithRunningBalance(
   const page = Math.max(1, filters.page || 1);
   const limit = Math.min(5000, Math.max(1, filters.limit || 50));
 
+  let scopedAccountIds: string[] | null = null;
+  if (filters.businessUnit && !filters.financialAccountId) {
+    const { listCorporateAccountIdsForUnit } = await import('./businessUnitScope');
+    scopedAccountIds = await listCorporateAccountIdsForUnit(supabase, filters.businessUnit);
+    if (scopedAccountIds.length === 0) {
+      return {
+        movements: [],
+        total: 0,
+        page,
+        limit,
+        kpis: {
+          currentBalance: 0,
+          periodIncome: 0,
+          periodExpense: 0,
+          periodNet: 0,
+          openingBalanceInPeriod: 0,
+          closingBalance: 0,
+          movementsCount: 0,
+        },
+      };
+    }
+  }
+
   let q = supabase
     .from('master_corporate_cash_movements')
     .select('*', { count: 'exact' })
@@ -424,6 +451,8 @@ export async function listCashMovementsWithRunningBalance(
   if (filters.origin) q = q.eq('origin', filters.origin);
   if (filters.financialAccountId) {
     q = q.eq('financial_account_id', filters.financialAccountId);
+  } else if (scopedAccountIds) {
+    q = q.in('financial_account_id', scopedAccountIds);
   }
   if (filters.categoryId) q = q.eq('category_id', filters.categoryId);
   if (filters.costCenterId) q = q.eq('cost_center_id', filters.costCenterId);
@@ -449,25 +478,21 @@ export async function listCashMovementsWithRunningBalance(
     const asOf = await dayBeforeIso(filters.fromDate);
     running = filters.financialAccountId
       ? (await computeAccountBalance(supabase, filters.financialAccountId, asOf)).currentBalance
-      : await consolidatedOpeningAsOf(supabase, asOf);
+      : await consolidatedOpeningAsOf(supabase, asOf, scopedAccountIds);
   } else if (filters.financialAccountId) {
     const acc = await supabase
       .from('master_corporate_financial_accounts')
       .select('opening_balance, opening_balance_date')
       .eq('id', filters.financialAccountId)
       .maybeSingle();
-    const openingDate = acc.data?.opening_balance_date
-      ? String(acc.data.opening_balance_date).slice(0, 10)
-      : null;
     const openingBal = roundMoney(Number(acc.data?.opening_balance || 0));
-    // Sem fromDate: saldo inicial entra se a data de abertura já passou (sempre, se null).
-    running = openingDate ? openingBal : openingBal;
+    running = openingBal;
   } else {
-    running = await consolidatedOpeningAsOf(supabase, '1900-01-01');
-    // Sem período: soma saldos iniciais (contribuição na data de abertura).
-    const { data: accounts } = await supabase
+    let accountsQuery = supabase
       .from('master_corporate_financial_accounts')
       .select('opening_balance');
+    if (scopedAccountIds) accountsQuery = accountsQuery.in('id', scopedAccountIds);
+    const { data: accounts } = await accountsQuery;
     running = roundMoney(
       (accounts || []).reduce((s, a) => s + Number(a.opening_balance || 0), 0),
     );
@@ -498,7 +523,10 @@ export async function listCashMovementsWithRunningBalance(
 
   const currentBalance = filters.financialAccountId
     ? (await computeAccountBalance(supabase, filters.financialAccountId)).currentBalance
-    : await computeAllAccountsCurrentBalance(supabase);
+    : await computeAllAccountsCurrentBalance(supabase, {
+        businessUnit: filters.businessUnit,
+        accountIds: scopedAccountIds,
+      });
 
   return {
     movements: pageRows,
@@ -944,7 +972,10 @@ export async function backfillCashMovements(
   return report;
 }
 
-export async function getCashHubKpis(supabase: SupabaseClient) {
+export async function getCashHubKpis(
+  supabase: SupabaseClient,
+  opts: { businessUnit?: string | null } = {},
+) {
   const now = new Date();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
@@ -956,6 +987,7 @@ export async function getCashHubKpis(supabase: SupabaseClient) {
     toDate: to,
     includeReversed: false,
     limit: 5000,
+    businessUnit: opts.businessUnit,
   });
 
   return {

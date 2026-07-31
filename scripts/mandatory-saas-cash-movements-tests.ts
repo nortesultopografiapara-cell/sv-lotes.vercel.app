@@ -332,12 +332,14 @@ function testSummaryCalculatesCorrectly() {
     { type: 'income', amount: 500 },
     { type: 'income', amount: 49.99 },
     { type: 'expense', amount: 10 },
+    { type: 'transfer', amount: 100 },
   ]);
 
   assert(summary.periodIncome === 549.99, 'entradas');
   assert(summary.periodExpense === 10, 'saídas');
-  assert(summary.netResult === 539.99, 'líquido');
-  assert(summary.movementCount === 3, 'contagem');
+  assert(summary.periodTransfer === 100, 'transferências fora do P&L');
+  assert(summary.netResult === 539.99, 'líquido ignora transfer');
+  assert(summary.movementCount === 4, 'contagem');
   console.log('OK testSummaryCalculatesCorrectly');
 }
 
@@ -354,7 +356,10 @@ function testMigrationStructure() {
   ]) {
     assert(migration.includes(col), `coluna ${col}`);
   }
-  assert(migration.includes("'income', 'expense'"), 'check type');
+  assert(migration.includes("'income', 'expense'"), 'check type legado');
+  const transferMigration = read('supabase/migrations/20260731120000_saas_cash_transfer_type.sql');
+  assert(transferMigration.includes("'transfer'"), 'migration transfer type');
+  assert(transferMigration.includes("CHECK (type IN ('income', 'expense', 'transfer'))"), 'check type novo');
   assert(migration.includes('asaas_webhook'), 'check source');
   assert(migration.includes('idx_saas_cash_movements_asaas_webhook_income_unique'), 'unique asaas');
   assert(!migration.includes('DELETE FROM'), 'sem apagar dados');
@@ -381,23 +386,64 @@ function testAsaasMovementMapping() {
     description: 'Transferência bancária',
   });
   assert(!transfer.skip, 'transfer mapeado');
-  assert(transfer.type === 'expense', 'transfer expense');
+  assert(transfer.type === 'transfer', 'transfer fora do P&L');
   assert(transfer.source === 'asaas_transfer', 'transfer source');
   assert(transfer.category === 'Saque', 'transfer categoria saque');
   assert(transfer.amount === 5, 'transfer valor absoluto');
   assert(transfer.description === 'Transferência bancária', 'descrição original Asaas');
 
-  const pixDebit = mapAsaasFinancialTransaction({
+  const pixDebitAmbiguous = mapAsaasFinancialTransaction({
     id: 'ft_pix_debit',
     type: 'PIX_TRANSACTION_DEBIT',
     value: -15,
     date: '2026-06-20',
     description: 'Transação via Pix com chave +55 94...',
   });
-  assert(!pixDebit.skip, 'pix debit mapeado');
-  assert(pixDebit.type === 'expense', 'pix debit expense');
-  assert(pixDebit.category === 'Transferência Pix', 'pix debit categoria');
-  assert(pixDebit.description?.includes('Transação via Pix'), 'descrição pix original');
+  assert(!pixDebitAmbiguous.skip, 'pix debit ambíguo mapeado');
+  assert(pixDebitAmbiguous.type === 'transfer', 'pix débito ambíguo fora do P&L');
+  assert(
+    pixDebitAmbiguous.category === 'Saída Pix (a classificar)',
+    'pix débito sem evidência fica pendente',
+  );
+  assert(
+    pixDebitAmbiguous.metadata?.needs_classification === true,
+    'flag needs_classification',
+  );
+
+  const pixDebitTransfer = mapAsaasFinancialTransaction({
+    id: 'ft_pix_debit_tr',
+    type: 'PIX_TRANSACTION_DEBIT',
+    value: -200,
+    date: '2026-06-20',
+    description: 'Saque para conta própria',
+    transferId: 'tr_abc',
+  });
+  assert(pixDebitTransfer.type === 'transfer', 'pix+transferId = transfer');
+  assert(pixDebitTransfer.category === 'Transferência Pix', 'categoria transfer pix');
+  assert(
+    pixDebitTransfer.metadata?.classification_rule === 'pix_debit+transferId',
+    'regra transferId',
+  );
+
+  const pixDebitExpense = mapAsaasFinancialTransaction({
+    id: 'ft_pix_debit_exp',
+    type: 'PIX_TRANSACTION_DEBIT',
+    value: -50,
+    date: '2026-06-20',
+    description: 'Pagamento fornecedor energia',
+  });
+  assert(pixDebitExpense.type === 'expense', 'pix com descrição de pagamento = despesa');
+  assert(pixDebitExpense.category === 'Pagamento Pix', 'categoria pagamento pix');
+
+  const billPay = mapAsaasFinancialTransaction({
+    id: 'ft_bill',
+    type: 'BILL_PAYMENT',
+    value: -80,
+    date: '2026-06-20',
+    description: 'Pagamento de boleto',
+  });
+  assert(billPay.type === 'expense', 'boleto continua despesa');
+  assert(billPay.category === 'Pagamento de conta', 'categoria boleto');
 
   const fee = mapAsaasFinancialTransaction({
     id: 'ft_fee',
@@ -495,7 +541,8 @@ async function testSyncAsaasCreatesExpenses() {
   );
 
   assert(result.created === 4, 'quatro movimentos criados');
-  assert(result.expenseCreated === 3, 'três saídas');
+  assert(result.expenseCreated === 1, 'uma despesa (tarifa)');
+  assert(result.transferCreated === 2, 'duas transferências/saques');
   assert(result.incomeCreated === 1, 'um ajuste positivo');
   assert(result.skippedWebhookIncome === 1, 'recebimento webhook ignorado');
   assert(supabase._tables.saas_cash_movements.length === 4, 'quatro linhas');
@@ -551,11 +598,13 @@ async function testSyncAsaasDoesNotDuplicate() {
 function testKpisAfterWithdrawalScenario() {
   const summary = computeSaasCashSummaryFromRows([
     { type: 'income', amount: 10 },
-    { type: 'expense', amount: 5 },
+    { type: 'transfer', amount: 5 },
+    { type: 'expense', amount: 1 },
   ]);
   assert(summary.periodIncome === 10, 'entrada 10');
-  assert(summary.periodExpense === 5, 'saída 5');
-  assert(summary.netResult === 5, 'saldo 5');
+  assert(summary.periodTransfer === 5, 'saque 5 não é despesa');
+  assert(summary.periodExpense === 1, 'tarifa 1');
+  assert(summary.netResult === 9, 'resultado 9 (sem saque)');
   console.log('OK testKpisAfterWithdrawalScenario');
 }
 
@@ -967,6 +1016,17 @@ function testApiAndSecurity() {
   const mappingLib = read('lib/asaasFinancialTransactions.ts');
   assert(mappingLib.includes('PIX_TRANSACTION_DEBIT'), 'mapeia pix debit');
   assert(mappingLib.includes('PAYMENT_FEE_REVERSAL'), 'mapeia desconto tarifa');
+  assert(mappingLib.includes('needs_classification'), 'pix pendente classificação');
+  assert(mappingLib.includes('classifyPixDebit'), 'heurística pix debit');
+
+  const manualIncomeApi = read('app/api/master/saas-cash/manual-income/route.ts');
+  assert(manualIncomeApi.includes('createExtraordinarySaasIncome'), 'API receita extraordinária');
+  assert(manualIncomeApi.includes('updateExtraordinarySaasIncome'), 'API edição segura');
+  assert(manualIncomeApi.includes('externalReference'), 'API ref externa');
+
+  assert(syncLib.includes('MANUAL_EXTRAORDINARY_INCOME'), 'origem extraordinária');
+  assert(syncLib.includes('updateExtraordinarySaasIncome'), 'edição extraordinária');
+  assert(syncLib.includes('periodTransfer'), 'summary periodTransfer');
 
   const startAtApi = read('app/api/master/saas-cash/start-at/route.ts');
   assert(startAtApi.includes('assertSuperAdmin'), 'start-at super admin');

@@ -237,11 +237,16 @@ export async function listCashMovementsRaw(
   supabase: SupabaseClient,
   opts: {
     accountId?: string;
+    accountIds?: string[] | null;
     fromDate?: string;
     toDate?: string;
     includeReversed?: boolean;
   } = {},
 ): Promise<MasterCorporateCashMovement[]> {
+  if (opts.accountIds && opts.accountIds.length === 0) {
+    return [];
+  }
+
   let q = supabase
     .from('master_corporate_cash_movements')
     .select('*')
@@ -249,6 +254,9 @@ export async function listCashMovementsRaw(
     .order('created_at', { ascending: true });
 
   if (opts.accountId) q = q.eq('financial_account_id', opts.accountId);
+  else if (opts.accountIds && opts.accountIds.length > 0) {
+    q = q.in('financial_account_id', opts.accountIds);
+  }
   if (opts.fromDate) q = q.gte('movement_date', opts.fromDate);
   if (opts.toDate) q = q.lte('movement_date', opts.toDate);
   if (!opts.includeReversed) q = q.eq('is_reversed', false);
@@ -349,11 +357,19 @@ export async function computeAccountBalance(
 
 export async function computeAllAccountsCurrentBalance(
   supabase: SupabaseClient,
+  opts: { businessUnit?: string | null; accountIds?: string[] | null } = {},
 ): Promise<number> {
-  const { data, error } = await supabase
-    .from('master_corporate_financial_accounts')
-    .select('id')
-    .eq('is_active', true);
+  let accountIds = opts.accountIds;
+  if (accountIds === undefined && opts.businessUnit) {
+    const { listCorporateAccountIdsForUnit } = await import('./businessUnitScope');
+    accountIds = await listCorporateAccountIdsForUnit(supabase, opts.businessUnit);
+  }
+  if (accountIds && accountIds.length === 0) return 0;
+
+  let query = supabase.from('master_corporate_financial_accounts').select('id').eq('is_active', true);
+  if (accountIds) query = query.in('id', accountIds);
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   let total = 0;
   for (const a of data || []) {
@@ -366,15 +382,24 @@ export async function computeAllAccountsCurrentBalance(
 export async function aggregateCorporateCashMonthlyRevenueExpense(
   supabase: SupabaseClient,
   year: number,
+  opts: { businessUnit?: string | null } = {},
 ): Promise<CorporateMonthlyRevenueExpense> {
   const from = `${year}-01-01`;
   const to = `${year}-12-31`;
+
+  let accountIds: string[] | null | undefined;
+  if (opts.businessUnit) {
+    const { listCorporateAccountIdsForUnit } = await import('./businessUnitScope');
+    accountIds = await listCorporateAccountIdsForUnit(supabase, opts.businessUnit);
+  }
+
   // includeReversed=true: originais marcados is_reversed são ignorados em pnl;
   // linhas REVERSAL ativas anulam o efeito no mês do estorno.
   const movements = await listCashMovementsRaw(supabase, {
     fromDate: from,
     toDate: to,
     includeReversed: true,
+    accountIds: accountIds ?? undefined,
   });
 
   return aggregateCorporateCashMonthlyFromRows(

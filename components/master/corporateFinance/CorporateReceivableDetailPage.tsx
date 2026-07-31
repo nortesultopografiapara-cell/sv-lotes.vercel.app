@@ -17,6 +17,7 @@ import type {
   MasterCorporateFinancialAccount,
   MasterCorporateFinancialCategory,
 } from '@/lib/master/corporateFinance/types';
+import { corporateBusinessUnitLabel } from '@/lib/master/corporateFinance/businessUnit';
 import { MasterSecureDeleteModal } from '@/components/master/MasterSecureDeleteModal';
 import {
   CorporateFinanceGuard,
@@ -57,6 +58,7 @@ type SettleForm = {
   amount: string;
   payment_method: string;
   reference: string;
+  asaas_payment_id: string;
   notes: string;
 };
 
@@ -115,6 +117,7 @@ function DetailInner() {
     amount: '',
     payment_method: 'PIX',
     reference: '',
+    asaas_payment_id: '',
     notes: '',
   });
   const [settleSaving, setSettleSaving] = useState(false);
@@ -208,16 +211,28 @@ function DetailInner() {
     setModalOpen(true);
   }
 
+  function unitAccounts() {
+    const u = row?.business_unit || 'SV_TOPOGRAFIA';
+    return accounts.filter((a) => (a.business_unit || 'SV_TOPOGRAFIA') === u);
+  }
+
   function openSettle() {
     if (!row) return;
+    const list = unitAccounts();
     const defaultAccount =
-      row.financial_account_id || accounts.find((a) => a.is_default)?.id || accounts[0]?.id || '';
+      (row.financial_account_id && list.some((a) => a.id === row.financial_account_id)
+        ? row.financial_account_id
+        : '') ||
+      list.find((a) => a.is_default)?.id ||
+      list[0]?.id ||
+      '';
     setSettleForm({
       financial_account_id: defaultAccount,
       payment_date: todayISO(),
       amount: String(row.remaining_amount ?? 0),
       payment_method: row.payment_method || 'PIX',
       reference: '',
+      asaas_payment_id: '',
       notes: '',
     });
     setSettleOpen(true);
@@ -243,6 +258,7 @@ function DetailInner() {
           quote_id: form.quote_id || null,
           cost_center_id: form.cost_center_id || null,
           financial_account_id: form.financial_account_id || null,
+          business_unit: row.business_unit,
           issue_date: form.issue_date,
           competence_date: form.competence_date,
           due_date: form.due_date,
@@ -280,6 +296,7 @@ function DetailInner() {
           amount: Number(settleForm.amount || 0),
           payment_method: settleForm.payment_method,
           reference: settleForm.reference || null,
+          asaas_payment_id: settleForm.asaas_payment_id || null,
           notes: settleForm.notes || null,
         }),
       });
@@ -500,6 +517,10 @@ function DetailInner() {
               </div>
               <div className={styles.detailGrid}>
                 <div className={styles.detailItem}>
+                  <label>Unidade</label>
+                  <p>{corporateBusinessUnitLabel(row.business_unit || 'SV_TOPOGRAFIA')}</p>
+                </div>
+                <div className={styles.detailItem}>
                   <label>Cliente</label>
                   <p>{row.customer_name}</p>
                 </div>
@@ -573,7 +594,7 @@ function DetailInner() {
 
             <CorporateAsaasChargeSection
               receivable={row}
-              accounts={accounts}
+              accounts={unitAccounts()}
               onChargeChanged={() => void load()}
             />
 
@@ -804,7 +825,7 @@ function DetailInner() {
                     }
                   >
                     <option value="">—</option>
-                    {accounts.map((a) => (
+                    {unitAccounts().map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
@@ -1042,7 +1063,7 @@ function DetailInner() {
                   }
                 >
                   <option value="">Selecione…</option>
-                  {accounts.map((a) => (
+                  {unitAccounts().map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
                     </option>
@@ -1095,6 +1116,16 @@ function DetailInner() {
                   className={styles.input}
                   value={settleForm.reference}
                   onChange={(e) => setSettleForm((f) => ({ ...f, reference: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={styles.label}>ID Asaas</label>
+                <input
+                  className={styles.input}
+                  value={settleForm.asaas_payment_id}
+                  onChange={(e) =>
+                    setSettleForm((f) => ({ ...f, asaas_payment_id: e.target.value }))
+                  }
                 />
               </div>
               <div>
