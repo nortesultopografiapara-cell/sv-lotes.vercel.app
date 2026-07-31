@@ -115,7 +115,11 @@ function testIsolationAndFiles() {
     dashData.includes('aggregateCorporateCashMonthlyRevenueExpense'),
     'agregação mensal no dashboard',
   );
-  assert(dashData.includes('aggregateSaasCashMonthlyRevenueExpense'), 'saas intacto');
+  assert(
+    dashData.includes('aggregateSvLotesMonthlyRevenueExpense') ||
+      dashData.includes('aggregateSaasCashMonthlyRevenueExpense'),
+    'saas intacto',
+  );
 
   // Isolamento tenant
   assert(!recv.includes('company_cash_movements'), 'AR sem company_cash');

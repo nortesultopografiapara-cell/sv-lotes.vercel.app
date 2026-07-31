@@ -15,13 +15,16 @@ import {
   isSaasFinancialRecordAfterStartAt,
 } from '@/lib/saasFinanceSettings';
 import {
-  aggregateSaasCashMonthlyRevenueExpense,
   buildEmptyMonthlyRevenueExpense,
   SAAS_CASH_MONTH_LABELS,
-  sumSaasCashReceivedIncome,
   sumSaasCashPeriodTotals,
   type MonthlyRevenueExpense,
 } from '@/lib/saasCashMovements';
+import {
+  aggregateSvLotesMonthlyRevenueExpense,
+  sumSvLotesConsolidatedReceivedIncome,
+  SV_LOTES_RECEIVED_REVENUE_SOURCE,
+} from '@/lib/master/svLotesDashboardRevenue';
 import { aggregateCorporateCashMonthlyRevenueExpense } from '@/lib/master/corporateFinance/cashMath';
 import { DASHBOARD_CORPORATE_BUSINESS_UNIT } from '@/lib/master/corporateFinance/businessUnitScope';
 import { computeTopographyProjectKpis } from '@/lib/master/topography/projectsService';
@@ -39,10 +42,11 @@ import type { MasterTopographyQuoteKpis } from '@/lib/master/topography/quoteTyp
  * | Assinaturas         | companies                     | isBillableCompany                          |
  * | MRR                 | companies + pricing           | calculateMrrFromCompanies (recorrente)     |
  * | Receita Recebida    | saas_cash_movements           | type=income, mês civil atual, sem transfer |
+ * |                     | + corp RECEIVABLE_PAYMENT     | business_unit=SV_LOTES, dedup vs SaaS      |
  * | Receita a Receber   | master_saas_invoices          | computeSaasBillingMetrics                  |
  * | Inadimplência       | master_saas_invoices          | faturas vencidas                           |
  * | Transferências      | saas_cash_movements           | type=transfer, mês atual (informativo)     |
- * | Gráfico R x D       | saas_cash_movements           | aggregateSaasCashMonthly (exclui transfer) |
+ * | Gráfico R x D       | saas + AR SV_LOTES consolidados | aggregateSvLotesMonthly (exclui transfer) |
  *
  * SV Topografia:
  * | KPI                 | Fonte                                      | Filtro                |
@@ -107,7 +111,7 @@ export type MasterDashboardData = {
     totalLots: number;
   };
   revenueByMonth: { month: string; label: string; value: number }[];
-  /** Jan–Dez do ano selecionado — Caixa SaaS (income/expense), sem dupla contagem. */
+  /** Jan–Dez do ano selecionado — Caixa SaaS + AR SV_LOTES (dedup), sem transfer. */
   saasMonthlyFinancials: MonthlyRevenueExpense[];
   /**
    * Jan–Dez — Financeiro Corporativo MASTER (income/expense), sem transferências.
@@ -138,7 +142,7 @@ export type MasterDashboardData = {
   alerts: MasterDashboardAlert[];
   recentCompanies: MasterRecentCompany[];
   cashStartAt: string | null;
-  receivedRevenueSource: 'saas_cash_movements';
+  receivedRevenueSource: typeof SV_LOTES_RECEIVED_REVENUE_SOURCE;
   /** Ano usado em saasMonthlyFinancials / topographyMonthlyFinancials. */
   financialYear: number;
   errors: string[];
@@ -324,10 +328,14 @@ export async function loadMasterDashboardData(
     .toISOString()
     .slice(0, 10);
 
-  const paymentsReceivedFromCash = await sumSaasCashReceivedIncome(supabase, cashStartAt, {
-    fromDate: monthFrom,
-    toDate: monthTo,
-  });
+  const paymentsReceivedFromCash = await sumSvLotesConsolidatedReceivedIncome(
+    supabase,
+    cashStartAt,
+    {
+      fromDate: monthFrom,
+      toDate: monthTo,
+    },
+  );
   let periodTransfer = 0;
   try {
     const periodTotals = await sumSaasCashPeriodTotals(supabase, cashStartAt, {
@@ -349,7 +357,7 @@ export async function loadMasterDashboardData(
 
   let saasMonthlyFinancials = buildEmptyMonthlyRevenueExpense();
   try {
-    saasMonthlyFinancials = await aggregateSaasCashMonthlyRevenueExpense(
+    saasMonthlyFinancials = await aggregateSvLotesMonthlyRevenueExpense(
       supabase,
       financialYear,
       cashStartAt,
@@ -655,7 +663,7 @@ export async function loadMasterDashboardData(
     alerts,
     recentCompanies,
     cashStartAt,
-    receivedRevenueSource: 'saas_cash_movements',
+    receivedRevenueSource: SV_LOTES_RECEIVED_REVENUE_SOURCE,
     financialYear,
     errors,
   };

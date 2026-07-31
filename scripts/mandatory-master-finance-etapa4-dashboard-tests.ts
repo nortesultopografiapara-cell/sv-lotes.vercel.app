@@ -54,7 +54,8 @@ function testMrrExcludesExtraordinary() {
   assert(mrr > 0, 'MRR vem de assinatura');
   const dash = read('lib/masterDashboardData.ts');
   assert(dash.includes('calculateMrrFromCompanies'), 'MRR via pricing');
-  assert(dash.includes('sumSaasCashReceivedIncome'), 'recebido via caixa');
+  assert(dash.includes('sumSvLotesConsolidatedReceivedIncome'), 'recebido consolidado');
+  assert(dash.includes('aggregateSvLotesMonthlyRevenueExpense'), 'gráfico consolidado');
   assert(
     !dash.includes('mrr') || dash.includes('recorrente'),
     'doc MRR recorrente',
@@ -80,6 +81,7 @@ function testReceivedIncludesExtraordinaryIncome() {
   const dash = read('lib/masterDashboardData.ts');
   assert(dash.includes('fromDate: monthFrom'), 'Receita Recebida mês atual');
   assert(dash.includes('toDate: monthTo'), 'Receita Recebida fim mês');
+  assert(svc.includes('sumSaasCashReceivedIncome'), 'função receita recebida base');
   console.log('OK testReceivedIncludesExtraordinaryIncome');
 }
 

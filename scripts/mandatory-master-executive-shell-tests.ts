@@ -314,7 +314,11 @@ function testExecutiveDashboardV2() {
   assert(data.includes('newCompaniesThisMonth'), 'novos clientes');
   assert(data.includes('saasMonthlyFinancials'), 'série anual Caixa SaaS');
   assert(data.includes('topographyMonthlyFinancials'), 'contrato Topografia');
-  assert(data.includes('aggregateSaasCashMonthlyRevenueExpense'), 'agrega Caixa SaaS');
+  assert(
+    data.includes('aggregateSvLotesMonthlyRevenueExpense') ||
+      data.includes('aggregateSaasCashMonthlyRevenueExpense'),
+    'agrega Caixa SaaS',
+  );
 
   const cash = read('lib/saasCashMovements.ts');
   assert(cash.includes('aggregateSaasCashMonthlyRevenueExpense'), 'helper anual');

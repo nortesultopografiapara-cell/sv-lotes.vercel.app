@@ -887,7 +887,7 @@ function testDashboardFinanceStartAtFilters() {
   const dashboard = read('lib/masterDashboardData.ts');
   assert(dashboard.includes('applySaasFinanceStartAtFilter'), 'master dashboard filtra');
   assert(dashboard.includes('getSaasCashStartAt'), 'master dashboard lê marco');
-  assert(dashboard.includes('sumSaasCashReceivedIncome'), 'master dashboard receita do caixa');
+  assert(dashboard.includes('sumSvLotesConsolidatedReceivedIncome') || dashboard.includes('sumSaasCashReceivedIncome'), 'master dashboard receita do caixa');
 
   const financePage = read('app/saas-finance/page.tsx');
   assert(financePage.includes('applySaasFinanceStartAtFilter'), 'financeiro SaaS filtra');

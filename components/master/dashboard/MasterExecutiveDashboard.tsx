@@ -392,7 +392,7 @@ export default function MasterExecutiveDashboard({ user }: { user: any }) {
           hint={
             dashboard.cashStartAt && stats.receivedRevenueHiddenCount > 0
               ? `Mês atual · ${stats.receivedRevenueHiddenCount} oculta(s) pelo marco`
-              : 'Mês atual · income no Caixa SaaS (sem transfer)'
+              : 'Mês atual · Caixa SaaS + AR SV_LOTES (sem transfer/dup)'
           }
           icon={<Banknote />}
           iconClass={styles.iconGreen}
