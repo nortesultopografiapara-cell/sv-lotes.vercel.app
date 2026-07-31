@@ -246,6 +246,10 @@ function testPhase1bUiAndNavigation() {
   assert(formUi.includes('Dados gerais') || formUi.includes('geral'), 'aba gerais');
   assert(formUi.includes('Aquisição') || formUi.includes('aquisicao'), 'aba aquisição');
   assert(formUi.includes('Controle') || formUi.includes('controle'), 'aba controle');
+  assert(formUi.includes('EquipmentDocumentsPanel'), 'aba docs usa painel Fase 2');
+  assert(formUi.includes('Salve o equipamento primeiro para anexar documentos.'), 'create sem upload');
+  assert(!formUi.includes('fora do escopo 1B'), 'sem placeholder 1B');
+  assert(!formUi.includes('entram em fase posterior'), 'sem texto fase posterior');
   assert(formUi.includes('Centro de custo'), 'campo centro de custo');
   assert(
     formUi.includes('Não foi possível carregar centros') ||

@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { EQUIPMENT_CATEGORIES } from '@/lib/master/topography/equipmentCategories';
+import type { MasterTopographyEquipmentDocument } from '@/lib/master/topography/equipmentDocumentTypes';
 import { EQUIPMENT_STATUSES } from '@/lib/master/topography/equipmentStatuses';
 import type { MasterTopographyEquipment } from '@/lib/master/topography/equipmentTypes';
+import { EquipmentDocumentsPanel } from './EquipmentDocumentsPanel';
 import styles from './equipment.module.css';
 
 export type EquipmentFormState = {
@@ -132,12 +134,50 @@ export function EquipmentFormModal({
     'idle' | 'loading' | 'ok' | 'empty' | 'error'
   >('idle');
   const [costCentersError, setCostCentersError] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<MasterTopographyEquipmentDocument[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [docsToast, setDocsToast] = useState<string | null>(null);
+
+  const equipmentId = mode === 'edit' && initial?.id ? initial.id : '';
+
+  const loadDocuments = useCallback(async () => {
+    if (!userId || !equipmentId) {
+      setDocuments([]);
+      return;
+    }
+    setDocsLoading(true);
+    setDocsError(null);
+    try {
+      const res = await fetch(
+        `/api/master/topography/equipment/${equipmentId}/documents?userId=${encodeURIComponent(userId)}`,
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao carregar documentos.');
+      setDocuments(data.documents || []);
+    } catch (err) {
+      setDocuments([]);
+      setDocsError(err instanceof Error ? err.message : 'Falha ao carregar documentos.');
+    } finally {
+      setDocsLoading(false);
+    }
+  }, [userId, equipmentId]);
 
   useEffect(() => {
     if (!open) return;
     setTab('geral');
     setForm(initial ? equipmentToForm(initial) : emptyEquipmentForm());
-  }, [open, initial]);
+    setDocsError(null);
+    setDocsToast(null);
+    if (mode !== 'edit' || !initial?.id) {
+      setDocuments([]);
+    }
+  }, [open, initial, mode]);
+
+  useEffect(() => {
+    if (!open || mode !== 'edit' || !equipmentId || !userId) return;
+    void loadDocuments();
+  }, [open, mode, equipmentId, userId, loadDocuments]);
 
   useEffect(() => {
     if (!open || !userId) return;
@@ -206,7 +246,10 @@ export function EquipmentFormModal({
           </button>
         </div>
 
-        <form className={styles.modalBody} onSubmit={(e) => void handleSubmit(e)}>
+        <form
+          className={`${styles.modalBody} ${tab === 'docs' ? styles.modalBodyDocs : ''}`}
+          onSubmit={(e) => void handleSubmit(e)}
+        >
           {error ? <div className={styles.formError}>{error}</div> : null}
 
           <div className={styles.tabs}>
@@ -459,15 +502,7 @@ export function EquipmentFormModal({
           ) : null}
 
           {tab === 'docs' ? (
-            <div className={styles.grid2}>
-              <div className={`${styles.field} ${styles.fieldFull}`}>
-                <label>Situação ANAC / ANATEL / Manual</label>
-                <div className={styles.comingSoonBox}>
-                  Documentação regulatória e link de manual entram em fase posterior (sem novos
-                  campos de banco nesta etapa). Upload de arquivos e fotos também ficam fora do
-                  escopo 1B.
-                </div>
-              </div>
+            <div className={styles.docsTabContent}>
               <div className={`${styles.field} ${styles.fieldFull}`}>
                 <label htmlFor="eq-notes">Observações gerais</label>
                 <textarea
@@ -478,6 +513,31 @@ export function EquipmentFormModal({
                   placeholder="Observações técnicas e gerais do equipamento"
                 />
               </div>
+
+              {!equipmentId ? (
+                <div className={styles.infoBanner} role="status">
+                  Salve o equipamento primeiro para anexar documentos.
+                </div>
+              ) : (
+                <>
+                  {docsError ? <div className={styles.formError}>{docsError}</div> : null}
+                  {docsToast ? <div className={styles.infoBanner}>{docsToast}</div> : null}
+                  {docsLoading ? (
+                    <p className={styles.muted}>Carregando documentos…</p>
+                  ) : (
+                    <EquipmentDocumentsPanel
+                      equipmentId={equipmentId}
+                      userId={userId}
+                      documents={documents}
+                      busy={saving || docsLoading}
+                      embedded
+                      onChanged={() => void loadDocuments()}
+                      onError={setDocsError}
+                      onToast={setDocsToast}
+                    />
+                  )}
+                </>
+              )}
             </div>
           ) : null}
 

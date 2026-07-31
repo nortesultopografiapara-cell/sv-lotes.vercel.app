@@ -306,6 +306,14 @@ function testApisAndUiContracts() {
   assert(detail.includes('EquipmentTimelinePanel'), 'detail timeline');
   assert(!detail.includes('Documentos — Em breve'), 'sem placeholder docs');
 
+  const formUi = read('components/master/topography/equipment/EquipmentFormModal.tsx');
+  assert(formUi.includes('EquipmentDocumentsPanel'), 'form modal docs panel');
+  assert(
+    formUi.includes('Salve o equipamento primeiro para anexar documentos.'),
+    'create sem upload',
+  );
+  assert(!formUi.includes('fora do escopo 1B'), 'form sem placeholder 1B');
+
   const kpi = read('components/master/topography/equipment/EquipmentKpiRow.tsx');
   assert(kpi.includes('calibrationDueSoon'), 'KPI calibração');
 

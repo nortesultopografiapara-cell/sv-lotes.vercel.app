@@ -26,6 +26,8 @@ type Props = {
   userId: string;
   documents: MasterTopographyEquipmentDocument[];
   busy: boolean;
+  /** Quando true, usa layout compacto (ex.: dentro do modal de edição). */
+  embedded?: boolean;
   onChanged: () => void;
   onError: (msg: string) => void;
   onToast: (msg: string) => void;
@@ -36,6 +38,7 @@ export function EquipmentDocumentsPanel({
   userId,
   documents,
   busy,
+  embedded = false,
   onChanged,
   onError,
   onToast,
@@ -51,6 +54,10 @@ export function EquipmentDocumentsPanel({
   const [formError, setFormError] = useState<string | null>(null);
 
   const upload = async () => {
+    if (!equipmentId) {
+      setFormError('Salve o equipamento primeiro para anexar documentos.');
+      return;
+    }
     if (!file) {
       setFormError('Selecione um arquivo.');
       return;
@@ -122,14 +129,15 @@ export function EquipmentDocumentsPanel({
   };
 
   return (
-    <div className={styles.card}>
+    <div className={embedded ? styles.docsPanelEmbedded : styles.card}>
       <div className={styles.panelHeader}>
-        <h3>Documentos</h3>
+        <h3>Documentos e arquivos</h3>
         <button
           type="button"
           className={styles.btnPrimary}
-          disabled={busy || uploading}
+          disabled={busy || uploading || !equipmentId}
           onClick={() => {
+            if (!equipmentId) return;
             setFormError(null);
             setOpen(true);
           }}
@@ -189,8 +197,12 @@ export function EquipmentDocumentsPanel({
       )}
 
       {open ? (
-        <div className={styles.modalOverlay} role="dialog" aria-modal="true">
-          <div className={styles.modal}>
+        <div
+          className={`${styles.modalOverlay} ${styles.modalOverlayNested}`}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className={`${styles.modal} ${styles.modalNested}`}>
             <h3>Anexar documento</h3>
             {formError ? <div className={styles.formError}>{formError}</div> : null}
             <div className={styles.formGrid}>
