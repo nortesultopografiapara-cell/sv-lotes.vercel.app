@@ -95,7 +95,6 @@ export const MASTER_EXECUTIVE_NAV: MasterExecutiveNavSection[] = [
         name: 'Operação',
         href: '/master/topography/operations',
         icon: Wrench,
-        comingSoon: true,
       },
       {
         name: 'Equipamentos',

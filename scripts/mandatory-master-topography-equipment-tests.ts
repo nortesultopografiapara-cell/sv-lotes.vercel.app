@@ -275,9 +275,16 @@ function testPhase1bUiAndNavigation() {
   assert(equipBlock.includes("/master/topography/equipment"), 'href equipamentos');
 
   assert(
-    /name:\s*'Operação'[\s\S]*?comingSoon:\s*true[\s\S]*?name:\s*'Equipamentos'/.test(nav),
-    'Operação permanece Em breve',
+    /name:\s*'Operação'[\s\S]*?href:\s*'\/master\/topography\/operations'[\s\S]*?name:\s*'Equipamentos'/.test(
+      nav,
+    ),
+    'Operação ativa no nav (Fase 1B)',
   );
+  const opsNavBlock = nav.slice(
+    nav.indexOf("name: 'Operação'"),
+    nav.indexOf("name: 'Equipamentos'"),
+  );
+  assert(!opsNavBlock.includes('comingSoon: true'), 'Operação sem Em breve');
   assert(
     /name:\s*'Veículos'[\s\S]*?comingSoon:\s*true[\s\S]*?name:\s*'Relatórios'/.test(nav),
     'Veículos permanece Em breve',

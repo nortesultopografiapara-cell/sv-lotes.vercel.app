@@ -7,6 +7,7 @@ export type MasterTopographyOperation = {
   description: string | null;
   project_id: string | null;
   quote_id: string | null;
+  client_id: string | null;
   client_name: string | null;
   service_type: string | null;
   status: OperationStatusCode;
@@ -21,6 +22,8 @@ export type MasterTopographyOperation = {
   longitude: number | null;
   responsible_user_id: string | null;
   responsible_name: string | null;
+  responsible_phone: string | null;
+  responsible_email: string | null;
   estimated_cost: number | null;
   actual_cost: number | null;
   notes: string | null;
@@ -35,6 +38,7 @@ export type MasterTopographyOperationInput = {
   description?: string | null;
   project_id?: string | null;
   quote_id?: string | null;
+  client_id?: string | null;
   client_name?: string | null;
   service_type?: string | null;
   status: OperationStatusCode;
@@ -49,6 +53,8 @@ export type MasterTopographyOperationInput = {
   longitude?: number | null;
   responsible_user_id?: string | null;
   responsible_name?: string | null;
+  responsible_phone?: string | null;
+  responsible_email?: string | null;
   estimated_cost?: number | null;
   actual_cost?: number | null;
   notes?: string | null;
@@ -78,6 +84,8 @@ export type MasterTopographyOperationKpis = {
   processing: number;
   waitingClient: number;
   completed: number;
+  /** Concluídas no mês civil UTC corrente (por actual_end ou updated_at). */
+  completedThisMonth: number;
   canceled: number;
   /** Agendadas/em andamento com scheduled_end no passado. */
   overdue: number;
