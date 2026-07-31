@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { recordAssignmentFromEquipmentEdit } from '@/lib/master/topography/equipmentAssignmentsService';
 import {
   getTopographyEquipmentById,
   logTopographyEquipmentAudit,
@@ -119,6 +120,21 @@ export async function PATCH(request: Request, context: Ctx) {
 
     const input = validateTopographyEquipmentInput(body);
     const equipment = await updateTopographyEquipment(supabaseAdmin, id, input);
+
+    await recordAssignmentFromEquipmentEdit(supabaseAdmin, {
+      equipmentId: id,
+      before: {
+        responsible_user_id: existing.responsible_user_id,
+        responsible_name: existing.responsible_name,
+        location: existing.location,
+      },
+      after: {
+        responsible_user_id: equipment.responsible_user_id,
+        responsible_name: equipment.responsible_name,
+        location: equipment.location,
+      },
+      createdBy: body.userId ? String(body.userId) : null,
+    });
 
     const audits: Array<{
       action: string;

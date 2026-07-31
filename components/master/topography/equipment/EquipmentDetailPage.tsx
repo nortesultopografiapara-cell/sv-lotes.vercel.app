@@ -7,12 +7,22 @@ import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { equipmentCategoryLabel } from '@/lib/master/topography/equipmentCategories';
+import type { MasterTopographyEquipmentAssignment } from '@/lib/master/topography/equipmentAssignmentTypes';
+import type { EquipmentAlert } from '@/lib/master/topography/equipmentAlertsService';
+import type { MasterTopographyEquipmentDocument } from '@/lib/master/topography/equipmentDocumentTypes';
+import type { MasterTopographyEquipmentMaintenance } from '@/lib/master/topography/equipmentMaintenanceTypes';
 import type { MasterTopographyEquipment } from '@/lib/master/topography/equipmentTypes';
+import type { EquipmentTimelineEvent } from '@/lib/master/topography/equipmentTimelineService';
 import {
   EquipmentFormModal,
   formToEquipmentPayload,
 } from './EquipmentFormModal';
+import { EquipmentAlertsBanner } from './EquipmentAlertsBanner';
+import { EquipmentAssignmentsPanel } from './EquipmentAssignmentsPanel';
+import { EquipmentDocumentsPanel } from './EquipmentDocumentsPanel';
+import { EquipmentMaintenancePanel } from './EquipmentMaintenancePanel';
 import { EquipmentStatusBadge } from './EquipmentStatusBadge';
+import { EquipmentTimelinePanel } from './EquipmentTimelinePanel';
 import styles from './equipment.module.css';
 
 function formatCurrency(val: number | null | undefined) {
@@ -40,6 +50,11 @@ function EquipmentDetailInner() {
   const id = String(params?.id || '');
 
   const [equipment, setEquipment] = useState<MasterTopographyEquipment | null>(null);
+  const [documents, setDocuments] = useState<MasterTopographyEquipmentDocument[]>([]);
+  const [maintenance, setMaintenance] = useState<MasterTopographyEquipmentMaintenance[]>([]);
+  const [assignments, setAssignments] = useState<MasterTopographyEquipmentAssignment[]>([]);
+  const [timeline, setTimeline] = useState<EquipmentTimelineEvent[]>([]);
+  const [alerts, setAlerts] = useState<EquipmentAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,12 +67,34 @@ function EquipmentDetailInner() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/master/topography/equipment/${id}?userId=${encodeURIComponent(user.id)}`,
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao carregar equipamento.');
-      setEquipment(data.equipment || null);
+      const qs = `userId=${encodeURIComponent(user.id)}`;
+      const [eqRes, docsRes, maintRes, assignRes, timeRes, alertRes] = await Promise.all([
+        fetch(`/api/master/topography/equipment/${id}?${qs}`),
+        fetch(`/api/master/topography/equipment/${id}/documents?${qs}`),
+        fetch(`/api/master/topography/equipment/${id}/maintenance?${qs}`),
+        fetch(`/api/master/topography/equipment/${id}/assignments?${qs}`),
+        fetch(`/api/master/topography/equipment/${id}/timeline?${qs}`),
+        fetch(`/api/master/topography/equipment/${id}/alerts?${qs}`),
+      ]);
+
+      const eqData = await eqRes.json();
+      if (!eqRes.ok) throw new Error(eqData.error || 'Falha ao carregar equipamento.');
+      setEquipment(eqData.equipment || null);
+
+      const docsData = await docsRes.json();
+      setDocuments(docsRes.ok ? docsData.documents || [] : []);
+
+      const maintData = await maintRes.json();
+      setMaintenance(maintRes.ok ? maintData.maintenance || [] : []);
+
+      const assignData = await assignRes.json();
+      setAssignments(assignRes.ok ? assignData.assignments || [] : []);
+
+      const timeData = await timeRes.json();
+      setTimeline(timeRes.ok ? timeData.events || [] : []);
+
+      const alertData = await alertRes.json();
+      setAlerts(alertRes.ok ? alertData.alerts || [] : []);
     } catch (err) {
       setEquipment(null);
       setError(err instanceof Error ? err.message : 'Falha ao carregar.');
@@ -85,6 +122,7 @@ function EquipmentDetailInner() {
       setEquipment(data.equipment);
       setModalOpen(false);
       setToast('Equipamento atualizado.');
+      void load();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Falha ao salvar.');
     } finally {
@@ -110,6 +148,7 @@ function EquipmentDetailInner() {
       if (!res.ok) throw new Error(data.error || 'Falha ao atualizar arquivamento.');
       setEquipment(data.equipment);
       setToast(archived ? 'Equipamento arquivado.' : 'Equipamento restaurado.');
+      void load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao arquivar/restaurar.');
     } finally {
@@ -191,6 +230,8 @@ function EquipmentDetailInner() {
 
       {error ? <div className={styles.errorBanner}>{error}</div> : null}
 
+      <EquipmentAlertsBanner alerts={alerts} />
+
       <div className={styles.detailGrid}>
         <div className={styles.card}>
           <h3>Dados técnicos</h3>
@@ -253,13 +294,42 @@ function EquipmentDetailInner() {
         </div>
       </div>
 
-      <div className={styles.card} style={{ marginTop: '0.85rem' }}>
-        <h3>Módulos futuros</h3>
-        <div className={styles.soonGrid}>
-          <div className={styles.comingSoonBox}>Documentos — Em breve</div>
-          <div className={styles.comingSoonBox}>Manutenções — Em breve</div>
-          <div className={styles.comingSoonBox}>Histórico de movimentações — Em breve</div>
-          <div className={styles.comingSoonBox}>QR Code — Em breve</div>
+      <div className={styles.fase2Stack}>
+        <EquipmentDocumentsPanel
+          equipmentId={equipment.id}
+          userId={user?.id || ''}
+          documents={documents}
+          busy={busy}
+          onChanged={() => void load()}
+          onError={setError}
+          onToast={setToast}
+        />
+        <EquipmentMaintenancePanel
+          equipmentId={equipment.id}
+          userId={user?.id || ''}
+          rows={maintenance}
+          busy={busy}
+          onChanged={() => void load()}
+          onError={setError}
+          onToast={setToast}
+        />
+        <EquipmentAssignmentsPanel
+          equipmentId={equipment.id}
+          userId={user?.id || ''}
+          rows={assignments}
+          currentResponsible={equipment.responsible_name}
+          currentLocation={equipment.location}
+          busy={busy}
+          onChanged={() => void load()}
+          onError={setError}
+          onToast={setToast}
+        />
+        <EquipmentTimelinePanel events={timeline} />
+        <div className={styles.card}>
+          <h3>Módulos futuros</h3>
+          <div className={styles.soonGrid}>
+            <div className={styles.comingSoonBox}>QR Code — Em breve</div>
+          </div>
         </div>
       </div>
 
