@@ -360,6 +360,47 @@
   padding: 1rem 1.15rem 1.25rem;
 }
 
+.modalBodyDocs {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.docsTabContent {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.docsPanelEmbedded {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  padding: 0.85rem 0.95rem;
+  min-width: 0;
+}
+
+.infoBanner {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.55rem;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.modalOverlayNested {
+  z-index: 95;
+  align-items: center;
+}
+
+.modalNested {
+  max-height: min(90vh, 720px);
+  overflow-y: auto;
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;
