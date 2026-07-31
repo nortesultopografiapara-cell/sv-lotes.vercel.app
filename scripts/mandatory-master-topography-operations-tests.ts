@@ -1,12 +1,12 @@
 /**
- * Testes obrigatórios — Operações (Master Topografia) Fase 1A.
+ * Testes obrigatórios — Operações (Master Topografia) Fase 1A + 1B.
  * npm run test:master-topography-operations
  *
  * Cobre: migration, tabela, contador, RPC OS-YYYY-NNNN, RLS, API SUPER_ADMIN,
  * CRUD contracts, archive/restore, datas, custos, status/transições, FKs opcionais,
- * isolamento Projetos/Orçamentos/Equipamentos/Financeiro, build markers.
+ * UI listagem/detalhe/filtros/KPIs/nav, isolamento Projetos/Orçamentos/Equipamentos/Financeiro.
  *
- * Não aplica migration. Não cobre UI (Fase 1B).
+ * Não aplica migration. Não cobre Fase 2 (equipe/checklist/etc.).
  */
 import fs from 'fs';
 import path from 'path';
@@ -333,7 +333,7 @@ function testValidationDatesCostsStatusTransitions() {
   console.log('OK testValidationDatesCostsStatusTransitions (13-18)');
 }
 
-/** 19–22: módulos intactos + nav Operação ainda comingSoon */
+/** 19–22: módulos intactos (sem Fase 2 de Operação) */
 function testIsolationIntactModules() {
   assert(exists('lib/master/topography/projectsService.ts'), '19. Projetos intactos');
   assert(exists('lib/master/topography/quotesService.ts'), '20. Orçamentos intactos');
@@ -344,7 +344,6 @@ function testIsolationIntactModules() {
     '22. Financeiro corporativo presente',
   );
 
-  // Tamanhos estáveis dos artefatos críticos de outros módulos (não deletados nesta fase)
   assert(fileSha('lib/master/topography/projectsService.ts') > 1000, '19. projectsService não vazio');
   assert(fileSha('lib/master/topography/quotesService.ts') > 1000, '20. quotesService não vazio');
   assert(fileSha('lib/master/topography/equipmentService.ts') > 1000, '21. equipmentService não vazio');
@@ -360,23 +359,6 @@ function testIsolationIntactModules() {
     '20. migration ops não altera quotes',
   );
 
-  // UI Fase 1A: não desbloquear nav / não criar UI completa
-  assert(
-    exists('app/master/topography/operations/page.tsx'),
-    'rota canônica /master/topography/operations',
-  );
-  const opsPage = read('app/master/topography/operations/page.tsx');
-  assert(opsPage.includes('MasterModulePlaceholder'), '1A sem UI — permanece placeholder');
-  assert(!exists('components/master/topography/operations/OperationsPage.tsx'), 'sem UI listagem 1A');
-
-  const nav = read('lib/master/executiveNav.ts');
-  assert(
-    /name:\s*'Operação'[\s\S]*?comingSoon:\s*true/.test(nav),
-    'Operação permanece Em breve (1A)',
-  );
-  assert(nav.includes('/master/topography/operations'), 'href canônico operations');
-
-  // Sem APIs de submódulos
   assert(
     !exists('app/api/master/topography/operations/[id]/team/route.ts'),
     'sem API equipe',
@@ -385,8 +367,115 @@ function testIsolationIntactModules() {
     !exists('app/api/master/topography/operations/[id]/checklist/route.ts'),
     'sem API checklist',
   );
+  assert(exists('app/gis/page.tsx') || exists('lib/gisSaleCreateService.ts'), '20. GIS clientes intacto');
+  assert(
+    exists('lib/contracts') || exists('app/contracts') || exists('components/contracts'),
+    '20. contratos clientes intactos',
+  );
 
   console.log('OK testIsolationIntactModules (19-22)');
+}
+
+/** Fase 1B UI — itens 1–18 + responsividade/nav */
+function testPhase1bUiAndNavigation() {
+  // 1. Página deixa de ser placeholder
+  const opsPage = read('app/master/topography/operations/page.tsx');
+  assert(!opsPage.includes('MasterModulePlaceholder'), '1. página deixa de ser placeholder');
+  assert(opsPage.includes('OperationsPage'), '1. usa OperationsPage');
+  assert(exists('app/master/topography/operations/[id]/page.tsx'), '8. rota detalhe');
+
+  assert(exists('components/master/topography/operations/OperationsPage.tsx'), '3. listagem UI');
+  assert(exists('components/master/topography/operations/OperationDetailPage.tsx'), '8. detalhe UI');
+  assert(exists('components/master/topography/operations/OperationFormModal.tsx'), '5. form modal');
+  assert(exists('components/master/topography/operations/OperationKpiRow.tsx'), '10. KPIs');
+  assert(exists('components/master/topography/operations/OperationFilters.tsx'), '9. filtros');
+  assert(exists('components/master/topography/operations/OperationStatusBadge.tsx'), 'status badge');
+  assert(exists('components/master/topography/operations/OperationPriorityBadge.tsx'), 'prioridade badge');
+  assert(exists('components/master/topography/operations/OperationStatusModal.tsx'), '11. alterar status');
+  assert(exists('components/master/topography/operations/operation.module.css'), '18. CSS módulo');
+
+  const listUi = read('components/master/topography/operations/OperationsPage.tsx');
+  assert(listUi.includes('MasterSuperAdminGuard'), 'segurança lista');
+  assert(listUi.includes('Nova Ordem de Serviço'), '5. botão criar');
+  assert(listUi.includes('emptyState') || listUi.includes('Nenhuma Ordem'), '4. estado vazio');
+  assert(listUi.includes('Arquivar'), '14. arquivar');
+  assert(listUi.includes('Restaurar'), '14. restaurar');
+  assert(listUi.includes('Editar'), '7. editar');
+  assert(listUi.includes('Detalhes'), '8. detalhes');
+  assert(listUi.includes('Alterar status'), '11. alterar status');
+  assert(listUi.includes('OperationKpiRow'), '10. KPIs na listagem');
+  assert(listUi.includes('OperationFilters'), '9. filtros na listagem');
+  assert(listUi.includes('includeArchived'), '9. filtro arquivadas');
+  assert(listUi.includes('/api/master/topography/operations'), '3. consome API listagem');
+  assert(listUi.includes('scheduledFrom'), '9. período agendado');
+
+  const formUi = read('components/master/topography/operations/OperationFormModal.tsx');
+  assert(formUi.includes('Dados gerais'), 'form aba gerais');
+  assert(formUi.includes('Planejamento'), 'form aba planejamento');
+  assert(formUi.includes('Custos'), 'form aba custos');
+  assert(formUi.includes('Observações'), 'form aba observações');
+  assert(formUi.includes('OS-AAAA-NNNN') || formUi.includes('gerado automaticamente'), '6. código backend');
+  assert(formUi.includes('Código imutável'), '6. código imutável na edição');
+  assert(formUi.includes('datetime-local'), 'datas no form');
+
+  const statusModal = read('components/master/topography/operations/OperationStatusModal.tsx');
+  assert(statusModal.includes('reabertura SUPER_ADMIN') || statusModal.includes('reabertura'), '15. reopen UI');
+  assert(statusModal.includes('Confirmo reabertura'), '15. confirmação explícita reopen');
+  assert(statusModal.includes('Fim real'), '13. COMPLETED exige actual_end na UI');
+  assert(statusModal.includes('OPERATION_STATUS_TRANSITIONS'), '11. transições do mapa');
+
+  const detailUi = read('components/master/topography/operations/OperationDetailPage.tsx');
+  assert(detailUi.includes('MasterSuperAdminGuard'), 'segurança detalhe');
+  assert(detailUi.includes('Voltar à lista'), 'voltar lista');
+  assert(detailUi.includes('Equipe') && detailUi.includes('Em breve'), 'reserva equipe');
+  assert(detailUi.includes('Checklist') && detailUi.includes('Em breve'), 'reserva checklist');
+  assert(detailUi.includes('Documentos') && detailUi.includes('Em breve'), 'reserva documentos');
+  assert(detailUi.includes('Timeline') && detailUi.includes('Em breve'), 'reserva timeline');
+  assert(!detailUi.includes('/api/master/topography/operations/') || detailUi.includes('operations/${'), 'detalhe API');
+
+  const kpiUi = read('components/master/topography/operations/OperationKpiRow.tsx');
+  assert(kpiUi.includes('Concluídas no mês'), '10. KPI concluídas no mês');
+  assert(kpiUi.includes('Atrasadas'), '10. KPI atrasadas');
+  assert(kpiUi.includes('completedThisMonth'), '10. completedThisMonth');
+
+  const types = read('lib/master/topography/operationTypes.ts');
+  assert(types.includes('completedThisMonth'), 'KPI type completedThisMonth');
+  const service = read('lib/master/topography/operationService.ts');
+  assert(service.includes('completedThisMonth'), 'KPI service completedThisMonth');
+
+  // 2. Menu Operação ativo
+  const nav = read('lib/master/executiveNav.ts');
+  const opsBlock = nav.slice(
+    nav.indexOf("name: 'Operação'"),
+    nav.indexOf("name: 'Equipamentos'"),
+  );
+  assert(!opsBlock.includes('comingSoon: true'), '2. Operação sem Em breve');
+  assert(opsBlock.includes("/master/topography/operations"), '2. href Operação');
+  assert(
+    /name:\s*'Veículos'[\s\S]*?comingSoon:\s*true/.test(nav),
+    'Veículos permanece Em breve',
+  );
+  assert(
+    /name:\s*'Relatórios'[\s\S]*?comingSoon:\s*true[\s\S]*?FINANCEIRO CORPORATIVO/.test(nav),
+    'Relatórios topografia permanece Em breve',
+  );
+
+  const dash = read('components/master/dashboard/MasterExecutiveDashboard.tsx');
+  assert(dash.includes("/master/topography/operations"), 'Dashboard link Operação');
+  assert(dash.includes("label: 'Operação'"), 'Dashboard label Operação');
+
+  // 18. responsividade básica no CSS
+  const css = read('components/master/topography/operations/operation.module.css');
+  assert(css.includes('@media'), '18. media queries');
+  assert(css.includes('overflow-x: auto'), '18. tabela scroll horizontal');
+
+  // Sem Fase 2
+  assert(
+    !exists('components/master/topography/operations/OperationTeamPanel.tsx'),
+    'sem painel equipe Fase 2',
+  );
+
+  console.log('OK testPhase1bUiAndNavigation');
 }
 
 /** 23. build — package script + markers de build readiness */
@@ -410,6 +499,7 @@ function main() {
   testApiContracts();
   testValidationDatesCostsStatusTransitions();
   testIsolationIntactModules();
+  testPhase1bUiAndNavigation();
   testBuildMarkers();
   console.log('\nmandatory-master-topography-operations-tests: all passed');
 }

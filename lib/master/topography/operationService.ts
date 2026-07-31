@@ -85,6 +85,7 @@ function emptyKpis(): MasterTopographyOperationKpis {
     processing: 0,
     waitingClient: 0,
     completed: 0,
+    completedThisMonth: 0,
     canceled: 0,
     overdue: 0,
     estimatedCostSum: 0,
@@ -158,7 +159,7 @@ export async function computeTopographyOperationKpis(
   let query = supabase
     .from('master_topography_operations')
     .select(
-      'id, status, scheduled_end, estimated_cost, actual_cost, is_archived',
+      'id, status, scheduled_end, actual_end, updated_at, estimated_cost, actual_cost, is_archived',
     );
 
   query = applyListFilters(query, filters);
@@ -175,6 +176,10 @@ export async function computeTopographyOperationKpis(
     'PROCESSING',
     'WAITING_CLIENT',
   ]);
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const monthStartIso = monthStart.toISOString();
 
   for (const row of data || []) {
     const status = String(row.status || '');
@@ -188,7 +193,17 @@ export async function computeTopographyOperationKpis(
     if (status === 'IN_FIELD') kpis.inField += 1;
     if (status === 'PROCESSING') kpis.processing += 1;
     if (status === 'WAITING_CLIENT') kpis.waitingClient += 1;
-    if (status === 'COMPLETED') kpis.completed += 1;
+    if (status === 'COMPLETED') {
+      kpis.completed += 1;
+      const completedAt = row.actual_end
+        ? String(row.actual_end)
+        : row.updated_at
+          ? String(row.updated_at)
+          : '';
+      if (completedAt && completedAt >= monthStartIso) {
+        kpis.completedThisMonth += 1;
+      }
+    }
     if (status === 'CANCELED') kpis.canceled += 1;
 
     kpis.estimatedCostSum += Number(row.estimated_cost || 0);

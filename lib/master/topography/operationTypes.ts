@@ -78,6 +78,8 @@ export type MasterTopographyOperationKpis = {
   processing: number;
   waitingClient: number;
   completed: number;
+  /** Concluídas no mês civil UTC corrente (por actual_end ou updated_at). */
+  completedThisMonth: number;
   canceled: number;
   /** Agendadas/em andamento com scheduled_end no passado. */
   overdue: number;

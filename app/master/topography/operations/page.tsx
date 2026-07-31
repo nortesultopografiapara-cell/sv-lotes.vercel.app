@@ -1,12 +1,12 @@
 'use client';
 
-import { MasterModulePlaceholder } from '@/components/master/MasterModulePlaceholder';
+import { Suspense } from 'react';
+import OperationsPage from '@/components/master/topography/operations/OperationsPage';
 
 export default function MasterTopographyOperationsPage() {
   return (
-    <MasterModulePlaceholder
-      title="Operação"
-      description="Operação de campo e rotinas da SV Topografia e Projetos. Em preparação."
-    />
+    <Suspense fallback={<div style={{ padding: '1.5rem', color: '#64748b' }}>Carregando…</div>}>
+      <OperationsPage />
+    </Suspense>
   );
 }
