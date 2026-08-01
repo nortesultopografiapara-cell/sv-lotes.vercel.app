@@ -40,7 +40,12 @@ import {
   buildBalloonAwarePaymentClauseText,
   resolveSaleContractBalloonFinance,
 } from "@/lib/saleContractBalloonFinance";
-import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import {
+  isRecantoPrimaveraContractModel,
+  isSvLotes2ContractModel,
+  resolveSaleContractModel,
+} from "@/lib/contractModel";
+import { buildMenesesClausesHtml } from "@/lib/menesesContractClauses";
 import { toContractTitleCase } from "@/lib/contractTitleCase";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
@@ -447,49 +452,9 @@ export function generateContractHTML({
   });
   const singleFutureDueLongFmt = singleFutureDue.longFmt;
 
-  const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
-    mode: paymentMode,
-    valorTotalFmt,
-    valorTotalExtenso,
-    dueDateLongFmt: singleFutureDueLongFmt,
-  });
-
-  const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
-    isCash: isCashPayment,
-    mode: paymentMode,
-    valorTotalFmt,
-    valorTotalExtenso,
-    valorEntradaFmt,
-    valorEntradaExtenso,
-    qtdParcelas,
-    valorParcelaFmt: valorParcelaFmtBalloonAware,
-    valorParcelaExtenso: valorParcelaExtensoBalloonAware,
-    dataPrimeiraParcelaFmt,
-    dataUltimaParcelaFmt,
-    singleFutureDueLongFmt,
-    hasVariableInstallments,
-    balloonClauseBodyHtml: balloonClauseBody,
-  });
-
-  const electronicSignatureClauseHtml =
-    buildSaleContractElectronicSignatureClauseHtml();
-  const forumClauseHtml = buildSaleContractForumClauseHtml(foroText);
+  const isMenesesModel = resolveSaleContractModel(tenant) === "MENESES";
 
   const dataContratoFmt = formatContractSaleDateBr(sale as Record<string, unknown>);
-
-  const projectNeighborhood = toTitleCase(
-    (isValid(project?.neighborhood) ? project.neighborhood : null) ||
-    (isValid(sale?.projects?.neighborhood) ? sale.projects.neighborhood : null) ||
-    (isValid(block?.projects?.neighborhood) ? block.projects.neighborhood : null) ||
-    ""
-  );
-    
-  const projectAddressRef = toTitleCase(
-    (isValid(project?.address_reference) ? project.address_reference : null) ||
-    (isValid(sale?.projects?.address_reference) ? sale.projects.address_reference : null) ||
-    (isValid(block?.projects?.address_reference) ? block.projects.address_reference : null) ||
-    ""
-  );
 
   // Build the locality string according to the requested hierarchy and fields
   let projectDescParts = [];
@@ -523,32 +488,46 @@ export function generateContractHTML({
     },
   );
 
-  return `
-        ${CONTRACT_PDF_PRINT_CSS}
-        <div class="sv-contract-document" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
-
-            <div class="contract-title">
-                 <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>
-            </div>
-            
-            <div class="contract-clause">
-                <p style="margin-bottom: 10px;">
-                    <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
-                </p>
-                <p style="margin-bottom: 10px;">
-                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
-                </p>
-                ${spouseQualificationHtml}
-            </div>
-
-            <div class="contract-preamble">
-                <p style="margin-bottom: 0;">
-                    Pelo presente instrumento particular, partes acima qualificadas têm entre si justo e acertado a celebração do presente compromisso de compra e venda que se regerá pelas cláusulas, termos e condições, estipuladas a seguir, que as partes mutuamente outorgam e aceitam, as quais comprometem cumprir e respeitar, por si, seus herdeiros e sucessores, na forma da lei:
-                </p>
-            </div>
-
-            ${paymentSummaryHtml}
-
+  /** Corpo jurídico: MENESES = cláusulas 1–14 novas; PADRAO = clássicas atuais. */
+  const legalClausesHtml = isMenesesModel
+    ? buildMenesesClausesHtml({
+        loteLabel: `LOTE ${lote} DA QUADRA ${quadra}`,
+        lote: String(lote || ""),
+        quadra: String(quadra || ""),
+        areaFmt: formatArea(block?.area),
+        lotBoundariesClause,
+        curvaClause,
+        projectDescString,
+        lotLocationSuffix,
+        foroText,
+      })
+    : (() => {
+        const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({
+          mode: paymentMode,
+          valorTotalFmt,
+          valorTotalExtenso,
+          dueDateLongFmt: singleFutureDueLongFmt,
+        });
+        const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
+          isCash: isCashPayment,
+          mode: paymentMode,
+          valorTotalFmt,
+          valorTotalExtenso,
+          valorEntradaFmt,
+          valorEntradaExtenso,
+          qtdParcelas,
+          valorParcelaFmt: valorParcelaFmtBalloonAware,
+          valorParcelaExtenso: valorParcelaExtensoBalloonAware,
+          dataPrimeiraParcelaFmt,
+          dataUltimaParcelaFmt,
+          singleFutureDueLongFmt,
+          hasVariableInstallments,
+          balloonClauseBodyHtml: balloonClauseBody,
+        });
+        const electronicSignatureClauseHtml =
+          buildSaleContractElectronicSignatureClauseHtml();
+        const forumClauseHtml = buildSaleContractForumClauseHtml(foroText);
+        return `
             <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: o imóvel identificado como <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${curvaClause}
@@ -610,7 +589,36 @@ export function generateContractHTML({
 
             ${electronicSignatureClauseHtml}
 
-            ${forumClauseHtml}
+            ${forumClauseHtml}`;
+      })();
+
+  return `
+        ${CONTRACT_PDF_PRINT_CSS}
+        <div class="sv-contract-document" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
+
+            <div class="contract-title">
+                 <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>
+            </div>
+            
+            <div class="contract-clause">
+                <p style="margin-bottom: 10px;">
+                    <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
+                </p>
+                <p style="margin-bottom: 10px;">
+                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
+                </p>
+                ${spouseQualificationHtml}
+            </div>
+
+            <div class="contract-preamble">
+                <p style="margin-bottom: 0;">
+                    Pelo presente instrumento particular, partes acima qualificadas têm entre si justo e acertado a celebração do presente compromisso de compra e venda que se regerá pelas cláusulas, termos e condições, estipuladas a seguir, que as partes mutuamente outorgam e aceitam, as quais comprometem cumprir e respeitar, por si, seus herdeiros e sucessores, na forma da lei:
+                </p>
+            </div>
+
+            ${paymentSummaryHtml}
+
+            ${legalClausesHtml}
 
             <div class="contract-clause">
                 <p style="margin-bottom: 10px;">
