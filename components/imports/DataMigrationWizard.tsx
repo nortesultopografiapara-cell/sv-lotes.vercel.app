@@ -708,7 +708,7 @@ export function DataMigrationWizard() {
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
       <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
       <p className="text-sm text-amber-100/90">
-        Este módulo ainda não está habilitado. Clientes, Corretores, Vendas e Atualizar Parcelas das Vendas Importadas possuem importação ativa nesta fase.
+        Este módulo ainda não está habilitado. Clientes, Corretores, Vendas, Atualizar Parcelas das Vendas Importadas e Contratos Antigos possuem importação ativa nesta fase.
       </p>
     </div>
   );
@@ -732,7 +732,7 @@ export function DataMigrationWizard() {
                     planilhas Excel para o SV LOTES de forma segura e orientada.
                   </p>
                   <p className="text-xs text-[var(--text-muted)] mt-3">
-                    A importação de Clientes, Corretores, Vendas e Atualizar Parcelas das Vendas Importadas está disponível. Os demais módulos serão habilitados nas próximas atualizações.
+                    A importação de Clientes, Corretores, Vendas, Atualizar Parcelas das Vendas Importadas e Contratos Antigos está disponível. Os demais módulos serão habilitados nas próximas atualizações.
                   </p>
                 </div>
               </div>

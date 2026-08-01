@@ -114,7 +114,7 @@ function testWizardSteps() {
 
 function testImportTypeCards() {
   const modules = listImportModules();
-  assert(modules.length === 4, '4 módulos visíveis');
+  assert(modules.length === 5, '5 módulos visíveis');
   assert(modules.some((m) => m.id === 'customers' && m.status === 'available'), 'clientes disponível');
   assert(modules.some((m) => m.id === 'brokers' && m.status === 'available'), 'corretores disponível');
   assert(modules.some((m) => m.id === 'sales' && m.status === 'available'), 'vendas disponível');
@@ -123,8 +123,8 @@ function testImportTypeCards() {
     'parcelas disponível',
   );
   assert(
-    !modules.some((m) => m.id === 'legacy_contracts'),
-    'contratos antigos oculto na seleção de nova migração',
+    modules.some((m) => m.id === 'legacy_contracts' && m.status === 'available'),
+    'contratos antigos disponível',
   );
   assert(!modules.some((m) => m.id === 'attachments'), 'anexos oculto na UI');
   assert(
@@ -134,18 +134,6 @@ function testImportTypeCards() {
 
   const card = read('components/imports/ImportTypeCard.tsx');
   assert(card.includes('import-type-card-'), 'testid card');
-
-  const layout = read('components/Layout.tsx');
-  assert(!layout.includes("name: 'Contratos Antigos'"), 'sem item Contratos Antigos no menu');
-  assert(!layout.includes('/legacy-contracts'), 'sem link /legacy-contracts no menu');
-  assert(fs.existsSync(path.join(ROOT, 'app/legacy-contracts/page.tsx')), 'rota /legacy-contracts preservada');
-
-  const wizard = read('components/imports/DataMigrationWizard.tsx');
-  assert(
-    !wizard.includes('e Contratos Antigos está disponível'),
-    'texto welcome sem Contratos Antigos',
-  );
-
   console.log('OK testImportTypeCards');
 }
 
