@@ -322,6 +322,15 @@ function testShareMessagesDistinct() {
   assert(spouseMsg.includes('cônjuge anuente'), 'texto anuente');
   assert(buyerMsg.includes('somente por você'), 'pessoal comprador');
   assert(spouseMsg.includes('somente por você'), 'pessoal cônjuge');
+  assert(buyerMsg.includes('Empreendimento: Recanto'), 'empreendimento buyer');
+  assert(spouseMsg.includes('Empreendimento: Recanto'), 'empreendimento spouse');
+  assert(buyerMsg.includes('Quadra: 01') && buyerMsg.includes('Lote: 02'), 'quadra/lote buyer');
+  assert(spouseMsg.includes('Contrato: 000000001/2026'), 'contrato spouse');
+  assert(buyerMsg.includes('https://www.svlotes.com.br/sign/sale/'), 'domínio oficial buyer');
+  assert(spouseMsg.includes('https://www.svlotes.com.br/sign/sale/'), 'domínio oficial spouse');
+  assert(buyerMsg.startsWith('SV LOTES'), 'header SV LOTES');
+  assert(!buyerMsg.includes('example.com'), 'sem host exemplo no buyer');
+  assert(!spouseMsg.includes('example.com'), 'sem host exemplo no spouse');
 
   console.log('OK testShareMessagesDistinct');
 }

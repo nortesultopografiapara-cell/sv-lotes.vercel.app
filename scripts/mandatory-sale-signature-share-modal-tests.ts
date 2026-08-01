@@ -146,6 +146,12 @@ function testModalWithSpouse() {
 
   assert(buyerMsg.includes('tok-buyer') && !buyerMsg.includes('tok-spouse'), 'wa buyer');
   assert(spouseMsg.includes('tok-spouse') && !spouseMsg.includes('tok-buyer'), 'wa spouse');
+  assert(buyerMsg.includes('Empreendimento: Recanto'), 'wa buyer empreendimento');
+  assert(spouseMsg.includes('Quadra: 1') && spouseMsg.includes('Lote: 2'), 'wa spouse quadra/lote');
+  assert(buyerMsg.includes('https://www.svlotes.com.br/sign/sale/tok-buyer'), 'wa buyer domínio oficial');
+  assert(spouseMsg.includes('https://www.svlotes.com.br/sign/sale/tok-spouse'), 'wa spouse domínio oficial');
+  assert(!buyerMsg.includes('old.example'), 'wa buyer sem host antigo');
+  assert(!spouseMsg.includes('old.example'), 'wa spouse sem host antigo');
 
   const waBuyer = buildSignatureShareWhatsAppUrl(buyer.phone, buyerMsg);
   const waSpouse = buildSignatureShareWhatsAppUrl(spouse.phone, spouseMsg);
