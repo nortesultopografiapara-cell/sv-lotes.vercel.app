@@ -14,6 +14,7 @@ import {
 import {
   CONTRACT_FOOTER_RESERVE_PX,
   CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+  CONTRACT_PDF_MARGIN_MM,
 } from '@/lib/contractPaginationEngine';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
 
@@ -55,24 +56,25 @@ export function buildSaleContractPrintTemplates(chrome: ContractPdfChromeInput):
   const infoLine = infoParts.join(' | ');
 
   const logoImg = chrome.logoBase64
-    ? `<img src="${chrome.logoBase64}" style="height:12px; margin-right:6px; vertical-align:middle;" />`
+    ? `<img src="${chrome.logoBase64}" style="height:11px; margin-right:5px; vertical-align:middle;" />`
     : '';
 
+  // Altura do template deve caber em CONTRACT_PDF_MARGIN_MM.top / .bottom (Chromium).
   const headerTemplate = `
-    <div style="font-size:8px; width:100%; padding:0 14mm 4px 14mm; font-family:'Times New Roman', Times, serif; color:#333; box-sizing:border-box;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #999; padding-bottom:4px;">
+    <div style="font-size:7px; line-height:1.2; width:100%; padding:1px 14mm 1px 14mm; font-family:'Times New Roman', Times, serif; color:#333; box-sizing:border-box;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:0.8px solid #999; padding-bottom:2px;">
         <div style="max-width:72%;">
-          ${logoImg}<strong>${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
+          ${logoImg}<strong style="font-size:7.5px;">${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
           ${infoLine ? `<br/><span>${infoLine}</span>` : ''}
           ${chrome.addressLine ? `<br/><span>${escapeHtml(chrome.addressLine)}</span>` : ''}
         </div>
-        <div style="text-align:right; white-space:nowrap;">${escapeHtml(contractLabel)}</div>
+        <div style="text-align:right; white-space:nowrap; font-size:7px;">${escapeHtml(contractLabel)}</div>
       </div>
     </div>`;
 
   const footerTemplate = `
-    <div style="font-size:7px; width:100%; padding:4px 14mm 0; font-family:'Times New Roman', Times, serif; color:#666; font-style:italic; box-sizing:border-box;">
-      <div style="border-top:1px solid #ccc; padding-top:4px; display:flex; justify-content:space-between;">
+    <div style="font-size:6.5px; line-height:1.15; width:100%; padding:1px 14mm 0; font-family:'Times New Roman', Times, serif; color:#666; font-style:italic; box-sizing:border-box;">
+      <div style="border-top:0.8px solid #ccc; padding-top:2px; display:flex; justify-content:space-between;">
         <span>Documento emitido digitalmente pelo SV LOTES GIS</span>
         <span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
       </div>
@@ -255,7 +257,12 @@ export async function buildSaleContractPdfFromHtml(
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '35mm', right: '15mm', bottom: '25mm', left: '15mm' },
+      margin: {
+        top: `${CONTRACT_PDF_MARGIN_MM.top}mm`,
+        right: `${CONTRACT_PDF_MARGIN_MM.right}mm`,
+        bottom: `${CONTRACT_PDF_MARGIN_MM.bottom}mm`,
+        left: `${CONTRACT_PDF_MARGIN_MM.left}mm`,
+      },
       displayHeaderFooter: true,
       headerTemplate,
       footerTemplate,

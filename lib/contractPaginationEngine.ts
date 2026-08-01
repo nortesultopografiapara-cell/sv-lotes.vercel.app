@@ -11,13 +11,27 @@
  * 4. Nova página só quando o bloco não cabe no espaço restante.
  */
 
+/**
+ * Margens Chromium/html2pdf alinhadas à altura real do header/footer template.
+ * Se a margem for menor que o chrome, o texto invade e aparece “cortado”.
+ */
+export const CONTRACT_PDF_MARGIN_MM = {
+  /** Reserva o chrome do headerTemplate (nome + CNPJ + endereço + linha). */
+  top: 48,
+  right: 15,
+  /** Reserva o chrome do footerTemplate (linha + texto + Página X de Y). */
+  bottom: 32,
+  left: 15,
+} as const;
+
 /** Altura útil aproximada de uma página A4 com margens do PDF (mm → px @ 96dpi). */
 export const CONTRACT_PAGE_CONTENT_HEIGHT_PX = Math.round(
-  ((297 - 35 - 25) / 25.4) * 96,
-); // ~894px
+  ((297 - CONTRACT_PDF_MARGIN_MM.top - CONTRACT_PDF_MARGIN_MM.bottom) / 25.4) *
+    96,
+); // ~822px com top 48 + bottom 32
 
 /** Reserva mínima para não “espremer” o bloco no rodapé. */
-export const CONTRACT_FOOTER_RESERVE_PX = 48;
+export const CONTRACT_FOOTER_RESERVE_PX = 56;
 
 /** Seletores canônicos — novos modelos devem reutilizar estes. */
 export const CONTRACT_PAGINATION_SELECTORS = {
@@ -164,6 +178,13 @@ export const CONTRACT_CLASSIC_CLAUSE_FLOW_CSS = `
     orphans: 3;
     widows: 3;
   }
+  /* Parágrafos íntegros: evita 1ª/última linha sob cabeçalho/rodapé. */
+  .sv-contract-document .contract-clause > p {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+    orphans: 3;
+    widows: 3;
+  }
   .sv-contract-document .contract-clause--tight {
     margin-bottom: 12px;
   }
@@ -183,6 +204,13 @@ export const CONTRACT_CLASSIC_CLAUSE_FLOW_CSS = `
   .sv-contract-document .contract-balloon-only-table {
     page-break-inside: avoid;
     break-inside: avoid-page;
+  }
+  /* Fecho (local/data) + assinaturas: não partir a data entre páginas. */
+  .sv-contract-document .contract-clause:has(+ .contract-signatures) {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    page-break-after: avoid;
+    break-after: avoid-page;
   }
   .sv-contract-document .contract-footer {
     page-break-before: avoid;
