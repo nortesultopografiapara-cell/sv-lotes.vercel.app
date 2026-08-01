@@ -12,6 +12,7 @@ import {
   buildClassicContractPaginationCss,
   buildRecantoContractPaginationCss,
   CONTRACT_HTML2PDF_PAGINATION_AVOID,
+  CONTRACT_PDF_MARGIN_MM,
   RECANTO_HTML2PDF_PAGINATION_AVOID,
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
@@ -72,7 +73,12 @@ export function getContractHtml2pdfOptions(
   filename: string,
 ): ContractHtml2pdfOptions {
   return {
-    margin: [35, 15, 25, 15],
+    margin: [
+      CONTRACT_PDF_MARGIN_MM.top,
+      CONTRACT_PDF_MARGIN_MM.right,
+      CONTRACT_PDF_MARGIN_MM.bottom,
+      CONTRACT_PDF_MARGIN_MM.left,
+    ],
     filename,
     image: { type: "jpeg", quality: 1 },
     // scale 3 + letterRendering: tipografia nítida (evita serrilhado do Quadro Financeiro).

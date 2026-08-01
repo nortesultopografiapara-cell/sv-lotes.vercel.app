@@ -97,6 +97,7 @@
     "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts",
     "test:contract-inline-signature-status": "tsx scripts/mandatory-contract-inline-signature-status-tests.ts",
     "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts",
+    "test:meneses-new-clauses": "tsx scripts/mandatory-meneses-new-clauses-tests.ts",
     "test:sale-spouse-cpf-reuse": "tsx scripts/mandatory-sale-spouse-cpf-reuse-tests.ts",
     "test:release-lot": "tsx scripts/mandatory-release-lot-tests.ts",
     "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts",

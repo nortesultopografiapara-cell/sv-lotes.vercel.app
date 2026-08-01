@@ -84,9 +84,9 @@ const CERT_STYLES = `
     display: block !important;
     width: 100%;
     overflow: hidden;
-    margin-top: 10px !important;
+    margin-top: 4px !important;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
     page-break-before: auto !important;
     break-before: auto !important;
@@ -100,56 +100,58 @@ const CERT_STYLES = `
     width: 100%;
     overflow: hidden;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
   }
   .sv-cert-official {
-    margin-top: 4px;
+    margin-top: 2px;
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 8pt;
-    line-height: 1.3;
+    font-size: 7.5pt;
+    line-height: 1.25;
     color: #1a202c;
     display: block !important;
     width: 100%;
     overflow: hidden;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
     margin-bottom: 0 !important;
   }
   .sv-cert-official .sv-cert-cards {
-    display: table !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
     width: 100%;
-    table-layout: fixed;
-    border-collapse: separate;
-    border-spacing: 8px 0;
-    margin-bottom: 6px;
+    margin: 0 0 4px 0;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
   }
   .sv-cert-official .sv-cert-card {
-    display: table-cell !important;
-    vertical-align: top;
-    width: 50%;
-    border: 1.5px solid #86efac;
-    border-radius: 6px;
+    display: block !important;
+    width: auto;
+    min-width: 0;
+    border: 1px solid #86efac;
+    border-radius: 3px;
     background: #f0fff4;
     padding: 0;
     overflow: hidden;
     box-sizing: border-box;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+  .sv-cert-official .sv-cert-card--full {
+    grid-column: 1 / -1;
   }
   .sv-cert-official .sv-cert-card-head {
-    padding: 5px 8px 4px 8px;
+    padding: 2px 5px 1px 5px;
     text-align: center;
     border-bottom: 1px solid #bbf7d0;
   }
   .sv-cert-official .sv-cert-card-role {
-    margin: 0 0 4px 0;
-    font-size: 8pt;
+    margin: 0 0 1px 0;
+    font-size: 6.5pt;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #14532d;
   }
@@ -158,67 +160,68 @@ const CERT_STYLES = `
     background: #166534;
     color: #fff;
     border-radius: 999px;
-    font-size: 6.5pt;
+    font-size: 5pt;
     font-weight: 700;
-    letter-spacing: 0.03em;
-    padding: 2px 8px;
+    letter-spacing: 0.02em;
+    padding: 1px 5px;
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-card-body {
-    padding: 5px 8px 4px 8px;
+    padding: 2px 5px 1px 5px;
   }
   .sv-cert-official .sv-cert-field {
     display: flex;
     flex-direction: row;
-    gap: 5px;
+    gap: 3px;
     align-items: flex-start;
-    margin-bottom: 3px;
+    margin-bottom: 0;
   }
   .sv-cert-official .sv-cert-field-icon {
-    width: 16px;
+    width: 10px;
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 0;
     color: #64748b;
-    font-size: 11pt;
-    line-height: 1;
+    font-size: 7pt;
+    line-height: 1.2;
     text-align: center;
   }
   .sv-cert-official .sv-cert-field-label {
-    display: block;
-    font-size: 6.5pt;
+    display: inline;
+    font-size: 5pt;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #64748b;
-    margin-bottom: 1px;
+    margin-right: 2px;
   }
   .sv-cert-official .sv-cert-field-value {
-    display: block;
-    font-size: 8pt;
+    display: inline;
+    font-size: 6.5pt;
     font-weight: 600;
     color: #0f172a;
-    line-height: 1.35;
+    line-height: 1.2;
+    word-break: break-word;
   }
   .sv-cert-official .sv-cert-card-foot {
-    padding: 4px 6px;
+    padding: 1px 3px;
     background: #166534;
     text-align: center;
-    font-size: 5.5pt;
+    font-size: 4.5pt;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
     color: #fff;
   }
   .sv-cert-official .sv-cert-validation {
     border: 1px solid #cbd5e1;
-    border-radius: 6px;
+    border-radius: 3px;
     background: #fff;
-    padding: 6px;
+    padding: 3px 5px;
     display: block !important;
     width: 100%;
     overflow: hidden;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
   }
   .sv-cert-official .sv-cert-validation-inner {
@@ -226,22 +229,21 @@ const CERT_STYLES = `
     width: 100%;
     table-layout: fixed;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
   }
   .sv-cert-official .sv-cert-qr {
     display: table-cell;
-    vertical-align: top;
-    width: 72px;
-    height: 64px;
-    padding-right: 8px;
+    vertical-align: middle;
+    width: 50px;
+    padding-right: 5px;
   }
   .sv-cert-official .sv-cert-qr img,
   .sv-cert-official img.sv-cert-qr {
-    width: 64px;
-    height: 64px;
+    width: 46px;
+    height: 46px;
     border: 1px solid #cbd5e1;
-    border-radius: 4px;
-    padding: 3px;
+    border-radius: 2px;
+    padding: 1px;
     background: #fff;
     display: block;
   }
@@ -251,31 +253,31 @@ const CERT_STYLES = `
     width: auto;
   }
   .sv-cert-official .sv-cert-validation-title {
-    margin: 0 0 5px 0;
-    font-size: 8.5pt;
+    margin: 0 0 1px 0;
+    font-size: 7pt;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #14532d;
   }
   .sv-cert-official .sv-cert-validation-row {
-    margin: 0 0 3px 0;
-    font-size: 7pt;
-    line-height: 1.45;
+    margin: 0;
+    font-size: 6pt;
+    line-height: 1.25;
   }
   .sv-cert-official .sv-cert-validation-row strong {
-    display: block;
-    font-size: 6.5pt;
+    display: inline;
+    font-size: 5pt;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #64748b;
-    margin-bottom: 1px;
+    margin-right: 3px;
   }
   .sv-cert-official .sv-cert-validation-row code,
   .sv-cert-official .sv-cert-validation-row span.value {
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 7pt;
+    font-size: 5.5pt;
     color: #0f172a;
     word-break: break-all;
   }
@@ -284,20 +286,40 @@ const CERT_STYLES = `
     background: #dcfce7;
     color: #166534;
     border: 1px solid #86efac;
-    border-radius: 4px;
+    border-radius: 2px;
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 7pt;
+    font-size: 5.5pt;
     font-weight: 700;
-    letter-spacing: 0.05em;
-    padding: 2px 8px;
+    letter-spacing: 0.03em;
+    padding: 0 4px;
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-legal {
-    margin: 6px 0 0 0;
-    font-size: 6.5pt;
-    line-height: 1.5;
+    margin: 2px 0 0 0;
+    font-size: 5pt;
+    line-height: 1.3;
     color: #64748b;
     text-align: center;
+  }
+  .contract-institutional-footer {
+    margin-top: 5px !important;
+    margin-bottom: 0 !important;
+    padding-top: 3px;
+    border-top: 1px solid #ccc;
+    font-size: 7.5pt;
+    color: #444;
+    text-align: center;
+    page-break-before: avoid;
+    break-before: avoid-page;
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+  .contract-institutional-footer p {
+    margin: 0;
+    line-height: 1.2;
+  }
+  .contract-institutional-footer p + p {
+    margin-top: 1px;
   }
 </style>`;
 
@@ -327,7 +349,7 @@ function buildCertField(icon: string, label: string, value: string): string {
     <div class="sv-cert-field">
       <span class="sv-cert-field-icon">${icon}</span>
       <div>
-        <span class="sv-cert-field-label">${escapeHtml(label)}</span>
+        <span class="sv-cert-field-label">${escapeHtml(label)}:</span>
         <span class="sv-cert-field-value">${escapeHtml(value || '—')}</span>
       </div>
     </div>`;
@@ -337,14 +359,16 @@ function buildOfficialSignatureCard(params: {
   role: string;
   fields: Array<{ icon: string; label: string; value: string }>;
   signed?: boolean;
+  fullWidth?: boolean;
 }): string {
   const fieldsHtml = params.fields.map((f) => buildCertField(f.icon, f.label, f.value)).join('');
   const badge = params.signed !== false
     ? '<span class="sv-cert-card-badge">✓ ASSINADO ELETRONICAMENTE</span>'
     : '<span class="sv-cert-card-badge" style="background:#92400e;">⏳ AGUARDANDO ASSINATURA</span>';
+  const fullClass = params.fullWidth ? ' sv-cert-card--full' : '';
 
   return `
-    <div class="sv-cert-card">
+    <div class="sv-cert-card${fullClass}">
       <div class="sv-cert-card-head">
         <p class="sv-cert-card-role">${escapeHtml(params.role)}</p>
         ${badge}
@@ -564,6 +588,55 @@ function removeHtmlDivBlockByClassMarker(html: string, classMarker: string): str
   return html;
 }
 
+/**
+ * Extrai o rodapé institucional do corpo do contrato para reposicionar
+ * após o certificado no PDF assinado (evita ficar entre assinaturas e evidências).
+ */
+export function extractContractInstitutionalFooter(html: string): {
+  html: string;
+  footerHtml: string;
+} {
+  for (const marker of [
+    'class="contract-institutional-footer"',
+    'class="contract-footer"',
+  ]) {
+    const markerIdx = html.indexOf(marker);
+    if (markerIdx < 0) continue;
+    const divStart = html.lastIndexOf('<div', markerIdx);
+    if (divStart < 0) continue;
+
+    let depth = 1;
+    let pos = divStart + 4;
+    while (pos < html.length) {
+      const openAt = html.indexOf('<div', pos);
+      const closeAt = html.indexOf('</div>', pos);
+      if (closeAt === -1) break;
+      if (openAt !== -1 && openAt < closeAt) {
+        depth += 1;
+        pos = openAt + 4;
+        continue;
+      }
+      pos = closeAt + 6;
+      depth -= 1;
+      if (depth === 0) {
+        const footerHtml = html.slice(divStart, pos);
+        // Normaliza classe legada para o seletor institucional.
+        const normalized = footerHtml.includes('contract-institutional-footer')
+          ? footerHtml
+          : footerHtml.replace(
+              'class="contract-footer"',
+              'class="contract-institutional-footer"',
+            );
+        return {
+          html: html.slice(0, divStart) + html.slice(pos),
+          footerHtml: normalized,
+        };
+      }
+    }
+  }
+  return { html, footerHtml: '' };
+}
+
 /** Remove blocos de assinatura manual de todos os modelos (PDF assinado eletronicamente). */
 export function stripManualContractSignaturesForSignedPdf(html: string): string {
   let result = html;
@@ -661,12 +734,8 @@ export function buildSaleContractSignatureCertificateHtml(
       <div class="sv-cert-cards">
         ${buildVendorCard(input)}
         ${buildBuyerCard(input)}
+        ${input.spouseName ? buildSpouseCard(input) : ''}
       </div>
-      ${
-        input.spouseName
-          ? `<div class="sv-cert-cards" style="margin-top: 6px;">${buildSpouseCard(input)}</div>`
-          : ''
-      }
 
       <div class="sv-cert-validation">
         <div class="sv-cert-validation-inner">
@@ -688,12 +757,10 @@ export function buildSaleContractSignatureCertificateHtml(
           <div class="sv-cert-validation-row">
             <strong>Emitido em</strong>
             <span class="value">${escapeHtml(issuedAt)}</span>
-          </div>
-          <div class="sv-cert-validation-row">
+            &nbsp;·&nbsp;
             <strong>Status</strong>
             <span class="status-validado">VALIDADO</span>
-          </div>
-          <div class="sv-cert-validation-row">
+            &nbsp;·&nbsp;
             <strong>Tipo de certificado</strong>
             <span class="value">Assinatura Eletrônica SV LOTES — MP 2.200-2/2001</span>
           </div>
@@ -702,8 +769,7 @@ export function buildSaleContractSignatureCertificateHtml(
       </div>
 
       <p class="sv-cert-legal">
-        Este documento foi assinado eletronicamente com certificado digital conforme MP 2.200-2/2001 e Lei 14.063/2020.
-        A autenticidade pode ser verificada através do QR Code ou dos dados acima.
+        Documento assinado eletronicamente conforme MP 2.200-2/2001 e Lei 14.063/2020. Autenticidade verificável pelo QR Code ou pelos dados acima.
       </p>
     </div>
     </div>

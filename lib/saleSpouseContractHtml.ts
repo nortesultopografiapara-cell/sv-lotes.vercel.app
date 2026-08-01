@@ -88,9 +88,9 @@ export function buildClassicSpouseSignatureSlotHtml(
 
   return `
                 <div class="signature-slot" data-party-role="SPOUSE">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
-                    <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${escapeHtml(name)}</p>
-                    <p style="margin: 0; font-size: 10pt; font-weight: normal;">CÔNJUGE ANUENTE${
+                    <div class="signature-line"></div>
+                    <p style="font-weight: bold; text-transform: uppercase;">${escapeHtml(name)}</p>
+                    <p style="font-size: 9pt; font-weight: normal;">CÔNJUGE ANUENTE${
                       cpf ? `<br/>CPF: ${escapeHtml(cpf)}` : ''
                     }</p>
                 </div>`;

@@ -85,11 +85,11 @@ export function buildSaleContractRepresentativeSignatureHtml(params: {
 
   const cpf = formatRepresentativeCpfForDisplay(params.representativeCpfRaw);
   if (cpf) {
-    return `<p style="margin: 4px 0 0 0; font-size: 9pt;">${name}<br/>Representante legal<br/>CPF: ${cpf}${suffix}</p>`;
+    return `<p style="margin: 1px 0 0 0; font-size: 7.5pt; line-height: 1.2;">${name}<br/>Representante legal<br/>CPF: ${cpf}${suffix}</p>`;
   }
 
   const companyLabel = company || 'IMOBILIÁRIA';
-  return `<p style="margin: 4px 0 0 0; font-size: 9pt;">${name}<br/>Representante legal da ${companyLabel.toUpperCase()}${suffix}</p>`;
+  return `<p style="margin: 1px 0 0 0; font-size: 7.5pt; line-height: 1.2;">${name}<br/>Representante legal da ${companyLabel.toUpperCase()}${suffix}</p>`;
 }
 
 export function buildSaleContractClauseQuartaHtml(params: {
