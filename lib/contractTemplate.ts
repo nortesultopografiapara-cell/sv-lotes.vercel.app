@@ -208,7 +208,7 @@ export function generateContractHTML({
   });
   const sellerText = formatClassicSellerInstallationText(seller);
   const empresaAssinatura = seller.signatureUrl
-    ? `<img src="${seller.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
+    ? `<img src="${seller.signatureUrl}" style="max-height: 40px; margin-bottom: 2px;" alt="Assinatura"/>`
     : "";
 
   const clienteNome = toTitleCase(customer?.name || "cliente não informado");
@@ -625,50 +625,52 @@ export function generateContractHTML({
 
             ${legalClausesHtml}
 
-            <div class="contract-clause">
-                <p style="margin-bottom: 10px;">
+            <div class="contract-clause contract-closing">
+                <p>
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
                 </p>
-                <div style="text-align: right; margin-bottom: 14px;">
+                <div class="contract-closing-date">
                     <p style="margin: 0;">${empresaCidade} - ${empresaUf}, ${dataContratoFechoFmt}</p>
                 </div>
             </div>
 
             <div class="contract-signatures">
+                <div class="signature-grid">
                 <div class="signature-slot" data-party-role="VENDOR">
                     ${empresaAssinatura}
-                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
-                    <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
-                    <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMITENTE VENDEDOR<br/>CNPJ: ${empresaCnpj}</p>
+                    <div class="signature-line"></div>
+                    <p style="font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
+                    <p style="font-size: 9pt; font-weight: normal;">PROMITENTE VENDEDOR<br/>CNPJ: ${empresaCnpj}</p>
                     ${representanteAssinaturaHtml}
                 </div>
 
                 <div class="signature-slot" data-party-role="BUYER">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
-                    <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
-                    <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}</p>
+                    <div class="signature-line"></div>
+                    <p style="font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
+                    <p style="font-size: 9pt; font-weight: normal;">PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}</p>
                 </div>
 
                 ${spouseSignatureSlotHtml}
 
                 <div class="signature-slot" data-party-role="WITNESS">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 6px auto; width: 60%;"></div>
-                    <p style="margin: 0 0 4px 0; font-weight: bold;">TESTEMUNHA 1</p>
-                    <p style="margin: 0 0 3px 0; font-size: 10pt;">Nome: __________________________________________</p>
-                    <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
+                    <div class="signature-line"></div>
+                    <p style="margin: 0 0 2px 0; font-weight: bold;">TESTEMUNHA 1</p>
+                    <p style="margin: 0 0 2px 0; font-size: 9pt;">Nome: ________________________________</p>
+                    <p style="margin: 0; font-size: 9pt;">CPF: _________________________________</p>
                 </div>
 
                 <div class="signature-slot" data-party-role="WITNESS">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 6px auto; width: 60%;"></div>
-                    <p style="margin: 0 0 4px 0; font-weight: bold;">TESTEMUNHA 2</p>
-                    <p style="margin: 0 0 3px 0; font-size: 10pt;">Nome: __________________________________________</p>
-                    <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
+                    <div class="signature-line"></div>
+                    <p style="margin: 0 0 2px 0; font-weight: bold;">TESTEMUNHA 2</p>
+                    <p style="margin: 0 0 2px 0; font-size: 9pt;">Nome: ________________________________</p>
+                    <p style="margin: 0; font-size: 9pt;">CPF: _________________________________</p>
+                </div>
                 </div>
 
                 <div class="contract-footer">
                     <p style="margin: 0;">${empresaNome} — CNPJ ${empresaCnpj}</p>
-                    <p style="margin: 4px 0 0 0;">${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
-                    ${vendedorContato ? `<p style="margin: 4px 0 0 0;">${vendedorContato}</p>` : ""}
+                    <p style="margin: 2px 0 0 0;">${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
+                    ${vendedorContato ? `<p style="margin: 2px 0 0 0;">${vendedorContato}</p>` : ""}
                 </div>
             </div>
         </div>

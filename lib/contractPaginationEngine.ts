@@ -76,13 +76,15 @@ export function shouldAvoidNearlyEmptyTail(input: {
 
 /** Espaçamentos compactos compartilhados (px / CSS). */
 export const CONTRACT_SIGNATURE_SPACING = {
-  blockMarginTopClassic: '18px',
+  blockMarginTopClassic: '10px',
   blockMarginTopRecanto: '12px',
   blockMarginTopSv2: '18px',
-  slotMarginBottomClassic: '16px',
-  slotMarginBottomLast: '6px',
+  slotMarginBottomClassic: '0',
+  slotMarginBottomLast: '0',
   slotMarginBottomRecanto: '12px',
   slotMarginBottomRecantoLast: '4px',
+  classicGridColumnGap: '14px',
+  classicGridRowGap: '6px',
   sv2GridMarginTop: '16px',
   sv2GridGap: '14px',
   /** Inline Recanto (atributo style do slot). */
@@ -102,17 +104,54 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     margin-bottom: 0 !important;
     padding-bottom: 0 !important;
   }
-  .contract-signatures {
+  /* Clássico (MENESES/PADRAO): grade 2 colunas — não aplica ao Recanto. */
+  .sv-contract-document .contract-signatures {
     margin-top: ${CONTRACT_SIGNATURE_SPACING.blockMarginTopClassic};
     text-align: center;
   }
-  .contract-signatures .signature-slot {
+  .sv-contract-document .contract-signatures .signature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: ${CONTRACT_SIGNATURE_SPACING.classicGridColumnGap};
+    row-gap: ${CONTRACT_SIGNATURE_SPACING.classicGridRowGap};
+    align-items: start;
+    grid-auto-rows: min-content;
+    width: 100%;
+  }
+  .sv-contract-document .contract-signatures .signature-slot {
     margin-bottom: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomClassic};
     page-break-inside: avoid;
     break-inside: avoid-page;
+    text-align: center;
+    min-width: 0;
   }
-  .contract-signatures .signature-slot:last-of-type {
-    margin-bottom: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomLast};
+  .sv-contract-document .contract-signatures .signature-slot p {
+    margin: 0;
+    line-height: 1.25;
+  }
+  .sv-contract-document .contract-signatures .signature-slot img {
+    max-height: 40px !important;
+    margin-bottom: 2px !important;
+  }
+  .sv-contract-document .contract-signatures .sv-esign-stamp {
+    margin: 0 0 2px 0 !important;
+    font-size: 8pt !important;
+    line-height: 1.2 !important;
+  }
+  .sv-contract-document .contract-signatures .signature-line {
+    border-top: 1px solid #111;
+    margin: 0 auto 3px auto;
+    width: 72%;
+  }
+  .sv-contract-document .contract-closing {
+    margin-bottom: 8px !important;
+  }
+  .sv-contract-document .contract-closing > p {
+    margin-bottom: 6px !important;
+  }
+  .sv-contract-document .contract-closing .contract-closing-date {
+    text-align: right;
+    margin-bottom: 6px !important;
   }
   .contract-signatures--recanto {
     margin-top: ${CONTRACT_SIGNATURE_SPACING.blockMarginTopRecanto};
@@ -145,12 +184,13 @@ export const CONTRACT_CERTIFICATE_PAGINATION_CSS = `
     display: block !important;
     width: 100%;
     overflow: hidden;
-    margin-top: 10px !important;
+    margin-top: 8px !important;
     margin-bottom: 0 !important;
     page-break-before: auto !important;
     break-before: auto !important;
+    /* Bloco compacto: preferir evidências + certificado na mesma página. */
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
   }
   .sv-cert-official-block.sv-pagination-force-break {
@@ -160,11 +200,16 @@ export const CONTRACT_CERTIFICATE_PAGINATION_CSS = `
   .sv-cert-official-inner,
   .sv-cert-official,
   .sv-cert-official .sv-cert-cards,
-  .sv-cert-official .sv-cert-card,
   .sv-cert-official .sv-cert-validation,
   .sv-cert-official .sv-cert-validation-inner {
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+  /* Cards individuais: não partir no meio; podem refluir em grade. */
+  .sv-cert-official .sv-cert-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
   }
 `.trim();
@@ -211,18 +256,19 @@ export const CONTRACT_CLASSIC_CLAUSE_FLOW_CSS = `
     break-inside: avoid-page !important;
     page-break-after: avoid;
     break-after: avoid-page;
+    margin-bottom: 6px !important;
   }
   .sv-contract-document .contract-footer {
     page-break-before: avoid;
     break-before: avoid-page;
     page-break-after: avoid !important;
     break-after: avoid-page !important;
-    margin-top: 10px;
+    margin-top: 8px;
     margin-bottom: 0 !important;
     padding-bottom: 0 !important;
     border-top: 1px solid #ccc;
-    padding-top: 8px;
-    font-size: 9pt;
+    padding-top: 6px;
+    font-size: 8.5pt;
     color: #444;
     text-align: center;
   }

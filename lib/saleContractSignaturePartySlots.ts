@@ -143,15 +143,22 @@ function injectStampIntoSlotHtml(
 ): string {
   const when = formatStampDate(stamp.signedAt);
   const stampHtml = `
-        <p class="sv-esign-stamp" style="margin: 0 0 6px 0; font-size: 9pt; color: #166534; font-weight: 700;">
+        <p class="sv-esign-stamp" style="margin: 0 0 2px 0; font-size: 8pt; color: #166534; font-weight: 700; line-height: 1.2;">
           Assinado eletronicamente
           ${stamp.signerName ? `<br/>${escapeHtml(stamp.signerName)}` : ''}
           ${when ? `<br/>${escapeHtml(when)}` : ''}
         </p>`;
 
-  const lineIdx = slotHtml.indexOf('border-top: 1px solid');
+  const lineIdx = slotHtml.indexOf('signature-line');
   if (lineIdx >= 0) {
     const insertAt = slotHtml.lastIndexOf('<div', lineIdx);
+    if (insertAt >= 0) {
+      return slotHtml.slice(0, insertAt) + stampHtml + slotHtml.slice(insertAt);
+    }
+  }
+  const legacyLineIdx = slotHtml.indexOf('border-top: 1px solid');
+  if (legacyLineIdx >= 0) {
+    const insertAt = slotHtml.lastIndexOf('<div', legacyLineIdx);
     if (insertAt >= 0) {
       return slotHtml.slice(0, insertAt) + stampHtml + slotHtml.slice(insertAt);
     }
