@@ -654,24 +654,24 @@ export function generateContractHTML({
 
                 <div class="signature-slot" data-party-role="WITNESS">
                     <div class="signature-line"></div>
-                    <p style="margin: 0 0 2px 0; font-weight: bold;">TESTEMUNHA 1</p>
-                    <p style="margin: 0 0 2px 0; font-size: 9pt;">Nome: ________________________________</p>
+                    <p style="margin: 0 0 1px 0; font-weight: bold;">TESTEMUNHA 1</p>
+                    <p style="margin: 0 0 1px 0; font-size: 9pt;">Nome: ________________________________</p>
                     <p style="margin: 0; font-size: 9pt;">CPF: _________________________________</p>
                 </div>
 
                 <div class="signature-slot" data-party-role="WITNESS">
                     <div class="signature-line"></div>
-                    <p style="margin: 0 0 2px 0; font-weight: bold;">TESTEMUNHA 2</p>
-                    <p style="margin: 0 0 2px 0; font-size: 9pt;">Nome: ________________________________</p>
+                    <p style="margin: 0 0 1px 0; font-weight: bold;">TESTEMUNHA 2</p>
+                    <p style="margin: 0 0 1px 0; font-size: 9pt;">Nome: ________________________________</p>
                     <p style="margin: 0; font-size: 9pt;">CPF: _________________________________</p>
                 </div>
                 </div>
+            </div>
 
-                <div class="contract-footer">
-                    <p style="margin: 0;">${empresaNome} — CNPJ ${empresaCnpj}</p>
-                    <p style="margin: 2px 0 0 0;">${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
-                    ${vendedorContato ? `<p style="margin: 2px 0 0 0;">${vendedorContato}</p>` : ""}
-                </div>
+            <div class="contract-institutional-footer">
+                <p>${empresaNome} — CNPJ ${empresaCnpj}</p>
+                <p>${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
+                ${vendedorContato ? `<p>${vendedorContato}</p>` : ""}
             </div>
         </div>
     `;

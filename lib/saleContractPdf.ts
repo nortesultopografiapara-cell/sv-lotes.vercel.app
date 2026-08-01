@@ -225,6 +225,7 @@ export async function buildSaleContractPdfFromHtml(
 
           const certH = Math.ceil(cert.getBoundingClientRect().height || 0);
           const sig = document.querySelector('.contract-signatures, .sv2-signatures');
+          const sigH = sig ? Math.ceil(sig.getBoundingClientRect().height || 0) : 0;
           let remaining = pageH;
 
           if (sig) {
@@ -238,10 +239,26 @@ export async function buildSaleContractPdfFromHtml(
           }
 
           const available = Math.max(0, remaining - footer);
-          if (certH > available) {
+          const packFitsFreshPage = sigH + certH + 8 <= pageH - footer;
+
+          if (certH > available + 48) {
+            if (sig && packFitsFreshPage) {
+              sig.classList.add('sv-pagination-force-break');
+              cert.classList.remove('sv-pagination-force-break');
+              return {
+                applied: true,
+                decision: 'pack-new-page',
+                remaining,
+                certH,
+                sigH,
+                available,
+              };
+            }
+            if (sig) sig.classList.remove('sv-pagination-force-break');
             cert.classList.add('sv-pagination-force-break');
             return { applied: true, decision: 'new-page', remaining, certH, available };
           }
+          if (sig) sig.classList.remove('sv-pagination-force-break');
           cert.classList.remove('sv-pagination-force-break');
           return { applied: true, decision: 'same-page', remaining, certH, available };
         },

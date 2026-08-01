@@ -84,7 +84,7 @@ const CERT_STYLES = `
     display: block !important;
     width: 100%;
     overflow: hidden;
-    margin-top: 8px !important;
+    margin-top: 4px !important;
     page-break-inside: avoid !important;
     break-inside: avoid-page !important;
     -webkit-column-break-inside: avoid !important;
@@ -120,9 +120,9 @@ const CERT_STYLES = `
   .sv-cert-official .sv-cert-cards {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    gap: 4px;
     width: 100%;
-    margin: 0 0 6px 0;
+    margin: 0 0 4px 0;
     page-break-inside: avoid !important;
     break-inside: avoid-page !important;
   }
@@ -131,7 +131,7 @@ const CERT_STYLES = `
     width: auto;
     min-width: 0;
     border: 1px solid #86efac;
-    border-radius: 4px;
+    border-radius: 3px;
     background: #f0fff4;
     padding: 0;
     overflow: hidden;
@@ -143,15 +143,15 @@ const CERT_STYLES = `
     grid-column: 1 / -1;
   }
   .sv-cert-official .sv-cert-card-head {
-    padding: 3px 6px 2px 6px;
+    padding: 2px 5px 1px 5px;
     text-align: center;
     border-bottom: 1px solid #bbf7d0;
   }
   .sv-cert-official .sv-cert-card-role {
-    margin: 0 0 2px 0;
-    font-size: 7pt;
+    margin: 0 0 1px 0;
+    font-size: 6.5pt;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #14532d;
   }
@@ -160,63 +160,63 @@ const CERT_STYLES = `
     background: #166534;
     color: #fff;
     border-radius: 999px;
-    font-size: 5.5pt;
+    font-size: 5pt;
     font-weight: 700;
     letter-spacing: 0.02em;
-    padding: 1px 6px;
+    padding: 1px 5px;
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-card-body {
-    padding: 3px 6px 2px 6px;
+    padding: 2px 5px 1px 5px;
   }
   .sv-cert-official .sv-cert-field {
     display: flex;
     flex-direction: row;
-    gap: 4px;
+    gap: 3px;
     align-items: flex-start;
-    margin-bottom: 1px;
+    margin-bottom: 0;
   }
   .sv-cert-official .sv-cert-field-icon {
-    width: 12px;
+    width: 10px;
     flex-shrink: 0;
-    margin-top: 1px;
+    margin-top: 0;
     color: #64748b;
-    font-size: 8pt;
-    line-height: 1;
+    font-size: 7pt;
+    line-height: 1.2;
     text-align: center;
   }
   .sv-cert-official .sv-cert-field-label {
     display: inline;
-    font-size: 5.5pt;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #64748b;
-    margin-right: 3px;
-  }
-  .sv-cert-official .sv-cert-field-value {
-    display: inline;
-    font-size: 7pt;
-    font-weight: 600;
-    color: #0f172a;
-    line-height: 1.25;
-    word-break: break-word;
-  }
-  .sv-cert-official .sv-cert-card-foot {
-    padding: 2px 4px;
-    background: #166534;
-    text-align: center;
     font-size: 5pt;
     font-weight: 700;
     letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-right: 2px;
+  }
+  .sv-cert-official .sv-cert-field-value {
+    display: inline;
+    font-size: 6.5pt;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.2;
+    word-break: break-word;
+  }
+  .sv-cert-official .sv-cert-card-foot {
+    padding: 1px 3px;
+    background: #166534;
+    text-align: center;
+    font-size: 4.5pt;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
     color: #fff;
   }
   .sv-cert-official .sv-cert-validation {
     border: 1px solid #cbd5e1;
-    border-radius: 4px;
+    border-radius: 3px;
     background: #fff;
-    padding: 4px 6px;
+    padding: 3px 5px;
     display: block !important;
     width: 100%;
     overflow: hidden;
@@ -234,16 +234,16 @@ const CERT_STYLES = `
   .sv-cert-official .sv-cert-qr {
     display: table-cell;
     vertical-align: middle;
-    width: 58px;
-    padding-right: 6px;
+    width: 50px;
+    padding-right: 5px;
   }
   .sv-cert-official .sv-cert-qr img,
   .sv-cert-official img.sv-cert-qr {
-    width: 52px;
-    height: 52px;
+    width: 46px;
+    height: 46px;
     border: 1px solid #cbd5e1;
-    border-radius: 3px;
-    padding: 2px;
+    border-radius: 2px;
+    padding: 1px;
     background: #fff;
     display: block;
   }
@@ -253,31 +253,31 @@ const CERT_STYLES = `
     width: auto;
   }
   .sv-cert-official .sv-cert-validation-title {
-    margin: 0 0 2px 0;
-    font-size: 7.5pt;
+    margin: 0 0 1px 0;
+    font-size: 7pt;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #14532d;
   }
   .sv-cert-official .sv-cert-validation-row {
-    margin: 0 0 1px 0;
-    font-size: 6.5pt;
-    line-height: 1.3;
+    margin: 0;
+    font-size: 6pt;
+    line-height: 1.25;
   }
   .sv-cert-official .sv-cert-validation-row strong {
     display: inline;
-    font-size: 5.5pt;
+    font-size: 5pt;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #64748b;
-    margin-right: 4px;
+    margin-right: 3px;
   }
   .sv-cert-official .sv-cert-validation-row code,
   .sv-cert-official .sv-cert-validation-row span.value {
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 6pt;
+    font-size: 5.5pt;
     color: #0f172a;
     word-break: break-all;
   }
@@ -286,20 +286,40 @@ const CERT_STYLES = `
     background: #dcfce7;
     color: #166534;
     border: 1px solid #86efac;
-    border-radius: 3px;
+    border-radius: 2px;
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 6pt;
+    font-size: 5.5pt;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 1px 5px;
+    letter-spacing: 0.03em;
+    padding: 0 4px;
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-legal {
-    margin: 3px 0 0 0;
-    font-size: 5.5pt;
-    line-height: 1.35;
+    margin: 2px 0 0 0;
+    font-size: 5pt;
+    line-height: 1.3;
     color: #64748b;
     text-align: center;
+  }
+  .contract-institutional-footer {
+    margin-top: 5px !important;
+    margin-bottom: 0 !important;
+    padding-top: 3px;
+    border-top: 1px solid #ccc;
+    font-size: 7.5pt;
+    color: #444;
+    text-align: center;
+    page-break-before: avoid;
+    break-before: avoid-page;
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+  .contract-institutional-footer p {
+    margin: 0;
+    line-height: 1.2;
+  }
+  .contract-institutional-footer p + p {
+    margin-top: 1px;
   }
 </style>`;
 
@@ -566,6 +586,55 @@ function removeHtmlDivBlockByClassMarker(html: string, classMarker: string): str
   }
 
   return html;
+}
+
+/**
+ * Extrai o rodapé institucional do corpo do contrato para reposicionar
+ * após o certificado no PDF assinado (evita ficar entre assinaturas e evidências).
+ */
+export function extractContractInstitutionalFooter(html: string): {
+  html: string;
+  footerHtml: string;
+} {
+  for (const marker of [
+    'class="contract-institutional-footer"',
+    'class="contract-footer"',
+  ]) {
+    const markerIdx = html.indexOf(marker);
+    if (markerIdx < 0) continue;
+    const divStart = html.lastIndexOf('<div', markerIdx);
+    if (divStart < 0) continue;
+
+    let depth = 1;
+    let pos = divStart + 4;
+    while (pos < html.length) {
+      const openAt = html.indexOf('<div', pos);
+      const closeAt = html.indexOf('</div>', pos);
+      if (closeAt === -1) break;
+      if (openAt !== -1 && openAt < closeAt) {
+        depth += 1;
+        pos = openAt + 4;
+        continue;
+      }
+      pos = closeAt + 6;
+      depth -= 1;
+      if (depth === 0) {
+        const footerHtml = html.slice(divStart, pos);
+        // Normaliza classe legada para o seletor institucional.
+        const normalized = footerHtml.includes('contract-institutional-footer')
+          ? footerHtml
+          : footerHtml.replace(
+              'class="contract-footer"',
+              'class="contract-institutional-footer"',
+            );
+        return {
+          html: html.slice(0, divStart) + html.slice(pos),
+          footerHtml: normalized,
+        };
+      }
+    }
+  }
+  return { html, footerHtml: '' };
 }
 
 /** Remove blocos de assinatura manual de todos os modelos (PDF assinado eletronicamente). */

@@ -143,7 +143,7 @@ function injectStampIntoSlotHtml(
 ): string {
   const when = formatStampDate(stamp.signedAt);
   const stampHtml = `
-        <p class="sv-esign-stamp" style="margin: 0 0 2px 0; font-size: 8pt; color: #166534; font-weight: 700; line-height: 1.2;">
+        <p class="sv-esign-stamp" style="margin: 0 0 1px 0; font-size: 7.5pt; color: #166534; font-weight: 700; line-height: 1.15;">
           Assinado eletronicamente
           ${stamp.signerName ? `<br/>${escapeHtml(stamp.signerName)}` : ''}
           ${when ? `<br/>${escapeHtml(when)}` : ''}

@@ -1424,6 +1424,7 @@ export async function loadSaleContractPdfForSign(
     const {
       buildSaleContractSignatureCertificateHtmlWithQr,
       stripManualContractSignaturesForSignedPdf,
+      extractContractInstitutionalFooter,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
     const { resolveSaleContractCertificatePublicUrl } = await import(
@@ -1558,6 +1559,10 @@ export async function loadSaleContractPdfForSign(
       spouseIpAddress: spouseParty?.ip_address || null,
       spouseSignatureHash: spouseParty?.signature_hash || null,
     });
+
+    // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.
+    const moved = extractContractInstitutionalFooter(html);
+    html = moved.html + (moved.footerHtml || '');
   }
 
   try {
