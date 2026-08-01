@@ -39,7 +39,7 @@ export function buildMenesesClausesHtml(ctx: MenesesClausesContext): string {
   const location = String(ctx.lotLocationSuffix || '');
   const foro = String(ctx.foroText || '').trim() || 'competente';
 
-  const objetoImovel = `o imóvel identificado como <strong>${loteStrong}</strong>${projectDesc}${location}, com área total de <strong>${area}</strong>${
+  const objetoImovel = `imóvel identificado como <strong>${loteStrong}</strong>${projectDesc}${location}, com área total de <strong>${area}</strong>${
     boundaries ? `, ${boundaries}` : ''
   }${curva}`;
 
@@ -54,7 +54,7 @@ export function buildMenesesClausesHtml(ctx: MenesesClausesContext): string {
                     <strong>Cláusula Segunda — Do Objeto:</strong> O PROMITENTE VENDEDOR declara-se legítimo possuidor e titular dos direitos possessórios do imóvel objeto deste contrato, livre e desembaraçado de quaisquer ônus, dívidas ou litígios de seu conhecimento.
                 </p>
                 <p style="margin-bottom: 0;">
-                    O imóvel objeto deste contrato corresponde a ${objetoImovel}.
+                    O imóvel objeto deste contrato corresponde ao ${objetoImovel}.
                 </p>`),
 
     clauseBlock(`

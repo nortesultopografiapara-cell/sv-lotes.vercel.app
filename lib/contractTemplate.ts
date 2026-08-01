@@ -53,6 +53,7 @@ import {
   formatContractDueDateBr,
   formatContractDueDateLongBr,
   formatContractSaleDateBr,
+  formatContractSaleDateLongBr,
   resolveContractPaymentDates,
   type ContractFinanceReceiptRef,
   type ContractPaymentDates,
@@ -455,6 +456,10 @@ export function generateContractHTML({
   const isMenesesModel = resolveSaleContractModel(tenant) === "MENESES";
 
   const dataContratoFmt = formatContractSaleDateBr(sale as Record<string, unknown>);
+  /** Fecho do contrato: MENESES usa data por extenso; PADRAO mantém dd/mm/aaaa. */
+  const dataContratoFechoFmt = isMenesesModel
+    ? formatContractSaleDateLongBr(sale as Record<string, unknown>) || dataContratoFmt
+    : dataContratoFmt;
 
   // Build the locality string according to the requested hierarchy and fields
   let projectDescParts = [];
@@ -625,7 +630,7 @@ export function generateContractHTML({
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
                 </p>
                 <div style="text-align: right; margin-bottom: 14px;">
-                    <p style="margin: 0;">${empresaCidade} - ${empresaUf}, ${dataContratoFmt}</p>
+                    <p style="margin: 0;">${empresaCidade} - ${empresaUf}, ${dataContratoFechoFmt}</p>
                 </div>
             </div>
 

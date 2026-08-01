@@ -105,6 +105,10 @@ console.log('1) MENESES contém cláusulas novas...');
   assert(h.includes('LOTE 05 DA QUADRA 12'), 'dimensões dinâmicas lote/quadra');
   assert(h.includes('450,50 m²') || h.includes('450.50'), 'área dinâmica');
   assert(h.includes('Rio Verde'), 'município/foro dinâmico');
+  assert(h.includes('corresponde ao imóvel identificado'), 'Cláusula Segunda: corresponde ao imóvel');
+  assert(!h.includes('corresponde a o imóvel'), 'Cláusula Segunda: sem "a o imóvel"');
+  assert(/Rio Verde\s*-\s*GO,\s*01 de julho de 2026/i.test(h), 'fecho MENESES com data por extenso');
+  assert(!h.includes('Rio Verde - GO, 01/07/2026'), 'fecho MENESES sem dd/mm/aaaa');
   assert(!h.includes('{{'), 'sem literais {{');
   assert(!h.includes('{%'), 'sem literais {%');
   for (const bad of OLD_MENESES_FORBIDDEN) {
@@ -129,6 +133,8 @@ console.log('2) PADRAO permanece com cláusulas clássicas...');
   assert(h.includes('honorários advocatícios de 20%'), 'PADRAO mantém honorários 20%');
   assert(h.includes('Cláusula Décima Segunda:'), 'PADRAO assinatura eletrônica clássica');
   assert(h.includes('Cláusula Décima Terceira:'), 'PADRAO foro clássico');
+  assert(h.includes('Rio Verde - GO, 01/07/2026'), 'PADRAO mantém fecho dd/mm/aaaa');
+  assert(!h.includes('01 de julho de 2026'), 'PADRAO sem data por extenso no fecho');
   for (const m of [
     'Das Declarações Iniciais',
     'Da Proteção de Dados Pessoais',
@@ -197,6 +203,8 @@ console.log('5) buildMenesesClausesHtml unitário...');
     foroText: 'da Comarca de <strong>Goiânia - GO</strong>',
   });
   assert(fragment.includes('LOTE 01 DA QUADRA A'), 'objeto com lote');
+  assert(fragment.includes('corresponde ao imóvel identificado'), 'objeto: corresponde ao imóvel');
+  assert(!fragment.includes('corresponde a o imóvel'), 'objeto: sem "a o imóvel"');
   assert(fragment.includes('Goiânia - GO'), 'foro dinâmico');
   assert(fragment.includes('Cláusula Décima Quarta'), '14 cláusulas');
   assert(!fragment.includes('{{'), 'sem mustache');
