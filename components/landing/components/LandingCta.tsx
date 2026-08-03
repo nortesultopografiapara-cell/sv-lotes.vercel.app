@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Calendar, MessageCircle, Play } from 'lucide-react';
+import { Calendar, Map, MessageCircle, Play } from 'lucide-react';
 import {
   buildWhatsAppUrl,
   LANDING_PRESENTATION_URL,
@@ -90,7 +90,7 @@ export function CtaWhatsApp({
 
 export function CtaTestLot({
   id = 'cta_teste',
-  label = 'Conhecer loteamento de teste',
+  label = 'Acessar Loteamento de Demonstração',
   className = '',
 }: { id?: string; label?: string; className?: string }) {
   return (
@@ -98,8 +98,9 @@ export function CtaTestLot({
       href={LANDING_TEST_LOTEMENT_PATH}
       id={id}
       data-cta={id}
-      className={`landing-btn-ghost landing-btn-interactive ${className}`.trim()}
+      className={`landing-btn-outline landing-btn-interactive ${className}`.trim()}
     >
+      <Map className="w-4 h-4 shrink-0" aria-hidden />
       {label}
     </Link>
   );

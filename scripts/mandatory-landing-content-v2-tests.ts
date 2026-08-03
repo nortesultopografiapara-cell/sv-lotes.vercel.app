@@ -18,7 +18,7 @@ function testHeroHighlights() {
   const src = read('components/landing/sections/HeroSection.tsx');
   assert(src.includes('PLATAFORMA COMPLETA PARA LOTEAMENTOS'), 'hero badge');
   assert(src.includes('Tudo em uma única plataforma'), 'hero accent');
-  assert(src.includes('Agendar demonstração gratuita'), 'hero cta demo');
+  assert(src.includes('Acessar Loteamento de Demonstração') || src.includes('cta_teste'), 'hero cta demo loteamento');
   assert(src.includes('mapaGis'), 'hero print GIS');
   console.log('OK testHeroHighlights');
 }

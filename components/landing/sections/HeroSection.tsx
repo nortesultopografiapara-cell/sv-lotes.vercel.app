@@ -32,7 +32,7 @@ export function HeroSection() {
               className="landing-hero-cta-primary"
             />
             <CtaPresentation id="cta_video_apresentacao" />
-            <CtaTestLot id="cta_teste" className="landing-hero-cta-tertiary" />
+            <CtaTestLot id="cta_teste" label="Acessar Loteamento de Demonstração" />
           </div>
           <ul className="landing-hero-v3-micros">
             {MICROS.map((item) => (

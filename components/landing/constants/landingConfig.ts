@@ -1,7 +1,7 @@
 /** Configuração central da landing pública — edite links e mensagens aqui */
 
 export const LANDING_PRESENTATION_URL =
-  'https://www.youtube.com/watch?v=u7Z7uCLGP6U';
+  'https://www.youtube.com/watch?v=IM7vH2N_w2s';
 
 /** Rota pública do loteamento demonstrativo */
 export const LANDING_TEST_LOTEMENT_PATH = '/demo';
@@ -137,24 +137,51 @@ export const LANDING_CLIENTS = [
   'LF Imóveis',
 ] as const;
 
-/** Logos exibidos no hero — substitua por PNGs reais em public/landing/clients/ quando disponíveis. */
-export const LANDING_CLIENT_LOGOS: Array<{
+/** Clientes ativos exibidos na seção de confiança da landing. */
+export const LANDING_TRUSTED_COMPANIES: Array<{
   name: string;
+  description: string;
   src: string;
   width: number;
   height: number;
 }> = [
-  { name: 'SV Topografia & Projetos', src: '/landing/logo.png', width: 140, height: 52 },
-  { name: 'Meneses Imobiliária', src: '/landing/clients/meneses.svg', width: 120, height: 48 },
+  {
+    name: 'Meneses Imobiliária',
+    description: 'Gestão completa de loteamentos urbanos.',
+    src: '/landing/clients/meneses.png',
+    width: 320,
+    height: 200,
+  },
   {
     name: 'Chacreamento Recanto Primavera',
-    src: '/landing/clients/recanto-primavera.svg',
-    width: 150,
-    height: 48,
+    description: 'Loteamento rural administrado pelo SV LOTES.',
+    src: '/landing/clients/recanto-primavera.png',
+    width: 320,
+    height: 220,
   },
-  { name: 'Vila das Chácaras', src: '/landing/clients/vila-chacaras.svg', width: 130, height: 48 },
-  { name: 'LF Imóveis', src: '/landing/clients/lf-imoveis.svg', width: 110, height: 48 },
+  {
+    name: 'Vila das Chácaras',
+    description: 'Gestão comercial e financeira integrada.',
+    src: '/landing/clients/vila-chacaras.png',
+    width: 360,
+    height: 180,
+  },
+  {
+    name: 'LF Imóveis',
+    description: 'Imobiliária parceira utilizando o SV LOTES.',
+    src: '/landing/clients/lf-imoveis.png',
+    width: 280,
+    height: 200,
+  },
 ];
+
+/** @deprecated use LANDING_TRUSTED_COMPANIES */
+export const LANDING_CLIENT_LOGOS = LANDING_TRUSTED_COMPANIES.map(({ name, src, width, height }) => ({
+  name,
+  src,
+  width,
+  height,
+}));
 
 /** Experiência verificável — não inventar métricas de escala. */
 export const LANDING_EXPERIENCE_LINE =
