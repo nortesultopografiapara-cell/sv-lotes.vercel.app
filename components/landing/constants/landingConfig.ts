@@ -48,6 +48,8 @@ export const LANDING_WHATSAPP_MESSAGES = {
   planBusiness: 'Olá! Tenho interesse no Plano Business do SV LOTES. Gostaria de mais informações.',
   planPro: 'Olá! Tenho interesse no Plano Profissional do SV LOTES. Gostaria de mais informações.',
   contact: 'Olá! Gostaria de saber mais sobre o SV LOTES.',
+  migration:
+    'Olá! Gostaria de falar com a equipe sobre migração de dados para o SV LOTES.',
 } as const;
 
 export type LandingPlanId = 'basico' | 'business' | 'profissional';
@@ -61,6 +63,7 @@ export type ContactFormInput = {
   company: string;
   phone: string;
   email: string;
+  city: string;
   plan: string;
   message: string;
 };
@@ -91,11 +94,12 @@ function formatContactFormFields(input: ContactFormInput): string {
     `Nome: ${input.name.trim()}`,
     `Empresa: ${input.company.trim() || '—'}`,
     `WhatsApp: ${input.phone.trim()}`,
+    `Cidade/estado: ${input.city.trim() || '—'}`,
     `E-mail: ${input.email.trim() || '—'}`,
     `Plano de interesse: ${input.plan}`,
     '',
     'Mensagem:',
-    input.message.trim(),
+    input.message.trim() || '—',
   ].join('\n');
 }
 
@@ -152,30 +156,32 @@ export const LANDING_CLIENT_LOGOS: Array<{
   { name: 'LF Imóveis', src: '/landing/clients/lf-imoveis.svg', width: 110, height: 48 },
 ];
 
-/** Métricas exibidas na seção Benefícios (percepção de escala). */
-export const LANDING_STATS = [
-  { value: 100, suffix: '+', label: 'empreendimentos cadastrados' },
-  { value: 10000, suffix: '+', label: 'lotes gerenciados' },
-  { value: 0, suffix: '', label: 'milhares de parcelas controladas', textOnly: true },
-] as const;
+/** Experiência verificável — não inventar métricas de escala. */
+export const LANDING_EXPERIENCE_LINE =
+  'Tecnologia desenvolvida a partir de mais de 15 anos de experiência em topografia, loteamentos e gestão imobiliária.';
 
-/** Galeria Sobre — substitua por fotos reais em public/landing/about/ quando disponíveis. */
+/** Galeria Sobre — apenas imagens alinhadas ao texto (sem legendas incompatíveis). */
 export const LANDING_ABOUT_PHOTOS = [
   {
     src: '/landing/logo.png',
-    alt: 'SV Topografia e Projetos — sede e identidade da empresa',
-    caption: 'Sede SV Topografia & Projetos — Parauapebas, PA',
+    alt: 'SV Topografia e Projetos — identidade da empresa',
+    caption: 'SV Topografia & Projetos — Parauapebas, PA',
   },
   {
-    src: '/landing/02.png',
-    alt: 'Levantamento de campo e mapa GIS de loteamento',
-    caption: 'Levantamentos de campo com GNSS RTK de alta precisão',
+    src: '/landing/product/masked/mapa-gis.webp',
+    alt: 'Mapa GIS do SV LOTES desenvolvido a partir da experiência em loteamentos',
+    caption: 'Plataforma criada por quem vive o mercado de loteamentos',
   },
-  {
-    src: '/landing/06.png',
-    alt: 'Tecnologia de precisão e operações de topografia',
-    caption: 'Drone e equipamentos de precisão para projetos',
-  },
+] as const;
+
+/** Recursos em destaque nos cards de plano (lista completa permanece expansível). */
+export const LANDING_PLAN_HIGHLIGHT_FEATURES = [
+  'Mapa GIS Interativo',
+  'Contratos Automáticos',
+  'Controle Financeiro',
+  'Assinatura Digital de Contratos',
+  'Portal do Cliente',
+  'Emissão de Boletos e PIX',
 ] as const;
 
 export const LANDING_INCLUDED_FEATURES = [

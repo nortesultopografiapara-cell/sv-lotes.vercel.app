@@ -4,13 +4,11 @@ import { useState } from 'react';
 import {
   Calendar,
   Clock,
-  Headphones,
   Mail,
   MapPin,
   MessageCircle,
   Navigation,
   Phone,
-  Shield,
 } from 'lucide-react';
 import {
   buildContactFormMailto,
@@ -34,6 +32,7 @@ const EMPTY_FORM = {
   company: '',
   phone: '',
   email: '',
+  city: '',
   plan: 'Ainda não sei',
   message: '',
 };
@@ -63,57 +62,152 @@ export function ContactSection() {
     errors[field] ? 'landing-contact-form-field--error' : '';
 
   return (
-    <section id="contato" className="landing-section landing-contact">
+    <section id="contato" className="landing-section landing-contact landing-contact-v3">
       <div className="landing-container">
         <Reveal className="landing-contact-head">
-          <span className="landing-pill">Entre em Contato</span>
+          <span className="landing-pill">Contato</span>
           <h2 className="landing-section-title">
-            Estamos prontos para <span className="text-brand">atender você!</span>
+            Pronto para transformar a gestão do seu loteamento?
           </h2>
           <p className="landing-section-subtitle">
-            Fale conosco e descubra como o SV LOTES pode transformar a gestão do seu loteamento ou
-            empreendimento.
+            Converse com nossa equipe e veja como o SV LOTES pode funcionar na sua operação.
           </p>
         </Reveal>
 
-        <div className="landing-contact-cta-banner">
-          <div>
-            <p className="landing-contact-cta-title">Pronto para ver o SV LOTES em ação?</p>
-            <p className="landing-contact-cta-desc">
-              Agende uma demonstração personalizada ou fale direto no WhatsApp com nossa equipe.
-            </p>
-          </div>
-          <a
-            href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="landing-btn-whatsapp landing-btn-interactive"
-          >
-            <MessageCircle className="w-5 h-5" />
-            Chamar no WhatsApp
-          </a>
-        </div>
-
         <div className="landing-contact-grid">
-          <div className="landing-contact-main">
-            <div className="landing-contact-highlights">
-              <div>
-                <Headphones className="w-5 h-5 text-brand" />
-                <div>
-                  <p className="font-semibold text-white text-sm">Atendimento especializado</p>
-                  <p className="text-xs text-gray-400">Profissionais que entendem do seu negócio.</p>
-                </div>
+          <Reveal className="landing-contact-main">
+            <div className="landing-contact-form">
+              <h3 className="text-lg font-bold text-white mb-4">Solicitar demonstração</h3>
+              <div className="landing-form-grid">
+                <label>
+                  Nome
+                  <input
+                    value={form.name}
+                    onChange={(e) => {
+                      setForm({ ...form, name: e.target.value });
+                      if (errors.name) setErrors({ ...errors, name: undefined });
+                    }}
+                    placeholder="Seu nome"
+                    className={fieldClass('name')}
+                    aria-invalid={Boolean(errors.name)}
+                    aria-describedby={errors.name ? 'contact-error-name' : undefined}
+                  />
+                  {errors.name ? (
+                    <span id="contact-error-name" className="landing-contact-form-error">
+                      {errors.name}
+                    </span>
+                  ) : null}
+                </label>
+                <label>
+                  Empresa
+                  <input
+                    value={form.company}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    placeholder="Nome da empresa"
+                  />
+                </label>
+                <label>
+                  WhatsApp
+                  <input
+                    value={form.phone}
+                    onChange={(e) => {
+                      setForm({ ...form, phone: e.target.value });
+                      if (errors.phone) setErrors({ ...errors, phone: undefined });
+                    }}
+                    placeholder="(94) 99999-9999"
+                    className={fieldClass('phone')}
+                    aria-invalid={Boolean(errors.phone)}
+                    aria-describedby={errors.phone ? 'contact-error-phone' : undefined}
+                  />
+                  {errors.phone ? (
+                    <span id="contact-error-phone" className="landing-contact-form-error">
+                      {errors.phone}
+                    </span>
+                  ) : null}
+                </label>
+                <label>
+                  Cidade/estado
+                  <input
+                    value={form.city}
+                    onChange={(e) => setForm({ ...form, city: e.target.value })}
+                    placeholder="Parauapebas – PA"
+                  />
+                </label>
+                <label>
+                  E-mail <span className="landing-muted text-xs">(opcional)</span>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="seu@email.com"
+                  />
+                </label>
+                <label>
+                  Plano de interesse
+                  <select
+                    value={form.plan}
+                    onChange={(e) => setForm({ ...form, plan: e.target.value })}
+                  >
+                    {PLANS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="sm:col-span-2">
+                  Mensagem
+                  <textarea
+                    rows={3}
+                    value={form.message}
+                    onChange={(e) => {
+                      setForm({ ...form, message: e.target.value });
+                      if (errors.message) setErrors({ ...errors, message: undefined });
+                    }}
+                    placeholder="Conte brevemente sobre seu loteamento"
+                    className={fieldClass('message')}
+                    aria-invalid={Boolean(errors.message)}
+                    aria-describedby={errors.message ? 'contact-error-message' : undefined}
+                  />
+                  {errors.message ? (
+                    <span id="contact-error-message" className="landing-contact-form-error">
+                      {errors.message}
+                    </span>
+                  ) : null}
+                </label>
               </div>
-              <div>
-                <Shield className="w-5 h-5 text-emerald-400" />
-                <div>
-                  <p className="font-semibold text-white text-sm">Resposta rápida</p>
-                  <p className="text-xs text-gray-400">Retorno em horário comercial.</p>
-                </div>
+
+              <div className="landing-contact-form-actions">
+                <button
+                  type="button"
+                  id="submit_demonstracao"
+                  data-cta="submit_demonstracao"
+                  onClick={handleWhatsApp}
+                  className="landing-btn-primary landing-contact-form-btn landing-btn-interactive"
+                >
+                  <Calendar className="w-4 h-4" aria-hidden />
+                  Agendar demonstração
+                </button>
+                <button
+                  type="button"
+                  onClick={handleWhatsApp}
+                  className="landing-btn-whatsapp landing-contact-form-btn landing-btn-interactive"
+                >
+                  <MessageCircle className="w-4 h-4" aria-hidden />
+                  Chamar no WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEmail}
+                  className="landing-btn-system landing-contact-form-btn landing-btn-interactive"
+                >
+                  <Mail className="w-4 h-4" aria-hidden />
+                  Enviar por E-mail
+                </button>
               </div>
             </div>
 
-            <Reveal className="landing-map-wrap landing-map-wrap--lg" delay={0.06}>
+            <div className="landing-map-wrap landing-map-wrap--lg mt-6">
               <iframe
                 title="Localização SV Topografia - Parauapebas PA"
                 src={`https://maps.google.com/maps?q=${LANDING_ADDRESS.lat},${LANDING_ADDRESS.lng}&z=16&output=embed`}
@@ -143,135 +237,10 @@ export function ContactSection() {
                   Traçar rota
                 </a>
               </div>
-              <div className="landing-map-coords">
-                <p>{LANDING_ADDRESS.full}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Lat: {LANDING_ADDRESS.lat} · Long: {LANDING_ADDRESS.lng}
-                </p>
-              </div>
-            </Reveal>
+            </div>
+          </Reveal>
 
-            <Reveal delay={0.1}>
-              <div className="landing-contact-form">
-                <h3 className="text-lg font-bold text-white mb-4">Envie sua mensagem</h3>
-                <div className="landing-form-grid">
-                  <label>
-                    Nome
-                    <input
-                      value={form.name}
-                      onChange={(e) => {
-                        setForm({ ...form, name: e.target.value });
-                        if (errors.name) setErrors({ ...errors, name: undefined });
-                      }}
-                      placeholder="Seu nome"
-                      className={fieldClass('name')}
-                      aria-invalid={Boolean(errors.name)}
-                      aria-describedby={errors.name ? 'contact-error-name' : undefined}
-                    />
-                    {errors.name ? (
-                      <span id="contact-error-name" className="landing-contact-form-error">
-                        {errors.name}
-                      </span>
-                    ) : null}
-                  </label>
-                  <label>
-                    Empresa
-                    <input
-                      value={form.company}
-                      onChange={(e) => setForm({ ...form, company: e.target.value })}
-                      placeholder="Nome da empresa"
-                    />
-                  </label>
-                  <label>
-                    WhatsApp
-                    <input
-                      value={form.phone}
-                      onChange={(e) => {
-                        setForm({ ...form, phone: e.target.value });
-                        if (errors.phone) setErrors({ ...errors, phone: undefined });
-                      }}
-                      placeholder="(94) 99999-9999"
-                      className={fieldClass('phone')}
-                      aria-invalid={Boolean(errors.phone)}
-                      aria-describedby={errors.phone ? 'contact-error-phone' : undefined}
-                    />
-                    {errors.phone ? (
-                      <span id="contact-error-phone" className="landing-contact-form-error">
-                        {errors.phone}
-                      </span>
-                    ) : null}
-                  </label>
-                  <label>
-                    E-mail
-                    <input
-                      type="email"
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      placeholder="seu@email.com"
-                    />
-                  </label>
-                  <label className="sm:col-span-2">
-                    Plano de interesse
-                    <select
-                      value={form.plan}
-                      onChange={(e) => setForm({ ...form, plan: e.target.value })}
-                    >
-                      {PLANS.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="sm:col-span-2">
-                    Mensagem
-                    <textarea
-                      rows={3}
-                      value={form.message}
-                      onChange={(e) => {
-                        setForm({ ...form, message: e.target.value });
-                        if (errors.message) setErrors({ ...errors, message: undefined });
-                      }}
-                      placeholder="Como podemos ajudar?"
-                      className={fieldClass('message')}
-                      aria-invalid={Boolean(errors.message)}
-                      aria-describedby={errors.message ? 'contact-error-message' : undefined}
-                    />
-                    {errors.message ? (
-                      <span id="contact-error-message" className="landing-contact-form-error">
-                        {errors.message}
-                      </span>
-                    ) : null}
-                  </label>
-                </div>
-
-                <p className="landing-contact-form-hint">
-                  Escolha como deseja entrar em contato conosco:
-                </p>
-
-                <div className="landing-contact-form-actions">
-                  <button
-                    type="button"
-                    onClick={handleWhatsApp}
-                    className="landing-btn-primary landing-contact-form-btn landing-btn-interactive"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    Enviar via WhatsApp
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleEmail}
-                    className="landing-btn-system landing-contact-form-btn landing-btn-interactive"
-                  >
-                    <Mail className="w-4 h-4" />
-                    Enviar por E-mail
-                  </button>
-                </div>
-              </div>
-            </Reveal>
-          </div>
-
-          <Reveal className="landing-contact-sidebar" delay={0.08}>
+          <Reveal className="landing-contact-sidebar" delay={0.06}>
             <a
               href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
               target="_blank"
@@ -287,17 +256,6 @@ export function ContactSection() {
 
             <h3 className="text-lg font-bold text-white mb-4 mt-6">Nossos contatos</h3>
             <ul className="landing-contact-list">
-              <li>
-                <MapPin className="w-5 h-5 text-emerald-400 shrink-0" />
-                <div>
-                  <p className="font-medium text-white">Endereço</p>
-                  <p className="text-sm text-gray-400">{LANDING_ADDRESS.street}</p>
-                  <p className="text-sm text-gray-400">{LANDING_ADDRESS.neighborhood}</p>
-                  <p className="text-sm text-gray-400">
-                    {LANDING_ADDRESS.city} · CEP: {LANDING_ADDRESS.cep}
-                  </p>
-                </div>
-              </li>
               <li>
                 <Phone className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div>
@@ -352,17 +310,14 @@ export function ContactSection() {
                   <p className="text-sm text-gray-400">{LANDING_CONTACT.hours}</p>
                 </div>
               </li>
+              <li>
+                <MapPin className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <p className="font-medium text-white">Endereço</p>
+                  <p className="text-sm text-gray-400">{LANDING_ADDRESS.full}</p>
+                </div>
+              </li>
             </ul>
-            <a
-              href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="landing-btn-primary w-full justify-center mt-6 landing-btn-interactive"
-              aria-label="Agendar demonstração"
-            >
-              <Calendar className="w-4 h-4" />
-              Agendar Demonstração
-            </a>
           </Reveal>
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Lock, LogIn, Menu, UserCircle, X } from 'lucide-react';
+import { Calendar, Lock, LogIn, Menu, UserCircle, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { LANDING_CLIENT_PORTAL_PATH, LANDING_LOGIN_PATH } from './constants/landingConfig';
 import { LANDING_NAV_ITEMS, LANDING_SECTION_IDS, type LandingNavId } from './landingNav';
@@ -135,6 +135,16 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             <Lock className="w-4 h-4" aria-hidden />
             Acessar o Sistema
           </Link>
+          <a
+            href="#contato"
+            id="cta_header_demonstracao"
+            data-cta="cta_header_demonstracao"
+            className="landing-btn-primary landing-btn-header-demo landing-btn-system--desktop"
+            onClick={handleNavActivate}
+          >
+            <Calendar className="w-4 h-4 shrink-0" aria-hidden />
+            Agendar demonstração
+          </a>
         </div>
       </div>
 
@@ -159,6 +169,14 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             <span>Portal do Cliente</span>
           </Link>
         ) : null}
+        <a
+          href="#contato"
+          className="landing-btn-primary landing-header-mobile-cta"
+          onClick={handleNavActivate}
+        >
+          <Calendar className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <span>Demo</span>
+        </a>
       </div>
 
       <nav
@@ -200,6 +218,14 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
               <Lock className="w-4 h-4" aria-hidden />
               Acessar o Sistema
             </Link>
+            <a
+              href="#contato"
+              className="landing-btn-primary landing-nav-mobile-action"
+              onClick={handleNavActivate}
+            >
+              <Calendar className="w-4 h-4" aria-hidden />
+              Agendar demonstração
+            </a>
           </li>
         </ul>
       </nav>

@@ -3,9 +3,9 @@ import { LandingPage } from '@/components/landing/LandingPage';
 import { resolveClientPortalUiEnabled } from '@/lib/portal-cliente/config';
 
 export const metadata: Metadata = {
-  title: 'SV LOTES — Gestão Inteligente para Loteamentos e Chacreamentos',
+  title: 'SV LOTES | Sistema Completo para Gestão de Loteamentos',
   description:
-    'Sistema completo para gestão de loteamentos, chácaras e empreendimentos imobiliários com mapa GIS, contratos automáticos, financeiro, clientes, corretores, relatórios e assinatura digital.',
+    'Gerencie mapa GIS, vendas, clientes, contratos, parcelas, cobranças, corretores e Portal do Cliente em uma única plataforma.',
   keywords: [
     'SV LOTES',
     'gestão de loteamentos',
@@ -19,10 +19,10 @@ export const metadata: Metadata = {
     'topografia',
   ],
   openGraph: {
-    title: 'SV LOTES — Gestão Inteligente para Loteamentos e Chacreamentos',
+    title: 'SV LOTES | Sistema Completo para Gestão de Loteamentos',
     description:
-      'Sistema completo para gestão de loteamentos, chácaras e empreendimentos imobiliários com mapa GIS, contratos automáticos, financeiro e assinatura digital.',
-    images: [{ url: '/landing/landing-home.png', width: 1200, height: 630, alt: 'SV LOTES' }],
+      'Gerencie mapa GIS, vendas, clientes, contratos, parcelas, cobranças, corretores e Portal do Cliente em uma única plataforma.',
+    images: [{ url: '/landing/product/masked/mapa-gis.png', width: 1024, height: 475, alt: 'Mapa GIS SV LOTES' }],
     type: 'website',
     locale: 'pt_BR',
   },

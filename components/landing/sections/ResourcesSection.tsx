@@ -1,222 +1,135 @@
 'use client';
 
-import Image from 'next/image';
+import { useState } from 'react';
 import {
-  Bell,
-  Building2,
+  CreditCard,
   FileSignature,
-  LayoutDashboard,
   Map,
-  Shield,
-  Smartphone,
-  UserCog,
   Users,
+  UserCircle2,
   Wallet,
+  ChevronDown,
 } from 'lucide-react';
-import { HoverLift, Reveal, Stagger, StaggerItem } from '../LandingMotion';
+import { ProductShot } from '../components/ProductShot';
+import type { ProductShotKey } from '../productShots';
+import { Reveal, Stagger, StaggerItem } from '../LandingMotion';
 
-const HIGHLIGHTS = [
+const PRIMARY: Array<{
+  icon: typeof Map;
+  title: string;
+  desc: string;
+  shot: ProductShotKey;
+  frame?: 'browser' | 'phone';
+}> = [
   {
-    icon: Users,
-    title: 'Plataforma Completa',
-    description: 'Todas as ferramentas em um só lugar.',
-    color: '#a855f7',
-  },
-  {
-    icon: Shield,
-    title: '100% Online e Seguro',
-    description: 'Seus dados protegidos com alta tecnologia.',
-    color: '#22c55e',
-  },
-  {
-    icon: Smartphone,
-    title: 'Acesso de Qualquer Lugar',
-    description: 'Use no computador, tablet ou celular.',
-    color: '#3b82f6',
-  },
-];
-
-const RESOURCES = [
-  {
-    n: 1,
     icon: Map,
-    title: 'Mapa GIS Interativo',
-    description: 'Lotes e status em tempo real.',
-    image: '/landing/02.png',
-    color: '#22c55e',
+    title: 'Mapa GIS Inteligente',
+    desc: 'Visualize e comercialize os lotes diretamente pelo empreendimento.',
+    shot: 'mapaGis',
   },
   {
-    n: 2,
     icon: Users,
-    title: 'Gestão de Clientes',
-    description: 'Cadastro e histórico completo.',
-    image: '/landing/05.png',
-    color: '#a855f7',
+    title: 'Vendas e Clientes',
+    desc: 'Centralize cadastro, contato, lotes adquiridos e histórico do cliente.',
+    shot: 'clientes',
   },
   {
-    n: 3,
+    icon: UserCircle2,
+    title: 'Corretores e Comissões',
+    desc: 'Acompanhe vendas, desempenho, comissões e equipe comercial.',
+    shot: 'corretores',
+  },
+  {
     icon: FileSignature,
-    title: 'Contratos e Assinaturas',
-    description: 'Geração automática e assinatura digital.',
-    image: '/landing/04.png',
-    color: '#f97316',
+    title: 'Contratos e Assinaturas Eletrônicas',
+    desc: 'Gere contratos automaticamente, envie para assinatura e mantenha todo o histórico.',
+    shot: 'contratoAssinado',
   },
   {
-    n: 4,
     icon: Wallet,
-    title: 'Financeiro Completo',
-    description: 'Parcelas, recebimentos e inadimplência.',
-    image: '/landing/03.png',
-    color: '#3b82f6',
+    title: 'Financeiro e Cobranças',
+    desc: 'Controle parcelas, recebimentos, inadimplência, boletos e PIX.',
+    shot: 'financeiro',
   },
   {
-    n: 5,
-    icon: LayoutDashboard,
-    title: 'Relatórios Inteligentes',
-    description: 'Dashboards para decisões estratégicas.',
-    image: '/landing/01.png',
-    color: '#a855f7',
-  },
-  {
-    n: 6,
-    icon: Bell,
-    title: 'Lembretes Automáticos',
-    description: 'Avisos de vencimento para sua equipe.',
-    image: '/landing/06.png',
-    color: '#22c55e',
-  },
-  {
-    n: 7,
-    icon: Smartphone,
+    icon: CreditCard,
     title: 'Portal do Cliente',
-    description:
-      'Cliente acessa contratos, parcelas, documentos e boletos utilizando CPF e código enviado por WhatsApp.',
-    image: '/landing/07.png',
-    color: '#f97316',
-  },
-  {
-    n: 8,
-    icon: FileSignature,
-    title: 'Assinatura Eletrônica',
-    description: 'Validade jurídica e rastreabilidade.',
-    image: '/landing/04.png',
-    color: '#22c55e',
-  },
-  {
-    n: 9,
-    icon: Shield,
-    title: 'Segurança e Backup',
-    description: 'Backup automático e controle de acesso.',
-    image: '/landing/06.png',
-    color: '#3b82f6',
-  },
-  {
-    n: 10,
-    icon: Building2,
-    title: 'Gestão de Empreendimentos',
-    description: 'Múltiplos loteamentos em uma plataforma.',
-    image: '/landing/02.png',
-    color: '#22c55e',
-  },
-  {
-    n: 11,
-    icon: UserCog,
-    title: 'Usuários e Permissões',
-    description: 'Perfis granulares e auditoria.',
-    image: '/landing/06.png',
-    color: '#a855f7',
-  },
-  {
-    n: 12,
-    icon: Users,
-    title: 'Gestão de Corretores',
-    description: 'Comissões e acompanhamento de vendas.',
-    image: '/landing/05.png',
-    color: '#f97316',
+    desc: 'O cliente consulta contratos, documentos, parcelas e cobranças on-line.',
+    shot: 'portal',
   },
 ];
 
-const WHY_ITEMS = [
-  { title: 'Mais produtividade', desc: 'Automatize tarefas e foque no que importa.' },
-  { title: 'Mais vendas', desc: 'Informações precisas para vender melhor.' },
-  { title: 'Menos inadimplência', desc: 'Lembretes reduzem esquecimentos.' },
-  { title: 'Economia de tempo', desc: 'Processos que economizam horas do dia.' },
-  { title: 'Decisões inteligentes', desc: 'Dados para decisões estratégicas.' },
-  { title: 'Clientes satisfeitos', desc: 'Atendimento rápido e profissional.' },
+const SECONDARY = [
+  { title: 'Empreendimentos', desc: 'Gestão unificada de loteamentos e limites do plano.' },
+  { title: 'Migração de dados', desc: 'Importe clientes, vendas e parcelas com validação.' },
+  { title: 'Pranchas e memorial', desc: 'Documentação técnica alinhada ao GIS.' },
+  { title: 'Relatórios', desc: 'Visões gerenciais e financeiras por empreendimento.' },
+  { title: 'Sincronização offline', desc: 'Continue operando com sincronização controlada.' },
+  { title: 'Configurações', desc: 'Contas, usuários e preferências da empresa.' },
 ];
 
 export function ResourcesSection() {
+  const [openMore, setOpenMore] = useState(false);
+
   return (
-    <section id="recursos" className="landing-section landing-resources">
+    <section id="recursos" className="landing-section landing-resources-v3">
       <div className="landing-container">
-        <Reveal className="landing-section-head">
-          <div>
-            <h2 className="landing-section-title">
-              Recursos que simplificam <span className="text-brand">sua gestão imobiliária</span>
-            </h2>
-            <p className="landing-section-subtitle">
-              Uma vitrine completa de funcionalidades para vender mais e controlar sua operação em
-              tempo real.
-            </p>
-          </div>
-          <div className="landing-highlights">
-            {HIGHLIGHTS.map((h) => (
-              <div key={h.title} className="landing-highlight">
-                <span style={{ color: h.color }}>
-                  <h.icon className="w-5 h-5" />
-                </span>
-                <div>
-                  <p className="landing-highlight-title">{h.title}</p>
-                  <p className="landing-highlight-desc">{h.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+        <Reveal className="landing-section-head-center">
+          <span className="landing-pill">Recursos</span>
+          <h2 className="landing-section-title">
+            Tudo o que sua loteadora precisa em um só lugar
+          </h2>
+          <p className="landing-section-subtitle">
+            Seis pilares principais da plataforma — com telas reais do sistema.
+          </p>
         </Reveal>
 
-        <Stagger className="landing-resource-grid">
-          {RESOURCES.map((r) => (
-            <StaggerItem key={r.n}>
-              <HoverLift>
-                <article
-                  className="landing-resource-card landing-resource-card--premium"
-                  style={{ '--resource-accent': r.color } as React.CSSProperties}
-                >
-                  <div className="landing-resource-card-head">
-                    <span className="landing-resource-num" style={{ color: r.color }}>
-                      {r.n}
+        <Stagger className="landing-resource-grid-v3">
+          {PRIMARY.map((card) => {
+            const Icon = card.icon;
+            return (
+              <StaggerItem key={card.title}>
+                <article className="landing-resource-card-v3">
+                  <div className="landing-resource-card-v3-head">
+                    <span className="landing-resource-icon">
+                      <Icon className="w-5 h-5" aria-hidden />
                     </span>
-                    <r.icon className="w-5 h-5" style={{ color: r.color }} />
+                    <h3>{card.title}</h3>
                   </div>
-                  <div className="landing-resource-thumb landing-resource-thumb--lg">
-                    <Image
-                      src={r.image}
-                      alt=""
-                      width={480}
-                      height={270}
-                      className="object-cover w-full h-full"
-                      sizes="(max-width: 640px) 100vw, 25vw"
-                    />
-                  </div>
-                  <h3 className="landing-resource-title">{r.title}</h3>
-                  <p className="landing-resource-desc">{r.description}</p>
+                  <p>{card.desc}</p>
+                  <ProductShot
+                    shot={card.shot}
+                    frame={card.frame || 'browser'}
+                    showCaption={false}
+                    className="landing-resource-shot"
+                  />
                 </article>
-              </HoverLift>
-            </StaggerItem>
-          ))}
+              </StaggerItem>
+            );
+          })}
         </Stagger>
 
-        <Reveal className="landing-why" delay={0.08}>
-          <h3 className="landing-why-title">Por que escolher a SV LOTES?</h3>
-          <div className="landing-why-grid">
-            {WHY_ITEMS.map((w) => (
-              <div key={w.title} className="landing-why-item landing-why-item--premium">
-                <p className="landing-why-item-title">{w.title}</p>
-                <p className="landing-why-item-desc">{w.desc}</p>
-              </div>
-            ))}
-          </div>
-        </Reveal>
+        <div className="landing-more-wrap">
+          <button
+            type="button"
+            className="landing-btn-outline landing-btn-interactive"
+            aria-expanded={openMore}
+            onClick={() => setOpenMore((v) => !v)}
+          >
+            Ver todas as funcionalidades
+            <ChevronDown className={`w-4 h-4 transition ${openMore ? 'rotate-180' : ''}`} />
+          </button>
+          {openMore ? (
+            <div className="landing-secondary-grid">
+              {SECONDARY.map((item) => (
+                <div key={item.title} className="landing-secondary-card">
+                  <h4>{item.title}</h4>
+                  <p>{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
     </section>
   );

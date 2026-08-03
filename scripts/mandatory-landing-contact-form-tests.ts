@@ -21,6 +21,7 @@ const sample = {
   company: 'Meneses Imobiliária',
   phone: '(94) 99999-9999',
   email: 'joao@test.com',
+  city: 'Parauapebas – PA',
   plan: 'Business',
   message: 'Quero ver uma demonstração completa.',
 };
@@ -31,6 +32,7 @@ function testValidationRequiredFields() {
     company: '',
     phone: '',
     email: '',
+    city: '',
     plan: 'Básico',
     message: '   ',
   });
@@ -46,6 +48,7 @@ function testWhatsAppMessageFormat() {
   assert(text.includes('Nome: João Silva'), 'nome');
   assert(text.includes('Empresa: Meneses Imobiliária'), 'empresa');
   assert(text.includes('WhatsApp: (94) 99999-9999'), 'whatsapp');
+  assert(text.includes('Cidade/estado: Parauapebas – PA'), 'cidade');
   assert(text.includes('E-mail: joao@test.com'), 'email');
   assert(text.includes('Plano de interesse: Business'), 'plano');
   assert(text.includes('Quero ver uma demonstração completa.'), 'mensagem');

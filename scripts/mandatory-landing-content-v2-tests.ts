@@ -1,5 +1,5 @@
 /**
- * Testes — conteúdo da landing SV LOTES 2.0 (Portal do Cliente em produção).
+ * Testes — conteúdo da landing SV LOTES (reformulação visual com prints reais).
  * npx tsx scripts/mandatory-landing-content-v2-tests.ts
  */
 
@@ -16,36 +16,33 @@ function read(rel: string): string {
 
 function testHeroHighlights() {
   const src = read('components/landing/sections/HeroSection.tsx');
-  assert(src.includes('Mapa GIS Inteligente'), 'hero gis');
-  assert(src.includes('Contratos e Assinaturas Eletrônicas'), 'hero contratos');
-  assert(src.includes('Portal do Cliente com acesso por CPF e WhatsApp'), 'hero portal');
-  assert(src.includes('Financeiro Completo e Cobranças Automáticas'), 'hero financeiro');
+  assert(src.includes('PLATAFORMA COMPLETA PARA LOTEAMENTOS'), 'hero badge');
+  assert(src.includes('Tudo em uma única plataforma'), 'hero accent');
+  assert(src.includes('Agendar demonstração gratuita'), 'hero cta demo');
+  assert(src.includes('mapaGis'), 'hero print GIS');
   console.log('OK testHeroHighlights');
 }
 
 function testResourcesPortalCard() {
   const src = read('components/landing/sections/ResourcesSection.tsx');
-  assert(
-    src.includes(
-      'Cliente acessa contratos, parcelas, documentos e boletos utilizando CPF e código enviado por WhatsApp.',
-    ),
-    'card portal recursos',
-  );
+  assert(src.includes('Portal do Cliente'), 'card portal recursos');
+  assert(src.includes('Mapa GIS Inteligente'), 'card gis');
+  assert(src.includes('Ver todas as funcionalidades'), 'expand recursos');
   console.log('OK testResourcesPortalCard');
 }
 
-function testFunctionalitiesStep5() {
-  const src = read('components/landing/sections/FunctionalitiesSection.tsx');
-  assert(src.includes('Contrato + Portal do Cliente'), 'passo 5 título');
-  assert(src.includes('Portal liberado automaticamente'), 'passo 5 portal');
-  assert(src.includes('Cliente acompanha tudo online'), 'passo 5 acompanhamento');
-  console.log('OK testFunctionalitiesStep5');
+function testFlowSteps() {
+  const src = read('components/landing/sections/FlowSection.tsx');
+  assert(src.includes('cinco passos integrados'), 'fluxo título');
+  assert(src.includes('Contrato e Portal'), 'passo 5');
+  console.log('OK testFlowSteps');
 }
 
-function testBenefitsAfterList() {
-  const src = read('components/landing/sections/BenefitsSection.tsx');
-  assert(src.includes('Portal do Cliente com acesso 24 horas'), 'benefício portal 24h');
-  console.log('OK testBenefitsAfterList');
+function testCompareBenefits() {
+  const src = read('components/landing/sections/CompareSection.tsx');
+  assert(src.includes('Portal do Cliente'), 'benefício portal');
+  assert(src.includes('Antes do SV LOTES'), 'comparativo antes');
+  console.log('OK testCompareBenefits');
 }
 
 function testClientPortalSection() {
@@ -54,17 +51,17 @@ function testClientPortalSection() {
     src.includes('Seu cliente acompanha tudo sem precisar ligar para a imobiliária.'),
     'subtítulo portal',
   );
-  assert(src.includes('📱 Login utilizando CPF'), 'card cpf');
-  assert(src.includes('💬 Código via WhatsApp'), 'card whatsapp');
-  assert(src.includes('📄 Contratos Online'), 'card contratos');
-  assert(src.includes('💰 Parcelas e Financeiro'), 'card financeiro');
-  assert(src.includes('/landing/07.png'), 'print portal');
+  assert(src.includes('Login por CPF/CNPJ'), 'card cpf');
+  assert(src.includes('Código de acesso por WhatsApp'), 'card whatsapp');
+  assert(src.includes('Contratos e documentos'), 'card contratos');
+  assert(src.includes('Parcelas, boletos e situação financeira'), 'card financeiro');
+  assert(src.includes('portal'), 'print portal');
   const page = read('components/landing/LandingPage.tsx');
   assert(page.includes('ClientPortalSection'), 'seção na landing');
-  const benefitsIdx = page.indexOf('BenefitsSection');
+  const compareIdx = page.indexOf('CompareSection');
   const portalIdx = page.indexOf('ClientPortalSection');
   const plansIdx = page.indexOf('PlansSection');
-  assert(benefitsIdx < portalIdx && portalIdx < plansIdx, 'ordem entre benefícios e planos');
+  assert(compareIdx < portalIdx && portalIdx < plansIdx, 'ordem portal entre benefícios e planos');
   console.log('OK testClientPortalSection');
 }
 
@@ -82,6 +79,7 @@ function testPlansIncludedFeatures() {
   ]) {
     assert(config.includes(`'${feature}'`), `recurso incluso: ${feature}`);
   }
+  assert(plans.includes('Ver todos os recursos'), 'expand planos');
   assert(!plans.includes('Em desenvolvimento'), 'sem bloco em desenvolvimento');
   assert(!config.includes('LANDING_ROADMAP_FEATURES'), 'sem roadmap legado');
   console.log('OK testPlansIncludedFeatures');
@@ -89,8 +87,8 @@ function testPlansIncludedFeatures() {
 
 function testAboutAndContact() {
   const about = read('components/landing/sections/AboutSection.tsx');
-  assert(about.includes('Novidades da versão 2.0'), 'bloco novidades');
-  assert(about.includes('Download Seguro de Contratos'), 'novidade download');
+  assert(about.includes('Tecnologia criada por quem vive o mercado'), 'sobre título');
+  assert(about.includes('2010'), 'fundação');
 
   const contact = read('components/landing/sections/ContactSection.tsx');
   const footer = read('components/landing/LandingFooter.tsx');
@@ -100,6 +98,7 @@ function testAboutAndContact() {
   assert(footer.includes('Suporte Técnico'), 'suporte rodapé');
   assert(footer.includes('LANDING_CONTACT.supportEmail'), 'email suporte no rodapé');
   assert(config.includes("email: 'gerencia@nortesultopografia.com.br'"), 'gerencia mantida');
+  assert(contact.includes('city'), 'campo cidade');
   console.log('OK testAboutAndContact');
 }
 
@@ -117,15 +116,30 @@ function testNoLegacyPortalDevCopy() {
   console.log('OK testNoLegacyPortalDevCopy');
 }
 
+function testProductShotsPresent() {
+  const shots = [
+    'mapa-gis.webp',
+    'dashboard.webp',
+    'clientes.webp',
+    'venda-modal.webp',
+  ];
+  for (const name of shots) {
+    const p = path.join(process.cwd(), 'public/landing/product/masked', name);
+    assert(fs.existsSync(p), `print mascarado: ${name}`);
+  }
+  console.log('OK testProductShotsPresent');
+}
+
 function main() {
   testHeroHighlights();
   testResourcesPortalCard();
-  testFunctionalitiesStep5();
-  testBenefitsAfterList();
+  testFlowSteps();
+  testCompareBenefits();
   testClientPortalSection();
   testPlansIncludedFeatures();
   testAboutAndContact();
   testNoLegacyPortalDevCopy();
+  testProductShotsPresent();
   console.log('OK — mandatory-landing-content-v2-tests passed');
 }
 
