@@ -178,14 +178,82 @@
 
 .landing-hero-v3-grid {
   display: grid;
-  gap: 2.5rem;
-  align-items: center;
+  gap: 1.5rem 2.5rem;
+  align-items: start;
+  grid-template-areas:
+    'copy'
+    'video'
+    'visual'
+    'micros';
+}
+
+.landing-hero-v3-copy {
+  grid-area: copy;
+}
+
+.landing-hero-v3-video {
+  grid-area: video;
+  justify-self: stretch;
+}
+
+.landing-hero-v3-visual {
+  grid-area: visual;
+  width: 100%;
+}
+
+.landing-hero-v3-micros {
+  grid-area: micros;
+}
+
+.landing-page-v3 .landing-hero-video-card {
+  width: 100%;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .landing-hero-v3-grid {
+    gap: 1.75rem 2rem;
+  }
+
+  .landing-hero-v3-video {
+    justify-self: start;
+  }
+
+  .landing-page-v3 .landing-hero-video-card {
+    width: 300px;
+    max-width: 300px;
+  }
 }
 
 @media (min-width: 1024px) {
   .landing-hero-v3-grid {
-    grid-template-columns: 1.05fr 1fr;
-    gap: 3rem;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.45fr);
+    grid-template-areas:
+      'copy visual'
+      'video visual'
+      'micros visual';
+    column-gap: 2.75rem;
+    row-gap: 1.15rem;
+    align-items: start;
+  }
+
+  /* Mapa GIS ~58–62% da área do hero (coluna direita dominante). */
+  .landing-hero-v3-visual {
+    width: 100%;
+    max-width: none;
+  }
+
+  .landing-hero-v3-video {
+    justify-self: start;
+    margin-top: 0.15rem;
+  }
+
+  .landing-page-v3 .landing-hero-video-card {
+    width: 340px;
+    max-width: 340px;
+  }
+
+  .landing-hero-v3-micros {
+    margin-top: 0.35rem;
   }
 }
 
@@ -217,35 +285,23 @@
   margin-top: 1.5rem;
 }
 
-.landing-hero-video-card {
-  margin-top: 1.15rem;
-  width: 100%;
-  max-width: 400px;
-}
-
-@media (max-width: 767px) {
-  .landing-hero-video-card {
-    max-width: none;
-  }
-}
-
-/* Presentation video card */
 .landing-video-card {
   display: block;
   text-decoration: none;
   color: inherit;
-  border-radius: 1rem;
+  border-radius: 0.9rem;
   overflow: hidden;
   background: var(--landing-navy-card, #0f1624);
   border: 1px solid color-mix(in srgb, #fff 10%, transparent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
 }
 
 .landing-video-card:hover {
   transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--landing-orange, #f97316) 45%, transparent);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border-color: color-mix(in srgb, var(--landing-orange, #f97316) 42%, transparent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
 }
 
 .landing-video-card:focus-visible {
@@ -253,11 +309,31 @@
   outline-offset: 3px;
 }
 
+.landing-video-card-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.65rem 0.85rem 0.35rem;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--landing-orange, #f97316);
+}
+
+.landing-video-card-kicker-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+}
+
 .landing-video-card-media {
   position: relative;
   aspect-ratio: 16 / 9;
   background: #020617;
   overflow: hidden;
+  margin: 0 0.65rem;
+  border-radius: 0.55rem;
 }
 
 .landing-video-card-thumb {
@@ -271,89 +347,111 @@
   position: absolute;
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 2.85rem;
+  height: 2.85rem;
   border-radius: 999px;
   background: var(--landing-orange, #f97316);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
   transition: transform 0.2s ease;
+  z-index: 2;
 }
 
 .landing-video-card:hover .landing-video-card-play {
-  transform: translate(-50%, -50%) scale(1.06);
+  transform: translate(-50%, -50%) scale(1.05);
 }
 
 .landing-video-card-play-icon {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.1rem;
+  height: 1.1rem;
   margin-left: 2px;
 }
 
-.landing-video-card-badge {
+.landing-video-card-overlay {
   position: absolute;
-  top: 0.65rem;
-  left: 0.65rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #fff;
-  background: color-mix(in srgb, #000 55%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 18%, transparent);
-  border-radius: 999px;
-  padding: 0.25rem 0.55rem;
-  backdrop-filter: blur(6px);
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background: color-mix(in srgb, #020617 72%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1;
 }
 
-.landing-video-card-duration {
-  position: absolute;
-  right: 0.65rem;
-  bottom: 0.65rem;
-  font-size: 0.75rem;
+@media (hover: hover) and (pointer: fine) {
+  .landing-video-card:hover .landing-video-card-overlay {
+    opacity: 1;
+  }
+
+  .landing-video-card:hover .landing-video-card-play {
+    opacity: 0;
+  }
+}
+
+.landing-video-card-overlay-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.landing-video-card-overlay-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.landing-video-card-overlay-list li svg {
+  color: #86efac;
+}
+
+.landing-video-card-overlay-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+  font-size: 0.8rem;
   font-weight: 700;
   color: #fff;
-  background: color-mix(in srgb, #000 65%, transparent);
-  border-radius: 0.35rem;
-  padding: 0.15rem 0.4rem;
+  background: var(--landing-orange, #f97316);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
 }
 
 .landing-video-card-body {
-  padding: 0.9rem 1rem 1rem;
+  padding: 0.7rem 0.85rem 0.9rem;
 }
 
 .landing-video-card-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #fff;
   line-height: 1.3;
 }
 
 .landing-video-card-desc {
-  margin: 0.4rem 0 0.75rem;
-  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.82rem;
   line-height: 1.45;
   color: var(--landing-muted, #94a3b8);
-}
-
-.landing-video-card-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--landing-orange, #f97316);
 }
 
 .landing-hero-v3-micros {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-top: 1.25rem;
+  margin: 0;
   list-style: none;
   padding: 0;
   color: var(--landing-muted);

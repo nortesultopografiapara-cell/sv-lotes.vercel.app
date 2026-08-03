@@ -34,19 +34,14 @@ export function HeroSection() {
             />
             <CtaTestLot id="cta_teste" label="Acessar Loteamento de Demonstração" />
           </div>
+        </Reveal>
+
+        <Reveal className="landing-hero-v3-video" delay={0.04}>
           <PresentationVideoCard
             id="cta_video_apresentacao"
             className="landing-hero-video-card"
             priority
           />
-          <ul className="landing-hero-v3-micros">
-            {MICROS.map((item) => (
-              <li key={item}>
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden />
-                {item}
-              </li>
-            ))}
-          </ul>
         </Reveal>
 
         <Reveal className="landing-hero-v3-visual" delay={0.08}>
@@ -63,6 +58,15 @@ export function HeroSection() {
             </span>
           </div>
         </Reveal>
+
+        <ul className="landing-hero-v3-micros">
+          {MICROS.map((item) => (
+            <li key={item}>
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden />
+              {item}
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );

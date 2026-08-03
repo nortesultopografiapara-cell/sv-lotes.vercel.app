@@ -21,7 +21,12 @@ function testHeroHighlights() {
   assert(src.includes('Acessar Loteamento de Demonstração') || src.includes('cta_teste'), 'hero cta demo loteamento');
   assert(src.includes('PresentationVideoCard'), 'hero card vídeo');
   assert(src.includes('cta_video_apresentacao'), 'cta vídeo id');
+  assert(src.includes('landing-hero-v3-visual'), 'mapa GIS no hero');
   assert(src.includes('mapaGis'), 'hero print GIS');
+  const card = read('components/landing/components/PresentationVideoCard.tsx');
+  assert(card.includes('Veja o sistema funcionando'), 'kicker vídeo');
+  assert(card.includes('Apresentação completa (3min40s)'), 'título vídeo');
+  assert(card.includes('Assistir apresentação completa'), 'overlay CTA');
   const config = read('components/landing/constants/landingConfig.ts');
   assert(config.includes('IM7vH2N_w2s'), 'vídeo oficial');
   assert(!config.includes('u7Z7uCLGP6U'), 'sem vídeo antigo');
