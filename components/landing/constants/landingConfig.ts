@@ -3,6 +3,17 @@
 export const LANDING_PRESENTATION_URL =
   'https://www.youtube.com/watch?v=IM7vH2N_w2s';
 
+/** ID do vídeo oficial de apresentação (YouTube). */
+export const LANDING_PRESENTATION_VIDEO_ID = 'IM7vH2N_w2s';
+
+export const LANDING_PRESENTATION_THUMB_MAX =
+  `https://img.youtube.com/vi/${LANDING_PRESENTATION_VIDEO_ID}/maxresdefault.jpg`;
+
+export const LANDING_PRESENTATION_THUMB_HQ =
+  `https://img.youtube.com/vi/${LANDING_PRESENTATION_VIDEO_ID}/hqdefault.jpg`;
+
+export const LANDING_PRESENTATION_DURATION = '3:40';
+
 /** Rota pública do loteamento demonstrativo */
 export const LANDING_TEST_LOTEMENT_PATH = '/demo';
 

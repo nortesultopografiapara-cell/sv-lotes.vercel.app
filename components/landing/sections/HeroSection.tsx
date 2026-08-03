@@ -2,7 +2,8 @@
 
 import { CheckCircle2 } from 'lucide-react';
 import { ProductShot } from '../components/ProductShot';
-import { CtaDemo, CtaPresentation, CtaTestLot } from '../components/LandingCta';
+import { CtaDemo, CtaTestLot } from '../components/LandingCta';
+import { PresentationVideoCard } from '../components/PresentationVideoCard';
 import { Reveal } from '../LandingMotion';
 
 const MICROS = [
@@ -31,9 +32,13 @@ export function HeroSection() {
               label="Agendar demonstração gratuita"
               className="landing-hero-cta-primary"
             />
-            <CtaPresentation id="cta_video_apresentacao" />
             <CtaTestLot id="cta_teste" label="Acessar Loteamento de Demonstração" />
           </div>
+          <PresentationVideoCard
+            id="cta_video_apresentacao"
+            className="landing-hero-video-card"
+            priority
+          />
           <ul className="landing-hero-v3-micros">
             {MICROS.map((item) => (
               <li key={item}>

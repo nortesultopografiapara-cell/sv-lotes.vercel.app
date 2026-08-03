@@ -19,7 +19,12 @@ function testHeroHighlights() {
   assert(src.includes('PLATAFORMA COMPLETA PARA LOTEAMENTOS'), 'hero badge');
   assert(src.includes('Tudo em uma única plataforma'), 'hero accent');
   assert(src.includes('Acessar Loteamento de Demonstração') || src.includes('cta_teste'), 'hero cta demo loteamento');
+  assert(src.includes('PresentationVideoCard'), 'hero card vídeo');
+  assert(src.includes('cta_video_apresentacao'), 'cta vídeo id');
   assert(src.includes('mapaGis'), 'hero print GIS');
+  const config = read('components/landing/constants/landingConfig.ts');
+  assert(config.includes('IM7vH2N_w2s'), 'vídeo oficial');
+  assert(!config.includes('u7Z7uCLGP6U'), 'sem vídeo antigo');
   console.log('OK testHeroHighlights');
 }
 
