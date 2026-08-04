@@ -150,6 +150,8 @@ function testPortalContractDownloadRoute(): void {
   assert(dashboard.includes('Baixar contrato'), 'download button');
   assert(dashboard.includes('contractDownloadUrl'), 'download url field');
   assert(dashboard.includes('contractDownloadAvailable'), 'download availability');
+  assert(dashboard.includes('>Loteadora<'), 'resumo usa rótulo Loteadora');
+  assert(!dashboard.includes('>Imobiliária<'), 'resumo sem rótulo Imobiliária');
 }
 
 function testPainelRedirectWithoutSession(): void {
@@ -228,6 +230,7 @@ function testSaleScopeInDashboardLoader(): void {
   assert(!dashboard.includes('gisSaleCreateService'), 'no gis');
   assert(!dashboard.includes('contractRegeneration'), 'no contract regeneration in dashboard');
   assert(dashboard.includes('assertClientPortalDashboardSanitized'), 'sanitizer');
+  assert(dashboard.includes('resolveSaleLoteadoraDisplayName'), 'resolve loteadora display name');
 }
 
 function testInstallmentPaymentLinksOnlyWhenPresent(): void {

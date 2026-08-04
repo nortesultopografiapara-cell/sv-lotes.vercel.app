@@ -4,13 +4,14 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { resolveCompanyDisplayName, resolveQuadraLote } from '@/lib/clientPortalLookup';
+import { resolveQuadraLote } from '@/lib/clientPortalLookup';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { formatCompanyAsaasChargeStatusLabel } from '@/lib/finance/companyAsaasChargeWorkflow';
 import { buildSignatureShareWhatsAppUrl } from '@/lib/saasContractSignatureShare';
 import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 import { maskCustomerName } from '@/lib/portal-cliente/masking';
+import { resolveSaleLoteadoraDisplayName } from '@/lib/portal-cliente/saleLoteadora';
 import type { ClientPortalSessionScope } from '@/lib/portal-cliente/session';
 import type {
   ClientPortalDashboardCharge,
@@ -562,21 +563,44 @@ async function loadLotSaleDashboard(
     rowCount: Array.isArray(receiptsRes.data) ? receiptsRes.data.length : 0,
   });
 
-  const company = companyRes.data;
-  const companyDisplay = resolveCompanyDisplayName(company);
+  const company = companyRes.error ? null : companyRes.data;
 
   const projectName = projectRes.error ? null : projectRes.data?.name ? String(projectRes.data.name) : null;
   const quadraLote = blockRes.error ? null : resolveQuadraLote(null, blockRes.data);
   const { quadra, lote } = parseQuadraLote(quadraLote);
 
   let contract = buildEmptyContract();
+  let contractHtml: string | null = null;
+  let tenantCompany: Record<string, unknown> | null = null;
+
   if (contractLookup.row) {
+    contractHtml = readStoredContractHtml(contractLookup.row as Record<string, unknown>);
     contract = await buildPortalDashboardContract(admin, contractLookup.row);
+
+    const contractTenantId = String(
+      contractLookup.row.tenant_id || contractLookup.row.company_id || '',
+    ).trim();
+    if (contractTenantId && contractTenantId !== companyId) {
+      const tenantRes = await admin
+        .from('companies')
+        .select('id, name, fantasy_name, razao_social, phone')
+        .eq('id', contractTenantId)
+        .maybeSingle();
+      if (!tenantRes.error && tenantRes.data) {
+        tenantCompany = tenantRes.data as Record<string, unknown>;
+      }
+    }
   } else if (contractLookup.queryError) {
     contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
   } else {
     contract = buildEmptyContract(CONTRACT_NOT_FOUND_MESSAGE);
   }
+
+  const companyDisplay = resolveSaleLoteadoraDisplayName({
+    contractHtml,
+    company: company as Record<string, unknown> | null,
+    tenantCompany,
+  });
 
   const receipts = receiptsRes.error ? [] : ((receiptsRes.data ?? []) as ReceiptRow[]);
   const installmentIds = receipts.map((r) => r.id);
@@ -743,7 +767,9 @@ async function loadCustomerRecordDashboard(
   const summary: ClientPortalDashboardSummary = {
     greetingName: resolveClientPortalGreetingName(customer.name),
     customerNameMasked: maskCustomerName(customer.name),
-    companyName: resolveCompanyDisplayName(company),
+    companyName: resolveSaleLoteadoraDisplayName({
+      company: company as Record<string, unknown>,
+    }),
     projectName: null,
     quadra: null,
     lote: null,
@@ -796,7 +822,9 @@ async function loadSaasContractDashboard(
   const summary: ClientPortalDashboardSummary = {
     greetingName: 'Cliente',
     customerNameMasked: '***',
-    companyName: resolveCompanyDisplayName(company),
+    companyName: resolveSaleLoteadoraDisplayName({
+      company: company as Record<string, unknown>,
+    }),
     projectName: null,
     quadra: null,
     lote: null,

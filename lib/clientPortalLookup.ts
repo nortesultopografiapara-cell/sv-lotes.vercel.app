@@ -88,19 +88,38 @@ type SubscriptionRow = {
   contract_status?: string | null;
 };
 
+function isGenericCompanyLabel(value: string): boolean {
+  const n = value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return (
+    !n ||
+    n === 'empresa' ||
+    n === 'loteadora' ||
+    n === 'imobiliaria' ||
+    n === 'nao informado' ||
+    n === 'n/a' ||
+    n === '-'
+  );
+}
+
 /**
- * Nome da empresa no Portal do Cliente (tenant).
- * Prioridade: Nome Fantasia → Razão Social → name → "Empresa".
- * Sem texto fixo "Loteadora".
+ * Nome da empresa no lookup do Portal (lista de vínculos).
+ * Alinha ao contrato: fantasia → razão → name → “Não informado”.
+ * Nunca retorna o genérico “Empresa”.
  */
 export function resolveCompanyDisplayName(company?: CompanyRow | null): string {
-  if (!company) return 'Empresa';
-  return (
-    String(company.fantasy_name || '').trim() ||
-    String(company.razao_social || '').trim() ||
-    String(company.name || '').trim() ||
-    'Empresa'
-  );
+  if (!company) return 'Não informado';
+  for (const candidate of [
+    String(company.fantasy_name || '').trim(),
+    String(company.razao_social || '').trim(),
+    String(company.name || '').trim(),
+  ]) {
+    if (!isGenericCompanyLabel(candidate)) return candidate;
+  }
+  return 'Não informado';
 }
 
 export function resolveQuadraLote(

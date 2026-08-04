@@ -209,14 +209,19 @@ function testResolveHelpers(): void {
     'tenant SV: razão social sobre name genérico',
   );
   assert(
-    resolveCompanyDisplayName(null) === 'Empresa',
-    'fallback Empresa sem Loteadora',
+    resolveCompanyDisplayName(null) === 'Não informado',
+    'fallback Não informado sem Loteadora genérica',
   );
   assert(
-    !['Loteadora'].includes(
+    resolveCompanyDisplayName({ name: 'Empresa', fantasy_name: '', razao_social: '' }) ===
+      'Não informado',
+    'name Empresa genérico → Não informado',
+  );
+  assert(
+    !['Loteadora', 'Empresa'].includes(
       resolveCompanyDisplayName({ name: '', fantasy_name: '', razao_social: '' }),
     ),
-    'vazio não retorna Loteadora',
+    'vazio não retorna Loteadora nem Empresa',
   );
   assert(
     resolveQuadraLote({ block_number: '03', lot_number: '08' }, null) === 'QD 03 LT 08',
