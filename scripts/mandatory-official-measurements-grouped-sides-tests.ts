@@ -3,7 +3,10 @@
  * npx tsx scripts/mandatory-official-measurements-grouped-sides-tests.ts
  */
 
+import { officialSegmentIndexesForSide } from '../lib/assistedConfrontation';
+import { resolveContractLotSides } from '../lib/contractLotBoundaries';
 import {
+  calculateBoundaryLength,
   getOfficialLotMeasurements,
   stripManualOfficialSidesFromBlock,
   type OfficialLotMeasures,
@@ -660,6 +663,202 @@ function testMoradaDoSolQd01Lt1OptionASides() {
   console.log('OK testMoradaDoSolQd01Lt1OptionASides');
 }
 
+/**
+ * Lote 8 / QD 02 — CHACARAS MORADA DO SOL (Opção A′).
+ * Rua Morada do Sol curva: frente composta AB+BC; lateral direita com
+ * transição CD+DE+EF e continuação FG; fundo GH; esquerda HI.
+ *
+ * FRONT=[0,1] RIGHT=[2,3,4,5] BACK=[6] LEFT=[7]
+ * FG NÃO pertence ao fundo (alternativa B proibida).
+ *
+ * Fixture de proteção via official_side — sem alterar classifySidesByFrontAnchor.
+ */
+function testMoradaDoSolQd02Lt8OptionAPrimeSides() {
+  const AB = 10.57;
+  const BC = 7.51;
+  const CD = 22.57;
+  const DE = 6.98;
+  const EF = 5.17;
+  const FG = 66.57;
+  const GH = 29.8;
+  const HI = 97.24;
+
+  const FRONT_TOTAL = AB + BC; // 18.08
+  const RIGHT_TOTAL = CD + DE + EF + FG; // 101.29
+
+  // Anel sintético 8 segmentos (régua); lados travados na Opção A′.
+  // Ordem no anel: 0→1→2→3→4→5→6→7→0 (cadeias contínuas por índice).
+  const segs = [
+    lineSeg(0, 0, 0, 0, AB, AB, 'front'), // AB
+    lineSeg(1, 0, AB, BC * 0.5, AB + BC * 0.85, BC, 'front'), // BC (curva)
+    lineSeg(
+      2,
+      BC * 0.5,
+      AB + BC * 0.85,
+      BC * 0.5 + CD,
+      AB + BC * 0.85,
+      CD,
+      'right',
+    ), // CD
+    lineSeg(
+      3,
+      BC * 0.5 + CD,
+      AB + BC * 0.85,
+      BC * 0.5 + CD + DE * 0.5,
+      AB + BC * 0.85 - DE,
+      DE,
+      'right',
+    ), // DE
+    lineSeg(
+      4,
+      BC * 0.5 + CD + DE * 0.5,
+      AB + BC * 0.85 - DE,
+      BC * 0.5 + CD + DE * 0.5 + EF,
+      AB + BC * 0.85 - DE,
+      EF,
+      'right',
+    ), // EF
+    lineSeg(
+      5,
+      BC * 0.5 + CD + DE * 0.5 + EF,
+      AB + BC * 0.85 - DE,
+      BC * 0.5 + CD + DE * 0.5 + EF + FG,
+      AB + BC * 0.85 - DE,
+      FG,
+      'right',
+    ), // FG
+    lineSeg(
+      6,
+      BC * 0.5 + CD + DE * 0.5 + EF + FG,
+      AB + BC * 0.85 - DE,
+      BC * 0.5 + CD + DE * 0.5 + EF + FG,
+      0,
+      GH,
+      'back',
+    ), // GH
+    lineSeg(7, BC * 0.5 + CD + DE * 0.5 + EF + FG, 0, 0, 0, HI, 'left'), // HI
+  ];
+
+  const b = block(segs, {
+    number: '8',
+    block_name: '02',
+    front_segment_index: 0,
+    front_street_name: 'Rua MORADA DO SOL',
+    frente: FRONT_TOTAL,
+    area: 2500,
+  });
+
+  const m = getOfficialLotMeasurements(b, 'MORADA-QD02-LT8-OPTION-A-PRIME');
+
+  const front = m.sides?.front.segmentIndexes ?? [];
+  const back = m.sides?.back.segmentIndexes ?? [];
+  const right = m.sides?.right.segmentIndexes ?? [];
+  const left = m.sides?.left.segmentIndexes ?? [];
+
+  assert(
+    JSON.stringify(front) === JSON.stringify([0, 1]),
+    `FRONT=[0,1] AB+BC got ${JSON.stringify(front)}`,
+  );
+  assert(
+    JSON.stringify(right) === JSON.stringify([2, 3, 4, 5]),
+    `RIGHT=[2,3,4,5] CD+DE+EF+FG got ${JSON.stringify(right)}`,
+  );
+  assert(
+    JSON.stringify(back) === JSON.stringify([6]),
+    `BACK=[6] GH got ${JSON.stringify(back)}`,
+  );
+  assert(
+    JSON.stringify(left) === JSON.stringify([7]),
+    `LEFT=[7] HI got ${JSON.stringify(left)}`,
+  );
+
+  // Cobertura 8/8, sem duplicata, sem ausente.
+  const all = [...front, ...right, ...back, ...left].sort((a, c) => a - c);
+  assert(all.length === 8, `cobertura ${all.length}/8`);
+  assert(
+    JSON.stringify(all) === JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7]),
+    `todos índices 0..7: ${JSON.stringify(all)}`,
+  );
+  assertDisjointSideIndexes(m);
+
+  // Continuidade no anel (cadeias por índice consecutivo).
+  const consecutive = (idxs: number[]) =>
+    idxs.every((v, i) => i === 0 || v === idxs[i - 1] + 1);
+  assert(consecutive(front), 'frente contínua');
+  assert(consecutive(right), 'direita contínua');
+  assert(consecutive(back), 'fundo contínuo');
+  assert(consecutive(left), 'esquerda contínua');
+
+  // Alternativa B proibida + sem segundo lado esquerdo espúrio.
+  assert(!back.includes(5), 'FG (5) não pertence ao fundo');
+  assert(!back.includes(2), 'CD (2) não pertence ao fundo');
+  assert(!back.includes(3), 'DE (3) não pertence ao fundo');
+  assert(!back.includes(4), 'EF (4) não pertence ao fundo');
+  assert(front.includes(0) && front.includes(1), 'AB+BC mesma frente');
+  assert(left.length === 1 && left[0] === 7, 'um único Lado Esquerdo (HI)');
+
+  assert(near(m.frente, FRONT_TOTAL), `frente ${m.frente}`);
+  assert(near(m.fundo, GH), `fundo ${m.fundo}`);
+  assert(near(m.ladoDireito, RIGHT_TOTAL), `dir ${m.ladoDireito}`);
+  assert(near(m.ladoEsquerdo, HI), `esq ${m.ladoEsquerdo}`);
+
+  // Alinhamento Confrontações (indexes) e contrato/modal (totais).
+  assert(
+    JSON.stringify(officialSegmentIndexesForSide(b, [b], 'frente')) ===
+      JSON.stringify([0, 1]),
+    'officialSegmentIndexesForSide frente',
+  );
+  assert(
+    JSON.stringify(officialSegmentIndexesForSide(b, [b], 'ladoDireito')) ===
+      JSON.stringify([2, 3, 4, 5]),
+    'officialSegmentIndexesForSide direito',
+  );
+  assert(
+    JSON.stringify(officialSegmentIndexesForSide(b, [b], 'fundo')) ===
+      JSON.stringify([6]),
+    'officialSegmentIndexesForSide fundo',
+  );
+  assert(
+    JSON.stringify(officialSegmentIndexesForSide(b, [b], 'ladoEsquerdo')) ===
+      JSON.stringify([7]),
+    'officialSegmentIndexesForSide esquerdo',
+  );
+
+  assert(
+    near(calculateBoundaryLength(b, 'frente'), FRONT_TOTAL),
+    'calculateBoundaryLength frente (modal)',
+  );
+  assert(
+    near(calculateBoundaryLength(b, 'ladoDireito'), RIGHT_TOTAL),
+    'calculateBoundaryLength direito (modal)',
+  );
+  assert(
+    near(calculateBoundaryLength(b, 'fundo'), GH),
+    'calculateBoundaryLength fundo (modal)',
+  );
+  assert(
+    near(calculateBoundaryLength(b, 'ladoEsquerdo'), HI),
+    'calculateBoundaryLength esquerdo (modal)',
+  );
+
+  const contract = resolveContractLotSides(b);
+  assert(
+    near(Number(contract.frente), FRONT_TOTAL),
+    `contrato frente ${contract.frente}`,
+  );
+  assert(near(Number(contract.fundo), GH), `contrato fundo ${contract.fundo}`);
+  assert(
+    near(Number(contract.ladoDireito), RIGHT_TOTAL),
+    `contrato dir ${contract.ladoDireito}`,
+  );
+  assert(
+    near(Number(contract.ladoEsquerdo), HI),
+    `contrato esq ${contract.ladoEsquerdo}`,
+  );
+
+  console.log('OK testMoradaDoSolQd02Lt8OptionAPrimeSides');
+}
+
 testRectangularSingleSegmentPerSide();
 testMartineQd02Lt04ColinearFrontGroup();
 testQd01Lt15ColinearBackGroup();
@@ -676,4 +875,5 @@ testClearOfficialSideReturnsToAutomatic();
 testLot010Single726SegmentManualRight();
 testMeasuresWithoutOfficialSideSafe();
 testMoradaDoSolQd01Lt1OptionASides();
+testMoradaDoSolQd02Lt8OptionAPrimeSides();
 console.log('mandatory-official-measurements-grouped-sides-tests: all passed');
