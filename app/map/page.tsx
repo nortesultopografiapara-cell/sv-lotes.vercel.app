@@ -3632,6 +3632,13 @@ export default function MapPage() {
               setMemorialTarget(lot);
               setMemorialPickMode(false);
             }}
+            onGenerateLotSheetFromPopup={
+              ownerReadOnly
+                ? undefined
+                : (lot) => {
+              setLotSheetTarget(lot);
+              setLotSheetPickMode(false);
+            }}
             assistedConfrontationMode={assistedConfrontationMode}
             onOverlayOpenChange={setGisMapOverlayOpen}
             onEnterpriseValueRefresh={() =>

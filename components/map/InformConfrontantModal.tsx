@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Eraser, Loader2, Save, X } from 'lucide-react';
 import {
   CONFRONTANT_PRESETS,
@@ -10,8 +10,11 @@ import {
 } from '@/lib/confrontantTypes';
 import {
   findPropagationTargets,
+  resolveSegmentPersistIndexes,
   type PropagationScope,
+  type SegmentPersistScope,
 } from '@/lib/assistedConfrontation';
+import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 import type { SideRole } from '@/lib/lotSegmentConfrontation';
 import { upsertProjectConfrontationGuide } from '@/lib/projectConfrontationGuides';
 
@@ -31,10 +34,14 @@ export type InformConfrontantModalProps = {
     confrontantType: ConfrontantPresetType | string | null,
     scope: PropagationScope,
     targetBlockIds: string[],
+    persistScope: SegmentPersistScope,
+    explicitIndexes: number[],
   ) => Promise<void>;
   onClear?: (
     scope: PropagationScope,
     targetBlockIds: string[],
+    persistScope: SegmentPersistScope,
+    explicitIndexes: number[],
   ) => Promise<void>;
 };
 
@@ -54,7 +61,9 @@ export function InformConfrontantModal({
 }: InformConfrontantModalProps) {
   const [preset, setPreset] = useState<ConfrontantPresetType>('lot');
   const [customText, setCustomText] = useState('');
-  const [scope, setScope] = useState<PropagationScope>('lot_only');
+  const [persistScope, setPersistScope] =
+    useState<SegmentPersistScope>('selected_only');
+  const [lotScope, setLotScope] = useState<PropagationScope>('lot_only');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
 
@@ -64,20 +73,42 @@ export function InformConfrontantModal({
       ? customText.trim() || 'Outro'
       : customText.trim() || selectedPreset?.label || 'Outro';
 
+  const resolvedIndexes = useMemo(() => {
+    try {
+      return resolveSegmentPersistIndexes({
+        block,
+        allBlocks,
+        side,
+        selectedIndexes: segmentIndexes,
+        persistScope,
+      });
+    } catch {
+      return Array.isArray(segmentIndexes) ? [...segmentIndexes] : [];
+    }
+  }, [block, allBlocks, side, segmentIndexes, persistScope]);
+
   /**
-   * Proteção secundária: nunca lançar na renderização (derruba /map → Something went wrong!).
-   * Em falha: registra contexto, avisa o usuário e restringe ao lote atual com os
-   * segmentIndexes já resolvidos pelo caller — sem inventar índices.
+   * Proteção secundária: nunca lançar na renderização.
    */
   let targets: ReturnType<typeof findPropagationTargets> = [];
   let targetsError: string | null = null;
   try {
+    const effectiveLotScope: PropagationScope =
+      persistScope === 'selected_only' ||
+      persistScope === 'consecutive_same_confrontant'
+        ? 'lot_only'
+        : lotScope;
     targets = findPropagationTargets(
       allBlocks,
       block,
       blockId,
       side,
-      scope,
+      effectiveLotScope,
+      null,
+      {
+        explicitIndexes: segmentIndexes,
+        persistScope,
+      },
     );
   } catch (err) {
     const msg =
@@ -89,7 +120,8 @@ export function InformConfrontantModal({
       blockId,
       lotNumber: block?.number ?? null,
       side,
-      scope,
+      persistScope,
+      lotScope,
       segmentIndexes,
       message: msg,
       err,
@@ -100,27 +132,49 @@ export function InformConfrontantModal({
       {
         blockId,
         block,
-        segmentIndexes: Array.isArray(segmentIndexes) ? [...segmentIndexes] : [],
+        segmentIndexes: resolvedIndexes,
       },
     ];
   }
+
+  const previewRows = useMemo(() => {
+    return resolvedIndexes.map((idx) => {
+      const prev =
+        getSegmentConfrontantRecord(block, idx)?.confrontant ??
+        currentConfrontant ??
+        'A DEFINIR';
+      return { idx, prev };
+    });
+  }, [resolvedIndexes, block, currentConfrontant]);
 
   const handleSave = async () => {
     if (!confrontantName.trim()) {
       alert('Informe o nome do confrontante.');
       return;
     }
+    if (!resolvedIndexes.length) {
+      alert('Nenhum segmento no escopo selecionado.');
+      return;
+    }
     setSaving(true);
     try {
       upsertProjectConfrontationGuide(projectId, {
+        project_id: projectId,
         name: confrontantName,
         type: preset === 'other' ? null : preset,
       });
+      const effectiveLotScope: PropagationScope =
+        persistScope === 'selected_only' ||
+        persistScope === 'consecutive_same_confrontant'
+          ? 'lot_only'
+          : lotScope;
       await onConfirm(
         confrontantName,
         preset === 'other' ? null : preset,
-        scope,
+        effectiveLotScope,
         targets.map((t) => t.blockId),
+        persistScope,
+        segmentIndexes,
       );
       onClose();
     } catch (e: unknown) {
@@ -143,7 +197,17 @@ export function InformConfrontantModal({
     }
     setClearing(true);
     try {
-      await onClear(scope, targets.map((t) => t.blockId));
+      const effectiveLotScope: PropagationScope =
+        persistScope === 'selected_only' ||
+        persistScope === 'consecutive_same_confrontant'
+          ? 'lot_only'
+          : lotScope;
+      await onClear(
+        effectiveLotScope,
+        targets.map((t) => t.blockId),
+        persistScope,
+        segmentIndexes,
+      );
       onClose();
     } catch (e: unknown) {
       alert(
@@ -172,7 +236,7 @@ export function InformConfrontantModal({
 
   return (
     <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
-      <div className="bg-[#1a1f29] border border-[#2d3340] rounded-xl w-full max-w-md shadow-2xl text-white">
+      <div className="bg-[#1a1f29] border border-[#2d3340] rounded-xl w-full max-w-md shadow-2xl text-white max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[#2d3340]">
           <h3 className="font-bold text-sm">Editar Confrontação</h3>
           <button
@@ -265,14 +329,17 @@ export function InformConfrontantModal({
 
           <div>
             <label className="block text-xs font-semibold text-gray-400 mb-2">
-              Aplicar em
+              Segmentos neste lote
             </label>
             <div className="space-y-1.5 text-xs">
               {(
                 [
-                  ['lot_only', 'Apenas este lote'],
-                  ['quadra_same_side', 'Todos os fundos desta quadra (lados pendentes)'],
-                  ['aligned_nearby', 'Segmentos alinhados pendentes na quadra'],
+                  ['selected_only', 'Somente este segmento'],
+                  ['entire_side', 'Todos os segmentos deste lado'],
+                  [
+                    'consecutive_same_confrontant',
+                    'Segmentos consecutivos com o mesmo confrontante',
+                  ],
                 ] as const
               ).map(([value, label]) => (
                 <label
@@ -281,20 +348,72 @@ export function InformConfrontantModal({
                 >
                   <input
                     type="radio"
-                    name="scope"
-                    checked={scope === value}
-                    onChange={() => setScope(value)}
+                    name="persistScope"
+                    checked={persistScope === value}
+                    onChange={() => setPersistScope(value)}
                   />
                   <span>{label}</span>
                 </label>
               ))}
             </div>
-            <p className="text-[10px] text-amber-400/90 mt-2">
-              {targets.length} lote(s) serão atualizados (manual não será
-              sobrescrito pela automática).
+          </div>
+
+          {persistScope === 'entire_side' ? (
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 mb-2">
+                Propagar para outros lotes
+              </label>
+              <div className="space-y-1.5 text-xs">
+                {(
+                  [
+                    ['lot_only', 'Apenas este lote'],
+                    [
+                      'quadra_same_side',
+                      'Mesmo lado nesta quadra (lados pendentes)',
+                    ],
+                    [
+                      'aligned_nearby',
+                      'Segmentos alinhados pendentes na quadra',
+                    ],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label
+                    key={value}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="lotScope"
+                      checked={lotScope === value}
+                      onChange={() => setLotScope(value)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-lg border border-[#2d3340] bg-[#0f1318] px-3 py-2 text-[10px] space-y-1">
+            <p className="font-semibold text-gray-300">Prévia do salvamento</p>
+            <p className="text-gray-500">
+              {targets.length} lote(s) · segmentos neste lote:{' '}
+              <strong className="text-gray-200">
+                {resolvedIndexes.map((i) => i + 1).join(', ') || '—'}
+              </strong>
             </p>
+            {previewRows.slice(0, 8).map((row) => (
+              <p key={row.idx} className="text-gray-400">
+                Seg. {row.idx + 1}: “{row.prev}” → “{confrontantName}”
+              </p>
+            ))}
+            {previewRows.length > 8 ? (
+              <p className="text-gray-500">
+                … e mais {previewRows.length - 8} segmento(s)
+              </p>
+            ) : null}
             {targetsError ? (
-              <p className="text-[10px] text-red-400 mt-1">{targetsError}</p>
+              <p className="text-red-400 mt-1">{targetsError}</p>
             ) : null}
           </div>
         </div>
@@ -325,7 +444,7 @@ export function InformConfrontantModal({
             </button>
             <button
               type="button"
-              disabled={saving || clearing}
+              disabled={saving || clearing || !resolvedIndexes.length}
               onClick={() => void handleSave()}
               className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
             >
