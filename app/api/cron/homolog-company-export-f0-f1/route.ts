@@ -57,14 +57,44 @@ async function ensureSchema(
   admin: NonNullable<ReturnType<typeof createServiceSupabase>['client']>,
 ) {
   const probe = await admin.from('company_export_jobs').select('id').limit(1);
-  if (!probe.error) return { applied: false, already: true as const };
+  if (!probe.error) {
+    // Ensure bucket even if table already exists
+    try {
+      await admin.storage.createBucket(COMPANY_EXPORT_BUCKET, { public: false });
+    } catch {
+      // may already exist
+    }
+    const { data: buckets } = await admin.storage.listBuckets();
+    const bucket = (buckets || []).find(
+      (b) => b.id === COMPANY_EXPORT_BUCKET || b.name === COMPANY_EXPORT_BUCKET,
+    );
+    if (bucket && (bucket as { public?: boolean }).public) {
+      await admin.storage.updateBucket(COMPANY_EXPORT_BUCKET, { public: false });
+    }
+    return { applied: false, already: true as const, bucketEnsured: true };
+  }
+
   const sql = migrationSql();
   assertSqlSafe(sql);
-  const { error } = await admin.rpc('exec_sql', { query: sql });
-  if (error) throw new Error(`exec_sql: ${error.message}`);
-  const after = await admin.from('company_export_jobs').select('id').limit(1);
-  if (after.error) throw new Error(`verify: ${after.error.message}`);
-  return { applied: true, already: false as const };
+
+  // Try common RPC names (may be absent on this project)
+  for (const args of [{ query: sql }, { sql }] as Array<Record<string, string>>) {
+    const { error } = await admin.rpc('exec_sql', args);
+    if (!error) {
+      const after = await admin.from('company_export_jobs').select('id').limit(1);
+      if (!after.error) return { applied: true, already: false as const, via: 'exec_sql' };
+    }
+  }
+
+  // Bucket can be created without raw SQL
+  const bucketCreate = await admin.storage.createBucket(COMPANY_EXPORT_BUCKET, {
+    public: false,
+  });
+  // ignore error if exists
+
+  throw new Error(
+    `NEED_MANUAL_SQL: exec_sql RPC unavailable. Apply supabase/migrations/20261004120000_company_export_jobs.sql in Supabase SQL Editor. bucketCreate=${bucketCreate.error?.message || 'ok_or_exists'}`,
+  );
 }
 
 async function pickCompanies(
@@ -72,7 +102,7 @@ async function pickCompanies(
 ) {
   const { data: companies, error } = await admin
     .from('companies')
-    .select('id, name, fantasy_name, document, cnpj')
+    .select('id, name, fantasy_name, cnpj, razao_social')
     .order('created_at', { ascending: true })
     .limit(80);
   if (error) throw new Error(error.message);
@@ -87,7 +117,7 @@ async function pickCompanies(
   }> = [];
 
   for (const c of companies || []) {
-    const name = String(c.fantasy_name || c.name || '');
+    const name = String(c.fantasy_name || c.name || c.razao_social || '');
     if (MENESES_HINT.test(name)) continue;
     const id = String(c.id);
     const [cust, sales] = await Promise.all([
@@ -107,7 +137,7 @@ async function pickCompanies(
     scored.push({
       id,
       name,
-      document: (c.document || c.cnpj || null) as string | null,
+      document: (c.cnpj || null) as string | null,
       customers,
       sales: salesCount,
       score,
