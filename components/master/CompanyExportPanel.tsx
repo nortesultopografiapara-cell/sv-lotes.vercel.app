@@ -134,28 +134,27 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
   }, [hasActive, companyId, userId, loadJobs]);
 
   useEffect(() => {
-    if (!modalOpen || exportVersion !== 'F2_COMPLETE') {
-      setEstimate(null);
-      setHeavyConfirm(false);
-      return;
-    }
+    if (!modalOpen || exportVersion !== 'F2_COMPLETE') return;
     let cancelled = false;
-    setEstimateLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/master/companies/${companyId}/exports/estimate?userId=${encodeURIComponent(userId)}`,
-        );
-        const json = await res.json();
-        if (!cancelled && res.ok) setEstimate(json.estimate || null);
-      } catch {
-        if (!cancelled) setEstimate(null);
-      } finally {
-        if (!cancelled) setEstimateLoading(false);
-      }
-    })();
+    const t = window.setTimeout(() => {
+      setEstimateLoading(true);
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/master/companies/${companyId}/exports/estimate?userId=${encodeURIComponent(userId)}`,
+          );
+          const json = await res.json();
+          if (!cancelled && res.ok) setEstimate(json.estimate || null);
+        } catch {
+          if (!cancelled) setEstimate(null);
+        } finally {
+          if (!cancelled) setEstimateLoading(false);
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(t);
     };
   }, [modalOpen, exportVersion, companyId, userId]);
 
@@ -271,7 +270,11 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
         </div>
         <button
           type="button"
-          onClick={() => setModalOpen(true)}
+          onClick={() => {
+            setHeavyConfirm(false);
+            setEstimate(null);
+            setModalOpen(true);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold"
         >
           <FileArchive className="w-4 h-4" />
@@ -412,7 +415,12 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
               Tipo de pacote
               <select
                 value={exportVersion}
-                onChange={(e) => setExportVersion(e.target.value as CompanyExportVersion)}
+                onChange={(e) => {
+                  const v = e.target.value as CompanyExportVersion;
+                  setExportVersion(v);
+                  setHeavyConfirm(false);
+                  if (v !== 'F2_COMPLETE') setEstimate(null);
+                }}
                 className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-white"
               >
                 <option value="F2_COMPLETE">F2 completo (recomendado)</option>
@@ -526,7 +534,11 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setHeavyConfirm(false);
+                  setEstimate(null);
+                }}
                 className="px-3 py-2 rounded-lg text-sm text-slate-300 border border-white/10"
               >
                 Cancelar
