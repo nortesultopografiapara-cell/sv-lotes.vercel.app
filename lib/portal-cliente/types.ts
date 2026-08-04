@@ -5,6 +5,7 @@ export type ClientPortalMaskedResult = {
   linkKey: string;
   customerNameMasked: string;
   phoneMasked: string | null;
+  /** Nome da loteadora/vendedora (resolveSaleLoteadoraDisplayName). */
   companyName: string;
   projectName: string | null;
   quadraLote: string | null;

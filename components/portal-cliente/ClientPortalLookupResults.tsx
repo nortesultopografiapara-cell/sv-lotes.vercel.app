@@ -87,7 +87,7 @@ export function ClientPortalLookupResults({ results, selectedLinkKey, onSelect }
 
                     <div className="space-y-1 border-t border-white/5 pt-2 text-xs text-gray-500">
                       <p>
-                        <span className="text-gray-400">Empresa:</span>{' '}
+                        <span className="text-gray-400">Loteadora:</span>{' '}
                         <span className="text-gray-300">{item.companyName}</span>
                       </p>
                       <p>

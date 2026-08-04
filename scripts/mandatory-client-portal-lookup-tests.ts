@@ -13,6 +13,7 @@ import {
   sanitizeClientPortalLookupResponse,
 } from '../lib/clientPortalLookup';
 import { maskCustomerName, maskPhone } from '../lib/portal-cliente/masking';
+import { resolveSaleLoteadoraDisplayName } from '../lib/portal-cliente/saleLoteadora';
 import type { ClientPortalLookupResponse } from '../lib/portal-cliente/types';
 
 const root = path.join(__dirname, '..');
@@ -82,6 +83,7 @@ function testSingleCompanyResult(): void {
   assert(response[0].customerNameMasked === 'JO*** SI***', 'masked customer name');
   assert(response[0].phoneMasked === '(94) 99***-**18', 'masked phone');
   assert(response[0].quadraLote === 'QD 02 LT 12', 'quadra lote');
+  assert(response[0].companyName !== 'Empresa', 'never Empresa');
 
   const apiShape = sanitizeClientPortalLookupResponse({ found: true, maskedResults: response });
   assertNoSensitiveLookupFields(apiShape);
@@ -154,7 +156,11 @@ function testSaasContractResult(): void {
 
   assert(response.length === 1, 'saas result');
   assert(response[0].linkLabel === 'Contrato SaaS', 'saas label');
-  assert(response[0].companyName === 'SV Topografia', 'saas company');
+  assert(
+    response[0].companyName ===
+      resolveSaleLoteadoraDisplayName({ company: { name: 'SV Topografia' } }),
+    'saas company alinhado ao resolver',
+  );
   assertNoSensitiveLookupFields({ found: true, maskedResults: response });
 }
 
@@ -229,6 +235,137 @@ function testResolveHelpers(): void {
   );
 }
 
+function testLoteadoraFromContractHtml(): void {
+  const vendor = 'S.V Topografia e Projeto LTDA';
+  const html = `<strong>Promitente Proprietário Vendedor:</strong> <strong>${vendor}</strong>, CNPJ n° 1`;
+  const response = buildMaskedResultsFromData({
+    customers: [
+      {
+        id: 'cust-1',
+        name: 'João Silva',
+        phone: '94999123418',
+        tenant_id: 'comp-1',
+        company_id: 'comp-1',
+      },
+    ],
+    sales: [
+      {
+        id: 'sale-1',
+        customer_id: 'cust-1',
+        company_id: 'comp-1',
+        project_id: 'proj-1',
+        status: 'ativo',
+      },
+    ],
+    companies: [{ id: 'comp-1', name: 'Empresa', fantasy_name: '', razao_social: '' }],
+    projects: [{ id: 'proj-1', name: 'Loteamento X' }],
+    blocks: [],
+    saasCompanies: [],
+    saasSubscriptions: [],
+    saleLoteadoraBySaleId: {
+      'sale-1': { contractHtml: html },
+    },
+  });
+
+  assert(response.length === 1, 'one link');
+  assert(response[0].companyName === vendor, 'saleLoteadoraName via HTML');
+  assert(
+    response[0].companyName ===
+      resolveSaleLoteadoraDisplayName({
+        company: { name: 'Empresa' },
+        contractHtml: html,
+      }),
+    'seleção = dashboard resolver',
+  );
+  assert(response[0].companyName !== 'Não informado', 'não fica Não informado com HTML');
+  assert(response[0].companyName !== 'Empresa', 'nunca Empresa');
+}
+
+function testDifferentLoteadorasSameCpf(): void {
+  const htmlSv =
+    '<strong>Promitente Proprietário Vendedor:</strong> <strong>S.V Topografia e Projeto LTDA</strong>, CNPJ';
+  const htmlMeneses =
+    '<strong>Promitente Proprietário Vendedor:</strong> <strong>Meneses Imobiliária Ltda</strong>, CNPJ';
+  const response = buildMaskedResultsFromData({
+    customers: [
+      { id: 'c1', name: 'Maria', phone: '94988887777', company_id: 'comp-sv', tenant_id: 'comp-sv' },
+      {
+        id: 'c2',
+        name: 'Maria',
+        phone: '94988887777',
+        company_id: 'comp-men',
+        tenant_id: 'comp-men',
+      },
+    ],
+    sales: [
+      { id: 'sale-sv', customer_id: 'c1', company_id: 'comp-sv', status: 'ativo', project_id: 'p1' },
+      { id: 'sale-men', customer_id: 'c2', company_id: 'comp-men', status: 'ativo', project_id: 'p2' },
+    ],
+    companies: [
+      { id: 'comp-sv', name: 'Empresa' },
+      { id: 'comp-men', name: 'Empresa' },
+    ],
+    projects: [
+      { id: 'p1', name: 'Empreendimento SV' },
+      { id: 'p2', name: 'Castanheira' },
+    ],
+    blocks: [],
+    saasCompanies: [],
+    saasSubscriptions: [],
+    saleLoteadoraBySaleId: {
+      'sale-sv': { contractHtml: htmlSv },
+      'sale-men': { contractHtml: htmlMeneses },
+    },
+  });
+
+  assert(response.length === 2, 'dois vínculos');
+  const names = response.map((r) => r.companyName).sort();
+  assert(names[0] === 'Meneses Imobiliária Ltda', 'meneses');
+  assert(names[1] === 'S.V Topografia e Projeto LTDA', 'sv');
+}
+
+function testPfLoteadoraOnSelection(): void {
+  const response = buildMaskedResultsFromData({
+    customers: [{ id: 'c1', name: 'Cliente', company_id: 'comp-pf', tenant_id: 'comp-pf' }],
+    sales: [{ id: 'sale-pf', customer_id: 'c1', company_id: 'comp-pf', status: 'ativo' }],
+    companies: [
+      { id: 'comp-pf', name: 'Ivanilde Silva Moreira', fantasy_name: '', razao_social: '' },
+    ],
+    projects: [],
+    blocks: [],
+    saasCompanies: [],
+    saasSubscriptions: [],
+  });
+  const expected = resolveSaleLoteadoraDisplayName({
+    company: { name: 'Ivanilde Silva Moreira' },
+  });
+  assert(response[0].companyName === expected, 'PF alinhado ao dashboard');
+  assert(response[0].companyName.toLowerCase().includes('ivanilde'), 'PF nome');
+}
+
+function testEmptyLoteadoraFallback(): void {
+  const response = buildMaskedResultsFromData({
+    customers: [{ id: 'c1', name: 'Cliente', company_id: 'comp-x', tenant_id: 'comp-x' }],
+    sales: [{ id: 'sale-x', customer_id: 'c1', company_id: 'comp-x', status: 'ativo' }],
+    companies: [{ id: 'comp-x', name: 'Empresa', fantasy_name: '', razao_social: '' }],
+    projects: [],
+    blocks: [],
+    saasCompanies: [],
+    saasSubscriptions: [],
+  });
+  assert(response[0].companyName === 'Não informado', 'fallback seguro');
+}
+
+function testSelectionUiLabel(): void {
+  const ui = read('components/portal-cliente/ClientPortalLookupResults.tsx');
+  assert(ui.includes('Loteadora:'), 'rótulo Loteadora na seleção');
+  assert(!ui.includes('Empresa:'), 'sem rótulo Empresa na seleção');
+  const lookup = read('lib/clientPortalLookup.ts');
+  assert(lookup.includes('resolveSaleLoteadoraDisplayName'), 'reutiliza resolver do dashboard');
+  assert(lookup.includes('loadSaleLoteadoraContextsBySaleIds'), 'carrega HTML do contrato');
+  assert(lookup.includes('readStoredContractHtml'), 'lê HTML persistido');
+}
+
 function testApiRouteExists(): void {
   const route = read('app/api/portal-cliente/lookup/route.ts');
   assert(route.includes('isClientPortalEnabled'), 'feature flag gate');
@@ -261,6 +398,11 @@ function main(): void {
   testSaasContractResult();
   testCancelledSaleExcluded();
   testResolveHelpers();
+  testLoteadoraFromContractHtml();
+  testDifferentLoteadorasSameCpf();
+  testPfLoteadoraOnSelection();
+  testEmptyLoteadoraFallback();
+  testSelectionUiLabel();
   testApiRouteExists();
   testIsolatedModule();
   testStage1ApiExists();

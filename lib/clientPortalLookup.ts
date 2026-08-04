@@ -11,8 +11,11 @@ import {
   normalizeCpfCnpj,
 } from '@/lib/inputMasks';
 import { normalizeDocument } from '@/lib/customerIdentity';
+import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
+import { parseMissingContractColumn } from '@/lib/contractRegeneration';
 import { buildClientPortalLinkKey } from '@/lib/portal-cliente/linkKey';
 import { maskCustomerName, maskPhone } from '@/lib/portal-cliente/masking';
+import { resolveSaleLoteadoraDisplayName } from '@/lib/portal-cliente/saleLoteadora';
 import type {
   ClientPortalLookupResponse,
   ClientPortalMaskedResult,
@@ -87,6 +90,129 @@ type SubscriptionRow = {
   company_id: string;
   contract_status?: string | null;
 };
+
+/** Contexto opcional por venda — mesma resolução do Resumo da Venda. */
+export type SaleLoteadoraLookupContext = {
+  contractHtml?: string | null;
+  tenantCompany?: CompanyRow | null;
+  projectOwnerName?: string | null;
+  explicitSellerName?: string | null;
+};
+
+const LOOKUP_CONTRACT_COLUMNS = [
+  'id',
+  'sale_id',
+  'tenant_id',
+  'company_id',
+  'version',
+  'created_at',
+  'status',
+  'generated_html',
+  'html_content',
+  'contract_html',
+  'content',
+  'html',
+] as const;
+
+function stripSelectColumn(select: string, column: string): string {
+  return select
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== column)
+    .join(', ');
+}
+
+function pickLatestContractRow(
+  rows: Array<Record<string, unknown>>,
+): Record<string, unknown> | null {
+  if (rows.length === 0) return null;
+  return [...rows].sort((a, b) => {
+    const va = Number(a.version) || 0;
+    const vb = Number(b.version) || 0;
+    if (vb !== va) return vb - va;
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  })[0];
+}
+
+/**
+ * Carrega HTML/tenant do contrato mais recente por sale_id (read-only).
+ * Alinha a seleção de vínculo ao Resumo da Venda / Promitente Vendedor.
+ */
+export async function loadSaleLoteadoraContextsBySaleIds(
+  admin: SupabaseClient,
+  saleIds: string[],
+  companyById: Map<string, CompanyRow>,
+): Promise<Map<string, SaleLoteadoraLookupContext>> {
+  const out = new Map<string, SaleLoteadoraLookupContext>();
+  const uniqueSaleIds = Array.from(new Set(saleIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  if (uniqueSaleIds.length === 0) return out;
+
+  let select = LOOKUP_CONTRACT_COLUMNS.join(', ');
+  let rows: Array<Record<string, unknown>> = [];
+
+  for (let attempt = 0; attempt < LOOKUP_CONTRACT_COLUMNS.length + 2; attempt++) {
+    const { data, error } = await admin
+      .from('contracts')
+      .select(select)
+      .in('sale_id', uniqueSaleIds);
+
+    if (!error) {
+      rows = (data as Array<Record<string, unknown>> | null) ?? [];
+      break;
+    }
+
+    const missing = parseMissingContractColumn(error.message || '');
+    if (!missing || !select.split(',').map((s) => s.trim()).includes(missing)) {
+      console.error('[client-portal-lookup] contracts query error', error.message);
+      break;
+    }
+    select = stripSelectColumn(select, missing);
+    if (!select.trim()) break;
+  }
+
+  const bySale = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of rows) {
+    const saleId = String(row.sale_id || '').trim();
+    if (!saleId) continue;
+    const list = bySale.get(saleId) ?? [];
+    list.push(row);
+    bySale.set(saleId, list);
+  }
+
+  const missingTenantIds = new Set<string>();
+  for (const [saleId, saleRows] of bySale) {
+    const latest = pickLatestContractRow(saleRows);
+    if (!latest) continue;
+    const html = readStoredContractHtml(latest);
+    const tenantId = String(latest.tenant_id || latest.company_id || '').trim();
+    let tenantCompany: CompanyRow | null = null;
+    if (tenantId) {
+      tenantCompany = companyById.get(tenantId) ?? null;
+      if (!tenantCompany) missingTenantIds.add(tenantId);
+    }
+    out.set(saleId, {
+      contractHtml: html,
+      tenantCompany,
+    });
+  }
+
+  if (missingTenantIds.size > 0) {
+    const loaded = await loadCompaniesByIds(admin, missingTenantIds);
+    for (const company of loaded) {
+      companyById.set(company.id, company);
+    }
+    for (const [saleId, ctx] of out) {
+      const saleRows = bySale.get(saleId) ?? [];
+      const latest = pickLatestContractRow(saleRows);
+      const tenantId = String(latest?.tenant_id || latest?.company_id || '').trim();
+      if (!tenantId) continue;
+      const tenantCompany = companyById.get(tenantId) ?? null;
+      out.set(saleId, { ...ctx, tenantCompany });
+    }
+  }
+
+  return out;
+}
 
 function isGenericCompanyLabel(value: string): boolean {
   const n = value
@@ -175,11 +301,14 @@ export function buildMaskedResultsFromData(input: {
   blocks: BlockRow[];
   saasCompanies: CompanyRow[];
   saasSubscriptions: SubscriptionRow[];
+  /** Contexto por sale_id — HTML/tenant do contrato (mesma regra do dashboard). */
+  saleLoteadoraBySaleId?: Record<string, SaleLoteadoraLookupContext | undefined>;
 }): ClientPortalMaskedResult[] {
   const companyById = new Map(input.companies.map((c) => [c.id, c]));
   const projectById = new Map(input.projects.map((p) => [p.id, p]));
   const blockById = new Map(input.blocks.map((b) => [b.id, b]));
   const salesByCustomer = new Map<string, SaleRow[]>();
+  const saleLoteadoraBySaleId = input.saleLoteadoraBySaleId ?? {};
 
   for (const sale of input.sales) {
     if (!isSaleActive(sale.status)) continue;
@@ -201,9 +330,10 @@ export function buildMaskedResultsFromData(input: {
     for (const sale of customerSales) {
       customersWithSale.add(customer.id);
       const companyId = String(sale.company_id || sale.tenant_id || customer.company_id || customer.tenant_id || '');
-      const company = companyById.get(companyId);
+      const company = companyById.get(companyId) ?? null;
       const project = sale.project_id ? projectById.get(sale.project_id) : null;
       const block = sale.block_id ? blockById.get(sale.block_id) : null;
+      const loteadoraCtx = saleLoteadoraBySaleId[sale.id];
 
       results.push({
         linkKey: buildClientPortalLinkKey({
@@ -214,7 +344,13 @@ export function buildMaskedResultsFromData(input: {
         }),
         customerNameMasked: maskedName,
         phoneMasked: maskedPhone,
-        companyName: resolveCompanyDisplayName(company),
+        companyName: resolveSaleLoteadoraDisplayName({
+          explicitSellerName: loteadoraCtx?.explicitSellerName,
+          contractHtml: loteadoraCtx?.contractHtml,
+          company: company as Record<string, unknown> | null,
+          tenantCompany: (loteadoraCtx?.tenantCompany ?? null) as Record<string, unknown> | null,
+          projectOwnerName: loteadoraCtx?.projectOwnerName,
+        }),
         projectName: project?.name?.trim() || null,
         quadraLote: resolveQuadraLote(sale, block),
         linkType: 'lot_sale',
@@ -226,7 +362,7 @@ export function buildMaskedResultsFromData(input: {
     if (customerSales.length === 0) {
       const companyId = String(customer.company_id || customer.tenant_id || '');
       if (!companyId) continue;
-      const company = companyById.get(companyId);
+      const company = companyById.get(companyId) ?? null;
       results.push({
         linkKey: buildClientPortalLinkKey({
           linkType: 'customer_record',
@@ -235,7 +371,9 @@ export function buildMaskedResultsFromData(input: {
         }),
         customerNameMasked: maskedName,
         phoneMasked: maskedPhone,
-        companyName: resolveCompanyDisplayName(company),
+        companyName: resolveSaleLoteadoraDisplayName({
+          company: company as Record<string, unknown> | null,
+        }),
         projectName: null,
         quadraLote: null,
         linkType: 'customer_record',
@@ -260,7 +398,9 @@ export function buildMaskedResultsFromData(input: {
       }),
       customerNameMasked: maskCustomerName(company.name),
       phoneMasked: null,
-      companyName: resolveCompanyDisplayName(company),
+      companyName: resolveSaleLoteadoraDisplayName({
+        company: company as Record<string, unknown>,
+      }),
       projectName: null,
       quadraLote: null,
       linkType: 'saas_contract',
@@ -538,14 +678,31 @@ export async function lookupClientPortalByDocument(
       : Promise.resolve({ data: [], error: null }),
   ]);
 
+  const companies = (companiesRes.data as CompanyRow[] | null) ?? [];
+  const companyById = new Map(companies.map((c) => [c.id, c]));
+
+  const activeSaleIds = sales
+    .filter((sale) => isSaleActive(sale.status))
+    .map((sale) => sale.id);
+  const saleLoteadoraMap = await loadSaleLoteadoraContextsBySaleIds(
+    admin,
+    activeSaleIds,
+    companyById,
+  );
+  const saleLoteadoraBySaleId: Record<string, SaleLoteadoraLookupContext | undefined> = {};
+  for (const [saleId, ctx] of saleLoteadoraMap) {
+    saleLoteadoraBySaleId[saleId] = ctx;
+  }
+
   const maskedResults = buildMaskedResultsFromData({
     customers,
     sales,
-    companies: (companiesRes.data as CompanyRow[] | null) ?? [],
+    companies: Array.from(companyById.values()),
     projects: (projectsRes.data as ProjectRow[] | null) ?? [],
     blocks: (blocksRes.data as BlockRow[] | null) ?? [],
     saasCompanies,
     saasSubscriptions: (subscriptionsRes.data as SubscriptionRow[] | null) ?? [],
+    saleLoteadoraBySaleId,
   });
 
   if (maskedResults.length === 0) {
