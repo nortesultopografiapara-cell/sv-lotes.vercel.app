@@ -221,24 +221,48 @@ export async function deleteExportPackageFile(
   companyId: string,
   exportId: string,
   userId: string,
-): Promise<void> {
+): Promise<{ removedPaths: string[]; removedCount: number; approxBytes: number }> {
   const job = await getCompanyExportJob(admin, companyId, exportId);
-  const path = job.storage_path || exportPackagePath(companyId, exportId);
   const bucket = job.storage_bucket || COMPANY_EXPORT_BUCKET;
+  const removedPaths: string[] = [];
+  let approxBytes = 0;
 
-  await admin.storage.from(bucket).remove([path]);
-
-  // Best-effort: clear staging prefix listing
-  try {
-    const prefix = `${companyId}/${exportId}/staging`;
-    const { data: listed } = await admin.storage.from(bucket).list(prefix, { limit: 100 });
-    if (listed?.length) {
-      await admin.storage
-        .from(bucket)
-        .remove(listed.map((f) => `${prefix}/${f.name}`));
+  const removeOne = async (objectPath: string, sizeHint?: number | null) => {
+    const { error } = await admin.storage.from(bucket).remove([objectPath]);
+    if (!error) {
+      removedPaths.push(objectPath);
+      if (sizeHint && sizeHint > 0) approxBytes += sizeHint;
     }
-  } catch {
-    // ignore
+  };
+
+  // package.zip (canonical + any stored path)
+  const packagePath = job.storage_path || exportPackagePath(companyId, exportId);
+  await removeOne(packagePath, Number(job.total_size || 0) || null);
+
+  // Recursive wipe under {companyId}/{exportId}/
+  const rootPrefix = `${companyId}/${exportId}`;
+  const queue = [rootPrefix];
+  while (queue.length) {
+    const prefix = queue.shift()!;
+    const { data: listed } = await admin.storage.from(bucket).list(prefix, {
+      limit: 1000,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    for (const item of listed || []) {
+      const child = `${prefix}/${item.name}`;
+      const isFolder = !item.id || item.id === null;
+      // Supabase: folders often have id null and no metadata.size
+      if (isFolder && (item.metadata == null || item.metadata?.mimetype == null)) {
+        // Could still be empty-named file; if metadata has size treat as file
+        if (typeof item.metadata?.size === 'number') {
+          await removeOne(child, item.metadata.size);
+        } else {
+          queue.push(child);
+        }
+      } else {
+        await removeOne(child, item.metadata?.size != null ? Number(item.metadata.size) : null);
+      }
+    }
   }
 
   await admin
@@ -246,7 +270,10 @@ export async function deleteExportPackageFile(
     .update({
       storage_path: null,
       signed_url_expires_at: null,
-      error_message: job.status === 'COMPLETED' ? 'Arquivo removido manualmente.' : job.error_message,
+      error_message:
+        job.status === 'COMPLETED' || job.status === 'EXPIRED'
+          ? 'Arquivo de homologação removido manualmente.'
+          : job.error_message || 'Arquivo de homologação removido manualmente.',
     })
     .eq('id', exportId)
     .eq('company_id', companyId);
@@ -256,8 +283,19 @@ export async function deleteExportPackageFile(
     userId,
     action: COMPANY_EXPORT_AUDIT.FILE_DELETED,
     description: 'Arquivo de exportação removido',
-    details: { exportId },
+    details: {
+      exportId,
+      removedCount: removedPaths.length,
+      approxBytes,
+      note: 'Histórico do job preservado; buckets tenant intactos',
+    },
   });
+
+  return {
+    removedPaths,
+    removedCount: removedPaths.length,
+    approxBytes,
+  };
 }
 
 /** Avança um job específico por até maxSteps etapas (útil em Preview sem cron). */

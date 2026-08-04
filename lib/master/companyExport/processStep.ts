@@ -289,6 +289,22 @@ export async function processCompanyExportStep(
   const cursor = parseCursor(job.step_cursor, exportVersion, job.options);
   cursor.exportVersion = exportVersion;
 
+  // Respeitar cancelamento entre ticks (jobs longos F2).
+  if (job.status === 'CANCELLED') {
+    return { done: true, failed: false };
+  }
+  {
+    const { data: live } = await admin
+      .from('company_export_jobs')
+      .select('status')
+      .eq('id', exportId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (live?.status === 'CANCELLED') {
+      return { done: true, failed: false };
+    }
+  }
+
   const parentIds = {
     saleIds: [] as string[],
     projectIds: [] as string[],
@@ -833,6 +849,17 @@ export async function processCompanyExportStep(
   }
 
   if (cursor.phase === 'zip_domains') {
+    if (await (async () => {
+      const { data } = await admin
+        .from('company_export_jobs')
+        .select('status')
+        .eq('id', exportId)
+        .eq('company_id', companyId)
+        .maybeSingle();
+      return data?.status === 'CANCELLED';
+    })()) {
+      return { done: true, failed: false };
+    }
     if (!cursor.zipPartRels) cursor.zipPartRels = [];
     if (!cursor.checksumLines) cursor.checksumLines = [];
     const domainIndex = cursor.zipDomainIndex || 0;

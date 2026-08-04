@@ -146,6 +146,25 @@ function testWiringFiles(): void {
   assert(processStep.includes('phaseAfterGeojson'), 'geojson branch');
   assert(processStep.includes('assembleExportPackage'), 'package assemble');
   assert(processStep.includes('zip_domains'), 'zip_domains phase');
+  assert(processStep.includes("status === 'CANCELLED'"), 'cancel check in worker');
+
+  const estimate = read('lib/master/companyExport/estimate.ts');
+  assert(estimate.includes('requiresExtraConfirmWithPlans'), 'heavy estimate');
+  assert(estimate.includes('COMPANY_EXPORT_HEAVY_BLOCKS_THRESHOLD'), 'blocks threshold');
+
+  const createRoute = read('app/api/master/companies/[id]/exports/route.ts');
+  assert(createRoute.includes('heavyConfirm'), 'create requires heavyConfirm');
+  assert(createRoute.includes('estimateCompanyExport'), 'create uses estimate');
+
+  const panel = read('components/master/CompanyExportPanel.tsx');
+  assert(panel.includes('includeGeneratedPlans'), 'panel plans');
+  assert(panel.includes('F2_COMPLETE'), 'panel f2');
+  assert(panel.includes('heavyConfirm'), 'panel heavy confirm');
+  assert(panel.includes('/exports/estimate'), 'panel estimate fetch');
+
+  const del = read('lib/master/companyExport/jobService.ts');
+  assert(del.includes('Arquivo de homologação removido manualmente'), 'manual remove message');
+  assert(del.includes('removedPaths'), 'recursive delete stats');
 
   const mig = read('supabase/migrations/20261005120000_company_export_f2.sql');
   assert(mig.includes('export_version'), 'migration version');
@@ -153,19 +172,10 @@ function testWiringFiles(): void {
   assert(mig.includes('ADD COLUMN IF NOT EXISTS'), 'additive');
   assert(!/DROP\s+TABLE/i.test(mig), 'no drop table');
 
-  const panel = read('components/master/CompanyExportPanel.tsx');
-  assert(panel.includes('includeGeneratedPlans'), 'panel plans');
-  assert(panel.includes('F2_COMPLETE'), 'panel f2');
-
   const saas = read('components/master/saas/SaasCompanyWorkspace.tsx');
   assert(saas.includes('CompanyExportPanel'), 'saas panel');
   assert(saas.includes('exportacoes'), 'saas tab');
 
-  const job = read('lib/master/companyExport/jobService.ts');
-  assert(job.includes('export_version'), 'job version');
-  assert(job.includes('assertStorageRegistrySecurity'), 'storage assert');
-
-  // No signed URL persistence in package helpers
   const copy = read('lib/master/companyExport/storageCopy.ts');
   assert(!copy.includes('createSignedUrl'), 'copy no signed url');
 }

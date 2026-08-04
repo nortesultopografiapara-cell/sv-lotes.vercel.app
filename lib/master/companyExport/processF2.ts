@@ -182,6 +182,9 @@ async function copyBatch(
   let ts = totalSize;
 
   for (const item of batch) {
+    if (await isExportCancelled(admin, companyId, exportId)) {
+      return { filesExported: fe, totalSize: ts, advanced: true, done: true };
+    }
     if (cursor.copiedKeys!.includes(item.key)) continue;
     const result = await copyInventoryItemToStaging(admin, companyId, exportId, item);
     cursor.copiedKeys!.push(item.key);
@@ -215,6 +218,20 @@ async function copyBatch(
   return { filesExported: fe, totalSize: ts, advanced: true, done };
 }
 
+async function isExportCancelled(
+  admin: SupabaseClient,
+  companyId: string,
+  exportId: string,
+): Promise<boolean> {
+  const { data } = await admin
+    .from('company_export_jobs')
+    .select('status')
+    .eq('id', exportId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+  return data?.status === 'CANCELLED';
+}
+
 export type F2StepResult = {
   handled: boolean;
   done: boolean;
@@ -245,6 +262,18 @@ export async function processF2Phase(
     filesExported,
     totalSize,
   };
+
+  if (await isExportCancelled(admin, companyId, exportId)) {
+    return {
+      handled: true,
+      done: true,
+      failed: false,
+      filesExported,
+      totalSize,
+      progress: 0,
+      currentStep: 'cancelled',
+    };
+  }
 
   if (cursor.phase === 'inventory_storage') {
     const nameMaps = await loadNameMaps(admin, companyId, parentIds);
@@ -437,6 +466,16 @@ export async function processF2Phase(
       cursor.memorialOffset = 0;
     } else {
       for (const block of batch) {
+        if (await isExportCancelled(admin, companyId, exportId)) {
+          return {
+            ...base,
+            filesExported: fe,
+            totalSize: ts,
+            progress: 95,
+            currentStep: 'cancelled',
+            done: true,
+          };
+        }
         const key = `memorial:${block.id}`;
         if (cursor.generatedKeys!.includes(key)) continue;
         const projectName = projects[block.project_id] || block.project_id;
@@ -490,6 +529,16 @@ export async function processF2Phase(
       cursor.lotPlanOffset = 0;
     } else {
       for (const block of batch) {
+        if (await isExportCancelled(admin, companyId, exportId)) {
+          return {
+            ...base,
+            filesExported: fe,
+            totalSize: ts,
+            progress: 96,
+            currentStep: 'cancelled',
+            done: true,
+          };
+        }
         const key = `lot_plan:${block.id}`;
         if (cursor.generatedKeys!.includes(key)) continue;
         const projectName = projects[block.project_id] || block.project_id;

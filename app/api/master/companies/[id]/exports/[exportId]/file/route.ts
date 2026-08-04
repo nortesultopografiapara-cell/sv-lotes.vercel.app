@@ -39,8 +39,7 @@ export async function DELETE(request: Request, context: Ctx) {
   const exportId = String(params.exportId || '').trim();
 
   try {
-    await deleteExportPackageFile(admin, companyId, exportId, auth.userId);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof CompanyExportError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

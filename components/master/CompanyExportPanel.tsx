@@ -11,6 +11,7 @@ import {
   type CompanyExportVersion,
 } from '@/lib/master/companyExport/types';
 import { reasonLabel } from '@/lib/master/companyExport/audit';
+import type { CompanyExportEstimate } from '@/lib/master/companyExport/estimate';
 
 type Props = {
   companyId: string;
@@ -69,6 +70,9 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [exportVersion, setExportVersion] = useState<CompanyExportVersion>('F2_COMPLETE');
   const [includePlans, setIncludePlans] = useState(true);
+  const [heavyConfirm, setHeavyConfirm] = useState(false);
+  const [estimate, setEstimate] = useState<CompanyExportEstimate | null>(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
 
@@ -129,9 +133,46 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
     return () => clearInterval(t);
   }, [hasActive, companyId, userId, loadJobs]);
 
+  useEffect(() => {
+    if (!modalOpen || exportVersion !== 'F2_COMPLETE') {
+      setEstimate(null);
+      setHeavyConfirm(false);
+      return;
+    }
+    let cancelled = false;
+    setEstimateLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/master/companies/${companyId}/exports/estimate?userId=${encodeURIComponent(userId)}`,
+        );
+        const json = await res.json();
+        if (!cancelled && res.ok) setEstimate(json.estimate || null);
+      } catch {
+        if (!cancelled) setEstimate(null);
+      } finally {
+        if (!cancelled) setEstimateLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, exportVersion, companyId, userId]);
+
+  const needsHeavyConfirm =
+    exportVersion === 'F2_COMPLETE' &&
+    estimate &&
+    (includePlans
+      ? estimate.requiresExtraConfirmWithPlans
+      : estimate.requiresExtraConfirmWithoutPlans);
+
   async function handleCreate() {
     if (!confirmed) {
       setError('Confirme explicitamente a geração do pacote.');
+      return;
+    }
+    if (needsHeavyConfirm && !heavyConfirm) {
+      setError('Esta exportação é pesada: confirme a estimativa de lotes/PDFs/tamanho.');
       return;
     }
     setSubmitting(true);
@@ -146,13 +187,18 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
           notes,
           exportVersion,
           includeGeneratedPlans: includePlans,
+          heavyConfirm: Boolean(heavyConfirm || !needsHeavyConfirm),
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Falha ao criar exportação');
+      if (!res.ok) {
+        if (json.estimate) setEstimate(json.estimate);
+        throw new Error(json.error || 'Falha ao criar exportação');
+      }
       setModalOpen(false);
       setNotes('');
       setConfirmed(false);
+      setHeavyConfirm(false);
       await loadJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro');
@@ -412,15 +458,59 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
             </div>
 
             {exportVersion === 'F2_COMPLETE' ? (
-              <label className="flex items-start gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={includePlans}
-                  onChange={(e) => setIncludePlans(e.target.checked)}
-                  className="mt-1"
-                />
-                Incluir memoriais e pranchas regenerados (pode demorar em empresas grandes)
-              </label>
+              <>
+                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-300 space-y-1">
+                  <p className="font-semibold text-slate-200">Estimativa F2</p>
+                  {estimateLoading ? (
+                    <p>Calculando lotes / PDFs / tamanho…</p>
+                  ) : estimate ? (
+                    <>
+                      <p>
+                        Lotes: {estimate.blocks} · Projetos: {estimate.projects} · Docs venda:{' '}
+                        {estimate.saleDocuments} · Legacy: {estimate.legacyDocuments}
+                      </p>
+                      <p>
+                        Se planos ligados ≈ {estimate.memorialsIfEnabled} memoriais +{' '}
+                        {estimate.lotPlansIfEnabled} pranchas + {estimate.generalPlansIfEnabled}{' '}
+                        gerais (~{estimate.estimatedBinaryMbWithPlans} MB;{' '}
+                        {estimate.estimatedMinutesWithPlans})
+                      </p>
+                      <p>
+                        Sem planos ≈ {estimate.estimatedBinaryMbWithoutPlans} MB
+                        {estimate.packageSplitLikelyWithPlans
+                          ? ' · pacote provavelmente dividido'
+                          : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <p>Estimativa indisponível — use com cautela em empresas grandes.</p>
+                  )}
+                </div>
+                <label className="flex items-start gap-2 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={includePlans}
+                    onChange={(e) => {
+                      setIncludePlans(e.target.checked);
+                      setHeavyConfirm(false);
+                    }}
+                    className="mt-1"
+                  />
+                  Incluir memoriais e pranchas regenerados (pode demorar em empresas grandes)
+                </label>
+                {needsHeavyConfirm ? (
+                  <label className="flex items-start gap-2 text-sm text-amber-100">
+                    <input
+                      type="checkbox"
+                      checked={heavyConfirm}
+                      onChange={(e) => setHeavyConfirm(e.target.checked)}
+                      className="mt-1"
+                    />
+                    Confirmo exportação pesada após revisar lotes, PDFs estimados e tamanho (ex.:
+                    Meneses).
+                  </label>
+                ) : null}
+              </>
             ) : null}
 
             <label className="flex items-start gap-2 text-sm text-slate-300">
@@ -443,7 +533,7 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
               </button>
               <button
                 type="button"
-                disabled={submitting || !confirmed}
+                disabled={submitting || !confirmed || Boolean(needsHeavyConfirm && !heavyConfirm)}
                 onClick={() => void handleCreate()}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-cyan-600 text-white disabled:opacity-50"
               >
