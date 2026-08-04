@@ -88,7 +88,14 @@ export async function middleware(request: NextRequest) {
     '/portal-cliente',
     '/api/portal-cliente',
   ];
-  const isPublicRoute = isLanding || isDemoPage || publicRoutes.some(route => url.pathname === route || url.pathname.startsWith(`${route}/`));
+  const isCompanyExportApi = /^\/api\/master\/companies\/[^/]+\/exports(\/|$)/.test(
+    url.pathname,
+  );
+  const isPublicRoute =
+    isLanding ||
+    isDemoPage ||
+    isCompanyExportApi ||
+    publicRoutes.some((route) => url.pathname === route || url.pathname.startsWith(`${route}/`));
 
   if (isPublicRoute) {
     if (user || isDemoMode) {
