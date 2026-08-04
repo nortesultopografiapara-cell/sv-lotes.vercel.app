@@ -11,6 +11,7 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 type Ctx = { params: Promise<{ id: string; exportId: string }> };
 
@@ -39,12 +40,13 @@ export async function DELETE(request: Request, context: Ctx) {
   const exportId = String(params.exportId || '').trim();
 
   try {
-    await deleteExportPackageFile(admin, companyId, exportId, auth.userId);
-    return NextResponse.json({ ok: true });
+    const result = await deleteExportPackageFile(admin, companyId, exportId, auth.userId);
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof CompanyExportError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    return NextResponse.json({ error: 'Erro ao excluir arquivo' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Erro ao excluir arquivo';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

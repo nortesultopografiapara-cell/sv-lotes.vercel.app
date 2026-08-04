@@ -8,7 +8,13 @@ import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 
 export type SaasPanelView = 'dashboard' | 'empresas' | 'cobrancas' | 'automacoes' | 'caixa';
 
-export type SaasCompanyTab = 'dados' | 'contrato' | 'assinatura' | 'cobrancas' | 'historico';
+export type SaasCompanyTab =
+  | 'dados'
+  | 'contrato'
+  | 'assinatura'
+  | 'cobrancas'
+  | 'historico'
+  | 'exportacoes';
 
 export type SaasChargeDisplayStatus =
   | 'GERADA'

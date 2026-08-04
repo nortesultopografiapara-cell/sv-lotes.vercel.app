@@ -22,7 +22,7 @@ import { buildStoredZip } from '../lib/master/companyExport/zipStore';
 import { buildExportReadmeHtml } from '../lib/master/companyExport/readme';
 import {
   COMPANY_EXPORT_REASONS,
-  COMPANY_EXPORT_SCHEMA_VERSION,
+  COMPANY_EXPORT_SCHEMA_VERSION_F1,
   emptyStepCursor,
   isCompanyExportReason,
 } from '../lib/master/companyExport/types';
@@ -259,7 +259,7 @@ function testReadmeAndReasons(): void {
   });
   assert(html.includes('Empresa Teste'), 'readme name');
   assert(html.includes('LGPD'), 'lgpd');
-  assert(html.includes(COMPANY_EXPORT_SCHEMA_VERSION), 'schema');
+  assert(html.includes(COMPANY_EXPORT_SCHEMA_VERSION_F1), 'schema');
   const cursor = emptyStepCursor();
   assert(cursor.phase === 'tables', 'cursor');
   assert(cursor.tableIndex === 0, 'cursor starts at table 0');
