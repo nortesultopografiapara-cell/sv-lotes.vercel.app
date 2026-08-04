@@ -5,8 +5,9 @@ import {
 } from '@/lib/officialLotMeasurements';
 
 /**
- * Chanfre: segmentos extras quando há mais de 4 lados em segments_json.
- * Cada lado oficial recebe exatamente 1 segmento; o restante é chanfre (sem somar no lado).
+ * Chanfre e medidas de lados do lote.
+ * Medidas oficiais (frente/fundo/laterais) preferem getOfficialLotMeasurements,
+ * que soma todos os segmentos da mesma confrontação.
  */
 
 export type ChanfreInfo = {
@@ -85,42 +86,10 @@ function getColumnTargets(block: Record<string, unknown>): LotSideMeasures {
   };
 }
 
-/** Combinações de k índices entre 0..n-1 */
-function combinations(n: number, k: number): number[][] {
-  const result: number[][] = [];
-  const combo: number[] = [];
-
-  function backtrack(start: number) {
-    if (combo.length === k) {
-      result.push([...combo]);
-      return;
-    }
-    for (let i = start; i <= n - (k - combo.length); i++) {
-      combo.push(i);
-      backtrack(i + 1);
-      combo.pop();
-    }
-  }
-
-  backtrack(0);
-  return result;
-}
-
-/** Permutações de um array (atribuição lado ↔ segmento) */
-function permutations<T>(arr: T[]): T[][] {
-  if (arr.length <= 1) return [arr];
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i++) {
-    const head = arr[i];
-    const rest = permutations(arr.filter((_, j) => j !== i));
-    for (const p of rest) out.push([head, ...p]);
-  }
-  return out;
-}
-
 /**
- * >4 segmentos: escolhe 4 segmentos (1 por lado) minimizando diferença às colunas;
- * segmentos não escolhidos = chanfre.
+ * Chanfre: segmentos extras curtos (1–15 m) além dos lados oficiais.
+ * Medidas de frente/fundo/laterais vêm de getOfficialLotMeasurements (soma por confrontação).
+ * Este fallback legado NÃO escolhe mais 1 segmento por lado (subestimava multi-segmento).
  */
 function resolveWithExtraSegments(
   segmentLengths: number[],
@@ -131,42 +100,29 @@ function resolveWithExtraSegments(
     columnTargets.fundo,
     columnTargets.ladoDireito,
     columnTargets.ladoEsquerdo,
-  ];
+  ].filter((t): t is number => t != null && Number.isFinite(t));
 
-  const n = segmentLengths.length;
-  let bestCost = Infinity;
-  let bestPerm: number[] | null = null;
-  let bestCombo: number[] | null = null;
-
-  for (const combo of combinations(n, 4)) {
-    for (const perm of permutations(combo)) {
-      let cost = 0;
-      for (let s = 0; s < 4; s++) {
-        const target = targets[s];
-        if (target == null) continue;
-        cost += Math.abs(segmentLengths[perm[s]] - target);
+  const used = new Set<number>();
+  for (const target of targets) {
+    let bestIdx = -1;
+    let bestDiff = Infinity;
+    for (let i = 0; i < segmentLengths.length; i++) {
+      if (used.has(i)) continue;
+      const diff = Math.abs(segmentLengths[i] - target);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIdx = i;
       }
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestPerm = perm;
-        bestCombo = combo;
-      }
+    }
+    if (bestIdx >= 0 && bestDiff <= Math.max(target * 0.08, 0.15)) {
+      used.add(bestIdx);
     }
   }
 
-  if (!bestPerm || !bestCombo) {
-    return { sides: columnTargets, chanfre: null, curva: null };
-  }
-
-  const used = new Set(bestCombo);
   const chanfreSegments = segmentLengths.filter((_, i) => !used.has(i));
 
-  const sides: LotSideMeasures = {
-    frente: round2(segmentLengths[bestPerm[0]]),
-    fundo: round2(segmentLengths[bestPerm[1]]),
-    ladoDireito: round2(segmentLengths[bestPerm[2]]),
-    ladoEsquerdo: round2(segmentLengths[bestPerm[3]]),
-  };
+  /** Mantém colunas (fonte persistida) — não substituir por um único segmento. */
+  const sides: LotSideMeasures = { ...columnTargets };
 
   if (chanfreSegments.length === 0) {
     return { sides, chanfre: null, curva: null };

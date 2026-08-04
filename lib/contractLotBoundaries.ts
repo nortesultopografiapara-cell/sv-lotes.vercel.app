@@ -41,16 +41,21 @@ export function resolveContractLotSides(
     ladoEsquerdo: null,
   };
 
-  const segs = b.segments;
-  if (Array.isArray(segs) && segs.length > 0) {
+  const hasSegments =
+    (Array.isArray(b.segments_json) && b.segments_json.length > 0) ||
+    (Array.isArray(b.segments) && b.segments.length > 0);
+
+  if (hasSegments) {
     try {
       const official = getOfficialLotMeasurements(b);
-      sides = {
-        frente: official.frente,
-        fundo: official.fundo,
-        ladoDireito: official.ladoDireito,
-        ladoEsquerdo: official.ladoEsquerdo,
-      };
+      if (official.source === 'txt_segments') {
+        sides = {
+          frente: official.frente,
+          fundo: official.fundo,
+          ladoDireito: official.ladoDireito,
+          ladoEsquerdo: official.ladoEsquerdo,
+        };
+      }
     } catch {
       /* fallback abaixo */
     }
