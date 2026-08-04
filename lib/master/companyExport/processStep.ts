@@ -151,20 +151,80 @@ async function fetchTablePage(
   const { data, error } = await query.range(offset, offset + COMPANY_EXPORT_PAGE_SIZE - 1);
   if (error) {
     const msg = error.message || '';
-    if (/does not exist|Could not find the table|schema cache/i.test(msg)) {
+    const isColumnError =
+      /column .* does not exist/i.test(msg) ||
+      /Could not find the '[^']+' column of/i.test(msg) ||
+      (/Could not find the '/i.test(msg) && /column/i.test(msg));
+    const isTableMissing =
+      !isColumnError &&
+      (/relation ["'].*["'] does not exist/i.test(msg) ||
+        /Could not find the table/i.test(msg) ||
+        (/does not exist/i.test(msg) && /table/i.test(msg)));
+
+    if (isTableMissing) {
       return { rows: [], error: null, missing: true };
     }
-    if (/column .* does not exist|Could not find.*column/i.test(msg)) {
-      // retry with minimal id-only then skip extras — treat as warning
-      const minimal = await admin
-        .from(spec.table)
-        .select(spec.columns.filter((c) => !c.includes('.')).slice(0, 8).join(', ') || 'id')
-        .limit(0);
-      if (minimal.error) {
-        return { rows: [], error: msg, missing: Boolean(spec.optional) };
+
+    if (isColumnError) {
+      // Fallback sanitizado: SELECT * + keep only allow-listed columns (never export secrets).
+      let fallback = admin.from(spec.table).select('*');
+      switch (spec.scope) {
+        case 'self_id':
+          fallback = fallback.eq('id', companyId);
+          break;
+        case 'company_id':
+          fallback = fallback.eq('company_id', companyId);
+          break;
+        case 'tenant_id':
+          fallback = fallback.eq('tenant_id', companyId);
+          break;
+        case 'company_or_tenant':
+          fallback = fallback.or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`);
+          break;
+        case 'via_sales':
+          fallback = fallback.in('sale_id', parentIds.saleIds.slice(0, 200));
+          break;
+        case 'via_projects':
+          fallback = fallback.in('project_id', parentIds.projectIds.slice(0, 200));
+          break;
+        case 'via_blocks':
+          fallback = fallback.or(
+            [
+              parentIds.blockIds.length
+                ? `block_id.in.(${parentIds.blockIds.slice(0, 100).join(',')})`
+                : null,
+              parentIds.blockIds.length
+                ? `lot_id.in.(${parentIds.blockIds.slice(0, 100).join(',')})`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(','),
+          );
+          break;
+        case 'via_contracts':
+          fallback = fallback.in('contract_id', parentIds.contractIds.slice(0, 200));
+          break;
+        case 'via_customers':
+          fallback = fallback.in('customer_id', parentIds.customerIds.slice(0, 200));
+          break;
+        default:
+          return { rows: [], error: msg, missing: false };
       }
-      return { rows: [], error: msg, missing: false };
+      const fb = await fallback.range(offset, offset + COMPANY_EXPORT_PAGE_SIZE - 1);
+      if (fb.error) {
+        return {
+          rows: [],
+          error: `${msg} | fallback: ${fb.error.message}`,
+          missing: Boolean(spec.optional),
+        };
+      }
+      const allow = [...spec.columns, ...(spec.jsonExtraColumns || [])];
+      const rows = ((fb.data as unknown as Record<string, unknown>[] | null) ?? []).map((row) =>
+        stripForbiddenColumns(row, allow),
+      );
+      return { rows, error: null, missing: false };
     }
+
     return { rows: [], error: msg, missing: false };
   }
 
@@ -513,14 +573,13 @@ export async function processCompanyExportStep(
   if (cursor.phase === 'readme') {
     const { data: company } = await admin
       .from('companies')
-      .select('id, name, fantasy_name, razao_social, cnpj, document')
+      .select('id, name, fantasy_name')
       .eq('id', companyId)
       .maybeSingle();
 
     const companyName =
-      String(company?.fantasy_name || company?.name || company?.razao_social || companyId).trim() ||
-      companyId;
-    const companyDocument = String(company?.cnpj || company?.document || '').trim() || null;
+      String(company?.fantasy_name || company?.name || companyId).trim() || companyId;
+    const companyDocument = null;
     cursor.companyName = companyName;
     cursor.companyDocument = companyDocument;
 
