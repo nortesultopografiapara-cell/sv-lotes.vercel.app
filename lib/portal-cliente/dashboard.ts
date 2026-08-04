@@ -563,9 +563,7 @@ async function loadLotSaleDashboard(
   });
 
   const company = companyRes.data;
-  const companyDisplay = company
-    ? resolveCompanyDisplayName(company)
-    : 'Loteadora';
+  const companyDisplay = resolveCompanyDisplayName(company);
 
   const projectName = projectRes.error ? null : projectRes.data?.name ? String(projectRes.data.name) : null;
   const quadraLote = blockRes.error ? null : resolveQuadraLote(null, blockRes.data);

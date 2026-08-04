@@ -261,7 +261,7 @@ export function ClientPortalDashboard() {
             <p className="font-medium text-white">{data.summary.saleStatusLabel || '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Loteadora</p>
+            <p className="text-xs text-gray-500">Imobiliária</p>
             <p className="font-medium text-white">{data.summary.companyName}</p>
           </div>
         </div>

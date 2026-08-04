@@ -193,6 +193,32 @@ function testResolveHelpers(): void {
     'fantasy name',
   );
   assert(
+    resolveCompanyDisplayName({
+      fantasy_name: 'Meneses Imobiliária LTDA',
+      razao_social: 'Meneses Razão',
+      name: 'Loteadora',
+    }) === 'Meneses Imobiliária LTDA',
+    'tenant Meneses: fantasia',
+  );
+  assert(
+    resolveCompanyDisplayName({
+      fantasy_name: '',
+      razao_social: 'S.V Topografia e Projeto LTDA',
+      name: 'Loteadora',
+    }) === 'S.V Topografia e Projeto LTDA',
+    'tenant SV: razão social sobre name genérico',
+  );
+  assert(
+    resolveCompanyDisplayName(null) === 'Empresa',
+    'fallback Empresa sem Loteadora',
+  );
+  assert(
+    !['Loteadora'].includes(
+      resolveCompanyDisplayName({ name: '', fantasy_name: '', razao_social: '' }),
+    ),
+    'vazio não retorna Loteadora',
+  );
+  assert(
     resolveQuadraLote({ block_number: '03', lot_number: '08' }, null) === 'QD 03 LT 08',
     'quadra lote from sale',
   );

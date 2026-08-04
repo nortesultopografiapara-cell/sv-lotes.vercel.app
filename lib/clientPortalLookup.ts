@@ -88,12 +88,17 @@ type SubscriptionRow = {
   contract_status?: string | null;
 };
 
+/**
+ * Nome da empresa no Portal do Cliente (tenant).
+ * Prioridade: Nome Fantasia → Razão Social → name → "Empresa".
+ * Sem texto fixo "Loteadora".
+ */
 export function resolveCompanyDisplayName(company?: CompanyRow | null): string {
   if (!company) return 'Empresa';
   return (
     String(company.fantasy_name || '').trim() ||
-    String(company.name || '').trim() ||
     String(company.razao_social || '').trim() ||
+    String(company.name || '').trim() ||
     'Empresa'
   );
 }
