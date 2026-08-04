@@ -2294,7 +2294,7 @@ export function getAutomaticOfficialSideForSegment(
     if (m.sides?.[side].segmentIndexes.includes(segmentIndex)) return kind;
   }
   const claimed = new Set<number>();
-  for (const [, side] of roleMap) {
+  for (const [side] of roleMap) {
     for (const idx of m.sides?.[side].segmentIndexes ?? []) claimed.add(idx);
   }
   if (!claimed.has(segmentIndex)) return "chanfre";

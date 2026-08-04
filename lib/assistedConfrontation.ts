@@ -21,6 +21,8 @@ import {
   resolveSideSegmentIndexes,
   type SideRole,
 } from '@/lib/lotSegmentConfrontation';
+
+export type { SideRole };
 import {
   concatDistinctSideConfrontants,
   isPendingConfrontantLabel,
@@ -278,6 +280,95 @@ export function confrontantsFromAudit(
 }
 
 export type PropagationScope = 'lot_only' | 'quadra_same_side' | 'aligned_nearby';
+
+/**
+ * Escopo de segmentos DENTRO do lote ao editar confrontante.
+ * Independente da propagação entre lotes (PropagationScope).
+ */
+export type SegmentPersistScope =
+  | 'selected_only'
+  | 'entire_side'
+  | 'consecutive_same_confrontant';
+
+function confrontantLabelAtIndex(
+  block: Record<string, unknown>,
+  segmentIndex: number,
+): string {
+  const rec = getSegmentConfrontantRecord(block, segmentIndex);
+  return String(rec?.confrontant ?? '').trim().toLowerCase();
+}
+
+/**
+ * Resolve quais segment_index persistir no lote fonte,
+ * conforme escopo escolhido no modal de confrontante.
+ */
+export function resolveSegmentPersistIndexes(params: {
+  block: Record<string, unknown>;
+  allBlocks: Record<string, unknown>[];
+  side: SideRole;
+  selectedIndexes: number[];
+  persistScope: SegmentPersistScope;
+  project?: Record<string, unknown> | null;
+  streetGuides?: StreetGuideConfrontInput[];
+}): number[] {
+  const {
+    block,
+    allBlocks,
+    side,
+    selectedIndexes,
+    persistScope,
+    project = null,
+    streetGuides = [],
+  } = params;
+  const selected = [...new Set(ensureSideIndexArray(selectedIndexes))].sort(
+    (a, b) => a - b,
+  );
+
+  if (persistScope === 'selected_only') {
+    return selected;
+  }
+
+  if (persistScope === 'entire_side') {
+    const sideIdx = officialSegmentIndexesForSide(
+      block,
+      allBlocks,
+      side,
+      project,
+      streetGuides,
+    );
+    return sideIdx.length ? sideIdx : selected;
+  }
+
+  // consecutive_same_confrontant: expandir no anel a partir das sementes
+  // enquanto o confrontante textual coincidir (ou vazio em ambos).
+  if (!selected.length) return [];
+  const segments = parseOfficialSegmentsFromBlock(block);
+  if (segments.length < 2) return selected;
+  const ordered = [...segments].sort(
+    (a, b) => a.segment_index - b.segment_index,
+  );
+  const n = ordered.length;
+  const ringPos = new Map(ordered.map((s, i) => [s.segment_index, i]));
+  const seed = selected[0];
+  const seedLabel = confrontantLabelAtIndex(block, seed);
+  const out = new Set<number>(selected);
+
+  const expand = (dir: 1 | -1) => {
+    const startPos = ringPos.get(seed);
+    if (startPos == null) return;
+    for (let step = 1; step < n; step++) {
+      const p = (startPos + dir * step + n * 10) % n;
+      const idx = ordered[p].segment_index;
+      if (out.has(idx)) break;
+      const label = confrontantLabelAtIndex(block, idx);
+      if (label !== seedLabel) break;
+      out.add(idx);
+    }
+  };
+  expand(1);
+  expand(-1);
+  return [...out].sort((a, b) => a - b);
+}
 
 function ensureSideIndexArray(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
@@ -643,6 +734,17 @@ export function officialSegmentIndexesForSide(
   );
 }
 
+export type FindPropagationTargetsOptions = {
+  /**
+   * Índices já escolhidos no editor (ex.: clique em Seg. N).
+   * Quando `persistScope === 'selected_only'` (padrão), o lote fonte
+   * usa exatamente estes índices — não reexpande para o lado inteiro.
+   */
+  explicitIndexes?: number[];
+  persistScope?: SegmentPersistScope;
+  streetGuides?: StreetGuideConfrontInput[];
+};
+
 export function findPropagationTargets(
   allBlocks: Record<string, unknown>[],
   sourceBlock: Record<string, unknown>,
@@ -650,18 +752,52 @@ export function findPropagationTargets(
   side: SideRole,
   scope: PropagationScope,
   project?: Record<string, unknown> | null,
+  options?: FindPropagationTargetsOptions,
 ): Array<{ blockId: string; block: Record<string, unknown>; segmentIndexes: number[] }> {
+  const persistScope: SegmentPersistScope =
+    options?.persistScope ??
+    (options?.explicitIndexes?.length ? 'selected_only' : 'entire_side');
+  const streetGuides = options?.streetGuides ?? [];
+  const explicit = ensureSideIndexArray(options?.explicitIndexes);
+
+  const sourceIndexes = resolveSegmentPersistIndexes({
+    block: sourceBlock,
+    allBlocks,
+    side,
+    selectedIndexes: explicit.length
+      ? explicit
+      : officialSegmentIndexesForSide(
+          sourceBlock,
+          allBlocks,
+          side,
+          project,
+          streetGuides,
+        ),
+    persistScope,
+    project,
+    streetGuides,
+  });
+
   if (scope === 'lot_only') {
     return [
       {
         blockId: sourceBlockId,
         block: sourceBlock,
-        segmentIndexes: officialSegmentIndexesForSide(
-          sourceBlock,
-          allBlocks,
-          side,
-          project,
-        ),
+        segmentIndexes: sourceIndexes,
+      },
+    ];
+  }
+
+  // Escopo "somente este segmento" / consecutivos: não propaga para outros lotes.
+  if (
+    persistScope === 'selected_only' ||
+    persistScope === 'consecutive_same_confrontant'
+  ) {
+    return [
+      {
+        blockId: sourceBlockId,
+        block: sourceBlock,
+        segmentIndexes: sourceIndexes,
       },
     ];
   }
@@ -677,8 +813,14 @@ export function findPropagationTargets(
     if (!id) continue;
     if (scope === 'quadra_same_side' && !sameQuadra(block, sourceBlock)) continue;
     if (scope === 'aligned_nearby' && !sameQuadra(block, sourceBlock)) continue;
-    if (scope !== 'lot_only' && id === sourceBlockId) {
-      /* incluir o próprio lote */
+
+    if (id === sourceBlockId) {
+      targets.push({
+        blockId: id,
+        block: sourceBlock,
+        segmentIndexes: sourceIndexes,
+      });
+      continue;
     }
 
     const indexes = officialSegmentIndexesForSide(
@@ -686,6 +828,7 @@ export function findPropagationTargets(
       allBlocks,
       side,
       project,
+      streetGuides,
     );
     if (!indexes.length) continue;
 
@@ -693,7 +836,7 @@ export function findPropagationTargets(
       block,
       id,
       allBlocks,
-      [],
+      streetGuides,
       project,
     );
     if (!audit.sides[side]?.pending && id !== sourceBlockId) continue;
