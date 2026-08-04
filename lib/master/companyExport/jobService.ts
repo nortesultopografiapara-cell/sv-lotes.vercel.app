@@ -226,42 +226,62 @@ export async function deleteExportPackageFile(
   const bucket = job.storage_bucket || COMPANY_EXPORT_BUCKET;
   const removedPaths: string[] = [];
   let approxBytes = 0;
+  const visited = new Set<string>();
 
-  const removeOne = async (objectPath: string, sizeHint?: number | null) => {
-    const { error } = await admin.storage.from(bucket).remove([objectPath]);
+  const removeBatch = async (paths: string[]) => {
+    if (!paths.length) return;
+    const unique = [...new Set(paths)].filter((p) => p && !removedPaths.includes(p));
+    if (!unique.length) return;
+    const { error } = await admin.storage.from(bucket).remove(unique);
     if (!error) {
-      removedPaths.push(objectPath);
-      if (sizeHint && sizeHint > 0) approxBytes += sizeHint;
+      for (const p of unique) removedPaths.push(p);
     }
   };
 
-  // package.zip (canonical + any stored path)
+  // package.zip first
   const packagePath = job.storage_path || exportPackagePath(companyId, exportId);
-  await removeOne(packagePath, Number(job.total_size || 0) || null);
+  await removeBatch([packagePath]);
+  if (Number(job.total_size || 0) > 0) approxBytes += Number(job.total_size || 0);
 
-  // Recursive wipe under {companyId}/{exportId}/
   const rootPrefix = `${companyId}/${exportId}`;
   const queue = [rootPrefix];
-  while (queue.length) {
+  let guard = 0;
+  while (queue.length && guard < 200) {
+    guard += 1;
     const prefix = queue.shift()!;
-    const { data: listed } = await admin.storage.from(bucket).list(prefix, {
+    if (visited.has(prefix)) continue;
+    visited.add(prefix);
+
+    const { data: listed, error: listErr } = await admin.storage.from(bucket).list(prefix, {
       limit: 1000,
       sortBy: { column: 'name', order: 'asc' },
     });
-    for (const item of listed || []) {
+    if (listErr || !listed?.length) continue;
+
+    const filePaths: string[] = [];
+    for (const item of listed) {
+      if (!item?.name || item.name === '.emptyFolderPlaceholder') continue;
       const child = `${prefix}/${item.name}`;
-      const isFolder = !item.id || item.id === null;
-      // Supabase: folders often have id null and no metadata.size
-      if (isFolder && (item.metadata == null || item.metadata?.mimetype == null)) {
-        // Could still be empty-named file; if metadata has size treat as file
-        if (typeof item.metadata?.size === 'number') {
-          await removeOne(child, item.metadata.size);
-        } else {
-          queue.push(child);
-        }
+      const size =
+        item.metadata && typeof (item.metadata as { size?: unknown }).size === 'number'
+          ? Number((item.metadata as { size: number }).size)
+          : null;
+      const looksLikeFile =
+        size != null ||
+        Boolean(item.id) ||
+        /\.[a-z0-9]{1,8}$/i.test(item.name) ||
+        item.name === 'package.zip';
+
+      if (looksLikeFile) {
+        filePaths.push(child);
+        if (size && size > 0) approxBytes += size;
       } else {
-        await removeOne(child, item.metadata?.size != null ? Number(item.metadata.size) : null);
+        queue.push(child);
       }
+    }
+    // remove in chunks of 50
+    for (let i = 0; i < filePaths.length; i += 50) {
+      await removeBatch(filePaths.slice(i, i + 50));
     }
   }
 
