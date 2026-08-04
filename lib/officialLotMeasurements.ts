@@ -109,6 +109,12 @@ const CHANFRE_BACK_MAX_M = 5;
 const MAX_SEGMENT_DISTANCE_M = 1000;
 /** Mesmo lado/alinhamento: variação de azimute entre segmentos consecutivos (global). */
 export const COLINEAR_DEFLECTION_MAX_DEG = 30;
+/**
+ * Cadeia contínua da mesma confrontação (frente/fundo/laterais).
+ * Permite pequena mudança de direção sem exigir colinearidade perfeita.
+ * Tolerância documentada: 45°.
+ */
+export const BOUNDARY_CHAIN_MAX_DEFLECTION_DEG = 45;
 /** Chanfre de esquina (~45°): segmento seguinte à virada. */
 const CHANFRE_DEFLECTION_MIN_DEG = 40;
 const CHANFRE_DEFLECTION_MAX_DEG = 50;
@@ -123,19 +129,104 @@ export function isOfficialCurveSegment(seg: OfficialLotSegment): boolean {
   return seg.segment_type === "CURVE";
 }
 
-/** Soma comprimentos oficiais apenas de segmentos LINE. */
+/** Soma comprimentos oficiais apenas de segmentos LINE (um único arredondamento no total). */
 export function sumLinePathDistances(
   indexes: number[],
   byIdx: Map<number, OfficialLotSegment>,
 ): number {
-  return round2(
-    indexes.reduce((sum, idx) => {
-      const seg = byIdx.get(idx);
-      if (!seg || isOfficialCurveSegment(seg)) return sum;
-      const length = Number(seg.distance);
-      return isValidSegmentDistance(length) ? sum + length : sum;
-    }, 0),
-  );
+  if (!Array.isArray(indexes) || indexes.length === 0) return 0;
+  const sum = indexes.reduce((acc, idx) => {
+    const seg = byIdx.get(idx);
+    if (!seg || isOfficialCurveSegment(seg)) return acc;
+    const length = Number(seg.distance);
+    return isValidSegmentDistance(length) ? acc + length : acc;
+  }, 0);
+  return round2(sum);
+}
+
+/**
+ * Medida total de uma confrontação = soma dos comprimentos reais dos segmentos
+ * classificados naquele lado (não corda entre extremos).
+ */
+export type BoundaryLengthType =
+  | "frente"
+  | "fundo"
+  | "ladoDireito"
+  | "ladoEsquerdo"
+  | "front"
+  | "back"
+  | "right"
+  | "left";
+
+function normalizeBoundaryLengthType(
+  boundaryType: BoundaryLengthType | string,
+): "frente" | "fundo" | "ladoDireito" | "ladoEsquerdo" | null {
+  const s = String(boundaryType || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (s === "frente" || s === "front") return "frente";
+  if (s === "fundo" || s === "back") return "fundo";
+  if (
+    s === "ladodireito" ||
+    s === "lado_direito" ||
+    s === "right" ||
+    s === "dir"
+  ) {
+    return "ladoDireito";
+  }
+  if (
+    s === "ladoesquerdo" ||
+    s === "lado_esquerdo" ||
+    s === "left" ||
+    s === "esq"
+  ) {
+    return "ladoEsquerdo";
+  }
+  return null;
+}
+
+/**
+ * Fonte única para dimensão de confrontação (modal, contrato, memorial, prancha).
+ * Prefere segments_json via getOfficialLotMeasurements; nunca retorna NaN.
+ */
+export function calculateBoundaryLength(
+  blockOrSegments: Record<string, unknown> | OfficialLotSegment[],
+  boundaryType: BoundaryLengthType | string,
+): number {
+  const kind = normalizeBoundaryLengthType(boundaryType);
+  if (!kind) return 0;
+
+  const block: Record<string, unknown> = Array.isArray(blockOrSegments)
+    ? { segments_json: segmentsToPersistJson(blockOrSegments) }
+    : blockOrSegments ?? {};
+
+  try {
+    const measures = getOfficialLotMeasurements(block);
+    const value = measures[kind];
+    if (value != null && Number.isFinite(value) && !Number.isNaN(value)) {
+      return value;
+    }
+  } catch {
+    /* fallback abaixo */
+  }
+
+  const fallbackKey =
+    kind === "frente"
+      ? "frente"
+      : kind === "fundo"
+        ? "Fundo"
+        : kind === "ladoDireito"
+          ? "Lado Dir."
+          : "Lado Esq.";
+  const raw =
+    block[fallbackKey] ??
+    block[kind] ??
+    (kind === "fundo" ? block.fundo : undefined);
+  if (raw == null || raw === "") return 0;
+  const n = Number(String(raw).replace(/[^\d.,-]/g, "").replace(",", "."));
+  return Number.isFinite(n) && !Number.isNaN(n) && n > 0 ? n : 0;
 }
 
 export function extractOfficialCurveInfo(
@@ -1265,6 +1356,60 @@ function partitionLinePathOnRing(
   }
 
   return { lateral, chanfre };
+}
+
+/**
+ * Expande cadeia da mesma confrontação ao longo do anel.
+ * Usa BOUNDARY_CHAIN_MAX_DEFLECTION_DEG (45°) — não exige colinearidade perfeita (30°).
+ */
+export function expandBoundaryChainAlongRing(
+  ordered: OfficialLotSegment[],
+  seedIndexes: number[],
+  frontSegmentIndex: number,
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+  maxDeflectionDeg: number = BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+): number[] {
+  if (!seedIndexes.length) return [];
+  const result = new Set(seedIndexes);
+  const n = ordered.length;
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const seed of [...result]) {
+      const pos = ordered.findIndex((s) => s.segment_index === seed);
+      if (pos < 0) continue;
+      const seg = byIdx.get(seed);
+      if (!seg) continue;
+      const refBearing = resolveSegmentBearing(seg, ordered[(pos + 1) % n]);
+
+      for (const step of [-1, 1] as const) {
+        const p = (pos + step + n) % n;
+        const idx = ordered[p].segment_index;
+        if (
+          idx === frontSegmentIndex ||
+          chanfreSet.has(idx) ||
+          result.has(idx)
+        ) {
+          continue;
+        }
+        const s = byIdx.get(idx);
+        if (!s || isOfficialCurveSegment(s)) continue;
+        if (!isValidSegmentDistance(s.distance)) continue;
+        const sNext = ordered[(p + 1) % n];
+        const defl = angularDifferenceDeg(
+          refBearing,
+          resolveSegmentBearing(s, sNext),
+        );
+        if (defl > maxDeflectionDeg) continue;
+        result.add(idx);
+        changed = true;
+      }
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
 }
 
 /**

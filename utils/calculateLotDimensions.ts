@@ -169,6 +169,7 @@ function sumPathLength(segments: Segment[], indexes: number[]): number {
 
 /**
  * Lados = dois caminhos consecutivos no anel (frente → fundo), sem somar lados opostos.
+ * Frente/fundo somam todos os segmentos da cadeia contínua (mesmo confrontação).
  */
 export function classifySidesByRingPaths(
     segments: Segment[],
@@ -190,19 +191,58 @@ export function classifySidesByRingPaths(
     };
     if (n < 3 || frontIndex < 0 || backIndex < 0) return empty;
 
-    const pathAIndexes = collectRingPathIndexes(n, frontIndex, backIndex, 1);
-    const pathBIndexes = collectRingPathIndexes(n, backIndex, frontIndex, 1);
+    /** Cadeia da mesma confrontação: deflexão consecutiva ≤ 45°. */
+    const SAME_SIDE_MAX_DEFL = 45;
+
+    const expandSideChain = (seedIdx: number, stopIdx: number): number[] => {
+        const result = new Set<number>([seedIdx]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const idx of [...result]) {
+                for (const step of [-1, 1] as const) {
+                    const neighbor = (idx + step + n) % n;
+                    if (neighbor === stopIdx || result.has(neighbor)) continue;
+                    const defl = diffAngle(
+                        segments[idx].azimuth,
+                        segments[neighbor].azimuth,
+                    );
+                    if (defl > SAME_SIDE_MAX_DEFL) continue;
+                    result.add(neighbor);
+                    changed = true;
+                }
+            }
+        }
+        return [...result].sort((a, b) => a - b);
+    };
+
+    const frontIndexes = expandSideChain(frontIndex, backIndex);
+    const backIndexes = expandSideChain(backIndex, frontIndex);
+    const frontSet = new Set(frontIndexes);
+    const backSet = new Set(backIndexes);
+
+    const pathARaw = collectRingPathIndexes(n, frontIndex, backIndex, 1).filter(
+        (i) => !frontSet.has(i) && !backSet.has(i),
+    );
+    const pathBRaw = collectRingPathIndexes(n, backIndex, frontIndex, 1).filter(
+        (i) => !frontSet.has(i) && !backSet.has(i),
+    );
 
     const pathA: RingPathMeasure = {
-        indexes: pathAIndexes,
-        totalLength: round(sumPathLength(segments, pathAIndexes)),
+        indexes: pathARaw,
+        totalLength: round(sumPathLength(segments, pathARaw)),
     };
     const pathB: RingPathMeasure = {
-        indexes: pathBIndexes,
-        totalLength: round(sumPathLength(segments, pathBIndexes)),
+        indexes: pathBRaw,
+        totalLength: round(sumPathLength(segments, pathBRaw)),
     };
 
-    const mainIndexes = new Set([frontIndex, backIndex, ...pathAIndexes, ...pathBIndexes]);
+    const mainIndexes = new Set([
+        ...frontIndexes,
+        ...backIndexes,
+        ...pathARaw,
+        ...pathBRaw,
+    ]);
     let chanfroTotal = 0;
     for (let i = 0; i < n; i++) {
         if (mainIndexes.has(i)) continue;
@@ -213,8 +253,8 @@ export function classifySidesByRingPaths(
     }
 
     return {
-        frente: round(segments[frontIndex]?.length || 0),
-        fundo: round(segments[backIndex]?.length || 0),
+        frente: round(sumPathLength(segments, frontIndexes)),
+        fundo: round(sumPathLength(segments, backIndexes)),
         ladoDireito: pathA.totalLength,
         ladoEsquerdo: pathB.totalLength,
         chanfro: round(chanfroTotal),
