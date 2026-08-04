@@ -1909,15 +1909,26 @@ function LotPopupContent({
       segments_json: lot.segments_json,
       front_segment_index: lot.front_segment_index,
     };
-    return buildOfficialLotConfrontationSegmentRows(
-      blockForSide,
-      confrontationAudit,
-      allBlocksForConfront,
-      {
-        frenteConfrontLabel,
-        frontStreetLabel,
-      },
-    );
+    try {
+      return buildOfficialLotConfrontationSegmentRows(
+        blockForSide,
+        confrontationAudit,
+        allBlocksForConfront,
+        {
+          frenteConfrontLabel,
+          frontStreetLabel,
+        },
+      );
+    } catch (err) {
+      console.error('[LotPopupContent] confrontationSegmentRows', {
+        lotId: lot?.id ?? null,
+        lotNumber: lot?.number ?? null,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        err,
+      });
+      return [];
+    }
   }, [
     confrontationAudit,
     lot,
@@ -2725,7 +2736,19 @@ export default function GISMap({
           scopeIds && !liveStreetAudits
             ? blocksForConfront.filter((b) => scopeIds.has(String(b.id)))
             : blocksForConfront;
-        const sharedPolys = buildAllPolysUtm(candidateBlocks);
+        let sharedPolys: number[][][] = [];
+        try {
+          sharedPolys = buildAllPolysUtm(candidateBlocks);
+        } catch (err) {
+          console.error('[GISMap] buildAllPolysUtm (confrontation_audits)', {
+            candidateCount: candidateBlocks.length,
+            liveStreetAudits,
+            message: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            err,
+          });
+          sharedPolys = [];
+        }
         const map =
           scopeIds && !liveStreetAudits
             ? new Map(confrontationAuditsPrevRef.current)
@@ -2752,7 +2775,13 @@ export default function GISMap({
               ),
             );
           } catch (err) {
-            console.warn('CONFRONTATION_AUDIT_SKIP', lot.id, err);
+            console.error('CONFRONTATION_AUDIT_SKIP', {
+              lotId: lot.id,
+              lotNumber: lot.number,
+              message: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined,
+              err,
+            });
           }
         }
         confrontationAuditsPrevRef.current = map;

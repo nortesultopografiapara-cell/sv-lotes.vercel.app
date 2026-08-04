@@ -376,6 +376,74 @@ export default function MapPage() {
     }
   }, [selectedProject, setGisSelectedProject, clearGisSelectedProject]);
 
+  /** Diagnóstico client-side: só em development ou ?gisPerf=1 (não-prod). */
+  useEffect(() => {
+    const diagnosticsOn =
+      process.env.NODE_ENV === 'development' || isGisPerfDiagnosticsEnabled();
+    if (!diagnosticsOn || typeof window === 'undefined') return;
+
+    const seen = new Set<string>();
+    const remember = (key: string): boolean => {
+      if (seen.has(key)) return false;
+      seen.add(key);
+      if (seen.size > 40) {
+        const first = seen.values().next().value;
+        if (first != null) seen.delete(first);
+      }
+      return true;
+    };
+
+    const sanitizeId = (id: unknown): string | null => {
+      const s = String(id ?? '').trim();
+      if (!s) return null;
+      return s.length > 12 ? `${s.slice(0, 8)}…` : s;
+    };
+
+    const onError = (event: ErrorEvent) => {
+      const key = `e:${event.message}:${event.filename}:${event.lineno}`;
+      if (!remember(key)) return;
+      console.error('[MAP_WINDOW_ONERROR]', {
+        action: 'window.onerror',
+        component: 'MapPage',
+        message: String(event.message ?? '').slice(0, 200),
+        projectId: sanitizeId(selectedProject?.id),
+        stack:
+          event.error instanceof Error
+            ? String(event.error.stack ?? '').slice(0, 800)
+            : null,
+      });
+    };
+
+    const onRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : typeof reason === 'string'
+            ? reason
+            : 'unhandledrejection';
+      const key = `r:${message}`;
+      if (!remember(key)) return;
+      console.error('[MAP_UNHANDLED_REJECTION]', {
+        action: 'unhandledrejection',
+        component: 'MapPage',
+        message: String(message).slice(0, 200),
+        projectId: sanitizeId(selectedProject?.id),
+        stack:
+          reason instanceof Error
+            ? String(reason.stack ?? '').slice(0, 800)
+            : null,
+      });
+    };
+
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, [selectedProject?.id]);
+
   useEffect(() => {
     return () => clearGisSelectedProject();
   }, [clearGisSelectedProject]);

@@ -696,7 +696,7 @@ export function findPropagationTargets(
       [],
       project,
     );
-    if (!audit.sides[side].pending && id !== sourceBlockId) continue;
+    if (!audit.sides[side]?.pending && id !== sourceBlockId) continue;
 
     targets.push({ blockId: id, block, segmentIndexes: indexes });
   }
