@@ -10,12 +10,19 @@ import {
 import { getSegmentConfrontantRecord } from '../lib/segmentConfrontantPersist';
 import {
   applyOfficialSideDraftToBlock,
+  applyOfficialEditorDraftToBlock,
   canEditOfficialSides,
   draftMapFromBlock,
+  looksLikeAggregatedSideConfrontant,
+  OFFICIAL_SIDES_PANEL_POSITION_CLASS,
+  onlyOfficialEditorFieldsChanged,
   onlyOfficialSideFieldsChanged,
   previewOfficialSideDraft,
+  resolveIndividualSegmentConfrontantLabel,
   restoreAutomaticOfficialSides,
+  setConfrontantDraftEntry,
   setDraftSides,
+  snapshotSegmentsJson,
   validateOfficialSideDraft,
 } from '../lib/officialSidePersist';
 import {
@@ -515,6 +522,176 @@ function testMemorialPranchaPointToPointUnchanged() {
   });
 }
 
+/** Seg. 3 (índice 2) — confrontante só neste índice; mesmo official_side intacto. */
+function testConfrontantSelectedOnlySameOfficialSideIntact() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 20, 20, 'front'),
+    lineSeg(1, 0, 20, 30, 20, 30, 'right'),
+    lineSeg(2, 30, 20, 50, 20, 20, 'right'),
+    lineSeg(3, 50, 20, 70, 20, 20, 'right'),
+    lineSeg(4, 70, 20, 70, 0, 20, 'back'),
+    lineSeg(5, 70, 0, 0, 0, 70, 'left'),
+  ];
+  // Agregado incorreto gravado em todos os direitos (bug histórico)
+  const AGG = 'LOTE 02 E 03 E RUA MORADA DO SOL';
+  for (const i of [1, 2, 3]) {
+    segs[i].confrontant = AGG;
+    segs[i].confrontant_source = 'manual';
+    segs[i].manual_confrontant = AGG;
+  }
+  segs[5].confrontant = 'Propriedade Particular';
+  segs[5].manual_confrontant = 'Propriedade Particular';
+  segs[5].confrontant_source = 'manual';
+  const b = block(segs, { id: 'agg-fix' });
+
+  assert(
+    resolveIndividualSegmentConfrontantLabel(b, 2) === AGG,
+    'mostra valor persistido do segmento (não reescreve)',
+  );
+  assert(looksLikeAggregatedSideConfrontant(AGG));
+
+  let cDraft = new Map();
+  cDraft = setConfrontantDraftEntry(cDraft, 2, {
+    confrontant: 'LOTE 02',
+    confrontant_type: 'lot',
+    previous: AGG,
+  });
+  const sideDraft = draftMapFromBlock(b);
+  const patched = applyOfficialEditorDraftToBlock(b, sideDraft, cDraft);
+
+  assert(
+    getSegmentConfrontantRecord(patched, 2)?.confrontant === 'LOTE 02',
+    'seg 2 atualizado',
+  );
+  assert(
+    getSegmentConfrontantRecord(patched, 1)?.confrontant === AGG,
+    'seg 1 mesmo official_side intacto',
+  );
+  assert(
+    getSegmentConfrontantRecord(patched, 3)?.confrontant === AGG,
+    'seg 3 mesmo official_side intacto',
+  );
+  assert(
+    getSegmentConfrontantRecord(patched, 5)?.confrontant ===
+      'Propriedade Particular',
+    'lado oposto intacto',
+  );
+  assert(onlyOfficialEditorFieldsChanged(b, patched));
+  assert(!onlyOfficialSideFieldsChanged(b, patched));
+
+  const m = getOfficialLotMeasurements(patched);
+  const c = resolveContractLotSides(patched);
+  assert(near(m.frente, Number(c.frente), 0.1));
+  assert(near(m.ladoDireito, Number(c.ladoDireito), 0.1));
+  console.log('OK testConfrontantSelectedOnlySameOfficialSideIntact');
+}
+
+function testMultipleConfrontantDraftsThenCancelLeavesOriginal() {
+  const segs = rectangularSegs().map((s, i) => ({
+    ...s,
+    official_side: (['front', 'right', 'back', 'left'] as const)[i],
+    confrontant: `Orig ${i}`,
+    manual_confrontant: `Orig ${i}`,
+    confrontant_source: 'manual',
+  }));
+  const original = block(segs, { id: 'multi-c' });
+  let cDraft = new Map();
+  cDraft = setConfrontantDraftEntry(cDraft, 1, {
+    confrontant: 'Novo Dir',
+    confrontant_type: 'lot',
+    previous: 'Orig 1',
+  });
+  cDraft = setConfrontantDraftEntry(cDraft, 3, {
+    confrontant: 'Novo Esq',
+    confrontant_type: 'private_property',
+    previous: 'Orig 3',
+  });
+  const sideDraft = draftMapFromBlock(original);
+  const patched = applyOfficialEditorDraftToBlock(
+    original,
+    sideDraft,
+    cDraft,
+  );
+  assert(getSegmentConfrontantRecord(patched, 1)?.confrontant === 'Novo Dir');
+  assert(getSegmentConfrontantRecord(patched, 3)?.confrontant === 'Novo Esq');
+  // Cancelar = não persistir → original intacto
+  assert(getSegmentConfrontantRecord(original, 1)?.confrontant === 'Orig 1');
+  assert(getSegmentConfrontantRecord(original, 3)?.confrontant === 'Orig 3');
+  console.log('OK testMultipleConfrontantDraftsThenCancelLeavesOriginal');
+}
+
+function testSnapshotRestoreOfficialSideAndConfrontant() {
+  const segs = rectangularSegs().map((s, i) => ({
+    ...s,
+    official_side: (['front', 'right', 'back', 'left'] as const)[i],
+    confrontant: `Base ${i}`,
+    manual_confrontant: `Base ${i}`,
+    confrontant_source: 'manual',
+  }));
+  const opening = block(segs, { id: 'snap' });
+  const baseline = snapshotSegmentsJson(opening);
+  assert(baseline != null && baseline.length === 4);
+
+  // sessão: muda confrontante + manteria sides
+  let cDraft = setConfrontantDraftEntry(new Map(), 1, {
+    confrontant: 'Editado',
+    confrontant_type: 'lot',
+    previous: 'Base 1',
+  });
+  const mid = applyOfficialEditorDraftToBlock(
+    opening,
+    draftMapFromBlock(opening),
+    cDraft,
+  );
+  assert(getSegmentConfrontantRecord(mid, 1)?.confrontant === 'Editado');
+
+  const restored = restoreAutomaticOfficialSides(mid, baseline);
+  assert(draftMapFromBlock(restored).size === 0, 'official_side limpo');
+  assert(
+    getSegmentConfrontantRecord(restored, 1)?.confrontant === 'Base 1',
+    'confrontante da sessão restaurado do baseline',
+  );
+  assert(
+    getSegmentConfrontantRecord(restored, 0)?.confrontant === 'Base 0',
+  );
+  console.log('OK testSnapshotRestoreOfficialSideAndConfrontant');
+}
+
+function testSegmentLabelNeverUsesSideAggregationHelper() {
+  // Se o segmento não tem confrontante, exibe "—" — nunca concatena o lado
+  const segs = [
+    lineSeg(0, 0, 0, 0, 10, 10, 'front'),
+    lineSeg(1, 0, 10, 20, 10, 20, 'right'),
+    lineSeg(2, 20, 10, 20, 0, 10, 'back'),
+    lineSeg(3, 20, 0, 0, 0, 20, 'left'),
+  ];
+  segs[1].confrontant = 'LOTE 02';
+  segs[1].manual_confrontant = 'LOTE 02';
+  const b = block(segs);
+  assert(resolveIndividualSegmentConfrontantLabel(b, 1) === 'LOTE 02');
+  assert(resolveIndividualSegmentConfrontantLabel(b, 2) === '—');
+  assert(!looksLikeAggregatedSideConfrontant('LOTE 02'));
+  console.log('OK testSegmentLabelNeverUsesSideAggregationHelper');
+}
+
+function testPanelPositionClearsToolbarReserve() {
+  assert(
+    OFFICIAL_SIDES_PANEL_POSITION_CLASS.includes('right-[calc(0.5rem+2.5rem+0.75rem)]'),
+    'mobile reserve toolbar',
+  );
+  assert(
+    OFFICIAL_SIDES_PANEL_POSITION_CLASS.includes(
+      'md:right-[calc(1rem+3rem+0.75rem)]',
+    ),
+    'desktop reserve toolbar',
+  );
+  assert(
+    !OFFICIAL_SIDES_PANEL_POSITION_CLASS.includes('right-4 '),
+    'nao usa right-4 fixo fragil sozinho',
+  );
+  console.log('OK testPanelPositionClearsToolbarReserve');
+}
+
 testSelectedOnlyDoesNotExpandSide();
 testEntireSideExplicit();
 testConsecutiveSameConfrontantStopsAtBreak();
@@ -529,5 +706,10 @@ testMartineQd06Lt6Placeholder();
 testAuditSnapshotDiff();
 testModalEqualsContract();
 testMemorialPranchaPointToPointUnchanged();
+testConfrontantSelectedOnlySameOfficialSideIntact();
+testMultipleConfrontantDraftsThenCancelLeavesOriginal();
+testSnapshotRestoreOfficialSideAndConfrontant();
+testSegmentLabelNeverUsesSideAggregationHelper();
+testPanelPositionClearsToolbarReserve();
 
 console.log('\nALL mandatory-official-side-editor-tests PASSED');
