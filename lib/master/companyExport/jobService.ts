@@ -12,13 +12,20 @@ import {
 import { assertRegistrySecurity } from '@/lib/master/companyExport/registry';
 import {
   COMPANY_EXPORT_SIGNED_URL_SECONDS,
+  DEFAULT_COMPANY_EXPORT_OPTIONS,
   emptyStepCursor,
   isCompanyExportReason,
+  normalizeExportOptions,
+  normalizeExportVersion,
   type CompanyExportJobRow,
+  type CompanyExportOptions,
   type CompanyExportReason,
+  type CompanyExportVersion,
 } from '@/lib/master/companyExport/types';
+import { assertStorageRegistrySecurity } from '@/lib/master/companyExport/storageRegistry';
 
 assertRegistrySecurity();
+assertStorageRegistrySecurity();
 
 export class CompanyExportError extends Error {
   status: number;
@@ -36,11 +43,21 @@ export async function createCompanyExportJob(
     requestedBy: string;
     reason: string;
     notes?: string | null;
+    exportVersion?: string | null;
+    options?: Partial<CompanyExportOptions> | null;
   },
 ): Promise<CompanyExportJobRow> {
   if (!isCompanyExportReason(input.reason)) {
     throw new CompanyExportError('Motivo de exportação inválido.');
   }
+
+  const exportVersion: CompanyExportVersion = normalizeExportVersion(
+    input.exportVersion ?? 'F2_COMPLETE',
+  );
+  const options = normalizeExportOptions({
+    ...DEFAULT_COMPANY_EXPORT_OPTIONS,
+    ...(input.options || {}),
+  });
 
   const { data: company, error: companyError } = await admin
     .from('companies')
@@ -63,9 +80,11 @@ export async function createCompanyExportJob(
       status: 'PENDING',
       progress: 0,
       current_step: 'queued',
-      step_cursor: emptyStepCursor(),
+      step_cursor: emptyStepCursor(exportVersion, options),
       storage_bucket: COMPANY_EXPORT_BUCKET,
       expires_at: expiresAt.toISOString(),
+      export_version: exportVersion,
+      options,
     })
     .select('*')
     .single();
@@ -78,8 +97,8 @@ export async function createCompanyExportJob(
     companyId: input.companyId,
     userId: input.requestedBy,
     action: COMPANY_EXPORT_AUDIT.CREATED,
-    description: `Job de exportação criado (${input.reason})`,
-    details: { exportId: data.id, companyName: company.name },
+    description: `Job de exportação criado (${input.reason} / ${exportVersion})`,
+    details: { exportId: data.id, companyName: company.name, exportVersion, options },
   });
 
   return data as CompanyExportJobRow;

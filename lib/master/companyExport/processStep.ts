@@ -14,7 +14,6 @@ import {
   exportPackagePath,
   exportStagingFilePath,
 } from '@/lib/master/companyExport/storagePaths';
-import { buildStoredZip } from '@/lib/master/companyExport/zipStore';
 import { buildExportReadmeHtml } from '@/lib/master/companyExport/readme';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { blocksRowsToGeoJson } from '@/lib/master/companyExport/blockGeoJson';
@@ -22,22 +21,35 @@ import {
   classifyPostgrestError,
   sanitizeExportWarning,
 } from '@/lib/master/companyExport/postgrestErrors';
+import { isF2Phase, processF2Phase } from '@/lib/master/companyExport/processF2';
+import { assembleExportPackage } from '@/lib/master/companyExport/packageAssemble';
 import {
   COMPANY_EXPORT_PAGE_SIZE,
   COMPANY_EXPORT_SCHEMA_VERSION,
+  COMPANY_EXPORT_SCHEMA_VERSION_F1,
   emptyStepCursor,
+  normalizeExportOptions,
+  normalizeExportVersion,
   type CompanyExportJobRow,
   type CompanyExportManifest,
   type CompanyExportStepCursor,
   type CompanyExportTableSpec,
+  type CompanyExportVersion,
 } from '@/lib/master/companyExport/types';
 
-function parseCursor(raw: unknown): CompanyExportStepCursor {
-  if (!raw || typeof raw !== 'object') return emptyStepCursor();
+function parseCursor(
+  raw: unknown,
+  version: CompanyExportVersion = 'F1_TABULAR',
+  optionsRaw?: unknown,
+): CompanyExportStepCursor {
+  const options = normalizeExportOptions(optionsRaw);
+  if (!raw || typeof raw !== 'object') return emptyStepCursor(version, options);
   const c = raw as Partial<CompanyExportStepCursor>;
   return {
-    ...emptyStepCursor(),
+    ...emptyStepCursor(version, options),
     ...c,
+    exportVersion: c.exportVersion || version,
+    options: normalizeExportOptions(c.options ?? options),
     recordCounts: c.recordCounts || {},
     files: Array.isArray(c.files) ? c.files : [],
     warnings: Array.isArray(c.warnings) ? c.warnings : [],
@@ -46,6 +58,10 @@ function parseCursor(raw: unknown): CompanyExportStepCursor {
       ? c.missingOptionalTables
       : [],
   };
+}
+
+function phaseAfterGeojson(version: CompanyExportVersion): CompanyExportStepCursor['phase'] {
+  return version === 'F2_COMPLETE' ? 'inventory_storage' : 'readme';
 }
 
 async function uploadText(
@@ -264,7 +280,11 @@ export async function processCompanyExportStep(
 ): Promise<{ done: boolean; failed: boolean }> {
   const companyId = job.company_id;
   const exportId = job.id;
-  const cursor = parseCursor(job.step_cursor);
+  const exportVersion = normalizeExportVersion(
+    job.export_version || (job.step_cursor as CompanyExportStepCursor | null)?.exportVersion,
+  );
+  const cursor = parseCursor(job.step_cursor, exportVersion, job.options);
+  cursor.exportVersion = exportVersion;
 
   const parentIds = {
     saleIds: [] as string[],
@@ -567,7 +587,7 @@ export async function processCompanyExportStep(
           cursor.warnings.push(
             sanitizeExportWarning('blocks', 'geojson', retry.error.message || kind),
           );
-          cursor.phase = 'readme';
+          cursor.phase = phaseAfterGeojson(exportVersion);
         } else {
           rows = (retry.data as unknown as Record<string, unknown>[] | null) ?? [];
         }
@@ -575,7 +595,7 @@ export async function processCompanyExportStep(
         cursor.warnings.push(
           sanitizeExportWarning('blocks', 'geojson', error.message || kind),
         );
-        cursor.phase = 'readme';
+        cursor.phase = phaseAfterGeojson(exportVersion);
       }
     } else {
       rows = (data as unknown as Record<string, unknown>[] | null) ?? [];
@@ -583,7 +603,7 @@ export async function processCompanyExportStep(
 
     if (cursor.phase === 'geojson_blocks') {
       if (rows.length === 0) {
-        cursor.phase = 'readme';
+        cursor.phase = phaseAfterGeojson(exportVersion);
       } else {
         const built = blocksRowsToGeoJson(rows);
         const rel = `04_empreendimentos/blocks_p${Math.floor(cursor.geojsonOffset / COMPANY_EXPORT_PAGE_SIZE) + 1}.geojson`;
@@ -605,8 +625,11 @@ export async function processCompanyExportStep(
             ),
           );
         }
-        if (rows.length < COMPANY_EXPORT_PAGE_SIZE) cursor.phase = 'readme';
-        else cursor.geojsonOffset += COMPANY_EXPORT_PAGE_SIZE;
+        if (rows.length < COMPANY_EXPORT_PAGE_SIZE) {
+          cursor.phase = phaseAfterGeojson(exportVersion);
+        } else {
+          cursor.geojsonOffset += COMPANY_EXPORT_PAGE_SIZE;
+        }
       }
     }
 
@@ -623,6 +646,44 @@ export async function processCompanyExportStep(
       .eq('company_id', companyId);
 
     return { done: false, failed: false };
+  }
+
+  if (isF2Phase(cursor.phase)) {
+    await ensureParents();
+    const f2 = await processF2Phase(
+      admin,
+      companyId,
+      exportId,
+      cursor,
+      parentIds,
+      filesExported,
+      totalSize,
+    );
+    if (f2.handled) {
+      filesExported = f2.filesExported;
+      totalSize = f2.totalSize;
+      await admin
+        .from('company_export_jobs')
+        .update({
+          progress: f2.progress,
+          current_step: f2.currentStep,
+          step_cursor: cursor,
+          files_exported: filesExported,
+          total_size: totalSize,
+          storage_files_found: cursor.storageFilesFound || 0,
+          storage_files_copied: cursor.storageFilesCopied || 0,
+          storage_files_missing: cursor.storageFilesMissing || 0,
+          storage_files_deduplicated: cursor.storageFilesDeduplicated || 0,
+          generated_memorials: cursor.generatedMemorials || 0,
+          generated_lot_plans: cursor.generatedLotPlans || 0,
+          generated_general_plans: cursor.generatedGeneralPlans || 0,
+          generation_errors: (cursor.generationErrors || []).length,
+          total_binary_size: cursor.totalBinarySize || 0,
+        })
+        .eq('id', exportId)
+        .eq('company_id', companyId);
+      return { done: false, failed: false };
+    }
   }
 
   if (cursor.phase === 'readme') {
@@ -647,6 +708,16 @@ export async function processCompanyExportStep(
       createdAt: job.created_at,
       files: cursor.files,
       recordCounts: cursor.recordCounts,
+      exportVersion,
+      options: cursor.options,
+      storageSummary: {
+        found: cursor.storageFilesFound || 0,
+        copied: cursor.storageFilesCopied || 0,
+        missing: cursor.storageFilesMissing || 0,
+        memorials: cursor.generatedMemorials || 0,
+        lotPlans: cursor.generatedLotPlans || 0,
+        generalPlans: cursor.generatedGeneralPlans || 0,
+      },
     });
     const rel = 'LEIA-ME.html';
     const path = exportStagingFilePath(companyId, exportId, rel);
@@ -676,6 +747,7 @@ export async function processCompanyExportStep(
   }
 
   if (cursor.phase === 'manifest') {
+    const isF2 = exportVersion === 'F2_COMPLETE';
     const manifest: CompanyExportManifest = {
       export_id: exportId,
       company_id: companyId,
@@ -686,15 +758,31 @@ export async function processCompanyExportStep(
       notes: job.notes,
       created_at: job.created_at,
       completed_at: null,
-      schema_version: COMPANY_EXPORT_SCHEMA_VERSION,
-      phase: 'F1_TABULAR',
+      schema_version: isF2 ? COMPANY_EXPORT_SCHEMA_VERSION : COMPANY_EXPORT_SCHEMA_VERSION_F1,
+      export_version: exportVersion,
+      phase: isF2 ? 'F2_COMPLETE' : 'F1_TABULAR',
+      options: cursor.options,
       tables_exported: Object.keys(cursor.recordCounts),
       records_per_table: cursor.recordCounts,
       files_generated: cursor.files,
       total_size_bytes: totalSize,
       errors: cursor.errors,
       warnings: cursor.warnings,
-      missing_files: [],
+      missing_files: cursor.missingFiles || [],
+      unresolved_files: cursor.unresolvedFiles || [],
+      generation_errors: cursor.generationErrors || [],
+      storage_summary: {
+        found: cursor.storageFilesFound || 0,
+        copied: cursor.storageFilesCopied || 0,
+        missing: cursor.storageFilesMissing || 0,
+        deduplicated: cursor.storageFilesDeduplicated || 0,
+        generated_memorials: cursor.generatedMemorials || 0,
+        generated_lot_plans: cursor.generatedLotPlans || 0,
+        generated_general_plans: cursor.generatedGeneralPlans || 0,
+        total_binary_size: cursor.totalBinarySize || 0,
+      },
+      original_source_file_status: cursor.originalSourceFileStatus || 'NOT_PERSISTED',
+      external_asaas_refs: cursor.asaasRefs || [],
       excluded_for_security: [
         'bank_credentials',
         'encrypted_payload',
@@ -704,7 +792,7 @@ export async function processCompanyExportStep(
         'master_topography_*',
         'master_corporate_*',
         'ASAAS_API_KEY (env)',
-        'storage binaries (F2)',
+        ...(isF2 ? [] : ['storage binaries (F2)']),
       ],
       checksum_sha256: null,
     };
@@ -739,7 +827,6 @@ export async function processCompanyExportStep(
 
   if (cursor.phase === 'zip') {
     const entries: { path: string; data: Buffer }[] = [];
-    const checksumLines: string[] = [];
 
     for (const rel of cursor.files) {
       const path = exportStagingFilePath(companyId, exportId, rel);
@@ -750,14 +837,6 @@ export async function processCompanyExportStep(
       }
       const buf = Buffer.from(await data.arrayBuffer());
       entries.push({ path: rel, data: buf });
-      const hash = createHash('sha256').update(buf).digest('hex');
-      checksumLines.push(`${hash}  ${rel}`);
-    }
-
-    if (checksumLines.length) {
-      const checksumBody = checksumLines.join('\n') + '\n';
-      entries.push({ path: 'checksums.sha256', data: Buffer.from(checksumBody, 'utf8') });
-      if (!cursor.files.includes('checksums.sha256')) cursor.files.push('checksums.sha256');
     }
 
     if (entries.length === 0) {
@@ -783,7 +862,24 @@ export async function processCompanyExportStep(
       return { done: true, failed: true };
     }
 
-    const zipBuf = buildStoredZip(entries);
+    const checksumBody =
+      entries
+        .map((e) => {
+          const hash = createHash('sha256').update(e.data).digest('hex');
+          return `${hash}  ${e.path}`;
+        })
+        .join('\n') + '\n';
+    entries.push({ path: 'checksums.sha256', data: Buffer.from(checksumBody, 'utf8') });
+    if (!cursor.files.includes('checksums.sha256')) cursor.files.push('checksums.sha256');
+
+    const assembled = assembleExportPackage(entries);
+    const zipBuf = assembled.packageZip;
+    cursor.packageParts = assembled.parts.map((p) => ({
+      name: p.name,
+      bytes: p.bytes,
+      checksum: p.checksum,
+    }));
+
     const packagePath = exportPackagePath(companyId, exportId);
     const { error: zipErr } = await admin.storage
       .from(COMPANY_EXPORT_BUCKET)
@@ -811,6 +907,7 @@ export async function processCompanyExportStep(
     const completedAt = new Date().toISOString();
     const expiresAt = new Date();
     expiresAt.setUTCDate(expiresAt.getUTCDate() + 7);
+    const isF2 = exportVersion === 'F2_COMPLETE';
 
     const manifest: CompanyExportManifest = {
       ...(job.manifest as CompanyExportManifest),
@@ -823,15 +920,31 @@ export async function processCompanyExportStep(
       notes: job.notes,
       created_at: job.created_at,
       completed_at: completedAt,
-      schema_version: COMPANY_EXPORT_SCHEMA_VERSION,
-      phase: 'F1_TABULAR',
+      schema_version: isF2 ? COMPANY_EXPORT_SCHEMA_VERSION : COMPANY_EXPORT_SCHEMA_VERSION_F1,
+      export_version: exportVersion,
+      phase: isF2 ? 'F2_COMPLETE' : 'F1_TABULAR',
+      options: cursor.options,
       tables_exported: Object.keys(cursor.recordCounts),
       records_per_table: cursor.recordCounts,
       files_generated: cursor.files,
       total_size_bytes: zipBuf.length,
       errors: cursor.errors,
       warnings: cursor.warnings,
-      missing_files: cursor.warnings.filter((w) => w.includes('missing')),
+      missing_files: cursor.missingFiles || [],
+      unresolved_files: cursor.unresolvedFiles || [],
+      generation_errors: cursor.generationErrors || [],
+      storage_summary: {
+        found: cursor.storageFilesFound || 0,
+        copied: cursor.storageFilesCopied || 0,
+        missing: cursor.storageFilesMissing || 0,
+        generated_memorials: cursor.generatedMemorials || 0,
+        generated_lot_plans: cursor.generatedLotPlans || 0,
+        generated_general_plans: cursor.generatedGeneralPlans || 0,
+        total_binary_size: cursor.totalBinarySize || 0,
+      },
+      package_parts: cursor.packageParts || [],
+      original_source_file_status: cursor.originalSourceFileStatus || 'NOT_PERSISTED',
+      external_asaas_refs: cursor.asaasRefs || [],
       excluded_for_security: [
         'bank_credentials',
         'encrypted_payload',
@@ -839,7 +952,7 @@ export async function processCompanyExportStep(
         'signature_token',
         'OTP',
         'master_* platform tables',
-        'storage binaries (F2)',
+        ...(isF2 ? [] : ['storage binaries (F2)']),
       ],
       checksum_sha256: packageHash,
     };
@@ -865,6 +978,15 @@ export async function processCompanyExportStep(
         completed_at: completedAt,
         manifest,
         error_message: null,
+        storage_files_found: cursor.storageFilesFound || 0,
+        storage_files_copied: cursor.storageFilesCopied || 0,
+        storage_files_missing: cursor.storageFilesMissing || 0,
+        generated_memorials: cursor.generatedMemorials || 0,
+        generated_lot_plans: cursor.generatedLotPlans || 0,
+        generated_general_plans: cursor.generatedGeneralPlans || 0,
+        generation_errors: (cursor.generationErrors || []).length,
+        package_parts: (cursor.packageParts || []).length,
+        total_binary_size: cursor.totalBinarySize || 0,
       })
       .eq('id', exportId)
       .eq('company_id', companyId);
@@ -879,6 +1001,7 @@ export async function processCompanyExportStep(
         records: recordsExported,
         files: filesExported,
         size: totalSize,
+        exportVersion,
       },
     });
 

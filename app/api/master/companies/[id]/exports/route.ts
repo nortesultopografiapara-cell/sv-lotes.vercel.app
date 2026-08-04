@@ -69,6 +69,13 @@ export async function POST(request: Request, context: Ctx) {
       requestedBy: auth.userId,
       reason: String(body.reason || ''),
       notes: body.notes != null ? String(body.notes) : null,
+      exportVersion: body.exportVersion != null ? String(body.exportVersion) : 'F2_COMPLETE',
+      options: {
+        include_generated_plans:
+          body.includeGeneratedPlans === undefined
+            ? true
+            : Boolean(body.includeGeneratedPlans),
+      },
     });
 
     // Kick several steps immediately (cron + Master polling continue)

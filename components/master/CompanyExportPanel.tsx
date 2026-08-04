@@ -8,6 +8,7 @@ import {
 import {
   type CompanyExportJobRow,
   type CompanyExportReason,
+  type CompanyExportVersion,
 } from '@/lib/master/companyExport/types';
 import { reasonLabel } from '@/lib/master/companyExport/audit';
 
@@ -51,6 +52,13 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function versionBadge(job: CompanyExportJobRow): string {
+  const v = (job.export_version ||
+    (job.manifest as { export_version?: string } | null)?.export_version ||
+    'F1_TABULAR') as string;
+  return v === 'F2_COMPLETE' ? 'F2' : 'F1';
+}
+
 export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
   const [jobs, setJobs] = useState<CompanyExportJobRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +67,8 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
   const [reason, setReason] = useState<CompanyExportReason>('CLIENT_REQUEST');
   const [notes, setNotes] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [exportVersion, setExportVersion] = useState<CompanyExportVersion>('F2_COMPLETE');
+  const [includePlans, setIncludePlans] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
 
@@ -79,7 +89,6 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
   }, [companyId, userId]);
 
   useEffect(() => {
-    // Carga inicial do histórico — setState ocorre no fetch async, não no body síncrono.
     const t = window.setTimeout(() => {
       void loadJobs();
     }, 0);
@@ -90,11 +99,35 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
 
   useEffect(() => {
     if (!hasActive) return;
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/master/companies/${companyId}/exports?userId=${encodeURIComponent(userId)}`,
+        );
+        const json = await res.json();
+        const list = (json.jobs || []) as CompanyExportJobRow[];
+        const active = list.filter((j) => j.status === 'PENDING' || j.status === 'PROCESSING');
+        await Promise.all(
+          active.map(async (j) => {
+            try {
+              await fetch(
+                `/api/master/companies/${companyId}/exports/${j.id}?userId=${encodeURIComponent(userId)}`,
+              );
+            } catch {
+              // ignore
+            }
+          }),
+        );
+      } catch {
+        // ignore
+      }
+      await loadJobs();
+    };
     const t = setInterval(() => {
-      void loadJobs();
+      void tick();
     }, 4000);
     return () => clearInterval(t);
-  }, [hasActive, loadJobs]);
+  }, [hasActive, companyId, userId, loadJobs]);
 
   async function handleCreate() {
     if (!confirmed) {
@@ -107,7 +140,13 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
       const res = await fetch(`/api/master/companies/${companyId}/exports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, reason, notes }),
+        body: JSON.stringify({
+          userId,
+          reason,
+          notes,
+          exportVersion,
+          includeGeneratedPlans: includePlans,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Falha ao criar exportação');
@@ -180,7 +219,8 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
         <div>
           <h3 className="text-lg font-semibold text-white">Exportações de dados</h3>
           <p className="text-sm text-slate-400">
-            Pacote tabular (CSV/JSON/HTML). Arquivos binários do Storage entram na fase F2.
+            Pacote completo (F2): tabular + Storage + memoriais/pranchas regenerados. F1 permanece
+            disponível como tabular apenas.
           </p>
         </div>
         <button
@@ -215,6 +255,9 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <p className="text-sm text-white font-medium">
+                    <span className="mr-2 inline-block rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-cyan-200">
+                      {versionBadge(job)}
+                    </span>
                     {statusLabel(job.status)} · {reasonLabel(job.reason)}
                   </p>
                   <p className="text-xs text-slate-500">
@@ -273,6 +316,21 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
                 <span>Registros: {job.records_exported ?? 0}</span>
                 <span>Arquivos: {job.files_exported ?? 0}</span>
                 <span>Tamanho: {formatBytes(Number(job.total_size || 0))}</span>
+                {job.storage_files_copied != null ? (
+                  <span>Storage: {job.storage_files_copied}/{job.storage_files_found ?? 0}</span>
+                ) : null}
+                {job.storage_files_missing ? (
+                  <span>Ausentes: {job.storage_files_missing}</span>
+                ) : null}
+                {(job.generated_memorials || job.generated_lot_plans) ? (
+                  <span>
+                    Planos: M{job.generated_memorials || 0}/P{job.generated_lot_plans || 0}/G
+                    {job.generated_general_plans || 0}
+                  </span>
+                ) : null}
+                {(job.package_parts || 0) > 1 ? (
+                  <span>Pacote dividido ({job.package_parts} partes)</span>
+                ) : null}
                 {job.expires_at ? (
                   <span>Expira: {new Date(job.expires_at).toLocaleString('pt-BR')}</span>
                 ) : null}
@@ -293,15 +351,28 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f141c] p-5 space-y-4 shadow-xl">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f141c] p-5 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-white">Exportar dados da empresa</h3>
             <p className="text-sm text-slate-300">
               Empresa: <strong className="text-white">{companyName}</strong>
             </p>
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
               O pacote contém dados pessoais e financeiros (LGPD). Trate como confidencial. Esta
-              ação não suspende nem exclui a empresa.
+              ação não suspende nem exclui a empresa. Memoriais/pranchas (F2) são regenerados no
+              staging e não gravam no cadastro operacional.
             </div>
+
+            <label className="block text-sm text-slate-300">
+              Tipo de pacote
+              <select
+                value={exportVersion}
+                onChange={(e) => setExportVersion(e.target.value as CompanyExportVersion)}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-white"
+              >
+                <option value="F2_COMPLETE">F2 completo (recomendado)</option>
+                <option value="F1_TABULAR">F1 tabular apenas</option>
+              </select>
+            </label>
 
             <label className="block text-sm text-slate-300">
               Motivo
@@ -331,7 +402,7 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                Conteúdo (F1 tabular)
+                Conteúdo tabular
               </p>
               <ul className="text-xs text-slate-400 space-y-1 list-disc pl-4">
                 {COMPANY_EXPORT_CONTENT_SUMMARY.map((item) => (
@@ -339,6 +410,18 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
                 ))}
               </ul>
             </div>
+
+            {exportVersion === 'F2_COMPLETE' ? (
+              <label className="flex items-start gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={includePlans}
+                  onChange={(e) => setIncludePlans(e.target.checked)}
+                  className="mt-1"
+                />
+                Incluir memoriais e pranchas regenerados (pode demorar em empresas grandes)
+              </label>
+            ) : null}
 
             <label className="flex items-start gap-2 text-sm text-slate-300">
               <input
