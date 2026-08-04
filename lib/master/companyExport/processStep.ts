@@ -22,7 +22,8 @@ import {
   sanitizeExportWarning,
 } from '@/lib/master/companyExport/postgrestErrors';
 import { isF2Phase, processF2Phase } from '@/lib/master/companyExport/processF2';
-import { assembleExportPackage } from '@/lib/master/companyExport/packageAssemble';
+import { assembleExportPackage, filesForDomain, COMPANY_EXPORT_ZIP_DOMAIN_ORDER } from '@/lib/master/companyExport/packageAssemble';
+import { buildStoredZip } from '@/lib/master/companyExport/zipStore';
 import {
   COMPANY_EXPORT_PAGE_SIZE,
   COMPANY_EXPORT_SCHEMA_VERSION,
@@ -46,7 +47,7 @@ function parseCursor(
   if (!raw || typeof raw !== 'object') return emptyStepCursor(version, options);
   const c = raw as Partial<CompanyExportStepCursor>;
   return {
-    ...emptyStepCursor(version, options),
+    ...    emptyStepCursor(version, options),
     ...c,
     exportVersion: c.exportVersion || version,
     options: normalizeExportOptions(c.options ?? options),
@@ -57,6 +58,8 @@ function parseCursor(
     missingOptionalTables: Array.isArray(c.missingOptionalTables)
       ? c.missingOptionalTables
       : [],
+    zipPartRels: Array.isArray(c.zipPartRels) ? c.zipPartRels : [],
+    checksumLines: Array.isArray(c.checksumLines) ? c.checksumLines : [],
   };
 }
 
@@ -807,7 +810,11 @@ export async function processCompanyExportStep(
       }
       totalSize += up.size;
     }
-    cursor.phase = 'zip';
+    cursor.phase = 'zip_domains';
+    cursor.zipDomainIndex = 0;
+    cursor.zipDomainFileOffset = 0;
+    cursor.zipPartRels = [];
+    cursor.checksumLines = [];
 
     await admin
       .from('company_export_jobs')
@@ -825,18 +832,186 @@ export async function processCompanyExportStep(
     return { done: false, failed: false };
   }
 
+  if (cursor.phase === 'zip_domains') {
+    if (!cursor.zipPartRels) cursor.zipPartRels = [];
+    if (!cursor.checksumLines) cursor.checksumLines = [];
+    const domainIndex = cursor.zipDomainIndex || 0;
+    const domains = [...COMPANY_EXPORT_ZIP_DOMAIN_ORDER];
+
+    // Skip empty domains
+    while (domainIndex < domains.length) {
+      const domain = domains[domainIndex];
+      const domainFiles = filesForDomain(
+        cursor.files.filter((f) => !f.startsWith('_meta/zip_parts/')),
+        domain,
+      );
+      if (domainFiles.length === 0) {
+        cursor.zipDomainIndex = domainIndex + 1;
+        cursor.zipDomainFileOffset = 0;
+        break;
+      }
+
+      const BATCH = 20;
+      const offset = cursor.zipDomainFileOffset || 0;
+      const batchPaths = domainFiles.slice(offset, offset + BATCH);
+      const batchEntries: { path: string; data: Buffer }[] = [];
+
+      for (const rel of batchPaths) {
+        const path = exportStagingFilePath(companyId, exportId, rel);
+        const { data, error } = await admin.storage.from(COMPANY_EXPORT_BUCKET).download(path);
+        if (error || !data) {
+          cursor.warnings.push(`ZIP missing staging file: ${rel}`);
+          continue;
+        }
+        const buf = Buffer.from(await data.arrayBuffer());
+        batchEntries.push({ path: rel, data: buf });
+        const hash = createHash('sha256').update(buf).digest('hex');
+        cursor.checksumLines.push(`${hash}  ${rel}`);
+      }
+
+      // Persist partial domain zip (append mode via chunk files)
+      const chunkRel = `_meta/zip_parts/${domain}_p${Math.floor(offset / BATCH)}.zip`;
+      if (batchEntries.length) {
+        const chunkZip = buildStoredZip(batchEntries);
+        const chunkPath = exportStagingFilePath(companyId, exportId, chunkRel);
+        const { error: upErr } = await admin.storage
+          .from(COMPANY_EXPORT_BUCKET)
+          .upload(chunkPath, chunkZip, { contentType: 'application/zip', upsert: true });
+        if (upErr) {
+          cursor.warnings.push(`Falha chunk ZIP ${chunkRel}: ${upErr.message}`);
+        } else if (!cursor.zipPartRels.includes(chunkRel)) {
+          cursor.zipPartRels.push(chunkRel);
+        }
+      }
+
+      const nextOffset = offset + batchPaths.length;
+      if (nextOffset >= domainFiles.length) {
+        cursor.zipDomainIndex = domainIndex + 1;
+        cursor.zipDomainFileOffset = 0;
+      } else {
+        cursor.zipDomainFileOffset = nextOffset;
+      }
+      break;
+    }
+
+    const doneDomains = (cursor.zipDomainIndex || 0) >= domains.length;
+    if (doneDomains) {
+      // Write checksums into staging
+      const checksumBody = (cursor.checksumLines || []).join('\n') + '\n';
+      const checksumRel = 'checksums.sha256';
+      const checksumPath = exportStagingFilePath(companyId, exportId, checksumRel);
+      await uploadText(admin, checksumPath, checksumBody, 'text/plain; charset=utf-8');
+      if (!cursor.files.includes(checksumRel)) {
+        cursor.files.push(checksumRel);
+        filesExported += 1;
+      }
+      // Also put checksums into dados_tabulares part via a tiny zip chunk
+      const checksumChunkRel = '_meta/zip_parts/checksums.zip';
+      const checksumChunk = buildStoredZip([
+        { path: checksumRel, data: Buffer.from(checksumBody, 'utf8') },
+      ]);
+      await admin.storage
+        .from(COMPANY_EXPORT_BUCKET)
+        .upload(exportStagingFilePath(companyId, exportId, checksumChunkRel), checksumChunk, {
+          contentType: 'application/zip',
+          upsert: true,
+        });
+      if (!cursor.zipPartRels.includes(checksumChunkRel)) {
+        cursor.zipPartRels.push(checksumChunkRel);
+      }
+      cursor.phase = 'zip';
+    }
+
+    await admin
+      .from('company_export_jobs')
+      .update({
+        progress: doneDomains ? 98 : 96,
+        current_step: doneDomains
+          ? 'zip'
+          : `zip_domains:${domains[Math.min(cursor.zipDomainIndex || 0, domains.length - 1)]}`,
+        step_cursor: cursor,
+        files_exported: filesExported,
+        total_size: totalSize,
+      })
+      .eq('id', exportId)
+      .eq('company_id', companyId);
+
+    return { done: false, failed: false };
+  }
+
   if (cursor.phase === 'zip') {
+    // Recovery: pacotes grandes sem chunks devem voltar ao zip_domains (evita timeout 60s).
+    if (
+      (!cursor.zipPartRels || cursor.zipPartRels.length === 0) &&
+      cursor.files.length > 80
+    ) {
+      cursor.phase = 'zip_domains';
+      cursor.zipDomainIndex = 0;
+      cursor.zipDomainFileOffset = 0;
+      cursor.zipPartRels = [];
+      cursor.checksumLines = [];
+      await admin
+        .from('company_export_jobs')
+        .update({
+          progress: 96,
+          current_step: 'zip_domains',
+          step_cursor: cursor,
+        })
+        .eq('id', exportId)
+        .eq('company_id', companyId);
+      return { done: false, failed: false };
+    }
+
+    const partRels = cursor.zipPartRels || [];
     const entries: { path: string; data: Buffer }[] = [];
 
-    for (const rel of cursor.files) {
-      const path = exportStagingFilePath(companyId, exportId, rel);
-      const { data, error } = await admin.storage.from(COMPANY_EXPORT_BUCKET).download(path);
-      if (error || !data) {
-        cursor.warnings.push(`ZIP missing staging file: ${rel}`);
-        continue;
+    // Prefer domain-chunk package (multi-step). Fallback: legacy single-pass for small F1.
+    if (partRels.length > 0) {
+      for (const rel of partRels) {
+        const path = exportStagingFilePath(companyId, exportId, rel);
+        const { data, error } = await admin.storage.from(COMPANY_EXPORT_BUCKET).download(path);
+        if (error || !data) {
+          cursor.warnings.push(`ZIP missing part: ${rel}`);
+          continue;
+        }
+        const buf = Buffer.from(await data.arrayBuffer());
+        const name = rel.replace(/^_meta\/zip_parts\//, 'parts/');
+        entries.push({ path: name, data: buf });
       }
-      const buf = Buffer.from(await data.arrayBuffer());
-      entries.push({ path: rel, data: buf });
+      const indexBody = JSON.stringify(
+        {
+          split: true,
+          mode: 'domain_chunks',
+          parts: entries.map((e) => e.path),
+          note: 'Descompacte parts/*.zip para obter a árvore de pastas. checksums.sha256 está em parts/checksums.zip.',
+        },
+        null,
+        2,
+      );
+      entries.unshift({ path: 'package_index.json', data: Buffer.from(indexBody, 'utf8') });
+    } else {
+      // Legacy single-pass (small packages / F1)
+      for (const rel of cursor.files) {
+        const path = exportStagingFilePath(companyId, exportId, rel);
+        const { data, error } = await admin.storage.from(COMPANY_EXPORT_BUCKET).download(path);
+        if (error || !data) {
+          cursor.warnings.push(`ZIP missing staging file: ${rel}`);
+          continue;
+        }
+        const buf = Buffer.from(await data.arrayBuffer());
+        entries.push({ path: rel, data: buf });
+      }
+      if (entries.length) {
+        const checksumBody =
+          entries
+            .map((e) => {
+              const hash = createHash('sha256').update(e.data).digest('hex');
+              return `${hash}  ${e.path}`;
+            })
+            .join('\n') + '\n';
+        entries.push({ path: 'checksums.sha256', data: Buffer.from(checksumBody, 'utf8') });
+        if (!cursor.files.includes('checksums.sha256')) cursor.files.push('checksums.sha256');
+      }
     }
 
     if (entries.length === 0) {
@@ -862,23 +1037,23 @@ export async function processCompanyExportStep(
       return { done: true, failed: true };
     }
 
-    const checksumBody =
-      entries
-        .map((e) => {
-          const hash = createHash('sha256').update(e.data).digest('hex');
-          return `${hash}  ${e.path}`;
-        })
-        .join('\n') + '\n';
-    entries.push({ path: 'checksums.sha256', data: Buffer.from(checksumBody, 'utf8') });
-    if (!cursor.files.includes('checksums.sha256')) cursor.files.push('checksums.sha256');
-
-    const assembled = assembleExportPackage(entries);
-    const zipBuf = assembled.packageZip;
-    cursor.packageParts = assembled.parts.map((p) => ({
-      name: p.name,
-      bytes: p.bytes,
-      checksum: p.checksum,
-    }));
+    const zipBuf =
+      partRels.length > 0
+        ? buildStoredZip(entries)
+        : assembleExportPackage(entries).packageZip;
+    const packageHash = createHash('sha256').update(zipBuf).digest('hex');
+    cursor.packageParts = [
+      {
+        name: 'package.zip',
+        bytes: zipBuf.length,
+        checksum: packageHash,
+      },
+      ...partRels.map((r) => ({
+        name: r.replace(/^_meta\/zip_parts\//, 'parts/'),
+        bytes: 0,
+        checksum: '',
+      })),
+    ];
 
     const packagePath = exportPackagePath(companyId, exportId);
     const { error: zipErr } = await admin.storage
@@ -903,7 +1078,6 @@ export async function processCompanyExportStep(
       return { done: true, failed: true };
     }
 
-    const packageHash = createHash('sha256').update(zipBuf).digest('hex');
     const completedAt = new Date().toISOString();
     const expiresAt = new Date();
     expiresAt.setUTCDate(expiresAt.getUTCDate() + 7);

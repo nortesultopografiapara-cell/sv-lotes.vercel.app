@@ -81,6 +81,7 @@ export type CompanyExportPhase =
   | 'build_file_index'
   | 'readme'
   | 'manifest'
+  | 'zip_domains'
   | 'zip'
   | 'verify_checksums'
   | 'done';
@@ -148,6 +149,10 @@ export type CompanyExportStepCursor = {
   generatedLotPlans?: number;
   generatedGeneralPlans?: number;
   totalBinarySize?: number;
+  zipDomainIndex?: number;
+  zipDomainFileOffset?: number;
+  zipPartRels?: string[];
+  checksumLines?: string[];
   packageParts?: Array<{ name: string; bytes: number; checksum: string }>;
   originalSourceFileStatus?: 'NOT_PERSISTED' | 'FOUND' | 'PARTIAL';
 };

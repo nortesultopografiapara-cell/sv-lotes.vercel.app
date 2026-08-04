@@ -145,6 +145,7 @@ function testWiringFiles(): void {
   assert(processStep.includes('processF2Phase'), 'wired processF2');
   assert(processStep.includes('phaseAfterGeojson'), 'geojson branch');
   assert(processStep.includes('assembleExportPackage'), 'package assemble');
+  assert(processStep.includes('zip_domains'), 'zip_domains phase');
 
   const mig = read('supabase/migrations/20261005120000_company_export_f2.sql');
   assert(mig.includes('export_version'), 'migration version');

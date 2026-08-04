@@ -30,6 +30,22 @@ function domainOf(path: string): string {
   return 'dados_tabulares';
 }
 
+export const COMPANY_EXPORT_ZIP_DOMAIN_ORDER = [
+  'dados_tabulares',
+  'documentos_clientes',
+  'contratos',
+  'empreendimentos',
+  'financeiro_index',
+] as const;
+
+export function resolveExportDomain(path: string): string {
+  return domainOf(path);
+}
+
+export function filesForDomain(paths: string[], domain: string): string[] {
+  return paths.filter((p) => domainOf(p) === domain);
+}
+
 const DOMAIN_ORDER = [
   'dados_tabulares',
   'documentos_clientes',
@@ -87,7 +103,7 @@ export function assembleExportPackage(entries: ZipStoreEntry[]): {
   const partEntries: ZipStoreEntry[] = [];
   const parts: PackagePartMeta[] = [];
 
-  for (const name of DOMAIN_ORDER) {
+  for (const name of COMPANY_EXPORT_ZIP_DOMAIN_ORDER) {
     const list = buckets.get(name);
     if (!list?.length) continue;
     const zip = buildStoredZip(list);
@@ -103,7 +119,7 @@ export function assembleExportPackage(entries: ZipStoreEntry[]): {
 
   // leftover domains
   for (const [name, list] of buckets) {
-    if ((DOMAIN_ORDER as readonly string[]).includes(name)) continue;
+    if ((COMPANY_EXPORT_ZIP_DOMAIN_ORDER as readonly string[]).includes(name)) continue;
     if (!list.length) continue;
     const zip = buildStoredZip(list);
     const partName = `${name}.zip`;
