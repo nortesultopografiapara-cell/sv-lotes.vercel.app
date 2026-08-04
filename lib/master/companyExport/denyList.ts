@@ -51,6 +51,16 @@ export const COMPANY_EXPORT_FORBIDDEN_FIELDS = [
   'password',
   'password_hash',
   'hashed_password',
+  'refresh_token',
+  'provider_token',
+  'provider_refresh_token',
+  'raw_app_meta_data',
+  'raw_user_meta_data',
+  'confirmation_token',
+  'recovery_token',
+  'email_change_token_new',
+  'email_change_token_current',
+  'reauthentication_token',
   'service_role',
   'service_role_key',
   'asaas_api_key',
@@ -70,6 +80,8 @@ export function isForbiddenExportField(fieldName: string): boolean {
   if (key.includes('api_key') || key.includes('apikey')) return true;
   if (key.includes('webhook_secret') || key.includes('webhooksecret')) return true;
   if (key.includes('access_token') || key.includes('accesstoken')) return true;
+  if (key.includes('refresh_token') || key.includes('refreshtoken')) return true;
+  if (key.includes('provider_token') || key.includes('providertoken')) return true;
   if (key.includes('encrypted_payload')) return true;
   if (key === 'signature_token') return true;
   return false;

@@ -17,6 +17,11 @@ import {
 import { buildStoredZip } from '@/lib/master/companyExport/zipStore';
 import { buildExportReadmeHtml } from '@/lib/master/companyExport/readme';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
+import { blocksRowsToGeoJson } from '@/lib/master/companyExport/blockGeoJson';
+import {
+  classifyPostgrestError,
+  sanitizeExportWarning,
+} from '@/lib/master/companyExport/postgrestErrors';
 import {
   COMPANY_EXPORT_PAGE_SIZE,
   COMPANY_EXPORT_SCHEMA_VERSION,
@@ -94,7 +99,12 @@ async function fetchTablePage(
     contractIds: string[];
     customerIds: string[];
   },
-): Promise<{ rows: Record<string, unknown>[]; error: string | null; missing: boolean }> {
+): Promise<{
+  rows: Record<string, unknown>[];
+  error: string | null;
+  missing: boolean;
+  usedStarFallback?: boolean;
+}> {
   const selectCols = [...new Set([...spec.columns, ...(spec.jsonExtraColumns || [])])].join(
     ', ',
   );
@@ -151,22 +161,14 @@ async function fetchTablePage(
   const { data, error } = await query.range(offset, offset + COMPANY_EXPORT_PAGE_SIZE - 1);
   if (error) {
     const msg = error.message || '';
-    const isColumnError =
-      /column .* does not exist/i.test(msg) ||
-      /Could not find the '[^']+' column of/i.test(msg) ||
-      (/Could not find the '/i.test(msg) && /column/i.test(msg));
-    const isTableMissing =
-      !isColumnError &&
-      (/relation ["'].*["'] does not exist/i.test(msg) ||
-        /Could not find the table/i.test(msg) ||
-        (/does not exist/i.test(msg) && /table/i.test(msg)));
+    const kind = classifyPostgrestError(msg);
 
-    if (isTableMissing) {
+    if (kind === 'table_missing') {
       return { rows: [], error: null, missing: true };
     }
 
-    if (isColumnError) {
-      // Fallback sanitizado: SELECT * + keep only allow-listed columns (never export secrets).
+    if (kind === 'column_missing') {
+      // Fallback controlado: SELECT * + allow-list estrita (deny-list prevalece via strip).
       let fallback = admin.from(spec.table).select('*');
       switch (spec.scope) {
         case 'self_id':
@@ -212,68 +214,48 @@ async function fetchTablePage(
       }
       const fb = await fallback.range(offset, offset + COMPANY_EXPORT_PAGE_SIZE - 1);
       if (fb.error) {
+        const fbKind = classifyPostgrestError(fb.error.message || '');
         return {
           rows: [],
-          error: `${msg} | fallback: ${fb.error.message}`,
-          missing: Boolean(spec.optional),
+          error: sanitizeExportWarning(
+            spec.table,
+            'select',
+            `${kind}/${fbKind}: ${msg}`,
+          ),
+          missing: fbKind === 'table_missing' ? true : Boolean(spec.optional && fbKind !== 'permission'),
         };
       }
       const allow = [...spec.columns, ...(spec.jsonExtraColumns || [])];
       const rows = ((fb.data as unknown as Record<string, unknown>[] | null) ?? []).map((row) =>
         stripForbiddenColumns(row, allow),
       );
-      return { rows, error: null, missing: false };
+      return {
+        rows,
+        error: null,
+        missing: false,
+        usedStarFallback: true,
+      };
     }
 
-    return { rows: [], error: msg, missing: false };
+    if (kind === 'permission') {
+      return {
+        rows: [],
+        error: sanitizeExportWarning(spec.table, 'permission', msg),
+        missing: false,
+      };
+    }
+
+    return {
+      rows: [],
+      error: sanitizeExportWarning(spec.table, kind, msg),
+      missing: false,
+    };
   }
 
   const rows = ((data as unknown as Record<string, unknown>[] | null) ?? []).map((row) =>
     stripForbiddenColumns(row, [...spec.columns, ...(spec.jsonExtraColumns || [])]),
   );
   return { rows, error: null, missing: false };
-}
-
-function blocksToGeoJson(rows: Record<string, unknown>[]): string {
-  const features = rows
-    .map((row) => {
-      const geom =
-        row.geojson ||
-        row.geometry ||
-        (typeof row.segments_json === 'object' ? null : null);
-      if (!geom || typeof geom !== 'object') {
-        return {
-          type: 'Feature',
-          properties: {
-            id: row.id,
-            project_id: row.project_id,
-            block_name: row.block_name,
-            lot_number: row.lot_number,
-            number: row.number,
-            area: row.area,
-          },
-          geometry: null,
-        };
-      }
-      const g = geom as Record<string, unknown>;
-      if (g.type === 'Feature') return g;
-      if (g.type === 'FeatureCollection') return null;
-      return {
-        type: 'Feature',
-        properties: { id: row.id, project_id: row.project_id },
-        geometry: g,
-      };
-    })
-    .filter(Boolean);
-
-  return JSON.stringify(
-    {
-      type: 'FeatureCollection',
-      features,
-    },
-    null,
-    2,
-  );
 }
 
 export async function processCompanyExportStep(
@@ -357,19 +339,30 @@ export async function processCompanyExportStep(
         const page = await fetchTablePage(admin, spec, companyId, cursor.offset, parentIds);
         if (page.missing) {
           cursor.missingOptionalTables.push(spec.table);
-          cursor.warnings.push(`Tabela opcional ausente: ${spec.table}`);
+          cursor.warnings.push(
+            sanitizeExportWarning(spec.table, 'tables', 'tabela opcional ausente'),
+          );
           cursor.tableIndex += 1;
           cursor.offset = 0;
         } else if (page.error && spec.optional) {
-          cursor.warnings.push(`${spec.table}: ${page.error}`);
+          cursor.warnings.push(page.error);
           cursor.tableIndex += 1;
           cursor.offset = 0;
         } else if (page.error) {
-          cursor.errors.push(`${spec.table}: ${page.error}`);
+          cursor.errors.push(page.error);
           // non-fatal for F1 — skip table
           cursor.tableIndex += 1;
           cursor.offset = 0;
         } else {
+          if (page.usedStarFallback && cursor.offset === 0) {
+            cursor.warnings.push(
+              sanitizeExportWarning(
+                spec.table,
+                'tables',
+                'fallback SELECT*+allow-list por coluna ausente no schema',
+              ),
+            );
+          }
           const allColumns = [...spec.columns];
           const sanitized = page.rows;
 
@@ -475,21 +468,43 @@ export async function processCompanyExportStep(
       cursor.phase = 'geojson_blocks';
       cursor.geojsonOffset = 0;
     } else {
+      // Fonte oficial do Portal/contratos: generated_html (contractHtmlGlobal).
       const { data, error } = await admin
         .from('contracts')
-        .select(
-          'id, contract_number, generated_html, html_content, contract_html, content, html',
-        )
+        .select('id, contract_number, generated_html')
         .in('id', batch);
       if (error) {
-        cursor.warnings.push(`contract_html: ${error.message}`);
+        const kind = classifyPostgrestError(error.message || '');
+        cursor.warnings.push(
+          sanitizeExportWarning(
+            'contracts',
+            'contract_html',
+            kind === 'column_missing'
+              ? 'generated_html indisponível neste schema; HTML omitido'
+              : error.message || kind,
+          ),
+        );
       } else {
+        let wrote = 0;
+        let missingHtml = 0;
         for (const row of (data as unknown as Record<string, unknown>[] | null) ?? []) {
           const html = readStoredContractHtml(row);
-          if (!html) continue;
+          if (!html) {
+            missingHtml += 1;
+            continue;
+          }
+          if (/signature_token|access_token/i.test(html)) {
+            cursor.warnings.push(
+              sanitizeExportWarning(
+                'contracts',
+                'contract_html',
+                `HTML ${String(row.id).slice(0, 8)} omitido (padrão sensível)`,
+              ),
+            );
+            continue;
+          }
           const id = String(row.id);
-          const num = sanitizeFilePart(String(row.contract_number || id).slice(0, 40));
-          const rel = `06_contratos/html/${num}_${id.slice(0, 8)}.html`;
+          const rel = `06_contratos/${sanitizeFilePart(id)}/contract.html`;
           const path = exportStagingFilePath(companyId, exportId, rel);
           const up = await uploadText(admin, path, html, 'text/html; charset=utf-8');
           if (up.ok) {
@@ -498,7 +513,17 @@ export async function processCompanyExportStep(
               filesExported += 1;
             }
             totalSize += up.size;
+            wrote += 1;
           }
+        }
+        if (wrote === 0 && missingHtml > 0 && cursor.contractHtmlOffset === 0) {
+          cursor.warnings.push(
+            sanitizeExportWarning(
+              'contracts',
+              'contract_html',
+              `${missingHtml} contrato(s) sem HTML persistido`,
+            ),
+          );
         }
       }
       cursor.contractHtmlOffset += batch.length;
@@ -521,34 +546,64 @@ export async function processCompanyExportStep(
   }
 
   if (cursor.phase === 'geojson_blocks') {
+    const selectCols =
+      'id, project_id, block_name, number, lot_number, area, segments_json, geometry';
     const { data, error } = await admin
       .from('blocks')
-      .select(
-        'id, project_id, block_name, number, lot_number, area, segments_json, geometry, geojson, coordinates',
-      )
+      .select(selectCols)
       .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)
       .range(cursor.geojsonOffset, cursor.geojsonOffset + COMPANY_EXPORT_PAGE_SIZE - 1);
 
+    let rows: Record<string, unknown>[] = [];
     if (error) {
-      cursor.warnings.push(`geojson_blocks: ${error.message}`);
-      cursor.phase = 'readme';
-    } else {
-      const rows = (data as unknown as Record<string, unknown>[] | null) ?? [];
-      if (rows.length === 0 && cursor.geojsonOffset === 0) {
+      const kind = classifyPostgrestError(error.message || '');
+      if (kind === 'column_missing') {
+        const retry = await admin
+          .from('blocks')
+          .select('id, project_id, block_name, number, lot_number, area, segments_json')
+          .or(`company_id.eq.${companyId},tenant_id.eq.${companyId}`)
+          .range(cursor.geojsonOffset, cursor.geojsonOffset + COMPANY_EXPORT_PAGE_SIZE - 1);
+        if (retry.error) {
+          cursor.warnings.push(
+            sanitizeExportWarning('blocks', 'geojson', retry.error.message || kind),
+          );
+          cursor.phase = 'readme';
+        } else {
+          rows = (retry.data as unknown as Record<string, unknown>[] | null) ?? [];
+        }
+      } else {
+        cursor.warnings.push(
+          sanitizeExportWarning('blocks', 'geojson', error.message || kind),
+        );
         cursor.phase = 'readme';
-      } else if (rows.length === 0) {
+      }
+    } else {
+      rows = (data as unknown as Record<string, unknown>[] | null) ?? [];
+    }
+
+    if (cursor.phase === 'geojson_blocks') {
+      if (rows.length === 0) {
         cursor.phase = 'readme';
       } else {
+        const built = blocksRowsToGeoJson(rows);
         const rel = `04_empreendimentos/blocks_p${Math.floor(cursor.geojsonOffset / COMPANY_EXPORT_PAGE_SIZE) + 1}.geojson`;
         const path = exportStagingFilePath(companyId, exportId, rel);
-        const geo = blocksToGeoJson(rows);
-        const up = await uploadText(admin, path, geo, 'application/geo+json');
+        const up = await uploadText(admin, path, built.geojson, 'application/geo+json');
         if (up.ok) {
           if (!cursor.files.includes(rel)) {
             cursor.files.push(rel);
             filesExported += 1;
           }
           totalSize += up.size;
+        }
+        if (built.withoutGeometry > 0 && cursor.geojsonOffset === 0) {
+          cursor.warnings.push(
+            sanitizeExportWarning(
+              'blocks',
+              'geojson',
+              `${built.withoutGeometry} lote(s) sem geometria WGS84; geometry=${built.sources.geometry} segments=${built.sources.segments_json}`,
+            ),
+          );
         }
         if (rows.length < COMPANY_EXPORT_PAGE_SIZE) cursor.phase = 'readme';
         else cursor.geojsonOffset += COMPANY_EXPORT_PAGE_SIZE;

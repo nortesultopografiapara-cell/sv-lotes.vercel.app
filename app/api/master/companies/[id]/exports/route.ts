@@ -6,10 +6,11 @@ import {
 } from '@/lib/master/companyExport/apiAuth';
 import {
   CompanyExportError,
+  advanceCompanyExportJob,
   createCompanyExportJob,
+  getCompanyExportJob,
   listCompanyExportJobs,
 } from '@/lib/master/companyExport/jobService';
-import { runCompanyExportWorker } from '@/lib/master/companyExport/jobService';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,11 +71,13 @@ export async function POST(request: Request, context: Ctx) {
       notes: body.notes != null ? String(body.notes) : null,
     });
 
-    // Kick one worker step immediately (best-effort)
+    // Kick several steps immediately (cron + Master polling continue)
     try {
-      await runCompanyExportWorker(admin, 1);
+      await advanceCompanyExportJob(admin, companyId, job.id, 12);
+      const refreshed = await getCompanyExportJob(admin, companyId, job.id);
+      return NextResponse.json({ ok: true, job: refreshed }, { status: 201 });
     } catch {
-      // cron will continue
+      // ignore kick failures
     }
 
     return NextResponse.json({ ok: true, job }, { status: 201 });

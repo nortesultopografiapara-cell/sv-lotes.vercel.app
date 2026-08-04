@@ -36,10 +36,6 @@
     "app/api/cron/expire-company-exports/route.ts": {
       "maxDuration": 60
     },
-    "app/api/cron/homolog-company-export-f0-f1/route.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
     "app/api/companies/update/route.ts": {
       "maxDuration": 60
     },
