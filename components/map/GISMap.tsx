@@ -5554,7 +5554,7 @@ export default function GISMap({
               setOfficialSidesSelected([]);
               setOfficialSidesDraft(new Map());
             }}
-            onSave={async (patched, draft) => {
+            onSave={async (patched, draft, confrontantDraft) => {
               if (!projectId || !officialSidesEditLot?.id) return;
               setOfficialSidesSaving(true);
               try {
@@ -5573,6 +5573,14 @@ export default function GISMap({
                       : l,
                   ),
                 );
+                const confrontantEdits = [...confrontantDraft.entries()].map(
+                  ([segment_index, entry]) => ({
+                    segment_index,
+                    previous: entry.previous,
+                    next: entry.confrontant,
+                    confrontant_type: entry.confrontant_type,
+                  }),
+                );
                 void logLotAuditEvent(supabase, {
                   ...lotAuditContextFromBlock(officialSidesEditLot, {
                     projectId,
@@ -5580,13 +5588,39 @@ export default function GISMap({
                   userId: user?.id ?? null,
                   action: "official_measure_side_changed",
                   title: "Classificação oficial de lados",
-                  description: `official_side atualizado no lote ${String(officialSidesEditLot.number ?? "")}`,
+                  description: `official_side/confrontante atualizado no lote ${String(officialSidesEditLot.number ?? "")}`,
                   oldData: { segments_json: snapshot },
                   newData: {
                     official_side_map: Object.fromEntries(draft.entries()),
+                    confrontant_edits: confrontantEdits,
+                    lot_id: officialSidesEditLot.id,
                   },
                   source: "gis_map",
                 });
+                if (confrontantEdits.length > 0) {
+                  void logLotAuditEvent(supabase, {
+                    ...lotAuditContextFromBlock(officialSidesEditLot, {
+                      projectId,
+                    }),
+                    userId: user?.id ?? null,
+                    action: "confrontation_manual",
+                    title: "Confrontante por segmento (editor de lados)",
+                    description: `selected_only em ${confrontantEdits.length} segmento(s) do lote ${String(officialSidesEditLot.number ?? "")}`,
+                    oldData: {
+                      segments_json: snapshot,
+                      confrontant_edits: confrontantEdits.map((e) => ({
+                        segment_index: e.segment_index,
+                        confrontant: e.previous,
+                      })),
+                    },
+                    newData: {
+                      lot_id: officialSidesEditLot.id,
+                      confrontant_edits: confrontantEdits,
+                      persist_scope: "selected_only",
+                    },
+                    source: "gis_map",
+                  });
+                }
                 setOfficialSidesEditLot(null);
                 setOfficialSidesSelected([]);
                 setOfficialSidesDraft(new Map());
@@ -5600,11 +5634,11 @@ export default function GISMap({
                 setOfficialSidesSaving(false);
               }
             }}
-            onRestoreAutomatic={async () => {
+            onRestoreAutomatic={async (sessionBaseline) => {
               if (!projectId || !officialSidesEditLot?.id) return;
               if (
                 !confirm(
-                  "Remover official_side de todos os segmentos e voltar à classificação automática?",
+                  "Restaurar official_side automático e confrontantes do início desta sessão?",
                 )
               ) {
                 return;
@@ -5612,12 +5646,15 @@ export default function GISMap({
               setOfficialSidesSaving(true);
               try {
                 const snapshot = snapshotSegmentsJson(officialSidesEditLot);
-                const restored = restoreAutomaticOfficialSides({
-                  ...officialSidesEditLot,
-                  block_name:
-                    officialSidesEditLot.block_name ??
-                    officialSidesEditLot.block,
-                });
+                const restored = restoreAutomaticOfficialSides(
+                  {
+                    ...officialSidesEditLot,
+                    block_name:
+                      officialSidesEditLot.block_name ??
+                      officialSidesEditLot.block,
+                  },
+                  sessionBaseline,
+                );
                 const rows = restored.segments_json as Record<
                   string,
                   unknown
@@ -5642,9 +5679,12 @@ export default function GISMap({
                   userId: user?.id ?? null,
                   action: "official_measure_side_changed",
                   title: "Classificação oficial restaurada (automática)",
-                  description: `official_side removido do lote ${String(officialSidesEditLot.number ?? "")}`,
+                  description: `official_side removido e confrontantes da sessão restaurados no lote ${String(officialSidesEditLot.number ?? "")}`,
                   oldData: { segments_json: snapshot },
-                  newData: { restored_automatic: true },
+                  newData: {
+                    restored_automatic: true,
+                    session_baseline_restored: Boolean(sessionBaseline),
+                  },
                   source: "gis_map",
                 });
                 setOfficialSidesEditLot({

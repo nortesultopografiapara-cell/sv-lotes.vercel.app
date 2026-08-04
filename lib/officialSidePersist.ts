@@ -1,6 +1,7 @@
 /**
  * Persistência e validação de official_side em segments_json.
  * Não altera heurística global — só o campo manual por segmento.
+ * Também aplica rascunhos de confrontante por segmento (selected_only).
  */
 
 import {
@@ -12,8 +13,22 @@ import {
   type OfficialSideKind,
 } from '@/lib/officialLotMeasurements';
 import { resolveContractLotSides } from '@/lib/contractLotBoundaries';
+import type { ConfrontantPresetType } from '@/lib/confrontantTypes';
+import {
+  applyConfrontantToSegmentRows,
+  blockWithUpdatedSegmentsJson,
+  getSegmentConfrontantRecord,
+} from '@/lib/segmentConfrontantPersist';
 
 export type OfficialSideDraftMap = Map<number, OfficialSideKind>;
+
+export type ConfrontantDraftEntry = {
+  confrontant: string;
+  confrontant_type: ConfrontantPresetType | string | null;
+  previous: string;
+};
+
+export type ConfrontantDraftMap = Map<number, ConfrontantDraftEntry>;
 
 export type OfficialSideValidation = {
   ok: boolean;
@@ -38,7 +53,31 @@ export type OfficialSideValidation = {
   };
   contractMatches: boolean;
   onlyOfficialSideDiff: boolean;
+  onlyEditorFieldsDiff: boolean;
 };
+
+/**
+ * Posição do painel: reserva toolbar GIS (`right-2/4` + `w-10/12` + gap).
+ * Mobile: esquerda + direita com reserva; desktop: âncora à direita sem cobrir toolbar.
+ */
+export const OFFICIAL_SIDES_PANEL_POSITION_CLASS =
+  'fixed z-[1200] bottom-4 left-4 right-[calc(0.5rem+2.5rem+0.75rem)] ' +
+  'md:left-auto md:right-[calc(1rem+3rem+0.75rem)] ' +
+  'w-auto md:w-[min(calc(100vw-2rem-4.75rem),380px)] ' +
+  'max-h-[min(85vh,640px)] max-w-[calc(100vw-1rem)]';
+
+const EDITOR_STRIP_FIELDS = [
+  'official_side',
+  'officialSide',
+  'confrontant',
+  'confrontante',
+  'confrontant_type',
+  'confrontant_source',
+  'manual_confrontant',
+  'manual_confrontant_type',
+  'manual_confrontant_source',
+  'updated_at',
+] as const;
 
 function readSegmentsArray(
   block: Record<string, unknown>,
@@ -75,6 +114,39 @@ function segmentIndexFromRow(
   return typeof row.segment_index === 'number' ? row.segment_index : fallback;
 }
 
+function stripEditorMutableFields(
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...row };
+  for (const key of EDITOR_STRIP_FIELDS) {
+    delete out[key];
+  }
+  return out;
+}
+
+/**
+ * Confrontante individual do segmento — nunca agrega o lado.
+ * Preferência: draft da sessão → registro persistido no segmento → "—".
+ */
+export function resolveIndividualSegmentConfrontantLabel(
+  block: Record<string, unknown>,
+  segmentIndex: number,
+  confrontantDraft?: ConfrontantDraftMap,
+): string {
+  const draft = confrontantDraft?.get(segmentIndex);
+  if (draft?.confrontant?.trim()) return draft.confrontant.trim();
+  const rec = getSegmentConfrontantRecord(block, segmentIndex);
+  if (rec?.confrontant?.trim()) return rec.confrontant.trim();
+  return '—';
+}
+
+/** Heurística UI: texto que parece agregação de vários confrontantes do lado. */
+export function looksLikeAggregatedSideConfrontant(label: string): boolean {
+  const t = String(label ?? '').trim();
+  if (!t || t === '—') return false;
+  return /\s+E\s+/i.test(t) || t.includes(' / ');
+}
+
 export function draftMapFromBlock(
   block: Record<string, unknown>,
 ): OfficialSideDraftMap {
@@ -102,6 +174,35 @@ export function applyOfficialSideDraftToBlock(
   return { ...block, segments_json: next };
 }
 
+export function applyConfrontantDraftToBlock(
+  block: Record<string, unknown>,
+  confrontantDraft: ConfrontantDraftMap,
+): Record<string, unknown> {
+  let next = block;
+  for (const [idx, entry] of confrontantDraft) {
+    const name = String(entry.confrontant ?? '').trim();
+    if (!name) continue;
+    const rows = applyConfrontantToSegmentRows(
+      next,
+      [idx],
+      name,
+      entry.confrontant_type ?? null,
+      'manual',
+    );
+    next = blockWithUpdatedSegmentsJson(next, rows);
+  }
+  return next;
+}
+
+export function applyOfficialEditorDraftToBlock(
+  block: Record<string, unknown>,
+  sideDraft: OfficialSideDraftMap,
+  confrontantDraft: ConfrontantDraftMap = new Map(),
+): Record<string, unknown> {
+  const withSides = applyOfficialSideDraftToBlock(block, sideDraft);
+  return applyConfrontantDraftToBlock(withSides, confrontantDraft);
+}
+
 export function onlyOfficialSideFieldsChanged(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
@@ -121,12 +222,35 @@ export function onlyOfficialSideFieldsChanged(
   return true;
 }
 
+/** Diff permitido no editor: só official_side e campos de confrontante. */
+export function onlyOfficialEditorFieldsChanged(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  const a = readSegmentsArray(before);
+  const b = readSegmentsArray(after);
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      JSON.stringify(stripEditorMutableFields(a[i])) !==
+      JSON.stringify(stripEditorMutableFields(b[i]))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function validateOfficialSideDraft(
   block: Record<string, unknown>,
   draft: OfficialSideDraftMap,
-  options?: { perimeterTolerance?: number },
+  options?: {
+    perimeterTolerance?: number;
+    confrontantDraft?: ConfrontantDraftMap;
+  },
 ): OfficialSideValidation {
   const tol = options?.perimeterTolerance ?? 0.5;
+  const confrontantDraft = options?.confrontantDraft ?? new Map();
   const errors: string[] = [];
   const warnings: string[] = [];
   const segments = parseOfficialSegmentsFromBlock(block);
@@ -173,7 +297,6 @@ export function validateOfficialSideDraft(
     );
   }
   if (seen.size !== total && orphans.length === 0 && duplicates.length === 0) {
-    // indices fora do anel
     for (const idx of seen.keys()) {
       if (!segments.some((s) => s.segment_index === idx)) {
         errors.push(`Índice inválido: ${idx}`);
@@ -181,7 +304,11 @@ export function validateOfficialSideDraft(
     }
   }
 
-  const patched = applyOfficialSideDraftToBlock(block, draft);
+  const patched = applyOfficialEditorDraftToBlock(
+    block,
+    draft,
+    confrontantDraft,
+  );
   const measures = getOfficialLotMeasurements(patched, patched.number);
   const contract = resolveContractLotSides(patched);
   const perimeter = segments.reduce((sum, s) => {
@@ -213,7 +340,6 @@ export function validateOfficialSideDraft(
     errors.push('Totais do modal ≠ resolveContractLotSides');
   }
 
-  // Conferir indexes da medição vs draft (quando cobertura completa)
   if (orphans.length === 0 && duplicates.length === 0) {
     const eq = (a: number[], b: number[]) =>
       JSON.stringify([...a].sort((x, y) => x - y)) ===
@@ -231,8 +357,14 @@ export function validateOfficialSideDraft(
   }
 
   const onlyOfficialSideDiff = onlyOfficialSideFieldsChanged(block, patched);
+  const onlyEditorFieldsDiff = onlyOfficialEditorFieldsChanged(block, patched);
 
-  // front seed warning
+  if (!onlyEditorFieldsDiff) {
+    errors.push(
+      'Alterações além de official_side/confrontante detectadas — save bloqueado',
+    );
+  }
+
   const frontSeed = Number(block.front_segment_index);
   if (
     Number.isFinite(frontSeed) &&
@@ -245,7 +377,7 @@ export function validateOfficialSideDraft(
   }
 
   return {
-    ok: errors.length === 0 && total >= 3 && onlyOfficialSideDiff,
+    ok: errors.length === 0 && total >= 3 && onlyEditorFieldsDiff,
     errors,
     warnings,
     coverage: { covered: seen.size, total },
@@ -262,17 +394,25 @@ export function validateOfficialSideDraft(
     },
     contractMatches,
     onlyOfficialSideDiff,
+    onlyEditorFieldsDiff,
   };
 }
 
 export function previewOfficialSideDraft(
   block: Record<string, unknown>,
   draft: OfficialSideDraftMap,
+  confrontantDraft: ConfrontantDraftMap = new Map(),
 ) {
-  const patched = applyOfficialSideDraftToBlock(block, draft);
+  const patched = applyOfficialEditorDraftToBlock(
+    block,
+    draft,
+    confrontantDraft,
+  );
   const measures = getOfficialLotMeasurements(patched, patched.number);
   const contract = resolveContractLotSides(patched);
-  const validation = validateOfficialSideDraft(block, draft);
+  const validation = validateOfficialSideDraft(block, draft, {
+    confrontantDraft,
+  });
   return { patched, measures, contract, validation };
 }
 
@@ -289,16 +429,39 @@ export function setDraftSides(
   return next;
 }
 
+export function setConfrontantDraftEntry(
+  draft: ConfrontantDraftMap,
+  segmentIndex: number,
+  entry: ConfrontantDraftEntry,
+): ConfrontantDraftMap {
+  const next = new Map(draft);
+  next.set(segmentIndex, {
+    confrontant: String(entry.confrontant ?? '').trim(),
+    confrontant_type: entry.confrontant_type ?? null,
+    previous: String(entry.previous ?? '').trim(),
+  });
+  return next;
+}
+
 export function snapshotSegmentsJson(
   block: Record<string, unknown>,
 ): Record<string, unknown>[] | null {
   return readSegmentsArray(block);
 }
 
+/**
+ * Restaura official_side automático preservando confrontantes do baseline
+ * da sessão (ou do bloco atual se baseline omitido).
+ */
 export function restoreAutomaticOfficialSides(
   block: Record<string, unknown>,
+  sessionBaseline?: Record<string, unknown>[] | null,
 ): Record<string, unknown> {
-  return stripManualOfficialSidesFromBlock(block);
+  const baseBlock =
+    sessionBaseline != null
+      ? { ...block, segments_json: sessionBaseline }
+      : block;
+  return stripManualOfficialSidesFromBlock(baseBlock);
 }
 
 export function normalizeDraftSideInput(
