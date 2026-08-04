@@ -44,9 +44,13 @@ function migrationSql(): string {
 }
 
 function assertSqlSafe(sql: string) {
-  if (/\bDROP\s+POLICY\b/i.test(sql)) throw new Error('SQL has DROP POLICY');
-  if (/\bDROP\s+TABLE\b/i.test(sql)) throw new Error('SQL has DROP TABLE');
-  if (/\bTRUNCATE\b/i.test(sql)) throw new Error('SQL has TRUNCATE');
+  const withoutComments = sql
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+  if (/\bDROP\s+POLICY\b/i.test(withoutComments)) throw new Error('SQL has DROP POLICY');
+  if (/\bDROP\s+TABLE\b/i.test(withoutComments)) throw new Error('SQL has DROP TABLE');
+  if (/\bTRUNCATE\b/i.test(withoutComments)) throw new Error('SQL has TRUNCATE');
 }
 
 async function ensureSchema(

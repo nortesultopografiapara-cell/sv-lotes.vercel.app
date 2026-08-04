@@ -1,5 +1,5 @@
 -- Company data export jobs (Master SUPER_ADMIN) — F0
--- Idempotent · additive only · no DROP · no TRUNCATE · no backfill
+-- Idempotent · additive only · no destructive statements · no backfill
 -- Authorized for shared Preview/Production Supabase (DDL only; app prod unchanged)
 
 CREATE TABLE IF NOT EXISTS public.company_export_jobs (
