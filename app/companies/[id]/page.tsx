@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Building2,
   CreditCard,
+  FileArchive,
   FolderOpen,
   History,
   Loader2,
@@ -28,8 +29,16 @@ import { isRealSaasCompany } from '@/lib/saasSubscription';
 import { computeDaysLate } from '@/lib/masterSaasReports';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { MasterCompanyAdminsPanel } from '@/components/master/MasterCompanyAdminsPanel';
+import { CompanyExportPanel } from '@/components/master/CompanyExportPanel';
 
-type TabId = 'geral' | 'plano' | 'recursos' | 'usuarios' | 'empreendimentos' | 'historico';
+type TabId =
+  | 'geral'
+  | 'plano'
+  | 'recursos'
+  | 'usuarios'
+  | 'empreendimentos'
+  | 'exportacoes'
+  | 'historico';
 
 const TABS: { id: TabId; label: string; icon: typeof Building2 }[] = [
   { id: 'geral', label: 'Geral', icon: Building2 },
@@ -37,6 +46,7 @@ const TABS: { id: TabId; label: string; icon: typeof Building2 }[] = [
   { id: 'recursos', label: 'Recursos', icon: Settings2 },
   { id: 'usuarios', label: 'Usuários', icon: Users },
   { id: 'empreendimentos', label: 'Empreendimentos', icon: FolderOpen },
+  { id: 'exportacoes', label: 'Exportações', icon: FileArchive },
   { id: 'historico', label: 'Histórico', icon: History },
 ];
 
@@ -231,13 +241,22 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
             <p className="text-sm text-slate-500">{company.slug || company.cnpj || company.id}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleImpersonate}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-semibold"
-        >
-          <LogIn className="w-4 h-4" /> Acessar como empresa
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('exportacoes')}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-cyan-500/40 text-cyan-200 text-sm font-semibold hover:bg-cyan-500/10"
+          >
+            <FileArchive className="w-4 h-4" /> Exportar dados
+          </button>
+          <button
+            type="button"
+            onClick={handleImpersonate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-semibold"
+          >
+            <LogIn className="w-4 h-4" /> Acessar como empresa
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 mb-6 border-b border-white/10 pb-2">
@@ -353,6 +372,14 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
           empty="Nenhum empreendimento cadastrado."
         />
       )}
+
+      {activeTab === 'exportacoes' && user?.id ? (
+        <CompanyExportPanel
+          companyId={companyId}
+          companyName={String(company.name || companyId)}
+          userId={user.id}
+        />
+      ) : null}
 
       {activeTab === 'historico' && (
         <DataTable
