@@ -102,7 +102,7 @@ async function pickCompanies(
 ) {
   const { data: companies, error } = await admin
     .from('companies')
-    .select('id, name, fantasy_name, cnpj, razao_social')
+    .select('id, name, fantasy_name, created_at')
     .order('created_at', { ascending: true })
     .limit(80);
   if (error) throw new Error(error.message);
@@ -117,7 +117,7 @@ async function pickCompanies(
   }> = [];
 
   for (const c of companies || []) {
-    const name = String(c.fantasy_name || c.name || c.razao_social || '');
+    const name = String(c.fantasy_name || c.name || '');
     if (MENESES_HINT.test(name)) continue;
     const id = String(c.id);
     const [cust, sales] = await Promise.all([
@@ -137,7 +137,7 @@ async function pickCompanies(
     scored.push({
       id,
       name,
-      document: (c.cnpj || null) as string | null,
+      document: null,
       customers,
       sales: salesCount,
       score,
