@@ -20,6 +20,7 @@ import type {
   ClientPortalDashboardInstallment,
   ClientPortalDashboardResponse,
 } from '@/lib/portal-cliente/dashboardTypes';
+import { formatClientPortalInstallmentLabel } from '@/lib/portal-cliente/installmentLabel';
 
 function formatDateBr(iso: string | null): string {
   if (!iso) return '—';
@@ -59,7 +60,11 @@ function InstallmentSection({
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-white">Parcela {item.installmentNumber}</p>
+                <p className="text-sm font-semibold text-white">
+                  {formatClientPortalInstallmentLabel({
+                    installmentNumber: item.installmentNumber,
+                  })}
+                </p>
                 <p className="text-xs text-gray-400">Vencimento: {formatDateBr(item.dueDate)}</p>
                 {item.paidAt ? (
                   <p className="text-xs text-gray-500">Pago em: {formatDateBr(item.paidAt)}</p>
@@ -99,7 +104,7 @@ function ChargeCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-white">
-            {installmentNumber ? `Parcela ${installmentNumber}` : 'Cobrança'}
+            {formatClientPortalInstallmentLabel({ installmentNumber })}
           </p>
           {dueDate ? (
             <p className="text-xs text-gray-400">Vencimento: {formatDateBr(dueDate)}</p>
