@@ -241,6 +241,63 @@ export async function deleteExportPackageFile(
   });
 }
 
+/** Avança um job específico por até maxSteps etapas (útil em Preview sem cron). */
+export async function advanceCompanyExportJob(
+  admin: SupabaseClient,
+  companyId: string,
+  exportId: string,
+  maxSteps = 12,
+): Promise<{ steps: number; done: boolean; failed: boolean; status: string }> {
+  let steps = 0;
+  for (let i = 0; i < maxSteps; i++) {
+    const { data: raw, error } = await admin
+      .from('company_export_jobs')
+      .select('*')
+      .eq('id', exportId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!raw) throw new CompanyExportError('Exportação não encontrada.', 404);
+    const job = raw as CompanyExportJobRow;
+    if (job.status === 'CANCELLED' || job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'EXPIRED') {
+      return { steps, done: true, failed: job.status === 'FAILED', status: job.status };
+    }
+    if (job.status === 'PENDING') {
+      await admin
+        .from('company_export_jobs')
+        .update({
+          status: 'PROCESSING',
+          started_at: job.started_at || new Date().toISOString(),
+          current_step: 'starting',
+        })
+        .eq('id', exportId)
+        .eq('company_id', companyId)
+        .eq('status', 'PENDING');
+    }
+    const { data: fresh } = await admin
+      .from('company_export_jobs')
+      .select('*')
+      .eq('id', exportId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (!fresh || fresh.status === 'CANCELLED') {
+      return { steps, done: true, failed: false, status: fresh?.status || 'CANCELLED' };
+    }
+    const result = await processCompanyExportStep(admin, fresh as CompanyExportJobRow);
+    steps += 1;
+    if (result.done) {
+      return {
+        steps,
+        done: true,
+        failed: Boolean(result.failed),
+        status: result.failed ? 'FAILED' : 'COMPLETED',
+      };
+    }
+  }
+  const latest = await getCompanyExportJob(admin, companyId, exportId);
+  return { steps, done: false, failed: false, status: latest.status };
+}
+
 /** Processa até N jobs PENDING/PROCESSING (uma etapa cada). */
 export async function runCompanyExportWorker(
   admin: SupabaseClient,

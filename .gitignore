@@ -13,3 +13,5 @@ tsconfig.tsbuildinfo
 
 # Local scratch / previews (não versionar)
 tmp/
+
+.env.company-export.apply

@@ -1,5 +1,6 @@
 -- Company data export jobs (Master SUPER_ADMIN) — F0
--- Idempotent · no destructive changes · RLS super-admin only
+-- Idempotent · additive only · no DROP · no TRUNCATE · no backfill
+-- Authorized for shared Preview/Production Supabase (DDL only; app prod unchanged)
 
 CREATE TABLE IF NOT EXISTS public.company_export_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -68,30 +69,57 @@ BEGIN
 END $$;
 
 -- Private bucket for export packages (staging + package.zip)
+-- UPSERT authorized only to keep this new bucket private.
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('company-exports', 'company-exports', false)
 ON CONFLICT (id) DO UPDATE SET public = false;
 
-DROP POLICY IF EXISTS company_exports_super_admin_select ON storage.objects;
-DROP POLICY IF EXISTS company_exports_super_admin_insert ON storage.objects;
-DROP POLICY IF EXISTS company_exports_super_admin_update ON storage.objects;
-DROP POLICY IF EXISTS company_exports_super_admin_delete ON storage.objects;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename = 'objects'
+      AND policyname = 'company_exports_super_admin_select'
+  ) THEN
+    CREATE POLICY company_exports_super_admin_select
+      ON storage.objects FOR SELECT
+      USING (bucket_id = 'company-exports' AND public.is_super_admin());
+  END IF;
 
-CREATE POLICY company_exports_super_admin_select
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'company-exports' AND public.is_super_admin());
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename = 'objects'
+      AND policyname = 'company_exports_super_admin_insert'
+  ) THEN
+    CREATE POLICY company_exports_super_admin_insert
+      ON storage.objects FOR INSERT
+      WITH CHECK (bucket_id = 'company-exports' AND public.is_super_admin());
+  END IF;
 
-CREATE POLICY company_exports_super_admin_insert
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'company-exports' AND public.is_super_admin());
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename = 'objects'
+      AND policyname = 'company_exports_super_admin_update'
+  ) THEN
+    CREATE POLICY company_exports_super_admin_update
+      ON storage.objects FOR UPDATE
+      USING (bucket_id = 'company-exports' AND public.is_super_admin())
+      WITH CHECK (bucket_id = 'company-exports' AND public.is_super_admin());
+  END IF;
 
-CREATE POLICY company_exports_super_admin_update
-  ON storage.objects FOR UPDATE
-  USING (bucket_id = 'company-exports' AND public.is_super_admin())
-  WITH CHECK (bucket_id = 'company-exports' AND public.is_super_admin());
-
-CREATE POLICY company_exports_super_admin_delete
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'company-exports' AND public.is_super_admin());
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename = 'objects'
+      AND policyname = 'company_exports_super_admin_delete'
+  ) THEN
+    CREATE POLICY company_exports_super_admin_delete
+      ON storage.objects FOR DELETE
+      USING (bucket_id = 'company-exports' AND public.is_super_admin());
+  END IF;
+END $$;
 
 NOTIFY pgrst, 'reload schema';
