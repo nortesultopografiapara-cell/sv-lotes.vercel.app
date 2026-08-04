@@ -41,7 +41,31 @@ export function parseBlockSideLength(val: unknown): number | null {
   return n;
 }
 
-/** Extrai comprimentos válidos de segments_json (array de números ou { length }). */
+/**
+ * Lê um comprimento de segmento a partir de valor bruto.
+ * Aceita number ou string numérica ("16,58" / "16.58"); rejeita NaN/≤0.
+ */
+export function parsePositiveSegmentLength(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw > 0.01 ? round2(raw) : null;
+  }
+  if (typeof raw === "string") {
+    const cleaned = raw.replace(/[^\d.,-]/g, "").replace(",", ".");
+    if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === ",") {
+      return null;
+    }
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) && n > 0.01 ? round2(n) : null;
+  }
+  return null;
+}
+
+/**
+ * Extrai comprimentos válidos de segments_json.
+ * Prioridade em objetos: distance → Distance → length → Length → storedLength → comprimento → medida.
+ * (Civil 3D / TXT oficial usa `distance`; `length` é legado geo.)
+ */
 export function parseSegmentLengthsFromJson(segmentsJson: unknown): number[] {
   if (!segmentsJson) return [];
 
@@ -59,20 +83,21 @@ export function parseSegmentLengthsFromJson(segmentsJson: unknown): number[] {
   const out: number[] = [];
   for (const item of data) {
     let n: number | null = null;
-    if (typeof item === "number" && Number.isFinite(item)) {
-      n = item;
-    } else if (typeof item === "string") {
-      n = parseFloat(item.replace(/[^\d.,-]/g, "").replace(",", "."));
+    if (typeof item === "number" || typeof item === "string") {
+      n = parsePositiveSegmentLength(item);
     } else if (item && typeof item === "object") {
       const obj = item as Record<string, unknown>;
-      const raw = obj.length ?? obj.Length ?? obj.comprimento ?? obj.medida;
-      if (raw != null) {
-        n = parseFloat(String(raw).replace(/[^\d.,-]/g, "").replace(",", "."));
-      }
+      const raw =
+        obj.distance ??
+        obj.Distance ??
+        obj.length ??
+        obj.Length ??
+        obj.storedLength ??
+        obj.comprimento ??
+        obj.medida;
+      n = parsePositiveSegmentLength(raw);
     }
-    if (n != null && Number.isFinite(n) && n > 0.01) {
-      out.push(round2(n));
-    }
+    if (n != null) out.push(n);
   }
   return out;
 }

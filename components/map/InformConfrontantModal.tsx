@@ -64,13 +64,46 @@ export function InformConfrontantModal({
       ? customText.trim() || 'Outro'
       : customText.trim() || selectedPreset?.label || 'Outro';
 
-  const targets = findPropagationTargets(
-    allBlocks,
-    block,
-    blockId,
-    side,
-    scope,
-  );
+  /**
+   * Proteção secundária: nunca lançar na renderização (derruba /map → Something went wrong!).
+   * Em falha: registra contexto, avisa o usuário e restringe ao lote atual com os
+   * segmentIndexes já resolvidos pelo caller — sem inventar índices.
+   */
+  let targets: ReturnType<typeof findPropagationTargets> = [];
+  let targetsError: string | null = null;
+  try {
+    targets = findPropagationTargets(
+      allBlocks,
+      block,
+      blockId,
+      side,
+      scope,
+    );
+  } catch (err) {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : 'Falha ao calcular alvos de propagação.';
+    console.error('[InformConfrontantModal] findPropagationTargets', {
+      projectId,
+      blockId,
+      lotNumber: block?.number ?? null,
+      side,
+      scope,
+      segmentIndexes,
+      message: msg,
+      err,
+    });
+    targetsError =
+      'Não foi possível calcular a propagação automática. O mapa continua ativo — salve apenas neste lote ou feche e tente novamente.';
+    targets = [
+      {
+        blockId,
+        block,
+        segmentIndexes: Array.isArray(segmentIndexes) ? [...segmentIndexes] : [],
+      },
+    ];
+  }
 
   const handleSave = async () => {
     if (!confrontantName.trim()) {
@@ -260,6 +293,9 @@ export function InformConfrontantModal({
               {targets.length} lote(s) serão atualizados (manual não será
               sobrescrito pela automática).
             </p>
+            {targetsError ? (
+              <p className="text-[10px] text-red-400 mt-1">{targetsError}</p>
+            ) : null}
           </div>
         </div>
 
