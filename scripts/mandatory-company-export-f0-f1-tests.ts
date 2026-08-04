@@ -267,34 +267,55 @@ function testReadmeAndReasons(): void {
 
 function testApiAndUiWiring(): void {
   const route = read('app/api/master/companies/[id]/exports/route.ts');
-  assert(route.includes('assertSuperAdmin') || route.includes('authorizeCompanyExport'), 'auth');
+  assert(route.includes('authorizeCompanyExport'), 'auth');
   assert(route.includes('createCompanyExportJob'), 'create');
   assert(route.includes('advanceCompanyExportJob'), 'kick advance');
   assert(route.includes('impersonatingTenantId'), 'block impersonation');
 
   const detail = read('app/api/master/companies/[id]/exports/[exportId]/route.ts');
   assert(detail.includes('advanceCompanyExportJob'), 'poll advances');
+  assert(detail.includes('authorizeCompanyExport'), 'detail auth');
 
   const download = read('app/api/master/companies/[id]/exports/[exportId]/download/route.ts');
   assert(download.includes('createExportDownloadUrl'), 'download');
+  assert(download.includes('authorizeCompanyExport'), 'download auth');
+
+  const cancel = read('app/api/master/companies/[id]/exports/[exportId]/cancel/route.ts');
+  assert(cancel.includes('cancelCompanyExportJob'), 'cancel');
+  assert(cancel.includes('authorizeCompanyExport'), 'cancel auth');
+
+  const file = read('app/api/master/companies/[id]/exports/[exportId]/file/route.ts');
+  assert(file.includes('deleteExportPackageFile'), 'delete package');
+  assert(file.includes('authorizeCompanyExport'), 'file auth');
 
   const cron = read('app/api/cron/process-company-exports/route.ts');
   assert(cron.includes('isCronSecretValid'), 'cron secret');
   assert(cron.includes('runCompanyExportWorker'), 'worker');
+  assert(!cron.includes('authorizeCompanyExport'), 'cron not master auth');
 
   const expire = read('app/api/cron/expire-company-exports/route.ts');
   assert(expire.includes('expireCompanyExportPackages'), 'expire');
+  assert(expire.includes('isCronSecretValid'), 'expire cron secret');
 
   assert(!fs.existsSync(path.join(root, 'app/api/cron/homolog-company-export-f0-f1/route.ts')), 'homolog route removed');
   assert(!fs.existsSync(path.join(root, 'scripts/run-company-export-homolog-preview.ts')), 'homolog driver removed');
+  assert(!fs.existsSync(path.join(root, 'scripts/apply-company-export-f0-migration.ts')), 'apply ddl script removed');
 
   const page = read('app/companies/[id]/page.tsx');
   assert(page.includes('Exportar dados'), 'button');
   assert(page.includes('CompanyExportPanel'), 'panel');
 
+  const panel = read('components/master/CompanyExportPanel.tsx');
+  assert(panel.includes('expires_at') || panel.includes('expir'), 'expiry UI');
+  assert(panel.includes('CANCELLED') || panel.includes('cancel'), 'cancel UI');
+  assert(panel.includes('COMPLETED'), 'completed status');
+
   const migration = read('supabase/migrations/20261004120000_company_export_jobs.sql');
   assert(migration.includes('company_export_jobs'), 'migration table');
   assert(migration.includes('company-exports'), 'bucket');
+  assert(migration.includes('company_export_jobs_super_admin_all'), 'rls policy');
+  assert(migration.includes('ENABLE ROW LEVEL SECURITY'), 'rls enabled');
+  assert(migration.includes('public = false'), 'private bucket');
   assert(!/^\s*DROP\s+POLICY/im.test(migration), 'no drop policy');
 
   const vercel = read('vercel.json');
@@ -304,6 +325,38 @@ function testApiAndUiWiring(): void {
 
   const mw = read('middleware.ts');
   assert(mw.includes('isCompanyExportApi'), 'export APIs reachable without session HTML redirect');
+  assert(
+    /isCompanyExportApi[\s\S]*isPublicRoute/.test(mw.replace(/\n/g, ' ')),
+    'export api only bypasses session gate',
+  );
+}
+
+function testAuthorizationGuards(): void {
+  const auth = read('lib/master/companyExport/apiAuth.ts');
+  assert(auth.includes('assertSuperAdmin'), 'assertSuperAdmin');
+  assert(auth.includes('impersonatingTenantId'), 'impersonation param');
+  assert(auth.includes("status: 403"), '403 on deny');
+  assert(auth.includes('Exportação indisponível durante impersonation'), 'impersonation message');
+
+  const routes = [
+    'app/api/master/companies/[id]/exports/route.ts',
+    'app/api/master/companies/[id]/exports/[exportId]/route.ts',
+    'app/api/master/companies/[id]/exports/[exportId]/download/route.ts',
+    'app/api/master/companies/[id]/exports/[exportId]/cancel/route.ts',
+    'app/api/master/companies/[id]/exports/[exportId]/file/route.ts',
+  ];
+  for (const r of routes) {
+    const src = read(r);
+    assert(src.includes('authorizeCompanyExport'), `${r} authorize`);
+    assert(!src.includes('isCronSecretValid'), `${r} not cron`);
+  }
+
+  const svc = read('lib/master/companyExport/jobService.ts');
+  assert(svc.includes(".eq('company_id', companyId)"), 'multi-tenant eq');
+  assert(svc.includes('cancelCompanyExportJob'), 'cancel fn');
+  assert(svc.includes('expireCompanyExportPackages'), 'expire fn');
+  assert(svc.includes('deleteExportPackageFile'), 'delete fn');
+  assert(svc.includes('Exportação não encontrada'), 'cross-company miss');
 }
 
 function testIsolationGuards(): void {
@@ -313,6 +366,8 @@ function testIsolationGuards(): void {
   assert(process.includes('stripForbiddenColumns'), 'sanitize');
   assert(process.includes('usedStarFallback'), 'fallback tracked');
   assert(process.includes('classifyPostgrestError'), 'error classify');
+  assert(process.includes('generated_html'), 'contract html source');
+  assert(process.includes('blocksRowsToGeoJson') || process.includes('blockGeoJson'), 'geojson helper');
 }
 
 function main(): void {
@@ -326,6 +381,7 @@ function main(): void {
   testZipAndPaths();
   testReadmeAndReasons();
   testApiAndUiWiring();
+  testAuthorizationGuards();
   testIsolationGuards();
   console.log('mandatory-company-export-f0-f1-tests: OK');
 }

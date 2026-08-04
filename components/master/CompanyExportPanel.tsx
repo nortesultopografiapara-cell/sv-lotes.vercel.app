@@ -79,7 +79,11 @@ export function CompanyExportPanel({ companyId, companyName, userId }: Props) {
   }, [companyId, userId]);
 
   useEffect(() => {
-    void loadJobs();
+    // Carga inicial do histórico — setState ocorre no fetch async, não no body síncrono.
+    const t = window.setTimeout(() => {
+      void loadJobs();
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [loadJobs]);
 
   const hasActive = jobs.some((j) => j.status === 'PENDING' || j.status === 'PROCESSING');
