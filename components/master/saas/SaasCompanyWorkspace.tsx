@@ -9,6 +9,7 @@ import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
 import { SaasChargesTable } from './SaasChargesTable';
 import { SaasTimeline } from './SaasTimeline';
+import { CompanyExportPanel } from '@/components/master/CompanyExportPanel';
 import type { SaasTimelineEvent } from '@/lib/masterSaasPanel';
 import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
 import type { SaasCompanyRow } from './SaasCompaniesList';
@@ -23,6 +24,7 @@ const TABS: { id: SaasCompanyTab; label: string }[] = [
   { id: 'assinatura', label: 'Assinatura' },
   { id: 'cobrancas', label: 'Cobranças' },
   { id: 'historico', label: 'Histórico' },
+  { id: 'exportacoes', label: 'Exportações' },
 ];
 
 type Props = {
@@ -43,6 +45,7 @@ type Props = {
   onGenerateContract: (opts?: { regenerate?: boolean }) => void | Promise<void>;
   onGenerateCharge: () => void;
   onRegisterPayment: () => void;
+  userId: string;
   chargeHandlers: {
     onViewCharge: (row: SaasInvoiceChargeRow) => void;
     onCopyPix: (row: SaasInvoiceChargeRow) => void;
@@ -77,6 +80,7 @@ export function SaasCompanyWorkspace({
   onGenerateContract,
   onGenerateCharge,
   onRegisterPayment,
+  userId,
   chargeHandlers,
 }: Props) {
   const pricing = resolveCompanyPricing(company);
@@ -102,6 +106,13 @@ export function SaasCompanyWorkspace({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onTabChange('exportacoes')}
+            className="px-3 py-2 rounded-lg border border-cyan-500/30 text-[12px] font-semibold text-cyan-200 hover:bg-cyan-500/10"
+          >
+            Exportar dados
+          </button>
           <Link
             href={`/companies/${company.id}`}
             className="px-3 py-2 rounded-lg border border-white/10 text-[12px] text-gray-300 hover:bg-white/5"
@@ -230,6 +241,16 @@ export function SaasCompanyWorkspace({
         <div className="rounded-2xl border border-white/5 bg-[#11161d] p-5">
           <h3 className="text-sm font-bold text-white mb-4">Timeline</h3>
           <SaasTimeline events={timelineEvents} />
+        </div>
+      ) : null}
+
+      {tab === 'exportacoes' ? (
+        <div className="rounded-2xl border border-white/5 bg-[#11161d] p-5">
+          <CompanyExportPanel
+            companyId={company.id}
+            companyName={company.name}
+            userId={userId}
+          />
         </div>
       ) : null}
     </div>

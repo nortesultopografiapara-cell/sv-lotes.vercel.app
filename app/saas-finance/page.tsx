@@ -1046,6 +1046,7 @@ function SaaSFinancePageContent() {
             }
             onGenerateCharge={() => openGenerateChargeModal(selectedCompany)}
             onRegisterPayment={() => openPaymentModal(selectedCompany)}
+            userId={user?.id || ''}
             chargeHandlers={chargeActionHandlers}
           />
         ) : (

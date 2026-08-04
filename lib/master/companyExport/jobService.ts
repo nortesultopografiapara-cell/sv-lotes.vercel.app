@@ -12,13 +12,20 @@ import {
 import { assertRegistrySecurity } from '@/lib/master/companyExport/registry';
 import {
   COMPANY_EXPORT_SIGNED_URL_SECONDS,
+  DEFAULT_COMPANY_EXPORT_OPTIONS,
   emptyStepCursor,
   isCompanyExportReason,
+  normalizeExportOptions,
+  normalizeExportVersion,
   type CompanyExportJobRow,
+  type CompanyExportOptions,
   type CompanyExportReason,
+  type CompanyExportVersion,
 } from '@/lib/master/companyExport/types';
+import { assertStorageRegistrySecurity } from '@/lib/master/companyExport/storageRegistry';
 
 assertRegistrySecurity();
+assertStorageRegistrySecurity();
 
 export class CompanyExportError extends Error {
   status: number;
@@ -36,11 +43,21 @@ export async function createCompanyExportJob(
     requestedBy: string;
     reason: string;
     notes?: string | null;
+    exportVersion?: string | null;
+    options?: Partial<CompanyExportOptions> | null;
   },
 ): Promise<CompanyExportJobRow> {
   if (!isCompanyExportReason(input.reason)) {
     throw new CompanyExportError('Motivo de exportação inválido.');
   }
+
+  const exportVersion: CompanyExportVersion = normalizeExportVersion(
+    input.exportVersion ?? 'F2_COMPLETE',
+  );
+  const options = normalizeExportOptions({
+    ...DEFAULT_COMPANY_EXPORT_OPTIONS,
+    ...(input.options || {}),
+  });
 
   const { data: company, error: companyError } = await admin
     .from('companies')
@@ -63,9 +80,11 @@ export async function createCompanyExportJob(
       status: 'PENDING',
       progress: 0,
       current_step: 'queued',
-      step_cursor: emptyStepCursor(),
+      step_cursor: emptyStepCursor(exportVersion, options),
       storage_bucket: COMPANY_EXPORT_BUCKET,
       expires_at: expiresAt.toISOString(),
+      export_version: exportVersion,
+      options,
     })
     .select('*')
     .single();
@@ -78,8 +97,8 @@ export async function createCompanyExportJob(
     companyId: input.companyId,
     userId: input.requestedBy,
     action: COMPANY_EXPORT_AUDIT.CREATED,
-    description: `Job de exportação criado (${input.reason})`,
-    details: { exportId: data.id, companyName: company.name },
+    description: `Job de exportação criado (${input.reason} / ${exportVersion})`,
+    details: { exportId: data.id, companyName: company.name, exportVersion, options },
   });
 
   return data as CompanyExportJobRow;
@@ -202,24 +221,68 @@ export async function deleteExportPackageFile(
   companyId: string,
   exportId: string,
   userId: string,
-): Promise<void> {
+): Promise<{ removedPaths: string[]; removedCount: number; approxBytes: number }> {
   const job = await getCompanyExportJob(admin, companyId, exportId);
-  const path = job.storage_path || exportPackagePath(companyId, exportId);
   const bucket = job.storage_bucket || COMPANY_EXPORT_BUCKET;
+  const removedPaths: string[] = [];
+  let approxBytes = 0;
+  const visited = new Set<string>();
 
-  await admin.storage.from(bucket).remove([path]);
-
-  // Best-effort: clear staging prefix listing
-  try {
-    const prefix = `${companyId}/${exportId}/staging`;
-    const { data: listed } = await admin.storage.from(bucket).list(prefix, { limit: 100 });
-    if (listed?.length) {
-      await admin.storage
-        .from(bucket)
-        .remove(listed.map((f) => `${prefix}/${f.name}`));
+  const removeBatch = async (paths: string[]) => {
+    if (!paths.length) return;
+    const unique = [...new Set(paths)].filter((p) => p && !removedPaths.includes(p));
+    if (!unique.length) return;
+    const { error } = await admin.storage.from(bucket).remove(unique);
+    if (!error) {
+      for (const p of unique) removedPaths.push(p);
     }
-  } catch {
-    // ignore
+  };
+
+  // package.zip first
+  const packagePath = job.storage_path || exportPackagePath(companyId, exportId);
+  await removeBatch([packagePath]);
+  if (Number(job.total_size || 0) > 0) approxBytes += Number(job.total_size || 0);
+
+  const rootPrefix = `${companyId}/${exportId}`;
+  const queue = [rootPrefix];
+  let guard = 0;
+  while (queue.length && guard < 200) {
+    guard += 1;
+    const prefix = queue.shift()!;
+    if (visited.has(prefix)) continue;
+    visited.add(prefix);
+
+    const { data: listed, error: listErr } = await admin.storage.from(bucket).list(prefix, {
+      limit: 1000,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    if (listErr || !listed?.length) continue;
+
+    const filePaths: string[] = [];
+    for (const item of listed) {
+      if (!item?.name || item.name === '.emptyFolderPlaceholder') continue;
+      const child = `${prefix}/${item.name}`;
+      const size =
+        item.metadata && typeof (item.metadata as { size?: unknown }).size === 'number'
+          ? Number((item.metadata as { size: number }).size)
+          : null;
+      const looksLikeFile =
+        size != null ||
+        Boolean(item.id) ||
+        /\.[a-z0-9]{1,8}$/i.test(item.name) ||
+        item.name === 'package.zip';
+
+      if (looksLikeFile) {
+        filePaths.push(child);
+        if (size && size > 0) approxBytes += size;
+      } else {
+        queue.push(child);
+      }
+    }
+    // remove in chunks of 50
+    for (let i = 0; i < filePaths.length; i += 50) {
+      await removeBatch(filePaths.slice(i, i + 50));
+    }
   }
 
   await admin
@@ -227,7 +290,10 @@ export async function deleteExportPackageFile(
     .update({
       storage_path: null,
       signed_url_expires_at: null,
-      error_message: job.status === 'COMPLETED' ? 'Arquivo removido manualmente.' : job.error_message,
+      error_message:
+        job.status === 'COMPLETED' || job.status === 'EXPIRED'
+          ? 'Arquivo de homologação removido manualmente.'
+          : job.error_message || 'Arquivo de homologação removido manualmente.',
     })
     .eq('id', exportId)
     .eq('company_id', companyId);
@@ -237,8 +303,19 @@ export async function deleteExportPackageFile(
     userId,
     action: COMPANY_EXPORT_AUDIT.FILE_DELETED,
     description: 'Arquivo de exportação removido',
-    details: { exportId },
+    details: {
+      exportId,
+      removedCount: removedPaths.length,
+      approxBytes,
+      note: 'Histórico do job preservado; buckets tenant intactos',
+    },
   });
+
+  return {
+    removedPaths,
+    removedCount: removedPaths.length,
+    approxBytes,
+  };
 }
 
 /** Avança um job específico por até maxSteps etapas (útil em Preview sem cron). */

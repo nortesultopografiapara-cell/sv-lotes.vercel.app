@@ -11,6 +11,8 @@ import {
   getCompanyExportJob,
   listCompanyExportJobs,
 } from '@/lib/master/companyExport/jobService';
+import { estimateCompanyExport } from '@/lib/master/companyExport/estimate';
+import { normalizeExportVersion } from '@/lib/master/companyExport/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,11 +66,40 @@ export async function POST(request: Request, context: Ctx) {
   if (!companyId) return NextResponse.json({ error: 'company id obrigatório' }, { status: 400 });
 
   try {
+    const exportVersion = normalizeExportVersion(
+      body.exportVersion != null ? String(body.exportVersion) : 'F2_COMPLETE',
+    );
+    const includeGeneratedPlans =
+      body.includeGeneratedPlans === undefined ? true : Boolean(body.includeGeneratedPlans);
+
+    if (exportVersion === 'F2_COMPLETE') {
+      const estimate = await estimateCompanyExport(admin, companyId);
+      const needsHeavy =
+        includeGeneratedPlans
+          ? estimate.requiresExtraConfirmWithPlans
+          : estimate.requiresExtraConfirmWithoutPlans;
+      if (needsHeavy && body.heavyConfirm !== true) {
+        return NextResponse.json(
+          {
+            error:
+              'Exportação pesada: confirme explicitamente (heavyConfirm) após revisar a estimativa de lotes/PDFs/tamanho.',
+            estimate,
+            requiresHeavyConfirm: true,
+          },
+          { status: 412 },
+        );
+      }
+    }
+
     const job = await createCompanyExportJob(admin, {
       companyId,
       requestedBy: auth.userId,
       reason: String(body.reason || ''),
       notes: body.notes != null ? String(body.notes) : null,
+      exportVersion,
+      options: {
+        include_generated_plans: includeGeneratedPlans,
+      },
     });
 
     // Kick several steps immediately (cron + Master polling continue)
