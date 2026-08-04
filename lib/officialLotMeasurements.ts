@@ -115,6 +115,42 @@ export const COLINEAR_DEFLECTION_MAX_DEG = 30;
  * Tolerância documentada: 45°.
  */
 export const BOUNDARY_CHAIN_MAX_DEFLECTION_DEG = 45;
+/**
+ * Desvio máximo do azimute de um segmento candidato em relação ao azimute
+ * de referência da **semente** (bearing do seed via resolveSegmentBearing —
+ * não média circular da cadeia). A comparação usa angularDifferenceDeg
+ * (mínimo em 0–180°), portanto 355° e 2° diferem ~7°, não ~353°.
+ * No wrap do anel a caminhada usa (pos±1+n)%n; o bearing de referência
+ * permanece o da semente original.
+ */
+export const BOUNDARY_CHAIN_MAX_GLOBAL_DEFLECTION_DEG = 50;
+/** Razão comprimento(candidato) / mediana(cadeia) — sinal de discrepância. */
+export const BOUNDARY_CHAIN_LENGTH_OUTLIER_RATIO = 2.5;
+/** Piso absoluto (m) para sinal de outlier de comprimento. */
+export const BOUNDARY_CHAIN_LENGTH_OUTLIER_MIN_ABS_M = 80;
+/**
+ * Escala típica de lateral de chácara vs frente curta: comprimento absoluto
+ * e ≥ 2,5× a soma da cadeia atual.
+ */
+export const BOUNDARY_CHAIN_CHACARA_LATERAL_MIN_M = 120;
+/** Limite seguro de segmentos numa única cadeia de confrontação. */
+export const BOUNDARY_CHAIN_MAX_SEGMENTS = 8;
+
+/**
+ * Alinhamento forte com a semente: abaixo disso, um outlier de comprimento
+ * sozinho NÃO basta para rejeitar (frente legítima com trechos desiguais).
+ */
+export const BOUNDARY_CHAIN_STRONG_ALIGN_GLOBAL_DEG = 20;
+
+export type ExpandChainOptions = {
+  maxDeflectionDeg?: number;
+  maxGlobalDeflectionDeg?: number;
+  /** Se false, não aplica a proteção combinada de outlier/lateral. */
+  rejectLengthOutliers?: boolean;
+  lengthOutlierRatio?: number;
+  lengthOutlierMinAbsM?: number;
+  maxSegments?: number;
+};
 /** Chanfre de esquina (~45°): segmento seguinte à virada. */
 const CHANFRE_DEFLECTION_MIN_DEG = 40;
 const CHANFRE_DEFLECTION_MAX_DEG = 50;
@@ -1412,26 +1448,159 @@ export function expandBoundaryChainAlongRing(
   return [...result].sort((a, b) => a - b);
 }
 
+function resolveExpandChainOptions(
+  maxDeflectionDegOrOptions?: number | ExpandChainOptions,
+): Required<ExpandChainOptions> {
+  const asOpts =
+    maxDeflectionDegOrOptions != null &&
+    typeof maxDeflectionDegOrOptions === "object"
+      ? maxDeflectionDegOrOptions
+      : {
+          maxDeflectionDeg:
+            typeof maxDeflectionDegOrOptions === "number"
+              ? maxDeflectionDegOrOptions
+              : BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+        };
+  return {
+    maxDeflectionDeg:
+      asOpts.maxDeflectionDeg ?? BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+    maxGlobalDeflectionDeg:
+      asOpts.maxGlobalDeflectionDeg ?? BOUNDARY_CHAIN_MAX_GLOBAL_DEFLECTION_DEG,
+    rejectLengthOutliers: asOpts.rejectLengthOutliers ?? true,
+    lengthOutlierRatio:
+      asOpts.lengthOutlierRatio ?? BOUNDARY_CHAIN_LENGTH_OUTLIER_RATIO,
+    lengthOutlierMinAbsM:
+      asOpts.lengthOutlierMinAbsM ?? BOUNDARY_CHAIN_LENGTH_OUTLIER_MIN_ABS_M,
+    maxSegments: asOpts.maxSegments ?? BOUNDARY_CHAIN_MAX_SEGMENTS,
+  };
+}
+
+function medianFinite(values: number[]): number {
+  const sorted = values
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/**
+ * Sinal de comprimento discrepante vs a cadeia atual (não decisão final).
+ */
+export function isBoundaryChainLengthOutlier(
+  nextDistance: number,
+  chainDistances: number[],
+  ratio: number = BOUNDARY_CHAIN_LENGTH_OUTLIER_RATIO,
+  minAbsM: number = BOUNDARY_CHAIN_LENGTH_OUTLIER_MIN_ABS_M,
+): boolean {
+  if (!Number.isFinite(nextDistance) || nextDistance <= 0) return true;
+  if (!chainDistances.length) return false;
+  const med = medianFinite(chainDistances);
+  const maxInChain = Math.max(
+    ...chainDistances.filter((d) => d > 0),
+    0,
+  );
+  if (!(med > 0) && !(maxInChain > 0)) return false;
+  const threshold = Math.max(
+    med > 0 ? med * ratio : 0,
+    maxInChain > 0 ? maxInChain * 2 : 0,
+    minAbsM,
+  );
+  return nextDistance > threshold;
+}
+
+/**
+ * Decide se a expansão deve PARAR no candidato — combinação de fatores.
+ * Comprimento discrepante sozinho NÃO rejeita trecho frontal legítimo
+ * (ex.: 12 m + 95 m na mesma via, bem alinhados).
+ *
+ * Rejeita quando:
+ * - escala de lateral de chácara (longo absoluto e ≫ soma da frente), OU
+ * - outlier de comprimento E (desvio global ou consecutivo além do alinhamento forte).
+ */
+export function shouldStopBoundaryChainForCombinedOutlier(input: {
+  nextDistance: number;
+  chainDistances: number[];
+  consecutiveDeflectionDeg: number;
+  globalDeflectionDeg: number;
+  lengthOutlierRatio?: number;
+  lengthOutlierMinAbsM?: number;
+  strongAlignGlobalDeg?: number;
+  chacaraLateralMinM?: number;
+}): boolean {
+  const {
+    nextDistance,
+    chainDistances,
+    consecutiveDeflectionDeg,
+    globalDeflectionDeg,
+  } = input;
+  const ratio = input.lengthOutlierRatio ?? BOUNDARY_CHAIN_LENGTH_OUTLIER_RATIO;
+  const minAbsM =
+    input.lengthOutlierMinAbsM ?? BOUNDARY_CHAIN_LENGTH_OUTLIER_MIN_ABS_M;
+  const strongAlign =
+    input.strongAlignGlobalDeg ?? BOUNDARY_CHAIN_STRONG_ALIGN_GLOBAL_DEG;
+  const chacaraMin =
+    input.chacaraLateralMinM ?? BOUNDARY_CHAIN_CHACARA_LATERAL_MIN_M;
+
+  const chainSum = chainDistances.reduce(
+    (acc, d) => acc + (Number.isFinite(d) && d > 0 ? d : 0),
+    0,
+  );
+  const lengthOutlier = isBoundaryChainLengthOutlier(
+    nextDistance,
+    chainDistances,
+    ratio,
+    minAbsM,
+  );
+  if (!lengthOutlier) return false;
+
+  // Extremidade da cadeia + escala típica de lateral longa de chácara.
+  const chacaraLateralScale =
+    nextDistance >= chacaraMin &&
+    chainSum > 0 &&
+    nextDistance >= chainSum * ratio;
+
+  if (chacaraLateralScale) return true;
+
+  const stronglyAligned =
+    globalDeflectionDeg <= strongAlign &&
+    consecutiveDeflectionDeg <= COLINEAR_DEFLECTION_MAX_DEG;
+
+  // Frente legítima com comprimentos desiguais na mesma direção: manter.
+  if (stronglyAligned) return false;
+
+  // Outlier + evidência de perda de aderência / mudança para lateral.
+  return true;
+}
+
 /**
  * Expande cadeia por deflexão CONSECUTIVA no anel.
  *
+ * Referência global: bearing da semente (não média circular).
+ * Diferenças angulares: angularDifferenceDeg (wrap 359°/0° seguro).
+ *
  * Regras:
- * - compara bearing do segmento atual com o ANTERIOR na caminhada (não vs semente);
- * - respeita a ordem do anel em ambos os sentidos;
- * - para ao encontrar: índice em `forbidden`, já incluído, curva/inválido,
- *   canto (~90°), deflexão > maxDeflectionDeg, ou chanfre curto 40–50°;
- * - `guard < n - 1` impede loop infinito no anel fechado;
- * - `Set` impede duplicação de índices;
- * - não muta `ordered` nem `forbidden` (somente lê).
+ * - compara bearing do segmento atual com o ANTERIOR na caminhada;
+ * - limita desvio GLOBAL vs azimute da semente;
+ * - outlier de comprimento só para se combinado com sinais topológicos
+ *   (ver shouldStopBoundaryChainForCombinedOutlier);
+ * - para ao encontrar: forbidden, duplicata, curva/inválido, canto (~90°),
+ *   deflexão > max, chanfre curto, combinação outlier, maxSegments;
+ * - não muta `ordered` nem `forbidden`.
  */
 export function expandChainByConsecutiveDeflection(
   ordered: OfficialLotSegment[],
   seedIndexes: number[],
   forbidden: Set<number>,
   byIdx: Map<number, OfficialLotSegment>,
-  maxDeflectionDeg: number = BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+  maxDeflectionDegOrOptions:
+    | number
+    | ExpandChainOptions = BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
 ): number[] {
   if (!seedIndexes.length) return [];
+  const opts = resolveExpandChainOptions(maxDeflectionDegOrOptions);
   const result = new Set(seedIndexes);
   const n = ordered.length;
   if (n < 2) return [...result].sort((a, b) => a - b);
@@ -1439,11 +1608,16 @@ export function expandChainByConsecutiveDeflection(
   for (const seed of seedIndexes) {
     const pos0 = ordered.findIndex((s) => s.segment_index === seed);
     if (pos0 < 0) continue;
+    const seedBearing = resolveSegmentBearing(
+      ordered[pos0],
+      ordered[(pos0 + 1) % n],
+    );
 
     for (const step of [-1, 1] as const) {
       let prevPos = pos0;
       let p = (pos0 + step + n) % n;
       for (let guard = 0; guard < n - 1; guard++) {
+        if (result.size >= opts.maxSegments) break;
         const idx = ordered[p].segment_index;
         if (forbidden.has(idx) || result.has(idx)) break;
         const prevSeg = ordered[prevPos];
@@ -1459,10 +1633,29 @@ export function expandChainByConsecutiveDeflection(
           ordered[(p + 1) % n],
         );
         const defl = angularDifferenceDeg(prevBearing, curBearing);
-        if (isCornerDeflection(defl) || defl > maxDeflectionDeg) break;
-        // Chanfre angular isolado: não incorporar à confrontação
+        if (isCornerDeflection(defl) || defl > opts.maxDeflectionDeg) break;
         if (isChanfreDeflection(defl) && curSeg.distance <= CHANFRE_BACK_MAX_M) {
           break;
+        }
+        const globalDefl = angularDifferenceDeg(seedBearing, curBearing);
+        if (globalDefl > opts.maxGlobalDeflectionDeg) break;
+
+        if (opts.rejectLengthOutliers) {
+          const chainDistances = [...result]
+            .map((i) => byIdx.get(i)?.distance)
+            .filter((d): d is number => d != null && isValidSegmentDistance(d));
+          if (
+            shouldStopBoundaryChainForCombinedOutlier({
+              nextDistance: curSeg.distance,
+              chainDistances,
+              consecutiveDeflectionDeg: defl,
+              globalDeflectionDeg: globalDefl,
+              lengthOutlierRatio: opts.lengthOutlierRatio,
+              lengthOutlierMinAbsM: opts.lengthOutlierMinAbsM,
+            })
+          ) {
+            break;
+          }
         }
         result.add(idx);
         prevPos = p;
@@ -1571,12 +1764,18 @@ function classifySidesByFrontAnchor(
    *    — não são descartados em silêncio (ver log SIDE_REMAINDER_SEGMENTS).
    */
   const frontOnlyForbidden = new Set<number>([...chanfreSet]);
+  const chainExpandOpts: ExpandChainOptions = {
+    maxDeflectionDeg: BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+    maxGlobalDeflectionDeg: BOUNDARY_CHAIN_MAX_GLOBAL_DEFLECTION_DEG,
+    rejectLengthOutliers: true,
+    maxSegments: BOUNDARY_CHAIN_MAX_SEGMENTS,
+  };
   frontIndexes = expandChainByConsecutiveDeflection(
     ordered,
     [frontSegmentIndex],
     frontOnlyForbidden,
     byIdx,
-    BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+    chainExpandOpts,
   );
   if (frontIndexes.length === 0) frontIndexes = [frontSegmentIndex];
   frenteLen = round2(sumLinePathDistances(frontIndexes, byIdx));
@@ -1594,7 +1793,7 @@ function classifySidesByFrontAnchor(
     fundoSeedIndexes,
     fundoForbidden,
     byIdx,
-    BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+    chainExpandOpts,
   );
   if (fundoIndexes.length === 0) {
     fundoIndexes = [...fundoSeedIndexes];
@@ -1841,7 +2040,8 @@ export function groupSegmentsByDeflection(
   const chanfreIndexes = detectChanfreIndexesByDeflection(segments, lotLabel);
   const chanfreSet = new Set(chanfreIndexes);
 
-  const rawGroups: number[][] = [];
+  // `let`: o fechamento do anel pode reatribuir ao fundir primeiro+último grupo.
+  let rawGroups: number[][] = [];
   let current: number[] = [ordered[0].segment_index];
 
   for (let i = 0; i < n - 1; i++) {
@@ -2133,6 +2333,46 @@ export function applyManualOfficialSideOverrides(
 
   if (isFrontSegmentLocked(block) && !manualFront.has(frontSegmentIndex)) {
     manualFront.add(frontSegmentIndex);
+  }
+
+  // Proteção combinada: não absorver lateral de chácara marcada como frente
+  // (comprimento discrepante ≫ soma dos trechos curtos). Sem regravar fonte.
+  if (manualFront.size > 1) {
+    const seedDist = byIdx.get(frontSegmentIndex)?.distance;
+    const keepFront = new Set<number>();
+    const seedLens =
+      seedDist != null && isValidSegmentDistance(seedDist) ? [seedDist] : [];
+    for (const idx of manualFront) {
+      const d = byIdx.get(idx)?.distance;
+      if (d == null || !isValidSegmentDistance(d)) continue;
+      if (idx === frontSegmentIndex) {
+        keepFront.add(idx);
+        if (!seedLens.includes(d)) seedLens.push(d);
+        continue;
+      }
+      if (
+        seedLens.length > 0 &&
+        shouldStopBoundaryChainForCombinedOutlier({
+          nextDistance: d,
+          chainDistances: seedLens,
+          consecutiveDeflectionDeg: 0,
+          globalDeflectionDeg: 0,
+        })
+      ) {
+        console.warn("OFFICIAL_SIDE_FRONT_OUTLIER_REJECTED", {
+          lote: block?.number ?? block?.id,
+          idx,
+          distance: d,
+        });
+        continue;
+      }
+      keepFront.add(idx);
+      seedLens.push(d);
+    }
+    if (keepFront.size > 0) {
+      manualFront.clear();
+      for (const idx of keepFront) manualFront.add(idx);
+    }
   }
 
   const claimed = new Set<number>([

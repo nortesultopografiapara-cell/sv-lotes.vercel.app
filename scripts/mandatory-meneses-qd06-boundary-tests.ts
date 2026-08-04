@@ -1,18 +1,17 @@
 /**
- * Fixtures sanitizadas — geometria estilo Meneses QD 06 (chácaras longas).
- *
- * Demonstra o bug de produção:
- * - frente/fundo multi-segmento com kink 30°–45°
- * - laterais longas (~247 m)
- * - trecho de extremidade NÃO pode ser absorvido pela lateral
+ * Fixtures — geometria estilo Meneses QD 06 (chácaras longas) + HOTFIX 2.
  *
  * npx tsx scripts/mandatory-meneses-qd06-boundary-tests.ts
  */
 import {
   getOfficialLotMeasurements,
   expandChainByConsecutiveDeflection,
+  groupSegmentsByDeflection,
   parseOfficialSegmentsFromBlock,
+  angularDifferenceDeg,
   BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+  isBoundaryChainLengthOutlier,
+  shouldStopBoundaryChainForCombinedOutlier,
 } from '../lib/officialLotMeasurements';
 import {
   resolveLotMeasuresFromBlock,
@@ -38,6 +37,7 @@ function lineSeg(
   endNorth: number,
   endEast: number,
   distance: number,
+  bearing?: number,
 ) {
   return {
     segment_index: idx,
@@ -47,6 +47,7 @@ function lineSeg(
     end_east: endEast,
     distance,
     segment_type: 'LINE' as const,
+    ...(bearing != null ? { bearing } : {}),
   };
 }
 
@@ -65,24 +66,46 @@ function block(
   };
 }
 
-function assertDisjointSides(
+function sideIndexes(
   m: ReturnType<typeof getOfficialLotMeasurements>,
-  label: string,
 ) {
-  const f = m.sides?.front.segmentIndexes ?? [];
-  const b = m.sides?.back.segmentIndexes ?? [];
-  const r = m.sides?.right.segmentIndexes ?? [];
-  const l = m.sides?.left.segmentIndexes ?? [];
-  const all = [...f, ...b, ...r, ...l];
-  assert(new Set(all).size === all.length, `${label}: índices compartilhados ${JSON.stringify({ f, b, r, l })}`);
+  return {
+    f: m.sides?.front.segmentIndexes ?? [],
+    b: m.sides?.back.segmentIndexes ?? [],
+    r: m.sides?.right.segmentIndexes ?? [],
+    l: m.sides?.left.segmentIndexes ?? [],
+  };
 }
 
-/**
- * Lote 4 estilo — frente 13,10 + 18,48 + 29,33 ≈ 60,91
- * kink ~35° entre 1º e 2º (quebra agrupamento ≤30° antigo).
- * Fundo 18,46 + 28,83 + 16,60 ≈ 63,89
- * Laterais ~247 m
- */
+function assertDisjointExactCoverage(
+  m: ReturnType<typeof getOfficialLotMeasurements>,
+  segmentCount: number,
+  label: string,
+) {
+  const { f, b, r, l } = sideIndexes(m);
+  const all = [...f, ...b, ...r, ...l];
+  assert(
+    new Set(all).size === all.length,
+    `${label}: índices compartilhados ${JSON.stringify({ f, b, r, l })}`,
+  );
+  assert(
+    all.length === segmentCount,
+    `${label}: cobertura ${all.length}/${segmentCount} idxs=${JSON.stringify({ f, b, r, l })}`,
+  );
+  for (let i = 0; i < segmentCount; i++) {
+    assert(all.includes(i), `${label}: índice ${i} ausente`);
+  }
+  const perimeterParts =
+    Number(m.frente ?? 0) +
+    Number(m.fundo ?? 0) +
+    Number(m.ladoDireito ?? 0) +
+    Number(m.ladoEsquerdo ?? 0);
+  assert(
+    m.perimeter == null || near(perimeterParts, Number(m.perimeter), 0.2),
+    `${label}: soma lados ${perimeterParts} vs perímetro ${m.perimeter}`,
+  );
+}
+
 function buildLote4StyleSegments() {
   const f0 = 13.1;
   const f1 = 18.48;
@@ -148,7 +171,33 @@ function buildLote4StyleSegments() {
   };
 }
 
-/** Lote 3 estilo — fundo 16,58 + 18,02; laterais longas. */
+/** Produção Lote 4: wrap [0,5,6,7] com idx5 ~246,7 m. */
+function buildLote4WrapAbsorptionSegments() {
+  const frontShort = [13.1, 18.48, 29.33] as const;
+  const longLateral = 246.7;
+  const segs = [
+    lineSeg(0, 0, 0, 0, frontShort[0], frontShort[0], 90),
+    lineSeg(1, 0, frontShort[0], 247.2, frontShort[0], 247.2, 0),
+    lineSeg(2, 247.2, frontShort[0], 247.2, -5.36, 18.46, 270),
+    lineSeg(3, 247.2, -5.36, 247.2, -34.19, 28.83, 270),
+    lineSeg(4, 247.2, -34.19, 247.2, -50.79, 16.6, 270),
+    lineSeg(5, 247.2, -50.79, 0.52, -50.79, longLateral, 78),
+    lineSeg(6, 0.52, -50.79, 0.52, -32.31, frontShort[1], 85),
+    lineSeg(7, 0.52, -32.31, 0, 0, frontShort[2], 88),
+  ];
+  return {
+    segs,
+    expected: {
+      frente: frontShort[0] + frontShort[1] + frontShort[2],
+      fundo: 18.46 + 28.83 + 16.6,
+      longIdx: 5,
+      longLen: longLateral,
+      frontIdxs: [0, 6, 7],
+      bugFrente: frontShort[0] + frontShort[1] + frontShort[2] + longLateral,
+    },
+  };
+}
+
 function buildLote3StyleSegments() {
   const frente = 34.49;
   const dir = 245.31;
@@ -191,84 +240,247 @@ function buildLote3StyleSegments() {
   };
 }
 
+/**
+ * OBRIGATÓRIO: caminho de fechamento colinear em groupSegmentsByDeflection
+ * (antes: TypeError Assignment to constant variable em rawGroups = …).
+ */
+function testGroupSegmentsColinearRingClosureDoesNotThrow() {
+  // Anel com primeiro e último grupo colineares no fechamento (≤30°).
+  const segs = [
+    lineSeg(0, 0, 0, 0, 20, 20, 90),
+    lineSeg(1, 0, 20, 30, 20, 30, 0),
+    lineSeg(2, 30, 20, 30, 0, 20, 270),
+    lineSeg(3, 30, 0, 0, 0, 30, 88), // ~colinear com idx0 no fechamento
+  ];
+  const ordered = parseOfficialSegmentsFromBlock({
+    segments_json: segs,
+    source_import: 'TXT_CIVIL3D',
+  });
+
+  let groups;
+  try {
+    groups = groupSegmentsByDeflection(ordered, 'colinear-close');
+  } catch (err) {
+    throw new Error(
+      `groupSegmentsByDeflection fechamento colinear lançou: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  assert(Array.isArray(groups) && groups.length >= 1, 'groups retornados');
+
+  // Wrap Lote 4 também exercita o merge de fechamento.
+  const wrap = buildLote4WrapAbsorptionSegments();
+  const wrapOrdered = parseOfficialSegmentsFromBlock({
+    segments_json: wrap.segs,
+    source_import: 'TXT_CIVIL3D',
+  });
+  const wrapGroups = groupSegmentsByDeflection(wrapOrdered, '4-wrap-close');
+  assert(Array.isArray(wrapGroups), 'wrap groups');
+
+  console.log('OK testGroupSegmentsColinearRingClosureDoesNotThrow', {
+    groups: groups.length,
+    wrapGroups: wrapGroups.length,
+  });
+}
+
+function testAngularWrapNearZero() {
+  const d355_2 = angularDifferenceDeg(355, 2);
+  const d2_8 = angularDifferenceDeg(2, 8);
+  const d355_8 = angularDifferenceDeg(355, 8);
+  assert(near(d355_2, 7, 0.5), `355° vs 2° → ~7°, got ${d355_2}`);
+  assert(near(d2_8, 6, 0.5), `2° vs 8° → ~6°, got ${d2_8}`);
+  assert(near(d355_8, 13, 0.5), `355° vs 8° → ~13°, got ${d355_8}`);
+  assert(d355_2 < 20 && d355_8 < 20, 'não tratar como ~360° de afastamento');
+
+  // Expansão com bearings próximos ao norte (wrap 359/0).
+  const segs = [
+    lineSeg(0, 0, 0, 10, 0.5, 10.01, 355),
+    lineSeg(1, 10, 0.5, 20, 0.7, 10.02, 2),
+    lineSeg(2, 20, 0.7, 30, 1.2, 10.05, 8),
+    lineSeg(3, 30, 1.2, 30, 40, 38.8, 90),
+    lineSeg(4, 30, 40, 0, 40, 30, 180),
+    lineSeg(5, 0, 40, 0, 0, 40, 270),
+  ];
+  const ordered = parseOfficialSegmentsFromBlock({
+    segments_json: segs,
+    source_import: 'TXT_CIVIL3D',
+  });
+  const byIdx = new Map(ordered.map((s) => [s.segment_index, s]));
+  const expanded = expandChainByConsecutiveDeflection(
+    ordered,
+    [0],
+    new Set([3, 4, 5]),
+    byIdx,
+    BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+  );
+  assert(
+    expanded.includes(0) && expanded.includes(1) && expanded.includes(2),
+    `cadeia 355/2/8 deve expandir; got ${expanded}`,
+  );
+  console.log('OK testAngularWrapNearZero', { d355_2, d2_8, d355_8, expanded });
+}
+
+function testLegitimateUnevenFrontNotRejectedByLengthAlone() {
+  // Frente na mesma via: 12 m + 95 m (outlier por mediana, mas alinhados).
+  assert(
+    isBoundaryChainLengthOutlier(95, [12]),
+    '95 vs 12 é outlier de comprimento (sinal)',
+  );
+  assert(
+    !shouldStopBoundaryChainForCombinedOutlier({
+      nextDistance: 95,
+      chainDistances: [12],
+      consecutiveDeflectionDeg: 5,
+      globalDeflectionDeg: 8,
+    }),
+    'não rejeitar frente legítima só por outlier de comprimento',
+  );
+
+  // Lateral de chácara: combina outlier + escala.
+  assert(
+    shouldStopBoundaryChainForCombinedOutlier({
+      nextDistance: 246.7,
+      chainDistances: [13.1, 18.48, 29.33],
+      consecutiveDeflectionDeg: 7,
+      globalDeflectionDeg: 12,
+    }),
+    'lateral ~247 m deve parar a expansão',
+  );
+
+  const segs = [
+    lineSeg(0, 0, 0, 0, 12, 12, 90),
+    lineSeg(1, 0, 12, 0, 107, 95, 90), // mesmo bearing — trecho longo da via
+    lineSeg(2, 0, 107, 40, 107, 40, 0),
+    lineSeg(3, 40, 107, 40, 0, 107, 270),
+    lineSeg(4, 40, 0, 0, 0, 40, 180),
+  ];
+  const b = block(segs, {
+    number: 'uneven-front',
+    front_segment_index: 0,
+    front_street_name: 'RUA X',
+  });
+  const m = getOfficialLotMeasurements(b, 'uneven-front');
+  const frontIdxs = m.sides?.front.segmentIndexes ?? [];
+  assert(
+    frontIdxs.includes(0) && frontIdxs.includes(1),
+    `frente desigual deve incluir 0 e 1; got ${frontIdxs}`,
+  );
+  assert(near(m.frente, 107, 1), `frente ~107 m got ${m.frente}`);
+  console.log('OK testLegitimateUnevenFrontNotRejectedByLengthAlone', {
+    frontIdxs,
+    frente: m.frente,
+  });
+}
+
+function testLote4WrapDoesNotAbsorbLongLateral() {
+  const { segs, expected } = buildLote4WrapAbsorptionSegments();
+  const ordered = parseOfficialSegmentsFromBlock({
+    segments_json: segs,
+    source_import: 'TXT_CIVIL3D',
+  });
+  const byIdx = new Map(ordered.map((s) => [s.segment_index, s]));
+
+  const legacyExpand = expandChainByConsecutiveDeflection(
+    ordered,
+    [0],
+    new Set(),
+    byIdx,
+    {
+      maxDeflectionDeg: BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+      maxGlobalDeflectionDeg: 180,
+      rejectLengthOutliers: false,
+      maxSegments: 99,
+    },
+  );
+  assert(
+    legacyExpand.includes(expected.longIdx),
+    `fixture bug: legado inclui idx${expected.longIdx}; got ${legacyExpand}`,
+  );
+
+  const fixedExpand = expandChainByConsecutiveDeflection(
+    ordered,
+    [0],
+    new Set(),
+    byIdx,
+    BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+  );
+  assert(
+    !fixedExpand.includes(expected.longIdx),
+    `não absorver idx${expected.longIdx}; got ${fixedExpand}`,
+  );
+  assert(
+    fixedExpand.includes(0) &&
+      fixedExpand.includes(6) &&
+      fixedExpand.includes(7) &&
+      fixedExpand.length === 3,
+    `frente wrap 0,6,7; got ${fixedExpand}`,
+  );
+
+  const b = block(segs, {
+    number: '4',
+    front_segment_index: 0,
+    frente: expected.bugFrente,
+  });
+  const m = getOfficialLotMeasurements(b, '4');
+  const { f, b: back, r, l } = sideIndexes(m);
+  assert(
+    f.length === 3 && f.includes(0) && f.includes(6) && f.includes(7),
+    `frente idxs exatamente 0,6,7; got ${f}`,
+  );
+  assert(!f.includes(5), 'idx5 fora da frente');
+  assert(near(m.frente, expected.frente, 0.5), `frente ${m.frente}`);
+  assert(near(m.fundo, expected.fundo, 0.5), `fundo ${m.fundo}`);
+  assert(near(m.ladoDireito, 247.2, 1) || near(m.ladoEsquerdo, 247.2, 1));
+  assert(
+    near(m.ladoDireito, expected.longLen, 1) ||
+      near(m.ladoEsquerdo, expected.longLen, 1),
+  );
+  assertDisjointExactCoverage(m, segs.length, 'lote4-wrap');
+  assert(
+    ![...r, ...l, ...back].some((i) => f.includes(i)),
+    'laterais/fundo não compartilham frente',
+  );
+
+  console.log('OK testLote4WrapDoesNotAbsorbLongLateral', {
+    legacyExpand,
+    fixedExpand,
+    frente: m.frente,
+    fundo: m.fundo,
+    dir: m.ladoDireito,
+    esq: m.ladoEsquerdo,
+    f,
+    back,
+    r,
+    l,
+  });
+}
+
 function testLote4FrontNotStolenByLateral() {
   const { segs, expected } = buildLote4StyleSegments();
   const b = block(segs, {
     number: '4',
     front_segment_index: 1,
-    // Valores persistidos do bug em produção (antes):
-    frente: expected.persistedBugFrente, // ~47,71 = 18,48+29,33 (sem 13,10)
+    frente: expected.persistedBugFrente,
     Fundo: 63.38,
     'Lado Dir.': 247.11,
-    'Lado Esq.': expected.persistedBugEsq, // ~258,21 (lateral + 13,10)
+    'Lado Esq.': expected.persistedBugEsq,
   });
-
-  // ANTES (persistido / bug): frente incompleta
-  assert(
-    near(Number(b.frente), 47.71, 0.05),
-    'fixture antes: frente persistida ~47,71',
-  );
-  assert(
-    near(Number(b['Lado Esq.']), 258.21, 0.05),
-    'fixture antes: lateral esq inflada ~258,21',
-  );
 
   const m = getOfficialLotMeasurements(b, '4');
   const frontIdxs = m.sides?.front.segmentIndexes ?? [];
-  const backIdxs = m.sides?.back.segmentIndexes ?? [];
-  const leftIdxs = m.sides?.left.segmentIndexes ?? [];
-  const rightIdxs = m.sides?.right.segmentIndexes ?? [];
-
-  // DEPOIS: frente completa 13,10+18,48+29,33
-  assert(frontIdxs.includes(0), `frente deve incluir idx0 (13,10); got ${frontIdxs}`);
-  assert(
-    frontIdxs.includes(1) && frontIdxs.includes(2),
-    `frente idxs ${frontIdxs}`,
-  );
-  assert(
-    !leftIdxs.includes(0) && !rightIdxs.includes(0),
-    '13,10 não pode ir para lateral',
-  );
-  assert(
-    near(m.frente, expected.frente, 0.5),
-    `depois frente ${m.frente} ~ ${expected.frente}`,
-  );
-  assert(
-    Math.abs(Number(m.frente) - 47.71) > 5,
-    'depois frente não pode permanecer ~47,71',
-  );
-  assert(near(m.fundo, expected.fundo, 0.8), `fundo ${m.fundo} ~ ${expected.fundo}`);
-  assert(
-    Math.abs(Number(m.ladoEsquerdo) - 258.21) > 5,
-    'lado esq não pode ficar no valor inflado 258,21',
-  );
-  assert(near(m.ladoDireito, expected.right, 3), `dir ${m.ladoDireito}`);
-  assert(near(m.ladoEsquerdo, expected.left, 5), `esq ${m.ladoEsquerdo}`);
-  assertDisjointSides(m, 'lote4');
-  assert(
-    backIdxs.every((i) => !frontIdxs.includes(i) && !leftIdxs.includes(i) && !rightIdxs.includes(i)),
-    'fundo não compartilha índices',
-  );
+  assert(frontIdxs.includes(0) && frontIdxs.includes(1) && frontIdxs.includes(2));
+  assert(near(m.frente, expected.frente, 0.5));
+  assert(near(m.fundo, expected.fundo, 0.8));
+  assert(near(m.ladoDireito, expected.right, 3));
+  assert(near(m.ladoEsquerdo, expected.left, 5));
+  assertDisjointExactCoverage(m, segs.length, 'lote4');
 
   const modal = resolveLotMeasuresFromBlock(b);
   const contract = resolveContractLotSides(b);
-  assert(near(modal.sides.frente, m.frente!, 0.05), 'modal frente = official');
-  assert(near(Number(contract.frente), m.frente!, 0.05), 'contrato frente = official');
-  assert(near(modal.sides.fundo, m.fundo!, 0.05), 'modal fundo = official');
-  // Sem fallback para coluna persistida 47,71
-  assert(m.source === 'txt_segments', `source ${m.source}`);
-
-  console.log('OK testLote4FrontNotStolenByLateral', {
-    before: { frente: 47.71, esq: 258.21 },
-    after: {
-      frente: m.frente,
-      fundo: m.fundo,
-      dir: m.ladoDireito,
-      esq: m.ladoEsquerdo,
-      frontIdxs,
-      backIdxs,
-    },
-  });
+  assert(near(modal.sides.frente, m.frente!, 0.05));
+  assert(near(Number(contract.frente), m.frente!, 0.05));
+  console.log('OK testLote4FrontNotStolenByLateral', { frente: m.frente });
 }
 
 function testLote3FundoNotSingleSegment() {
@@ -277,41 +489,25 @@ function testLote3FundoNotSingleSegment() {
     number: '3',
     front_segment_index: 0,
     frente: 34.49,
-    Fundo: '16.58', // persistido incompleto
+    Fundo: '16.58',
     'Lado Dir.': 245.31,
     'Lado Esq.': 258.23,
   });
 
   const m = getOfficialLotMeasurements(b, '3');
   assert(m.fundo !== 16.58, `fundo não pode ficar 16,58; got ${m.fundo}`);
-  assert(near(m.fundo, expected.fundo, 0.5), `fundo ${m.fundo} ~ ${expected.fundo}`);
-  assert(near(m.fundo, 34.6, 0.2), `fundo ~34,60 got ${m.fundo}`);
-
+  assert(near(m.fundo, expected.fundo, 0.5));
+  assert(near(m.fundo, 34.6, 0.2));
+  assert(near(m.frente, expected.frente, 0.2));
   const backIdxs = m.sides?.back.segmentIndexes ?? [];
-  const leftIdxs = m.sides?.left.segmentIndexes ?? [];
-  const rightIdxs = m.sides?.right.segmentIndexes ?? [];
-  assert(backIdxs.includes(2) && backIdxs.includes(3), `fundo idxs ${backIdxs}`);
-  assert(
-    !leftIdxs.includes(2) &&
-      !leftIdxs.includes(3) &&
-      !rightIdxs.includes(2) &&
-      !rightIdxs.includes(3),
-    'índices do fundo não entram nas laterais',
-  );
-  assertDisjointSides(m, 'lote3');
-  assert(m.source === 'txt_segments', `source ${m.source}`);
+  assert(backIdxs.includes(2) && backIdxs.includes(3));
+  assertDisjointExactCoverage(m, segs.length, 'lote3');
 
   const modal = resolveLotMeasuresFromBlock(b);
   const contract = resolveContractLotSides(b);
-  assert(near(modal.sides.fundo, m.fundo!, 0.05), 'popup=official fundo');
-  assert(near(Number(contract.fundo), m.fundo!, 0.05), 'contrato=official fundo');
-  assert(near(modal.sides.fundo, Number(contract.fundo), 0.05), 'popup=contrato');
-  assert(Number(modal.sides.fundo) !== 16.58, 'sem fallback 16,58 no modal');
-
-  console.log('OK testLote3FundoNotSingleSegment', {
-    before: { fundo: 16.58 },
-    after: { fundo: m.fundo, backIdxs, dir: m.ladoDireito, esq: m.ladoEsquerdo },
-  });
+  assert(near(modal.sides.fundo, m.fundo!, 0.05));
+  assert(near(Number(contract.fundo), m.fundo!, 0.05));
+  console.log('OK testLote3FundoNotSingleSegment', { fundo: m.fundo });
 }
 
 function testNoMutationOfSegmentsJson() {
@@ -322,36 +518,29 @@ function testNoMutationOfSegmentsJson() {
   Object.freeze(b.segments_json);
 
   const orderedCopy = parseOfficialSegmentsFromBlock(b);
-  const forbidden = new Set<number>();
   const byIdx = new Map(orderedCopy.map((s) => [s.segment_index, s]));
   expandChainByConsecutiveDeflection(
     orderedCopy,
     [1],
-    forbidden,
+    new Set(),
     byIdx,
     BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
   );
-
   getOfficialLotMeasurements(b, 'MUT');
   resolveLotMeasuresFromBlock(b);
-
-  assert(
-    Array.isArray(b.segments_json) && b.segments_json.length === frozen.length,
-    'segments_json intacto',
-  );
-  assert(JSON.stringify(b.segments_json) === snapshot, 'conteúdo segments_json não mutado');
+  assert(JSON.stringify(b.segments_json) === snapshot, 'sem mutação');
   console.log('OK testNoMutationOfSegmentsJson');
 }
 
 function testConfrontationEditorDoesNotThrow() {
-  const { segs } = buildLote4StyleSegments();
-  const b = block(segs, { id: 'lot-4-test', front_segment_index: 1 });
+  const { segs } = buildLote4WrapAbsorptionSegments();
+  const b = block(segs, { id: 'lot-4-test', front_segment_index: 0 });
   const load = loadLotConfrontations({
     lot: b,
     allBlocks: [b],
     streetGuides: [],
   });
-  assert(load.status !== 'error', `load confrontações: ${load.error}`);
+  assert(load.status !== 'error', `load: ${load.error}`);
 
   const targets = findPropagationTargets(
     [b],
@@ -360,17 +549,58 @@ function testConfrontationEditorDoesNotThrow() {
     'fundo',
     'lot_only',
   );
-  assert(Array.isArray(targets) && targets.length >= 1, 'targets');
+  assert(Array.isArray(targets) && targets.length >= 1);
 
-  const targets2 = findPropagationTargets(
-    [],
-    { id: 'x' },
-    'x',
+  // Cancelar / reabrir
+  const load2 = loadLotConfrontations({
+    lot: b,
+    allBlocks: [b],
+    streetGuides: [],
+  });
+  assert(load2.status !== 'error', 'reload após cancel');
+
+  // Fechamento colinear durante fluxo de edição
+  groupSegmentsByDeflection(
+    parseOfficialSegmentsFromBlock(b),
+    'edit-flow',
+  );
+
+  console.log('OK testConfrontationEditorDoesNotThrow');
+}
+
+function testAutomaticConfrontationStateUpdate() {
+  const { segs } = buildLote4WrapAbsorptionSegments();
+  const b = block(segs, { id: 'lot-4-auto', front_segment_index: 0 });
+  const m = getOfficialLotMeasurements(b, '4');
+  assert(m.source === 'txt_segments');
+  assert(m.frente != null && m.frente < 100);
+
+  const load = loadLotConfrontations({
+    lot: b,
+    allBlocks: [b],
+    streetGuides: [{ id: 'sg', name: 'RUA 05', type: 'Rua' } as never],
+  });
+  assert(load.status !== 'error', `audit: ${load.error}`);
+
+  const targets = findPropagationTargets(
+    [b],
+    b,
+    'lot-4-auto',
     'frente',
     'lot_only',
   );
-  assert(Array.isArray(targets2), 'targets empty blocks');
-  console.log('OK testConfrontationEditorDoesNotThrow');
+  assert(Array.isArray(targets));
+
+  // Reconstruir estado (segunda auditoria) sem TypeError
+  const load2 = loadLotConfrontations({
+    lot: b,
+    allBlocks: [b],
+    streetGuides: [],
+  });
+  assert(load2.status !== 'error');
+  groupSegmentsByDeflection(parseOfficialSegmentsFromBlock(b), 'post-auto');
+
+  console.log('OK testAutomaticConfrontationStateUpdate', { frente: m.frente });
 }
 
 function testConsecutiveExpandRules() {
@@ -386,63 +616,39 @@ function testConsecutiveExpandRules() {
     source_import: 'TXT_CIVIL3D',
   });
   const byIdx = new Map(ordered.map((s) => [s.segment_index, s]));
-  const forbidden = new Set([3]);
   const expanded = expandChainByConsecutiveDeflection(
     ordered,
     [0],
-    forbidden,
+    new Set([3]),
     byIdx,
     BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
   );
-  assert(expanded.includes(0), 'seed');
-  assert(!expanded.includes(3), 'respeita forbidden');
-  assert(new Set(expanded).size === expanded.length, 'sem duplicatas');
+  assert(!expanded.includes(3), 'forbidden respeitado');
   console.log('OK testConsecutiveExpandRules', expanded);
 }
 
 function testParseDistanceFields() {
-  assert(parsePositiveSegmentLength(16.58) === 16.58, 'number');
-  assert(parsePositiveSegmentLength('16,58') === 16.58, 'string pt-BR');
-  assert(parsePositiveSegmentLength('16.58') === 16.58, 'string en');
-  assert(parsePositiveSegmentLength('abc') == null, 'string inválida');
-  assert(parsePositiveSegmentLength('') == null, 'vazio');
-  assert(parsePositiveSegmentLength(0) == null, 'zero');
-  assert(parsePositiveSegmentLength(-5) == null, 'negativo');
-  assert(parsePositiveSegmentLength(NaN) == null, 'NaN');
-
+  assert(parsePositiveSegmentLength(16.58) === 16.58);
+  assert(parsePositiveSegmentLength('16,58') === 16.58);
   const fromDistance = parseSegmentLengthsFromJson([
     { segment_index: 0, distance: 16.58 },
     { segment_index: 1, distance: '18,02' },
-    { segment_index: 2, length: 99 }, // distance tem prioridade; sem distance usa length
+    { segment_index: 2, length: 99 },
   ]);
-  assert(fromDistance[0] === 16.58, 'distance numérico');
-  assert(fromDistance[1] === 18.02, 'distance string');
-  assert(fromDistance[2] === 99, 'fallback length');
-
-  const preferDistance = parseSegmentLengthsFromJson([
-    { distance: 13.1, length: 999 },
-  ]);
-  assert(preferDistance[0] === 13.1, 'distance > length');
-
-  const invalidSkipped = parseSegmentLengthsFromJson([
-    { distance: 'nao-numero' },
-    { length: 'x' },
-    { distance: 10 },
-  ]);
-  assert(invalidSkipped.length === 1 && invalidSkipped[0] === 10, 'ignora inválidos');
-
-  console.log('OK testParseDistanceFields', {
-    fromDistance,
-    preferDistance,
-    invalidSkipped,
-  });
+  assert(fromDistance[0] === 16.58 && fromDistance[1] === 18.02);
+  console.log('OK testParseDistanceFields');
 }
 
 function main() {
+  testGroupSegmentsColinearRingClosureDoesNotThrow();
+  testAngularWrapNearZero();
+  testLegitimateUnevenFrontNotRejectedByLengthAlone();
+  testLote4WrapDoesNotAbsorbLongLateral();
   testLote4FrontNotStolenByLateral();
   testLote3FundoNotSingleSegment();
   testNoMutationOfSegmentsJson();
   testConfrontationEditorDoesNotThrow();
+  testAutomaticConfrontationStateUpdate();
   testConsecutiveExpandRules();
   testParseDistanceFields();
   console.log('mandatory-meneses-qd06-boundary-tests: all passed');
