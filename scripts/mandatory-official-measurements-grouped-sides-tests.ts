@@ -584,6 +584,82 @@ function testMartineQd02Lt04ColinearFrontGroup() {
   console.log('OK testMartineQd02Lt04ColinearFrontGroup');
 }
 
+/**
+ * Lote 1 / QD 01 — CHACARAS MORADA DO SOL (Opção A).
+ * Frente AB na Vicinal VP 03; observador dentro do lote olhando para a frente.
+ *
+ * FRONT=[AB] BACK=[EF] RIGHT=[BC,CD,DE] LEFT=[FG]
+ * CD e DE são do degrau da lateral direita — NÃO do fundo (hipótese B proibida).
+ *
+ * Fixture de proteção: trava a classificação esperada via official_side
+ * (sem alterar classifySidesByFrontAnchor nesta entrega).
+ */
+function testMoradaDoSolQd01Lt1OptionASides() {
+  const AB = 53.85;
+  const BC = 123.19;
+  const CD = 38.77;
+  const DE = 85.4;
+  const EF = 125.54;
+  const FG = 209.59;
+
+  // Anel sintético com comprimentos da régua; lados travados na Opção A.
+  const segs = [
+    lineSeg(0, 53.85, 0, 0, 0, AB, 'front'), // AB
+    lineSeg(1, 0, 0, 0, -123.19, BC, 'right'), // BC
+    lineSeg(2, 0, -123.19, -38.77, -123.19, CD, 'right'), // CD
+    lineSeg(3, -38.77, -123.19, -38.77, -208.59, DE, 'right'), // DE
+    lineSeg(4, -38.77, -208.59, 86.77, -208.59, EF, 'back'), // EF
+    lineSeg(5, 86.77, -208.59, 53.85, 0, FG, 'left'), // FG
+  ];
+
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '1',
+      block_name: '01',
+      front_segment_index: 0,
+      front_street_name: 'Vicinal VP 03',
+      frente: AB,
+      area: 18491.06,
+    }),
+    'MORADA-QD01-LT1-OPTION-A',
+  );
+
+  const front = m.sides?.front.segmentIndexes ?? [];
+  const back = m.sides?.back.segmentIndexes ?? [];
+  const right = m.sides?.right.segmentIndexes ?? [];
+  const left = m.sides?.left.segmentIndexes ?? [];
+
+  assert(
+    JSON.stringify(front) === JSON.stringify([0]),
+    `FRONT=[AB=0] got ${JSON.stringify(front)}`,
+  );
+  assert(
+    JSON.stringify(back) === JSON.stringify([4]),
+    `BACK=[EF=4] got ${JSON.stringify(back)}`,
+  );
+  assert(
+    JSON.stringify(right) === JSON.stringify([1, 2, 3]),
+    `RIGHT=[BC,CD,DE]=[1,2,3] got ${JSON.stringify(right)}`,
+  );
+  assert(
+    JSON.stringify(left) === JSON.stringify([5]),
+    `LEFT=[FG=5] got ${JSON.stringify(left)}`,
+  );
+
+  // Hipótese B proibida: CD/DE não podem ir para o fundo.
+  assert(!back.includes(2), 'CD (2) não pertence ao fundo');
+  assert(!back.includes(3), 'DE (3) não pertence ao fundo');
+  assert(right.includes(2) && right.includes(3), 'CD+DE na lateral direita');
+
+  assert(near(m.frente, AB), `frente ${m.frente}`);
+  assert(near(m.fundo, EF), `fundo ${m.fundo}`);
+  assert(near(m.ladoDireito, BC + CD + DE), `dir ${m.ladoDireito}`);
+  assert(near(m.ladoEsquerdo, FG), `esq ${m.ladoEsquerdo}`);
+  assertDisjointSideIndexes(m);
+
+  console.log('OK testMoradaDoSolQd01Lt1OptionASides');
+}
+
 testRectangularSingleSegmentPerSide();
 testMartineQd02Lt04ColinearFrontGroup();
 testQd01Lt15ColinearBackGroup();
@@ -599,4 +675,5 @@ testManualOfficialSideOverridesHeuristic();
 testClearOfficialSideReturnsToAutomatic();
 testLot010Single726SegmentManualRight();
 testMeasuresWithoutOfficialSideSafe();
+testMoradaDoSolQd01Lt1OptionASides();
 console.log('mandatory-official-measurements-grouped-sides-tests: all passed');
