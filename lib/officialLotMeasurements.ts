@@ -1413,6 +1413,68 @@ export function expandBoundaryChainAlongRing(
 }
 
 /**
+ * Expande cadeia por deflexão CONSECUTIVA no anel.
+ *
+ * Regras:
+ * - compara bearing do segmento atual com o ANTERIOR na caminhada (não vs semente);
+ * - respeita a ordem do anel em ambos os sentidos;
+ * - para ao encontrar: índice em `forbidden`, já incluído, curva/inválido,
+ *   canto (~90°), deflexão > maxDeflectionDeg, ou chanfre curto 40–50°;
+ * - `guard < n - 1` impede loop infinito no anel fechado;
+ * - `Set` impede duplicação de índices;
+ * - não muta `ordered` nem `forbidden` (somente lê).
+ */
+export function expandChainByConsecutiveDeflection(
+  ordered: OfficialLotSegment[],
+  seedIndexes: number[],
+  forbidden: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+  maxDeflectionDeg: number = BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+): number[] {
+  if (!seedIndexes.length) return [];
+  const result = new Set(seedIndexes);
+  const n = ordered.length;
+  if (n < 2) return [...result].sort((a, b) => a - b);
+
+  for (const seed of seedIndexes) {
+    const pos0 = ordered.findIndex((s) => s.segment_index === seed);
+    if (pos0 < 0) continue;
+
+    for (const step of [-1, 1] as const) {
+      let prevPos = pos0;
+      let p = (pos0 + step + n) % n;
+      for (let guard = 0; guard < n - 1; guard++) {
+        const idx = ordered[p].segment_index;
+        if (forbidden.has(idx) || result.has(idx)) break;
+        const prevSeg = ordered[prevPos];
+        const curSeg = ordered[p];
+        if (isOfficialCurveSegment(curSeg)) break;
+        if (!isValidSegmentDistance(curSeg.distance)) break;
+        const prevBearing = resolveSegmentBearing(
+          prevSeg,
+          ordered[(prevPos + 1) % n],
+        );
+        const curBearing = resolveSegmentBearing(
+          curSeg,
+          ordered[(p + 1) % n],
+        );
+        const defl = angularDifferenceDeg(prevBearing, curBearing);
+        if (isCornerDeflection(defl) || defl > maxDeflectionDeg) break;
+        // Chanfre angular isolado: não incorporar à confrontação
+        if (isChanfreDeflection(defl) && curSeg.distance <= CHANFRE_BACK_MAX_M) {
+          break;
+        }
+        result.add(idx);
+        prevPos = p;
+        p = (p + step + n) % n;
+      }
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
+}
+
+/**
  * Frente travada (rua/manual): percorre anel, fundo no segmento oposto, chanfre 1–5 m no fundo.
  */
 function classifySidesByFrontAnchor(
@@ -1490,10 +1552,6 @@ function classifySidesByFrontAnchor(
     chanfreSet,
     byIdx,
   );
-  const backStopIndexes =
-    backGroupLineIndexes.length > 0
-      ? backGroupLineIndexes
-      : [backSegmentIndex];
 
   console.log("BACK_DEFLECTION_GROUP", {
     lote: lotLabel ?? block?.number ?? block?.id,
@@ -1502,8 +1560,48 @@ function classifySidesByFrontAnchor(
     backGroupTotalM: sumLinePathDistances(backGroupLineIndexes, byIdx),
   });
 
-  const fundoStop = new Set(backStopIndexes);
-  const excludeWalk = new Set<number>([frontSegmentIndex]);
+  /**
+   * Ordem topológica obrigatória (frente → fundo → laterais):
+   * 1. Identificar a cadeia COMPLETA da frente (expansão consecutiva ≤45°).
+   * 2. Identificar a cadeia COMPLETA do fundo (semente oposta + expansão).
+   * 3. Reservar índices de frente/fundo/chanfre.
+   * 4. Só então construir lado direito e esquerdo = arcos restantes no anel.
+   * 5. Laterais NUNCA reivindican índices já pertencentes à frente/fundo.
+   * 6. Segmentos restantes (fora dos 4 lados) ficam explícitos em chanfre/resto
+   *    — não são descartados em silêncio (ver log SIDE_REMAINDER_SEGMENTS).
+   */
+  const frontOnlyForbidden = new Set<number>([...chanfreSet]);
+  frontIndexes = expandChainByConsecutiveDeflection(
+    ordered,
+    [frontSegmentIndex],
+    frontOnlyForbidden,
+    byIdx,
+    BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+  );
+  if (frontIndexes.length === 0) frontIndexes = [frontSegmentIndex];
+  frenteLen = round2(sumLinePathDistances(frontIndexes, byIdx));
+
+  const fundoSeedIndexes =
+    backGroupLineIndexes.length > 0
+      ? backGroupLineIndexes
+      : [backSegmentIndex];
+  const fundoForbidden = new Set<number>([
+    ...chanfreSet,
+    ...frontIndexes,
+  ]);
+  let fundoIndexes = expandChainByConsecutiveDeflection(
+    ordered,
+    fundoSeedIndexes,
+    fundoForbidden,
+    byIdx,
+    BOUNDARY_CHAIN_MAX_DEFLECTION_DEG,
+  );
+  if (fundoIndexes.length === 0) {
+    fundoIndexes = [...fundoSeedIndexes];
+  }
+
+  const fundoStop = new Set(fundoIndexes);
+  const excludeWalk = new Set<number>([...frontIndexes, ...chanfreSet]);
 
   const pathAIndexes = collectRingArcFromFront(
     ordered,
@@ -1546,30 +1644,7 @@ function classifySidesByFrontAnchor(
     ladoEsquerdoIndexes = [];
   }
 
-  const fundoSeed = collectFundoIndexesFromRingWalk(
-    ordered,
-    frontSegmentIndex,
-    pathAIndexes,
-    pathBIndexes,
-    chanfreSet,
-    byIdx,
-  );
-  const fundoExpandForbidden = new Set<number>([
-    frontSegmentIndex,
-    ...chanfreSet,
-    ...ladoDireitoIndexes,
-    ...ladoEsquerdoIndexes,
-  ]);
-  let fundoIndexes = expandColinearAdjacentWithinBoundary(
-    ordered,
-    fundoSeed.length ? fundoSeed : [backSegmentIndex],
-    fundoExpandForbidden,
-    byIdx,
-    buildAllowedIndexesForDeflectionGroups(
-      groups,
-      backGroupLineIndexes.length > 0 ? backGroupLineIndexes : fundoSeed,
-    ),
-  );
+  // Reclaims legados (conectores / quebras curtas no fundo) — sem priorizar lateral sobre fundo.
   fundoIndexes = reclaimFundoChanfreConnectorsFromPaths(
     ordered,
     fundoIndexes,
@@ -1604,56 +1679,23 @@ function classifySidesByFrontAnchor(
     ladoEsquerdoIndexes = reclaimedBack.ladoEsquerdo;
   }
 
-  const frontExpandForbidden = new Set<number>([
-    ...chanfreSet,
-    ...backGroupLineIndexes,
-    ...fundoIndexes,
-    ...ladoDireitoIndexes,
-    ...ladoEsquerdoIndexes,
-  ]);
-  const frontGroup = groups.find((g) =>
-    g.segmentIndexes.includes(frontSegmentIndex),
-  );
-  if (frontGroup) {
-    frontIndexes = frontGroup.segmentIndexes.filter((idx) => {
-      const seg = byIdx.get(idx);
-      return seg && !isOfficialCurveSegment(seg) && !chanfreSet.has(idx);
-    });
-    if (frontIndexes.length > 0) {
-      frenteLen = round2(sumLinePathDistances(frontIndexes, byIdx));
-    }
-  } else {
-    const frontColinear = expandColinearAdjacentWithinBoundary(
-      ordered,
-      [frontSegmentIndex],
-      frontExpandForbidden,
-      byIdx,
-      buildAllowedIndexesForDeflectionGroups(groups, [frontSegmentIndex]),
-    );
-    if (frontColinear.length > 0) {
-      frontIndexes = frontColinear;
-      frenteLen = round2(sumLinePathDistances(frontColinear, byIdx));
-    }
-  }
-
   const frontClaimed = new Set<number>(frontIndexes);
-  fundoIndexes = stripIndexesClaimedByOthers(fundoIndexes, frontClaimed);
+  const fundoClaimed = new Set<number>(fundoIndexes);
+  // Laterais cedem a frente/fundo — nunca o contrário.
   ladoDireitoIndexes = stripIndexesClaimedByOthers(
     ladoDireitoIndexes,
-    new Set([...frontClaimed, ...fundoIndexes]),
+    new Set([...frontClaimed, ...fundoClaimed, ...chanfreSet]),
   );
   ladoEsquerdoIndexes = stripIndexesClaimedByOthers(
     ladoEsquerdoIndexes,
     new Set([
       ...frontClaimed,
-      ...fundoIndexes,
+      ...fundoClaimed,
+      ...chanfreSet,
       ...ladoDireitoIndexes,
     ]),
   );
-  fundoIndexes = stripIndexesClaimedByOthers(
-    fundoIndexes,
-    new Set([...ladoDireitoIndexes, ...ladoEsquerdoIndexes]),
-  );
+  // Não remover segmentos do fundo porque uma lateral os reivindica.
 
   console.log("BACK_GROUP_SELECTED", {
     lote: lotLabel ?? block?.number ?? block?.id,
@@ -1685,6 +1727,25 @@ function classifySidesByFrontAnchor(
     indexes: ladoEsquerdoIndexes,
     totalM: pathB.totalLength,
   });
+
+  const assigned = new Set<number>([
+    ...frontIndexes,
+    ...fundoIndexes,
+    ...ladoDireitoIndexes,
+    ...ladoEsquerdoIndexes,
+    ...chanfreIndexes,
+  ]);
+  const remainderIndexes = ordered
+    .map((s) => s.segment_index)
+    .filter((idx) => !assigned.has(idx));
+  if (remainderIndexes.length > 0) {
+    console.log("SIDE_REMAINDER_SEGMENTS", {
+      lote: lotLabel ?? block?.number ?? block?.id,
+      remainderIndexes,
+      distances: remainderIndexes.map((i) => byIdx.get(i)?.distance),
+      note: "restantes explícitos — tratados como chanfre/não-lado, não descartados",
+    });
+  }
 
   const result = {
     frente: frenteLen,

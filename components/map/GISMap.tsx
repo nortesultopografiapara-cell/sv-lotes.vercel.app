@@ -3165,42 +3165,100 @@ export default function GISMap({
     segmentIndexes?: number[],
   ) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    const block = {
-      ...lot,
-      block_name: lot.block,
-      segments_json: lot.segments_json,
-      front_segment_index: lot.front_segment_index,
-    };
-    const indexes =
-      segmentIndexes?.length
-        ? segmentIndexes
-        : officialSegmentIndexesForSide(block, blocksForConfront, side);
-    // Prefer auditoria global (Revisar Confrontações); senão carrega só este lote.
-    const audit =
-      confrontationAudits.get(lot.id) ??
-      loadLotConfrontations({
+    try {
+      const block = {
+        ...lot,
+        block_name: lot.block,
+        segments_json: lot.segments_json,
+        front_segment_index: lot.front_segment_index,
+      };
+      let indexes: number[] = [];
+      let indexesSource: 'caller' | 'official' | 'empty' = 'empty';
+      try {
+        if (segmentIndexes?.length) {
+          indexes = [...segmentIndexes];
+          indexesSource = 'caller';
+        } else {
+          indexes = officialSegmentIndexesForSide(
+            block,
+            blocksForConfront,
+            side,
+          );
+          indexesSource = indexes.length ? 'official' : 'empty';
+        }
+      } catch (err) {
+        console.error('[GISMap] officialSegmentIndexesForSide', {
+          lotId: lot?.id ?? null,
+          lotNumber: lot?.number ?? null,
+          side,
+          message: err instanceof Error ? err.message : String(err),
+          err,
+        });
+        if (segmentIndexes?.length) {
+          indexes = [...segmentIndexes];
+          indexesSource = 'caller';
+        } else {
+          alert(
+            'Não foi possível identificar os segmentos desta confrontação. O mapa permanece ativo — tente novamente ou corrija a frente do lote.',
+          );
+          return;
+        }
+      }
+
+      if (!indexes.length) {
+        console.error('[GISMap] openConfrontationEditor empty indexes', {
+          lotId: lot?.id ?? null,
+          lotNumber: lot?.number ?? null,
+          side,
+          indexesSource,
+        });
+        alert(
+          'Nenhum segmento encontrado para esta confrontação. O mapa permanece ativo.',
+        );
+        return;
+      }
+
+      // Prefer auditoria global (Revisar Confrontações); senão carrega só este lote.
+      const audit =
+        confrontationAudits.get(lot.id) ??
+        loadLotConfrontations({
+          lot,
+          allBlocks: blocksForConfront,
+          streetGuides,
+        }).audit;
+      const primaryIdx = indexes[0];
+      const edge =
+        primaryIdx != null
+          ? audit?.segmentEdges.find((e) => e.segmentIndex === primaryIdx)
+          : undefined;
+      const rec =
+        primaryIdx != null
+          ? getSegmentConfrontantRecord(block, primaryIdx)
+          : null;
+      setConfrontEdit({
         lot,
-        allBlocks: blocksForConfront,
-        streetGuides,
-      }).audit;
-    const primaryIdx = indexes[0];
-    const edge =
-      primaryIdx != null
-        ? audit?.segmentEdges.find((e) => e.segmentIndex === primaryIdx)
-        : undefined;
-    const rec =
-      primaryIdx != null
-        ? getSegmentConfrontantRecord(block, primaryIdx)
-        : null;
-    setConfrontEdit({
-      lot,
-      side,
-      segmentIndexes: indexes,
-      currentConfrontant:
-        edge?.confrontant ?? rec?.confrontant ?? audit?.sides[side]?.label ?? null,
-      currentSource:
-        edge?.source ?? rec?.confrontant_source ?? audit?.sides[side]?.source ?? null,
-    });
+        side,
+        segmentIndexes: indexes,
+        currentConfrontant:
+          edge?.confrontant ?? rec?.confrontant ?? audit?.sides[side]?.label ?? null,
+        currentSource:
+          edge?.source ?? rec?.confrontant_source ?? audit?.sides[side]?.source ?? null,
+      });
+    } catch (err) {
+      console.error('[GISMap] openConfrontationEditor', {
+        lotId: lot?.id ?? null,
+        lotNumber: lot?.number ?? null,
+        side,
+        message: err instanceof Error ? err.message : String(err),
+        err,
+      });
+      // Não abrir estado parcial — mapa continua operacional.
+      alert(
+        err instanceof Error
+          ? `Erro ao abrir editor de confrontação: ${err.message}`
+          : 'Erro ao abrir editor de confrontação. O mapa permanece ativo.',
+      );
+    }
   };
 
   const handleConfrontEdgePick = (lot: any, edgeIndex: number) => {
