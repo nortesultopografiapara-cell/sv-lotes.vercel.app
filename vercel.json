@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/saas-billing-reminders",
       "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/process-company-exports",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/expire-company-exports",
+      "schedule": "15 4 * * *"
     }
   ],
   "functions": {
@@ -21,10 +29,21 @@
     "app/api/cron/saas-billing-reminders/route.ts": {
       "maxDuration": 60
     },
+    "app/api/cron/process-company-exports/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "app/api/cron/expire-company-exports/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/companies/update/route.ts": {
       "maxDuration": 60
     },
     "app/api/sales/create/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "app/api/master/companies/[id]/exports/route.ts": {
       "maxDuration": 60,
       "memory": 1024
     }
