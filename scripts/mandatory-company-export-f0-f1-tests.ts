@@ -301,6 +301,9 @@ function testApiAndUiWiring(): void {
   assert(vercel.includes('process-company-exports'), 'cron process');
   assert(vercel.includes('expire-company-exports'), 'cron expire');
   assert(!vercel.includes('homolog-company-export'), 'no homolog cron config');
+
+  const mw = read('middleware.ts');
+  assert(mw.includes('isCompanyExportApi'), 'export APIs reachable without session HTML redirect');
 }
 
 function testIsolationGuards(): void {
