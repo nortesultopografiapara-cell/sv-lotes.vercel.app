@@ -1,6 +1,6 @@
 /**
  * Homologação curta F0+F1 via APIs Master no Preview.
- * Requer middleware liberando /api/master/companies/*/exports (assertSuperAdmin na rota).
+ * Requer middleware liberando rotas Master de exportação (assertSuperAdmin na rota).
  *
  * Uso:
  *   COMPANY_EXPORT_PREVIEW_URL=... SUPER_ADMIN_USER_ID=... npx tsx scripts/short-company-export-homolog.ts
