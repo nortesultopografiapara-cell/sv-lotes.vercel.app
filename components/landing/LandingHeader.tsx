@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Calendar, Lock, LogIn, Menu, UserCircle, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
+import { trackSolicitarDemonstracao } from '@/lib/analytics';
 import { LANDING_CLIENT_PORTAL_PATH, LANDING_LOGIN_PATH } from './constants/landingConfig';
 import { LANDING_NAV_ITEMS, LANDING_SECTION_IDS, type LandingNavId } from './landingNav';
 
@@ -140,7 +141,13 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             id="cta_header_demonstracao"
             data-cta="cta_header_demonstracao"
             className="landing-btn-primary landing-btn-header-demo landing-btn-system--desktop"
-            onClick={handleNavActivate}
+            onClick={() => {
+              trackSolicitarDemonstracao({
+                cta_id: 'cta_header_demonstracao',
+                cta_label: 'Agendar demonstração',
+              });
+              handleNavActivate();
+            }}
           >
             <Calendar className="w-4 h-4 shrink-0" aria-hidden />
             Agendar demonstração
@@ -172,7 +179,13 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
         <a
           href="#contato"
           className="landing-btn-primary landing-header-mobile-cta"
-          onClick={handleNavActivate}
+          onClick={() => {
+            trackSolicitarDemonstracao({
+              cta_id: 'cta_header_mobile_demo',
+              cta_label: 'Demo',
+            });
+            handleNavActivate();
+          }}
         >
           <Calendar className="w-3.5 h-3.5 shrink-0" aria-hidden />
           <span>Demo</span>
@@ -221,7 +234,13 @@ export function LandingHeader({ scrolled, clientPortalEnabled }: Props) {
             <a
               href="#contato"
               className="landing-btn-primary landing-nav-mobile-action"
-              onClick={handleNavActivate}
+              onClick={() => {
+                trackSolicitarDemonstracao({
+                  cta_id: 'cta_header_nav_mobile_demo',
+                  cta_label: 'Agendar demonstração',
+                });
+                handleNavActivate();
+              }}
             >
               <Calendar className="w-4 h-4" aria-hidden />
               Agendar demonstração

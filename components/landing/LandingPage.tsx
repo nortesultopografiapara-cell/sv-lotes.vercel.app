@@ -22,6 +22,7 @@ import { AboutSection } from './sections/AboutSection';
 import { ContactSection } from './sections/ContactSection';
 import { CtaDemo, CtaWhatsApp } from './components/LandingCta';
 import { buildWhatsAppUrl, LANDING_WHATSAPP_MESSAGES } from './constants/landingConfig';
+import { trackClickWhatsApp } from '@/lib/analytics';
 import './landing.css';
 import './landing-v3.css';
 
@@ -69,6 +70,9 @@ export function LandingPage({ clientPortalEnabled }: Props) {
         className="landing-whatsapp-float"
         aria-label="Falar no WhatsApp"
         data-cta="cta_whatsapp_float"
+        onClick={() =>
+          trackClickWhatsApp({ cta_id: 'cta_whatsapp_float', cta_label: 'float' })
+        }
       >
         <MessageCircle className="w-7 h-7" />
       </a>

@@ -23,6 +23,11 @@ import {
   validateContactForm,
   type ContactFormFieldErrors,
 } from '../constants/landingConfig';
+import {
+  trackClickWhatsApp,
+  trackEnviarFormulario,
+  trackSolicitarDemonstracao,
+} from '@/lib/analytics';
 import { Reveal } from '../LandingMotion';
 
 const PLANS = ['Básico', 'Business', 'Profissional', 'Ainda não sei'];
@@ -47,14 +52,23 @@ export function ContactSection() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = (source: 'demonstracao' | 'whatsapp' | 'email_fallback' = 'whatsapp') => {
     if (!runValidation()) return;
+    if (source === 'demonstracao') {
+      trackSolicitarDemonstracao({ form: 'contact', channel: 'whatsapp' });
+      trackEnviarFormulario({ form: 'contact', channel: 'whatsapp' });
+    } else {
+      trackClickWhatsApp({ form: 'contact', channel: 'whatsapp' });
+      trackEnviarFormulario({ form: 'contact', channel: 'whatsapp' });
+    }
     const url = buildContactFormWhatsApp(form);
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleEmail = () => {
     if (!runValidation()) return;
+    trackEnviarFormulario({ form: 'contact', channel: 'email' });
+    trackSolicitarDemonstracao({ form: 'contact', channel: 'email' });
     window.location.href = buildContactFormMailto(form);
   };
 
@@ -182,7 +196,7 @@ export function ContactSection() {
                   type="button"
                   id="submit_demonstracao"
                   data-cta="submit_demonstracao"
-                  onClick={handleWhatsApp}
+                  onClick={() => handleWhatsApp('demonstracao')}
                   className="landing-btn-primary landing-contact-form-btn landing-btn-interactive"
                 >
                   <Calendar className="w-4 h-4" aria-hidden />
@@ -190,7 +204,7 @@ export function ContactSection() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleWhatsApp}
+                  onClick={() => handleWhatsApp('whatsapp')}
                   className="landing-btn-whatsapp landing-contact-form-btn landing-btn-interactive"
                 >
                   <MessageCircle className="w-4 h-4" aria-hidden />

@@ -3,6 +3,8 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Sidebar } from '@/components/Layout';
 import { AppProviders } from '@/components/AppProviders';
+import { GoogleConsentDefaults } from '@/components/analytics/GoogleConsentDefaults';
+import { GoogleTag } from '@/components/analytics/GoogleTag';
 import { THEME_INIT_SCRIPT } from '@/lib/themeInitScript';
 
 const inter = Inter({
@@ -59,11 +61,13 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
         />
+        <GoogleConsentDefaults />
       </head>
       <body suppressHydrationWarning>
         <AppProviders>
           <Sidebar>{children}</Sidebar>
         </AppProviders>
+        <GoogleTag />
       </body>
     </html>
   );

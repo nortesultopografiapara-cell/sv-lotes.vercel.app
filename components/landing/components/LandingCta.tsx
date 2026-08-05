@@ -3,6 +3,10 @@
 import Link from 'next/link';
 import { Calendar, Map, MessageCircle, Play } from 'lucide-react';
 import {
+  trackClickWhatsApp,
+  trackSolicitarDemonstracao,
+} from '@/lib/analytics';
+import {
   buildWhatsAppUrl,
   LANDING_PRESENTATION_URL,
   LANDING_TEST_LOTEMENT_PATH,
@@ -35,6 +39,9 @@ export function CtaDemo({
       id={id}
       data-cta={id}
       className={`${variantClass} landing-btn-interactive ${className}`.trim()}
+      onClick={() =>
+        trackSolicitarDemonstracao({ cta_id: id, cta_label: label })
+      }
     >
       <Calendar className="w-4 h-4 shrink-0" aria-hidden />
       {label}
@@ -81,6 +88,7 @@ export function CtaWhatsApp({
       target="_blank"
       rel="noopener noreferrer"
       className={`landing-btn-whatsapp landing-btn-interactive ${className}`.trim()}
+      onClick={() => trackClickWhatsApp({ cta_id: id, cta_label: label })}
     >
       <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
       {label}
