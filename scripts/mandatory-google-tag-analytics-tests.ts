@@ -38,6 +38,16 @@ assert.equal(
   'AW-18367509513/bNhHCL_Tx9wcEInop72E'
 );
 
+assert.equal(
+  getGoogleAdsConversionLabel('click_whatsapp'),
+  'cj8eCILp4NwcEInop72E'
+);
+assert.equal(hasGoogleAdsConversionLabel('click_whatsapp'), true);
+assert.equal(
+  `${getGoogleAdsId()}/${getGoogleAdsConversionLabel('click_whatsapp')}`,
+  'AW-18367509513/cj8eCILp4NwcEInop72E'
+);
+
 const granted = buildDefaultConsentState('granted');
 assert.equal(granted.ad_storage, 'granted');
 assert.equal(granted.ad_user_data, 'granted');

@@ -70,6 +70,19 @@ export function trackClickWhatsApp(params: AnalyticsEventParams = {}): void {
     event_label: 'whatsapp',
     ...params,
   });
+
+  const conversionLabel = getGoogleAdsConversionLabel('click_whatsapp');
+  if (!conversionLabel) return;
+
+  trackGoogleAdsConversion({
+    conversionLabel,
+    currency: 'BRL',
+    extra: {
+      event_category: 'engagement',
+      event_label: 'whatsapp',
+      ...params,
+    },
+  });
 }
 
 export function trackSolicitarDemonstracao(
