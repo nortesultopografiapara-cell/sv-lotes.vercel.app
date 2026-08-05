@@ -9,6 +9,10 @@ import {
   buildDefaultConsentState,
 } from '../lib/analytics/consent';
 import { ANALYTICS_EVENTS } from '../lib/analytics/eventNames';
+import {
+  getGoogleAdsConversionLabel,
+  hasGoogleAdsConversionLabel,
+} from '../lib/analytics/conversions';
 
 assert.equal(GOOGLE_ADS_ID, 'AW-18367509513');
 assert.equal(getGoogleAdsId().startsWith('AW-'), true);
@@ -19,6 +23,10 @@ assert.equal(ANALYTICS_EVENTS.solicitar_demonstracao, 'solicitar_demonstracao');
 assert.equal(ANALYTICS_EVENTS.enviar_formulario, 'enviar_formulario');
 assert.equal(ANALYTICS_EVENTS.cadastro_empresa, 'cadastro_empresa');
 assert.equal(ANALYTICS_EVENTS.assinatura_realizada, 'assinatura_realizada');
+
+assert.equal(typeof getGoogleAdsConversionLabel('assinatura'), 'string');
+assert.equal(getGoogleAdsConversionLabel('assinatura'), '');
+assert.equal(hasGoogleAdsConversionLabel('assinatura'), false);
 
 const granted = buildDefaultConsentState('granted');
 assert.equal(granted.ad_storage, 'granted');

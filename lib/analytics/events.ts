@@ -5,6 +5,7 @@
 
 import { sendGAEvent } from '@next/third-parties/google';
 import { GA_MEASUREMENT_ID, getGoogleAdsId } from './config';
+import { getGoogleAdsConversionLabel } from './conversions';
 import {
   ANALYTICS_EVENTS,
   type AnalyticsEventName,
@@ -97,13 +98,44 @@ export function trackCadastroEmpresa(params: AnalyticsEventParams = {}): void {
   });
 }
 
+/**
+ * Conversão comercial futura: contratação/ativação de assinatura paga do SV LOTES.
+ * NÃO usar em rotas de assinatura documental (/sign, /sign/sale).
+ *
+ * Hoje: envia `assinatura_realizada` ao dataLayer quando chamado.
+ * Ads (send_to): só dispara se houver conversionLabel configurado (ainda vazio).
+ */
 export function trackAssinaturaRealizada(
-  params: AnalyticsEventParams = {}
+  params: AnalyticsEventParams & {
+    transaction_id?: string;
+    value?: number;
+    currency?: string;
+  } = {}
 ): void {
+  const { transaction_id, value, currency, ...rest } = params;
+
   trackEvent(ANALYTICS_EVENTS.assinatura_realizada, {
     event_category: 'conversion',
-    event_label: 'assinatura',
-    ...params,
+    event_label: 'assinatura_sv_lotes',
+    ...(transaction_id ? { transaction_id } : {}),
+    ...(typeof value === 'number' ? { value } : {}),
+    ...(currency ? { currency } : {}),
+    ...rest,
+  });
+
+  const conversionLabel = getGoogleAdsConversionLabel('assinatura');
+  if (!conversionLabel) return;
+
+  trackGoogleAdsConversion({
+    conversionLabel,
+    value,
+    currency: currency || 'BRL',
+    transaction_id,
+    extra: {
+      event_category: 'conversion',
+      event_label: 'assinatura_sv_lotes',
+      ...rest,
+    },
   });
 }
 

@@ -6,6 +6,12 @@ export {
 } from './config';
 
 export {
+  type GoogleAdsConversionAction,
+  getGoogleAdsConversionLabel,
+  hasGoogleAdsConversionLabel,
+} from './conversions';
+
+export {
   type ConsentStatus,
   type GoogleConsentState,
   buildConsentDefaultInlineScript,
