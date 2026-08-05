@@ -80,6 +80,19 @@ export function trackSolicitarDemonstracao(
     event_label: 'demonstracao',
     ...params,
   });
+
+  const conversionLabel = getGoogleAdsConversionLabel('solicitar_demonstracao');
+  if (!conversionLabel) return;
+
+  trackGoogleAdsConversion({
+    conversionLabel,
+    currency: 'BRL',
+    extra: {
+      event_category: 'lead',
+      event_label: 'demonstracao',
+      ...params,
+    },
+  });
 }
 
 export function trackEnviarFormulario(params: AnalyticsEventParams = {}): void {

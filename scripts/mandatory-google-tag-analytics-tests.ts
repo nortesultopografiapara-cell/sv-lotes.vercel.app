@@ -28,6 +28,16 @@ assert.equal(typeof getGoogleAdsConversionLabel('assinatura'), 'string');
 assert.equal(getGoogleAdsConversionLabel('assinatura'), '');
 assert.equal(hasGoogleAdsConversionLabel('assinatura'), false);
 
+assert.equal(
+  getGoogleAdsConversionLabel('solicitar_demonstracao'),
+  'bNhHCL_Tx9wcEInop72E'
+);
+assert.equal(hasGoogleAdsConversionLabel('solicitar_demonstracao'), true);
+assert.equal(
+  `${getGoogleAdsId()}/${getGoogleAdsConversionLabel('solicitar_demonstracao')}`,
+  'AW-18367509513/bNhHCL_Tx9wcEInop72E'
+);
+
 const granted = buildDefaultConsentState('granted');
 assert.equal(granted.ad_storage, 'granted');
 assert.equal(granted.ad_user_data, 'granted');
