@@ -57,6 +57,10 @@ export const RECANTO_PRIMAVERA_LITERAL_PHRASES = [
   'taxa equivalente ao valor de 1 (uma) parcela',
   'problemas de marco ou divisa com o vizinho',
   'vistoria in loco',
+  'Parágrafo Primeiro: O COMPRADOR(A) declara ter ciência de que o loteamento objeto deste contrato já dispõe de infraestrutura de rede elétrica instalada',
+  'padrão de entrada',
+  'medidor de energia (relógio)',
+  'inteira e exclusiva responsabilidade do COMPRADOR(A)',
   'terraplanagem, remoção de pedras, árvores, tocos',
   'garante a existência de água no solo ou subsolo',
   'conservação, limpeza, roçada, aterro, retirada de lixo e entulho',
@@ -312,6 +316,9 @@ export function buildRecantoPrimaveraClausesHtml(
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA SEXTA – DAS CONDIÇÕES DO IMÓVEL:</strong> O(A) COMPRADOR(A) declara ter realizado vistoria in loco, tomando pleno conhecimento da localização, confrontações, topografia, acessos e estado de conservação do imóvel, aceitando-o no estado em que se encontra.
+      </p>
+      <p style="margin-bottom: 10px;">
+        Parágrafo Primeiro: O COMPRADOR(A) declara ter ciência de que o loteamento objeto deste contrato já dispõe de infraestrutura de rede elétrica instalada. Todavia, a solicitação de ligação individual de energia elétrica junto à concessionária competente, inclusive a instalação do padrão de entrada, do medidor de energia (relógio) e demais equipamentos necessários à ligação, bem como o atendimento às exigências técnicas, apresentação de documentos, pagamento de taxas, tarifas e demais custos necessários à efetiva ligação e utilização do serviço, serão de inteira e exclusiva responsabilidade do COMPRADOR(A), não recaindo sobre o VENDEDOR(A) qualquer obrigação ou ônus a esse respeito.
       </p>
       <p style="margin-bottom: 10px;">
         O(A) VENDEDOR(A) não se responsabiliza por terraplanagem, remoção de pedras, árvores, tocos ou quaisquer obstáculos naturais existentes no lote, tampouco garante a existência de água no solo ou subsolo.
