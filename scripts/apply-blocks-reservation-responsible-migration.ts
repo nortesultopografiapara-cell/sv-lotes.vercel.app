@@ -11,8 +11,13 @@ const MIGRATION = '20260806140000_blocks_reservation_responsible.sql';
 
 function loadEnv(filePath: string) {
   const abs = path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
-  if (!fs.existsSync(abs)) return;
-  for (const line of fs.readFileSync(abs, 'utf8').split(/\r?\n/)) {
+  if (!fs.existsSync(abs)) {
+    console.error(JSON.stringify({ error: 'env file missing', abs }));
+    return;
+  }
+  const raw = fs.readFileSync(abs, 'utf8').replace(/^\uFEFF/, '');
+  let loaded = 0;
+  for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
     if (!t || t.startsWith('#')) continue;
     const eq = t.indexOf('=');
@@ -25,9 +30,27 @@ function loadEnv(filePath: string) {
     ) {
       val = val.slice(1, -1);
     }
-    val = val.replace(/\\n/g, '\n').replace(/\\r/g, '\r').trim();
+    // Vercel CLI pode escapar aspas internas
+    val = val
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\"/g, '"')
+      .trim();
+    if (!key) continue;
     process.env[key] = val;
+    loaded += 1;
   }
+  console.log(
+    JSON.stringify({
+      envFile: path.basename(abs),
+      bytes: raw.length,
+      keysLoaded: loaded,
+      hasPublicUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      publicUrlLen: String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').length,
+      serviceKeyLen: String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').length,
+    }),
+  );
 }
 
 async function main() {
