@@ -13,6 +13,8 @@ export type OfflineReservationInput = {
     id: string;
     tenant_id?: string | null;
     role?: string;
+    name?: string | null;
+    email?: string | null;
   };
   brokerId?: string | null;
 };
@@ -23,6 +25,11 @@ export async function queueOfflineReservation(
   const lot = input.lot;
   const projectId = String(lot.project_id || '');
   const tenantId = String(input.user.tenant_id || lot.tenant_id || '');
+  const reservedByName =
+    String(input.user.name || input.user.email || '').trim() || 'usuário';
+  const reservationAt = new Date().toISOString();
+  const expires = new Date(reservationAt);
+  expires.setHours(expires.getHours() + 48);
 
   const action = await saveOfflineAction({
     type: 'BLOCK_RESERVE',
@@ -32,6 +39,7 @@ export async function queueOfflineReservation(
       project_id: projectId,
       tenant_id: tenantId,
       user_id: input.user.id,
+      user_name: reservedByName,
       is_super_admin: input.user.role === 'SUPER_ADMIN',
       final_price: input.finalPrice,
       broker_id: input.brokerId ?? null,
@@ -47,6 +55,10 @@ export async function queueOfflineReservation(
     customerId: `offline-pending-${action.id}`,
     price: input.finalPrice,
     offlinePending: true,
+    reservation_date: reservationAt,
+    reservation_expires_at: expires.toISOString(),
+    reserved_by_user_id: input.user.id,
+    reserved_by_name: reservedByName,
   });
 
   console.log('OFFLINE_RESERVATION_QUEUED', {

@@ -40,6 +40,9 @@ async function executeBlockReserve(
   const projectId = String(p.project_id || '');
   const tenantId = String(p.tenant_id || '');
   const userId = String(p.user_id || '');
+  const userName =
+    String(p.user_name || '').trim() ||
+    (userId ? 'usuário' : '');
   const customerData = (p.customer_data || {}) as CustomerFormValues;
   const finalPrice = Number(p.final_price) || 0;
   const brokerId = (p.broker_id as string | null) || null;
@@ -80,6 +83,7 @@ async function executeBlockReserve(
   const d = new Date();
   d.setHours(d.getHours() + 48);
   const expirationTime = d.toISOString();
+  const reservationAt = new Date().toISOString();
 
   const signalAmount =
     customerData.signal_amount != null && customerData.signal_amount !== ''
@@ -94,7 +98,9 @@ async function executeBlockReserve(
       customer_id: customerId,
       broker_id: brokerId,
       reservation_expires_at: expirationTime,
-      reservation_date: new Date().toISOString(),
+      reservation_date: reservationAt,
+      reserved_by_user_id: userId || null,
+      reserved_by_name: userName || null,
       signal_amount: signalAmount,
       signal_date: customerData.signal_date || null,
       signal_payment_method: customerData.signal_payment_method || null,
@@ -104,7 +110,29 @@ async function executeBlockReserve(
     .eq('project_id', projectId);
 
   if (updateError) {
-    return { ok: false, message: updateError.message };
+    if (/reserved_by|column/i.test(updateError.message || '')) {
+      const { error: legacyErr } = await supabase
+        .from('blocks')
+        .update({
+          status: 'Reservado',
+          price: finalPrice,
+          customer_id: customerId,
+          broker_id: brokerId,
+          reservation_expires_at: expirationTime,
+          reservation_date: reservationAt,
+          signal_amount: signalAmount,
+          signal_date: customerData.signal_date || null,
+          signal_payment_method: customerData.signal_payment_method || null,
+          signal_notes: customerData.signal_notes || null,
+        })
+        .eq('id', blockId)
+        .eq('project_id', projectId);
+      if (legacyErr) {
+        return { ok: false, message: legacyErr.message };
+      }
+    } else {
+      return { ok: false, message: updateError.message };
+    }
   }
 
   try {
@@ -120,6 +148,8 @@ async function executeBlockReserve(
       signal_date: customerData.signal_date || null,
       signal_payment_method: customerData.signal_payment_method || null,
       signal_notes: customerData.signal_notes || null,
+      created_by_user_id: userId || null,
+      created_by_name: userName || null,
     });
   } catch {
     /* não bloqueia sync */

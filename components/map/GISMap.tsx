@@ -88,6 +88,14 @@ import {
   type LotAuditLogRow,
 } from "@/lib/lotAudit";
 import {
+  buildLotReservationDisplay,
+  buildReservationConvertedAuditDescription,
+  buildReservationCreatedAuditDescription,
+  isLotReservedStatus,
+  type LotReservationDisplay,
+} from "@/lib/lotReservationDisplay";
+import { resolveReservationResponsibleName } from "@/lib/lotReservationResolve";
+import {
   formatCurrencyBRL as formatBRL,
   formatLotAuditDescription,
   parseCurrencyBRL,
@@ -1839,6 +1847,8 @@ function LotPopupContent({
   const [auditUserNames, setAuditUserNames] = useState<Record<string, string>>(
     {},
   );
+  const [reservationDisplay, setReservationDisplay] =
+    useState<LotReservationDisplay | null>(null);
 
   const quadraLabel = String(lot.block ?? lot.block_name ?? "").trim();
   const formattedPrice =
@@ -1898,6 +1908,92 @@ function LotPopupContent({
       cancelled = true;
     };
   }, [popupTab, lot?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReservationSection() {
+      if (!isLotReservedStatus(lot?.status)) {
+        setReservationDisplay(null);
+        return;
+      }
+
+      const companyId =
+        lot.tenant_id || lot.company_id || lot.tenantId || null;
+
+      const baseSource = {
+        status: lot.status,
+        customerName: lot.customerName,
+        customerId: lot.customerId || lot.customer_id,
+        reservationDate: lot.reservation_date || lot.reservationDate,
+        reservationExpiresAt:
+          lot.reservation_expires_at || lot.reservationExpiresAt,
+        reservedByUserId: lot.reserved_by_user_id || lot.reservedByUserId,
+        reservedByName: lot.reserved_by_name || lot.reservedByName,
+        brokerId: lot.broker_id || lot.brokerId,
+        brokerName: lot.brokerName || null,
+      };
+
+      const snapshotName = String(
+        lot.reserved_by_name || lot.reservedByName || "",
+      ).trim();
+      if (snapshotName) {
+        if (!cancelled) {
+          setReservationDisplay(buildLotReservationDisplay(baseSource));
+        }
+        return;
+      }
+
+      // Mostra imediatamente com "Não identificado" e resolve em seguida (legado).
+      if (!cancelled) {
+        setReservationDisplay(buildLotReservationDisplay(baseSource));
+      }
+
+      try {
+        const resolved = await resolveReservationResponsibleName(supabase, {
+          companyId,
+          blockId: String(lot.id),
+          reservedByUserId: baseSource.reservedByUserId,
+          reservedByName: baseSource.reservedByName,
+          brokerId: baseSource.brokerId,
+          brokerName: baseSource.brokerName,
+        });
+        if (cancelled) return;
+        setReservationDisplay(
+          buildLotReservationDisplay(baseSource, {
+            resolvedReservedByName: resolved,
+          }),
+        );
+      } catch {
+        /* mantém display parcial */
+      }
+    }
+
+    void loadReservationSection();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    lot?.id,
+    lot?.status,
+    lot?.customerName,
+    lot?.customerId,
+    lot?.customer_id,
+    lot?.reservation_date,
+    lot?.reservationDate,
+    lot?.reservation_expires_at,
+    lot?.reservationExpiresAt,
+    lot?.reserved_by_user_id,
+    lot?.reservedByUserId,
+    lot?.reserved_by_name,
+    lot?.reservedByName,
+    lot?.broker_id,
+    lot?.brokerId,
+    lot?.brokerName,
+    lot?.tenant_id,
+    lot?.company_id,
+    lot?.tenantId,
+  ]);
 
   const handleSavePrice = async () => {
     if (!canEditLotPrice) return;
@@ -2024,7 +2120,9 @@ function LotPopupContent({
               </span>
             ) : null}
           </h3>
-          {lot.customerName && lot.status !== "Disponível" && (
+          {lot.customerName &&
+            lot.status !== "Disponível" &&
+            !isLotReservedStatus(lot.status) && (
             <p className="text-[10px] text-gray-600 truncate mt-0.5">
               {lot.customerName}
             </p>
@@ -2115,6 +2213,66 @@ function LotPopupContent({
               <span className="font-medium text-gray-900 text-right truncate max-w-[160px]">
                 {lot.customerName}
               </span>
+            </div>
+          )}
+
+          {reservationDisplay && (
+            <div
+              className={`mt-1.5 pt-1.5 border-t space-y-1 rounded-md px-1.5 py-1.5 ${
+                reservationDisplay.situation === "active"
+                  ? "border-sky-200 bg-sky-50/70"
+                  : "border-orange-200 bg-orange-50/70"
+              }`}
+            >
+              <p
+                className={`text-[10px] font-bold tracking-wide uppercase ${
+                  reservationDisplay.situation === "active"
+                    ? "text-sky-800"
+                    : "text-orange-800"
+                }`}
+              >
+                Reserva
+              </p>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-gray-500 shrink-0">Cliente reservado</span>
+                <span className="font-medium text-gray-900 text-right leading-tight">
+                  {reservationDisplay.customerName}
+                </span>
+              </div>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-gray-500 shrink-0">Reserva feita por</span>
+                <span className="font-medium text-gray-900 text-right leading-tight">
+                  {reservationDisplay.reservedByLabel}
+                </span>
+              </div>
+              {reservationDisplay.reservedAtLabel && (
+                <div className="flex justify-between items-start gap-2">
+                  <span className="text-gray-500 shrink-0">Realizada em</span>
+                  <span className="font-medium text-gray-900 text-right">
+                    {reservationDisplay.reservedAtLabel}
+                  </span>
+                </div>
+              )}
+              {reservationDisplay.expiresAtLabel && (
+                <div className="flex justify-between items-start gap-2">
+                  <span className="text-gray-500 shrink-0">Válida até</span>
+                  <span className="font-medium text-gray-900 text-right">
+                    {reservationDisplay.expiresAtLabel}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between items-center gap-2 pt-0.5">
+                <span className="text-gray-500 shrink-0">Situação</span>
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                    reservationDisplay.situation === "active"
+                      ? "bg-sky-100 text-sky-800"
+                      : "bg-orange-100 text-orange-900"
+                  }`}
+                >
+                  {reservationDisplay.situationLabel}
+                </span>
+              </div>
             </div>
           )}
 
@@ -4141,6 +4299,13 @@ export default function GISMap({
                 customerId: b.customer_id || null,
                 saleId: b.sale_id || null,
                 contractId: b.contract_id || null,
+                broker_id: b.broker_id || null,
+                tenant_id: b.tenant_id || b.company_id || null,
+                company_id: b.company_id || b.tenant_id || null,
+                reservation_date: b.reservation_date || null,
+                reservation_expires_at: b.reservation_expires_at || null,
+                reserved_by_user_id: b.reserved_by_user_id || null,
+                reserved_by_name: b.reserved_by_name || null,
                 signal_amount: b.signal_amount,
                 signal_date: b.signal_date,
                 signal_payment_method: b.signal_payment_method,
@@ -4513,7 +4678,16 @@ export default function GISMap({
                 status: newStatus,
                 price: finalPrice,
                 ...(newStatus === "Disponível"
-                  ? { customer_id: null, customerId: null, customerName: null }
+                  ? {
+                      customer_id: null,
+                      customerId: null,
+                      customerName: null,
+                      broker_id: null,
+                      reservation_date: null,
+                      reservation_expires_at: null,
+                      reserved_by_user_id: null,
+                      reserved_by_name: null,
+                    }
                   : {}),
               }
             : l,
@@ -4527,7 +4701,16 @@ export default function GISMap({
                 status: newStatus,
                 price: finalPrice,
                 ...(newStatus === "Disponível"
-                  ? { customer_id: null, customerId: null, customerName: null }
+                  ? {
+                      customer_id: null,
+                      customerId: null,
+                      customerName: null,
+                      broker_id: null,
+                      reservation_date: null,
+                      reservation_expires_at: null,
+                      reserved_by_user_id: null,
+                      reserved_by_name: null,
+                    }
                   : {}),
               }
             : l,
@@ -4545,6 +4728,8 @@ export default function GISMap({
         updatePayload.broker_id = null;
         updatePayload.reservation_expires_at = null;
         updatePayload.reservation_date = null;
+        updatePayload.reserved_by_user_id = null;
+        updatePayload.reserved_by_name = null;
       }
 
       gisPerfLotEditMark('db_start');
@@ -4658,6 +4843,8 @@ export default function GISMap({
               id: user.id,
               tenant_id: finalTenantId,
               role: user.role,
+              name: user.name,
+              email: user.email,
             },
             brokerId: finalBrokerId,
           });
@@ -4680,6 +4867,7 @@ export default function GISMap({
 
     try {
       if (isVendidoStatus(newStatus)) {
+        const wasReserved = isLotReservedStatus(lot.status);
         console.log("[sales/create] client_start", { lotId: lot.id });
         const { ok, data, error } = await fetchJsonWithTimeout<{
           success?: boolean;
@@ -4722,6 +4910,25 @@ export default function GISMap({
           throw new Error(
             error || data?.error || "Não foi possível concluir a venda.",
           );
+        }
+
+        if (wasReserved) {
+          void logLotAuditEvent(supabase, {
+            ...lotAuditContextFromBlock(lot, {
+              companyId: finalTenantId,
+              projectId: finalProjectId,
+            }),
+            userId: user.id,
+            action: "status_changed",
+            title: "Reserva convertida em venda",
+            description: buildReservationConvertedAuditDescription(),
+            newData: {
+              customer_id: data.customerId,
+              sale_id: data.saleId,
+              from_status: lot.status,
+            },
+            source: "sale_flow",
+          });
         }
 
         markLocalPatchSuppress([String(lot.id)]);
@@ -4817,8 +5024,13 @@ export default function GISMap({
           : null;
 
       let expirationTime: string | null = null;
+      let reservationAt: string | null = null;
+      const reservedByUserId = user.id;
+      const reservedByName =
+        String(user.name || user.email || "").trim() || "usuário";
       if (newStatus === "Reservado") {
-        const d = new Date();
+        reservationAt = new Date().toISOString();
+        const d = new Date(reservationAt);
         d.setHours(d.getHours() + 48);
         expirationTime = d.toISOString();
       }
@@ -4826,15 +5038,29 @@ export default function GISMap({
       {
         // Reservas e Disponível
         console.log("BLOCK_MARKED_RESERVED_OR_AVAILABLE");
-        const { error: updateError } = await supabase
+        const reservationPatch =
+          newStatus === "Reservado"
+            ? {
+                reservation_expires_at: expirationTime,
+                reservation_date: reservationAt,
+                reserved_by_user_id: reservedByUserId,
+                reserved_by_name: reservedByName,
+              }
+            : {
+                reservation_expires_at: null,
+                reservation_date: null,
+                reserved_by_user_id: null,
+                reserved_by_name: null,
+              };
+
+        let { error: updateError } = await supabase
           .from("blocks")
           .update({
             status: newStatus,
             price: finalPrice,
             customer_id: customerId,
             broker_id: finalBrokerId,
-            reservation_expires_at: expirationTime,
-            reservation_date: newStatus === "Reservado" ? new Date().toISOString() : null,
+            ...reservationPatch,
             signal_amount: signalAmount,
             signal_date: customerData.signal_date || null,
             signal_payment_method: customerData.signal_payment_method || null,
@@ -4844,10 +5070,77 @@ export default function GISMap({
           .eq("tenant_id", finalTenantId)
           .eq("project_id", lot.project_id || finalProjectId);
 
+        if (
+          updateError &&
+          /reserved_by|column/i.test(updateError.message || "")
+        ) {
+          const {
+            reserved_by_user_id: _u,
+            reserved_by_name: _n,
+            ...legacyPatch
+          } = reservationPatch as Record<string, unknown>;
+          ({ error: updateError } = await supabase
+            .from("blocks")
+            .update({
+              status: newStatus,
+              price: finalPrice,
+              customer_id: customerId,
+              broker_id: finalBrokerId,
+              ...legacyPatch,
+              signal_amount: signalAmount,
+              signal_date: customerData.signal_date || null,
+              signal_payment_method: customerData.signal_payment_method || null,
+              signal_notes: customerData.signal_notes || null,
+            })
+            .eq("id", lot.id)
+            .eq("tenant_id", finalTenantId)
+            .eq("project_id", lot.project_id || finalProjectId));
+        }
+
         if (updateError) throw updateError;
         console.log("CUSTOMER_ID_LINKED_TO_BLOCK");
 
         if (newStatus === "Reservado") {
+          markLocalPatchSuppress([String(lot.id)]);
+          setLots((prev) =>
+            prev.map((l) =>
+              l.id === lot.id
+                ? {
+                    ...l,
+                    status: "Reservado",
+                    price: finalPrice,
+                    customerId,
+                    customer_id: customerId,
+                    customerName: customerData.name || l.customerName,
+                    broker_id: finalBrokerId,
+                    reservation_date: reservationAt,
+                    reservation_expires_at: expirationTime,
+                    reserved_by_user_id: reservedByUserId,
+                    reserved_by_name: reservedByName,
+                  }
+                : l,
+            ),
+          );
+          setBlocksData((prev) =>
+            prev.map((l) =>
+              l.id === lot.id
+                ? {
+                    ...l,
+                    status: "Reservado",
+                    price: finalPrice,
+                    customerId,
+                    customer_id: customerId,
+                    customerName: customerData.name || l.customerName,
+                    broker_id: finalBrokerId,
+                    reservation_date: reservationAt,
+                    reservation_expires_at: expirationTime,
+                    reserved_by_user_id: reservedByUserId,
+                    reserved_by_name: reservedByName,
+                  }
+                : l,
+            ),
+          );
+
           void logLotAuditEvent(supabase, {
             ...lotAuditContextFromBlock(lot, {
               companyId: finalTenantId,
@@ -4856,11 +5149,17 @@ export default function GISMap({
             userId: user.id,
             action: "reserved",
             title: "Lote reservado",
-            description: `Reservado para ${customerData.name || "cliente"}`,
+            description: buildReservationCreatedAuditDescription({
+              actorName: reservedByName,
+              customerName: customerData.name || "cliente",
+            }),
             newData: {
               customer_id: customerId,
               broker_id: finalBrokerId,
+              reserved_by_user_id: reservedByUserId,
+              reserved_by_name: reservedByName,
               expiration_time: expirationTime,
+              reservation_date: reservationAt,
             },
             source: "sale_flow",
           });
@@ -4880,6 +5179,8 @@ export default function GISMap({
                signal_date: customerData.signal_date || null,
                signal_payment_method: customerData.signal_payment_method || null,
                signal_notes: customerData.signal_notes || null,
+               created_by_user_id: reservedByUserId,
+               created_by_name: reservedByName,
             });
          }
       } catch(e) {}
@@ -5854,6 +6155,10 @@ export default function GISMap({
                         contract_id: null,
                         contractId: null,
                         broker_id: null,
+                        reservation_date: null,
+                        reservation_expires_at: null,
+                        reserved_by_user_id: null,
+                        reserved_by_name: null,
                       }
                     : l,
                 ),
@@ -5872,6 +6177,10 @@ export default function GISMap({
                         contract_id: null,
                         contractId: null,
                         broker_id: null,
+                        reservation_date: null,
+                        reservation_expires_at: null,
+                        reserved_by_user_id: null,
+                        reserved_by_name: null,
                       }
                     : l,
                 ),

@@ -40,6 +40,8 @@ export const COMMERCIAL_FIELDS_PRESERVED = [
   'broker_id',
   'reservation_expires_at',
   'reservation_date',
+  'reserved_by_user_id',
+  'reserved_by_name',
   'signal_amount',
   'signal_date',
   'signal_payment_method',

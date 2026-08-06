@@ -922,6 +922,8 @@ async function applyLocalRelease(
     broker_id: null,
     reservation_expires_at: null,
     reservation_date: null,
+    reserved_by_user_id: null,
+    reserved_by_name: null,
   };
 
   let blockErr = (
@@ -937,9 +939,19 @@ async function applyLocalRelease(
       .eq('id', block.id)
   ).error;
 
-  if (blockErr && /signal_|column/i.test(blockErr.message)) {
-    // Schema sem campos de sinal — limpa só vínculos comerciais.
-    blockErr = (await admin.from('blocks').update(clearCore).eq('id', block.id)).error;
+  if (blockErr && /signal_|reserved_by|column/i.test(blockErr.message)) {
+    // Schema sem campos de sinal / reserved_by — limpa só vínculos comerciais.
+    const legacyCore = {
+      status: LOT_AVAILABLE_STATUS,
+      customer_id: null,
+      sale_id: null,
+      contract_id: null,
+      broker_id: null,
+      reservation_expires_at: null,
+      reservation_date: null,
+    };
+    blockErr = (await admin.from('blocks').update(legacyCore).eq('id', block.id))
+      .error;
   }
 
   if (blockErr) {
