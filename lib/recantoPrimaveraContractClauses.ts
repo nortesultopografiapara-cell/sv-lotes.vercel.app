@@ -57,8 +57,6 @@ export const RECANTO_PRIMAVERA_LITERAL_PHRASES = [
   'taxa equivalente ao valor de 1 (uma) parcela',
   'problemas de marco ou divisa com o vizinho',
   'vistoria in loco',
-  'ligação individual de energia elétrica',
-  'prazo de 90 (noventa) dias',
   'terraplanagem, remoção de pedras, árvores, tocos',
   'garante a existência de água no solo ou subsolo',
   'conservação, limpeza, roçada, aterro, retirada de lixo e entulho',
@@ -314,9 +312,6 @@ export function buildRecantoPrimaveraClausesHtml(
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA SEXTA – DAS CONDIÇÕES DO IMÓVEL:</strong> O(A) COMPRADOR(A) declara ter realizado vistoria in loco, tomando pleno conhecimento da localização, confrontações, topografia, acessos e estado de conservação do imóvel, aceitando-o no estado em que se encontra.
-      </p>
-      <p style="margin-bottom: 10px;">
-        O empreendimento dispõe de energia elétrica instalada na via de acesso, cabendo ao(à) COMPRADOR(A), às suas expensas, a ligação individual de energia elétrica ao lote adquirido, devendo providenciar transformador próprio no prazo de 90 (noventa) dias contados da assinatura deste contrato, quando necessário.
       </p>
       <p style="margin-bottom: 10px;">
         O(A) VENDEDOR(A) não se responsabiliza por terraplanagem, remoção de pedras, árvores, tocos ou quaisquer obstáculos naturais existentes no lote, tampouco garante a existência de água no solo ou subsolo.
