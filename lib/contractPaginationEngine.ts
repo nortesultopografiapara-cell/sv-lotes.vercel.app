@@ -639,7 +639,11 @@ export function applyContractPaginationBreaksToElement(
 }
 
 /**
- * Prepara um fragmento HTML solto para medição + html2pdf (anexa temporariamente).
+ * Prepara um fragmento HTML solto para medição + html2pdf.
+ *
+ * IMPORTANTE: a medição pode anexar off-screen, mas ANTES do html2canvas
+ * o elemento DEVE voltar ao fluxo normal. Deixar `left: -10000px` faz o
+ * html2pdf gerar PDF só com chrome (cabeçalho/rodapé) e corpo vazio.
  */
 export function prepareContractHtmlElementForPagination(
   element: HTMLElement,
@@ -656,8 +660,68 @@ export function prepareContractHtmlElementForPagination(
     element.style.width = '794px';
   }
 
-  // Mantém off-screen até o caller remover após o html2pdf.
-  return applyContractPaginationBreaksToElement(element);
+  const result = applyContractPaginationBreaksToElement(element);
+
+  // Restaura layout imprimível — html2canvas captura a caixa visível do elemento.
+  restoreContractElementStylesForHtml2PdfCapture(element);
+
+  return result;
+}
+
+/**
+ * Garante estilos compatíveis com captura html2canvas / html2pdf.
+ * Nunca deixar position absolute fora da viewport.
+ */
+export function restoreContractElementStylesForHtml2PdfCapture(
+  element: HTMLElement,
+): void {
+  element.style.position = 'static';
+  element.style.left = '';
+  element.style.top = '';
+  element.style.right = '';
+  element.style.bottom = '';
+  element.style.transform = '';
+  element.style.opacity = '';
+  element.style.visibility = '';
+  element.style.display = '';
+  element.style.width = element.style.width || '794px';
+}
+
+/** Falha rápido se o elemento ainda estiver fora da área capturável. */
+export function assertContractElementReadyForHtml2PdfCapture(
+  element: HTMLElement,
+): void {
+  const left = String(element.style.left || '').trim();
+  const pos = String(element.style.position || '').trim().toLowerCase();
+  const vis = String(element.style.visibility || '').trim().toLowerCase();
+  const display = String(element.style.display || '').trim().toLowerCase();
+  const opacity = String(element.style.opacity || '').trim();
+
+  if (/^-?\d{4,}px$/i.test(left) || left.includes('-10000')) {
+    throw new Error(
+      'CONTRACT_PDF_CAPTURE_OFFSCREEN: elemento com left off-screen antes do html2pdf',
+    );
+  }
+  if (pos === 'absolute' && /^-/.test(left)) {
+    throw new Error(
+      'CONTRACT_PDF_CAPTURE_OFFSCREEN: position absolute fora da viewport',
+    );
+  }
+  if (vis === 'hidden') {
+    throw new Error(
+      'CONTRACT_PDF_CAPTURE_HIDDEN: visibility hidden antes do html2pdf',
+    );
+  }
+  if (display === 'none') {
+    throw new Error(
+      'CONTRACT_PDF_CAPTURE_HIDDEN: display none antes do html2pdf',
+    );
+  }
+  if (opacity === '0') {
+    throw new Error(
+      'CONTRACT_PDF_CAPTURE_HIDDEN: opacity 0 antes do html2pdf',
+    );
+  }
 }
 
 /**

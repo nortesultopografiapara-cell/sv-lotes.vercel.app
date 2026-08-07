@@ -78,7 +78,10 @@ import {
   getContractHtml2pdfOptions,
   resolveContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
-import { prepareContractHtmlElementForPagination } from "@/lib/contractPaginationEngine";
+import {
+  assertContractElementReadyForHtml2PdfCapture,
+  prepareContractHtmlElementForPagination,
+} from "@/lib/contractPaginationEngine";
 import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
 import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
 import {
@@ -887,6 +890,7 @@ export default function ContractsPage() {
       const element = document.createElement("div");
       element.innerHTML = ver.generated_html;
       prepareContractHtmlElementForPagination(element);
+      assertContractElementReadyForHtml2PdfCapture(element);
       const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
       const htmlLooksRecanto = String(ver.generated_html || '').includes(
         'sv-contract-recanto-primavera',
@@ -998,6 +1002,7 @@ export default function ContractsPage() {
 
       element.innerHTML = htmlBody;
       prepareContractHtmlElementForPagination(element);
+      assertContractElementReadyForHtml2PdfCapture(element);
 
       let logoBase64: string | null = null;
       if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
