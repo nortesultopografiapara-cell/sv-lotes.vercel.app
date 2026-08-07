@@ -14,12 +14,14 @@ import {
   applyCertificateBreakClass,
   CONTRACT_CERTIFICATE_PAGINATION_CSS,
   CONTRACT_HTML2PDF_PAGINATION_AVOID,
+  CONTRACT_PAGE_CONTENT_HEIGHT_PX,
   CONTRACT_PAGINATION_MEASURE_SCRIPT,
   CONTRACT_PAGINATION_SELECTORS,
   CONTRACT_SIGNATURE_PAGINATION_CSS,
   CONTRACT_SIGNATURE_SPACING,
   decideIndivisibleBlockPlacement,
   decideSignatureAndCertificatePlacement,
+  decideSignaturePageBreakFromContinuousMeasure,
   offsetWithinPagePx,
   RECANTO_HTML2PDF_PAGINATION_AVOID,
   remainingSpaceOnPagePx,
@@ -182,12 +184,43 @@ assert(
     footerReservePx: 40,
   });
   assert(
-    'assinaturas longas sem espaço → new-page no bloco',
-    longSig.signature === 'new-page',
+    'assinaturas compactas NÃO usam offset contínuo para force-break',
+    longSig.signature === 'same-page',
   );
   assert(
-    'com assinaturas em página nova, certificado cabe → same-page',
-    longSig.certificate === 'same-page',
+    'certificado sem espaço após assinaturas no fluxo contínuo → new-page',
+    longSig.certificate === 'new-page',
+  );
+}
+{
+  // Cenário real 000000027: resto contínuo ~239 < altura ~311, mas o bloco
+  // cabe numa página útil — NÃO deve forçar página exclusiva de assinaturas.
+  const recantoFit = decideSignatureAndCertificatePlacement({
+    signatureOffsetTopInPagePx: 596,
+    signatureHeightPx: 311,
+    certificateHeightPx: 0,
+    pageH: CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+    footerReservePx: 40,
+  });
+  assert(
+    'Recanto 000000027: bloco compacto permanece same-page (sem pág. só assinaturas)',
+    recantoFit.signature === 'same-page',
+  );
+  assert(
+    'medição contínua isolada também same-page para bloco < página útil',
+    decideSignaturePageBreakFromContinuousMeasure({
+      signatureHeightPx: 311,
+      pageH: CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+      footerReservePx: 40,
+    }) === 'same-page',
+  );
+  assert(
+    'só force-break se altura > página útil inteira',
+    decideSignaturePageBreakFromContinuousMeasure({
+      signatureHeightPx: CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+      pageH: CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+      footerReservePx: 40,
+    }) === 'new-page',
   );
 }
 {
@@ -203,6 +236,16 @@ assert(
     spouseHeavy.signature === 'same-page',
   );
 }
+assert(
+  'script de medição NÃO força assinaturas pelo resto contínuo',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decideSignature') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('fullPageUsable') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('sv-pagination-compact'),
+);
+assert(
+  'CSS de compactação leve existe',
+  CONTRACT_SIGNATURE_PAGINATION_CSS.includes('sv-pagination-compact'),
+);
 assert(
   'offsetWithinPagePx normaliza',
   offsetWithinPagePx(900, 837) === 900 - 837,

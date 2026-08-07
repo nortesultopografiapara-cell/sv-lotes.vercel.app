@@ -157,9 +157,36 @@ export function remainingSpaceOnPagePx(
 }
 
 /**
+ * Medição contínua (y % PAGE_H) subestima o espaço real no PDF quando
+ * quebras anteriores (`break-inside: avoid` em parágrafos/tabelas) deixam
+ * folgas. Usar esse resto para forçar `page-break-before` nas assinaturas
+ * gera página quase vazia (ex.: data na pág. N, assinaturas na N+1).
+ *
+ * Por isso o Chromium deve decidir o encaixe das assinaturas via
+ * `page-break-inside: avoid` — só forçamos nova página se o bloco for
+ * maior que a área útil de uma página inteira (impossível caber).
+ */
+export function decideSignaturePageBreakFromContinuousMeasure(input: {
+  pageH?: number;
+  footerReservePx?: number;
+  signatureHeightPx?: number | null;
+}): ContractPaginationDecision {
+  const pageH = input.pageH ?? CONTRACT_PAGE_CONTENT_HEIGHT_PX;
+  const footer = input.footerReservePx ?? CONTRACT_FOOTER_RESERVE_PX;
+  const sigH = Math.max(0, Number(input.signatureHeightPx) || 0);
+  if (sigH <= 0) return 'same-page';
+  // Só força nova página se nem uma página vazia comportaria o bloco.
+  const fullPageUsable = Math.max(0, pageH - footer);
+  return sigH > fullPageUsable ? 'new-page' : 'same-page';
+}
+
+/**
  * Decisão inteligente: assinaturas e certificado são medidos em separado.
  * Nunca empurra o bloco de assinaturas para página nova só porque o certificado
  * não cabe depois — isso gerava páginas quase vazias.
+ *
+ * Assinaturas: NÃO usam o resto contínuo (y % PAGE_H) para force-break —
+ * ver `decideSignaturePageBreakFromContinuousMeasure`.
  */
 export function decideSignatureAndCertificatePlacement(input: {
   pageH?: number;
@@ -170,6 +197,11 @@ export function decideSignatureAndCertificatePlacement(input: {
   /** Topo do certificado na página (fluxo contínuo), quando não há assinaturas. */
   certificateOffsetTopInPagePx?: number | null;
   certificateHeightPx?: number | null;
+  /**
+   * @deprecated Ignorado. Mantido só para compatibilidade de chamadas/testes.
+   * Assinaturas não forçam quebra pelo offset contínuo.
+   */
+  trustContinuousSignatureOffset?: boolean;
 }): {
   signature: ContractPaginationDecision;
   certificate: ContractPaginationDecision;
@@ -181,18 +213,13 @@ export function decideSignatureAndCertificatePlacement(input: {
   const hasSig = sigH > 0 && input.signatureOffsetTopInPagePx != null;
   const hasCert = certH > 0;
 
-  let signature: ContractPaginationDecision = 'same-page';
-  if (hasSig) {
-    const remainingAtSig = remainingSpaceOnPagePx(
-      Number(input.signatureOffsetTopInPagePx) || 0,
-      pageH,
-    );
-    signature = decideIndivisibleBlockPlacement({
-      remainingPx: remainingAtSig,
-      blockHeightPx: sigH,
-      footerReservePx: footer,
-    });
-  }
+  const signature = hasSig
+    ? decideSignaturePageBreakFromContinuousMeasure({
+        pageH,
+        footerReservePx: footer,
+        signatureHeightPx: sigH,
+      })
+    : 'same-page';
 
   let certificate: ContractPaginationDecision = 'same-page';
   if (hasCert) {
@@ -271,6 +298,10 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
   ${CONTRACT_PAGINATION_SELECTORS.signatureBlock}.sv-pagination-force-break {
     page-break-before: always !important;
     break-before: page !important;
+  }
+  /* Compactação genérica (detalhes Recanto ficam em CONTRACT_RECANTO_CLAUSE_FLOW_CSS). */
+  ${CONTRACT_PAGINATION_SELECTORS.signatureBlock}.sv-pagination-compact {
+    margin-top: 2px !important;
   }
   /* Clássico (MENESES/PADRAO): grade 2 colunas — não aplica ao Recanto. */
   .sv-contract-document .contract-signatures {
@@ -550,6 +581,42 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
     break-after: avoid-page !important;
     margin-bottom: 0 !important;
   }
+  /* Compactação sob demanda (sv-pagination-compact) — vence inline/Recanto. */
+  .contract-signatures--recanto.sv-pagination-compact .signature-grid {
+    row-gap: 4px !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot-spouse {
+    padding-top: 2px !important;
+    margin-top: 0 !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot .signature-line,
+  .contract-signatures--recanto.sv-pagination-compact .signature-line {
+    height: 10px !important;
+    padding: 0 !important;
+    margin: 0 auto 0 auto !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot > p {
+    margin-top: 1px !important;
+    margin-bottom: 1px !important;
+    line-height: 1.2 !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot > p:first-of-type {
+    margin-top: 2px !important;
+    margin-bottom: 2px !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot img {
+    max-height: 28px !important;
+    margin-bottom: 1px !important;
+  }
+  /* Cola fechamento/data ao bloco — evita página só com data. */
+  .sv-contract-recanto-primavera .contract-closing {
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+  }
+  .sv-contract-recanto-primavera .contract-signatures--recanto {
+    page-break-before: avoid !important;
+    break-before: avoid-page !important;
+  }
 `.trim();
 
 /** Fluxo SV LOTES 2.0 — injetado no CSS clássico (template SV2 usa CONTRACT_PDF_PRINT_CSS). */
@@ -625,11 +692,27 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
     return ((t % PAGE_H) + PAGE_H) % PAGE_H;
   };
   const remainingAt = (y) => Math.max(0, PAGE_H - pageOffset(y));
-  const decide = (remaining, blockH) => {
+  const decideBlock = (remaining, blockH) => {
     const available = Math.max(0, remaining - FOOTER);
     if (blockH <= 0) return 'same-page';
     if (available <= 0) return 'new-page';
     return blockH <= available ? 'same-page' : 'new-page';
+  };
+  // Resto contínuo para decidir compactação — sem reservar rodapé de novo
+  // (PAGE_H já desconta a margem inferior do PDF).
+  const decideContinuousTight = (remaining, blockH) => {
+    const safety = 8;
+    const available = Math.max(0, remaining - safety);
+    if (blockH <= 0) return 'same-page';
+    if (available <= 0) return 'new-page';
+    return blockH <= available ? 'same-page' : 'new-page';
+  };
+  // Assinaturas: NÃO usar resto contínuo (y%PAGE_H) — subestima folgas do PDF.
+  // Só force-break se o bloco for maior que uma página útil inteira.
+  const decideSignature = (blockH) => {
+    if (blockH <= 0) return 'same-page';
+    const fullPageUsable = Math.max(0, PAGE_H - FOOTER);
+    return blockH > fullPageUsable ? 'new-page' : 'same-page';
   };
 
   let signature = 'same-page';
@@ -637,6 +720,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   let sigH = 0;
   let certH = 0;
   let remainingAtSig = PAGE_H;
+  let continuousWouldForce = false;
 
   if (sig) {
     const rect = sig.getBoundingClientRect();
@@ -648,9 +732,23 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
     }
     const top = rect.top + scrollY;
     remainingAtSig = remainingAt(top);
-    signature = decide(remainingAtSig, sigH);
+    continuousWouldForce = decideContinuousTight(remainingAtSig, sigH) === 'new-page';
+    signature = decideSignature(sigH);
     if (signature === 'new-page') {
       sig.classList.add('sv-pagination-force-break');
+    } else if (continuousWouldForce) {
+      // Compacta e remede — objetivo: caber no resto real do Chromium.
+      sig.classList.add('sv-pagination-compact');
+      const rect2 = sig.getBoundingClientRect();
+      sigH = Math.ceil(rect2.height || 0);
+      const next2 = sig.nextElementSibling;
+      if (next2 && next2.classList && next2.classList.contains('contract-institutional-footer')) {
+        sigH += Math.ceil(next2.getBoundingClientRect().height || 0);
+      }
+      remainingAtSig = remainingAt(rect2.top + scrollY);
+      continuousWouldForce = decideContinuousTight(remainingAtSig, sigH) === 'new-page';
+    } else {
+      sig.classList.remove('sv-pagination-compact');
     }
   }
 
@@ -667,7 +765,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
       const top = cert.getBoundingClientRect().top + scrollY;
       remainingForCert = remainingAt(top);
     }
-    certificate = decide(remainingForCert, certH);
+    certificate = decideBlock(remainingForCert, certH);
     if (certificate === 'new-page') {
       cert.classList.add('sv-pagination-force-break');
     }
@@ -680,6 +778,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
     remainingAtSig,
     sigH,
     certH,
+    continuousWouldForce,
     decision:
       signature === 'new-page'
         ? 'signature-new-page'
@@ -717,12 +816,14 @@ export function applyContractPaginationBreaksToElement(
   ) as HTMLElement | null;
 
   if (sig) sig.classList.remove('sv-pagination-force-break');
+  if (sig) sig.classList.remove('sv-pagination-compact');
   if (cert) cert.classList.remove('sv-pagination-force-break');
 
   let sigH = 0;
   let certH = 0;
   let signatureOffset: number | null = null;
   let certificateOffset: number | null = null;
+  let continuousWouldForce = false;
 
   if (sig) {
     const rect = sig.getBoundingClientRect();
@@ -732,6 +833,13 @@ export function applyContractPaginationBreaksToElement(
       sigH += Math.ceil(next.getBoundingClientRect().height || 0);
     }
     signatureOffset = offsetWithinPagePx(rect.top + scrollY, pageH);
+    const remainingAtSig = Math.max(0, pageH - signatureOffset);
+    continuousWouldForce =
+      decideIndivisibleBlockPlacement({
+        remainingPx: remainingAtSig,
+        blockHeightPx: sigH,
+        footerReservePx: footer,
+      }) === 'new-page';
   }
   if (cert) {
     const rect = cert.getBoundingClientRect();
@@ -750,6 +858,14 @@ export function applyContractPaginationBreaksToElement(
 
   if (sig && decisions.signature === 'new-page') {
     sig.classList.add('sv-pagination-force-break');
+  } else if (sig && continuousWouldForce) {
+    sig.classList.add('sv-pagination-compact');
+    const rect2 = sig.getBoundingClientRect();
+    sigH = Math.ceil(rect2.height || 0);
+    const next2 = sig.nextElementSibling as HTMLElement | null;
+    if (next2?.classList?.contains('contract-institutional-footer')) {
+      sigH += Math.ceil(next2.getBoundingClientRect().height || 0);
+    }
   }
   if (cert && decisions.certificate === 'new-page') {
     cert.classList.add('sv-pagination-force-break');
