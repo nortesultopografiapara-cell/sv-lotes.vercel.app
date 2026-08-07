@@ -65,9 +65,97 @@ export function decideIndivisibleBlockPlacement(input: {
 }
 
 /**
+ * Offset vertical dentro da página atual (fluxo contínuo → simulação A4).
+ */
+export function offsetWithinPagePx(
+  contentTopPx: number,
+  pageH: number = CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+): number {
+  if (pageH <= 0) return 0;
+  const t = Number(contentTopPx) || 0;
+  return ((t % pageH) + pageH) % pageH;
+}
+
+export function remainingSpaceOnPagePx(
+  contentTopPx: number,
+  pageH: number = CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+): number {
+  return Math.max(0, pageH - offsetWithinPagePx(contentTopPx, pageH));
+}
+
+/**
+ * Decisão inteligente: assinaturas e certificado são medidos em separado.
+ * Nunca empurra o bloco de assinaturas para página nova só porque o certificado
+ * não cabe depois — isso gerava páginas quase vazias.
+ */
+export function decideSignatureAndCertificatePlacement(input: {
+  pageH?: number;
+  footerReservePx?: number;
+  /** Topo do bloco de assinaturas na página (0 = início da área útil). */
+  signatureOffsetTopInPagePx?: number | null;
+  signatureHeightPx?: number | null;
+  /** Topo do certificado na página (fluxo contínuo), quando não há assinaturas. */
+  certificateOffsetTopInPagePx?: number | null;
+  certificateHeightPx?: number | null;
+}): {
+  signature: ContractPaginationDecision;
+  certificate: ContractPaginationDecision;
+} {
+  const pageH = input.pageH ?? CONTRACT_PAGE_CONTENT_HEIGHT_PX;
+  const footer = input.footerReservePx ?? CONTRACT_FOOTER_RESERVE_PX;
+  const sigH = Math.max(0, Number(input.signatureHeightPx) || 0);
+  const certH = Math.max(0, Number(input.certificateHeightPx) || 0);
+  const hasSig = sigH > 0 && input.signatureOffsetTopInPagePx != null;
+  const hasCert = certH > 0;
+
+  let signature: ContractPaginationDecision = 'same-page';
+  if (hasSig) {
+    const remainingAtSig = remainingSpaceOnPagePx(
+      Number(input.signatureOffsetTopInPagePx) || 0,
+      pageH,
+    );
+    signature = decideIndivisibleBlockPlacement({
+      remainingPx: remainingAtSig,
+      blockHeightPx: sigH,
+      footerReservePx: footer,
+    });
+  }
+
+  let certificate: ContractPaginationDecision = 'same-page';
+  if (hasCert) {
+    let remainingForCert: number;
+    if (hasSig) {
+      if (signature === 'new-page') {
+        // Assinaturas no topo da nova página; certificado segue na mesma folha se couber.
+        remainingForCert = Math.max(0, pageH - sigH);
+      } else {
+        const offset = Number(input.signatureOffsetTopInPagePx) || 0;
+        remainingForCert = Math.max(
+          0,
+          remainingSpaceOnPagePx(offset, pageH) - sigH,
+        );
+      }
+    } else {
+      remainingForCert = remainingSpaceOnPagePx(
+        Number(input.certificateOffsetTopInPagePx) || 0,
+        pageH,
+      );
+    }
+    certificate = decideIndivisibleBlockPlacement({
+      remainingPx: remainingForCert,
+      blockHeightPx: certH,
+      footerReservePx: footer,
+    });
+  }
+
+  return { signature, certificate };
+}
+
+/**
  * Evita página quase vazia: se restam poucas linhas úteis após o conteúdo
  * anterior, força o próximo bloco indivisível a iniciar na página seguinte
  * apenas quando o aproveitamento seria pior (espaço restante < limiar).
+ * Não usar para empurrar assinaturas que já cabem.
  */
 export function shouldAvoidNearlyEmptyTail(input: {
   remainingPx: number;
@@ -127,8 +215,9 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
   }
   .sv-contract-document .contract-signatures .signature-slot {
     margin-bottom: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomClassic};
-    page-break-inside: avoid;
-    break-inside: avoid-page;
+    /* Quebra só no bloco pai — slots individuais não forçam página nova. */
+    page-break-inside: auto;
+    break-inside: auto;
     text-align: center;
     min-width: 0;
   }
@@ -390,51 +479,186 @@ ${CONTRACT_CERTIFICATE_PAGINATION_CSS}
 }
 
 /**
- * Script de medição para Chromium (Puppeteer): marca o certificado com
- * `sv-pagination-force-break` apenas quando não cabe após o bloco de assinaturas.
- * Não altera hash/token/QR — só a classe de quebra.
+ * Script de medição para Chromium (Puppeteer) e html2pdf (browser):
+ * - Bloco de assinaturas: nova página só se a altura real não couber no restante.
+ * - Certificado: decisão independente (nunca empurra assinaturas junto).
+ * Não altera hash/token/QR — só classes de quebra.
  */
 export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
 (() => {
   const PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
   const FOOTER = ${CONTRACT_FOOTER_RESERVE_PX};
-  const sig = document.querySelector('.contract-signatures, .sv2-signatures');
-  const cert = document.querySelector('.sv-cert-official-block');
-  if (!cert) return { applied: false, reason: 'no-cert' };
+  const root = document;
+  const sig = root.querySelector('.contract-signatures, .sv2-signatures');
+  const cert = root.querySelector('.sv-cert-official-block');
+  if (sig) sig.classList.remove('sv-pagination-force-break');
+  if (cert) cert.classList.remove('sv-pagination-force-break');
 
-  const certH = Math.ceil(cert.getBoundingClientRect().height || 0);
-  const sigH = sig ? Math.ceil(sig.getBoundingClientRect().height || 0) : 0;
-  let remaining = PAGE_H;
+  const scrollY = window.scrollY || window.pageYOffset || 0;
+  const pageOffset = (y) => {
+    const t = Number(y) || 0;
+    return ((t % PAGE_H) + PAGE_H) % PAGE_H;
+  };
+  const remainingAt = (y) => Math.max(0, PAGE_H - pageOffset(y));
+  const decide = (remaining, blockH) => {
+    const available = Math.max(0, remaining - FOOTER);
+    if (blockH <= 0) return 'same-page';
+    if (available <= 0) return 'new-page';
+    return blockH <= available ? 'same-page' : 'new-page';
+  };
+
+  let signature = 'same-page';
+  let certificate = 'same-page';
+  let sigH = 0;
+  let certH = 0;
+  let remainingAtSig = PAGE_H;
 
   if (sig) {
-    const sigRect = sig.getBoundingClientRect();
-    const offsetInPage = ((sigRect.bottom % PAGE_H) + PAGE_H) % PAGE_H;
-    remaining = Math.max(0, PAGE_H - offsetInPage);
-  } else {
-    const certTop = cert.getBoundingClientRect().top;
-    const offsetInPage = ((certTop % PAGE_H) + PAGE_H) % PAGE_H;
-    remaining = Math.max(0, PAGE_H - offsetInPage);
-  }
-
-  const available = Math.max(0, remaining - FOOTER);
-  const packFitsFreshPage = sigH + certH + 8 <= PAGE_H - FOOTER;
-
-  if (certH > available + 48) {
-    // Preferir levar assinaturas + certificado juntos para a última página.
-    if (sig && packFitsFreshPage) {
-      sig.classList.add('sv-pagination-force-break');
-      cert.classList.remove('sv-pagination-force-break');
-      return { applied: true, decision: 'pack-new-page', remaining, certH, sigH, available };
+    const rect = sig.getBoundingClientRect();
+    sigH = Math.ceil(rect.height || 0);
+    // Inclui rodapé institucional imediatamente seguinte (mesmo “fecho” visual).
+    const next = sig.nextElementSibling;
+    if (next && next.classList && next.classList.contains('contract-institutional-footer')) {
+      sigH += Math.ceil(next.getBoundingClientRect().height || 0);
     }
-    if (sig) sig.classList.remove('sv-pagination-force-break');
-    cert.classList.add('sv-pagination-force-break');
-    return { applied: true, decision: 'new-page', remaining, certH, available };
+    const top = rect.top + scrollY;
+    remainingAtSig = remainingAt(top);
+    signature = decide(remainingAtSig, sigH);
+    if (signature === 'new-page') {
+      sig.classList.add('sv-pagination-force-break');
+    }
   }
-  if (sig) sig.classList.remove('sv-pagination-force-break');
-  cert.classList.remove('sv-pagination-force-break');
-  return { applied: true, decision: 'same-page', remaining, certH, available };
+
+  if (cert) {
+    certH = Math.ceil(cert.getBoundingClientRect().height || 0);
+    let remainingForCert = PAGE_H;
+    if (sig) {
+      if (signature === 'new-page') {
+        remainingForCert = Math.max(0, PAGE_H - sigH);
+      } else {
+        remainingForCert = Math.max(0, remainingAtSig - sigH);
+      }
+    } else {
+      const top = cert.getBoundingClientRect().top + scrollY;
+      remainingForCert = remainingAt(top);
+    }
+    certificate = decide(remainingForCert, certH);
+    if (certificate === 'new-page') {
+      cert.classList.add('sv-pagination-force-break');
+    }
+  }
+
+  return {
+    applied: true,
+    signature,
+    certificate,
+    remainingAtSig,
+    sigH,
+    certH,
+    decision:
+      signature === 'new-page'
+        ? 'signature-new-page'
+        : certificate === 'new-page'
+          ? 'certificate-new-page'
+          : 'same-page',
+  };
 })()
 `;
+
+/**
+ * Aplica a medição de paginação em um elemento HTML já no DOM (html2pdf / preview).
+ * Mesma regra do script Puppeteer — assinaturas e certificado independentes.
+ */
+export function applyContractPaginationBreaksToElement(
+  element: ParentNode,
+  opts?: { pageH?: number; footerReservePx?: number },
+): {
+  signature: ContractPaginationDecision;
+  certificate: ContractPaginationDecision;
+  sigH: number;
+  certH: number;
+} {
+  const pageH = opts?.pageH ?? CONTRACT_PAGE_CONTENT_HEIGHT_PX;
+  const footer = opts?.footerReservePx ?? CONTRACT_FOOTER_RESERVE_PX;
+  const doc = (element as Element).ownerDocument || document;
+  const win = doc.defaultView || window;
+  const scrollY = win.scrollY || win.pageYOffset || 0;
+
+  const sig = element.querySelector(
+    '.contract-signatures, .sv2-signatures',
+  ) as HTMLElement | null;
+  const cert = element.querySelector(
+    '.sv-cert-official-block',
+  ) as HTMLElement | null;
+
+  if (sig) sig.classList.remove('sv-pagination-force-break');
+  if (cert) cert.classList.remove('sv-pagination-force-break');
+
+  let sigH = 0;
+  let certH = 0;
+  let signatureOffset: number | null = null;
+  let certificateOffset: number | null = null;
+
+  if (sig) {
+    const rect = sig.getBoundingClientRect();
+    sigH = Math.ceil(rect.height || 0);
+    const next = sig.nextElementSibling as HTMLElement | null;
+    if (next?.classList?.contains('contract-institutional-footer')) {
+      sigH += Math.ceil(next.getBoundingClientRect().height || 0);
+    }
+    signatureOffset = offsetWithinPagePx(rect.top + scrollY, pageH);
+  }
+  if (cert) {
+    const rect = cert.getBoundingClientRect();
+    certH = Math.ceil(rect.height || 0);
+    certificateOffset = offsetWithinPagePx(rect.top + scrollY, pageH);
+  }
+
+  const decisions = decideSignatureAndCertificatePlacement({
+    pageH,
+    footerReservePx: footer,
+    signatureOffsetTopInPagePx: signatureOffset,
+    signatureHeightPx: sigH || null,
+    certificateOffsetTopInPagePx: certificateOffset,
+    certificateHeightPx: certH || null,
+  });
+
+  if (sig && decisions.signature === 'new-page') {
+    sig.classList.add('sv-pagination-force-break');
+  }
+  if (cert && decisions.certificate === 'new-page') {
+    cert.classList.add('sv-pagination-force-break');
+  }
+
+  return {
+    signature: decisions.signature,
+    certificate: decisions.certificate,
+    sigH,
+    certH,
+  };
+}
+
+/**
+ * Prepara um fragmento HTML solto para medição + html2pdf (anexa temporariamente).
+ */
+export function prepareContractHtmlElementForPagination(
+  element: HTMLElement,
+): ReturnType<typeof applyContractPaginationBreaksToElement> {
+  const needsAttach = !element.isConnected;
+
+  if (needsAttach) {
+    element.style.position = 'absolute';
+    element.style.left = '-10000px';
+    element.style.top = '0';
+    element.style.width = '794px';
+    document.body.appendChild(element);
+  } else if (!element.style.width) {
+    element.style.width = '794px';
+  }
+
+  // Mantém off-screen até o caller remover após o html2pdf.
+  return applyContractPaginationBreaksToElement(element);
+}
 
 /**
  * Aplica decisão de paginação no HTML do certificado (string),

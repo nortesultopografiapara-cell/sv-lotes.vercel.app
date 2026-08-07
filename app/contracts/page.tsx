@@ -78,6 +78,7 @@ import {
   getContractHtml2pdfOptions,
   resolveContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
+import { prepareContractHtmlElementForPagination } from "@/lib/contractPaginationEngine";
 import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
 import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContractAssets";
 import {
@@ -885,6 +886,7 @@ export default function ContractsPage() {
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
       element.innerHTML = ver.generated_html;
+      prepareContractHtmlElementForPagination(element);
       const pdfFilename = `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`;
       const htmlLooksRecanto = String(ver.generated_html || '').includes(
         'sv-contract-recanto-primavera',
@@ -893,35 +895,39 @@ export default function ContractsPage() {
         ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
         : getContractHtml2pdfOptions(pdfFilename);
 
-      await html2pdf()
-        .from(element)
-        .set(pdfOptions)
-        .toPdf()
-        .get("pdf")
-        .then((pdf: any) => {
-          if (tenantData) {
-            applyContractPdfChrome(
-              pdf,
-              buildContractPdfChromeFromTenant(
-                tenantData,
-                String(
-                  ver.contract_number || selectedContract?.contract_number || "",
+      try {
+        await html2pdf()
+          .from(element)
+          .set(pdfOptions)
+          .toPdf()
+          .get("pdf")
+          .then((pdf: any) => {
+            if (tenantData) {
+              applyContractPdfChrome(
+                pdf,
+                buildContractPdfChromeFromTenant(
+                  tenantData,
+                  String(
+                    ver.contract_number || selectedContract?.contract_number || "",
+                  ),
+                  null,
                 ),
-                null,
-              ),
-            );
-          } else {
-            applyContractPdfChrome(pdf, {
-              tenantName: "Imobiliária",
-              tenantCnpj: "",
-              addressLine: "",
-              cityUfLine: "",
-              contractNumber: String(ver.contract_number || ""),
-              logoBase64: null,
-            });
-          }
-        })
-        .save();
+              );
+            } else {
+              applyContractPdfChrome(pdf, {
+                tenantName: "Imobiliária",
+                tenantCnpj: "",
+                addressLine: "",
+                cityUfLine: "",
+                contractNumber: String(ver.contract_number || ""),
+                logoBase64: null,
+              });
+            }
+          })
+          .save();
+      } finally {
+        element.remove();
+      }
     } catch (e) {
       console.error(e);
       alert("Erro ao baixar PDF desta versão.");
@@ -991,6 +997,7 @@ export default function ContractsPage() {
       }
 
       element.innerHTML = htmlBody;
+      prepareContractHtmlElementForPagination(element);
 
       let logoBase64: string | null = null;
       if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
@@ -1019,22 +1026,26 @@ export default function ContractsPage() {
       const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
       const opt = resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename);
 
-      html2pdf()
-        .from(element)
-        .set(opt)
-        .toPdf()
-        .get("pdf")
-        .then((pdf: any) => {
-          applyContractPdfChrome(
-            pdf,
-            buildContractPdfChromeFromTenant(
-              tenantData || {},
-              String(selectedContract.contract_number || ""),
-              logoBase64,
-            ),
-          );
-        })
-        .save();
+      try {
+        await html2pdf()
+          .from(element)
+          .set(opt)
+          .toPdf()
+          .get("pdf")
+          .then((pdf: any) => {
+            applyContractPdfChrome(
+              pdf,
+              buildContractPdfChromeFromTenant(
+                tenantData || {},
+                String(selectedContract.contract_number || ""),
+                logoBase64,
+              ),
+            );
+          })
+          .save();
+      } finally {
+        element.remove();
+      }
     } catch (e) {
       alert(
         "Erro ao tentar baixar PDF. Certifique-se que html2pdf.js está instalado.",

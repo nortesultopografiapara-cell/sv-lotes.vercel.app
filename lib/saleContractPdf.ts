@@ -12,8 +12,7 @@ import {
   type ContractPdfChromeInput,
 } from '@/lib/contractPdfPostProcess';
 import {
-  CONTRACT_FOOTER_RESERVE_PX,
-  CONTRACT_PAGE_CONTENT_HEIGHT_PX,
+  CONTRACT_PAGINATION_MEASURE_SCRIPT,
   CONTRACT_PDF_MARGIN_MM,
 } from '@/lib/contractPaginationEngine';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
@@ -216,55 +215,11 @@ export async function buildSaleContractPdfFromHtml(
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(documentHtml, { waitUntil: 'load', timeout: 45_000 });
 
-    // Engine única: mede espaço restante e só força quebra do certificado se não couber.
+    // Engine única: mede espaço restante.
+    // Assinaturas só vão para nova página se não couberem; certificado é independente
+    // (nunca empurra assinaturas juntos — evita páginas quase vazias).
     try {
-      await page.evaluate(
-        (pageH: number, footer: number) => {
-          const cert = document.querySelector('.sv-cert-official-block');
-          if (!cert) return { applied: false, reason: 'no-cert' };
-
-          const certH = Math.ceil(cert.getBoundingClientRect().height || 0);
-          const sig = document.querySelector('.contract-signatures, .sv2-signatures');
-          const sigH = sig ? Math.ceil(sig.getBoundingClientRect().height || 0) : 0;
-          let remaining = pageH;
-
-          if (sig) {
-            const sigRect = sig.getBoundingClientRect();
-            const offsetInPage = ((sigRect.bottom % pageH) + pageH) % pageH;
-            remaining = Math.max(0, pageH - offsetInPage);
-          } else {
-            const certTop = cert.getBoundingClientRect().top;
-            const offsetInPage = ((certTop % pageH) + pageH) % pageH;
-            remaining = Math.max(0, pageH - offsetInPage);
-          }
-
-          const available = Math.max(0, remaining - footer);
-          const packFitsFreshPage = sigH + certH + 8 <= pageH - footer;
-
-          if (certH > available + 48) {
-            if (sig && packFitsFreshPage) {
-              sig.classList.add('sv-pagination-force-break');
-              cert.classList.remove('sv-pagination-force-break');
-              return {
-                applied: true,
-                decision: 'pack-new-page',
-                remaining,
-                certH,
-                sigH,
-                available,
-              };
-            }
-            if (sig) sig.classList.remove('sv-pagination-force-break');
-            cert.classList.add('sv-pagination-force-break');
-            return { applied: true, decision: 'new-page', remaining, certH, available };
-          }
-          if (sig) sig.classList.remove('sv-pagination-force-break');
-          cert.classList.remove('sv-pagination-force-break');
-          return { applied: true, decision: 'same-page', remaining, certH, available };
-        },
-        CONTRACT_PAGE_CONTENT_HEIGHT_PX,
-        CONTRACT_FOOTER_RESERVE_PX,
-      );
+      await page.evaluate(CONTRACT_PAGINATION_MEASURE_SCRIPT);
     } catch (measureErr) {
       console.warn('[sale-sign-pdf] pagination measure skipped', {
         message: measureErr instanceof Error ? measureErr.message : String(measureErr),

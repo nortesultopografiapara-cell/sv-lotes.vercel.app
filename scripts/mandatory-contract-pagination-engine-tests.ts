@@ -14,11 +14,15 @@ import {
   applyCertificateBreakClass,
   CONTRACT_CERTIFICATE_PAGINATION_CSS,
   CONTRACT_HTML2PDF_PAGINATION_AVOID,
+  CONTRACT_PAGINATION_MEASURE_SCRIPT,
   CONTRACT_PAGINATION_SELECTORS,
   CONTRACT_SIGNATURE_PAGINATION_CSS,
   CONTRACT_SIGNATURE_SPACING,
   decideIndivisibleBlockPlacement,
+  decideSignatureAndCertificatePlacement,
+  offsetWithinPagePx,
   RECANTO_HTML2PDF_PAGINATION_AVOID,
+  remainingSpaceOnPagePx,
   shouldAvoidNearlyEmptyTail,
 } from '../lib/contractPaginationEngine';
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
@@ -135,6 +139,77 @@ assert(
 assert(
   'espaço útil suficiente não força cauda vazia',
   shouldAvoidNearlyEmptyTail({ remainingPx: 200 }) === false,
+);
+
+// --- Assinaturas vs certificado (independentes) ---
+{
+  const shortFits = decideSignatureAndCertificatePlacement({
+    signatureOffsetTopInPagePx: 500,
+    signatureHeightPx: 220,
+    certificateHeightPx: 280,
+    pageH: 837,
+    footerReservePx: 40,
+  });
+  assert(
+    'assinaturas cabem → same-page (mesmo com certificado grande depois)',
+    shortFits.signature === 'same-page',
+  );
+  assert(
+    'certificado que não cabe após assinaturas → new-page só no certificado',
+    shortFits.certificate === 'new-page',
+  );
+}
+{
+  const packWouldHaveForced = decideSignatureAndCertificatePlacement({
+    signatureOffsetTopInPagePx: 450,
+    signatureHeightPx: 280,
+    certificateHeightPx: 400,
+    pageH: 837,
+    footerReservePx: 40,
+  });
+  assert(
+    'NÃO empurrar assinaturas quando só o certificado não cabe',
+    packWouldHaveForced.signature === 'same-page' &&
+      packWouldHaveForced.certificate === 'new-page',
+  );
+}
+{
+  const longSig = decideSignatureAndCertificatePlacement({
+    signatureOffsetTopInPagePx: 700,
+    signatureHeightPx: 320,
+    certificateHeightPx: 200,
+    pageH: 837,
+    footerReservePx: 40,
+  });
+  assert(
+    'assinaturas longas sem espaço → new-page no bloco',
+    longSig.signature === 'new-page',
+  );
+  assert(
+    'com assinaturas em página nova, certificado cabe → same-page',
+    longSig.certificate === 'same-page',
+  );
+}
+{
+  const spouseHeavy = decideSignatureAndCertificatePlacement({
+    signatureOffsetTopInPagePx: 100,
+    signatureHeightPx: 480,
+    certificateHeightPx: 350,
+    pageH: 837,
+    footerReservePx: 40,
+  });
+  assert(
+    'várias partes no início da página → assinaturas same-page',
+    spouseHeavy.signature === 'same-page',
+  );
+}
+assert(
+  'offsetWithinPagePx normaliza',
+  offsetWithinPagePx(900, 837) === 900 - 837,
+);
+assert(
+  'remainingSpaceOnPagePx',
+  remainingSpaceOnPagePx(100, 837) === 737,
 );
 
 // --- Engine CSS compartilhada ---
@@ -331,9 +406,17 @@ const pdfPipeline = fs.readFileSync(
   'utf8',
 );
 assert(
-  'pipeline PDF mede paginação',
-  pdfPipeline.includes('CONTRACT_PAGE_CONTENT_HEIGHT_PX') &&
-    pdfPipeline.includes('sv-pagination-force-break'),
+  'pipeline PDF usa script de medição da engine',
+  pdfPipeline.includes('CONTRACT_PAGINATION_MEASURE_SCRIPT'),
+);
+assert(
+  'script de medição NÃO usa pack-new-page',
+  !CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('pack-new-page'),
+);
+assert(
+  'script mede assinaturas e certificado em separado',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('signature-new-page') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('certificate-new-page'),
 );
 
 console.log(`\nTotal: ${pass} PASSOU / ${total - pass} FALHOU de ${total}`);
