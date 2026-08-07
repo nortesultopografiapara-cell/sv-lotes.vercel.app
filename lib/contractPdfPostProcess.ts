@@ -12,6 +12,7 @@ import {
   buildClassicContractPaginationCss,
   buildRecantoContractPaginationCss,
   CONTRACT_HTML2PDF_PAGINATION_AVOID,
+  CONTRACT_PDF_CONTENT_WIDTH_PX,
   CONTRACT_PDF_MARGIN_MM,
   RECANTO_HTML2PDF_PAGINATION_AVOID,
 } from "@/lib/contractPaginationEngine";
@@ -56,6 +57,9 @@ export type ContractHtml2pdfOptions = {
     useCORS: boolean;
     letterRendering?: boolean;
     logging?: boolean;
+    /** Largura do documento = área útil A4 (evita corte à direita). */
+    windowWidth?: number;
+    width?: number;
   };
   jsPDF: { unit: string; format: string; orientation: string };
   pagebreak: ContractHtml2pdfPagebreakOptions;
@@ -82,11 +86,14 @@ export function getContractHtml2pdfOptions(
     filename,
     image: { type: "jpeg", quality: 1 },
     // scale 3 + letterRendering: tipografia nítida (evita serrilhado do Quadro Financeiro).
+    // windowWidth = área útil A4 — HTML mais largo que isso corta o lado direito.
     html2canvas: {
       scale: 3,
       useCORS: true,
       letterRendering: true,
       logging: false,
+      windowWidth: CONTRACT_PDF_CONTENT_WIDTH_PX,
+      width: CONTRACT_PDF_CONTENT_WIDTH_PX,
     },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     pagebreak: {

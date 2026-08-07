@@ -27,6 +27,22 @@ export const CONTRACT_PDF_MARGIN_MM = {
   left: 15,
 } as const;
 
+/** Largura A4 em mm. */
+export const CONTRACT_A4_WIDTH_MM = 210;
+
+/**
+ * Largura útil do conteúdo (A4 − margens laterais) em px @ 96dpi.
+ * html2pdf/jsPDF aplicam as margens FORA do canvas — o HTML deve caber
+ * nesta largura, senão o lado direito é cortado.
+ */
+export const CONTRACT_PDF_CONTENT_WIDTH_PX = Math.round(
+  ((CONTRACT_A4_WIDTH_MM -
+    CONTRACT_PDF_MARGIN_MM.left -
+    CONTRACT_PDF_MARGIN_MM.right) /
+    25.4) *
+    96,
+); // ~680px com laterais 15mm
+
 /** Altura útil aproximada de uma página A4 com margens do PDF (mm → px @ 96dpi). */
 export const CONTRACT_PAGE_CONTENT_HEIGHT_PX = Math.round(
   ((297 - CONTRACT_PDF_MARGIN_MM.top - CONTRACT_PDF_MARGIN_MM.bottom) / 25.4) *
@@ -45,6 +61,63 @@ export const CONTRACT_PAGINATION_SELECTORS = {
   documentRoots:
     '.sv-contract-document, .sv-contract-recanto-primavera, .sv-contract-sv-lotes-2',
 } as const;
+
+/**
+ * CSS de largura segura para A4 — aplica aos roots informados.
+ * Evita corte lateral no html2canvas / Chromium.
+ */
+export function buildContractA4WidthSafeCss(documentRoots: string): string {
+  return `
+  ${documentRoots} {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    /* 2px interno evita corte da borda direita de tabelas em width:100% */
+    padding-left: 0 !important;
+    padding-right: 2px !important;
+    overflow-x: clip;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  ${documentRoots} *,
+  ${documentRoots} *::before,
+  ${documentRoots} *::after {
+    box-sizing: border-box;
+  }
+  ${documentRoots} img,
+  ${documentRoots} svg,
+  ${documentRoots} canvas {
+    max-width: 100% !important;
+    height: auto;
+  }
+  ${documentRoots} table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse;
+  }
+  ${documentRoots} th,
+  ${documentRoots} td {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal !important;
+    max-width: 100%;
+  }
+  ${documentRoots} p,
+  ${documentRoots} h1,
+  ${documentRoots} h2,
+  ${documentRoots} h3,
+  ${documentRoots} li {
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+`.trim();
+}
+
+/** @deprecated prefer buildContractA4WidthSafeCss com roots isolados por modelo */
+export const CONTRACT_A4_WIDTH_SAFE_CSS = buildContractA4WidthSafeCss(
+  CONTRACT_PAGINATION_SELECTORS.documentRoots,
+);
 
 export type ContractPaginationDecision = 'same-page' | 'new-page';
 
@@ -274,12 +347,62 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     margin-top: ${CONTRACT_SIGNATURE_SPACING.blockMarginTopRecanto};
     text-align: center;
   }
-  .contract-signatures--recanto .signature-slot {
-    margin-bottom: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomRecanto};
-    text-align: center;
+  .contract-signatures--recanto .signature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: ${CONTRACT_SIGNATURE_SPACING.classicGridColumnGap};
+    row-gap: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomRecanto};
+    align-items: start;
+    justify-items: center;
+    width: 100%;
   }
-  .contract-signatures--recanto .signature-slot:last-of-type {
-    margin-bottom: ${CONTRACT_SIGNATURE_SPACING.slotMarginBottomRecantoLast};
+  .contract-signatures--recanto .signature-slot {
+    margin-bottom: 0;
+    text-align: center;
+    min-width: 0;
+    width: 100%;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+  /* Linhas padronizadas — altura fixa cria o respiro sob a linha (estilo cartório). */
+  .contract-signatures--recanto .signature-slot .signature-line,
+  .contract-signatures--recanto .signature-line {
+    border-top: 1px solid #111 !important;
+    border-bottom: none !important;
+    margin: 0 auto 0 auto !important;
+    padding: 0 !important;
+    width: 70% !important;
+    max-width: 240px !important;
+    height: 26px !important;
+    box-sizing: border-box !important;
+  }
+  .contract-signatures--recanto .signature-slot > p {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    text-align: center !important;
+    line-height: 1.35 !important;
+  }
+  .contract-signatures--recanto .signature-slot > p:first-of-type {
+    margin-top: 4px !important;
+    margin-bottom: 6px !important;
+  }
+  .contract-signatures--recanto .signature-slot > p + p {
+    margin-top: 0 !important;
+    margin-bottom: 4px !important;
+  }
+  .contract-signatures--recanto .signature-slot > p:last-of-type {
+    margin-bottom: 0 !important;
+  }
+  .contract-signatures--recanto .signature-slot img {
+    display: block;
+    margin: 0 auto 4px auto;
+    max-height: 36px;
+  }
+  /* Respiro entre CPF do comprador e linha do cônjuge */
+  .contract-signatures--recanto .signature-slot-spouse {
+    grid-column: 2;
+    margin-top: 0 !important;
+    padding-top: 12px !important;
   }
   .sv2-signatures {
     margin-top: ${CONTRACT_SIGNATURE_SPACING.blockMarginTopSv2};
@@ -455,6 +578,7 @@ ${CONTRACT_SV2_CLAUSE_FLOW_CSS}
 /** CSS Meneses/Padrão — sem roots Recanto/SV2 (isolamento de modelos). */
 export function buildClassicContractPaginationCss(): string {
   return `<style type="text/css">
+${buildContractA4WidthSafeCss('.sv-contract-document')}
 ${CONTRACT_CLASSIC_CLAUSE_FLOW_CSS}
 ${CONTRACT_SIGNATURE_PAGINATION_CSS}
 ${CONTRACT_CERTIFICATE_PAGINATION_CSS}
@@ -472,6 +596,7 @@ export function buildSv2ContractPaginationAddonCss(): string {
 /** CSS Recanto — mesma engine de assinatura/certificado (sem roots SV2). */
 export function buildRecantoContractPaginationCss(): string {
   return `<style type="text/css">
+${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-recanto-primavera, .sv-contract-recanto-primavera')}
 ${CONTRACT_RECANTO_CLAUSE_FLOW_CSS}
 ${CONTRACT_SIGNATURE_PAGINATION_CSS}
 ${CONTRACT_CERTIFICATE_PAGINATION_CSS}
@@ -654,10 +779,10 @@ export function prepareContractHtmlElementForPagination(
     element.style.position = 'absolute';
     element.style.left = '-10000px';
     element.style.top = '0';
-    element.style.width = '794px';
+    element.style.width = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
     document.body.appendChild(element);
   } else if (!element.style.width) {
-    element.style.width = '794px';
+    element.style.width = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
   }
 
   const result = applyContractPaginationBreaksToElement(element);
@@ -684,7 +809,9 @@ export function restoreContractElementStylesForHtml2PdfCapture(
   element.style.opacity = '';
   element.style.visibility = '';
   element.style.display = '';
-  element.style.width = element.style.width || '794px';
+  element.style.width = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
+  element.style.maxWidth = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
+  element.style.boxSizing = 'border-box';
 }
 
 /** Falha rápido se o elemento ainda estiver fora da área capturável. */

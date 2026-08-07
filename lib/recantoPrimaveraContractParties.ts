@@ -2,18 +2,24 @@
  * Blocos HTML do contrato Recanto — assinaturas e campos de partes.
  */
 
-import { CONTRACT_SIGNATURE_SPACING } from '@/lib/contractPaginationEngine';
 import { sanitizeContractField } from '@/lib/recantoPrimaveraCompanyProfile';
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
 
 const SIGNATURE_SLOT_STYLE =
-  `text-align: center; margin-bottom: ${CONTRACT_SIGNATURE_SPACING.recantoSlotInlineMarginBottom}; page-break-inside: avoid;`;
+  `text-align: center; margin-bottom: 0; min-width: 0; width: 100%;`;
+/** Respiro cartório: linha no topo + altura 26px até o bloco de texto. */
 const SIGNATURE_LINE_STYLE =
-  'border-top: 1px solid #111; margin: 0 auto 6px auto; width: 55%; max-width: 320px;';
+  'border-top: 1px solid #111; margin: 0 auto 0 auto; padding: 0; width: 70%; max-width: 240px; height: 26px; box-sizing: border-box;';
+const SIGNATURE_LINE_CLASS = 'signature-line';
+/** +4px acima do título; fontes inalteradas. */
 const SIGNATURE_ROLE_STYLE =
-  'margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase; font-size: 11pt;';
-const SIGNATURE_NAME_STYLE = 'margin: 0 0 2px 0; font-weight: bold; font-size: 11pt;';
-const SIGNATURE_META_STYLE = 'margin: 0; font-size: 10pt; font-weight: normal;';
+  'margin: 4px 0 6px 0; font-weight: bold; text-transform: uppercase; font-size: 11pt; text-align: center;';
+const SIGNATURE_NAME_STYLE =
+  'margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;';
+const SIGNATURE_META_STYLE =
+  'margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: break-word; text-align: center;';
+/** ~12px entre CPF do comprador e linha do cônjuge. */
+const SIGNATURE_SPOUSE_SLOT_EXTRA = ' margin-top: 0; padding-top: 12px;';
 
 function buildRecantoPartyFieldLine(label: string, value: string): string {
   const clean = sanitizeContractField(value);
@@ -33,6 +39,7 @@ function buildSignatureSlot(params: {
   name?: string;
   docLines?: string[];
   signatureImage?: string;
+  extraClass?: string;
 }): string {
   const name = sanitizeContractField(params.name);
   const docLines = (params.docLines || [])
@@ -43,10 +50,21 @@ function buildSignatureSlot(params: {
     .map((line) => `<p style="${SIGNATURE_META_STYLE}">${line}</p>`)
     .join('\n');
 
+  const className = [
+    'signature-slot',
+    params.extraClass || '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const slotStyle =
+    SIGNATURE_SLOT_STYLE +
+    (params.partyRole === 'SPOUSE' ? SIGNATURE_SPOUSE_SLOT_EXTRA : '');
+
   return `
-      <div class="signature-slot" data-party-role="${params.partyRole}" style="${SIGNATURE_SLOT_STYLE}">
+      <div class="${className}" data-party-role="${params.partyRole}" style="${slotStyle}">
         ${params.signatureImage || ''}
-        <div style="${SIGNATURE_LINE_STYLE}"></div>
+        <div class="${SIGNATURE_LINE_CLASS}" style="${SIGNATURE_LINE_STYLE}"></div>
         <p style="${SIGNATURE_ROLE_STYLE}">${params.role}</p>
         ${name ? `<p style="${SIGNATURE_NAME_STYLE}">${name}</p>` : ''}
         ${docHtml}
@@ -127,21 +145,24 @@ export function buildRecantoPrimaveraSignaturesHtml(
         partyRole: 'SPOUSE',
         name: ctx.conjugeNome,
         docLines: [ctx.conjugeCpf ? `CPF: ${ctx.conjugeCpf}` : ''].filter(Boolean),
+        extraClass: 'signature-slot-spouse',
       })
     : '';
 
   // RECANTO_PRIMAVERA: sem bloco de assinatura do corretor (corretor permanece na venda).
+  // Layout 2 colunas: Vendedor|Comprador, Cônjuge sob comprador, Testemunhas lado a lado.
   return `
-    <div class="contract-clause contract-clause--tight">
+    <div class="contract-clause contract-clause--tight contract-closing">
       <p style="margin-bottom: 10px;">
         E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
       </p>
-      <div style="text-align: right; margin-bottom: 14px;">
+      <div class="contract-closing-date" style="text-align: right; margin-bottom: 10px;">
         <p style="margin: 0;">${ctx.dataContratoExtensoFmt || ctx.dataContratoFmt}</p>
       </div>
     </div>
 
     <div class="contract-signatures contract-signatures--recanto">
+      <div class="signature-grid">
       ${buildSignatureSlot({
         role: 'VENDEDOR(A)',
         partyRole: 'VENDOR',
@@ -159,13 +180,17 @@ export function buildRecantoPrimaveraSignaturesHtml(
 
       ${conjugeSignatureSlot}
 
-      <div class="signature-slot" data-party-role="WITNESS" style="${SIGNATURE_SLOT_STYLE}">
-        <div style="${SIGNATURE_LINE_STYLE}"></div>
-        <p style="${SIGNATURE_ROLE_STYLE}">Testemunhas</p>
-        <p style="margin: 4px 0 2px 0; font-size: 10pt;">Nome: __________________________________________</p>
-        <p style="margin: 0 0 8px 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
-        <p style="margin: 0 0 2px 0; font-size: 10pt;">Nome: __________________________________________</p>
-        <p style="margin: 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
+      ${buildSignatureSlot({
+        role: 'TESTEMUNHA 1',
+        partyRole: 'WITNESS',
+        docLines: ['Nome: ________________________________', 'RG/CPF: _____________________________'],
+      })}
+
+      ${buildSignatureSlot({
+        role: 'TESTEMUNHA 2',
+        partyRole: 'WITNESS',
+        docLines: ['Nome: ________________________________', 'RG/CPF: _____________________________'],
+      })}
       </div>
     </div>`;
 }

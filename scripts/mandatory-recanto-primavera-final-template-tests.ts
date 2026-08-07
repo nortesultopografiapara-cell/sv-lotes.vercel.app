@@ -398,7 +398,7 @@ function testBrokerFilled() {
   assertNotIncludes(html, 'CRECI nº 12345-PA', 'creci não aparece nas assinaturas');
   assertNotIncludes(html, 'Corretor responsável', 'sem resumo corretor');
   assertNotIncludes(html, 'Intermediação', 'sem bloco intermediação');
-  assert(html.includes('Testemunhas'), 'testemunhas após cônjuge');
+  assert(html.includes('TESTEMUNHA 1'), 'testemunhas após cônjuge');
   console.log('OK testBrokerFilled');
 }
 
@@ -712,12 +712,17 @@ function testSignaturesFormat() {
   assertNotIncludes(html, 'CORRETOR', 'sem slot assinatura corretor');
   assertNotIncludes(html, 'Carlos Corretor', 'nome corretor fora das assinaturas');
   assertNotIncludes(html, 'CRECI nº 12345-PA', 'creci fora das assinaturas');
-  assert(html.includes('Testemunhas'), 'testemunhas');
+  assert(html.includes('TESTEMUNHA 1'), 'testemunha 1');
+  assert(html.includes('TESTEMUNHA 2'), 'testemunha 2');
   assert(html.includes('RG/CPF:'), 'rg/cpf testemunhas');
+  assert(html.includes('signature-grid'), 'grade 2 colunas');
+  assert(html.includes('contract-signatures--recanto'), 'bloco recanto');
+  // legado "Testemunhas" (slot único) removido
+  assert(!/>\s*Testemunhas\s*</.test(html), 'sem rótulo empilhado Testemunhas');
   assertNotIncludes(html, 'Intermediação', 'sem intermediação antes das assinaturas');
   assertNotIncludes(html, 'CPF/CRECI:', 'sem linha combinada cpf/creci');
   const spouseIdx = html.indexOf('CÔNJUGE ANUENTE');
-  const witnessesIdx = html.indexOf('Testemunhas');
+  const witnessesIdx = html.indexOf('TESTEMUNHA 1');
   assert(spouseIdx >= 0 && witnessesIdx > spouseIdx, 'testemunhas após cônjuge sem slot corretor');
   console.log('OK testSignaturesFormat');
 }
@@ -958,7 +963,7 @@ function testFinalScenarioBrokerNoSpouse() {
   assertNotIncludes(html, 'CORRETOR', 'cenário 2 sem título corretor');
   assertNotIncludes(html, 'Carlos Corretor', 'cenário 2 nome corretor fora das assinaturas');
   assertNotIncludes(html, 'Esposo(A)/Cônjuge', 'cenário 2 sem cônjuge');
-  assert(html.includes('Testemunhas'), 'cenário 2 testemunhas');
+  assert(html.includes('TESTEMUNHA 1'), 'cenário 2 testemunhas');
   console.log('OK testFinalScenarioBrokerNoSpouse');
 }
 

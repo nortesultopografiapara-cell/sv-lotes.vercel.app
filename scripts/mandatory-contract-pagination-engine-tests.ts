@@ -245,7 +245,7 @@ assert(
 );
 assert(
   'Recanto html2pdf não fragmenta slots individuais (bloco pai)',
-  !RECANTO_HTML2PDF_PAGINATION_AVOID.includes(
+  !(RECANTO_HTML2PDF_PAGINATION_AVOID as readonly string[]).includes(
     '.sv-contract-recanto-primavera .signature-slot',
   ),
 );
@@ -338,12 +338,15 @@ const recanto = generateRecantoPrimaveraContract({
 });
 assert('Recanto: bloco assinaturas', recanto.includes('contract-signatures--recanto'));
 assert('Recanto: cônjuge no bloco', /data-party-role="SPOUSE"/.test(recanto));
-assert('Recanto: testemunhas no mesmo bloco', recanto.includes('Testemunhas'));
 assert(
-  'Recanto: margin compacta do slot',
-  recanto.includes(
-    `margin-bottom: ${CONTRACT_SIGNATURE_SPACING.recantoSlotInlineMarginBottom}`,
-  ),
+  'Recanto: testemunhas no mesmo bloco',
+  recanto.includes('TESTEMUNHA 1') && recanto.includes('TESTEMUNHA 2'),
+);
+assert('Recanto: grade 2 colunas', recanto.includes('signature-grid'));
+assert(
+  'Recanto: CSS A4 width safe na engine',
+  CONTRACT_PDF_PRINT_CSS.includes('table-layout: fixed') ||
+    RECANTO_CONTRACT_PDF_PRINT_CSS.includes('table-layout: fixed'),
 );
 
 const sv2 = generateSvLotes2Contract({

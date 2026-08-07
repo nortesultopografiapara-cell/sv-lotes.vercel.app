@@ -13,6 +13,7 @@ import {
 } from '@/lib/contractPdfPostProcess';
 import {
   CONTRACT_PAGINATION_MEASURE_SCRIPT,
+  CONTRACT_PDF_CONTENT_WIDTH_PX,
   CONTRACT_PDF_MARGIN_MM,
 } from '@/lib/contractPaginationEngine';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
@@ -36,7 +37,16 @@ export function wrapSaleContractHtmlDocument(
 <title>${escapeHtml(title)}</title>
 ${CONTRACT_PDF_PRINT_CSS}
 <style>
-  body { margin: 0; padding: 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; color: #111; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: ${CONTRACT_PDF_CONTENT_WIDTH_PX}px;
+    max-width: ${CONTRACT_PDF_CONTENT_WIDTH_PX}px;
+    box-sizing: border-box;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    color: #111;
+  }
 </style>
 </head>
 <body>${htmlFragment}</body>
@@ -212,7 +222,11 @@ export async function buildSaleContractPdfFromHtml(
   try {
     browser = await launchSaleContractPdfBrowser();
     page = await browser.newPage();
-    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
+    await page.setViewport({
+      width: CONTRACT_PDF_CONTENT_WIDTH_PX,
+      height: 1123,
+      deviceScaleFactor: 1,
+    });
     await page.setContent(documentHtml, { waitUntil: 'load', timeout: 45_000 });
 
     // Engine única: mede espaço restante.

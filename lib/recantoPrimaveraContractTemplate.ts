@@ -24,7 +24,7 @@ export function generateRecantoPrimaveraContract(
 
   return `
         ${RECANTO_CONTRACT_PDF_PRINT_CSS}
-        <div class="sv-contract-document sv-contract-recanto-primavera" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
+        <div class="sv-contract-document sv-contract-recanto-primavera" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: 100%; box-sizing: border-box; text-align: justify;">
 
             ${buildRecantoPrimaveraTitleHtml(ctx)}
             ${buildRecantoPrimaveraVendorHeaderHtml(ctx)}
