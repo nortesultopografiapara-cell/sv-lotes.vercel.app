@@ -3,6 +3,28 @@
  * Preserva layout/classes do contrato clássico; não altera PADRAO/Recanto/SV2.
  */
 
+import type { SalePaymentMode } from '@/lib/salePaymentMode';
+
+/** Mesma fonte financeira do Quadro-Resumo / Cláusula Quarta clássica. */
+export type MenesesClausesFinanceContext = {
+  paymentMode: SalePaymentMode;
+  valorTotalFmt: string;
+  valorTotalExtenso?: string;
+  valorEntradaFmt: string;
+  valorEntradaExtenso?: string;
+  valorSaldoFmt: string;
+  qtdParcelas: number;
+  valorParcelaFmt: string;
+  dataPrimeiraParcelaFmt: string;
+  dataUltimaParcelaFmt: string;
+  singleFutureDueLongFmt?: string;
+  hasVariableInstallments?: boolean;
+  /** Corpo já montado por buildBalloonAwarePaymentClauseText (sem prefixo de cláusula). */
+  balloonClauseBodyHtml?: string | null;
+  /** Ex.: correção monetária / condição especial do quadro. */
+  correctionLabel?: string | null;
+};
+
 export type MenesesClausesContext = {
   /** Ex.: LOTE 05 DA QUADRA 12 */
   loteLabel: string;
@@ -17,6 +39,8 @@ export type MenesesClausesContext = {
   lotLocationSuffix: string;
   /** Ex.: da Comarca de <strong>Cidade - UF</strong> */
   foroText: string;
+  /** Resumo dinâmico da venda (obrigatório para materializar preço/pagamento). */
+  finance?: MenesesClausesFinanceContext | null;
 };
 
 function clauseBlock(inner: string): string {
@@ -24,6 +48,87 @@ function clauseBlock(inner: string): string {
             <div class="contract-clause" style="padding-bottom: 5px;">
                 ${inner}
             </div>`;
+}
+
+const QUADRO_REMISSAO =
+  'observadas as demais condições constantes do Quadro Financeiro, do Quadro-Resumo e da Tabela de Pagamentos integrantes deste instrumento';
+
+function hasMeaningfulCurrency(fmt: string | undefined): boolean {
+  const s = String(fmt || '').trim();
+  if (!s || s === '—' || s === '-') return false;
+  const digits = s.replace(/[^\d]/g, '');
+  return Boolean(digits) && !/^0+$/.test(digits);
+}
+
+function specialConditionsSuffix(correctionLabel?: string | null): string {
+  const label = String(correctionLabel || '').trim();
+  if (!label) return '';
+  if (
+    /^(sem correção|nao informado|não informado|parcelas fixas|—|-)$/i.test(label)
+  ) {
+    return '';
+  }
+  return ` Correção das parcelas: <strong>${label}</strong>.`;
+}
+
+/**
+ * Narrativa financeira da Cláusula Terceira (MENESES).
+ * Espelha a condição contratada persistida na venda + parcelas — mesma fonte do Quadro-Resumo.
+ */
+export function buildMenesesClauseTerceiraPriceNarrativeHtml(
+  finance: MenesesClausesFinanceContext,
+): string {
+  const total = String(finance.valorTotalFmt || '').trim() || '—';
+  const totalExt = String(finance.valorTotalExtenso || '').trim();
+  const totalStrong = totalExt
+    ? `<strong>${total} (${totalExt})</strong>`
+    : `<strong>${total}</strong>`;
+  const special = specialConditionsSuffix(finance.correctionLabel);
+
+  if (finance.paymentMode === 'IMMEDIATE_CASH') {
+    return `O preço certo, justo e contratado para a presente alienação é de ${totalStrong}, negociado de forma <strong>À VISTA</strong>, a ser quitado no ato da assinatura do presente contrato, ${QUADRO_REMISSAO}.${special}`;
+  }
+
+  if (finance.paymentMode === 'SINGLE_FUTURE') {
+    const due =
+      String(finance.singleFutureDueLongFmt || '').trim() ||
+      String(finance.dataPrimeiraParcelaFmt || '').trim() ||
+      '—';
+    return `O preço certo, justo e contratado para a presente alienação é de ${totalStrong}, a ser pago em <strong>pagamento único</strong> com vencimento em <strong>${due}</strong>, ${QUADRO_REMISSAO}.${special}`;
+  }
+
+  if (finance.hasVariableInstallments) {
+    const balloon = String(finance.balloonClauseBodyHtml || '').trim();
+    if (balloon) {
+      const body = balloon.replace(/\s+$/u, '');
+      const withPeriod = /[.!?]$/.test(body) ? body : `${body}.`;
+      return `${withPeriod} Demais condições financeiras ${QUADRO_REMISSAO}.${special}`;
+    }
+    const entrada = String(finance.valorEntradaFmt || '').trim() || '—';
+    const saldo = String(finance.valorSaldoFmt || '').trim() || '—';
+    const qtd = Math.max(1, Number(finance.qtdParcelas) || 1);
+    const first = String(finance.dataPrimeiraParcelaFmt || '').trim() || '—';
+    const last = String(finance.dataUltimaParcelaFmt || '').trim() || '—';
+    const withEntry = hasMeaningfulCurrency(entrada);
+    const entryPart = withEntry
+      ? `, sendo <strong>${entrada}</strong> de entrada e o saldo de <strong>${saldo}</strong>`
+      : `, com saldo de <strong>${saldo}</strong>`;
+    return `O preço certo, justo e contratado para a presente alienação é de ${totalStrong}${entryPart} parcelado em <strong>${qtd} parcelas</strong> mensais, com parcelas balão discriminadas no Quadro Financeiro, vencendo-se a primeira em <strong>${first}</strong> e a última em <strong>${last}</strong>, ${QUADRO_REMISSAO}.${special}`;
+  }
+
+  const entrada = String(finance.valorEntradaFmt || '').trim() || '—';
+  const saldo = String(finance.valorSaldoFmt || '').trim() || '—';
+  const parcela = String(finance.valorParcelaFmt || '').trim() || '—';
+  const qtd = Math.max(1, Number(finance.qtdParcelas) || 1);
+  const first = String(finance.dataPrimeiraParcelaFmt || '').trim() || '—';
+  const last = String(finance.dataUltimaParcelaFmt || '').trim() || '—';
+  const withEntry = hasMeaningfulCurrency(entrada);
+
+  if (withEntry) {
+    return `O preço certo, justo e contratado para a presente alienação é de ${totalStrong}, sendo <strong>${entrada}</strong> de entrada e o saldo de <strong>${saldo}</strong> parcelado em <strong>${qtd} parcelas iguais</strong> de <strong>${parcela}</strong>, vencendo-se a primeira em <strong>${first}</strong> e a última em <strong>${last}</strong>, ${QUADRO_REMISSAO}.${special}`;
+  }
+
+  return `O preço certo, justo e contratado para a presente alienação é de ${totalStrong}, parcelado em <strong>${qtd} parcelas iguais</strong> de <strong>${parcela}</strong> (saldo de <strong>${saldo}</strong>), vencendo-se a primeira em <strong>${first}</strong> e a última em <strong>${last}</strong>, ${QUADRO_REMISSAO}.${special}`;
 }
 
 /**
@@ -43,6 +148,10 @@ export function buildMenesesClausesHtml(ctx: MenesesClausesContext): string {
     boundaries ? `, ${boundaries}` : ''
   }${curva}`;
 
+  const priceNarrative = ctx.finance
+    ? buildMenesesClauseTerceiraPriceNarrativeHtml(ctx.finance)
+    : `O preço certo, justo e contratado para a presente alienação, bem como as condições de quitação, prazos, vencimentos, sinal de negócio, entrada, saldo, quantidade e valor das parcelas, eventuais parcelas balão, reajustes e demais condições financeiras, observarão integralmente as especificações constantes do Quadro Financeiro, do Quadro-Resumo e da Tabela de Pagamentos integrantes deste instrumento.`;
+
   return [
     clauseBlock(`
                 <p style="margin-bottom: 0;">
@@ -59,7 +168,7 @@ export function buildMenesesClausesHtml(ctx: MenesesClausesContext): string {
 
     clauseBlock(`
                 <p style="margin-bottom: 10px;">
-                    <strong>Cláusula Terceira — Do Preço e da Forma de Pagamento:</strong> O preço certo, justo e contratado para a presente alienação, bem como as condições de quitação, prazos, vencimentos, sinal de negócio, entrada, saldo, quantidade e valor das parcelas, eventuais parcelas balão, reajustes e demais condições financeiras, observarão integralmente as especificações constantes do Quadro Financeiro, do Quadro-Resumo e da Tabela de Pagamentos integrantes deste instrumento.
+                    <strong>Cláusula Terceira — Do Preço e da Forma de Pagamento:</strong> ${priceNarrative}
                 </p>
                 <p style="margin-bottom: 10px;">
                     <strong>Parágrafo Primeiro:</strong> O pagamento das parcelas será realizado pelos meios oficialmente disponibilizados pelo PROMITENTE VENDEDOR ou por sua administradora, incluindo boleto bancário, PIX ou outro canal financeiro habilitado na Central do Cliente do SV LOTES, observada a conta financeira vinculada à respectiva venda.

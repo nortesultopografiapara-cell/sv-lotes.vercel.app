@@ -481,6 +481,7 @@ export function generateContractHTML({
     isCashPayment,
     financeReceipts,
     balloonAddons,
+    contractModel: resolveSaleContractModel(tenant),
   });
   const paymentSummaryHtml = buildSaleContractPaymentSummaryHtml(
     paymentBreakdown,
@@ -505,6 +506,25 @@ export function generateContractHTML({
         projectDescString,
         lotLocationSuffix,
         foroText,
+        finance: {
+          paymentMode,
+          // Mesma base numérica do Quadro-Resumo (valor do lote / líquido).
+          valorTotalFmt: paymentBreakdown.netValueFmt || valorTotalFmt,
+          valorTotalExtenso,
+          valorEntradaFmt: paymentBreakdown.entryFmt || valorEntradaFmt,
+          valorEntradaExtenso,
+          valorSaldoFmt: paymentBreakdown.installmentBalanceFmt,
+          qtdParcelas: paymentBreakdown.installmentsCount || qtdParcelas,
+          valorParcelaFmt: hasVariableInstallments
+            ? valorParcelaFmtBalloonAware
+            : paymentBreakdown.installmentValueFmt || valorParcelaFmtBalloonAware,
+          dataPrimeiraParcelaFmt,
+          dataUltimaParcelaFmt,
+          singleFutureDueLongFmt,
+          hasVariableInstallments,
+          balloonClauseBodyHtml: balloonClauseBody,
+          correctionLabel: paymentBreakdown.correctionLabel,
+        },
       })
     : (() => {
         const clauseTerceiraHtml = buildSaleContractClauseTerceiraHtml({

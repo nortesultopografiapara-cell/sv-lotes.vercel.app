@@ -123,6 +123,10 @@ console.log('1) MENESES contém cláusulas novas...');
     h.includes('Quadro Financeiro') || h.includes('quadro financeiro') || h.includes('Tabela'),
     'quadro financeiro presente',
   );
+  const hNorm = h.replace(/\u00a0|\u202f/g, ' ');
+  assert(hNorm.includes('R$ 100.000,00'), 'Cláusula Terceira materializa valor total');
+  assert(hNorm.includes('R$ 10.000,00'), 'Cláusula Terceira materializa entrada');
+  assert(/parcelas iguais/i.test(hNorm), 'Cláusula Terceira materializa parcelas iguais');
 }
 
 console.log('2) PADRAO permanece com cláusulas clássicas...');
@@ -208,6 +212,11 @@ console.log('5) buildMenesesClausesHtml unitário...');
   assert(fragment.includes('Goiânia - GO'), 'foro dinâmico');
   assert(fragment.includes('Cláusula Décima Quarta'), '14 cláusulas');
   assert(!fragment.includes('{{'), 'sem mustache');
+  assert(
+    fragment.includes('observarão integralmente as especificações') ||
+      fragment.includes('Quadro Financeiro'),
+    'terceira sem finance ainda remete ao quadro',
+  );
 }
 
 console.log('\nOK mandatory-meneses-new-clauses-tests');
