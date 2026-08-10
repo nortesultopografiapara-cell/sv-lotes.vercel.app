@@ -645,6 +645,7 @@ export function generateContractHTML({
 
             ${legalClausesHtml}
 
+            <div class="contract-signature-pack">
             <div class="contract-clause contract-closing">
                 <p>
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
@@ -692,6 +693,7 @@ export function generateContractHTML({
                 <p>${empresaNome} — CNPJ ${empresaCnpj}</p>
                 <p>${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
                 ${vendedorContato ? `<p>${vendedorContato}</p>` : ""}
+            </div>
             </div>
         </div>
     `;

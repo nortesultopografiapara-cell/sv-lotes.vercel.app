@@ -55,6 +55,8 @@ export const CONTRACT_FOOTER_RESERVE_PX = 40;
 /** Seletores canônicos — novos modelos devem reutilizar estes. */
 export const CONTRACT_PAGINATION_SELECTORS = {
   signatureBlock: '.contract-signatures, .sv2-signatures',
+  /** Fecho + data + assinaturas (+ rodapé institucional) — bloco indivisível clássico. */
+  signaturePack: '.contract-signature-pack',
   signatureSlot: '.signature-slot',
   certificateBlock: '.sv-cert-official-block',
   certificateUnit: '.sv-cert-official-inner, .sv-cert-official',
@@ -287,6 +289,37 @@ export const CONTRACT_SIGNATURE_SPACING = {
  * Seletores globais (sem root Recanto) — seguros no HTML Meneses/Padrão.
  */
 export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
+  /* Pack clássico: fecho/data + assinaturas + rodapé = UMA unidade. */
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack}.sv-pagination-force-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+  /*
+   * Dentro do pack: filhos NÃO são unidades de quebra próprias.
+   * Evita fecho/data na pág. N e assinaturas sozinhas na N+1.
+   */
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} .contract-closing,
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} .contract-closing > p,
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} .contract-closing-date,
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} .contract-signatures,
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} .contract-institutional-footer {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    page-break-before: avoid !important;
+    break-before: avoid-page !important;
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+  }
   ${CONTRACT_PAGINATION_SELECTORS.signatureBlock} {
     page-break-inside: avoid !important;
     break-inside: avoid-page !important;
@@ -294,6 +327,14 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     break-after: auto !important;
     margin-bottom: 0 !important;
     padding-bottom: 0 !important;
+  }
+  /* Pack já é a unidade; assinaturas internas não forçam página própria. */
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} ${CONTRACT_PAGINATION_SELECTORS.signatureBlock},
+  ${CONTRACT_PAGINATION_SELECTORS.signaturePack} .contract-signatures {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    page-break-before: avoid !important;
+    break-before: avoid-page !important;
   }
   ${CONTRACT_PAGINATION_SELECTORS.signatureBlock}.sv-pagination-force-break {
     page-break-before: always !important;
@@ -307,6 +348,9 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
   .sv-contract-document .contract-signatures {
     margin-top: ${CONTRACT_SIGNATURE_SPACING.blockMarginTopClassic};
     text-align: center;
+  }
+  .sv-contract-document .contract-signature-pack .contract-signatures {
+    margin-top: 2px !important;
   }
   .sv-contract-document .contract-signatures .signature-grid {
     display: grid;
@@ -487,22 +531,36 @@ export const CONTRACT_CERTIFICATE_PAGINATION_CSS = `
 
 /** Fluxo de cláusulas — Meneses / Padrão. */
 export const CONTRACT_CLASSIC_CLAUSE_FLOW_CSS = `
+  .sv-contract-document {
+    /* line-height inteiro em px evita fatia subpixel no html2canvas. */
+    font-size: 12pt !important;
+    line-height: 18px !important;
+  }
   .sv-contract-document .contract-clause {
     page-break-inside: auto;
     break-inside: auto;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     orphans: 3;
     widows: 3;
   }
-  /* Parágrafos íntegros: evita 1ª/última linha sob cabeçalho/rodapé. */
-  .sv-contract-document .contract-clause > p {
+  /*
+   * Parágrafos jurídicos íntegros (exceto fechamento — pertence ao pack final).
+   * Se o parágrafo for maior que a página, o motor ainda pode partir —
+   * orphans/widows + avoid no html2pdf cobrem o caso típico.
+   */
+  .sv-contract-document .contract-clause:not(.contract-closing) > p {
     page-break-inside: avoid;
     break-inside: avoid-page;
     orphans: 3;
     widows: 3;
+    /* Evita meia linha colada no rodapé/cabeçalho após fatia. */
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    margin-bottom: 10px;
   }
   .sv-contract-document .contract-clause--tight {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .sv-contract-document .contract-title {
     text-align: center;
@@ -521,8 +579,9 @@ export const CONTRACT_CLASSIC_CLAUSE_FLOW_CSS = `
     page-break-inside: avoid;
     break-inside: avoid-page;
   }
-  /* Fecho (local/data) + assinaturas: não partir a data entre páginas. */
-  .sv-contract-document .contract-clause:has(+ .contract-signatures) {
+  /* Fecho (local/data): dentro do pack com assinaturas — evita data órfã. */
+  .sv-contract-document .contract-clause:has(+ .contract-signatures),
+  .sv-contract-document .contract-signature-pack > .contract-closing {
     page-break-inside: avoid !important;
     break-inside: avoid-page !important;
     page-break-after: avoid;
@@ -681,8 +740,10 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   const PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
   const FOOTER = ${CONTRACT_FOOTER_RESERVE_PX};
   const root = document;
+  const pack = root.querySelector('.contract-signature-pack');
   const sig = root.querySelector('.contract-signatures, .sv2-signatures');
   const cert = root.querySelector('.sv-cert-official-block');
+  if (pack) pack.classList.remove('sv-pagination-force-break');
   if (sig) sig.classList.remove('sv-pagination-force-break');
   if (cert) cert.classList.remove('sv-pagination-force-break');
 
@@ -698,21 +759,21 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
     if (available <= 0) return 'new-page';
     return blockH <= available ? 'same-page' : 'new-page';
   };
-  // Resto contínuo para decidir compactação — sem reservar rodapé de novo
-  // (PAGE_H já desconta a margem inferior do PDF).
-  const decideContinuousTight = (remaining, blockH) => {
-    const safety = 8;
-    const available = Math.max(0, remaining - safety);
-    if (blockH <= 0) return 'same-page';
-    if (available <= 0) return 'new-page';
-    return blockH <= available ? 'same-page' : 'new-page';
-  };
-  // Assinaturas: NÃO usar resto contínuo (y%PAGE_H) — subestima folgas do PDF.
-  // Só force-break se o bloco for maior que uma página útil inteira.
-  const decideSignature = (blockH) => {
-    if (blockH <= 0) return 'same-page';
+  /*
+   * NÃO usar y % PAGE_H para force-break do pack/assinaturas.
+   * Quebras anteriores (parágrafos avoid) deixam folgas no PDF real que a
+   * medição contínua não vê — forçar página gera assinaturas órfãs.
+   * Force-break só se o bloco for maior que a área útil de UMA página.
+   * Encaixe no resto da página: CSS break-inside:avoid + html2pdf avoid.
+   */
+  const decideForceSignatureBreak = (blockH) => {
     const fullPageUsable = Math.max(0, PAGE_H - FOOTER);
+    if (blockH <= 0) return 'same-page';
     return blockH > fullPageUsable ? 'new-page' : 'same-page';
+  };
+  const continuousLooksTight = (remaining, blockH) => {
+    const safety = 8;
+    return blockH > 0 && blockH > Math.max(0, remaining - safety);
   };
 
   let signature = 'same-page';
@@ -721,41 +782,48 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   let certH = 0;
   let remainingAtSig = PAGE_H;
   let continuousWouldForce = false;
+  const breakTarget = pack || sig;
 
-  if (sig) {
-    const rect = sig.getBoundingClientRect();
-    sigH = Math.ceil(rect.height || 0);
-    // Inclui rodapé institucional imediatamente seguinte (mesmo “fecho” visual).
-    const next = sig.nextElementSibling;
-    if (next && next.classList && next.classList.contains('contract-institutional-footer')) {
-      sigH += Math.ceil(next.getBoundingClientRect().height || 0);
-    }
-    const top = rect.top + scrollY;
-    remainingAtSig = remainingAt(top);
-    continuousWouldForce = decideContinuousTight(remainingAtSig, sigH) === 'new-page';
-    signature = decideSignature(sigH);
-    if (signature === 'new-page') {
-      sig.classList.add('sv-pagination-force-break');
-    } else if (continuousWouldForce) {
-      // Compacta e remede — objetivo: caber no resto real do Chromium.
-      sig.classList.add('sv-pagination-compact');
-      const rect2 = sig.getBoundingClientRect();
-      sigH = Math.ceil(rect2.height || 0);
-      const next2 = sig.nextElementSibling;
-      if (next2 && next2.classList && next2.classList.contains('contract-institutional-footer')) {
-        sigH += Math.ceil(next2.getBoundingClientRect().height || 0);
+  if (breakTarget) {
+    const measureHeight = () => {
+      const rect = breakTarget.getBoundingClientRect();
+      let h = Math.ceil(rect.height || 0);
+      // Sem pack: incluir rodapé institucional seguinte (fecho visual).
+      if (!pack && sig) {
+        const next = sig.nextElementSibling;
+        if (next && next.classList && next.classList.contains('contract-institutional-footer')) {
+          h += Math.ceil(next.getBoundingClientRect().height || 0);
+        }
       }
-      remainingAtSig = remainingAt(rect2.top + scrollY);
-      continuousWouldForce = decideContinuousTight(remainingAtSig, sigH) === 'new-page';
-    } else {
+      return { h, top: rect.top + scrollY };
+    };
+
+    let measured = measureHeight();
+    sigH = measured.h;
+    remainingAtSig = remainingAt(measured.top);
+    continuousWouldForce = continuousLooksTight(remainingAtSig, sigH);
+
+    if (continuousWouldForce && sig) {
+      // Compacta para maximizar chance de caber na mesma página (CSS/html2pdf).
+      sig.classList.add('sv-pagination-compact');
+      measured = measureHeight();
+      sigH = measured.h;
+      remainingAtSig = remainingAt(measured.top);
+      continuousWouldForce = continuousLooksTight(remainingAtSig, sigH);
+    } else if (sig) {
       sig.classList.remove('sv-pagination-compact');
+    }
+
+    signature = decideForceSignatureBreak(sigH);
+    if (signature === 'new-page' && breakTarget) {
+      breakTarget.classList.add('sv-pagination-force-break');
     }
   }
 
   if (cert) {
     certH = Math.ceil(cert.getBoundingClientRect().height || 0);
     let remainingForCert = PAGE_H;
-    if (sig) {
+    if (breakTarget || sig) {
       if (signature === 'new-page') {
         remainingForCert = Math.max(0, PAGE_H - sigH);
       } else {
@@ -779,6 +847,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
     sigH,
     certH,
     continuousWouldForce,
+    usedPack: Boolean(pack),
     decision:
       signature === 'new-page'
         ? 'signature-new-page'
@@ -808,6 +877,9 @@ export function applyContractPaginationBreaksToElement(
   const win = doc.defaultView || window;
   const scrollY = win.scrollY || win.pageYOffset || 0;
 
+  const pack = element.querySelector(
+    '.contract-signature-pack',
+  ) as HTMLElement | null;
   const sig = element.querySelector(
     '.contract-signatures, .sv2-signatures',
   ) as HTMLElement | null;
@@ -815,6 +887,7 @@ export function applyContractPaginationBreaksToElement(
     '.sv-cert-official-block',
   ) as HTMLElement | null;
 
+  if (pack) pack.classList.remove('sv-pagination-force-break');
   if (sig) sig.classList.remove('sv-pagination-force-break');
   if (sig) sig.classList.remove('sv-pagination-compact');
   if (cert) cert.classList.remove('sv-pagination-force-break');
@@ -824,22 +897,45 @@ export function applyContractPaginationBreaksToElement(
   let signatureOffset: number | null = null;
   let certificateOffset: number | null = null;
   let continuousWouldForce = false;
+  const breakTarget = pack || sig;
 
-  if (sig) {
-    const rect = sig.getBoundingClientRect();
-    sigH = Math.ceil(rect.height || 0);
-    const next = sig.nextElementSibling as HTMLElement | null;
-    if (next?.classList?.contains('contract-institutional-footer')) {
-      sigH += Math.ceil(next.getBoundingClientRect().height || 0);
+  const measureTarget = (el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    let h = Math.ceil(rect.height || 0);
+    if (!pack && sig) {
+      const next = sig.nextElementSibling as HTMLElement | null;
+      if (next?.classList?.contains('contract-institutional-footer')) {
+        h += Math.ceil(next.getBoundingClientRect().height || 0);
+      }
     }
-    signatureOffset = offsetWithinPagePx(rect.top + scrollY, pageH);
+    return { h, top: rect.top + scrollY };
+  };
+
+  if (breakTarget) {
+    let measured = measureTarget(breakTarget);
+    sigH = measured.h;
+    signatureOffset = offsetWithinPagePx(measured.top, pageH);
     const remainingAtSig = Math.max(0, pageH - signatureOffset);
     continuousWouldForce =
       decideIndivisibleBlockPlacement({
         remainingPx: remainingAtSig,
         blockHeightPx: sigH,
-        footerReservePx: footer,
+        footerReservePx: 8,
       }) === 'new-page';
+
+    if (continuousWouldForce && sig) {
+      sig.classList.add('sv-pagination-compact');
+      measured = measureTarget(breakTarget);
+      sigH = measured.h;
+      signatureOffset = offsetWithinPagePx(measured.top, pageH);
+      const remaining2 = Math.max(0, pageH - signatureOffset);
+      continuousWouldForce =
+        decideIndivisibleBlockPlacement({
+          remainingPx: remaining2,
+          blockHeightPx: sigH,
+          footerReservePx: 8,
+        }) === 'new-page';
+    }
   }
   if (cert) {
     const rect = cert.getBoundingClientRect();
@@ -847,6 +943,8 @@ export function applyContractPaginationBreaksToElement(
     certificateOffset = offsetWithinPagePx(rect.top + scrollY, pageH);
   }
 
+  // Pack e assinaturas: NÃO force-break por y%PAGE_H (subestima folgas reais).
+  // Só força se altura > página útil; encaixe no resto via CSS/html2pdf avoid.
   const decisions = decideSignatureAndCertificatePlacement({
     pageH,
     footerReservePx: footer,
@@ -855,25 +953,22 @@ export function applyContractPaginationBreaksToElement(
     certificateOffsetTopInPagePx: certificateOffset,
     certificateHeightPx: certH || null,
   });
+  const signature = decisions.signature;
+  const decisionsCert = decisions;
 
-  if (sig && decisions.signature === 'new-page') {
-    sig.classList.add('sv-pagination-force-break');
+  if (breakTarget && signature === 'new-page') {
+    breakTarget.classList.add('sv-pagination-force-break');
   } else if (sig && continuousWouldForce) {
+    // Compactação já aplicada acima quando continuousLooksTight; reforça classe.
     sig.classList.add('sv-pagination-compact');
-    const rect2 = sig.getBoundingClientRect();
-    sigH = Math.ceil(rect2.height || 0);
-    const next2 = sig.nextElementSibling as HTMLElement | null;
-    if (next2?.classList?.contains('contract-institutional-footer')) {
-      sigH += Math.ceil(next2.getBoundingClientRect().height || 0);
-    }
   }
-  if (cert && decisions.certificate === 'new-page') {
+  if (cert && decisionsCert.certificate === 'new-page') {
     cert.classList.add('sv-pagination-force-break');
   }
 
   return {
-    signature: decisions.signature,
-    certificate: decisions.certificate,
+    signature,
+    certificate: decisionsCert.certificate,
     sigH,
     certH,
   };
@@ -985,12 +1080,27 @@ export function applyCertificateBreakClass(
   );
 }
 
-/** Seletores html2pdf avoid — assinaturas inteiras; cláusulas fluem. */
+/**
+ * Seletores html2pdf avoid — clássico.
+ *
+ * CRÍTICO: NÃO listar `.contract-signatures` junto com `.contract-signature-pack`.
+ * O html2pdf processa cada avoid de forma independente; se assinaturas e o
+ * parágrafo de fechamento (`.contract-clause > p`) estiverem na lista, o motor
+ * move as assinaturas sozinhas e deixa fecho/data órfãos na página anterior.
+ * O pack final (fecho + data + assinaturas + rodapé institucional) é a ÚNICA
+ * unidade atômica do encerramento clássico.
+ */
 export const CONTRACT_HTML2PDF_PAGINATION_AVOID = [
   '.contract-balloon-finance',
   '.contract-balloon-only-table',
   '.contract-payment-block',
-  '.contract-signatures',
+  /* Parágrafos jurídicos íntegros — exclui fechamento (vai no pack). */
+  '.sv-contract-document .contract-clause:not(.contract-closing) > p',
+  '.sv-contract-document .contract-preamble',
+  '.sv-contract-document .contract-title',
+  /* Pack final atômico (fecho + data + assinaturas + rodapé). */
+  '.contract-signature-pack',
+  /* Fallback SV2 sem pack clássico. */
   '.sv2-signatures',
   '.sv-cert-official-block',
 ] as const;

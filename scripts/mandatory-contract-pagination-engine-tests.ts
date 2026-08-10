@@ -237,10 +237,11 @@ assert(
   );
 }
 assert(
-  'script de medição NÃO força assinaturas pelo resto contínuo',
-  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decideSignature') &&
-    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('fullPageUsable') &&
-    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('sv-pagination-compact'),
+  'script mede pack clássico; force-break só se > página útil',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decideForceSignatureBreak') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('contract-signature-pack') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('sv-pagination-compact') &&
+    !CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decidePackFits'),
 );
 assert(
   'CSS de compactação leve existe',
@@ -282,9 +283,19 @@ assert(
     CONTRACT_PDF_PRINT_CSS.includes('page-break-before: auto'),
 );
 assert(
-  'html2pdf evita bloco de assinaturas inteiro',
-  CONTRACT_HTML2PDF_PAGINATION_AVOID.includes('.contract-signatures') &&
+  'html2pdf clássico evita PACK final (não assinaturas isoladas)',
+  CONTRACT_HTML2PDF_PAGINATION_AVOID.includes('.contract-signature-pack') &&
+    !CONTRACT_HTML2PDF_PAGINATION_AVOID.includes('.contract-signatures') &&
     CONTRACT_HTML2PDF_PAGINATION_AVOID.includes('.sv2-signatures'),
+);
+assert(
+  'html2pdf clássico NÃO evita parágrafo de fechamento isolado',
+  !(CONTRACT_HTML2PDF_PAGINATION_AVOID as readonly string[]).includes(
+    '.sv-contract-document .contract-clause > p',
+  ) &&
+    (CONTRACT_HTML2PDF_PAGINATION_AVOID as readonly string[]).some((s) =>
+      s.includes(':not(.contract-closing)'),
+    ),
 );
 assert(
   'Recanto html2pdf não fragmenta slots individuais (bloco pai)',
