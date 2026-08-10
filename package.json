@@ -110,7 +110,8 @@
     "test:release-lot": "tsx scripts/mandatory-release-lot-tests.ts",
     "test:lot-reservation-display": "tsx scripts/mandatory-lot-reservation-display-tests.ts",
     "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts",
-    "test:street-guides-report": "tsx scripts/mandatory-street-guides-report-tests.ts"
+    "test:street-guides-report": "tsx scripts/mandatory-street-guides-report-tests.ts",
+    "test:supabase-fetch-all": "tsx scripts/mandatory-supabase-fetch-all-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

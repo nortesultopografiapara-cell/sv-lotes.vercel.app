@@ -30,6 +30,10 @@ import {
   Wallet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  BLOCKS_GIS_SELECT,
+  fetchAllBlocksForProject,
+} from "@/lib/blocksFetchAll";
 import { useAuth } from "@/hooks/useAuth";
 import { isOwnerRole, canManageGisProject } from "@/lib/rolePermissions";
 import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
@@ -4100,14 +4104,8 @@ export default function GISMap({
       }
 
       try {
-        let blocksQuery = supabase
-          .from("blocks")
-          .select("*, projects(name), customers(name)")
-          .eq("project_id", projectId);
-
-        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
-          blocksQuery = blocksQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-        } else if (user.role !== "SUPER_ADMIN" && !user.tenant_id) {
+        const applyTenant = user.role !== "SUPER_ADMIN" && Boolean(user.tenant_id);
+        if (user.role !== "SUPER_ADMIN" && !user.tenant_id) {
           // Bloquear se não tiver tenant
           setLots([]);
           setLoading(false);
@@ -4116,12 +4114,23 @@ export default function GISMap({
         }
 
         gisPerfMarkStart('gis_fetch_request');
-        const blocksRes = await blocksQuery;
+        const blocksFetch = await fetchAllBlocksForProject(supabase, projectId, {
+          select: BLOCKS_GIS_SELECT,
+          applyTenant,
+          tenantId: applyTenant ? user.tenant_id : null,
+        });
+        const blocksRes = {
+          data: blocksFetch.rows as any[],
+          error: null as null,
+        };
         gisPerfMarkEnd('gis_fetch_request', {
           rowCount: blocksRes.data?.length ?? 0,
-          hasError: Boolean(blocksRes.error),
+          hasError: false,
+          pagesFetched: blocksFetch.pagesFetched,
+          wouldTruncateWithoutPagination:
+            blocksFetch.wouldTruncateWithoutPagination,
+          exactCount: blocksFetch.exactCount,
         });
-        if (blocksRes.error) throw blocksRes.error;
 
         console.group('[SECURITY] GISMap Load');
         console.log('Empresa logada:', user?.company_id || user?.tenant_id);

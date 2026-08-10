@@ -27,6 +27,7 @@ import {
   type LotSheetVertexRow,
 } from '@/lib/lotSheetEnrichment';
 import { formatStreetDisplay } from '@/lib/streetGuide';
+import { fetchAllBlocksForProject } from '@/lib/blocksFetchAll';
 import {
   getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
@@ -247,10 +248,11 @@ export async function loadLotSheetPayload(
     throw new Error(projErr?.message || 'Empreendimento não encontrado.');
   }
 
-  const { data: allBlocks } = await supabase
-    .from('blocks')
-    .select('*')
-    .eq('project_id', params.projectId);
+  const allBlocksFetch = await fetchAllBlocksForProject(supabase, params.projectId, {
+    select: '*',
+    applyTenant: false,
+  });
+  const allBlocks = allBlocksFetch.rows;
 
   const { data: guides } = await supabase
     .from('street_guides')

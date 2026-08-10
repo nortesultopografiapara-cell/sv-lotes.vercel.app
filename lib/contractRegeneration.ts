@@ -66,6 +66,7 @@ import {
   resolveStoredContractHtmlMeta,
   shouldLoadProjectBlocksForContract,
 } from '@/lib/contractHtmlGlobal';
+import { fetchAllBlocksForProject } from '@/lib/blocksFetchAll';
 
 export {
   CONTRACT_HTML_READ_COLUMNS,
@@ -824,12 +825,15 @@ export async function loadFreshRegenerationEntities(
   let projectBlocks: Array<Record<string, unknown>> = [];
   let streetGuides: Array<Record<string, unknown>> = [];
   if (projectId && shouldLoadProjectBlocksForContract(company)) {
-    const [{ data: blocks }, { data: guides }] = await Promise.all([
-      supabase.from('blocks').select('*').eq('project_id', projectId),
+    const [blocksFetch, guidesRes] = await Promise.all([
+      fetchAllBlocksForProject(supabase, projectId, {
+        select: '*',
+        applyTenant: false,
+      }),
       supabase.from('street_guides').select('*').eq('project_id', projectId),
     ]);
-    projectBlocks = (blocks || []) as Array<Record<string, unknown>>;
-    streetGuides = (guides || []) as Array<Record<string, unknown>>;
+    projectBlocks = blocksFetch.rows as Array<Record<string, unknown>>;
+    streetGuides = (guidesRes.data || []) as Array<Record<string, unknown>>;
     logContractHtmlGlobal('global-regenerate', 'project_blocks_loaded', {
       projectId,
       blocksCount: projectBlocks.length,

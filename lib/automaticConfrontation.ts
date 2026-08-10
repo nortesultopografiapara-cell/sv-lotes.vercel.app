@@ -3,6 +3,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { fetchAllBlocksForProject } from '@/lib/blocksFetchAll';
 import { applyAutoFrontStreetToBlockSegments } from '@/lib/autoFrontStreetSegments';
 import { buildLotConfrontationAudit } from '@/lib/assistedConfrontation';
 import {
@@ -41,14 +42,12 @@ async function fetchProjectBlocks(
   projectId: string,
   tenantId?: string,
 ): Promise<Record<string, unknown>[]> {
-  let query = supabase.from('blocks').select('*').eq('project_id', projectId);
-  if (tenantId) {
-    query = query.or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
-  }
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  const rows = data || [];
-  return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  const result = await fetchAllBlocksForProject(supabase, projectId, {
+    select: '*',
+    applyTenant: Boolean(tenantId),
+    tenantId: tenantId || null,
+  });
+  return result.rows as Record<string, unknown>[];
 }
 
 async function fetchProjectStreetGuides(

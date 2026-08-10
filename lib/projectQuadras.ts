@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { clearProjectMapOfflineCache } from '@/lib/offline/store';
+import { fetchAllPaginated } from '@/lib/supabaseFetchAll';
 
 export function normalizeQuadraBlockName(name: string): string {
   return String(name ?? '').trim().toUpperCase();
@@ -22,28 +23,33 @@ function applyBlocksTenantFilter<T extends { or: (filter: string) => T }>(
   );
 }
 
-/** Lista distintas quadras (block_name) do projeto. */
+/** Lista distintas quadras (block_name) do projeto — paginado (sem teto 1000). */
 export async function fetchProjectQuadraNames(
   supabase: SupabaseClient,
   projectId: string,
   user?: { role?: string; tenant_id?: string | null } | null,
 ): Promise<string[]> {
-  let query = supabase
-    .from('blocks')
-    .select('block_name')
-    .eq('project_id', projectId)
-    .not('block_name', 'is', null);
+  const tenantId =
+    user?.role !== 'SUPER_ADMIN' && user?.tenant_id ? user.tenant_id : null;
 
-  query = applyBlocksTenantFilter(query, user);
-
-  const { data, error } = await query;
-  if (error) throw error;
+  const { rows } = await fetchAllPaginated<{ block_name?: string }>(
+    (from, to) => {
+      let query = supabase
+        .from('blocks')
+        .select('id, block_name')
+        .eq('project_id', projectId)
+        .not('block_name', 'is', null)
+        .order('id', { ascending: true });
+      if (tenantId) {
+        query = query.or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
+      }
+      return query.range(from, to);
+    },
+  );
 
   const names = new Set<string>();
-  for (const row of data || []) {
-    const bn = normalizeQuadraBlockName(
-      (row as { block_name?: string }).block_name ?? '',
-    );
+  for (const row of rows) {
+    const bn = normalizeQuadraBlockName(row.block_name ?? '');
     if (bn) names.add(bn);
   }
 
@@ -64,19 +70,25 @@ export async function deleteProjectQuadra(
   const quadraName = normalizeQuadraBlockName(blockName);
   if (!quadraName) throw new Error('Nome da quadra inválido.');
 
-  let idsQuery = supabase
-    .from('blocks')
-    .select('id')
-    .eq('project_id', projectId)
-    .eq('block_name', quadraName);
+  const tenantId =
+    user?.role !== 'SUPER_ADMIN' && user?.tenant_id ? user.tenant_id : null;
+  const { rows: blockRows } = await fetchAllPaginated<{ id?: string }>(
+    (from, to) => {
+      let q = supabase
+        .from('blocks')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('block_name', quadraName)
+        .order('id', { ascending: true });
+      if (tenantId) {
+        q = q.or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
+      }
+      return q.range(from, to);
+    },
+  );
 
-  idsQuery = applyBlocksTenantFilter(idsQuery, user);
-
-  const { data: blockRows, error: selectError } = await idsQuery;
-  if (selectError) throw selectError;
-
-  const lotIds = (blockRows || [])
-    .map((r) => (r as { id?: string }).id)
+  const lotIds = blockRows
+    .map((r) => r.id)
     .filter((id): id is string => Boolean(id));
 
   if (lotIds.length > 0) {

@@ -26,6 +26,7 @@ import {
   formatMemorialDistanceM,
 } from '@/lib/memorial/memorialFormat';
 import { sanitizeMemorialDisplayText } from '@/lib/memorial/memorialBranding';
+import { fetchAllBlocksForProject } from '@/lib/blocksFetchAll';
 import type { MemorialCompanyInfo, MemorialPayload } from '@/lib/memorial/memorialTypes';
 import {
   normalizeTechnicalResponsibleFromCompany,
@@ -189,10 +190,11 @@ export async function loadMemorialPayload(
     throw new Error(projErr?.message || 'Empreendimento não encontrado.');
   }
 
-  const { data: allBlocks } = await supabase
-    .from('blocks')
-    .select('*')
-    .eq('project_id', params.projectId);
+  const allBlocksFetch = await fetchAllBlocksForProject(supabase, params.projectId, {
+    select: '*',
+    applyTenant: false,
+  });
+  const allBlocks = allBlocksFetch.rows;
 
   const { data: guides } = await supabase
     .from('street_guides')

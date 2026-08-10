@@ -66,6 +66,12 @@ import {
   formatQuadraLabel,
   normalizeQuadraBlockName,
 } from '@/lib/projectQuadras';
+import {
+  fetchAllBlocksForProject,
+  fetchProjectLotStatsMap,
+  insertBlocksInBatches,
+  type ProjectLotStats,
+} from '@/lib/blocksFetchAll';
 import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
 import { UpdateIndividualLotModal } from '@/components/map/UpdateIndividualLotModal';
 import { DeleteIndividualLotModal } from '@/components/map/DeleteIndividualLotModal';
@@ -612,6 +618,9 @@ export default function MapPage() {
   const [enterpriseRefreshKey, setEnterpriseRefreshKey] = useState(0);
   const [quadrasPanelOpen, setQuadrasPanelOpen] = useState(false);
   const [projectQuadras, setProjectQuadras] = useState<string[]>([]);
+  const [projectLotStats, setProjectLotStats] = useState<
+    Record<string, ProjectLotStats>
+  >({});
   const [quadrasLoading, setQuadrasLoading] = useState(false);
   const [quadraActionLoading, setQuadraActionLoading] = useState<string | null>(
     null,
@@ -964,17 +973,18 @@ export default function MapPage() {
     if (!selectedProject || !user) return;
     setEnterpriseOverviewGenerating(true);
     try {
-      let blocksQuery = supabase
-        .from('blocks')
-        .select('*')
-        .eq('project_id', selectedProject.id);
-      if (!isPlatformAdmin(user.role) && user.tenant_id) {
-        blocksQuery = blocksQuery.or(
-          `tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`,
-        );
-      }
-      const { data: blocks, error: blocksErr } = await blocksQuery;
-      if (blocksErr) throw blocksErr;
+      const tenantForBlocks =
+        !isPlatformAdmin(user.role) && user.tenant_id ? user.tenant_id : null;
+      const blocksFetch = await fetchAllBlocksForProject(
+        supabase,
+        selectedProject.id,
+        {
+          select: '*',
+          applyTenant: Boolean(tenantForBlocks),
+          tenantId: tenantForBlocks,
+        },
+      );
+      const blocks = blocksFetch.rows as Record<string, unknown>[];
       if (!blocks?.length) {
         alert('Nenhum lote encontrado neste empreendimento.');
         return;
@@ -1317,12 +1327,20 @@ export default function MapPage() {
 
        if (perfOn) gisPerfIdentifyFrontsMark('calc_start');
 
-       let blocksQuery = supabase.from('blocks').select('*').eq('project_id', selectedProject.id);
-       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-           blocksQuery = blocksQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-       }
-       const { data: blocks, error } = await blocksQuery;
-       if (error) throw error;
+       let blocksQueryTenant =
+         user?.role !== 'SUPER_ADMIN' && user?.tenant_id
+           ? user.tenant_id
+           : null;
+       const blocksFetch = await fetchAllBlocksForProject(
+         supabase,
+         selectedProject.id,
+         {
+           select: '*',
+           applyTenant: Boolean(blocksQueryTenant),
+           tenantId: blocksQueryTenant,
+         },
+       );
+       const blocks = blocksFetch.rows as any[];
        if (!blocks || blocks.length === 0) {
          if (perfOn) gisPerfIdentifyFrontsEnd({ path: 'empty' });
          return;
@@ -1663,9 +1681,7 @@ export default function MapPage() {
 
       let query = supabase
         .from('projects')
-        .select(
-          '*, blocks(id, status, geometry, number, block_name, project_id, area, price)',
-        )
+        .select('*')
         .order('created_at', { ascending: false });
 
       query = applyTenantFilterToProjectsQuery(query, user, activeTenantId);
@@ -1675,6 +1691,7 @@ export default function MapPage() {
       if (error) {
         console.warn('Error fetching projects:', error);
         setProjects([]);
+        setProjectLotStats({});
         return;
       }
 
@@ -1689,6 +1706,22 @@ export default function MapPage() {
         ownerMapProjectIds,
       );
       setProjects(filteredList);
+
+      try {
+        const stats = await fetchProjectLotStatsMap(
+          supabase,
+          filteredList.map((p: { id?: string }) => String(p.id || '')),
+          {
+            applyTenant: !rlsCtx.isSuperAdmin,
+            tenantId: activeTenantId,
+          },
+        );
+        setProjectLotStats(stats);
+      } catch (statsErr) {
+        console.warn('[MAP] falha ao contar lotes por projeto', statsErr);
+        setProjectLotStats({});
+      }
+
       logSaasCompanyContext(activeTenantId, saasCompany, filteredList.length);
       try {
         await cacheProjectsForOffline(filteredList);
@@ -2220,8 +2253,16 @@ export default function MapPage() {
             return;
           }
 
-          const { error: insertError } = await supabase.from('blocks').insert(blocksToInsert);
-          if (insertError) throw insertError;
+          const { total: kmlInserted } = await insertBlocksInBatches(
+            supabase,
+            blocksToInsert as Record<string, unknown>[],
+            { batchSize: 200, select: 'id, number' },
+          );
+          if (kmlInserted !== blocksToInsert.length) {
+            throw new Error(
+              `Importação parcial KML: ${kmlInserted}/${blocksToInsert.length} lotes inseridos.`,
+            );
+          }
       }
       
       alert(`Importados ${blocksToInsert.length} lotes com sucesso!`);
@@ -2550,11 +2591,17 @@ export default function MapPage() {
           const insertPayload = blocksToInsert.map(
             ({ _officialSegs: _s, ...row }) => row,
           );
-          const { data: inserted, error: insertError } = await supabase
-            .from('blocks')
-            .insert(insertPayload)
-            .select('id, number');
-          if (insertError) throw insertError;
+          const { inserted, total: insertedTotal } = await insertBlocksInBatches(
+            supabase,
+            insertPayload as Record<string, unknown>[],
+            { batchSize: 200, select: 'id, number' },
+          );
+
+          if (insertedTotal !== insertPayload.length) {
+            throw new Error(
+              `Importação parcial TXT: ${insertedTotal}/${insertPayload.length} lotes inseridos.`,
+            );
+          }
 
           if (inserted?.length) {
             for (let i = 0; i < inserted.length; i++) {
@@ -4106,10 +4153,19 @@ export default function MapPage() {
                    </thead>
                    <tbody>
                      {filteredProjects.map((p) => {
-                       const blocks = p.blocks || [];
-                       const total = blocks.length;
-                       const sold = blocks.filter((l: any) => l.status === 'Vendido').length;
-                       const hasGis = blocks.some((l: any) => l.geometry != null);
+                       const stats = projectLotStats[String(p.id)] || {
+                         total: Array.isArray(p.blocks) ? p.blocks.length : 0,
+                         sold: Array.isArray(p.blocks)
+                           ? p.blocks.filter((l: any) => l.status === 'Vendido')
+                               .length
+                           : 0,
+                         hasGis: Array.isArray(p.blocks)
+                           ? p.blocks.some((l: any) => l.geometry != null)
+                           : false,
+                       };
+                       const total = stats.total;
+                       const sold = stats.sold;
+                       const hasGis = stats.hasGis;
                        const pct = total > 0 ? Math.round((sold / total) * 100) : 0;
                        const locationLabel =
                          p.location ||
@@ -4226,10 +4282,18 @@ export default function MapPage() {
                {/* Mobile — cards empilhados, nome completo */}
                <div className="md:hidden flex flex-col gap-3 p-4">
                  {filteredProjects.map((p) => {
-                   const blocks = p.blocks || [];
-                   const total = blocks.length;
-                   const sold = blocks.filter((l: any) => l.status === 'Vendido').length;
-                   const hasGis = blocks.some((l: any) => l.geometry != null);
+                   const stats = projectLotStats[String(p.id)] || {
+                     total: Array.isArray(p.blocks) ? p.blocks.length : 0,
+                     sold: Array.isArray(p.blocks)
+                       ? p.blocks.filter((l: any) => l.status === 'Vendido').length
+                       : 0,
+                     hasGis: Array.isArray(p.blocks)
+                       ? p.blocks.some((l: any) => l.geometry != null)
+                       : false,
+                   };
+                   const total = stats.total;
+                   const sold = stats.sold;
+                   const hasGis = stats.hasGis;
                    const pct = total > 0 ? Math.round((sold / total) * 100) : 0;
                    const locationLabel =
                      p.location ||

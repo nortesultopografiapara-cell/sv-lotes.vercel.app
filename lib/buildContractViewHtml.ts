@@ -22,6 +22,7 @@ import {
 import { loadSaleContractContext, parseMissingContractColumn } from "@/lib/contractRegeneration";
 import { logContractHtmlGlobal, shouldLoadProjectBlocksForContract } from "@/lib/contractHtmlGlobal";
 import { loadCustomerForSaleContract } from "@/lib/loadCustomerForSaleContract";
+import { fetchAllBlocksForProject } from "@/lib/blocksFetchAll";
 
 const COMPANY_CONTRACT_VIEW_SELECT = COMPANY_CONTRACT_LOAD_SELECT;
 
@@ -351,12 +352,15 @@ export async function buildContractViewHtml(
   let streetGuides: Record<string, unknown>[] = [];
 
   if (projectId && shouldLoadProjectBlocksForContract(params.tenant)) {
-    const [{ data: blocks }, { data: guides }] = await Promise.all([
-      supabase.from("blocks").select(BLOCKS_PROJECT_LIST_SELECT).eq("project_id", projectId),
+    const [blocksFetch, guidesRes] = await Promise.all([
+      fetchAllBlocksForProject(supabase, projectId, {
+        select: BLOCKS_PROJECT_LIST_SELECT,
+        applyTenant: false,
+      }),
       supabase.from("street_guides").select(STREET_GUIDES_SELECT).eq("project_id", projectId),
     ]);
-    projectBlocks = (blocks || []) as Record<string, unknown>[];
-    streetGuides = (guides || []) as Record<string, unknown>[];
+    projectBlocks = blocksFetch.rows as Record<string, unknown>[];
+    streetGuides = (guidesRes.data || []) as Record<string, unknown>[];
     logContractHtmlGlobal("global-preview", "project_blocks_loaded", {
       projectId,
       blocksCount: projectBlocks.length,

@@ -26,6 +26,7 @@ import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
 import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import { BulkAdjustBrokerCommissionsModal } from '@/components/brokers/BulkAdjustBrokerCommissionsModal';
+import { fetchAllPaginated } from '@/lib/supabaseFetchAll';
 import {
   fetchCompanySaasByTenantId,
   getCompanySaasPlan,
@@ -200,8 +201,19 @@ export default function CorretoresPage() {
       const commData = c || [];
       console.log("BROKERS_COMMISSIONS_RAW", commData.length);
       
-      const { data: bld } = await applyTenantFilter(supabase.from('blocks').select('*'), rlsCtx, 'blocks');
-      const blockData = bld || [];
+      const { rows: blockData } = await fetchAllPaginated(
+        async (from, to) => {
+          const q = applyTenantFilter(
+            supabase
+              .from('blocks')
+              .select('id, number, lot_number, block_name, name, project_id, status, sale_id, customer_id, broker_id')
+              .order('id', { ascending: true }),
+            rlsCtx,
+            'blocks',
+          );
+          return q.range(from, to);
+        },
+      );
       
       const { data: prj } = await applyTenantFilter(
         supabase.from('projects').select('id, name'),
