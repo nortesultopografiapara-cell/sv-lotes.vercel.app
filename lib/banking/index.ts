@@ -53,3 +53,14 @@ export type {
   SicrediConfigValidationResult,
 } from './sicrediConfigValidation';
 export { runSicrediTestConnection } from './sicrediApiHandlers';
+export {
+  InterBankProvider,
+  interBankProvider,
+  INTER_BOLETO_NOT_ENABLED_MESSAGE,
+  INTER_NOT_IMPLEMENTED_MESSAGE,
+} from './providers/interBankProvider';
+export {
+  validateInterCertificatePem,
+  validateInterPrivateKeyPem,
+  validateInterCertificateKeyPair,
+} from './inter/interPemValidation';

@@ -69,7 +69,7 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
       ) : tab === 'asaas' ? (
         <AsaasIntegrationPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
       ) : (
-        <BanksDevelopmentPanel />
+        <BanksDevelopmentPanel readOnlyDemo={readOnlyDemo} />
       )}
     </div>
   );

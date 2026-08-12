@@ -27,7 +27,7 @@ export const FINANCIAL_INTEGRATION_UI_CARDS: FinancialIntegrationUiCard[] = [
     code: 'INTER',
     label: 'Inter',
     status: 'development',
-    description: 'Integração direta em preparação.',
+    description: 'Configuração de credenciais disponível (Fase A).',
   },
   {
     code: 'NUBANK',
