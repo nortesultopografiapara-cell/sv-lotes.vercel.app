@@ -32,7 +32,7 @@ import {
   DEFAULT_INSTALLMENT_CORRECTION_TYPE,
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
-import { normalizeSaleContractModel } from '@/lib/contractModel';
+import { resolveSaleContractModelFromContext } from '@/lib/contractModel';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import { cpfCnpjIlikePatterns, matchesCpfCnpj } from '@/lib/inputMasks';
@@ -366,7 +366,25 @@ export async function updateSaleFromEdit(
     .select('contract_model')
     .eq('id', tenantId)
     .maybeSingle();
-  const contractModel = normalizeSaleContractModel(companyRow?.contract_model);
+
+  const projectId =
+    String(lot.projectId || lot.project_id || saleBefore.project_id || '').trim() ||
+    null;
+  let projectModel: unknown = null;
+  if (projectId) {
+    const { data: projectRow } = await supabase
+      .from('projects')
+      .select('contract_model')
+      .eq('id', projectId)
+      .maybeSingle();
+    projectModel = projectRow?.contract_model;
+  }
+
+  const contractModel = resolveSaleContractModelFromContext({
+    saleModel: saleBefore.contract_model,
+    projectModel,
+    companyModel: companyRow?.contract_model,
+  }).model;
   const financeOptions = {
     contractModel,
     grossDownPayment: parseCurrencyBRLNumber(data.down_payment),

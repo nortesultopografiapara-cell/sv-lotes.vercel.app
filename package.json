@@ -18,6 +18,7 @@
     "test:contract-pdf-blank": "tsx scripts/mandatory-contract-pdf-blank-page-tests.ts",
     "test:contract-pdf-body": "tsx scripts/mandatory-contract-pdf-body-regression-tests.ts",
     "test:contract-pagination": "tsx scripts/mandatory-contract-pagination-engine-tests.ts",
+    "test:project-contract-model": "tsx scripts/mandatory-project-contract-model-tests.ts",
     "test:contract-identity": "tsx scripts/mandatory-contract-identity-tests.ts",
     "test:contract-validation": "tsx scripts/mandatory-contract-validation-tests.ts",
     "test:contract-signature": "tsx scripts/mandatory-contract-signature-tests.ts",

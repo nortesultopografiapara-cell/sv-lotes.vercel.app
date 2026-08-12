@@ -11,7 +11,11 @@ import {
 import { loadCustomerForSaleContract } from '@/lib/loadCustomerForSaleContract';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
-import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
+import {
+  applyEffectiveContractModelToTenant,
+  isRecantoPrimaveraContractModel,
+  resolveSaleContractModelFromContext,
+} from '@/lib/contractModel';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
   diagnoseContractBalloonAddons,
@@ -883,13 +887,28 @@ export async function buildFreshSaleContractHtml(
     streetGuides,
   } = fresh;
 
-  const tenant = {
+  const tenantBase = {
     ...company,
     id: session.contractTenantId,
   };
+  const effectiveModel = resolveSaleContractModelFromContext({
+    saleModel: sale.contract_model,
+    contractModel: contract.contract_model,
+    projectModel: project.contract_model,
+    companyModel: company.contract_model,
+  });
+  const tenant = applyEffectiveContractModelToTenant(
+    tenantBase,
+    effectiveModel.model,
+  );
+  console.log('REGENERATE_CONTRACT_MODEL', {
+    model: effectiveModel.model,
+    source: effectiveModel.source,
+  });
   const saleWithId = {
     ...sale,
     id: (sale.id as string) || (contract.sale_id as string),
+    contract_model: effectiveModel.model,
   };
   // Identificador real da venda — obrigatório para balões/regeneração.
   // (Bug: saleId era referenciado sem declaração → "saleId is not defined".)
@@ -1174,6 +1193,11 @@ export async function regenerateSaleContract(
     sale_value: sale.total_value ?? sale.agreed_price ?? contract.sale_value,
     down_payment: sale.down_payment ?? contract.down_payment,
     installments: sale.installments_count ?? contract.installments,
+    contract_model:
+      tenant.contract_model ||
+      sale.contract_model ||
+      contract.contract_model ||
+      null,
     ...contractPayloadPartial,
     created_at: now,
     },

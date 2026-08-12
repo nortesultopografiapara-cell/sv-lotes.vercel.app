@@ -8,6 +8,8 @@ export type ProjectFormInitialData = {
   address: string;
   contract_city: string;
   financial_account_id: string;
+  /** Vazio = herdar modelo padrão da empresa. */
+  contract_model: string;
 };
 
 export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
@@ -18,6 +20,7 @@ export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
   address: '',
   contract_city: '',
   financial_account_id: '',
+  contract_model: '',
 };
 
 /** Converte registro do Supabase para o formulário unificado (criar/editar). */
@@ -53,5 +56,6 @@ export function projectToFormInitialData(
     ).trim(),
     contract_city: contractCity,
     financial_account_id: String(project.financial_account_id || '').trim(),
+    contract_model: String(project.contract_model || '').trim(),
   };
 }

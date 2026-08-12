@@ -23,6 +23,7 @@ type CreateProjectBody = {
   address?: string | null;
   forum_city?: string | null;
   impersonatingTenantId?: string | null;
+  contract_model?: string | null;
 };
 
 async function resolveTenantForUser(
@@ -177,6 +178,7 @@ export async function POST(request: Request) {
       forum_city: body.forum_city?.trim() || city,
       location,
       tenant_id: tenantId,
+      contract_model: body.contract_model?.trim() || null,
     });
 
     if (error) {

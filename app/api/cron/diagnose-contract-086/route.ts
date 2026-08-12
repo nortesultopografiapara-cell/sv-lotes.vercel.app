@@ -254,5 +254,19 @@ export async function GET(request: NextRequest) {
     quadro,
     coherence,
     allCoherent: Object.values(coherence).every(Boolean),
+    schemaColumns: await (async () => {
+      const check = async (table: 'projects' | 'sales' | 'contracts') => {
+        const { error } = await sb.from(table).select('contract_model').limit(1);
+        if (!error) return true;
+        const msg = error.message || '';
+        if (/Could not find the 'contract_model' column/i.test(msg)) return false;
+        return true;
+      };
+      return {
+        projects: await check('projects'),
+        sales: await check('sales'),
+        contracts: await check('contracts'),
+      };
+    })(),
   });
 }

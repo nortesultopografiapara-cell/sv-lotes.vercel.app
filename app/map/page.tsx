@@ -50,6 +50,12 @@ import {
   type ProjectFormInitialData,
   projectToFormInitialData,
 } from '@/lib/project-form';
+import {
+  SALE_CONTRACT_MODEL_LABELS,
+  SALE_CONTRACT_MODEL_OPTIONS,
+  normalizeSaleContractModel,
+  type SaleContractModel,
+} from '@/lib/contractModel';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
@@ -547,6 +553,9 @@ export default function MapPage() {
   const [newProjectAddr, setNewProjectAddr] = useState('');
   const [newProjectForum, setNewProjectForum] = useState('');
   const [newProjectFinancialAccountId, setNewProjectFinancialAccountId] = useState('');
+  const [newProjectContractModel, setNewProjectContractModel] = useState('');
+  const [companyDefaultContractModel, setCompanyDefaultContractModel] =
+    useState<SaleContractModel>('PADRAO');
   const [projectFinancialAccounts, setProjectFinancialAccounts] = useState<
     Array<{ id: string; name: string; accountType: string; beneficiaryName: string | null; isDefault: boolean }>
   >([]);
@@ -564,6 +573,20 @@ export default function MapPage() {
       })
       .catch(() => {
         if (!cancelled) setProjectFinancialAccounts([]);
+      });
+    void supabase
+      .from('companies')
+      .select('contract_model')
+      .eq('id', saasTenantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setCompanyDefaultContractModel(
+          normalizeSaleContractModel(data?.contract_model),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCompanyDefaultContractModel('PADRAO');
       });
     return () => {
       cancelled = true;
@@ -1847,6 +1870,7 @@ export default function MapPage() {
     setNewProjectAddr(initialData.address);
     setNewProjectForum(initialData.contract_city);
     setNewProjectFinancialAccountId(initialData.financial_account_id);
+    setNewProjectContractModel(initialData.contract_model);
   };
 
   const resetProjectForm = () => {
@@ -1949,6 +1973,7 @@ export default function MapPage() {
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
         financial_account_id: newProjectFinancialAccountId || null,
+        contract_model: newProjectContractModel || null,
       });
 
       const updatedFields = {
@@ -1961,6 +1986,12 @@ export default function MapPage() {
         forum_city: String(saved.forum_city ?? contract_city),
         contract_city: String(saved.contract_city ?? contract_city),
         location: String(saved.location ?? location),
+        financial_account_id:
+          (saved.financial_account_id as string | null) ??
+          (newProjectFinancialAccountId || null),
+        contract_model:
+          (saved.contract_model as string | null) ??
+          (newProjectContractModel || null),
       };
 
       setProjects((prev) =>
@@ -2042,6 +2073,7 @@ export default function MapPage() {
         forum_city: newProjectForum.trim() || cityStr,
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
+        contract_model: newProjectContractModel || null,
       });
 
       await reloadSaas();
@@ -3254,6 +3286,26 @@ export default function MapPage() {
                   <option key={account.id} value={account.id}>
                     {account.name}
                     {account.isDefault ? ' (Padrão)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                Modelo de contrato padrão do empreendimento
+              </label>
+              <select
+                value={newProjectContractModel}
+                onChange={(e) => setNewProjectContractModel(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+              >
+                <option value="">
+                  Usar modelo padrão da empresa (
+                  {SALE_CONTRACT_MODEL_LABELS[companyDefaultContractModel]})
+                </option>
+                {SALE_CONTRACT_MODEL_OPTIONS.map((model) => (
+                  <option key={model} value={model}>
+                    {SALE_CONTRACT_MODEL_LABELS[model]}
                   </option>
                 ))}
               </select>

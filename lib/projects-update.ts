@@ -10,6 +10,7 @@ export const PROJECT_UPDATE_KNOWN_COLUMNS = [
   'address',
   'forum_city',
   'financial_account_id',
+  'contract_model',
 ] as const;
 
 export type ProjectUpdateInput = {
@@ -23,11 +24,23 @@ export type ProjectUpdateInput = {
   /** Alias de forum_city — nunca enviado como coluna separada. */
   contract_city?: string | null;
   financial_account_id?: string | null;
+  /**
+   * Modelo de contrato do empreendimento.
+   * null / '' = herdar companies.contract_model.
+   * undefined = não alterar o campo.
+   */
+  contract_model?: string | null;
 };
 
-function cleanPayload(payload: Record<string, unknown>): Record<string, unknown> {
+function cleanPayload(
+  payload: Record<string, unknown>,
+  keepNullKeys: string[] = [],
+): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(payload).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+    Object.entries(payload).filter(([key, v]) => {
+      if (keepNullKeys.includes(key) && v === null) return true;
+      return v !== undefined && v !== null && v !== '';
+    }),
   );
 }
 
@@ -57,6 +70,11 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
   if (input.financial_account_id !== undefined) {
     full.financial_account_id = input.financial_account_id || null;
   }
+  if (input.contract_model !== undefined) {
+    const raw = input.contract_model;
+    full.contract_model =
+      raw == null || String(raw).trim() === '' ? null : String(raw).trim();
+  }
 
   return [
     full,
@@ -65,6 +83,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       city: full.city,
       uf: full.uf,
       location: full.location,
+      ...(input.contract_model !== undefined
+        ? { contract_model: full.contract_model }
+        : {}),
     },
     {
       name: full.name,
@@ -75,7 +96,7 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       name: full.name,
       location: full.location,
     },
-  ].map(cleanPayload);
+  ].map((payload) => cleanPayload(payload, ['contract_model']));
 }
 
 export function formatProjectUpdateDbError(message: string): string {

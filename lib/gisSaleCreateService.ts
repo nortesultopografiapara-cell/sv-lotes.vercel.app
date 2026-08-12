@@ -36,7 +36,9 @@ import {
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
-import { normalizeSaleContractModel } from '@/lib/contractModel';
+import {
+  assertSaleContractModelConfigured,
+} from '@/lib/contractModel';
 import { buildRecantoInstallmentSalesSnapshot } from '@/lib/recantoFixedInstallmentPlan';
 import {
   buildCommissionSnapshotFields,
@@ -147,27 +149,42 @@ async function loadProjectSnapshotForSale(
   supabase: SupabaseClient,
   projectId: string,
 ): Promise<Record<string, unknown> | null> {
-  const withAccount = await supabase
+  const withContractModel = await supabase
     .from('projects')
-    .select('id, name, city, uf, forum_city, financial_account_id')
+    .select('id, name, city, uf, forum_city, financial_account_id, contract_model')
     .eq('id', projectId)
     .maybeSingle();
 
-  if (!withAccount.error) {
-    return (withAccount.data as Record<string, unknown> | null) ?? null;
+  if (!withContractModel.error) {
+    return (withContractModel.data as Record<string, unknown> | null) ?? null;
   }
 
-  if (parseMissingColumn(withAccount.error.message) === 'financial_account_id') {
-    const fallback = await supabase
+  const missing = parseMissingColumn(withContractModel.error.message);
+  if (missing === 'contract_model' || missing === 'financial_account_id') {
+    const withAccount = await supabase
       .from('projects')
-      .select('id, name, city, uf, forum_city')
+      .select('id, name, city, uf, forum_city, financial_account_id')
       .eq('id', projectId)
       .maybeSingle();
-    if (fallback.error) throw new Error(fallback.error.message);
-    return (fallback.data as Record<string, unknown> | null) ?? null;
+
+    if (!withAccount.error) {
+      return (withAccount.data as Record<string, unknown> | null) ?? null;
+    }
+
+    if (parseMissingColumn(withAccount.error.message) === 'financial_account_id') {
+      const fallback = await supabase
+        .from('projects')
+        .select('id, name, city, uf, forum_city')
+        .eq('id', projectId)
+        .maybeSingle();
+      if (fallback.error) throw new Error(fallback.error.message);
+      return (fallback.data as Record<string, unknown> | null) ?? null;
+    }
+
+    throw new Error(withAccount.error.message);
   }
 
-  throw new Error(withAccount.error.message);
+  throw new Error(withContractModel.error.message);
 }
 
 async function insertContractForSale(
@@ -284,6 +301,22 @@ export async function executeGisSaleCreate(
 
   const projDataSnapshot = await loadProjectSnapshotForSale(supabase, projectId);
 
+  const { data: tenantContractRow, error: tenantContractErr } = await supabase
+    .from('companies')
+    .select('contract_model')
+    .eq('id', tenantId)
+    .maybeSingle();
+  if (tenantContractErr) {
+    throw new Error(tenantContractErr.message || 'Falha ao carregar modelo de contrato da empresa');
+  }
+
+  const saleContractModel = assertSaleContractModelConfigured({
+    projectModel: projDataSnapshot?.contract_model,
+    companyModel: tenantContractRow?.contract_model,
+    uiFallback: input.tenantContractModel,
+    companyFound: Boolean(tenantContractRow),
+  });
+
   const resolvedFinancialAccount = await resolveFinancialAccountForSaleOptional(supabase, tenantId, {
     financialAccountId: input.financialAccountId,
     projectId,
@@ -300,7 +333,6 @@ export async function executeGisSaleCreate(
   const instCount = paymentMode.isInstallment
     ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ''))
     : 1;
-  const saleContractModel = normalizeSaleContractModel(input.tenantContractModel);
 
   const recantoSignalContract =
     saleContractModel === 'RECANTO_PRIMAVERA'
@@ -439,6 +471,7 @@ export async function executeGisSaleCreate(
       recantoInstallmentSnapshot.residual_installment_amount,
     ...balloonSalesFields,
     ...(financialAccountId ? { financial_account_id: financialAccountId } : {}),
+    contract_model: saleContractModel,
     ...buildSaleSpouseDbPatch(customerData),
   };
 
@@ -477,14 +510,7 @@ export async function executeGisSaleCreate(
       }
     }
 
-    const { data: tenantContractRow } = await supabase
-      .from('companies')
-      .select('contract_model')
-      .eq('id', tenantId)
-      .maybeSingle();
-    const contractModel = normalizeSaleContractModel(
-      tenantContractRow?.contract_model ?? input.tenantContractModel,
-    );
+    const contractModel = saleContractModel;
 
     const financePayloads = buildSaleEditFinancePayloads(
       tenantId,
@@ -556,6 +582,7 @@ export async function executeGisSaleCreate(
           tenant_id: tenantId,
           company_id: tenantId,
           contract_number: contractNumber,
+          contract_model: saleContractModel,
         };
 
         const built = await buildFreshSaleContractHtml(supabase, stubContract, {
@@ -602,6 +629,7 @@ export async function executeGisSaleCreate(
             is_current: true,
             needs_regenerar: false,
             generated_html: built.html,
+            contract_model: saleContractModel,
             created_at: new Date().toISOString(),
             ...built.contractPayloadPartial,
           },
@@ -617,6 +645,7 @@ export async function executeGisSaleCreate(
             version: 1,
             is_current: true,
             generated_html: built.html,
+            contract_model: saleContractModel,
             ...built.contractPayloadPartial,
           },
           {
@@ -628,6 +657,7 @@ export async function executeGisSaleCreate(
             contract_number: built.contractNumber || contractNumber,
             status: 'ativo',
             generated_html: built.html,
+            contract_model: saleContractModel,
           },
         ];
 

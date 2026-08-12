@@ -9,6 +9,9 @@ export type ProjectInsertInput = {
   forum_city?: string | null;
   location?: string | null;
   tenant_id: string;
+  /** null/omit = herdar modelo padrão da empresa. */
+  contract_model?: string | null;
+  financial_account_id?: string | null;
 };
 
 export async function insertProjectWithFallback(
