@@ -186,7 +186,7 @@ function testPreservePaid() {
 }
 
 function testBatchLimit() {
-  assert(SALE_CHARGES_GENERATE_BATCH_LIMIT === 5, 'lote 5');
+  assert(SALE_CHARGES_GENERATE_BATCH_LIMIT === 5, 'lote técnico 5');
   assert(SALE_CHARGES_GENERATE_BATCH_LIMIT < 100, 'não dispara 100 de uma vez');
   console.log('OK testBatchLimit');
 }
@@ -407,7 +407,10 @@ function testUiAndRoutesExist() {
     'utf8',
   );
   assert(panel.includes('Gerar cobranças faltantes'), 'botão gerar');
+  assert(panel.includes('Gerar cobranças'), 'modal gerar cobranças');
+  assert(panel.includes('Próximas {n}'), 'atalho quantidade');
   assert(panel.includes('Gerar carnê em PDF'), 'botão carnê');
+  assert(!panel.includes('while (remaining > 0)'), 'não gera todas automaticamente');
   assert(!panel.includes('ASAAS_API_KEY'), 'sem API key no front');
   assert(!panel.includes('apiKey'), 'sem apiKey no front');
 

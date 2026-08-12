@@ -93,26 +93,41 @@ export async function loadSaleContext(
   lotLabel: string | null;
   contractNumber: string | null;
   financialAccountId: string | null;
+  installmentCorrectionType: string | null;
 }> {
   const { data: sale, error } = await admin
     .from('sales')
     .select(
-      'id, company_id, tenant_id, customer_id, project_id, block_id, lot_id, financial_account_id, contract_id',
+      'id, company_id, tenant_id, customer_id, project_id, block_id, lot_id, financial_account_id, contract_id, installment_correction_type',
     )
     .eq('id', saleId)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!sale) throw new Error('Venda não encontrada.');
+  let saleRow = sale as Record<string, unknown> | null;
+  if (error?.message?.match(/installment_correction_type/i)) {
+    const fallback = await admin
+      .from('sales')
+      .select(
+        'id, company_id, tenant_id, customer_id, project_id, block_id, lot_id, financial_account_id, contract_id',
+      )
+      .eq('id', saleId)
+      .maybeSingle();
+    if (fallback.error) throw new Error(fallback.error.message);
+    saleRow = fallback.data as Record<string, unknown> | null;
+  } else if (error) {
+    throw new Error(error.message);
+  }
 
-  const saleCompany = String(sale.company_id || sale.tenant_id || '');
+  if (!saleRow) throw new Error('Venda não encontrada.');
+
+  const saleCompany = String(saleRow.company_id || saleRow.tenant_id || '');
   if (saleCompany && saleCompany !== companyId) {
     throw new Error('Venda não pertence a esta empresa.');
   }
 
-  const customerId = sale.customer_id ? String(sale.customer_id) : null;
-  const projectId = sale.project_id ? String(sale.project_id) : null;
-  const blockId = sale.block_id ? String(sale.block_id) : null;
+  const customerId = saleRow.customer_id ? String(saleRow.customer_id) : null;
+  const projectId = saleRow.project_id ? String(saleRow.project_id) : null;
+  const blockId = saleRow.block_id ? String(saleRow.block_id) : null;
 
   const [customerRes, projectRes, blockRes, contractRes] = await Promise.all([
     customerId
@@ -155,10 +170,10 @@ export async function loadSaleContext(
       {
         id: saleId,
         block_id: blockId,
-        lot_id: (sale.lot_id as string | null) ?? null,
+        lot_id: (saleRow.lot_id as string | null) ?? null,
       },
       blockRes.data ? [blockRes.data] : [],
-    ) || (quadra && lote ? `QD ${quadra} - LT ${lote}` : null);
+    ) || (quadra && lote ? `QD ${quadra} — LT ${lote}` : null);
 
   return {
     customerName: customerRes.data?.name ? String(customerRes.data.name) : null,
@@ -171,8 +186,11 @@ export async function loadSaleContext(
     contractNumber: contractRes.data?.contract_number
       ? String(contractRes.data.contract_number)
       : null,
-    financialAccountId: sale.financial_account_id
-      ? String(sale.financial_account_id)
+    financialAccountId: saleRow.financial_account_id
+      ? String(saleRow.financial_account_id)
+      : null,
+    installmentCorrectionType: saleRow.installment_correction_type
+      ? String(saleRow.installment_correction_type)
       : null,
   };
 }
@@ -258,6 +276,7 @@ export async function getSaleChargesSummary(
     beneficiaryDocumentDivergence: beneficiary.companyDocumentDivergence,
     beneficiaryWarnings: beneficiary.warnings,
     beneficiaryDocumentSource: beneficiary.documentSource,
+    installmentCorrectionType: context.installmentCorrectionType,
   });
 }
 

@@ -20,7 +20,10 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       saleId?: string;
       sale_id?: string;
+      /** Tamanho do lote técnico desta request (máx. SALE_CHARGES_GENERATE_BATCH_LIMIT). */
       limit?: number;
+      /** Alias opcional de limit (quantidade deste batch). */
+      quantity?: number;
       confirmed?: boolean;
     };
     const saleId = String(body.saleId || body.sale_id || '').trim();
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
       companyId: auth.tenantId,
       saleId,
       userId: auth.userId,
-      limit: body.limit ?? SALE_CHARGES_GENERATE_BATCH_LIMIT,
+      limit: body.limit ?? body.quantity ?? SALE_CHARGES_GENERATE_BATCH_LIMIT,
       confirmed: true,
     });
 

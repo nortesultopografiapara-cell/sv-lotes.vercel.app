@@ -13,7 +13,14 @@ import {
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import {
   SALE_CHARGES_GENERATE_BATCH_LIMIT,
+  SALE_CHARGES_GENERATE_ACTION_MAX,
+  SALE_CHARGES_QUANTITY_PRESETS,
+  SALE_CHARGES_CORRECTION_WARNING,
   buildSaleCarneWhatsAppMessage,
+  clampGenerateMissingChargesQuantity,
+  planGenerateMissingCharges,
+  saleHasMonetaryCorrection,
+  splitGenerateMissingChargesBatches,
   type SaleChargesSummary,
 } from '@/lib/finance/saleChargesShared';
 import {
@@ -64,6 +71,8 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [lastErrors, setLastErrors] = useState<Array<{ installmentId: string; message: string }>>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [quantityMode, setQuantityMode] = useState<'3' | '6' | '12' | 'custom'>('6');
+  const [customQuantity, setCustomQuantity] = useState('6');
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailTo, setEmailTo] = useState('');
   const [emailBusy, setEmailBusy] = useState(false);
@@ -99,20 +108,90 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
   const canMutate = !disabled && !generating && !syncing && !pdfBusy && !emailBusy;
 
+  const pendingInstallmentsCount = useMemo(() => {
+    if (!summary) return 0;
+    return Math.max(0, summary.totalInstallments - summary.paidInstallments);
+  }, [summary]);
+
+  const requestedQuantity = useMemo(() => {
+    if (!summary) return 0;
+    if (quantityMode === 'custom') {
+      return clampGenerateMissingChargesQuantity(
+        customQuantity,
+        summary.chargesMissing,
+      );
+    }
+    return clampGenerateMissingChargesQuantity(
+      Number(quantityMode),
+      summary.chargesMissing,
+    );
+  }, [summary, quantityMode, customQuantity]);
+
+  const generatePlan = useMemo(() => {
+    if (!summary) return null;
+    return planGenerateMissingCharges({
+      missingOrdered: summary.missingInstallments || [],
+      quantityRequested: requestedQuantity,
+    });
+  }, [summary, requestedQuantity]);
+
+  const nextMissingLabel = useMemo(() => {
+    const next = summary?.missingInstallments?.[0];
+    if (!next) return '—';
+    const n =
+      next.installmentNumber == null
+        ? '—'
+        : String(Math.trunc(next.installmentNumber)).padStart(2, '0');
+    const due = next.dueDate
+      ? (() => {
+          const [y, m, d] = next.dueDate.slice(0, 10).split('-');
+          return y && m && d ? `${d}/${m}/${y}` : next.dueDate;
+        })()
+      : '—';
+    return `Parcela ${n} — ${due}`;
+  }, [summary]);
+
+  function openGenerateModal() {
+    if (!summary || summary.chargesMissing <= 0) return;
+    const defaultQty = clampGenerateMissingChargesQuantity(
+      6,
+      summary.chargesMissing,
+    );
+    if (defaultQty === 3) setQuantityMode('3');
+    else if (defaultQty === 12 && summary.chargesMissing >= 12) setQuantityMode('12');
+    else if (defaultQty >= 6) setQuantityMode('6');
+    else setQuantityMode('custom');
+    setCustomQuantity(String(Math.max(1, defaultQty || 1)));
+    setConfirmOpen(true);
+  }
+
   async function runGenerateMissing() {
-    if (!saleId || !summary) return;
+    if (!saleId || !summary || generating) return;
+    const quantity = clampGenerateMissingChargesQuantity(
+      quantityMode === 'custom' ? customQuantity : Number(quantityMode),
+      summary.chargesMissing,
+    );
+    if (quantity < 1) {
+      setError('Informe uma quantidade válida de cobranças.');
+      return;
+    }
+
     setConfirmOpen(false);
     setGenerating(true);
     setError('');
     setInfo('');
     setLastErrors([]);
+
+    const batches = splitGenerateMissingChargesBatches(
+      quantity,
+      SALE_CHARGES_GENERATE_BATCH_LIMIT,
+    );
     let totalCreated = 0;
     let totalErrors: Array<{ installmentId: string; message: string }> = [];
-    let remaining = summary.chargesMissing;
-    const totalTarget = summary.chargesMissing;
+    let attempted = 0;
 
     try {
-      while (remaining > 0) {
+      for (const batchLimit of batches) {
         const res = await fetch('/api/finance/asaas/sale-charges/generate-missing', {
           method: 'POST',
           credentials: 'include',
@@ -120,35 +199,40 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           body: JSON.stringify({
             saleId,
             confirmed: true,
-            limit: SALE_CHARGES_GENERATE_BATCH_LIMIT,
+            limit: batchLimit,
+            quantity: batchLimit,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as GenerateResult & {
           error?: string;
+          requested?: number;
         };
         if (!res.ok) throw new Error(data.error || 'Falha ao gerar cobranças');
 
+        const requested = Number(data.requested || batchLimit);
+        attempted += requested;
         totalCreated += Number(data.created || 0) + Number(data.reused || 0);
         totalErrors = totalErrors.concat(data.errors || []);
-        remaining = Number(data.remainingMissing || 0);
         setProgress({
-          done: totalTarget - remaining,
-          total: totalTarget,
+          done: Math.min(quantity, attempted),
+          total: quantity,
         });
         setLastErrors(totalErrors);
 
         if ((data.errors || []).length > 0 && data.created === 0 && data.reused === 0) {
-          // avoid infinite loop when every item in batch fails
-          if (remaining >= totalTarget) break;
+          // Lote inteiro falhou — evita loop infinito na mesma ação.
+          break;
         }
+        if (Number(data.remainingMissing || 0) <= 0) break;
+        if (attempted >= quantity) break;
       }
 
       await loadSummary();
       const errCount = totalErrors.length;
       setInfo(
         errCount > 0
-          ? `${totalCreated} cobrança(s) processada(s). ${errCount} apresentaram erro.`
-          : `${totalCreated} cobrança(s) gerada(s) com sucesso.`,
+          ? `${totalCreated} cobrança(s) processada(s) de ${quantity} solicitada(s). ${errCount} com erro.`
+          : `${totalCreated} cobrança(s) gerada(s) com sucesso (solicitado: ${quantity}).`,
       );
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro na geração');
@@ -464,7 +548,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             <button
               type="button"
               disabled={!canMutate || !kpi.hasFinancialAccount || kpi.chargesMissing <= 0}
-              onClick={() => setConfirmOpen(true)}
+              onClick={() => openGenerateModal()}
               className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40"
             >
               {generating ? 'Gerando…' : 'Gerar cobranças faltantes'}
@@ -526,21 +610,108 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
       {confirmOpen && summary ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="text-base font-bold text-gray-900">Confirmar geração</h3>
-            <p className="mt-2 text-sm text-gray-700">
-              Esta venda possui <strong>{summary.eligibleInstallments}</strong> parcelas
-              elegíveis.
-            </p>
-            <ul className="mt-2 space-y-1 text-sm text-gray-700">
-              <li>Cobranças já geradas: {summary.chargesGenerated}</li>
-              <li>Cobranças faltantes: {summary.chargesMissing}</li>
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="text-base font-bold text-gray-900">Gerar cobranças</h3>
+            <ul className="mt-3 space-y-1 text-sm text-gray-700">
               <li>
-                Serão geradas somente as <strong>{summary.chargesMissing}</strong> cobranças
-                faltantes (em lotes de {SALE_CHARGES_GENERATE_BATCH_LIMIT}).
+                Parcelas pendentes da venda:{' '}
+                <strong>{pendingInstallmentsCount}</strong>
+              </li>
+              <li>
+                Cobranças já geradas: <strong>{summary.chargesGenerated}</strong>
+              </li>
+              <li>
+                Cobranças faltantes: <strong>{summary.chargesMissing}</strong>
+              </li>
+              <li>
+                Próxima parcela sem cobrança: <strong>{nextMissingLabel}</strong>
               </li>
             </ul>
-            <div className="mt-3 rounded-lg bg-slate-50 p-2 text-xs text-gray-600">
+
+            {saleHasMonetaryCorrection(summary.installmentCorrectionType) ? (
+              <div className="mt-3 flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{SALE_CHARGES_CORRECTION_WARNING}</span>
+              </div>
+            ) : null}
+
+            <div className="mt-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                Quantas cobranças deseja gerar?
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {SALE_CHARGES_QUANTITY_PRESETS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={summary.chargesMissing < 1}
+                    onClick={() => {
+                      setQuantityMode(String(n) as '3' | '6' | '12');
+                      setCustomQuantity(String(n));
+                    }}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${
+                      quantityMode === String(n)
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900'
+                        : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+                    }`}
+                  >
+                    Próximas {n}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setQuantityMode('custom')}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${
+                    quantityMode === 'custom'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900'
+                      : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  Personalizado
+                </button>
+              </div>
+              {quantityMode === 'custom' ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <label className="text-sm text-gray-700" htmlFor="charge-qty">
+                    Quantidade:
+                  </label>
+                  <input
+                    id="charge-qty"
+                    type="number"
+                    min={1}
+                    max={Math.min(
+                      summary.chargesMissing,
+                      SALE_CHARGES_GENERATE_ACTION_MAX,
+                    )}
+                    value={customQuantity}
+                    onChange={(e) => setCustomQuantity(e.target.value)}
+                    className="w-24 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                  <span className="text-xs text-gray-500">
+                    máx. {Math.min(summary.chargesMissing, SALE_CHARGES_GENERATE_ACTION_MAX)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            {generatePlan && generatePlan.quantity > 0 ? (
+              <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-gray-800">
+                <div className="font-semibold">{generatePlan.labelRange}</div>
+                {generatePlan.periodLabel ? (
+                  <div className="mt-1 text-gray-600">{generatePlan.periodLabel}</div>
+                ) : null}
+                <div className="mt-2 text-xs text-gray-500">
+                  Lotes técnicos internos de até {SALE_CHARGES_GENERATE_BATCH_LIMIT}{' '}
+                  (a ação para em {generatePlan.quantity}).
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-amber-800">
+                Não há cobranças faltantes para gerar.
+              </p>
+            )}
+
+            <div className="mt-3 rounded-lg bg-white p-2 text-xs text-gray-600 border border-gray-100">
               <div>Cliente: {summary.customerName || '—'}</div>
               <div>Empreendimento: {summary.projectName || '—'}</div>
               <div>
@@ -548,20 +719,25 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
               </div>
               <div>Conta: {summary.financialAccountName || '—'}</div>
             </div>
+
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-600"
+                disabled={generating}
                 onClick={() => setConfirmOpen(false)}
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white"
+                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                disabled={generating || !generatePlan || generatePlan.quantity < 1}
                 onClick={() => void runGenerateMissing()}
               >
-                Continuar
+                {generatePlan && generatePlan.quantity > 0
+                  ? `Gerar ${generatePlan.quantity} cobrança${generatePlan.quantity === 1 ? '' : 's'}`
+                  : 'Gerar cobranças'}
               </button>
             </div>
           </div>

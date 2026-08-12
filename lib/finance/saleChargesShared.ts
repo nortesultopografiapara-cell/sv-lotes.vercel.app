@@ -9,6 +9,20 @@ import {
   isActiveCompanyAsaasChargeStatus,
   isRegeneratableCompanyAsaasChargeStatus,
 } from '@/lib/finance/companyAsaasChargeWorkflow';
+import type { MissingChargeInstallmentPreview } from '@/lib/finance/generateMissingSaleChargesPlan';
+
+export {
+  SALE_CHARGES_GENERATE_BATCH_LIMIT,
+  SALE_CHARGES_GENERATE_ACTION_MAX,
+  SALE_CHARGES_QUANTITY_PRESETS,
+  SALE_CHARGES_CORRECTION_WARNING,
+  clampGenerateMissingChargesQuantity,
+  planGenerateMissingCharges,
+  splitGenerateMissingChargesBatches,
+  saleHasMonetaryCorrection,
+  type MissingChargeInstallmentPreview,
+  type GenerateMissingChargesPlan,
+} from '@/lib/finance/generateMissingSaleChargesPlan';
 
 function isPaidFinanceReceipt(r: {
   status?: string | null;
@@ -18,7 +32,6 @@ function isPaidFinanceReceipt(r: {
   return st === 'pago' || st === 'paid' || Boolean(r.paid_at);
 }
 
-export const SALE_CHARGES_GENERATE_BATCH_LIMIT = 5;
 export const SALE_CHARGES_AUDIT_GENERATE = 'SALE_ASAAS_CHARGES_GENERATE_MISSING';
 export const SALE_CHARGES_AUDIT_SYNC = 'SALE_ASAAS_CHARGES_SYNC';
 export const SALE_CHARGES_AUDIT_CARNE_PDF = 'SALE_ASAAS_CARNE_PDF';
@@ -69,7 +82,11 @@ export type SaleChargesSummary = {
   totalPaid: number;
   totalPending: number;
   missingInstallmentIds: string[];
+  /** Próximas parcelas sem cobrança (ordem installment_number). */
+  missingInstallments: MissingChargeInstallmentPreview[];
   errorInstallmentIds: string[];
+  /** FIXED | IPCA | IGPM | INCC | null (legado). */
+  installmentCorrectionType: string | null;
   carneReady: boolean;
   carneBlockReason: string | null;
   beneficiaryDocumentMissing?: boolean;
@@ -214,6 +231,7 @@ export function buildSaleChargesSummaryFromRows(params: {
   beneficiaryDocumentDivergence?: boolean;
   beneficiaryWarnings?: string[];
   beneficiaryDocumentSource?: string | null;
+  installmentCorrectionType?: string | null;
 }): SaleChargesSummary {
   const byInstallment = latestChargeByInstallment(params.charges);
   const installments = params.installments.filter((r) => r.sale_id === params.saleId);
@@ -228,6 +246,7 @@ export function buildSaleChargesSummaryFromRows(params: {
   let totalPaid = 0;
   let totalPending = 0;
   const missingIds: string[] = [];
+  const missingInstallments: MissingChargeInstallmentPreview[] = [];
   const errorIds: string[] = [];
   const dueDates: string[] = [];
 
@@ -267,6 +286,15 @@ export function buildSaleChargesSummaryFromRows(params: {
       } else {
         missing += 1;
         missingIds.push(String(row.id));
+        missingInstallments.push({
+          id: String(row.id),
+          installmentNumber:
+            row.installment_number == null
+              ? null
+              : Number(row.installment_number),
+          dueDate: due,
+          amount,
+        });
       }
     } else if (charge && installmentHasBlockingCharge(charge)) {
       generated += 1;
@@ -311,7 +339,9 @@ export function buildSaleChargesSummaryFromRows(params: {
     totalPaid: Math.round(totalPaid * 100) / 100,
     totalPending: Math.round(totalPending * 100) / 100,
     missingInstallmentIds: missingIds,
+    missingInstallments,
     errorInstallmentIds: errorIds,
+    installmentCorrectionType: params.installmentCorrectionType ?? null,
     carneReady,
     carneBlockReason:
       missing > 0
