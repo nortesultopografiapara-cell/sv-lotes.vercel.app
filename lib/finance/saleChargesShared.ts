@@ -74,6 +74,8 @@ export type SaleChargesSummary = {
   eligibleInstallments: number;
   chargesGenerated: number;
   chargesMissing: number;
+  /** Cobranças ativas com artefatos suficientes para o carnê PDF. */
+  printableChargesCount: number;
   chargesFailed: number;
   chargesCancelled: number;
   firstDueDate: string | null;
@@ -165,6 +167,55 @@ export function isPrintablePendingCharge(charge: CompanyAsaasChargeResponse): bo
   return chargeHasCarneArtifacts(charge);
 }
 
+/** Rótulo com número real da parcela no contrato (não renumerar pelo carnê parcial). */
+export function formatSaleCarneParcelLabel(
+  installmentNumber: number | null | undefined,
+  contractTotalParcels: number,
+): string {
+  const total = Math.max(1, Math.floor(Number(contractTotalParcels) || 1));
+  const totalPad = String(total).padStart(2, '0');
+  if (installmentNumber === 0) return `Entrada/${totalPad} do contrato`;
+  if (installmentNumber == null || !Number.isFinite(Number(installmentNumber))) {
+    return `Parcela —/${totalPad} do contrato`;
+  }
+  const n = String(Math.trunc(Number(installmentNumber))).padStart(2, '0');
+  return `Parcela ${n}/${totalPad} do contrato`;
+}
+
+export function buildSaleCarnePartialNotice(
+  printableCount: number,
+  contractTotalParcels?: number | null,
+): string | null {
+  const n = Math.max(0, Math.floor(Number(printableCount) || 0));
+  if (n <= 0) return null;
+  const total = Math.max(0, Math.floor(Number(contractTotalParcels) || 0));
+  if (total > 0 && n >= total) return null;
+  return `Carnê parcial — contém ${n} cobrança${n === 1 ? '' : 's'} atualmente emitida${n === 1 ? '' : 's'}.`;
+}
+
+export function buildSaleCarneReadyMessage(params: {
+  printableCount: number;
+  missingCount: number;
+}): { carneReady: boolean; carneBlockReason: string | null } {
+  const printable = Math.max(0, Math.floor(Number(params.printableCount) || 0));
+  const missing = Math.max(0, Math.floor(Number(params.missingCount) || 0));
+  if (printable >= 1) {
+    return {
+      carneReady: true,
+      carneBlockReason:
+        missing > 0
+          ? printable === 1
+            ? `1 cobrança disponível para o carnê. Existem mais ${missing} parcela${missing === 1 ? '' : 's'} ainda sem cobrança gerada.`
+            : `${printable} cobranças disponíveis para o carnê. Existem mais ${missing} parcela${missing === 1 ? '' : 's'} ainda sem cobrança gerada.`
+          : null,
+    };
+  }
+  return {
+    carneReady: false,
+    carneBlockReason: 'Nenhuma cobrança disponível para gerar o carnê.',
+  };
+}
+
 export function formatDigitableLineDisplay(raw: string): string {
   const d = String(raw || '').replace(/\D/g, '');
   if (d.length !== 47) return String(raw || '').trim();
@@ -240,6 +291,7 @@ export function buildSaleChargesSummaryFromRows(params: {
   let eligible = 0;
   let generated = 0;
   let missing = 0;
+  let printable = 0;
   let failed = 0;
   let cancelled = 0;
   let totalAmount = 0;
@@ -257,6 +309,9 @@ export function buildSaleChargesSummaryFromRows(params: {
     if (due) dueDates.push(due);
 
     const charge = byInstallment.get(String(row.id)) || null;
+    if (charge && isPrintablePendingCharge(charge)) {
+      printable += 1;
+    }
 
     if (isCanceledFinanceReceipt(row)) {
       continue;
@@ -302,13 +357,17 @@ export function buildSaleChargesSummaryFromRows(params: {
   }
 
   dueDates.sort();
-  const carneReady = missing === 0 && eligible > 0 && failed === 0;
+  const { carneReady, carneBlockReason } = buildSaleCarneReadyMessage({
+    printableCount: printable,
+    missingCount: missing,
+  });
   let uiState: SaleChargesSummary['uiState'] = 'none';
   if (!params.hasFinancialAccount) uiState = 'no_account';
   else if (failed > 0) uiState = 'errors';
-  else if (carneReady) uiState = 'carne_ready';
   else if (generated > 0 && missing > 0) uiState = 'partial';
+  else if (carneReady && missing === 0) uiState = 'carne_ready';
   else if (generated > 0 && missing === 0) uiState = 'complete';
+  else if (carneReady) uiState = 'carne_ready';
   else uiState = 'none';
 
   return {
@@ -331,6 +390,7 @@ export function buildSaleChargesSummaryFromRows(params: {
     eligibleInstallments: eligible,
     chargesGenerated: generated,
     chargesMissing: missing,
+    printableChargesCount: printable,
     chargesFailed: failed,
     chargesCancelled: cancelled,
     firstDueDate: dueDates[0] || null,
@@ -343,14 +403,11 @@ export function buildSaleChargesSummaryFromRows(params: {
     errorInstallmentIds: errorIds,
     installmentCorrectionType: params.installmentCorrectionType ?? null,
     carneReady,
+    carneReady,
     carneBlockReason:
-      missing > 0
-        ? `O carnê ainda não pode ser gerado. ${generated} de ${eligible} cobranças estão disponíveis. Gere as ${missing} cobranças faltantes antes de continuar.`
-        : failed > 0
-          ? 'Existem cobranças com erro. Atualize a situação ou regenere as parcelas com falha antes do carnê.'
-          : eligible === 0
-            ? 'Não há parcelas elegíveis para carnê nesta venda.'
-            : null,
+      !carneReady && failed > 0
+        ? 'Existem cobranças com erro. Atualize a situação ou regenere as parcelas com falha antes do carnê.'
+        : carneBlockReason,
     beneficiaryDocumentMissing: params.beneficiaryDocumentMissing ?? false,
     beneficiaryDocumentDivergence: params.beneficiaryDocumentDivergence ?? false,
     beneficiaryWarnings: params.beneficiaryWarnings ?? [],

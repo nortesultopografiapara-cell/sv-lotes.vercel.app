@@ -16,6 +16,8 @@ import {
   digitableLineToBarcode44,
   formatDateBr,
   formatDigitableLineDisplay,
+  formatSaleCarneParcelLabel,
+  buildSaleCarnePartialNotice,
 } from '@/lib/finance/saleChargesShared';
 import { formatCarneTaxDocument } from '@/lib/finance/saleCarneBeneficiary';
 import { formatPayerAddressForCarne } from '@/lib/finance/saleCarnePayerAddress';
@@ -128,10 +130,18 @@ async function resolveOfficialPixImage(
 
 function parcelLabelFor(item: SaleCarneBoletoItem): string {
   if (item.parcelLabel) return item.parcelLabel;
-  const n = item.installment?.installment_number;
-  if (n === 0) return `Entrada de ${item.totalParcels}`;
-  if (n == null) return `Parcela — de ${item.totalParcels}`;
-  return `Parcela ${n} de ${item.totalParcels}`;
+  return formatSaleCarneParcelLabel(
+    item.installment?.installment_number,
+    item.totalParcels,
+  );
+}
+
+function drawPartialCarneNotice(doc: jsPDF, notice: string) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(80, 60, 20);
+  doc.text(notice, PAGE_W / 2, PAGE_H - 4.2, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
 }
 
 function resolveOfficialDigitable(charge: CompanyAsaasChargeResponse): string {
@@ -496,12 +506,28 @@ export async function buildSaleCarnePdfBytes(input: SaleCarnePdfInput): Promise<
     throw new Error('Nenhuma cobrança pendente com dados suficientes para o carnê.');
   }
 
+  const contractTotal = Math.max(
+    1,
+    input.summary.totalInstallments ||
+      input.summary.eligibleInstallments ||
+      items[0]?.totalParcels ||
+      items.length,
+  );
+  const partialNotice =
+    buildSaleCarnePartialNotice(items.length, contractTotal) ||
+    (input.summary.chargesMissing > 0
+      ? `Carnê parcial — contém ${items.length} cobrança${items.length === 1 ? '' : 's'} atualmente emitida${items.length === 1 ? '' : 's'}.`
+      : null);
+
   for (let i = 0; i < items.length; i++) {
     if (i > 0 && i % 3 === 0) doc.addPage();
     const slot = i % 3;
     const y0 = MARGIN + slot * SLOT_H;
     if (slot > 0) drawCutLine(doc, y0);
     await drawBoletoSlot(doc, y0, input, items[i]);
+    if (partialNotice && (i % 3 === 2 || i === items.length - 1)) {
+      drawPartialCarneNotice(doc, partialNotice);
+    }
   }
 
   return doc.output('arraybuffer') as unknown as Uint8Array;

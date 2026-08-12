@@ -11,6 +11,7 @@ import {
   digitableLineToBarcode44,
   formatDateBr,
   formatDigitableLineDisplay,
+  formatSaleCarneParcelLabel,
   installmentHasBlockingCharge,
   installmentNeedsAsaasCharge,
   isCanceledFinanceReceipt,
@@ -241,9 +242,243 @@ function testCarneBlockedWhenMissing() {
     hasFinancialAccount: true,
     financialAccountBlockReason: null,
   });
-  assert(!summary.carneReady, 'não ready');
-  assert(String(summary.carneBlockReason || '').includes('faltantes'), 'mensagem');
+  assert(summary.carneReady === true, 'carnê liberado com 1 imprimível');
+  assert(summary.printableChargesCount === 1, '1 imprimível');
+  assert(summary.chargesMissing === 1, 'ainda 1 faltante');
+  assert(
+    String(summary.carneBlockReason || '').includes('disponível'),
+    'aviso de carnê parcial',
+  );
+  assert(
+    !String(summary.carneBlockReason || '').includes('Gere as'),
+    'não obriga gerar todas',
+  );
   console.log('OK testCarneBlockedWhenMissing');
+}
+
+function testPartialCarneTenWithTwo() {
+  const installments = Array.from({ length: 10 }, (_, i) =>
+    installment({
+      id: `p${i + 1}`,
+      installment_number: i + 1,
+      due_date: `2026-${String((i % 12) + 1).padStart(2, '0')}-12`,
+    }),
+  );
+  const charges = [1, 2].map((n) =>
+    charge({ id: `c${n}`, installmentId: `p${n}`, asaasPaymentId: `pay_${n}` }),
+  );
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments,
+    charges,
+    context: {
+      customerName: 'Cliente',
+      customerEmail: null,
+      customerPhone: null,
+      projectName: 'P',
+      quadra: '02',
+      lote: '39',
+      lotLabel: null,
+      contractNumber: null,
+      financialAccountId: 'fa',
+    },
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.totalInstallments === 10, '10 parcelas');
+  assert(summary.chargesGenerated === 2, '2 geradas');
+  assert(summary.chargesMissing === 8, '8 faltantes');
+  assert(summary.printableChargesCount === 2, '2 imprimíveis');
+  assert(summary.carneReady === true, 'carnê liberado');
+  assert(
+    String(summary.carneBlockReason || '').includes('2 cobranças disponíveis'),
+    'mensagem 2 disponíveis',
+  );
+  assert(
+    String(summary.carneBlockReason || '').includes('8 parcelas'),
+    'mensagem 8 sem cobrança',
+  );
+
+  const printable = charges.filter(isPrintablePendingCharge);
+  assert(printable.length === 2, 'PDF filtraria 2');
+  const labels = printable.map((c, idx) =>
+    formatSaleCarneParcelLabel(idx + 1, summary.totalInstallments),
+  );
+  assert(labels[0] === 'Parcela 01/10 do contrato', 'rótulo parcela 01/10');
+  assert(labels[1] === 'Parcela 02/10 do contrato', 'rótulo parcela 02/10');
+  console.log('OK testPartialCarneTenWithTwo');
+}
+
+function testPartialCarneHundredWithSix() {
+  const installments = Array.from({ length: 100 }, (_, i) =>
+    installment({ id: `p${i + 1}`, installment_number: i + 1 }),
+  );
+  const charges = [7, 8, 9, 10, 11, 12].map((n) =>
+    charge({ id: `c${n}`, installmentId: `p${n}`, asaasPaymentId: `pay_${n}` }),
+  );
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments,
+    charges,
+    context: {
+      customerName: 'A',
+      customerEmail: null,
+      customerPhone: null,
+      projectName: 'P',
+      quadra: '1',
+      lote: '1',
+      lotLabel: null,
+      contractNumber: null,
+      financialAccountId: 'fa',
+    },
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.carneReady === true, 'liberado com 6');
+  assert(summary.printableChargesCount === 6, '6 imprimíveis');
+  assert(summary.chargesMissing === 94, '94 faltantes permanecem');
+  assert(
+    formatSaleCarneParcelLabel(7, 100) === 'Parcela 07/100 do contrato',
+    'preserva nº real 07/100',
+  );
+  assert(
+    formatSaleCarneParcelLabel(8, 100) === 'Parcela 08/100 do contrato',
+    'preserva nº real 08/100',
+  );
+  console.log('OK testPartialCarneHundredWithSix');
+}
+
+function testCarneBlockedWhenZeroPrintable() {
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments: [installment({ id: 'p1' }), installment({ id: 'p2', installment_number: 2 })],
+    charges: [],
+    context: {
+      customerName: 'A',
+      customerEmail: null,
+      customerPhone: null,
+      projectName: 'P',
+      quadra: '1',
+      lote: '1',
+      lotLabel: null,
+      contractNumber: null,
+      financialAccountId: 'fa',
+    },
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.carneReady === false, 'bloqueado sem imprimíveis');
+  assert(summary.printableChargesCount === 0, '0 imprimíveis');
+  assert(
+    summary.carneBlockReason === 'Nenhuma cobrança disponível para gerar o carnê.',
+    'mensagem zero',
+  );
+  console.log('OK testCarneBlockedWhenZeroPrintable');
+}
+
+function testPrintableExcludesPaidCancelledFailedExpired() {
+  const paid = charge({ installmentId: 'p1', status: 'PAID', id: 'c-paid' });
+  const cancelled = charge({ installmentId: 'p2', status: 'CANCELLED', id: 'c-can' });
+  const failed = charge({ installmentId: 'p3', status: 'FAILED', id: 'c-fail' });
+  const expired = charge({ installmentId: 'p4', status: 'EXPIRED', id: 'c-exp' });
+  const pending = charge({ installmentId: 'p5', status: 'PENDING', id: 'c-ok' });
+  assert(!isPrintablePendingCharge(paid), 'PAID fora');
+  assert(!isPrintablePendingCharge(cancelled), 'CANCELLED fora');
+  assert(!isPrintablePendingCharge(failed), 'FAILED fora');
+  assert(!isPrintablePendingCharge(expired), 'EXPIRED fora');
+  assert(isPrintablePendingCharge(pending), 'PENDING ok');
+
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments: [
+      installment({ id: 'p1', status: 'pago', paid_at: '2026-01-01' }),
+      installment({ id: 'p2', installment_number: 2 }),
+      installment({ id: 'p3', installment_number: 3 }),
+      installment({ id: 'p4', installment_number: 4 }),
+      installment({ id: 'p5', installment_number: 5 }),
+    ],
+    charges: [paid, cancelled, failed, expired, pending],
+    context: {
+      customerName: 'A',
+      customerEmail: null,
+      customerPhone: null,
+      projectName: 'P',
+      quadra: '1',
+      lote: '1',
+      lotLabel: null,
+      contractNumber: null,
+      financialAccountId: 'fa',
+    },
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.printableChargesCount === 1, 'só PENDING conta');
+  assert(summary.carneReady === true, 'liberado com 1 válida');
+  console.log('OK testPrintableExcludesPaidCancelledFailedExpired');
+}
+
+function testFullCarneStillReady() {
+  const installments = Array.from({ length: 3 }, (_, i) =>
+    installment({ id: `p${i + 1}`, installment_number: i + 1 }),
+  );
+  const charges = installments.map((r, i) =>
+    charge({ id: `c${i + 1}`, installmentId: r.id, asaasPaymentId: `pay_${i + 1}` }),
+  );
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments,
+    charges,
+    context: {
+      customerName: 'A',
+      customerEmail: null,
+      customerPhone: null,
+      projectName: 'P',
+      quadra: '1',
+      lote: '1',
+      lotLabel: null,
+      contractNumber: null,
+      financialAccountId: 'fa',
+    },
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.chargesMissing === 0, 'sem faltantes');
+  assert(summary.printableChargesCount === 3, '3 imprimíveis');
+  assert(summary.carneReady === true, 'venda antiga ok');
+  assert(summary.carneBlockReason === null, 'sem aviso parcial');
+  console.log('OK testFullCarneStillReady');
+}
+
+function testPartialCarneUiAndRoutes() {
+  const panel = fs.readFileSync(
+    path.join(process.cwd(), 'components/sales/SaleChargesPanel.tsx'),
+    'utf8',
+  );
+  const pdfRoute = fs.readFileSync(
+    path.join(process.cwd(), 'app/api/finance/asaas/sale-charges/carne-pdf/route.ts'),
+    'utf8',
+  );
+  const emailRoute = fs.readFileSync(
+    path.join(process.cwd(), 'app/api/finance/asaas/sale-charges/carne-email/route.ts'),
+    'utf8',
+  );
+  assert(panel.includes('disabled={!canMutate || !kpi.carneReady}'), 'botões usam carneReady');
+  assert(!pdfRoute.includes('chargesMissing > 0'), 'pdf não bloqueia por missing');
+  assert(!emailRoute.includes('chargesMissing > 0'), 'email não bloqueia por missing');
+  assert(pdfRoute.includes('formatSaleCarneParcelLabel'), 'pdf usa rótulo contrato');
+  assert(emailRoute.includes('formatSaleCarneParcelLabel'), 'email usa rótulo contrato');
+  assert(panel.includes('kpi.carneReady ?'), 'mostra aviso parcial mesmo ready');
+  console.log('OK testPartialCarneUiAndRoutes');
 }
 
 function testDigitableToBarcode() {
@@ -320,6 +555,7 @@ function testFilenameSanitize() {
     eligibleInstallments: 99,
     chargesGenerated: 99,
     chargesMissing: 0,
+    printableChargesCount: 99,
     chargesFailed: 0,
     chargesCancelled: 0,
     firstDueDate: null,
@@ -328,7 +564,9 @@ function testFilenameSanitize() {
     totalPaid: 0,
     totalPending: 0,
     missingInstallmentIds: [],
+    missingInstallments: [],
     errorInstallmentIds: [],
+    installmentCorrectionType: null,
     carneReady: true,
     carneBlockReason: null,
     uiState: 'carne_ready',
@@ -570,6 +808,12 @@ function main() {
   testBatchLimit();
   testNoAccountBlocksCarneReadyFalse();
   testCarneBlockedWhenMissing();
+  testPartialCarneTenWithTwo();
+  testPartialCarneHundredWithSix();
+  testCarneBlockedWhenZeroPrintable();
+  testPrintableExcludesPaidCancelledFailedExpired();
+  testFullCarneStillReady();
+  testPartialCarneUiAndRoutes();
   testDigitableToBarcode();
   testCarneArtifacts();
   testFilenameSanitize();

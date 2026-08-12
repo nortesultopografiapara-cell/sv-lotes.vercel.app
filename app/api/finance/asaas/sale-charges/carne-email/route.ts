@@ -19,6 +19,7 @@ import {
   buildSaleCarnePdfBytes,
   type SaleCarneBoletoItem,
 } from '@/lib/finance/saleCarnePdf';
+import { formatSaleCarneParcelLabel } from '@/lib/finance/saleChargesShared';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,10 +62,12 @@ export async function POST(request: Request) {
       saleId,
     );
 
-    if (summary.chargesMissing > 0 || !summary.carneReady) {
+    if (!summary.carneReady || charges.length === 0) {
       return NextResponse.json(
         {
-          error: summary.carneBlockReason || 'Gere as cobranças faltantes antes do carnê.',
+          error:
+            summary.carneBlockReason ||
+            'Nenhuma cobrança disponível para gerar o carnê.',
           summary,
         },
         { status: 409 },
@@ -88,7 +91,7 @@ export async function POST(request: Request) {
     }
 
     const byId = new Map(installments.map((r) => [String(r.id), r]));
-    const eligibleCount = Math.max(1, summary.eligibleInstallments);
+    const contractTotal = Math.max(1, summary.totalInstallments || summary.eligibleInstallments || 1);
     const items: SaleCarneBoletoItem[] = enrichedCharges
       .map((charge) => {
         const installment = byId.get(String(charge.installmentId)) || null;
@@ -96,11 +99,8 @@ export async function POST(request: Request) {
         return {
           charge,
           installment,
-          parcelLabel:
-            n === 0
-              ? `Entrada de ${eligibleCount}`
-              : `Parcela ${n ?? '?'} de ${eligibleCount}`,
-          totalParcels: eligibleCount,
+          parcelLabel: formatSaleCarneParcelLabel(n, contractTotal),
+          totalParcels: contractTotal,
         };
       })
       .sort((a, b) => {

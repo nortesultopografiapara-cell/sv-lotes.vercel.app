@@ -564,8 +564,14 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
           </div>
 
-          {kpi.carneBlockReason && !kpi.carneReady ? (
-            <p className="text-xs text-amber-800">{kpi.carneBlockReason}</p>
+          {kpi.carneBlockReason ? (
+            <p
+              className={`text-xs ${
+                kpi.carneReady ? 'text-slate-700' : 'text-amber-800'
+              }`}
+            >
+              {kpi.carneBlockReason}
+            </p>
           ) : null}
 
           <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
