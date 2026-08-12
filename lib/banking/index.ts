@@ -64,3 +64,15 @@ export {
   validateInterPrivateKeyPem,
   validateInterCertificateKeyPair,
 } from './inter/interPemValidation';
+export {
+  INTER_OAUTH_SCOPES,
+  getInterOAuthTokenUrl,
+  getInterCobrancaV3BaseUrl,
+} from './inter/interEndpoints';
+export {
+  requestInterAccessToken,
+  toPublicInterConnectionTest,
+  humanizeInterOAuthFailure,
+} from './inter/interOAuthClient';
+export { runCompanyInterConnectionTest } from './inter/interConnectionTest';
+export { clearAllInterTokenCacheForTests } from './inter/interTokenCache';

@@ -1,6 +1,6 @@
 /**
- * Provider INTER — Fase A: validação local de configuração.
- * Sem emissão de cobrança / sem OAuth real.
+ * Provider INTER — Fase B: OAuth+mTLS via cliente dedicado.
+ * Emissão de cobrança permanece bloqueada.
  */
 
 import type { IBankProvider, BankProviderContext } from '@/lib/banking/BankProvider';
@@ -17,7 +17,7 @@ import type {
 } from '@/lib/banking/types';
 
 export const INTER_BOLETO_NOT_ENABLED_MESSAGE =
-  'Emissão Inter ainda não habilitada nesta fase (Fase A = configuração).';
+  'Emissão Inter ainda não habilitada nesta fase (Fase B = OAuth+mTLS).';
 
 export const INTER_NOT_IMPLEMENTED_MESSAGE =
   'Operação Inter ainda não implementada nesta fase.';
@@ -25,6 +25,10 @@ export const INTER_NOT_IMPLEMENTED_MESSAGE =
 export class InterBankProvider implements IBankProvider {
   readonly providerCode = 'INTER' as const;
 
+  /**
+   * Preferir runCompanyInterConnectionTest na API.
+   * Aqui: validação estrutural rápida sem rede.
+   */
   async testConnection(context: BankProviderContext): Promise<BankConnectionTestResult> {
     const started = Date.now();
     const cfg = context.config || {};
@@ -37,7 +41,7 @@ export class InterBankProvider implements IBankProvider {
       return {
         ok: true,
         message:
-          'Configuração local completa. OAuth+mTLS ainda não verificado (aguardando Fase B).',
+          'Credenciais locais presentes. Use POST ?action=test-connection para OAuth+mTLS real.',
         latencyMs: Date.now() - started,
       };
     }

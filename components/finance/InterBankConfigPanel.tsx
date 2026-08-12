@@ -139,15 +139,38 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
     setError('');
     setInfo('');
     try {
+      setInfo('Testando conexão com Banco Inter...');
       const res = await fetch('/api/banking/inter/config?action=test-connection', {
         method: 'POST',
         credentials: 'include',
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha no teste');
-      setInfo(String(data.message || 'Teste local concluído.'));
+      if (data.config) setConfig(data.config as InterBankConfigPublic);
+
+      if (data.ok) {
+        const envLabel =
+          data.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox';
+        const when = data.testedAt
+          ? new Date(String(data.testedAt)).toLocaleString('pt-BR')
+          : '';
+        setInfo(
+          [
+            String(data.message || 'Conexão com Banco Inter realizada com sucesso.'),
+            `Ambiente: ${envLabel}`,
+            `Status da autenticação: ${data.authStatus || 'VERIFIED'}`,
+            when ? `Data/hora do teste: ${when}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        );
+      } else {
+        setError(String(data.message || data.error || 'Falha na autenticação Inter.'));
+        setInfo('');
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro no teste');
+      setInfo('');
     } finally {
       setTesting(false);
     }
@@ -207,7 +230,15 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
             Ambiente:{' '}
             {config.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}
           </p>
-          <p className="text-amber-300">Integração verificada: ainda não (Fase B)</p>
+          <p className={config.connectionVerified ? 'text-emerald-300' : 'text-amber-300'}>
+            {config.connectionVerified
+              ? `Integração verificada${
+                  config.lastConnectionTestAt
+                    ? ` — ${new Date(config.lastConnectionTestAt).toLocaleString('pt-BR')}`
+                    : ''
+                }`
+              : 'Integração verificada: ainda não (aguarde Testar conexão)'}
+          </p>
         </div>
       ) : null}
 
@@ -322,7 +353,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
         </p>
       ) : null}
       {info ? (
-        <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+        <p className="whitespace-pre-line rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
           {info}
         </p>
       ) : null}
@@ -343,7 +374,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
           onClick={() => void testLocal()}
           className="rounded-lg border border-[var(--border-color)] px-4 py-2 text-sm font-semibold disabled:opacity-40"
         >
-          {testing ? 'Testando…' : 'Testar conexão (local)'}
+          {testing ? 'Testando conexão com Banco Inter...' : 'Testar conexão'}
         </button>
       </div>
     </div>

@@ -20,8 +20,10 @@ export type InterBankConfigPublic = {
   privateKeyFileName: string | null;
   configuredAt: string | null;
   updatedAt: string | null;
-  /** Fase A: configuração salva, ainda sem OAuth+mTLS verificado. */
-  connectionVerified: false;
+  /** true somente após OAuth+mTLS com access_token válido (Fase B). */
+  connectionVerified: boolean;
+  lastConnectionTestAt: string | null;
+  authStatus: 'VERIFIED' | 'FAILED' | 'DRAFT' | null;
   message: string;
 };
 
@@ -55,5 +57,7 @@ export const EMPTY_INTER_BANK_CONFIG = (
   configuredAt: null,
   updatedAt: null,
   connectionVerified: false,
+  lastConnectionTestAt: null,
+  authStatus: null,
   message: 'Banco Inter ainda não configurado.',
 });

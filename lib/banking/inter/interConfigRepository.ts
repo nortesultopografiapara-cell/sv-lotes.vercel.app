@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { clearCachedInterToken } from '@/lib/banking/inter/interTokenCache';
 import {
   encryptBankingSecret,
   formatBankingEncryptionKeyError,
@@ -35,10 +36,30 @@ type IntegrationRow = {
   configured_at: string | null;
   updated_at: string | null;
   active: boolean;
+  metadata?: Record<string, unknown> | null;
+  last_error?: string | null;
 };
 
 function clean(value: unknown): string {
   return String(value ?? '').trim();
+}
+
+function readConnectionMeta(row: IntegrationRow): {
+  connectionVerified: boolean;
+  lastConnectionTestAt: string | null;
+  authStatus: InterBankConfigPublic['authStatus'];
+} {
+  const meta =
+    row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? row.metadata
+      : {};
+  const connectionVerified = Boolean(meta.connectionVerified);
+  const lastConnectionTestAt =
+    typeof meta.lastConnectionTestAt === 'string' ? meta.lastConnectionTestAt : null;
+  const authRaw = meta.authStatus;
+  const authStatus =
+    authRaw === 'VERIFIED' || authRaw === 'FAILED' || authRaw === 'DRAFT' ? authRaw : null;
+  return { connectionVerified, lastConnectionTestAt, authStatus };
 }
 
 async function loadCredentialMap(
@@ -103,8 +124,19 @@ function buildPublicResponse(
   const clientId = row.client_id || '';
   const hasSecret = credTypes.has('oauth');
   const hasCertBundle = credTypes.has('certificate');
-  const configured =
-    Boolean(clientId) && hasSecret && hasCertBundle;
+  const configured = Boolean(clientId) && hasSecret && hasCertBundle;
+  const { connectionVerified, lastConnectionTestAt, authStatus } = readConnectionMeta(row);
+
+  let message: string;
+  if (!configured) {
+    message = 'Configuração incompleta. Preencha Client ID, Secret, certificado e chave.';
+  } else if (connectionVerified) {
+    message = 'Configuração salva. Integração verificada (OAuth+mTLS).';
+  } else if (authStatus === 'FAILED' && row.last_error) {
+    message = `Configuração salva. Último teste falhou: ${String(row.last_error).slice(0, 180)}`;
+  } else {
+    message = 'Configuração salva. Conexão OAuth+mTLS ainda não verificada.';
+  }
 
   return {
     id: row.id,
@@ -121,10 +153,10 @@ function buildPublicResponse(
     privateKeyFileName: certMeta.privateKeyFileName,
     configuredAt: row.configured_at,
     updatedAt: row.updated_at,
-    connectionVerified: false,
-    message: configured
-      ? 'Configuração salva. Conexão OAuth+mTLS ainda não verificada.'
-      : 'Configuração incompleta. Preencha Client ID, Secret, certificado e chave.',
+    connectionVerified,
+    lastConnectionTestAt,
+    authStatus,
+    message,
   };
 }
 
@@ -138,7 +170,7 @@ export async function getCompanyInterBankConfig(
   const { data, error } = await admin
     .from('bank_integrations')
     .select(
-      'id, company_id, environment, status, client_id, certificate_name, configured_at, updated_at, active',
+      'id, company_id, environment, status, client_id, certificate_name, configured_at, updated_at, active, metadata, last_error',
     )
     .eq('company_id', companyId)
     .eq('provider', 'INTER')
@@ -225,6 +257,7 @@ export async function saveCompanyInterBankConfig(
       : existing.certificateFileName || null;
 
   // is_default=false → não rouba a integração padrão (Asaas).
+  // Ao salvar credenciais, invalida verificação OAuth anterior.
   const payload = {
     company_id: companyId,
     provider: 'INTER',
@@ -238,6 +271,15 @@ export async function saveCompanyInterBankConfig(
     configured_at: now,
     updated_at: now,
     created_by: userId,
+    last_error: null as string | null,
+    metadata: {
+      connectionVerified: false,
+      authStatus: 'DRAFT',
+      lastConnectionTestAt: null,
+      lastConnectionTestOk: null,
+      verifiedAt: null,
+      credentialsUpdatedAt: now,
+    },
   };
 
   let integrationId = existing.id;
@@ -274,13 +316,15 @@ export async function saveCompanyInterBankConfig(
     await upsertCredential(admin, integrationId!, companyId, 'certificate', serialized);
   }
 
+  clearCachedInterToken(companyId);
+
   return getCompanyInterBankConfig(admin, companyId);
 }
 
 /** Garante que a resposta pública não contenha PEMs/secrets. */
 export function assertInterConfigResponseSafe(response: InterBankConfigPublic): void {
   const asRecord = response as unknown as Record<string, unknown>;
-  for (const key of ['clientSecret', 'certificatePem', 'privateKeyPem', 'encrypted_payload']) {
+  for (const key of ['clientSecret', 'certificatePem', 'privateKeyPem', 'encrypted_payload', 'access_token', 'accessToken']) {
     if (Object.prototype.hasOwnProperty.call(asRecord, key)) {
       throw new Error(`Resposta Inter expõe material sensível (${key}).`);
     }
@@ -294,6 +338,8 @@ export function assertInterConfigResponseSafe(response: InterBankConfigPublic): 
     '"clientSecret"',
     '"certificatePem"',
     '"privateKeyPem"',
+    '"access_token"',
+    '"accessToken"',
     'encrypted_payload',
   ];
   for (const token of forbidden) {

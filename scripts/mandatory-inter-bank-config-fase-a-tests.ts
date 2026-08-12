@@ -266,7 +266,7 @@ async function main() {
       },
     });
     assert(test.ok, 'teste local ok com config completa');
-    assert(test.message.includes('OAuth+mTLS ainda não verificado'), 'não marca integração verificada');
+    assert(test.message.includes('OAuth+mTLS'), 'aponta para teste OAuth+mTLS real');
   }
 
   // 11 Asaas regressão — ASAAS ANTES = ASAAS DEPOIS (arquivos + isolation)
@@ -313,8 +313,8 @@ async function main() {
     assert(uiPanel.includes('Selecionar certificado'), 'UI upload certificado');
     assert(uiPanel.includes('Selecionar chave privada'), 'UI upload chave');
     assert(uiPanel.includes('Configurado ••••••••••'), 'UI mascara Client Secret');
-    assert(!uiPanel.includes('Integração verificada</'), 'UI não marca verificada como ok');
-    assert(uiPanel.includes('ainda não (Fase B)'), 'UI deixa claro não verificado');
+    assert(uiPanel.includes('Testar conexão'), 'UI botão Testar conexão');
+    assert(uiPanel.includes('Integração verificada'), 'UI status verificação');
 
     const mig = fs.readFileSync(
       path.join(root, 'supabase/migrations/20260830180000_bank_integrations_provider_inter.sql'),

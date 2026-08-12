@@ -8,7 +8,7 @@ import {
   saveCompanyInterBankConfig,
 } from '@/lib/banking/inter/interConfigRepository';
 import type { InterBankConfigSaveInput } from '@/lib/banking/inter/interConfigTypes';
-import { interBankProvider } from '@/lib/banking/providers/interBankProvider';
+import { runCompanyInterConnectionTest } from '@/lib/banking/inter/interConnectionTest';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -81,7 +81,7 @@ export async function PUT(request: Request) {
   }
 }
 
-/** Teste local Fase A — não chama API Inter. */
+/** Fase B — OAuth2 + mTLS real (sem emissão de cobrança). */
 export async function POST(request: Request) {
   const auth = await authorizeBankingRoute(request);
   if ('error' in auth) return auth.error;
@@ -92,32 +92,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
     }
 
-    const config = await getCompanyInterBankConfig(auth.admin, auth.tenantId);
-    const result = await interBankProvider.testConnection({
-      integrationId: config.id || 'none',
-      companyId: auth.tenantId,
-      environment: config.environment,
-      config: {
-        clientId: config.clientId,
-        hasClientSecret: config.hasClientSecret,
-        hasCertificate: config.hasCertificate,
-        hasPrivateKey: config.hasPrivateKey,
-      },
-    });
+    const { test, config } = await runCompanyInterConnectionTest(auth.admin, auth.tenantId);
+    assertInterConfigResponseSafe(config);
 
-    return NextResponse.json({
-      ok: result.ok,
-      message: result.message,
-      latencyMs: result.latencyMs,
-      connectionVerified: false,
-    });
+    const payload = {
+      ok: test.ok,
+      message: test.message,
+      environment: test.environment,
+      authStatus: test.authStatus,
+      testedAt: test.testedAt,
+      connectionVerified: test.connectionVerified,
+      tokenUrlHost: test.tokenUrlHost,
+      expiresIn: test.expiresIn,
+      config,
+    };
+
+    const json = JSON.stringify(payload);
+    if (
+      json.includes('access_token') ||
+      json.includes('BEGIN CERTIFICATE') ||
+      json.includes('BEGIN PRIVATE KEY') ||
+      json.includes('clientSecret')
+    ) {
+      console.error('[banking/inter/config POST test] resposta insegura bloqueada');
+      return NextResponse.json(
+        { error: 'Resposta de teste bloqueada por segurança.' },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json(payload);
   } catch (err) {
     console.error(
       '[banking/inter/config POST test]',
       err instanceof Error ? err.message : 'error',
     );
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro no teste local.' },
+      { error: err instanceof Error ? err.message : 'Erro no teste de conexão Inter.' },
       { status: 500 },
     );
   }
