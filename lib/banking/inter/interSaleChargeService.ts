@@ -196,6 +196,14 @@ export function bankChargeToSummaryLike(
     updatedAt: String(row.updated_at || ''),
     nossoNumero: (row.our_number as string) || null,
     barCode: (row.barcode as string) || null,
+    invoiceNumber: (() => {
+      const meta =
+        row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const seu = String(meta.seuNumero || '').trim();
+      return seu || null;
+    })(),
     asaasRemoteStatus: String((row.metadata as Record<string, unknown>)?.interSituacao || status),
   };
 }

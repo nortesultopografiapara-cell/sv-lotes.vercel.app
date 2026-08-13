@@ -1,27 +1,36 @@
 /**
- * Carnê Inter: somente PDFs oficiais compactados (até 3 por A4).
- * Sem capa/resumo — a capa permanece na aba “Capa do Carnê”.
- * Não reconstrói boleto. Escala contain/fit — sem stretch.
+ * Carnê Inter: mesmo grid A4 do Asaas (3 boletos/folha, sem capa),
+ * alimentado só com artefatos oficiais Inter (linha, barcode, Pix).
+ * Não embute a página inteira do PDF Inter.
  */
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import {
+  COMPANY_ASAAS_FINE_PERCENT,
+  COMPANY_ASAAS_INTEREST_PERCENT_MONTHLY,
+} from '@/lib/finance/asaasCompanyLateFees';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import {
-  SALE_CARNE_MARGIN_MM,
-  SALE_CARNE_PAGE_SIZE_PT,
-  SALE_CARNE_PAGE_W_MM,
-  containFitRect,
-  mmToPt,
+  buildSaleCarnePdfBytes,
+  type SaleCarneBrandConfig,
+  type SaleCarnePayerInfo,
+  type SaleCarnePdfInput,
+} from '@/lib/finance/saleCarnePdf';
+import {
+  chargeHasOfficialBoletoLine,
+  type SaleChargeInstallmentRow,
+  type SaleChargesSummary,
+} from '@/lib/finance/saleChargesShared';
+import {
   saleCarneBoletoSheetCount,
   saleCarneDocumentPageCount,
-  saleCarneNeedsNewPage,
-  saleCarneSlotIndex,
-  saleCarneSlotInnerBoxPt,
 } from '@/lib/finance/saleCarneSlotLayout';
 
 export type InterCarneItem = {
   charge: CompanyAsaasChargeResponse;
   parcelLabel: string;
+  installment?: SaleChargeInstallmentRow | null;
+  totalParcels?: number;
+  /** Ignorado — o carnê Inter não embute o PDF oficial A4. */
   officialPdf?: Uint8Array | null;
 };
 
@@ -34,6 +43,70 @@ export type InterCarnePdfResult = {
   coverPages: number;
 };
 
+/** Banco Inter (Febraban 077-9). Multa/mora iguais às enviadas na emissão V3. */
+export const INTER_CARNE_BRAND: SaleCarneBrandConfig = {
+  displayName: 'INTER',
+  bankCode: '077-9',
+  carteira: '',
+  defaultAgency: '',
+  finePercent: COMPANY_ASAAS_FINE_PERCENT,
+  interestPercentMonthly: COMPANY_ASAAS_INTEREST_PERCENT_MONTHLY,
+  missingArtifactsMessage:
+    'Cobrança Inter sem linha digitável/código de barras oficiais. Atualize a situação e tente novamente.',
+};
+
+function stubSummary(params: {
+  items: InterCarneItem[];
+  emittedCount: number;
+  totalParcels: number;
+  customerName?: string | null;
+  projectName?: string | null;
+  lotLabel?: string | null;
+  quadra?: string | null;
+  lote?: string | null;
+  summary?: SaleChargesSummary | null;
+}): SaleChargesSummary {
+  if (params.summary) return params.summary;
+  const total = Math.max(1, Math.floor(Number(params.totalParcels) || 1));
+  const emitted = Math.max(0, Math.floor(Number(params.emittedCount) || 0));
+  return {
+    saleId: params.items[0]?.charge.saleId || 'sale',
+    companyId: params.items[0]?.charge.companyId || 'company',
+    customerName: params.customerName || null,
+    customerEmail: null,
+    customerPhone: null,
+    projectName: params.projectName || null,
+    quadra: params.quadra || null,
+    lote: params.lote || null,
+    lotLabel: params.lotLabel || null,
+    contractNumber: null,
+    financialAccountId: null,
+    financialAccountName: 'Banco Inter',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+    totalInstallments: total,
+    paidInstallments: 0,
+    eligibleInstallments: total,
+    chargesGenerated: emitted,
+    chargesMissing: Math.max(0, total - emitted),
+    printableChargesCount: params.items.length,
+    chargesFailed: 0,
+    chargesCancelled: 0,
+    firstDueDate: null,
+    lastDueDate: null,
+    totalAmount: 0,
+    totalPaid: 0,
+    totalPending: 0,
+    missingInstallmentIds: [],
+    missingInstallments: [],
+    errorInstallmentIds: [],
+    installmentCorrectionType: null,
+    carneReady: true,
+    carneBlockReason: null,
+    uiState: 'carne_ready',
+  };
+}
+
 export async function buildInterCarnePdfBytes(params: {
   items: InterCarneItem[];
   emittedCount: number;
@@ -41,90 +114,63 @@ export async function buildInterCarnePdfBytes(params: {
   customerName?: string | null;
   projectName?: string | null;
   lotLabel?: string | null;
+  quadra?: string | null;
+  lote?: string | null;
+  summary?: SaleChargesSummary | null;
+  beneficiaryName?: string | null;
+  beneficiaryDocument?: string | null;
+  payer?: SaleCarnePayerInfo | null;
+  agencyCedente?: string | null;
 }): Promise<InterCarnePdfResult> {
-  const out = await PDFDocument.create();
-  const officialItems = params.items.filter((item) => item.officialPdf && item.officialPdf.length >= 8);
-  let includedOfficialPdfs = 0;
-  let skippedWithoutPdf = params.items.length - officialItems.length;
-  let boletoPage: ReturnType<PDFDocument['addPage']> | null = null;
-  let font: Awaited<ReturnType<PDFDocument['embedFont']>> | null = null;
-
-  for (const item of officialItems) {
-    try {
-      const src = await PDFDocument.load(item.officialPdf as Uint8Array);
-      const srcPages = src.getPages();
-      if (srcPages.length === 0) {
-        skippedWithoutPdf += 1;
-        continue;
-      }
-      const embedded = await out.embedPage(srcPages[0]);
-      const srcW = embedded.width;
-      const srcH = embedded.height;
-      const placed = includedOfficialPdfs;
-
-      if (placed === 0 || saleCarneNeedsNewPage(placed)) {
-        boletoPage = out.addPage(SALE_CARNE_PAGE_SIZE_PT);
-      }
-      if (!boletoPage) continue;
-
-      const slot = saleCarneSlotIndex(placed);
-      const box = saleCarneSlotInnerBoxPt(slot);
-      if (box.cutY != null) {
-        const x0 = mmToPt(SALE_CARNE_MARGIN_MM);
-        const x1 = mmToPt(SALE_CARNE_PAGE_W_MM) - x0;
-        boletoPage.drawLine({
-          start: { x: x0, y: box.cutY },
-          end: { x: x1, y: box.cutY },
-          thickness: 0.4,
-          color: rgb(0.47, 0.47, 0.47),
-          dashArray: [3.4, 3.4],
-        });
-        boletoPage.drawLine({
-          start: { x: x0, y: box.cutY - 4 },
-          end: { x: x0, y: box.cutY + 4 },
-          thickness: 0.5,
-          color: rgb(0.47, 0.47, 0.47),
-        });
-        boletoPage.drawLine({
-          start: { x: x1, y: box.cutY - 4 },
-          end: { x: x1, y: box.cutY + 4 },
-          thickness: 0.5,
-          color: rgb(0.47, 0.47, 0.47),
-        });
-        if (!font) font = await out.embedFont(StandardFonts.Helvetica);
-        boletoPage.drawText('corte aqui', {
-          x: mmToPt(SALE_CARNE_PAGE_W_MM) / 2 - 18,
-          y: box.cutY + 2,
-          size: 6,
-          font,
-          color: rgb(0.47, 0.47, 0.47),
-        });
-      }
-
-      const fit = containFitRect(srcW, srcH, box.x, box.y, box.width, box.height);
-      boletoPage.drawPage(embedded, {
-        x: fit.x,
-        y: fit.y,
-        width: fit.width,
-        height: fit.height,
-      });
-      includedOfficialPdfs += 1;
-    } catch {
-      skippedWithoutPdf += 1;
-    }
+  const printable = params.items.filter((item) => chargeHasOfficialBoletoLine(item.charge));
+  const skippedWithoutPdf = params.items.length - printable.length;
+  if (printable.length === 0) {
+    const empty = await buildEmptyPdfPlaceholder();
+    return {
+      bytes: empty,
+      includedOfficialPdfs: 0,
+      skippedWithoutPdf,
+      pageCount: 0,
+      boletoSheetCount: 0,
+      coverPages: 0,
+    };
   }
 
-  const boletoSheetCount = saleCarneBoletoSheetCount(includedOfficialPdfs);
-  const coverPages = 0;
-  const bytes = await out.save();
+  const input: SaleCarnePdfInput = {
+    summary: stubSummary(params),
+    items: printable.map((item) => ({
+      charge: item.charge,
+      installment: item.installment ?? null,
+      parcelLabel: item.parcelLabel,
+      totalParcels: item.totalParcels || params.totalParcels,
+    })),
+    beneficiaryName: params.beneficiaryName,
+    beneficiaryDocument: params.beneficiaryDocument,
+    payer: params.payer || {
+      name: params.customerName || 'Pagador',
+      document: '',
+    },
+    agencyCedente: params.agencyCedente ?? '',
+    brand: INTER_CARNE_BRAND,
+  };
+
+  const raw = await buildSaleCarnePdfBytes(input);
+  const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer);
+  const boletoSheetCount = saleCarneBoletoSheetCount(printable.length);
   return {
     bytes,
-    includedOfficialPdfs,
+    includedOfficialPdfs: printable.length,
     skippedWithoutPdf,
-    pageCount: out.getPageCount(),
+    pageCount: boletoSheetCount,
     boletoSheetCount,
-    coverPages,
+    coverPages: 0,
   };
+}
+
+async function buildEmptyPdfPlaceholder(): Promise<Uint8Array> {
+  const { PDFDocument } = await import('pdf-lib');
+  const doc = await PDFDocument.create();
+  return doc.save();
 }
 
 export function expectedInterCarnePageCount(officialBoletoCount: number): number {

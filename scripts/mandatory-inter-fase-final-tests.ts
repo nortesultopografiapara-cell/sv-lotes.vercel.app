@@ -362,17 +362,26 @@ async function testPartialCarne() {
     customerName: 'Maria',
     projectName: 'Alfa',
     lotLabel: 'QD 01 — LT 02',
+    quadra: '01',
+    lote: '02',
   });
   assert.ok(built.bytes.length > 80);
-  assert.equal(built.includedOfficialPdfs, 0);
-  assert.equal(built.boletoSheetCount, 0);
+  assert.equal(built.includedOfficialPdfs, 2);
+  assert.equal(built.boletoSheetCount, 1);
+  assert.equal(built.pageCount, 1);
   assert.equal(built.coverPages, 0);
-  assert.ok(built.pageCount === 0 || built.pageCount === 1, 'sem capa/resumo');
   const header = Buffer.from(built.bytes.slice(0, 8)).toString('utf8');
   assert.match(header, /%PDF/);
-  assert.doesNotMatch(Buffer.from(built.bytes).toString('latin1'), /Carnê de cobranças/);
+  const latin = Buffer.from(built.bytes).toString('latin1');
+  assert.match(latin, /INTER/);
+  assert.match(latin, /077-9/);
+  assert.match(latin, /Empreendimento/);
+  assert.match(latin, /Alfa/);
+  assert.match(latin, /Quadra/);
+  assert.doesNotMatch(latin, /Carnê de cobranças/);
   const carneSvc = read('lib/banking/inter/interCarneService.ts');
-  assert.match(carneSvc, /fetchInterCobrancaPdf/);
+  assert.match(carneSvc, /fetchInterCobrancaByCodigo/);
+  assert.doesNotMatch(carneSvc, /fetchInterCobrancaPdf/);
   assert.doesNotMatch(carneSvc, /createInterCobranca/);
   const panel = read('components/sales/SaleChargesPanel.tsx');
   assert.match(panel, /\/api\/finance\/inter\/sale-charges\/carne-pdf/);
@@ -380,16 +389,6 @@ async function testPartialCarne() {
   assert.doesNotMatch(panel, /Carnê PDF no layout Asaas não se aplica/);
   assert.doesNotMatch(panel, /fase futura/);
   console.log('OK carnê parcial Inter (2 de 4, sem boleto fictício)');
-}
-
-async function makeOfficialA4Pdf(): Promise<Uint8Array> {
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
-  const doc = await PDFDocument.create();
-  const page = doc.addPage([595.28, 841.89]);
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  page.drawRectangle({ x: 36, y: 36, width: 523, height: 770, borderColor: rgb(0, 0, 0), borderWidth: 1 });
-  page.drawText('BOLETO OFICIAL INTER (fixture)', { x: 48, y: 780, size: 14, font, color: rgb(0, 0, 0) });
-  return doc.save();
 }
 
 async function testCompactCarnePagination() {
@@ -410,42 +409,75 @@ async function testCompactCarnePagination() {
   const fit = containFitRect(595.28, 841.89, 0, 0, 500, 250);
   assert.ok(Math.abs(fit.width / fit.height - 595.28 / 841.89) < 1e-9, 'contain preserva proporção');
   assert.ok(fit.width <= 500 && fit.height <= 250, 'cabe no slot');
-  assert.ok(fit.scale < 1, 'reduz A4 para 1/3');
-  assert.ok(Math.abs(fit.width / 595.28 - fit.scale) < 1e-9);
-  assert.ok(Math.abs(fit.height / 841.89 - fit.scale) < 1e-9);
 
-  const official = await makeOfficialA4Pdf();
   for (const c of cases) {
     const items = Array.from({ length: c.n }, (_, i) => ({
       charge: charge({ installmentId: `fr-${i}`, asaasPaymentId: `ext-${i}` }),
       parcelLabel: `Parcela ${String(i + 1).padStart(2, '0')}/10 do contrato`,
-      officialPdf: official,
     }));
     const built = await buildInterCarnePdfBytes({
       items,
       emittedCount: c.n,
       totalParcels: 10,
       customerName: 'Maria',
+      projectName: 'Loteamento Teste',
+      quadra: '02',
+      lote: '53',
     });
     assert.equal(built.includedOfficialPdfs, c.n, `incluiu ${c.n}`);
     assert.equal(built.pageCount, c.pages, `páginas ${c.n} boletos`);
     assert.equal(built.boletoSheetCount, c.sheets, `folhas ${c.n}`);
     assert.equal(built.coverPages, 0, `sem capa ${c.n}`);
+    const latin = Buffer.from(built.bytes).toString('latin1');
+    assert.match(latin, /INTER/);
+    assert.match(latin, /077-9/);
+    assert.doesNotMatch(latin, /Carnê de cobranças — Banco Inter/);
   }
 
+  const two = await buildInterCarnePdfBytes({
+    items: [
+      { charge: charge({ installmentId: 'fr-a' }), parcelLabel: 'Parcela 01/10 do contrato' },
+      { charge: charge({ installmentId: 'fr-b' }), parcelLabel: 'Parcela 02/10 do contrato' },
+    ],
+    emittedCount: 2,
+    totalParcels: 10,
+    customerName: 'SEVERINO JOSE DE FRANCA',
+    projectName: 'LOTEAMENTO TESTE',
+    quadra: '02',
+    lote: '53',
+    beneficiaryName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+  });
+  const twoLatin = Buffer.from(two.bytes).toString('latin1');
+  assert.match(twoLatin, /Empreendimento: LOTEAMENTO TESTE/);
+  assert.match(twoLatin, /Quadra: 02/);
+  assert.match(twoLatin, /Lote: 53/);
+  assert.match(twoLatin, /SEVERINO JOSE DE FRANCA/);
+  assert.equal(two.pageCount, 1);
+
   const interPdf = read('lib/banking/inter/interCarnePdf.ts');
-  assert.match(interPdf, /containFitRect/);
-  assert.match(interPdf, /embedPage/);
-  assert.match(interPdf, /saleCarneNeedsNewPage/);
-  assert.match(interPdf, /coverPages = 0/);
+  assert.match(interPdf, /buildSaleCarnePdfBytes/);
+  assert.match(interPdf, /INTER_CARNE_BRAND/);
+  assert.match(interPdf, /077-9/);
+  assert.match(interPdf, /coverPages: 0/);
+  assert.doesNotMatch(interPdf, /embedPage/);
+  assert.doesNotMatch(interPdf, /containFitRect/);
   assert.doesNotMatch(interPdf, /copyPages/);
   assert.doesNotMatch(interPdf, /Carnê de cobranças — Banco Inter/);
+  const carneSvc = read('lib/banking/inter/interCarneService.ts');
+  assert.match(carneSvc, /fetchInterCobrancaByCodigo/);
+  assert.doesNotMatch(carneSvc, /fetchInterCobrancaPdf/);
+  assert.doesNotMatch(carneSvc, /createInterCobranca/);
+  assert.match(carneSvc, /projectName/);
+  assert.match(carneSvc, /quadra/);
+  assert.match(carneSvc, /lote/);
   const asaasPdf = read('lib/finance/saleCarnePdf.ts');
   assert.match(asaasPdf, /SLOT_H/);
   assert.match(asaasPdf, /drawBoletoSlot/);
   assert.match(asaasPdf, /saleCarneNeedsNewPage/);
   assert.match(asaasPdf, /from 'jspdf'/);
-  console.log('OK compositor Inter 3/folha sem capa (1,2,3,4,6,10) + Asaas intacto');
+  assert.match(asaasPdf, /ASAAS_BANK_CODE/);
+  assert.match(asaasPdf, /461/);
+  console.log('OK compositor Inter 3/folha no grid Asaas (1,2,3,4,6,10) + Asaas intacto');
 }
 
 async function testPaymentSettlementIdempotent() {

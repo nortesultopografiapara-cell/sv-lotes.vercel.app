@@ -9,7 +9,6 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
   fetchInterCobrancaByCodigo,
-  fetchInterCobrancaPdf,
   getInterCobrancaWebhook,
   normalizeInterCobrancaDetail,
 } from '@/lib/banking/inter/interCobrancaClient';
@@ -281,16 +280,9 @@ export async function GET(request: Request) {
         if (!ext) continue;
         const status = String(rec.status || '').toUpperCase();
         if (status === 'CANCELLED' || status === 'FAILED' || status === 'EXPIRED') continue;
-        let officialPdf: Uint8Array | null = null;
-        try {
-          officialPdf = new Uint8Array(await fetchInterCobrancaPdf(creds, ext));
-        } catch {
-          officialPdf = null;
-        }
         items.push({
           charge: bankChargeToSummaryLike(rec, COMPANY),
           parcelLabel: `Parcela ${items.length + 1}`,
-          officialPdf,
         });
       }
       const built = await buildInterCarnePdfBytes({
