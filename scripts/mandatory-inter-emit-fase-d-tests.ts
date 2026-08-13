@@ -11,6 +11,8 @@ import {
   createInterCobranca,
   pollInterCobrancaUntilReady,
   normalizeInterCobrancaDetail,
+  sanitizeInterApiErrorBody,
+  InterCobrancaHttpError,
 } from '../lib/banking/inter/interCobrancaClient';
 import {
   buildInterChargeIdempotencyKey,
@@ -250,6 +252,31 @@ async function main() {
   assert(mapInterSituacaoToBankStatus('A_RECEBER') === 'REGISTERED', 'map A_RECEBER→REGISTERED');
   assert(mapInterSituacaoToBankStatus('EM_PROCESSAMENTO') === 'PENDING', 'map EM_PROCESSAMENTO');
   assert(mapInterSituacaoToBankStatus('RECEBIDO') === 'PAID', 'map RECEBIDO→PAID');
+
+  {
+    const sanitized = sanitizeInterApiErrorBody(
+      JSON.stringify({
+        title: 'Dados inválidos.',
+        detail: 'Verifique os dados.',
+        violacoes: [
+          {
+            razao: 'O valor deve ser igual ou superior a 2.50',
+            propriedade: 'valorNominal',
+            valor: '10',
+          },
+        ],
+        access_token: 'leak',
+      }),
+    );
+    const violacoes = sanitized.violacoes as Array<{ razao?: string }>;
+    assert(
+      violacoes?.[0]?.razao === 'O valor deve ser igual ou superior a 2.50',
+      'sanitize preserva violacoes[].razao completo',
+    );
+    assert(sanitized.access_token == null, 'sanitize omite access_token');
+    const err = new InterCobrancaHttpError(400, JSON.stringify({ violacoes: [{ razao: 'abc' }] }));
+    assert(err.status === 400 && err.message.includes('abc'), 'InterCobrancaHttpError inclui razao');
+  }
 
   // Payload POST documentado
   {

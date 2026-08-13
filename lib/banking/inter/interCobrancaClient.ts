@@ -58,6 +58,62 @@ export type InterWebhookRegistration = {
   criacao?: string | null;
 };
 
+const SENSITIVE_KEY_RE =
+  /token|secret|password|authorization|cert|private.?key|client.?secret|api.?key|bearer|pem/i;
+
+function redactSensitiveKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSensitiveKeys);
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (SENSITIVE_KEY_RE.test(key)) {
+      out[key] = '[REDACTED]';
+      continue;
+    }
+    out[key] = redactSensitiveKeys(v);
+  }
+  return out;
+}
+
+/** Resposta de erro Inter sem credenciais — inclui violacoes[].razao completo. */
+export function sanitizeInterApiErrorBody(bodyText: string): Record<string, unknown> {
+  const raw = String(bodyText || '').trim();
+  if (!raw) return { empty: true };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const violacoes = Array.isArray(parsed.violacoes)
+      ? parsed.violacoes.map((item) => {
+          const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+          return {
+            razao: row.razao != null ? String(row.razao) : null,
+            propriedade: row.propriedade != null ? String(row.propriedade) : null,
+            valor: row.valor != null ? String(row.valor) : null,
+          };
+        })
+      : [];
+    return redactSensitiveKeys({
+      title: parsed.title ?? null,
+      detail: parsed.detail ?? null,
+      timestamp: parsed.timestamp ?? null,
+      violacoes,
+    }) as Record<string, unknown>;
+  } catch {
+    return { unparsedPreview: raw.slice(0, 2000) };
+  }
+}
+
+export class InterCobrancaHttpError extends Error {
+  status: number;
+  sanitized: Record<string, unknown>;
+  constructor(status: number, bodyText: string) {
+    const sanitized = sanitizeInterApiErrorBody(bodyText);
+    super(`Falha ao emitir cobrança Inter (HTTP ${status}). ${JSON.stringify(sanitized)}`);
+    this.name = 'InterCobrancaHttpError';
+    this.status = status;
+    this.sanitized = sanitized;
+  }
+}
+
 function createMtlsAgent(creds: InterOAuthCredentials): https.Agent {
   return new https.Agent({
     cert: creds.certificatePem,
@@ -229,8 +285,7 @@ export async function createInterCobranca(
     options,
   );
   if (res.status < 200 || res.status >= 300 || !res.json) {
-    const detail = String(res.bodyText || '').slice(0, 240);
-    throw new Error(`Falha ao emitir cobrança Inter (HTTP ${res.status}). ${detail}`);
+    throw new InterCobrancaHttpError(res.status, res.bodyText || JSON.stringify(res.json || {}));
   }
   const codigo = String(
     res.json.codigoSolicitacao || res.json.idSolicitacao || '',
