@@ -906,8 +906,74 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
   };
 
+  const handleRefreshInter = async (installmentId: string) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch('/api/finance/inter/refresh-charge', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      const charge = json.charge as CompanyAsaasChargeResponse | null;
+      if (charge) {
+        applyInterChargeUpdate(installmentId, charge);
+        const hasArtifacts = Boolean(
+          charge.bankSlipIdentification || charge.pixCopyPaste || charge.barCode || charge.nossoNumero,
+        );
+        showToast(
+          hasArtifacts
+            ? 'Dados Inter atualizados (linha/Pix materializados).'
+            : 'Cobrança Inter consultada. Artefatos ainda não disponíveis no GET.',
+        );
+      } else {
+        showToast('Cobrança Inter não encontrada para esta parcela.', true);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar cobrança Inter.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleDownloadInterPdf = async (installmentId: string) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch(
+        `/api/finance/inter/pdf?installmentId=${encodeURIComponent(installmentId)}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Erro ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `boleto-inter-${installmentId.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('PDF oficial do boleto Inter baixado.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao baixar PDF Inter.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
   const handleRefreshAsaas = async (installmentId: string) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
+    const row = payments.find((p) => String(p.id) === installmentId);
+    const provider = row ? resolveRowProvider(row) : 'ASAAS_COMPANY';
+    if (provider === 'INTER') {
+      await handleRefreshInter(installmentId);
+      return;
+    }
     setAsaasActionInstallmentId(installmentId);
     try {
       const res = await fetch(
@@ -1559,6 +1625,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         }
                         onCopyPix={() => charge && void handleCopyPix(charge)}
                         onCopyBarcodeLine={() => charge && void handleCopyBarcodeLine(charge)}
+                        onDownloadPdf={() => void handleDownloadInterPdf(installmentId)}
                         onWhatsApp={() => {
                           if (!charge) {
                             showToast('Cobrança indisponível para envio por WhatsApp.', true);

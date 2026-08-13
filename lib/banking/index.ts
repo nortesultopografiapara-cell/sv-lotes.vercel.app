@@ -81,6 +81,7 @@ export {
   getInterCobrancaWebhook,
   deleteInterCobrancaWebhook,
   fetchInterCobrancaByCodigo,
+  fetchInterCobrancaPdf,
 } from './inter/interCobrancaClient';
 export {
   validateInterWebhookHmac,

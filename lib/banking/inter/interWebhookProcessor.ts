@@ -14,6 +14,7 @@ import {
 } from '@/lib/banking/inter/interCobrancaClient';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
 import type { InterOAuthFetchFn } from '@/lib/banking/inter/interOAuthClient';
+import { refreshInterChargeArtifacts } from '@/lib/banking/inter/interSaleChargeService';
 
 export function buildInterWebhookIdempotencyKey(input: {
   codigoSolicitacao: string;
@@ -259,6 +260,15 @@ export async function processInterWebhookCallbackItem(
     }
 
     if (!isInterSituacaoRecebido(confirmed.situacao)) {
+      try {
+        await refreshInterChargeArtifacts(admin, {
+          companyId: input.companyId,
+          externalId: codigo,
+          detail: confirmed,
+        });
+      } catch {
+        /* materialização best-effort — não muda semântica de ignore/sem baixa */
+      }
       await markWebhookEvent(admin, claim.eventId, 'IGNORED', `situacao=${confirmed.situacao}`);
       return {
         ok: true,
@@ -329,6 +339,7 @@ export async function processInterWebhookCallbackItem(
         digitable_line: confirmed.linhaDigitavel || undefined,
         pix_copy_paste: confirmed.pixCopiaECola || undefined,
         our_number: confirmed.nossoNumero || undefined,
+        txid: confirmed.txid || undefined,
         metadata: {
           ...prevMeta,
           origemRecebimento: origem,

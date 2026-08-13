@@ -204,14 +204,36 @@ function pickNumber(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function pickNonEmptyString(...vals: unknown[]): string | null {
+  for (const v of vals) {
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+export function interDetailHasPaymentArtifacts(detail: Pick<
+  InterCobrancaDetail,
+  'linhaDigitavel' | 'codigoBarras' | 'pixCopiaECola' | 'nossoNumero'
+>): boolean {
+  return Boolean(
+    detail.linhaDigitavel || detail.codigoBarras || detail.pixCopiaECola || detail.nossoNumero,
+  );
+}
+
 export function normalizeInterCobrancaDetail(
   raw: Record<string, unknown>,
   fallbackCodigo?: string,
 ): InterCobrancaDetail {
-  const cobranca =
-    raw.cobranca && typeof raw.cobranca === 'object'
-      ? (raw.cobranca as Record<string, unknown>)
-      : raw;
+  const cobranca = asRecord(raw.cobranca) || raw;
+  const boleto = asRecord(raw.boleto) || asRecord(cobranca.boleto) || {};
+  const pix = asRecord(raw.pix) || asRecord(cobranca.pix) || {};
   const codigo = String(
     cobranca.codigoSolicitacao ||
       cobranca.idSolicitacao ||
@@ -239,25 +261,22 @@ export function normalizeInterCobrancaDetail(
       : raw.dataHoraSituacao
         ? String(raw.dataHoraSituacao)
         : null,
-    nossoNumero: cobranca.nossoNumero ? String(cobranca.nossoNumero) : null,
-    seuNumero: cobranca.seuNumero ? String(cobranca.seuNumero) : null,
-    codigoBarras: cobranca.codigoBarras ? String(cobranca.codigoBarras) : null,
-    linhaDigitavel: cobranca.linhaDigitavel ? String(cobranca.linhaDigitavel) : null,
-    pixCopiaECola: cobranca.pixCopiaECola
-      ? String(cobranca.pixCopiaECola)
-      : cobranca.pixCopiaCola
-        ? String(cobranca.pixCopiaCola)
-        : null,
-    txid: cobranca.txid
-      ? String(cobranca.txid)
-      : (() => {
-          const pix = cobranca.pix;
-          if (pix && typeof pix === 'object' && 'txid' in (pix as object)) {
-            const tx = (pix as Record<string, unknown>).txid;
-            return tx ? String(tx) : null;
-          }
-          return null;
-        })(),
+    nossoNumero: pickNonEmptyString(cobranca.nossoNumero, boleto.nossoNumero, raw.nossoNumero),
+    seuNumero: pickNonEmptyString(cobranca.seuNumero, raw.seuNumero),
+    codigoBarras: pickNonEmptyString(cobranca.codigoBarras, boleto.codigoBarras, raw.codigoBarras),
+    linhaDigitavel: pickNonEmptyString(
+      cobranca.linhaDigitavel,
+      boleto.linhaDigitavel,
+      raw.linhaDigitavel,
+    ),
+    pixCopiaECola: pickNonEmptyString(
+      cobranca.pixCopiaECola,
+      cobranca.pixCopiaCola,
+      pix.pixCopiaECola,
+      pix.pixCopiaCola,
+      raw.pixCopiaECola,
+    ),
+    txid: pickNonEmptyString(cobranca.txid, pix.txid, raw.txid),
     raw,
   };
 }
@@ -308,7 +327,7 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Retry/backoff até obter linha digitável/código de barras/PIX ou situacao útil. */
+/** Retry/backoff até obter linha digitável/código de barras/PIX. A_RECEBER sem artefatos continua. */
 export async function pollInterCobrancaUntilReady(
   creds: InterOAuthCredentials,
   codigoSolicitacao: string,
@@ -325,16 +344,14 @@ export async function pollInterCobrancaUntilReady(
     last = await fetchInterCobrancaByCodigo(creds, codigoSolicitacao, {
       fetchFn: options?.fetchFn,
     });
-    const hasArtifacts = Boolean(
-      last.linhaDigitavel || last.codigoBarras || last.pixCopiaECola || last.nossoNumero,
-    );
+    const hasArtifacts = interDetailHasPaymentArtifacts(last);
     const situacao = last.situacao;
-    const readyStatus =
-      situacao === 'A_RECEBER' ||
+    const terminalWithoutWaiting =
       situacao === 'RECEBIDO' ||
+      situacao === 'PAGO' ||
       situacao === 'CANCELADO' ||
       situacao === 'EXPIRADO';
-    if (hasArtifacts || readyStatus) {
+    if (hasArtifacts || terminalWithoutWaiting) {
       return last;
     }
     if (attempt < maxAttempts) {
@@ -363,6 +380,55 @@ export async function fetchInterCobrancaByCodigo(
     throw new Error(`Falha ao consultar cobrança Inter (HTTP ${res.status}).`);
   }
   return normalizeInterCobrancaDetail(res.json, codigoSolicitacao);
+}
+
+export function decodeInterCobrancaPdfPayload(
+  json: Record<string, unknown> | null,
+  bodyText: string,
+): Buffer | null {
+  const b64 = pickNonEmptyString(
+    json?.pdf,
+    json?.arquivo,
+    json?.pdfBase64,
+    json?.file,
+  );
+  if (b64) {
+    const cleaned = b64.replace(/^data:application\/pdf;base64,/i, '');
+    const bytes = Buffer.from(cleaned, 'base64');
+    if (bytes.length > 4) return bytes;
+  }
+  const raw = String(bodyText || '');
+  if (raw.startsWith('%PDF')) {
+    return Buffer.from(raw, 'binary');
+  }
+  return null;
+}
+
+/** GET oficial /cobranca/v3/cobrancas/{codigoSolicitacao}/pdf — não gera cobrança. */
+export async function fetchInterCobrancaPdf(
+  creds: InterOAuthCredentials,
+  codigoSolicitacao: string,
+  options?: { fetchFn?: InterOAuthFetchFn },
+): Promise<Buffer> {
+  const code = encodeURIComponent(String(codigoSolicitacao || '').trim());
+  if (!code) throw new Error('codigoSolicitacao ausente.');
+  const res = await authorizedRequest(
+    creds,
+    `/cobrancas/${code}/pdf`,
+    { method: 'GET' },
+    options,
+  );
+  if (res.status === 404) {
+    throw new Error('PDF oficial do boleto Inter ainda não está disponível para esta cobrança.');
+  }
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`Falha ao obter PDF oficial Inter (HTTP ${res.status}).`);
+  }
+  const pdf = decodeInterCobrancaPdfPayload(res.json, res.bodyText);
+  if (!pdf) {
+    throw new Error('Inter não retornou PDF oficial para esta cobrança.');
+  }
+  return pdf;
 }
 
 export async function putInterCobrancaWebhook(

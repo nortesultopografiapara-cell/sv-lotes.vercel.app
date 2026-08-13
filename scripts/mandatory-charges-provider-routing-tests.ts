@@ -95,7 +95,9 @@ function testAsaasGuard() {
 
 function testCentralRoutesByProvider() {
   const page = read('components/charges/ChargesPageClient.tsx');
-  assert.match(page, /\/api\/finance\/inter\/create-charge/);
+  assert.match(page, /\/api\/finance\/inter\/refresh-charge/);
+  assert.match(page, /handleRefreshInter/);
+  assert.match(page, /\/api\/finance\/inter\/pdf/);
   assert.match(page, /\/api\/finance\/asaas\/create-charge/);
   assert.match(page, /\/api\/finance\/inter\/charges/);
   assert.match(page, /resolveRowProvider/);

@@ -68,7 +68,11 @@ export function canShowChargeWhatsAppButton(input: {
   if (!input.charge) return false;
   if (input.charge.status === 'CANCELLED') return false;
   if (!normalizeWhatsAppPhone(input.customerPhone)) return false;
-  return Boolean(resolveChargeWhatsAppShareableUrl(input.charge));
+  return Boolean(
+    resolveChargeWhatsAppShareableUrl(input.charge) ||
+      String(input.charge.pixCopyPaste || '').trim() ||
+      String(input.charge.bankSlipIdentification || '').trim(),
+  );
 }
 
 export type BuildChargeWhatsAppMessageInput = {

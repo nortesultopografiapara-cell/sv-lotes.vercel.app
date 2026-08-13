@@ -24,6 +24,10 @@ import {
   resolveCompanyAsaasReceiptUrl,
   type ChargeActionVisibility,
 } from '@/lib/charges/chargeOperationsHelpers';
+import {
+  INTER_PDF_NOT_MATERIALIZED_HINT,
+  resolveInterIssuedChargeActions,
+} from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
 
 const btnClass =
@@ -56,6 +60,7 @@ export type ChargeInstallmentActionsProps = {
   onCopyPix: () => void;
   onCopyBarcodeLine: () => void;
   onWhatsApp: () => void;
+  onDownloadPdf?: () => void;
 };
 
 export function resolveChargeInstallmentActionsProps(
@@ -68,6 +73,7 @@ export function resolveChargeInstallmentActionsProps(
     | 'onCopyPix'
     | 'onCopyBarcodeLine'
     | 'onWhatsApp'
+    | 'onDownloadPdf'
   >,
 ): ChargeActionVisibility {
   return resolveChargeActionVisibility({
@@ -103,6 +109,7 @@ export function ChargeInstallmentActions({
   onCopyPix,
   onCopyBarcodeLine,
   onWhatsApp,
+  onDownloadPdf,
 }: ChargeInstallmentActionsProps) {
   const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
@@ -125,6 +132,16 @@ export function ChargeInstallmentActions({
   const detailsUrl = !isInter ? resolveCompanyAsaasDetailsUrl(charge) : null;
   const regenerateBillingType =
     charge?.billingType === 'PIX' ? 'PIX' : ('BOLETO' as const);
+  const interActions = isInter
+    ? resolveInterIssuedChargeActions({ charge, installmentPaid })
+    : null;
+  const showGenerate = Boolean(
+    actions.showGenerate && providerReady && !interActions?.hideGenerate,
+  );
+  const showCopyBarcodeLine = isInter
+    ? Boolean(interActions?.showCopyLinha)
+    : actions.showCopyBarcodeLine;
+  const showCopyPix = isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix;
 
   if (!isInter && !companyAsaasEnabled) {
     return (
@@ -151,7 +168,7 @@ export function ChargeInstallmentActions({
   return (
     <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
       <div className="flex flex-wrap justify-end gap-1.5">
-        {actions.showGenerate && providerReady ? (
+        {showGenerate ? (
           <>
             <button
               type="button"
@@ -246,7 +263,7 @@ export function ChargeInstallmentActions({
           </a>
         ) : null}
 
-        {actions.showCopyBarcodeLine ? (
+        {showCopyBarcodeLine ? (
           <button
             type="button"
             className={btnClass}
@@ -258,10 +275,23 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showCopyPix ? (
+        {showCopyPix ? (
           <button type="button" className={btnClass} onClick={onCopyPix} title="Copiar Pix copia e cola">
             <Copy className="h-3.5 w-3.5" />
             Copiar Pix
+          </button>
+        ) : null}
+
+        {isInter && interActions?.showOfficialPdf && onDownloadPdf ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDownloadPdf}
+            className={btnClass}
+            title="Baixar PDF oficial do boleto Inter (Cobrança V3)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            Baixar PDF
           </button>
         ) : null}
 
@@ -275,6 +305,19 @@ export function ChargeInstallmentActions({
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Status
+          </button>
+        ) : null}
+
+        {isInter && interActions?.showRefresh ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRefreshStatus}
+            className={btnVioletClass}
+            title="Consultar Cobrança V3 e materializar linha/Pix/nosso número (não emite)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Atualizar dados
           </button>
         ) : null}
 
@@ -352,7 +395,13 @@ export function ChargeInstallmentActions({
         ) : null}
       </div>
 
-      {actions.showBoletoUnavailableWarning ? (
+      {isInter && interActions?.showRefresh && !interActions.showOfficialPdf ? (
+        <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
+          {INTER_PDF_NOT_MATERIALIZED_HINT}
+        </p>
+      ) : null}
+
+      {actions.showBoletoUnavailableWarning && !isInter ? (
         <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
           {BOLETO_UNAVAILABLE_WARNING}
         </p>

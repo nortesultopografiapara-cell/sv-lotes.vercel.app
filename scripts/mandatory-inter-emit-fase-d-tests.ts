@@ -517,6 +517,23 @@ async function main() {
     assert(d.codigoSolicitacao === 'ABC' && d.situacao === 'A_RECEBER', 'normalize nested cobranca');
   }
 
+  {
+    const d = normalizeInterCobrancaDetail({
+      cobranca: { codigoSolicitacao: 'SOL-SIB', situacao: 'A_RECEBER' },
+      boleto: {
+        nossoNumero: '90816247624',
+        codigoBarras: '07791159400000000000000000000000000000000000',
+        linhaDigitavel: '07790001160000000000000000000000000000000000000',
+      },
+      pix: { txid: 'txid-inter-35-chars-xxxxxxxxxxxxx', pixCopiaECola: '0002010102PIX' },
+    });
+    assert(d.linhaDigitavel?.startsWith('07790'), 'normalize lê boleto.linhaDigitavel');
+    assert(d.codigoBarras?.startsWith('07791'), 'normalize lê boleto.codigoBarras');
+    assert(d.nossoNumero === '90816247624', 'normalize lê boleto.nossoNumero');
+    assert(d.pixCopiaECola === '0002010102PIX', 'normalize lê pix.pixCopiaECola');
+    assert(d.txid?.startsWith('txid-inter'), 'normalize lê pix.txid');
+  }
+
   // Asaas intocado — arquivos de rota Asaas não foram alterados nesta fase (diff check leve)
   {
     const asaasRoutes = [

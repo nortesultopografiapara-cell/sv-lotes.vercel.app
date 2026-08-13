@@ -13,6 +13,7 @@ import {
   normalizeInterCobrancaDetail,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
+import { refreshInterChargeArtifacts } from '@/lib/banking/inter/interSaleChargeService';
 import type { InterOAuthCredentials } from '@/lib/banking/inter/interOAuthClient';
 
 export const runtime = 'nodejs';
@@ -144,6 +145,42 @@ export async function GET(request: Request) {
     const normalized = normalizeInterCobrancaDetail(raw, CODIGO);
     const fromSiblings = siblingArtifacts(raw);
 
+    let persist: {
+      inserted: boolean;
+      created: boolean;
+      bankChargeId?: string;
+      error?: string;
+    } = { inserted: false, created: false };
+    try {
+      const refreshed = await refreshInterChargeArtifacts(admin, {
+        companyId: COMPANY,
+        externalId: CODIGO,
+        detail: normalized,
+      });
+      persist = {
+        inserted: refreshed.inserted,
+        created: refreshed.created,
+        bankChargeId: refreshed.bankChargeId,
+      };
+    } catch (err) {
+      persist = {
+        inserted: false,
+        created: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const { data: localAfter } = await admin
+      .from('bank_charges')
+      .select(
+        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, created_at, updated_at',
+      )
+      .eq('company_id', COMPANY)
+      .eq('provider', 'INTER')
+      .eq('external_id', CODIGO)
+      .maybeSingle();
+    const localRow = localAfter || local;
+
     const { data: webhookEvents, error: whErr } = await admin
       .from('bank_webhook_events')
       .select('id, processing_status, created_at, provider, event_type, external_event_id')
@@ -205,22 +242,23 @@ export async function GET(request: Request) {
         siblingScan: fromSiblings,
         rawKeyInventory: inventory(raw),
       },
-      local: local
+      local: localRow
         ? {
-            id: local.id,
-            finance_receipt_id: local.finance_receipt_id,
-            status: local.status,
-            amount: local.amount,
-            due_date: local.due_date,
-            digitable_line: Boolean(local.digitable_line),
-            barcode: Boolean(local.barcode),
-            pix_copy_paste: Boolean(local.pix_copy_paste),
-            our_number: Boolean(local.our_number),
-            txid: Boolean(local.txid),
-            created_at: local.created_at,
-            updated_at: local.updated_at,
+            id: localRow.id,
+            finance_receipt_id: localRow.finance_receipt_id,
+            status: localRow.status,
+            amount: localRow.amount,
+            due_date: localRow.due_date,
+            digitable_line: Boolean(localRow.digitable_line),
+            barcode: Boolean(localRow.barcode),
+            pix_copy_paste: Boolean(localRow.pix_copy_paste),
+            our_number: Boolean(localRow.our_number),
+            txid: Boolean(localRow.txid),
+            created_at: localRow.created_at,
+            updated_at: localRow.updated_at,
           }
         : null,
+      persist,
       webhook: {
         registration: webhookReg,
         queryError: whErr?.message || null,
@@ -229,7 +267,9 @@ export async function GET(request: Request) {
         mentionsCodigoCount: events.filter((e) => e.mentionsCodigo).length,
         events: events.slice(0, 8),
       },
-      verdict: allMaterialized ? 'PASS' : 'PENDING_OR_FAIL',
+      verdict: allMaterialized && localRow?.digitable_line && localRow?.pix_copy_paste
+        ? 'PASS'
+        : 'PENDING_OR_FAIL',
       createAttempted: false,
     });
   } catch (err) {

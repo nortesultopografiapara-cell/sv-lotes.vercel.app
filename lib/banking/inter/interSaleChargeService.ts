@@ -6,7 +6,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   createInterCobranca,
+  fetchInterCobrancaByCodigo,
   pollInterCobrancaUntilReady,
+  type InterCobrancaDetail,
   type InterCreateCobrancaInput,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
@@ -188,7 +190,7 @@ export function bankChargeToSummaryLike(
     invoiceUrl: null,
     bankSlipUrl: null,
     bankSlipIdentification: (row.digitable_line as string) || null,
-    pixQrCode: null,
+    pixQrCode: (row.pix_qr_code as string) || null,
     pixCopyPaste: (row.pix_copy_paste as string) || null,
     financialAccountId: null,
     paymentLink: null,
@@ -198,6 +200,156 @@ export function bankChargeToSummaryLike(
     nossoNumero: (row.our_number as string) || null,
     barCode: (row.barcode as string) || null,
     asaasRemoteStatus: String((row.metadata as Record<string, unknown>)?.interSituacao || status),
+  };
+}
+
+function asMeta(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function interBankChargeMissingArtifacts(row: Record<string, unknown>): boolean {
+  return !(
+    String(row.digitable_line || '').trim() &&
+    String(row.barcode || '').trim() &&
+    String(row.pix_copy_paste || '').trim() &&
+    String(row.our_number || '').trim() &&
+    String(row.txid || '').trim()
+  );
+}
+
+export function buildInterBankChargeArtifactPatch(
+  existing: Record<string, unknown>,
+  detail: InterCobrancaDetail,
+): Record<string, unknown> {
+  const prevMeta = asMeta(existing.metadata);
+  const existingPaid = String(existing.status || '').toUpperCase() === 'PAID';
+  const nextStatus = existingPaid
+    ? 'PAID'
+    : mapInterSituacaoToBankStatus(detail.situacao);
+  return {
+    status: nextStatus,
+    our_number: detail.nossoNumero || existing.our_number || null,
+    txid: detail.txid || existing.txid || null,
+    barcode: detail.codigoBarras || existing.barcode || null,
+    digitable_line: detail.linhaDigitavel || existing.digitable_line || null,
+    pix_copy_paste: detail.pixCopiaECola || existing.pix_copy_paste || null,
+    metadata: {
+      ...prevMeta,
+      codigoSolicitacao:
+        detail.codigoSolicitacao || prevMeta.codigoSolicitacao || existing.external_id,
+      seuNumero: detail.seuNumero || prevMeta.seuNumero || null,
+      interSituacao: detail.situacao || prevMeta.interSituacao || null,
+      lastMaterializedAt: new Date().toISOString(),
+      interArtifacts: {
+        codigoBarras: detail.codigoBarras || null,
+        linhaDigitavel: detail.linhaDigitavel || null,
+        pixCopiaECola: detail.pixCopiaECola || null,
+        nossoNumero: detail.nossoNumero || null,
+        txid: detail.txid || null,
+        seuNumero: detail.seuNumero || null,
+      },
+    },
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function loadInterCredsForCompany(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<InterOAuthCredentials> {
+  const secrets = await loadInterSecretsForServer(admin, companyId);
+  if (!secrets) throw new Error('Credenciais Inter ausentes.');
+  return {
+    companyId,
+    environment: secrets.environment,
+    clientId: secrets.clientId,
+    clientSecret: secrets.clientSecret,
+    certificatePem: secrets.certificatePem,
+    privateKeyPem: secrets.privateKeyPem,
+  };
+}
+
+/**
+ * GET-only: materializa artefatos na linha bank_charges já existente.
+ * Nunca cria cobrança Inter nem insere outro bank_charges.
+ */
+export async function refreshInterChargeArtifacts(
+  admin: SupabaseClient,
+  input: {
+    companyId: string;
+    installmentId?: string | null;
+    externalId?: string | null;
+    fetchFn?: InterOAuthFetchFn;
+    detail?: InterCobrancaDetail | null;
+  },
+): Promise<{
+  charge: import('@/lib/finance/companyAsaasChargeTypes').CompanyAsaasChargeResponse;
+  reused: true;
+  created: false;
+  bankChargeId: string;
+  externalId: string;
+  inserted: false;
+}> {
+  const companyId = String(input.companyId || '').trim();
+  const installmentId = String(input.installmentId || '').trim();
+  let externalId = String(input.externalId || '').trim();
+
+  let existing: Record<string, unknown> | null = null;
+  if (externalId) {
+    const { data, error } = await admin
+      .from('bank_charges')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('provider', 'INTER')
+      .eq('external_id', externalId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    existing = (data as Record<string, unknown>) || null;
+  }
+  if (!existing && installmentId) {
+    existing = await findActiveInterBankChargeForReceipt(admin, companyId, installmentId);
+  }
+  if (!existing?.id) {
+    throw new Error(
+      'Cobrança Inter local não encontrada. Nenhuma nova cobrança será emitida.',
+    );
+  }
+  externalId = String(existing.external_id || externalId || '').trim();
+  if (!externalId) {
+    throw new Error(
+      'Cobrança Inter sem external_id. Nenhuma nova cobrança será emitida.',
+    );
+  }
+
+  const detail =
+    input.detail ||
+    (await fetchInterCobrancaByCodigo(
+      await loadInterCredsForCompany(admin, companyId),
+      externalId,
+      { fetchFn: input.fetchFn },
+    ));
+
+  const patch = buildInterBankChargeArtifactPatch(existing, detail);
+  const { data: updated, error: updateErr } = await admin
+    .from('bank_charges')
+    .update(patch)
+    .eq('id', existing.id)
+    .eq('company_id', companyId)
+    .eq('provider', 'INTER')
+    .select('*')
+    .maybeSingle();
+  if (updateErr) throw new Error(updateErr.message);
+
+  const row = (updated as Record<string, unknown>) || { ...existing, ...patch };
+  return {
+    charge: bankChargeToSummaryLike(row, companyId),
+    reused: true,
+    created: false,
+    inserted: false,
+    bankChargeId: String(row.id),
+    externalId,
   };
 }
 
@@ -412,6 +564,8 @@ export async function createInterInstallmentCharge(
         nossoNumero: polled.nossoNumero,
         linhaDigitavel: polled.linhaDigitavel,
         codigoBarras: polled.codigoBarras,
+        pixCopiaECola: polled.pixCopiaECola,
+        txid: polled.txid,
       },
       providerLabel: 'Banco Inter',
     },

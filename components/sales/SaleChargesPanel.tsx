@@ -602,8 +602,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
           {chargeProvider === 'INTER' ? (
             <p className="text-xs text-amber-800">
-              Carnê PDF/WhatsApp/e-mail do Banco Inter será habilitado em fase futura. Nesta fase só
-              emissão e consulta de cobranças Inter.
+              Carnê PDF no layout Asaas não se aplica ao Banco Inter. O PDF oficial do boleto Inter
+              está na Central de Cobranças (consulta GET Cobrança V3), após materializar linha
+              digitável e Pix.
             </p>
           ) : kpi.carneBlockReason ? (
             <p
