@@ -13,6 +13,7 @@ export const BANK_PROVIDERS = [
   'ITAU',
   'SANTANDER',
   'ASAAS_COMPANY',
+  'INTER',
 ] as const;
 
 export type BankProvider = (typeof BANK_PROVIDERS)[number];

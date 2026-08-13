@@ -1,0 +1,13 @@
+.git
+.gitignore
+*.md
+*.pem
+*.crt
+*.key
+*.p12
+.env
+.env.*
+node_modules
+ca.crt
+certs/
+secrets/

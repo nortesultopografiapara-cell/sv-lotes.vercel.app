@@ -17,9 +17,11 @@ import {
 } from './asaasIntegrationConfig';
 import {
   createCompanyFinancialAccount,
+  getCompanyFinancialAccountById,
   getDefaultFinancialAccountForCompany,
   updateCompanyFinancialAccount,
 } from './companyFinancialAccountRepository';
+import { resolveUniqueProviderAccount } from './financialAccountRequired';
 
 const ASAAS_PROVIDER = 'ASAAS_COMPANY';
 
@@ -177,12 +179,37 @@ async function loadCompanyName(admin: SupabaseClient, companyId: string): Promis
 export async function getCompanyAsaasIntegrationConfig(
   admin: SupabaseClient,
   companyId: string,
+  lookup?: { financialAccountId?: string | null },
 ): Promise<AsaasIntegrationConfigResponse> {
   const companyName = await loadCompanyName(admin, companyId);
   const syncedChargesCount = await countSyncedCharges(admin, companyId);
 
-  const defaultAccount = await getDefaultFinancialAccountForCompany(admin, companyId);
-  let integrationId = defaultAccount?.bankIntegrationId ?? null;
+  let integrationId: string | null = null;
+  const explicitFa = String(lookup?.financialAccountId || '').trim() || null;
+  if (explicitFa) {
+    const account = await getCompanyFinancialAccountById(admin, companyId, explicitFa);
+    if (!account?.bankIntegrationId) {
+      throw new Error('Conta financeira sem integração Asaas vinculada.');
+    }
+    const { data: row, error } = await admin
+      .from('bank_integrations')
+      .select(
+        'id, company_id, provider, environment, status, webhook_url, metadata, configured_at, updated_at, active',
+      )
+      .eq('id', account.bankIntegrationId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const provider = String((row as IntegrationRow | null)?.provider || '').toUpperCase();
+    if (provider && provider !== ASAAS_PROVIDER && provider !== 'ASAAS') {
+      throw new Error('A conta financeira selecionada não está vinculada ao Asaas.');
+    }
+    const credentialTypes = row ? await loadCredentialTypes(admin, row.id) : new Set<string>();
+    return mapRowToResponse(row as IntegrationRow | null, companyId, companyName, credentialTypes, syncedChargesCount);
+  }
+
+  const unique = await resolveUniqueProviderAccount(admin, companyId, 'ASAAS_COMPANY');
+  integrationId = unique.integrationId;
 
   let data: IntegrationRow | null = null;
   if (integrationId) {
@@ -196,20 +223,6 @@ export async function getCompanyAsaasIntegrationConfig(
       .maybeSingle();
     if (error) throw new Error(error.message);
     data = (row as IntegrationRow | null) ?? null;
-  }
-
-  if (!data) {
-    const { data: legacyRow, error } = await admin
-      .from('bank_integrations')
-      .select(
-        'id, company_id, provider, environment, status, webhook_url, metadata, configured_at, updated_at, active',
-      )
-      .eq('company_id', companyId)
-      .eq('provider', ASAAS_PROVIDER)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    data = (legacyRow as IntegrationRow | null) ?? null;
-    integrationId = data?.id ?? null;
   }
 
   const row = data;

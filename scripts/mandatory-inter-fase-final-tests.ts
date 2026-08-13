@@ -1,0 +1,809 @@
+/**
+ * Fase final Inter Cobrança V3 — Central, WhatsApp, e-mail, carnê parcial,
+ * settlement idempotente e proteção contra duplicidade.
+ * npm run test:inter-fase-final
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  formatInterChargeStatusLabel,
+  isInterSituacaoRecebido,
+  mapInterSituacaoToBankStatus,
+} from '../lib/banking/inter/interStatus';
+import { settleInterPaidCharge, buildInterFinanceReceiptPaidPatch } from '../lib/banking/inter/interPaymentSettlement';
+import { filterChargeInstallments, computeInstallmentStatus, formatInstallmentStatusLabel } from '../lib/charges/chargeInstallmentHelpers';
+import { buildSaleChargesSummaryFromRows, type SaleChargeInstallmentRow } from '../lib/finance/saleChargesShared';
+import { buildInterCarnePdfBytes, expectedInterCarnePageCount } from '../lib/banking/inter/interCarnePdf';
+import {
+  containFitRect,
+  saleCarneBoletoSheetCount,
+  saleCarneDocumentPageCount,
+} from '../lib/finance/saleCarneSlotLayout';
+import { buildInterChargeEmailHtml } from '../lib/banking/inter/interChargeEmail';
+import { buildSaleCarnePartialNotice } from '../lib/finance/saleChargesShared';
+import { resolveInterIssuedChargeActions } from '../lib/charges/interChargeActions';
+import {
+  buildInterChargeWhatsAppMessage,
+  executeChargeWhatsAppShare,
+} from '../lib/charges/chargeWhatsAppMessage';
+import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
+import type { InterCobrancaDetail } from '../lib/banking/inter/interCobrancaClient';
+
+const root = path.join(__dirname, '..');
+
+function read(rel: string): string {
+  return fs.readFileSync(path.join(root, rel), 'utf8');
+}
+
+function charge(partial: Partial<CompanyAsaasChargeResponse>): CompanyAsaasChargeResponse {
+  return {
+    id: '2be6533a-9430-4db3-92d0-8da03b48242a',
+    companyId: 'co-1',
+    customerId: 'cu-1',
+    saleId: 's-1',
+    installmentId: 'fr-1',
+    asaasPaymentId: '937fb876-9e2f-4cf2-a2aa-d6be84923b7f',
+    billingType: 'BOLETO',
+    status: 'REGISTERED',
+    value: 11.11,
+    dueDate: '2026-10-09',
+    invoiceUrl: null,
+    bankSlipUrl: null,
+    bankSlipIdentification: '07790001161111000000000000000000000000000000000',
+    pixQrCode: null,
+    pixCopyPaste: '00020101021226580014BR.GOV.BCB.PIX',
+    financialAccountId: null,
+    paymentLink: null,
+    paidAt: null,
+    createdAt: '2026-08-13T11:32:55.789Z',
+    updatedAt: '2026-08-13T11:32:55.789Z',
+    asaasRemoteStatus: 'A_RECEBER',
+    nossoNumero: '90816247624',
+    barCode: '07791159401111000000000000000000000000000000',
+    ...partial,
+  };
+}
+
+function paidDetail(partial?: Partial<InterCobrancaDetail>): InterCobrancaDetail {
+  return {
+    codigoSolicitacao: '937fb876-9e2f-4cf2-a2aa-d6be84923b7f',
+    situacao: 'RECEBIDO',
+    valorNominal: 5,
+    valorTotalRecebido: 5,
+    origemRecebimento: 'PIX',
+    dataHoraSituacao: '2026-08-13T12:00:00Z',
+    nossoNumero: '90816247624',
+    linhaDigitavel: '07790001161111000000000000000000000000000000000',
+    codigoBarras: '07791159401111000000000000000000000000000000',
+    pixCopiaECola: '00020101021226580014BR.GOV.BCB.PIX',
+    txid: 'txid-pago',
+    raw: {},
+    ...partial,
+  };
+}
+
+type Row = Record<string, unknown>;
+
+function createSettlementMock(seed: {
+  charge: Row;
+  receipt: Row;
+  movements?: Array<{ id: string; metadata: Row }>;
+}) {
+  const chargeRow = { ...seed.charge };
+  const receiptRow = { ...seed.receipt };
+  const movements = [...(seed.movements || [])];
+  let cashInserts = 0;
+  let receiptUpdates = 0;
+  let chargeUpdates = 0;
+
+  const admin = {
+    from: (table: string) => {
+      const state: { op: string; payload: Row | null } = { op: 'select', payload: null };
+      const applyUpdate = () => {
+        if (state.op !== 'update' || !state.payload) return;
+        if (table === 'bank_charges') {
+          chargeUpdates += 1;
+          Object.assign(chargeRow, state.payload);
+        }
+        if (table === 'finance_receipts') {
+          receiptUpdates += 1;
+          Object.assign(receiptRow, state.payload);
+        }
+      };
+      const api: Record<string, unknown> = {
+        select: () => api,
+        update: (payload: Row) => {
+          state.op = 'update';
+          state.payload = payload;
+          return api;
+        },
+        insert: (payload: Row) => {
+          state.op = 'insert';
+          state.payload = payload;
+          if (table === 'cash_movements') {
+            cashInserts += 1;
+            const id = `cm-${cashInserts}`;
+            movements.push({
+              id,
+              metadata: (payload.metadata as Row) || {},
+            });
+            (api as { _insertedId?: string })._insertedId = id;
+          }
+          return api;
+        },
+        eq: () => api,
+        filter: () => api,
+        limit: () => api,
+        maybeSingle: async () => {
+          applyUpdate();
+          if (table === 'bank_charges') return { data: { ...chargeRow }, error: null };
+          if (table === 'finance_receipts') return { data: { ...receiptRow }, error: null };
+          if (table === 'cash_movements') {
+            const existing = movements.find(
+              (m) =>
+                String((m.metadata as Row).bank_charge_id) === String(chargeRow.id) &&
+                String((m.metadata as Row).provider) === 'INTER',
+            );
+            return { data: existing ? { id: existing.id } : null, error: null };
+          }
+          return { data: null, error: null };
+        },
+        single: async () => {
+          const id = (api as { _insertedId?: string })._insertedId || `cm-${cashInserts}`;
+          return { data: { id }, error: null };
+        },
+        then: (resolve: (value: { data: unknown; error: null }) => void) => {
+          applyUpdate();
+          resolve({ data: null, error: null });
+        },
+      };
+      return api;
+    },
+  };
+
+  return {
+    admin: admin as never,
+    chargeRow,
+    receiptRow,
+    movements,
+    cashInserts: () => cashInserts,
+    receiptUpdates: () => receiptUpdates,
+    chargeUpdates: () => chargeUpdates,
+  };
+}
+
+function testStatusMapping() {
+  assert.equal(mapInterSituacaoToBankStatus('A_RECEBER'), 'REGISTERED');
+  assert.equal(mapInterSituacaoToBankStatus('RECEBIDO'), 'PAID');
+  assert.equal(mapInterSituacaoToBankStatus('PAGO'), 'PAID');
+  assert.equal(mapInterSituacaoToBankStatus('CANCELADO'), 'CANCELLED');
+  assert.equal(mapInterSituacaoToBankStatus('ATRASADO'), 'OVERDUE');
+  assert.equal(isInterSituacaoRecebido('RECEBIDO'), true);
+  assert.equal(
+    formatInterChargeStatusLabel({ situacao: 'A_RECEBER', dueDate: '2099-01-01' }),
+    'A receber',
+  );
+  assert.equal(formatInterChargeStatusLabel({ situacao: 'RECEBIDO' }), 'Pago/Recebido');
+  assert.equal(
+    formatInterChargeStatusLabel({ situacao: 'A_RECEBER', dueDate: '2020-01-01', todayStr: '2026-08-13' }),
+    'Atrasado',
+  );
+  assert.equal(formatInterChargeStatusLabel({ situacao: 'CANCELADO' }), 'Cancelado');
+  const helpers = read('lib/charges/chargeInstallmentHelpers.ts');
+  assert.match(helpers, /formatInterChargeStatusLabel/);
+  assert.doesNotMatch(helpers, /situacao === 'A_RECEBER'/);
+  console.log('OK status Inter centralizado');
+}
+
+function testUiHideGenerateAndNoAsaasActions() {
+  const issued = resolveInterIssuedChargeActions({
+    charge: charge({}),
+    installmentPaid: false,
+    customerPhone: '11999999999',
+    customerEmail: 'cliente@example.com',
+  });
+  assert.equal(issued.hideGenerate, true);
+  assert.equal(issued.showCopyLinha, true);
+  assert.equal(issued.showCopyPix, true);
+  assert.equal(issued.showOfficialPdf, true);
+  assert.equal(issued.showWhatsApp, true);
+  assert.equal(issued.showEmail, true);
+
+  const noExt = resolveInterIssuedChargeActions({
+    charge: charge({ asaasPaymentId: '' }),
+    installmentPaid: false,
+  });
+  assert.equal(noExt.hideGenerate, false);
+  assert.equal(noExt.showOfficialPdf, false);
+
+  const actions = read('components/charges/ChargeInstallmentActions.tsx');
+  assert.match(actions, /hideGenerate/);
+  assert.match(actions, /Baixar boleto/);
+  assert.match(actions, /onSendEmail/);
+  assert.doesNotMatch(actions, /Abrir cobrança Asaas/);
+  const interBlock = actions.slice(actions.indexOf('isInter'));
+  assert.match(interBlock, /!isInter/);
+  const page = read('components/charges/ChargesPageClient.tsx');
+  assert.match(page, /<th>Status cobrança<\/th>/);
+  assert.doesNotMatch(page, /<th>Status Asaas<\/th>/);
+  assert.match(page, /\/api\/finance\/inter\/send-email/);
+  assert.match(page, /preferInterMessage: provider === 'INTER'/);
+  console.log('OK UI Inter sem Gerar e sem ações Asaas');
+}
+
+function testRefreshGetOnlyAndPdfRoute() {
+  const refresh = read('app/api/finance/inter/refresh-charge/route.ts');
+  assert.match(refresh, /created: false/);
+  assert.match(refresh, /inserted: false/);
+  assert.doesNotMatch(refresh, /createInterCobranca/);
+  assert.doesNotMatch(refresh, /createInterInstallmentCharge/);
+  const pdf = read('app/api/finance/inter/pdf/route.ts');
+  assert.match(pdf, /fetchInterCobrancaPdf/);
+  assert.doesNotMatch(pdf, /createInterCobranca/);
+  assert.match(pdf, /application\/pdf/);
+  const create = read('app/api/finance/inter/create-charge/route.ts');
+  assert.match(create, /createInterInstallmentCharge/);
+  assert.match(create, /reused: result.reused/);
+  const service = read('lib/banking/inter/interSaleChargeService.ts');
+  assert.match(service, /if \(existing\?\.id\)/);
+  assert.match(service, /reused: true/);
+  assert.match(service, /settleInterPaidCharge/);
+  assert.match(refresh, /receiptUpdated/);
+  assert.match(refresh, /created: false/);
+  assert.doesNotMatch(
+    service.slice(service.indexOf('if (existing?.id)'), service.indexOf('const { data: receipt')),
+    /createInterCobranca/,
+  );
+  const refreshFn = service.slice(
+    service.indexOf('export async function refreshInterChargeArtifacts'),
+    service.indexOf('export async function getInterSaleChargesSummary'),
+  );
+  assert.match(refreshFn, /settleInterPaidCharge/);
+  assert.doesNotMatch(refreshFn, /createInterCobranca/);
+  const page = read('components/charges/ChargesPageClient.tsx');
+  const refreshInterFn = page.slice(
+    page.indexOf('const handleRefreshInter'),
+    page.indexOf('const handleDownloadInterPdf'),
+  );
+  assert.match(refreshInterFn, /receiptUpdated/);
+  assert.match(refreshInterFn, /loadInstallments\(\{ syncAsaasStatuses: false \}\)/);
+  const bulkRefresh = page.slice(page.indexOf('const runBulkRefresh'), page.indexOf('const handleRefreshList'));
+  assert.match(bulkRefresh, /handleRefreshInter/);
+  assert.match(bulkRefresh, /loadInstallments\(\{ syncAsaasStatuses: false \}\)/);
+  assert.doesNotMatch(bulkRefresh, /create-charge/);
+  console.log('OK refresh GET-only / PDF oficial / emissão não duplica');
+}
+
+function testWhatsAppWithoutAsaasUrl() {
+  const msg = buildInterChargeWhatsAppMessage({
+    clientName: 'Maria',
+    parcelLabel: 'Parcela 1',
+    contractNumber: 'CT-1',
+    projectName: 'Loteamento Alfa',
+    lotLabel: 'QD 01 • LT 02',
+    amount: 11.11,
+    dueDateLabel: '09/10/2026',
+    charge: charge({ invoiceUrl: null, bankSlipUrl: null, paymentLink: null }),
+  });
+  assert.match(msg, /Olá, Maria/);
+  assert.match(msg, /Loteamento Alfa/);
+  assert.match(msg, /Pix copia e cola/);
+  assert.match(msg, /Linha digitável/);
+  assert.doesNotMatch(msg, /undefined/);
+  assert.doesNotMatch(msg, /asaas/i);
+  assert.doesNotMatch(msg, /https:\/\/www\.asaas/);
+
+  const share = executeChargeWhatsAppShare({
+    installmentId: 'fr-1',
+    customerPhone: '11987654321',
+    charge: charge({ invoiceUrl: null, bankSlipUrl: null, paymentLink: null }),
+    preferInterMessage: true,
+    messageInput: {
+      clientName: 'Maria',
+      parcelLabel: 'Parcela 1',
+      contractNumber: 'CT-1',
+      projectName: 'Loteamento Alfa',
+      lotLabel: 'QD 01 • LT 02',
+      amount: 11.11,
+      dueDateLabel: '09/10/2026',
+    },
+  });
+  assert.equal(share.ok, true);
+  if (share.ok) {
+    assert.match(share.url, /wa\.me/);
+    assert.doesNotMatch(decodeURIComponent(share.url), /asaas/i);
+  }
+
+  const noArtifacts = executeChargeWhatsAppShare({
+    installmentId: 'fr-1',
+    customerPhone: '11987654321',
+    charge: charge({
+      pixCopyPaste: null,
+      bankSlipIdentification: null,
+      invoiceUrl: null,
+      bankSlipUrl: null,
+      paymentLink: null,
+    }),
+    preferInterMessage: true,
+    messageInput: {
+      clientName: 'Maria',
+      parcelLabel: 'Parcela 1',
+      contractNumber: 'CT-1',
+      projectName: 'Alfa',
+      lotLabel: 'LT 1',
+      amount: 11.11,
+      dueDateLabel: '09/10/2026',
+    },
+  });
+  assert.equal(noArtifacts.ok, false);
+  console.log('OK WhatsApp Inter sem URL Asaas');
+}
+
+function testEmailIndependentOfAsaas() {
+  const email = buildInterChargeEmailHtml({
+    clientName: 'Maria',
+    projectName: 'Loteamento Alfa',
+    lotLabel: 'QD 01 — LT 02',
+    parcelLabel: 'Parcela 1',
+    dueDateLabel: '09/10/2026',
+    amount: 11.11,
+    pixCopyPaste: '00020101021226580014BR.GOV.BCB.PIX',
+    digitableLine: '07790001161111000000000000000000000000000000000',
+  });
+  assert.match(email.subject, /Parcela 1/);
+  assert.match(email.html, /Pix copia e cola/);
+  assert.match(email.html, /Linha digitável/);
+  assert.doesNotMatch(email.html, /asaas/i);
+  const route = read('app/api/finance/inter/send-email/route.ts');
+  assert.match(route, /sendResendEmail/);
+  assert.match(route, /fetchInterCobrancaPdf/);
+  assert.doesNotMatch(route, /company_asaas/);
+  assert.doesNotMatch(route, /asaas\/sale-charges/);
+  console.log('OK e-mail Inter independente do Asaas');
+}
+
+async function testPartialCarne() {
+  const notice = buildSaleCarnePartialNotice(2, 4);
+  assert.match(String(notice), /2/);
+  const built = await buildInterCarnePdfBytes({
+    items: [
+      {
+        charge: charge({ installmentId: 'a', value: 10, dueDate: '2026-10-09' }),
+        parcelLabel: 'Parcela 01/04 do contrato',
+        officialPdf: null,
+      },
+      {
+        charge: charge({ installmentId: 'b', value: 20, dueDate: '2026-11-09' }),
+        parcelLabel: 'Parcela 02/04 do contrato',
+        officialPdf: null,
+      },
+    ],
+    emittedCount: 2,
+    totalParcels: 4,
+    customerName: 'Maria',
+    projectName: 'Alfa',
+    lotLabel: 'QD 01 — LT 02',
+    quadra: '01',
+    lote: '02',
+  });
+  assert.ok(built.bytes.length > 80);
+  assert.equal(built.includedOfficialPdfs, 2);
+  assert.equal(built.boletoSheetCount, 1);
+  assert.equal(built.pageCount, 1);
+  assert.equal(built.coverPages, 0);
+  const header = Buffer.from(built.bytes.slice(0, 8)).toString('utf8');
+  assert.match(header, /%PDF/);
+  const latin = Buffer.from(built.bytes).toString('latin1');
+  assert.match(latin, /INTER/);
+  assert.match(latin, /077-9/);
+  assert.match(latin, /Empreendimento/);
+  assert.match(latin, /Alfa/);
+  assert.match(latin, /Quadra/);
+  assert.doesNotMatch(latin, /Carnê de cobranças/);
+  const carneSvc = read('lib/banking/inter/interCarneService.ts');
+  assert.match(carneSvc, /fetchInterCobrancaByCodigo/);
+  assert.doesNotMatch(carneSvc, /fetchInterCobrancaPdf/);
+  assert.doesNotMatch(carneSvc, /createInterCobranca/);
+  const panel = read('components/sales/SaleChargesPanel.tsx');
+  assert.match(panel, /\/api\/finance\/inter\/sale-charges\/carne-pdf/);
+  assert.match(panel, /Gerar carnê em PDF \/ Baixar/);
+  assert.doesNotMatch(panel, /Carnê PDF no layout Asaas não se aplica/);
+  assert.doesNotMatch(panel, /fase futura/);
+  console.log('OK carnê parcial Inter (2 de 4, sem boleto fictício)');
+}
+
+async function testCompactCarnePagination() {
+  const cases: Array<{ n: number; pages: number; sheets: number }> = [
+    { n: 1, pages: 1, sheets: 1 },
+    { n: 2, pages: 1, sheets: 1 },
+    { n: 3, pages: 1, sheets: 1 },
+    { n: 4, pages: 2, sheets: 2 },
+    { n: 6, pages: 2, sheets: 2 },
+    { n: 10, pages: 4, sheets: 4 },
+  ];
+  for (const c of cases) {
+    assert.equal(saleCarneBoletoSheetCount(c.n), c.sheets, `sheets ${c.n}`);
+    assert.equal(saleCarneDocumentPageCount({ coverPages: 0, boletoCount: c.n }), c.pages, `math ${c.n}`);
+    assert.equal(expectedInterCarnePageCount(c.n), c.pages, `expected ${c.n}`);
+  }
+
+  const fit = containFitRect(595.28, 841.89, 0, 0, 500, 250);
+  assert.ok(Math.abs(fit.width / fit.height - 595.28 / 841.89) < 1e-9, 'contain preserva proporção');
+  assert.ok(fit.width <= 500 && fit.height <= 250, 'cabe no slot');
+
+  for (const c of cases) {
+    const items = Array.from({ length: c.n }, (_, i) => ({
+      charge: charge({ installmentId: `fr-${i}`, asaasPaymentId: `ext-${i}` }),
+      parcelLabel: `Parcela ${String(i + 1).padStart(2, '0')}/10 do contrato`,
+    }));
+    const built = await buildInterCarnePdfBytes({
+      items,
+      emittedCount: c.n,
+      totalParcels: 10,
+      customerName: 'Maria',
+      projectName: 'Loteamento Teste',
+      quadra: '02',
+      lote: '53',
+    });
+    assert.equal(built.includedOfficialPdfs, c.n, `incluiu ${c.n}`);
+    assert.equal(built.pageCount, c.pages, `páginas ${c.n} boletos`);
+    assert.equal(built.boletoSheetCount, c.sheets, `folhas ${c.n}`);
+    assert.equal(built.coverPages, 0, `sem capa ${c.n}`);
+    const latin = Buffer.from(built.bytes).toString('latin1');
+    assert.match(latin, /INTER/);
+    assert.match(latin, /077-9/);
+    assert.doesNotMatch(latin, /Carnê de cobranças — Banco Inter/);
+  }
+
+  const two = await buildInterCarnePdfBytes({
+    items: [
+      { charge: charge({ installmentId: 'fr-a' }), parcelLabel: 'Parcela 01/10 do contrato' },
+      { charge: charge({ installmentId: 'fr-b' }), parcelLabel: 'Parcela 02/10 do contrato' },
+    ],
+    emittedCount: 2,
+    totalParcels: 10,
+    customerName: 'SEVERINO JOSE DE FRANCA',
+    projectName: 'LOTEAMENTO TESTE',
+    quadra: '02',
+    lote: '53',
+    beneficiaryName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+  });
+  const twoLatin = Buffer.from(two.bytes).toString('latin1');
+  assert.match(twoLatin, /Empreendimento: LOTEAMENTO TESTE/);
+  assert.match(twoLatin, /Quadra: 02/);
+  assert.match(twoLatin, /Lote: 53/);
+  assert.match(twoLatin, /SEVERINO JOSE DE FRANCA/);
+  assert.equal(two.pageCount, 1);
+
+  const interPdf = read('lib/banking/inter/interCarnePdf.ts');
+  assert.match(interPdf, /buildSaleCarnePdfBytes/);
+  assert.match(interPdf, /INTER_CARNE_BRAND/);
+  assert.match(interPdf, /077-9/);
+  assert.match(interPdf, /coverPages: 0/);
+  assert.doesNotMatch(interPdf, /embedPage/);
+  assert.doesNotMatch(interPdf, /containFitRect/);
+  assert.doesNotMatch(interPdf, /copyPages/);
+  assert.doesNotMatch(interPdf, /Carnê de cobranças — Banco Inter/);
+  const carneSvc = read('lib/banking/inter/interCarneService.ts');
+  assert.match(carneSvc, /fetchInterCobrancaByCodigo/);
+  assert.doesNotMatch(carneSvc, /fetchInterCobrancaPdf/);
+  assert.doesNotMatch(carneSvc, /createInterCobranca/);
+  assert.match(carneSvc, /projectName/);
+  assert.match(carneSvc, /quadra/);
+  assert.match(carneSvc, /lote/);
+  const asaasPdf = read('lib/finance/saleCarnePdf.ts');
+  assert.match(asaasPdf, /SLOT_H/);
+  assert.match(asaasPdf, /drawBoletoSlot/);
+  assert.match(asaasPdf, /saleCarneNeedsNewPage/);
+  assert.match(asaasPdf, /from 'jspdf'/);
+  assert.match(asaasPdf, /ASAAS_BANK_CODE/);
+  assert.match(asaasPdf, /461/);
+  console.log('OK compositor Inter 3/folha no grid Asaas (1,2,3,4,6,10) + Asaas intacto');
+}
+
+async function testPaymentSettlementIdempotent() {
+  const patch = buildInterFinanceReceiptPaidPatch({
+    paidAmount: 11.11,
+    paidAt: '2026-08-13T12:00:00Z',
+  });
+  assert.deepEqual(Object.keys(patch).sort(), ['paid_amount', 'paid_at', 'status']);
+  assert.equal(patch.status, 'pago');
+  assert.equal('payment_method' in patch, false);
+  assert.equal('updated_at' in patch, false);
+
+  const settlementSrc = read('lib/banking/inter/interPaymentSettlement.ts');
+  assert.match(settlementSrc, /status: INTER_FINANCE_RECEIPT_PAID_STATUS/);
+  assert.doesNotMatch(settlementSrc, /payment_method:/);
+  assert.match(settlementSrc, /company_id \|\| data\.tenant_id/);
+  const webhookSrc = read('lib/banking/inter/interWebhookProcessor.ts');
+  assert.match(webhookSrc, /settleInterPaidCharge/);
+  assert.match(webhookSrc, /healDuplicateInterWebhook/);
+  const financeUi = read('components/finance/FinancePremiumUI.tsx');
+  assert.match(financeUi, /label = 'PAGO'/);
+  assert.match(financeUi, /s === 'pago' \|\| s === 'paid'/);
+
+  const chargeSeed: Row = {
+    id: 'bc-paid',
+    company_id: 'co-1',
+    status: 'REGISTERED',
+    amount: 11.11,
+    finance_receipt_id: 'fr-paid',
+    sale_id: 's-1',
+    customer_id: 'cu-1',
+    external_id: '937fb876-9e2f-4cf2-a2aa-d6be84923b7f',
+    metadata: {},
+  };
+  const detail11 = paidDetail({
+    valorNominal: 11.11,
+    valorTotalRecebido: 11.11,
+  });
+  const mock = createSettlementMock({
+    charge: chargeSeed,
+    receipt: {
+      id: 'fr-paid',
+      status: 'pendente',
+      company_id: 'co-1',
+      sale_id: 's-1',
+      customer_id: 'cu-1',
+      project_id: 'p-1',
+      installment_number: 1,
+      amount: 11.11,
+    },
+  });
+  const first = await settleInterPaidCharge(mock.admin, {
+    companyId: 'co-1',
+    charge: mock.chargeRow,
+    detail: detail11,
+  });
+  assert.equal(first.paid, true);
+  assert.equal(first.duplicate, false);
+  assert.equal(first.receiptUpdated, true);
+  assert.equal(first.receiptStatus, 'pago');
+  assert.equal(mock.cashInserts(), 1);
+  assert.equal(mock.receiptRow.status, 'pago');
+  assert.equal(mock.receiptRow.paid_amount, 11.11);
+  assert.equal(String(mock.chargeRow.status).toUpperCase(), 'PAID');
+
+  const second = await settleInterPaidCharge(mock.admin, {
+    companyId: 'co-1',
+    charge: { ...mock.chargeRow, status: 'PAID' },
+    detail: detail11,
+  });
+  assert.equal(second.paid, true);
+  assert.equal(second.duplicate, true);
+  assert.equal(second.receiptUpdated, false);
+  assert.equal(mock.cashInserts(), 1);
+  assert.equal(mock.movements.length, 1);
+  assert.equal(mock.receiptUpdates(), 1);
+  console.log('OK pagamento Inter idempotente (1 cash_movement)');
+}
+
+async function testPaidChargeHealsPendingReceipt() {
+  const mock = createSettlementMock({
+    charge: {
+      id: 'bc-heal',
+      company_id: 'co-1',
+      status: 'PAID',
+      amount: 11.11,
+      finance_receipt_id: 'fr-heal',
+      sale_id: 's-1',
+      customer_id: 'cu-1',
+      external_id: '937fb876-9e2f-4cf2-a2aa-d6be84923b7f',
+      metadata: {},
+    },
+    receipt: {
+      id: 'fr-heal',
+      status: 'pendente',
+      company_id: null,
+      tenant_id: 'co-1',
+      sale_id: 's-1',
+      customer_id: 'cu-1',
+      project_id: 'p-1',
+      installment_number: 1,
+      amount: 11.11,
+    },
+  });
+  const settled = await settleInterPaidCharge(mock.admin, {
+    companyId: 'co-1',
+    charge: mock.chargeRow,
+    detail: paidDetail({ valorNominal: 11.11, valorTotalRecebido: 11.11 }),
+  });
+  assert.equal(settled.paid, true);
+  assert.equal(settled.duplicate, false);
+  assert.equal(settled.receiptUpdated, true);
+  assert.equal(mock.receiptRow.status, 'pago');
+  assert.equal(mock.chargeUpdates(), 0);
+  assert.equal(mock.cashInserts(), 1);
+  console.log('OK charge PAID + parcela pendente (tenant_id) é liquidada');
+}
+
+async function testUnpaidSituacaoDoesNotSettle() {
+  const mock = createSettlementMock({
+    charge: {
+      id: 'bc-open',
+      company_id: 'co-1',
+      status: 'REGISTERED',
+      amount: 5,
+      finance_receipt_id: 'fr-open',
+      metadata: {},
+    },
+    receipt: {
+      id: 'fr-open',
+      status: 'pendente',
+      company_id: 'co-1',
+      installment_number: 2,
+      amount: 5,
+    },
+  });
+  const settled = await settleInterPaidCharge(mock.admin, {
+    companyId: 'co-1',
+    charge: mock.chargeRow,
+    detail: paidDetail({
+      situacao: 'A_RECEBER',
+      origemRecebimento: undefined,
+    }),
+  });
+  assert.equal(settled.paid, false);
+  assert.equal(mock.receiptRow.status, 'pendente');
+  assert.equal(mock.cashInserts(), 0);
+  assert.equal(mock.chargeUpdates(), 0);
+  console.log('OK A_RECEBER continua pendente');
+}
+
+function testCentralAndFinanceAndSaleAgreeOnPaidParcel() {
+  const paidRow = {
+    id: 'fr-paid',
+    status: 'pago',
+    paid_at: '2026-08-13T12:00:00Z',
+    paid_amount: 11.11,
+    amount: 11.11,
+    due_date: '2026-09-09',
+    installment_number: 1,
+    sales: { installments_count: 10 },
+    projects: { name: 'LOTEAMENTO DANIEL' },
+    blocks: { block_name: '02', number: '39' },
+    customers: { name: 'Cliente' },
+  };
+  const pendingRow = {
+    ...paidRow,
+    id: 'fr-open',
+    status: 'pendente',
+    paid_at: null,
+    paid_amount: null,
+    amount: 11.11,
+  };
+  assert.equal(computeInstallmentStatus(paidRow), 'pago');
+  assert.equal(formatInstallmentStatusLabel('pago'), 'Pago');
+  const pendente = filterChargeInstallments(
+    [paidRow, pendingRow],
+    {
+      search: '',
+      statusFilter: 'Pendente',
+      projectFilter: 'Todos os projetos',
+      financialAccountFilter: 'Todas as contas',
+      startDate: '',
+      endDate: '',
+    },
+    '2026-08-13',
+  );
+  assert.equal(pendente.length, 1);
+  assert.equal(String(pendente[0].id), 'fr-open');
+  const pago = filterChargeInstallments(
+    [paidRow, pendingRow],
+    {
+      search: '',
+      statusFilter: 'Pago',
+      projectFilter: 'Todos os projetos',
+      financialAccountFilter: 'Todas as contas',
+      startDate: '',
+      endDate: '',
+    },
+    '2026-08-13',
+  );
+  assert.equal(pago.length, 1);
+  assert.equal(String(pago[0].id), 'fr-paid');
+
+  const emptyCtx = {
+    customerName: null,
+    customerEmail: null,
+    customerPhone: null,
+    projectName: 'LOTEAMENTO DANIEL',
+    quadra: '02',
+    lote: '39',
+    lotLabel: 'QD 02 — LT 39',
+    contractNumber: null,
+    financialAccountId: 'fa-1',
+  };
+  const paidInstallment: SaleChargeInstallmentRow = {
+    id: 'fr-paid',
+    sale_id: 's-1',
+    installment_number: 1,
+    due_date: '2026-09-09',
+    amount: 11.11,
+    status: 'pago',
+    paid_at: '2026-08-13T12:00:00Z',
+  };
+  const pendingInstallments: SaleChargeInstallmentRow[] = [
+    paidInstallment,
+    ...Array.from({ length: 9 }, (_, i) => ({
+      id: `fr-${i + 2}`,
+      sale_id: 's-1',
+      installment_number: i + 2,
+      due_date: '2026-10-09',
+      amount: 10.99,
+      status: 'pendente',
+    })),
+  ];
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 's-1',
+    companyId: 'co-1',
+    installments: pendingInstallments,
+    charges: [
+      charge({
+        installmentId: 'fr-paid',
+        status: 'PAID',
+        value: 11.11,
+        paidAt: '2026-08-13T12:00:00Z',
+        asaasRemoteStatus: 'RECEBIDO',
+      }),
+    ],
+    context: emptyCtx,
+    financialAccountName: 'Inter',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert.equal(summary.paidInstallments, 1);
+  assert.equal(summary.totalPaid, 11.11);
+  assert.equal(summary.eligibleInstallments, 9);
+  console.log('OK Central/Financeiro/Venda concordam na parcela paga');
+}
+
+function testGenerateMissingDoesNotReemit() {
+  const service = read('lib/banking/inter/interSaleChargeService.ts');
+  assert.match(service, /generateMissingInterSaleChargesBatch/);
+  assert.match(service, /refreshInterChargeArtifacts/);
+  assert.match(service, /result.reused/);
+  const gen = read('app/api/finance/inter/sale-charges/generate-missing/route.ts');
+  assert.match(gen, /generateMissingInterSaleChargesBatch/);
+  console.log('OK lote Inter não reemite cobrança existente');
+}
+
+function testAsaasRegressionSourcesIntact() {
+  const asaasPaths = [
+    'app/api/finance/asaas/sale-charges/carne-pdf/route.ts',
+    'app/api/finance/asaas/sale-charges/carne-email/route.ts',
+    'lib/finance/saleCarnePdf.ts',
+    'lib/finance/asaasCompanyChargeService.ts',
+  ];
+  for (const rel of asaasPaths) {
+    assert.equal(fs.existsSync(path.join(root, rel)), true, rel);
+  }
+  const panel = read('components/sales/SaleChargesPanel.tsx');
+  assert.match(panel, /\/api\/finance\/asaas\/sale-charges\/carne-pdf/);
+  assert.match(panel, /\/api\/finance\/asaas\/sale-charges\/generate-missing/);
+  console.log('OK regressão Asaas: rotas de carnê/emissão intactas');
+}
+
+async function main() {
+  console.log('\n=== Inter fase final ===\n');
+  testStatusMapping();
+  testUiHideGenerateAndNoAsaasActions();
+  testRefreshGetOnlyAndPdfRoute();
+  testWhatsAppWithoutAsaasUrl();
+  testEmailIndependentOfAsaas();
+  await testPartialCarne();
+  await testCompactCarnePagination();
+  await testPaymentSettlementIdempotent();
+  await testPaidChargeHealsPendingReceipt();
+  await testUnpaidSituacaoDoesNotSettle();
+  testCentralAndFinanceAndSaleAgreeOnPaidParcel();
+  testGenerateMissingDoesNotReemit();
+  testAsaasRegressionSourcesIntact();
+  console.log('\n=== Inter fase final OK ===\n');
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -1,0 +1,42 @@
+# SV LOTES — Receptor mTLS webhook Banco Inter (Fly.io)
+#
+# TLS termina NO Node (https.createServer + requestCert + ca do Inter).
+# Fly Proxy NÃO usa handlers tls/http — TCP passthrough (handlers = []).
+#
+# Docs:
+# https://fly.io/docs/networking/services/
+# https://fly.io/docs/security/tls-termination/
+# «If you want to terminate TLS yourself, then you only need to remove the handlers…»
+
+app = "sv-lotes-inter-webhook"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8443"
+  HOST = "0.0.0.0"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8443
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Pública 443 → TCP cru → Node faz TLS + mTLS
+  [[services.ports]]
+    port = 443
+    handlers = []
+
+  # Health: TCP only (/health HTTP exige client cert do Inter)
+  [[services.tcp_checks]]
+    grace_period = "30s"
+    interval = "15s"
+    timeout = "2s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpus = 1

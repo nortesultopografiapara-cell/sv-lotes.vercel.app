@@ -175,10 +175,12 @@ function testCreateChargeApiPathAndDuplicateGuard() {
     'utf8',
   );
   assert(page.includes('/api/finance/asaas/create-charge'), 'charges chama create-charge');
+  assert(page.includes('/api/finance/inter/create-charge'), 'charges também roteia Inter create-charge');
   assert(page.includes('/api/finance/asaas/charge-status'), 'charges chama charge-status');
   assert(page.includes('requestChargeBulkStatusSync'), 'charges usa sync bulk');
   assert(page.includes('/api/finance/asaas/regenerate-charge'), 'charges chama regenerate-charge');
-  assert(page.includes("createAsaasChargeRequest(installmentId, 'BOLETO')"), 'bulk gera boleto+pix');
+  assert(page.includes("createAsaasChargeRequest(installmentId, 'BOLETO')"), 'bulk gera boleto+pix Asaas');
+  assert(page.includes('createInterChargeRequest'), 'bulk/individual gera Inter via helper');
 
   const chargeService = fs.readFileSync(
     path.join(process.cwd(), 'lib/finance/asaasCompanyChargeService.ts'),
@@ -712,7 +714,7 @@ function testChargesUsesSameIntegrationReadyRuleAsSettings() {
   );
   assert(pageClient.includes('loadError'), 'charges exibe erro de carregamento');
   assert(
-    pageClient.includes('Nenhuma cobrança Asaas gerada para atualizar.'),
+    pageClient.includes('Nenhuma cobrança gerada para atualizar.'),
     'mensagem clara ao atualizar status sem cobrança',
   );
   assert(

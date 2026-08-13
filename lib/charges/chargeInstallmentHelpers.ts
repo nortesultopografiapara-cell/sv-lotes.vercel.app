@@ -1,5 +1,6 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import { resolveAsaasStatusDisplayLabel } from '@/lib/charges/chargeOperationsHelpers';
+import { formatInterChargeStatusLabel } from '@/lib/banking/inter/interStatus';
 
 export type FinanceReceiptRow = Record<string, unknown>;
 
@@ -15,8 +16,11 @@ export type ChargeInstallmentView = {
   installmentStatus: string;
   installmentStatusLabel: string;
   asaasStatusLabel: string;
+  /** Label da coluna Status cobrança (Asaas ou Inter). */
+  chargeStatusLabel: string;
   financialAccountId: string | null;
   financialAccountLabel: string;
+  chargeProvider: 'ASAAS_COMPANY' | 'INTER';
 };
 
 export type ChargeKpiSummary = {
@@ -67,6 +71,7 @@ export function buildChargeInstallmentView(
     hasChargeHistory?: boolean;
     environmentMismatch?: boolean;
     legacySandbox?: boolean;
+    chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
   },
 ): ChargeInstallmentView {
   const projects = row.projects as { name?: string } | undefined;
@@ -104,6 +109,25 @@ export function buildChargeInstallmentView(
       '',
   ).trim() || null;
 
+  const chargeProvider = options?.chargeProvider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+  const asaasStatusLabel =
+    chargeProvider === 'INTER'
+      ? asaasCharge
+        ? formatInterChargeStatusLabel({
+            situacao: asaasCharge.asaasRemoteStatus,
+            bankStatus: asaasCharge.status,
+            dueDate: asaasCharge.dueDate || String(row.due_date || ''),
+            todayStr,
+          })
+        : options?.hasChargeHistory
+          ? 'Histórico disponível'
+          : 'Não gerada'
+      : resolveAsaasStatusDisplayLabel(asaasCharge, {
+          hasChargeHistory: Boolean(options?.hasChargeHistory || asaasCharge?.asaasPaymentId),
+          environmentMismatch: options?.environmentMismatch,
+          legacySandbox: options?.legacySandbox,
+        });
+
   return {
     id: String(row.id),
     clientName: customers?.name || customers?.full_name || '—',
@@ -117,16 +141,14 @@ export function buildChargeInstallmentView(
     amount: Number(row.amount) || 0,
     installmentStatus,
     installmentStatusLabel: formatInstallmentStatusLabel(installmentStatus),
-    asaasStatusLabel: resolveAsaasStatusDisplayLabel(asaasCharge, {
-      hasChargeHistory: Boolean(options?.hasChargeHistory || asaasCharge?.asaasPaymentId),
-      environmentMismatch: options?.environmentMismatch,
-      legacySandbox: options?.legacySandbox,
-    }),
+    asaasStatusLabel,
+    chargeStatusLabel: asaasStatusLabel,
     financialAccountId,
     financialAccountLabel:
       (financialAccountId && financialAccountLabels?.[financialAccountId]) ||
       financialAccountId ||
       '—',
+    chargeProvider,
   };
 }
 

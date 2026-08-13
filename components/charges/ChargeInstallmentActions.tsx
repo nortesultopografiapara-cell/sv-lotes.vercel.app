@@ -5,6 +5,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Mail,
   MessageCircle,
   QrCode,
   RefreshCw,
@@ -24,6 +25,10 @@ import {
   resolveCompanyAsaasReceiptUrl,
   type ChargeActionVisibility,
 } from '@/lib/charges/chargeOperationsHelpers';
+import {
+  INTER_PDF_NOT_MATERIALIZED_HINT,
+  resolveInterIssuedChargeActions,
+} from '@/lib/charges/interChargeActions';
 import type { ChargeInstallmentView } from '@/lib/charges/chargeInstallmentHelpers';
 
 const btnClass =
@@ -41,10 +46,13 @@ export type ChargeInstallmentActionsProps = {
   installmentPaid: boolean;
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
+  /** Provider da conta financeira da parcela. */
+  chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   whatsappShareUrl?: string | null;
   hasPaidChargeHistory?: boolean;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
@@ -54,6 +62,8 @@ export type ChargeInstallmentActionsProps = {
   onCopyPix: () => void;
   onCopyBarcodeLine: () => void;
   onWhatsApp: () => void;
+  onDownloadPdf?: () => void;
+  onSendEmail?: () => void;
 };
 
 export function resolveChargeInstallmentActionsProps(
@@ -66,6 +76,8 @@ export function resolveChargeInstallmentActionsProps(
     | 'onCopyPix'
     | 'onCopyBarcodeLine'
     | 'onWhatsApp'
+    | 'onDownloadPdf'
+    | 'onSendEmail'
   >,
 ): ChargeActionVisibility {
   return resolveChargeActionVisibility({
@@ -87,10 +99,12 @@ export function ChargeInstallmentActions({
   installmentPaid,
   integrationActive,
   companyAsaasEnabled,
+  chargeProvider = 'ASAAS_COMPANY',
   ownerReadOnly,
   busy,
   installmentsDataReady = true,
   customerPhone,
+  customerEmail,
   whatsappShareUrl,
   hasPaidChargeHistory = false,
   onGenerate,
@@ -100,12 +114,17 @@ export function ChargeInstallmentActions({
   onCopyPix,
   onCopyBarcodeLine,
   onWhatsApp,
+  onDownloadPdf,
+  onSendEmail,
 }: ChargeInstallmentActionsProps) {
+  const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
+  const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
+
   const actions = resolveChargeActionVisibility({
     charge,
     installmentPaid,
-    integrationActive,
-    companyAsaasEnabled,
+    integrationActive: isInter ? true : integrationActive,
+    companyAsaasEnabled: isInter ? true : companyAsaasEnabled,
     ownerReadOnly,
     installmentsDataReady,
     installmentId: view.id,
@@ -113,20 +132,35 @@ export function ChargeInstallmentActions({
     hasPaidChargeHistory,
   });
 
-  const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';
-  const boletoUrl = charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
-  const receiptUrl = resolveCompanyAsaasReceiptUrl(charge);
-  const detailsUrl = resolveCompanyAsaasDetailsUrl(charge);
+  const paymentLink = !isInter && charge ? resolveCompanyAsaasPaymentLink(charge) : '';
+  const boletoUrl = !isInter && charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
+  const receiptUrl = !isInter ? resolveCompanyAsaasReceiptUrl(charge) : null;
+  const detailsUrl = !isInter ? resolveCompanyAsaasDetailsUrl(charge) : null;
   const regenerateBillingType =
     charge?.billingType === 'PIX' ? 'PIX' : ('BOLETO' as const);
+  const interActions = isInter
+    ? resolveInterIssuedChargeActions({
+        charge,
+        installmentPaid,
+        customerEmail,
+        customerPhone,
+      })
+    : null;
+  const showGenerate = Boolean(
+    actions.showGenerate && providerReady && !interActions?.hideGenerate,
+  );
+  const showCopyBarcodeLine = isInter
+    ? Boolean(interActions?.showCopyLinha)
+    : actions.showCopyBarcodeLine;
+  const showCopyPix = isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix;
 
-  if (!companyAsaasEnabled) {
+  if (!isInter && !companyAsaasEnabled) {
     return (
       <span className="text-[10px] text-[var(--text-muted)]">Asaas indisponível</span>
     );
   }
 
-  if (!integrationActive) {
+  if (!isInter && !integrationActive) {
     return (
       <span className="text-[10px] text-amber-400/90" title="Integração Asaas não está ativa.">
         Integração inativa
@@ -145,27 +179,33 @@ export function ChargeInstallmentActions({
   return (
     <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
       <div className="flex flex-wrap justify-end gap-1.5">
-        {actions.showGenerate ? (
+        {showGenerate ? (
           <>
             <button
               type="button"
               disabled={busy}
               onClick={() => onGenerate('BOLETO')}
               className={btnPrimaryClass}
-              title="Gerar cobrança com boleto e Pix no Asaas"
+              title={
+                isInter
+                  ? 'Gerar cobrança via Banco Inter (Cobrança V3 — boleto/Pix)'
+                  : 'Gerar cobrança com boleto e Pix no Asaas'
+              }
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
               Gerar cobrança
             </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onGenerate('BOLETO')}
-              className={btnClass}
-              title="Gerar boleto bancário com Pix como alternativa"
-            >
-              Boleto
-            </button>
+            {!isInter ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onGenerate('BOLETO')}
+                className={btnClass}
+                title="Gerar boleto bancário com Pix como alternativa"
+              >
+                Boleto
+              </button>
+            ) : null}
           </>
         ) : null}
 
@@ -234,7 +274,7 @@ export function ChargeInstallmentActions({
           </a>
         ) : null}
 
-        {actions.showCopyBarcodeLine ? (
+        {showCopyBarcodeLine ? (
           <button
             type="button"
             className={btnClass}
@@ -246,14 +286,27 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showCopyPix ? (
+        {showCopyPix ? (
           <button type="button" className={btnClass} onClick={onCopyPix} title="Copiar Pix copia e cola">
             <Copy className="h-3.5 w-3.5" />
             Copiar Pix
           </button>
         ) : null}
 
-        {actions.showRefreshStatus ? (
+        {isInter && interActions?.showOfficialPdf && onDownloadPdf ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDownloadPdf}
+            className={btnClass}
+            title="Baixar PDF oficial do boleto Inter (Cobrança V3)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            Baixar boleto
+          </button>
+        ) : null}
+
+        {actions.showRefreshStatus && !isInter ? (
           <button
             type="button"
             disabled={busy}
@@ -266,7 +319,20 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showCancel ? (
+        {isInter && interActions?.showRefresh ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRefreshStatus}
+            className={btnVioletClass}
+            title="Consultar Cobrança V3 e materializar linha/Pix/nosso número (não emite)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Atualizar dados
+          </button>
+        ) : null}
+
+        {actions.showCancel && !isInter ? (
           <button
             type="button"
             disabled={busy}
@@ -279,7 +345,7 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showRegenerate ? (
+        {actions.showRegenerate && !isInter ? (
           <button
             type="button"
             disabled={busy}
@@ -292,14 +358,18 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showWhatsApp ? (
+        {(isInter ? Boolean(interActions?.showWhatsApp) : actions.showWhatsApp) ? (
           whatsappShareUrl ? (
             <a
               href={whatsappShareUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={btnClass}
-              title={CHARGES_WHATSAPP_TOOLTIP}
+              title={
+                isInter
+                  ? 'Enviar cobrança Inter por WhatsApp (Pix e/ou linha digitável)'
+                  : CHARGES_WHATSAPP_TOOLTIP
+              }
             >
               <MessageCircle className="h-3.5 w-3.5" />
               WhatsApp
@@ -309,7 +379,11 @@ export function ChargeInstallmentActions({
               type="button"
               className={btnClass}
               onClick={onWhatsApp}
-              title={CHARGES_WHATSAPP_TOOLTIP}
+              title={
+                isInter
+                  ? 'Enviar cobrança Inter por WhatsApp (Pix e/ou linha digitável)'
+                  : CHARGES_WHATSAPP_TOOLTIP
+              }
             >
               <MessageCircle className="h-3.5 w-3.5" />
               WhatsApp
@@ -317,12 +391,24 @@ export function ChargeInstallmentActions({
           )
         ) : null}
 
-        {/* Indicador complementar — nunca substitui links de consulta quando há charge. */}
+        {isInter && interActions?.showEmail && onSendEmail ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onSendEmail}
+            className={btnClass}
+            title="Enviar cobrança Inter por e-mail (Pix/linha e PDF oficial quando disponível)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+            E-mail
+          </button>
+        ) : null}
+
         {actions.showPaidIndicator ? (
           <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
         ) : null}
 
-        {!charge && hasPaidChargeHistory ? (
+        {!charge && hasPaidChargeHistory && !isInter ? (
           <span
             className="text-[10px] text-amber-400/90"
             title="Há histórico de cobrança Asaas. Atualize a lista se os links não aparecerem."
@@ -330,15 +416,36 @@ export function ChargeInstallmentActions({
             Histórico Asaas
           </span>
         ) : null}
+
+        {isInter && charge?.asaasPaymentId ? (
+          <span
+            className="text-[10px] text-emerald-400/90"
+            title={`Cobrança Inter ${charge.asaasPaymentId}`}
+          >
+            Inter emitida
+          </span>
+        ) : null}
       </div>
 
-      {actions.showBoletoUnavailableWarning ? (
+      {isInter && interActions?.artifactsPending ? (
+        <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
+          Cobrança emitida. Boleto/Pix ainda estão sendo processados pelo Banco Inter.
+        </p>
+      ) : null}
+
+      {isInter && interActions?.showRefresh && !interActions.showOfficialPdf && !interActions.artifactsPending ? (
+        <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
+          {INTER_PDF_NOT_MATERIALIZED_HINT}
+        </p>
+      ) : null}
+
+      {actions.showBoletoUnavailableWarning && !isInter ? (
         <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
           {BOLETO_UNAVAILABLE_WARNING}
         </p>
       ) : null}
 
-      {actions.showReceiptUnavailableHint ? (
+      {actions.showReceiptUnavailableHint && !isInter ? (
         <p className="max-w-md text-right text-[10px] leading-snug text-[var(--text-muted)]">
           Comprovante ainda não disponível no Asaas. Os demais links da cobrança permanecem ativos.
         </p>

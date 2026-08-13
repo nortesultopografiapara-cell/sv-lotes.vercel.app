@@ -4,6 +4,7 @@ import { isBankingModuleEnabled } from '@/lib/banking/config';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { decryptBankingSecret } from '@/lib/banking/credentialsCrypto';
 import { getCompanyAsaasIntegrationConfig } from '@/lib/finance/asaasIntegrationRepository';
+import { isFinancialAccountRequiredError } from '@/lib/finance/financialAccountRequired';
 import {
   executeCompanyAsaasPaymentReconciliation,
   isCompanyAsaasPaidWebhookEvent,
@@ -44,6 +45,66 @@ export async function loadCompanyAsaasWebhookToken(
     .eq('credential_type', 'webhook_secret')
     .maybeSingle();
 
+  if (!data?.encrypted_payload) return null;
+  try {
+    return decryptBankingSecret(String(data.encrypted_payload));
+  } catch {
+    return null;
+  }
+}
+
+async function loadAllCompanyAsaasWebhookTokens(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<string[]> {
+  const { data: accounts } = await admin
+    .from('company_financial_accounts')
+    .select('bank_integration_id')
+    .eq('company_id', companyId)
+    .eq('active', true);
+  const ids = Array.from(
+    new Set(
+      (accounts || [])
+        .map((row) => String(row.bank_integration_id || '').trim())
+        .filter(Boolean),
+    ),
+  );
+  if (ids.length === 0) return [];
+  const { data: creds } = await admin
+    .from('bank_credentials')
+    .select('encrypted_payload')
+    .eq('credential_type', 'webhook_secret')
+    .in('integration_id', ids);
+  const tokens: string[] = [];
+  for (const row of creds || []) {
+    try {
+      const token = decryptBankingSecret(String(row.encrypted_payload || ''));
+      if (token) tokens.push(token);
+    } catch {
+      /* ignora credencial ilegível */
+    }
+  }
+  return tokens;
+}
+
+async function loadAsaasWebhookTokenForAccount(
+  admin: SupabaseClient,
+  companyId: string,
+  financialAccountId: string,
+): Promise<string | null> {
+  const { data: account } = await admin
+    .from('company_financial_accounts')
+    .select('bank_integration_id')
+    .eq('id', financialAccountId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (!account?.bank_integration_id) return null;
+  const { data } = await admin
+    .from('bank_credentials')
+    .select('encrypted_payload')
+    .eq('integration_id', account.bank_integration_id)
+    .eq('credential_type', 'webhook_secret')
+    .maybeSingle();
   if (!data?.encrypted_payload) return null;
   try {
     return decryptBankingSecret(String(data.encrypted_payload));
@@ -97,8 +158,17 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
     return NextResponse.json({ error: adminError || 'Serviço indisponível.' }, { status: 503 });
   }
 
-  const expectedToken = await loadCompanyAsaasWebhookToken(admin, companyId);
-  if (!verifyCompanyAsaasWebhookToken(request, expectedToken)) {
+  let expectedToken: string | null = null;
+  try {
+    expectedToken = await loadCompanyAsaasWebhookToken(admin, companyId);
+  } catch (err) {
+    if (!isFinancialAccountRequiredError(err)) throw err;
+  }
+  const allTokens = await loadAllCompanyAsaasWebhookTokens(admin, companyId);
+  const tokensToTry = Array.from(
+    new Set([expectedToken, ...allTokens].filter((t): t is string => Boolean(t))),
+  );
+  if (tokensToTry.length > 0 && !tokensToTry.some((t) => verifyCompanyAsaasWebhookToken(request, t))) {
     return NextResponse.json({ error: 'Webhook não autorizado.' }, { status: 401 });
   }
 
@@ -138,6 +208,20 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
       await markCompanyAsaasWebhookEventProcessed(admin, registration.id, companyId, 'IGNORED', 'charge_not_found');
     }
     return NextResponse.json({ ok: true, ignored: true, reason: 'charge_not_found' });
+  }
+
+  if (charge.financialAccountId) {
+    const accountToken = await loadAsaasWebhookTokenForAccount(
+      admin,
+      companyId,
+      charge.financialAccountId,
+    );
+    if (accountToken && !verifyCompanyAsaasWebhookToken(request, accountToken)) {
+      return NextResponse.json(
+        { error: 'Webhook não autorizado para esta conta Asaas.' },
+        { status: 401 },
+      );
+    }
   }
 
   if (registration.id) {

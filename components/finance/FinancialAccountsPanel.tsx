@@ -8,7 +8,7 @@ import {
   type CompanyFinancialAccountResponse,
   type CompanyFinancialAccountType,
 } from '@/lib/finance/companyFinancialAccountTypes';
-import { buildDefaultAsaasWebhookUrl } from '@/lib/finance/asaasIntegrationConfig';
+import { InterBankConfigPanel } from '@/components/finance/InterBankConfigPanel';
 
 type Props = {
   tenantId: string;
@@ -138,6 +138,37 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     setError(null);
   }
 
+  async function startCreateInter() {
+    if (readOnlyDemo) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const hasInter = accounts.some((a) => a.provider === 'INTER');
+      const res = await fetch('/api/banking/inter/link-financial-account', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          createAdditional: hasInter,
+          name: form.name.trim() || undefined,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      const account = json.account as CompanyFinancialAccountResponse;
+      setCreating(false);
+      setSelectedId(account.id);
+      setSuccess(`Conta Inter criada: ${account.name}. Configure Client ID, Secret e certificado.`);
+      await loadAccounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao criar conta Inter.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSave() {
     if (readOnlyDemo) return;
     setSaving(true);
@@ -180,18 +211,30 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
             <h3 className="text-base font-bold text-[var(--text-primary)]">Contas Financeiras</h3>
           </div>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            Cadastre contas recebedoras com token Asaas próprio. Cada venda e cobrança usa a conta vinculada.
+            Cadastre várias contas recebedoras Asaas e Banco Inter. Cada empreendimento/venda
+            escolhe a conta. Credenciais nunca se misturam.
           </p>
         </div>
         {!readOnlyDemo ? (
-          <button
-            type="button"
-            onClick={startCreate}
-            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-          >
-            <Plus className="h-4 w-4" />
-            Nova conta
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={startCreate}
+              className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+            >
+              <Plus className="h-4 w-4" />
+              Nova conta Asaas
+            </button>
+            <button
+              type="button"
+              onClick={() => void startCreateInter()}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-500/20 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Nova conta Inter
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -218,8 +261,27 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
               Nenhuma conta cadastrada. A integração legada será migrada automaticamente.
             </p>
           ) : (
-            <div className="space-y-2">
-              {accounts.map((account) => (
+            <div className="space-y-3">
+              {(['INTER', 'ASAAS_COMPANY', 'NONE'] as const).map((group) => {
+                const items = accounts.filter((account) => {
+                  if (group === 'INTER') return account.provider === 'INTER';
+                  if (group === 'ASAAS_COMPANY')
+                    return account.provider === 'ASAAS_COMPANY' || account.provider === 'ASAAS';
+                  return !account.provider;
+                });
+                if (items.length === 0) return null;
+                const title =
+                  group === 'INTER'
+                    ? 'Banco Inter'
+                    : group === 'ASAAS_COMPANY'
+                      ? 'Asaas'
+                      : 'Sem provider';
+                return (
+                  <div key={group} className="space-y-1">
+                    <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                      {title}
+                    </p>
+                    {items.map((account) => (
                 <button
                   key={account.id}
                   type="button"
@@ -234,7 +296,9 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-[var(--text-primary)]">{account.name}</span>
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      {account.name}
+                    </span>
                     {account.isDefault ? <Star className="h-3.5 w-3.5 text-amber-400" /> : null}
                   </div>
                   <p className="text-xs text-[var(--text-secondary)]">
@@ -242,7 +306,10 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     {!account.active ? ' · Inativa' : ''}
                   </p>
                 </button>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -355,6 +422,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                 </div>
               </div>
 
+              {creating || selectedAccount?.provider !== 'INTER' ? (
               <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-4 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                   <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" />
@@ -418,6 +486,13 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   </div>
                 </div>
               </div>
+              ) : selectedAccount?.id ? (
+                <InterBankConfigPanel
+                  financialAccountId={selectedAccount.id}
+                  readOnlyDemo={readOnlyDemo}
+                  embedded
+                />
+              ) : null}
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Observações</label>

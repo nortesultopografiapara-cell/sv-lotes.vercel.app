@@ -53,6 +53,7 @@ import {
   resolveCustomerDocumentDigits,
   type CustomerRecord,
 } from '@/lib/customerIdentity';
+import { INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE } from '@/lib/charges/chargeProviderRouting';
 
 type InstallmentRow = {
   id: string;
@@ -80,6 +81,13 @@ export class CompanyAsaasIntegrationInactiveError extends Error {
   constructor(message = 'Integração Asaas Company não está ativa para esta empresa.') {
     super(message);
     this.name = 'CompanyAsaasIntegrationInactiveError';
+  }
+}
+
+export class CompanyAsaasWrongProviderError extends Error {
+  constructor(message = INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE) {
+    super(message);
+    this.name = 'CompanyAsaasWrongProviderError';
   }
 }
 
@@ -130,13 +138,20 @@ async function resolveCompanyAsaasCredentials(
   const resolved = await resolveFinancialAccountForInstallment(admin, companyId, installment);
   const account = resolved.account;
 
+  const provider = String(account.provider || '').trim().toUpperCase();
+  if (provider === 'INTER') {
+    throw new CompanyAsaasWrongProviderError();
+  }
+
   if (!account.bankIntegrationId) {
     throw new CompanyAsaasIntegrationInactiveError(
       `Conta financeira "${account.name}" sem integração Asaas configurada.`,
     );
   }
 
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
+  const config = await getCompanyAsaasIntegrationConfig(admin, companyId, {
+    financialAccountId: account.id,
+  });
   if (!isCompanyAsaasIntegrationReady(config) && resolved.source === 'company_default') {
     throw new CompanyAsaasIntegrationInactiveError();
   }

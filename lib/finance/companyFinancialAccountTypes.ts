@@ -39,6 +39,8 @@ export type CompanyFinancialAccountResponse = {
   phone: string | null;
   environment: BankEnvironment;
   bankIntegrationId: string | null;
+  /** Provider da bank_integrations vinculada (ASAAS_COMPANY, INTER, …) ou null. */
+  provider: string | null;
   isDefault: boolean;
   active: boolean;
   notes: string | null;
@@ -67,6 +69,7 @@ export function mapCompanyFinancialAccountRow(
       | 'hasProductionApiKey'
       | 'hasWebhookToken'
       | 'connectionStatus'
+      | 'provider'
     >
   >,
 ): CompanyFinancialAccountResponse {
@@ -81,6 +84,7 @@ export function mapCompanyFinancialAccountRow(
     phone: row.phone,
     environment: row.environment,
     bankIntegrationId: row.bank_integration_id,
+    provider: extras?.provider ?? null,
     isDefault: row.is_default,
     active: row.active,
     notes: row.notes,
@@ -93,7 +97,29 @@ export function mapCompanyFinancialAccountRow(
   };
 }
 
-export function formatFinancialAccountLabel(account: Pick<CompanyFinancialAccountResponse, 'name' | 'accountType' | 'beneficiaryName'>): string {
+export function formatFinancialAccountProviderLabel(
+  provider: string | null | undefined,
+): string {
+  const p = String(provider || '').trim().toUpperCase();
+  if (!p) return 'Sem provider';
+  if (p === 'INTER') return 'Banco Inter';
+  if (p === 'ASAAS_COMPANY' || p === 'ASAAS') return 'Asaas';
+  return p;
+}
+
+/**
+ * Label de select / UI.
+ * Com provider: "Nome — Asaas|Banco Inter".
+ * Sem campo provider (legado): mantém formato anterior com tipo.
+ */
+export function formatFinancialAccountLabel(
+  account: Pick<CompanyFinancialAccountResponse, 'name' | 'accountType' | 'beneficiaryName'> & {
+    provider?: string | null;
+  },
+): string {
+  if (Object.prototype.hasOwnProperty.call(account, 'provider')) {
+    return `${account.name} — ${formatFinancialAccountProviderLabel(account.provider)}`;
+  }
   const typeLabel = COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS[account.accountType] || account.accountType;
   const beneficiary = String(account.beneficiaryName || '').trim();
   if (beneficiary && beneficiary !== account.name) {

@@ -21,6 +21,13 @@ import {
 } from '@/lib/finance/saleChargesShared';
 import { formatCarneTaxDocument } from '@/lib/finance/saleCarneBeneficiary';
 import { formatPayerAddressForCarne } from '@/lib/finance/saleCarnePayerAddress';
+import {
+  SALE_CARNE_MARGIN_MM,
+  SALE_CARNE_PAGE_H_MM,
+  SALE_CARNE_PAGE_W_MM,
+  saleCarneNeedsNewPage,
+  saleCarneSlotIndex,
+} from '@/lib/finance/saleCarneSlotLayout';
 
 export type SaleCarneBoletoItem = {
   charge: CompanyAsaasChargeResponse;
@@ -41,6 +48,18 @@ export type SaleCarnePayerInfo = {
   formattedAddress?: string | null;
 };
 
+export type SaleCarneBrandConfig = {
+  /** Texto do cabeçalho (Asaas: ASAAS). */
+  displayName?: string;
+  /** Código do banco no box (Asaas: 461). */
+  bankCode?: string;
+  carteira?: string;
+  defaultAgency?: string;
+  finePercent?: number;
+  interestPercentMonthly?: number;
+  missingArtifactsMessage?: string;
+};
+
 export type SaleCarnePdfInput = {
   summary: SaleChargesSummary;
   items: SaleCarneBoletoItem[];
@@ -48,11 +67,13 @@ export type SaleCarnePdfInput = {
   beneficiaryDocument?: string | null;
   payer?: SaleCarnePayerInfo | null;
   agencyCedente?: string | null;
+  /** Omitido = identidade Asaas atual (não alterar o carnê Asaas). */
+  brand?: SaleCarneBrandConfig | null;
 };
 
-const PAGE_W = 210;
-const PAGE_H = 297;
-const MARGIN = 6;
+const PAGE_W = SALE_CARNE_PAGE_W_MM;
+const PAGE_H = SALE_CARNE_PAGE_H_MM;
+const MARGIN = SALE_CARNE_MARGIN_MM;
 const SLOT_H = (PAGE_H - MARGIN * 2) / 3;
 const ASAAS_BANK_CODE = '461';
 
@@ -216,6 +237,33 @@ function drawCutLine(doc: jsPDF, y: number): void {
   doc.setTextColor(0, 0, 0);
 }
 
+function resolveCarneBrand(input: SaleCarnePdfInput): {
+  displayName: string;
+  bankCode: string;
+  carteira: string;
+  agencyFallback: string;
+  finePercent: number;
+  interestPercentMonthly: number;
+  missingArtifactsMessage: string;
+} {
+  const brand = input.brand || {};
+  return {
+    displayName: String(brand.displayName || 'ASAAS').trim() || 'ASAAS',
+    bankCode: String(brand.bankCode || ASAAS_BANK_CODE).trim() || ASAAS_BANK_CODE,
+    carteira: brand.carteira != null ? String(brand.carteira) : '1',
+    agencyFallback: brand.defaultAgency != null ? String(brand.defaultAgency) : '0001',
+    finePercent: Number.isFinite(Number(brand.finePercent))
+      ? Number(brand.finePercent)
+      : COMPANY_ASAAS_FINE_PERCENT,
+    interestPercentMonthly: Number.isFinite(Number(brand.interestPercentMonthly))
+      ? Number(brand.interestPercentMonthly)
+      : COMPANY_ASAAS_INTEREST_PERCENT_MONTHLY,
+    missingArtifactsMessage:
+      String(brand.missingArtifactsMessage || '').trim() ||
+      'Cobrança sem linha digitável/código de barras oficiais do Asaas. Atualize a situação e tente novamente.',
+  };
+}
+
 async function drawBoletoSlot(
   doc: jsPDF,
   y0: number,
@@ -224,12 +272,11 @@ async function drawBoletoSlot(
 ): Promise<void> {
   const charge = item.charge;
   const s = input.summary;
+  const brand = resolveCarneBrand(input);
   const digitable = resolveOfficialDigitable(charge);
   const barcode = resolveOfficialBarcode(charge);
   if (!digitable && !barcode) {
-    throw new Error(
-      'Cobrança sem linha digitável/código de barras oficiais do Asaas. Atualize a situação e tente novamente.',
-    );
+    throw new Error(brand.missingArtifactsMessage);
   }
 
   const due = formatDateBr(charge.dueDate);
@@ -242,7 +289,8 @@ async function drawBoletoSlot(
   const payerDoc = formatDoc(input.payer?.document);
   const nosso = resolveNossoNumero(charge);
   const docNumber = resolveDocumentNumber(charge);
-  const agency = String(input.agencyCedente || '0001').trim() || '0001';
+  const agency =
+    String(input.agencyCedente ?? brand.agencyFallback).trim() || brand.agencyFallback;
   const parcel = parcelLabelFor(item);
   const processed = formatDateBr(charge.createdAt) || due;
   const digitableDisplay = digitable
@@ -266,7 +314,7 @@ async function drawBoletoSlot(
   let y = top + 3.2;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
-  doc.text('ASAAS', xLeft + 1.2, y);
+  doc.text(brand.displayName, xLeft + 1.2, y);
   y += 3;
   doc.setFontSize(5.5);
   doc.text('RECIBO DO PAGADOR', xLeft + 1.2, y);
@@ -319,26 +367,26 @@ async function drawBoletoSlot(
   let ry = top;
   const headerH = 7;
 
-  // Header: ASAAS | 461 | linha digitável
+  // Header: marca | código banco | linha digitável
   doc.setLineWidth(0.25);
   doc.rect(xRight, ry, rightW, headerH);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.text('ASAAS', xRight + 1.5, ry + 4.8);
+  doc.text(brand.displayName, xRight + 1.5, ry + 4.8);
 
-  const bankBoxW = 12;
+  const bankBoxW = brand.bankCode.length > 3 ? 16 : 12;
   const bankBoxX = xRight + 28;
   doc.setLineWidth(0.45);
   doc.rect(bankBoxX, ry + 1.2, bankBoxW, 4.6);
-  doc.setFontSize(9);
-  doc.text(ASAAS_BANK_CODE, bankBoxX + bankBoxW / 2, ry + 4.5, { align: 'center' });
+  doc.setFontSize(brand.bankCode.length > 3 ? 7.5 : 9);
+  doc.text(brand.bankCode, bankBoxX + bankBoxW / 2, ry + 4.5, { align: 'center' });
   doc.setLineWidth(0.25);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.2);
   doc.text(digitableDisplay, xRight + rightW - 1.2, ry + 4.8, {
     align: 'right',
-    maxWidth: rightW - 44,
+    maxWidth: rightW - (bankBoxX - xRight + bankBoxW + 4),
   });
   ry += headerH;
 
@@ -384,7 +432,7 @@ async function drawBoletoSlot(
   // Uso banco / carteira / valor
   const r4H = 6;
   drawLabeledBox(doc, xRight, ry, c3, r4H, 'Uso do banco', '');
-  drawLabeledBox(doc, xRight + c3, ry, c3 * 0.7, r4H, 'Carteira', '1');
+  drawLabeledBox(doc, xRight + c3, ry, c3 * 0.7, r4H, 'Carteira', brand.carteira);
   drawLabeledBox(doc, xRight + c3 * 1.7, ry, c3 * 0.7, r4H, 'Espécie', 'R$');
   drawLabeledBox(doc, xRight + c3 * 2.4, ry, c3, r4H, 'Quantidade', '');
   drawLabeledBox(doc, xRight + c3 * 3.4, ry, c3, r4H, 'Valor', '');
@@ -411,8 +459,8 @@ async function drawBoletoSlot(
   doc.setFontSize(5.4);
   const instructions = [
     'Não receber após o vencimento.',
-    `Multa de ${COMPANY_ASAAS_FINE_PERCENT}% após o vencimento.`,
-    `Juros de mora de ${COMPANY_ASAAS_INTEREST_PERCENT_MONTHLY}% ao mês.`,
+    `Multa de ${brand.finePercent}% após o vencimento.`,
+    `Juros de mora de ${brand.interestPercentMonthly}% ao mês.`,
     parcel,
     s.projectName ? `Empreendimento: ${s.projectName}` : '',
     s.quadra || s.lote
@@ -520,8 +568,8 @@ export async function buildSaleCarnePdfBytes(input: SaleCarnePdfInput): Promise<
       : null);
 
   for (let i = 0; i < items.length; i++) {
-    if (i > 0 && i % 3 === 0) doc.addPage();
-    const slot = i % 3;
+    if (saleCarneNeedsNewPage(i)) doc.addPage();
+    const slot = saleCarneSlotIndex(i);
     const y0 = MARGIN + slot * SLOT_H;
     if (slot > 0) drawCutLine(doc, y0);
     await drawBoletoSlot(doc, y0, input, items[i]);
@@ -530,5 +578,5 @@ export async function buildSaleCarnePdfBytes(input: SaleCarnePdfInput): Promise<
     }
   }
 
-  return doc.output('arraybuffer') as unknown as Uint8Array;
+  return new Uint8Array(doc.output('arraybuffer'));
 }

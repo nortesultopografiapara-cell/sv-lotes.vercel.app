@@ -67,7 +67,11 @@ export function resolveAsaasStatusDisplayLabel(
   }
 
   const remote = String(charge.asaasRemoteStatus || '').toUpperCase();
-  if (remote === 'RECEIVED' || remote === 'RECEIVED_IN_CASH') return 'Pago';
+  if (remote === 'RECEIVED' || remote === 'RECEIVED_IN_CASH' || remote === 'RECEBIDO' || remote === 'PAGO') {
+    return 'Pago';
+  }
+  if (remote === 'A_RECEBER') return 'A receber';
+  if (remote === 'EM_PROCESSAMENTO') return 'Em processamento';
   if (remote === 'CONFIRMED') return 'Confirmada';
   if (remote === 'PENDING') return 'Aguardando pagamento';
   if (remote === 'OVERDUE') return 'Vencida';
@@ -276,7 +280,12 @@ export function computeAsaasOperationalKpis(
       continue;
     }
 
-    if (charge && isActiveCompanyAsaasChargeStatus(charge.status)) {
+    // Só conta como emitida com id + identificador externo persistido (evita falso positivo).
+    if (
+      charge &&
+      isActiveCompanyAsaasChargeStatus(charge.status) &&
+      String(charge.asaasPaymentId || '').trim()
+    ) {
       cobrancasEmitidas += amt;
       qtyCobrancasEmitidas += 1;
       continue;

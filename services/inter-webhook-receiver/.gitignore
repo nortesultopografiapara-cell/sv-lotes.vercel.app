@@ -1,0 +1,11 @@
+# Ignore local secrets / TLS material for the Inter webhook receiver
+*.pem
+*.crt
+*.key
+*.p12
+*.jks
+.env
+.env.*
+certs/
+secrets/
+!test/

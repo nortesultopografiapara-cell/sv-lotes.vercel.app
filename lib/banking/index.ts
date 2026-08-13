@@ -53,3 +53,41 @@ export type {
   SicrediConfigValidationResult,
 } from './sicrediConfigValidation';
 export { runSicrediTestConnection } from './sicrediApiHandlers';
+export {
+  InterBankProvider,
+  interBankProvider,
+  INTER_BOLETO_NOT_ENABLED_MESSAGE,
+  INTER_NOT_IMPLEMENTED_MESSAGE,
+} from './providers/interBankProvider';
+export {
+  validateInterCertificatePem,
+  validateInterPrivateKeyPem,
+  validateInterCertificateKeyPair,
+} from './inter/interPemValidation';
+export {
+  INTER_OAUTH_SCOPES,
+  getInterOAuthTokenUrl,
+  getInterCobrancaV3BaseUrl,
+} from './inter/interEndpoints';
+export {
+  requestInterAccessToken,
+  toPublicInterConnectionTest,
+  humanizeInterOAuthFailure,
+} from './inter/interOAuthClient';
+export { runCompanyInterConnectionTest } from './inter/interConnectionTest';
+export { clearAllInterTokenCacheForTests } from './inter/interTokenCache';
+export {
+  putInterCobrancaWebhook,
+  getInterCobrancaWebhook,
+  deleteInterCobrancaWebhook,
+  fetchInterCobrancaByCodigo,
+  fetchInterCobrancaPdf,
+} from './inter/interCobrancaClient';
+export {
+  validateInterWebhookHmac,
+  signInterWebhookHmac,
+} from './inter/interWebhookHmac';
+export {
+  processInterWebhookCallbackItem,
+  buildInterWebhookIdempotencyKey,
+} from './inter/interWebhookProcessor';

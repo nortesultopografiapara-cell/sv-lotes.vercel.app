@@ -6,6 +6,7 @@ import {
   isInstallmentPaidForCharges,
 } from '@/lib/charges/chargeOperationsHelpers';
 import type { FinanceReceiptRow } from '@/lib/charges/chargeInstallmentHelpers';
+import type { ChargesEmitProvider } from '@/lib/charges/chargeProviderRouting';
 
 export type AsaasIntegrationLoadResult = {
   integration: AsaasIntegrationConfigResponse | null;
@@ -29,16 +30,19 @@ export function countSelectedGeneratableCharges(params: {
   companyAsaasEnabled: boolean;
   ownerReadOnly: boolean;
   installmentsDataReady?: boolean;
+  resolveProvider?: (row: FinanceReceiptRow) => ChargesEmitProvider;
 }): number {
   let count = 0;
   for (const installmentId of params.selectedIds) {
     const row = params.payments.find((p) => String(p.id) === installmentId);
     if (!row) continue;
+    const provider = params.resolveProvider?.(row) ?? 'ASAAS_COMPANY';
+    const isInter = provider === 'INTER';
     if (
       canGenerateAsaasCharge({
         installmentPaid: isInstallmentPaidForCharges(row),
-        integrationActive: params.integrationActive,
-        companyAsaasEnabled: params.companyAsaasEnabled,
+        integrationActive: isInter ? true : params.integrationActive,
+        companyAsaasEnabled: isInter ? true : params.companyAsaasEnabled,
         ownerReadOnly: params.ownerReadOnly,
         charge: params.chargesByInstallment[installmentId] ?? null,
         installmentsDataReady: params.installmentsDataReady,
