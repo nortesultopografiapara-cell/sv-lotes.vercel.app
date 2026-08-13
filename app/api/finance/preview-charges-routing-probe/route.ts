@@ -18,7 +18,7 @@ import { listCompanyFinancialAccounts } from '@/lib/finance/companyFinancialAcco
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const COMPANY = 'f26f2331-1885-4ac6-8d8e-4131cc8a8014';
+const PREFERRED_COMPANY = 'f26f2331-1885-4ac6-8d8e-4131cc8a8014';
 const FAKE_INSTALLMENT = '00000000-0000-4000-8000-000000000099';
 
 function getAdmin() {
@@ -48,6 +48,71 @@ async function countExact(
   return count ?? 0;
 }
 
+async function resolveProbeCompany(
+  admin: ReturnType<typeof createClient>,
+): Promise<{
+  companyId: string;
+  discovery: Record<string, unknown>;
+}> {
+  const preferredAccounts = await listCompanyFinancialAccounts(admin, PREFERRED_COMPANY, {
+    activeOnly: false,
+  });
+  if (preferredAccounts.some((a) => String(a.provider || '').toUpperCase() === 'INTER')) {
+    return {
+      companyId: PREFERRED_COMPANY,
+      discovery: { source: 'preferred_company', accountCount: preferredAccounts.length },
+    };
+  }
+
+  const { data: interIntegrations, error: intErr } = await admin
+    .from('bank_integrations')
+    .select('id, company_id, provider, status')
+    .eq('provider', 'INTER')
+    .limit(10);
+  if (intErr) throw new Error(intErr.message);
+
+  for (const row of interIntegrations || []) {
+    const companyId = String(row.company_id || '').trim();
+    if (!companyId) continue;
+    const accounts = await listCompanyFinancialAccounts(admin, companyId, { activeOnly: false });
+    const hasInter = accounts.some((a) => String(a.provider || '').toUpperCase() === 'INTER');
+    if (hasInter) {
+      return {
+        companyId,
+        discovery: {
+          source: 'bank_integrations_scan',
+          preferredHadAccounts: preferredAccounts.length,
+          interIntegrationIdPrefix: String(row.id).slice(0, 8),
+          accountCount: accounts.length,
+        },
+      };
+    }
+  }
+
+  // Fallback: any company with company_asaas_charges + bank_charges activity
+  const { data: anyCharge } = await admin
+    .from('bank_charges')
+    .select('company_id')
+    .eq('provider', 'INTER')
+    .limit(1)
+    .maybeSingle();
+  if (anyCharge?.company_id) {
+    return {
+      companyId: String(anyCharge.company_id),
+      discovery: { source: 'bank_charges_scan', preferredHadAccounts: preferredAccounts.length },
+    };
+  }
+
+  return {
+    companyId: PREFERRED_COMPANY,
+    discovery: {
+      source: 'preferred_fallback_empty',
+      preferredHadAccounts: preferredAccounts.length,
+      interIntegrations: (interIntegrations || []).length,
+    },
+  };
+}
+
 export async function POST(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -55,6 +120,7 @@ export async function POST(request: Request) {
 
   try {
     const admin = getAdmin();
+    const { companyId: COMPANY, discovery } = await resolveProbeCompany(admin);
     const accounts = await listCompanyFinancialAccounts(admin, COMPANY, { activeOnly: false });
 
     const interAccount = accounts.find(
@@ -228,6 +294,7 @@ export async function POST(request: Request) {
       ok: true,
       mode: 'routing_guard_only_no_emit',
       companyId: COMPANY,
+      discovery,
       accounts: accounts.map((a) => ({
         id: a.id,
         provider: a.provider,
