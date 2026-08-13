@@ -2,13 +2,17 @@
  * Servidor HTTPS mTLS — valida certificado cliente do Inter (ca.crt)
  * e encaminha payload assinado HMAC ao SV LOTES.
  *
- * Env:
+ * Env (preferir PEM em secrets; paths só para dev local):
  *  INTER_WEBHOOK_CA_PEM ou INTER_WEBHOOK_CA_PATH  — trust anchor (ca.crt)
  *  TLS_CERT_PEM / TLS_CERT_PATH                     — certificado do servidor (CA pública)
  *  TLS_KEY_PEM / TLS_KEY_PATH                       — chave do servidor
  *  SV_LOTES_INTERNAL_WEBHOOK_URL                    — https://.../api/finance/inter/webhook/internal
  *  INTER_WEBHOOK_HMAC_SECRET                        — segredo compartilhado
- *  PORT                                             — default 8443
+ *  PORT                                             — default 8443 (Fly internal_port)
+ *  HOST                                             — default 0.0.0.0
+ *
+ * Nota health: com rejectUnauthorized=true o handshake exige client cert.
+ * Fly deve usar tcp_checks (não HTTP) — ver fly.toml / README.
  */
 
 import fs from 'node:fs';
@@ -101,6 +105,7 @@ export function createServer(options = {}) {
         }
 
         const url = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
+        // /health exige mTLS (mesmo servidor). Fly usa tcp_checks — ver README.
         if (req.method === 'GET' && url.pathname === '/health') {
           sendJson(res, 200, { ok: true, service: 'inter-webhook-receiver' });
           return;
@@ -129,14 +134,14 @@ export function createServer(options = {}) {
         }
 
         const forward = await forwardToSvLotes(companyId, parsed, req.headers);
-        // Não ecoar payload Inter
+        // Não ecoar payload Inter / não logar body
         sendJson(res, forward.ok ? 200 : 502, {
           ok: forward.ok,
           forwarded: true,
           svStatus: forward.status,
         });
       } catch (err) {
-        // Nunca logar PEM / payload completo
+        // Nunca logar PEM / HMAC / payload completo
         console.error('[inter-webhook-receiver]', err instanceof Error ? err.message : 'error');
         sendJson(res, 500, { error: 'Erro interno do receptor.' });
       }
@@ -152,8 +157,9 @@ const isMain =
 
 if (isMain) {
   const port = Number(process.env.PORT || 8443);
+  const host = String(process.env.HOST || '0.0.0.0').trim() || '0.0.0.0';
   const server = createServer();
-  server.listen(port, () => {
-    console.log(`[inter-webhook-receiver] listening on ${port} (mTLS)`);
+  server.listen(port, host, () => {
+    console.log(`[inter-webhook-receiver] listening on ${host}:${port} (mTLS, TCP passthrough ready)`);
   });
 }
