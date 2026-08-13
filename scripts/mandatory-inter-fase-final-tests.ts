@@ -363,12 +363,14 @@ async function testPartialCarne() {
     projectName: 'Alfa',
     lotLabel: 'QD 01 — LT 02',
   });
-  assert.ok(built.bytes.length > 100);
+  assert.ok(built.bytes.length > 80);
   assert.equal(built.includedOfficialPdfs, 0);
-  assert.equal(built.pageCount, 1);
   assert.equal(built.boletoSheetCount, 0);
+  assert.equal(built.coverPages, 0);
+  assert.ok(built.pageCount === 0 || built.pageCount === 1, 'sem capa/resumo');
   const header = Buffer.from(built.bytes.slice(0, 8)).toString('utf8');
   assert.match(header, /%PDF/);
+  assert.doesNotMatch(Buffer.from(built.bytes).toString('latin1'), /Carnê de cobranças/);
   const carneSvc = read('lib/banking/inter/interCarneService.ts');
   assert.match(carneSvc, /fetchInterCobrancaPdf/);
   assert.doesNotMatch(carneSvc, /createInterCobranca/);
@@ -392,15 +394,16 @@ async function makeOfficialA4Pdf(): Promise<Uint8Array> {
 
 async function testCompactCarnePagination() {
   const cases: Array<{ n: number; pages: number; sheets: number }> = [
-    { n: 1, pages: 2, sheets: 1 },
-    { n: 2, pages: 2, sheets: 1 },
-    { n: 3, pages: 2, sheets: 1 },
-    { n: 4, pages: 3, sheets: 2 },
-    { n: 10, pages: 5, sheets: 4 },
+    { n: 1, pages: 1, sheets: 1 },
+    { n: 2, pages: 1, sheets: 1 },
+    { n: 3, pages: 1, sheets: 1 },
+    { n: 4, pages: 2, sheets: 2 },
+    { n: 6, pages: 2, sheets: 2 },
+    { n: 10, pages: 4, sheets: 4 },
   ];
   for (const c of cases) {
     assert.equal(saleCarneBoletoSheetCount(c.n), c.sheets, `sheets ${c.n}`);
-    assert.equal(saleCarneDocumentPageCount({ coverPages: 1, boletoCount: c.n }), c.pages, `math ${c.n}`);
+    assert.equal(saleCarneDocumentPageCount({ coverPages: 0, boletoCount: c.n }), c.pages, `math ${c.n}`);
     assert.equal(expectedInterCarnePageCount(c.n), c.pages, `expected ${c.n}`);
   }
 
@@ -427,20 +430,22 @@ async function testCompactCarnePagination() {
     assert.equal(built.includedOfficialPdfs, c.n, `incluiu ${c.n}`);
     assert.equal(built.pageCount, c.pages, `páginas ${c.n} boletos`);
     assert.equal(built.boletoSheetCount, c.sheets, `folhas ${c.n}`);
-    assert.equal(built.coverPages, 1);
+    assert.equal(built.coverPages, 0, `sem capa ${c.n}`);
   }
 
   const interPdf = read('lib/banking/inter/interCarnePdf.ts');
   assert.match(interPdf, /containFitRect/);
   assert.match(interPdf, /embedPage/);
   assert.match(interPdf, /saleCarneNeedsNewPage/);
+  assert.match(interPdf, /coverPages = 0/);
   assert.doesNotMatch(interPdf, /copyPages/);
+  assert.doesNotMatch(interPdf, /Carnê de cobranças — Banco Inter/);
   const asaasPdf = read('lib/finance/saleCarnePdf.ts');
   assert.match(asaasPdf, /SLOT_H/);
   assert.match(asaasPdf, /drawBoletoSlot/);
   assert.match(asaasPdf, /saleCarneNeedsNewPage/);
   assert.match(asaasPdf, /from 'jspdf'/);
-  console.log('OK compositor Inter 3/folha (1,2,3,4,10) + Asaas intacto');
+  console.log('OK compositor Inter 3/folha sem capa (1,2,3,4,6,10) + Asaas intacto');
 }
 
 async function testPaymentSettlementIdempotent() {

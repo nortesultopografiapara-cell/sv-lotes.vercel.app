@@ -1,12 +1,11 @@
 /**
- * Carnê Inter: capa SV LOTES + PDFs oficiais compactados (até 3 por A4).
+ * Carnê Inter: somente PDFs oficiais compactados (até 3 por A4).
+ * Sem capa/resumo — a capa permanece na aba “Capa do Carnê”.
  * Não reconstrói boleto. Escala contain/fit — sem stretch.
  */
 
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
-import { formatCurrencyBRL } from '@/lib/currencyBrl';
-import { buildSaleCarnePartialNotice } from '@/lib/finance/saleChargesShared';
 import {
   SALE_CARNE_MARGIN_MM,
   SALE_CARNE_PAGE_SIZE_PT,
@@ -44,50 +43,11 @@ export async function buildInterCarnePdfBytes(params: {
   lotLabel?: string | null;
 }): Promise<InterCarnePdfResult> {
   const out = await PDFDocument.create();
-  const font = await out.embedFont(StandardFonts.Helvetica);
-  const fontBold = await out.embedFont(StandardFonts.HelveticaBold);
-  const cover = out.addPage(SALE_CARNE_PAGE_SIZE_PT);
-  const { height } = cover.getSize();
-  let y = height - 56;
-
-  const draw = (text: string, size = 11, bold = false) => {
-    cover.drawText(text.slice(0, 110), {
-      x: 48,
-      y,
-      size,
-      font: bold ? fontBold : font,
-      color: rgb(0.12, 0.14, 0.18),
-    });
-    y -= size + 8;
-  };
-
-  draw('Carnê de cobranças — Banco Inter', 16, true);
-  draw(params.customerName || 'Cliente', 12, true);
-  if (params.projectName) draw(params.projectName);
-  if (params.lotLabel) draw(params.lotLabel);
-  const notice =
-    buildSaleCarnePartialNotice(params.emittedCount, params.totalParcels) ||
-    `${params.emittedCount} de ${params.totalParcels} parcelas com cobrança emitida.`;
-  draw(notice, 10);
-  y -= 6;
-  draw('Cobranças incluídas (PDF oficial Inter, até 3 por folha):', 11, true);
-
-  for (const item of params.items) {
-    const due = String(item.charge.dueDate || '').slice(0, 10);
-    const valor = formatCurrencyBRL(Number(item.charge.value) || 0);
-    const linha = String(item.charge.bankSlipIdentification || '').trim();
-    draw(`${item.parcelLabel}  ·  venc. ${due || '—'}  ·  ${valor}`, 10, true);
-    if (linha) draw(`Linha: ${linha}`, 8);
-    if (item.officialPdf?.length) draw('Boleto oficial Inter nas folhas seguintes.', 8);
-    else draw('PDF oficial ainda não disponível nesta cobrança.', 8);
-    y -= 4;
-    if (y < 80) break;
-  }
-
   const officialItems = params.items.filter((item) => item.officialPdf && item.officialPdf.length >= 8);
   let includedOfficialPdfs = 0;
   let skippedWithoutPdf = params.items.length - officialItems.length;
   let boletoPage: ReturnType<PDFDocument['addPage']> | null = null;
+  let font: Awaited<ReturnType<PDFDocument['embedFont']>> | null = null;
 
   for (const item of officialItems) {
     try {
@@ -131,6 +91,7 @@ export async function buildInterCarnePdfBytes(params: {
           thickness: 0.5,
           color: rgb(0.47, 0.47, 0.47),
         });
+        if (!font) font = await out.embedFont(StandardFonts.Helvetica);
         boletoPage.drawText('corte aqui', {
           x: mmToPt(SALE_CARNE_PAGE_W_MM) / 2 - 18,
           y: box.cutY + 2,
@@ -154,7 +115,7 @@ export async function buildInterCarnePdfBytes(params: {
   }
 
   const boletoSheetCount = saleCarneBoletoSheetCount(includedOfficialPdfs);
-  const coverPages = 1;
+  const coverPages = 0;
   const bytes = await out.save();
   return {
     bytes,
@@ -167,5 +128,5 @@ export async function buildInterCarnePdfBytes(params: {
 }
 
 export function expectedInterCarnePageCount(officialBoletoCount: number): number {
-  return saleCarneDocumentPageCount({ coverPages: 1, boletoCount: officialBoletoCount });
+  return saleCarneDocumentPageCount({ coverPages: 0, boletoCount: officialBoletoCount });
 }
