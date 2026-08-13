@@ -79,14 +79,65 @@ No **Vercel Preview** (não production):
 | `INTER_WEBHOOK_HMAC_SECRET` | Mesmo do Fly |
 | `INTER_WEBHOOK_RECEIVER_PUBLIC_URL` | `https://<host-do-receiver>` (sem path) |
 
+## Domínio `inter-webhook.svlotes.com.br` + DNS-01
+
+O TLS termina no **Node**. Portanto o certificado precisa ser **PEM seu** (`TLS_CERT_PEM` / `TLS_KEY_PEM`), não o certificado gerenciado pelo Fly Proxy.
+
+### 1) Após o app ter IPv4 dedicado
+
+```text
+Tipo: A
+Nome: inter-webhook
+Host: inter-webhook.svlotes.com.br
+Valor: <IPv4 dedicado do Fly — fly ips list -a sv-lotes-inter-webhook>
+Proxy CDN: desligado (DNS only) se usar Cloudflare
+```
+
+(DNS pode ser criado **depois** do `fly ips allocate-v4`; o IP sai do Fly.)
+
+### 2) Emitir certificado Let's Encrypt (DNS-01)
+
+Em Linux/WSL/macOS (Certbot; Windows oficial descontinuado — use WSL):
+
+```bash
+sudo certbot certonly \
+  --manual \
+  --preferred-challenges dns \
+  -d inter-webhook.svlotes.com.br
+```
+
+1. Certbot mostra um TXT `_acme-challenge.inter-webhook.svlotes.com.br`.
+2. Crie o TXT no DNS e aguarde propagação.
+3. Enter no Certbot.
+4. Arquivos típicos:
+   - `/etc/letsencrypt/live/inter-webhook.svlotes.com.br/fullchain.pem` → `TLS_CERT_PEM`
+   - `/etc/letsencrypt/live/inter-webhook.svlotes.com.br/privkey.pem` → `TLS_KEY_PEM`
+
+### 3) ca.crt do Inter
+
+Arquivo **Certificado Webhook** do Internet Banking Inter → `INTER_WEBHOOK_CA_PEM`.  
+Não usar o certificado/chave OAuth da API.
+
+### 4) Deploy script (após auth + PEMs)
+
+```powershell
+cd services\inter-webhook-receiver
+$env:INTER_CA_FILE = "C:\caminho\ca.crt"
+$env:TLS_CERT_FILE = "C:\caminho\fullchain.pem"
+$env:TLS_KEY_FILE  = "C:\caminho\privkey.pem"
+$env:INTER_WEBHOOK_HMAC_SECRET = "<mesmo do Vercel Preview>"
+# se necessário: $env:FLY_API_TOKEN = "..."
+.\scripts\fly-deploy-receiver.ps1
+```
+
 ## fly.dev vs domínio próprio
 
 | Host | Serve para webhook Inter? |
 |------|---------------------------|
-| `*.fly.dev` | **Não recomendado / praticamente inviável** com esta arquitetura. TLS termina no **Node**; precisamos de `TLS_CERT_PEM`/`TLS_KEY_PEM` com CN/SAN do hostname. Certificados gerenciados pelo Fly Proxy **não** são exportados para o app. Let's Encrypt em `*.fly.dev` não é controlado por nós. |
-| `inter-webhook.svlotes.com.br` | **Recomendado** para cadastro no Inter. Emitir cert (ex.: DNS-01 Let's Encrypt), colocar PEM nos secrets. DNS **ainda não** nesta etapa. |
+| `*.fly.dev` | **Não recomendado** com TLS no Node: não controlamos cert LE para `fly.dev`. |
+| `inter-webhook.svlotes.com.br` | **Recomendado** para cadastro no Inter (DNS-01 + PEMs nos secrets). |
 
-Para testes de conectividade TCP no Fly antes do domínio, pode-se usar cert autoassinado **só** em laboratório — o Inter **não** aceitará isso em produção/sandbox oficial.
+Lab com cert autoassinado só valida TCP/mTLS localmente — Inter não aceita.
 
 ## Segurança
 
@@ -96,15 +147,13 @@ Para testes de conectividade TCP no Fly antes do domínio, pode-se usar cert aut
 - Não misturar `ca.crt` com cert/key OAuth API Inter
 - Asaas intocado
 
-## URL cadastrada no Inter (depois do deploy + domínio)
+## URL cadastrada no Inter (depois do deploy + domínio + validação)
 
 ```
 https://inter-webhook.svlotes.com.br/webhook/<COMPANY_UUID>
 ```
 
-(ou o host final acordado)
-
-## Comandos Fly (NÃO executar até autorização)
+## Comandos Fly (passo a passo)
 
 ### 1) Instalar / login
 
