@@ -948,12 +948,20 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       const charge = json.charge as CompanyAsaasChargeResponse | null;
       if (charge) {
         applyInterChargeUpdate(installmentId, charge);
+        const paid = Boolean(json.paid || json.receiptUpdated || charge.status === 'PAID');
+        if (paid && !options?.silent) {
+          await loadInstallments({ syncAsaasStatuses: false });
+        }
         if (!options?.silent) {
           const hasArtifacts = Boolean(
             charge.bankSlipIdentification || charge.pixCopyPaste || charge.barCode || charge.nossoNumero,
           );
-          if (json.paid || charge.status === 'PAID') {
-            showToast('Pagamento Inter confirmado e sincronizado.');
+          if (paid) {
+            showToast(
+              json.receiptUpdated
+                ? 'Pagamento Inter confirmado — parcela baixada automaticamente.'
+                : 'Pagamento Inter confirmado e sincronizado.',
+            );
           } else if (hasArtifacts) {
             showToast('Dados Inter atualizados (linha/Pix materializados).');
           } else {
@@ -1306,6 +1314,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         for (const installmentId of interIds) {
           if (await handleRefreshInter(installmentId, { silent: true })) ok += 1;
         }
+        await loadInstallments({ syncAsaasStatuses: false });
       } finally {
         setBulkBusy(false);
       }
@@ -1337,6 +1346,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         for (const installmentId of interIds) {
           if (await handleRefreshInter(installmentId, { silent: true })) ok += 1;
         }
+        await loadInstallments({ syncAsaasStatuses: false });
       } finally {
         setBulkBusy(false);
       }

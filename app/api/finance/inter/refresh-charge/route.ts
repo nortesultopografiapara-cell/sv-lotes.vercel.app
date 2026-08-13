@@ -37,6 +37,14 @@ export async function POST(request: Request) {
       inserted: false,
       reused: true,
       paid: Boolean(result.paid),
+      receiptUpdated: Boolean(result.receiptUpdated),
+      receipt: result.receiptStatus
+        ? {
+            status: result.receiptStatus,
+            paidAt: result.receiptPaidAt,
+            paidAmount: result.receiptPaidAmount,
+          }
+        : null,
       artifactsReady: Boolean(
         result.charge.bankSlipIdentification ||
           result.charge.barCode ||

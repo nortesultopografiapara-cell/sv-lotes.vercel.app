@@ -51,7 +51,9 @@ function createMockAdmin(seed?: {
 
     const api: Record<string, unknown> = {
       select: (_cols?: string) => {
-        state.op = 'select';
+        if (state.op !== 'insert' && state.op !== 'update') {
+          state.op = 'select';
+        }
         return api;
       },
       insert: (payload: Row) => {
@@ -287,6 +289,24 @@ async function main() {
     });
     assert(r2.duplicate, 'callback duplicado');
     assert(mock.cashMovements.length === 1, 'sem baixa duplicada');
+    assert(mock.getReceipt()?.status === 'pago', 'parcela permanece paga após duplicata');
+
+    mock.getReceipt()!.status = 'pendente';
+    mock.getReceipt()!.paid_at = null;
+    mock.getReceipt()!.paid_amount = null;
+    const r3 = await processInterWebhookCallbackItem(mock.admin, {
+      companyId: 'co-1',
+      item: {
+        codigoSolicitacao: 'sol-1',
+        situacao: 'RECEBIDO',
+        dataHoraSituacao: '2026-08-12T12:00:00Z',
+      },
+      confirmCharge: confirm,
+    });
+    assert(r3.duplicate, 'webhook duplicado ainda reclama idempotência');
+    assert(r3.paid, 'duplicata RECEBIDO ainda aplica settlement');
+    assert(mock.getReceipt()?.status === 'pago', 'webhook duplicado sara parcela pendente');
+    assert(mock.cashMovements.length === 1, 'heal duplicado não cria segundo cash_movement');
   }
 
   // PIX

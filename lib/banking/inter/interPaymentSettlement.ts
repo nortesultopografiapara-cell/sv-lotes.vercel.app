@@ -1,6 +1,7 @@
 /**
  * Baixa idempotente de cobrança Inter paga (webhook ou refresh GET).
  * Não emite cobrança. Não duplica cash_movements.
+ * Parcela (finance_receipts) é a fonte de verdade para Central e Financeiro.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -11,6 +12,8 @@ import {
 } from '@/lib/banking/inter/interCobrancaClient';
 import { isInterSituacaoRecebido } from '@/lib/banking/inter/interStatus';
 
+export const INTER_FINANCE_RECEIPT_PAID_STATUS = 'pago' as const;
+
 export type InterPaidSettlementResult = {
   paid: boolean;
   duplicate: boolean;
@@ -18,12 +21,52 @@ export type InterPaidSettlementResult = {
   financeReceiptId: string | null;
   cashMovementId: string | null;
   origemRecebimento: 'BOLETO' | 'PIX' | 'UNKNOWN';
+  receiptUpdated: boolean;
+  receiptStatus: string | null;
+  receiptPaidAt: string | null;
+  receiptPaidAmount: number | null;
 };
 
 function asMeta(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function isReceiptPaidStatus(status: unknown): boolean {
+  const s = String(status || '').trim().toLowerCase();
+  return s === INTER_FINANCE_RECEIPT_PAID_STATUS || s === 'paid';
+}
+
+async function loadFinanceReceiptForInterSettlement(
+  admin: SupabaseClient,
+  companyId: string,
+  financeReceiptId: string,
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await admin
+    .from('finance_receipts')
+    .select(
+      'id, status, tenant_id, company_id, sale_id, customer_id, project_id, installment_number, amount, paid_amount, paid_at',
+    )
+    .eq('id', financeReceiptId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.id) return null;
+  const owner = String(data.company_id || data.tenant_id || '').trim();
+  if (owner && owner !== companyId) return null;
+  return data as Record<string, unknown>;
+}
+
+/** Colunas reais de finance_receipts — sem payment_method/updated_at. */
+export function buildInterFinanceReceiptPaidPatch(input: {
+  paidAmount: number;
+  paidAt: string;
+}): { status: typeof INTER_FINANCE_RECEIPT_PAID_STATUS; paid_amount: number; paid_at: string } {
+  return {
+    status: INTER_FINANCE_RECEIPT_PAID_STATUS,
+    paid_amount: input.paidAmount,
+    paid_at: input.paidAt,
+  };
 }
 
 export async function settleInterPaidCharge(admin: SupabaseClient, input: {
@@ -46,20 +89,26 @@ export async function settleInterPaidCharge(admin: SupabaseClient, input: {
   const prevMeta = asMeta(charge.metadata);
   const chargeId = String(charge.id);
 
+  const empty: InterPaidSettlementResult = {
+    paid: false,
+    duplicate: false,
+    bankChargeId: chargeId,
+    financeReceiptId: charge.finance_receipt_id ? String(charge.finance_receipt_id) : null,
+    cashMovementId: null,
+    origemRecebimento: origem,
+    receiptUpdated: false,
+    receiptStatus: null,
+    receiptPaidAt: null,
+    receiptPaidAmount: null,
+  };
+
   if (!isInterSituacaoRecebido(confirmed.situacao) && String(charge.status).toUpperCase() !== 'PAID') {
-    return {
-      paid: false,
-      duplicate: false,
-      bankChargeId: chargeId,
-      financeReceiptId: charge.finance_receipt_id ? String(charge.finance_receipt_id) : null,
-      cashMovementId: null,
-      origemRecebimento: origem,
-    };
+    return empty;
   }
 
-  const alreadyPaid = String(charge.status).toUpperCase() === 'PAID';
-  if (!alreadyPaid) {
-    await admin
+  const alreadyChargePaid = String(charge.status).toUpperCase() === 'PAID';
+  if (!alreadyChargePaid) {
+    const { error: chargeErr } = await admin
       .from('bank_charges')
       .update({
         status: 'PAID',
@@ -88,36 +137,63 @@ export async function settleInterPaidCharge(admin: SupabaseClient, input: {
       })
       .eq('id', chargeId)
       .eq('company_id', companyId);
+    if (chargeErr) throw new Error(chargeErr.message);
   }
 
   let financeReceiptId = charge.finance_receipt_id
     ? String(charge.finance_receipt_id)
     : null;
   let cashMovementId: string | null = null;
+  let receiptUpdated = false;
+  let receiptStatus: string | null = null;
+  let receiptPaidAt: string | null = null;
+  let receiptPaidAmount: number | null = null;
+  let receiptWasAlreadyPaid = false;
+  let cashMovementExisted = false;
 
   if (financeReceiptId) {
-    const { data: receipt } = await admin
-      .from('finance_receipts')
-      .select('id, status, company_id, sale_id, customer_id, project_id, installment_number, amount')
-      .eq('id', financeReceiptId)
-      .eq('company_id', companyId)
-      .maybeSingle();
+    const receipt = await loadFinanceReceiptForInterSettlement(
+      admin,
+      companyId,
+      financeReceiptId,
+    );
 
     if (receipt?.id) {
-      const receiptPaid = String(receipt.status || '').toLowerCase() === 'pago';
-      if (!receiptPaid) {
-        await admin
+      receiptStatus = String(receipt.status || '') || null;
+      receiptPaidAt = receipt.paid_at ? String(receipt.paid_at) : null;
+      receiptPaidAmount =
+        receipt.paid_amount != null ? Number(receipt.paid_amount) : null;
+      receiptWasAlreadyPaid = isReceiptPaidStatus(receipt.status);
+      if (!isReceiptPaidStatus(receipt.status)) {
+        const patch = buildInterFinanceReceiptPaidPatch({ paidAmount, paidAt });
+        const { error: receiptErr } = await admin
           .from('finance_receipts')
-          .update({
-            status: 'pago',
-            paid_amount: paidAmount,
-            paid_at: paidAt,
-            payment_method:
-              origem === 'PIX' ? 'pix' : origem === 'BOLETO' ? 'boleto' : 'banco_inter',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', receipt.id)
-          .eq('company_id', companyId);
+          .update(patch)
+          .eq('id', String(receipt.id));
+        if (receiptErr) {
+          throw new Error(
+            `Falha ao baixar parcela finance_receipts (${String(receipt.id)}): ${receiptErr.message}`,
+          );
+        }
+        const { data: updated, error: verifyErr } = await admin
+          .from('finance_receipts')
+          .select('id, status, paid_amount, paid_at')
+          .eq('id', String(receipt.id))
+          .maybeSingle();
+        if (verifyErr) {
+          throw new Error(
+            `Falha ao conferir parcela finance_receipts (${String(receipt.id)}): ${verifyErr.message}`,
+          );
+        }
+        if (!updated?.id || !isReceiptPaidStatus(updated.status)) {
+          throw new Error(
+            `UPDATE finance_receipts não liquidou a parcela (installment_id=${String(receipt.id)}).`,
+          );
+        }
+        receiptUpdated = true;
+        receiptStatus = INTER_FINANCE_RECEIPT_PAID_STATUS;
+        receiptPaidAt = paidAt;
+        receiptPaidAmount = paidAmount;
       }
 
       const { data: existingMv } = await admin
@@ -133,6 +209,7 @@ export async function settleInterPaidCharge(admin: SupabaseClient, input: {
 
       if (existingMv?.id) {
         cashMovementId = String(existingMv.id);
+        cashMovementExisted = true;
       } else {
         const movementDate = paidAt.slice(0, 10);
         const payload = buildCashMovementEntradaPayload({
@@ -182,12 +259,19 @@ export async function settleInterPaidCharge(admin: SupabaseClient, input: {
     }
   }
 
+  const duplicate =
+    alreadyChargePaid && receiptWasAlreadyPaid && cashMovementExisted;
+
   return {
     paid: true,
-    duplicate: alreadyPaid,
+    duplicate,
     bankChargeId: chargeId,
     financeReceiptId,
     cashMovementId,
     origemRecebimento: origem,
+    receiptUpdated,
+    receiptStatus,
+    receiptPaidAt,
+    receiptPaidAmount,
   };
 }

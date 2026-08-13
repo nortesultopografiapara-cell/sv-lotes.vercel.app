@@ -11,7 +11,9 @@ import {
   isInterSituacaoRecebido,
   mapInterSituacaoToBankStatus,
 } from '../lib/banking/inter/interStatus';
-import { settleInterPaidCharge } from '../lib/banking/inter/interPaymentSettlement';
+import { settleInterPaidCharge, buildInterFinanceReceiptPaidPatch } from '../lib/banking/inter/interPaymentSettlement';
+import { filterChargeInstallments, computeInstallmentStatus, formatInstallmentStatusLabel } from '../lib/charges/chargeInstallmentHelpers';
+import { buildSaleChargesSummaryFromRows, type SaleChargeInstallmentRow } from '../lib/finance/saleChargesShared';
 import { buildInterCarnePdfBytes, expectedInterCarnePageCount } from '../lib/banking/inter/interCarnePdf';
 import {
   containFitRect,
@@ -246,10 +248,30 @@ function testRefreshGetOnlyAndPdfRoute() {
   const service = read('lib/banking/inter/interSaleChargeService.ts');
   assert.match(service, /if \(existing\?\.id\)/);
   assert.match(service, /reused: true/);
+  assert.match(service, /settleInterPaidCharge/);
+  assert.match(refresh, /receiptUpdated/);
+  assert.match(refresh, /created: false/);
   assert.doesNotMatch(
     service.slice(service.indexOf('if (existing?.id)'), service.indexOf('const { data: receipt')),
     /createInterCobranca/,
   );
+  const refreshFn = service.slice(
+    service.indexOf('export async function refreshInterChargeArtifacts'),
+    service.indexOf('export async function getInterSaleChargesSummary'),
+  );
+  assert.match(refreshFn, /settleInterPaidCharge/);
+  assert.doesNotMatch(refreshFn, /createInterCobranca/);
+  const page = read('components/charges/ChargesPageClient.tsx');
+  const refreshInterFn = page.slice(
+    page.indexOf('const handleRefreshInter'),
+    page.indexOf('const handleDownloadInterPdf'),
+  );
+  assert.match(refreshInterFn, /receiptUpdated/);
+  assert.match(refreshInterFn, /loadInstallments\(\{ syncAsaasStatuses: false \}\)/);
+  const bulkRefresh = page.slice(page.indexOf('const runBulkRefresh'), page.indexOf('const handleRefreshList'));
+  assert.match(bulkRefresh, /handleRefreshInter/);
+  assert.match(bulkRefresh, /loadInstallments\(\{ syncAsaasStatuses: false \}\)/);
+  assert.doesNotMatch(bulkRefresh, /create-charge/);
   console.log('OK refresh GET-only / PDF oficial / emissão não duplica');
 }
 
@@ -481,17 +503,41 @@ async function testCompactCarnePagination() {
 }
 
 async function testPaymentSettlementIdempotent() {
+  const patch = buildInterFinanceReceiptPaidPatch({
+    paidAmount: 11.11,
+    paidAt: '2026-08-13T12:00:00Z',
+  });
+  assert.deepEqual(Object.keys(patch).sort(), ['paid_amount', 'paid_at', 'status']);
+  assert.equal(patch.status, 'pago');
+  assert.equal('payment_method' in patch, false);
+  assert.equal('updated_at' in patch, false);
+
+  const settlementSrc = read('lib/banking/inter/interPaymentSettlement.ts');
+  assert.match(settlementSrc, /status: INTER_FINANCE_RECEIPT_PAID_STATUS/);
+  assert.doesNotMatch(settlementSrc, /payment_method:/);
+  assert.match(settlementSrc, /company_id \|\| data\.tenant_id/);
+  const webhookSrc = read('lib/banking/inter/interWebhookProcessor.ts');
+  assert.match(webhookSrc, /settleInterPaidCharge/);
+  assert.match(webhookSrc, /healDuplicateInterWebhook/);
+  const financeUi = read('components/finance/FinancePremiumUI.tsx');
+  assert.match(financeUi, /label = 'PAGO'/);
+  assert.match(financeUi, /s === 'pago' \|\| s === 'paid'/);
+
   const chargeSeed: Row = {
     id: 'bc-paid',
     company_id: 'co-1',
     status: 'REGISTERED',
-    amount: 5,
+    amount: 11.11,
     finance_receipt_id: 'fr-paid',
     sale_id: 's-1',
     customer_id: 'cu-1',
     external_id: '937fb876-9e2f-4cf2-a2aa-d6be84923b7f',
     metadata: {},
   };
+  const detail11 = paidDetail({
+    valorNominal: 11.11,
+    valorTotalRecebido: 11.11,
+  });
   const mock = createSettlementMock({
     charge: chargeSeed,
     receipt: {
@@ -502,30 +548,215 @@ async function testPaymentSettlementIdempotent() {
       customer_id: 'cu-1',
       project_id: 'p-1',
       installment_number: 1,
-      amount: 5,
+      amount: 11.11,
     },
   });
   const first = await settleInterPaidCharge(mock.admin, {
     companyId: 'co-1',
     charge: mock.chargeRow,
-    detail: paidDetail(),
+    detail: detail11,
   });
   assert.equal(first.paid, true);
   assert.equal(first.duplicate, false);
+  assert.equal(first.receiptUpdated, true);
+  assert.equal(first.receiptStatus, 'pago');
   assert.equal(mock.cashInserts(), 1);
   assert.equal(mock.receiptRow.status, 'pago');
+  assert.equal(mock.receiptRow.paid_amount, 11.11);
   assert.equal(String(mock.chargeRow.status).toUpperCase(), 'PAID');
 
   const second = await settleInterPaidCharge(mock.admin, {
     companyId: 'co-1',
     charge: { ...mock.chargeRow, status: 'PAID' },
-    detail: paidDetail(),
+    detail: detail11,
   });
   assert.equal(second.paid, true);
   assert.equal(second.duplicate, true);
+  assert.equal(second.receiptUpdated, false);
   assert.equal(mock.cashInserts(), 1);
   assert.equal(mock.movements.length, 1);
+  assert.equal(mock.receiptUpdates(), 1);
   console.log('OK pagamento Inter idempotente (1 cash_movement)');
+}
+
+async function testPaidChargeHealsPendingReceipt() {
+  const mock = createSettlementMock({
+    charge: {
+      id: 'bc-heal',
+      company_id: 'co-1',
+      status: 'PAID',
+      amount: 11.11,
+      finance_receipt_id: 'fr-heal',
+      sale_id: 's-1',
+      customer_id: 'cu-1',
+      external_id: '937fb876-9e2f-4cf2-a2aa-d6be84923b7f',
+      metadata: {},
+    },
+    receipt: {
+      id: 'fr-heal',
+      status: 'pendente',
+      company_id: null,
+      tenant_id: 'co-1',
+      sale_id: 's-1',
+      customer_id: 'cu-1',
+      project_id: 'p-1',
+      installment_number: 1,
+      amount: 11.11,
+    },
+  });
+  const settled = await settleInterPaidCharge(mock.admin, {
+    companyId: 'co-1',
+    charge: mock.chargeRow,
+    detail: paidDetail({ valorNominal: 11.11, valorTotalRecebido: 11.11 }),
+  });
+  assert.equal(settled.paid, true);
+  assert.equal(settled.duplicate, false);
+  assert.equal(settled.receiptUpdated, true);
+  assert.equal(mock.receiptRow.status, 'pago');
+  assert.equal(mock.chargeUpdates(), 0);
+  assert.equal(mock.cashInserts(), 1);
+  console.log('OK charge PAID + parcela pendente (tenant_id) é liquidada');
+}
+
+async function testUnpaidSituacaoDoesNotSettle() {
+  const mock = createSettlementMock({
+    charge: {
+      id: 'bc-open',
+      company_id: 'co-1',
+      status: 'REGISTERED',
+      amount: 5,
+      finance_receipt_id: 'fr-open',
+      metadata: {},
+    },
+    receipt: {
+      id: 'fr-open',
+      status: 'pendente',
+      company_id: 'co-1',
+      installment_number: 2,
+      amount: 5,
+    },
+  });
+  const settled = await settleInterPaidCharge(mock.admin, {
+    companyId: 'co-1',
+    charge: mock.chargeRow,
+    detail: paidDetail({
+      situacao: 'A_RECEBER',
+      origemRecebimento: undefined,
+    }),
+  });
+  assert.equal(settled.paid, false);
+  assert.equal(mock.receiptRow.status, 'pendente');
+  assert.equal(mock.cashInserts(), 0);
+  assert.equal(mock.chargeUpdates(), 0);
+  console.log('OK A_RECEBER continua pendente');
+}
+
+function testCentralAndFinanceAndSaleAgreeOnPaidParcel() {
+  const paidRow = {
+    id: 'fr-paid',
+    status: 'pago',
+    paid_at: '2026-08-13T12:00:00Z',
+    paid_amount: 11.11,
+    amount: 11.11,
+    due_date: '2026-09-09',
+    installment_number: 1,
+    sales: { installments_count: 10 },
+    projects: { name: 'LOTEAMENTO DANIEL' },
+    blocks: { block_name: '02', number: '39' },
+    customers: { name: 'Cliente' },
+  };
+  const pendingRow = {
+    ...paidRow,
+    id: 'fr-open',
+    status: 'pendente',
+    paid_at: null,
+    paid_amount: null,
+    amount: 11.11,
+  };
+  assert.equal(computeInstallmentStatus(paidRow), 'pago');
+  assert.equal(formatInstallmentStatusLabel('pago'), 'Pago');
+  const pendente = filterChargeInstallments(
+    [paidRow, pendingRow],
+    {
+      search: '',
+      statusFilter: 'Pendente',
+      projectFilter: 'Todos os projetos',
+      financialAccountFilter: 'Todas as contas',
+      startDate: '',
+      endDate: '',
+    },
+    '2026-08-13',
+  );
+  assert.equal(pendente.length, 1);
+  assert.equal(String(pendente[0].id), 'fr-open');
+  const pago = filterChargeInstallments(
+    [paidRow, pendingRow],
+    {
+      search: '',
+      statusFilter: 'Pago',
+      projectFilter: 'Todos os projetos',
+      financialAccountFilter: 'Todas as contas',
+      startDate: '',
+      endDate: '',
+    },
+    '2026-08-13',
+  );
+  assert.equal(pago.length, 1);
+  assert.equal(String(pago[0].id), 'fr-paid');
+
+  const emptyCtx = {
+    customerName: null,
+    customerEmail: null,
+    customerPhone: null,
+    projectName: 'LOTEAMENTO DANIEL',
+    quadra: '02',
+    lote: '39',
+    lotLabel: 'QD 02 — LT 39',
+    contractNumber: null,
+    financialAccountId: 'fa-1',
+  };
+  const paidInstallment: SaleChargeInstallmentRow = {
+    id: 'fr-paid',
+    sale_id: 's-1',
+    installment_number: 1,
+    due_date: '2026-09-09',
+    amount: 11.11,
+    status: 'pago',
+    paid_at: '2026-08-13T12:00:00Z',
+  };
+  const pendingInstallments: SaleChargeInstallmentRow[] = [
+    paidInstallment,
+    ...Array.from({ length: 9 }, (_, i) => ({
+      id: `fr-${i + 2}`,
+      sale_id: 's-1',
+      installment_number: i + 2,
+      due_date: '2026-10-09',
+      amount: 10.99,
+      status: 'pendente',
+    })),
+  ];
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 's-1',
+    companyId: 'co-1',
+    installments: pendingInstallments,
+    charges: [
+      charge({
+        installmentId: 'fr-paid',
+        status: 'PAID',
+        value: 11.11,
+        paidAt: '2026-08-13T12:00:00Z',
+        asaasRemoteStatus: 'RECEBIDO',
+      }),
+    ],
+    context: emptyCtx,
+    financialAccountName: 'Inter',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert.equal(summary.paidInstallments, 1);
+  assert.equal(summary.totalPaid, 11.11);
+  assert.equal(summary.eligibleInstallments, 9);
+  console.log('OK Central/Financeiro/Venda concordam na parcela paga');
 }
 
 function testGenerateMissingDoesNotReemit() {
@@ -564,6 +795,9 @@ async function main() {
   await testPartialCarne();
   await testCompactCarnePagination();
   await testPaymentSettlementIdempotent();
+  await testPaidChargeHealsPendingReceipt();
+  await testUnpaidSituacaoDoesNotSettle();
+  testCentralAndFinanceAndSaleAgreeOnPaidParcel();
   testGenerateMissingDoesNotReemit();
   testAsaasRegressionSourcesIntact();
   console.log('\n=== Inter fase final OK ===\n');

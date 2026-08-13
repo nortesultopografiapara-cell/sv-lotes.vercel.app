@@ -173,14 +173,7 @@ export async function processInterWebhookCallbackItem(
   });
 
   if (!claim.claimed) {
-    return {
-      ok: true,
-      duplicate: true,
-      ignored: false,
-      paid: false,
-      message: 'Callback duplicado — nenhuma baixa adicional.',
-      codigoSolicitacao: codigo,
-    };
+    return healDuplicateInterWebhook(admin, input, codigo);
   }
 
   try {
@@ -246,14 +239,7 @@ export async function processInterWebhookCallbackItem(
       });
       if (!finalClaim.claimed) {
         await markWebhookEvent(admin, claim.eventId, 'DUPLICATE');
-        return {
-          ok: true,
-          duplicate: true,
-          ignored: false,
-          paid: false,
-          message: 'Confirmação já processada — nenhuma baixa adicional.',
-          codigoSolicitacao: codigo,
-        };
+        return settleConfirmedRecebidoAfterDuplicate(admin, input.companyId, codigo, confirmed);
       }
       await markWebhookEvent(admin, finalClaim.eventId, 'PROCESSED');
     }
@@ -353,6 +339,113 @@ export async function processInterWebhookCallbackItem(
       message,
       codigoSolicitacao: codigo,
     };
+  }
+}
+
+async function loadInterChargeByCodigo(
+  admin: SupabaseClient,
+  companyId: string,
+  codigo: string,
+): Promise<Record<string, unknown> | null> {
+  const { data: charge } = await admin
+    .from('bank_charges')
+    .select(
+      'id, company_id, finance_receipt_id, sale_id, customer_id, status, amount, metadata, paid_at, paid_amount, external_id, barcode, digitable_line, pix_copy_paste, our_number, txid',
+    )
+    .eq('company_id', companyId)
+    .eq('provider', 'INTER')
+    .eq('external_id', codigo)
+    .maybeSingle();
+  return charge?.id ? (charge as Record<string, unknown>) : null;
+}
+
+async function settleConfirmedRecebidoAfterDuplicate(
+  admin: SupabaseClient,
+  companyId: string,
+  codigo: string,
+  confirmed: InterCobrancaDetail,
+): Promise<InterWebhookProcessResult> {
+  const base: InterWebhookProcessResult = {
+    ok: true,
+    duplicate: true,
+    ignored: false,
+    paid: false,
+    message: 'Callback duplicado — nenhuma baixa adicional.',
+    codigoSolicitacao: codigo,
+  };
+  if (!isInterSituacaoRecebido(confirmed.situacao)) {
+    return {
+      ...base,
+      ignored: true,
+      message: 'Callback duplicado — status não final.',
+    };
+  }
+  const charge = await loadInterChargeByCodigo(admin, companyId, codigo);
+  if (!charge) {
+    return {
+      ...base,
+      ignored: true,
+      message: 'Callback duplicado — cobrança local não encontrada.',
+    };
+  }
+  const settled = await settleInterPaidCharge(admin, {
+    companyId,
+    charge,
+    detail: confirmed,
+  });
+  return {
+    ...base,
+    paid: settled.paid,
+    message: settled.receiptUpdated
+      ? 'Callback duplicado — parcela sincronizada.'
+      : 'Callback duplicado — nenhuma baixa adicional.',
+    bankChargeId: settled.bankChargeId,
+    financeReceiptId: settled.financeReceiptId,
+    cashMovementId: settled.cashMovementId,
+    origemRecebimento: settled.origemRecebimento,
+  };
+}
+
+async function healDuplicateInterWebhook(
+  admin: SupabaseClient,
+  input: {
+    companyId: string;
+    item: InterWebhookCallbackItem;
+    fetchFn?: InterOAuthFetchFn;
+    confirmCharge?: (codigo: string) => Promise<InterCobrancaDetail>;
+  },
+  codigo: string,
+): Promise<InterWebhookProcessResult> {
+  const fallback: InterWebhookProcessResult = {
+    ok: true,
+    duplicate: true,
+    ignored: false,
+    paid: false,
+    message: 'Callback duplicado — nenhuma baixa adicional.',
+    codigoSolicitacao: codigo,
+  };
+  try {
+    if (!input.confirmCharge) {
+      const secrets = await loadInterSecretsForServer(admin, input.companyId);
+      if (!secrets) return fallback;
+      const confirmed = await fetchInterCobrancaByCodigo(
+        {
+          companyId: input.companyId,
+          environment: secrets.environment,
+          clientId: secrets.clientId,
+          clientSecret: secrets.clientSecret,
+          certificatePem: secrets.certificatePem,
+          privateKeyPem: secrets.privateKeyPem,
+        },
+        codigo,
+        { fetchFn: input.fetchFn },
+      );
+      return settleConfirmedRecebidoAfterDuplicate(admin, input.companyId, codigo, confirmed);
+    }
+    const confirmed = await input.confirmCharge(codigo);
+    return settleConfirmedRecebidoAfterDuplicate(admin, input.companyId, codigo, confirmed);
+  } catch {
+    return fallback;
   }
 }
 

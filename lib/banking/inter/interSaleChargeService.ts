@@ -297,6 +297,10 @@ export async function refreshInterChargeArtifacts(
   externalId: string;
   inserted: false;
   paid?: boolean;
+  receiptUpdated?: boolean;
+  receiptStatus?: string | null;
+  receiptPaidAt?: string | null;
+  receiptPaidAmount?: number | null;
 }> {
   const companyId = String(input.companyId || '').trim();
   const installmentId = String(input.installmentId || '').trim();
@@ -351,6 +355,10 @@ export async function refreshInterChargeArtifacts(
   const row = (updated as Record<string, unknown>) || { ...existing, ...patch };
 
   let paid = String(row.status || '').toUpperCase() === 'PAID';
+  let receiptUpdated = false;
+  let receiptStatus: string | null = null;
+  let receiptPaidAt: string | null = null;
+  let receiptPaidAmount: number | null = null;
   if (isInterSituacaoRecebido(detail.situacao)) {
     const settled = await settleInterPaidCharge(admin, {
       companyId,
@@ -358,6 +366,10 @@ export async function refreshInterChargeArtifacts(
       detail,
     });
     paid = settled.paid;
+    receiptUpdated = settled.receiptUpdated;
+    receiptStatus = settled.receiptStatus;
+    receiptPaidAt = settled.receiptPaidAt;
+    receiptPaidAmount = settled.receiptPaidAmount;
     if (paid) {
       row.status = 'PAID';
     }
@@ -369,6 +381,10 @@ export async function refreshInterChargeArtifacts(
     created: false,
     inserted: false,
     paid,
+    receiptUpdated,
+    receiptStatus,
+    receiptPaidAt,
+    receiptPaidAmount,
     bankChargeId: String(row.id),
     externalId,
   };
