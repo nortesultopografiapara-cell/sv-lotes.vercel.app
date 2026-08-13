@@ -4,6 +4,7 @@ import { isBankingModuleEnabled } from '@/lib/banking/config';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { decryptBankingSecret } from '@/lib/banking/credentialsCrypto';
 import { getCompanyAsaasIntegrationConfig } from '@/lib/finance/asaasIntegrationRepository';
+import { isFinancialAccountRequiredError } from '@/lib/finance/financialAccountRequired';
 import {
   executeCompanyAsaasPaymentReconciliation,
   isCompanyAsaasPaidWebhookEvent,
@@ -157,7 +158,12 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
     return NextResponse.json({ error: adminError || 'Serviço indisponível.' }, { status: 503 });
   }
 
-  const expectedToken = await loadCompanyAsaasWebhookToken(admin, companyId);
+  let expectedToken: string | null = null;
+  try {
+    expectedToken = await loadCompanyAsaasWebhookToken(admin, companyId);
+  } catch (err) {
+    if (!isFinancialAccountRequiredError(err)) throw err;
+  }
   const allTokens = await loadAllCompanyAsaasWebhookTokens(admin, companyId);
   const tokensToTry = Array.from(
     new Set([expectedToken, ...allTokens].filter((t): t is string => Boolean(t))),

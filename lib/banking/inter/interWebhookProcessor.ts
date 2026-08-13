@@ -11,6 +11,7 @@ import {
   type InterCobrancaDetail,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
+import { isFinancialAccountRequiredError } from '@/lib/finance/financialAccountRequired';
 import type { InterOAuthFetchFn } from '@/lib/banking/inter/interOAuthClient';
 import { refreshInterChargeArtifacts } from '@/lib/banking/inter/interSaleChargeService';
 import { settleInterPaidCharge } from '@/lib/banking/inter/interPaymentSettlement';
@@ -50,6 +51,20 @@ export function extractInterCallbackItems(payload: unknown): InterWebhookCallbac
 
 export function resolveCodigoSolicitacao(item: InterWebhookCallbackItem): string {
   return String(item.codigoSolicitacao || item.idSolicitacao || '').trim();
+}
+
+async function loadInterSecretsForUnknownCharge(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<Awaited<ReturnType<typeof loadInterSecretsForServer>>> {
+  try {
+    return await loadInterSecretsForServer(admin, companyId);
+  } catch (err) {
+    if (isFinancialAccountRequiredError(err)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 export type InterWebhookProcessResult = {
@@ -198,7 +213,7 @@ export async function processInterWebhookCallbackItem(
               ? String(localCharge.financial_account_id)
               : null,
           })
-        : await loadInterSecretsForServer(admin, input.companyId);
+        : await loadInterSecretsForUnknownCharge(admin, input.companyId);
     if (!input.confirmCharge && !secrets) {
       await markWebhookEvent(admin, claim.eventId, 'FAILED', 'Credenciais Inter ausentes');
       return {
@@ -424,12 +439,16 @@ async function healDuplicateInterWebhook(
   try {
     const localCharge = await loadInterChargeByCodigo(admin, input.companyId, codigo);
     if (!input.confirmCharge) {
-      const secrets = await loadInterSecretsForServer(admin, input.companyId, {
-        integrationId: localCharge?.integration_id ? String(localCharge.integration_id) : null,
-        financialAccountId: localCharge?.financial_account_id
-          ? String(localCharge.financial_account_id)
-          : null,
-      });
+      const secrets = localCharge
+        ? await loadInterSecretsForServer(admin, input.companyId, {
+            integrationId: localCharge.integration_id
+              ? String(localCharge.integration_id)
+              : null,
+            financialAccountId: localCharge.financial_account_id
+              ? String(localCharge.financial_account_id)
+              : null,
+          })
+        : await loadInterSecretsForUnknownCharge(admin, input.companyId);
       if (!secrets) return fallback;
       const confirmed = await fetchInterCobrancaByCodigo(
         {

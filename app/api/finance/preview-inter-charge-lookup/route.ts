@@ -111,6 +111,9 @@ function siblingArtifacts(raw: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
+  if (process.env.VERCEL_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   if (!authorized(request)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }

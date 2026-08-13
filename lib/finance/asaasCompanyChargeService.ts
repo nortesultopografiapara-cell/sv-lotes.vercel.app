@@ -149,7 +149,9 @@ async function resolveCompanyAsaasCredentials(
     );
   }
 
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
+  const config = await getCompanyAsaasIntegrationConfig(admin, companyId, {
+    financialAccountId: account.id,
+  });
   if (!isCompanyAsaasIntegrationReady(config) && resolved.source === 'company_default') {
     throw new CompanyAsaasIntegrationInactiveError();
   }

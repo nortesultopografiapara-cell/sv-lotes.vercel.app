@@ -9,6 +9,7 @@ import {
   listCompanyFinancialAccounts,
 } from '@/lib/finance/companyFinancialAccountRepository';
 import type { CompanyFinancialAccountResponse } from '@/lib/finance/companyFinancialAccountTypes';
+import { resolveUniqueProviderAccount } from '@/lib/finance/financialAccountRequired';
 
 const ASAAS_LINKED_ERROR =
   'Esta conta já está vinculada ao Asaas. Crie uma nova conta financeira ou selecione outra conta.';
@@ -17,17 +18,11 @@ async function getInterIntegrationId(
   admin: SupabaseClient,
   companyId: string,
 ): Promise<string> {
-  const { data, error } = await admin
-    .from('bank_integrations')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('provider', 'INTER')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.id) throw new Error('Configure o Banco Inter antes de criar/vincular a conta financeira.');
-  return String(data.id);
+  const unique = await resolveUniqueProviderAccount(admin, companyId, 'INTER');
+  if (!unique.integrationId) {
+    throw new Error('Configure o Banco Inter antes de criar/vincular a conta financeira.');
+  }
+  return unique.integrationId;
 }
 
 async function getAsaasCompanyIntegrationId(

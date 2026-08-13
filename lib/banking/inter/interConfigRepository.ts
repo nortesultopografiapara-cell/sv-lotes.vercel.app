@@ -25,6 +25,7 @@ import {
   validateInterCertificatePem,
   validateInterPrivateKeyPem,
 } from '@/lib/banking/inter/interPemValidation';
+import { resolveUniqueProviderAccount } from '@/lib/finance/financialAccountRequired';
 
 type IntegrationRow = {
   id: string;
@@ -225,31 +226,16 @@ export async function resolveInterIntegrationId(
     };
   }
 
-  const { data, error } = await admin
-    .from('bank_integrations')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('provider', 'INTER')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.id) return { integrationId: null, financialAccountId: null };
-  const { data: fa } = await admin
-    .from('company_financial_accounts')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('bank_integration_id', data.id)
-    .limit(1)
-    .maybeSingle();
+  const unique = await resolveUniqueProviderAccount(admin, companyId, 'INTER');
   return {
-    integrationId: String(data.id),
-    financialAccountId: fa?.id ? String(fa.id) : null,
+    integrationId: unique.integrationId,
+    financialAccountId: unique.financialAccountId,
   };
 }
 
 /**
- * Carrega integração INTER da conta financeira (ou a mais recente, compatível com 1 conta).
+ * Carrega integração INTER da conta financeira.
+ * Sem lookup: só se existir exatamente 1 conta/integração INTER.
  */
 export async function getCompanyInterBankConfig(
   admin: SupabaseClient,

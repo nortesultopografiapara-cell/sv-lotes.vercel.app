@@ -18,6 +18,10 @@ import {
 import { resolveFinancialAccountForSaleOptional } from '../lib/finance/companyFinancialAccountResolver';
 import { resolveInterIntegrationId } from '../lib/banking/inter/interConfigRepository';
 import { assertSecretsDoNotCrossAccounts } from '../lib/finance/financialAccountCredentialResolver';
+import {
+  FINANCIAL_ACCOUNT_REQUIRED,
+  resolveUniqueProviderAccount,
+} from '../lib/finance/financialAccountRequired';
 import { interChargeBelongsToReceiptAccount } from '../lib/banking/inter/interPaymentSettlement';
 import {
   clearAllInterTokenCacheForTests,
@@ -400,6 +404,18 @@ async function main() {
 
   void resolveSaleChargesProvider;
 
+  // Fallback legado: 1 INTER / 1 ASAAS sem financial_account_id
+  {
+    const mock = createMultiAccountMock();
+    const inter = await resolveUniqueProviderAccount(mock.admin, 'co-1', 'INTER');
+    assert(inter.integrationId === 'int-inter', 'fallback 1 INTER usa a única conta');
+    assert(inter.financialAccountId === 'fa-inter', 'fallback 1 INTER devolve FA');
+    const asaas = await resolveUniqueProviderAccount(mock.admin, 'co-1', 'ASAAS_COMPANY');
+    assert(asaas.integrationId === 'int-asaas', 'fallback 1 ASAAS usa a única conta');
+    const resolved = await resolveInterIntegrationId(mock.admin, 'co-1');
+    assert(resolved.integrationId === 'int-inter', 'resolve Inter sem lookup com 1 conta');
+  }
+
   // TESTE A — 2 INTER mesmo company_id
   {
     const mock = createMultiAccountMock();
@@ -485,6 +501,14 @@ async function main() {
       mock.integrations.filter((i) => i.provider === 'INTER').length >= 3,
       'TESTE A — três integrações INTER coexistentes',
     );
+
+    let required = false;
+    try {
+      await resolveInterIntegrationId(mock.admin, 'co-1');
+    } catch (e) {
+      required = e instanceof Error && e.message.includes(FINANCIAL_ACCOUNT_REQUIRED);
+    }
+    assert(required, 'TESTE A — 2+ INTER sem FA → FINANCIAL_ACCOUNT_REQUIRED');
   }
 
   // TESTE B — 2 ASAAS
@@ -518,6 +542,13 @@ async function main() {
     assert(a?.bank_integration_id === 'int-asaas', 'TESTE B — Asaas A api/integration A');
     assert(b?.bank_integration_id === 'int-asaas-b', 'TESTE B — Asaas B api/integration B');
     assert(a?.bank_integration_id !== b?.bank_integration_id, 'TESTE B — API keys isoladas por integração');
+    let asaasRequired = false;
+    try {
+      await resolveUniqueProviderAccount(mock.admin, 'co-1', 'ASAAS_COMPANY');
+    } catch (e) {
+      asaasRequired = e instanceof Error && e.message.includes(FINANCIAL_ACCOUNT_REQUIRED);
+    }
+    assert(asaasRequired, 'TESTE B — 2+ ASAAS sem FA → FINANCIAL_ACCOUNT_REQUIRED');
     const repo = fs.readFileSync(
       path.join(__dirname, '../lib/finance/companyFinancialAccountRepository.ts'),
       'utf8',
@@ -678,6 +709,24 @@ async function main() {
     assert(
       fs.existsSync(path.join(root, 'supabase/migrations/20260907120000_multi_bank_accounts_per_company.sql')),
       'migration multi-conta existe',
+    );
+    const requiredSrc = fs.readFileSync(
+      path.join(root, 'lib/finance/financialAccountRequired.ts'),
+      'utf8',
+    );
+    assert(requiredSrc.includes('FINANCIAL_ACCOUNT_REQUIRED'), 'erro explícito multi-conta');
+    const previewLookup = fs.readFileSync(
+      path.join(root, 'app/api/finance/preview-inter-charge-lookup/route.ts'),
+      'utf8',
+    );
+    assert(
+      previewLookup.includes("VERCEL_ENV === 'production'") && previewLookup.includes('404'),
+      'diagnóstico Preview bloqueado em Production',
+    );
+    const mw = fs.readFileSync(path.join(root, 'middleware.ts'), 'utf8');
+    assert(
+      !mw.includes("'/api/finance/preview-inter-charge-lookup'"),
+      'diagnóstico fora das rotas públicas',
     );
   }
 
