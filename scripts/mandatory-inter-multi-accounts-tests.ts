@@ -700,6 +700,12 @@ async function main() {
     );
     assert(faPanel.includes('Nova conta Asaas'), 'UI Nova conta Asaas');
     assert(faPanel.includes('Nova conta Inter'), 'UI Nova conta Inter');
+    assert(
+      faPanel.includes("from '@/lib/finance/asaasIntegrationConfig'"),
+      'FinancialAccountsPanel importa buildDefaultAsaasWebhookUrl',
+    );
+    assert(faPanel.includes('buildDefaultAsaasWebhookUrl('), 'FinancialAccountsPanel gera webhook Asaas default');
+    assert(faPanel.includes('InterBankConfigPanel'), 'FinancialAccountsPanel embute config Inter');
     assert(faPanel.includes("title === 'INTER' ? 'Banco Inter'") || faPanel.includes("'Banco Inter'"), 'lista agrupada Inter');
     const resolver = fs.readFileSync(
       path.join(root, 'lib/finance/financialAccountCredentialResolver.ts'),

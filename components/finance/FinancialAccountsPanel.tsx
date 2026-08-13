@@ -8,6 +8,7 @@ import {
   type CompanyFinancialAccountResponse,
   type CompanyFinancialAccountType,
 } from '@/lib/finance/companyFinancialAccountTypes';
+import { buildDefaultAsaasWebhookUrl } from '@/lib/finance/asaasIntegrationConfig';
 import { InterBankConfigPanel } from '@/components/finance/InterBankConfigPanel';
 
 type Props = {
