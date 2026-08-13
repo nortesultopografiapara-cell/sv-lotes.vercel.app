@@ -52,6 +52,19 @@ export type CompanyFinancialAccountResponse = {
   updatedAt: string;
 };
 
+/** Nome inicial de rascunho — nunca herdar nome de outra conta/provider. */
+export const NEW_ASAAS_FINANCIAL_ACCOUNT_NAME = 'Nova conta Asaas';
+export const NEW_INTER_FINANCIAL_ACCOUNT_NAME = 'Nova conta Banco Inter';
+
+export function isAsaasFinancialProvider(provider: string | null | undefined): boolean {
+  const p = String(provider || '').trim().toUpperCase();
+  return p === 'ASAAS_COMPANY' || p === 'ASAAS';
+}
+
+export function isInterFinancialProvider(provider: string | null | undefined): boolean {
+  return String(provider || '').trim().toUpperCase() === 'INTER';
+}
+
 export const COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS: Record<CompanyFinancialAccountType, string> = {
   IMOBILIARIA: 'Imobiliária',
   PROPRIETARIO: 'Proprietário',

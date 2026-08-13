@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
 import {
+  isInterFinancialProvider,
   type CompanyFinancialAccountResponse,
   type CompanyFinancialAccountRow,
   type CompanyFinancialAccountType,
@@ -204,15 +205,18 @@ async function ensureBankIntegrationForAccount(
   },
 ): Promise<string> {
   if (account.bank_integration_id) {
+    const patch: Record<string, unknown> = {
+      environment: input.environment,
+      label: account.name,
+      updated_at: new Date().toISOString(),
+      active: account.active,
+    };
+    if (input.webhookUrl !== undefined) {
+      patch.webhook_url = cleanText(input.webhookUrl) || null;
+    }
     const { error } = await admin
       .from('bank_integrations')
-      .update({
-        environment: input.environment,
-        webhook_url: cleanText(input.webhookUrl) || null,
-        label: account.name,
-        updated_at: new Date().toISOString(),
-        active: account.active,
-      })
+      .update(patch)
       .eq('id', account.bank_integration_id)
       .eq('company_id', companyId);
     if (error) throw new Error(error.message);
@@ -356,6 +360,10 @@ export async function updateCompanyFinancialAccount(
 
   if (error) throw new Error(error.message);
   const row = data as CompanyFinancialAccountRow;
+
+  if (isInterFinancialProvider(existing.provider)) {
+    return (await getCompanyFinancialAccountById(admin, companyId, accountId))!;
+  }
 
   const integrationId = await ensureBankIntegrationForAccount(admin, companyId, userId, row, {
     environment: (input.environment ?? row.environment) as BankEnvironment,

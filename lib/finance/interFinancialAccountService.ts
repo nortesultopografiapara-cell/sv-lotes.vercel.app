@@ -8,7 +8,10 @@ import {
   getCompanyFinancialAccountById,
   listCompanyFinancialAccounts,
 } from '@/lib/finance/companyFinancialAccountRepository';
-import type { CompanyFinancialAccountResponse } from '@/lib/finance/companyFinancialAccountTypes';
+import {
+  NEW_INTER_FINANCIAL_ACCOUNT_NAME,
+  type CompanyFinancialAccountResponse,
+} from '@/lib/finance/companyFinancialAccountTypes';
 import { resolveUniqueProviderAccount } from '@/lib/finance/financialAccountRequired';
 
 const ASAAS_LINKED_ERROR =
@@ -154,20 +157,14 @@ export async function createInterFinancialAccount(
   const interIntegrations = (integrations as Array<{ id: string; environment?: string }> | null) || [];
   const unused = interIntegrations.find((row) => !linkedIntegrationIds.has(String(row.id)));
 
-  const { data: company } = await admin
-    .from('companies')
-    .select('name')
-    .eq('id', companyId)
-    .maybeSingle();
-  const companyName = String(company?.name || 'Empresa').trim() || 'Empresa';
-  const name =
-    String(input?.name || '').trim() || `${companyName} — Banco Inter`;
+  const name = String(input?.name || '').trim() || NEW_INTER_FINANCIAL_ACCOUNT_NAME;
+  const beneficiaryName = String(input?.beneficiaryName || '').trim() || null;
 
   if (!input?.createAdditional) {
     if (unused?.id) {
       return insertInterFinancialAccountRow(admin, companyId, {
         name,
-        beneficiaryName: String(input?.beneficiaryName || companyName).trim() || companyName,
+        beneficiaryName,
         integrationId: String(unused.id),
         environment: (unused.environment as 'SANDBOX' | 'PRODUCTION') || 'SANDBOX',
       });
@@ -197,7 +194,7 @@ export async function createInterFinancialAccount(
 
   return insertInterFinancialAccountRow(admin, companyId, {
     name,
-    beneficiaryName: String(input?.beneficiaryName || companyName).trim() || companyName,
+    beneficiaryName,
     integrationId: String(createdInt.id),
     environment: (createdInt.environment as 'SANDBOX' | 'PRODUCTION') || 'SANDBOX',
   });
@@ -208,7 +205,7 @@ async function insertInterFinancialAccountRow(
   companyId: string,
   input: {
     name: string;
-    beneficiaryName: string;
+    beneficiaryName: string | null;
     integrationId: string;
     environment: string;
   },

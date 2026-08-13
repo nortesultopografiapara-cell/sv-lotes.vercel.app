@@ -5,6 +5,9 @@ import { Building2, Loader2, Plus, Save, ShieldCheck, Star } from 'lucide-react'
 import {
   COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS,
   COMPANY_FINANCIAL_ACCOUNT_TYPES,
+  NEW_ASAAS_FINANCIAL_ACCOUNT_NAME,
+  NEW_INTER_FINANCIAL_ACCOUNT_NAME,
+  isInterFinancialProvider,
   type CompanyFinancialAccountResponse,
   type CompanyFinancialAccountType,
 } from '@/lib/finance/companyFinancialAccountTypes';
@@ -83,7 +86,8 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
   const [form, setForm] = useState<FormState>(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creatingProvider, setCreatingProvider] = useState<'ASAAS' | 'INTER' | null>(null);
+  const creating = creatingProvider !== null;
 
   const suggestedWebhookUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -94,6 +98,10 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
     () => accounts.find((account) => account.id === selectedId) ?? null,
     [accounts, selectedId],
   );
+  const selectedIsInter = isInterFinancialProvider(selectedAccount?.provider);
+  const showAsaasEnvironment = creatingProvider === 'ASAAS' || (!creating && selectedAccount && !selectedIsInter);
+  const showAsaasCredentials = creatingProvider === 'ASAAS' || (!creating && selectedAccount && !selectedIsInter);
+  const showInterCredentials = !creating && selectedIsInter && Boolean(selectedAccount?.id);
 
   const loadAccounts = useCallback(async () => {
     setLoading(true);
@@ -106,84 +114,122 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
       const list = (json.accounts as CompanyFinancialAccountResponse[]) || [];
       setAccounts(list);
-      if (!selectedId && list.length > 0) {
-        const defaultAccount = list.find((item) => item.isDefault) || list[0];
-        setSelectedId(defaultAccount.id);
-        setForm(accountToForm(defaultAccount));
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar contas financeiras.');
     } finally {
       setLoading(false);
     }
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => {
     void loadAccounts();
   }, [loadAccounts]);
 
   useEffect(() => {
+    if (creatingProvider) return;
+    if (selectedId) return;
+    if (accounts.length === 0) return;
+    const defaultAccount = accounts.find((item) => item.isDefault) || accounts[0];
+    setSelectedId(defaultAccount.id);
+  }, [accounts, selectedId, creatingProvider]);
+
+  useEffect(() => {
+    if (creatingProvider) return;
     if (!selectedAccount) return;
     setForm(accountToForm(selectedAccount));
-    setCreating(false);
-  }, [selectedAccount?.id]);
+  }, [selectedAccount?.id, creatingProvider]);
 
-  function startCreate() {
-    setCreating(true);
+  function startCreateAsaas() {
+    setCreatingProvider('ASAAS');
     setSelectedId(null);
     setForm({
       ...emptyForm(),
+      name: NEW_ASAAS_FINANCIAL_ACCOUNT_NAME,
+      isDefault: false,
       webhookUrl: suggestedWebhookUrl,
     });
     setSuccess(null);
     setError(null);
   }
 
-  async function startCreateInter() {
+  function startCreateInter() {
     if (readOnlyDemo) return;
-    setSaving(true);
-    setError(null);
+    setCreatingProvider('INTER');
+    setSelectedId(null);
+    setForm({
+      ...emptyForm(),
+      name: NEW_INTER_FINANCIAL_ACCOUNT_NAME,
+      isDefault: false,
+    });
     setSuccess(null);
-    try {
-      const hasInter = accounts.some((a) => a.provider === 'INTER');
-      const res = await fetch('/api/banking/inter/link-financial-account', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create',
-          createAdditional: hasInter,
-          name: form.name.trim() || undefined,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-      const account = json.account as CompanyFinancialAccountResponse;
-      setCreating(false);
-      setSelectedId(account.id);
-      setSuccess(`Conta Inter criada: ${account.name}. Configure Client ID, Secret e certificado.`);
-      await loadAccounts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao criar conta Inter.');
-    } finally {
-      setSaving(false);
-    }
+    setError(null);
+  }
+
+  function selectExistingAccount(accountId: string) {
+    setCreatingProvider(null);
+    setSelectedId(accountId);
+    setSuccess(null);
+    setError(null);
   }
 
   async function handleSave() {
     if (readOnlyDemo) return;
+    const name = form.name.trim();
+    if (!name) {
+      setError('Informe o nome da conta.');
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      const payload = {
-        ...form,
-        webhookUrl: form.webhookUrl || suggestedWebhookUrl,
-      };
+      if (creatingProvider === 'INTER') {
+        const hasInter = accounts.some((a) => a.provider === 'INTER');
+        const res = await fetch('/api/banking/inter/link-financial-account', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create',
+            createAdditional: hasInter,
+            name,
+            beneficiaryName: form.beneficiaryName.trim() || undefined,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+        const account = json.account as CompanyFinancialAccountResponse;
+        setCreatingProvider(null);
+        setSelectedId(account.id);
+        setSuccess(`Conta Inter criada: ${account.name}. Configure Client ID, Secret e certificado.`);
+        await loadAccounts();
+        return;
+      }
+
+      const isNewAsaas = creatingProvider === 'ASAAS';
+      const payload = selectedIsInter && !isNewAsaas
+        ? {
+            name,
+            accountType: form.accountType,
+            beneficiaryName: form.beneficiaryName,
+            document: form.document,
+            email: form.email,
+            phone: form.phone,
+            isDefault: form.isDefault,
+            active: form.active,
+            notes: form.notes,
+          }
+        : {
+            ...form,
+            name,
+            isDefault: isNewAsaas ? false : form.isDefault,
+            webhookUrl: form.webhookUrl || suggestedWebhookUrl,
+          };
+
       const res = await fetch(
-        creating ? '/api/finance/financial-accounts' : `/api/finance/financial-accounts/${selectedId}`,
+        isNewAsaas ? '/api/finance/financial-accounts' : `/api/finance/financial-accounts/${selectedId}`,
         {
-          method: creating ? 'POST' : 'PATCH',
+          method: isNewAsaas ? 'POST' : 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -192,8 +238,8 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
       const account = json.account as CompanyFinancialAccountResponse;
-      setSuccess(creating ? 'Conta financeira criada.' : 'Conta financeira atualizada.');
-      setCreating(false);
+      setSuccess(isNewAsaas ? 'Conta financeira criada.' : 'Conta financeira atualizada.');
+      setCreatingProvider(null);
       setSelectedId(account.id);
       await loadAccounts();
     } catch (err) {
@@ -220,7 +266,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={startCreate}
+              onClick={startCreateAsaas}
               className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
             >
               <Plus className="h-4 w-4" />
@@ -228,7 +274,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
             </button>
             <button
               type="button"
-              onClick={() => void startCreateInter()}
+              onClick={startCreateInter}
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-500/20 disabled:opacity-50"
             >
@@ -257,7 +303,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
               <Loader2 className="h-4 w-4 animate-spin" />
               Carregando contas...
             </div>
-          ) : accounts.length === 0 ? (
+          ) : accounts.length === 0 && !creating ? (
             <p className="text-sm text-[var(--text-secondary)]">
               Nenhuma conta cadastrada. A integração legada será migrada automaticamente.
             </p>
@@ -270,26 +316,39 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     return account.provider === 'ASAAS_COMPANY' || account.provider === 'ASAAS';
                   return !account.provider;
                 });
-                if (items.length === 0) return null;
+                const showDraft =
+                  (group === 'INTER' && creatingProvider === 'INTER') ||
+                  (group === 'ASAAS_COMPANY' && creatingProvider === 'ASAAS');
+                if (items.length === 0 && !showDraft) return null;
                 const title =
                   group === 'INTER'
                     ? 'Banco Inter'
                     : group === 'ASAAS_COMPANY'
                       ? 'Asaas'
                       : 'Sem provider';
+                const draftName =
+                  creatingProvider === 'INTER'
+                    ? form.name.trim() || NEW_INTER_FINANCIAL_ACCOUNT_NAME
+                    : form.name.trim() || NEW_ASAAS_FINANCIAL_ACCOUNT_NAME;
                 return (
                   <div key={group} className="space-y-1">
                     <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
                       {title}
                     </p>
+                    {showDraft ? (
+                      <div className="w-full rounded-lg border border-dashed border-[color-mix(in_srgb,var(--brand-primary)_35%,transparent)] bg-[var(--bg-elevated)] px-3 py-2 text-left">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-[var(--text-primary)]">{draftName}</span>
+                          <span className="text-[10px] uppercase text-[var(--text-muted)]">rascunho</span>
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)]">Ainda não salva</p>
+                      </div>
+                    ) : null}
                     {items.map((account) => (
                 <button
                   key={account.id}
                   type="button"
-                  onClick={() => {
-                    setCreating(false);
-                    setSelectedId(account.id);
-                  }}
+                  onClick={() => selectExistingAccount(account.id)}
                   className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
                     selectedId === account.id && !creating
                       ? 'border-[color-mix(in_srgb,var(--brand-primary)_35%,transparent)] bg-[var(--bg-elevated)]'
@@ -324,6 +383,11 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   <input
                     value={form.name}
                     disabled={readOnlyDemo}
+                    placeholder={
+                      creatingProvider === 'INTER'
+                        ? NEW_INTER_FINANCIAL_ACCOUNT_NAME
+                        : NEW_ASAAS_FINANCIAL_ACCOUNT_NAME
+                    }
                     onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                     className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
                   />
@@ -384,6 +448,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
                   />
                 </div>
+                {showAsaasEnvironment ? (
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Ambiente Asaas</label>
                   <select
@@ -401,12 +466,13 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     <option value="PRODUCTION">Produção</option>
                   </select>
                 </div>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-4 pt-6">
                   <label className="inline-flex items-center gap-2 text-sm text-[var(--text-primary)]">
                     <input
                       type="checkbox"
                       checked={form.isDefault}
-                      disabled={readOnlyDemo}
+                      disabled={readOnlyDemo || creating}
                       onChange={(e) => setForm((prev) => ({ ...prev, isDefault: e.target.checked }))}
                     />
                     Conta padrão da empresa
@@ -423,7 +489,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                 </div>
               </div>
 
-              {creating || selectedAccount?.provider !== 'INTER' ? (
+              {showAsaasCredentials ? (
               <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-4 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                   <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" />
@@ -487,12 +553,17 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   </div>
                 </div>
               </div>
-              ) : selectedAccount?.id ? (
+              ) : showInterCredentials && selectedAccount?.id ? (
                 <InterBankConfigPanel
                   financialAccountId={selectedAccount.id}
                   readOnlyDemo={readOnlyDemo}
                   embedded
                 />
+              ) : creatingProvider === 'INTER' ? (
+                <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-sm text-orange-100">
+                  Salve a conta para configurar Client ID, Secret e certificado. Uma conta nova
+                  começa incompleta (NOT_REGISTERED). Não cadastre webhook sem credenciais reais.
+                </div>
               ) : null}
 
               <div>

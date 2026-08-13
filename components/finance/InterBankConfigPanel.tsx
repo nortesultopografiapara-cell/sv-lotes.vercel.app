@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileKey2, Loader2, ShieldCheck, Upload } from 'lucide-react';
 import type { InterBankConfigPublic } from '@/lib/banking/inter/interConfigTypes';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { NEW_INTER_FINANCIAL_ACCOUNT_NAME } from '@/lib/finance/companyFinancialAccountTypes';
 
 type Props = {
   readOnlyDemo?: boolean;
@@ -316,6 +317,7 @@ export function InterBankConfigPanel({
         body: JSON.stringify({
           action: 'create',
           createAdditional: interAccounts.length > 0,
+          name: NEW_INTER_FINANCIAL_ACCOUNT_NAME,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -452,7 +454,7 @@ export function InterBankConfigPanel({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
-          <span className="mb-1 block font-semibold text-[var(--text-primary)]">Ambiente</span>
+          <span className="mb-1 block font-semibold text-[var(--text-primary)]">Ambiente Inter</span>
           <select
             value={environment}
             disabled={readOnlyDemo || saving}

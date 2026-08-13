@@ -14,7 +14,13 @@ import { resolveSaleChargesProvider } from '../lib/finance/saleChargesProvider';
 import {
   formatFinancialAccountLabel,
   formatFinancialAccountProviderLabel,
+  NEW_ASAAS_FINANCIAL_ACCOUNT_NAME,
+  NEW_INTER_FINANCIAL_ACCOUNT_NAME,
 } from '../lib/finance/companyFinancialAccountTypes';
+import {
+  createCompanyFinancialAccount,
+  updateCompanyFinancialAccount,
+} from '../lib/finance/companyFinancialAccountRepository';
 import { resolveFinancialAccountForSaleOptional } from '../lib/finance/companyFinancialAccountResolver';
 import { resolveInterIntegrationId } from '../lib/banking/inter/interConfigRepository';
 import { assertSecretsDoNotCrossAccounts } from '../lib/finance/financialAccountCredentialResolver';
@@ -38,8 +44,8 @@ type Row = Record<string, unknown>;
 
 function createMultiAccountMock() {
   const integrations: Row[] = [
-    { id: 'int-asaas', company_id: 'co-1', provider: 'ASAAS_COMPANY', is_default: true },
-    { id: 'int-inter', company_id: 'co-1', provider: 'INTER', is_default: false },
+    { id: 'int-asaas', company_id: 'co-1', provider: 'ASAAS_COMPANY', is_default: true, webhook_url: 'https://www.svlotes.com.br/api/webhooks/asaas/co-1', metadata: { connectionStatus: 'CONNECTED' } },
+    { id: 'int-inter', company_id: 'co-1', provider: 'INTER', is_default: false, webhook_url: 'https://inter-webhook.svlotes.com.br/webhook/co-1', metadata: { webhookStatus: 'REGISTERED' } },
   ];
   const accounts: Row[] = [
     {
@@ -99,6 +105,12 @@ function createMultiAccountMock() {
     },
   ];
   const companies: Row[] = [{ id: 'co-1', name: 'S V TOPOGRAFIA E PROJETOS' }];
+  const credentials: Row[] = [
+    { id: 'cred-asaas-api', integration_id: 'int-asaas', credential_type: 'api_key', encrypted_payload: 'enc-asaas-a' },
+    { id: 'cred-asaas-wh', integration_id: 'int-asaas', credential_type: 'webhook_secret', encrypted_payload: 'enc-asaas-wh' },
+    { id: 'cred-inter-id', integration_id: 'int-inter', credential_type: 'oauth', encrypted_payload: 'enc-inter-id' },
+    { id: 'cred-inter-secret', integration_id: 'int-inter', credential_type: 'api_key', encrypted_payload: 'enc-inter-secret' },
+  ];
 
   function matchFilters(rows: Row[], filters: Array<[string, unknown]>) {
     return rows.filter((row) =>
@@ -180,7 +192,7 @@ function createMultiAccountMock() {
               ...state.payload,
             };
             accounts.push(row);
-            return { data: { id: row.id }, error: null };
+            return { data: row, error: null };
           }
           if (table === 'company_financial_accounts' && state.op === 'select') {
             const rows = matchFilters(accounts, state.filters);
@@ -200,7 +212,7 @@ function createMultiAccountMock() {
           return { data: null, error: null, count: rows.length };
         }
         if (table === 'bank_credentials') {
-          return { data: [], error: null };
+          return { data: matchFilters(credentials, state.filters), error: null };
         }
         if (table === 'bank_integrations' && state.op === 'select') {
           return { data: matchFilters(integrations, state.filters), error: null };
@@ -224,13 +236,23 @@ function createMultiAccountMock() {
           state.filters.push([col, val]);
           return chain;
         };
+        chain.select = () => chain;
+        chain.single = async () => {
+          const rows = table === 'bank_integrations'
+            ? matchFilters(integrations, state.filters)
+            : matchFilters(accounts, state.filters);
+          for (const row of rows) Object.assign(row, payload);
+          return { data: rows[0] || null, error: rows[0] ? null : { message: 'not found' } };
+        };
         (chain as { then?: typeof Promise.prototype.then }).then = (
           onfulfilled: (v: unknown) => unknown,
           onrejected?: (e: unknown) => unknown,
         ) => {
-          const rows = matchFilters(accounts, state.filters);
+          const rows = table === 'bank_integrations'
+            ? matchFilters(integrations, state.filters)
+            : matchFilters(accounts, state.filters);
           for (const row of rows) Object.assign(row, payload);
-          return Promise.resolve({ data: null, error: null }).then(onfulfilled, onrejected);
+          return Promise.resolve({ data: rows[0] || null, error: null }).then(onfulfilled, onrejected);
         };
         return chain;
       };
@@ -246,8 +268,11 @@ function createMultiAccountMock() {
     integrations,
     sales,
     asaasCharges,
+    credentials,
     getAccount: (id: string) => accounts.find((a) => a.id === id),
     getIntegration: (id: string) => integrations.find((i) => i.id === id),
+    getCredentials: (integrationId: string) =>
+      credentials.filter((c) => c.integration_id === integrationId),
   };
 }
 
@@ -700,6 +725,15 @@ async function main() {
     );
     assert(faPanel.includes('Nova conta Asaas'), 'UI Nova conta Asaas');
     assert(faPanel.includes('Nova conta Inter'), 'UI Nova conta Inter');
+    assert(faPanel.includes('startCreateAsaas'), 'Nova conta Asaas abre rascunho local');
+    assert(faPanel.includes('creatingProvider'), 'estado de rascunho Asaas/Inter');
+    assert(faPanel.includes('NEW_ASAAS_FINANCIAL_ACCOUNT_NAME'), 'nome inicial Nova conta Asaas');
+    assert(faPanel.includes('NEW_INTER_FINANCIAL_ACCOUNT_NAME'), 'nome inicial Nova conta Banco Inter');
+    assert(faPanel.includes('showAsaasEnvironment'), 'Ambiente Asaas só no provider Asaas');
+    assert(faPanel.includes('Ambiente Asaas'), 'label Ambiente Asaas existe');
+    assert(faPanel.includes('function startCreateInter()'), 'Nova conta Inter é rascunho local');
+    assert(faPanel.includes('function startCreateAsaas()'), 'Nova conta Asaas é rascunho local');
+    assert(faPanel.includes("creatingProvider === 'INTER'"), 'criar Inter só no save');
     assert(
       faPanel.includes("from '@/lib/finance/asaasIntegrationConfig'"),
       'FinancialAccountsPanel importa buildDefaultAsaasWebhookUrl',
@@ -733,6 +767,89 @@ async function main() {
     assert(
       !mw.includes("'/api/finance/preview-inter-charge-lookup'"),
       'diagnóstico fora das rotas públicas',
+    );
+  }
+
+  // Isolamento UX — Nova conta Asaas / Inter sem herdar credencial nem nome
+  {
+    const mock = createMultiAccountMock();
+    const asaasA = mock.getAccount('fa-asaas')!;
+    const asaasACreds = mock.getCredentials('int-asaas').map((c) => ({ ...c }));
+    const createdAsaas = await createCompanyFinancialAccount(mock.admin, 'co-1', 'user-1', {
+      name: NEW_ASAAS_FINANCIAL_ACCOUNT_NAME,
+      accountType: 'IMOBILIARIA',
+      environment: 'PRODUCTION',
+      isDefault: false,
+      active: true,
+    });
+    assert(createdAsaas.id !== 'fa-asaas', 'Asaas B tem ID diferente');
+    assert(createdAsaas.bankIntegrationId !== 'int-asaas', 'Asaas B tem integração diferente');
+    assert(createdAsaas.isDefault === false, 'Asaas B não vira padrão');
+    assert(!createdAsaas.hasProductionApiKey, 'Asaas B sem API key herdada');
+    assert(!createdAsaas.hasWebhookToken, 'Asaas B sem webhook token herdado');
+    assert(mock.getAccount('fa-asaas')?.name === asaasA.name, 'nome Asaas A intacto');
+    assert(
+      mock.getAccount('fa-asaas')?.bank_integration_id === 'int-asaas',
+      'integração Asaas A intacta',
+    );
+    assert(
+      JSON.stringify(mock.getCredentials('int-asaas')) === JSON.stringify(asaasACreds),
+      'credenciais Asaas A intactas após criar B',
+    );
+
+    await updateCompanyFinancialAccount(mock.admin, 'co-1', createdAsaas.id, 'user-1', {
+      name: 'Asaas Sócio B',
+    });
+    assert(mock.getAccount('fa-asaas')?.name === asaasA.name, 'editar Asaas B não altera nome de A');
+    assert(
+      JSON.stringify(mock.getCredentials('int-asaas')) === JSON.stringify(asaasACreds),
+      'editar Asaas B não altera credenciais de A',
+    );
+  }
+
+  {
+    const mock = createMultiAccountMock();
+    const interAName = String(mock.getAccount('fa-inter')?.name);
+    const interAWebhook = String(mock.getIntegration('int-inter')?.webhook_url);
+    const interACreds = mock.getCredentials('int-inter').map((c) => ({ ...c }));
+    const createdInter = await createInterFinancialAccount(mock.admin, 'co-1', {
+      name: NEW_INTER_FINANCIAL_ACCOUNT_NAME,
+      createAdditional: true,
+    });
+    assert(createdInter.id !== 'fa-inter', 'Inter B tem ID diferente');
+    assert(createdInter.bankIntegrationId !== 'int-inter', 'Inter B tem integração diferente');
+    assert(createdInter.name === NEW_INTER_FINANCIAL_ACCOUNT_NAME, 'Inter B usa nome neutro');
+    assert(!String(createdInter.name).toUpperCase().includes('ASAAS'), 'Inter B não herda nome Asaas');
+    assert(!createdInter.hasSandboxApiKey, 'Inter B não herda Client ID');
+    assert(!createdInter.hasProductionApiKey, 'Inter B não herda secret');
+    assert(mock.getAccount('fa-inter')?.name === interAName, 'nome Inter A intacto');
+    assert(
+      mock.getIntegration('int-inter')?.webhook_url === interAWebhook,
+      'webhook Inter A permanece REGISTERED/URL intacta',
+    );
+    assert(
+      JSON.stringify(mock.getCredentials('int-inter')) === JSON.stringify(interACreds),
+      'credenciais Inter A intactas após criar B',
+    );
+
+    const unnamed = await createInterFinancialAccount(mock.admin, 'co-1', {
+      createAdditional: true,
+    });
+    assert(unnamed.name === NEW_INTER_FINANCIAL_ACCOUNT_NAME, 'fallback Inter é Nova conta Banco Inter');
+    assert(!unnamed.name.includes('S V TOPOGRAFIA'), 'fallback Inter não usa nome da empresa/Asaas');
+
+    await updateCompanyFinancialAccount(mock.admin, 'co-1', createdInter.id, 'user-1', {
+      name: 'Inter Filial',
+      webhookUrl: 'https://www.svlotes.com.br/api/webhooks/asaas/should-not-apply',
+    });
+    assert(mock.getAccount('fa-inter')?.name === interAName, 'editar Inter B não altera nome de A');
+    assert(
+      mock.getIntegration('int-inter')?.webhook_url === interAWebhook,
+      'editar Inter B não altera webhook de A',
+    );
+    assert(
+      mock.getCredentials('int-inter').length === interACreds.length,
+      'editar Inter B não altera credenciais de A',
     );
   }
 

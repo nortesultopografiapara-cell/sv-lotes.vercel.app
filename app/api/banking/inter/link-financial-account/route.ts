@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       action?: string;
       financialAccountId?: string;
       name?: string;
+      beneficiaryName?: string;
       createAdditional?: boolean;
     };
     const action = String(body.action || 'create').trim().toLowerCase();
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
     // create (default) — nunca sobrescreve conta padrão Asaas
     const account = await createInterFinancialAccount(auth.admin, auth.tenantId, {
       name: body.name,
+      beneficiaryName: body.beneficiaryName,
       createAdditional: Boolean(body.createAdditional),
     });
     return NextResponse.json({ ok: true, account, financialAccountId: account.id });
