@@ -12,16 +12,12 @@ export const SALE_CARNE_SLOT_H_MM =
   (SALE_CARNE_PAGE_H_MM - SALE_CARNE_MARGIN_MM * 2) / SALE_CARNE_SLOTS_PER_PAGE;
 export const SALE_CARNE_SLOT_PAD_MM = 1.2;
 
-const MM_TO_PT = 72 / 25.4;
-
 export function mmToPt(mm: number): number {
-  return mm * MM_TO_PT;
+  return (mm * 72) / 25.4;
 }
 
-export const SALE_CARNE_PAGE_SIZE_PT: [number, number] = [
-  mmToPt(SALE_CARNE_PAGE_W_MM),
-  mmToPt(SALE_CARNE_PAGE_H_MM),
-];
+/** A4 em pontos (mesmo formato do carnê Asaas 210×297 mm). */
+export const SALE_CARNE_PAGE_SIZE_PT: [number, number] = [595.28, 841.89];
 
 export function saleCarneSlotIndex(itemIndex: number): number {
   return ((Math.max(0, Math.floor(itemIndex)) % SALE_CARNE_SLOTS_PER_PAGE) +
