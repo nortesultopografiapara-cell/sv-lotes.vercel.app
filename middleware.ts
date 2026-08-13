@@ -73,6 +73,7 @@ export async function middleware(request: NextRequest) {
     '/api/regenerate',
     '/api/payments/webhook',
     '/api/finance/asaas/company-webhook',
+    '/api/finance/inter/webhook/internal',
     '/api/master/corporate-finance/asaas/webhook',
     '/api/cron',
     '/validar',

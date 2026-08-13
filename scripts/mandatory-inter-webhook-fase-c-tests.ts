@@ -381,6 +381,11 @@ async function main() {
     );
     assert(internal.includes('validateInterWebhookHmac'), 'internal exige HMAC');
     assert(!internal.includes('company_asaas'), 'internal sem Asaas');
+    const mw = fs.readFileSync(path.join(root, 'middleware.ts'), 'utf8');
+    assert(
+      mw.includes("'/api/finance/inter/webhook/internal'"),
+      'middleware libera webhook interno Inter (HMAC)',
+    );
     assert(
       fs.existsSync(path.join(root, 'services/inter-webhook-receiver/src/server.js')),
       'receptor dedicado existe',
