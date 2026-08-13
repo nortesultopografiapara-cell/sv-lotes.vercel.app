@@ -32,6 +32,11 @@ import {
   formatFinancialAccountLabel,
   type CompanyFinancialAccountResponse,
 } from '@/lib/finance/companyFinancialAccountTypes';
+import {
+  resolveChargesEmitProviderByAccountId,
+  isConfirmedPersistedProviderCharge,
+  type ChargesEmitProvider,
+} from '@/lib/charges/chargeProviderRouting';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
   buildChargeInstallmentView,
@@ -121,8 +126,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
     Record<string, CompanyAsaasChargeResponse>
   >({});
+  const [interChargesByInstallment, setInterChargesByInstallment] = useState<
+    Record<string, CompanyAsaasChargeResponse>
+  >({});
   const asaasChargesByInstallmentRef = useRef(asaasChargesByInstallment);
   asaasChargesByInstallmentRef.current = asaasChargesByInstallment;
+  const interChargesByInstallmentRef = useRef(interChargesByInstallment);
+  interChargesByInstallmentRef.current = interChargesByInstallment;
   const asaasChargeHistoryIdsRef = useRef<Set<string>>(new Set());
   const [asaasChargeHistoryIds, setAsaasChargeHistoryIds] = useState<Set<string>>(new Set());
   const [integrationConfig, setIntegrationConfig] =
@@ -156,6 +166,36 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     return map;
   }, [financialAccounts]);
 
+  const financialAccountsById = useMemo(() => {
+    const map: Record<string, CompanyFinancialAccountResponse> = {};
+    for (const account of financialAccounts) {
+      map[account.id] = account;
+    }
+    return map;
+  }, [financialAccounts]);
+
+  const resolveRowProvider = useCallback(
+    (row: FinanceReceiptRow): ChargesEmitProvider => {
+      const faId = String(
+        row.financial_account_id ||
+          (row.sales as { financial_account_id?: string } | undefined)?.financial_account_id ||
+          '',
+      ).trim();
+      return resolveChargesEmitProviderByAccountId(faId, financialAccountsById);
+    },
+    [financialAccountsById],
+  );
+
+  const chargeForInstallment = useCallback(
+    (installmentId: string, provider: ChargesEmitProvider) => {
+      if (provider === 'INTER') {
+        return interChargesByInstallment[installmentId] ?? null;
+      }
+      return asaasChargesByInstallment[installmentId] ?? null;
+    },
+    [asaasChargesByInstallment, interChargesByInstallment],
+  );
+
   const showToast = useCallback((message: string, isError = false) => {
     setToast(message);
     setToastIsError(isError);
@@ -173,6 +213,16 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           prev[installmentId],
           charge,
         ),
+      }));
+    },
+    [],
+  );
+
+  const applyInterChargeUpdate = useCallback(
+    (installmentId: string, charge: CompanyAsaasChargeResponse) => {
+      setInterChargesByInstallment((prev) => ({
+        ...prev,
+        [installmentId]: charge,
       }));
     },
     [],
@@ -275,6 +325,43 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       return asaasChargesByInstallmentRef.current;
     }
   }, [showToast]);
+
+  const loadInterChargeMap = useCallback(async (installmentIds: string[]) => {
+    if (installmentIds.length === 0) {
+      setInterChargesByInstallment({});
+      return {} as Record<string, CompanyAsaasChargeResponse>;
+    }
+
+    try {
+      let map = { ...interChargesByInstallmentRef.current };
+      const chunks = chunkInstallmentIdsForChargeFetch(installmentIds);
+      for (const chunk of chunks) {
+        const chargesRes = await fetch('/api/finance/inter/charges', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ installmentIds: chunk }),
+        });
+        if (chargesRes.status === 403 || chargesRes.status === 404) {
+          console.error('CHARGES_INTER_LOAD_FORBIDDEN', chargesRes.status);
+          return interChargesByInstallmentRef.current;
+        }
+        if (!chargesRes.ok) {
+          console.error('CHARGES_INTER_LOAD_HTTP', chargesRes.status);
+          return interChargesByInstallmentRef.current;
+        }
+        const chargesJson = await chargesRes.json().catch(() => ({}));
+        const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+        map = mergeFetchedChargesIntoMap(map, chunk, charges);
+      }
+      setInterChargesByInstallment(map);
+      return map;
+    } catch (err) {
+      console.error('CHARGES_INTER_LOAD', err);
+      return interChargesByInstallmentRef.current;
+    }
+  }, []);
 
   const refreshInstallmentRows = useCallback(
     async (
@@ -438,6 +525,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           rlsCtx,
           ownerCtx,
         });
+        void loadInterChargeMap(installmentIds);
 
         if (integrationOk) {
           try {
@@ -477,6 +565,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         }).catch((err) => {
           console.error('[charges/financial-agent] asaas context background failed', err);
         });
+        void loadInterChargeMap(installmentIds).catch((err) => {
+          console.error('[charges/financial-agent] inter charges background failed', err);
+        });
       }
     } catch (err) {
       console.error('[charges/financial-agent] load failed', err);
@@ -495,6 +586,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     user,
     ownerReadOnly,
     loadAsaasChargesContext,
+    loadInterChargeMap,
     refreshInstallmentRows,
     showToast,
   ]);
@@ -615,9 +707,23 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const pageRows = pagination.pageRows;
 
   const kpis = useMemo(() => computeChargeKpiSummary(payments), [payments]);
+
+  const providerChargesByInstallment = useMemo(() => {
+    const map: Record<string, CompanyAsaasChargeResponse> = {};
+    for (const row of payments) {
+      const id = String(row.id);
+      const provider = resolveRowProvider(row);
+      const charge = chargeForInstallment(id, provider);
+      if (charge && isConfirmedPersistedProviderCharge(charge)) {
+        map[id] = charge;
+      }
+    }
+    return map;
+  }, [payments, resolveRowProvider, chargeForInstallment]);
+
   const asaasKpis = useMemo(
-    () => computeAsaasOperationalKpis(payments, asaasChargesByInstallment),
-    [payments, asaasChargesByInstallment],
+    () => computeAsaasOperationalKpis(payments, providerChargesByInstallment),
+    [payments, providerChargesByInstallment],
   );
 
   const selectedGeneratableCount = useMemo(
@@ -625,26 +731,28 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       countSelectedGeneratableCharges({
         selectedIds,
         payments,
-        chargesByInstallment: asaasChargesByInstallment,
+        chargesByInstallment: providerChargesByInstallment,
         integrationActive,
         companyAsaasEnabled: asaasAccessAvailable,
         ownerReadOnly,
         installmentsDataReady,
+        resolveProvider: resolveRowProvider,
       }),
     [
       selectedIds,
       payments,
-      asaasChargesByInstallment,
+      providerChargesByInstallment,
       integrationActive,
       asaasAccessAvailable,
       ownerReadOnly,
       installmentsDataReady,
+      resolveRowProvider,
     ],
   );
 
   const selectedWithChargeCount = useMemo(
-    () => countSelectedWithAsaasCharge(selectedIds, asaasChargesByInstallment),
-    [selectedIds, asaasChargesByInstallment],
+    () => countSelectedWithAsaasCharge(selectedIds, providerChargesByInstallment),
+    [selectedIds, providerChargesByInstallment],
   );
 
   const allFilteredSelected =
@@ -652,8 +760,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const allWithChargeCount = useMemo(
     () =>
-      filteredRows.filter((row) => Boolean(asaasChargesByInstallment[String(row.id)])).length,
-    [filteredRows, asaasChargesByInstallment],
+      filteredRows.filter((row) => Boolean(providerChargesByInstallment[String(row.id)])).length,
+    [filteredRows, providerChargesByInstallment],
   );
 
   const refreshAllBlockReason = useMemo(
@@ -700,10 +808,34 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     if (!res.ok) {
       throw new Error(mapCreateChargeApiError(json.error || `Erro ${res.status}`));
     }
-    return json.charge as CompanyAsaasChargeResponse;
+    const charge = json.charge as CompanyAsaasChargeResponse;
+    if (!isConfirmedPersistedProviderCharge(charge)) {
+      throw new Error('Cobrança Asaas sem identificador externo persistido.');
+    }
+    return charge;
   };
 
-  const handleCreateAsaasCharge = async (
+  const createInterChargeRequest = async (
+    installmentId: string,
+  ): Promise<CompanyAsaasChargeResponse> => {
+    const res = await fetch('/api/finance/inter/create-charge', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ installmentId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(mapCreateChargeApiError(json.error || `Erro ${res.status}`));
+    }
+    const charge = json.charge as CompanyAsaasChargeResponse;
+    if (!isConfirmedPersistedProviderCharge(charge)) {
+      throw new Error('Cobrança Inter sem identificador externo persistido.');
+    }
+    return charge;
+  };
+
+  const handleCreateCharge = async (
     installmentId: string,
     billingType: 'PIX' | 'BOLETO',
   ) => {
@@ -728,14 +860,31 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Não é possível gerar cobrança para parcela paga.', true);
       return;
     }
-    if (!integrationReady) {
+
+    const provider = resolveRowProvider(row);
+    if (provider === 'ASAAS_COMPANY' && !integrationReady) {
       showToast('Integração Asaas não está ativa.', true);
       return;
     }
 
-    const previousCharge = asaasChargesByInstallment[installmentId];
+    const previousCharge = chargeForInstallment(installmentId, provider);
     setAsaasActionInstallmentId(installmentId);
     try {
+      if (provider === 'INTER') {
+        const charge = await createInterChargeRequest(installmentId);
+        applyInterChargeUpdate(installmentId, charge);
+        if (
+          previousCharge &&
+          previousCharge.id === charge.id &&
+          previousCharge.status === charge.status
+        ) {
+          showToast('Cobrança Inter já existe para esta parcela.');
+        } else {
+          showToast('Cobrança Inter gerada com sucesso.');
+        }
+        return;
+      }
+
       const charge = await createAsaasChargeRequest(installmentId, billingType);
       applyAsaasChargeUpdate(installmentId, charge);
       if (
@@ -749,7 +898,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       }
     } catch (err) {
       showToast(
-        err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.',
+        err instanceof Error ? err.message : 'Erro ao gerar cobrança.',
         true,
       );
     } finally {
@@ -921,17 +1070,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       );
       return;
     }
-    if (!integrationReady) {
-      showToast('Integração Asaas não está ativa.', true);
-      return;
-    }
     const ids = Array.from(selectedIds);
     if (ids.length === 0) {
       showToast('Selecione ao menos uma parcela.', true);
       return;
     }
     if (selectedGeneratableCount === 0) {
-      showToast('Nenhuma parcela selecionada pode gerar cobrança Asaas.', true);
+      showToast('Nenhuma parcela selecionada pode gerar cobrança.', true);
       return;
     }
 
@@ -942,11 +1087,17 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     for (const installmentId of ids) {
       const row = payments.find((p) => String(p.id) === installmentId);
       if (!row) continue;
-      const charge = asaasChargesByInstallment[installmentId] ?? null;
+      const provider = resolveRowProvider(row);
+      const isInter = provider === 'INTER';
+      if (!isInter && !integrationReady) {
+        skipCount += 1;
+        continue;
+      }
+      const charge = chargeForInstallment(installmentId, provider);
       const canGenerate = canGenerateAsaasCharge({
         installmentPaid: isInstallmentPaidForCharges(row),
-        integrationActive,
-        companyAsaasEnabled: asaasAccessAvailable,
+        integrationActive: isInter ? true : integrationActive,
+        companyAsaasEnabled: isInter ? true : asaasAccessAvailable,
         ownerReadOnly,
         charge,
         installmentsDataReady,
@@ -957,13 +1108,18 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         continue;
       }
       try {
-        const created = await createAsaasChargeRequest(installmentId, 'BOLETO');
-        applyAsaasChargeUpdate(installmentId, created);
+        if (isInter) {
+          const created = await createInterChargeRequest(installmentId);
+          applyInterChargeUpdate(installmentId, created);
+        } else {
+          const created = await createAsaasChargeRequest(installmentId, 'BOLETO');
+          applyAsaasChargeUpdate(installmentId, created);
+        }
         okCount += 1;
       } catch (err) {
         errCount += 1;
         if (errCount === 1) {
-          showToast(err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.', true);
+          showToast(err instanceof Error ? err.message : 'Erro ao gerar cobrança.', true);
         }
       }
     }
@@ -982,7 +1138,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Selecione ao menos uma parcela.', true);
       return;
     }
-    const idsWithCharge = ids.filter((id) => asaasChargesByInstallment[id]);
+    const idsWithCharge = ids.filter((id) => {
+      const row = payments.find((p) => String(p.id) === id);
+      if (!row) return false;
+      return resolveRowProvider(row) === 'ASAAS_COMPANY' && Boolean(asaasChargesByInstallment[id]);
+    });
     if (idsWithCharge.length === 0) {
       showToast('Nenhuma cobrança Asaas gerada para atualizar.', true);
       return;
@@ -993,6 +1153,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const runRefreshAllCharges = async () => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     const idsWithCharge = filteredRows
+      .filter((row) => resolveRowProvider(row) === 'ASAAS_COMPANY')
       .map((row) => String(row.id))
       .filter((id) => asaasChargesByInstallment[id]);
     if (idsWithCharge.length === 0) {
@@ -1023,7 +1184,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">Cobranças</h1>
           </div>
           <p className="text-sm text-[var(--text-secondary)]">
-            Central operacional de parcelas e cobranças Asaas da empresa.
+            Central operacional de parcelas e cobranças da empresa.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1131,7 +1292,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           loading={loading}
         />
         <FinanceStatCard
-          title="Aguardando geração Asaas"
+          title="Aguardando geração"
           value={formatCurrency(asaasKpis.aguardandoGeracao)}
           subtitle={`${asaasKpis.qtyAguardandoGeracao} parcela(s) sem cobrança ativa`}
           icon={<Zap className="h-5 w-5" />}
@@ -1139,7 +1300,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           loading={loading}
         />
         <FinanceStatCard
-          title="Cobranças Asaas emitidas"
+          title="Cobranças emitidas"
           value={formatCurrency(asaasKpis.cobrancasEmitidas)}
           subtitle={`${asaasKpis.qtyCobrancasEmitidas} cobrança(s) ativa(s)`}
           icon={<QrCode className="h-5 w-5" />}
@@ -1237,9 +1398,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </span>
           <button
             type="button"
-            disabled={bulkBusy || !integrationReady || !installmentsDataReady || selectedGeneratableCount === 0}
+            disabled={
+              bulkBusy ||
+              !installmentsDataReady ||
+              selectedGeneratableCount === 0 ||
+              ownerReadOnly
+            }
             onClick={() => void runBulkGenerate()}
             className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Gera cobranças pelo provider da conta financeira (Asaas ou Banco Inter)"
           >
             {bulkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
             Gerar cobranças selecionadas
@@ -1286,7 +1453,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
               <th>Valor</th>
               <th>Conta recebedora</th>
               <th>Status parcela</th>
-              <th>Status Asaas</th>
+              <th>Status cobrança</th>
               <th className="text-right min-w-[280px]">Ações</th>
             </tr>
           </thead>
@@ -1307,10 +1474,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             ) : (
               pageRows.map((row) => {
                 const installmentId = String(row.id);
-                const charge = asaasChargesByInstallment[installmentId] ?? null;
+                const provider = resolveRowProvider(row);
+                const charge = chargeForInstallment(installmentId, provider);
                 const view = buildChargeInstallmentView(row, charge, undefined, financialAccountLabels, {
                   hasChargeHistory:
-                    asaasChargeHistoryIds.has(installmentId) || Boolean(charge?.asaasPaymentId),
+                    provider === 'INTER'
+                      ? Boolean(charge?.asaasPaymentId)
+                      : asaasChargeHistoryIds.has(installmentId) || Boolean(charge?.asaasPaymentId),
+                  chargeProvider: provider,
                 });
                 const installmentPaid = isInstallmentPaidForCharges(row);
                 const rowBusy = asaasActionInstallmentId === installmentId || bulkBusy;
@@ -1355,7 +1526,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                       <FinanceStatusBadge status={view.installmentStatus} />
                     </td>
                     <td>
-                      <span className="text-xs text-[var(--text-secondary)]">{view.asaasStatusLabel}</span>
+                      <span className="text-xs text-[var(--text-secondary)]">
+                        {view.chargeStatusLabel}
+                      </span>
                     </td>
                     <td>
                       <ChargeInstallmentActions
@@ -1364,17 +1537,20 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         installmentPaid={installmentPaid}
                         integrationActive={integrationActive}
                         companyAsaasEnabled={asaasAccessAvailable}
+                        chargeProvider={provider}
                         ownerReadOnly={ownerReadOnly}
                         busy={rowBusy}
                         installmentsDataReady={installmentsDataReady}
                         customerPhone={customerPhone}
                         whatsappShareUrl={whatsappShareUrl}
                         hasPaidChargeHistory={
-                          asaasChargeHistoryIds.has(installmentId) ||
-                          Boolean(charge?.asaasPaymentId)
+                          provider === 'INTER'
+                            ? Boolean(charge?.asaasPaymentId)
+                            : asaasChargeHistoryIds.has(installmentId) ||
+                              Boolean(charge?.asaasPaymentId)
                         }
                         onGenerate={(billingType) =>
-                          void handleCreateAsaasCharge(installmentId, billingType)
+                          void handleCreateCharge(installmentId, billingType)
                         }
                         onRefreshStatus={() => void handleRefreshAsaas(installmentId)}
                         onCancel={() => void handleCancelAsaas(installmentId)}

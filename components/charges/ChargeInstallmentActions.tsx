@@ -41,6 +41,8 @@ export type ChargeInstallmentActionsProps = {
   installmentPaid: boolean;
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
+  /** Provider da conta financeira da parcela. */
+  chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
@@ -87,6 +89,7 @@ export function ChargeInstallmentActions({
   installmentPaid,
   integrationActive,
   companyAsaasEnabled,
+  chargeProvider = 'ASAAS_COMPANY',
   ownerReadOnly,
   busy,
   installmentsDataReady = true,
@@ -101,11 +104,14 @@ export function ChargeInstallmentActions({
   onCopyBarcodeLine,
   onWhatsApp,
 }: ChargeInstallmentActionsProps) {
+  const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
+  const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
+
   const actions = resolveChargeActionVisibility({
     charge,
     installmentPaid,
-    integrationActive,
-    companyAsaasEnabled,
+    integrationActive: isInter ? true : integrationActive,
+    companyAsaasEnabled: isInter ? true : companyAsaasEnabled,
     ownerReadOnly,
     installmentsDataReady,
     installmentId: view.id,
@@ -113,20 +119,20 @@ export function ChargeInstallmentActions({
     hasPaidChargeHistory,
   });
 
-  const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';
-  const boletoUrl = charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
-  const receiptUrl = resolveCompanyAsaasReceiptUrl(charge);
-  const detailsUrl = resolveCompanyAsaasDetailsUrl(charge);
+  const paymentLink = !isInter && charge ? resolveCompanyAsaasPaymentLink(charge) : '';
+  const boletoUrl = !isInter && charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
+  const receiptUrl = !isInter ? resolveCompanyAsaasReceiptUrl(charge) : null;
+  const detailsUrl = !isInter ? resolveCompanyAsaasDetailsUrl(charge) : null;
   const regenerateBillingType =
     charge?.billingType === 'PIX' ? 'PIX' : ('BOLETO' as const);
 
-  if (!companyAsaasEnabled) {
+  if (!isInter && !companyAsaasEnabled) {
     return (
       <span className="text-[10px] text-[var(--text-muted)]">Asaas indisponível</span>
     );
   }
 
-  if (!integrationActive) {
+  if (!isInter && !integrationActive) {
     return (
       <span className="text-[10px] text-amber-400/90" title="Integração Asaas não está ativa.">
         Integração inativa
@@ -145,27 +151,33 @@ export function ChargeInstallmentActions({
   return (
     <div className="flex flex-col items-end gap-1.5" data-installment-id={view.id}>
       <div className="flex flex-wrap justify-end gap-1.5">
-        {actions.showGenerate ? (
+        {actions.showGenerate && providerReady ? (
           <>
             <button
               type="button"
               disabled={busy}
               onClick={() => onGenerate('BOLETO')}
               className={btnPrimaryClass}
-              title="Gerar cobrança com boleto e Pix no Asaas"
+              title={
+                isInter
+                  ? 'Gerar cobrança via Banco Inter (Cobrança V3 — boleto/Pix)'
+                  : 'Gerar cobrança com boleto e Pix no Asaas'
+              }
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
               Gerar cobrança
             </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onGenerate('BOLETO')}
-              className={btnClass}
-              title="Gerar boleto bancário com Pix como alternativa"
-            >
-              Boleto
-            </button>
+            {!isInter ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onGenerate('BOLETO')}
+                className={btnClass}
+                title="Gerar boleto bancário com Pix como alternativa"
+              >
+                Boleto
+              </button>
+            ) : null}
           </>
         ) : null}
 
@@ -253,7 +265,7 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showRefreshStatus ? (
+        {actions.showRefreshStatus && !isInter ? (
           <button
             type="button"
             disabled={busy}
@@ -266,7 +278,7 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showCancel ? (
+        {actions.showCancel && !isInter ? (
           <button
             type="button"
             disabled={busy}
@@ -279,7 +291,7 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showRegenerate ? (
+        {actions.showRegenerate && !isInter ? (
           <button
             type="button"
             disabled={busy}
@@ -317,17 +329,25 @@ export function ChargeInstallmentActions({
           )
         ) : null}
 
-        {/* Indicador complementar — nunca substitui links de consulta quando há charge. */}
         {actions.showPaidIndicator ? (
           <span className="text-[10px] text-[var(--text-muted)]">Parcela paga</span>
         ) : null}
 
-        {!charge && hasPaidChargeHistory ? (
+        {!charge && hasPaidChargeHistory && !isInter ? (
           <span
             className="text-[10px] text-amber-400/90"
             title="Há histórico de cobrança Asaas. Atualize a lista se os links não aparecerem."
           >
             Histórico Asaas
+          </span>
+        ) : null}
+
+        {isInter && charge?.asaasPaymentId ? (
+          <span
+            className="text-[10px] text-emerald-400/90"
+            title={`Cobrança Inter ${charge.asaasPaymentId}`}
+          >
+            Inter emitida
           </span>
         ) : null}
       </div>
@@ -338,7 +358,7 @@ export function ChargeInstallmentActions({
         </p>
       ) : null}
 
-      {actions.showReceiptUnavailableHint ? (
+      {actions.showReceiptUnavailableHint && !isInter ? (
         <p className="max-w-md text-right text-[10px] leading-snug text-[var(--text-muted)]">
           Comprovante ainda não disponível no Asaas. Os demais links da cobrança permanecem ativos.
         </p>

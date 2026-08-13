@@ -276,7 +276,12 @@ export function computeAsaasOperationalKpis(
       continue;
     }
 
-    if (charge && isActiveCompanyAsaasChargeStatus(charge.status)) {
+    // Só conta como emitida com id + identificador externo persistido (evita falso positivo).
+    if (
+      charge &&
+      isActiveCompanyAsaasChargeStatus(charge.status) &&
+      String(charge.asaasPaymentId || '').trim()
+    ) {
       cobrancasEmitidas += amt;
       qtyCobrancasEmitidas += 1;
       continue;

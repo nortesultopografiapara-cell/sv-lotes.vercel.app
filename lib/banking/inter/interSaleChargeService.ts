@@ -127,7 +127,7 @@ export async function findActiveInterBankChargeForReceipt(
   return (byReceipt as Record<string, unknown>) || null;
 }
 
-async function listInterChargesForInstallments(
+export async function listInterChargesForInstallments(
   admin: SupabaseClient,
   companyId: string,
   installmentIds: string[],
@@ -157,7 +157,7 @@ async function listInterChargesForInstallments(
   return map;
 }
 
-function bankChargeToSummaryLike(
+export function bankChargeToSummaryLike(
   row: Record<string, unknown>,
   companyId: string,
 ): import('@/lib/finance/companyAsaasChargeTypes').CompanyAsaasChargeResponse {

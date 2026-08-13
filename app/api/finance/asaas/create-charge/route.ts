@@ -6,6 +6,7 @@ import {
   CompanyAsaasChargePaidError,
   CompanyAsaasCustomerDocumentMissingError,
   CompanyAsaasIntegrationInactiveError,
+  CompanyAsaasWrongProviderError,
 } from '@/lib/finance/asaasCompanyChargeService';
 
 export const runtime = 'nodejs';
@@ -18,7 +19,9 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const installmentId = String(body.installmentId ?? body.installment_id ?? '').trim();
-    const billingTypeRaw = String(body.billingType ?? body.billing_type ?? 'BOLETO').trim().toUpperCase();
+    const billingTypeRaw = String(body.billingType ?? body.billing_type ?? 'BOLETO')
+      .trim()
+      .toUpperCase();
     const billingType = billingTypeRaw === 'PIX' ? 'PIX' : 'BOLETO';
 
     if (!installmentId) {
@@ -35,6 +38,9 @@ export async function POST(request: Request) {
     assertCompanyAsaasChargeResponseSafe(charge);
     return NextResponse.json({ charge });
   } catch (err) {
+    if (err instanceof CompanyAsaasWrongProviderError) {
+      return NextResponse.json({ error: err.message, code: 'WRONG_PROVIDER' }, { status: 400 });
+    }
     if (err instanceof CompanyAsaasIntegrationInactiveError) {
       return NextResponse.json({ error: err.message }, { status: 403 });
     }

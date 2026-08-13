@@ -51,6 +51,7 @@
     "test:sale-balloon-contract": "tsx scripts/mandatory-sale-balloon-contract-tests.ts",
     "test:sale-documents": "tsx scripts/mandatory-sale-documents-tests.ts",
     "test:charges-operational": "tsx scripts/mandatory-charges-operational-tests.ts",
+    "test:charges-provider-routing": "tsx scripts/mandatory-charges-provider-routing-tests.ts",
     "test:company-financial-accounts": "tsx scripts/mandatory-company-financial-accounts-tests.ts",
     "test:company-asaas-reconciliation": "tsx scripts/mandatory-company-asaas-reconciliation-tests.ts",
     "test:company-asaas-bulk-status": "tsx scripts/mandatory-company-asaas-bulk-status-tests.ts",
