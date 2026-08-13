@@ -18,6 +18,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const installmentId = String(url.searchParams.get('installmentId') || '').trim();
     let externalId = String(url.searchParams.get('externalId') || '').trim();
+    let chargeIntegrationId: string | null = null;
+    let chargeFaId: string | null = null;
 
     if (!externalId && installmentId) {
       const existing = await findActiveInterBankChargeForReceipt(
@@ -26,6 +28,8 @@ export async function GET(request: Request) {
         installmentId,
       );
       externalId = String(existing?.external_id || '').trim();
+      chargeIntegrationId = existing?.integration_id ? String(existing.integration_id) : null;
+      chargeFaId = existing?.financial_account_id ? String(existing.financial_account_id) : null;
     }
     if (!externalId) {
       return NextResponse.json(
@@ -34,12 +38,16 @@ export async function GET(request: Request) {
       );
     }
 
-    const secrets = await loadInterSecretsForServer(auth.admin, auth.tenantId);
+    const secrets = await loadInterSecretsForServer(auth.admin, auth.tenantId, {
+      integrationId: chargeIntegrationId,
+      financialAccountId: chargeFaId,
+    });
     if (!secrets) {
       return NextResponse.json({ error: 'Credenciais Inter ausentes.' }, { status: 500 });
     }
     const creds: InterOAuthCredentials = {
       companyId: auth.tenantId,
+      integrationId: secrets.integrationId,
       environment: secrets.environment,
       clientId: secrets.clientId,
       clientSecret: secrets.clientSecret,

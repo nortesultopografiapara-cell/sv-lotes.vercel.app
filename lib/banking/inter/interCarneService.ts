@@ -122,10 +122,13 @@ export async function buildInterSaleCarneBundle(
     companyId,
     installments.map((i) => i.id),
   );
-  const secrets = await loadInterSecretsForServer(admin, companyId);
+  const secrets = await loadInterSecretsForServer(admin, companyId, {
+    financialAccountId: summary.financialAccountId,
+  });
   if (!secrets) throw new Error('Credenciais Inter ausentes.');
   const creds: InterOAuthCredentials = {
     companyId,
+    integrationId: secrets.integrationId,
     environment: secrets.environment,
     clientId: secrets.clientId,
     clientSecret: secrets.clientSecret,

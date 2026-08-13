@@ -25,6 +25,7 @@ export type InterBankConfigPublic = {
   lastConnectionTestAt: string | null;
   authStatus: 'VERIFIED' | 'FAILED' | 'DRAFT' | null;
   message: string;
+  financialAccountId?: string | null;
 };
 
 export type InterBankConfigSaveInput = {
@@ -37,6 +38,7 @@ export type InterBankConfigSaveInput = {
   /** PEM da chave privada (conteúdo, não caminho). */
   privateKeyPem?: string;
   privateKeyFileName?: string;
+  financialAccountId?: string | null;
 };
 
 export const EMPTY_INTER_BANK_CONFIG = (
@@ -60,4 +62,5 @@ export const EMPTY_INTER_BANK_CONFIG = (
   lastConnectionTestAt: null,
   authStatus: null,
   message: 'Banco Inter ainda não configurado.',
+  financialAccountId: null,
 });

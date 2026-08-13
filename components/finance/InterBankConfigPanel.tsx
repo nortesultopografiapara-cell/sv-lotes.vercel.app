@@ -8,6 +8,9 @@ import type { BankEnvironment } from '@/lib/banking/types';
 type Props = {
   readOnlyDemo?: boolean;
   onClose?: () => void;
+  financialAccountId?: string | null;
+  /** Quando true, oculta lista/criação (já existem na tela de contas). */
+  embedded?: boolean;
 };
 
 type LocalFile = {
@@ -39,7 +42,12 @@ type CompanyFinancialAccountPublic = {
   active: boolean;
 };
 
-export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
+export function InterBankConfigPanel({
+  readOnlyDemo = false,
+  onClose,
+  financialAccountId = null,
+  embedded = false,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -65,24 +73,33 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
   const [linkingAccount, setLinkingAccount] = useState(false);
   const [interAccounts, setInterAccounts] = useState<CompanyFinancialAccountPublic[]>([]);
   const [linkableAccounts, setLinkableAccounts] = useState<CompanyFinancialAccountPublic[]>([]);
+  const [selectedConfigAccountId, setSelectedConfigAccountId] = useState<string>(
+    financialAccountId || '',
+  );
   const [selectedLinkAccountId, setSelectedLinkAccountId] = useState('');
 
   const loadWebhook = useCallback(async () => {
     try {
-      const res = await fetch('/api/banking/inter/webhook', { credentials: 'include' });
+      const qs = selectedConfigAccountId
+        ? `?financialAccountId=${encodeURIComponent(selectedConfigAccountId)}`
+        : '';
+      const res = await fetch(`/api/banking/inter/webhook${qs}`, { credentials: 'include' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return;
       setWebhook(data.webhook || null);
     } catch {
       /* silencioso na carga inicial */
     }
-  }, []);
+  }, [selectedConfigAccountId]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/banking/inter/config', { credentials: 'include' });
+      const qs = selectedConfigAccountId
+        ? `?financialAccountId=${encodeURIComponent(selectedConfigAccountId)}`
+        : '';
+      const res = await fetch(`/api/banking/inter/config${qs}`, { credentials: 'include' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar Inter');
       const cfg = data.config as InterBankConfigPublic;
@@ -98,12 +115,16 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [loadWebhook]);
+  }, [loadWebhook, selectedConfigAccountId]);
 
   useEffect(() => {
     void load();
     void loadInterAccounts();
   }, [load]);
+
+  useEffect(() => {
+    if (financialAccountId) setSelectedConfigAccountId(financialAccountId);
+  }, [financialAccountId]);
 
   async function loadInterAccounts() {
     try {
@@ -151,6 +172,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
         environment,
         clientId,
       };
+      if (selectedConfigAccountId) body.financialAccountId = selectedConfigAccountId;
       if (clientSecret.trim()) body.clientSecret = clientSecret.trim();
       if (certFile && keyFile) {
         body.certificatePem = certFile.content;
@@ -189,9 +211,16 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
     setError('');
     setInfo('');
     try {
-      const res = await fetch('/api/banking/inter/webhook', {
+      const qs = selectedConfigAccountId
+        ? `?financialAccountId=${encodeURIComponent(selectedConfigAccountId)}`
+        : '';
+      const res = await fetch(`/api/banking/inter/webhook${qs}`, {
         method,
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          financialAccountId: selectedConfigAccountId || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha na operação de webhook');
@@ -238,6 +267,10 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
       const res = await fetch('/api/banking/inter/config?action=test-connection', {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          financialAccountId: selectedConfigAccountId || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha no teste');
@@ -280,11 +313,15 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create' }),
+        body: JSON.stringify({
+          action: 'create',
+          createAdditional: interAccounts.length > 0,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao criar conta Inter');
       await loadInterAccounts();
+      if (data.account?.id) setSelectedConfigAccountId(String(data.account.id));
       setInfo(
         `Conta financeira Inter criada/garantida: ${String(data.account?.name || data.financialAccountId)}. Não altera contas Asaas.`,
       );
@@ -571,6 +608,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
         </div>
       </div>
 
+      {!embedded ? (
       <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 space-y-3">
         <div>
           <p className="text-xs font-semibold text-[var(--text-primary)]">
@@ -586,8 +624,16 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
           <ul className="space-y-1 text-xs text-emerald-200">
             {interAccounts.map((a) => (
               <li key={a.id}>
-                {a.name} — Banco Inter
-                {a.isDefault ? ' (padrão empresa)' : ''}
+                <button
+                  type="button"
+                  className={`text-left underline-offset-2 hover:underline ${
+                    selectedConfigAccountId === a.id ? 'font-bold text-white' : ''
+                  }`}
+                  onClick={() => setSelectedConfigAccountId(a.id)}
+                >
+                  {a.name} — Banco Inter
+                  {a.isDefault ? ' (padrão empresa)' : ''}
+                </button>
               </li>
             ))}
           </ul>
@@ -645,6 +691,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
           </div>
         ) : null}
       </div>
+      ) : null}
 
       {error ? (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">

@@ -38,6 +38,17 @@ function isReceiptPaidStatus(status: unknown): boolean {
   return s === INTER_FINANCE_RECEIPT_PAID_STATUS || s === 'paid';
 }
 
+/** Legacy sem FA nas duas pontas continua válido. Nunca liquida parcela de outra conta. */
+export function interChargeBelongsToReceiptAccount(
+  charge: { financial_account_id?: unknown },
+  receipt: { financial_account_id?: unknown },
+): boolean {
+  const chargeFa = String(charge.financial_account_id || '').trim();
+  const receiptFa = String(receipt.financial_account_id || '').trim();
+  if (!chargeFa || !receiptFa) return true;
+  return chargeFa === receiptFa;
+}
+
 async function loadFinanceReceiptForInterSettlement(
   admin: SupabaseClient,
   companyId: string,
@@ -46,7 +57,7 @@ async function loadFinanceReceiptForInterSettlement(
   const { data, error } = await admin
     .from('finance_receipts')
     .select(
-      'id, status, tenant_id, company_id, sale_id, customer_id, project_id, installment_number, amount, paid_amount, paid_at',
+      'id, status, tenant_id, company_id, sale_id, customer_id, project_id, financial_account_id, installment_number, amount, paid_amount, paid_at',
     )
     .eq('id', financeReceiptId)
     .maybeSingle();
@@ -159,6 +170,11 @@ export async function settleInterPaidCharge(admin: SupabaseClient, input: {
     );
 
     if (receipt?.id) {
+      if (!interChargeBelongsToReceiptAccount(charge, receipt)) {
+        throw new Error(
+          'Cobrança Inter não corresponde à conta financeira da parcela.',
+        );
+      }
       receiptStatus = String(receipt.status || '') || null;
       receiptPaidAt = receipt.paid_at ? String(receipt.paid_at) : null;
       receiptPaidAmount =

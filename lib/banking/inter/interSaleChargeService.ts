@@ -260,20 +260,33 @@ export function buildInterBankChargeArtifactPatch(
   };
 }
 
-async function loadInterCredsForCompany(
+async function loadInterCredsForIntegration(
   admin: SupabaseClient,
   companyId: string,
+  integrationId: string | null | undefined,
+  financialAccountId?: string | null,
 ): Promise<InterOAuthCredentials> {
-  const secrets = await loadInterSecretsForServer(admin, companyId);
-  if (!secrets) throw new Error('Credenciais Inter ausentes.');
+  const secrets = await loadInterSecretsForServer(admin, companyId, {
+    integrationId: integrationId || null,
+    financialAccountId: financialAccountId || null,
+  });
+  if (!secrets) throw new Error('Credenciais Inter ausentes para esta conta financeira.');
   return {
     companyId,
+    integrationId: secrets.integrationId,
     environment: secrets.environment,
     clientId: secrets.clientId,
     clientSecret: secrets.clientSecret,
     certificatePem: secrets.certificatePem,
     privateKeyPem: secrets.privateKeyPem,
   };
+}
+
+async function loadInterCredsForCompany(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<InterOAuthCredentials> {
+  return loadInterCredsForIntegration(admin, companyId, null);
 }
 
 /**
@@ -336,7 +349,12 @@ export async function refreshInterChargeArtifacts(
   const detail =
     input.detail ||
     (await fetchInterCobrancaByCodigo(
-      await loadInterCredsForCompany(admin, companyId),
+      await loadInterCredsForIntegration(
+        admin,
+        companyId,
+        existing.integration_id ? String(existing.integration_id) : null,
+        existing.financial_account_id ? String(existing.financial_account_id) : null,
+      ),
       externalId,
       { fetchFn: input.fetchFn },
     ));
@@ -402,7 +420,10 @@ export async function getInterSaleChargesSummary(
     throw new Error('Conta financeira desta venda não está vinculada ao Banco Inter.');
   }
 
-  const secrets = await loadInterSecretsForServer(admin, companyId);
+  const secrets = await loadInterSecretsForServer(admin, companyId, {
+    integrationId: providerInfo.bankIntegrationId,
+    financialAccountId: providerInfo.financialAccountId,
+  });
   const interConfigured = Boolean(secrets?.clientId && secrets.clientSecret);
 
   const chargeMap = await listInterChargesForInstallments(
@@ -566,11 +587,15 @@ export async function createInterInstallmentCharge(
     throw new Error('Conta financeira não vinculada ao Banco Inter.');
   }
 
-  const secrets = await loadInterSecretsForServer(admin, input.companyId);
-  if (!secrets) throw new Error('Credenciais Inter ausentes.');
+  const secrets = await loadInterSecretsForServer(admin, input.companyId, {
+    integrationId: resolved.bankIntegrationId,
+    financialAccountId: resolved.financialAccountId,
+  });
+  if (!secrets) throw new Error('Credenciais Inter ausentes para esta conta financeira.');
 
   const creds: InterOAuthCredentials = {
     companyId: input.companyId,
+    integrationId: secrets.integrationId,
     environment: secrets.environment,
     clientId: secrets.clientId,
     clientSecret: secrets.clientSecret,
@@ -609,6 +634,7 @@ export async function createInterInstallmentCharge(
   const insertRow = {
     company_id: input.companyId,
     integration_id: resolved.bankIntegrationId,
+    financial_account_id: resolved.financialAccountId || null,
     finance_receipt_id: input.installmentId,
     sale_id: saleId || null,
     customer_id: receipt.customer_id || null,

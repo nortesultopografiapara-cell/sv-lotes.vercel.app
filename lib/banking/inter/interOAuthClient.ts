@@ -17,6 +17,8 @@ import {
 
 export type InterOAuthCredentials = {
   companyId: string;
+  /** Identidade da conta Inter (token cache e mTLS isolados). */
+  integrationId?: string | null;
   environment: BankEnvironment;
   clientId: string;
   clientSecret: string;
@@ -223,7 +225,12 @@ export async function requestInterAccessToken(
   }
 
   if (!options?.bypassCache) {
-    const cached = getCachedInterToken(creds.companyId, environment);
+    const cached = getCachedInterToken(
+      creds.companyId,
+      environment,
+      30_000,
+      creds.integrationId,
+    );
     if (cached) {
       return {
         ok: true,
@@ -348,7 +355,7 @@ export async function requestInterAccessToken(
     tokenType,
     scope,
   };
-  setCachedInterToken(creds.companyId, environment, cached);
+  setCachedInterToken(creds.companyId, environment, cached, creds.integrationId);
 
   return {
     ok: true,

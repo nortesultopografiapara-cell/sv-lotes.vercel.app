@@ -27,9 +27,15 @@ export async function runCompanyInterConnectionTest(
   options?: {
     bypassCache?: boolean;
     fetchFn?: InterOAuthFetchFn;
+    financialAccountId?: string | null;
+    integrationId?: string | null;
   },
 ): Promise<InterConnectionTestBundle> {
-  const existing = await getCompanyInterBankConfig(admin, companyId);
+  const lookup = {
+    financialAccountId: options?.financialAccountId || null,
+    integrationId: options?.integrationId || null,
+  };
+  const existing = await getCompanyInterBankConfig(admin, companyId, lookup);
   if (!existing.id) {
     const test = toPublicInterConnectionTest({
       ok: false,
@@ -40,7 +46,7 @@ export async function runCompanyInterConnectionTest(
     return { test, config: existing };
   }
 
-  const secrets = await loadInterSecretsForServer(admin, companyId);
+  const secrets = await loadInterSecretsForServer(admin, companyId, lookup);
   if (!secrets) {
     const missingCode =
       !existing.clientIdConfigured
@@ -64,14 +70,15 @@ export async function runCompanyInterConnectionTest(
       environment: existing.environment,
     });
     await persistInterConnectionTestResult(admin, companyId, existing.id, test);
-    return { test, config: await getCompanyInterBankConfig(admin, companyId) };
+    return { test, config: await getCompanyInterBankConfig(admin, companyId, lookup) };
   }
 
-  clearCachedInterToken(companyId, secrets.environment);
+  clearCachedInterToken(companyId, secrets.environment, secrets.integrationId);
 
   const oauth = await requestInterAccessToken(
     {
       companyId,
+      integrationId: secrets.integrationId,
       environment: secrets.environment,
       clientId: secrets.clientId,
       clientSecret: secrets.clientSecret,
@@ -86,7 +93,7 @@ export async function runCompanyInterConnectionTest(
 
   const test = toPublicInterConnectionTest(oauth);
   await persistInterConnectionTestResult(admin, companyId, existing.id, test);
-  const config = await getCompanyInterBankConfig(admin, companyId);
+  const config = await getCompanyInterBankConfig(admin, companyId, lookup);
   return { test, config };
 }
 

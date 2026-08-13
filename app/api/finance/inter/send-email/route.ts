@@ -78,10 +78,14 @@ export async function POST(request: Request) {
 
     const attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
     try {
-      const secrets = await loadInterSecretsForServer(auth.admin, auth.tenantId);
+      const secrets = await loadInterSecretsForServer(auth.admin, auth.tenantId, {
+        integrationId: row.integration_id ? String(row.integration_id) : null,
+        financialAccountId: row.financial_account_id ? String(row.financial_account_id) : null,
+      });
       if (secrets && charge.asaasPaymentId) {
         const creds: InterOAuthCredentials = {
           companyId: auth.tenantId,
+          integrationId: secrets.integrationId,
           environment: secrets.environment,
           clientId: secrets.clientId,
           clientSecret: secrets.clientSecret,

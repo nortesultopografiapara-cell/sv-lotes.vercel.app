@@ -118,6 +118,7 @@ function buildPublicResponse(
   row: IntegrationRow | null,
   credTypes: Set<string>,
   certMeta: { certificateFileName: string | null; privateKeyFileName: string | null },
+  financialAccountId: string | null = null,
 ): InterBankConfigPublic {
   if (!row) return EMPTY_INTER_BANK_CONFIG(companyId);
 
@@ -157,25 +158,115 @@ function buildPublicResponse(
     lastConnectionTestAt,
     authStatus,
     message,
+    financialAccountId,
+  };
+}
+
+export type InterConfigLookup = {
+  integrationId?: string | null;
+  financialAccountId?: string | null;
+};
+
+export async function resolveInterIntegrationId(
+  admin: SupabaseClient,
+  companyId: string,
+  lookup?: InterConfigLookup,
+): Promise<{ integrationId: string | null; financialAccountId: string | null }> {
+  const financialAccountId = String(lookup?.financialAccountId || '').trim() || null;
+  const explicitIntegrationId = String(lookup?.integrationId || '').trim() || null;
+
+  if (financialAccountId) {
+    const { data, error } = await admin
+      .from('company_financial_accounts')
+      .select('id, bank_integration_id')
+      .eq('id', financialAccountId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data?.id) throw new Error('Conta financeira não encontrada.');
+    const integrationId = data.bank_integration_id ? String(data.bank_integration_id) : null;
+    if (!integrationId) {
+      throw new Error('Conta financeira sem integração Inter vinculada.');
+    }
+    const { data: integration, error: intErr } = await admin
+      .from('bank_integrations')
+      .select('id, provider')
+      .eq('id', integrationId)
+      .eq('company_id', companyId)
+      .eq('provider', 'INTER')
+      .maybeSingle();
+    if (intErr) throw new Error(intErr.message);
+    if (!integration?.id) {
+      throw new Error('A conta financeira selecionada não está vinculada ao Banco Inter.');
+    }
+    return { integrationId: String(integration.id), financialAccountId };
+  }
+
+  if (explicitIntegrationId) {
+    const { data, error } = await admin
+      .from('bank_integrations')
+      .select('id')
+      .eq('id', explicitIntegrationId)
+      .eq('company_id', companyId)
+      .eq('provider', 'INTER')
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data?.id) throw new Error('Integração Inter não encontrada.');
+    const { data: fa } = await admin
+      .from('company_financial_accounts')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('bank_integration_id', explicitIntegrationId)
+      .limit(1)
+      .maybeSingle();
+    return {
+      integrationId: String(data.id),
+      financialAccountId: fa?.id ? String(fa.id) : null,
+    };
+  }
+
+  const { data, error } = await admin
+    .from('bank_integrations')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('provider', 'INTER')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.id) return { integrationId: null, financialAccountId: null };
+  const { data: fa } = await admin
+    .from('company_financial_accounts')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('bank_integration_id', data.id)
+    .limit(1)
+    .maybeSingle();
+  return {
+    integrationId: String(data.id),
+    financialAccountId: fa?.id ? String(fa.id) : null,
   };
 }
 
 /**
- * Carrega integração INTER da empresa (não usa is_default).
+ * Carrega integração INTER da conta financeira (ou a mais recente, compatível com 1 conta).
  */
 export async function getCompanyInterBankConfig(
   admin: SupabaseClient,
   companyId: string,
+  lookup?: InterConfigLookup,
 ): Promise<InterBankConfigPublic> {
+  const resolved = await resolveInterIntegrationId(admin, companyId, lookup);
+  if (!resolved.integrationId) return EMPTY_INTER_BANK_CONFIG(companyId);
+
   const { data, error } = await admin
     .from('bank_integrations')
     .select(
       'id, company_id, environment, status, client_id, certificate_name, configured_at, updated_at, active, metadata, last_error',
     )
+    .eq('id', resolved.integrationId)
     .eq('company_id', companyId)
     .eq('provider', 'INTER')
-    .order('updated_at', { ascending: false })
-    .limit(1)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -188,15 +279,21 @@ export async function getCompanyInterBankConfig(
   let certificateFileName: string | null = null;
   let privateKeyFileName: string | null = null;
 
-  // Metadados de nome: preferir certificate_name "cert||key"; fallback parse só se decrypt disponível
   const nameParts = String(row.certificate_name || '').split('||');
   if (nameParts[0]) certificateFileName = nameParts[0].trim() || null;
   if (nameParts[1]) privateKeyFileName = nameParts[1].trim() || null;
 
-  return buildPublicResponse(companyId, row, credTypes, {
-    certificateFileName,
-    privateKeyFileName,
-  });
+  const publicCfg = buildPublicResponse(
+    companyId,
+    row,
+    credTypes,
+    {
+      certificateFileName,
+      privateKeyFileName,
+    },
+    resolved.financialAccountId,
+  );
+  return publicCfg;
 }
 
 export async function saveCompanyInterBankConfig(
@@ -213,7 +310,10 @@ export async function saveCompanyInterBankConfig(
   const certificateFileName = clean(input.certificateFileName).slice(0, 180);
   const privateKeyFileName = clean(input.privateKeyFileName).slice(0, 180);
 
-  const existing = await getCompanyInterBankConfig(admin, companyId);
+  const lookup: InterConfigLookup = {
+    financialAccountId: input.financialAccountId || null,
+  };
+  const existing = await getCompanyInterBankConfig(admin, companyId, lookup);
 
   const replacingCert = Boolean(certificatePem || privateKeyPem);
   if (replacingCert) {
@@ -316,9 +416,31 @@ export async function saveCompanyInterBankConfig(
     await upsertCredential(admin, integrationId!, companyId, 'certificate', serialized);
   }
 
-  clearCachedInterToken(companyId);
+  if (lookup.financialAccountId && integrationId) {
+    const { data: fa } = await admin
+      .from('company_financial_accounts')
+      .select('id, bank_integration_id')
+      .eq('id', lookup.financialAccountId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (fa?.id && !fa.bank_integration_id) {
+      await admin
+        .from('company_financial_accounts')
+        .update({
+          bank_integration_id: integrationId,
+          updated_at: now,
+        })
+        .eq('id', lookup.financialAccountId)
+        .eq('company_id', companyId);
+    }
+  }
 
-  return getCompanyInterBankConfig(admin, companyId);
+  clearCachedInterToken(companyId, undefined, integrationId);
+
+  return getCompanyInterBankConfig(admin, companyId, {
+    integrationId,
+    financialAccountId: lookup.financialAccountId,
+  });
 }
 
 /** Garante que a resposta pública não contenha PEMs/secrets. */
@@ -353,21 +475,26 @@ export function assertInterConfigResponseSafe(response: InterBankConfigPublic): 
 export async function loadInterSecretsForServer(
   admin: SupabaseClient,
   companyId: string,
+  lookup?: InterConfigLookup,
 ): Promise<{
   clientId: string;
   clientSecret: string;
   certificatePem: string;
   privateKeyPem: string;
   environment: BankEnvironment;
+  integrationId: string;
+  financialAccountId: string | null;
 } | null> {
   const { decryptBankingSecret } = await import('@/lib/banking/credentialsCrypto');
+  const resolved = await resolveInterIntegrationId(admin, companyId, lookup);
+  if (!resolved.integrationId) return null;
+
   const { data, error } = await admin
     .from('bank_integrations')
     .select('id, client_id, environment')
+    .eq('id', resolved.integrationId)
     .eq('company_id', companyId)
     .eq('provider', 'INTER')
-    .order('updated_at', { ascending: false })
-    .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data?.id) return null;
@@ -386,5 +513,7 @@ export async function loadInterSecretsForServer(
     certificatePem: parsed.certificatePem,
     privateKeyPem: parsed.privateKeyPem,
     environment: (data.environment as BankEnvironment) || 'SANDBOX',
+    integrationId: String(data.id),
+    financialAccountId: resolved.financialAccountId,
   };
 }

@@ -18,7 +18,12 @@ export async function GET(request: Request) {
   if ('error' in auth) return auth.error;
 
   try {
-    const config = await getCompanyInterBankConfig(auth.admin, auth.tenantId);
+    const url = new URL(request.url);
+    const lookup = {
+      financialAccountId: url.searchParams.get('financialAccountId') || url.searchParams.get('financial_account_id'),
+      integrationId: url.searchParams.get('integrationId') || url.searchParams.get('integration_id'),
+    };
+    const config = await getCompanyInterBankConfig(auth.admin, auth.tenantId, lookup);
     assertInterConfigResponseSafe(config);
     return NextResponse.json({ config });
   } catch (err) {
@@ -48,6 +53,7 @@ export async function PUT(request: Request) {
       privateKeyFileName: String(
         body.privateKeyFileName ?? body.private_key_file_name ?? '',
       ),
+      financialAccountId: String(body.financialAccountId ?? body.financial_account_id ?? '').trim() || null,
     };
 
     const config = await saveCompanyInterBankConfig(
@@ -92,7 +98,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
     }
 
-    const { test, config } = await runCompanyInterConnectionTest(auth.admin, auth.tenantId);
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const { test, config } = await runCompanyInterConnectionTest(auth.admin, auth.tenantId, {
+      financialAccountId:
+        String(body.financialAccountId ?? body.financial_account_id ?? url.searchParams.get('financialAccountId') ?? '').trim() ||
+        null,
+    });
     assertInterConfigResponseSafe(config);
 
     const payload = {

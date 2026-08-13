@@ -101,6 +101,16 @@ export async function linkFinancialAccountToInterIntegration(
     return existing;
   }
 
+  const others = await listCompanyFinancialAccounts(admin, companyId, { activeOnly: false });
+  const taken = others.find(
+    (a) => a.id !== financialAccountId && a.bankIntegrationId === interId,
+  );
+  if (taken) {
+    throw new Error(
+      'Esta integração Inter já está vinculada a outra conta. Use "Nova conta Inter" para credenciais próprias.',
+    );
+  }
+
   const { error } = await admin
     .from('company_financial_accounts')
     .update({
@@ -119,15 +129,35 @@ export async function linkFinancialAccountToInterIntegration(
 export type CreateInterFinancialAccountInput = {
   name?: string | null;
   beneficiaryName?: string | null;
+  /** true = cria nova integração Inter (segunda conta). false = reusa integração ainda sem FA. */
+  createAdditional?: boolean;
 };
 
-/** Cria FA nova com bank_integration_id = INTER (is_default=false). Não toca Asaas. */
+/** Cria FA Inter. Sem createAdditional, reusa integração órfã ou a FA Inter já existente. */
 export async function createInterFinancialAccount(
   admin: SupabaseClient,
   companyId: string,
   input?: CreateInterFinancialAccountInput,
 ): Promise<CompanyFinancialAccountResponse> {
-  const interId = await getInterIntegrationId(admin, companyId);
+  const existingList = await listCompanyFinancialAccounts(admin, companyId, {
+    activeOnly: false,
+  });
+  const interAccounts = existingList.filter(
+    (a) => a.active && String(a.provider || '').toUpperCase() === 'INTER',
+  );
+  const linkedIntegrationIds = new Set(
+    interAccounts.map((a) => a.bankIntegrationId).filter(Boolean) as string[],
+  );
+
+  const { data: integrations, error: intErr } = await admin
+    .from('bank_integrations')
+    .select('id, environment')
+    .eq('company_id', companyId)
+    .eq('provider', 'INTER')
+    .order('updated_at', { ascending: false });
+  if (intErr) throw new Error(intErr.message);
+  const interIntegrations = (integrations as Array<{ id: string; environment?: string }> | null) || [];
+  const unused = interIntegrations.find((row) => !linkedIntegrationIds.has(String(row.id)));
 
   const { data: company } = await admin
     .from('companies')
@@ -138,25 +168,66 @@ export async function createInterFinancialAccount(
   const name =
     String(input?.name || '').trim() || `${companyName} — Banco Inter`;
 
-  // Reusa conta Inter existente pelo nome/vínculo se já houver
-  const existingList = await listCompanyFinancialAccounts(admin, companyId, {
-    activeOnly: false,
-  });
-  const already = existingList.find(
-    (a) => a.bankIntegrationId === interId && a.active,
-  );
-  if (already) return already;
+  if (!input?.createAdditional) {
+    if (unused?.id) {
+      return insertInterFinancialAccountRow(admin, companyId, {
+        name,
+        beneficiaryName: String(input?.beneficiaryName || companyName).trim() || companyName,
+        integrationId: String(unused.id),
+        environment: (unused.environment as 'SANDBOX' | 'PRODUCTION') || 'SANDBOX',
+      });
+    }
+    if (interAccounts[0]) return interAccounts[0];
+  }
 
+  const now = new Date().toISOString();
+  const { data: createdInt, error: createIntErr } = await admin
+    .from('bank_integrations')
+    .insert({
+      company_id: companyId,
+      provider: 'INTER',
+      bank_provider: 'INTER',
+      environment: unused?.environment || 'SANDBOX',
+      status: 'DRAFT',
+      label: name,
+      active: false,
+      is_default: false,
+      configured_at: now,
+      updated_at: now,
+      metadata: { createdForFinancialAccount: true },
+    })
+    .select('id, environment')
+    .single();
+  if (createIntErr) throw new Error(createIntErr.message);
+
+  return insertInterFinancialAccountRow(admin, companyId, {
+    name,
+    beneficiaryName: String(input?.beneficiaryName || companyName).trim() || companyName,
+    integrationId: String(createdInt.id),
+    environment: (createdInt.environment as 'SANDBOX' | 'PRODUCTION') || 'SANDBOX',
+  });
+}
+
+async function insertInterFinancialAccountRow(
+  admin: SupabaseClient,
+  companyId: string,
+  input: {
+    name: string;
+    beneficiaryName: string;
+    integrationId: string;
+    environment: string;
+  },
+): Promise<CompanyFinancialAccountResponse> {
   const now = new Date().toISOString();
   const { data, error } = await admin
     .from('company_financial_accounts')
     .insert({
       company_id: companyId,
-      name,
+      name: input.name,
       account_type: 'IMOBILIARIA',
-      beneficiary_name: String(input?.beneficiaryName || companyName).trim() || companyName,
-      environment: 'SANDBOX',
-      bank_integration_id: interId,
+      beneficiary_name: input.beneficiaryName,
+      environment: input.environment,
+      bank_integration_id: input.integrationId,
       is_default: false,
       active: true,
       notes: 'Conta financeira Banco Inter (provider INTER).',

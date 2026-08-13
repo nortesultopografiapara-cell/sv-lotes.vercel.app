@@ -144,15 +144,10 @@ export async function processInterWebhookCallbackItem(
     };
   }
 
-  const { data: integration } = await admin
-    .from('bank_integrations')
-    .select('id')
-    .eq('company_id', input.companyId)
-    .eq('provider', 'INTER')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const integrationId = integration?.id ? String(integration.id) : null;
+  const localCharge = await loadInterChargeByCodigo(admin, input.companyId, codigo);
+  const integrationId = localCharge?.integration_id
+    ? String(localCharge.integration_id)
+    : null;
 
   // Idempotência preliminar com hint do callback; se RECEBIDO, reforça após GET.
   const prelimKey = buildInterWebhookIdempotencyKey({
@@ -194,7 +189,16 @@ export async function processInterWebhookCallbackItem(
 
     const secrets = input.confirmCharge
       ? null
-      : await loadInterSecretsForServer(admin, input.companyId);
+      : localCharge
+        ? await loadInterSecretsForServer(admin, input.companyId, {
+            integrationId: localCharge.integration_id
+              ? String(localCharge.integration_id)
+              : null,
+            financialAccountId: localCharge.financial_account_id
+              ? String(localCharge.financial_account_id)
+              : null,
+          })
+        : await loadInterSecretsForServer(admin, input.companyId);
     if (!input.confirmCharge && !secrets) {
       await markWebhookEvent(admin, claim.eventId, 'FAILED', 'Credenciais Inter ausentes');
       return {
@@ -212,6 +216,7 @@ export async function processInterWebhookCallbackItem(
       : await fetchInterCobrancaByCodigo(
           {
             companyId: input.companyId,
+            integrationId: secrets!.integrationId,
             environment: secrets!.environment,
             clientId: secrets!.clientId,
             clientSecret: secrets!.clientSecret,
@@ -265,15 +270,7 @@ export async function processInterWebhookCallbackItem(
       };
     }
 
-    const { data: charge } = await admin
-      .from('bank_charges')
-      .select(
-        'id, company_id, finance_receipt_id, sale_id, customer_id, status, amount, metadata, paid_at, paid_amount, external_id, barcode, digitable_line, pix_copy_paste, our_number, txid',
-      )
-      .eq('company_id', input.companyId)
-      .eq('provider', 'INTER')
-      .eq('external_id', codigo)
-      .maybeSingle();
+    const charge = localCharge;
 
     if (!charge?.id) {
       await markWebhookEvent(admin, claim.eventId, 'IGNORED', 'bank_charge não encontrado');
@@ -350,7 +347,7 @@ async function loadInterChargeByCodigo(
   const { data: charge } = await admin
     .from('bank_charges')
     .select(
-      'id, company_id, finance_receipt_id, sale_id, customer_id, status, amount, metadata, paid_at, paid_amount, external_id, barcode, digitable_line, pix_copy_paste, our_number, txid',
+      'id, company_id, finance_receipt_id, sale_id, customer_id, status, amount, metadata, paid_at, paid_amount, external_id, barcode, digitable_line, pix_copy_paste, our_number, txid, integration_id, financial_account_id',
     )
     .eq('company_id', companyId)
     .eq('provider', 'INTER')
@@ -425,12 +422,19 @@ async function healDuplicateInterWebhook(
     codigoSolicitacao: codigo,
   };
   try {
+    const localCharge = await loadInterChargeByCodigo(admin, input.companyId, codigo);
     if (!input.confirmCharge) {
-      const secrets = await loadInterSecretsForServer(admin, input.companyId);
+      const secrets = await loadInterSecretsForServer(admin, input.companyId, {
+        integrationId: localCharge?.integration_id ? String(localCharge.integration_id) : null,
+        financialAccountId: localCharge?.financial_account_id
+          ? String(localCharge.financial_account_id)
+          : null,
+      });
       if (!secrets) return fallback;
       const confirmed = await fetchInterCobrancaByCodigo(
         {
           companyId: input.companyId,
+          integrationId: secrets.integrationId,
           environment: secrets.environment,
           clientId: secrets.clientId,
           clientSecret: secrets.clientSecret,
