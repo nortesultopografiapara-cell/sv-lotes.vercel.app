@@ -1,7 +1,7 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 
 export const INTER_OFFICIAL_PDF_HINT =
-  'O Inter fornece PDF oficial do boleto em GET /cobranca/v3/cobrancas/{codigoSolicitacao}/pdf. Carnê PDF Asaas não se aplica a esta cobrança.';
+  'Baixar boleto consulta o PDF oficial do Banco Inter. Nenhuma cobrança nova é emitida.';
 
 export const INTER_PDF_NOT_MATERIALIZED_HINT =
   'PDF oficial do boleto Inter ainda não materializado. Atualize os dados da cobrança (consulta GET). Não será emitida nova cobrança.';
@@ -9,6 +9,8 @@ export const INTER_PDF_NOT_MATERIALIZED_HINT =
 export function resolveInterIssuedChargeActions(params: {
   charge: CompanyAsaasChargeResponse | null | undefined;
   installmentPaid: boolean;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
 }): {
   hasExternalId: boolean;
   hideGenerate: boolean;
@@ -16,6 +18,9 @@ export function resolveInterIssuedChargeActions(params: {
   showCopyPix: boolean;
   showOfficialPdf: boolean;
   showRefresh: boolean;
+  showWhatsApp: boolean;
+  showEmail: boolean;
+  artifactsPending: boolean;
   officialPdfUnavailableReason: string | null;
 } {
   const charge = params.charge;
@@ -27,16 +32,22 @@ export function resolveInterIssuedChargeActions(params: {
   const pix = String(charge?.pixCopyPaste || '').trim();
   const nosso = String(charge?.nossoNumero || '').trim();
   const hasBoletoArtifact = Boolean(linha || barcode.length >= 44 || nosso);
-  const showOfficialPdf = hasExternalId && hasBoletoArtifact && !paid;
+  const artifactsPending = hasExternalId && !hasBoletoArtifact && !pix && !paid;
+  const phone = String(params.customerPhone || '').replace(/\D/g, '');
+  const email = String(params.customerEmail || '').trim();
+  const hasShareableArtifacts = Boolean(linha || pix);
 
   return {
     hasExternalId,
     hideGenerate: hasExternalId,
     showCopyLinha: Boolean(linha) && !paid,
     showCopyPix: Boolean(pix) && !paid,
-    showOfficialPdf,
-    showRefresh: hasExternalId && !paid,
-    officialPdfUnavailableReason: hasExternalId && !showOfficialPdf && !paid
+    showOfficialPdf: hasExternalId,
+    showRefresh: hasExternalId,
+    showWhatsApp: hasExternalId && phone.length >= 10 && hasShareableArtifacts && !paid,
+    showEmail: hasExternalId && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && hasShareableArtifacts,
+    artifactsPending,
+    officialPdfUnavailableReason: artifactsPending
       ? INTER_PDF_NOT_MATERIALIZED_HINT
       : hasExternalId
         ? INTER_OFFICIAL_PDF_HINT

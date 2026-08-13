@@ -11,6 +11,8 @@ import {
   type InterCobrancaDetail,
   type InterCreateCobrancaInput,
 } from '@/lib/banking/inter/interCobrancaClient';
+import { isInterSituacaoRecebido, mapInterSituacaoToBankStatus } from '@/lib/banking/inter/interStatus';
+import { settleInterPaidCharge } from '@/lib/banking/inter/interPaymentSettlement';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
 import type { InterOAuthCredentials, InterOAuthFetchFn } from '@/lib/banking/inter/interOAuthClient';
 import { resolveCustomerDocumentDigits } from '@/lib/customerIdentity';
@@ -46,15 +48,7 @@ export function buildInterChargeIdempotencyKey(
   return `INTER:${companyId}:${financeReceiptId}`;
 }
 
-export function mapInterSituacaoToBankStatus(situacao: string): string {
-  const s = String(situacao || '').toUpperCase();
-  if (s === 'RECEBIDO' || s === 'PAGO') return 'PAID';
-  if (s === 'CANCELADO') return 'CANCELLED';
-  if (s === 'EXPIRADO') return 'EXPIRED';
-  if (s === 'A_RECEBER') return 'REGISTERED';
-  if (s === 'EM_PROCESSAMENTO') return 'PENDING';
-  return 'PENDING';
-}
+export { mapInterSituacaoToBankStatus } from '@/lib/banking/inter/interStatus';
 
 function onlyDigits(v: unknown): string {
   return String(v || '').replace(/\D/g, '');
@@ -112,8 +106,11 @@ export async function findActiveInterBankChargeForReceipt(
     .eq('provider', 'INTER')
     .eq('idempotency_key', idem)
     .maybeSingle();
-  if (byIdem?.id && ACTIVE_BANK_CHARGE_STATUSES.has(String(byIdem.status))) {
-    return byIdem as Record<string, unknown>;
+  if (byIdem?.id) {
+    const ext = String(byIdem.external_id || '').trim();
+    if (ext || ACTIVE_BANK_CHARGE_STATUSES.has(String(byIdem.status))) {
+      return byIdem as Record<string, unknown>;
+    }
   }
 
   const { data: byReceipt } = await admin
@@ -291,6 +288,7 @@ export async function refreshInterChargeArtifacts(
   bankChargeId: string;
   externalId: string;
   inserted: false;
+  paid?: boolean;
 }> {
   const companyId = String(input.companyId || '').trim();
   const installmentId = String(input.installmentId || '').trim();
@@ -343,11 +341,26 @@ export async function refreshInterChargeArtifacts(
   if (updateErr) throw new Error(updateErr.message);
 
   const row = (updated as Record<string, unknown>) || { ...existing, ...patch };
+
+  let paid = String(row.status || '').toUpperCase() === 'PAID';
+  if (isInterSituacaoRecebido(detail.situacao)) {
+    const settled = await settleInterPaidCharge(admin, {
+      companyId,
+      charge: row,
+      detail,
+    });
+    paid = settled.paid;
+    if (paid) {
+      row.status = 'PAID';
+    }
+  }
+
   return {
     charge: bankChargeToSummaryLike(row, companyId),
     reused: true,
     created: false,
     inserted: false,
+    paid,
     bankChargeId: String(row.id),
     externalId,
   };
@@ -401,19 +414,35 @@ export async function getInterSaleChargesSummary(
   });
 
   // providerInfo.financialAccountName já vem com "— Banco Inter"
+  const issuedMaterialized = charges.filter(
+    (c) =>
+      Boolean(String(c.asaasPaymentId || '').trim()) &&
+      c.status !== 'CANCELLED' &&
+      c.status !== 'FAILED' &&
+      c.status !== 'EXPIRED',
+  );
+  const carneOverride =
+    issuedMaterialized.length >= 1
+      ? {
+          carneReady: true as const,
+          carneBlockReason:
+            summary.chargesMissing > 0
+              ? `${issuedMaterialized.length} de ${summary.totalInstallments} parcelas com cobrança emitida.`
+              : summary.carneBlockReason,
+          uiState:
+            summary.uiState === 'none' || summary.uiState === 'partial'
+              ? summary.chargesMissing > 0
+                ? ('partial' as const)
+                : ('carne_ready' as const)
+              : summary.uiState,
+        }
+      : {};
+
   return {
     ...summary,
+    ...carneOverride,
     chargeProvider: 'INTER' as const,
     financialAccountName: providerInfo.financialAccountName || summary.financialAccountName,
-    carneReady: false,
-    carneBlockReason:
-      'Carnê PDF Inter ainda não está disponível nesta fase (somente emissão/consulta).',
-    uiState:
-      summary.uiState === 'carne_ready'
-        ? summary.chargesMissing > 0
-          ? 'partial'
-          : 'complete'
-        : summary.uiState,
   };
 }
 
@@ -445,17 +474,42 @@ export async function createInterInstallmentCharge(
       sleepFn?: (ms: number) => Promise<void>;
     };
   },
-): Promise<{ chargeId: string; codigoSolicitacao: string; reused: boolean }> {
+): Promise<{ chargeId: string; codigoSolicitacao: string; reused: boolean; artifactsReady?: boolean }> {
   const existing = await findActiveInterBankChargeForReceipt(
     admin,
     input.companyId,
     input.installmentId,
   );
   if (existing?.id) {
+    const codigo = String(existing.external_id || '').trim();
+    if (codigo && interBankChargeMissingArtifacts(existing)) {
+      try {
+        const refreshed = await refreshInterChargeArtifacts(admin, {
+          companyId: input.companyId,
+          installmentId: input.installmentId,
+          externalId: codigo,
+          fetchFn: input.fetchFn,
+        });
+        return {
+          chargeId: refreshed.bankChargeId,
+          codigoSolicitacao: refreshed.externalId,
+          reused: true,
+          artifactsReady: Boolean(
+            refreshed.charge.bankSlipIdentification ||
+              refreshed.charge.barCode ||
+              refreshed.charge.pixCopyPaste ||
+              refreshed.charge.nossoNumero,
+          ),
+        };
+      } catch {
+        /* reuso sem reemitir mesmo se GET falhar */
+      }
+    }
     return {
       chargeId: String(existing.id),
-      codigoSolicitacao: String(existing.external_id || ''),
+      codigoSolicitacao: codigo,
       reused: true,
+      artifactsReady: !interBankChargeMissingArtifacts(existing),
     };
   }
 
@@ -526,13 +580,6 @@ export async function createInterInstallmentCharge(
   };
 
   const created = await createInterCobranca(creds, createPayload, { fetchFn: input.fetchFn });
-  const polled = await pollInterCobrancaUntilReady(creds, created.codigoSolicitacao, {
-    fetchFn: input.fetchFn,
-    maxAttempts: input.pollOptions?.maxAttempts ?? 6,
-    initialDelayMs: input.pollOptions?.initialDelayMs ?? 800,
-    sleepFn: input.pollOptions?.sleepFn,
-  });
-
   const idempotencyKey = buildInterChargeIdempotencyKey(input.companyId, input.installmentId);
   const now = new Date().toISOString();
   const insertRow = {
@@ -545,28 +592,20 @@ export async function createInterInstallmentCharge(
     provider: 'INTER',
     environment: secrets.environment,
     external_id: created.codigoSolicitacao,
-    our_number: polled.nossoNumero || null,
-    txid: polled.txid || null,
+    our_number: null,
+    txid: null,
     amount,
     due_date: dueDate,
-    status: mapInterSituacaoToBankStatus(polled.situacao),
-    barcode: polled.codigoBarras || null,
-    digitable_line: polled.linhaDigitavel || null,
-    pix_copy_paste: polled.pixCopiaECola || null,
+    status: 'PENDING',
+    barcode: null,
+    digitable_line: null,
+    pix_copy_paste: null,
     idempotency_key: idempotencyKey,
     metadata: {
       codigoSolicitacao: created.codigoSolicitacao,
       seuNumero,
-      interSituacao: polled.situacao,
+      interSituacao: 'EM_PROCESSAMENTO',
       createRaw: created.raw,
-      pollRaw: {
-        situacao: polled.situacao,
-        nossoNumero: polled.nossoNumero,
-        linhaDigitavel: polled.linhaDigitavel,
-        codigoBarras: polled.codigoBarras,
-        pixCopiaECola: polled.pixCopiaECola,
-        txid: polled.txid,
-      },
       providerLabel: 'Banco Inter',
     },
     created_by: input.userId || null,
@@ -588,6 +627,16 @@ export async function createInterInstallmentCharge(
         input.installmentId,
       );
       if (again?.id) {
+        try {
+          await refreshInterChargeArtifacts(admin, {
+            companyId: input.companyId,
+            installmentId: input.installmentId,
+            externalId: String(again.external_id || created.codigoSolicitacao),
+            fetchFn: input.fetchFn,
+          });
+        } catch {
+          /* GET-only best-effort */
+        }
         return {
           chargeId: String(again.id),
           codigoSolicitacao: String(again.external_id || created.codigoSolicitacao),
@@ -598,10 +647,32 @@ export async function createInterInstallmentCharge(
     throw new Error(insertErr.message);
   }
 
+  const polled = await pollInterCobrancaUntilReady(creds, created.codigoSolicitacao, {
+    fetchFn: input.fetchFn,
+    maxAttempts: input.pollOptions?.maxAttempts ?? 6,
+    initialDelayMs: input.pollOptions?.initialDelayMs ?? 800,
+    sleepFn: input.pollOptions?.sleepFn,
+  });
+
+  try {
+    await refreshInterChargeArtifacts(admin, {
+      companyId: input.companyId,
+      installmentId: input.installmentId,
+      externalId: created.codigoSolicitacao,
+      fetchFn: input.fetchFn,
+      detail: polled,
+    });
+  } catch {
+    /* external_id já persistido; artefatos podem chegar via Atualizar dados */
+  }
+
   return {
     chargeId: String(inserted.id),
     codigoSolicitacao: created.codigoSolicitacao,
     reused: false,
+    artifactsReady: Boolean(
+      polled.linhaDigitavel || polled.codigoBarras || polled.pixCopiaECola || polled.nossoNumero,
+    ),
   };
 }
 
@@ -634,13 +705,35 @@ export async function generateMissingInterSaleChargesBatch(
     throw new Error('Conta financeira desta venda não está vinculada ao Banco Inter.');
   }
 
-  const summary = await getInterSaleChargesSummary(admin, params.companyId, params.saleId);
+  const installments = await loadSaleScopedInstallments(admin, params.companyId, params.saleId);
+  const chargeMap = await listInterChargesForInstallments(
+    admin,
+    params.companyId,
+    installments.map((i) => i.id),
+  );
+  for (const [installmentId, row] of chargeMap.entries()) {
+    if (!interBankChargeMissingArtifacts(row as Record<string, unknown>)) continue;
+    const codigo = String((row as Record<string, unknown>).external_id || '').trim();
+    if (!codigo) continue;
+    try {
+      await refreshInterChargeArtifacts(admin, {
+        companyId: params.companyId,
+        installmentId,
+        externalId: codigo,
+        fetchFn: params.fetchFn,
+      });
+    } catch {
+      /* GET-only; não reemite */
+    }
+  }
+
+  const afterRefresh = await getInterSaleChargesSummary(admin, params.companyId, params.saleId);
   const limit = Math.min(
     Math.max(1, Number(params.limit || SALE_CHARGES_GENERATE_BATCH_LIMIT)),
     SALE_CHARGES_GENERATE_BATCH_LIMIT,
   );
   const plan = planGenerateMissingCharges({
-    missingOrdered: summary.missingInstallments,
+    missingOrdered: afterRefresh.missingInstallments,
     quantityRequested: limit,
   });
   const batch = plan.selected;
@@ -690,3 +783,39 @@ export async function generateMissingInterSaleChargesBatch(
 }
 
 export type { MissingChargeInstallmentPreview };
+
+export async function refreshInterSaleCharges(
+  admin: SupabaseClient,
+  params: {
+    companyId: string;
+    saleId: string;
+    fetchFn?: InterOAuthFetchFn;
+  },
+): Promise<{ refreshed: number; paidSettled: number; errors: string[] }> {
+  const installments = await loadSaleScopedInstallments(admin, params.companyId, params.saleId);
+  const chargeMap = await listInterChargesForInstallments(
+    admin,
+    params.companyId,
+    installments.map((i) => i.id),
+  );
+  let refreshed = 0;
+  let paidSettled = 0;
+  const errors: string[] = [];
+  for (const [installmentId, row] of chargeMap.entries()) {
+    const codigo = String((row as Record<string, unknown>).external_id || '').trim();
+    if (!codigo) continue;
+    try {
+      const result = await refreshInterChargeArtifacts(admin, {
+        companyId: params.companyId,
+        installmentId,
+        externalId: codigo,
+        fetchFn: params.fetchFn,
+      });
+      refreshed += 1;
+      if (result.paid) paidSettled += 1;
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return { refreshed, paidSettled, errors };
+}

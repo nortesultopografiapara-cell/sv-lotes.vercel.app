@@ -86,6 +86,38 @@ export type BuildChargeWhatsAppMessageInput = {
   charge: CompanyAsaasChargeResponse;
 };
 
+export function buildInterChargeWhatsAppMessage(input: BuildChargeWhatsAppMessageInput): string {
+  const clientName = input.clientName.trim() || 'Cliente';
+  const emp = input.projectName.trim();
+  const lote = input.lotLabel.trim();
+  const ref = [emp, lote].filter(Boolean).join(' — ') || 'sua parcela';
+  const valor = formatCurrencyBRL(Number(input.amount) || Number(input.charge.value) || 0);
+  const pixCopy = String(input.charge.pixCopyPaste || '').trim();
+  const linha = String(input.charge.bankSlipIdentification || '').trim();
+
+  const lines: string[] = [
+    `Olá, ${clientName}. Segue sua cobrança referente a ${ref}.`,
+    '',
+    `Vencimento: ${input.dueDateLabel}`,
+    `Valor: ${valor}`,
+  ];
+  if (pixCopy) {
+    lines.push('', 'Pix copia e cola:', pixCopy);
+  }
+  if (linha) {
+    lines.push('', 'Linha digitável:', linha);
+  }
+  lines.push('', 'SV LOTES');
+  return lines.join('\n');
+}
+
+export function chargeHasInterWhatsAppPayload(charge: CompanyAsaasChargeResponse): boolean {
+  return Boolean(
+    String(charge.pixCopyPaste || '').trim() ||
+      String(charge.bankSlipIdentification || '').trim(),
+  );
+}
+
 export function buildChargeWhatsAppMessage(input: BuildChargeWhatsAppMessageInput): string {
   const primaryUrl = resolveChargeWhatsAppPrimaryPaymentUrl(input.charge);
   const pixCopy = String(input.charge.pixCopyPaste || '').trim();
@@ -170,6 +202,21 @@ export function resolveChargeCustomerPhone(row: Record<string, unknown>): string
   return null;
 }
 
+export function resolveChargeCustomerEmail(row: Record<string, unknown>): string | null {
+  const customers = row.customers;
+  const pick = (value: unknown) => {
+    const email = String(value || '').trim();
+    return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+  };
+  if (Array.isArray(customers)) {
+    return pick((customers[0] as { email?: string | null } | undefined)?.email);
+  }
+  if (customers && typeof customers === 'object') {
+    return pick((customers as { email?: string | null }).email);
+  }
+  return null;
+}
+
 export type ChargeWhatsAppShareResult =
   | { ok: true; url: string; installmentId: string }
   | { ok: false; error: string; installmentId: string };
@@ -179,6 +226,7 @@ export function executeChargeWhatsAppShare(input: {
   customerPhone?: string | null;
   charge: CompanyAsaasChargeResponse;
   messageInput: Omit<BuildChargeWhatsAppMessageInput, 'charge'>;
+  preferInterMessage?: boolean;
 }): ChargeWhatsAppShareResult {
   const installmentId = String(input.installmentId || '').trim();
   const phone = input.customerPhone;
@@ -191,18 +239,29 @@ export function executeChargeWhatsAppShare(input: {
     };
   }
 
-  if (!resolveChargeWhatsAppShareableUrl(input.charge)) {
+  const hasAsaasUrl = Boolean(resolveChargeWhatsAppShareableUrl(input.charge));
+  const useInterMessage =
+    Boolean(input.preferInterMessage) ||
+    (!hasAsaasUrl && chargeHasInterWhatsAppPayload(input.charge));
+  if (!hasAsaasUrl && !chargeHasInterWhatsAppPayload(input.charge)) {
     return {
       ok: false,
-      error: 'Link de pagamento indisponível para esta cobrança.',
+      error: input.preferInterMessage
+        ? 'Pix ou linha digitável indisponível para esta cobrança.'
+        : 'Link da cobrança indisponível para envio por WhatsApp.',
       installmentId,
     };
   }
 
-  const message = buildChargeWhatsAppMessage({
-    ...input.messageInput,
-    charge: input.charge,
-  });
+  const message = useInterMessage
+    ? buildInterChargeWhatsAppMessage({
+        ...input.messageInput,
+        charge: input.charge,
+      })
+    : buildChargeWhatsAppMessage({
+        ...input.messageInput,
+        charge: input.charge,
+      });
   const url = buildChargeWhatsAppShareUrl(phone, message);
   if (!url) {
     return {

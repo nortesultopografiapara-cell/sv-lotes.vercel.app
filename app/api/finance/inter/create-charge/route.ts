@@ -54,6 +54,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       reused: result.reused,
+      created: !result.reused,
+      artifactsReady: Boolean(result.artifactsReady),
       charge: bankChargeToSummaryLike(persisted, auth.tenantId),
     });
   } catch (err) {

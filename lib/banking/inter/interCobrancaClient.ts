@@ -11,6 +11,7 @@ import {
   type InterOAuthCredentials,
   type InterOAuthFetchFn,
 } from '@/lib/banking/inter/interOAuthClient';
+import { isInterSituacaoTerminal } from '@/lib/banking/inter/interStatus';
 
 export type InterCobrancaDetail = {
   codigoSolicitacao: string;
@@ -345,13 +346,7 @@ export async function pollInterCobrancaUntilReady(
       fetchFn: options?.fetchFn,
     });
     const hasArtifacts = interDetailHasPaymentArtifacts(last);
-    const situacao = last.situacao;
-    const terminalWithoutWaiting =
-      situacao === 'RECEBIDO' ||
-      situacao === 'PAGO' ||
-      situacao === 'CANCELADO' ||
-      situacao === 'EXPIRADO';
-    if (hasArtifacts || terminalWithoutWaiting) {
+    if (hasArtifacts || isInterSituacaoTerminal(last.situacao)) {
       return last;
     }
     if (attempt < maxAttempts) {
@@ -488,10 +483,7 @@ export async function deleteInterCobrancaWebhook(
   }
 }
 
-export function isInterSituacaoRecebido(situacao: string): boolean {
-  const s = String(situacao || '').trim().toUpperCase();
-  return s === 'RECEBIDO' || s === 'PAGO';
-}
+export { isInterSituacaoRecebido } from '@/lib/banking/inter/interStatus';
 
 export function mapInterOrigemRecebimento(
   origem: string | null | undefined,

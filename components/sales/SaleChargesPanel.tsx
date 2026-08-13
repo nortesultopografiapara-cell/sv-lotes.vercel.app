@@ -265,8 +265,22 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     setInfo('');
     try {
       if (chargeProvider === 'INTER') {
-        await loadSummary();
-        setInfo('Situação das cobranças Inter atualizada.');
+        const res = await fetch('/api/finance/inter/sale-charges/sync', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ saleId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao sincronizar Inter');
+        if (data.summary) setSummary(data.summary as SaleChargesSummary);
+        else await loadSummary();
+        const paid = Number(data.paidSettled || 0);
+        setInfo(
+          paid > 0
+            ? `Situação Inter atualizada. ${paid} pagamento(s) sincronizado(s).`
+            : 'Situação das cobranças Inter atualizada (consulta GET).',
+        );
         return;
       }
       const res = await fetch('/api/finance/asaas/sale-charges/sync', {
@@ -288,11 +302,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }
 
   async function fetchCarneBlob(): Promise<{ blob: Blob; filename: string }> {
-    if (chargeProvider === 'INTER') {
-      throw new Error('Carnê PDF Inter ainda não está disponível nesta fase.');
-    }
     if (!saleId) throw new Error('Venda não identificada');
-    const res = await fetch('/api/finance/asaas/sale-charges/carne-pdf', {
+    const path =
+      chargeProvider === 'INTER'
+        ? '/api/finance/inter/sale-charges/carne-pdf'
+        : '/api/finance/asaas/sale-charges/carne-pdf';
+    const res = await fetch(path, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -388,15 +403,15 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }
 
   async function sendEmail() {
-    if (chargeProvider === 'INTER') {
-      setError('Carnê por e-mail Inter ainda não está disponível nesta fase.');
-      return;
-    }
     if (!saleId) return;
     setEmailBusy(true);
     setError('');
     try {
-      const res = await fetch('/api/finance/asaas/sale-charges/carne-email', {
+      const path =
+        chargeProvider === 'INTER'
+          ? '/api/finance/inter/sale-charges/carne-email'
+          : '/api/finance/asaas/sale-charges/carne-email';
+      const res = await fetch(path, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -434,7 +449,8 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         <div>
           <h4 className="text-sm font-bold text-gray-900">Cobranças da venda</h4>
           <p className="text-xs text-gray-500">
-            Somente parcelas desta venda · Asaas Company
+            Somente parcelas desta venda ·{' '}
+            {chargeProvider === 'INTER' ? 'Banco Inter' : 'Asaas Company'}
           </p>
         </div>
         <button
@@ -600,13 +616,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
           </div>
 
-          {chargeProvider === 'INTER' ? (
-            <p className="text-xs text-amber-800">
-              Carnê PDF no layout Asaas não se aplica ao Banco Inter. O PDF oficial do boleto Inter
-              está na Central de Cobranças (consulta GET Cobrança V3), após materializar linha
-              digitável e Pix.
-            </p>
-          ) : kpi.carneBlockReason ? (
+          {kpi.carneBlockReason ? (
             <p
               className={`text-xs ${
                 kpi.carneReady ? 'text-slate-700' : 'text-amber-800'
@@ -619,9 +629,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
             <button
               type="button"
-              disabled={
-                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
-              }
+              disabled={!canMutate || !kpi.carneReady}
               onClick={() => void downloadCarne()}
               className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
@@ -630,9 +638,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
             <button
               type="button"
-              disabled={
-                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
-              }
+              disabled={!canMutate || !kpi.carneReady}
               onClick={() => void printCarne()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >
@@ -641,9 +647,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
             <button
               type="button"
-              disabled={
-                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
-              }
+              disabled={!canMutate || !kpi.carneReady}
               onClick={() => void sendWhatsApp()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 disabled:opacity-40"
             >
@@ -651,9 +655,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
             <button
               type="button"
-              disabled={
-                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
-              }
+              disabled={!canMutate || !kpi.carneReady}
               onClick={() => setEmailOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >

@@ -4,17 +4,16 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildCashMovementEntradaPayload } from '@/lib/finance/cashMovementsSchema';
 import {
   fetchInterCobrancaByCodigo,
   isInterSituacaoRecebido,
-  mapInterOrigemRecebimento,
   normalizeInterCobrancaDetail,
   type InterCobrancaDetail,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
 import type { InterOAuthFetchFn } from '@/lib/banking/inter/interOAuthClient';
 import { refreshInterChargeArtifacts } from '@/lib/banking/inter/interSaleChargeService';
+import { settleInterPaidCharge } from '@/lib/banking/inter/interPaymentSettlement';
 
 export function buildInterWebhookIdempotencyKey(input: {
   codigoSolicitacao: string;
@@ -283,7 +282,7 @@ export async function processInterWebhookCallbackItem(
     const { data: charge } = await admin
       .from('bank_charges')
       .select(
-        'id, company_id, finance_receipt_id, sale_id, customer_id, status, amount, metadata, paid_at, paid_amount',
+        'id, company_id, finance_receipt_id, sale_id, customer_id, status, amount, metadata, paid_at, paid_amount, external_id, barcode, digitable_line, pix_copy_paste, our_number, txid',
       )
       .eq('company_id', input.companyId)
       .eq('provider', 'INTER')
@@ -302,20 +301,14 @@ export async function processInterWebhookCallbackItem(
       };
     }
 
-    const origem = mapInterOrigemRecebimento(confirmed.origemRecebimento);
-    const paidAmount =
-      confirmed.valorTotalRecebido ??
-      confirmed.valorNominal ??
-      Number(charge.amount) ??
-      0;
-    const paidAt = confirmed.dataHoraSituacao || new Date().toISOString();
+    const settled = await settleInterPaidCharge(admin, {
+      companyId: input.companyId,
+      charge: charge as Record<string, unknown>,
+      detail: confirmed,
+      webhookEventId: claim.eventId,
+    });
 
-    const prevMeta =
-      charge.metadata && typeof charge.metadata === 'object' && !Array.isArray(charge.metadata)
-        ? (charge.metadata as Record<string, unknown>)
-        : {};
-
-    if (String(charge.status).toUpperCase() === 'PAID') {
+    if (settled.duplicate) {
       await markWebhookEvent(admin, claim.eventId, 'DUPLICATE');
       return {
         ok: true,
@@ -324,131 +317,11 @@ export async function processInterWebhookCallbackItem(
         paid: true,
         message: 'Cobrança já estava PAID.',
         codigoSolicitacao: codigo,
-        bankChargeId: String(charge.id),
-        financeReceiptId: charge.finance_receipt_id ? String(charge.finance_receipt_id) : null,
+        bankChargeId: settled.bankChargeId,
+        financeReceiptId: settled.financeReceiptId,
+        cashMovementId: settled.cashMovementId,
+        origemRecebimento: settled.origemRecebimento,
       };
-    }
-
-    await admin
-      .from('bank_charges')
-      .update({
-        status: 'PAID',
-        paid_at: paidAt,
-        paid_amount: paidAmount,
-        barcode: confirmed.codigoBarras || undefined,
-        digitable_line: confirmed.linhaDigitavel || undefined,
-        pix_copy_paste: confirmed.pixCopiaECola || undefined,
-        our_number: confirmed.nossoNumero || undefined,
-        txid: confirmed.txid || undefined,
-        metadata: {
-          ...prevMeta,
-          origemRecebimento: origem,
-          interSituacao: confirmed.situacao,
-          interConfirmedAt: new Date().toISOString(),
-          interArtifacts: {
-            codigoBarras: confirmed.codigoBarras,
-            linhaDigitavel: confirmed.linhaDigitavel,
-            pixCopiaECola: confirmed.pixCopiaECola,
-            nossoNumero: confirmed.nossoNumero,
-            seuNumero: confirmed.seuNumero,
-          },
-        },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', charge.id)
-      .eq('company_id', input.companyId);
-
-    let financeReceiptId = charge.finance_receipt_id
-      ? String(charge.finance_receipt_id)
-      : null;
-    let cashMovementId: string | null = null;
-
-    if (financeReceiptId) {
-      const { data: receipt } = await admin
-        .from('finance_receipts')
-        .select('id, status, company_id, sale_id, customer_id, project_id, installment_number, amount')
-        .eq('id', financeReceiptId)
-        .eq('company_id', input.companyId)
-        .maybeSingle();
-
-      if (receipt?.id) {
-        const alreadyPaid = String(receipt.status || '').toLowerCase() === 'pago';
-        if (!alreadyPaid) {
-          await admin
-            .from('finance_receipts')
-            .update({
-              status: 'pago',
-              paid_amount: paidAmount,
-              paid_at: paidAt,
-              payment_method:
-                origem === 'PIX' ? 'pix' : origem === 'BOLETO' ? 'boleto' : 'banco_inter',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', receipt.id)
-            .eq('company_id', input.companyId);
-        }
-
-        // cash_movements idempotente por metadata.bank_charge_id + provider INTER
-        const { data: existingMv } = await admin
-          .from('cash_movements')
-          .select('id')
-          .eq('company_id', input.companyId)
-          .eq('type', 'entrada')
-          .eq('status', 'ativo')
-          .filter('metadata->>bank_charge_id', 'eq', String(charge.id))
-          .filter('metadata->>provider', 'eq', 'INTER')
-          .limit(1)
-          .maybeSingle();
-
-        if (existingMv?.id) {
-          cashMovementId = String(existingMv.id);
-        } else {
-          const movementDate = paidAt.slice(0, 10);
-          const payload = buildCashMovementEntradaPayload({
-            tenant_id: input.companyId,
-            company_id: input.companyId,
-            project_id: receipt.project_id || null,
-            type: 'entrada',
-            category: 'recebimento_parcela',
-            description: `Recebimento Inter (${origem}) — parcela ${receipt.installment_number ?? ''}`.trim(),
-            amount: paidAmount,
-            customer_id: receipt.customer_id || charge.customer_id || null,
-            sale_id: receipt.sale_id || charge.sale_id || null,
-            movement_date: movementDate,
-            status: 'ativo',
-            metadata: {
-              provider: 'INTER',
-              bank_charge_id: String(charge.id),
-              installment_id: financeReceiptId,
-              codigo_solicitacao: codigo,
-              origemRecebimento: origem,
-            },
-          });
-          const { data: mv, error: mvErr } = await admin
-            .from('cash_movements')
-            .insert(payload)
-            .select('id')
-            .single();
-          if (!mvErr && mv?.id) {
-            cashMovementId = String(mv.id);
-            await admin.from('bank_cash_movements').insert({
-              company_id: input.companyId,
-              cash_movement_id: cashMovementId,
-              bank_charge_id: String(charge.id),
-              webhook_event_id: claim.eventId,
-              movement_kind: 'payment',
-              bank_reference: codigo,
-              amount: paidAmount,
-              metadata: { origemRecebimento: origem },
-            });
-          } else if (mvErr) {
-            console.error('[inter-webhook] cash_movements insert failed (parcela mantida paga)', {
-              chargeId: charge.id,
-              error: mvErr.message,
-            });
-          }
-        }
-      }
     }
 
     await markWebhookEvent(admin, claim.eventId, 'PROCESSED');
@@ -459,10 +332,10 @@ export async function processInterWebhookCallbackItem(
       paid: true,
       message: 'Cobrança confirmada via GET e baixada.',
       codigoSolicitacao: codigo,
-      bankChargeId: String(charge.id),
-      financeReceiptId,
-      cashMovementId,
-      origemRecebimento: origem,
+      bankChargeId: settled.bankChargeId,
+      financeReceiptId: settled.financeReceiptId,
+      cashMovementId: settled.cashMovementId,
+      origemRecebimento: settled.origemRecebimento,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro no processamento Inter.';

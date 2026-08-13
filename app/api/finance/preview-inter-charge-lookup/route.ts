@@ -115,6 +115,10 @@ export async function GET(request: Request) {
   }
 
   try {
+    const url = new URL(request.url);
+    const codigo = String(url.searchParams.get('codigo') || CODIGO).trim() || CODIGO;
+    const includeList = url.searchParams.get('list') === '1';
+
     const admin = getAdmin();
     const secrets = await loadInterSecretsForServer(admin, COMPANY);
     if (!secrets) {
@@ -132,34 +136,36 @@ export async function GET(request: Request) {
     const { data: local, error: localErr } = await admin
       .from('bank_charges')
       .select(
-        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, created_at, updated_at',
+        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, paid_at, paid_amount, created_at, updated_at',
       )
       .eq('company_id', COMPANY)
       .eq('provider', 'INTER')
-      .eq('external_id', CODIGO)
+      .eq('external_id', codigo)
       .maybeSingle();
     if (localErr) throw new Error(localErr.message);
 
-    const detail = await fetchInterCobrancaByCodigo(creds, CODIGO);
+    const detail = await fetchInterCobrancaByCodigo(creds, codigo);
     const raw = (detail.raw || {}) as Record<string, unknown>;
-    const normalized = normalizeInterCobrancaDetail(raw, CODIGO);
+    const normalized = normalizeInterCobrancaDetail(raw, codigo);
     const fromSiblings = siblingArtifacts(raw);
 
     let persist: {
       inserted: boolean;
       created: boolean;
+      paid?: boolean;
       bankChargeId?: string;
       error?: string;
     } = { inserted: false, created: false };
     try {
       const refreshed = await refreshInterChargeArtifacts(admin, {
         companyId: COMPANY,
-        externalId: CODIGO,
+        externalId: codigo,
         detail: normalized,
       });
       persist = {
         inserted: refreshed.inserted,
         created: refreshed.created,
+        paid: Boolean(refreshed.paid),
         bankChargeId: refreshed.bankChargeId,
       };
     } catch (err) {
@@ -173,11 +179,11 @@ export async function GET(request: Request) {
     const { data: localAfter } = await admin
       .from('bank_charges')
       .select(
-        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, created_at, updated_at',
+        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, paid_at, paid_amount, created_at, updated_at',
       )
       .eq('company_id', COMPANY)
       .eq('provider', 'INTER')
-      .eq('external_id', CODIGO)
+      .eq('external_id', codigo)
       .maybeSingle();
     const localRow = localAfter || local;
 
@@ -198,8 +204,8 @@ export async function GET(request: Request) {
       external_event_id: e.external_event_id || null,
       afterChargeCreated: createdAt ? String(e.created_at) >= createdAt : null,
       mentionsCodigo:
-        String(e.external_event_id || '').includes(CODIGO) ||
-        String(e.event_type || '').includes(CODIGO),
+        String(e.external_event_id || '').includes(codigo) ||
+        String(e.event_type || '').includes(codigo),
     }));
 
     let webhookReg: { webhookUrlHost?: string; criacao?: string | null } | null = null;
@@ -225,10 +231,37 @@ export async function GET(request: Request) {
       artifacts.pixCopiaECola &&
       artifacts.nossoNumero;
 
+    const { count: bankChargesCount } = await admin
+      .from('bank_charges')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', COMPANY)
+      .eq('provider', 'INTER');
+    const { data: cashRows } = await admin
+      .from('cash_movements')
+      .select('id, amount, metadata, status')
+      .eq('company_id', COMPANY)
+      .eq('status', 'ativo')
+      .limit(1000);
+    const interCash = (cashRows || []).filter((row) => {
+      const md = row.metadata && typeof row.metadata === 'object' ? (row.metadata as Record<string, unknown>) : {};
+      return String(md.provider || '') === 'INTER';
+    });
+    let list: Array<Record<string, unknown>> | null = null;
+    if (includeList) {
+      const { data: allCharges } = await admin
+        .from('bank_charges')
+        .select('id, amount, status, external_id, paid_at, finance_receipt_id, sale_id')
+        .eq('company_id', COMPANY)
+        .eq('provider', 'INTER')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      list = (allCharges || []) as Array<Record<string, unknown>>;
+    }
+
     return NextResponse.json({
       ok: true,
       mode: 'lookup_only',
-      codigoSolicitacao: CODIGO,
+      codigoSolicitacao: codigo,
       inter: {
         situacao: normalized.situacao,
         valorNominal: normalized.valorNominal,
@@ -254,11 +287,18 @@ export async function GET(request: Request) {
             pix_copy_paste: Boolean(localRow.pix_copy_paste),
             our_number: Boolean(localRow.our_number),
             txid: Boolean(localRow.txid),
+            paid_at: localRow.paid_at || null,
+            paid_amount: localRow.paid_amount ?? null,
             created_at: localRow.created_at,
             updated_at: localRow.updated_at,
           }
         : null,
       persist,
+      counts: {
+        bankChargesInter: bankChargesCount ?? 0,
+        cashMovementsInter: interCash.length,
+      },
+      list,
       webhook: {
         registration: webhookReg,
         queryError: whErr?.message || null,

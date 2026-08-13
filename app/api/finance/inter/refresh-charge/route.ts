@@ -36,6 +36,13 @@ export async function POST(request: Request) {
       created: false,
       inserted: false,
       reused: true,
+      paid: Boolean(result.paid),
+      artifactsReady: Boolean(
+        result.charge.bankSlipIdentification ||
+          result.charge.barCode ||
+          result.charge.pixCopyPaste ||
+          result.charge.nossoNumero,
+      ),
       charge: result.charge,
     });
   } catch (err) {

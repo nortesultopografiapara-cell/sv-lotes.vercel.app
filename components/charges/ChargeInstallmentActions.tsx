@@ -5,6 +5,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Mail,
   MessageCircle,
   QrCode,
   RefreshCw,
@@ -51,6 +52,7 @@ export type ChargeInstallmentActionsProps = {
   busy: boolean;
   installmentsDataReady?: boolean;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   whatsappShareUrl?: string | null;
   hasPaidChargeHistory?: boolean;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
@@ -61,6 +63,7 @@ export type ChargeInstallmentActionsProps = {
   onCopyBarcodeLine: () => void;
   onWhatsApp: () => void;
   onDownloadPdf?: () => void;
+  onSendEmail?: () => void;
 };
 
 export function resolveChargeInstallmentActionsProps(
@@ -74,6 +77,7 @@ export function resolveChargeInstallmentActionsProps(
     | 'onCopyBarcodeLine'
     | 'onWhatsApp'
     | 'onDownloadPdf'
+    | 'onSendEmail'
   >,
 ): ChargeActionVisibility {
   return resolveChargeActionVisibility({
@@ -100,6 +104,7 @@ export function ChargeInstallmentActions({
   busy,
   installmentsDataReady = true,
   customerPhone,
+  customerEmail,
   whatsappShareUrl,
   hasPaidChargeHistory = false,
   onGenerate,
@@ -110,6 +115,7 @@ export function ChargeInstallmentActions({
   onCopyBarcodeLine,
   onWhatsApp,
   onDownloadPdf,
+  onSendEmail,
 }: ChargeInstallmentActionsProps) {
   const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
@@ -133,7 +139,12 @@ export function ChargeInstallmentActions({
   const regenerateBillingType =
     charge?.billingType === 'PIX' ? 'PIX' : ('BOLETO' as const);
   const interActions = isInter
-    ? resolveInterIssuedChargeActions({ charge, installmentPaid })
+    ? resolveInterIssuedChargeActions({
+        charge,
+        installmentPaid,
+        customerEmail,
+        customerPhone,
+      })
     : null;
   const showGenerate = Boolean(
     actions.showGenerate && providerReady && !interActions?.hideGenerate,
@@ -291,7 +302,7 @@ export function ChargeInstallmentActions({
             title="Baixar PDF oficial do boleto Inter (Cobrança V3)"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            Baixar PDF
+            Baixar boleto
           </button>
         ) : null}
 
@@ -347,14 +358,18 @@ export function ChargeInstallmentActions({
           </button>
         ) : null}
 
-        {actions.showWhatsApp ? (
+        {(isInter ? Boolean(interActions?.showWhatsApp) : actions.showWhatsApp) ? (
           whatsappShareUrl ? (
             <a
               href={whatsappShareUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={btnClass}
-              title={CHARGES_WHATSAPP_TOOLTIP}
+              title={
+                isInter
+                  ? 'Enviar cobrança Inter por WhatsApp (Pix e/ou linha digitável)'
+                  : CHARGES_WHATSAPP_TOOLTIP
+              }
             >
               <MessageCircle className="h-3.5 w-3.5" />
               WhatsApp
@@ -364,12 +379,29 @@ export function ChargeInstallmentActions({
               type="button"
               className={btnClass}
               onClick={onWhatsApp}
-              title={CHARGES_WHATSAPP_TOOLTIP}
+              title={
+                isInter
+                  ? 'Enviar cobrança Inter por WhatsApp (Pix e/ou linha digitável)'
+                  : CHARGES_WHATSAPP_TOOLTIP
+              }
             >
               <MessageCircle className="h-3.5 w-3.5" />
               WhatsApp
             </button>
           )
+        ) : null}
+
+        {isInter && interActions?.showEmail && onSendEmail ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onSendEmail}
+            className={btnClass}
+            title="Enviar cobrança Inter por e-mail (Pix/linha e PDF oficial quando disponível)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+            E-mail
+          </button>
         ) : null}
 
         {actions.showPaidIndicator ? (
@@ -395,7 +427,13 @@ export function ChargeInstallmentActions({
         ) : null}
       </div>
 
-      {isInter && interActions?.showRefresh && !interActions.showOfficialPdf ? (
+      {isInter && interActions?.artifactsPending ? (
+        <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
+          Cobrança emitida. Boleto/Pix ainda estão sendo processados pelo Banco Inter.
+        </p>
+      ) : null}
+
+      {isInter && interActions?.showRefresh && !interActions.showOfficialPdf && !interActions.artifactsPending ? (
         <p className="max-w-md text-right text-[10px] leading-snug text-amber-400/95">
           {INTER_PDF_NOT_MATERIALIZED_HINT}
         </p>

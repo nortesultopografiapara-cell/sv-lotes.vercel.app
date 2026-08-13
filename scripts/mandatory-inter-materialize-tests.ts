@@ -258,7 +258,7 @@ function main() {
     assert.equal(emptyUi.hideGenerate, true);
     assert.equal(emptyUi.showCopyLinha, false);
     assert.equal(emptyUi.showCopyPix, false);
-    assert.equal(emptyUi.showOfficialPdf, false);
+    assert.equal(emptyUi.showOfficialPdf, true);
     assert.equal(emptyUi.showRefresh, true);
 
     const ready = charge({
@@ -291,7 +291,7 @@ function main() {
       'utf8',
     );
     assert.match(actions, /hideGenerate/);
-    assert.match(actions, /Baixar PDF/);
+    assert.match(actions, /Baixar boleto/);
     assert.match(actions, /Atualizar dados/);
     assert.match(actions, /Copiar linha digitável/);
     assert.match(actions, /Copiar Pix/);

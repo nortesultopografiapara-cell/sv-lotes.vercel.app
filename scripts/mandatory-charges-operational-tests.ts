@@ -714,7 +714,7 @@ function testChargesUsesSameIntegrationReadyRuleAsSettings() {
   );
   assert(pageClient.includes('loadError'), 'charges exibe erro de carregamento');
   assert(
-    pageClient.includes('Nenhuma cobrança Asaas gerada para atualizar.'),
+    pageClient.includes('Nenhuma cobrança gerada para atualizar.'),
     'mensagem clara ao atualizar status sem cobrança',
   );
   assert(
