@@ -43,17 +43,32 @@ async function loadIntegrationConnectionStatus(
   return 'DISCONNECTED';
 }
 
+async function loadIntegrationProvider(
+  admin: SupabaseClient,
+  integrationId: string | null,
+): Promise<string | null> {
+  if (!integrationId) return null;
+  const { data } = await admin
+    .from('bank_integrations')
+    .select('provider')
+    .eq('id', integrationId)
+    .maybeSingle();
+  return data?.provider ? String(data.provider).toUpperCase() : null;
+}
+
 async function mapRowWithIntegration(
   admin: SupabaseClient,
   row: CompanyFinancialAccountRow,
 ): Promise<CompanyFinancialAccountResponse> {
   const credentialTypes = await loadCredentialTypes(admin, row.bank_integration_id);
   const connectionStatus = await loadIntegrationConnectionStatus(admin, row.bank_integration_id);
+  const provider = await loadIntegrationProvider(admin, row.bank_integration_id);
   return mapCompanyFinancialAccountRow(row, {
     hasSandboxApiKey: credentialTypes.has('oauth'),
     hasProductionApiKey: credentialTypes.has('api_key'),
     hasWebhookToken: credentialTypes.has('webhook_secret'),
     connectionStatus,
+    provider,
   });
 }
 

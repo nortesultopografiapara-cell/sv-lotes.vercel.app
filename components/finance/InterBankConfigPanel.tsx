@@ -31,6 +31,14 @@ async function readTextFile(file: File): Promise<LocalFile> {
   return { name: file.name, size: file.size, content };
 }
 
+type CompanyFinancialAccountPublic = {
+  id: string;
+  name: string;
+  provider: string | null;
+  isDefault: boolean;
+  active: boolean;
+};
+
 export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -55,6 +63,9 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
   } | null>(null);
   const [webhookBusy, setWebhookBusy] = useState(false);
   const [linkingAccount, setLinkingAccount] = useState(false);
+  const [interAccounts, setInterAccounts] = useState<CompanyFinancialAccountPublic[]>([]);
+  const [linkableAccounts, setLinkableAccounts] = useState<CompanyFinancialAccountPublic[]>([]);
+  const [selectedLinkAccountId, setSelectedLinkAccountId] = useState('');
 
   const loadWebhook = useCallback(async () => {
     try {
@@ -91,7 +102,22 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
 
   useEffect(() => {
     void load();
+    void loadInterAccounts();
   }, [load]);
+
+  async function loadInterAccounts() {
+    try {
+      const res = await fetch('/api/banking/inter/link-financial-account', {
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setInterAccounts((data.interAccounts as CompanyFinancialAccountPublic[]) || []);
+      setLinkableAccounts((data.linkable as CompanyFinancialAccountPublic[]) || []);
+    } catch {
+      /* silencioso */
+    }
+  }
 
   async function onPickCert(fileList: FileList | null) {
     const file = fileList?.[0];
@@ -245,7 +271,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
     }
   }
 
-  async function linkDefaultFinancialAccount() {
+  async function createInterAccount() {
     setLinkingAccount(true);
     setError('');
     setInfo('');
@@ -254,15 +280,68 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ action: 'create' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao criar conta Inter');
+      await loadInterAccounts();
+      setInfo(
+        `Conta financeira Inter criada/garantida: ${String(data.account?.name || data.financialAccountId)}. Não altera contas Asaas.`,
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao criar conta Inter');
+    } finally {
+      setLinkingAccount(false);
+    }
+  }
+
+  async function linkSelectedAccount() {
+    if (!selectedLinkAccountId) {
+      setError('Selecione uma conta sem provider.');
+      return;
+    }
+    setLinkingAccount(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/inter/link-financial-account', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'link',
+          financialAccountId: selectedLinkAccountId,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao vincular conta');
-      setInfo(
-        `Conta financeira vinculada ao Banco Inter (${String(data.financialAccountId || '').slice(0, 8)}…). Cobranças da venda dessa conta usarão Inter.`,
-      );
+      await loadInterAccounts();
+      setInfo(`Conta vinculada ao Banco Inter: ${String(data.account?.name || '')}`);
+      setSelectedLinkAccountId('');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao vincular conta');
+    } finally {
+      setLinkingAccount(false);
+    }
+  }
+
+  async function recoverAsaasAndCreateInter() {
+    setLinkingAccount(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/inter/link-financial-account', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recover' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha na recuperação');
+      await loadInterAccounts();
+      setInfo(String(data.message || 'Recuperação concluída.'));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro na recuperação');
     } finally {
       setLinkingAccount(false);
     }
@@ -492,22 +571,79 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 space-y-2">
-        <p className="text-xs font-semibold text-[var(--text-primary)]">
-          Conta financeira (emissão de cobranças)
-        </p>
-        <p className="text-xs text-[var(--text-secondary)]">
-          Vincule a conta financeira padrão ao Banco Inter para que a aba Cobranças da venda use o
-          fluxo Inter (bank_charges). Contas sem vínculo continuam no Asaas.
-        </p>
-        <button
-          type="button"
-          disabled={readOnlyDemo || linkingAccount}
-          onClick={() => void linkDefaultFinancialAccount()}
-          className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-200 disabled:opacity-40"
-        >
-          {linkingAccount ? 'Vinculando…' : 'Vincular conta financeira padrão ao Inter'}
-        </button>
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-[var(--text-primary)]">
+            Conta financeira Banco Inter
+          </p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Crie uma conta Inter independente ou vincule uma conta sem provider. Nunca converte
+            automaticamente uma conta Asaas. Cada empreendimento escolhe a conta no cadastro do
+            projeto.
+          </p>
+        </div>
+        {interAccounts.length > 0 ? (
+          <ul className="space-y-1 text-xs text-emerald-200">
+            {interAccounts.map((a) => (
+              <li key={a.id}>
+                {a.name} — Banco Inter
+                {a.isDefault ? ' (padrão empresa)' : ''}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-amber-200">Nenhuma conta financeira Inter ativa ainda.</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={readOnlyDemo || linkingAccount}
+            onClick={() => void createInterAccount()}
+            className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-200 disabled:opacity-40"
+          >
+            {linkingAccount ? 'Processando…' : 'Criar conta financeira Banco Inter'}
+          </button>
+          <button
+            type="button"
+            disabled={readOnlyDemo || linkingAccount}
+            onClick={() => void recoverAsaasAndCreateInter()}
+            className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-bold text-sky-200 disabled:opacity-40"
+          >
+            Restaurar Asaas + garantir conta Inter
+          </button>
+        </div>
+        {linkableAccounts.filter((a) => !a.provider).length > 0 ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block text-xs flex-1 min-w-[180px]">
+              <span className="mb-1 block text-[var(--text-secondary)]">
+                Conta sem provider
+              </span>
+              <select
+                value={selectedLinkAccountId}
+                disabled={readOnlyDemo || linkingAccount}
+                onChange={(e) => setSelectedLinkAccountId(e.target.value)}
+                className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-2 py-1.5 text-xs"
+              >
+                <option value="">Selecione…</option>
+                {linkableAccounts
+                  .filter((a) => !a.provider)
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={readOnlyDemo || linkingAccount || !selectedLinkAccountId}
+              onClick={() => void linkSelectedAccount()}
+              className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+            >
+              Vincular ao Inter
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {error ? (

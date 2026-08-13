@@ -240,9 +240,7 @@ export async function getInterSaleChargesSummary(
       contractNumber: ctx.contractNumber,
       financialAccountId: providerInfo.financialAccountId,
     },
-    financialAccountName: providerInfo.financialAccountName
-      ? `${providerInfo.financialAccountName} (Banco Inter)`
-      : 'Banco Inter',
+    financialAccountName: providerInfo.financialAccountName,
     hasFinancialAccount: Boolean(providerInfo.financialAccountId),
     financialAccountBlockReason: interConfigured
       ? null
@@ -250,9 +248,11 @@ export async function getInterSaleChargesSummary(
     installmentCorrectionType: ctx.installmentCorrectionType,
   });
 
+  // providerInfo.financialAccountName já vem com "— Banco Inter"
   return {
     ...summary,
     chargeProvider: 'INTER' as const,
+    financialAccountName: providerInfo.financialAccountName || summary.financialAccountName,
     carneReady: false,
     carneBlockReason:
       'Carnê PDF Inter ainda não está disponível nesta fase (somente emissão/consulta).',

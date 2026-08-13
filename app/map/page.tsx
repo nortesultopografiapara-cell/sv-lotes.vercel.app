@@ -21,6 +21,7 @@ import {
   createProjectThroughApi,
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
+import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route, ClipboardList } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
@@ -557,7 +558,14 @@ export default function MapPage() {
   const [companyDefaultContractModel, setCompanyDefaultContractModel] =
     useState<SaleContractModel>('PADRAO');
   const [projectFinancialAccounts, setProjectFinancialAccounts] = useState<
-    Array<{ id: string; name: string; accountType: string; beneficiaryName: string | null; isDefault: boolean }>
+    Array<{
+      id: string;
+      name: string;
+      accountType: string;
+      beneficiaryName: string | null;
+      isDefault: boolean;
+      provider?: string | null;
+    }>
   >([]);
   const [projectFormSubmitting, setProjectFormSubmitting] = useState(false);
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
@@ -3284,7 +3292,12 @@ export default function MapPage() {
                 <option value="">Usar conta padrão da empresa</option>
                 {projectFinancialAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.name}
+                    {formatFinancialAccountLabel({
+                      name: account.name,
+                      accountType: (account.accountType as 'IMOBILIARIA') || 'IMOBILIARIA',
+                      beneficiaryName: account.beneficiaryName,
+                      provider: account.provider ?? null,
+                    })}
                     {account.isDefault ? ' (Padrão)' : ''}
                   </option>
                 ))}

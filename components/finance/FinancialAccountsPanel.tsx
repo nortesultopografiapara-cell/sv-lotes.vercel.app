@@ -234,7 +234,12 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-[var(--text-primary)]">{account.name}</span>
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      {account.name}
+                      {account.provider
+                        ? ` — ${account.provider === 'INTER' ? 'Banco Inter' : account.provider === 'ASAAS_COMPANY' ? 'Asaas' : account.provider}`
+                        : ' — Sem provider'}
+                    </span>
                     {account.isDefault ? <Star className="h-3.5 w-3.5 text-amber-400" /> : null}
                   </div>
                   <p className="text-xs text-[var(--text-secondary)]">

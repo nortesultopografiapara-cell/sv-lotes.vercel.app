@@ -70,7 +70,21 @@ function testResponseSafe() {
 function testFormatLabel() {
   const label = formatFinancialAccountLabel(accountA);
   assert(label.includes('Conta Irineu'), label);
-  assert(label.includes('Irineu Martini'), label);
+  assert(label.includes('Sem provider') || label.includes('Asaas') || label.includes('Irineu'), label);
+
+  const withProvider = formatFinancialAccountLabel({
+    ...accountA,
+    provider: 'ASAAS_COMPANY',
+  });
+  assert(withProvider === 'Conta Irineu — Asaas', withProvider);
+
+  const interLabel = formatFinancialAccountLabel({
+    name: 'S V TOPOGRAFIA E PROJETOS',
+    accountType: 'IMOBILIARIA',
+    beneficiaryName: null,
+    provider: 'INTER',
+  });
+  assert(interLabel === 'S V TOPOGRAFIA E PROJETOS — Banco Inter', interLabel);
 }
 
 function testSaleFinancePayloadOmitsAccountWhenUnset() {

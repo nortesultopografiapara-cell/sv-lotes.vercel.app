@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
+import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 
 export type SaleChargesProviderCode = 'ASAAS_COMPANY' | 'INTER';
 
@@ -56,7 +57,9 @@ export async function resolveSaleChargesProvider(
     return {
       provider: 'ASAAS_COMPANY',
       financialAccountId: account?.id || null,
-      financialAccountName: account?.name || null,
+      financialAccountName: account
+        ? formatFinancialAccountLabel(account)
+        : null,
       bankIntegrationId: null,
     };
   }
@@ -70,11 +73,16 @@ export async function resolveSaleChargesProvider(
   if (error) throw new Error(error.message);
 
   const providerRaw = String(data?.provider || '').toUpperCase();
+  const labeled = formatFinancialAccountLabel({
+    ...account,
+    provider: providerRaw || account.provider || null,
+  });
+
   if (providerRaw === 'INTER') {
     return {
       provider: 'INTER',
       financialAccountId: account.id,
-      financialAccountName: account.name,
+      financialAccountName: labeled,
       bankIntegrationId: account.bankIntegrationId,
     };
   }
@@ -82,44 +90,14 @@ export async function resolveSaleChargesProvider(
   return {
     provider: 'ASAAS_COMPANY',
     financialAccountId: account.id,
-    financialAccountName: account.name,
+    financialAccountName: labeled,
     bankIntegrationId: account.bankIntegrationId,
   };
 }
 
-/** Vincula a conta financeira ao bank_integrations INTER (não cria Asaas). */
-export async function linkFinancialAccountToInterIntegration(
-  admin: SupabaseClient,
-  companyId: string,
-  financialAccountId: string,
-): Promise<void> {
-  const { data: inter, error: interErr } = await admin
-    .from('bank_integrations')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('provider', 'INTER')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (interErr) throw new Error(interErr.message);
-  if (!inter?.id) throw new Error('Configure o Banco Inter antes de vincular a conta financeira.');
-
-  const { data: account, error: accErr } = await admin
-    .from('company_financial_accounts')
-    .select('id, company_id')
-    .eq('id', financialAccountId)
-    .eq('company_id', companyId)
-    .maybeSingle();
-  if (accErr) throw new Error(accErr.message);
-  if (!account?.id) throw new Error('Conta financeira não encontrada.');
-
-  const { error } = await admin
-    .from('company_financial_accounts')
-    .update({
-      bank_integration_id: inter.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', financialAccountId)
-    .eq('company_id', companyId);
-  if (error) throw new Error(error.message);
-}
+/** @deprecated use lib/finance/interFinancialAccountService — reexport para compat. */
+export {
+  linkFinancialAccountToInterIntegration,
+  createInterFinancialAccount,
+  recoverMislinkedAsaasAndEnsureInterAccount,
+} from '@/lib/finance/interFinancialAccountService';
