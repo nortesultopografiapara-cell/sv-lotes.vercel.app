@@ -76,3 +76,17 @@ export {
 } from './inter/interOAuthClient';
 export { runCompanyInterConnectionTest } from './inter/interConnectionTest';
 export { clearAllInterTokenCacheForTests } from './inter/interTokenCache';
+export {
+  putInterCobrancaWebhook,
+  getInterCobrancaWebhook,
+  deleteInterCobrancaWebhook,
+  fetchInterCobrancaByCodigo,
+} from './inter/interCobrancaClient';
+export {
+  validateInterWebhookHmac,
+  signInterWebhookHmac,
+} from './inter/interWebhookHmac';
+export {
+  processInterWebhookCallbackItem,
+  buildInterWebhookIdempotencyKey,
+} from './inter/interWebhookProcessor';

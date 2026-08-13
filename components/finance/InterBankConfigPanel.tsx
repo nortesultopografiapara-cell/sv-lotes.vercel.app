@@ -44,6 +44,27 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
   const [clientSecret, setClientSecret] = useState('');
   const [certFile, setCertFile] = useState<LocalFile | null>(null);
   const [keyFile, setKeyFile] = useState<LocalFile | null>(null);
+  const [webhook, setWebhook] = useState<{
+    receiverPublicUrl: string | null;
+    registeredUrl: string | null;
+    status: string;
+    lastNotificationAt: string | null;
+    lastNotificationCodigo: string | null;
+    lastNotificationSituacao: string | null;
+    lastError: string | null;
+  } | null>(null);
+  const [webhookBusy, setWebhookBusy] = useState(false);
+
+  const loadWebhook = useCallback(async () => {
+    try {
+      const res = await fetch('/api/banking/inter/webhook', { credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setWebhook(data.webhook || null);
+    } catch {
+      /* silencioso na carga inicial */
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,12 +80,13 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
       setClientSecret('');
       setCertFile(null);
       setKeyFile(null);
+      await loadWebhook();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadWebhook]);
 
   useEffect(() => {
     void load();
@@ -131,6 +153,52 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
       setError(e instanceof Error ? e.message : 'Erro ao salvar');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function webhookAction(method: 'GET' | 'PUT' | 'DELETE') {
+    if (readOnlyDemo) return;
+    setWebhookBusy(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/inter/webhook', {
+        method,
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha na operação de webhook');
+      if (method === 'GET') {
+        setWebhook(data.webhook || null);
+        setInfo('Webhook consultado no Inter.');
+      } else if (method === 'PUT') {
+        setWebhook((prev) => ({
+          receiverPublicUrl: data.webhook?.receiverPublicUrl || prev?.receiverPublicUrl || null,
+          registeredUrl: data.webhook?.registeredUrl || null,
+          status: data.webhook?.status || 'REGISTERED',
+          lastNotificationAt: prev?.lastNotificationAt || null,
+          lastNotificationCodigo: prev?.lastNotificationCodigo || null,
+          lastNotificationSituacao: prev?.lastNotificationSituacao || null,
+          lastError: null,
+        }));
+        setInfo('Webhook cadastrado no Inter (URL do receptor mTLS).');
+      } else {
+        setWebhook((prev) =>
+          prev
+            ? {
+                ...prev,
+                registeredUrl: null,
+                status: 'NOT_REGISTERED',
+                lastError: null,
+              }
+            : prev,
+        );
+        setInfo('Webhook removido no Inter.');
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro no webhook');
+    } finally {
+      setWebhookBusy(false);
     }
   }
 
@@ -344,6 +412,59 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
           ) : (
             <p className="mt-2 text-xs text-[var(--text-muted)]">Nenhum arquivo selecionado.</p>
           )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-4 space-y-3">
+        <div>
+          <h4 className="text-sm font-bold text-[var(--text-primary)]">Webhook</h4>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Callbacks do Inter passam por receptor mTLS dedicado (ca.crt). O certificado webhook
+            não é enviado por este formulário — fica só no ambiente do receptor.
+          </p>
+        </div>
+        <div className="text-xs text-[var(--text-secondary)] space-y-1">
+          <p>
+            URL pública do receptor:{' '}
+            <span className="font-mono text-[var(--text-primary)]">
+              {webhook?.receiverPublicUrl || 'INTER_WEBHOOK_RECEIVER_PUBLIC_URL não configurada'}
+            </span>
+          </p>
+          <p>Status: {webhook?.status || '—'}</p>
+          <p>URL registrada no Inter: {webhook?.registeredUrl || '—'}</p>
+          <p>
+            Última notificação:{' '}
+            {webhook?.lastNotificationAt
+              ? `${new Date(webhook.lastNotificationAt).toLocaleString('pt-BR')} (${webhook.lastNotificationSituacao || '—'} / ${webhook.lastNotificationCodigo || '—'})`
+              : '—'}
+          </p>
+          <p>Último erro: {webhook?.lastError || '—'}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={readOnlyDemo || webhookBusy}
+            onClick={() => void webhookAction('PUT')}
+            className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+          >
+            Cadastrar webhook no Inter
+          </button>
+          <button
+            type="button"
+            disabled={readOnlyDemo || webhookBusy}
+            onClick={() => void webhookAction('GET')}
+            className="rounded-lg border border-[var(--border-color)] px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+          >
+            Consultar webhook
+          </button>
+          <button
+            type="button"
+            disabled={readOnlyDemo || webhookBusy}
+            onClick={() => void webhookAction('DELETE')}
+            className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 disabled:opacity-40"
+          >
+            Remover webhook
+          </button>
         </div>
       </div>
 
