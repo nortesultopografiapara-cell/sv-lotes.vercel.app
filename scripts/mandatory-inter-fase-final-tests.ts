@@ -12,7 +12,12 @@ import {
   mapInterSituacaoToBankStatus,
 } from '../lib/banking/inter/interStatus';
 import { settleInterPaidCharge } from '../lib/banking/inter/interPaymentSettlement';
-import { buildInterCarnePdfBytes } from '../lib/banking/inter/interCarnePdf';
+import { buildInterCarnePdfBytes, expectedInterCarnePageCount } from '../lib/banking/inter/interCarnePdf';
+import {
+  containFitRect,
+  saleCarneBoletoSheetCount,
+  saleCarneDocumentPageCount,
+} from '../lib/finance/saleCarneSlotLayout';
 import { buildInterChargeEmailHtml } from '../lib/banking/inter/interChargeEmail';
 import { buildSaleCarnePartialNotice } from '../lib/finance/saleChargesShared';
 import { resolveInterIssuedChargeActions } from '../lib/charges/interChargeActions';
@@ -360,6 +365,8 @@ async function testPartialCarne() {
   });
   assert.ok(built.bytes.length > 100);
   assert.equal(built.includedOfficialPdfs, 0);
+  assert.equal(built.pageCount, 1);
+  assert.equal(built.boletoSheetCount, 0);
   const header = Buffer.from(built.bytes.slice(0, 8)).toString('utf8');
   assert.match(header, /%PDF/);
   const carneSvc = read('lib/banking/inter/interCarneService.ts');
@@ -371,6 +378,69 @@ async function testPartialCarne() {
   assert.doesNotMatch(panel, /Carnê PDF no layout Asaas não se aplica/);
   assert.doesNotMatch(panel, /fase futura/);
   console.log('OK carnê parcial Inter (2 de 4, sem boleto fictício)');
+}
+
+async function makeOfficialA4Pdf(): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595.28, 841.89]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawRectangle({ x: 36, y: 36, width: 523, height: 770, borderColor: rgb(0, 0, 0), borderWidth: 1 });
+  page.drawText('BOLETO OFICIAL INTER (fixture)', { x: 48, y: 780, size: 14, font, color: rgb(0, 0, 0) });
+  return doc.save();
+}
+
+async function testCompactCarnePagination() {
+  const cases: Array<{ n: number; pages: number; sheets: number }> = [
+    { n: 1, pages: 2, sheets: 1 },
+    { n: 2, pages: 2, sheets: 1 },
+    { n: 3, pages: 2, sheets: 1 },
+    { n: 4, pages: 3, sheets: 2 },
+    { n: 10, pages: 5, sheets: 4 },
+  ];
+  for (const c of cases) {
+    assert.equal(saleCarneBoletoSheetCount(c.n), c.sheets, `sheets ${c.n}`);
+    assert.equal(saleCarneDocumentPageCount({ coverPages: 1, boletoCount: c.n }), c.pages, `math ${c.n}`);
+    assert.equal(expectedInterCarnePageCount(c.n), c.pages, `expected ${c.n}`);
+  }
+
+  const fit = containFitRect(595.28, 841.89, 0, 0, 500, 250);
+  assert.ok(Math.abs(fit.width / fit.height - 595.28 / 841.89) < 1e-9, 'contain preserva proporção');
+  assert.ok(fit.width <= 500 && fit.height <= 250, 'cabe no slot');
+  assert.ok(fit.scale < 1, 'reduz A4 para 1/3');
+  assert.ok(Math.abs(fit.width / 595.28 - fit.scale) < 1e-9);
+  assert.ok(Math.abs(fit.height / 841.89 - fit.scale) < 1e-9);
+
+  const official = await makeOfficialA4Pdf();
+  for (const c of cases) {
+    const items = Array.from({ length: c.n }, (_, i) => ({
+      charge: charge({ installmentId: `fr-${i}`, asaasPaymentId: `ext-${i}` }),
+      parcelLabel: `Parcela ${String(i + 1).padStart(2, '0')}/10 do contrato`,
+      officialPdf: official,
+    }));
+    const built = await buildInterCarnePdfBytes({
+      items,
+      emittedCount: c.n,
+      totalParcels: 10,
+      customerName: 'Maria',
+    });
+    assert.equal(built.includedOfficialPdfs, c.n, `incluiu ${c.n}`);
+    assert.equal(built.pageCount, c.pages, `páginas ${c.n} boletos`);
+    assert.equal(built.boletoSheetCount, c.sheets, `folhas ${c.n}`);
+    assert.equal(built.coverPages, 1);
+  }
+
+  const interPdf = read('lib/banking/inter/interCarnePdf.ts');
+  assert.match(interPdf, /containFitRect/);
+  assert.match(interPdf, /embedPage/);
+  assert.match(interPdf, /saleCarneNeedsNewPage/);
+  assert.doesNotMatch(interPdf, /copyPages/);
+  const asaasPdf = read('lib/finance/saleCarnePdf.ts');
+  assert.match(asaasPdf, /SLOT_H/);
+  assert.match(asaasPdf, /drawBoletoSlot/);
+  assert.match(asaasPdf, /saleCarneNeedsNewPage/);
+  assert.match(asaasPdf, /from 'jspdf'/);
+  console.log('OK compositor Inter 3/folha (1,2,3,4,10) + Asaas intacto');
 }
 
 async function testPaymentSettlementIdempotent() {
@@ -455,6 +525,7 @@ async function main() {
   testWhatsAppWithoutAsaasUrl();
   testEmailIndependentOfAsaas();
   await testPartialCarne();
+  await testCompactCarnePagination();
   await testPaymentSettlementIdempotent();
   testGenerateMissingDoesNotReemit();
   testAsaasRegressionSourcesIntact();

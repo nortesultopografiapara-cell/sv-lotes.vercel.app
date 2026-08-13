@@ -21,6 +21,13 @@ import {
 } from '@/lib/finance/saleChargesShared';
 import { formatCarneTaxDocument } from '@/lib/finance/saleCarneBeneficiary';
 import { formatPayerAddressForCarne } from '@/lib/finance/saleCarnePayerAddress';
+import {
+  SALE_CARNE_MARGIN_MM,
+  SALE_CARNE_PAGE_H_MM,
+  SALE_CARNE_PAGE_W_MM,
+  saleCarneNeedsNewPage,
+  saleCarneSlotIndex,
+} from '@/lib/finance/saleCarneSlotLayout';
 
 export type SaleCarneBoletoItem = {
   charge: CompanyAsaasChargeResponse;
@@ -50,9 +57,9 @@ export type SaleCarnePdfInput = {
   agencyCedente?: string | null;
 };
 
-const PAGE_W = 210;
-const PAGE_H = 297;
-const MARGIN = 6;
+const PAGE_W = SALE_CARNE_PAGE_W_MM;
+const PAGE_H = SALE_CARNE_PAGE_H_MM;
+const MARGIN = SALE_CARNE_MARGIN_MM;
 const SLOT_H = (PAGE_H - MARGIN * 2) / 3;
 const ASAAS_BANK_CODE = '461';
 
@@ -520,8 +527,8 @@ export async function buildSaleCarnePdfBytes(input: SaleCarnePdfInput): Promise<
       : null);
 
   for (let i = 0; i < items.length; i++) {
-    if (i > 0 && i % 3 === 0) doc.addPage();
-    const slot = i % 3;
+    if (saleCarneNeedsNewPage(i)) doc.addPage();
+    const slot = saleCarneSlotIndex(i);
     const y0 = MARGIN + slot * SLOT_H;
     if (slot > 0) drawCutLine(doc, y0);
     await drawBoletoSlot(doc, y0, input, items[i]);

@@ -9,11 +9,13 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
   fetchInterCobrancaByCodigo,
+  fetchInterCobrancaPdf,
   getInterCobrancaWebhook,
   normalizeInterCobrancaDetail,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
-import { refreshInterChargeArtifacts } from '@/lib/banking/inter/interSaleChargeService';
+import { refreshInterChargeArtifacts, bankChargeToSummaryLike } from '@/lib/banking/inter/interSaleChargeService';
+import { buildInterCarnePdfBytes } from '@/lib/banking/inter/interCarnePdf';
 import type { InterOAuthCredentials } from '@/lib/banking/inter/interOAuthClient';
 
 export const runtime = 'nodejs';
@@ -118,6 +120,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const codigo = String(url.searchParams.get('codigo') || CODIGO).trim() || CODIGO;
     const includeList = url.searchParams.get('list') === '1';
+    const includeCarne = url.searchParams.get('carne') === '1';
 
     const admin = getAdmin();
     const secrets = await loadInterSecretsForServer(admin, COMPANY);
@@ -136,7 +139,7 @@ export async function GET(request: Request) {
     const { data: local, error: localErr } = await admin
       .from('bank_charges')
       .select(
-        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, paid_at, paid_amount, created_at, updated_at',
+        'id, finance_receipt_id, sale_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, paid_at, paid_amount, created_at, updated_at',
       )
       .eq('company_id', COMPANY)
       .eq('provider', 'INTER')
@@ -179,7 +182,7 @@ export async function GET(request: Request) {
     const { data: localAfter } = await admin
       .from('bank_charges')
       .select(
-        'id, finance_receipt_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, paid_at, paid_amount, created_at, updated_at',
+        'id, finance_receipt_id, sale_id, external_id, status, amount, due_date, digitable_line, barcode, pix_copy_paste, our_number, txid, paid_at, paid_amount, created_at, updated_at',
       )
       .eq('company_id', COMPANY)
       .eq('provider', 'INTER')
@@ -258,6 +261,56 @@ export async function GET(request: Request) {
       list = (allCharges || []) as Array<Record<string, unknown>>;
     }
 
+    let carneLayout: Record<string, unknown> | null = null;
+    if (includeCarne) {
+      const saleId = String(
+        (localRow as { sale_id?: string } | null)?.sale_id || '',
+      ).trim();
+      const { data: saleCharges } = await admin
+        .from('bank_charges')
+        .select('*')
+        .eq('company_id', COMPANY)
+        .eq('provider', 'INTER')
+        .eq('sale_id', saleId || '00000000-0000-0000-0000-000000000000')
+        .order('due_date', { ascending: true })
+        .limit(20);
+      const items = [];
+      for (const row of saleCharges || []) {
+        const rec = row as Record<string, unknown>;
+        const ext = String(rec.external_id || '').trim();
+        if (!ext) continue;
+        const status = String(rec.status || '').toUpperCase();
+        if (status === 'CANCELLED' || status === 'FAILED' || status === 'EXPIRED') continue;
+        let officialPdf: Uint8Array | null = null;
+        try {
+          officialPdf = new Uint8Array(await fetchInterCobrancaPdf(creds, ext));
+        } catch {
+          officialPdf = null;
+        }
+        items.push({
+          charge: bankChargeToSummaryLike(rec, COMPANY),
+          parcelLabel: `Parcela ${items.length + 1}`,
+          officialPdf,
+        });
+      }
+      const built = await buildInterCarnePdfBytes({
+        items,
+        emittedCount: items.length,
+        totalParcels: Math.max(items.length, 10),
+        customerName: 'Preview GET-only',
+      });
+      carneLayout = {
+        saleId: saleId || null,
+        boletos: items.length,
+        officialPdfs: built.includedOfficialPdfs,
+        skippedWithoutPdf: built.skippedWithoutPdf,
+        pageCount: built.pageCount,
+        boletoSheetCount: built.boletoSheetCount,
+        coverPages: built.coverPages,
+        createAttempted: false,
+      };
+    }
+
     return NextResponse.json({
       ok: true,
       mode: 'lookup_only',
@@ -299,6 +352,7 @@ export async function GET(request: Request) {
         cashMovementsInter: interCash.length,
       },
       list,
+      carneLayout,
       webhook: {
         registration: webhookReg,
         queryError: whErr?.message || null,
