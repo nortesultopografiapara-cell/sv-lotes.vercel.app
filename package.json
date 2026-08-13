@@ -44,6 +44,7 @@
     "test:inter-fase-a": "tsx scripts/mandatory-inter-bank-config-fase-a-tests.ts",
     "test:inter-fase-b": "tsx scripts/mandatory-inter-oauth-fase-b-tests.ts",
     "test:inter-fase-c": "tsx scripts/mandatory-inter-webhook-fase-c-tests.ts",
+    "test:inter-fase-d": "tsx scripts/mandatory-inter-emit-fase-d-tests.ts",
     "test:sale-finance-pending": "tsx scripts/mandatory-sale-finance-receipt-pending-tests.ts",
     "test:sale-balloon": "tsx scripts/mandatory-sale-balloon-installments-tests.ts",
     "test:sale-balloon-contract": "tsx scripts/mandatory-sale-balloon-contract-tests.ts",

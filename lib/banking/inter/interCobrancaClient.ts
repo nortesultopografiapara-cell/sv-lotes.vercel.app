@@ -24,7 +24,33 @@ export type InterCobrancaDetail = {
   codigoBarras?: string | null;
   linhaDigitavel?: string | null;
   pixCopiaECola?: string | null;
+  txid?: string | null;
   raw: Record<string, unknown>;
+};
+
+export type InterCreateCobrancaInput = {
+  seuNumero: string;
+  valorNominal: number;
+  dataVencimento: string;
+  numDiasAgenda?: number;
+  pagador: {
+    cpfCnpj: string;
+    tipoPessoa: 'FISICA' | 'JURIDICA';
+    nome: string;
+    email?: string;
+    endereco: string;
+    numero: string;
+    complemento?: string;
+    bairro: string;
+    cidade: string;
+    uf: string;
+    cep: string;
+    ddd?: string;
+    telefone?: string;
+  };
+  formasRecebimento?: Array<'BOLETO' | 'PIX'>;
+  multa?: { codigo: 'PERCENTUAL' | 'VALORFIXO'; taxa?: number; valor?: number };
+  mora?: { codigo: 'TAXAMENSAL' | 'VALORDIA'; taxa?: number; valor?: number };
 };
 
 export type InterWebhookRegistration = {
@@ -166,8 +192,103 @@ export function normalizeInterCobrancaDetail(
       : cobranca.pixCopiaCola
         ? String(cobranca.pixCopiaCola)
         : null,
+    txid: cobranca.txid
+      ? String(cobranca.txid)
+      : (() => {
+          const pix = cobranca.pix;
+          if (pix && typeof pix === 'object' && 'txid' in (pix as object)) {
+            const tx = (pix as Record<string, unknown>).txid;
+            return tx ? String(tx) : null;
+          }
+          return null;
+        })(),
     raw,
   };
+}
+
+export async function createInterCobranca(
+  creds: InterOAuthCredentials,
+  input: InterCreateCobrancaInput,
+  options?: { fetchFn?: InterOAuthFetchFn },
+): Promise<{ codigoSolicitacao: string; raw: Record<string, unknown> }> {
+  const payload = {
+    seuNumero: String(input.seuNumero || '').slice(0, 15),
+    valorNominal: Number(input.valorNominal),
+    dataVencimento: String(input.dataVencimento).slice(0, 10),
+    numDiasAgenda: input.numDiasAgenda ?? 60,
+    pagador: input.pagador,
+    formasRecebimento: input.formasRecebimento || ['BOLETO', 'PIX'],
+    ...(input.multa ? { multa: input.multa } : {}),
+    ...(input.mora ? { mora: input.mora } : {}),
+  };
+
+  const res = await authorizedRequest(
+    creds,
+    '/cobrancas',
+    { method: 'POST', body: payload },
+    options,
+  );
+  if (res.status < 200 || res.status >= 300 || !res.json) {
+    const detail = String(res.bodyText || '').slice(0, 240);
+    throw new Error(`Falha ao emitir cobrança Inter (HTTP ${res.status}). ${detail}`);
+  }
+  const codigo = String(
+    res.json.codigoSolicitacao || res.json.idSolicitacao || '',
+  ).trim();
+  if (!codigo) {
+    throw new Error('Inter não retornou codigoSolicitacao.');
+  }
+  return { codigoSolicitacao: codigo, raw: res.json };
+}
+
+export type InterPollOptions = {
+  fetchFn?: InterOAuthFetchFn;
+  maxAttempts?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  sleepFn?: (ms: number) => Promise<void>;
+};
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Retry/backoff até obter linha digitável/código de barras/PIX ou situacao útil. */
+export async function pollInterCobrancaUntilReady(
+  creds: InterOAuthCredentials,
+  codigoSolicitacao: string,
+  options?: InterPollOptions,
+): Promise<InterCobrancaDetail> {
+  const maxAttempts = options?.maxAttempts ?? 6;
+  const initialDelayMs = options?.initialDelayMs ?? 800;
+  const maxDelayMs = options?.maxDelayMs ?? 5000;
+  const sleepFn = options?.sleepFn || defaultSleep;
+
+  let last: InterCobrancaDetail | null = null;
+  let delay = initialDelayMs;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    last = await fetchInterCobrancaByCodigo(creds, codigoSolicitacao, {
+      fetchFn: options?.fetchFn,
+    });
+    const hasArtifacts = Boolean(
+      last.linhaDigitavel || last.codigoBarras || last.pixCopiaECola || last.nossoNumero,
+    );
+    const situacao = last.situacao;
+    const readyStatus =
+      situacao === 'A_RECEBER' ||
+      situacao === 'RECEBIDO' ||
+      situacao === 'CANCELADO' ||
+      situacao === 'EXPIRADO';
+    if (hasArtifacts || readyStatus) {
+      return last;
+    }
+    if (attempt < maxAttempts) {
+      await sleepFn(delay);
+      delay = Math.min(maxDelayMs, Math.round(delay * 1.6));
+    }
+  }
+  if (!last) throw new Error('Timeout ao consultar cobrança Inter.');
+  return last;
 }
 
 export async function fetchInterCobrancaByCodigo(

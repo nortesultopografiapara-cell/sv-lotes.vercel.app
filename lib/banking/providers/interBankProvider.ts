@@ -1,6 +1,6 @@
 /**
- * Provider INTER — Fase B: OAuth+mTLS via cliente dedicado.
- * Emissão de cobrança permanece bloqueada.
+ * Provider INTER — Fase D: emissão real via interSaleChargeService (Cobrança V3).
+ * createBoleto genérico permanece desabilitado; use /api/finance/inter/sale-charges.
  */
 
 import type { IBankProvider, BankProviderContext } from '@/lib/banking/BankProvider';
@@ -17,10 +17,10 @@ import type {
 } from '@/lib/banking/types';
 
 export const INTER_BOLETO_NOT_ENABLED_MESSAGE =
-  'Emissão Inter ainda não habilitada nesta fase (Fase B = OAuth+mTLS).';
+  'Use a aba Cobranças da venda (fluxo Inter → bank_charges). createBoleto genérico não é o caminho de emissão.';
 
 export const INTER_NOT_IMPLEMENTED_MESSAGE =
-  'Operação Inter ainda não implementada nesta fase.';
+  'Operação Inter ainda não implementada neste provider genérico.';
 
 export class InterBankProvider implements IBankProvider {
   readonly providerCode = 'INTER' as const;

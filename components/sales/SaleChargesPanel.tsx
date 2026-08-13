@@ -78,16 +78,27 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [emailBusy, setEmailBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [info, setInfo] = useState('');
+  const [chargeProvider, setChargeProvider] = useState<'ASAAS_COMPANY' | 'INTER'>('ASAAS_COMPANY');
 
   const loadSummary = useCallback(async () => {
     if (!saleId) return;
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(
-        `/api/finance/asaas/sale-charges?saleId=${encodeURIComponent(saleId)}`,
+      const providerRes = await fetch(
+        `/api/finance/sale-charges/provider?saleId=${encodeURIComponent(saleId)}`,
         { credentials: 'include' },
       );
+      const providerData = await providerRes.json().catch(() => ({}));
+      const provider =
+        providerRes.ok && providerData.provider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+      setChargeProvider(provider);
+
+      const summaryPath =
+        provider === 'INTER'
+          ? `/api/finance/inter/sale-charges?saleId=${encodeURIComponent(saleId)}`
+          : `/api/finance/asaas/sale-charges?saleId=${encodeURIComponent(saleId)}`;
+      const res = await fetch(summaryPath, { credentials: 'include' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar cobranças');
       setSummary(data.summary as SaleChargesSummary);
@@ -192,7 +203,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
     try {
       for (const batchLimit of batches) {
-        const res = await fetch('/api/finance/asaas/sale-charges/generate-missing', {
+        const generatePath =
+          chargeProvider === 'INTER'
+            ? '/api/finance/inter/sale-charges/generate-missing'
+            : '/api/finance/asaas/sale-charges/generate-missing';
+        const res = await fetch(generatePath, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -249,6 +264,11 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
     setError('');
     setInfo('');
     try {
+      if (chargeProvider === 'INTER') {
+        await loadSummary();
+        setInfo('Situação das cobranças Inter atualizada.');
+        return;
+      }
       const res = await fetch('/api/finance/asaas/sale-charges/sync', {
         method: 'POST',
         credentials: 'include',
@@ -268,6 +288,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }
 
   async function fetchCarneBlob(): Promise<{ blob: Blob; filename: string }> {
+    if (chargeProvider === 'INTER') {
+      throw new Error('Carnê PDF Inter ainda não está disponível nesta fase.');
+    }
     if (!saleId) throw new Error('Venda não identificada');
     const res = await fetch('/api/finance/asaas/sale-charges/carne-pdf', {
       method: 'POST',
@@ -353,7 +376,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         return;
       }
       const wa = buildSignatureShareWhatsAppUrl(phone, msg);
-      window.open(wa, '_blank');
+      if (wa) window.open(wa, '_blank');
       setInfo(
         'PDF baixado. WhatsApp aberto com mensagem pronta — anexe o arquivo baixado na conversa.',
       );
@@ -365,6 +388,10 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }
 
   async function sendEmail() {
+    if (chargeProvider === 'INTER') {
+      setError('Carnê por e-mail Inter ainda não está disponível nesta fase.');
+      return;
+    }
     if (!saleId) return;
     setEmailBusy(true);
     setError('');
@@ -498,9 +525,18 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </div>
             <div className="rounded-lg border border-gray-200 p-2 sm:col-span-2">
               <div className="text-[10px] uppercase text-gray-500">Conta recebedora</div>
-              <div className="flex items-center gap-1.5 font-semibold text-gray-900">
+              <div className="flex flex-wrap items-center gap-1.5 font-semibold text-gray-900">
                 <Wallet className="h-3.5 w-3.5" />
                 {kpi.financialAccountName || 'Não configurada'}
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                    chargeProvider === 'INTER'
+                      ? 'bg-orange-100 text-orange-900'
+                      : 'bg-sky-100 text-sky-900'
+                  }`}
+                >
+                  {chargeProvider === 'INTER' ? 'Banco Inter' : 'Asaas'}
+                </span>
               </div>
             </div>
           </div>
@@ -564,7 +600,12 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
           </div>
 
-          {kpi.carneBlockReason ? (
+          {chargeProvider === 'INTER' ? (
+            <p className="text-xs text-amber-800">
+              Carnê PDF/WhatsApp/e-mail do Banco Inter será habilitado em fase futura. Nesta fase só
+              emissão e consulta de cobranças Inter.
+            </p>
+          ) : kpi.carneBlockReason ? (
             <p
               className={`text-xs ${
                 kpi.carneReady ? 'text-slate-700' : 'text-amber-800'
@@ -577,7 +618,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
           <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
             <button
               type="button"
-              disabled={!canMutate || !kpi.carneReady}
+              disabled={
+                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
+              }
               onClick={() => void downloadCarne()}
               className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
@@ -586,7 +629,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
             <button
               type="button"
-              disabled={!canMutate || !kpi.carneReady}
+              disabled={
+                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
+              }
               onClick={() => void printCarne()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >
@@ -595,7 +640,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
             <button
               type="button"
-              disabled={!canMutate || !kpi.carneReady}
+              disabled={
+                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
+              }
               onClick={() => void sendWhatsApp()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 disabled:opacity-40"
             >
@@ -603,7 +650,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             </button>
             <button
               type="button"
-              disabled={!canMutate || !kpi.carneReady}
+              disabled={
+                chargeProvider === 'INTER' || !canMutate || !kpi.carneReady
+              }
               onClick={() => setEmailOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >

@@ -54,6 +54,7 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
     lastError: string | null;
   } | null>(null);
   const [webhookBusy, setWebhookBusy] = useState(false);
+  const [linkingAccount, setLinkingAccount] = useState(false);
 
   const loadWebhook = useCallback(async () => {
     try {
@@ -241,6 +242,29 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
       setInfo('');
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function linkDefaultFinancialAccount() {
+    setLinkingAccount(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await fetch('/api/banking/inter/link-financial-account', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao vincular conta');
+      setInfo(
+        `Conta financeira vinculada ao Banco Inter (${String(data.financialAccountId || '').slice(0, 8)}…). Cobranças da venda dessa conta usarão Inter.`,
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao vincular conta');
+    } finally {
+      setLinkingAccount(false);
     }
   }
 
@@ -466,6 +490,24 @@ export function InterBankConfigPanel({ readOnlyDemo = false, onClose }: Props) {
             Remover webhook
           </button>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 space-y-2">
+        <p className="text-xs font-semibold text-[var(--text-primary)]">
+          Conta financeira (emissão de cobranças)
+        </p>
+        <p className="text-xs text-[var(--text-secondary)]">
+          Vincule a conta financeira padrão ao Banco Inter para que a aba Cobranças da venda use o
+          fluxo Inter (bank_charges). Contas sem vínculo continuam no Asaas.
+        </p>
+        <button
+          type="button"
+          disabled={readOnlyDemo || linkingAccount}
+          onClick={() => void linkDefaultFinancialAccount()}
+          className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-200 disabled:opacity-40"
+        >
+          {linkingAccount ? 'Vinculando…' : 'Vincular conta financeira padrão ao Inter'}
+        </button>
       </div>
 
       {error ? (
