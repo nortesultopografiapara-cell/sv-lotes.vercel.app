@@ -3,7 +3,7 @@
  * Runtime service role only. VERCEL_ENV=preview required.
  * DELETE after homologation.
  *
- * GET/POST /api/finance/_preview-charges-routing-probe
+ * GET/POST /api/finance/preview-charges-routing-probe
  * Header: x-sv-preview-probe: <PREVIEW_CHARGES_ROUTING_PROBE_SECRET>
  */
 import { NextResponse } from 'next/server';
@@ -13,6 +13,7 @@ import {
   createCompanyInstallmentCharge,
 } from '@/lib/finance/asaasCompanyChargeService';
 import { createInterInstallmentCharge } from '@/lib/banking/inter/interSaleChargeService';
+import { listCompanyFinancialAccounts } from '@/lib/finance/companyFinancialAccountRepository';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,17 +55,12 @@ export async function POST(request: Request) {
 
   try {
     const admin = getAdmin();
+    const accounts = await listCompanyFinancialAccounts(admin, COMPANY, { activeOnly: false });
 
-    const { data: accounts, error: accErr } = await admin
-      .from('company_financial_accounts')
-      .select('id, name, provider')
-      .eq('company_id', COMPANY);
-    if (accErr) throw new Error(accErr.message);
-
-    const interAccount = (accounts || []).find(
+    const interAccount = accounts.find(
       (a) => String(a.provider || '').toUpperCase() === 'INTER',
     );
-    const asaasAccount = (accounts || []).find((a) => {
+    const asaasAccount = accounts.find((a) => {
       const p = String(a.provider || '').toUpperCase();
       return p === 'ASAAS_COMPANY' || p === 'ASAAS';
     });
@@ -73,7 +69,7 @@ export async function POST(request: Request) {
       const { data, error } = await admin
         .from('finance_receipts')
         .select('id, amount, status, financial_account_id')
-        .eq('company_id', COMPANY)
+        .or(`company_id.eq.${COMPANY},tenant_id.eq.${COMPANY}`)
         .eq('financial_account_id', financialAccountId)
         .not('status', 'in', '("pago","paid","cancelado","canceled")')
         .order('created_at', { ascending: false })
@@ -86,7 +82,7 @@ export async function POST(request: Request) {
       const { data, error } = await admin
         .from('finance_receipts')
         .select('id, amount, status')
-        .eq('company_id', COMPANY)
+        .or(`company_id.eq.${COMPANY},tenant_id.eq.${COMPANY}`)
         .eq('financial_account_id', financialAccountId)
         .in('status', ['pago', 'paid'])
         .limit(1);
@@ -112,7 +108,6 @@ export async function POST(request: Request) {
       }),
     };
 
-    // A) INTER endpoint/service with fake ID — early fail, no persist
     let interFake: Record<string, unknown>;
     try {
       await createInterInstallmentCharge(admin, {
@@ -128,7 +123,6 @@ export async function POST(request: Request) {
       };
     }
 
-    // B) ASAAS endpoint/service with fake ID — early fail, no persist
     let asaasFake: Record<string, unknown>;
     try {
       await createCompanyInstallmentCharge(admin, {
@@ -145,7 +139,6 @@ export async function POST(request: Request) {
       };
     }
 
-    // C) Guard: INTER installment forced through Asaas create — WRONG_PROVIDER, no emit
     let wrongProvider: Record<string, unknown>;
     if (!interInstallmentId) {
       wrongProvider = { skipped: true, reason: 'no_inter_unpaid_installment' };
@@ -156,7 +149,10 @@ export async function POST(request: Request) {
           installmentId: interInstallmentId,
           billingType: 'BOLETO',
         });
-        wrongProvider = { unexpectedSuccess: true, installmentIdPrefix: interInstallmentId.slice(0, 8) };
+        wrongProvider = {
+          unexpectedSuccess: true,
+          installmentIdPrefix: interInstallmentId.slice(0, 8),
+        };
       } catch (err) {
         wrongProvider = {
           installmentIdPrefix: interInstallmentId.slice(0, 8),
@@ -167,7 +163,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // D) ASAAS path reachable without emit — paid installment should refuse
     let asaasPaidProbe: Record<string, unknown>;
     if (!asaasPaid?.id) {
       asaasPaidProbe = {
@@ -233,7 +228,7 @@ export async function POST(request: Request) {
       ok: true,
       mode: 'routing_guard_only_no_emit',
       companyId: COMPANY,
-      accounts: (accounts || []).map((a) => ({
+      accounts: accounts.map((a) => ({
         id: a.id,
         provider: a.provider,
         name: a.name,
