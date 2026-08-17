@@ -45,8 +45,13 @@ import {
   isContractSignatureSendBlocked,
   isFullySignedContract,
   isPublicClientSignBlocked,
+  shouldRenderMasterProviderSignButton,
 } from '../lib/saasContractBilateralSignature';
 import { buildSignUrl } from '../lib/saasContractUrls';
+import {
+  hasSaasContractDocumentForMasterUi,
+  hasSaasContractReady,
+} from '../lib/saasSubscription';
 import {
   buildSignatureShareEmailSubject,
   buildSignatureShareMailtoUrl,
@@ -281,6 +286,44 @@ function testBilateralSignatureFlow() {
   assert(!canShowProviderSignButton('PENDING'), 'botão SV oculto antes do cliente');
   assert(!canShowProviderSignButton('SIGNED'), 'botão SV oculto após bilateral');
 
+  assert(
+    shouldRenderMasterProviderSignButton('CLIENT_SIGNED', 'master-user'),
+    'SV visível com CLIENT_SIGNED mesmo sem PDF na subscription',
+  );
+  assert(
+    !shouldRenderMasterProviderSignButton('CLIENT_SIGNED', null),
+    'SV exige usuário Master autenticado',
+  );
+  assert(
+    !shouldRenderMasterProviderSignButton('PENDING', 'master-user'),
+    'SV oculto antes da assinatura do cliente',
+  );
+
+  const clientSignedSub = {
+    id: 's',
+    company_id: 'co1',
+    plan_type: 'personalizado',
+    monthly_price: 400,
+    custom_price_enabled: true,
+    billing_cycle: 'monthly',
+    start_date: '2024-08-17',
+    payment_status: 'paid',
+    contract_status: 'client_signed',
+    contract_pdf_url: null,
+  };
+  assert(
+    hasSaasContractReady(clientSignedSub),
+    'client_signed na subscription continua documento pronto',
+  );
+  assert(
+    hasSaasContractDocumentForMasterUi(null, { id: 'contract-v3' }),
+    'versão ativa em company_contracts basta para o Master',
+  );
+  assert(
+    !hasSaasContractDocumentForMasterUi(null, null),
+    'sem subscription e sem versão não há documento',
+  );
+
   console.log('OK testBilateralSignatureFlow');
 }
 
@@ -315,6 +358,23 @@ function testSignedDocumentAccessUi() {
   assert(panel.includes('Abrir PDF Assinado'), 'UI abrir PDF assinado');
   assert(panel.includes('Baixar PDF Assinado'), 'UI baixar PDF assinado');
   assert(panel.includes('signed: true'), 'URL API signed=1');
+  assert(panel.includes('Assinar pela SV'), 'UI botão Assinar pela SV');
+  assert(
+    panel.includes('/api/companies/${companyId}/contract/sign-provider'),
+    'painel chama API de assinatura da SV',
+  );
+  assert(
+    panel.includes('shouldRenderMasterProviderSignButton'),
+    'botão SV usa regra bilateral, não hasSaasContractReady',
+  );
+  assert(
+    /\{showProviderSignButton && \(/.test(panel),
+    'botão SV não fica aninhado em contractReady',
+  );
+  assert(
+    !/contractReady && user\?\.id && \(/.test(panel),
+    'toolbar SaaS não esconde a ação da SV atrás de contractReady',
+  );
 
   const saleSection = readFileSync(
     join(root, 'components/contracts/SaleContractSignatureSection.tsx'),
@@ -577,7 +637,7 @@ async function testNextBuild() {
   execSync('npx next build', {
     cwd: process.cwd(),
     stdio: 'inherit',
-    env: { ...process.env, NODE_OPTIONS: '--max_old_space_size=1536' },
+    env: { ...process.env, NODE_OPTIONS: '--max_old_space_size=4096' },
   });
   console.log('OK testNextBuild');
 }

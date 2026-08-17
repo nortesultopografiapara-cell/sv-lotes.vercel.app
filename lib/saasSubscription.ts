@@ -89,5 +89,16 @@ export function hasSaasContractReady(sub?: CompanySubscription | null): boolean 
   if (!sub) return false;
   if (Boolean(sub.contract_pdf_url)) return true;
   const status = (sub.contract_status || '').toLowerCase();
-  return ['active', 'generated', 'sent', 'signed'].includes(status);
+  return ['active', 'generated', 'sent', 'viewed', 'client_signed', 'signed'].includes(status);
+}
+
+/**
+ * PDF/versão vigente no Master: usa a subscription OU a linha ativa em company_contracts.
+ * Evita esconder "Assinar pela SV" quando o cliente já assinou e o PDF está só na versão.
+ */
+export function hasSaasContractDocumentForMasterUi(
+  sub?: CompanySubscription | null,
+  activeContract?: { id?: string | null } | null,
+): boolean {
+  return hasSaasContractReady(sub) || Boolean(activeContract?.id);
 }

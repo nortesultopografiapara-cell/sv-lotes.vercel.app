@@ -27,7 +27,7 @@ import {
 } from '@/lib/saasContractValidation';
 import {
   formatDateBr,
-  hasSaasContractReady,
+  hasSaasContractDocumentForMasterUi,
   isRealSaasCompany,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
@@ -59,7 +59,7 @@ import {
   type LocalSignatureTimelineEvent,
 } from '@/lib/saasContractSignatureShare';
 import {
-  canShowProviderSignButton,
+  shouldRenderMasterProviderSignButton,
   isContractSignatureSendBlocked,
 } from '@/lib/saasContractBilateralSignature';
 import {
@@ -149,8 +149,6 @@ export function SaasContractPanel({
   const validation = company
     ? validateSaasContractGeneration(company as CompanyPricingSource, sub)
     : null;
-  const contractReady = hasSaasContractReady(sub);
-
   const contractViewUrl =
     companyId && user?.id
       ? buildSaasContractPdfUrl(companyId, user.id, 'inline')
@@ -164,6 +162,8 @@ export function SaasContractPanel({
   const activeContract = useMemo(() => {
     return findActiveVisibleSaasContract(contracts);
   }, [contracts]);
+
+  const documentReady = hasSaasContractDocumentForMasterUi(sub, activeContract);
 
   const signedContractRecord = useMemo(
     () => resolveSaasSignedContractRecord(contracts, signatureInfo.latest),
@@ -252,8 +252,8 @@ export function SaasContractPanel({
   }, [contractsProp, loadContracts]);
 
   useEffect(() => {
-    if (hasSaasContractReady(sub)) setError(null);
-  }, [sub?.contract_pdf_url, sub?.contract_status]);
+    if (documentReady) setError(null);
+  }, [documentReady]);
 
   useEffect(() => {
     void loadSignatureInfo();
@@ -295,14 +295,15 @@ export function SaasContractPanel({
   );
 
   const canSendForSignature =
-    contractReady &&
+    documentReady &&
     activeContract &&
     !['signed', 'active', 'client_signed'].includes(String(activeContract.status || '').toLowerCase()) &&
     !signatureBlocked &&
     !hasActivePendingSignature;
 
-  const showProviderSignButton = canShowProviderSignButton(
+  const showProviderSignButton = shouldRenderMasterProviderSignButton(
     signatureInfo.latest?.signature_status,
+    user?.id,
   );
 
   const handleProviderSign = async (input: {
@@ -541,7 +542,7 @@ export function SaasContractPanel({
   };
 
   const handleGenerateClick = () => {
-    if (contractReady) {
+    if (documentReady) {
       setShowRegenerateModal(true);
       return;
     }
@@ -556,12 +557,12 @@ export function SaasContractPanel({
   const saasVersionStatusLabel = (status?: string | null) =>
     saasContractDocumentStatusLabel(status);
 
-  const contractStatusLabel =
-    sub?.contract_status
-      ? saasContractDocumentStatusLabel(sub.contract_status)
-      : contractReady
-        ? 'Gerado'
-        : '—';
+  const documentStatusRaw = activeContract?.status || sub?.contract_status;
+  const contractStatusLabel = documentStatusRaw
+    ? saasContractDocumentStatusLabel(documentStatusRaw)
+    : documentReady
+      ? 'Gerado'
+      : '—';
 
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
@@ -597,7 +598,7 @@ export function SaasContractPanel({
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {contractReady && user?.id && (
+          {documentReady && user?.id && (
             <>
               <a
                 href={contractViewUrl}
@@ -631,18 +632,18 @@ export function SaasContractPanel({
                   </a>
                 </>
               ) : null}
-              {showProviderSignButton && (
-                <button
-                  type="button"
-                  disabled={signingProvider || busy}
-                  onClick={() => setProviderSignModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 disabled:opacity-50"
-                >
-                  <ShieldCheck className={`w-4 h-4 ${signingProvider ? 'animate-pulse' : ''}`} />
-                  Assinar pela SV
-                </button>
-              )}
             </>
+          )}
+          {showProviderSignButton && (
+            <button
+              type="button"
+              disabled={signingProvider || busy}
+              onClick={() => setProviderSignModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <ShieldCheck className={`w-4 h-4 ${signingProvider ? 'animate-pulse' : ''}`} />
+              Assinar pela SV
+            </button>
           )}
           {canSharePendingLink && signatureInfo.latest?.signature_url && (
             <>
@@ -681,7 +682,7 @@ export function SaasContractPanel({
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
-            {contractReady ? 'Regenerar contrato SaaS' : 'Gerar contrato SaaS'}
+            {documentReady ? 'Regenerar contrato SaaS' : 'Gerar contrato SaaS'}
           </button>
         </div>
       </div>
@@ -712,7 +713,30 @@ export function SaasContractPanel({
         </div>
       )}
 
-      {!contractReady && validation?.ok && (
+      {showProviderSignButton && (
+        <div className="mx-5 mt-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-emerald-100">
+              Cliente assinou — aguardando assinatura da SV
+            </p>
+            <p className="text-[12px] text-emerald-200/80 mt-1">
+              A assinatura do cliente permanece válida. Conclua a etapa da SV para gerar o PDF
+              bilateral final.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={signingProvider || busy}
+            onClick={() => setProviderSignModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 disabled:opacity-50 shrink-0"
+          >
+            <ShieldCheck className={`w-4 h-4 ${signingProvider ? 'animate-pulse' : ''}`} />
+            Assinar pela SV
+          </button>
+        </div>
+      )}
+
+      {!documentReady && !showProviderSignButton && validation?.ok && (
         <div className="mx-5 mt-4 p-4 rounded-xl bg-[#0B0E14] border border-dashed border-amber-500/30 text-center">
           <p className="text-sm text-gray-300 mb-3">
             Nenhum contrato PDF gerado para esta empresa ainda.
@@ -772,7 +796,7 @@ export function SaasContractPanel({
         <Info label="Nº do contrato" value={sub?.contract_number || activeContract?.contract_number || '—'} />
         <Info label="Data de geração" value={generatedAtLabel} />
         <Info label="Pagamento" value={company.payment_status} />
-        <Info label="PDF" value={contractReady ? 'Disponível' : 'Não gerado'} />
+        <Info label="PDF" value={documentReady ? 'Disponível' : 'Não gerado'} />
       </div>
 
       <div className="px-5 pb-5">

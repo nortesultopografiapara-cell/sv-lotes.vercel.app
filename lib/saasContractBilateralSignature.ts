@@ -32,6 +32,17 @@ export function canShowProviderSignButton(status?: SignatureStatus | string | nu
   return canProviderSignContract(status);
 }
 
+/**
+ * Renderização no Master: depende só do status da assinatura SaaS e do usuário autenticado.
+ * Não pode ser gated por hasSaasContractReady / PDF da subscription.
+ */
+export function shouldRenderMasterProviderSignButton(
+  signatureStatus?: SignatureStatus | string | null,
+  masterUserId?: string | null,
+): boolean {
+  return Boolean(masterUserId) && canShowProviderSignButton(signatureStatus);
+}
+
 export function isContractSignatureSendBlocked(status?: SignatureStatus | string | null): boolean {
   return isClientSignatureComplete(status);
 }
