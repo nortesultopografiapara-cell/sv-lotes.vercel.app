@@ -296,9 +296,11 @@ function testDigitalSignatureClause() {
   for (const phrase of RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES) {
     assert(html.includes(phrase), `cláusula assinatura digital: ${phrase}`);
   }
-  const clauseIdx = html.indexOf('CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA');
+  const clauseIdx = html.indexOf('CLÁUSULA DÉCIMA PRIMEIRA – DA ASSINATURA ELETRÔNICA');
   const signaturesIdx = html.indexOf('E, por estarem assim justos e contratados');
-  assert(clauseIdx > 0 && signaturesIdx > clauseIdx, 'cláusula 12 antes das assinaturas');
+  assert(clauseIdx > 0 && signaturesIdx > clauseIdx, 'cláusula 11 antes das assinaturas');
+  assertNotIncludes(html, 'CLÁUSULA DÉCIMA SEGUNDA', 'sem cláusula décima segunda');
+  assertNotIncludes(html, 'CLÁUSULA DÉCIMA PRIMEIRA - DO FORO', 'foro não usa numeração antiga');
   console.log('OK testDigitalSignatureClause');
 }
 
@@ -866,7 +868,7 @@ function testMenesesUnchanged() {
   assert(html.includes('Cláusula Décima Segunda:'), 'cláusula assinatura Meneses preservada');
   assertNotIncludes(html, RECANTO_PRIMAVERA_LEGAL_MARKER, 'sem marcador Recanto');
   assertNotIncludes(html, 'sv-contract-recanto-primavera', 'sem classe Recanto');
-  assertNotIncludes(html, 'CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA', 'sem cláusula Recanto');
+  assertNotIncludes(html, 'CLÁUSULA DÉCIMA PRIMEIRA – DA ASSINATURA ELETRÔNICA', 'sem cláusula Recanto');
   console.log('OK testMenesesUnchanged');
 }
 
@@ -911,7 +913,7 @@ function testSaasUnchanged() {
   const { buildSaasContractDocumentText, menesesSaasContractFixture } = require('../lib/saasContractContent');
   const text = buildSaasContractDocumentText(menesesSaasContractFixture());
   assert(typeof text === 'string' && text.length > 100, 'texto SaaS gerado');
-  assertNotIncludes(text, 'CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA', 'SaaS sem cláusula Recanto');
+  assertNotIncludes(text, 'CLÁUSULA DÉCIMA PRIMEIRA – DA ASSINATURA ELETRÔNICA', 'SaaS sem cláusula Recanto');
   assertNotIncludes(text, 'CHACREAMENTO RECANTO PRIMAVERA', 'SaaS sem template Recanto');
   console.log('OK testSaasUnchanged');
 }
