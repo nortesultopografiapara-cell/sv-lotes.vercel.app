@@ -274,8 +274,8 @@ export const CONTRACT_SIGNATURE_SPACING = {
   blockMarginTopSv2: '18px',
   slotMarginBottomClassic: '0',
   slotMarginBottomLast: '0',
-  slotMarginBottomRecanto: '12px',
-  slotMarginBottomRecantoLast: '4px',
+  slotMarginBottomRecanto: '16px',
+  slotMarginBottomRecantoLast: '6px',
   classicGridColumnGap: '12px',
   classicGridRowGap: '4px',
   sv2GridMarginTop: '16px',
@@ -436,20 +436,44 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     text-align: center;
     min-width: 0;
     width: 100%;
-    page-break-inside: auto;
-    break-inside: auto;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    overflow: visible !important;
   }
-  /* Linhas padronizadas — altura fixa cria o respiro sob a linha (estilo cartório). */
+  /* Grade fixa: vendedor|comprador, cônjuge abaixo do comprador, testemunhas na 3ª linha. */
+  .contract-signatures--recanto .signature-slot[data-party-role="VENDOR"] {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .contract-signatures--recanto .signature-slot[data-party-role="BUYER"] {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .contract-signatures--recanto .signature-slot-spouse,
+  .contract-signatures--recanto .signature-slot[data-party-role="SPOUSE"] {
+    grid-row: 2;
+    grid-column: 2;
+  }
+  .contract-signatures--recanto .signature-slot-witness-1 {
+    grid-row: 3;
+    grid-column: 1;
+  }
+  .contract-signatures--recanto .signature-slot-witness-2 {
+    grid-row: 3;
+    grid-column: 2;
+  }
+  /* Linha de assinatura: respiro acima (assinatura) + gap curto até o rótulo. */
   .contract-signatures--recanto .signature-slot .signature-line,
   .contract-signatures--recanto .signature-line {
     border-top: 1px solid #111 !important;
     border-bottom: none !important;
-    margin: 0 auto 0 auto !important;
+    margin: 32px auto 0 auto !important;
     padding: 0 !important;
     width: 70% !important;
     max-width: 240px !important;
-    height: 26px !important;
+    height: 12px !important;
     box-sizing: border-box !important;
+    overflow: visible !important;
   }
   .contract-signatures--recanto .signature-slot > p {
     margin-left: 0 !important;
@@ -466,7 +490,12 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     margin-bottom: 4px !important;
   }
   .contract-signatures--recanto .signature-slot > p:last-of-type {
-    margin-bottom: 0 !important;
+    margin-bottom: 2px !important;
+  }
+  .contract-signatures--recanto .signature-slot-witness-1,
+  .contract-signatures--recanto .signature-slot-witness-2 {
+    min-height: 118px;
+    padding-bottom: 6px;
   }
   .contract-signatures--recanto .signature-slot img {
     display: block;
@@ -475,9 +504,8 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
   }
   /* Respiro entre CPF do comprador e linha do cônjuge */
   .contract-signatures--recanto .signature-slot-spouse {
-    grid-column: 2;
     margin-top: 0 !important;
-    padding-top: 12px !important;
+    padding-top: 22px !important;
   }
   .sv2-signatures {
     margin-top: ${CONTRACT_SIGNATURE_SPACING.blockMarginTopSv2};
@@ -619,6 +647,18 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
     break-inside: auto;
     margin-bottom: 10px;
   }
+  .sv-contract-recanto-primavera .contract-header-recanto,
+  .sv-contract-recanto-primavera .contract-vendor-block,
+  .sv-contract-recanto-primavera .contract-buyer-block,
+  .sv-contract-recanto-primavera .contract-spouse-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+  .sv-contract-recanto-primavera .contract-spouse-block {
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+  }
   .sv-contract-recanto-primavera p {
     page-break-inside: avoid;
     break-inside: avoid-page;
@@ -640,32 +680,37 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
     break-after: avoid-page !important;
     margin-bottom: 0 !important;
   }
-  /* Compactação sob demanda (sv-pagination-compact) — vence inline/Recanto. */
+  /* Compactação sob demanda — reduz levemente, sem esmagar testemunhas/cônjuge. */
   .contract-signatures--recanto.sv-pagination-compact .signature-grid {
-    row-gap: 4px !important;
+    row-gap: 10px !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot-spouse {
-    padding-top: 2px !important;
+    padding-top: 14px !important;
     margin-top: 0 !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot .signature-line,
   .contract-signatures--recanto.sv-pagination-compact .signature-line {
     height: 10px !important;
     padding: 0 !important;
-    margin: 0 auto 0 auto !important;
+    margin: 24px auto 0 auto !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot > p {
-    margin-top: 1px !important;
-    margin-bottom: 1px !important;
-    line-height: 1.2 !important;
+    margin-top: 2px !important;
+    margin-bottom: 3px !important;
+    line-height: 1.3 !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot > p:first-of-type {
-    margin-top: 2px !important;
-    margin-bottom: 2px !important;
+    margin-top: 3px !important;
+    margin-bottom: 4px !important;
+  }
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot-witness-1,
+  .contract-signatures--recanto.sv-pagination-compact .signature-slot-witness-2 {
+    min-height: 108px !important;
+    padding-bottom: 4px !important;
   }
   .contract-signatures--recanto.sv-pagination-compact .signature-slot img {
     max-height: 28px !important;
-    margin-bottom: 1px !important;
+    margin-bottom: 2px !important;
   }
   /* Cola fechamento/data ao bloco — evita página só com data. */
   .sv-contract-recanto-primavera .contract-closing {
@@ -1107,6 +1152,10 @@ export const CONTRACT_HTML2PDF_PAGINATION_AVOID = [
 
 export const RECANTO_HTML2PDF_PAGINATION_AVOID = [
   '.sv-contract-recanto-primavera p',
+  '.sv-contract-recanto-primavera .contract-header-recanto',
+  '.sv-contract-recanto-primavera .contract-vendor-block',
+  '.sv-contract-recanto-primavera .contract-buyer-block',
+  '.sv-contract-recanto-primavera .contract-spouse-block',
   '.sv-contract-recanto-primavera .contract-payment-block',
   '.sv-contract-recanto-primavera .contract-signatures',
   '.sv-contract-recanto-primavera .contract-clause--electronic-signature',

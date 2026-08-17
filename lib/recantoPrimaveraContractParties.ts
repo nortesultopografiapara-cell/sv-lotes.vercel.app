@@ -7,9 +7,9 @@ import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraCont
 
 const SIGNATURE_SLOT_STYLE =
   `text-align: center; margin-bottom: 0; min-width: 0; width: 100%;`;
-/** Respiro cartório: linha no topo + altura 26px até o bloco de texto. */
+/** Respiro cartório: área acima da linha (margin-top no CSS) + gap até o bloco de texto. */
 const SIGNATURE_LINE_STYLE =
-  'border-top: 1px solid #111; margin: 0 auto 0 auto; padding: 0; width: 70%; max-width: 240px; height: 26px; box-sizing: border-box;';
+  'border-top: 1px solid #111; margin: 32px auto 0 auto; padding: 0; width: 70%; max-width: 240px; height: 12px; box-sizing: border-box;';
 const SIGNATURE_LINE_CLASS = 'signature-line';
 /** +4px acima do título; fontes inalteradas. */
 const SIGNATURE_ROLE_STYLE =
@@ -18,8 +18,8 @@ const SIGNATURE_NAME_STYLE =
   'margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;';
 const SIGNATURE_META_STYLE =
   'margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: break-word; text-align: center;';
-/** ~12px entre CPF do comprador e linha do cônjuge. */
-const SIGNATURE_SPOUSE_SLOT_EXTRA = ' margin-top: 0; padding-top: 12px;';
+/** Respiro entre CPF do comprador e linha do cônjuge. */
+const SIGNATURE_SPOUSE_SLOT_EXTRA = ' margin-top: 0; padding-top: 22px;';
 
 function buildRecantoPartyFieldLine(label: string, value: string): string {
   const clean = sanitizeContractField(value);
@@ -184,12 +184,14 @@ export function buildRecantoPrimaveraSignaturesHtml(
         role: 'TESTEMUNHA 1',
         partyRole: 'WITNESS',
         docLines: ['Nome: ________________________________', 'RG/CPF: _____________________________'],
+        extraClass: 'signature-slot-witness-1',
       })}
 
       ${buildSignatureSlot({
         role: 'TESTEMUNHA 2',
         partyRole: 'WITNESS',
         docLines: ['Nome: ________________________________', 'RG/CPF: _____________________________'],
+        extraClass: 'signature-slot-witness-2',
       })}
       </div>
     </div>`;
