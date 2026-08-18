@@ -14,6 +14,7 @@ import {
   shouldCreateSpouseSignatureParty,
   supportsSpouseElectronicSignature,
   validateSpouseForElectronicSignature,
+  assertSpouseReadyForSignatureSend,
   SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE,
 } from '../lib/saleContractSignaturePartyRules';
 import {
@@ -99,10 +100,43 @@ function testModelGating() {
   assert(
     shouldCreateSpouseSignatureParty({
       contractModel: 'RECANTO_PRIMAVERA',
-      sale: {},
-      contractHtml: '<div>CÔNJUGE ANUENTE</div>',
+      sale: { has_spouse: true },
     }),
-    'slot no HTML também exige SPOUSE',
+    'has_spouse true exige cônjuge mesmo incompleto',
+  );
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {
+        has_spouse: false,
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+      },
+      contractHtml:
+        '<style>.x[data-party-role="SPOUSE"]{}</style><div class="signature-slot" data-party-role="SPOUSE">CÔNJUGE ANUENTE</div>',
+    }),
+    'has_spouse false ignora HTML e campos residuais',
+  );
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {},
+      contractHtml:
+        '<style>.contract-signatures--recanto .signature-slot[data-party-role="SPOUSE"]{grid-row:2}</style><p>sem anuente</p>',
+    }),
+    'legado: seletor CSS SPOUSE não exige cônjuge',
+  );
+
+  assert(
+    shouldCreateSpouseSignatureParty({
+      contractModel: 'MENESES',
+      sale: {},
+      contractHtml:
+        '<div class="signature-slot" data-party-role="SPOUSE"><p>CÔNJUGE ANUENTE</p></div>',
+    }),
+    'legado: tag real SPOUSE exige cônjuge',
   );
 
   assert(
@@ -142,6 +176,71 @@ function testModelGating() {
   );
 
   console.log('OK testModelGating');
+}
+
+function testHasSpouseFlagSendGate() {
+  const cssLeak =
+    '<style>.contract-signatures--recanto .signature-slot[data-party-role="SPOUSE"]{grid-row:2}</style>';
+  const realSlot =
+    '<div class="signature-slot" data-party-role="SPOUSE">CÔNJUGE ANUENTE</div>';
+  const complete = {
+    has_spouse: true,
+    sale_spouse_name: 'Maria Silva',
+    sale_spouse_cpf: '12345678901',
+    sale_spouse_phone: '94999998888',
+  };
+  const models = ['RECANTO_PRIMAVERA', 'MENESES', 'PADRAO', 'SV_LOTES_2'];
+
+  for (const model of models) {
+    const singleCss = shouldCreateSpouseSignatureParty({
+      contractModel: model,
+      sale: { has_spouse: false, civil_state: 'Solteiro' },
+      contractHtml: `${cssLeak}<p>contrato solteiro</p>`,
+    });
+    assert(!singleCss, `${model}: solteiro + CSS SPOUSE não exige`);
+
+    const residual = shouldCreateSpouseSignatureParty({
+      contractModel: model,
+      sale: {
+        has_spouse: false,
+        sale_spouse_name: 'Nome Residual',
+        sale_spouse_cpf: '12345678901',
+        sale_spouse_phone: '94999998888',
+      },
+      contractHtml: realSlot,
+    });
+    assert(!residual, `${model}: has_spouse false ignora residual`);
+
+    const ready = assertSpouseReadyForSignatureSend({
+      contractModel: model,
+      sale: complete,
+      contractHtml: realSlot,
+    });
+    assert(ready.ok && !('skipped' in ready), `${model}: cônjuge completo`);
+
+    const incomplete = assertSpouseReadyForSignatureSend({
+      contractModel: model,
+      sale: { has_spouse: true, sale_spouse_name: 'Maria' },
+      contractHtml: realSlot,
+    });
+    assert(!incomplete.ok, `${model}: cônjuge incompleto bloqueia`);
+
+    const legacy = shouldCreateSpouseSignatureParty({
+      contractModel: model,
+      sale: {},
+      contractHtml: realSlot,
+    });
+    assert(legacy, `${model}: legado sem has_spouse usa tag real`);
+
+    const legacyCssOnly = shouldCreateSpouseSignatureParty({
+      contractModel: model,
+      sale: {},
+      contractHtml: `${cssLeak}<p>sem anuente no corpo</p>`,
+    });
+    assert(!legacyCssOnly, `${model}: legado não usa seletor em <style>`);
+  }
+
+  console.log('OK testHasSpouseFlagSendGate');
 }
 
 function testSpouseValidation() {
@@ -411,6 +510,16 @@ function testMigrationAndWiring() {
 
   const service = read('lib/saleContractSignatureService.ts');
   assert(service.includes('createSignaturePartiesAfterSend'), 'send parties');
+  assert(
+    service.includes('assertSaleSignaturePartiesReadyBeforeSend'),
+    'valida parties antes do insert',
+  );
+  const validateIdx = service.indexOf('assertSaleSignaturePartiesReadyBeforeSend');
+  const insertIdx = service.indexOf('insertSaleSignatureRowWithFallback');
+  assert(
+    validateIdx >= 0 && insertIdx >= 0 && validateIdx < insertIdx,
+    'validação de signatários ocorre antes de criar o processo',
+  );
   assert(service.includes('signPartyElectronically'), 'sign party');
   assert(service.includes('assertVendorCanSignWithParties'), 'vendor gate');
   assert(service.includes('getSaleContractBucket') || service.includes('saleContractStorage'), 'bucket helper');
@@ -431,6 +540,7 @@ function testMigrationAndWiring() {
   const flow = read('lib/saleContractSignaturePartyFlow.ts');
   assert(flow.includes('reissueExternalPartyLink'), 'reissue');
   assert(flow.includes('BUYER_LINK_CREATED'), 'eventos');
+  assert(flow.includes('has_spouse'), 'select da venda inclui has_spouse');
 
   const ui = read('components/contracts/SaleContractSignatureSection.tsx');
   assert(ui.includes('Assinaturas'), 'painel');
@@ -467,12 +577,12 @@ function testUnifiedSpouseRuleAndViews() {
     'requiresSpouse sem HTML',
   );
   assert(
-    !requiresSpouseSignature({
+    requiresSpouseSignature({
       contractModel: 'RECANTO_PRIMAVERA',
       sale: { has_spouse: true },
       contractHtml: '',
     }),
-    'has_spouse UI sozinho não basta',
+    'has_spouse true exige validação mesmo sem HTML',
   );
   assert(
     contractHtmlHasSpouseAnuenteSlot('<p>CÔNJUGE ANUENTE</p>'),
@@ -733,6 +843,7 @@ function testSaleContractBucketAndVendorPanel() {
 
 function main() {
   testModelGating();
+  testHasSpouseFlagSendGate();
   testSpouseValidation();
   testTokensDistinct();
   testAggregateStatusWithoutSpouse();

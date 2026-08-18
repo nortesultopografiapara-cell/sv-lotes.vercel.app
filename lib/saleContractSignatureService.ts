@@ -49,6 +49,7 @@ import {
   isSaleSignatureBlocked,
 } from '@/lib/saleContractSignatureStatus';
 import {
+  assertSaleSignaturePartiesReadyBeforeSend,
   createSignaturePartiesAfterSend,
   assertVendorCanSignWithParties,
   markVendorPartySigned,
@@ -605,6 +606,9 @@ export async function sendSaleContractForSignature(
   if (!tenantId) {
     throw new SaleContractSignatureError('Contrato sem tenant vinculado.');
   }
+
+  mark('validate_signature_parties');
+  await assertSaleSignaturePartiesReadyBeforeSend(supabaseAdmin, contractRow);
 
   mark('cancel_open_signatures');
   await cancelOpenSaleSignatures(supabaseAdmin, resolvedId);

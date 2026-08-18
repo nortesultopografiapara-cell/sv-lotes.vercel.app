@@ -451,8 +451,7 @@ export const CONTRACT_SIGNATURE_PAGINATION_CSS = `
     grid-row: 1;
     grid-column: 2;
   }
-  .contract-signatures--recanto .signature-slot-spouse,
-  .contract-signatures--recanto .signature-slot[data-party-role="SPOUSE"] {
+  .contract-signatures--recanto .signature-slot-spouse {
     grid-row: 2;
     grid-column: 2;
   }

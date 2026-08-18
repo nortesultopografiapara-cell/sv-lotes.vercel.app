@@ -159,9 +159,16 @@ export function signatureSlotPartyRoleAttr(
   return `data-party-role="${role}"`;
 }
 
+/** Remove CSS/JS embutidos para não tratar seletor de estilo como slot real. */
+export function stripEmbeddedStyleAndScript(html: string): string {
+  return String(html || '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ');
+}
+
 export function contractHtmlHasSpousePartyRoleAttr(
   contractHtml?: string | null,
 ): boolean {
-  const raw = String(contractHtml || '');
-  return /data-party-role\s*=\s*["']SPOUSE["']/i.test(raw);
+  const body = stripEmbeddedStyleAndScript(String(contractHtml || ''));
+  return /<[a-z][^>]*\bdata-party-role\s*=\s*["']SPOUSE["']/i.test(body);
 }

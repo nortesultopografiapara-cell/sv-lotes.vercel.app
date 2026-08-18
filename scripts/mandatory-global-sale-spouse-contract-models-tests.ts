@@ -216,6 +216,34 @@ function testSv2WithAndWithoutSpouse() {
   console.log('OK testSv2WithAndWithoutSpouse');
 }
 
+function testGeneratedHtmlDoesNotLeakSpouseCssSelector() {
+  for (const model of ['MENESES', 'PADRAO', 'SV_LOTES_2', 'RECANTO_PRIMAVERA']) {
+    const html = generateContractHTML({
+      tenant: tenant(model),
+      customer: { ...CUSTOMER, civil_state: 'Solteiro' },
+      project: PROJECT,
+      block: BLOCK,
+      sale: baseSale({ has_spouse: false }),
+    });
+    assert(
+      !shouldCreateSpouseSignatureParty({
+        contractModel: model,
+        sale: { has_spouse: false },
+        contractHtml: html,
+      }),
+      `${model}: HTML gerado sem cônjuge não dispara party`,
+    );
+    const styleMatch = html.match(/<style[\s\S]*?<\/style>/i);
+    if (styleMatch) {
+      assert(
+        !styleMatch[0].includes('[data-party-role="SPOUSE"]'),
+        `${model}: CSS compartilhado sem seletor SPOUSE`,
+      );
+    }
+  }
+  console.log('OK testGeneratedHtmlDoesNotLeakSpouseCssSelector');
+}
+
 function testElectronicPartyGateGlobal() {
   for (const model of ['MENESES', 'PADRAO', 'SV_LOTES_2', 'RECANTO_PRIMAVERA']) {
     assert(supportsSpouseElectronicSignature(model), `supports ${model}`);
@@ -301,6 +329,7 @@ function main() {
   testRecantoWithAndWithoutSpouse();
   testSv2WithAndWithoutSpouse();
   testElectronicPartyGateGlobal();
+  testGeneratedHtmlDoesNotLeakSpouseCssSelector();
   testStampByDataPartyRoleOnMenesesHtml();
   testPadraoSameAsMeneses();
   console.log('mandatory-global-sale-spouse-contract-models-tests: all passed');

@@ -2,9 +2,10 @@
  * Regras de inclusão e validação do cônjuge como signatário eletrônico.
  * Global: todos os modelos de contrato de venda.
  *
- * requiresSpouse =
- *   resolveSaleSpouseContext(sale).hasSpouse ||
- *   HTML possui slot SPOUSE / "CÔNJUGE ANUENTE"
+ * has_spouse === false → nunca exige cônjuge (ignora HTML e campos residuais).
+ * has_spouse === true  → sempre exige e valida nome + CPF + contato.
+ * has_spouse ausente   → legado: nome+CPF da venda OU tag real no HTML
+ *                        (nunca texto/seletor dentro de <style>).
  *
  * Não depende do estado civil do comprador.
  */
@@ -19,9 +20,13 @@ import { onlyDigits } from '@/lib/inputMasks';
 import {
   extractRecantoSpouseSource,
   hasSaleSpouseData,
+  parseSaleHasSpouseFlag,
   resolveSaleSpouseContext,
 } from '@/lib/saleSpouseFields';
-import { contractHtmlHasSpousePartyRoleAttr } from '@/lib/saleSpouseContractHtml';
+import {
+  contractHtmlHasSpousePartyRoleAttr,
+  stripEmbeddedStyleAndScript,
+} from '@/lib/saleSpouseContractHtml';
 
 /** Todos os modelos suportam party SPOUSE quando a venda tem cônjuge válido. */
 export const SPOUSE_ELECTRONIC_SIGNATURE_MODELS: SaleContractModel[] = [
@@ -46,7 +51,7 @@ export function contractHtmlHasSpouseAnuenteSlot(
 ): boolean {
   if (contractHtmlHasSpousePartyRoleAttr(contractHtml)) return true;
 
-  const raw = String(contractHtml || '');
+  const raw = stripEmbeddedStyleAndScript(String(contractHtml || ''));
   if (!raw.trim()) return false;
 
   const normalized = raw
@@ -100,6 +105,10 @@ export function shouldCreateSpouseSignatureParty(params: {
     const model = normalizeSaleContractModel(params.contractModel);
     if (!SPOUSE_ELECTRONIC_SIGNATURE_MODELS.includes(model)) return false;
   }
+
+  const flag = parseSaleHasSpouseFlag(params.sale?.has_spouse);
+  if (flag === false) return false;
+  if (flag === true) return true;
 
   const fromSale = resolveSaleSpouseContext(params.sale).hasSpouse;
   const fromHtml = contractHtmlHasSpouseAnuenteSlot(params.contractHtml);

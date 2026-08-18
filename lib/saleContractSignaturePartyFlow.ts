@@ -75,7 +75,7 @@ export type SendPartiesResult = {
 const SPOUSE_PARTY_NOT_CREATED_MESSAGE =
   'O contrato possui cônjuge anuente, mas o participante eletrônico do cônjuge não foi criado. Verifique os dados e tente novamente.';
 
-async function loadSaleAndCompanyForSignature(
+export async function loadSaleAndCompanyForSignature(
   supabaseAdmin: SupabaseClient,
   contractRow: Record<string, unknown>,
 ): Promise<{
@@ -121,7 +121,7 @@ async function loadSaleAndCompanyForSignature(
   if (saleId) {
     // Colunas de cônjuge explícitas + * via fallback se o schema cache rejeitar.
     const spouseCols =
-      'id, company_id, tenant_id, customer_id, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
+      'id, company_id, tenant_id, customer_id, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
     let { data, error } = await supabaseAdmin
       .from('sales')
       .select(spouseCols)
@@ -182,6 +182,43 @@ async function loadSaleAndCompanyForSignature(
   };
 }
 
+function resolveEffectiveSaleContractModel(
+  loadedModel: string,
+  storedHtml: string,
+): string {
+  const htmlLooksRecanto = contractHtmlLooksLikeRecanto(storedHtml);
+  return loadedModel === 'RECANTO_PRIMAVERA' || htmlLooksRecanto
+    ? 'RECANTO_PRIMAVERA'
+    : loadedModel;
+}
+
+/**
+ * Valida signatários ANTES de criar o processo em contract_signatures.
+ * Falha aqui não gera token, link, evento LINK_CREATED nem registro PENDING.
+ */
+export async function assertSaleSignaturePartiesReadyBeforeSend(
+  supabaseAdmin: SupabaseClient,
+  contractRow: Record<string, unknown>,
+): Promise<void> {
+  const loaded = await loadSaleAndCompanyForSignature(
+    supabaseAdmin,
+    contractRow,
+  );
+  const storedHtml = readStoredContractHtml(contractRow) || '';
+  const contractModel = resolveEffectiveSaleContractModel(
+    loaded.contractModel,
+    storedHtml,
+  );
+  const spouseCheck = assertSpouseReadyForSignatureSend({
+    contractModel,
+    sale: loaded.sale,
+    contractHtml: storedHtml,
+  });
+  if (!spouseCheck.ok) {
+    throw new SaleContractSignatureError(spouseCheck.message, 'validation');
+  }
+}
+
 /**
  * Valida cônjuge (se aplicável) e cria parties após insert do processo.
  */
@@ -203,11 +240,10 @@ export async function createSignaturePartiesAfterSend(
 
   const storedHtml = readStoredContractHtml(params.contractRow) || '';
   const htmlLooksRecanto = contractHtmlLooksLikeRecanto(storedHtml);
-  // Modelo efetivo: company.contract_model, com fallback pelo HTML Recanto já gerado.
-  const contractModel =
-    loaded.contractModel === 'RECANTO_PRIMAVERA' || htmlLooksRecanto
-      ? 'RECANTO_PRIMAVERA'
-      : loaded.contractModel;
+  const contractModel = resolveEffectiveSaleContractModel(
+    loaded.contractModel,
+    storedHtml,
+  );
 
   const spouseNamePresent = Boolean(
     sale && String(sale.sale_spouse_name || '').trim(),

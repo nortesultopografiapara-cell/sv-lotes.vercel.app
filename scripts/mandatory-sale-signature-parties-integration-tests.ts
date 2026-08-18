@@ -5,6 +5,8 @@
  */
 
 import { createSignaturePartiesAfterSend } from '../lib/saleContractSignaturePartyFlow';
+import { sendSaleContractForSignature } from '../lib/saleContractSignatureService';
+import { SaleContractSignatureError } from '../lib/saleContractSignatureErrors';
 import { hashSaleSignaturePartyToken } from '../lib/saleContractSignaturePartyTokens';
 
 function assert(cond: boolean, msg: string) {
@@ -18,6 +20,7 @@ function createFakeSupabase(state: {
   sale: Row;
   customer: Row;
   parties: Row[];
+  signatureInserts?: Row[];
 }) {
   const from = (table: string) => {
     const ctx: {
@@ -43,6 +46,10 @@ function createFakeSupabase(state: {
     api.insert = (payload: Row) => {
       ctx.mode = 'insert';
       ctx.insertPayload = payload;
+      if (table === 'contract_signatures') {
+        state.signatureInserts = state.signatureInserts || [];
+        state.signatureInserts.push(payload);
+      }
       return api;
     };
     api.update = () => {
@@ -223,9 +230,85 @@ async function testBrokenCompanySelectWouldHaveFailedBefore() {
   console.log('OK testBrokenCompanySelectWouldHaveFailedBefore');
 }
 
+async function testValidationFailureDoesNotCreateSignatureProcess() {
+  const cssLeakHtml = `
+    <style>
+      .contract-signatures--recanto .signature-slot[data-party-role="SPOUSE"] { grid-row: 2; }
+    </style>
+    <div class="sv-contract-recanto-primavera">
+      <p>E, por estarem assim justos e contratados...</p>
+    </div>
+  `;
+
+  const state = {
+    company: {
+      id: 'company-1',
+      contract_model: 'RECANTO_PRIMAVERA',
+    },
+    sale: {
+      id: 'sale-1',
+      has_spouse: true,
+      sale_spouse_name: 'Só Nome',
+    },
+    customer: { id: 'cust-1', name: 'Antonio Wilson Alves' },
+    parties: [] as Row[],
+    signatureInserts: [] as Row[],
+  };
+
+  const sb = createFakeSupabase(state);
+  let failed = false;
+  try {
+    await sendSaleContractForSignature(sb, 'ct-1', {
+      id: 'ct-1',
+      status: 'ativo',
+      company_id: 'company-1',
+      tenant_id: 'company-1',
+      sale_id: 'sale-1',
+      customer_id: 'cust-1',
+      generated_html: cssLeakHtml,
+    });
+  } catch (err) {
+    failed = true;
+    assert(err instanceof SaleContractSignatureError, 'erro de validação');
+    assert(
+      String((err as Error).message).includes('cônjuge anuente'),
+      'mensagem de cônjuge incompleto',
+    );
+  }
+
+  assert(failed, 'envio deve falhar na validação');
+  assert(state.signatureInserts.length === 0, 'não cria processo em contract_signatures');
+  assert(state.parties.length === 0, 'não cria parties/links');
+
+  const skippedState = {
+    company: { id: 'company-1', contract_model: 'RECANTO_PRIMAVERA' },
+    sale: {
+      id: 'sale-1',
+      has_spouse: false,
+      sale_spouse_name: 'Residual',
+      sale_spouse_cpf: '12345678901',
+    },
+    customer: { id: 'cust-1', name: 'Antonio Wilson Alves' },
+    parties: [] as Row[],
+    signatureInserts: [] as Row[],
+  };
+  const ready = await import('../lib/saleContractSignaturePartyRules').then(
+    (mod) =>
+      mod.assertSpouseReadyForSignatureSend({
+        contractModel: 'RECANTO_PRIMAVERA',
+        sale: skippedState.sale,
+        contractHtml: cssLeakHtml,
+      }),
+  );
+  assert(ready.ok && 'skipped' in ready, 'solteiro com CSS SPOUSE não exige cônjuge');
+
+  console.log('OK testValidationFailureDoesNotCreateSignatureProcess');
+}
+
 async function main() {
   await testBrokenCompanySelectWouldHaveFailedBefore();
   await testCreatePartiesWithRecantoCompanySelectStar();
+  await testValidationFailureDoesNotCreateSignatureProcess();
   // silence unused
   void hashSaleSignaturePartyToken;
   console.log('\nTodos os testes de integração de parties passaram.');
