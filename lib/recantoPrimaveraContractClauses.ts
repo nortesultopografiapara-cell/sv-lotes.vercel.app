@@ -381,7 +381,7 @@ export function buildRecantoPrimaveraElectronicSignatureClauseHtml(): string {
   return `
     <div class="contract-clause contract-clause--electronic-signature contract-clause--tight" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
-        <strong>CLÁUSULA DÉCIMA PRIMEIRA – DA ASSINATURA ELETRÔNICA</strong>
+        <strong>CLÁUSULA DÉCIMA PRIMEIRA – DA&nbsp;ASSINATURA ELETRÔNICA</strong>
       </p>
       <p style="margin-bottom: 10px;">
         As partes reconhecem como válida e eficaz a assinatura eletrônica realizada por meio da plataforma SV LOTES, nos termos da Medida Provisória nº 2.200-2/2001 e legislação aplicável, produzindo todos os efeitos jurídicos de uma assinatura manuscrita, dispensando reconhecimento de firma, autenticação ou assinatura física adicional.

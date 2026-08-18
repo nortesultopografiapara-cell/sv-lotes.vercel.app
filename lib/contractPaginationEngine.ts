@@ -57,6 +57,8 @@ export const CONTRACT_PAGINATION_SELECTORS = {
   signatureBlock: '.contract-signatures, .sv2-signatures',
   /** Fecho + data + assinaturas (+ rodapé institucional) — bloco indivisível clássico. */
   signaturePack: '.contract-signature-pack',
+  /** Recanto: fecho + data + assinaturas — mesma regra do pack clássico. */
+  recantoClosingPack: '.contract-closing-and-signatures--recanto',
   signatureSlot: '.signature-slot',
   certificateBlock: '.sv-cert-official-block',
   certificateUnit: '.sv-cert-official-inner, .sv-cert-official',
@@ -712,14 +714,38 @@ export const CONTRACT_RECANTO_CLAUSE_FLOW_CSS = `
     max-height: 28px !important;
     margin-bottom: 2px !important;
   }
-  /* Cola fechamento/data ao bloco — evita página só com data. */
-  .sv-contract-recanto-primavera .contract-closing {
-    page-break-after: avoid !important;
-    break-after: avoid-page !important;
+  /*
+   * Pack Recanto: fecho + data + assinaturas = UMA unidade indivisível.
+   * Se não couber no restante da página, o bloco inteiro vai para a próxima.
+   */
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    -webkit-column-break-inside: avoid !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
   }
-  .sv-contract-recanto-primavera .contract-signatures--recanto {
-    page-break-before: avoid !important;
-    break-before: avoid-page !important;
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack}.sv-pagination-force-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-closing,
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-closing > p,
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-closing-date,
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-signatures--recanto {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+  .sv-contract-recanto-primavera ${CONTRACT_PAGINATION_SELECTORS.recantoClosingPack} .contract-signatures--recanto {
+    margin-top: 8px !important;
   }
 `.trim();
 
@@ -785,7 +811,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   const PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
   const FOOTER = ${CONTRACT_FOOTER_RESERVE_PX};
   const root = document;
-  const pack = root.querySelector('.contract-signature-pack');
+  const pack = root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto');
   const sig = root.querySelector('.contract-signatures, .sv2-signatures');
   const cert = root.querySelector('.sv-cert-official-block');
   if (pack) pack.classList.remove('sv-pagination-force-break');
@@ -923,7 +949,7 @@ export function applyContractPaginationBreaksToElement(
   const scrollY = win.scrollY || win.pageYOffset || 0;
 
   const pack = element.querySelector(
-    '.contract-signature-pack',
+    '.contract-signature-pack, .contract-closing-and-signatures--recanto',
   ) as HTMLElement | null;
   const sig = element.querySelector(
     '.contract-signatures, .sv2-signatures',
@@ -1157,7 +1183,7 @@ export const RECANTO_HTML2PDF_PAGINATION_AVOID = [
   '.sv-contract-recanto-primavera .contract-buyer-block',
   '.sv-contract-recanto-primavera .contract-spouse-block',
   '.sv-contract-recanto-primavera .contract-payment-block',
-  '.sv-contract-recanto-primavera .contract-signatures',
+  '.sv-contract-recanto-primavera .contract-closing-and-signatures--recanto',
   '.sv-contract-recanto-primavera .contract-clause--electronic-signature',
   '.sv-cert-official-block',
 ] as const;

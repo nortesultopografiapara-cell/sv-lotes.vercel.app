@@ -150,8 +150,10 @@ export function buildRecantoPrimaveraSignaturesHtml(
     : '';
 
   // RECANTO_PRIMAVERA: sem bloco de assinatura do corretor (corretor permanece na venda).
+  // Fecho + data + assinaturas = unidade indivisível (evita folha só de rubricas).
   // Layout 2 colunas: Vendedor|Comprador, Cônjuge sob comprador, Testemunhas lado a lado.
   return `
+    <div class="contract-closing-and-signatures--recanto">
     <div class="contract-clause contract-clause--tight contract-closing">
       <p style="margin-bottom: 10px;">
         E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
@@ -194,5 +196,6 @@ export function buildRecantoPrimaveraSignaturesHtml(
         extraClass: 'signature-slot-witness-2',
       })}
       </div>
+    </div>
     </div>`;
 }

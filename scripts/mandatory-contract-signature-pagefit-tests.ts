@@ -65,9 +65,9 @@ assert(
   'CSS de compactação presente',
 );
 assert(
-  CONTRACT_RECANTO_CLAUSE_FLOW_CSS.includes('page-break-before: avoid') &&
-    CONTRACT_RECANTO_CLAUSE_FLOW_CSS.includes('contract-closing'),
-  'fechamento colado às assinaturas (break-before/after avoid)',
+  CONTRACT_RECANTO_CLAUSE_FLOW_CSS.includes('contract-closing-and-signatures--recanto') &&
+    CONTRACT_RECANTO_CLAUSE_FLOW_CSS.includes('page-break-inside: avoid'),
+  'Recanto: pack fecho+data+assinaturas indivisível',
 );
 
 if (process.exitCode) {
