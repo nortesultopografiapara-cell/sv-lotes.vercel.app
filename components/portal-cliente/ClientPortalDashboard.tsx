@@ -16,6 +16,7 @@ import {
   Receipt,
   Wallet,
 } from 'lucide-react';
+import { openWhatsAppClickToChatUrl } from '@/lib/whatsapp/clickToChat';
 import type {
   ClientPortalDashboardInstallment,
   ClientPortalDashboardResponse,
@@ -430,6 +431,11 @@ export function ClientPortalDashboard() {
           href={data.companyWhatsAppUrl}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={(event) => {
+            if (event.ctrlKey || event.metaKey || event.button !== 0) return;
+            event.preventDefault();
+            openWhatsAppClickToChatUrl(data.companyWhatsAppUrl);
+          }}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/20"
         >
           <MessageCircle className="h-4 w-4" aria-hidden />

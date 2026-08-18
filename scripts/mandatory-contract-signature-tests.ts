@@ -528,8 +528,13 @@ function testWhatsAppUrl() {
     signatureUrl: 'https://www.svlotes.com.br/sign/tok',
     expiresAt: '2026-07-15T00:00:00Z',
   });
-  const url = buildSignatureShareWhatsAppUrl('(94) 99239-1277', msg);
-  assert(url?.startsWith('https://wa.me/5594992391277?text='), 'whatsapp url');
+  const urlMobile = buildSignatureShareWhatsAppUrl('(94) 99239-1277', msg, 'mobile');
+  assert(urlMobile?.startsWith('https://wa.me/5594992391277?text='), 'whatsapp url mobile');
+  const urlDesktop = buildSignatureShareWhatsAppUrl('(94) 99239-1277', msg, 'desktop');
+  assert(
+    urlDesktop?.startsWith('https://web.whatsapp.com/send?phone=5594992391277&text='),
+    'whatsapp url desktop',
+  );
   assert(!canShareViaWhatsApp(''), 'whatsapp desabilita sem telefone');
   assert(!buildSignatureShareWhatsAppUrl('', msg), 'sem telefone sem url');
   console.log('OK testWhatsAppUrl');

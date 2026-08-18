@@ -1,4 +1,5 @@
 import type { MasterTopographyOperation } from './operationTypes';
+import { buildWhatsAppUrl } from '@/lib/whatsapp/clickToChat';
 
 function formatDateTimeBr(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -32,8 +33,5 @@ export function buildWhatsAppShareUrl(
   phone: string | null | undefined,
   message: string,
 ): string | null {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (!digits || digits.length < 10) return null;
-  const withCountry = digits.startsWith('55') ? digits : `55${digits}`;
-  return `https://wa.me/${withCountry}?text=${encodeURIComponent(message)}`;
+  return buildWhatsAppUrl(phone, message);
 }

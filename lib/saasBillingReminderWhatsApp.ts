@@ -2,7 +2,7 @@
  * Lembretes automáticos de cobrança SaaS via WhatsApp (Z-API).
  */
 
-import { normalizeWhatsAppPhone } from '@/lib/saasContractSignatureShare';
+import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
 import {
   formatReminderAmountBr,
   formatReminderDueDateBr,

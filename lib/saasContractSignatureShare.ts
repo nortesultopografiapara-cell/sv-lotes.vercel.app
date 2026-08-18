@@ -8,7 +8,12 @@ import {
   canResendOrShareSignature as canResendOrShareSignatureBilateral,
   isContractSignatureSendBlocked as isContractSignatureSendBlockedBilateral,
 } from '@/lib/saasContractBilateralSignature';
-import { onlyDigits } from '@/lib/inputMasks';
+
+export {
+  buildSignatureShareWhatsAppUrl,
+  canShareViaWhatsApp,
+  normalizeWhatsAppPhone,
+} from '@/lib/whatsapp/clickToChat';
 
 export type SignatureShareMessageInput = {
   signerName: string;
@@ -40,30 +45,6 @@ export function formatSignatureTimelineDateTime(iso: string): string {
   });
 }
 
-/** Normaliza telefone brasileiro para wa.me (DDI 55). */
-export function normalizeWhatsAppPhone(phone?: string | null): string | null {
-  const digits = onlyDigits(phone);
-  if (!digits) return null;
-
-  if (digits.length >= 12 && digits.startsWith('55')) {
-    return digits;
-  }
-
-  if (digits.length === 10 || digits.length === 11) {
-    return `55${digits}`;
-  }
-
-  if (digits.length > 11) {
-    return digits.startsWith('55') ? digits : `55${digits}`;
-  }
-
-  return null;
-}
-
-export function canShareViaWhatsApp(phone?: string | null): boolean {
-  return Boolean(normalizeWhatsAppPhone(phone));
-}
-
 export function canShareViaEmail(email?: string | null): boolean {
   const value = String(email || '').trim();
   return value.includes('@');
@@ -93,15 +74,6 @@ export function buildSignatureShareMessage(input: SignatureShareMessageInput): s
 
 export function buildSignatureShareEmailSubject(companyName: string): string {
   return `Contrato SV LOTES para assinatura eletrônica — ${companyName}`;
-}
-
-export function buildSignatureShareWhatsAppUrl(
-  phone: string | null | undefined,
-  message: string,
-): string | null {
-  const normalized = normalizeWhatsAppPhone(phone);
-  if (!normalized) return null;
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
 export function buildSignatureShareMailtoUrl(

@@ -1,10 +1,7 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
-import {
-  buildSignatureShareWhatsAppUrl,
-  normalizeWhatsAppPhone,
-} from '@/lib/saasContractSignatureShare';
+import { buildWhatsAppUrl, normalizeWhatsAppPhone, openWhatsAppClickToChatUrl } from '@/lib/whatsapp/clickToChat';
 
 /** Boleto/fatura Asaas — sem fallback para paymentLink genérico. */
 export function resolveChargeWhatsAppBoletoOrInvoiceUrl(
@@ -160,7 +157,7 @@ export function buildChargeWhatsAppShareUrl(
   phone: string | null | undefined,
   message: string,
 ): string | null {
-  return buildSignatureShareWhatsAppUrl(phone, message);
+  return buildWhatsAppUrl(phone, message);
 }
 
 export function canShareChargeViaWhatsApp(input: {
@@ -274,29 +271,7 @@ export function executeChargeWhatsAppShare(input: {
   return { ok: true, url, installmentId };
 }
 
-/** Abre wa.me no clique do usuário; fallback via âncora se pop-up for bloqueado. */
+/** Abre click-to-chat no dispositivo atual; fallback via âncora se pop-up for bloqueado. */
 export function openChargeWhatsAppShareUrl(url: string): boolean {
-  const trimmed = String(url || '').trim();
-  if (!trimmed.startsWith('https://wa.me/')) return false;
-
-  try {
-    const opened = window.open(trimmed, '_blank');
-    if (opened) return true;
-  } catch {
-    // segue para fallback
-  }
-
-  try {
-    const anchor = document.createElement('a');
-    anchor.href = trimmed;
-    anchor.target = '_blank';
-    anchor.rel = 'noopener noreferrer';
-    anchor.style.display = 'none';
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    return true;
-  } catch {
-    return false;
-  }
+  return openWhatsAppClickToChatUrl(url);
 }

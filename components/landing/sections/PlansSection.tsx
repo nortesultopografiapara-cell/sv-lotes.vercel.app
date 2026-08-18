@@ -7,6 +7,7 @@ import {
   LANDING_INCLUDED_FEATURES,
   LANDING_PLAN_HIGHLIGHT_FEATURES,
   LANDING_WHATSAPP_MESSAGES,
+  handleLandingWhatsAppClick,
   type LandingPlanId,
 } from '../constants/landingConfig';
 import { LANDING_PLANS } from '../landingPlans';
@@ -104,11 +105,14 @@ export function PlansSection() {
 
                     <div className="landing-plan-actions">
                       <a
-                        href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id])}
+                        href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id], 'desktop')}
                         target="_blank"
                         rel="noopener noreferrer"
                         data-cta="cta_planos"
                         className="landing-btn-primary w-full justify-center landing-btn-interactive"
+                        onClick={(event) =>
+                          handleLandingWhatsAppClick(event, PLAN_MESSAGES[plan.id])
+                        }
                       >
                         Escolher plano
                       </a>
@@ -121,10 +125,13 @@ export function PlansSection() {
                         Solicitar demonstração
                       </a>
                       <a
-                        href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id])}
+                        href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id], 'desktop')}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="landing-btn-whatsapp-text w-full justify-center landing-btn-interactive"
+                        onClick={(event) =>
+                          handleLandingWhatsAppClick(event, PLAN_MESSAGES[plan.id])
+                        }
                       >
                         <MessageCircle className="w-4 h-4" aria-hidden />
                         WhatsApp

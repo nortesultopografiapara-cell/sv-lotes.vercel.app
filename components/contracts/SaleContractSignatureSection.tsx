@@ -22,7 +22,6 @@ import {
   buildSaleSignatureEmailSubject,
   buildSaleSignatureShareMessage,
   buildSalePartySignatureShareMessage,
-  buildSignatureShareWhatsAppUrl,
   buildSignatureShareMailtoUrl,
   canShareViaWhatsApp,
   canShareViaEmail,
@@ -30,6 +29,7 @@ import {
   mergeSaleSignatureTimeline,
   type LocalSignatureTimelineEvent,
 } from '@/lib/saleContractSignatureShare';
+import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
 import {
   isVendorWaitingForBuyers,
@@ -499,8 +499,7 @@ export const SaleContractSignatureSection = forwardRef<
   };
 
   const handleWhatsApp = () => {
-    const url = buildSignatureShareWhatsAppUrl(buyerPhone, shareMessage);
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    openWhatsApp(buyerPhone, shareMessage);
   };
 
   if (!contract) return null;
@@ -613,8 +612,7 @@ export const SaleContractSignatureSection = forwardRef<
                       label="WhatsApp"
                       disabled={!canShareViaWhatsApp(phone)}
                       onClick={() => {
-                        const wa = buildSignatureShareWhatsAppUrl(phone, partyMessage);
-                        if (wa) window.open(wa, '_blank', 'noopener,noreferrer');
+                        openWhatsApp(phone, partyMessage);
                       }}
                     />
                     <ActionChip

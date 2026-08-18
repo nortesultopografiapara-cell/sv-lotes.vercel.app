@@ -5,6 +5,7 @@ import {
   buildOperationShareMessage,
   buildWhatsAppShareUrl,
 } from '@/lib/master/topography/operationShare';
+import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import type { MasterTopographyOperation } from '@/lib/master/topography/operationTypes';
 import styles from './operation.module.css';
 
@@ -77,8 +78,8 @@ export function OperationShareModal({
   const handleWhatsApp = async () => {
     // Baixa PDF primeiro (WhatsApp Web não anexa automaticamente) e abre mensagem.
     await handleDownload();
-    if (waUrl) {
-      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    if (operation) {
+      openWhatsApp(operation.responsible_phone, message);
     }
   };
 

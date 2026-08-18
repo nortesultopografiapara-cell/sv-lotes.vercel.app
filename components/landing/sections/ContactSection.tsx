@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import {
   buildContactFormMailto,
-  buildContactFormWhatsApp,
+  buildContactFormWhatsAppMessage,
   buildWhatsAppUrl,
   LANDING_ADDRESS,
   LANDING_CONTACT,
@@ -20,6 +20,8 @@ import {
   LANDING_GOOGLE_MAPS_URL,
   LANDING_PHONE_NUMBER,
   LANDING_WHATSAPP_MESSAGES,
+  handleLandingWhatsAppClick,
+  openLandingWhatsApp,
   validateContactForm,
   type ContactFormFieldErrors,
 } from '../constants/landingConfig';
@@ -61,8 +63,8 @@ export function ContactSection() {
       trackClickWhatsApp({ form: 'contact', channel: 'whatsapp' });
       trackEnviarFormulario({ form: 'contact', channel: 'whatsapp' });
     }
-    const url = buildContactFormWhatsApp(form);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    const urlOk = openLandingWhatsApp(buildContactFormWhatsAppMessage(form));
+    if (!urlOk) return;
   };
 
   const handleEmail = () => {
@@ -256,10 +258,13 @@ export function ContactSection() {
 
           <Reveal className="landing-contact-sidebar" delay={0.06}>
             <a
-              href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
+              href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo, 'desktop')}
               target="_blank"
               rel="noopener noreferrer"
               className="landing-contact-whatsapp-card"
+              onClick={(event) =>
+                handleLandingWhatsAppClick(event, LANDING_WHATSAPP_MESSAGES.demo)
+              }
             >
               <MessageCircle className="w-8 h-8" />
               <div>
@@ -286,10 +291,13 @@ export function ContactSection() {
                   {LANDING_CONTACT.whatsapp.map((w) => (
                     <a
                       key={w}
-                      href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.contact)}
+                      href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.contact, 'desktop')}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="block text-sm text-gray-400 hover:text-white"
+                      onClick={(event) =>
+                        handleLandingWhatsAppClick(event, LANDING_WHATSAPP_MESSAGES.contact)
+                      }
                     >
                       {w}
                     </a>

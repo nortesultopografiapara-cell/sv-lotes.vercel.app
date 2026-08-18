@@ -28,6 +28,7 @@ import {
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import { canShowMobileVendorSignAction } from "@/lib/saleContractBilateralSignature";
+import { openWhatsApp } from "@/lib/whatsapp/clickToChat";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import { isOwnerRole } from "@/lib/rolePermissions";
 import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
@@ -1275,16 +1276,15 @@ export default function ContractsPage() {
 
   const handleReenviar = () => {
     if (!selectedContract) return;
-    let phone = selectedContract.customers?.phone || "";
+    const phone = selectedContract.customers?.phone || "";
     if (!phone) {
       alert("Cliente não possui telefone cadastrado.");
       return;
     }
-    phone = phone.replace(/\\D/g, "");
-    const msg = encodeURIComponent(
-      `Olá ${selectedContract.customers?.name || "Cliente"}, segue atualizações sobre seu contrato de venda do lote. Por favor, qualquer dúvida entre em contato.`,
-    );
-    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    const msg = `Olá ${selectedContract.customers?.name || "Cliente"}, segue atualizações sobre seu contrato de venda do lote. Por favor, qualquer dúvida entre em contato.`;
+    if (!openWhatsApp(phone, msg)) {
+      alert("Telefone do cliente inválido para WhatsApp.");
+    }
   };
 
   const handleCancelar = async () => {

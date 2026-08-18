@@ -3,7 +3,7 @@
  */
 
 import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
-import { normalizeWhatsAppPhone } from '@/lib/saasContractSignatureShare';
+import { buildWhatsAppUrl } from '@/lib/whatsapp/clickToChat';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 
 export type SaasPanelView = 'dashboard' | 'empresas' | 'cobrancas' | 'automacoes' | 'caixa';
@@ -184,10 +184,7 @@ export function buildSaasChargeWhatsAppUrl(
   phone: string | null | undefined,
   row: SaasInvoiceChargeRow,
 ): string | null {
-  const normalized = normalizeWhatsAppPhone(phone);
-  if (!normalized) return null;
-  const text = encodeURIComponent(buildSaasChargeWhatsAppMessage(row));
-  return `https://wa.me/${normalized}?text=${text}`;
+  return buildWhatsAppUrl(phone, buildSaasChargeWhatsAppMessage(row));
 }
 
 export function buildSaasChargeEmailUrl(

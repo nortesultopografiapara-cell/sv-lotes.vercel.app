@@ -20,6 +20,7 @@ import {
   isOwnerRole,
 } from '@/lib/rolePermissions';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
+import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
 import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
@@ -1237,7 +1238,9 @@ export default function FinancePage() {
     const amountStr = formatCurrency(Number(p.amount) || 0);
     const dateStr = p.due_date ? new Date(p.due_date + 'T12:00:00Z').toLocaleDateString('pt-BR') : '';
     const msg = `Olá, ${p.customers?.name || 'Cliente'}. Identificamos uma parcela referente ao lote ${lotDesc}, no valor de ${amountStr}, com vencimento em ${dateStr}. Poderia verificar, por favor?`;
-    window.open(`https://wa.me/55${phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    if (!openWhatsApp(phone, msg)) {
+      alert('Telefone do cliente inválido para WhatsApp.');
+    }
   };
 
   const prepareExportData = () => {

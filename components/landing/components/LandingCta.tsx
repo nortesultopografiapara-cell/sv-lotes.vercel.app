@@ -11,6 +11,7 @@ import {
   LANDING_PRESENTATION_URL,
   LANDING_TEST_LOTEMENT_PATH,
   LANDING_WHATSAPP_MESSAGES,
+  handleLandingWhatsAppClick,
 } from '../constants/landingConfig';
 
 type DemoProps = {
@@ -82,13 +83,16 @@ export function CtaWhatsApp({
 }) {
   return (
     <a
-      href={buildWhatsAppUrl(message)}
+      href={buildWhatsAppUrl(message, 'desktop')}
       id={id}
       data-cta={id}
       target="_blank"
       rel="noopener noreferrer"
       className={`landing-btn-whatsapp landing-btn-interactive ${className}`.trim()}
-      onClick={() => trackClickWhatsApp({ cta_id: id, cta_label: label })}
+      onClick={(event) => {
+        handleLandingWhatsAppClick(event, message);
+        trackClickWhatsApp({ cta_id: id, cta_label: label });
+      }}
     >
       <MessageCircle className="w-4 h-4 shrink-0" aria-hidden />
       {label}

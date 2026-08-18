@@ -57,7 +57,7 @@ function testWhatsAppMessageFormat() {
 
 function testWhatsAppUrlOpensWithEncodedMessage() {
   const url = buildContactFormWhatsApp(sample);
-  assert(url.startsWith('https://wa.me/'), 'url whatsapp');
+  assert(url.startsWith('https://web.whatsapp.com/send?phone=5594991955918'), 'url whatsapp desktop');
   assert(url.includes('text='), 'param text');
   const decoded = decodeURIComponent(url.split('text=')[1] ?? '');
   assert(decoded.includes('João Silva'), 'payload decodificado');

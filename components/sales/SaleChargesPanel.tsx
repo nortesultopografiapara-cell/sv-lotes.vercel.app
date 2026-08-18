@@ -23,10 +23,7 @@ import {
   splitGenerateMissingChargesBatches,
   type SaleChargesSummary,
 } from '@/lib/finance/saleChargesShared';
-import {
-  buildSignatureShareWhatsAppUrl,
-  normalizeWhatsAppPhone,
-} from '@/lib/saasContractSignatureShare';
+import { normalizeWhatsAppPhone, openWhatsApp } from '@/lib/whatsapp/clickToChat';
 
 type SaleChargesPanelProps = {
   saleId: string | null | undefined;
@@ -382,16 +379,20 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       a.click();
       URL.revokeObjectURL(url);
 
-      const phone = normalizeWhatsAppPhone(summary.customerPhone);
+      const phone = summary.customerPhone;
       const msg = buildSaleCarneWhatsAppMessage(summary);
-      if (!phone) {
+      if (!normalizeWhatsAppPhone(phone)) {
         setInfo(
           'PDF baixado. Cadastre o telefone do cliente para abrir o WhatsApp automaticamente.',
         );
         return;
       }
-      const wa = buildSignatureShareWhatsAppUrl(phone, msg);
-      if (wa) window.open(wa, '_blank');
+      if (!openWhatsApp(phone, msg)) {
+        setInfo(
+          'PDF baixado. Telefone inválido para abrir o WhatsApp automaticamente.',
+        );
+        return;
+      }
       setInfo(
         'PDF baixado. WhatsApp aberto com mensagem pronta — anexe o arquivo baixado na conversa.',
       );

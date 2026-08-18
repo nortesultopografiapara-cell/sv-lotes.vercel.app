@@ -150,7 +150,7 @@ function testPdfAndShareContracts() {
   assert(msg.includes('Parauapebas-PA'), '19. local');
 
   const wa = buildWhatsAppShareUrl('94999990000', msg);
-  assert(wa?.startsWith('https://wa.me/55'), '20. wa.me com 55');
+  assert(wa?.startsWith('https://web.whatsapp.com/send?phone=5594999990000'), '20. click-to-chat com 55');
   assert(wa?.includes('text='), '20. text query');
   assert(decodeURIComponent(wa!.split('text=')[1]).includes('OS-2026-0001'), '20. msg encoded');
   assert(buildWhatsAppShareUrl(null, msg) === null, 'wa sem telefone');

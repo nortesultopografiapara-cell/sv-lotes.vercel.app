@@ -16,11 +16,11 @@ import {
   buildSalePartySignatureShareMessage,
   buildSaleSignatureEmailSubject,
   buildSignatureShareMailtoUrl,
-  buildSignatureShareWhatsAppUrl,
   canShareViaEmail,
   canShareViaWhatsApp,
   formatSignatureExpiresAtBr,
 } from '@/lib/saleContractSignatureShare';
+import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import { qrCodePayloadForSignatureUrl } from '@/lib/saasContractSignatureShare';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
 import { enrichBuyerPartyPhone } from '@/lib/saleContractPublicSignUi';
@@ -125,7 +125,6 @@ function PartyShareCard({
     signatureUrl,
   ]);
 
-  const whatsappUrl = buildSignatureShareWhatsAppUrl(phone, shareMessage);
   const mailtoUrl = buildSignatureShareMailtoUrl(
     email,
     buildSaleSignatureEmailSubject(projectName),
@@ -274,10 +273,8 @@ function PartyShareCard({
             <ActionButton
               icon={MessageCircle}
               label="Enviar por WhatsApp"
-              onClick={() =>
-                whatsappUrl && window.open(whatsappUrl, '_blank', 'noopener,noreferrer')
-              }
-              disabled={!canShareViaWhatsApp(phone) || !whatsappUrl}
+              onClick={() => openWhatsApp(phone, shareMessage)}
+              disabled={!canShareViaWhatsApp(phone) || !shareMessage}
               disabledTitle="Telefone não cadastrado para envio por WhatsApp."
             />
             <ActionButton

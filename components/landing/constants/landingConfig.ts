@@ -1,5 +1,11 @@
 /** Configuração central da landing pública — edite links e mensagens aqui */
 
+import {
+  buildWhatsAppUrl as buildClickToChatWhatsAppUrl,
+  openWhatsApp,
+  type WhatsAppOpenTarget,
+} from '@/lib/whatsapp/clickToChat';
+
 export const LANDING_PRESENTATION_URL =
   'https://www.youtube.com/watch?v=IM7vH2N_w2s';
 
@@ -65,8 +71,31 @@ export const LANDING_WHATSAPP_MESSAGES = {
 
 export type LandingPlanId = 'basico' | 'business' | 'profissional';
 
-export function buildWhatsAppUrl(message: string): string {
-  return `https://wa.me/${LANDING_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+export function buildWhatsAppUrl(
+  message: string,
+  target?: WhatsAppOpenTarget,
+): string {
+  return (
+    buildClickToChatWhatsAppUrl(LANDING_WHATSAPP_NUMBER, message, target) || ''
+  );
+}
+
+export function openLandingWhatsApp(message: string): boolean {
+  return openWhatsApp(LANDING_WHATSAPP_NUMBER, message);
+}
+
+export function handleLandingWhatsAppClick(
+  event: {
+    preventDefault: () => void;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    button: number;
+  },
+  message: string,
+): void {
+  if (event.ctrlKey || event.metaKey || event.button !== 0) return;
+  event.preventDefault();
+  openLandingWhatsApp(message);
 }
 
 export type ContactFormInput = {

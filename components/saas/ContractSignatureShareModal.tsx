@@ -15,12 +15,12 @@ import {
   buildSignatureShareEmailSubject,
   buildSignatureShareMailtoUrl,
   buildSignatureShareMessage,
-  buildSignatureShareWhatsAppUrl,
   canShareViaEmail,
   canShareViaWhatsApp,
   formatSignatureExpiresAtBr,
   qrCodePayloadForSignatureUrl,
 } from '@/lib/saasContractSignatureShare';
+import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import {
   signatureStatusEmoji,
   signatureStatusLabel,
@@ -78,14 +78,12 @@ export function ContractSignatureShareModal({
       expiresAt,
     });
 
-  const whatsappUrl = buildSignatureShareWhatsAppUrl(signerPhone, shareMessage);
+  const whatsappEnabled = canShareViaWhatsApp(signerPhone);
   const mailtoUrl = buildSignatureShareMailtoUrl(
     signerEmail,
     emailSubjectOverride || buildSignatureShareEmailSubject(companyName),
     shareMessage,
   );
-
-  const whatsappEnabled = canShareViaWhatsApp(signerPhone);
   const emailEnabled = canShareViaEmail(signerEmail);
 
   useEffect(() => {
@@ -221,8 +219,8 @@ export function ContractSignatureShareModal({
             <ActionButton
               icon={MessageCircle}
               label="Enviar por WhatsApp"
-              onClick={() => whatsappUrl && window.open(whatsappUrl, '_blank', 'noopener,noreferrer')}
-              disabled={!whatsappEnabled || !whatsappUrl}
+              onClick={() => openWhatsApp(signerPhone, shareMessage)}
+              disabled={!whatsappEnabled || !shareMessage}
               disabledTitle="Telefone não cadastrado para envio por WhatsApp."
             />
             <ActionButton

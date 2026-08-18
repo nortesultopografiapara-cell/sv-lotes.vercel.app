@@ -6,7 +6,8 @@
  * - lib/saasWhatsAppTest.ts (teste Master)
  * - lib/whatsapp/zapiProvider.ts (provider único)
  *
- * Contratos e cobranças manuais usam wa.me no navegador — não passam por aqui.
+ * Contratos e cobranças manuais usam click-to-chat no navegador
+ * (`lib/whatsapp/clickToChat.ts`) — não passam por aqui.
  */
 
 import { normalizeBrazilianWhatsAppPhone } from '@/lib/saasBillingReminderWhatsApp';

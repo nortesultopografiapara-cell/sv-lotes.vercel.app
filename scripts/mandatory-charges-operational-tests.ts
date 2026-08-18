@@ -467,7 +467,7 @@ function testChargeWhatsAppClickHandler() {
     'utf8',
   );
   assert(page.includes('executeChargeWhatsAppShare'), 'charges usa executeChargeWhatsAppShare');
-  assert(page.includes('openChargeWhatsAppShareUrl'), 'charges abre wa.me no clique');
+  assert(page.includes('openChargeWhatsAppShareUrl'), 'charges abre click-to-chat no clique');
   assert(!page.includes('buildChargeWhatsAppMessage({'), 'handler não chama helper sem import');
 
   const actions = require('fs').readFileSync(
@@ -475,7 +475,7 @@ function testChargeWhatsAppClickHandler() {
     'utf8',
   );
   assert(actions.includes('onWhatsApp'), 'ações recebem onWhatsApp');
-  assert(actions.includes('whatsappShareUrl'), 'ações recebem href wa.me');
+  assert(actions.includes('whatsappShareUrl'), 'ações recebem href click-to-chat');
 
   const paidShare = executeChargeWhatsAppShare({
     installmentId: 'inst-paid',
@@ -495,8 +495,12 @@ function testChargeWhatsAppClickHandler() {
       dueDateLabel: '01/07/2026',
     },
   });
-  assert(paidShare.ok, 'PAID gera url wa.me');
-  assert(paidShare.ok && paidShare.url.startsWith('https://wa.me/5511999887766'), 'url com DDI 55');
+  assert(paidShare.ok, 'PAID gera url click-to-chat');
+  assert(
+    paidShare.ok &&
+      paidShare.url.startsWith('https://web.whatsapp.com/send?phone=5511999887766'),
+    'url desktop com DDI 55',
+  );
 
   const noPhone = executeChargeWhatsAppShare({
     installmentId: 'inst-1',
