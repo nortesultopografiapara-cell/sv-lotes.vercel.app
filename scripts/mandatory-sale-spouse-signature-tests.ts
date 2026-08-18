@@ -773,6 +773,19 @@ function testPublicSignPanelUsesPartyNotAggregate() {
   assert(enriched[1].signer_phone === '11911112222', 'spouse intacto');
   assert(canShareViaWhatsApp(enriched[0].signer_phone), 'buyer WhatsApp ok');
 
+  const recovered = enrichBuyerPartyPhone(
+    [
+      {
+        role: 'BUYER' as const,
+        signer_phone: '2731',
+        phone: '2731',
+      },
+    ],
+    '(94) 99999-2731',
+  );
+  assert(recovered[0].phone === '(94) 99999-2731', 'buyer inválido cede ao customer');
+  assert(canShareViaWhatsApp(recovered[0].phone), 'buyer recuperado WhatsApp ok');
+
   const page = read('app/sign/sale/[token]/page.tsx');
   assert(page.includes('resolveSalePublicSignPanel'), 'página usa painel por party');
   assert(

@@ -23,7 +23,7 @@ import {
 import { countSignedParties } from '@/lib/saleContractSignaturePartyStatus';
 import {
   enrichBuyerPartyPhone,
-  pickCustomerPhoneForSignature,
+  pickCustomerWhatsAppPhoneForSignature,
 } from '@/lib/saleContractPublicSignUi';
 import {
   resolveSaleSignUrl,
@@ -161,7 +161,7 @@ export async function GET(
         .eq('id', customerId)
         .maybeSingle();
       if (!first.error && first.data) {
-        buyerPhoneFallback = pickCustomerPhoneForSignature(
+        buyerPhoneFallback = pickCustomerWhatsAppPhoneForSignature(
           first.data as Record<string, unknown>,
         );
       } else {
@@ -170,7 +170,7 @@ export async function GET(
           .select('phone')
           .eq('id', customerId)
           .maybeSingle();
-        buyerPhoneFallback = pickCustomerPhoneForSignature(
+        buyerPhoneFallback = pickCustomerWhatsAppPhoneForSignature(
           (retry as Record<string, unknown>) || null,
         );
       }

@@ -16,15 +16,17 @@ import {
   buildSalePartySignatureShareMessage,
   buildSaleSignatureEmailSubject,
   buildSignatureShareMailtoUrl,
-  canShareViaEmail,
-  canShareViaWhatsApp,
   formatSignatureExpiresAtBr,
 } from '@/lib/saleContractSignatureShare';
 import { openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import { qrCodePayloadForSignatureUrl } from '@/lib/saasContractSignatureShare';
 import type { SaleSignaturePartyPublicView } from '@/lib/saleContractSignaturePartyTypes';
 import { enrichBuyerPartyPhone } from '@/lib/saleContractPublicSignUi';
-import { maskEmailPublic, maskPhonePublic } from '@/lib/signaturePrivacy';
+import {
+  formatSalePartyShareContactLine,
+  resolveSalePartyShareContact,
+} from '@/lib/saleContractSignatureShareContact';
+import { maskEmailPublic } from '@/lib/signaturePrivacy';
 import {
   signatureStatusEmoji,
   signatureStatusLabel,
@@ -63,6 +65,7 @@ type PartyCardProps = {
   quadra: string;
   lote: string;
   contractNumber: string;
+  buyerFallbackPhone?: string | null;
   onLinkCopied?: () => void;
   onLinkOpened?: () => void;
 };
@@ -81,6 +84,7 @@ function PartyShareCard({
   quadra,
   lote,
   contractNumber,
+  buyerFallbackPhone = null,
   onLinkCopied,
   onLinkOpened,
 }: PartyCardProps) {
@@ -94,8 +98,12 @@ function PartyShareCard({
   const displayName = String(
     party.name || party.signer_name || '',
   ).trim();
-  const phone = party.phone || party.signer_phone;
-  const email = party.email || party.signer_email;
+  const contact = resolveSalePartyShareContact(party, {
+    fallbackPhone: party.role === 'BUYER' ? buyerFallbackPhone : null,
+  });
+  const contactLine = formatSalePartyShareContactLine(contact);
+  const phone = contact.phone;
+  const email = contact.email;
   const isVendor = party.role === 'VENDOR';
   const isSpouse = party.role === 'SPOUSE';
   const isExternal = party.role === 'BUYER' || party.role === 'SPOUSE';
@@ -176,7 +184,6 @@ function PartyShareCard({
     onLinkOpened?.();
   }, [onLinkOpened, signatureUrl]);
 
-  const phoneMasked = phone ? maskPhonePublic(phone) : '';
   const emailMasked = email ? maskEmailPublic(email) : '';
 
   return (
@@ -189,11 +196,13 @@ function PartyShareCard({
           <p className="text-base font-semibold text-white mt-0.5">
             {displayName || party.roleLabel}
           </p>
-          {(phoneMasked && phoneMasked !== '—') ||
-          (emailMasked && emailMasked !== '—') ? (
+          {(contactLine && party.role !== 'VENDOR') ||
+          (contact.canShareEmail && emailMasked && emailMasked !== '—') ? (
             <p className="text-[11px] text-gray-400 mt-1 space-x-2">
-              {phoneMasked && phoneMasked !== '—' ? (
-                <span>WhatsApp: final {String(phone).replace(/\D/g, '').slice(-4)}</span>
+              {contact.canShareWhatsApp && contact.phoneLast4 ? (
+                <span>WhatsApp: final {contact.phoneLast4}</span>
+              ) : contact.phoneInvalidHint ? (
+                <span>Telefone inválido para WhatsApp</span>
               ) : null}
               {emailMasked && emailMasked !== '—' ? (
                 <span>E-mail: {emailMasked}</span>
@@ -274,14 +283,14 @@ function PartyShareCard({
               icon={MessageCircle}
               label="Enviar por WhatsApp"
               onClick={() => openWhatsApp(phone, shareMessage)}
-              disabled={!canShareViaWhatsApp(phone) || !shareMessage}
+              disabled={!contact.canShareWhatsApp || !shareMessage}
               disabledTitle="Telefone não cadastrado para envio por WhatsApp."
             />
             <ActionButton
               icon={Mail}
               label="Enviar por e-mail"
               onClick={() => mailtoUrl && window.open(mailtoUrl, '_self')}
-              disabled={!canShareViaEmail(email) || !mailtoUrl}
+              disabled={!contact.canShareEmail || !mailtoUrl}
               disabledTitle="E-mail não cadastrado para envio."
             />
           </div>
@@ -391,6 +400,7 @@ export function SaleContractMultiPartyShareModal({
                 quadra={quadra}
                 lote={lote}
                 contractNumber={contractNumber}
+                buyerFallbackPhone={legacySignerPhone}
                 onLinkCopied={onLinkCopied}
                 onLinkOpened={onLinkOpened}
               />
@@ -476,6 +486,7 @@ function LegacySingleLinkBlock({
         quadra={quadra}
         lote={lote}
         contractNumber={contractNumber}
+        buyerFallbackPhone={signerPhone}
         onLinkCopied={onLinkCopied}
         onLinkOpened={onLinkOpened}
       />

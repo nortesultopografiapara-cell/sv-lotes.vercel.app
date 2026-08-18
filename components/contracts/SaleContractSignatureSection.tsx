@@ -23,8 +23,6 @@ import {
   buildSaleSignatureShareMessage,
   buildSalePartySignatureShareMessage,
   buildSignatureShareMailtoUrl,
-  canShareViaWhatsApp,
-  canShareViaEmail,
   formatSignatureTimelineDateTime,
   mergeSaleSignatureTimeline,
   type LocalSignatureTimelineEvent,
@@ -51,7 +49,14 @@ import {
 } from '@/lib/fetchJsonWithTimeout';
 import { formatClientFetchError } from '@/lib/clientFetchError';
 import { buildContractApiTenantQueryString } from '@/lib/contractApiTenantQuery';
-import { enrichBuyerPartyPhone } from '@/lib/saleContractPublicSignUi';
+import {
+  enrichBuyerPartyPhone,
+  pickCustomerWhatsAppPhoneForSignature,
+} from '@/lib/saleContractPublicSignUi';
+import {
+  formatSalePartyShareContactLine,
+  resolveSalePartyShareContact,
+} from '@/lib/saleContractSignatureShareContact';
 
 type SelectedContract = {
   id: string;
@@ -149,7 +154,9 @@ export const SaleContractSignatureSection = forwardRef<
   });
 
   const buyerName = contract?.customer_name || contract?.customers?.name || 'Comprador';
-  const buyerPhone = contract?.customers?.phone || null;
+  const buyerPhone = pickCustomerWhatsAppPhoneForSignature(
+    (contract?.customers as Record<string, unknown> | null | undefined) || null,
+  );
   const buyerEmail = contract?.customers?.email || null;
 
   const buildSignatureApiUrl = useCallback(
@@ -498,8 +505,22 @@ export const SaleContractSignatureSection = forwardRef<
     }
   };
 
+  const shareParties = useMemo(
+    () => enrichBuyerPartyPhone(parties, buyerPhone),
+    [parties, buyerPhone],
+  );
+
+  const buyerShareContact = useMemo(
+    () =>
+      resolveSalePartyShareContact(
+        shareParties.find((p) => p.role === 'BUYER'),
+        { fallbackPhone: buyerPhone },
+      ),
+    [shareParties, buyerPhone],
+  );
+
   const handleWhatsApp = () => {
-    openWhatsApp(buyerPhone, shareMessage);
+    openWhatsApp(buyerShareContact.phone, shareMessage);
   };
 
   if (!contract) return null;
@@ -551,9 +572,11 @@ export const SaleContractSignatureSection = forwardRef<
               </p>
             )}
           </div>
-          {enrichBuyerPartyPhone(parties, buyerPhone).map((party) => {
-            const phone = party.signer_phone || party.phone;
-            const email = party.signer_email;
+          {shareParties.map((party) => {
+            const contact = resolveSalePartyShareContact(party, {
+              fallbackPhone: party.role === 'BUYER' ? buyerPhone : null,
+            });
+            const contactLine = formatSalePartyShareContactLine(contact);
             const url = party.signatureUrl || party.signature_url || null;
             const partyMessage =
               party.role === 'BUYER' || party.role === 'SPOUSE'
@@ -582,12 +605,9 @@ export const SaleContractSignatureSection = forwardRef<
                     ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
                     : party.statusLabel}
                 </p>
-                {(phone || email) && party.role !== 'VENDOR' && (
+                {contactLine && party.role !== 'VENDOR' && (
                   <p className="text-[11px] text-[var(--text-muted)]">
-                    Contato:{' '}
-                    {phone
-                      ? `WhatsApp final ${String(phone).replace(/\D/g, '').slice(-4)}`
-                      : email}
+                    Contato: {contactLine}
                   </p>
                 )}
                 {party.role === 'VENDOR' &&
@@ -610,18 +630,18 @@ export const SaleContractSignatureSection = forwardRef<
                     <ActionChip
                       icon={MessageCircle}
                       label="WhatsApp"
-                      disabled={!canShareViaWhatsApp(phone)}
+                      disabled={!contact.canShareWhatsApp}
                       onClick={() => {
-                        openWhatsApp(phone, partyMessage);
+                        openWhatsApp(contact.phone, partyMessage);
                       }}
                     />
                     <ActionChip
                       icon={Share2}
                       label="E-mail"
-                      disabled={!canShareViaEmail(email)}
+                      disabled={!contact.canShareEmail}
                       onClick={() => {
                         const mail = buildSignatureShareMailtoUrl(
-                          email,
+                          contact.email,
                           buildSaleSignatureEmailSubject(projectName),
                           partyMessage,
                         );
@@ -680,7 +700,7 @@ export const SaleContractSignatureSection = forwardRef<
               icon={MessageCircle}
               label="WhatsApp"
               onClick={handleWhatsApp}
-              disabled={!canShareViaWhatsApp(buyerPhone)}
+              disabled={!buyerShareContact.canShareWhatsApp}
             />
             <ActionChip icon={Share2} label="Compartilhar" onClick={() => setShareOpen(true)} />
           </>
@@ -744,7 +764,7 @@ export const SaleContractSignatureSection = forwardRef<
           contractNumber={String(contract.contract_number || '')}
           expiresAt={latest?.expires_at || new Date().toISOString()}
           status={status}
-          parties={enrichBuyerPartyPhone(parties, buyerPhone)}
+          parties={shareParties}
           legacySignatureUrl={parties.length === 0 ? signUrl : null}
           legacySignerName={buyerName}
           legacySignerPhone={buyerPhone}
