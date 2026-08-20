@@ -162,3 +162,41 @@ export function formatAraguaiaSideMeters(value: unknown): string {
     }) + ' m'
   );
 }
+
+/**
+ * Medida linear por extenso — exclusivo Araguaia.
+ * Ex.: 20 → "vinte metros"; 20,50 → "vinte metros e cinquenta centímetros".
+ * Usa a mesma precisão de 2 casas do valor numérico exibido (sem arredondamento inventado).
+ */
+export function formatAraguaiaMetersExtenso(value: unknown): string {
+  if (value == null || value === '') return '';
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return '';
+  try {
+    const rounded = Math.round(num * 100) / 100;
+    let meters = Math.floor(rounded + 1e-9);
+    let cm = Math.round((rounded - meters) * 100);
+    if (cm >= 100) {
+      meters += 1;
+      cm = 0;
+    }
+    if (meters === 0 && cm === 0) return 'zero metros';
+
+    const extenso = require('extenso') as (n: string) => string;
+    if (cm === 0) {
+      const t = String(extenso(String(meters)));
+      return meters === 1 ? `${t} metro` : `${t} metros`;
+    }
+    if (meters === 0) {
+      const t = String(extenso(String(cm)));
+      return cm === 1 ? `${t} centímetro` : `${t} centímetros`;
+    }
+    const mText = String(extenso(String(meters)));
+    const cText = String(extenso(String(cm)));
+    const mUnit = meters === 1 ? 'metro' : 'metros';
+    const cUnit = cm === 1 ? 'centímetro' : 'centímetros';
+    return `${mText} ${mUnit} e ${cText} ${cUnit}`;
+  } catch {
+    return '';
+  }
+}

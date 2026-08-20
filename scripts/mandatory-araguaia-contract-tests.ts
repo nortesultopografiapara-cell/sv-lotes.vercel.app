@@ -19,6 +19,7 @@ import {
   resolveProjectContractSellers,
 } from '../lib/projectContractSellers';
 import { formatAraguaiaAreaExtenso } from '../lib/araguaiaContractContext';
+import { formatAraguaiaMetersExtenso } from '../lib/araguaiaContractLot';
 import {
   ARAGUAIA_CONTRACT_TITLE,
   ARAGUAIA_LEGAL_MARKER,
@@ -239,11 +240,14 @@ function testHtmlGeneration() {
   assert(!html.includes('confrontando com'), 'sem confrontações');
   assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro confrontações');
   assert(!html.includes('confrontante'), 'sem palavra confrontante');
-  assert(html.includes('Frente:'), 'medida Frente');
-  assert(html.includes('Fundo:'), 'medida Fundo');
-  assert(html.includes('Lateral Direita:'), 'medida Lateral Direita');
-  assert(html.includes('Lateral Esquerda:'), 'medida Lateral Esquerda');
-  assert(html.includes('possuindo:'), 'intro medidas');
+  assert(html.includes('medindo:'), 'intro medidas texto corrido');
+  assert(html.includes('frente'), 'medida frente');
+  assert(html.includes('fundo'), 'medida fundo');
+  assert(html.includes('lateral direita'), 'medida lateral direita');
+  assert(html.includes('lateral esquerda'), 'medida lateral esquerda');
+  assert(html.includes('metros'), 'medida por extenso');
+  assert(!html.includes('<strong>Frente:</strong>'), 'sem lista Frente:');
+  assert(!html.includes('possuindo:'), 'sem intro lista antiga');
   assert(html.includes('araguaia-closing-statement'), 'fecho no pack');
   assert(html.includes('araguaia-clause-keep'), 'keep título+lead');
   assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
@@ -278,6 +282,15 @@ function testIsolationOtherModels() {
 function testAreaExtenso() {
   const text = formatAraguaiaAreaExtenso(1250.5);
   assert(Boolean(text) && text.includes('metros quadrados'), 'área por extenso');
+  assert(formatAraguaiaMetersExtenso(20) === 'vinte metros', '20 m extenso');
+  assert(
+    formatAraguaiaMetersExtenso(20.5) === 'vinte metros e cinquenta centímetros',
+    '20,50 m extenso',
+  );
+  assert(
+    formatAraguaiaMetersExtenso(60) === 'sessenta metros',
+    '60 m extenso',
+  );
 }
 
 function testSourceFilesExist() {

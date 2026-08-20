@@ -6,6 +6,7 @@ const extenso = require('extenso');
 
 import {
   formatAraguaiaSideMeters,
+  formatAraguaiaMetersExtenso,
   resolveAraguaiaLotDescription,
 } from '@/lib/araguaiaContractLot';
 import { formatContractIdentityDocumentPhrase } from '@/lib/contractIdentity';
@@ -67,6 +68,10 @@ export type AraguaiaContractContext = {
   fundoM: string;
   ladoDireitoM: string;
   ladoEsquerdoM: string;
+  frenteMExtenso: string;
+  fundoMExtenso: string;
+  ladoDireitoMExtenso: string;
+  ladoEsquerdoMExtenso: string;
   confrontanteFrente: string;
   confrontanteFundo: string;
   confrontanteDireita: string;
@@ -354,6 +359,10 @@ export function buildAraguaiaContractContext(
     fundoM: formatAraguaiaSideMeters(lot.sides.fundo),
     ladoDireitoM: formatAraguaiaSideMeters(lot.sides.ladoDireito),
     ladoEsquerdoM: formatAraguaiaSideMeters(lot.sides.ladoEsquerdo),
+    frenteMExtenso: formatAraguaiaMetersExtenso(lot.sides.frente),
+    fundoMExtenso: formatAraguaiaMetersExtenso(lot.sides.fundo),
+    ladoDireitoMExtenso: formatAraguaiaMetersExtenso(lot.sides.ladoDireito),
+    ladoEsquerdoMExtenso: formatAraguaiaMetersExtenso(lot.sides.ladoEsquerdo),
     confrontanteFrente: lot.confrontations.frente,
     confrontanteFundo: lot.confrontations.fundo,
     confrontanteDireita: lot.confrontations.ladoDireito,

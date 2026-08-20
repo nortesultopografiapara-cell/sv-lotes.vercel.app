@@ -109,6 +109,23 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
 .sv-contract-araguaia .signature-slot-intervenient { grid-row: 2; grid-column: 2; }
 .sv-contract-araguaia .signature-slot-witness-1 { grid-row: 3; grid-column: 1; }
 .sv-contract-araguaia .signature-slot-witness-2 { grid-row: 3; grid-column: 2; }
+/* Ajuste mínimo: evita corte do CPF nas testemunhas sem aumentar o pack. */
+.sv-contract-araguaia .signature-slot-witness-1,
+.sv-contract-araguaia .signature-slot-witness-2 {
+  padding-top: 2px;
+  padding-bottom: 10px;
+  overflow: visible;
+  box-sizing: border-box;
+}
+.sv-contract-araguaia .signature-slot-witness-1 .signature-line,
+.sv-contract-araguaia .signature-slot-witness-2 .signature-line {
+  margin-top: 18px;
+}
+.sv-contract-araguaia .signature-slot-witness-1 > p,
+.sv-contract-araguaia .signature-slot-witness-2 > p {
+  line-height: 1.35;
+  margin-bottom: 1px;
+}
 </style>`;
 }
 

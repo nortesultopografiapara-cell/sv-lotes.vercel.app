@@ -72,6 +72,11 @@ function moneyPhrase(fmt: string, extenso: string): string {
   return strong(fmt);
 }
 
+function sideMetersPhrase(fmt: string, extensoText: string): string {
+  if (extensoText) return `${strong(fmt)} (${esc(extensoText)})`;
+  return strong(fmt);
+}
+
 /**
  * Título + primeiro parágrafo no mesmo bloco evitável de quebra de página
  * (Chromium/Puppeteer print). Demais parágrafos ficam fora do keep.
@@ -147,20 +152,8 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
   return `
     ${clauseHtml(
       ARAGUAIA_LEGAL_MARKER,
-      `Os PROMITENTES VENDEDORES prometem vender ao(à) PROMITENTE COMPRADOR(A), que promete comprar, o imóvel situado no empreendimento <strong>Chacreamento Araguaia</strong>, identificado como ${chacaraLabel(ctx)}, com área total de ${areaPhrase(ctx)}, possuindo:`,
-      `<p style="margin: 0 0 6px 0; padding-left: 12px;">
-        <strong>Frente:</strong> ${strong(ctx.frenteM)};
-      </p>
-      <p style="margin: 0 0 6px 0; padding-left: 12px;">
-        <strong>Fundo:</strong> ${strong(ctx.fundoM)};
-      </p>
-      <p style="margin: 0 0 6px 0; padding-left: 12px;">
-        <strong>Lateral Direita:</strong> ${strong(ctx.ladoDireitoM)};
-      </p>
-      <p style="margin: 0 0 10px 0; padding-left: 12px;">
-        <strong>Lateral Esquerda:</strong> ${strong(ctx.ladoEsquerdoM)}.
-      </p>
-      <p style="margin: 0 0 10px 0;">
+      `Os PROMITENTES VENDEDORES prometem vender ao(à) PROMITENTE COMPRADOR(A), que promete comprar, o imóvel situado no empreendimento <strong>Chacreamento Araguaia</strong>, identificado como ${chacaraLabel(ctx)}, com área total de ${areaPhrase(ctx)}, medindo: frente ${sideMetersPhrase(ctx.frenteM, ctx.frenteMExtenso)}, fundo ${sideMetersPhrase(ctx.fundoM, ctx.fundoMExtenso)}, lateral direita ${sideMetersPhrase(ctx.ladoDireitoM, ctx.ladoDireitoMExtenso)} e lateral esquerda ${sideMetersPhrase(ctx.ladoEsquerdoM, ctx.ladoEsquerdoMExtenso)}.`,
+      `<p style="margin: 0 0 10px 0;">
         O imóvel objeto deste instrumento é transferido no estado em que se encontra, conhecidas e aceitas pelo(a) PROMITENTE COMPRADOR(A) suas características e área total.
       </p>`,
     )}
