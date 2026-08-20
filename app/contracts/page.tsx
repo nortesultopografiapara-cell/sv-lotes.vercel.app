@@ -896,9 +896,17 @@ export default function ContractsPage() {
       const htmlLooksRecanto = String(ver.generated_html || '').includes(
         'sv-contract-recanto-primavera',
       );
-      const pdfOptions = htmlLooksRecanto
-        ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
-        : getContractHtml2pdfOptions(pdfFilename);
+      const htmlLooksAraguaia = String(ver.generated_html || '').includes(
+        'sv-contract-araguaia',
+      );
+      const pdfOptions = htmlLooksAraguaia
+        ? resolveContractHtml2pdfOptions(
+            { ...(tenantData || {}), contract_model: 'ARAGUAIA' },
+            pdfFilename,
+          )
+        : htmlLooksRecanto
+          ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
+          : getContractHtml2pdfOptions(pdfFilename);
 
       try {
         await html2pdf()
@@ -1030,7 +1038,15 @@ export default function ContractsPage() {
       }
 
       const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
-      const opt = resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename);
+      const htmlLooksAraguaia = String(htmlBody || '').includes(
+        'sv-contract-araguaia',
+      );
+      const opt = resolveContractHtml2pdfOptions(
+        htmlLooksAraguaia
+          ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : tenantData || {},
+        pdfFilename,
+      );
 
       try {
         await html2pdf()

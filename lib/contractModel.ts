@@ -10,6 +10,7 @@ export const SALE_CONTRACT_MODELS = [
   'SV_LOTES_2',
   'RECANTO_PRIMAVERA',
   'MENESES',
+  'ARAGUAIA',
   'CUSTOM',
 ] as const;
 
@@ -20,6 +21,7 @@ export const SALE_CONTRACT_MODEL_LABELS: Record<SaleContractModel, string> = {
   SV_LOTES_2: 'SV LOTES 2.0 (RECOMENDADO)',
   RECANTO_PRIMAVERA: 'Recanto Primavera',
   MENESES: 'Meneses',
+  ARAGUAIA: 'Chacreamento Araguaia',
   CUSTOM: 'Personalizado (futuro)',
 };
 
@@ -29,6 +31,7 @@ export const SALE_CONTRACT_MODEL_OPTIONS: SaleContractModel[] = [
   'SV_LOTES_2',
   'RECANTO_PRIMAVERA',
   'MENESES',
+  'ARAGUAIA',
 ];
 
 export const PROJECT_CONTRACT_MODEL_INHERIT = '';
@@ -71,6 +74,13 @@ export function normalizeSaleContractModel(
   if (value === 'MENESES') {
     return 'MENESES';
   }
+  if (
+    value === 'ARAGUAIA' ||
+    value === 'CHACREAMENTO_ARAGUAIA' ||
+    value.includes('ARAGUAIA')
+  ) {
+    return 'ARAGUAIA';
+  }
   if (value === 'CUSTOM' || value === 'PERSONALIZADO') {
     return 'CUSTOM';
   }
@@ -105,6 +115,48 @@ export function resolveSaleContractModel(
 }
 
 /**
+ * Nome canônico do empreendimento de homologação Preview do modelo ARAGUAIA.
+ * Usado somente fora de Production quando Preview e Production compartilham o mesmo banco
+ * (não gravar `projects.contract_model` em Production sem autorização).
+ */
+export const PREVIEW_ARAGUAIA_PROJECT_NAME = 'Chacreamento Araguaia';
+
+/** Runtime Vercel/Node que NÃO é Production (preview, development, test). */
+export function isNonProductionContractRuntime(): boolean {
+  const vercelEnv = String(
+    process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_ENV || '',
+  )
+    .trim()
+    .toLowerCase();
+  if (vercelEnv === 'production') return false;
+  if (vercelEnv === 'preview' || vercelEnv === 'development') return true;
+  // Local / scripts sem VERCEL_ENV: permitir coerce para testes manuais.
+  return String(process.env.NODE_ENV || '')
+    .trim()
+    .toLowerCase() !== 'production';
+}
+
+/**
+ * Em Preview/dev, força ARAGUAIA para o empreendimento Chacreamento Araguaia
+ * sem UPDATE em `projects` (banco compartilhado com Production).
+ * Em Production: nunca altera o valor do banco.
+ */
+export function coercePreviewAraguaiaProjectModel(input: {
+  projectName?: unknown;
+  projectModel?: unknown;
+}): unknown {
+  if (!isNonProductionContractRuntime()) return input.projectModel;
+  const name = String(input.projectName ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (name === PREVIEW_ARAGUAIA_PROJECT_NAME.toLowerCase()) {
+    return 'ARAGUAIA';
+  }
+  return input.projectModel;
+}
+
+/**
  * Resolve o modelo efetivo com prioridade de snapshot e empreendimento.
  * Nunca cruza tenant: callers devem passar apenas entidades já isoladas.
  */
@@ -114,6 +166,8 @@ export function resolveSaleContractModelFromContext(input: {
   projectModel?: unknown;
   companyModel?: unknown;
   uiFallback?: unknown;
+  /** Nome do empreendimento — habilita coerce Preview do Araguaia sem migration/UPDATE. */
+  projectName?: unknown;
 }): { model: SaleContractModel; source: SaleContractModelSource } {
   const sale = parseOptionalSaleContractModel(input.saleModel);
   if (sale) return { model: sale, source: 'sale' };
@@ -121,7 +175,12 @@ export function resolveSaleContractModelFromContext(input: {
   const contract = parseOptionalSaleContractModel(input.contractModel);
   if (contract) return { model: contract, source: 'contract' };
 
-  const project = parseOptionalSaleContractModel(input.projectModel);
+  const project = parseOptionalSaleContractModel(
+    coercePreviewAraguaiaProjectModel({
+      projectName: input.projectName,
+      projectModel: input.projectModel,
+    }),
+  );
   if (project) return { model: project, source: 'project' };
 
   if (
@@ -151,8 +210,13 @@ export function assertSaleContractModelConfigured(input: {
   companyModel?: unknown;
   uiFallback?: unknown;
   companyFound?: boolean;
+  projectName?: unknown;
 }): SaleContractModel {
-  const hasProject = parseOptionalSaleContractModel(input.projectModel) != null;
+  const effectiveProjectModel = coercePreviewAraguaiaProjectModel({
+    projectName: input.projectName,
+    projectModel: input.projectModel,
+  });
+  const hasProject = parseOptionalSaleContractModel(effectiveProjectModel) != null;
   const hasSale = parseOptionalSaleContractModel(input.saleModel) != null;
   const hasContract = parseOptionalSaleContractModel(input.contractModel) != null;
   const hasCompany =
@@ -189,6 +253,12 @@ export function isSvLotes2ContractModel(
   company: Record<string, unknown> | null | undefined,
 ): boolean {
   return resolveSaleContractModel(company) === 'SV_LOTES_2';
+}
+
+export function isAraguaiaContractModel(
+  company: Record<string, unknown> | null | undefined,
+): boolean {
+  return resolveSaleContractModel(company) === 'ARAGUAIA';
 }
 
 /** Modelos que usam o template clássico (Meneses / Padrão SV LOTES). */

@@ -41,12 +41,14 @@ import {
   resolveSaleContractBalloonFinance,
 } from "@/lib/saleContractBalloonFinance";
 import {
+  isAraguaiaContractModel,
   isRecantoPrimaveraContractModel,
   isSvLotes2ContractModel,
   resolveSaleContractModel,
 } from "@/lib/contractModel";
 import { buildMenesesClausesHtml } from "@/lib/menesesContractClauses";
 import { toContractTitleCase } from "@/lib/contractTitleCase";
+import { generateAraguaiaContract } from "@/lib/araguaiaContractTemplate";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
@@ -110,6 +112,21 @@ export function generateContractHTML({
   streetGuides,
   manualConfrontants,
 }: GenerateContractParams) {
+  if (isAraguaiaContractModel(tenant)) {
+    return generateAraguaiaContract({
+      tenant,
+      customer,
+      project,
+      block,
+      sale,
+      contractSnapshot,
+      contractDate,
+      financeReceipts,
+      projectBlocks,
+      streetGuides,
+    });
+  }
+
   if (isRecantoPrimaveraContractModel(tenant)) {
     return generateRecantoPrimaveraContract({
       tenant,

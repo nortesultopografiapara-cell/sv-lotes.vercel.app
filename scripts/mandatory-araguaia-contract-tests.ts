@@ -1,0 +1,291 @@
+/**
+ * Testes obrigatórios — modelo ARAGUAIA (Chacreamento Araguaia).
+ * npx tsx scripts/mandatory-araguaia-contract-tests.ts
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { generateContractHTML } from '../lib/contractTemplate';
+import {
+  isAraguaiaContractModel,
+  isClassicSaleContractModel,
+  isRecantoPrimaveraContractModel,
+  normalizeSaleContractModel,
+  resolveSaleContractModelFromContext,
+  SALE_CONTRACT_MODEL_OPTIONS,
+} from '../lib/contractModel';
+import {
+  ARAGUAIA_DEFAULT_SELLERS,
+  resolveProjectContractSellers,
+} from '../lib/projectContractSellers';
+import { formatAraguaiaAreaExtenso } from '../lib/araguaiaContractContext';
+import {
+  ARAGUAIA_CONTRACT_TITLE,
+  ARAGUAIA_LEGAL_MARKER,
+} from '../lib/araguaiaContractClauses';
+
+function assert(cond: boolean, msg: string) {
+  if (!cond) throw new Error(`FAIL: ${msg}`);
+  console.log(`OK ${msg}`);
+}
+
+const TENANT = {
+  contract_model: 'ARAGUAIA',
+  razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+  cnpj: '57590706000178',
+  address: 'Rua Teste, 100',
+  city: 'Parauapebas',
+  state: 'PA',
+};
+
+const PROJECT = {
+  name: 'Chacreamento Araguaia',
+  city: 'Parauapebas',
+  uf: 'PA',
+  contract_model: 'ARAGUAIA',
+};
+
+const CUSTOMER = {
+  name: 'Cliente Teste Araguaia',
+  cpf_cnpj: '11144477735',
+  rg: '1234567',
+  rg_issuer: 'PC',
+  rg_issuer_state: 'PA',
+  nationality: 'Brasileira',
+  civil_state: 'Solteiro',
+  profession: 'Comerciante',
+  email: 'cliente@teste.com',
+  phone: '(94) 99999-1234',
+  address: 'Rua A, 10',
+  neighborhood: 'Centro',
+  city: 'Parauapebas',
+  state: 'PA',
+  zip_code: '68515000',
+};
+
+const BLOCK = {
+  id: 'block-araguaia-1',
+  number: '12',
+  block_name: '01',
+  area: 1250.5,
+  frente: 25,
+  fundo: 25,
+  'Lado Dir.': 50,
+  'Lado Esq.': 50,
+  segments_json: [
+    {
+      segment_index: 0,
+      official_side: 'frente',
+      distance: 25,
+      confrontant: 'Rua Principal',
+    },
+    {
+      segment_index: 1,
+      official_side: 'lado_direito',
+      distance: 50,
+      confrontant: 'Chácara 13',
+    },
+    {
+      segment_index: 2,
+      official_side: 'fundo',
+      distance: 25,
+      confrontant: 'Área verde',
+    },
+    {
+      segment_index: 3,
+      official_side: 'lado_esquerdo',
+      distance: 50,
+      confrontant: 'Chácara 11',
+    },
+  ],
+};
+
+const SALE = {
+  total_value: 80000,
+  down_payment: 10000,
+  installments_count: 24,
+  installment_value: 2916.67,
+  payment_type: 'Parcelado',
+  installment_correction_type: 'IGPM',
+  sale_date: '2026-08-20',
+  brokers: { name: 'Corretor Exemplo', cpf: '12345678909' },
+};
+
+const RECEIPTS = [
+  { installment_number: 0, amount: 10000, due_date: '2026-08-20' },
+  { installment_number: 1, amount: 2916.67, due_date: '2026-09-20' },
+  { installment_number: 2, amount: 2916.67, due_date: '2026-10-20' },
+];
+
+function testModelRegistration() {
+  assert(normalizeSaleContractModel('ARAGUAIA') === 'ARAGUAIA', 'normalize ARAGUAIA');
+  assert(
+    normalizeSaleContractModel('chacreamento_araguaia') === 'ARAGUAIA',
+    'normalize alias',
+  );
+  assert(SALE_CONTRACT_MODEL_OPTIONS.includes('ARAGUAIA'), 'opção UI');
+  assert(isAraguaiaContractModel(TENANT), 'isAraguaia');
+  assert(!isRecantoPrimaveraContractModel(TENANT), 'não é Recanto');
+  assert(!isClassicSaleContractModel(TENANT), 'não é clássico');
+  const resolved = resolveSaleContractModelFromContext({
+    projectModel: 'ARAGUAIA',
+    companyModel: 'PADRAO',
+  });
+  assert(resolved.model === 'ARAGUAIA' && resolved.source === 'project', 'prioridade projeto');
+
+  const prevVercel = process.env.VERCEL_ENV;
+  const prevNode = process.env.NODE_ENV;
+  process.env.VERCEL_ENV = 'preview';
+  const coerced = resolveSaleContractModelFromContext({
+    projectModel: null,
+    projectName: 'Chacreamento Araguaia',
+    companyModel: 'PADRAO',
+  });
+  assert(
+    coerced.model === 'ARAGUAIA' && coerced.source === 'project',
+    'Preview coerce Chacreamento Araguaia',
+  );
+  const otherProj = resolveSaleContractModelFromContext({
+    projectModel: null,
+    projectName: 'Outro Empreendimento',
+    companyModel: 'MENESES',
+  });
+  assert(otherProj.model === 'MENESES' && otherProj.source === 'company', 'Preview sem coerce outros');
+  process.env.VERCEL_ENV = 'production';
+  const prodNoCoerce = resolveSaleContractModelFromContext({
+    projectModel: null,
+    projectName: 'Chacreamento Araguaia',
+    companyModel: 'PADRAO',
+  });
+  assert(
+    prodNoCoerce.model === 'PADRAO' && prodNoCoerce.source === 'company',
+    'Production sem coerce Araguaia',
+  );
+  if (prevVercel === undefined) delete process.env.VERCEL_ENV;
+  else process.env.VERCEL_ENV = prevVercel;
+  if (prevNode === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = prevNode;
+}
+
+function testSellersResolution() {
+  const defaults = resolveProjectContractSellers({
+    project: PROJECT,
+    contractModel: 'ARAGUAIA',
+  });
+  assert(defaults.length === 2, '2 vendedores default');
+  assert(defaults[0].name.includes('Daniel'), 'Daniel');
+  assert(defaults[1].name.includes('Aldenise'), 'Aldenise');
+  assert(Boolean(defaults[0].cpf?.includes('820')), 'CPF Daniel');
+  assert(Boolean(defaults[1].cpf?.includes('856')), 'CPF Aldenise');
+
+  const override = resolveProjectContractSellers({
+    project: {
+      ...PROJECT,
+      seller_parties_json: [
+        {
+          order: 1,
+          name: 'Vendedor Mundo Novo 1',
+          cpf: '111.111.111-11',
+          rg: '1',
+        },
+      ],
+    },
+    contractModel: 'ARAGUAIA',
+  });
+  assert(override[0].name.includes('Mundo Novo'), 'override por projeto');
+
+  const otherModel = resolveProjectContractSellers({
+    project: { name: 'Outro' },
+    contractModel: 'MENESES',
+  });
+  assert(otherModel.length === 0, 'sem fallback fora do Araguaia');
+  assert(ARAGUAIA_DEFAULT_SELLERS.length === 2, 'constante default');
+}
+
+function testHtmlGeneration() {
+  const html = generateContractHTML({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+
+  assert(html.includes('sv-contract-araguaia'), 'root class');
+  assert(html.includes(ARAGUAIA_CONTRACT_TITLE), 'título');
+  assert(html.includes(ARAGUAIA_LEGAL_MARKER), 'cláusula primeira');
+  assert(html.includes('Daniel Roberto Rivelino de Sousa'), 'vendedor 1');
+  assert(html.includes('Aldenise Alves Sousa'), 'vendedor 2');
+  assert(html.includes('820.912.262-20') || html.includes('82091226220'), 'CPF Daniel');
+  assert(html.includes('INTERVENIENTE'), 'papel interveniente');
+  assert(html.includes('R R NEGÓCIOS'), 'razão interveniente');
+  assert(html.includes('57.590.706/0001-78') || html.includes('57590706000178'), 'CNPJ');
+  assert(html.includes('Cliente Teste Araguaia'), 'comprador');
+  assert(html.includes('Chácara nº'), 'chácara');
+  assert(html.includes('IGP-M'), 'correção IGP-M');
+  assert(html.includes('Corretor Exemplo'), 'corretor');
+  assert(html.includes('PROMITENTE VENDEDOR'), 'assinatura vendedor');
+  assert(html.includes('TESTEMUNHA 1'), 'testemunha 1');
+  assert(html.includes('TESTEMUNHA 2'), 'testemunha 2');
+  assert(html.includes('contract-closing-and-signatures--araguaia'), 'pack assinaturas');
+  assert(!html.includes('Quadro Financeiro') && !html.includes('payment-summary'), 'sem quadro financeiro');
+  assert(html.includes('confrontando com'), 'confrontações no texto');
+  assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
+}
+
+function testIsolationOtherModels() {
+  const meneses = generateContractHTML({
+    tenant: { ...TENANT, contract_model: 'MENESES', name: 'Meneses' },
+    customer: CUSTOMER,
+    project: { name: 'X', city: 'Y', uf: 'PA' },
+    block: { number: '1', block_name: '01', area: 300 },
+    sale: { ...SALE, installment_correction_type: 'FIXED' },
+    financeReceipts: RECEIPTS,
+  });
+  assert(!meneses.includes('sv-contract-araguaia'), 'Meneses sem Araguaia');
+  assert(!meneses.includes('Daniel Roberto Rivelino'), 'Meneses sem Daniel');
+
+  const recanto = generateContractHTML({
+    tenant: { contract_model: 'RECANTO_PRIMAVERA', name: 'Recanto Co' },
+    customer: CUSTOMER,
+    project: { name: 'Recanto Primavera', city: 'X', uf: 'PA' },
+    block: { number: '1', block_name: '01', area: 300 },
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(!recanto.includes('sv-contract-araguaia'), 'Recanto sem Araguaia');
+  assert(!recanto.includes('Daniel Roberto Rivelino'), 'Recanto sem Daniel');
+}
+
+function testAreaExtenso() {
+  const text = formatAraguaiaAreaExtenso(1250.5);
+  assert(Boolean(text) && text.includes('metros quadrados'), 'área por extenso');
+}
+
+function testSourceFilesExist() {
+  const root = process.cwd();
+  for (const rel of [
+    'lib/araguaiaContractTemplate.ts',
+    'lib/araguaiaContractContext.ts',
+    'lib/araguaiaContractClauses.ts',
+    'lib/araguaiaContractParties.ts',
+    'lib/araguaiaContractLot.ts',
+    'lib/projectContractSellers.ts',
+    'supabase/migrations/20260820120000_projects_seller_parties_json.sql',
+  ]) {
+    assert(fs.existsSync(path.join(root, rel)), `arquivo ${rel}`);
+  }
+}
+
+function main() {
+  testModelRegistration();
+  testSellersResolution();
+  testAreaExtenso();
+  testHtmlGeneration();
+  testIsolationOtherModels();
+  testSourceFilesExist();
+  console.log('mandatory-araguaia-contract-tests: all passed');
+}
+
+main();
