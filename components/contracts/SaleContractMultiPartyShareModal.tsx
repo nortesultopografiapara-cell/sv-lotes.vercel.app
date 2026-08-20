@@ -32,6 +32,7 @@ import {
   signatureStatusLabel,
   type SignatureStatus,
 } from '@/lib/saasContractStatus';
+import { sortAraguaiaVendorParties } from '@/lib/araguaiaContractEsign';
 
 const VENDOR_INTERNAL_MESSAGE =
   'A assinatura da vendedora será realizada internamente no sistema após a conclusão das assinaturas do comprador e do cônjuge.';
@@ -74,7 +75,7 @@ function roleHeading(role: string): string {
   const key = String(role || '').toUpperCase();
   if (key === 'BUYER') return 'COMPRADOR';
   if (key === 'SPOUSE') return 'CÔNJUGE ANUENTE';
-  if (key === 'VENDOR') return 'VENDEDORA';
+  if (key === 'VENDOR') return 'PROMITENTE VENDEDOR';
   return 'SIGNATÁRIO';
 }
 
@@ -107,14 +108,20 @@ function PartyShareCard({
   const isVendor = party.role === 'VENDOR';
   const isSpouse = party.role === 'SPOUSE';
   const isExternal = party.role === 'BUYER' || party.role === 'SPOUSE';
+  const isPublicVendor = isVendor && Boolean(signatureUrl);
+  const canShareLikeExternal = isExternal || isPublicVendor;
   const missingUrl =
-    Boolean(party.missingPublicUrl) || (isExternal && !isVendor && !signatureUrl);
+    Boolean(party.missingPublicUrl) ||
+    (isExternal && !signatureUrl);
 
   const shareMessage = useMemo(() => {
-    if (!isExternal || !signatureUrl) return '';
+    if (!canShareLikeExternal || !signatureUrl) return '';
     return buildSalePartySignatureShareMessage({
       signerName: displayName || party.roleLabel,
-      role: party.role,
+      role:
+        party.role === 'SPOUSE' || party.role === 'VENDOR'
+          ? party.role
+          : 'BUYER',
       projectName,
       quadra,
       lote,
@@ -122,9 +129,9 @@ function PartyShareCard({
       signatureUrl,
     });
   }, [
+    canShareLikeExternal,
     contractNumber,
     displayName,
-    isExternal,
     lote,
     party.role,
     party.roleLabel,
@@ -140,7 +147,11 @@ function PartyShareCard({
   );
 
   useEffect(() => {
-    if (!signatureUrl || isVendor || missingUrl) {
+    if (!signatureUrl || (!canShareLikeExternal && isVendor) || missingUrl) {
+      setQrDataUrl(null);
+      return;
+    }
+    if (isVendor && !isPublicVendor) {
       setQrDataUrl(null);
       return;
     }
@@ -159,7 +170,7 @@ function PartyShareCard({
     return () => {
       cancelled = true;
     };
-  }, [isVendor, missingUrl, signatureUrl]);
+  }, [canShareLikeExternal, isPublicVendor, isVendor, missingUrl, signatureUrl]);
 
   const handleCopy = useCallback(async () => {
     if (!signatureUrl) return;
@@ -196,7 +207,7 @@ function PartyShareCard({
           <p className="text-base font-semibold text-white mt-0.5">
             {displayName || party.roleLabel}
           </p>
-          {(contactLine && party.role !== 'VENDOR') ||
+          {(contactLine && (!isVendor || isPublicVendor)) ||
           (contact.canShareEmail && emailMasked && emailMasked !== '—') ? (
             <p className="text-[11px] text-gray-400 mt-1 space-x-2">
               {contact.canShareWhatsApp && contact.phoneLast4 ? (
@@ -215,7 +226,7 @@ function PartyShareCard({
         </p>
       </div>
 
-      {isVendor ? (
+      {isVendor && !isPublicVendor ? (
         <p className="text-sm text-amber-200/90 leading-relaxed">{VENDOR_INTERNAL_MESSAGE}</p>
       ) : missingUrl ? (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100 flex gap-2">
@@ -325,11 +336,14 @@ export function SaleContractMultiPartyShareModal({
       if (role === 'VENDOR') return 2;
       return 9;
     };
-    // Nunca filtrar por URL — VENDOR e SPOUSE sem link também aparecem.
-    // BUYER sem telefone na party: usa telefone do cliente (legado / cadastro).
-    return enrichBuyerPartyPhone([...parties], legacySignerPhone).sort(
-      (a, b) => rank(a.role) - rank(b.role),
+    const enriched = enrichBuyerPartyPhone([...parties], legacySignerPhone);
+    const vendors = sortAraguaiaVendorParties(
+      enriched.filter((p) => p.role === 'VENDOR'),
     );
+    const nonVendors = enriched
+      .filter((p) => p.role !== 'VENDOR')
+      .sort((a, b) => rank(a.role) - rank(b.role));
+    return [...nonVendors, ...vendors];
   }, [parties, legacySignerPhone]);
 
   const useLegacy = orderedParties.length === 0 && Boolean(legacySignatureUrl);

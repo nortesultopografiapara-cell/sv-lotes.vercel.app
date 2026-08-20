@@ -2,6 +2,7 @@
  * Persistência e operações dos participantes (contract_signature_parties).
  */
 
+import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildSaleSignUrl, resolvePartySignatureUrl } from '@/lib/saleContractUrls';
 import { signatureExpiresAt } from '@/lib/saasContractSignatureService';
@@ -21,6 +22,45 @@ import {
   saleSignaturePartyRoleLabel,
   saleSignaturePartyStatusLabel,
 } from '@/lib/saleContractSignaturePartyTypes';
+
+/**
+ * Garante UUID individual da assinatura da party em `signature_data`
+ * (mesmo padrão de `signature_event_id` do processo / evidências).
+ */
+export function ensurePartySignatureEventData(
+  base?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const existing = base && typeof base === 'object' ? { ...base } : {};
+  const fromData = String(
+    existing.signature_event_id || existing.signature_id || '',
+  ).trim();
+  const id = fromData || randomUUID();
+  return {
+    ...existing,
+    signature_event_id: id,
+    signature_id: id,
+  };
+}
+
+/** Lê o ID único persistido da party (metadata ou fallback ao party.id). */
+export function readPartySignatureEventId(
+  party: {
+    id?: string | null;
+    signature_data?: Record<string, unknown> | null;
+  } | null | undefined,
+): string | null {
+  if (!party) return null;
+  const data =
+    party.signature_data && typeof party.signature_data === 'object'
+      ? party.signature_data
+      : {};
+  const fromData = String(
+    data.signature_event_id || data.signature_id || '',
+  ).trim();
+  if (fromData) return fromData;
+  const partyId = String(party.id || '').trim();
+  return partyId || null;
+}
 
 export type CreatePartyInput = {
   companyId: string;
@@ -366,6 +406,7 @@ export async function markPartySigned(
   },
 ): Promise<ContractSignaturePartyRow> {
   const signedAt = patch.signedAt || nowIso();
+  const signatureData = ensurePartySignatureEventData(patch.signatureData);
   const { data, error } = await supabaseAdmin
     .from('contract_signature_parties')
     .update({
@@ -378,7 +419,7 @@ export async function markPartySigned(
       signature_hash: patch.signatureHash,
       ip_address: patch.ipAddress || null,
       user_agent: patch.userAgent || null,
-      signature_data: patch.signatureData || {},
+      signature_data: signatureData,
       updated_at: signedAt,
     })
     .eq('id', partyId)
@@ -484,6 +525,7 @@ export function toPublicPartyViews(
       roleLabel: saleSignaturePartyRoleLabel(role),
       signer_name: party.signer_name,
       name: party.signer_name,
+      signer_cpf: includeUrls ? party.signer_cpf : undefined,
       signer_cpf_masked: party.signer_cpf
         ? maskCpfPublic(party.signer_cpf)
         : null,

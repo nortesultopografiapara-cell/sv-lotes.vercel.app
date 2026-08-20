@@ -64,6 +64,9 @@ export type SaleContractSignatureCertificateInput = {
   spouseSignedAt?: string | null;
   spouseIpAddress?: string | null;
   spouseSignatureHash?: string | null;
+  spouseSignatureEventId?: string | null;
+  /** ID único da party BUYER (preferencial sobre o ID do processo). */
+  buyerSignatureEventId?: string | null;
   /**
    * Cards PF de múltiplos VENDOR (ARAGUAIA).
    * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE.
@@ -580,7 +583,7 @@ function buildSpouseCard(input: SaleContractSignatureCertificateInput): string {
       phone: input.spousePhone,
       ipAddress: input.spouseIpAddress,
       signedAt: input.spouseSignedAt,
-      signatureEventId: null,
+      signatureEventId: input.spouseSignatureEventId || null,
     }),
   ];
 
@@ -606,7 +609,10 @@ function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
       os: input.os,
       device: input.device,
       approxLocation: input.approxLocation,
-      signatureEventId: input.signatureEventId || input.uniqueId,
+      signatureEventId:
+        input.buyerSignatureEventId ||
+        input.signatureEventId ||
+        input.uniqueId,
     }),
   ];
 

@@ -5,7 +5,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { onlyDigits } from '@/lib/inputMasks';
-import { normalizeSaleContractModel } from '@/lib/contractModel';
+import {
+  resolveSaleContractModelFromContext,
+} from '@/lib/contractModel';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
@@ -50,6 +52,7 @@ import { SaleContractSignatureError } from '@/lib/saleContractSignatureErrors';
 import type { SaleSignatureStatus } from '@/lib/saleContractSignatureStatus';
 import { canPublicSaleSign } from '@/lib/saleContractSignatureStatus';
 import { isSignatureExpired } from '@/lib/saasContractSignatureService';
+import { resolveIpGeoApprox, formatApproxLocation, parseUserAgent } from '@/lib/signatureEvidence';
 
 /** Subconjunto do processo — evita import circular com saleContractSignatureService. */
 export type SignatureProcessRow = {
@@ -85,6 +88,7 @@ export async function loadSaleAndCompanyForSignature(
 ): Promise<{
   sale: Record<string, unknown> | null;
   company: Record<string, unknown> | null;
+  project: Record<string, unknown> | null;
   contractModel: string;
   rawContractModel: string | null;
   customer: Record<string, unknown> | null;
@@ -123,9 +127,9 @@ export async function loadSaleAndCompanyForSignature(
   let sale: Record<string, unknown> | null = null;
   let saleLoadError: string | null = null;
   if (saleId) {
-    // Colunas de cônjuge explícitas + * via fallback se o schema cache rejeitar.
+    // Colunas de cônjuge explícitas + project_id para resolver modelo ARAGUAIA.
     const spouseCols =
-      'id, company_id, tenant_id, customer_id, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
+      'id, company_id, tenant_id, customer_id, project_id, contract_model, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
     let { data, error } = await supabaseAdmin
       .from('sales')
       .select(spouseCols)
@@ -150,6 +154,19 @@ export async function loadSaleAndCompanyForSignature(
     sale = (data as Record<string, unknown>) || null;
   }
 
+  let project: Record<string, unknown> | null = null;
+  const projectId = String(
+    contractRow.project_id || sale?.project_id || '',
+  ).trim();
+  if (projectId) {
+    const { data: projectData } = await supabaseAdmin
+      .from('projects')
+      .select('id, name, contract_model, company_id')
+      .eq('id', projectId)
+      .maybeSingle();
+    project = (projectData as Record<string, unknown>) || null;
+  }
+
   let customer: Record<string, unknown> | null = null;
   if (customerId) {
     const first = await supabaseAdmin
@@ -172,13 +189,37 @@ export async function loadSaleAndCompanyForSignature(
     }
   }
 
+  const resolved = resolveSaleContractModelFromContext({
+    saleModel: sale?.contract_model,
+    contractModel: contractRow.contract_model,
+    projectModel: project?.contract_model,
+    companyModel: company?.contract_model,
+    projectName: project?.name,
+  });
   const rawContractModel =
-    company?.contract_model != null ? String(company.contract_model) : null;
+    resolved.source !== 'fallback'
+      ? String(
+          sale?.contract_model ||
+            contractRow.contract_model ||
+            project?.contract_model ||
+            company?.contract_model ||
+            resolved.model,
+        )
+      : company?.contract_model != null
+        ? String(company.contract_model)
+        : null;
+
+  console.log('[signature-parties] contract_model_resolved', {
+    model: resolved.model,
+    source: resolved.source,
+    projectName: String(project?.name || '').slice(0, 40),
+  });
 
   return {
     sale,
     company,
-    contractModel: normalizeSaleContractModel(rawContractModel),
+    project,
+    contractModel: resolved.model,
     rawContractModel,
     customer,
     companyLoadError,
@@ -800,6 +841,8 @@ export async function signPartyElectronically(
     `${party.role}|${hashPayload}`,
   );
 
+  const ua = parseUserAgent(input.userAgent);
+  const geo = await resolveIpGeoApprox(input.ipAddress);
   const signedParty = await markPartySigned(supabaseAdmin, party.id, {
     signerName,
     signerCpf: signerDocument,
@@ -809,7 +852,13 @@ export async function signPartyElectronically(
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
     signedAt,
-    signatureData: { role: party.role },
+    signatureData: {
+      role: party.role,
+      browser: ua.browser,
+      os: ua.os,
+      device: ua.device,
+      approx_location: formatApproxLocation(geo),
+    },
   });
 
   const parties = await listSignatureParties(supabaseAdmin, signature.id);
@@ -911,6 +960,9 @@ export async function markVendorPartySigned(
 
   if (!vendor) return null;
 
+  const ua = parseUserAgent(input.userAgent);
+  const geo = await resolveIpGeoApprox(input.ipAddress);
+
   return markPartySigned(supabaseAdmin, vendor.id, {
     signerName: input.vendorName,
     signerCpf: docDigits,
@@ -919,7 +971,14 @@ export async function markVendorPartySigned(
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
     signedAt: input.signedAt,
-    signatureData: { role: 'VENDOR', partyId: vendor.id },
+    signatureData: {
+      role: 'VENDOR',
+      partyId: vendor.id,
+      browser: ua.browser,
+      os: ua.os,
+      device: ua.device,
+      approx_location: formatApproxLocation(geo),
+    },
   });
 }
 

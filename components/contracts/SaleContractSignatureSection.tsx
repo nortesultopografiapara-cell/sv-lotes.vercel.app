@@ -284,6 +284,7 @@ export const SaleContractSignatureSection = forwardRef<
       vendorDocument: string;
       vendorEmail: string;
       vendorRole: string;
+      partyId?: string | null;
     }) => {
       if (!contract?.id || blockOwnerWriteOnClient(userRole)) {
         throw new Error('Sem permissão para assinar como vendedor.');
@@ -310,6 +311,7 @@ export const SaleContractSignatureSection = forwardRef<
               vendorDocument: input.vendorDocument,
               vendorEmail: input.vendorEmail,
               vendorRole: input.vendorRole,
+              partyId: input.partyId || null,
             }),
           },
           CONTRACTS_FETCH_TIMEOUT_MS,
@@ -340,6 +342,30 @@ export const SaleContractSignatureSection = forwardRef<
     },
     [contract?.id, loadSignature, onSigned, resolveSignatureIdForVendorSign, userRole],
   );
+
+  const pendingVendorTargets = useMemo(() => {
+    return parties
+      .filter(
+        (p) =>
+          p.role === 'VENDOR' &&
+          !['SIGNED', 'CANCELLED', 'EXPIRED'].includes(
+            String(p.status || '').toUpperCase(),
+          ),
+      )
+      .map((p) => ({
+        partyId: p.id,
+        name: String(p.signer_name || p.name || 'Vendedor'),
+        document: String(p.signer_cpf || ''),
+        email: String(p.signer_email || p.email || ''),
+      }));
+  }, [parties]);
+
+  const vendorPartyCount = useMemo(
+    () => parties.filter((p) => p.role === 'VENDOR').length,
+    [parties],
+  );
+
+  const multiVendorPending = vendorPartyCount > 1;
 
   const shareMessage = useMemo(() => {
     if (!signUrl || !contract) return '';
@@ -711,7 +737,13 @@ export const SaleContractSignatureSection = forwardRef<
         {showVendorSignButton && (
           <ActionChip
             icon={ShieldCheck}
-            label={signingVendor ? 'Assinando…' : 'Assinar como vendedor'}
+            label={
+              signingVendor
+                ? 'Assinando…'
+                : multiVendorPending
+                  ? 'Assinar promitente vendedor'
+                  : 'Assinar como vendedor'
+            }
             onClick={() => setVendorSignOpen(true)}
             disabled={signingVendor}
             primary
@@ -787,6 +819,7 @@ export const SaleContractSignatureSection = forwardRef<
         defaultName={vendorDefaults.name}
         defaultDocument={vendorDefaults.document}
         defaultEmail={vendorDefaults.email}
+        vendorTargets={multiVendorPending ? pendingVendorTargets : []}
         onSign={handleVendorSign}
       />
     </div>

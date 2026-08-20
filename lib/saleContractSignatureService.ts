@@ -978,6 +978,8 @@ export type SignSaleContractByVendorInput = {
   vendorDocument: string;
   vendorEmail: string;
   vendorRole?: string | null;
+  /** Party VENDOR específica (obrigatório com N vendedores). */
+  partyId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
@@ -1121,7 +1123,7 @@ export async function signSaleContractByVendor(
       userAgent: input.userAgent,
       signatureHash: vendorHashEarly,
       signedAt: vendorSignedAtEarly,
-      partyId: (input as { partyId?: string }).partyId || null,
+      partyId: input.partyId || null,
     });
     const syncedEarly = await syncAggregateSignatureStatus(
       supabaseAdmin,
@@ -1644,6 +1646,9 @@ export async function loadSaleContractPdfForSign(
 
     const { isAraguaiaSaleContractModel, sortAraguaiaVendorParties } =
       await import('@/lib/araguaiaContractEsign');
+    const { readPartySignatureEventId } = await import(
+      '@/lib/saleContractSignatureParties'
+    );
 
     let contractModelForCert = String(
       contractCtx?.contract_model ||
@@ -1674,6 +1679,24 @@ export async function loadSaleContractPdfForSign(
         /R\s*R\s*NEG[OÓ]CIOS/i.test(String(p.signer_name || '')),
       );
 
+    const readPartyLocation = (p: (typeof parties)[number]) => {
+      const data =
+        p.signature_data && typeof p.signature_data === 'object'
+          ? p.signature_data
+          : {};
+      return String(data.approx_location || '').trim() || null;
+    };
+    const readPartyUaField = (
+      p: (typeof parties)[number],
+      key: 'browser' | 'os' | 'device',
+    ) => {
+      const data =
+        p.signature_data && typeof p.signature_data === 'object'
+          ? p.signature_data
+          : {};
+      return String(data[key] || '').trim() || null;
+    };
+
     const personVendorCards = useAraguaiaPersonVendors
       ? sortAraguaiaVendorParties(vendorParties).map((p) => ({
           name: String(p.signer_name || ''),
@@ -1683,6 +1706,11 @@ export async function loadSaleContractPdfForSign(
           signedAt: p.signed_at,
           ipAddress: p.ip_address,
           signatureHash: p.signature_hash,
+          signatureEventId: readPartySignatureEventId(p),
+          browser: readPartyUaField(p, 'browser'),
+          os: readPartyUaField(p, 'os'),
+          device: readPartyUaField(p, 'device'),
+          approxLocation: readPartyLocation(p),
         }))
       : null;
 
@@ -1786,6 +1814,12 @@ export async function loadSaleContractPdfForSign(
       spouseSignedAt: spouseParty?.signed_at || null,
       spouseIpAddress: spouseParty?.ip_address || null,
       spouseSignatureHash: spouseParty?.signature_hash || null,
+      spouseSignatureEventId: spouseParty
+        ? readPartySignatureEventId(spouseParty)
+        : null,
+      buyerSignatureEventId: buyerParty
+        ? readPartySignatureEventId(buyerParty)
+        : null,
       personVendorCards,
     });
 

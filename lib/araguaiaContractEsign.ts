@@ -20,14 +20,16 @@ export type AraguaiaEsignVendor = {
   email: string | null;
 };
 
-/** Contatos WhatsApp confirmados — não inventar e-mail. */
+/** Contatos confirmados — Daniel mantém e-mail operacional; Aldenise sem e-mail pessoal. */
+export const ARAGUAIA_DANIEL_ESIGN_EMAIL = 'rrnegocioseservicos@gmail.com';
+
 export const ARAGUAIA_ESIGN_VENDORS: AraguaiaEsignVendor[] = [
   {
     order: 1,
     name: ARAGUAIA_DEFAULT_SELLERS[0].name,
     cpf: ARAGUAIA_DEFAULT_SELLERS[0].cpf || '820.912.262-20',
     phoneRaw: '94991254320',
-    email: null,
+    email: ARAGUAIA_DANIEL_ESIGN_EMAIL,
   },
   {
     order: 2,
@@ -53,19 +55,19 @@ export function resolveAraguaiaEsignVendorPhone(
   return normalizeWhatsAppPhone(phoneRaw);
 }
 
-/** Parties VENDOR a criar no envio ARAGUAIA (sem e-mail inventado). */
+/** Parties VENDOR a criar no envio ARAGUAIA. */
 export function buildAraguaiaEsignVendorPartyInputs(): Array<{
   name: string;
   cpf: string;
   phone: string | null;
-  email: null;
+  email: string | null;
   order: number;
 }> {
   return ARAGUAIA_ESIGN_VENDORS.map((v) => ({
     name: v.name,
     cpf: onlyDigits(v.cpf) || v.cpf,
     phone: resolveAraguaiaEsignVendorPhone(v.phoneRaw),
-    email: null,
+    email: v.email,
     order: v.order,
   }));
 }

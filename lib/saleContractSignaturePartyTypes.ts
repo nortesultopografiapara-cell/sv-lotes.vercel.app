@@ -52,6 +52,8 @@ export type SaleSignaturePartyPublicView = {
   signer_name: string | null;
   /** Alias camelCase para a modal / API de compartilhamento. */
   name?: string | null;
+  /** CPF completo — só na API autenticada (includeUrls). */
+  signer_cpf?: string | null;
   signer_cpf_masked?: string | null;
   signer_phone: string | null;
   phone?: string | null;
