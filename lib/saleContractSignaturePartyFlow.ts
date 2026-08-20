@@ -9,6 +9,10 @@ import { normalizeSaleContractModel } from '@/lib/contractModel';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
+  buildAraguaiaEsignVendorPartyInputs,
+  isAraguaiaSaleContractModel,
+} from '@/lib/araguaiaContractEsign';
+import {
   assertSpouseReadyForSignatureSend,
   hasRecantoSpouse,
   contractHtmlHasSpouseAnuenteSlot,
@@ -273,7 +277,12 @@ export async function createSignaturePartiesAfterSend(
 
   const partiesRequested = ['BUYER'];
   if (spouseRequired) partiesRequested.push('SPOUSE');
-  partiesRequested.push('VENDOR');
+  const araguaiaEsign = isAraguaiaSaleContractModel(contractModel);
+  if (araguaiaEsign) {
+    partiesRequested.push('VENDOR', 'VENDOR');
+  } else {
+    partiesRequested.push('VENDOR');
+  }
 
   console.log('[signature-parties] spouse_gate', {
     contractId: String(params.signature.contract_id || '').slice(0, 8),
@@ -320,6 +329,10 @@ export async function createSignaturePartiesAfterSend(
     ? normalizeSellerFromCompany(company)
     : { representative: '', representativeCpf: '', email: '', phone: '' };
 
+  const araguaiaVendors = araguaiaEsign
+    ? buildAraguaiaEsignVendorPartyInputs()
+    : null;
+
   const buyerName =
     String(customer?.name || '').trim() ||
     String(params.contractRow.signed_by_name || '').trim() ||
@@ -362,14 +375,25 @@ export async function createSignaturePartiesAfterSend(
             email: spouseData.email || null,
           }
         : null,
-      vendor: {
-        name:
-          seller.representative !== 'Não informado'
-            ? seller.representative
-            : null,
-        cpf: seller.representativeCpf || null,
-        email: seller.email !== 'Não informado' ? seller.email : null,
-      },
+      vendor: araguaiaVendors
+        ? null
+        : {
+            name:
+              seller.representative !== 'Não informado'
+                ? seller.representative
+                : null,
+            cpf: seller.representativeCpf || null,
+            email: seller.email !== 'Não informado' ? seller.email : null,
+          },
+      vendors: araguaiaVendors
+        ? araguaiaVendors.map((v) => ({
+            name: v.name,
+            cpf: v.cpf,
+            phone: v.phone,
+            email: v.email,
+            withPublicToken: true,
+          }))
+        : null,
       expiresAt: params.expiresAt,
     });
 
@@ -384,6 +408,24 @@ export async function createSignaturePartiesAfterSend(
         SPOUSE_PARTY_NOT_CREATED_MESSAGE,
         'validation',
       );
+    }
+    if (araguaiaEsign) {
+      const vendorCount = createdRoles.filter((r) => r === 'VENDOR').length;
+      if (vendorCount < 2) {
+        throw new SaleContractSignatureError(
+          'ARAGUAIA exige dois promitentes vendedores (Daniel e Aldenise) na assinatura eletrônica.',
+          'validation',
+        );
+      }
+      const hasRrAsParty = persisted.some((p) =>
+        /R\s*R\s*NEG[OÓ]CIOS/i.test(String(p.signer_name || '')),
+      );
+      if (hasRrAsParty) {
+        throw new SaleContractSignatureError(
+          'R R Negócios não deve ser signatária no modelo ARAGUAIA.',
+          'validation',
+        );
+      }
     }
 
     await logSignatureEvent(supabaseAdmin, {
@@ -464,6 +506,9 @@ export async function syncAggregateSignatureStatus(
 
   const now = new Date().toISOString();
   const buyer = list.find((p) => p.role === 'BUYER');
+  const vendors = list.filter(
+    (p) => String(p.role).toUpperCase() === 'VENDOR',
+  );
   const patch: Record<string, unknown> = {
     signature_status: aggregate,
     updated_at: now,
@@ -482,6 +527,25 @@ export async function syncAggregateSignatureStatus(
 
   if (buyer?.viewed_at) {
     patch.viewed_at = buyer.viewed_at;
+  }
+
+  if (aggregate === 'SIGNED') {
+    const lastVendor = [...vendors]
+      .filter((p) => String(p.status).toUpperCase() === 'SIGNED')
+      .sort((a, b) =>
+        String(a.signed_at || '').localeCompare(String(b.signed_at || '')),
+      )
+      .at(-1);
+    if (lastVendor) {
+      patch.vendor_signer_name = lastVendor.signer_name;
+      patch.vendor_signer_document = lastVendor.signer_cpf;
+      patch.vendor_signer_email = lastVendor.signer_email;
+      patch.vendor_signed_at = lastVendor.signed_at;
+      patch.vendor_signature_hash = lastVendor.signature_hash;
+      patch.vendor_ip_address = lastVendor.ip_address;
+      patch.vendor_user_agent = lastVendor.user_agent;
+      patch.certificate_status = 'VALIDADO';
+    }
   }
 
   const { data } = await supabaseAdmin
@@ -503,6 +567,13 @@ export async function syncAggregateSignatureStatus(
 
   if (aggregate === 'CLIENT_SIGNED') {
     contractPatch.status = 'client_signed';
+    if (buyer?.signed_at) {
+      contractPatch.signed_at = buyer.signed_at;
+      contractPatch.signed_by_name = buyer.signer_name;
+      contractPatch.signed_by_cpf = buyer.signer_cpf;
+    }
+  } else if (aggregate === 'SIGNED') {
+    contractPatch.status = 'assinado';
     if (buyer?.signed_at) {
       contractPatch.signed_at = buyer.signed_at;
       contractPatch.signed_by_name = buyer.signer_name;
@@ -629,7 +700,7 @@ export async function signPartyElectronically(
     throw new SaleContractSignatureError('Link de assinatura inválido.');
   }
 
-  if (party.role !== 'BUYER' && party.role !== 'SPOUSE') {
+  if (party.role !== 'BUYER' && party.role !== 'SPOUSE' && party.role !== 'VENDOR') {
     throw new SaleContractSignatureError(
       'Este link não é válido para assinatura pública.',
     );
@@ -749,7 +820,11 @@ export async function signPartyElectronically(
   );
 
   const eventType: SignatureEventType =
-    party.role === 'SPOUSE' ? 'SPOUSE_SIGNED' : 'BUYER_SIGNED';
+    party.role === 'SPOUSE'
+      ? 'SPOUSE_SIGNED'
+      : party.role === 'VENDOR'
+        ? 'VENDOR_SIGNED'
+        : 'BUYER_SIGNED';
 
   await logSignatureEvent(supabaseAdmin, {
     signatureToken: token,
@@ -812,20 +887,39 @@ export async function markVendorPartySigned(
     userAgent?: string | null;
     signatureHash: string;
     signedAt: string;
+    /** Quando há N VENDORs, assina a party específica. */
+    partyId?: string | null;
   },
-): Promise<void> {
-  const vendor = parties.find((p) => p.role === 'VENDOR');
-  if (!vendor) return;
+): Promise<ContractSignaturePartyRow | null> {
+  const vendors = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'VENDOR',
+  );
+  if (vendors.length === 0) return null;
 
-  await markPartySigned(supabaseAdmin, vendor.id, {
+  const docDigits = onlyDigits(input.vendorDocument);
+  let vendor =
+    (input.partyId
+      ? vendors.find((p) => p.id === input.partyId)
+      : undefined) ||
+    vendors.find(
+      (p) =>
+        onlyDigits(p.signer_cpf || '') === docDigits &&
+        String(p.status).toUpperCase() !== 'SIGNED',
+    ) ||
+    vendors.find((p) => String(p.status).toUpperCase() !== 'SIGNED') ||
+    vendors[0];
+
+  if (!vendor) return null;
+
+  return markPartySigned(supabaseAdmin, vendor.id, {
     signerName: input.vendorName,
-    signerCpf: onlyDigits(input.vendorDocument),
+    signerCpf: docDigits,
     signerEmail: input.vendorEmail,
     signatureHash: input.signatureHash,
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
     signedAt: input.signedAt,
-    signatureData: { role: 'VENDOR' },
+    signatureData: { role: 'VENDOR', partyId: vendor.id },
   });
 }
 

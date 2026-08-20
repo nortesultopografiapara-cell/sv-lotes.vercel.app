@@ -38,6 +38,7 @@ function isTerminalCancelled(party?: PartyStatusSnapshot | null): boolean {
 /**
  * Calcula o status do documento (contract_signatures) a partir das parties.
  * Sem parties → null (usar fluxo legado).
+ * Compatível com 1 VENDOR (modelos clássicos) e N VENDOR (ARAGUAIA).
  */
 export function computeAggregateSaleSignatureStatus(
   parties: PartyStatusSnapshot[] | null | undefined,
@@ -46,26 +47,31 @@ export function computeAggregateSaleSignatureStatus(
 
   const buyer = partyByRole(parties, 'BUYER');
   const spouse = partyByRole(parties, 'SPOUSE');
-  const vendor = partyByRole(parties, 'VENDOR');
+  const vendors = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'VENDOR',
+  );
   const hasSpouse = Boolean(spouse);
 
-  if (!buyer || !vendor) return null;
+  if (!buyer || vendors.length === 0) return null;
 
+  const allVendorsCancelled = vendors.every(isTerminalCancelled);
   const allCancelled =
     isTerminalCancelled(buyer) &&
-    isTerminalCancelled(vendor) &&
+    allVendorsCancelled &&
     (!hasSpouse || isTerminalCancelled(spouse));
   if (allCancelled) {
-    const anyExpired = [buyer, spouse, vendor].some(
+    const anyExpired = [buyer, spouse, ...vendors].some(
       (p) => String(p?.status || '').toUpperCase() === 'EXPIRED',
     );
     return anyExpired ? 'EXPIRED' : 'CANCELLED';
   }
 
+  const vendorsAllSigned = vendors.every(isSigned);
+  const vendorsAnySigned = vendors.some(isSigned);
   const externalComplete =
     isSigned(buyer) && (!hasSpouse || isSigned(spouse));
 
-  if (externalComplete && isSigned(vendor)) {
+  if (externalComplete && vendorsAllSigned) {
     return 'SIGNED';
   }
 
@@ -76,7 +82,7 @@ export function computeAggregateSaleSignatureStatus(
   const anyExternalSigned =
     isSigned(buyer) || (hasSpouse && isSigned(spouse));
 
-  if (anyExternalSigned) {
+  if (anyExternalSigned || vendorsAnySigned) {
     return 'PARTIALLY_SIGNED';
   }
 
@@ -112,7 +118,15 @@ export function canVendorSignFromParties(
     return { ok: false, reason: 'Este contrato já foi assinado pelo vendedor.' };
   }
   if (aggregate === 'CLIENT_SIGNED') {
-    return { ok: true };
+    const vendors = parties.filter(
+      (p) => String(p.role).toUpperCase() === 'VENDOR',
+    );
+    const pendingVendor = vendors.some((p) => !isSigned(p));
+    if (pendingVendor) return { ok: true };
+    return {
+      ok: false,
+      reason: 'Este contrato já foi assinado pelo vendedor.',
+    };
   }
 
   const spouse = partyByRole(parties, 'SPOUSE');
@@ -136,6 +150,27 @@ export function canVendorSignFromParties(
     ok: false,
     reason: 'Aguardando assinatura de todos os compradores.',
   };
+}
+
+/** Parties VENDOR ainda pendentes. */
+export function listPendingVendorParties<
+  T extends { role: string; status: string },
+>(parties: T[] | null | undefined): T[] {
+  return (parties || []).filter(
+    (p) =>
+      String(p.role).toUpperCase() === 'VENDOR' &&
+      String(p.status).toUpperCase() !== 'SIGNED' &&
+      !['CANCELLED', 'EXPIRED'].includes(String(p.status || '').toUpperCase()),
+  );
+}
+
+export function allVendorPartiesSigned(
+  parties: PartyStatusSnapshot[] | null | undefined,
+): boolean {
+  const vendors = (parties || []).filter(
+    (p) => String(p.role).toUpperCase() === 'VENDOR',
+  );
+  return vendors.length > 0 && vendors.every(isSigned);
 }
 
 export function countSignedParties(

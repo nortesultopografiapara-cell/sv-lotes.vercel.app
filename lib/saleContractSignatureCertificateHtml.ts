@@ -64,6 +64,24 @@ export type SaleContractSignatureCertificateInput = {
   spouseSignedAt?: string | null;
   spouseIpAddress?: string | null;
   spouseSignatureHash?: string | null;
+  /**
+   * Cards PF de múltiplos VENDOR (ARAGUAIA).
+   * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE.
+   */
+  personVendorCards?: Array<{
+    name: string;
+    cpf?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    signedAt?: string | null;
+    ipAddress?: string | null;
+    signatureHash?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    device?: string | null;
+    approxLocation?: string | null;
+    signatureEventId?: string | null;
+  }> | null;
 };
 
 export type SaleContractElectronicSignaturesInput = {
@@ -376,6 +394,55 @@ function buildOfficialSignatureCard(params: {
       <div class="sv-cert-card-body">${fieldsHtml}</div>
       <div class="sv-cert-card-foot">✓ DOCUMENTO ASSINADO ELETRONICAMENTE COM VALIDADE JURÍDICA</div>
     </div>`;
+}
+
+function buildPersonVendorCard(input: {
+  name: string;
+  cpf?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  signedAt?: string | null;
+  ipAddress?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+}): string {
+  const name = String(input.name || '').trim() || '—';
+  const cpf = input.cpf
+    ? formatCpfCnpj(input.cpf) || input.cpf
+    : '—';
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '👤', label: 'Nome', value: name },
+    { icon: '🪪', label: 'CPF', value: cpf },
+    ...buildEvidenceFields({
+      email: input.email,
+      phone: input.phone,
+      ipAddress: input.ipAddress,
+      signedAt: input.signedAt,
+      browser: input.browser,
+      os: input.os,
+      device: input.device,
+      approxLocation: input.approxLocation,
+      signatureEventId: input.signatureEventId,
+    }),
+  ];
+  return buildOfficialSignatureCard({
+    role: 'PROMITENTE VENDEDOR',
+    fields,
+    signed: Boolean(input.signedAt),
+  });
+}
+
+function buildVendorCardsHtml(input: SaleContractSignatureCertificateInput): string {
+  const personCards = Array.isArray(input.personVendorCards)
+    ? input.personVendorCards.filter((c) => String(c?.name || '').trim())
+    : [];
+  if (personCards.length > 0) {
+    return personCards.map((c) => buildPersonVendorCard(c)).join('\n');
+  }
+  return buildVendorCard(input);
 }
 
 function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
@@ -732,7 +799,7 @@ export function buildSaleContractSignatureCertificateHtml(
     <div class="sv-cert-official-inner">
     <div class="sv-cert-official">
       <div class="sv-cert-cards">
-        ${buildVendorCard(input)}
+        ${buildVendorCardsHtml(input)}
         ${buildBuyerCard(input)}
         ${input.spouseName ? buildSpouseCard(input) : ''}
       </div>

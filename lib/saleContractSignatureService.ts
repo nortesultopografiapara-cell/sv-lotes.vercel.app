@@ -55,6 +55,7 @@ import {
   markVendorPartySigned,
   signPartyElectronically,
   markPartyOrLegacyViewed,
+  syncAggregateSignatureStatus,
 } from '@/lib/saleContractSignaturePartyFlow';
 import {
   getPartyByPublicToken,
@@ -785,6 +786,21 @@ export async function signSaleContractElectronically(
       input,
     );
 
+    if (result.aggregate === 'SIGNED') {
+      try {
+        await ensureSignedPdfAfterAllPartiesSigned(
+          supabaseAdmin,
+          result.signature as ContractSignatureRow,
+        );
+      } catch (pdfErr) {
+        console.error('[SALE_CONTRACT_SIGN] finalize_pdf_after_parties_failed', {
+          message:
+            pdfErr instanceof Error ? pdfErr.message : String(pdfErr),
+          signatureId: String(result.signature.id || '').slice(0, 8),
+        });
+      }
+    }
+
     return {
       signature: result.signature as ContractSignatureRow,
       awaitingVendor: result.awaitingVendor,
@@ -986,12 +1002,17 @@ export async function signSaleContractByVendor(
     throw new SaleContractSignatureError('Solicitação de assinatura não encontrada.');
   }
 
-  const signatureRow = signature as ContractSignatureRow;
+  let signatureRow = signature as ContractSignatureRow;
 
   const partiesForVendor = await assertVendorCanSignWithParties(
     supabaseAdmin,
     signatureRow,
   );
+
+  const vendorPartyRows = partiesForVendor.filter(
+    (p) => String(p.role).toUpperCase() === 'VENDOR',
+  );
+  const multiVendor = vendorPartyRows.length > 1;
 
   if (partiesForVendor.length === 0) {
     if (!canVendorSignSaleContract(signatureRow.signature_status)) {
@@ -1007,10 +1028,23 @@ export async function signSaleContractByVendor(
         'Assinatura do comprador incompleta. Aguarde o comprador assinar primeiro.',
       );
     }
-  } else if (!canVendorSignSaleContract(signatureRow.signature_status)) {
+  } else if (
+    !multiVendor &&
+    !canVendorSignSaleContract(signatureRow.signature_status)
+  ) {
     // Parties ok, mas status agregado ainda não CLIENT_SIGNED (inconsistência)
     throw new SaleContractSignatureError(
       'O vendedor só pode assinar após todos os compradores assinarem.',
+    );
+  } else if (
+    multiVendor &&
+    !['CLIENT_SIGNED', 'PARTIALLY_SIGNED'].includes(
+      String(signatureRow.signature_status || '').toUpperCase(),
+    ) &&
+    !canVendorSignSaleContract(signatureRow.signature_status)
+  ) {
+    throw new SaleContractSignatureError(
+      'Aguardando demais participantes antes da assinatura do vendedor.',
     );
   }
 
@@ -1024,7 +1058,10 @@ export async function signSaleContractByVendor(
     );
   }
   if (!isValidSignerEmail(vendorEmail)) {
-    throw new SaleContractSignatureError('Informe um e-mail válido para assinar.');
+    if (!multiVendor) {
+      throw new SaleContractSignatureError('Informe um e-mail válido para assinar.');
+    }
+    // ARAGUAIA / multi-VENDOR: e-mail opcional quando WhatsApp da party existe.
   }
 
   const { data: contract, error: contractErr } = await supabaseAdmin
@@ -1059,6 +1096,56 @@ export async function signSaleContractByVendor(
       signature: signatureRow,
       pdfSignedUrl: String(contractRow.pdf_signed_url),
     };
+  }
+
+  // Multi-VENDOR (ARAGUAIA): marca só a party correspondente; PDF só quando todos assinaram.
+  if (multiVendor) {
+    const vendorSignedAtEarly = new Date().toISOString();
+    const vendorHashEarly = await computeSignatureHash(
+      buildSignatureHashPayload({
+        contractId: String(contractRow.id),
+        contractNumber: String(contractRow.contract_number || ''),
+        signerName: vendorName,
+        signerDocument: vendorDocument,
+        signerEmail: isValidSignerEmail(vendorEmail) ? vendorEmail : '',
+        signedAt: vendorSignedAtEarly,
+        ipAddress: input.ipAddress || '',
+        party: 'PROVIDER',
+      }),
+    );
+    await markVendorPartySigned(supabaseAdmin, partiesForVendor, {
+      vendorName,
+      vendorDocument,
+      vendorEmail: isValidSignerEmail(vendorEmail) ? vendorEmail : '',
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      signatureHash: vendorHashEarly,
+      signedAt: vendorSignedAtEarly,
+      partyId: (input as { partyId?: string }).partyId || null,
+    });
+    const syncedEarly = await syncAggregateSignatureStatus(
+      supabaseAdmin,
+      signatureRow,
+    );
+    await logSignatureEvent(supabaseAdmin, {
+      signatureToken: signatureRow.signature_token,
+      signatureSource: 'SALE',
+      signatureRecordId: signatureRow.id,
+      eventType: 'VENDOR_SIGNED',
+      personName: vendorName,
+      personEmail: isValidSignerEmail(vendorEmail) ? vendorEmail : undefined,
+      eventDescription: 'Participante VENDOR marcado como assinado.',
+      occurredAt: vendorSignedAtEarly,
+      metadata: { role: 'VENDOR', multiVendor: true },
+    });
+    if (syncedEarly.aggregate !== 'SIGNED') {
+      return {
+        signature: syncedEarly.signature as ContractSignatureRow,
+        pdfSignedUrl: String(contractRow.pdf_signed_url || '') || null,
+      };
+    }
+    // Todos os VENDORs assinaram — segue fluxo de PDF/certificado abaixo.
+    signatureRow = syncedEarly.signature as ContractSignatureRow;
   }
 
   const clientSignedAt = signatureRow.signed_at!;
@@ -1294,6 +1381,98 @@ export async function signSaleContractByVendor(
   return { signature: finalSignature, pdfSignedUrl };
 }
 
+/**
+ * Quando todas as parties (incl. N VENDORs ARAGUAIA) já estão SIGNED via links públicos,
+ * gera e persiste o PDF assinado com certificado — sem exigir sign-vendor admin.
+ */
+async function ensureSignedPdfAfterAllPartiesSigned(
+  supabaseAdmin: SupabaseClient,
+  signatureRow: ContractSignatureRow,
+): Promise<string | null> {
+  const contractId = String(signatureRow.contract_id || '');
+  if (!contractId) return null;
+
+  const { data: contract } = await supabaseAdmin
+    .from('contracts')
+    .select('*')
+    .eq('id', contractId)
+    .maybeSingle();
+  if (!contract) return null;
+
+  const contractRow = contract as Record<string, unknown>;
+  if (String(contractRow.pdf_signed_url || '').trim()) {
+    return String(contractRow.pdf_signed_url);
+  }
+
+  const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
+  if (!tenantId) return null;
+
+  const parties = await listSignatureParties(supabaseAdmin, signatureRow.id);
+  const vendors = parties.filter((p) => String(p.role).toUpperCase() === 'VENDOR');
+  const lastVendor = [...vendors]
+    .filter((p) => String(p.status).toUpperCase() === 'SIGNED')
+    .sort((a, b) =>
+      String(a.signed_at || '').localeCompare(String(b.signed_at || '')),
+    )
+    .at(-1);
+
+  const previewSignature: ContractSignatureRow = {
+    ...signatureRow,
+    signature_status: 'SIGNED',
+    certificate_status: 'VALIDADO',
+    vendor_signer_name:
+      signatureRow.vendor_signer_name || lastVendor?.signer_name || null,
+    vendor_signer_document:
+      signatureRow.vendor_signer_document || lastVendor?.signer_cpf || null,
+    vendor_signer_email:
+      signatureRow.vendor_signer_email || lastVendor?.signer_email || null,
+    vendor_signed_at:
+      signatureRow.vendor_signed_at || lastVendor?.signed_at || null,
+    vendor_signature_hash:
+      signatureRow.vendor_signature_hash || lastVendor?.signature_hash || null,
+    vendor_ip_address:
+      signatureRow.vendor_ip_address || lastVendor?.ip_address || null,
+  } as ContractSignatureRow;
+
+  const signContext = await loadSaleSignPageContext(
+    supabaseAdmin,
+    previewSignature,
+  );
+  const { pdf } = await loadSaleContractPdfForSign(supabaseAdmin, contractId, {
+    signature: previewSignature,
+    signContext,
+  });
+
+  const contractNumber = String(contractRow.contract_number || '');
+  const pdfSignedUrl = await uploadSignedSaleContractPdf(
+    supabaseAdmin,
+    tenantId,
+    contractNumber,
+    pdf,
+  );
+
+  await supabaseAdmin
+    .from('contracts')
+    .update({
+      status: 'assinado',
+      signature_status: 'SIGNED',
+      pdf_signed_url: pdfSignedUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', contractId);
+
+  await supabaseAdmin
+    .from('contract_signatures')
+    .update({
+      signature_status: 'SIGNED',
+      certificate_status: 'VALIDADO',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', signatureRow.id);
+
+  return pdfSignedUrl;
+}
+
 export async function loadSaleContractHtmlForSign(
   supabaseAdmin: SupabaseClient,
   contractId: string,
@@ -1460,7 +1639,52 @@ export async function loadSaleContractPdfForSign(
     const parties = await listSignatureParties(supabaseAdmin, signature.id);
     const spouseParty = parties.find((p) => p.role === 'SPOUSE');
     const buyerParty = parties.find((p) => p.role === 'BUYER');
-    const vendorParty = parties.find((p) => p.role === 'VENDOR');
+    const vendorParties = parties.filter((p) => p.role === 'VENDOR');
+    const vendorParty = vendorParties[0];
+
+    const { isAraguaiaSaleContractModel, sortAraguaiaVendorParties } =
+      await import('@/lib/araguaiaContractEsign');
+
+    let contractModelForCert = String(
+      contractCtx?.contract_model ||
+        project?.contract_model ||
+        company?.contract_model ||
+        tenant?.contract_model ||
+        '',
+    );
+    try {
+      const { resolveSaleContractModelFromContext } = await import(
+        '@/lib/contractModel'
+      );
+      contractModelForCert = resolveSaleContractModelFromContext({
+        saleModel: contractCtx?.sale_contract_model || contractCtx?.contract_model,
+        contractModel: contractCtx?.contract_model,
+        projectModel: project?.contract_model,
+        companyModel: company?.contract_model || tenant?.contract_model,
+        projectName: project?.name,
+      }).model;
+    } catch {
+      /* keep string */
+    }
+
+    const useAraguaiaPersonVendors =
+      isAraguaiaSaleContractModel(contractModelForCert) &&
+      vendorParties.length > 0 &&
+      !vendorParties.some((p) =>
+        /R\s*R\s*NEG[OÓ]CIOS/i.test(String(p.signer_name || '')),
+      );
+
+    const personVendorCards = useAraguaiaPersonVendors
+      ? sortAraguaiaVendorParties(vendorParties).map((p) => ({
+          name: String(p.signer_name || ''),
+          cpf: p.signer_cpf,
+          email: p.signer_email,
+          phone: p.signer_phone,
+          signedAt: p.signed_at,
+          ipAddress: p.ip_address,
+          signatureHash: p.signature_hash,
+        }))
+      : null;
 
     if (parties.length > 0) {
       // Selos por papel (VENDOR/BUYER/SPOUSE) — nunca deduplicar por CPF.
@@ -1562,6 +1786,7 @@ export async function loadSaleContractPdfForSign(
       spouseSignedAt: spouseParty?.signed_at || null,
       spouseIpAddress: spouseParty?.ip_address || null,
       spouseSignatureHash: spouseParty?.signature_hash || null,
+      personVendorCards,
     });
 
     // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.

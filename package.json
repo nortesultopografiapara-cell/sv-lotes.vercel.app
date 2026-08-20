@@ -118,6 +118,7 @@
     "test:contract-inline-signature-status": "tsx scripts/mandatory-contract-inline-signature-status-tests.ts",
     "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts",
     "test:araguaia-contract": "tsx scripts/mandatory-araguaia-contract-tests.ts",
+    "test:araguaia-esign": "tsx scripts/mandatory-araguaia-esign-tests.ts",
     "test:meneses-new-clauses": "tsx scripts/mandatory-meneses-new-clauses-tests.ts",
     "test:meneses-clause-terceira-finance": "tsx scripts/mandatory-meneses-clause-terceira-finance-tests.ts",
     "test:sale-spouse-cpf-reuse": "tsx scripts/mandatory-sale-spouse-cpf-reuse-tests.ts",

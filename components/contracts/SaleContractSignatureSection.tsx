@@ -57,6 +57,7 @@ import {
   formatSalePartyShareContactLine,
   resolveSalePartyShareContact,
 } from '@/lib/saleContractSignatureShareContact';
+import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 
 type SelectedContract = {
   id: string;
@@ -579,7 +580,9 @@ export const SaleContractSignatureSection = forwardRef<
             const contactLine = formatSalePartyShareContactLine(contact);
             const url = party.signatureUrl || party.signature_url || null;
             const partyMessage =
-              party.role === 'BUYER' || party.role === 'SPOUSE'
+              party.role === 'BUYER' ||
+              party.role === 'SPOUSE' ||
+              party.role === 'VENDOR'
                 ? buildSalePartySignatureShareMessage({
                     signerName: party.signer_name || party.roleLabel,
                     role: party.role,
@@ -605,7 +608,7 @@ export const SaleContractSignatureSection = forwardRef<
                     ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
                     : party.statusLabel}
                 </p>
-                {contactLine && party.role !== 'VENDOR' && (
+                {contactLine && (
                   <p className="text-[11px] text-[var(--text-muted)]">
                     Contato: {contactLine}
                   </p>

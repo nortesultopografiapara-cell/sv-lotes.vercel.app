@@ -1,0 +1,100 @@
+/**
+ * Signatários eletrônicos — modelo ARAGUAIA (isolado).
+ * Dois PROMITENTES VENDEDORES PF + BUYER + SPOUSE opcional.
+ * R R Negócios NÃO assina.
+ */
+
+import { onlyDigits } from '@/lib/inputMasks';
+import {
+  ARAGUAIA_DEFAULT_SELLERS,
+  formatSellerCpfDisplay,
+} from '@/lib/projectContractSellers';
+import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
+
+export type AraguaiaEsignVendor = {
+  order: number;
+  name: string;
+  cpf: string;
+  /** Dígitos brutos informados (DDD+número); normalizar via helper WhatsApp. */
+  phoneRaw: string;
+  email: string | null;
+};
+
+/** Contatos WhatsApp confirmados — não inventar e-mail. */
+export const ARAGUAIA_ESIGN_VENDORS: AraguaiaEsignVendor[] = [
+  {
+    order: 1,
+    name: ARAGUAIA_DEFAULT_SELLERS[0].name,
+    cpf: ARAGUAIA_DEFAULT_SELLERS[0].cpf || '820.912.262-20',
+    phoneRaw: '94991254320',
+    email: null,
+  },
+  {
+    order: 2,
+    name: ARAGUAIA_DEFAULT_SELLERS[1].name,
+    cpf: ARAGUAIA_DEFAULT_SELLERS[1].cpf || '856.560.112-91',
+    phoneRaw: '94991252923',
+    email: null,
+  },
+];
+
+export function isAraguaiaSaleContractModel(
+  model?: string | null,
+): boolean {
+  const key = String(model || '')
+    .trim()
+    .toUpperCase();
+  return key === 'ARAGUAIA' || key.includes('ARAGUAIA');
+}
+
+export function resolveAraguaiaEsignVendorPhone(
+  phoneRaw: string,
+): string | null {
+  return normalizeWhatsAppPhone(phoneRaw);
+}
+
+/** Parties VENDOR a criar no envio ARAGUAIA (sem e-mail inventado). */
+export function buildAraguaiaEsignVendorPartyInputs(): Array<{
+  name: string;
+  cpf: string;
+  phone: string | null;
+  email: null;
+  order: number;
+}> {
+  return ARAGUAIA_ESIGN_VENDORS.map((v) => ({
+    name: v.name,
+    cpf: onlyDigits(v.cpf) || v.cpf,
+    phone: resolveAraguaiaEsignVendorPhone(v.phoneRaw),
+    email: null,
+    order: v.order,
+  }));
+}
+
+export function formatAraguaiaEsignVendorCpfDisplay(cpf: string): string {
+  return formatSellerCpfDisplay(cpf) || cpf;
+}
+
+export function araguaiaVendorCpfDigits(cpf?: string | null): string {
+  return onlyDigits(cpf || '');
+}
+
+/** Ordena VENDORs: Daniel (order 1) → Aldenise (order 2) → demais. */
+export function sortAraguaiaVendorParties<
+  T extends { signer_name?: string | null; signer_cpf?: string | null; created_at?: string },
+>(parties: T[]): T[] {
+  const orderOf = (p: T): number => {
+    const cpf = araguaiaVendorCpfDigits(p.signer_cpf);
+    const name = String(p.signer_name || '').toLowerCase();
+    const known = ARAGUAIA_ESIGN_VENDORS.find(
+      (v) =>
+        araguaiaVendorCpfDigits(v.cpf) === cpf ||
+        name.includes(v.name.split(' ')[0].toLowerCase()),
+    );
+    return known?.order ?? 99;
+  };
+  return [...parties].sort((a, b) => {
+    const d = orderOf(a) - orderOf(b);
+    if (d !== 0) return d;
+    return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+  });
+}
