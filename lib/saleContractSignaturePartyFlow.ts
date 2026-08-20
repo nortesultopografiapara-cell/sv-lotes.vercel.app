@@ -13,6 +13,7 @@ import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
   buildAraguaiaEsignVendorPartyInputs,
   isAraguaiaSaleContractModel,
+  resolveAraguaiaVendorSignerEmail,
 } from '@/lib/araguaiaContractEsign';
 import {
   assertSpouseReadyForSignatureSend,
@@ -838,6 +839,21 @@ export async function signPartyElectronically(
   const signerEmailRaw = normalizeSignerEmail(input.signerEmail);
   const hasEmail = isValidSignerEmail(signerEmailRaw);
   const partyPhone = String(party.signer_phone || '').trim();
+  const lockedVendorEmail = resolveAraguaiaVendorSignerEmail({
+    cpf: party.signer_cpf || signerDocument,
+    submittedEmail: hasEmail ? signerEmailRaw : null,
+  });
+  const resolvedSignerEmail =
+    lockedVendorEmail !== undefined
+      ? lockedVendorEmail
+      : hasEmail
+        ? signerEmailRaw
+        : party.role === 'VENDOR'
+          ? null
+          : party.signer_email || null;
+  const resolvedHasEmail = isValidSignerEmail(
+    String(resolvedSignerEmail || ''),
+  );
 
   if (!signerName || signerDocument.length < 11) {
     throw new SaleContractSignatureError(
@@ -845,7 +861,7 @@ export async function signPartyElectronically(
     );
   }
 
-  if (!hasEmail && !partyPhone) {
+  if (!resolvedHasEmail && !partyPhone) {
     throw new SaleContractSignatureError(
       'Informe um e-mail válido para assinar.',
     );
@@ -890,7 +906,7 @@ export async function signPartyElectronically(
     contractNumber: String(contractRow.contract_number || ''),
     signerName,
     signerDocument,
-    signerEmail: hasEmail ? signerEmailRaw : '',
+    signerEmail: resolvedHasEmail ? String(resolvedSignerEmail) : '',
     signedAt,
     ipAddress: input.ipAddress || '',
     party: party.role === 'SPOUSE' ? 'CLIENT' : 'CLIENT',
@@ -904,7 +920,7 @@ export async function signPartyElectronically(
   const signedParty = await markPartySigned(supabaseAdmin, party.id, {
     signerName,
     signerCpf: signerDocument,
-    signerEmail: hasEmail ? signerEmailRaw : party.signer_email,
+    signerEmail: resolvedHasEmail ? String(resolvedSignerEmail) : null,
     signerPhone: party.signer_phone,
     signatureHash,
     ipAddress: input.ipAddress,
@@ -939,7 +955,7 @@ export async function signPartyElectronically(
     signatureRecordId: signature.id,
     eventType,
     personName: signerName,
-    personEmail: hasEmail ? signerEmailRaw : undefined,
+    personEmail: resolvedHasEmail ? String(resolvedSignerEmail) : undefined,
     ipAddress: input.ipAddress || undefined,
     userAgent: input.userAgent || undefined,
     eventDescription: `Assinatura eletrônica do ${saleSignaturePartyRoleLabel(party.role).toLowerCase()}.`,
@@ -1021,10 +1037,20 @@ export async function markVendorPartySigned(
   const ua = parseUserAgent(input.userAgent);
   const geo = await resolveIpGeoApprox(input.ipAddress);
 
+  const lockedVendorEmail = resolveAraguaiaVendorSignerEmail({
+    cpf: vendor.signer_cpf || docDigits,
+    submittedEmail: input.vendorEmail,
+  });
+  const vendorEmailToPersist =
+    lockedVendorEmail !== undefined
+      ? lockedVendorEmail
+      : String(input.vendorEmail || '').trim() || null;
+
   return markPartySigned(supabaseAdmin, vendor.id, {
     signerName: input.vendorName,
     signerCpf: docDigits,
-    signerEmail: input.vendorEmail,
+    signerEmail: vendorEmailToPersist,
+    signerPhone: vendor.signer_phone,
     signatureHash: input.signatureHash,
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,

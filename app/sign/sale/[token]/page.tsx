@@ -24,7 +24,15 @@ type SaleSignPageData = {
   company: { id: string; name: string; cnpj?: string | null } | null;
   lot: { quadra: string; lote: string; project: string };
   buyer: { name: string | null; document?: string | null; email?: string | null };
-  party?: { role: string; roleLabel: string; status: string; statusLabel: string } | null;
+  party?: {
+    role: string;
+    roleLabel: string;
+    status: string;
+    statusLabel: string;
+    phone?: string | null;
+    email?: string | null;
+    emailOptional?: boolean;
+  } | null;
   signature: {
     status: string;
     statusLabel: string;
@@ -93,7 +101,14 @@ export default function SaleSignContractPage() {
         if (payload.buyer?.document) {
           setSignerDocument(formatCpfCnpj(String(payload.buyer.document)));
         }
-        if (payload.buyer?.email) {
+        // VENDOR com e-mail NULL (ex.: Aldenise): não pré-preencher e-mail do comprador.
+        const partyEmail =
+          payload.party?.email != null
+            ? String(payload.party.email).trim()
+            : '';
+        if (payload.party?.role === 'VENDOR') {
+          setSignerEmail(partyEmail);
+        } else if (payload.buyer?.email) {
           setSignerEmail(String(payload.buyer.email));
         }
       } catch {
@@ -115,8 +130,17 @@ export default function SaleSignContractPage() {
       setFormError('Você precisa concordar com os termos do contrato.');
       return;
     }
-    if (!isValidSignerEmail(signerEmail)) {
+    const emailOptional = Boolean(data?.party?.emailOptional);
+    if (!emailOptional && !isValidSignerEmail(signerEmail)) {
       setFormError('Informe um e-mail válido.');
+      return;
+    }
+    if (
+      emailOptional &&
+      signerEmail.trim() &&
+      !isValidSignerEmail(signerEmail)
+    ) {
+      setFormError('Informe um e-mail válido ou deixe em branco.');
       return;
     }
 
@@ -266,11 +290,17 @@ export default function SaleSignContractPage() {
           placeholder="000.000.000-00"
         />
         <Field
-          label="E-mail"
+          label={
+            data.party?.emailOptional ? 'E-mail (opcional)' : 'E-mail'
+          }
           type="email"
           value={signerEmail}
           onChange={setSignerEmail}
-          placeholder="seu@email.com"
+          placeholder={
+            data.party?.emailOptional
+              ? 'Sem e-mail — WhatsApp basta'
+              : 'seu@email.com'
+          }
         />
 
         <label className="flex items-start gap-3 text-sm text-gray-300 cursor-pointer">

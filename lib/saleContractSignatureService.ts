@@ -1644,7 +1644,11 @@ export async function loadSaleContractPdfForSign(
     const vendorParties = parties.filter((p) => p.role === 'VENDOR');
     const vendorParty = vendorParties[0];
 
-    const { isAraguaiaSaleContractModel, sortAraguaiaVendorParties } =
+    const {
+      isAraguaiaSaleContractModel,
+      sortAraguaiaVendorParties,
+      resolveAraguaiaVendorSignerEmail,
+    } =
       await import('@/lib/araguaiaContractEsign');
     const { readPartySignatureEventId } = await import(
       '@/lib/saleContractSignatureParties'
@@ -1698,20 +1702,30 @@ export async function loadSaleContractPdfForSign(
     };
 
     const personVendorCards = useAraguaiaPersonVendors
-      ? sortAraguaiaVendorParties(vendorParties).map((p) => ({
-          name: String(p.signer_name || ''),
-          cpf: p.signer_cpf,
-          email: p.signer_email,
-          phone: p.signer_phone,
-          signedAt: p.signed_at,
-          ipAddress: p.ip_address,
-          signatureHash: p.signature_hash,
-          signatureEventId: readPartySignatureEventId(p),
-          browser: readPartyUaField(p, 'browser'),
-          os: readPartyUaField(p, 'os'),
-          device: readPartyUaField(p, 'device'),
-          approxLocation: readPartyLocation(p),
-        }))
+      ? sortAraguaiaVendorParties(vendorParties).map((p) => {
+          const lockedEmail = resolveAraguaiaVendorSignerEmail({
+            cpf: p.signer_cpf,
+            submittedEmail: p.signer_email,
+          });
+          const email =
+            lockedEmail !== undefined
+              ? lockedEmail
+              : p.signer_email || null;
+          return {
+            name: String(p.signer_name || ''),
+            cpf: p.signer_cpf,
+            email,
+            phone: p.signer_phone,
+            signedAt: p.signed_at,
+            ipAddress: p.ip_address,
+            signatureHash: p.signature_hash,
+            signatureEventId: readPartySignatureEventId(p),
+            browser: readPartyUaField(p, 'browser'),
+            os: readPartyUaField(p, 'os'),
+            device: readPartyUaField(p, 'device'),
+            approxLocation: readPartyLocation(p),
+          };
+        })
       : null;
 
     if (parties.length > 0) {

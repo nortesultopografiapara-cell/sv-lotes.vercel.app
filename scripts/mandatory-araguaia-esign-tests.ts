@@ -11,6 +11,8 @@ import {
   buildAraguaiaEsignVendorPartyInputs,
   isAraguaiaSaleContractModel,
   resolveAraguaiaEsignVendorPhone,
+  resolveAraguaiaVendorSignerEmail,
+  resolveSalePublicSignPrefillEmail,
   sortAraguaiaVendorParties,
 } from '../lib/araguaiaContractEsign';
 import {
@@ -54,6 +56,36 @@ function testEsignVendorsConfig() {
     resolveAraguaiaEsignVendorPhone(ARAGUAIA_ESIGN_VENDORS[1].phoneRaw) ===
       '5594991252923',
     'WhatsApp Aldenise 94991252923 → 5594991252923',
+  );
+  ok(
+    resolveAraguaiaVendorSignerEmail({
+      cpf: '85656011291',
+      submittedEmail: 'severino@nortesultopografia.com.br',
+    }) === null,
+    'Aldenise ignora e-mail do comprador submetido',
+  );
+  ok(
+    resolveAraguaiaVendorSignerEmail({
+      cpf: '82091226220',
+      submittedEmail: '',
+    }) === ARAGUAIA_DANIEL_ESIGN_EMAIL,
+    'Daniel mantém e-mail configurado',
+  );
+  ok(
+    resolveSalePublicSignPrefillEmail({
+      partyRole: 'VENDOR',
+      partyEmail: null,
+      customerEmail: 'severino@nortesultopografia.com.br',
+    }) === null,
+    'prefill público VENDOR sem fallback buyer',
+  );
+  ok(
+    resolveSalePublicSignPrefillEmail({
+      partyRole: 'BUYER',
+      partyEmail: null,
+      customerEmail: 'severino@nortesultopografia.com.br',
+    }) === 'severino@nortesultopografia.com.br',
+    'prefill público BUYER mantém customer.email',
   );
   ok(
     normalizeWhatsAppPhone('94991254320') === '5594991254320',
@@ -176,6 +208,7 @@ function testCertificatePersonVendors() {
         name: 'Aldenise Alves Sousa',
         cpf: '85656011291',
         email: null,
+        phone: '5594991252923',
         signedAt: '2026-08-20T12:03:00.000Z',
         signatureEventId: 'aldenise-uuid-4444',
       },
@@ -199,6 +232,70 @@ function testCertificatePersonVendors() {
     'certificado sem Não informado no ID',
   );
   ok(html.includes('rrnegocioseservicos@gmail.com'), 'e-mail Daniel no cert');
+  ok(html.includes('5594991252923'), 'telefone Aldenise no cert');
+  const aldeniseIdx = html.indexOf('Aldenise Alves Sousa');
+  const nextBuyer = html.indexOf('PROMISSÁRIO COMPRADOR', aldeniseIdx);
+  const aldeniseCard = html.slice(
+    aldeniseIdx,
+    nextBuyer > 0 ? nextBuyer : aldeniseIdx + 2500,
+  );
+  ok(
+    !/E-mail/i.test(aldeniseCard),
+    'card Aldenise omite linha E-mail quando NULL',
+  );
+  ok(
+    !aldeniseCard.includes('severino@nortesultopografia.com.br'),
+    'card Aldenise sem e-mail do comprador',
+  );
+
+  const lockedEmail =
+    resolveAraguaiaVendorSignerEmail({
+      cpf: '85656011291',
+      submittedEmail: 'severino@nortesultopografia.com.br',
+    }) ?? null;
+  const lockedHtml = buildSaleContractSignatureCertificateHtml({
+    contractNumber: 'ARAG-EMAIL-LOCK',
+    projectName: 'Araguaia',
+    quadra: '01',
+    lote: '02',
+    buyerName: 'Severino Teste',
+    buyerDocument: '11122233344',
+    companyName: 'R R Negocios',
+    representativeName: 'x',
+    representativeCpf: '000',
+    signedAt: '2026-08-20T12:00:00.000Z',
+    buyerSignatureEventId: 'buyer-uuid-lock',
+    personVendorCards: [
+      {
+        name: 'Daniel Roberto Rivelino de Sousa',
+        cpf: '82091226220',
+        email: 'rrnegocioseservicos@gmail.com',
+        signedAt: '2026-08-20T12:02:00.000Z',
+        signatureEventId: 'daniel-uuid-lock',
+      },
+      {
+        name: 'Aldenise Alves Sousa',
+        cpf: '85656011291',
+        email: lockedEmail,
+        phone: '5594991252923',
+        signedAt: '2026-08-20T12:03:00.000Z',
+        signatureEventId: 'aldenise-uuid-lock',
+      },
+    ],
+  });
+  const lockedAldenise = lockedHtml.slice(
+    lockedHtml.indexOf('Aldenise Alves Sousa'),
+    lockedHtml.indexOf('PROMISSÁRIO COMPRADOR'),
+  );
+  ok(
+    lockedHtml.includes('rrnegocioseservicos@gmail.com'),
+    'lock: Daniel mantém e-mail',
+  );
+  ok(
+    !/E-mail/i.test(lockedAldenise) &&
+      !lockedAldenise.includes('severino@nortesultopografia.com.br'),
+    'lock: Aldenise sem e-mail do comprador no certificado',
+  );
 }
 
 function testSignatureEventIdPersistence() {

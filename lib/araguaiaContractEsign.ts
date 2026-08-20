@@ -80,6 +80,60 @@ export function araguaiaVendorCpfDigits(cpf?: string | null): string {
   return onlyDigits(cpf || '');
 }
 
+/** VENDOR PF ARAGUAIA conhecido (Daniel / Aldenise) pelo CPF. */
+export function findAraguaiaEsignVendorByCpf(
+  cpf?: string | null,
+): AraguaiaEsignVendor | null {
+  const digits = araguaiaVendorCpfDigits(cpf);
+  if (!digits) return null;
+  return (
+    ARAGUAIA_ESIGN_VENDORS.find(
+      (v) => araguaiaVendorCpfDigits(v.cpf) === digits,
+    ) || null
+  );
+}
+
+/**
+ * E-mail persistido/exibido para VENDOR ARAGUAIA.
+ * Aldenise (email configurado NULL): nunca herda buyer/customer/outro.
+ * Daniel: mantém e-mail configurado se o submetido for inválido/vazio.
+ * Demais VENDORs: sem override.
+ */
+export function resolveAraguaiaVendorSignerEmail(input: {
+  cpf?: string | null;
+  submittedEmail?: string | null;
+}): string | null | undefined {
+  const known = findAraguaiaEsignVendorByCpf(input.cpf);
+  if (!known) return undefined;
+  if (known.email === null) return null;
+  const submitted = String(input.submittedEmail || '')
+    .trim()
+    .toLowerCase();
+  if (submitted.includes('@')) return submitted;
+  return known.email;
+}
+
+/**
+ * Prefill público de e-mail no link de assinatura.
+ * VENDOR nunca recebe fallback de customer/buyer.
+ */
+export function resolveSalePublicSignPrefillEmail(input: {
+  partyRole?: string | null;
+  partyEmail?: string | null;
+  customerEmail?: string | null;
+}): string | null {
+  const role = String(input.partyRole || '')
+    .trim()
+    .toUpperCase();
+  const partyEmail = String(input.partyEmail || '').trim() || null;
+  if (role === 'VENDOR') return partyEmail;
+  return (
+    partyEmail ||
+    String(input.customerEmail || '').trim() ||
+    null
+  );
+}
+
 /** Ordena VENDORs: Daniel (order 1) → Aldenise (order 2) → demais. */
 export function sortAraguaiaVendorParties<
   T extends { signer_name?: string | null; signer_cpf?: string | null; created_at?: string },
