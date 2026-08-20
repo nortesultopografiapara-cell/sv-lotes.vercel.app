@@ -216,14 +216,21 @@ function testHtmlGeneration() {
   assert(html.includes('sv-contract-araguaia'), 'root class');
   assert(html.includes(ARAGUAIA_CONTRACT_TITLE), 'título');
   assert(html.includes(ARAGUAIA_LEGAL_MARKER), 'cláusula primeira');
-  assert(html.includes('Daniel Roberto Rivelino de Sousa'), 'vendedor 1');
-  assert(html.includes('Aldenise Alves Sousa'), 'vendedor 2');
+  assert(
+    html.includes('Daniel Roberto Rivelino de Sousa') ||
+      html.includes('DANIEL ROBERTO RIVELINO DE SOUSA'),
+    'vendedor 1',
+  );
+  assert(
+    html.includes('Aldenise Alves Sousa') || html.includes('ALDENISE ALVES SOUSA'),
+    'vendedor 2',
+  );
   assert(html.includes('820.912.262-20') || html.includes('82091226220'), 'CPF Daniel');
   assert(html.includes('INTERVENIENTE'), 'papel interveniente');
   assert(html.includes('R R NEGÓCIOS'), 'razão interveniente');
   assert(html.includes('57.590.706/0001-78') || html.includes('57590706000178'), 'CNPJ');
   assert(html.includes('Cliente Teste Araguaia'), 'comprador');
-  assert(html.includes('Chácara nº'), 'chácara');
+  assert(/chácara nº/i.test(html), 'chácara');
   assert(html.includes('IGP-M'), 'correção IGP-M');
   assert(html.includes('Corretor Exemplo'), 'corretor');
   assert(html.includes('PROMITENTE VENDEDOR'), 'assinatura vendedor');
@@ -239,6 +246,7 @@ function testHtmlGeneration() {
   assert(!html.includes('[endereço pendente]'), 'sem placeholder endereço');
   assert(!html.includes('confrontando com'), 'sem confrontações');
   assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro confrontações');
+  assert(!html.includes('confrontando pela'), 'sem confrontando pela');
   assert(!html.includes('confrontante'), 'sem palavra confrontante');
   assert(html.includes('medindo:'), 'intro medidas texto corrido');
   assert(html.includes('frente'), 'medida frente');
@@ -249,10 +257,69 @@ function testHtmlGeneration() {
   assert(!html.includes('<strong>Frente:</strong>'), 'sem lista Frente:');
   assert(!html.includes('possuindo:'), 'sem intro lista antiga');
   assert(html.includes('araguaia-closing-statement'), 'fecho no pack');
+  assert(html.includes('03'), 'três vias');
   assert(html.includes('araguaia-clause-keep'), 'keep título+lead');
   assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
   assert(html.includes('4606073-PC/PA') || html.includes('4606073'), 'RG Daniel');
   assert(html.includes('5279360-PC/PA') || html.includes('5279360'), 'RG Aldenise');
+  assert(html.includes('produtor rural'), 'qualificação Daniel');
+  assert(html.includes('funcionária pública municipal'), 'qualificação Aldenise');
+  assert(html.includes('Avenida dos Ipês'), 'endereço vendedores');
+}
+
+function testOriginalFidelityMarkers() {
+  const html = generateContractHTML({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+
+  const must = [
+    ['55.278', 'matrícula nº 55.278'],
+    ['MB034600000389', 'título INCRA'],
+    ['54600003311/2010-71', 'processo administrativo'],
+    ['99 chácaras', '99 chácaras'],
+    ['nota promissória', 'nota promissória'],
+    ['pro solvendo', 'pro solvendo'],
+    ['2%', 'multa 2%'],
+    ['0,0333%', 'juros dia 0,0333%'],
+    ['20%', 'honorários 20%'],
+    ['30', 'inadimplência 30 dias'],
+    ['03', 'inadimplência 03 parcelas'],
+    ['25%', 'retenção 25%'],
+    ['carta de quitação', 'carta de quitação'],
+    ['georreferenciamento', 'georreferenciamento'],
+    ['10%', 'multa 10%'],
+    ['escritura', 'escritura'],
+    ['CESSÃO E TRANSFERÊNCIA', 'cessão e transferência'],
+    ['anuência do cônjuge', 'anuência do cônjuge'],
+    ['última parcela paga', 'taxa última parcela'],
+    ['arruamento', 'arruamento'],
+    ['limpo', 'limpeza'],
+    ['cercamento', 'cercamento'],
+    ['05%', 'diferença 05%'],
+    ['Corretor Exemplo', 'corretor dinâmico'],
+    ['Comarca de Parauapebas', 'foro Parauapebas'],
+    ['DESCRIÇÃO DO IMÓVEL', 'título cláusula primeira'],
+    ['CONDIÇÕES GERAIS', 'condições gerais'],
+    ['CIÊNCIA DO CONTRATO', 'ciência'],
+    ['IRREVOGABILIDADE DA TRANSAÇÃO', 'irrevogabilidade'],
+    ['RESCISÃO', 'rescisão'],
+    ['SUCESSÃO CONTRATUAL', 'sucessão'],
+    ['DISPOSIÇÕES GERAIS', 'disposições gerais'],
+  ];
+  for (const [needle, label] of must) {
+    assert(html.includes(needle), `fidelidade: ${label}`);
+  }
+  assert(!html.includes('confrontando pela direita'), 'fidelidade: sem confrontante direita');
+  assert(!html.includes('confrontando pela esquerda'), 'fidelidade: sem confrontante esquerda');
+  assert(
+    !html.includes('foro da comarca do imóvel ou da sede'),
+    'fidelidade: sem foro antigo genérico',
+  );
 }
 
 function testIsolationOtherModels() {
@@ -313,6 +380,7 @@ function main() {
   testSellersResolution();
   testAreaExtenso();
   testHtmlGeneration();
+  testOriginalFidelityMarkers();
   testIsolationOtherModels();
   testSourceFilesExist();
   console.log('mandatory-araguaia-contract-tests: all passed');

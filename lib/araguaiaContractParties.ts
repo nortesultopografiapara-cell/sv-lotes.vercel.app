@@ -80,7 +80,7 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
     <div class="contract-closing-and-signatures--araguaia">
       <div class="contract-closing" style="margin: 18px 0 8px 0; text-align: justify;">
         <p class="araguaia-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
-          E, por estarem assim justos e contratados, firmam o presente instrumento em tantas vias quantas necessárias, na presença das testemunhas abaixo.
+          E, assim, por estarem justos e contratados, assinam o presente, inclusive o mandatário supracitado, <strong>03</strong> (três) vias de igual teor e forma, para um mesmo efeito, na presença de duas testemunhas abaixo que a tudo assistiram.
         </p>
         <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
           ${esc(ctx.closingLine)}

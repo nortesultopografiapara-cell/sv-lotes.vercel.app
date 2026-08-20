@@ -330,9 +330,10 @@ export function buildAraguaiaContractContext(
       ...sale,
       ...(params.contractDate ? { sale_date: params.contractDate } : {}),
     }) || formatContractSaleDateLongBr(sale);
-  const closingLine = cityUf
-    ? `${cityUf}, ${contractDateLong || '___ de _____________ de ______'}.`
-    : `${contractDateLong || '___ de _____________ de ______'}.`;
+  // Fecho do original: "Parauapebas – PA, …" (data dinâmica).
+  const closingLine = `Parauapebas – PA, ${
+    contractDateLong || '___ de _____________ de ______'
+  }.`;
 
   return {
     sellers,

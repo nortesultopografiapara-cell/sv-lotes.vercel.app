@@ -20,29 +20,33 @@ export type ProjectContractSellerParty = {
   address?: string | null;
 };
 
+/** Endereço comum dos promitentes / interveniente — modelo ARAGUAIA (fixo original). */
+export const ARAGUAIA_SELLERS_ADDRESS =
+  'Avenida dos Ipês, S/N – QD 31 LT 13 – Cidade Jardim – Parauapebas – PA';
+
 /** Defaults do Chacreamento Araguaia — não usar em outros modelos. */
 export const ARAGUAIA_DEFAULT_SELLERS: ProjectContractSellerParty[] = [
   {
     role: 'PROMITENTE_VENDEDOR',
     order: 1,
     name: 'Daniel Roberto Rivelino de Sousa',
-    nationality: null,
-    maritalStatus: null,
-    profession: null,
+    nationality: 'brasileiro',
+    maritalStatus: 'casado',
+    profession: 'produtor rural',
     rg: '4606073-PC/PA',
     cpf: '820.912.262-20',
-    address: null,
+    address: ARAGUAIA_SELLERS_ADDRESS,
   },
   {
     role: 'PROMITENTE_VENDEDOR',
     order: 2,
     name: 'Aldenise Alves Sousa',
-    nationality: null,
-    maritalStatus: null,
-    profession: null,
+    nationality: 'brasileira',
+    maritalStatus: 'casada',
+    profession: 'funcionária pública municipal',
     rg: '5279360-PC/PA',
     cpf: '856.560.112-91',
-    address: null,
+    address: ARAGUAIA_SELLERS_ADDRESS,
   },
 ];
 
