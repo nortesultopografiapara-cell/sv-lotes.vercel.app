@@ -60,6 +60,8 @@ export type AraguaiaContractContext = {
   buyerAddress: string;
   hasSpouse: boolean;
   spouseQualificationHtml: string;
+  spouseName: string;
+  spouseCpf: string;
   chacaraNumber: string;
   quadra: string;
   areaFmt: string;
@@ -246,14 +248,18 @@ export function buildAraguaiaContractContext(
   const spouseCtx = resolveSaleSpouseContext(sale);
   const hasSpouse = Boolean(spouseCtx.hasSpouse && spouseCtx.spouse?.name);
   let spouseQualificationHtml = '';
+  let spouseName = '';
+  let spouseCpf = '';
   if (hasSpouse && spouseCtx.spouse) {
     const sp = spouseCtx.spouse;
+    spouseName = toContractTitleCase(sp.name || '');
+    spouseCpf = formatCpfCnpj(sp.cpf) || sp.cpf || '';
     const parts = [
-      toContractTitleCase(sp.name || ''),
+      spouseName,
       sp.nationality ? `nacionalidade ${toContractTitleCase(sp.nationality)}` : '',
       sp.maritalStatus ? toContractTitleCase(sp.maritalStatus) : '',
       sp.profession ? `profissão ${toContractTitleCase(sp.profession)}` : '',
-      sp.cpf ? `CPF nº ${formatCpfCnpj(sp.cpf) || sp.cpf}` : '',
+      spouseCpf ? `CPF nº ${spouseCpf}` : '',
       sp.rg ? `RG nº ${sp.rg}${sp.issuer ? ` — ${sp.issuer}` : ''}` : '',
       sp.address ? `residente em ${sp.address}` : '',
     ].filter(Boolean);
@@ -352,6 +358,8 @@ export function buildAraguaiaContractContext(
     buyerAddress,
     hasSpouse,
     spouseQualificationHtml,
+    spouseName,
+    spouseCpf,
     chacaraNumber,
     quadra,
     areaFmt: formatAreaNumber(lot.areaM2),

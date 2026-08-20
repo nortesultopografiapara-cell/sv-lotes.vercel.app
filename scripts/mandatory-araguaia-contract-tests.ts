@@ -228,7 +228,6 @@ function testHtmlGeneration() {
   assert(html.includes('820.912.262-20') || html.includes('82091226220'), 'CPF Daniel');
   assert(html.includes('INTERVENIENTE'), 'papel interveniente');
   assert(html.includes('R R NEGÓCIOS'), 'razão interveniente');
-  assert(html.includes('57.590.706/0001-78') || html.includes('57590706000178'), 'CNPJ');
   assert(html.includes('Cliente Teste Araguaia'), 'comprador');
   assert(/chácara nº/i.test(html), 'chácara');
   assert(html.includes('IGP-M'), 'correção IGP-M');
@@ -264,7 +263,54 @@ function testHtmlGeneration() {
   assert(html.includes('5279360-PC/PA') || html.includes('5279360'), 'RG Aldenise');
   assert(html.includes('produtor rural'), 'qualificação Daniel');
   assert(html.includes('funcionária pública municipal'), 'qualificação Aldenise');
+  assert(html.includes('Índice Geral de Preços de Mercado – IGP-M'), 'item1 IGP-M completo');
+  assert(html.includes('Índice Geral de Preços do Mercado – IGP-M'), 'item2 IGP-M completo');
+  assert(html.includes('araguaia-financial-item-1-3'), 'wrapper item 1.3');
   assert(html.includes('Avenida dos Ipês'), 'endereço vendedores');
+
+  const sigMarker = '<div class="contract-closing-and-signatures--araguaia">';
+  const sigIdx = html.indexOf(sigMarker);
+  assert(sigIdx >= 0, 'bloco assinaturas presente');
+  const sigBlock = html.slice(sigIdx);
+  assert(sigBlock.includes('Daniel Roberto Rivelino de Sousa'), 'sig Daniel');
+  assert(sigBlock.includes('Aldenise Alves Sousa'), 'sig Aldenise');
+  assert(sigBlock.includes('Cliente Teste Araguaia'), 'sig comprador');
+  assert(sigBlock.includes('TESTEMUNHA 1'), 'sig testemunha 1');
+  assert(sigBlock.includes('TESTEMUNHA 2'), 'sig testemunha 2');
+  assert(!/<p[^>]*>INTERVENIENTE<\/p>/i.test(sigBlock), 'sig sem INTERVENIENTE');
+  assert(!sigBlock.includes('R R NEGÓCIOS'), 'sig sem R R Negócios');
+  assert(!sigBlock.includes('signature-slot-intervenient'), 'sig sem slot interveniente');
+  assert(!sigBlock.includes('CÔNJUGE DO PROMITENTE'), 'sig sem cônjuge (venda sem spouse)');
+}
+
+function testSignatureBlockWithSpouse() {
+  const html = generateContractHTML({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: {
+      ...SALE,
+      has_spouse: true,
+      sale_spouse_name: 'João Cônjuge Araguaia',
+      sale_spouse_cpf: '39053344705',
+      sale_spouse_nationality: 'Brasileiro',
+      sale_spouse_marital_status: 'Casado',
+      sale_spouse_profession: 'Comerciante',
+    },
+    financeReceipts: RECEIPTS,
+  });
+  const sigMarker = '<div class="contract-closing-and-signatures--araguaia">';
+  const sigIdx = html.indexOf(sigMarker);
+  assert(sigIdx >= 0, 'bloco com cônjuge presente');
+  const sigBlock = html.slice(sigIdx);
+  assert(sigBlock.includes('CÔNJUGE DO PROMITENTE COMPRADOR'), 'slot cônjuge');
+  assert(sigBlock.includes('João Cônjuge Araguaia') || sigBlock.includes('Joao Cônjuge'), 'nome cônjuge');
+  assert(sigBlock.includes('390.533.447-05') || sigBlock.includes('39053344705'), 'CPF cônjuge');
+  assert(sigBlock.includes('signature-slot-spouse'), 'classe spouse');
+  assert(!/<p[^>]*>INTERVENIENTE<\/p>/i.test(sigBlock), 'com cônjuge sem INTERVENIENTE');
+  assert(!sigBlock.includes('R R NEGÓCIOS'), 'com cônjuge sem R R no bloco');
+  assert(html.includes('INTERVENIENTE'), 'R R permanece no corpo/preâmbulo');
 }
 
 function testOriginalFidelityMarkers() {
@@ -303,6 +349,8 @@ function testOriginalFidelityMarkers() {
     ['05%', 'diferença 05%'],
     ['Corretor Exemplo', 'corretor dinâmico'],
     ['Comarca de Parauapebas', 'foro Parauapebas'],
+    ['Índice Geral de Preços de Mercado – IGP-M', 'IGP-M item 1 completo'],
+    ['Índice Geral de Preços do Mercado – IGP-M', 'IGP-M item 2 completo'],
     ['DESCRIÇÃO DO IMÓVEL', 'título cláusula primeira'],
     ['CONDIÇÕES GERAIS', 'condições gerais'],
     ['CIÊNCIA DO CONTRATO', 'ciência'],
@@ -380,6 +428,7 @@ function main() {
   testSellersResolution();
   testAreaExtenso();
   testHtmlGeneration();
+  testSignatureBlockWithSpouse();
   testOriginalFidelityMarkers();
   testIsolationOtherModels();
   testSourceFilesExist();

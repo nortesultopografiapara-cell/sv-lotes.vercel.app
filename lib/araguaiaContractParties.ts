@@ -1,6 +1,8 @@
 /**
  * Assinaturas e título — modelo ARAGUAIA (isolado).
- * Não altera parties eletrônicos BUYER/SPOUSE/VENDOR.
+ * Bloco visual: Daniel, Aldenise, comprador, cônjuge (se houver), testemunhas.
+ * R R Negócios NÃO assina (permanece INTERVENIENTE só no corpo).
+ * Motor eletrônico global (BUYER/SPOUSE/VENDOR empresa) não é alterado aqui.
  */
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
@@ -75,6 +77,20 @@ export function buildAraguaiaBodyHtml(ctx: AraguaiaContractContext): string {
 export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): string {
   const seller1 = ctx.sellers[0];
   const seller2 = ctx.sellers[1];
+  const showSpouse = Boolean(ctx.hasSpouse && ctx.spouseName);
+  const gridMod = showSpouse
+    ? 'signature-grid--araguaia signature-grid--araguaia-with-spouse'
+    : 'signature-grid--araguaia signature-grid--araguaia-no-spouse';
+
+  const spouseSlot = showSpouse
+    ? buildSlot({
+        role: 'CÔNJUGE DO PROMITENTE COMPRADOR(A)',
+        name: ctx.spouseName,
+        meta: ctx.spouseCpf ? [`CPF: ${ctx.spouseCpf}`] : [],
+        dataRole: 'SPOUSE',
+        extraClass: 'signature-slot-spouse',
+      })
+    : '';
 
   return `
     <div class="contract-closing-and-signatures--araguaia">
@@ -87,14 +103,14 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
         </p>
       </div>
       <div class="contract-signatures contract-signatures--araguaia">
-        <div class="signature-grid signature-grid--araguaia">
+        <div class="signature-grid ${gridMod}">
           ${buildSlot({
             role: 'PROMITENTE VENDEDOR',
             name: seller1?.name || 'Promitente Vendedor 1',
             meta: seller1?.cpf
               ? [`CPF: ${formatSellerCpfDisplay(seller1.cpf) || seller1.cpf}`]
               : [],
-            dataRole: 'VENDOR_PF_1',
+            dataRole: 'VENDOR',
             extraClass: 'signature-slot-vendor-1',
           })}
           ${buildSlot({
@@ -103,7 +119,7 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
             meta: seller2?.cpf
               ? [`CPF: ${formatSellerCpfDisplay(seller2.cpf) || seller2.cpf}`]
               : [],
-            dataRole: 'VENDOR_PF_2',
+            dataRole: 'VENDOR',
             extraClass: 'signature-slot-vendor-2',
           })}
           ${buildSlot({
@@ -113,13 +129,7 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
             dataRole: 'BUYER',
             extraClass: 'signature-slot-buyer',
           })}
-          ${buildSlot({
-            role: 'INTERVENIENTE',
-            name: ctx.intervenienteName,
-            meta: [`CNPJ: ${ctx.intervenienteCnpj}`],
-            dataRole: 'INTERVENIENT',
-            extraClass: 'signature-slot-intervenient',
-          })}
+          ${spouseSlot}
           ${buildSlot({
             role: 'TESTEMUNHA 1',
             meta: ['Nome: ________________________________', 'CPF: ________________________________'],

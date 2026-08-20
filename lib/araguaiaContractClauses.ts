@@ -162,10 +162,9 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ? strong(vencimento)
       : vencimento;
 
-  const correction =
-    ctx.correctionLabel && ctx.correctionLabel !== 'não informado'
-      ? ctx.correctionLabel
-      : 'Índice Geral de Preços de Mercado – IGP-M';
+  // Redação literal do contrato original (itens 1 e 2). Item 3 permanece IGP-M/FGV.
+  const igpmItem1 = 'Índice Geral de Preços de Mercado – IGP-M';
+  const igpmItem2 = 'Índice Geral de Preços do Mercado – IGP-M';
 
   const brokerLine = ctx.brokerCpf
     ? `${strong(ctx.brokerName)}, CPF nº ${strong(ctx.brokerCpf)}`
@@ -219,7 +218,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
           ctx.parcelaFmt,
           ctx.parcelaExtenso,
         )}, vencendo a primeira em ${vencimentoHtml}, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
-          correction,
+          igpmItem1,
         )}, ou outro que venha substituí-lo.`,
       )}
       ${itemP(
@@ -228,12 +227,14 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>1.2</strong> – As parcelas descritas no item 1 desta cláusula serão representadas por uma única <strong>nota promissória</strong> emitida pelo(a/s) PROMITENTE(S) COMPRADOR(A/ES) a favor e à ordem dos PROMITENTES VENDEDORES, de natureza <strong>“pro solvendo”</strong> do preço, que deverá ser paga onde for posta em cobrança em caso de inadimplência.`,
       )}
+      <div class="araguaia-financial-item-1-3">
       ${itemP(
         `<strong>1.3</strong> – Nenhuma parcela poderá ser paga senão em sua totalidade, não sendo admitido o fracionamento do pagamento de qualquer das prestações, salvo se os PROMITENTES VENDEDORES, a seu exclusivo critério e por mera liberalidade, decidir de forma diversa, não se constituindo assim em novação ou alteração dos termos do presente contrato.`,
       )}
+      </div>
       ${itemP(
         `<strong>2</strong> – O pagamento das parcelas descritas no item 1 desta cláusula será feito mediante a emissão de boletos bancários, sendo que as parcelas serão reajustadas anualmente mediante a aplicação da variação positiva do ${esc(
-          correction,
+          igpmItem2,
         )}, ou outro que o substitua.`,
       )}
       ${itemP(
