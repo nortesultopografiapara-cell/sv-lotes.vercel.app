@@ -70,6 +70,7 @@ export function contractHtmlHasSpouseAnuenteSlot(
 
 /**
  * Detecta HTML gerado pelo template Recanto (classe ou slot de assinatura).
+ * NÃO classificar ARAGUAIA/Meneses/SV2 como Recanto só por terem cônjuge anuente.
  */
 export function contractHtmlLooksLikeRecanto(
   contractHtml?: string | null,
@@ -77,6 +78,17 @@ export function contractHtmlLooksLikeRecanto(
   const raw = String(contractHtml || '');
   if (!raw.trim()) return false;
   const lower = raw.toLowerCase();
+  // Isolamento: templates de outros modelos com cônjuge não são Recanto.
+  if (
+    lower.includes('sv-contract-araguaia') ||
+    lower.includes('sv-contract-meneses') ||
+    lower.includes('sv-contract-sv-lotes-2') ||
+    /data-contract-model=["']?araguaia/i.test(raw) ||
+    /data-contract-model=["']?meneses/i.test(raw) ||
+    /data-contract-model=["']?sv_lotes_2/i.test(raw)
+  ) {
+    return false;
+  }
   return (
     lower.includes('sv-contract-recanto-primavera') ||
     contractHtmlHasSpouseAnuenteSlot(raw) ||

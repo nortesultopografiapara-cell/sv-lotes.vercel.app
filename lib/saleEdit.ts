@@ -371,18 +371,21 @@ export async function updateSaleFromEdit(
     String(lot.projectId || lot.project_id || saleBefore.project_id || '').trim() ||
     null;
   let projectModel: unknown = null;
+  let projectName: unknown = null;
   if (projectId) {
     const { data: projectRow } = await supabase
       .from('projects')
-      .select('contract_model')
+      .select('contract_model, name')
       .eq('id', projectId)
       .maybeSingle();
     projectModel = projectRow?.contract_model;
+    projectName = projectRow?.name;
   }
 
   const contractModel = resolveSaleContractModelFromContext({
     saleModel: saleBefore.contract_model,
     projectModel,
+    projectName,
     companyModel: companyRow?.contract_model,
   }).model;
   const financeOptions = {

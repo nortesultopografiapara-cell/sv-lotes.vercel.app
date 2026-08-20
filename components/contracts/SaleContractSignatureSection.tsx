@@ -6,6 +6,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -57,6 +58,7 @@ import {
   formatSalePartyShareContactLine,
   resolveSalePartyShareContact,
 } from '@/lib/saleContractSignatureShareContact';
+import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
 
 type SelectedContract = {
   id: string;
@@ -171,10 +173,17 @@ export const SaleContractSignatureSection = forwardRef<
   const quadra = resolveQuadra(contract?.blocks || null);
   const lote = resolveLote(contract?.blocks || null);
 
+  const [electronicallySignedFlag, setElectronicallySignedFlag] = useState(false);
+  const onSignedRef = useRef(onSigned);
+  onSignedRef.current = onSigned;
+  const syncedSignedParentRef = useRef(false);
+
   const loadSignature = useCallback(async () => {
     if (!contract?.id) {
       setLatest(null);
       setTimeline([]);
+      setElectronicallySignedFlag(false);
+      syncedSignedParentRef.current = false;
       return;
     }
     setLoading(true);
@@ -187,6 +196,8 @@ export const SaleContractSignatureSection = forwardRef<
         parties?: SaleSignaturePartyPublicView[];
         progress?: { signed: number; total: number };
         vendorDefaults?: { name?: string; document?: string; email?: string; companyName?: string };
+        electronicallySigned?: boolean;
+        pdfSignedUrl?: string | null;
       }>(
         await buildSignatureApiUrl(contract.id),
         { credentials: 'include' },
@@ -199,6 +210,7 @@ export const SaleContractSignatureSection = forwardRef<
       setLatest(json.latest || null);
       setParties(json.parties || []);
       setProgress(json.progress || null);
+      setElectronicallySignedFlag(Boolean(json.electronicallySigned));
       // Confiar na URL já normalizada pelo servidor (Preview usa VERCEL_URL em runtime).
       setSignUrl(json.latest?.signature_url || null);
       const fallbackEmail = String(loggedInUserEmail || '').trim();
@@ -209,6 +221,15 @@ export const SaleContractSignatureSection = forwardRef<
         companyName: String(json.vendorDefaults?.companyName || projectName),
       });
       setTimeline(mergeSaleSignatureTimeline(json.history || [], []));
+
+      const becameSigned =
+        Boolean(json.electronicallySigned) ||
+        String(json.latest?.signature_status || '').toUpperCase() === 'SIGNED';
+      // Sincroniza o contrato pai uma vez (status/pdf_signed_url) sem loop de reload.
+      if (becameSigned && !syncedSignedParentRef.current) {
+        syncedSignedParentRef.current = true;
+        onSignedRef.current?.();
+      }
     } catch (e) {
       setError(
         e instanceof Error
@@ -222,6 +243,7 @@ export const SaleContractSignatureSection = forwardRef<
 
   useEffect(() => {
     setLocalTimeline([]);
+    syncedSignedParentRef.current = false;
   }, [contract?.id]);
 
   useEffect(() => {
@@ -283,6 +305,7 @@ export const SaleContractSignatureSection = forwardRef<
       vendorDocument: string;
       vendorEmail: string;
       vendorRole: string;
+      partyId?: string | null;
     }) => {
       if (!contract?.id || blockOwnerWriteOnClient(userRole)) {
         throw new Error('Sem permissão para assinar como vendedor.');
@@ -309,6 +332,7 @@ export const SaleContractSignatureSection = forwardRef<
               vendorDocument: input.vendorDocument,
               vendorEmail: input.vendorEmail,
               vendorRole: input.vendorRole,
+              partyId: input.partyId || null,
             }),
           },
           CONTRACTS_FETCH_TIMEOUT_MS,
@@ -339,6 +363,30 @@ export const SaleContractSignatureSection = forwardRef<
     },
     [contract?.id, loadSignature, onSigned, resolveSignatureIdForVendorSign, userRole],
   );
+
+  const pendingVendorTargets = useMemo(() => {
+    return parties
+      .filter(
+        (p) =>
+          p.role === 'VENDOR' &&
+          !['SIGNED', 'CANCELLED', 'EXPIRED'].includes(
+            String(p.status || '').toUpperCase(),
+          ),
+      )
+      .map((p) => ({
+        partyId: p.id,
+        name: String(p.signer_name || p.name || 'Vendedor'),
+        document: String(p.signer_cpf || ''),
+        email: String(p.signer_email || p.email || ''),
+      }));
+  }, [parties]);
+
+  const vendorPartyCount = useMemo(
+    () => parties.filter((p) => p.role === 'VENDOR').length,
+    [parties],
+  );
+
+  const multiVendorPending = vendorPartyCount > 1;
 
   const shareMessage = useMemo(() => {
     if (!signUrl || !contract) return '';
@@ -527,7 +575,16 @@ export const SaleContractSignatureSection = forwardRef<
 
   const status = latest?.signature_status || contract.signature_status;
   const statusLabel = saleSignatureStatusLabel(status);
-  const isElectronicallySigned = isSaleContractFullySigned(contract);
+  // Usar status do processo (`latest`) + flag da API — o `contract` do pai pode
+  // permanecer "ativo" após 4/4 via links públicos até o reload.
+  const isElectronicallySigned =
+    electronicallySignedFlag ||
+    isSaleContractFullySigned({
+      status: contract.status,
+      signature_status: latest?.signature_status || contract.signature_status,
+    }) ||
+    (Boolean(progress && progress.total > 0 && progress.signed >= progress.total) &&
+      String(latest?.signature_status || '').toUpperCase() === 'SIGNED');
   const isAwaitingVendor = String(status || '').toUpperCase() === 'CLIENT_SIGNED';
 
   const signedPdfDownloadUrl = `/api/contracts/${contract.id}/pdf?download=1`;
@@ -579,7 +636,9 @@ export const SaleContractSignatureSection = forwardRef<
             const contactLine = formatSalePartyShareContactLine(contact);
             const url = party.signatureUrl || party.signature_url || null;
             const partyMessage =
-              party.role === 'BUYER' || party.role === 'SPOUSE'
+              party.role === 'BUYER' ||
+              party.role === 'SPOUSE' ||
+              party.role === 'VENDOR'
                 ? buildSalePartySignatureShareMessage({
                     signerName: party.signer_name || party.roleLabel,
                     role: party.role,
@@ -605,7 +664,7 @@ export const SaleContractSignatureSection = forwardRef<
                     ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
                     : party.statusLabel}
                 </p>
-                {contactLine && party.role !== 'VENDOR' && (
+                {contactLine && (
                   <p className="text-[11px] text-[var(--text-muted)]">
                     Contato: {contactLine}
                   </p>
@@ -708,7 +767,13 @@ export const SaleContractSignatureSection = forwardRef<
         {showVendorSignButton && (
           <ActionChip
             icon={ShieldCheck}
-            label={signingVendor ? 'Assinando…' : 'Assinar como vendedor'}
+            label={
+              signingVendor
+                ? 'Assinando…'
+                : multiVendorPending
+                  ? 'Assinar promitente vendedor'
+                  : 'Assinar como vendedor'
+            }
             onClick={() => setVendorSignOpen(true)}
             disabled={signingVendor}
             primary
@@ -784,6 +849,7 @@ export const SaleContractSignatureSection = forwardRef<
         defaultName={vendorDefaults.name}
         defaultDocument={vendorDefaults.document}
         defaultEmail={vendorDefaults.email}
+        vendorTargets={multiVendorPending ? pendingVendorTargets : []}
         onSign={handleVendorSign}
       />
     </div>

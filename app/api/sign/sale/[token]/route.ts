@@ -36,6 +36,10 @@ import {
   computeAggregateSaleSignatureStatus,
   toPartyStatusSnapshots,
 } from '@/lib/saleContractSignaturePartyStatus';
+import {
+  findAraguaiaEsignVendorByCpf,
+  resolveSalePublicSignPrefillEmail,
+} from '@/lib/araguaiaContractEsign';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -220,6 +224,26 @@ export async function GET(
     ? saleSignaturePartyRoleLabel(partyRole)
     : 'Comprador';
 
+  const customerEmail =
+    String(customer?.email || customer?.contact_email || '').trim() || null;
+  const partyEmailRaw = String(party?.signer_email || '').trim() || null;
+  const knownAraguaiaVendor = party
+    ? findAraguaiaEsignVendorByCpf(party.signer_cpf)
+    : null;
+  // Aldenise (e demais VENDOR com e-mail NULL no cadastro): nunca expor e-mail alheio.
+  const partyEmailForPrefill =
+    knownAraguaiaVendor && knownAraguaiaVendor.email === null
+      ? null
+      : partyEmailRaw;
+  const prefillEmail = resolveSalePublicSignPrefillEmail({
+    partyRole,
+    partyEmail: partyEmailForPrefill,
+    customerEmail,
+  });
+  const partyPhone = String(party?.signer_phone || '').trim() || null;
+  const emailOptional =
+    partyRole === 'VENDOR' && Boolean(partyPhone) && !prefillEmail;
+
   return NextResponse.json({
     success: true,
     contract: {
@@ -251,13 +275,7 @@ export async function GET(
         customer?.document ||
         customer?.cpf ||
         null,
-      email:
-        String(
-          party?.signer_email ||
-            customer?.email ||
-            customer?.contact_email ||
-            '',
-        ).trim() || null,
+      email: prefillEmail,
     },
     party: partyRole
       ? {
@@ -271,6 +289,9 @@ export async function GET(
                 : partyStatus
               : partyStatus,
           ),
+          phone: partyPhone,
+          email: partyEmailForPrefill,
+          emailOptional,
         }
       : null,
     signature: {

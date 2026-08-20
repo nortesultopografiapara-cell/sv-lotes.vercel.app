@@ -895,6 +895,7 @@ export async function buildFreshSaleContractHtml(
     saleModel: sale.contract_model,
     contractModel: contract.contract_model,
     projectModel: project.contract_model,
+    projectName: project.name,
     companyModel: company.contract_model,
   });
   const tenant = applyEffectiveContractModelToTenant(

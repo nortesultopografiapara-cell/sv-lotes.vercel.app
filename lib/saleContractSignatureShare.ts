@@ -60,7 +60,7 @@ export function buildSaleSignatureShareMessage(input: SaleSignatureShareInput): 
 
 export type SalePartySignatureShareInput = {
   signerName: string;
-  role: 'BUYER' | 'SPOUSE';
+  role: 'BUYER' | 'SPOUSE' | 'VENDOR';
   projectName: string;
   quadra: string;
   lote: string;
@@ -69,13 +69,20 @@ export type SalePartySignatureShareInput = {
 };
 
 /**
- * Mensagem individual por participante (comprador ou cônjuge).
+ * Mensagem individual por participante (comprador, cônjuge ou vendedor PF).
  * Inclui empreendimento, quadra, lote e contrato — não omitir esses campos.
  */
 export function buildSalePartySignatureShareMessage(
   input: SalePartySignatureShareInput,
 ): string {
-  const name = shareField(input.signerName, input.role === 'SPOUSE' ? 'cônjuge' : 'comprador');
+  const name = shareField(
+    input.signerName,
+    input.role === 'SPOUSE'
+      ? 'cônjuge'
+      : input.role === 'VENDOR'
+        ? 'vendedor'
+        : 'comprador',
+  );
   const project = shareField(input.projectName, '—');
   const quadra = shareField(input.quadra, '—');
   const lote = shareField(input.lote, '—');
@@ -85,7 +92,9 @@ export function buildSalePartySignatureShareMessage(
   const purpose =
     input.role === 'SPOUSE'
       ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de cônjuge anuente.'
-      : 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda.';
+      : input.role === 'VENDOR'
+        ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de promitente vendedor.'
+        : 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda.';
 
   return [
     'SV LOTES',

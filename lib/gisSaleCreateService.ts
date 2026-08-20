@@ -312,6 +312,7 @@ export async function executeGisSaleCreate(
 
   const saleContractModel = assertSaleContractModelConfigured({
     projectModel: projDataSnapshot?.contract_model,
+    projectName: projDataSnapshot?.name,
     companyModel: tenantContractRow?.contract_model,
     uiFallback: input.tenantContractModel,
     companyFound: Boolean(tenantContractRow),

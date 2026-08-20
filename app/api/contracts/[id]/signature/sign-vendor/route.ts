@@ -68,6 +68,7 @@ export async function POST(
       vendorDocument: String(body.vendorDocument || ''),
       vendorEmail: String(body.vendorEmail || ''),
       vendorRole: body.vendorRole ? String(body.vendorRole) : null,
+      partyId: body.partyId ? String(body.partyId) : null,
       ipAddress: resolveClientIp(request),
       userAgent: request.headers.get('user-agent'),
     });

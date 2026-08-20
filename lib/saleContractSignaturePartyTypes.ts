@@ -52,6 +52,8 @@ export type SaleSignaturePartyPublicView = {
   signer_name: string | null;
   /** Alias camelCase para a modal / API de compartilhamento. */
   name?: string | null;
+  /** CPF completo — só na API autenticada (includeUrls). */
+  signer_cpf?: string | null;
   signer_cpf_masked?: string | null;
   signer_phone: string | null;
   phone?: string | null;
@@ -114,24 +116,48 @@ export function isPublicPartyRole(role?: string | null): boolean {
 export function saleAwaitingVendorPanelMessage(parties: {
   role: string;
   status: string;
+  signer_name?: string | null;
 }[]): string {
   const hasSpouse = parties.some(
     (p) => String(p.role).toUpperCase() === 'SPOUSE',
   );
+  const pendingVendors = parties.filter(
+    (p) =>
+      String(p.role).toUpperCase() === 'VENDOR' &&
+      String(p.status).toUpperCase() !== 'SIGNED',
+  );
+  if (pendingVendors.length > 1) {
+    const names = pendingVendors
+      .map((p) => String(p.signer_name || '').trim())
+      .filter(Boolean)
+      .join(' e ');
+    return hasSpouse
+      ? `Comprador e cônjuge anuente assinaram. Aguardando assinatura dos promitentes vendedores${names ? ` (${names})` : ''} para emitir o certificado final.`
+      : `Comprador assinou. Aguardando assinatura dos promitentes vendedores${names ? ` (${names})` : ''}.`;
+  }
   if (hasSpouse) {
     return 'Comprador e cônjuge anuente assinaram. Aguardando assinatura da vendedora para emitir o certificado final.';
   }
   return 'Comprador assinou. Aguardando assinatura da vendedora.';
 }
 
-/** VENDOR ainda bloqueada pelos compradores externos. */
+/**
+ * VENDOR ainda bloqueada pelos compradores externos.
+ * Com N VENDORs (ARAGUAIA / link público individual), a ordem é livre:
+ * cada promitente pode assinar sem aguardar comprador/cônjuge.
+ * Com 1 VENDOR (modelos clássicos), mantém o gate pós-compradores.
+ */
 export function isVendorWaitingForBuyers(parties: {
   role: string;
   status: string;
 }[]): boolean {
-  const vendor = parties.find((p) => String(p.role).toUpperCase() === 'VENDOR');
-  if (!vendor) return false;
-  if (String(vendor.status).toUpperCase() === 'SIGNED') return false;
+  const vendors = parties.filter((p) => String(p.role).toUpperCase() === 'VENDOR');
+  if (vendors.length === 0) return false;
+  if (vendors.every((p) => String(p.status).toUpperCase() === 'SIGNED')) {
+    return false;
+  }
+  // Multi-VENDOR: assinatura pública independente (não bloquear UI/compartilhamento).
+  if (vendors.length > 1) return false;
 
   const external = parties.filter((p) =>
     ['BUYER', 'SPOUSE'].includes(String(p.role).toUpperCase()),

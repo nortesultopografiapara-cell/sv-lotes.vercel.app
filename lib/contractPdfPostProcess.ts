@@ -7,7 +7,7 @@ import {
   formatCompanyAddressForHeader,
   getCompanyDisplayName,
 } from "@/lib/contractCompanyDisplay";
-import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import { isAraguaiaContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import {
   buildClassicContractPaginationCss,
   buildRecantoContractPaginationCss,
@@ -17,6 +17,7 @@ import {
   RECANTO_HTML2PDF_PAGINATION_AVOID,
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
+import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaContractTemplate";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
 
@@ -125,6 +126,15 @@ export function resolveContractHtml2pdfOptions(
 ): ContractHtml2pdfOptions {
   if (isRecantoPrimaveraContractModel(tenant)) {
     return getRecantoContractHtml2pdfOptions(filename);
+  }
+  if (isAraguaiaContractModel(tenant)) {
+    return {
+      ...getContractHtml2pdfOptions(filename),
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: [...ARAGUAIA_HTML2PDF_PAGINATION_AVOID],
+      },
+    };
   }
   return getContractHtml2pdfOptions(filename);
 }

@@ -10,6 +10,7 @@ import {
 } from '@/lib/supabase/server';
 import {
   buildSaleSignatureHistory,
+  ensureSignedPdfAfterAllPartiesSigned,
   listSaleContractSignatures,
   logSignatureFinal,
   SaleContractSignatureError,
@@ -17,10 +18,14 @@ import {
   type ContractSignatureRow,
 } from '@/lib/saleContractSignatureService';
 import {
+  computeAggregateSaleSignatureStatus,
+  countSignedParties,
+  toPartyStatusSnapshots,
+} from '@/lib/saleContractSignaturePartyStatus';
+import {
   listSignatureParties,
   toPublicPartyViews,
 } from '@/lib/saleContractSignatureParties';
-import { countSignedParties } from '@/lib/saleContractSignaturePartyStatus';
 import {
   enrichBuyerPartyPhone,
   pickCustomerWhatsAppPhoneForSignature,
@@ -181,6 +186,39 @@ export async function GET(
     );
     const progress = countSignedParties(partiesRaw);
 
+    let latestResponse = latest;
+    let pdfSignedUrl: string | null = String(
+      (contract as { pdf_signed_url?: string | null }).pdf_signed_url || '',
+    ).trim() || null;
+    const aggregateFromParties = computeAggregateSaleSignatureStatus(
+      toPartyStatusSnapshots(partiesRaw),
+    );
+    let latestStatus = String(latestResponse?.signature_status || '').toUpperCase();
+    if (
+      latestResponse &&
+      (latestStatus === 'SIGNED' || aggregateFromParties === 'SIGNED') &&
+      !pdfSignedUrl
+    ) {
+      try {
+        pdfSignedUrl = await ensureSignedPdfAfterAllPartiesSigned(
+          supabase,
+          latestResponse as ContractSignatureRow,
+        );
+        if (pdfSignedUrl) {
+          latestStatus = 'SIGNED';
+          latestResponse = {
+            ...latestResponse,
+            signature_status: 'SIGNED',
+          } as ContractSignatureRow;
+        }
+      } catch (pdfErr) {
+        console.error('[signature-get] ensure_signed_pdf_failed', {
+          contractId: resolvedId.slice(0, 8),
+          message: pdfErr instanceof Error ? pdfErr.message : String(pdfErr),
+        });
+      }
+    }
+
     const tenantId = String(contract.tenant_id || contract.company_id || '');
     let vendorDefaults = {
       name: '',
@@ -207,12 +245,17 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      latest,
+      latest: latestResponse,
       history,
       signatures: signatures.map((row) => normalizeSaleSignaturePublicUrls(row) || row),
       parties,
       progress,
       vendorDefaults,
+      pdfSignedUrl,
+      electronicallySigned:
+        latestStatus === 'SIGNED' ||
+        aggregateFromParties === 'SIGNED' ||
+        Boolean(pdfSignedUrl),
     });
   } catch (err) {
     const message =
