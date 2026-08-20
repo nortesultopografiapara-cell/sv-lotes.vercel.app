@@ -284,8 +284,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>2</strong> – O chacreamento é fruto da área pertencente à matrícula nº <strong>55.278</strong>, lançada no Livro 02 do Registro Geral, ficha 01, do 1º Ofício de Registro de Imóveis de Parauapebas – PA, correspondente aos lotes 33; 34 e 36 – parte 01 do Assentamento Palmares Sul – Parauapebas – PA, cabendo ao(s) PROMITENTE(S) COMPRADOR(A/ES) a responsabilidade pela documentação necessária conforme estabelece a legislação regente, inclusive os serviços de <strong>georreferenciamento</strong>, arcando com todos os custos incidentes;`,
       )}
-      ${itemP(
-        `<strong>3</strong> – Para efeito da efetivação do desmembramento previsto no item 2 desta cláusula, estando o parcelamento devidamente quitado, caberá aos PROMITENTES VENDEDORES fornecerem ao/à(s) PROMITENTE(S) COMPRADOR(A/ES) toda documentação necessária para a concretização deste procedimento, de acordo com o que for requisitado pelo cartório de títulos e documentos.`,
+      ${keepTogether(
+        'araguaia-general-conditions-item-3',
+        itemP(
+          `<strong>3</strong> – Para efeito da efetivação do desmembramento previsto no item 2 desta cláusula, estando o parcelamento devidamente quitado, caberá aos PROMITENTES VENDEDORES fornecerem ao/à(s) PROMITENTE(S) COMPRADOR(A/ES) toda documentação necessária para a concretização deste procedimento, de acordo com o que for requisitado pelo cartório de títulos e documentos.`,
+        ),
       )}
       ${keepTogether(
         'araguaia-general-conditions-item-4',
@@ -357,8 +360,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>B</strong> – A partir da celebração deste contrato, todos os tributos que incidem ou venham a incidir sobre o imóvel ora compromissado, correm às expensas do(a/s) PROMITENTE(S) COMPRADOR(A/ES), que se obriga(m) a pagá-los nas épocas e repartições competentes, ainda que lançados em nome de terceiros.`,
       )}
-      ${itemP(
-        `<strong>C</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) se declara(m) ciente(s) de que adquiriu o imóvel com a infraestrutura descrita na cláusula oitava deste contrato, sendo que quaisquer outros serviços ou melhoramentos públicos que vierem a ser exigidos pelos poderes públicos correrão à suas expensas.`,
+      ${keepTogether(
+        'araguaia-ninth-letter-c',
+        itemP(
+          `<strong>C</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) se declara(m) ciente(s) de que adquiriu o imóvel com a infraestrutura descrita na cláusula oitava deste contrato, sendo que quaisquer outros serviços ou melhoramentos públicos que vierem a ser exigidos pelos poderes públicos correrão à suas expensas.`,
+        ),
       )}
       `,
     )}

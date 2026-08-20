@@ -267,9 +267,11 @@ function testHtmlGeneration() {
   assert(html.includes('Índice Geral de Preços do Mercado – IGP-M'), 'item2 IGP-M completo');
   assert(html.includes('araguaia-financial-item-1-3'), 'wrapper item 1.3');
   assert(html.includes('araguaia-financial-item-8'), 'wrapper item 8');
+  assert(html.includes('araguaia-general-conditions-item-3'), 'wrapper CG item 3');
   assert(html.includes('araguaia-general-conditions-item-4'), 'wrapper CG item 4');
   assert(html.includes('araguaia-sixth-letter-b'), 'wrapper sexta alínea B');
   assert(html.includes('araguaia-sixth-letter-c'), 'wrapper sexta alínea C');
+  assert(html.includes('araguaia-ninth-letter-c'), 'wrapper nona alínea C');
   assert(html.includes('araguaia-keep-together'), 'classe keep-together');
   assert(html.includes('Avenida dos Ipês'), 'endereço vendedores');
 
