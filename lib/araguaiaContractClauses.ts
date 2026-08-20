@@ -18,28 +18,23 @@ function strong(value: string): string {
   return `<strong>${esc(value)}</strong>`;
 }
 
+/** Qualificação do vendedor: omite campos ausentes (sem placeholders). */
 function sellerQualification(ctx: AraguaiaContractContext, index: number): string {
   const seller = ctx.sellers[index];
   if (!seller) return '<em>[promitente vendedor não configurado]</em>';
-  const parts = [
-    strong(seller.name),
-    seller.nationality
-      ? `nacionalidade ${esc(seller.nationality)}`
-      : '<em>[nacionalidade pendente]</em>',
-    seller.maritalStatus
-      ? esc(seller.maritalStatus)
-      : '<em>[estado civil pendente]</em>',
-    seller.profession
-      ? `profissão ${esc(seller.profession)}`
-      : '<em>[profissão pendente]</em>',
-    seller.rg ? `RG nº ${strong(seller.rg)}` : '<em>[RG pendente]</em>',
-    seller.cpf
-      ? `CPF nº ${strong(formatSellerCpfDisplay(seller.cpf) || seller.cpf)}`
-      : '<em>[CPF pendente]</em>',
-    seller.address
-      ? `residente e domiciliado(a) em ${esc(seller.address)}`
-      : '<em>[endereço pendente]</em>',
-  ];
+  const parts: string[] = [strong(seller.name)];
+  if (seller.nationality) parts.push(`nacionalidade ${esc(seller.nationality)}`);
+  if (seller.maritalStatus) parts.push(esc(seller.maritalStatus));
+  if (seller.profession) parts.push(`profissão ${esc(seller.profession)}`);
+  if (seller.rg) parts.push(`RG nº ${strong(seller.rg)}`);
+  if (seller.cpf) {
+    parts.push(
+      `CPF nº ${strong(formatSellerCpfDisplay(seller.cpf) || seller.cpf)}`,
+    );
+  }
+  if (seller.address) {
+    parts.push(`residente e domiciliado(a) em ${esc(seller.address)}`);
+  }
   return parts.join(', ');
 }
 
@@ -75,6 +70,21 @@ function areaPhrase(ctx: AraguaiaContractContext): string {
 function moneyPhrase(fmt: string, extenso: string): string {
   if (extenso) return `${strong(fmt)} (${esc(extenso)})`;
   return strong(fmt);
+}
+
+/**
+ * Título + primeiro parágrafo no mesmo bloco evitável de quebra de página
+ * (Chromium/Puppeteer print). Demais parágrafos ficam fora do keep.
+ */
+function clauseHtml(title: string, leadHtml: string, restHtml = ''): string {
+  return `
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">${title}</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">${leadHtml}</p>
+      </div>
+      ${restHtml}
+    </div>`;
 }
 
 /** Marcador estável para testes. */
@@ -121,7 +131,6 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
   const parcelasTxt =
     ctx.qtdParcelas > 0
       ? `${strong(String(ctx.qtdParcelas))} (${esc(
-          // número simples por extenso via texto auxiliar curto
           ctx.qtdParcelas === 1 ? 'uma' : String(ctx.qtdParcelas),
         )}) parcelas mensais e consecutivas de ${moneyPhrase(ctx.parcelaFmt, ctx.parcelaExtenso)}`
       : '<em>[quantidade de parcelas pendente]</em>';
@@ -136,35 +145,18 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     : strong(ctx.brokerName);
 
   return `
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">${ARAGUAIA_LEGAL_MARKER}</p>
-      <p style="margin: 0 0 10px 0;">
-        Os PROMITENTES VENDEDORES prometem vender ao(à) PROMITENTE COMPRADOR(A), que promete comprar, o imóvel situado no empreendimento <strong>Chacreamento Araguaia</strong>,
-        identificado como ${chacaraLabel(ctx)}, com área total de ${areaPhrase(ctx)}, confrontando-se da seguinte forma:
-      </p>
-      <p style="margin: 0 0 6px 0; padding-left: 12px;">
-        <strong>Frente:</strong> ${strong(ctx.frenteM)}, confrontando com ${esc(ctx.confrontanteFrente)};
-      </p>
-      <p style="margin: 0 0 6px 0; padding-left: 12px;">
-        <strong>Fundo:</strong> ${strong(ctx.fundoM)}, confrontando com ${esc(ctx.confrontanteFundo)};
-      </p>
-      <p style="margin: 0 0 6px 0; padding-left: 12px;">
-        <strong>Lateral Direita:</strong> ${strong(ctx.ladoDireitoM)}, confrontando com ${esc(ctx.confrontanteDireita)};
-      </p>
-      <p style="margin: 0 0 10px 0; padding-left: 12px;">
-        <strong>Lateral Esquerda:</strong> ${strong(ctx.ladoEsquerdoM)}, confrontando com ${esc(ctx.confrontanteEsquerda)}.
-      </p>
-      <p style="margin: 0 0 10px 0;">
-        O imóvel objeto deste instrumento é transferido no estado em que se encontra, conhecidas e aceitas pelo(a) PROMITENTE COMPRADOR(A) suas características, confrontações e medidas.
-      </p>
-    </div>
+    ${clauseHtml(
+      ARAGUAIA_LEGAL_MARKER,
+      `Os PROMITENTES VENDEDORES prometem vender ao(à) PROMITENTE COMPRADOR(A), que promete comprar, o imóvel situado no empreendimento <strong>Chacreamento Araguaia</strong>, identificado como ${chacaraLabel(ctx)}, com área total de ${areaPhrase(ctx)}.`,
+      `<p style="margin: 0 0 10px 0;">
+        O imóvel objeto deste instrumento é transferido no estado em que se encontra, conhecidas e aceitas pelo(a) PROMITENTE COMPRADOR(A) suas características e área total.
+      </p>`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA SEGUNDA – DO PREÇO E FORMA DE PAGAMENTO</p>
-      <p style="margin: 0 0 10px 0;">
-        O preço total da promessa de compra e venda é de ${moneyPhrase(ctx.valorTotalFmt, ctx.valorTotalExtenso)}, a ser pago pelo(a) PROMITENTE COMPRADOR(A) da seguinte forma:
-      </p>
-      <p style="margin: 0 0 8px 0; padding-left: 12px;">
+    ${clauseHtml(
+      'CLÁUSULA SEGUNDA – DO PREÇO E FORMA DE PAGAMENTO',
+      `O preço total da promessa de compra e venda é de ${moneyPhrase(ctx.valorTotalFmt, ctx.valorTotalExtenso)}, a ser pago pelo(a) PROMITENTE COMPRADOR(A) da seguinte forma:`,
+      `<p style="margin: 0 0 8px 0; padding-left: 12px;">
         <strong>a)</strong> Entrada no valor de ${moneyPhrase(ctx.entradaFmt, ctx.entradaExtenso)}, paga na forma e data ajustadas entre as partes;
       </p>
       <p style="margin: 0 0 8px 0; padding-left: 12px;">
@@ -175,91 +167,69 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       </p>
       <p style="margin: 0 0 10px 0;">
         A quitação plena, geral e irrevogável somente será concedida após a efetiva confirmação do pagamento integral do preço.
-      </p>
-    </div>
+      </p>`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA TERCEIRA – DO REAJUSTE</p>
-      <p style="margin: 0 0 10px 0;">
-        As parcelas pactuadas neste instrumento sujeitam-se a reajustamento monetário anual pela variação positiva do índice <strong>${esc(ctx.correctionLabel)}</strong>, ou outro índice que venha a substituí-lo oficialmente, conforme condição financeira registrada na venda.
-      </p>
-      <p style="margin: 0 0 10px 0;">
+    ${clauseHtml(
+      'CLÁUSULA TERCEIRA – DO REAJUSTE',
+      `As parcelas pactuadas neste instrumento sujeitam-se a reajustamento monetário anual pela variação positiva do índice <strong>${esc(ctx.correctionLabel)}</strong>, ou outro índice que venha a substituí-lo oficialmente, conforme condição financeira registrada na venda.`,
+      `<p style="margin: 0 0 10px 0;">
         Não haverá aplicação de índice negativo em prejuízo das parcelas já vencidas e pagas.
-      </p>
-    </div>
+      </p>`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA QUARTA – DA POSSE</p>
-      <p style="margin: 0 0 10px 0;">
-        A posse do imóvel será transmitida ao(à) PROMITENTE COMPRADOR(A) nas condições ajustadas entre as partes, passando o(a) PROMITENTE COMPRADOR(A) a responder, a partir de então, por todas as obrigações decorrentes da ocupação, uso e conservação do imóvel, inclusive tributos e taxas que sobre ele incidam.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA QUARTA – DA POSSE',
+      `A posse do imóvel será transmitida ao(à) PROMITENTE COMPRADOR(A) nas condições ajustadas entre as partes, passando o(a) PROMITENTE COMPRADOR(A) a responder, a partir de então, por todas as obrigações decorrentes da ocupação, uso e conservação do imóvel, inclusive tributos e taxas que sobre ele incidam.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA QUINTA – DA INFRAESTRUTURA</p>
-      <p style="margin: 0 0 10px 0;">
-        O(A) PROMITENTE COMPRADOR(A) declara ter ciência das condições de infraestrutura do empreendimento Chacreamento Araguaia, inclusive quanto a água, energia elétrica e demais serviços, comprometendo-se a observar as normas do empreendimento e da legislação aplicável, bem como a arcar com custos de ligações individuais e padrões exigidos pelas concessionárias.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA QUINTA – DA INFRAESTRUTURA',
+      `O(A) PROMITENTE COMPRADOR(A) declara ter ciência das condições de infraestrutura do empreendimento Chacreamento Araguaia, inclusive quanto a água, energia elétrica e demais serviços, comprometendo-se a observar as normas do empreendimento e da legislação aplicável, bem como a arcar com custos de ligações individuais e padrões exigidos pelas concessionárias.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA SEXTA – DO INADIMPLEMENTO</p>
-      <p style="margin: 0 0 10px 0;">
-        O atraso no pagamento de qualquer parcela implicará a incidência de multa, juros e correção monetária na forma da lei e das condições financeiras da venda, sem prejuízo das demais sanções previstas neste instrumento.
-      </p>
-      <p style="margin: 0 0 10px 0;">
+    ${clauseHtml(
+      'CLÁUSULA SEXTA – DO INADIMPLEMENTO',
+      `O atraso no pagamento de qualquer parcela implicará a incidência de multa, juros e correção monetária na forma da lei e das condições financeiras da venda, sem prejuízo das demais sanções previstas neste instrumento.`,
+      `<p style="margin: 0 0 10px 0;">
         Persistindo o inadimplemento, os PROMITENTES VENDEDORES poderão considerar rescindido o presente contrato, resguardados os direitos e as retenções legalmente admitidos.
-      </p>
-    </div>
+      </p>`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA SÉTIMA – DA RESCISÃO</p>
-      <p style="margin: 0 0 10px 0;">
-        Em caso de rescisão por inadimplemento do(a) PROMITENTE COMPRADOR(A), aplicar-se-ão as retenções e devoluções previstas na legislação vigente e neste instrumento, observando-se a boa-fé e o equilíbrio contratual.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA SÉTIMA – DA RESCISÃO',
+      `Em caso de rescisão por inadimplemento do(a) PROMITENTE COMPRADOR(A), aplicar-se-ão as retenções e devoluções previstas na legislação vigente e neste instrumento, observando-se a boa-fé e o equilíbrio contratual.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA OITAVA – DA IRREVOGABILIDADE</p>
-      <p style="margin: 0 0 10px 0;">
-        O presente instrumento é celebrado em caráter irrevogável e irretratável, obrigando as partes, seus herdeiros e sucessores, salvo nas hipóteses expressamente previstas em lei ou neste contrato.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA OITAVA – DA IRREVOGABILIDADE',
+      `O presente instrumento é celebrado em caráter irrevogável e irretratável, obrigando as partes, seus herdeiros e sucessores, salvo nas hipóteses expressamente previstas em lei ou neste contrato.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA NONA – DOS TRIBUTOS</p>
-      <p style="margin: 0 0 10px 0;">
-        Correrão por conta do(a) PROMITENTE COMPRADOR(A), a partir da imissão na posse, o ITBI, IPTU, ITR e demais tributos, taxas e contribuições que incidam ou venham a incidir sobre o imóvel, bem como as despesas de escritura e registro, quando devidos.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA NONA – DOS TRIBUTOS',
+      `Correrão por conta do(a) PROMITENTE COMPRADOR(A), a partir da imissão na posse, o ITBI, IPTU, ITR e demais tributos, taxas e contribuições que incidam ou venham a incidir sobre o imóvel, bem como as despesas de escritura e registro, quando devidos.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA – DAS OBRIGAÇÕES GERAIS</p>
-      <p style="margin: 0 0 10px 0;">
-        O(A) PROMITENTE COMPRADOR(A) obriga-se a não transferir os direitos deste contrato a terceiros sem anuência prévia e escrita dos PROMITENTES VENDEDORES e da INTERVENIENTE, bem como a manter atualizados seus dados de contato.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA – DAS OBRIGAÇÕES GERAIS',
+      `O(A) PROMITENTE COMPRADOR(A) obriga-se a não transferir os direitos deste contrato a terceiros sem anuência prévia e escrita dos PROMITENTES VENDEDORES e da INTERVENIENTE, bem como a manter atualizados seus dados de contato.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA PRIMEIRA – DA INTERVENIÊNCIA</p>
-      <p style="margin: 0 0 10px 0;">
-        A INTERVENIENTE participa deste instrumento para intermediação e acompanhamento da operação, sem transferir para si a qualidade de PROMITENTE VENDEDORA do imóvel, a qual permanece com as pessoas físicas acima qualificadas.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA PRIMEIRA – DA INTERVENIÊNCIA',
+      `A INTERVENIENTE participa deste instrumento para intermediação e acompanhamento da operação, sem transferir para si a qualidade de PROMITENTE VENDEDORA do imóvel, a qual permanece com as pessoas físicas acima qualificadas.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA SEGUNDA – DO FORO</p>
-      <p style="margin: 0 0 10px 0;">
-        Fica eleito o foro da comarca do imóvel ou da sede da INTERVENIENTE, à escolha do autor da ação, para dirimir quaisquer dúvidas oriundas deste contrato, com renúncia a qualquer outro, por mais privilegiado que seja.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA SEGUNDA – DO FORO',
+      `Fica eleito o foro da comarca do imóvel ou da sede da INTERVENIENTE, à escolha do autor da ação, para dirimir quaisquer dúvidas oriundas deste contrato, com renúncia a qualquer outro, por mais privilegiado que seja.`,
+    )}
 
-    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
-      <p style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA TERCEIRA – DA CORRETAGEM</p>
-      <p style="margin: 0 0 10px 0;">
-        A intermediação desta operação foi realizada pelo(a) corretor(a) ${brokerLine}, reconhecendo as partes a atuação do profissional na concretização do negócio, nos termos da legislação aplicável.
-      </p>
-    </div>
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA TERCEIRA – DA CORRETAGEM',
+      `A intermediação desta operação foi realizada pelo(a) corretor(a) ${brokerLine}, reconhecendo as partes a atuação do profissional na concretização do negócio, nos termos da legislação aplicável.`,
+    )}
 
     <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
       <p style="margin: 0 0 10px 0;">

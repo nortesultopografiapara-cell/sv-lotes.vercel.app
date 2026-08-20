@@ -230,8 +230,20 @@ function testHtmlGeneration() {
   assert(html.includes('TESTEMUNHA 2'), 'testemunha 2');
   assert(html.includes('contract-closing-and-signatures--araguaia'), 'pack assinaturas');
   assert(!html.includes('Quadro Financeiro') && !html.includes('payment-summary'), 'sem quadro financeiro');
-  assert(html.includes('confrontando com'), 'confrontações no texto');
+  assert(!html.includes('araguaia-dev-pending'), 'sem quadro amarelo');
+  assert(!html.includes('Preview de desenvolvimento'), 'sem banner preview');
+  assert(!html.includes('[nacionalidade pendente]'), 'sem placeholder nacionalidade');
+  assert(!html.includes('[estado civil pendente]'), 'sem placeholder estado civil');
+  assert(!html.includes('[profissão pendente]'), 'sem placeholder profissão');
+  assert(!html.includes('[endereço pendente]'), 'sem placeholder endereço');
+  assert(!html.includes('confrontando com'), 'sem confrontações');
+  assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro confrontações');
+  assert(!html.includes('Lateral Direita'), 'sem lateral direita');
+  assert(!html.includes('Lateral Esquerda'), 'sem lateral esquerda');
+  assert(html.includes('araguaia-clause-keep'), 'keep título+lead');
   assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
+  assert(html.includes('4606073-PC/PA') || html.includes('4606073'), 'RG Daniel');
+  assert(html.includes('5279360-PC/PA') || html.includes('5279360'), 'RG Aldenise');
 }
 
 function testIsolationOtherModels() {

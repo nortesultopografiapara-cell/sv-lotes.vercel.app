@@ -59,6 +59,8 @@ export const CONTRACT_PAGINATION_SELECTORS = {
   signaturePack: '.contract-signature-pack',
   /** Recanto: fecho + data + assinaturas — mesma regra do pack clássico. */
   recantoClosingPack: '.contract-closing-and-signatures--recanto',
+  /** Araguaia: fecho + data + assinaturas — mesma regra (só ativa se o pack existir). */
+  araguaiaClosingPack: '.contract-closing-and-signatures--araguaia',
   signatureSlot: '.signature-slot',
   certificateBlock: '.sv-cert-official-block',
   certificateUnit: '.sv-cert-official-inner, .sv-cert-official',
@@ -810,7 +812,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   const PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
   const FOOTER = ${CONTRACT_FOOTER_RESERVE_PX};
   const root = document;
-  const pack = root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto');
+  const pack = root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
   const sig = root.querySelector('.contract-signatures, .sv2-signatures');
   const cert = root.querySelector('.sv-cert-official-block');
   if (pack) pack.classList.remove('sv-pagination-force-break');
@@ -948,7 +950,7 @@ export function applyContractPaginationBreaksToElement(
   const scrollY = win.scrollY || win.pageYOffset || 0;
 
   const pack = element.querySelector(
-    '.contract-signature-pack, .contract-closing-and-signatures--recanto',
+    '.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia',
   ) as HTMLElement | null;
   const sig = element.querySelector(
     '.contract-signatures, .sv2-signatures',

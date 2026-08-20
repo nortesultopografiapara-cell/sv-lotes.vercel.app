@@ -133,18 +133,3 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
       </div>
     </div>`;
 }
-
-export function buildAraguaiaPendingBannerHtml(
-  ctx: AraguaiaContractContext,
-): string {
-  if (!ctx.pendingFields.length) return '';
-  const items = ctx.pendingFields
-    .slice(0, 20)
-    .map((f) => `<li>${esc(f)}</li>`)
-    .join('');
-  return `
-    <div class="araguaia-dev-pending" style="border: 1px dashed #b45309; background: #fffbeb; color: #92400e; padding: 10px 12px; margin-bottom: 14px; font-size: 10pt; page-break-inside: avoid;">
-      <p style="margin: 0 0 6px 0; font-weight: bold;">Preview de desenvolvimento — campos pendentes (não inventados):</p>
-      <ul style="margin: 0; padding-left: 18px;">${items}</ul>
-    </div>`;
-}

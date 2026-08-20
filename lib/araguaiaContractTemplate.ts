@@ -9,7 +9,6 @@ import {
 } from '@/lib/araguaiaContractContext';
 import {
   buildAraguaiaBodyHtml,
-  buildAraguaiaPendingBannerHtml,
   buildAraguaiaSignaturesHtml,
   buildAraguaiaTitleHtml,
 } from '@/lib/araguaiaContractParties';
@@ -41,24 +40,49 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   break-inside: auto;
   margin-bottom: 12px;
 }
+/* Título + 1º parágrafo: nunca separar / cortar no rodapé */
+.sv-contract-araguaia .araguaia-clause-keep {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  -webkit-column-break-inside: avoid;
+}
+.sv-contract-araguaia .araguaia-clause-title {
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  orphans: 3;
+  widows: 3;
+}
+.sv-contract-araguaia .araguaia-clause-lead {
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  orphans: 3;
+  widows: 3;
+}
 .sv-contract-araguaia p {
   orphans: 3;
   widows: 3;
 }
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia {
+  /* Pack atômico: data + assinaturas sempre juntos (Chromium tende a partir avoid em blocos altos). */
+  page-break-before: always !important;
+  break-before: page !important;
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
-  page-break-before: auto;
-  break-before: auto;
   margin-top: 8px;
+}
+.sv-contract-araguaia .contract-closing-and-signatures--araguaia.sv-pagination-force-break {
+  page-break-before: always !important;
+  break-before: page !important;
 }
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-closing,
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-closing-date,
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-signatures--araguaia {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
-  page-break-before: avoid;
-  break-before: avoid-page;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
 }
 .sv-contract-araguaia .contract-signatures--araguaia .signature-grid--araguaia {
   display: grid;
@@ -79,13 +103,11 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
 .sv-contract-araguaia .signature-slot-intervenient { grid-row: 2; grid-column: 2; }
 .sv-contract-araguaia .signature-slot-witness-1 { grid-row: 3; grid-column: 1; }
 .sv-contract-araguaia .signature-slot-witness-2 { grid-row: 3; grid-column: 2; }
-@media print {
-  .sv-contract-araguaia .araguaia-dev-pending { display: none !important; }
-}
 </style>`;
 }
 
 export const ARAGUAIA_HTML2PDF_PAGINATION_AVOID = [
+  '.araguaia-clause-keep',
   '.contract-closing-and-signatures--araguaia',
   '.sv-contract-araguaia .signature-slot',
   '.sv-cert-official-block',
@@ -101,7 +123,6 @@ export function generateAraguaiaContract(
   return `
     ${buildAraguaiaContractPaginationCss()}
     <div class="sv-contract-document sv-contract-araguaia" data-contract-model="ARAGUAIA" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: ${CONTRACT_PDF_CONTENT_WIDTH_PX}px; box-sizing: border-box; text-align: justify;">
-      ${buildAraguaiaPendingBannerHtml(ctx)}
       ${buildAraguaiaTitleHtml()}
       ${buildAraguaiaBodyHtml(ctx)}
       ${buildAraguaiaSignaturesHtml(ctx)}
