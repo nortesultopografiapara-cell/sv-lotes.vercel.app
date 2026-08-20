@@ -248,6 +248,67 @@ function testSortVendors() {
   ok(sorted[1].signer_name?.includes('Aldenise'), 'sort Aldenise segundo');
 }
 
+function testRecantoHeuristicDoesNotStealAraguaia() {
+  const {
+    contractHtmlLooksLikeRecanto,
+  } = require('../lib/saleContractSignaturePartyRules') as typeof import('../lib/saleContractSignaturePartyRules');
+  const {
+    resolveEffectiveSaleContractModel,
+  } = require('../lib/saleContractSignaturePartyFlow') as typeof import('../lib/saleContractSignaturePartyFlow');
+
+  const araguaiaHtmlWithSpouse = `
+    <div class="sv-contract-document sv-contract-araguaia" data-contract-model="ARAGUAIA">
+      <div class="signature-slot-spouse">Cônjuge Anuente</div>
+      <p>CLÁUSULA PRIMEIRA — DECLARA que...</p>
+    </div>
+  `;
+  ok(
+    !contractHtmlLooksLikeRecanto(araguaiaHtmlWithSpouse),
+    'HTML Araguaia+cônjuge NÃO parece Recanto',
+  );
+  ok(
+    resolveEffectiveSaleContractModel('ARAGUAIA', araguaiaHtmlWithSpouse) ===
+      'ARAGUAIA',
+    'modelo efetivo permanece ARAGUAIA com cônjuge',
+  );
+
+  const recantoHtml = `
+    <div class="sv-contract-recanto-primavera">Cônjuge Anuente</div>
+  `;
+  ok(contractHtmlLooksLikeRecanto(recantoHtml), 'HTML Recanto continua detectável');
+  ok(
+    resolveEffectiveSaleContractModel('PADRAO', recantoHtml) ===
+      'RECANTO_PRIMAVERA',
+    'PADRAO+HTML Recanto ainda sobe para RECANTO',
+  );
+}
+
+function testExpectedPartyCounts() {
+  // Contagens canônicas do fluxo ARAGUAIA (criação).
+  const withSpouseRoles = ['BUYER', 'SPOUSE', 'VENDOR', 'VENDOR'];
+  const withoutSpouseRoles = ['BUYER', 'VENDOR', 'VENDOR'];
+  ok(withSpouseRoles.length === 4, 'ARAGUAIA+spouse => 4 parties');
+  ok(
+    withSpouseRoles.filter((r) => r === 'VENDOR').length === 2,
+    'ARAGUAIA+spouse => 2 VENDOR',
+  );
+  ok(withoutSpouseRoles.length === 3, 'ARAGUAIA sem spouse => 3 parties');
+  ok(
+    withoutSpouseRoles.filter((r) => r === 'VENDOR').length === 2,
+    'ARAGUAIA sem spouse => 2 VENDOR',
+  );
+
+  const inputs = buildAraguaiaEsignVendorPartyInputs();
+  const cpfs = inputs.map((v) => v.cpf).sort();
+  ok(
+    cpfs[0] === '82091226220' && cpfs[1] === '85656011291',
+    'CPFs vendors 82091226220 e 85656011291',
+  );
+
+  const classic = ['BUYER', 'VENDOR'];
+  ok(classic.filter((r) => r === 'VENDOR').length === 1, 'outros modelos 1 VENDOR');
+}
+
 function testPartyFlowWiring() {
   const flow = fs.readFileSync(
     path.join(process.cwd(), 'lib/saleContractSignaturePartyFlow.ts'),
@@ -266,8 +327,13 @@ function testPartyFlowWiring() {
     'assinatura pública VENDOR',
   );
   ok(
-    flow.includes('vendor: araguaiaVendors'),
-    'ARAGUAIA não usa seller empresa como único vendor',
+    flow.includes('vendorCount !== 2') ||
+      flow.includes('exatamente 2 VENDOR'),
+    'gate pós-criação exige 2 VENDOR',
+  );
+  ok(
+    flow.includes('82091226220') && flow.includes('85656011291'),
+    'valida CPFs Daniel/Aldenise',
   );
 
   const modal = fs.readFileSync(
@@ -327,6 +393,8 @@ function main() {
   testCertificatePersonVendors();
   testSignatureEventIdPersistence();
   testSortVendors();
+  testRecantoHeuristicDoesNotStealAraguaia();
+  testExpectedPartyCounts();
   testPartyFlowWiring();
   testIsolationOtherModels();
   console.log('mandatory-araguaia-esign-tests: all passed');

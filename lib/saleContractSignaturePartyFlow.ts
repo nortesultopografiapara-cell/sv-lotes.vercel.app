@@ -227,12 +227,26 @@ export async function loadSaleAndCompanyForSignature(
   };
 }
 
-function resolveEffectiveSaleContractModel(
+/**
+ * Modelo efetivo para criação de parties.
+ * Heurística Recanto (HTML com cônjuge) NÃO pode sobrescrever ARAGUAIA/MENESES/SV2.
+ */
+export function resolveEffectiveSaleContractModel(
   loadedModel: string,
   storedHtml: string,
 ): string {
+  const key = String(loadedModel || '')
+    .trim()
+    .toUpperCase();
+  if (key === 'ARAGUAIA' || key.includes('ARAGUAIA')) {
+    return 'ARAGUAIA';
+  }
+  if (key === 'MENESES') return 'MENESES';
+  if (key === 'SV_LOTES_2' || key.includes('SV_LOTES_2')) return 'SV_LOTES_2';
+  if (key === 'CUSTOM') return 'CUSTOM';
+
   const htmlLooksRecanto = contractHtmlLooksLikeRecanto(storedHtml);
-  return loadedModel === 'RECANTO_PRIMAVERA' || htmlLooksRecanto
+  return key === 'RECANTO_PRIMAVERA' || htmlLooksRecanto
     ? 'RECANTO_PRIMAVERA'
     : loadedModel;
 }
@@ -374,6 +388,28 @@ export async function createSignaturePartiesAfterSend(
     ? buildAraguaiaEsignVendorPartyInputs()
     : null;
 
+  console.log('[signature-parties] araguaia_esign_gate', {
+    contractId: String(params.signature.contract_id || '').slice(0, 8),
+    araguaiaEsign,
+    effectiveContractModel: contractModel,
+    loadedContractModel: loaded.contractModel,
+    projectName: String(loaded.project?.name || '').slice(0, 40),
+    vendorPayloadCount: araguaiaVendors?.length ?? 0,
+    vendorPayload: araguaiaVendors?.map((v) => ({
+      name: v.name,
+      cpf: v.cpf,
+      phone: v.phone,
+      email: v.email,
+    })),
+  });
+
+  if (araguaiaEsign && (!araguaiaVendors || araguaiaVendors.length !== 2)) {
+    throw new SaleContractSignatureError(
+      'ARAGUAIA: buildAraguaiaEsignVendorPartyInputs deve retornar exatamente 2 VENDOR.',
+      'validation',
+    );
+  }
+
   const buyerName =
     String(customer?.name || '').trim() ||
     String(params.contractRow.signed_by_name || '').trim() ||
@@ -451,10 +487,32 @@ export async function createSignaturePartiesAfterSend(
       );
     }
     if (araguaiaEsign) {
-      const vendorCount = createdRoles.filter((r) => r === 'VENDOR').length;
-      if (vendorCount < 2) {
+      const vendorParties = persisted.filter(
+        (p) => String(p.role).toUpperCase() === 'VENDOR',
+      );
+      const vendorCount = vendorParties.length;
+      const vendorCpfs = vendorParties
+        .map((p) => onlyDigits(p.signer_cpf || ''))
+        .filter(Boolean)
+        .sort();
+      const expectedCpfs = ['82091226220', '85656011291'];
+      console.log('[signature-parties] araguaia_vendors_persisted', {
+        contractSignatureId: String(params.signature.id).slice(0, 8),
+        vendorCount,
+        vendorCpfs,
+        names: vendorParties.map((p) => p.signer_name),
+        partyIds: vendorParties.map((p) => p.id),
+      });
+      if (vendorCount !== 2) {
         throw new SaleContractSignatureError(
-          'ARAGUAIA exige dois promitentes vendedores (Daniel e Aldenise) na assinatura eletrônica.',
+          `ARAGUAIA exige exatamente 2 VENDOR persistidos (recebido ${vendorCount}). Reenvie após correção.`,
+          'validation',
+        );
+      }
+      const missingCpf = expectedCpfs.filter((cpf) => !vendorCpfs.includes(cpf));
+      if (missingCpf.length > 0) {
+        throw new SaleContractSignatureError(
+          `ARAGUAIA: CPFs de VENDOR incompletos (faltando ${missingCpf.join(', ')}).`,
           'validation',
         );
       }
