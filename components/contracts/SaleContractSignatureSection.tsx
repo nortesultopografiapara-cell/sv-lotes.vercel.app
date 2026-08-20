@@ -6,6 +6,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -172,10 +173,17 @@ export const SaleContractSignatureSection = forwardRef<
   const quadra = resolveQuadra(contract?.blocks || null);
   const lote = resolveLote(contract?.blocks || null);
 
+  const [electronicallySignedFlag, setElectronicallySignedFlag] = useState(false);
+  const onSignedRef = useRef(onSigned);
+  onSignedRef.current = onSigned;
+  const syncedSignedParentRef = useRef(false);
+
   const loadSignature = useCallback(async () => {
     if (!contract?.id) {
       setLatest(null);
       setTimeline([]);
+      setElectronicallySignedFlag(false);
+      syncedSignedParentRef.current = false;
       return;
     }
     setLoading(true);
@@ -188,6 +196,8 @@ export const SaleContractSignatureSection = forwardRef<
         parties?: SaleSignaturePartyPublicView[];
         progress?: { signed: number; total: number };
         vendorDefaults?: { name?: string; document?: string; email?: string; companyName?: string };
+        electronicallySigned?: boolean;
+        pdfSignedUrl?: string | null;
       }>(
         await buildSignatureApiUrl(contract.id),
         { credentials: 'include' },
@@ -200,6 +210,7 @@ export const SaleContractSignatureSection = forwardRef<
       setLatest(json.latest || null);
       setParties(json.parties || []);
       setProgress(json.progress || null);
+      setElectronicallySignedFlag(Boolean(json.electronicallySigned));
       // Confiar na URL já normalizada pelo servidor (Preview usa VERCEL_URL em runtime).
       setSignUrl(json.latest?.signature_url || null);
       const fallbackEmail = String(loggedInUserEmail || '').trim();
@@ -210,6 +221,15 @@ export const SaleContractSignatureSection = forwardRef<
         companyName: String(json.vendorDefaults?.companyName || projectName),
       });
       setTimeline(mergeSaleSignatureTimeline(json.history || [], []));
+
+      const becameSigned =
+        Boolean(json.electronicallySigned) ||
+        String(json.latest?.signature_status || '').toUpperCase() === 'SIGNED';
+      // Sincroniza o contrato pai uma vez (status/pdf_signed_url) sem loop de reload.
+      if (becameSigned && !syncedSignedParentRef.current) {
+        syncedSignedParentRef.current = true;
+        onSignedRef.current?.();
+      }
     } catch (e) {
       setError(
         e instanceof Error
@@ -223,6 +243,7 @@ export const SaleContractSignatureSection = forwardRef<
 
   useEffect(() => {
     setLocalTimeline([]);
+    syncedSignedParentRef.current = false;
   }, [contract?.id]);
 
   useEffect(() => {
@@ -554,7 +575,16 @@ export const SaleContractSignatureSection = forwardRef<
 
   const status = latest?.signature_status || contract.signature_status;
   const statusLabel = saleSignatureStatusLabel(status);
-  const isElectronicallySigned = isSaleContractFullySigned(contract);
+  // Usar status do processo (`latest`) + flag da API — o `contract` do pai pode
+  // permanecer "ativo" após 4/4 via links públicos até o reload.
+  const isElectronicallySigned =
+    electronicallySignedFlag ||
+    isSaleContractFullySigned({
+      status: contract.status,
+      signature_status: latest?.signature_status || contract.signature_status,
+    }) ||
+    (Boolean(progress && progress.total > 0 && progress.signed >= progress.total) &&
+      String(latest?.signature_status || '').toUpperCase() === 'SIGNED');
   const isAwaitingVendor = String(status || '').toUpperCase() === 'CLIENT_SIGNED';
 
   const signedPdfDownloadUrl = `/api/contracts/${contract.id}/pdf?download=1`;

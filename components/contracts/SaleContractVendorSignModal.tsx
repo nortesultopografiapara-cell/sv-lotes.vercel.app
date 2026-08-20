@@ -170,7 +170,7 @@ export function SaleContractVendorSignModal({
       : 'Assinar como vendedor';
 
   return createPortal(
-    <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/65 p-4">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/65 p-4">
       <div className="bg-[#11161d] border border-white/10 rounded-2xl max-w-lg w-full shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3 p-5 border-b border-white/10">
           <div>
@@ -193,7 +193,13 @@ export function SaleContractVendorSignModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <form
+          className="p-5 space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSubmit();
+          }}
+        >
           {multi && (
             <div>
               <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
@@ -271,21 +277,20 @@ export function SaleContractVendorSignModal({
           </label>
 
           {formError && (
-            <p ref={errorRef} className="text-sm text-rose-300">
+            <p ref={errorRef} role="alert" className="text-sm text-rose-300">
               {formError}
             </p>
           )}
 
           <button
-            type="button"
-            onClick={() => void handleSubmit()}
+            type="submit"
             disabled={disabled || !canSubmit || !accepted}
             className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-semibold py-2.5"
           >
             {disabled ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Assinando…
+                Registrando assinatura…
               </>
             ) : multi && selectedTarget ? (
               `Assinar como ${selectedTarget.name.split(' ')[0]}`
@@ -293,7 +298,7 @@ export function SaleContractVendorSignModal({
               'Assinar como vendedor'
             )}
           </button>
-        </div>
+        </form>
       </div>
     </div>,
     document.body,

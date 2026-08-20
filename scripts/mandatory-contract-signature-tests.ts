@@ -381,6 +381,11 @@ function testSignedDocumentAccessUi() {
     'utf8',
   );
   assert(saleSection.includes('Baixar PDF Assinado'), 'venda baixar PDF assinado');
+  assert(
+    saleSection.includes('latest?.signature_status') ||
+      saleSection.includes('electronicallySignedFlag'),
+    'botão usa status do processo / flag API (não só contract stale)',
+  );
 
   const contractRoute = readFileSync(
     join(root, 'app/api/companies/[id]/contract/route.ts'),

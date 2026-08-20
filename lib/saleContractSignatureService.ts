@@ -1387,7 +1387,7 @@ export async function signSaleContractByVendor(
  * Quando todas as parties (incl. N VENDORs ARAGUAIA) já estão SIGNED via links públicos,
  * gera e persiste o PDF assinado com certificado — sem exigir sign-vendor admin.
  */
-async function ensureSignedPdfAfterAllPartiesSigned(
+export async function ensureSignedPdfAfterAllPartiesSigned(
   supabaseAdmin: SupabaseClient,
   signatureRow: ContractSignatureRow,
 ): Promise<string | null> {
