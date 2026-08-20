@@ -430,6 +430,31 @@ function testSourceFilesExist() {
   }
 }
 
+/** Pack Araguaia: não forçar página por y%PAGE_H (página vazia antes do fecho). */
+function testAraguaiaPackNoContinuousForceBreak() {
+  const engine = fs.readFileSync(
+    path.join(process.cwd(), 'lib/contractPaginationEngine.ts'),
+    'utf8',
+  );
+  assert(
+    engine.includes("contract-closing-and-signatures--araguaia'),") ||
+      engine.includes('araguaiaClosingPack'),
+    'engine conhece pack Araguaia',
+  );
+  assert(
+    !engine.includes(
+      "pack.classList.contains('contract-closing-and-signatures--araguaia')\n    ) {\n      signature = 'new-page';",
+    ),
+    'measure script sem force new-page contínuo Araguaia',
+  );
+  assert(
+    !engine.includes(
+      "// Araguaia: fecho+data+assinaturas juntos na página seguinte se não cabem.",
+    ),
+    'applyBreaks sem force contínuo Araguaia',
+  );
+}
+
 function main() {
   testModelRegistration();
   testSellersResolution();
@@ -439,6 +464,7 @@ function main() {
   testOriginalFidelityMarkers();
   testIsolationOtherModels();
   testSourceFilesExist();
+  testAraguaiaPackNoContinuousForceBreak();
   console.log('mandatory-araguaia-contract-tests: all passed');
 }
 

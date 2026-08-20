@@ -64,7 +64,9 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   orphans: 3;
   widows: 3;
 }
-/* Fecho + data + assinaturas: unidade indivisível; quebra só se não couber (measure / force-break). */
+/* Fecho + data + assinaturas: unidade indivisível.
+ * Quebra antecipada (force-break) só se altura > página útil (measure).
+ * NÃO forçar por y%PAGE_H — evita página quase vazia antes do pack. */
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
