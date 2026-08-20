@@ -111,6 +111,12 @@ function itemP(html: string): string {
   return `<p style="margin: 0 0 10px 0; text-align: justify;">${html}</p>`;
 }
 
+/** Mantém o bloco inteiro na mesma página (CSS + avoid ARAGUAIA). */
+function keepTogether(extraClass: string, innerHtml: string): string {
+  const cls = ['araguaia-keep-together', extraClass].filter(Boolean).join(' ');
+  return `<div class="${cls}">${innerHtml}</div>`;
+}
+
 /** Marcador estável para testes. */
 export const ARAGUAIA_LEGAL_MARKER =
   'CLÁUSULA PRIMEIRA – DESCRIÇÃO DO IMÓVEL';
@@ -227,11 +233,12 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>1.2</strong> – As parcelas descritas no item 1 desta cláusula serão representadas por uma única <strong>nota promissória</strong> emitida pelo(a/s) PROMITENTE(S) COMPRADOR(A/ES) a favor e à ordem dos PROMITENTES VENDEDORES, de natureza <strong>“pro solvendo”</strong> do preço, que deverá ser paga onde for posta em cobrança em caso de inadimplência.`,
       )}
-      <div class="araguaia-financial-item-1-3">
-      ${itemP(
-        `<strong>1.3</strong> – Nenhuma parcela poderá ser paga senão em sua totalidade, não sendo admitido o fracionamento do pagamento de qualquer das prestações, salvo se os PROMITENTES VENDEDORES, a seu exclusivo critério e por mera liberalidade, decidir de forma diversa, não se constituindo assim em novação ou alteração dos termos do presente contrato.`,
+      ${keepTogether(
+        'araguaia-financial-item-1-3',
+        itemP(
+          `<strong>1.3</strong> – Nenhuma parcela poderá ser paga senão em sua totalidade, não sendo admitido o fracionamento do pagamento de qualquer das prestações, salvo se os PROMITENTES VENDEDORES, a seu exclusivo critério e por mera liberalidade, decidir de forma diversa, não se constituindo assim em novação ou alteração dos termos do presente contrato.`,
+        ),
       )}
-      </div>
       ${itemP(
         `<strong>2</strong> – O pagamento das parcelas descritas no item 1 desta cláusula será feito mediante a emissão de boletos bancários, sendo que as parcelas serão reajustadas anualmente mediante a aplicação da variação positiva do ${esc(
           igpmItem2,
@@ -252,8 +259,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>7</strong> – Ocorrendo a reversão do imóvel em favor dos PROMITENTES VENDEDORES conforme estabelecido no item 6 desta cláusula, os PROMITENTES VENDEDORES deverão pagar a indenização pelas benfeitorias em parcelas não superiores ao parcelamento cumprido pelo(a/s) PROMITENTE(S) COMPRADOR(A/ES);`,
       )}
-      ${itemP(
-        `<strong>8</strong> – Em ocorrendo a reversão do imóvel em favor dos PROMITENTES VENDEDORES por inadimplência do(s) PROMITENTE(ES) COMPRADOR(A/ES) sem que tenham sido erigidas benfeitorias no imóvel, deverão os PROMITENTES VENDEDORES proceder com a devolução dos valores pagos, devendo fazê-lo em tantas parcelas quantas tenham sido quitadas, cabendo-lhes o direito de reter <strong>25%</strong> (vinte e cinco por cento) do valor a ser restituído, a título de taxa de administração; exceto a entrada que será revertida em sua totalidade aos PROMITENTES VENDEDORES.`,
+      ${keepTogether(
+        'araguaia-financial-item-8',
+        itemP(
+          `<strong>8</strong> – Em ocorrendo a reversão do imóvel em favor dos PROMITENTES VENDEDORES por inadimplência do(s) PROMITENTE(ES) COMPRADOR(A/ES) sem que tenham sido erigidas benfeitorias no imóvel, deverão os PROMITENTES VENDEDORES proceder com a devolução dos valores pagos, devendo fazê-lo em tantas parcelas quantas tenham sido quitadas, cabendo-lhes o direito de reter <strong>25%</strong> (vinte e cinco por cento) do valor a ser restituído, a título de taxa de administração; exceto a entrada que será revertida em sua totalidade aos PROMITENTES VENDEDORES.`,
+        ),
       )}
       ${itemP(
         `<strong>9</strong> – Nos casos de desistência do(s) PROMITENTE(S) COMPRADOR(A/ES) do negócio estabelecido neste contrato, poderá haver a devolução do imóvel objeto deste compromisso de compra e venda, sendo que no caso do(s) adquirente(s) terem adquirido mais de uma unidade, os valores a serem restituídos poderão ser utilizados para quitação das parcelas ainda devidas da chácara remanescente, valor este que será integralmente creditado em favor do(s) PROMITENTE(S) COMPRADOR(A/ES);`,
@@ -277,8 +287,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>3</strong> – Para efeito da efetivação do desmembramento previsto no item 2 desta cláusula, estando o parcelamento devidamente quitado, caberá aos PROMITENTES VENDEDORES fornecerem ao/à(s) PROMITENTE(S) COMPRADOR(A/ES) toda documentação necessária para a concretização deste procedimento, de acordo com o que for requisitado pelo cartório de títulos e documentos.`,
       )}
-      ${itemP(
-        `<strong>4</strong> – O não cumprimento da obrigação estabelecida no item 3 desta cláusula implicará no pagamento de uma multa fixada em <strong>10%</strong> (dez por cento) do valor original da venda em favor do(s) PROMITENTE(S) COMPRADOR(A/ES);`,
+      ${keepTogether(
+        'araguaia-general-conditions-item-4',
+        itemP(
+          `<strong>4</strong> – O não cumprimento da obrigação estabelecida no item 3 desta cláusula implicará no pagamento de uma multa fixada em <strong>10%</strong> (dez por cento) do valor original da venda em favor do(s) PROMITENTE(S) COMPRADOR(A/ES);`,
+        ),
       )}
       ${itemP(
         `<strong>5</strong> – Observadas as disposições contidas neste contrato, estando quitadas as parcelas devidas, os PROMITENTES VENDEDORES outorgarão a(os) PROMITENTE(S) COMPRADOR(A/ES) a respectiva <strong>escritura</strong> pública de venda e compra do imóvel ora negociado, desde que cumpridas as obrigações previstas neste instrumento contratual, inclusive no que se refere aos procedimentos para efetivação do desmembramento da unidade adquirida da porção original do imóvel.`,
@@ -309,8 +322,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
       )}
-      ${itemP(
-        `<strong>C</strong> – Pela venda, cessão de direitos e obrigações ou transferência realizadas sem a expressa anuência dos PROMITENTES VENDEDORES, ou a existência de ações pessoais, reipersecutórias e executivas que de algum modo afetem os direitos e obrigações objeto deste contrato;`,
+      ${keepTogether(
+        'araguaia-sixth-letter-c',
+        itemP(
+          `<strong>C</strong> – Pela venda, cessão de direitos e obrigações ou transferência realizadas sem a expressa anuência dos PROMITENTES VENDEDORES, ou a existência de ações pessoais, reipersecutórias e executivas que de algum modo afetem os direitos e obrigações objeto deste contrato;`,
+        ),
       )}
       ${itemP(
         `<strong>D</strong> – Pelo descumprimento de qualquer das cláusulas deste contrato;`,

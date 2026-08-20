@@ -128,7 +128,8 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   grid-row: 3;
   grid-column: 2;
 }
-/* Item financeiro 1.3 — não partir entre páginas */
+/* Blocos pontuais ARAGUAIA — não partir entre páginas (1.3, item 8, CG-4, alínea C) */
+.sv-contract-araguaia .araguaia-keep-together,
 .sv-contract-araguaia .araguaia-financial-item-1-3 {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
@@ -156,7 +157,11 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
 
 export const ARAGUAIA_HTML2PDF_PAGINATION_AVOID = [
   '.araguaia-clause-keep',
+  '.araguaia-keep-together',
   '.araguaia-financial-item-1-3',
+  '.araguaia-financial-item-8',
+  '.araguaia-general-conditions-item-4',
+  '.araguaia-sixth-letter-c',
   '.contract-closing-and-signatures--araguaia',
   '.sv-contract-araguaia .signature-slot',
   '.sv-cert-official-block',
