@@ -319,8 +319,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>A</strong> – Vencida e não paga qualquer parcela, este compromisso será considerado rescindido <strong>90</strong> (noventa) dias após o vencimento, independentemente de notificação judicial ou extrajudicial, valendo como cláusula resolutiva expressa, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
       )}
-      ${itemP(
-        `<strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
+      ${keepTogether(
+        'araguaia-sixth-letter-b',
+        itemP(
+          `<strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
+        ),
       )}
       ${keepTogether(
         'araguaia-sixth-letter-c',

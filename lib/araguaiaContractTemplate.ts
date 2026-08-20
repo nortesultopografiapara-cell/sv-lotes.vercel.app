@@ -161,6 +161,7 @@ export const ARAGUAIA_HTML2PDF_PAGINATION_AVOID = [
   '.araguaia-financial-item-1-3',
   '.araguaia-financial-item-8',
   '.araguaia-general-conditions-item-4',
+  '.araguaia-sixth-letter-b',
   '.araguaia-sixth-letter-c',
   '.contract-closing-and-signatures--araguaia',
   '.sv-contract-araguaia .signature-slot',
