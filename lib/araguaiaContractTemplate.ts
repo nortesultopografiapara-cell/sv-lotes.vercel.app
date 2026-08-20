@@ -64,17 +64,23 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   orphans: 3;
   widows: 3;
 }
+/* Fecho + data + assinaturas: unidade indivisível; quebra só se não couber (measure / force-break). */
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia {
-  /* Pack atômico: data + assinaturas sempre juntos (Chromium tende a partir avoid em blocos altos). */
-  page-break-before: always !important;
-  break-before: page !important;
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
+  page-break-before: auto;
+  break-before: auto;
   margin-top: 8px;
 }
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia.sv-pagination-force-break {
   page-break-before: always !important;
   break-before: page !important;
+}
+.sv-contract-araguaia .araguaia-closing-statement {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  orphans: 4;
+  widows: 4;
 }
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-closing,
 .sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-closing-date,

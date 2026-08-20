@@ -79,6 +79,9 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
   return `
     <div class="contract-closing-and-signatures--araguaia">
       <div class="contract-closing" style="margin: 18px 0 8px 0; text-align: justify;">
+        <p class="araguaia-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
+          E, por estarem assim justos e contratados, firmam o presente instrumento em tantas vias quantas necessárias, na presença das testemunhas abaixo.
+        </p>
         <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
           ${esc(ctx.closingLine)}
         </p>

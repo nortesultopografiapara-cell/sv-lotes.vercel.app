@@ -887,6 +887,20 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
     }
 
     signature = decideForceSignatureBreak(sigH);
+    /*
+     * Araguaia only: o pack (fecho + data + assinaturas) é indivisível.
+     * Se não cabe no resto da página, força página nova (evita linha órfã / página vazia).
+     * Não altera decisão de packs clássico/Recanto.
+     */
+    if (
+      signature !== 'new-page' &&
+      continuousWouldForce &&
+      pack &&
+      pack.classList &&
+      pack.classList.contains('contract-closing-and-signatures--araguaia')
+    ) {
+      signature = 'new-page';
+    }
     if (signature === 'new-page' && breakTarget) {
       breakTarget.classList.add('sv-pagination-force-break');
     }
@@ -1029,6 +1043,14 @@ export function applyContractPaginationBreaksToElement(
   const decisionsCert = decisions;
 
   if (breakTarget && signature === 'new-page') {
+    breakTarget.classList.add('sv-pagination-force-break');
+  } else if (
+    breakTarget &&
+    continuousWouldForce &&
+    pack &&
+    pack.classList.contains('contract-closing-and-signatures--araguaia')
+  ) {
+    // Araguaia: fecho+data+assinaturas juntos na página seguinte se não cabem.
     breakTarget.classList.add('sv-pagination-force-break');
   } else if (sig && continuousWouldForce) {
     // Compactação já aplicada acima quando continuousLooksTight; reforça classe.

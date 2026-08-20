@@ -238,8 +238,13 @@ function testHtmlGeneration() {
   assert(!html.includes('[endereço pendente]'), 'sem placeholder endereço');
   assert(!html.includes('confrontando com'), 'sem confrontações');
   assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro confrontações');
-  assert(!html.includes('Lateral Direita'), 'sem lateral direita');
-  assert(!html.includes('Lateral Esquerda'), 'sem lateral esquerda');
+  assert(!html.includes('confrontante'), 'sem palavra confrontante');
+  assert(html.includes('Frente:'), 'medida Frente');
+  assert(html.includes('Fundo:'), 'medida Fundo');
+  assert(html.includes('Lateral Direita:'), 'medida Lateral Direita');
+  assert(html.includes('Lateral Esquerda:'), 'medida Lateral Esquerda');
+  assert(html.includes('possuindo:'), 'intro medidas');
+  assert(html.includes('araguaia-closing-statement'), 'fecho no pack');
   assert(html.includes('araguaia-clause-keep'), 'keep título+lead');
   assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
   assert(html.includes('4606073-PC/PA') || html.includes('4606073'), 'RG Daniel');
