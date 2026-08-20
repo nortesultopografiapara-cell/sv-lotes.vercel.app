@@ -350,7 +350,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
 
     ${clauseHtml(
       'CLÁUSULA DÉCIMA PRIMEIRA – DISPOSIÇÕES GERAIS',
-      `<strong>1</strong> – Pelo princípio da liberdade de contratar prevista no Código Civil Brasileiro, as partes declaram que concordam com plena legalidade das cláusulas aqui entabuladas, isentando-se assim terceiros de toda e qualquer responsabilidade pela assinatura do presente contrato;`,
+        `<strong>1</strong> – Pelo princípio da liberdade de contratar prevista no Código Civil Brasileiro, as partes declaram que concordam com plena legalidade das cláusulas aqui entabuladas, isentado-se assim terceiros de toda e qualquer responsabilidade pela assinatura do presente contrato;`,
       `
       ${itemP(
         `<strong>2</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) declara(m) que visitou(ram) o imóvel prometido conforme descrito na cláusula segunda deste contrato, tendo, portanto, pleno conhecimento quanto à localização, topografia e dimensões;`,
