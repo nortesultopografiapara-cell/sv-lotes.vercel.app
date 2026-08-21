@@ -146,6 +146,7 @@ export const SaleContractSignatureSection = forwardRef<
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [vendorSignOpen, setVendorSignOpen] = useState(false);
+  const [intervenientSignOpen, setIntervenientSignOpen] = useState(false);
   const [signingVendor, setSigningVendor] = useState(false);
   const [vendorSignSuccess, setVendorSignSuccess] = useState<string | null>(null);
   const [vendorDefaults, setVendorDefaults] = useState({
@@ -379,6 +380,24 @@ export const SaleContractSignatureSection = forwardRef<
         document: String(p.signer_cpf || ''),
         email: String(p.signer_email || p.email || ''),
       }));
+  }, [parties]);
+
+  const pendingIntervenientTarget = useMemo(() => {
+    const party = parties.find(
+      (p) =>
+        p.role === 'INTERVENIENT' &&
+        !['SIGNED', 'CANCELLED', 'EXPIRED'].includes(
+          String(p.status || '').toUpperCase(),
+        ),
+    );
+    if (!party) return null;
+    return {
+      partyId: party.id,
+      name: String(party.signer_name || party.name || 'R R NEGÓCIOS & SERVIÇOS LTDA'),
+      document: String(party.signer_cpf || ''),
+      email: String(party.signer_email || party.email || ''),
+      representativeName: party.representativeName || null,
+    };
   }, [parties]);
 
   const vendorPartyCount = useMemo(
@@ -664,6 +683,11 @@ export const SaleContractSignatureSection = forwardRef<
                     ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
                     : party.statusLabel}
                 </p>
+                {party.role === 'INTERVENIENT' && party.representativeName && (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Representante: {party.representativeName}
+                  </p>
+                )}
                 {contactLine && (
                   <p className="text-[11px] text-[var(--text-muted)]">
                     Contato: {contactLine}
@@ -682,6 +706,15 @@ export const SaleContractSignatureSection = forwardRef<
                   String(status || '').toUpperCase() === 'CLIENT_SIGNED' && (
                   <p className="text-[11px] text-emerald-300/80">
                     Liberada para assinar
+                  </p>
+                )}
+                {party.role === 'INTERVENIENT' &&
+                  party.status !== 'SIGNED' &&
+                  !['CANCELLED', 'EXPIRED'].includes(
+                    String(party.status || '').toUpperCase(),
+                  ) && (
+                  <p className="text-[11px] text-emerald-300/80">
+                    Assinatura administrativa pela empresa
                   </p>
                 )}
                 {party.canShare && url && (
@@ -764,7 +797,8 @@ export const SaleContractSignatureSection = forwardRef<
             <ActionChip icon={Share2} label="Compartilhar" onClick={() => setShareOpen(true)} />
           </>
         )}
-        {showVendorSignButton && (
+        {showVendorSignButton &&
+          (vendorPartyCount <= 1 || pendingVendorTargets.length > 0) && (
           <ActionChip
             icon={ShieldCheck}
             label={
@@ -775,6 +809,21 @@ export const SaleContractSignatureSection = forwardRef<
                   : 'Assinar como vendedor'
             }
             onClick={() => setVendorSignOpen(true)}
+            disabled={signingVendor}
+            primary
+          />
+        )}
+        {pendingIntervenientTarget &&
+          (showVendorSignButton ||
+            String(status || '').toUpperCase() === 'PARTIALLY_SIGNED') && (
+          <ActionChip
+            icon={ShieldCheck}
+            label={
+              signingVendor
+                ? 'Assinando…'
+                : 'Assinar pela R R Negócios — INTERVENIENTE'
+            }
+            onClick={() => setIntervenientSignOpen(true)}
             disabled={signingVendor}
             primary
           />
@@ -852,6 +901,38 @@ export const SaleContractSignatureSection = forwardRef<
         vendorTargets={multiVendorPending ? pendingVendorTargets : []}
         onSign={handleVendorSign}
       />
+
+      {pendingIntervenientTarget && (
+        <SaleContractVendorSignModal
+          isOpen={intervenientSignOpen}
+          onClose={() => setIntervenientSignOpen(false)}
+          companyName={pendingIntervenientTarget.name}
+          contractNumber={String(contract.contract_number || '')}
+          busy={signingVendor}
+          defaultName={pendingIntervenientTarget.name}
+          defaultDocument={pendingIntervenientTarget.document}
+          defaultEmail={pendingIntervenientTarget.email}
+          vendorTargets={[
+            {
+              partyId: pendingIntervenientTarget.partyId,
+              name: pendingIntervenientTarget.name,
+              document: pendingIntervenientTarget.document,
+              email: pendingIntervenientTarget.email,
+              emailRequired: false,
+            },
+          ]}
+          onSign={async (input) => {
+            await handleVendorSign({
+              ...input,
+              vendorRole: 'Interveniente',
+              partyId: pendingIntervenientTarget.partyId,
+            });
+            setVendorSignSuccess(
+              'Contrato assinado pela INTERVENIENTE (R R Negócios) com sucesso.',
+            );
+          }}
+        />
+      )}
     </div>
   );
 });

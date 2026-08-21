@@ -85,6 +85,25 @@ export type SaleContractSignatureCertificateInput = {
     approxLocation?: string | null;
     signatureEventId?: string | null;
   }> | null;
+  /**
+   * Card PJ INTERVENIENT (ARAGUAIA V2) — distinto dos VENDOR PF.
+   */
+  intervenientCard?: {
+    companyName: string;
+    companyCnpj?: string | null;
+    representativeName?: string | null;
+    representativeCpf?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    signedAt?: string | null;
+    ipAddress?: string | null;
+    signatureHash?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    device?: string | null;
+    approxLocation?: string | null;
+    signatureEventId?: string | null;
+  } | null;
 };
 
 export type SaleContractElectronicSignaturesInput = {
@@ -433,6 +452,59 @@ function buildPersonVendorCard(input: {
   ];
   return buildOfficialSignatureCard({
     role: 'PROMITENTE VENDEDOR',
+    fields,
+    signed: Boolean(input.signedAt),
+  });
+}
+
+function buildIntervenientCard(input: {
+  companyName: string;
+  companyCnpj?: string | null;
+  representativeName?: string | null;
+  representativeCpf?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  signedAt?: string | null;
+  ipAddress?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+}): string {
+  const company = String(input.companyName || '').trim() || '—';
+  const cnpj = input.companyCnpj
+    ? formatCpfCnpj(input.companyCnpj) || input.companyCnpj
+    : '—';
+  const rep = String(input.representativeName || '').trim();
+  const repCpf = input.representativeCpf
+    ? formatCpfCnpj(input.representativeCpf) || input.representativeCpf
+    : '—';
+
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '🏢', label: 'Empresa', value: company },
+    { icon: '🪪', label: 'CNPJ', value: cnpj },
+  ];
+  if (rep) {
+    fields.push({ icon: '👤', label: 'Representante', value: rep });
+    fields.push({ icon: '🪪', label: 'CPF do representante', value: repCpf });
+  }
+  fields.push(
+    ...buildEvidenceFields({
+      email: input.email,
+      phone: input.phone,
+      ipAddress: input.ipAddress,
+      signedAt: input.signedAt,
+      browser: input.browser,
+      os: input.os,
+      device: input.device,
+      approxLocation: input.approxLocation,
+      signatureEventId: input.signatureEventId,
+    }),
+  );
+
+  return buildOfficialSignatureCard({
+    role: 'INTERVENIENTE',
     fields,
     signed: Boolean(input.signedAt),
   });
@@ -808,6 +880,12 @@ export function buildSaleContractSignatureCertificateHtml(
         ${buildVendorCardsHtml(input)}
         ${buildBuyerCard(input)}
         ${input.spouseName ? buildSpouseCard(input) : ''}
+        ${
+          input.intervenientCard &&
+          String(input.intervenientCard.companyName || '').trim()
+            ? buildIntervenientCard(input.intervenientCard)
+            : ''
+        }
       </div>
 
       <div class="sv-cert-validation">

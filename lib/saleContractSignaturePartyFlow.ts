@@ -11,7 +11,9 @@ import {
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
+  ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT,
   buildAraguaiaEsignVendorPartyInputs,
+  buildAraguaiaIntervenientPartyInput,
   isAraguaiaSaleContractModel,
   resolveAraguaiaVendorSignerEmail,
 } from '@/lib/araguaiaContractEsign';
@@ -472,6 +474,20 @@ export async function createSignaturePartiesAfterSend(
             withPublicToken: true,
           }))
         : null,
+      // Persistência remota só com schema INTERVENIENT + flag. Até lá: helpers/UI/tests.
+      intervenient:
+        araguaiaEsign && ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT
+          ? (() => {
+              const i = buildAraguaiaIntervenientPartyInput();
+              return {
+                name: i.name,
+                cnpj: i.cnpj,
+                phone: i.phone,
+                email: i.email,
+                signatureData: i.signatureData,
+              };
+            })()
+          : null,
       expiresAt: params.expiresAt,
     });
 
@@ -1058,6 +1074,78 @@ export async function markVendorPartySigned(
     signatureData: {
       role: 'VENDOR',
       partyId: vendor.id,
+      browser: ua.browser,
+      os: ua.os,
+      device: ua.device,
+      approx_location: formatApproxLocation(geo),
+    },
+  });
+}
+
+/**
+ * Assina somente a party INTERVENIENT (PJ). Não altera VENDOR Daniel.
+ * Evento e signature_event_id distintos do VENDOR PF.
+ */
+export async function markIntervenientPartySigned(
+  supabaseAdmin: SupabaseClient,
+  parties: ContractSignaturePartyRow[],
+  input: {
+    companyName: string;
+    companyCnpj: string;
+    representativeName: string;
+    representativeCpf: string;
+    representativeEmail?: string | null;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    signatureHash: string;
+    signedAt: string;
+    partyId?: string | null;
+  },
+): Promise<ContractSignaturePartyRow | null> {
+  const intervenients = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'INTERVENIENT',
+  );
+  if (intervenients.length === 0) return null;
+
+  const intervenient =
+    (input.partyId
+      ? intervenients.find((p) => p.id === input.partyId)
+      : undefined) ||
+    intervenients.find((p) => String(p.status).toUpperCase() !== 'SIGNED') ||
+    intervenients[0];
+
+  if (!intervenient) return null;
+  if (String(intervenient.status).toUpperCase() === 'SIGNED') {
+    return intervenient;
+  }
+
+  const ua = parseUserAgent(input.userAgent);
+  const geo = await resolveIpGeoApprox(input.ipAddress);
+  const existingData =
+    intervenient.signature_data && typeof intervenient.signature_data === 'object'
+      ? intervenient.signature_data
+      : {};
+  const cnpjDigits = onlyDigits(input.companyCnpj);
+  const repCpfDigits = onlyDigits(input.representativeCpf);
+
+  return markPartySigned(supabaseAdmin, intervenient.id, {
+    signerName: input.companyName,
+    signerCpf: cnpjDigits,
+    signerEmail: input.representativeEmail || intervenient.signer_email,
+    signerPhone: intervenient.signer_phone,
+    signatureHash: input.signatureHash,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt: input.signedAt,
+    signatureData: {
+      ...existingData,
+      role: 'INTERVENIENT',
+      party_kind: 'LEGAL_ENTITY',
+      partyId: intervenient.id,
+      company_name: input.companyName,
+      company_cnpj: cnpjDigits,
+      representative_name: input.representativeName,
+      representative_cpf: repCpfDigits,
       browser: ua.browser,
       os: ua.os,
       device: ua.device,

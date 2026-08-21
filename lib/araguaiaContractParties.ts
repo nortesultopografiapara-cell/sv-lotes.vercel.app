@@ -1,7 +1,9 @@
 /**
  * Assinaturas e título — modelo ARAGUAIA (isolado).
  * Bloco físico unsigned: Daniel, Aldenise, comprador, INTERVENIENTE (R R), testemunhas.
- * Sem slot de cônjuge. Party eletrônica INTERVENIENT ainda não é criada aqui.
+ * Sem slot de cônjuge.
+ * Party eletrônica INTERVENIENT: ver buildAraguaiaIntervenientPartyInput()
+ * (persistência remota gated por ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT).
  */
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';

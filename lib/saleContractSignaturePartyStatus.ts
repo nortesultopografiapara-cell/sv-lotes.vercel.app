@@ -39,6 +39,7 @@ function isTerminalCancelled(party?: PartyStatusSnapshot | null): boolean {
  * Calcula o status do documento (contract_signatures) a partir das parties.
  * Sem parties → null (usar fluxo legado).
  * Compatível com 1 VENDOR (modelos clássicos) e N VENDOR (ARAGUAIA).
+ * Se existir INTERVENIENT (ARAGUAIA V2), ela é obrigatória para SIGNED.
  */
 export function computeAggregateSaleSignatureStatus(
   parties: PartyStatusSnapshot[] | null | undefined,
@@ -47,10 +48,12 @@ export function computeAggregateSaleSignatureStatus(
 
   const buyer = partyByRole(parties, 'BUYER');
   const spouse = partyByRole(parties, 'SPOUSE');
+  const intervenient = partyByRole(parties, 'INTERVENIENT');
   const vendors = parties.filter(
     (p) => String(p.role).toUpperCase() === 'VENDOR',
   );
   const hasSpouse = Boolean(spouse);
+  const hasIntervenient = Boolean(intervenient);
 
   if (!buyer || vendors.length === 0) return null;
 
@@ -58,9 +61,10 @@ export function computeAggregateSaleSignatureStatus(
   const allCancelled =
     isTerminalCancelled(buyer) &&
     allVendorsCancelled &&
-    (!hasSpouse || isTerminalCancelled(spouse));
+    (!hasSpouse || isTerminalCancelled(spouse)) &&
+    (!hasIntervenient || isTerminalCancelled(intervenient));
   if (allCancelled) {
-    const anyExpired = [buyer, spouse, ...vendors].some(
+    const anyExpired = [buyer, spouse, intervenient, ...vendors].some(
       (p) => String(p?.status || '').toUpperCase() === 'EXPIRED',
     );
     return anyExpired ? 'EXPIRED' : 'CANCELLED';
@@ -68,10 +72,12 @@ export function computeAggregateSaleSignatureStatus(
 
   const vendorsAllSigned = vendors.every(isSigned);
   const vendorsAnySigned = vendors.some(isSigned);
+  const intervenientSigned = !hasIntervenient || isSigned(intervenient);
+  const providersComplete = vendorsAllSigned && intervenientSigned;
   const externalComplete =
     isSigned(buyer) && (!hasSpouse || isSigned(spouse));
 
-  if (externalComplete && vendorsAllSigned) {
+  if (externalComplete && providersComplete) {
     return 'SIGNED';
   }
 
@@ -81,8 +87,10 @@ export function computeAggregateSaleSignatureStatus(
 
   const anyExternalSigned =
     isSigned(buyer) || (hasSpouse && isSigned(spouse));
+  const anyProviderSigned =
+    vendorsAnySigned || (hasIntervenient && isSigned(intervenient));
 
-  if (anyExternalSigned || vendorsAnySigned) {
+  if (anyExternalSigned || anyProviderSigned) {
     return 'PARTIALLY_SIGNED';
   }
 
@@ -122,7 +130,10 @@ export function canVendorSignFromParties(
       (p) => String(p.role).toUpperCase() === 'VENDOR',
     );
     const pendingVendor = vendors.some((p) => !isSigned(p));
-    if (pendingVendor) return { ok: true };
+    const intervenient = partyByRole(parties, 'INTERVENIENT');
+    const pendingIntervenient =
+      Boolean(intervenient) && !isSigned(intervenient);
+    if (pendingVendor || pendingIntervenient) return { ok: true };
     return {
       ok: false,
       reason: 'Este contrato já foi assinado pelo vendedor.',
@@ -171,6 +182,33 @@ export function allVendorPartiesSigned(
     (p) => String(p.role).toUpperCase() === 'VENDOR',
   );
   return vendors.length > 0 && vendors.every(isSigned);
+}
+
+/** INTERVENIENT presente e ainda não SIGNED (ARAGUAIA V2). */
+export function listPendingIntervenientParties<
+  T extends { role: string; status: string },
+>(parties: T[] | null | undefined): T[] {
+  return (parties || []).filter(
+    (p) =>
+      String(p.role).toUpperCase() === 'INTERVENIENT' &&
+      String(p.status).toUpperCase() !== 'SIGNED' &&
+      !['CANCELLED', 'EXPIRED'].includes(String(p.status || '').toUpperCase()),
+  );
+}
+
+export function isIntervenientPartySigned(
+  parties: PartyStatusSnapshot[] | null | undefined,
+): boolean {
+  const intervenient = partyByRole(parties || [], 'INTERVENIENT');
+  if (!intervenient) return true;
+  return isSigned(intervenient);
+}
+
+/** Providers ARAGUAIA: todos VENDOR + INTERVENIENT (se houver). */
+export function allAraguaiaProviderPartiesSigned(
+  parties: PartyStatusSnapshot[] | null | undefined,
+): boolean {
+  return allVendorPartiesSigned(parties) && isIntervenientPartySigned(parties);
 }
 
 export function countSignedParties(

@@ -92,6 +92,10 @@ export type SaleSignaturePartyPublicView = {
   canShare: boolean;
   /** Preview: SPOUSE/BUYER pendente sem URL — modal deve exibir erro, não omitir. */
   missingPublicUrl?: boolean;
+  /** INTERVENIENT PJ — nome do representante (signature_data). */
+  representativeName?: string | null;
+  representativeCpfMasked?: string | null;
+  companyCnpjMasked?: string | null;
 };
 
 export function saleSignaturePartyRoleLabel(
