@@ -29,8 +29,9 @@ export function isAraguaiaEsignV2PersistEnabled(): boolean {
  */
 export function shouldPersistAraguaiaIntervenientParty(
   params: AraguaiaEsignV2GateInput = {},
+  env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return shouldEnableAraguaiaEsignV2(params);
+  return shouldEnableAraguaiaEsignV2(params, env);
 }
 
 /**
@@ -38,8 +39,9 @@ export function shouldPersistAraguaiaIntervenientParty(
  */
 export function shouldPersistAraguaiaWitnessParties(
   params: AraguaiaEsignV2GateInput = {},
+  env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return shouldEnableAraguaiaEsignV2(params);
+  return shouldEnableAraguaiaEsignV2(params, env);
 }
 
 /**
@@ -66,13 +68,21 @@ export type AraguaiaEsignVendor = {
 /** Contatos confirmados — Daniel mantém e-mail operacional; Aldenise sem e-mail pessoal. */
 export const ARAGUAIA_DANIEL_ESIGN_EMAIL = 'rrnegocioseservicos@gmail.com';
 
-/** CPF do representante da INTERVENIENTE (mesmo Daniel PF VENDOR — eventos distintos). */
-export const ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF = '820.912.262-20';
-export const ARAGUAIA_INTERVENIENT_REPRESENTATIVE_NAME =
-  'Daniel Roberto Rivelino de Sousa';
-export const ARAGUAIA_INTERVENIENT_COMPANY_NAME =
-  'R R NEGÓCIOS & SERVIÇOS LTDA';
-export const ARAGUAIA_INTERVENIENT_COMPANY_CNPJ = '57.590.706/0001-78';
+/** Constantes legado / fallback — preferir resolveAraguaiaIntervenientIdentity({ company }). */
+export {
+  ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF as ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF,
+  ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_NAME as ARAGUAIA_INTERVENIENT_REPRESENTATIVE_NAME,
+  ARAGUAIA_INTERVENIENT_FALLBACK_COMPANY_NAME as ARAGUAIA_INTERVENIENT_COMPANY_NAME,
+  ARAGUAIA_INTERVENIENT_FALLBACK_COMPANY_CNPJ as ARAGUAIA_INTERVENIENT_COMPANY_CNPJ,
+  resolveAraguaiaIntervenientIdentity,
+} from '@/lib/araguaiaIntervenientIdentity';
+import {
+  ARAGUAIA_INTERVENIENT_FALLBACK_COMPANY_CNPJ,
+  ARAGUAIA_INTERVENIENT_FALLBACK_COMPANY_NAME,
+  ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF,
+  ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_NAME,
+  resolveAraguaiaIntervenientIdentity,
+} from '@/lib/araguaiaIntervenientIdentity';
 
 export type AraguaiaIntervenientPartyInput = {
   role: 'INTERVENIENT';
@@ -98,7 +108,9 @@ export const ARAGUAIA_ESIGN_VENDORS: AraguaiaEsignVendor[] = [
   {
     order: 1,
     name: ARAGUAIA_DEFAULT_SELLERS[0].name,
-    cpf: ARAGUAIA_DEFAULT_SELLERS[0].cpf || ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF,
+    cpf:
+      ARAGUAIA_DEFAULT_SELLERS[0].cpf ||
+      ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF,
     phoneRaw: '94991254320',
     email: ARAGUAIA_DANIEL_ESIGN_EMAIL,
   },
@@ -143,22 +155,30 @@ export function buildAraguaiaEsignVendorPartyInputs(): Array<{
   }));
 }
 
-export function buildAraguaiaIntervenientSignatureData(): AraguaiaIntervenientSignatureData {
+export function buildAraguaiaIntervenientSignatureData(input?: {
+  company?: Record<string, unknown> | null;
+  sellers?: Array<{ name?: string | null; cpf?: string | null }> | null;
+}): AraguaiaIntervenientSignatureData {
+  const id = resolveAraguaiaIntervenientIdentity(input);
   return {
     party_kind: 'LEGAL_ENTITY',
-    company_name: ARAGUAIA_INTERVENIENT_COMPANY_NAME,
-    company_cnpj: onlyDigits(ARAGUAIA_INTERVENIENT_COMPANY_CNPJ),
-    representative_name: ARAGUAIA_INTERVENIENT_REPRESENTATIVE_NAME,
-    representative_cpf: onlyDigits(ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF),
+    company_name: id.companyName,
+    company_cnpj: id.companyCnpjDigits,
+    representative_name: id.representativeName,
+    representative_cpf: id.representativeCpfDigits,
   };
 }
 
 /**
  * Party INTERVENIENT (PJ) — distinta do VENDOR PF Daniel.
  * signer_cpf = CNPJ; representante fica em signature_data.
+ * Passar `company` (tenant do contrato) para alinhar ao HTML do preâmbulo.
  */
-export function buildAraguaiaIntervenientPartyInput(): AraguaiaIntervenientPartyInput {
-  const data = buildAraguaiaIntervenientSignatureData();
+export function buildAraguaiaIntervenientPartyInput(input?: {
+  company?: Record<string, unknown> | null;
+  sellers?: Array<{ name?: string | null; cpf?: string | null }> | null;
+}): AraguaiaIntervenientPartyInput {
+  const data = buildAraguaiaIntervenientSignatureData(input);
   return {
     role: 'INTERVENIENT',
     name: data.company_name,
@@ -301,9 +321,10 @@ export function readAraguaiaIntervenientFromSignatureData(
     company_name: companyName,
     company_cnpj: companyCnpj,
     representative_name:
-      representativeName || ARAGUAIA_INTERVENIENT_REPRESENTATIVE_NAME,
+      representativeName || ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_NAME,
     representative_cpf:
-      representativeCpf || onlyDigits(ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF),
+      representativeCpf ||
+      onlyDigits(ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF),
   };
 }
 
@@ -311,7 +332,7 @@ export function readAraguaiaIntervenientFromSignatureData(
 export function isAraguaiaDanielVendorCpf(cpf?: string | null): boolean {
   return (
     araguaiaVendorCpfDigits(cpf) ===
-    onlyDigits(ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF)
+    onlyDigits(ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF)
   );
 }
 
@@ -323,8 +344,8 @@ export function isAraguaiaIntervenientParty(party: {
   if (String(party.role || '').toUpperCase() !== 'INTERVENIENT') return false;
   const fromData = readAraguaiaIntervenientFromSignatureData(party.signature_data);
   if (fromData) return true;
-  const doc = onlyDigits(party.signer_cpf || '');
-  return doc === onlyDigits(ARAGUAIA_INTERVENIENT_COMPANY_CNPJ);
+  // Qualquer party INTERVENIENT com documento (CNPJ) — sem amarrar a R R.
+  return onlyDigits(party.signer_cpf || '').length >= 11;
 }
 
 export function formatAraguaiaEsignVendorCpfDisplay(cpf: string): string {

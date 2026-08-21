@@ -8,10 +8,6 @@
 
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
 import {
-  ARAGUAIA_INTERVENIENT_COMPANY_CNPJ,
-  ARAGUAIA_INTERVENIENT_COMPANY_NAME,
-  ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF,
-  ARAGUAIA_INTERVENIENT_REPRESENTATIVE_NAME,
   readAraguaiaIntervenientFromSignatureData,
   sortAraguaiaVendorParties,
 } from '@/lib/araguaiaContractEsign';
@@ -111,28 +107,21 @@ export function buildAraguaiaElectronicSignatureSlotsFromParties(
       const company =
         meta?.company_name ||
         String(party.signer_name || '').trim() ||
-        ARAGUAIA_INTERVENIENT_COMPANY_NAME;
+        '—';
       const cnpj =
-        meta?.company_cnpj ||
-        onlyDigits(party.signer_cpf || '') ||
-        onlyDigits(ARAGUAIA_INTERVENIENT_COMPANY_CNPJ);
-      const repName =
-        meta?.representative_name ||
-        ARAGUAIA_INTERVENIENT_REPRESENTATIVE_NAME;
-      const repCpf =
-        meta?.representative_cpf ||
-        onlyDigits(ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF);
+        meta?.company_cnpj || onlyDigits(party.signer_cpf || '') || '';
+      const repName = meta?.representative_name || '';
+      const repCpf = meta?.representative_cpf || '';
+      const extraMeta = ['Representada por:'];
+      if (repName) extraMeta.push(repName);
+      if (repCpf) extraMeta.push(`CPF: ${formatCpfCnpj(repCpf) || repCpf}`);
       slots.push({
         role,
         roleLabel: 'INTERVENIENTE',
         name: company,
         documentLabel: 'CNPJ',
         document: cnpj,
-        extraMeta: [
-          'Representada por:',
-          repName,
-          `CPF: ${formatCpfCnpj(repCpf) || repCpf}`,
-        ],
+        extraMeta,
         signedAt: party.signed_at,
         signatureEventId: eventId,
         dataRole: 'INTERVENIENT',

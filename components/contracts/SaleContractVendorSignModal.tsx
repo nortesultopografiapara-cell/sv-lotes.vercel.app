@@ -22,6 +22,8 @@ export type SaleContractVendorSignModalProps = {
   defaultName?: string;
   defaultDocument?: string;
   defaultEmail?: string;
+  /** Label do documento (CPF pessoa física / CNPJ PJ INTERVENIENT). */
+  documentLabel?: 'CPF' | 'CNPJ';
   /** Quando há N VENDORs (ARAGUAIA), lista as parties pendentes. */
   vendorTargets?: VendorSignTargetOption[];
   onSign: (input: {
@@ -53,6 +55,7 @@ export function SaleContractVendorSignModal({
   defaultName = '',
   defaultDocument = '',
   defaultEmail = '',
+  documentLabel = 'CPF',
   vendorTargets = [],
   onSign,
 }: SaleContractVendorSignModalProps) {
@@ -234,7 +237,7 @@ export function SaleContractVendorSignModal({
 
           <div>
             <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
-              CPF
+              {documentLabel}
             </label>
             <input
               value={formatCpfCnpj(vendorDocument) || vendorDocument}

@@ -27,6 +27,7 @@ import {
   resolveProjectContractSellers,
   type ProjectContractSellerParty,
 } from '@/lib/projectContractSellers';
+import { resolveAraguaiaIntervenientIdentity } from '@/lib/araguaiaIntervenientIdentity';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 
@@ -199,14 +200,12 @@ export function buildAraguaiaContractContext(
     if (!s.address) pendingFields.push(`endereço de ${s.name}`);
   }
 
-  const intervenienteName =
-    clean(tenant.razao_social) ||
-    clean(tenant.fantasy_name) ||
-    clean(tenant.name) ||
-    'R R NEGÓCIOS & SERVIÇOS LTDA';
-  const intervenienteCnpj =
-    formatCpfCnpj(clean(tenant.cnpj || tenant.document)) ||
-    '57.590.706/0001-78';
+  const intervenienteId = resolveAraguaiaIntervenientIdentity({
+    company: tenant,
+    sellers,
+  });
+  const intervenienteName = intervenienteId.companyName;
+  const intervenienteCnpj = intervenienteId.companyCnpjDisplay;
   const intervenienteAddress =
     clean(tenant.address || tenant.endereco) || 'endereço não informado';
   const intervenienteCityUf = [clean(tenant.city || tenant.cidade), clean(tenant.state || tenant.uf)]

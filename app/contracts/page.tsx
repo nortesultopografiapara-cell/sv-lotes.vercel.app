@@ -24,6 +24,7 @@ import {
   Trash2,
   History,
   ShieldCheck,
+  ExternalLink,
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
@@ -2122,14 +2123,59 @@ export default function ContractsPage() {
                         Regenerar contrato
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => void handleBaixarPDF()}
-                      className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium"
-                    >
-                      <Download className="w-4 h-4" />
-                      Baixar PDF
-                    </button>
+                    {isSaleContractFullySigned(selectedContract) &&
+                      String(
+                        (selectedContract as { pdf_signed_url?: string | null })
+                          .pdf_signed_url || "",
+                      ).trim() && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = String(
+                                (
+                                  selectedContract as {
+                                    pdf_signed_url?: string | null;
+                                  }
+                                ).pdf_signed_url || "",
+                              ).trim();
+                              if (url) {
+                                window.open(url, "_blank", "noopener,noreferrer");
+                              }
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors text-sm font-medium shadow-sm"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Abrir PDF Assinado
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleBaixarPDF();
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-700/90 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
+                          >
+                            <ShieldCheck className="w-4 h-4" />
+                            Baixar PDF Assinado
+                          </button>
+                        </>
+                      )}
+                    {!(
+                      isSaleContractFullySigned(selectedContract) &&
+                      String(
+                        (selectedContract as { pdf_signed_url?: string | null })
+                          .pdf_signed_url || "",
+                      ).trim()
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => void handleBaixarPDF()}
+                        className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium"
+                      >
+                        <Download className="w-4 h-4" />
+                        Baixar PDF
+                      </button>
+                    )}
                   </div>
                 </div>
 

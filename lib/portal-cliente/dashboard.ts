@@ -33,9 +33,11 @@ import { resolvePortalClientContract, type PortalContractRow } from '@/lib/porta
 import {
   PORTAL_CONTRACT_DOWNLOAD_PATH,
   PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+  PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
   resolvePortalContractPdfAvailability,
 } from '@/lib/portal-cliente/contractDownload';
 import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
+import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
 
 const CONTRACT_NOT_FOUND_MESSAGE = 'Contrato não encontrado.';
 const CONTRACT_UNAVAILABLE_MESSAGE = 'Contrato ainda não disponível.';
@@ -335,8 +337,22 @@ async function buildPortalDashboardContract(
     signatureRow?.signature_status || contractRow.signature_status || '',
   ).toUpperCase();
 
+  const contractWithSignatureStatus: PortalContractRow = {
+    ...contractRow,
+    signature_status: signatureStatus || contractRow.signature_status,
+  };
+
   const storedHtml = readStoredContractHtml(contractRow as Record<string, unknown>);
-  if (storedHtml) {
+  const electronicallySigned = shouldBlockUnsignedFallbackAfterElectronicSign({
+    signatureStatus,
+    contractStatus: contractRow.status,
+  });
+  const hasSignedPdf = Boolean(String(contractRow.pdf_signed_url || '').trim());
+
+  if (electronicallySigned) {
+    // SIGNED: visualizar via rota que serve pdf_signed_url (inline) — nunca HTML.
+    contractViewUrl = hasSignedPdf ? '/api/portal-cliente/contract' : null;
+  } else if (storedHtml) {
     contractViewUrl = '/api/portal-cliente/contract';
   }
 
@@ -350,9 +366,19 @@ async function buildPortalDashboardContract(
     }
   }
 
-  const contractDownloadAvailable = resolvePortalContractPdfAvailability(contractRow, storedHtml);
+  const contractDownloadAvailable = resolvePortalContractPdfAvailability(
+    contractWithSignatureStatus,
+    storedHtml,
+  );
   const hasDocument = Boolean(signUrl || contractViewUrl || contractDownloadAvailable);
   const generatedAt = contractRow.created_at ? String(contractRow.created_at).slice(0, 10) : null;
+
+  let contractDownloadUnavailableMessage: string | null = null;
+  if (!contractDownloadAvailable) {
+    contractDownloadUnavailableMessage = electronicallySigned
+      ? PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE
+      : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE;
+  }
 
   return {
     contractNumber: String(contractRow.contract_number || '').trim() || null,
@@ -363,9 +389,7 @@ async function buildPortalDashboardContract(
     contractViewUrl,
     contractDownloadUrl: PORTAL_CONTRACT_DOWNLOAD_PATH,
     contractDownloadAvailable,
-    contractDownloadUnavailableMessage: contractDownloadAvailable
-      ? null
-      : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+    contractDownloadUnavailableMessage,
     emptyMessage: hasDocument ? null : CONTRACT_UNAVAILABLE_MESSAGE,
   };
 }

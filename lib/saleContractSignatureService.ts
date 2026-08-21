@@ -1857,7 +1857,8 @@ export async function loadSaleContractPdfForSign(
       intervenientCard = {
         companyName:
           meta?.company_name ||
-          String(intervenientParty.signer_name || 'R R NEGÓCIOS & SERVIÇOS LTDA'),
+          String(intervenientParty.signer_name || '').trim() ||
+          '—',
         companyCnpj:
           meta?.company_cnpj || intervenientParty.signer_cpf || null,
         representativeName: meta?.representative_name || null,

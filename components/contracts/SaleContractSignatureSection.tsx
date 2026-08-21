@@ -393,7 +393,7 @@ export const SaleContractSignatureSection = forwardRef<
     if (!party) return null;
     return {
       partyId: party.id,
-      name: String(party.signer_name || party.name || 'R R NEGÓCIOS & SERVIÇOS LTDA'),
+      name: String(party.signer_name || party.name || 'INTERVENIENTE'),
       document: String(party.signer_cpf || ''),
       email: String(party.signer_email || party.email || ''),
       representativeName: party.representativeName || null,
@@ -928,6 +928,7 @@ export const SaleContractSignatureSection = forwardRef<
           defaultName={pendingIntervenientTarget.name}
           defaultDocument={pendingIntervenientTarget.document}
           defaultEmail={pendingIntervenientTarget.email}
+          documentLabel="CNPJ"
           vendorTargets={[
             {
               partyId: pendingIntervenientTarget.partyId,
@@ -944,7 +945,7 @@ export const SaleContractSignatureSection = forwardRef<
               partyId: pendingIntervenientTarget.partyId,
             });
             setVendorSignSuccess(
-              'Contrato assinado pela INTERVENIENTE (R R Negócios) com sucesso.',
+              `Contrato assinado pela INTERVENIENTE (${pendingIntervenientTarget.name}) com sucesso.`,
             );
           }}
         />

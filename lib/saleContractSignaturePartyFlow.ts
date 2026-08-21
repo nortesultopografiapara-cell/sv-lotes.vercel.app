@@ -488,7 +488,10 @@ export async function createSignaturePartiesAfterSend(
           contractModel,
         })
           ? (() => {
-              const i = buildAraguaiaIntervenientPartyInput();
+              const i = buildAraguaiaIntervenientPartyInput({
+                company,
+                sellers: araguaiaVendors,
+              });
               return {
                 name: i.name,
                 cnpj: i.cnpj,

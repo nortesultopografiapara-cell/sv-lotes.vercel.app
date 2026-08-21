@@ -1,6 +1,11 @@
 /**
  * Download read-only de PDF de contrato — Portal do Cliente.
- * Prioridade: pdf_signed_url → pdf_url → HTML salvo (somente se NÃO estiver eletronicamente assinado).
+ *
+ * UNSIGNED (antes da assinatura eletrônica final):
+ *   pdf_signed_url → pdf_url → HTML salvo
+ *
+ * SIGNED (aggregate/eletrônico concluído):
+ *   EXCLUSIVAMENTE pdf_signed_url — sem fallback para pdf_url / generated_html.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -15,7 +20,7 @@ export const PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE =
   'PDF do contrato ainda não disponível.';
 
 export const PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE =
-  'PDF assinado eletronicamente indisponível no momento. Tente novamente em instantes.';
+  'Documento assinado em processamento';
 
 export const PORTAL_CONTRACT_DOWNLOAD_PATH = '/api/portal-cliente/contract/download';
 
@@ -40,10 +45,8 @@ export function resolvePortalContractPdfAvailability(
     contractStatus: contract.status,
   });
   if (blockUnsigned) {
-    return Boolean(
-      String(contract.pdf_signed_url || '').trim() ||
-        String(contract.pdf_url || '').trim(),
-    );
+    // SIGNED: só o PDF final assinado.
+    return Boolean(String(contract.pdf_signed_url || '').trim());
   }
   return Boolean(
     String(contract.pdf_signed_url || '').trim() ||
@@ -70,21 +73,27 @@ export async function loadPortalContractPdfForDownload(
   });
 
   const signedUrl = String(contract.pdf_signed_url || '').trim();
+
+  if (blockUnsignedFallback) {
+    if (!signedUrl) {
+      throw new PortalContractPdfUnavailableError(
+        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+      );
+    }
+    const bytes = await fetchPdfBytesFromUrl(signedUrl);
+    if (!bytes) {
+      throw new PortalContractPdfUnavailableError(
+        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+      );
+    }
+    return { bytes, source: 'pdf_signed_url', contractNumber };
+  }
+
   if (signedUrl) {
     const bytes = await fetchPdfBytesFromUrl(signedUrl);
     if (bytes) {
       return { bytes, source: 'pdf_signed_url', contractNumber };
     }
-    if (blockUnsignedFallback) {
-      throw new PortalContractPdfUnavailableError(
-        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
-      );
-    }
-  } else if (blockUnsignedFallback) {
-    // Assinado eletronicamente sem artefato final — não entregar HTML pré-assinatura.
-    throw new PortalContractPdfUnavailableError(
-      PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
-    );
   }
 
   const pdfUrl = String(contract.pdf_url || '').trim();
