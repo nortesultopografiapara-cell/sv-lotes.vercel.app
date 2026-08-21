@@ -1,10 +1,11 @@
 /**
  * Identidade da INTERVENIENTE ARAGUAIA — mesma fonte do preâmbulo e do e-sign V2.
- * Company/tenant → razão social + CNPJ; representante = 1º promitente (Daniel).
+ * Company/tenant → razão social + CNPJ;
+ * Representante → Representante Legal da company (Configurações).
  */
 
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
-import { ARAGUAIA_DEFAULT_SELLERS } from '@/lib/projectContractSellers';
+import { resolveAraguaiaCompanyLegalRepresentative } from '@/lib/araguaiaCompanyLegalRepresentative';
 
 /** Fallback legado quando a empresa do contrato não traz razão/CNPJ. */
 export const ARAGUAIA_INTERVENIENT_FALLBACK_COMPANY_NAME =
@@ -21,6 +22,8 @@ export type AraguaiaIntervenientIdentity = {
   companyCnpjDigits: string;
   representativeName: string;
   representativeCpfDigits: string;
+  representativeEmail: string | null;
+  representativePhone: string | null;
   /** true quando razão + CNPJ vieram da company do contrato. */
   usedCompanySource: boolean;
 };
@@ -30,15 +33,15 @@ function clean(value: unknown): string {
 }
 
 /**
- * Mesma regra de `buildAraguaiaContractContext` para interveniente.
  * Passar sempre a company/tenant do contrato no fluxo V2.
+ * Representante Legal da company — não “1º promitente” hardcoded.
  */
 export function resolveAraguaiaIntervenientIdentity(input?: {
   company?: Record<string, unknown> | null;
+  /** @deprecated Ignorado — representante vem do Representante Legal da company. */
   sellers?: Array<{ name?: string | null; cpf?: string | null }> | null;
 }): AraguaiaIntervenientIdentity {
   const company = input?.company || {};
-  const seller1 = input?.sellers?.[0];
   const companyName =
     clean(company.razao_social) ||
     clean(company.fantasy_name) ||
@@ -46,14 +49,14 @@ export function resolveAraguaiaIntervenientIdentity(input?: {
   const cnpjRaw = clean(company.cnpj || company.document);
   const cnpjDigits = onlyDigits(cnpjRaw);
   const usedCompanySource = Boolean(companyName && cnpjDigits.length >= 14);
-  const representativeName =
-    clean(seller1?.name) ||
-    ARAGUAIA_DEFAULT_SELLERS[0]?.name ||
-    ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_NAME;
-  const representativeCpfDigits =
-    onlyDigits(seller1?.cpf || '') ||
-    onlyDigits(ARAGUAIA_DEFAULT_SELLERS[0]?.cpf || '') ||
-    onlyDigits(ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF);
+  const legal = resolveAraguaiaCompanyLegalRepresentative(company);
+
+  const representativeName = legal.usedCompanySource
+    ? legal.name
+    : ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_NAME;
+  const representativeCpfDigits = legal.usedCompanySource
+    ? legal.cpfDigits
+    : onlyDigits(ARAGUAIA_INTERVENIENT_FALLBACK_REPRESENTATIVE_CPF);
 
   if (usedCompanySource) {
     return {
@@ -62,6 +65,8 @@ export function resolveAraguaiaIntervenientIdentity(input?: {
       companyCnpjDigits: cnpjDigits,
       representativeName,
       representativeCpfDigits,
+      representativeEmail: legal.usedCompanySource ? legal.email : null,
+      representativePhone: legal.usedCompanySource ? legal.phone : null,
       usedCompanySource: true,
     };
   }
@@ -72,6 +77,8 @@ export function resolveAraguaiaIntervenientIdentity(input?: {
     companyCnpjDigits: onlyDigits(ARAGUAIA_INTERVENIENT_FALLBACK_COMPANY_CNPJ),
     representativeName,
     representativeCpfDigits,
+    representativeEmail: legal.usedCompanySource ? legal.email : null,
+    representativePhone: legal.usedCompanySource ? legal.phone : null,
     usedCompanySource: false,
   };
 }

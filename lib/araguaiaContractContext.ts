@@ -24,9 +24,9 @@ import {
 } from '@/lib/installmentCorrectionType';
 import {
   formatSellerCpfDisplay,
-  resolveProjectContractSellers,
   type ProjectContractSellerParty,
 } from '@/lib/projectContractSellers';
+import { resolveAraguaiaPromitenteVendors } from '@/lib/araguaiaCompanyLegalRepresentative';
 import { resolveAraguaiaIntervenientIdentity } from '@/lib/araguaiaIntervenientIdentity';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
@@ -50,6 +50,8 @@ export type AraguaiaContractContext = {
   intervenienteCnpj: string;
   intervenienteAddress: string;
   intervenienteCityUf: string;
+  intervenienteRepresentativeName: string;
+  intervenienteRepresentativeCpf: string;
   buyerName: string;
   buyerNationality: string;
   buyerMaritalStatus: string;
@@ -186,11 +188,12 @@ export function buildAraguaiaContractContext(
   const sale = params.sale || {};
   const pendingFields: string[] = [];
 
-  const sellers = resolveProjectContractSellers({
+  const sellers = resolveAraguaiaPromitenteVendors({
+    company: tenant,
     project,
     contractModel: 'ARAGUAIA',
   });
-  if (sellers.length < 2) {
+  if (sellers.length < 1) {
     pendingFields.push('promitentes vendedores do empreendimento');
   }
   for (const s of sellers) {
@@ -202,7 +205,6 @@ export function buildAraguaiaContractContext(
 
   const intervenienteId = resolveAraguaiaIntervenientIdentity({
     company: tenant,
-    sellers,
   });
   const intervenienteName = intervenienteId.companyName;
   const intervenienteCnpj = intervenienteId.companyCnpjDisplay;
@@ -346,6 +348,8 @@ export function buildAraguaiaContractContext(
     intervenienteCnpj,
     intervenienteAddress,
     intervenienteCityUf,
+    intervenienteRepresentativeName: intervenienteId.representativeName,
+    intervenienteRepresentativeCpf: intervenienteId.representativeCpfDigits,
     buyerName,
     buyerNationality,
     buyerMaritalStatus,

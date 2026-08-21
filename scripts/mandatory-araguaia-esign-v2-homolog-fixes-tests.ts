@@ -44,6 +44,10 @@ const TOPOGRAFIA = {
   name: 'S.V TOPOGRAFIA E PROJETO LTDA',
   cnpj: '12.345.678/0001-90',
   document: '12345678000190',
+  legal_representative: 'REPRESENTANTE TOPOGRAFIA',
+  representative_cpf: '390.533.447-05',
+  legal_representative_email: 'rep.topo@example.com',
+  legal_representative_phone: '94991112233',
 };
 
 console.log('\n======== ETAPA 8 — HOMOLOG FIXES ========');
@@ -84,13 +88,26 @@ console.log('\n=== A/B) Topografia → INTERVENIENT alinhada (sem R R hardcoded)
     'A: preâmbulo Topografia',
   );
   ok(!/R\s*R\s*NEG/i.test(ctx.intervenienteName), 'B: preâmbulo sem R R');
+  ok(
+    ctx.intervenienteRepresentativeName === 'REPRESENTANTE TOPOGRAFIA',
+    'A: rep legal no ctx',
+  );
+  ok(
+    ctx.sellers.some((s) => s.name === 'REPRESENTANTE TOPOGRAFIA'),
+    'A: VENDOR = Representante Legal',
+  );
 
   const physical = buildAraguaiaPhysicalSignaturesGridHtml(ctx);
   ok(
     physical.includes('S.V TOPOGRAFIA E PROJETO LTDA'),
     'A: bloco físico Topografia',
   );
+  ok(
+    physical.includes('REPRESENTANTE TOPOGRAFIA'),
+    'A: bloco físico Representante Legal',
+  );
   ok(!/R\s*R\s*NEG/i.test(physical), 'B: bloco físico sem R R');
+  ok(!/Daniel Roberto/i.test(physical), 'B: físico sem Daniel hardcoded');
 
   const flow = readFileSync(
     join(root, 'lib/saleContractSignaturePartyFlow.ts'),

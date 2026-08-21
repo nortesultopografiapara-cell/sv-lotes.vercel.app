@@ -74,6 +74,8 @@ function mockCtx(): AraguaiaContractContext {
     intervenienteCnpj: '57.590.706/0001-78',
     intervenienteAddress: 'Endereço',
     intervenienteCityUf: 'Parauapebas/PA',
+    intervenienteRepresentativeName: 'Daniel Roberto Rivelino de Sousa',
+    intervenienteRepresentativeCpf: '82091226220',
     buyerName: 'Comprador Teste Silva',
     buyerNationality: 'Brasileira',
     buyerMaritalStatus: 'Solteiro',

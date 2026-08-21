@@ -10,6 +10,10 @@ import {
   ARAGUAIA_DEFAULT_SELLERS,
   formatSellerCpfDisplay,
 } from '@/lib/projectContractSellers';
+import {
+  resolveAraguaiaCompanyLegalRepresentative,
+  resolveAraguaiaPromitenteVendors,
+} from '@/lib/araguaiaCompanyLegalRepresentative';
 import { isValidSignerEmail, normalizeSignerEmail } from '@/lib/saleContractEmailValidation';
 import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
 import type { SaleSignaturePartyRole } from '@/lib/saleContractSignaturePartyTypes';
@@ -138,21 +142,48 @@ export function resolveAraguaiaEsignVendorPhone(
   return normalizeWhatsAppPhone(phoneRaw);
 }
 
-/** Parties VENDOR a criar no envio ARAGUAIA. */
-export function buildAraguaiaEsignVendorPartyInputs(): Array<{
+/** Parties VENDOR a criar no envio ARAGUAIA — dinâmicas da company/projeto. */
+export function buildAraguaiaEsignVendorPartyInputs(input?: {
+  company?: Record<string, unknown> | null;
+  project?: Record<string, unknown> | null;
+}): Array<{
   name: string;
   cpf: string;
   phone: string | null;
   email: string | null;
   order: number;
 }> {
-  return ARAGUAIA_ESIGN_VENDORS.map((v) => ({
-    name: v.name,
-    cpf: onlyDigits(v.cpf) || v.cpf,
-    phone: resolveAraguaiaEsignVendorPhone(v.phoneRaw),
-    email: v.email,
-    order: v.order,
-  }));
+  const sellers = resolveAraguaiaPromitenteVendors({
+    company: input?.company,
+    project: input?.project,
+    contractModel: 'ARAGUAIA',
+  });
+  const legal = resolveAraguaiaCompanyLegalRepresentative(input?.company);
+
+  return sellers.map((s, idx) => {
+    const cpfDigits = onlyDigits(s.cpf || '') || String(s.cpf || '');
+    const isLegalRep =
+      legal.usedCompanySource &&
+      onlyDigits(legal.cpfDigits) === onlyDigits(cpfDigits);
+    const legacy = ARAGUAIA_ESIGN_VENDORS.find(
+      (v) => onlyDigits(v.cpf) === onlyDigits(cpfDigits),
+    );
+    return {
+      name: s.name,
+      cpf: cpfDigits,
+      phone: isLegalRep
+        ? legal.phone
+        : legacy
+          ? resolveAraguaiaEsignVendorPhone(legacy.phoneRaw)
+          : null,
+      email: isLegalRep
+        ? legal.email
+        : legacy
+          ? legacy.email
+          : null,
+      order: s.order || idx + 1,
+    };
+  });
 }
 
 export function buildAraguaiaIntervenientSignatureData(input?: {
@@ -170,32 +201,36 @@ export function buildAraguaiaIntervenientSignatureData(input?: {
 }
 
 /**
- * Party INTERVENIENT (PJ) — distinta do VENDOR PF Daniel.
- * signer_cpf = CNPJ; representante fica em signature_data.
- * Passar `company` (tenant do contrato) para alinhar ao HTML do preâmbulo.
+ * Party INTERVENIENT (PJ) — distinta do VENDOR PF.
+ * signer_cpf = CNPJ; representante = Representante Legal da company.
  */
 export function buildAraguaiaIntervenientPartyInput(input?: {
   company?: Record<string, unknown> | null;
   sellers?: Array<{ name?: string | null; cpf?: string | null }> | null;
 }): AraguaiaIntervenientPartyInput {
+  const id = resolveAraguaiaIntervenientIdentity(input);
   const data = buildAraguaiaIntervenientSignatureData(input);
   return {
     role: 'INTERVENIENT',
     name: data.company_name,
     cnpj: data.company_cnpj,
-    phone: resolveAraguaiaEsignVendorPhone(ARAGUAIA_ESIGN_VENDORS[0].phoneRaw),
-    email: ARAGUAIA_DANIEL_ESIGN_EMAIL,
+    phone: id.representativePhone,
+    email: id.representativeEmail,
     withPublicToken: false,
     signatureData: data,
   };
 }
 
 /** Papéis obrigatórios do destino ARAGUAIA e-sign V2 (sem SPOUSE). */
-export function buildAraguaiaEsignExpectedPartyRoles(): SaleSignaturePartyRole[] {
+export function buildAraguaiaEsignExpectedPartyRoles(input?: {
+  company?: Record<string, unknown> | null;
+  project?: Record<string, unknown> | null;
+}): SaleSignaturePartyRole[] {
+  const vendors = buildAraguaiaEsignVendorPartyInputs(input);
+  const vendorRoles = vendors.map(() => 'VENDOR' as const);
   return [
     'BUYER',
-    'VENDOR',
-    'VENDOR',
+    ...vendorRoles,
     'INTERVENIENT',
     'WITNESS_1',
     'WITNESS_2',

@@ -127,8 +127,19 @@ export const ARAGUAIA_CONTRACT_TITLE =
 export function buildAraguaiaPartiesPreambleHtml(
   ctx: AraguaiaContractContext,
 ): string {
-  const seller1 = sellerInline(ctx, 0);
-  const seller2 = sellerInline(ctx, 1);
+  const sellerParts = ctx.sellers.map((_, i) => sellerInline(ctx, i));
+  const sellersPhrase =
+    sellerParts.length === 0
+      ? '<em>[promitente vendedor não configurado]</em>'
+      : sellerParts.length === 1
+        ? sellerParts[0]
+        : sellerParts.length === 2
+          ? `${sellerParts[0]} e ${sellerParts[1]}`
+          : `${sellerParts.slice(0, -1).join(', ')} e ${sellerParts[sellerParts.length - 1]}`;
+  const residenceWord =
+    ctx.sellers.length <= 1
+      ? 'residente e domiciliado(a)'
+      : 'ambos residentes e domiciliados';
   const sellersAddress =
     ctx.sellers[0]?.address ||
     ctx.sellers[1]?.address ||
@@ -138,7 +149,7 @@ export function buildAraguaiaPartiesPreambleHtml(
   return `
     <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
       ${itemP(
-        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${seller1} e ${seller2}, ambos residentes e domiciliados na ${esc(
+        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${residenceWord} na ${esc(
           sellersAddress,
         )}, neste ato representados pela pessoa jurídica <strong>${esc(
           ctx.intervenienteName,

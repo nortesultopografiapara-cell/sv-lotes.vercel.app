@@ -170,7 +170,7 @@ export async function loadSaleAndCompanyForSignature(
   if (projectId) {
     const { data: projectData } = await supabaseAdmin
       .from('projects')
-      .select('id, name, contract_model, company_id')
+      .select('id, name, contract_model, company_id, seller_parties_json')
       .eq('id', projectId)
       .maybeSingle();
     project = (projectData as Record<string, unknown>) || null;
@@ -303,7 +303,7 @@ export async function createSignaturePartiesAfterSend(
     supabaseAdmin,
     params.contractRow,
   );
-  const { sale, company, customer, rawContractModel, companyLoadError, saleLoadError } =
+  const { sale, company, customer, rawContractModel, companyLoadError, saleLoadError, project } =
     loaded;
 
   const storedHtml = readStoredContractHtml(params.contractRow) || '';
@@ -394,8 +394,19 @@ export async function createSignaturePartiesAfterSend(
     : { representative: '', representativeCpf: '', email: '', phone: '' };
 
   const araguaiaVendors = araguaiaEsign
-    ? buildAraguaiaEsignVendorPartyInputs()
+    ? buildAraguaiaEsignVendorPartyInputs({
+        company,
+        project,
+      })
     : null;
+
+  if (araguaiaEsign) {
+    partiesRequested.length = 1; // BUYER
+    if (spouseRequired) partiesRequested.push('SPOUSE');
+    for (let i = 0; i < (araguaiaVendors?.length || 0); i++) {
+      partiesRequested.push('VENDOR');
+    }
+  }
 
   console.log('[signature-parties] araguaia_esign_gate', {
     contractId: String(params.signature.contract_id || '').slice(0, 8),
@@ -412,9 +423,9 @@ export async function createSignaturePartiesAfterSend(
     })),
   });
 
-  if (araguaiaEsign && (!araguaiaVendors || araguaiaVendors.length !== 2)) {
+  if (araguaiaEsign && (!araguaiaVendors || araguaiaVendors.length < 1)) {
     throw new SaleContractSignatureError(
-      'ARAGUAIA: buildAraguaiaEsignVendorPartyInputs deve retornar exatamente 2 VENDOR.',
+      'ARAGUAIA: configure o Representante Legal da empresa (Configurações) ou os promitentes do empreendimento.',
       'validation',
     );
   }
@@ -490,7 +501,6 @@ export async function createSignaturePartiesAfterSend(
           ? (() => {
               const i = buildAraguaiaIntervenientPartyInput({
                 company,
-                sellers: araguaiaVendors,
               });
               return {
                 name: i.name,
@@ -540,17 +550,21 @@ export async function createSignaturePartiesAfterSend(
         .map((p) => onlyDigits(p.signer_cpf || ''))
         .filter(Boolean)
         .sort();
-      const expectedCpfs = ['82091226220', '85656011291'];
+      const expectedCpfs = (araguaiaVendors || [])
+        .map((v) => onlyDigits(v.cpf || ''))
+        .filter(Boolean)
+        .sort();
       console.log('[signature-parties] araguaia_vendors_persisted', {
         contractSignatureId: String(params.signature.id).slice(0, 8),
         vendorCount,
         vendorCpfs,
+        expectedCpfs,
         names: vendorParties.map((p) => p.signer_name),
         partyIds: vendorParties.map((p) => p.id),
       });
-      if (vendorCount !== 2) {
+      if (vendorCount !== expectedCpfs.length || vendorCount < 1) {
         throw new SaleContractSignatureError(
-          `ARAGUAIA exige exatamente 2 VENDOR persistidos (recebido ${vendorCount}). Reenvie após correção.`,
+          `ARAGUAIA exige ${expectedCpfs.length} VENDOR persistido(s) (recebido ${vendorCount}). Reenvie após correção.`,
           'validation',
         );
       }

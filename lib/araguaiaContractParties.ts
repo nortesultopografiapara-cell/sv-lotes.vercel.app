@@ -89,35 +89,32 @@ export type BuildAraguaiaSignaturesHtmlOptions = {
 export function buildAraguaiaPhysicalSignaturesGridHtml(
   ctx: AraguaiaContractContext,
 ): string {
-  const seller1 = ctx.sellers[0];
-  const seller2 = ctx.sellers[1];
   const intervenienteName =
     ctx.intervenienteName || 'R R NEGÓCIOS & SERVIÇOS LTDA';
   const intervenienteCnpj =
     ctx.intervenienteCnpj || '57.590.706/0001-78';
   const representativeName =
-    seller1?.name || 'Daniel Roberto Rivelino de Sousa';
+    ctx.intervenienteRepresentativeName ||
+    ctx.sellers[0]?.name ||
+    'Representante Legal';
+
+  const vendorSlots = (ctx.sellers.length > 0 ? ctx.sellers : [null, null])
+    .map((seller, idx) =>
+      buildPhysicalSlot({
+        role: 'PROMITENTE VENDEDOR',
+        name: seller?.name || `Promitente Vendedor ${idx + 1}`,
+        meta: seller?.cpf
+          ? [`CPF: ${formatSellerCpfDisplay(seller.cpf) || seller.cpf}`]
+          : [],
+        dataRole: 'VENDOR',
+        extraClass: `signature-slot-vendor-${idx + 1}`,
+      }),
+    )
+    .join('\n');
 
   return `
         <div class="signature-grid signature-grid--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
-          ${buildPhysicalSlot({
-            role: 'PROMITENTE VENDEDOR',
-            name: seller1?.name || 'Promitente Vendedor 1',
-            meta: seller1?.cpf
-              ? [`CPF: ${formatSellerCpfDisplay(seller1.cpf) || seller1.cpf}`]
-              : [],
-            dataRole: 'VENDOR',
-            extraClass: 'signature-slot-vendor-1',
-          })}
-          ${buildPhysicalSlot({
-            role: 'PROMITENTE VENDEDOR',
-            name: seller2?.name || 'Promitente Vendedor 2',
-            meta: seller2?.cpf
-              ? [`CPF: ${formatSellerCpfDisplay(seller2.cpf) || seller2.cpf}`]
-              : [],
-            dataRole: 'VENDOR',
-            extraClass: 'signature-slot-vendor-2',
-          })}
+          ${vendorSlots}
           ${buildPhysicalSlot({
             role: 'PROMITENTE COMPRADOR(A)',
             name: ctx.buyerName,
