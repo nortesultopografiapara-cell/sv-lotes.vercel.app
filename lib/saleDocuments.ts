@@ -31,7 +31,7 @@ export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
   BUYER: ['RG', 'CPF', 'CNH', 'CERTIFICATE', 'PROOF_OF_ADDRESS', 'OTHER'],
   SPOUSE: ['RG', 'CPF', 'CNH', 'CERTIFICATE', 'PROOF_OF_ADDRESS', 'OTHER'],
   OTHER: ['OTHER'],
-  SYSTEM_GENERATED: ['SYSTEM'],
+  SYSTEM_GENERATED: ['SYSTEM', 'PROMISSORY_NOTE'],
 };
 
 export const SALE_DOCUMENT_CATEGORY_LABELS: Record<SaleDocumentCategory, string> = {
@@ -54,6 +54,7 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   PROOF_OF_ADDRESS: 'Comprovante de residência',
   OTHER: 'Outros',
   SYSTEM: 'Documento do sistema',
+  PROMISSORY_NOTE: 'Nota Promissória',
 };
 
 export const SALE_DOCUMENT_ALLOWED_MIME_TYPES = [

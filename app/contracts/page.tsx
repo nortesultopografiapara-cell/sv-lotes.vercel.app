@@ -92,6 +92,30 @@ import {
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
+type PromissoryNoteDocumentView = {
+  id: string;
+  version: number;
+  emitted: boolean;
+  fileName: string;
+};
+
+type PromissoryNoteStatus = {
+  visible: boolean;
+  eligibility: {
+    applicable: boolean;
+    reason:
+      | "ok"
+      | "not_araguaia"
+      | "cash_sale"
+      | "no_balance"
+      | "cancelled_no_doc"
+      | "cancelled_history_only";
+    tooltip: string | null;
+  };
+  document: PromissoryNoteDocumentView | null;
+  versions: PromissoryNoteDocumentView[];
+};
+
 /** Valor compacto para faixa de KPIs no mobile (ex.: R$ 1,13M). */
 function formatCompactCurrencyBRL(value: number): string {
   const n = Number(value) || 0;
@@ -522,6 +546,9 @@ export default function ContractsPage() {
   const [contractHtmlRetryKey, setContractHtmlRetryKey] = useState(0);
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
+  const [promissoryNoteStatus, setPromissoryNoteStatus] =
+    useState<PromissoryNoteStatus | null>(null);
+  const [promissoryNoteLoading, setPromissoryNoteLoading] = useState(false);
 
   const ensureCustomerValidForContractAction = (
     contract: Record<string, unknown> | null | undefined,
@@ -679,6 +706,45 @@ export default function ContractsPage() {
       active = false;
     };
   }, [selectedContract?.id]);
+
+  const loadPromissoryNoteStatus = async (
+    contractId: string,
+  ): Promise<PromissoryNoteStatus | null> => {
+    const { ok, data, error } = await fetchJsonWithTimeout<
+      PromissoryNoteStatus & { success?: boolean; error?: string }
+    >(
+      `/api/contracts/${contractId}/promissory-note`,
+      { credentials: "include" },
+      CONTRACTS_FETCH_TIMEOUT_MS,
+    );
+    if (!ok || data?.success === false) {
+      throw new Error(data?.error || error || "Erro ao consultar Nota Promissória.");
+    }
+    return data || null;
+  };
+
+  useEffect(() => {
+    let active = true;
+    const contractId = String(selectedContract?.id || "");
+    setPromissoryNoteStatus(null);
+    if (!contractId || ownerReadOnly) return () => { active = false; };
+
+    setPromissoryNoteLoading(true);
+    void loadPromissoryNoteStatus(contractId)
+      .then((status) => {
+        if (active) setPromissoryNoteStatus(status);
+      })
+      .catch((error) => {
+        console.warn("[CONTRATOS] Nota Promissória", error);
+        if (active) setPromissoryNoteStatus(null);
+      })
+      .finally(() => {
+        if (active) setPromissoryNoteLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedContract?.id, ownerReadOnly]);
 
   useEffect(() => {
     if (!contractToast) return;
@@ -1572,6 +1638,94 @@ export default function ContractsPage() {
     setShowRegenerateModal(true);
   };
 
+  const refreshPromissoryNoteStatus = async () => {
+    if (!selectedContract?.id) return;
+    const status = await loadPromissoryNoteStatus(selectedContract.id);
+    setPromissoryNoteStatus(status);
+  };
+
+  const handleGeneratePromissoryNote = async (regenerate = false) => {
+    if (!selectedContract?.id || promissoryNoteLoading) return;
+    if (
+      regenerate &&
+      !window.confirm(
+        "Gerar uma nova versão da Nota Promissória? As versões já emitidas serão preservadas.",
+      )
+    ) {
+      return;
+    }
+    setPromissoryNoteLoading(true);
+    try {
+      const { ok, data, error } = await fetchJsonWithTimeout<{
+        success?: boolean;
+        error?: string;
+      }>(
+        `/api/contracts/${selectedContract.id}/promissory-note`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(regenerate ? { regenerate: true } : {}),
+        },
+        CONTRACTS_FETCH_TIMEOUT_MS,
+      );
+      if (!ok || data?.success === false) {
+        throw new Error(data?.error || error || "Erro ao gerar Nota Promissória.");
+      }
+      await refreshPromissoryNoteStatus();
+      setContractToast(
+        regenerate
+          ? "Nova versão da Nota Promissória gerada."
+          : "Nota Promissória gerada com sucesso.",
+      );
+    } catch (error) {
+      setContractToast(
+        error instanceof Error ? error.message : "Erro ao gerar Nota Promissória.",
+      );
+    } finally {
+      setPromissoryNoteLoading(false);
+    }
+  };
+
+  const handleOpenPromissoryNote = async (download: boolean) => {
+    if (!selectedContract?.id || promissoryNoteLoading) return;
+    setPromissoryNoteLoading(true);
+    try {
+      const action = download ? "download=1" : "open=1";
+      const { ok, data, error } = await fetchJsonWithTimeout<{
+        success?: boolean;
+        error?: string;
+        url?: string;
+        fileName?: string;
+      }>(
+        `/api/contracts/${selectedContract.id}/promissory-note?${action}`,
+        { credentials: "include" },
+        CONTRACTS_FETCH_TIMEOUT_MS,
+      );
+      if (!ok || data?.success === false || !data?.url) {
+        throw new Error(data?.error || error || "Arquivo não disponível.");
+      }
+      if (download) {
+        const anchor = document.createElement("a");
+        anchor.href = data.url;
+        anchor.download = data.fileName || "nota-promissoria.pdf";
+        anchor.rel = "noopener";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        await refreshPromissoryNoteStatus();
+      } else {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      setContractToast(
+        error instanceof Error ? error.message : "Erro ao abrir Nota Promissória.",
+      );
+    } finally {
+      setPromissoryNoteLoading(false);
+    }
+  };
+
   const confirmRegenerateContract = async () => {
     if (!selectedContract) return;
     // NÃO validar o objeto resumido da lista aqui.
@@ -2080,6 +2234,94 @@ export default function ContractsPage() {
                         Ativar Contrato
                       </button>
                     )}
+                    {promissoryNoteStatus?.visible &&
+                      !promissoryNoteStatus.document &&
+                      promissoryNoteStatus.eligibility.reason === "ok" && (
+                        <button
+                          type="button"
+                          onClick={() => void handleGeneratePromissoryNote(false)}
+                          disabled={promissoryNoteLoading}
+                          className="flex items-center gap-2 px-4 py-2 border border-amber-500/40 bg-amber-500/10 text-amber-300 rounded-lg hover:bg-amber-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                        >
+                          {promissoryNoteLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Receipt className="w-4 h-4" />
+                          )}
+                          Gerar Nota Promissória
+                        </button>
+                      )}
+                    {promissoryNoteStatus?.visible &&
+                      !promissoryNoteStatus.document &&
+                      promissoryNoteStatus.eligibility.reason !== "ok" && (
+                        <button
+                          type="button"
+                          disabled
+                          title={
+                            promissoryNoteStatus.eligibility.tooltip ||
+                            "Nota Promissória indisponível."
+                          }
+                          className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-[var(--text-muted)] rounded-lg text-sm font-medium opacity-60 cursor-not-allowed"
+                        >
+                          <Receipt className="w-4 h-4" />
+                          {promissoryNoteStatus.eligibility.reason ===
+                          "cancelled_no_doc"
+                            ? "Nota Promissória — cancelado"
+                            : "Nota Promissória indisponível"}
+                        </button>
+                      )}
+                    {promissoryNoteStatus?.visible &&
+                      promissoryNoteStatus.document && (
+                        <div className="relative group">
+                          <button
+                            type="button"
+                            disabled={promissoryNoteLoading}
+                            className="flex items-center gap-2 px-4 py-2 border border-amber-500/40 bg-amber-500/10 text-amber-300 rounded-lg hover:bg-amber-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                          >
+                            {promissoryNoteLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Receipt className="w-4 h-4" />
+                            )}
+                            Nota Promissória v
+                            {promissoryNoteStatus.document.version}
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+                          <div className="absolute right-0 top-full mt-1 w-56 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenPromissoryNote(false)}
+                              className="block w-full text-left px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-amber-500/10 hover:text-amber-300 border-b border-[var(--border-color)]/50"
+                            >
+                              Abrir
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenPromissoryNote(true)}
+                              className="block w-full text-left px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-amber-500/10 hover:text-amber-300"
+                            >
+                              Baixar
+                            </button>
+                            {promissoryNoteStatus.eligibility.reason === "ok" && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleGeneratePromissoryNote(true)
+                                }
+                                className="block w-full text-left px-4 py-2 text-sm text-amber-300 hover:bg-amber-500/10 border-t border-[var(--border-color)]/50"
+                              >
+                                Regenerar Nota Promissória
+                              </button>
+                            )}
+                            {promissoryNoteStatus.eligibility.reason ===
+                              "cancelled_history_only" && (
+                              <p className="px-4 py-2 text-xs text-[var(--text-muted)] border-t border-[var(--border-color)]/50">
+                                Contrato cancelado: somente histórico.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     {/* Botão Dropdown "Modelos" */}
                     <div className="relative group">
                       <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-[var(--text-secondary)] border border-[var(--border-color)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium">

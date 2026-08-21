@@ -200,7 +200,7 @@ export async function listSaleDocuments(
   }));
 }
 
-export async function createSaleDocumentMetadata(
+async function insertSaleDocumentRow(
   admin: SupabaseClient,
   input: {
     saleId: string;
@@ -215,13 +215,6 @@ export async function createSaleDocumentMetadata(
     fileSize: number;
   },
 ): Promise<SaleDocumentRow> {
-  if (!isUploadAllowedForCategory(input.category)) {
-    throw new SaleDocumentError(
-      'Documentos gerados pelo sistema são reservados para integração futura.',
-      400,
-    );
-  }
-
   const typeCheck = validateSaleDocumentType(input.category, input.documentType);
   if (!typeCheck.valid) {
     throw new SaleDocumentError(typeCheck.message, 400);
@@ -284,6 +277,55 @@ export async function createSaleDocumentMetadata(
     ...(data as SaleDocumentRow),
     category: normalizeSaleDocumentCategory((data as SaleDocumentRow).category) || 'OTHER',
   };
+}
+
+export async function createSaleDocumentMetadata(
+  admin: SupabaseClient,
+  input: {
+    saleId: string;
+    ctx: SaleContextForDocuments;
+    userId: string;
+    category: SaleDocumentCategory;
+    documentType: string;
+    description?: string | null;
+    originalFileName: string;
+    storagePath: string;
+    mimeType: string;
+    fileSize: number;
+  },
+): Promise<SaleDocumentRow> {
+  if (!isUploadAllowedForCategory(input.category)) {
+    throw new SaleDocumentError(
+      'Documentos gerados pelo sistema são reservados para integração futura.',
+      400,
+    );
+  }
+
+  return insertSaleDocumentRow(admin, input);
+}
+
+/**
+ * Persistência de artefatos gerados pelo sistema (ex.: Nota Promissória).
+ * Não passa pelo bloqueio de upload manual de SYSTEM_GENERATED.
+ */
+export async function createSystemGeneratedSaleDocumentMetadata(
+  admin: SupabaseClient,
+  input: {
+    saleId: string;
+    ctx: SaleContextForDocuments;
+    userId: string;
+    documentType: string;
+    description?: string | null;
+    originalFileName: string;
+    storagePath: string;
+    mimeType: string;
+    fileSize: number;
+  },
+): Promise<SaleDocumentRow> {
+  return insertSaleDocumentRow(admin, {
+    ...input,
+    category: 'SYSTEM_GENERATED',
+  });
 }
 
 export async function updateSaleDocumentDescription(
