@@ -212,7 +212,8 @@ export function ReleaseLotConfirmModal({
     acknowledged &&
     password.trim().length > 0 &&
     (motiveCode !== 'outro' || motiveDetail.trim().length >= 3) &&
-    !(preview && preview.asaasBlockedCharges > 0);
+    !(preview && preview.asaasBlockedCharges > 0) &&
+    !(preview && preview.interBlockedCharges > 0);
 
   if (!mounted) return null;
 
@@ -284,13 +285,37 @@ export function ReleaseLotConfirmModal({
                 <SummaryRow label="Parcelas pendentes" value={String(preview.pendingReceipts)} />
                 <SummaryRow label="Parcelas atrasadas" value={String(preview.overdueReceipts)} />
                 <SummaryRow
-                  label="Cobranças Asaas canceláveis"
-                  value={String(preview.openAsaasCharges)}
+                  label="Cobranças bancárias canceláveis"
+                  value={String(
+                    preview.openCancelableCharges ??
+                      (preview.openAsaasCharges || 0) + (preview.openInterCharges || 0),
+                  )}
                 />
+                {(preview.openAsaasCharges > 0 || preview.openInterCharges > 0) && (
+                  <SummaryRow
+                    label="Detalhe provedores"
+                    value={[
+                      preview.openAsaasCharges > 0
+                        ? `Asaas ${preview.openAsaasCharges}`
+                        : null,
+                      preview.openInterCharges > 0
+                        ? `Inter ${preview.openInterCharges}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  />
+                )}
                 {preview.asaasBlockedCharges > 0 && (
                   <SummaryRow
                     label="Cobranças Asaas bloqueadas"
                     value={String(preview.asaasBlockedCharges)}
+                  />
+                )}
+                {preview.interBlockedCharges > 0 && (
+                  <SummaryRow
+                    label="Cobranças Inter bloqueadas"
+                    value={String(preview.interBlockedCharges)}
                   />
                 )}
                 <SummaryRow
@@ -312,6 +337,27 @@ export function ReleaseLotConfirmModal({
                       {preview.asaasBlockedDetails.map((d) => (
                         <li key={d.chargeId}>
                           Local: {d.localStatus || '—'} · Asaas: {d.remoteStatus || '—'} —{' '}
+                          {d.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {preview.interBlockedCharges > 0 && (
+                <div className="bg-red-50 border border-red-200 text-red-900 rounded-lg p-3 text-xs flex gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>
+                      Há cobrança(s) Banco Inter que não podem ser canceladas automaticamente.
+                    </strong>{' '}
+                    A liberação está bloqueada. O lote e o contrato não serão alterados até
+                    regularizar.
+                    <ul className="mt-2 space-y-1 list-disc pl-4">
+                      {preview.interBlockedDetails.map((d) => (
+                        <li key={d.chargeId}>
+                          Local: {d.localStatus || '—'} · Inter: {d.remoteStatus || '—'} —{' '}
                           {d.error}
                         </li>
                       ))}

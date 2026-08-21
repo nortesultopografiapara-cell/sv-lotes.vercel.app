@@ -106,9 +106,9 @@ export function sanitizeInterApiErrorBody(bodyText: string): Record<string, unkn
 export class InterCobrancaHttpError extends Error {
   status: number;
   sanitized: Record<string, unknown>;
-  constructor(status: number, bodyText: string) {
+  constructor(status: number, bodyText: string, operation: 'emitir' | 'cancelar' = 'emitir') {
     const sanitized = sanitizeInterApiErrorBody(bodyText);
-    super(`Falha ao emitir cobrança Inter (HTTP ${status}). ${JSON.stringify(sanitized)}`);
+    super(`Falha ao ${operation} cobrança Inter (HTTP ${status}). ${JSON.stringify(sanitized)}`);
     this.name = 'InterCobrancaHttpError';
     this.status = status;
     this.sanitized = sanitized;
@@ -375,6 +375,38 @@ export async function fetchInterCobrancaByCodigo(
     throw new Error(`Falha ao consultar cobrança Inter (HTTP ${res.status}).`);
   }
   return normalizeInterCobrancaDetail(res.json, codigoSolicitacao);
+}
+
+/**
+ * POST /cobranca/v3/cobrancas/{codigoSolicitacao}/cancelar
+ * Escopo: boleto-cobranca.write. Resposta típica: 202 Accepted.
+ */
+export async function cancelInterCobranca(
+  creds: InterOAuthCredentials,
+  codigoSolicitacao: string,
+  options?: {
+    fetchFn?: InterOAuthFetchFn;
+    motivoCancelamento?: string;
+  },
+): Promise<{ status: number; raw: Record<string, unknown> | null }> {
+  const code = encodeURIComponent(String(codigoSolicitacao || '').trim());
+  if (!code) throw new Error('codigoSolicitacao ausente para cancelamento Inter.');
+  const motivo = String(options?.motivoCancelamento || 'ACERTOS').trim() || 'ACERTOS';
+  const res = await authorizedRequest(
+    creds,
+    `/cobrancas/${code}/cancelar`,
+    { method: 'POST', body: { motivoCancelamento: motivo } },
+    { fetchFn: options?.fetchFn },
+  );
+  // 202 Accepted / 200 OK
+  if (res.status < 200 || res.status >= 300) {
+    throw new InterCobrancaHttpError(
+      res.status,
+      res.bodyText || JSON.stringify(res.json || {}),
+      'cancelar',
+    );
+  }
+  return { status: res.status, raw: res.json };
 }
 
 export function decodeInterCobrancaPdfPayload(

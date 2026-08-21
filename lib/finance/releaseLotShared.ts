@@ -46,6 +46,35 @@ const REFUNDED_ASAAS_STATUSES = new Set([
   'REFUND_IN_PROGRESS',
 ]);
 
+/** Status locais de bank_charges Inter ainda abertos (candidatos a sync/cancel). */
+const INTER_LOCAL_CANCEL_CANDIDATES = new Set([
+  'PENDING',
+  'REGISTERED',
+  'OVERDUE',
+]);
+const INTER_PAID_STATUSES = new Set(['PAID']);
+const INTER_TERMINAL_CANCEL_STATUSES = new Set([
+  'CANCELLED',
+  'CANCELED',
+  'EXPIRED',
+  'FAILED',
+]);
+/** Situações remotas Inter que ainda podem ser canceladas via POST …/cancelar. */
+const INTER_REMOTE_CANCELABLE_SITUACOES = new Set([
+  'A_RECEBER',
+  'ATRASADO',
+  'EM_PROCESSAMENTO',
+]);
+const INTER_REMOTE_PAID_SITUACOES = new Set([
+  'RECEBIDO',
+  'PAGO',
+  'MARCADO_RECEBIDO',
+]);
+const INTER_REMOTE_ALREADY_CANCELLED_SITUACOES = new Set([
+  'CANCELADO',
+  'EXPIRADO',
+]);
+
 export function normalizeAsaasRemoteStatus(status?: string | null): string {
   return String(status || '')
     .toUpperCase()
@@ -77,6 +106,72 @@ export function isAlreadyCancelledAsaasChargeStatus(status?: string | null): boo
 
 export function isRefundedAsaasChargeStatus(status?: string | null): boolean {
   return REFUNDED_ASAAS_STATUSES.has(normalizeAsaasRemoteStatus(status));
+}
+
+export function normalizeInterBankChargeStatus(status?: string | null): string {
+  return String(status || '')
+    .toUpperCase()
+    .trim();
+}
+
+export function normalizeInterSituacaoForRelease(situacao?: string | null): string {
+  return String(situacao || '')
+    .toUpperCase()
+    .trim();
+}
+
+export function isLocalInterCancelCandidateStatus(status?: string | null): boolean {
+  return INTER_LOCAL_CANCEL_CANDIDATES.has(normalizeInterBankChargeStatus(status));
+}
+
+export function isPaidInterBankChargeStatus(status?: string | null): boolean {
+  return INTER_PAID_STATUSES.has(normalizeInterBankChargeStatus(status));
+}
+
+export function isAlreadyCancelledInterBankChargeStatus(
+  status?: string | null,
+): boolean {
+  return INTER_TERMINAL_CANCEL_STATUSES.has(normalizeInterBankChargeStatus(status));
+}
+
+export type ReleaseInterDisposition =
+  | 'cancel'
+  | 'preserve_paid'
+  | 'already_cancelled'
+  | 'block_non_removable';
+
+/**
+ * Decisão após consultar situacao real no Inter (Cobrança V3).
+ * Não cancela cobrança já RECEBIDO/PAGO.
+ */
+export function classifyRemoteInterSituacaoForRelease(
+  situacao?: string | null,
+): ReleaseInterDisposition {
+  const s = normalizeInterSituacaoForRelease(situacao);
+  if (!s) return 'block_non_removable';
+  if (INTER_REMOTE_CANCELABLE_SITUACOES.has(s)) return 'cancel';
+  if (INTER_REMOTE_PAID_SITUACOES.has(s)) return 'preserve_paid';
+  if (INTER_REMOTE_ALREADY_CANCELLED_SITUACOES.has(s)) return 'already_cancelled';
+  return 'block_non_removable';
+}
+
+export function classifyInterBankChargeForRelease(
+  status?: string | null,
+): ReleaseChargeBucket {
+  if (isPaidInterBankChargeStatus(status)) return 'paid';
+  const st = normalizeInterBankChargeStatus(status);
+  if (st === 'PENDING' || st === 'REGISTERED' || st === 'OVERDUE') return 'open';
+  if (isAlreadyCancelledInterBankChargeStatus(status)) return 'cancelled';
+  return 'other';
+}
+
+export function interCancelMotivoFromReleaseMotive(
+  motiveCode?: string | null,
+): string {
+  const code = String(motiveCode || '').trim();
+  if (code === 'desistencia') return 'CLIENTE_DESISTIU';
+  if (code === 'inadimplencia') return 'APOS_VENCIMENTO';
+  return 'ACERTOS';
 }
 
 /**
@@ -263,6 +358,11 @@ export type ReleaseLotPlanSummary = {
   openAsaasCharges: number;
   paidAsaasCharges: number;
   alreadyCanceledAsaasCharges: number;
+  openInterCharges: number;
+  paidInterCharges: number;
+  alreadyCanceledInterCharges: number;
+  /** Soma Asaas + Inter canceláveis (UI agnóstica). */
+  openCancelableCharges: number;
   hasPreservedPayments: boolean;
   unpaidToCancel: number;
 };
@@ -351,6 +451,26 @@ export function summarizeReleaseCharges(
   return { openAsaasCharges, paidAsaasCharges, alreadyCanceledAsaasCharges };
 }
 
+export function summarizeReleaseInterCharges(
+  charges: Array<{ status?: string | null }>,
+): Pick<
+  ReleaseLotPlanSummary,
+  'openInterCharges' | 'paidInterCharges' | 'alreadyCanceledInterCharges'
+> {
+  let openInterCharges = 0;
+  let paidInterCharges = 0;
+  let alreadyCanceledInterCharges = 0;
+  for (const c of charges) {
+    const bucket = classifyInterBankChargeForRelease(c.status);
+    if (bucket === 'open') openInterCharges += 1;
+    else if (bucket === 'paid') paidInterCharges += 1;
+    else if (bucket === 'cancelled' || bucket === 'refunded') {
+      alreadyCanceledInterCharges += 1;
+    }
+  }
+  return { openInterCharges, paidInterCharges, alreadyCanceledInterCharges };
+}
+
 /**
  * Identificação de quadra/lote a partir das colunas reais de `blocks`.
  * Espelha GISMap + saleChargesService: block_name || name ; number || lot_number.
@@ -407,6 +527,11 @@ export type ReleaseLotPreview = {
   openAsaasCharges: number;
   paidAsaasCharges: number;
   alreadyCanceledAsaasCharges: number;
+  openInterCharges: number;
+  paidInterCharges: number;
+  alreadyCanceledInterCharges: number;
+  /** Total cancelável (Asaas + Inter) — label UI agnóstico. */
+  openCancelableCharges: number;
   /** Cobranças com status remoto não removível (não PENDING/OVERDUE) — bloqueiam limpeza local. */
   asaasBlockedCharges: number;
   asaasBlockedDetails: Array<{
@@ -415,7 +540,15 @@ export type ReleaseLotPreview = {
     localStatus?: string | null;
     remoteStatus?: string | null;
   }>;
+  interBlockedCharges: number;
+  interBlockedDetails: Array<{
+    chargeId: string;
+    error: string;
+    localStatus?: string | null;
+    remoteStatus?: string | null;
+  }>;
   openChargeIds: string[];
+  openInterChargeIds: string[];
   unpaidReceiptIds: string[];
   paidReceiptIds: string[];
 };

@@ -9,17 +9,21 @@ import {
   buildReleaseLotIdempotencyKey,
   classifyAsaasChargeForRelease,
   classifyFinanceReceiptForRelease,
+  classifyInterBankChargeForRelease,
   classifyRemoteAsaasStatusForRelease,
+  classifyRemoteInterSituacaoForRelease,
   isActiveUnpaidFinanceReceipt,
   isAsaasRemoteCancelableStatus,
   isCanceledSaleStatus,
   isLocalAsaasCancelCandidateStatus,
+  isLocalInterCancelCandidateStatus,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   RELEASE_LOT_MOTIVE_OPTIONS,
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
   summarizeReleaseCharges,
+  summarizeReleaseInterCharges,
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
 } from '../lib/finance/releaseLotShared';
@@ -119,6 +123,35 @@ function testAsaasClassification() {
   console.log('OK testAsaasClassification');
 }
 
+function testInterClassification() {
+  assert(classifyInterBankChargeForRelease('REGISTERED') === 'open', 'REGISTERED open Inter');
+  assert(classifyInterBankChargeForRelease('PENDING') === 'open', 'PENDING open Inter');
+  assert(classifyInterBankChargeForRelease('OVERDUE') === 'open', 'OVERDUE open Inter');
+  assert(classifyInterBankChargeForRelease('PAID') === 'paid', 'PAID Inter');
+  assert(classifyInterBankChargeForRelease('CANCELLED') === 'cancelled', 'CANCELLED Inter');
+  assert(isLocalInterCancelCandidateStatus('REGISTERED'), 'REGISTERED candidata Inter');
+  assert(!isLocalInterCancelCandidateStatus('PAID'), 'PAID não candidata Inter');
+  assert(classifyRemoteInterSituacaoForRelease('A_RECEBER') === 'cancel', 'A_RECEBER cancel');
+  assert(classifyRemoteInterSituacaoForRelease('ATRASADO') === 'cancel', 'ATRASADO cancel');
+  assert(classifyRemoteInterSituacaoForRelease('EM_PROCESSAMENTO') === 'cancel', 'EM_PROCESSAMENTO');
+  assert(classifyRemoteInterSituacaoForRelease('RECEBIDO') === 'preserve_paid', 'RECEBIDO preserve');
+  assert(classifyRemoteInterSituacaoForRelease('CANCELADO') === 'already_cancelled', 'CANCELADO');
+  assert(
+    classifyRemoteInterSituacaoForRelease('DESCONHECIDO') === 'block_non_removable',
+    'desconhecido bloqueia',
+  );
+  const s = summarizeReleaseInterCharges([
+    { status: 'REGISTERED' },
+    { status: 'PENDING' },
+    { status: 'PAID' },
+    { status: 'CANCELLED' },
+  ]);
+  assert(s.openInterCharges === 2, '2 open Inter');
+  assert(s.paidInterCharges === 1, '1 paid Inter');
+  assert(s.alreadyCanceledInterCharges === 1, '1 cancelled Inter');
+  console.log('OK testInterClassification');
+}
+
 function testSaleAndLotStatusHelpers() {
   assert(isCanceledSaleStatus('CANCELLED'), 'CANCELLED');
   assert(isCanceledSaleStatus('cancelada'), 'cancelada');
@@ -187,7 +220,13 @@ function testServiceOrchestrationSource() {
   assert(svc.includes("customer_id: null"), 'limpa customer_id');
   assert(svc.includes("action: preview.saleId ? 'sale_cancelled'"), 'audit sale_cancelled');
   assert(svc.includes('ASAAS_CANCEL_FAILED'), 'falha Asaas bloqueia local');
+  assert(svc.includes('INTER_CANCEL_FAILED'), 'falha Inter bloqueia local');
+  assert(svc.includes('resolveInterChargesForRelease'), 'resolve Inter com sync');
+  assert(svc.includes('cancel_inter'), 'stage cancel_inter');
+  assert(svc.includes('listOpenInterBankChargeIdsForSale'), 'carrega bank_charges Inter');
   assert(svc.includes('asaasBlockedCharges'), 'preview expõe bloqueadas');
+  assert(svc.includes('interBlockedCharges'), 'preview expõe Inter bloqueadas');
+  assert(svc.includes('openCancelableCharges'), 'total agnóstico canceláveis');
   assert(svc.includes('delete_rejected_reclassified'), 'reclassifica se DELETE recusado');
   assert(svc.includes('alreadyReleased'), 'idempotência alreadyReleased');
   assert(svc.includes('isPaidFinanceReceiptStatus'), 'preserva pagas');
@@ -218,8 +257,10 @@ function testGisWiring() {
   assert(modal.includes('Liberar lote e encerrar venda'), 'botão destrutivo');
   assert(modal.includes('Estou ciente de que o lote será liberado'), 'checkbox');
   assert(modal.includes('Motivo da liberação'), 'motivo obrigatório');
-  assert(modal.includes('Cobranças Asaas canceláveis'), 'conta só canceláveis');
+  assert(modal.includes('Cobranças bancárias canceláveis'), 'conta canceláveis agnóstico');
+  assert(!modal.includes('Cobranças Asaas canceláveis'), 'sem label acoplado só Asaas');
   assert(modal.includes('asaasBlockedCharges'), 'bloqueia submit se Asaas bloqueado');
+  assert(modal.includes('interBlockedCharges'), 'bloqueia submit se Inter bloqueado');
   assert(modal.includes('pagamentos preservados'), 'alerta pagamentos');
   assert(modal.includes('submittingRef'), 'anti double-click');
   assert(modal.includes('form-input-light'), 'contraste inputs GIS');
@@ -239,6 +280,7 @@ function testApiErrorShape() {
   const svc = read('lib/finance/releaseLotService.ts');
   assert(svc.includes('ReleaseLotStage'), 'stages tipados');
   assert(svc.includes('cancel_asaas'), 'stage asaas');
+  assert(svc.includes('cancel_inter'), 'stage inter');
   assert(svc.includes('clear_lot'), 'stage clear_lot');
   console.log('OK testApiErrorShape');
 }
@@ -268,6 +310,7 @@ function main() {
   testMotiveValidation();
   testReceiptClassification();
   testAsaasClassification();
+  testInterClassification();
   testSaleAndLotStatusHelpers();
   testBlocksColumnMapping();
   testServiceOrchestrationSource();
