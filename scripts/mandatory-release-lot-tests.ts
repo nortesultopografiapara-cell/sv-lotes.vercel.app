@@ -17,6 +17,7 @@ import {
   isCanceledSaleStatus,
   isLocalAsaasCancelCandidateStatus,
   isLocalInterCancelCandidateStatus,
+  isOperationalFinanceReceiptForListing,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   RELEASE_LOT_MOTIVE_OPTIONS,
@@ -271,6 +272,38 @@ function testGisWiring() {
   console.log('OK testGisWiring');
 }
 
+function testOperationalListingExcludesCanceled() {
+  assert(
+    !isOperationalFinanceReceiptForListing({ status: 'cancelado' }),
+    'cancelado fora da listagem operacional',
+  );
+  assert(
+    isOperationalFinanceReceiptForListing({ status: 'pago', paid_at: '2026-01-01' }),
+    'pago permanece operacional/histórico',
+  );
+  assert(
+    isOperationalFinanceReceiptForListing({ status: 'pendente' }),
+    'pendente operacional',
+  );
+
+  const financePage = read('app/finance/page.tsx');
+  assert(
+    financePage.includes("st !== 'cancelado' && st !== 'canceled'"),
+    'Financeiro Todas exclui cancelado',
+  );
+
+  const chargeFilter = read('lib/charges/chargeInstallmentHelpers.ts');
+  assert(
+    chargeFilter.includes("status !== 'cancelado' && status !== 'canceled'"),
+    'Cobranças Todas exclui cancelado',
+  );
+
+  const svc = read('lib/finance/releaseLotService.ts');
+  assert(svc.includes("status: RECEIPT_CANCELLED_STATUS"), 'cleanup = UPDATE cancelado');
+  assert(!svc.includes("from('finance_receipts').delete"), 'não DELETE parcelas');
+  console.log('OK testOperationalListingExcludesCanceled');
+}
+
 function testApiErrorShape() {
   const route = read('app/api/lots/[lotId]/release/route.ts');
   assert(route.includes('success: false'), 'success false');
@@ -316,6 +349,7 @@ function main() {
   testServiceOrchestrationSource();
   testApiRoute();
   testGisWiring();
+  testOperationalListingExcludesCanceled();
   testApiErrorShape();
   testPaidNeverDeletedGuards();
   console.log('\nALL mandatory-release-lot-tests PASSED');

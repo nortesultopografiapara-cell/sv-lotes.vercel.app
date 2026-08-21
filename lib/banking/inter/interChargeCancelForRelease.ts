@@ -263,6 +263,7 @@ export async function listOpenInterBankChargeIdsForSale(
   admin: SupabaseClient,
   companyId: string,
   saleId: string,
+  options?: { financeReceiptIds?: string[] },
 ): Promise<
   Array<{
     id: string;
@@ -271,6 +272,16 @@ export async function listOpenInterBankChargeIdsForSale(
     finance_receipt_id: string | null;
   }>
 > {
+  const byId = new Map<
+    string,
+    {
+      id: string;
+      status: string;
+      external_id: string | null;
+      finance_receipt_id: string | null;
+    }
+  >();
+
   const { data, error } = await admin
     .from('bank_charges')
     .select('id, status, external_id, finance_receipt_id')
@@ -278,12 +289,42 @@ export async function listOpenInterBankChargeIdsForSale(
     .eq('provider', 'INTER')
     .eq('sale_id', saleId);
   if (error) throw new Error(error.message);
-  return (data || []).map((row) => ({
-    id: String(row.id),
-    status: String(row.status || ''),
-    external_id: row.external_id ? String(row.external_id) : null,
-    finance_receipt_id: row.finance_receipt_id
-      ? String(row.finance_receipt_id)
-      : null,
-  }));
+  for (const row of data || []) {
+    byId.set(String(row.id), {
+      id: String(row.id),
+      status: String(row.status || ''),
+      external_id: row.external_id ? String(row.external_id) : null,
+      finance_receipt_id: row.finance_receipt_id
+        ? String(row.finance_receipt_id)
+        : null,
+    });
+  }
+
+  // Fallback: cobranças sem sale_id (ou sale_id divergente) ligadas às parcelas da venda.
+  const receiptIds = (options?.financeReceiptIds || [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+  if (receiptIds.length > 0) {
+    const { data: byReceipt, error: byReceiptErr } = await admin
+      .from('bank_charges')
+      .select('id, status, external_id, finance_receipt_id')
+      .eq('company_id', companyId)
+      .eq('provider', 'INTER')
+      .in('finance_receipt_id', receiptIds);
+    if (byReceiptErr) throw new Error(byReceiptErr.message);
+    for (const row of byReceipt || []) {
+      const id = String(row.id);
+      if (byId.has(id)) continue;
+      byId.set(id, {
+        id,
+        status: String(row.status || ''),
+        external_id: row.external_id ? String(row.external_id) : null,
+        finance_receipt_id: row.finance_receipt_id
+          ? String(row.finance_receipt_id)
+          : null,
+      });
+    }
+  }
+
+  return Array.from(byId.values());
 }

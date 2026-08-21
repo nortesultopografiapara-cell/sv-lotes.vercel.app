@@ -204,7 +204,29 @@ export function resolveChargeActionVisibility(params: {
   installmentId?: string;
   customerPhone?: string | null;
   hasPaidChargeHistory?: boolean;
+  /** Parcela cancelada (venda encerrada) — sem ações operacionais. */
+  installmentCanceled?: boolean;
 }): ChargeActionVisibility {
+  if (params.installmentCanceled) {
+    return {
+      showGenerate: false,
+      showOpenCharge: false,
+      showOpenBoleto: false,
+      showOpenReceipt: false,
+      showViewDetails: false,
+      showCopyBarcodeLine: false,
+      showCopyPix: false,
+      showWhatsApp: false,
+      showBoletoUnavailableWarning: false,
+      showReceiptUnavailableHint: false,
+      showRefreshStatus: false,
+      showCancel: false,
+      showRegenerate: false,
+      showPaidIndicator: false,
+      showOpenLink: false,
+      showCopyLink: false,
+    };
+  }
   const paymentLink = params.charge ? resolveCompanyAsaasPaymentLink(params.charge) : '';
   const boletoUrl = params.charge ? resolveCompanyAsaasBoletoUrl(params.charge) : '';
   const receiptUrl = resolveCompanyAsaasReceiptUrl(params.charge);

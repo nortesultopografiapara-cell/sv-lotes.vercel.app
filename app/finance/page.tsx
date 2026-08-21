@@ -766,8 +766,12 @@ export default function FinancePage() {
          (statusFilter.toLowerCase() === 'pago' && (p.status === 'pago' || p.status === 'PAID')) ||
          (statusFilter.toLowerCase() === 'pendente' && (p.status === 'pendente' || p.status === 'PENDING') && p.due_date >= new Date().toISOString().split('T')[0]) ||
          (statusFilter.toLowerCase() === 'atrasado' && (p.status === 'atrasado' || p.status === 'OVERDUE' || ( (p.status === 'pendente' || p.status === 'PENDING') && p.due_date < new Date().toISOString().split('T')[0] ))) ||
-         (statusFilter.toLowerCase() === 'cancelado' && (p.status === 'cancelado' || p.status === 'CANCELED'))
-         : true;
+         (statusFilter.toLowerCase() === 'cancelado' && (p.status === 'cancelado' || p.status === 'CANCELED' || p.status === 'cancelled' || p.status === 'CANCELLED'))
+         : (() => {
+             const st = String(p.status || '').toLowerCase();
+             // Listagem operacional: "Todas" exclui canceladas (auditoria via filtro Cancelado).
+             return st !== 'cancelado' && st !== 'canceled' && st !== 'cancelled';
+           })();
          
      const matchProject = projectFilter !== 'Todos os projetos' ? (computedProjName === projectFilter) : true;
 

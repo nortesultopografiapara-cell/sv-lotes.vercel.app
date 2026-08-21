@@ -217,6 +217,20 @@ export function isCanceledFinanceReceiptStatus(row: {
   return CANCELED_RECEIPT_STATUSES.has(st);
 }
 
+/**
+ * Listagem operacional Financeiro/Cobranças:
+ * - pago → permanece (histórico / fluxo)
+ * - cancelado → fora da listagem padrão (auditoria só no filtro Cancelado)
+ * - demais → obrigação ativa
+ */
+export function isOperationalFinanceReceiptForListing(row: {
+  status?: string | null;
+  paid_at?: string | null;
+}): boolean {
+  if (isCanceledFinanceReceiptStatus(row)) return false;
+  return true;
+}
+
 export function isOverdueFinanceReceiptStatus(row: {
   status?: string | null;
 }): boolean {

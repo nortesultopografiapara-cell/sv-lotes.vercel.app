@@ -1,7 +1,8 @@
 /**
  * Orquestração servidor: Liberar lote e encerrar venda.
  * Fases: plano → cancelar Asaas abertas → cancelar Inter abertas → aplicar local → auditoria.
- * Sem migration — usa status existentes (cancelado / CANCELLED / Disponível).
+ * Parcelas não pagas: UPDATE status=cancelado (auditoria). Listagens operacionais
+ * Financeiro/Cobranças excluem cancelado por padrão — não hard-delete (preserva pagos).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -401,6 +402,7 @@ async function loadSaleContext(
       admin,
       companyId,
       saleId,
+      { financeReceiptIds: receipts.map((r) => r.id) },
     );
     interCharges = interRows.map((r) => ({
       id: r.id,
@@ -908,26 +910,24 @@ async function applyLocalRelease(
     }
     cancelledUnpaidReceipts = (updated || []).length;
 
-    // Segurança local: inativa bank_charges Inter abertas das parcelas canceladas
+    // Segurança local: inativa bank_charges Inter abertos das parcelas canceladas
     // (já devem ter sido canceladas no provedor na fase cancel_inter).
-    if (preview.saleId) {
-      const { error: bankCancelErr } = await admin
-        .from('bank_charges')
-        .update({
-          status: 'CANCELLED',
-          updated_at: now,
-        })
-        .eq('company_id', companyId)
-        .eq('provider', 'INTER')
-        .eq('sale_id', preview.saleId)
-        .in('finance_receipt_id', preview.unpaidReceiptIds)
-        .in('status', ['PENDING', 'REGISTERED', 'OVERDUE']);
-      if (bankCancelErr) {
-        console.warn(
-          '[releaseLot] cancel bank_charges Inter local',
-          bankCancelErr.message,
-        );
-      }
+    // Usa finance_receipt_id (não exige sale_id) para cobrir linhas órfãs de vínculo.
+    const { error: bankCancelErr } = await admin
+      .from('bank_charges')
+      .update({
+        status: 'CANCELLED',
+        updated_at: now,
+      })
+      .eq('company_id', companyId)
+      .eq('provider', 'INTER')
+      .in('finance_receipt_id', preview.unpaidReceiptIds)
+      .in('status', ['PENDING', 'REGISTERED', 'OVERDUE']);
+    if (bankCancelErr) {
+      console.warn(
+        '[releaseLot] cancel bank_charges Inter local',
+        bankCancelErr.message,
+      );
     }
 
     if (preview.paidReceiptIds.length > 0) {

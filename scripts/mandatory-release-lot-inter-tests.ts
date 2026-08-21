@@ -20,10 +20,13 @@ import {
   classifyRemoteInterSituacaoForRelease,
   isActiveUnpaidFinanceReceipt,
   isLocalInterCancelCandidateStatus,
+  isOperationalFinanceReceiptForListing,
   isPaidFinanceReceiptStatus,
   summarizeReleaseInterCharges,
   summarizeReleaseReceipts,
 } from '../lib/finance/releaseLotShared';
+import { filterChargeInstallments } from '../lib/charges/chargeInstallmentHelpers';
+import { resolveChargeActionVisibility } from '../lib/charges/chargeOperationsHelpers';
 import type { InterOAuthCredentials, InterOAuthFetchFn } from '../lib/banking/inter/interOAuthClient';
 
 function assert(cond: boolean, msg: string) {
@@ -359,6 +362,130 @@ function testWiringSourceGuards() {
   assert(!modal.includes('Cobranças Asaas canceláveis'), 'sem label só Asaas');
 }
 
+async function testFullReleaseScenarioWithRealInterChargeShape() {
+  // Espelha o contrato homolog: entrada paga + 1 Inter A_RECEBER + 1 sem cobrança.
+  const receipts = [
+    { id: 'r-entrada', status: 'pago', amount: 100, paid_at: '2026-08-01' },
+    { id: 'r-1', status: 'pendente', amount: 110, paid_at: null },
+    { id: 'r-2', status: 'pendente', amount: 110, paid_at: null },
+  ];
+  const afterRelease = receipts.map((r) =>
+    isPaidFinanceReceiptStatus(r)
+      ? r
+      : { ...r, status: 'cancelado', paid_at: null },
+  );
+
+  assert(
+    afterRelease.filter((r) => isOperationalFinanceReceiptForListing(r)).length === 1,
+    'após cleanup, só entrada paga na listagem operacional',
+  );
+  assert(
+    afterRelease.filter((r) => !isOperationalFinanceReceiptForListing(r)).length === 2,
+    '2 não pagas saem da listagem operacional (status cancelado)',
+  );
+
+  const operationalCharges = filterChargeInstallments(
+    afterRelease.map((r) => ({
+      ...r,
+      due_date: '2026-09-01',
+      installment_number: r.id === 'r-entrada' ? 0 : 1,
+    })),
+    {
+      search: '',
+      statusFilter: 'Todas',
+      projectFilter: 'Todos os projetos',
+      financialAccountFilter: 'Todas as contas',
+      startDate: '',
+      endDate: '',
+    },
+  );
+  assert(operationalCharges.length === 1, 'Cobranças/Todas: só parcela paga');
+  assert(String(operationalCharges[0].id) === 'r-entrada', 'parcela preservada = entrada');
+
+  const canceledActions = resolveChargeActionVisibility({
+    charge: {
+      id: 'bc-old',
+      companyId: 'co',
+      customerId: null,
+      saleId: 's1',
+      installmentId: 'r-1',
+      asaasPaymentId: 'SOL-110',
+      billingType: 'BOLETO',
+      status: 'CANCELLED',
+      value: 110,
+      dueDate: '2026-09-01',
+      invoiceUrl: null,
+      bankSlipUrl: null,
+      bankSlipIdentification: 'linha',
+      pixQrCode: null,
+      pixCopyPaste: 'pix',
+      financialAccountId: null,
+      paymentLink: null,
+      paidAt: null,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+    },
+    installmentPaid: false,
+    integrationActive: true,
+    companyAsaasEnabled: true,
+    ownerReadOnly: false,
+    installmentCanceled: true,
+  });
+  assert(!canceledActions.showGenerate, 'sem Gerar cobrança em parcela cancelada');
+  assert(!canceledActions.showCopyPix, 'sem Copiar Pix em parcela cancelada');
+  assert(!canceledActions.showCopyBarcodeLine, 'sem boleto em parcela cancelada');
+
+  const state = {
+    charges: [
+      {
+        id: 'bc-110',
+        status: 'REGISTERED',
+        external_id: 'SOL-REAL-110',
+        integration_id: 'int-1',
+        financial_account_id: 'fa-1',
+        provider: 'INTER',
+        company_id: 'co-inter-release',
+        metadata: { interSituacao: 'A_RECEBER', codigoSolicitacao: 'SOL-REAL-110' },
+      },
+    ] as BankChargeRow[],
+    updates: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+  };
+  const admin = makeMockAdmin(state);
+  const { fetchFn, cancelPosts } = makeInterFetch({ situacao: 'A_RECEBER' });
+  const result = await resolveInterChargesForRelease(
+    admin,
+    'co-inter-release',
+    ['bc-110'],
+    {
+      executeCancel: true,
+      motiveCode: 'desistencia',
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as any,
+    },
+  );
+  assert(result.cancelled === 1, 'cobrança Inter A_RECEBER cancelada');
+  assert(cancelPosts.length === 1, 'POST /cancelar exercitado (não 0 canceláveis)');
+  assert(
+    cancelPosts[0].includes('/cobrancas/SOL-REAL-110/cancelar'),
+    'usa codigoSolicitacao=external_id',
+  );
+  assert(state.charges[0].status === 'CANCELLED', 'bank_charges deixa de ativo');
+}
+
+function testZeroCancelableWhenNoBankCharges() {
+  const interSum = summarizeReleaseInterCharges([]);
+  assert(interSum.openInterCharges === 0, 'sem bank_charges → 0 canceláveis Inter');
+  assert(
+    !isLocalInterCancelCandidateStatus('CANCELLED'),
+    'CANCELLED local não é candidata',
+  );
+  // Explica o modal do contrato 000000007/2026: parcelas futuras sem emissão Inter.
+  assert(
+    summarizeReleaseInterCharges([{ status: 'CANCELLED' }]).openInterCharges === 0,
+    'só CANCELLED → 0 open',
+  );
+}
+
 async function testCancelHttpErrorShape() {
   const { fetchFn } = makeInterFetch({ cancelFail: true, cancelStatus: 422 });
   let caught: unknown = null;
@@ -374,10 +501,12 @@ async function testCancelHttpErrorShape() {
 async function main() {
   testCanonicalReceiptPlan();
   testWiringSourceGuards();
+  testZeroCancelableWhenNoBankCharges();
   await testCancelHttpErrorShape();
   await testCancelInterHappyPath();
   await testPreservePaidInterNeverCancelled();
   await testInterCancelApiFailureBlocksRelease();
+  await testFullReleaseScenarioWithRealInterChargeShape();
   console.log('\nALL mandatory-release-lot-inter-tests PASSED');
 }
 
