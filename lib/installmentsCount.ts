@@ -1,5 +1,12 @@
+/**
+ * Limite de parcelamento de vendas (produto).
+ * Fonte única — UI, validação, criação/edição e importação.
+ */
+export const MAX_SALE_INSTALLMENTS = 300;
+
+/** Alias estável usado pelo combobox e helpers existentes. */
+export const INSTALLMENTS_MAX = MAX_SALE_INSTALLMENTS;
 export const INSTALLMENTS_MIN = 1;
-export const INSTALLMENTS_MAX = 160;
 
 export function sanitizeInstallmentsInput(raw: string): string {
   return String(raw ?? '').replace(/\D/g, '');
@@ -23,7 +30,10 @@ export function validateInstallmentsCount(raw: string): InstallmentsValidationRe
     return { valid: false, message: 'Quantidade mínima: 1 parcela.' };
   }
   if (num > INSTALLMENTS_MAX) {
-    return { valid: false, message: 'Quantidade máxima: 160 parcelas.' };
+    return {
+      valid: false,
+      message: `Quantidade máxima: ${INSTALLMENTS_MAX} parcelas.`,
+    };
   }
 
   return { valid: true, value: num };

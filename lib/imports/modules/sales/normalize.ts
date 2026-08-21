@@ -11,6 +11,7 @@ import {
   formatDateObjectAsIso,
   isLikelyExcelDateSerial,
 } from '@/lib/imports/spreadsheetCellValue';
+import { INSTALLMENTS_MAX } from '@/lib/installmentsCount';
 import { normalizeLotNumberForMatch } from '@/lib/shapefileImport';
 
 export function normalizeImportEntityName(value?: string | null): string {
@@ -274,7 +275,7 @@ export function parseSaleInstallmentsCount(raw: string): number {
   if (!trimmed) return 1;
   const num = Number(trimmed.replace(/\D/g, ''));
   if (!Number.isFinite(num) || num < 1) return 1;
-  return Math.min(160, Math.floor(num));
+  return Math.min(INSTALLMENTS_MAX, Math.floor(num));
 }
 
 export function parseSaleCommissionPercent(raw: string): number | null {

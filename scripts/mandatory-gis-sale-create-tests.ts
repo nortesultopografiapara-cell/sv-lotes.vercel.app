@@ -30,6 +30,11 @@ function testGisSaleCreateServiceFlow() {
   );
   assert(service.includes('CONTRACT_GENERATION_TIMEOUT_MS'), 'timeout no contrato');
   assert(service.includes('rollbackPartialSale'), 'rollback em falha parcial');
+  assert(service.includes('insertRowsWithColumnFallback'), 'parcelas em lote');
+  assert(
+    !service.includes('for (const financePayload of financePayloads)'),
+    'sem loop 1-a-1 de parcelas',
+  );
   assert(service.includes('persistGeneratedContractHtml'), 'persiste HTML do contrato');
   assert(service.includes('buildCommissionSnapshotFields'), 'snapshot de comissão na venda');
   assert(service.includes('resolveSaleCommissionPlan'), 'plano PERCENT/FIXED/NONE');
