@@ -12,6 +12,8 @@ import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
   ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
+  ARAGUAIA_MISSING_LEGAL_REPRESENTATIVE_MESSAGE,
+  assertAraguaiaEsignV2LegalRepresentativeReady,
   buildAraguaiaEsignVendorPartyInputs,
   buildAraguaiaIntervenientPartyInput,
   buildAraguaiaWitnessPartyInputs,
@@ -23,6 +25,7 @@ import {
   shouldPersistAraguaiaWitnessParties,
   validateAraguaiaWitnessIdentity,
 } from '@/lib/araguaiaContractEsign';
+import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import {
   assertSpouseReadyForSignatureSend,
   hasRecantoSpouse,
@@ -285,6 +288,20 @@ export async function assertSaleSignaturePartiesReadyBeforeSend(
   if (!spouseCheck.ok) {
     throw new SaleContractSignatureError(spouseCheck.message, 'validation');
   }
+
+  if (
+    shouldEnableAraguaiaEsignV2({
+      companyId: loaded.company?.id ? String(loaded.company.id) : null,
+      contractModel,
+    })
+  ) {
+    const legalBlock = assertAraguaiaEsignV2LegalRepresentativeReady({
+      company: loaded.company,
+    });
+    if (legalBlock) {
+      throw new SaleContractSignatureError(legalBlock, 'validation');
+    }
+  }
 }
 
 /**
@@ -341,12 +358,7 @@ export async function createSignaturePartiesAfterSend(
 
   const partiesRequested = ['BUYER'];
   if (spouseRequired) partiesRequested.push('SPOUSE');
-  const araguaiaEsign = isAraguaiaSaleContractModel(contractModel);
-  if (araguaiaEsign) {
-    partiesRequested.push('VENDOR', 'VENDOR');
-  } else {
-    partiesRequested.push('VENDOR');
-  }
+  // Contagem real de VENDOR preenchida após buildAraguaiaEsignVendorPartyInputs.
 
   console.log('[signature-parties] spouse_gate', {
     contractId: String(params.signature.contract_id || '').slice(0, 8),
@@ -389,14 +401,33 @@ export async function createSignaturePartiesAfterSend(
     );
   }
 
+  const araguaiaEsign = isAraguaiaSaleContractModel(contractModel);
+  const araguaiaEsignV2 = shouldEnableAraguaiaEsignV2({
+    companyId: company?.id ? String(company.id) : null,
+    contractModel,
+  });
+  const araguaiaVendorMode = araguaiaEsignV2 ? 'v2' : 'legacy';
+
   const seller = company
     ? normalizeSellerFromCompany(company)
     : { representative: '', representativeCpf: '', email: '', phone: '' };
 
+  if (araguaiaEsignV2) {
+    const legalBlock = assertAraguaiaEsignV2LegalRepresentativeReady({
+      company,
+    });
+    if (legalBlock) {
+      throw new SaleContractSignatureError(legalBlock, 'validation');
+    }
+  }
+
   const araguaiaVendors = araguaiaEsign
     ? buildAraguaiaEsignVendorPartyInputs({
         company,
-        project,
+        project: araguaiaEsignV2 ? null : project,
+        companyId: company?.id ? String(company.id) : null,
+        contractModel,
+        mode: araguaiaVendorMode,
       })
     : null;
 
@@ -411,6 +442,7 @@ export async function createSignaturePartiesAfterSend(
   console.log('[signature-parties] araguaia_esign_gate', {
     contractId: String(params.signature.contract_id || '').slice(0, 8),
     araguaiaEsign,
+    araguaiaEsignV2,
     effectiveContractModel: contractModel,
     loadedContractModel: loaded.contractModel,
     projectName: String(loaded.project?.name || '').slice(0, 40),
@@ -425,7 +457,9 @@ export async function createSignaturePartiesAfterSend(
 
   if (araguaiaEsign && (!araguaiaVendors || araguaiaVendors.length < 1)) {
     throw new SaleContractSignatureError(
-      'ARAGUAIA: configure o Representante Legal da empresa (Configurações) ou os promitentes do empreendimento.',
+      araguaiaEsignV2
+        ? ARAGUAIA_MISSING_LEGAL_REPRESENTATIVE_MESSAGE
+        : 'ARAGUAIA: configure o Representante Legal da empresa (Configurações) ou os promitentes do empreendimento.',
       'validation',
     );
   }
@@ -501,6 +535,7 @@ export async function createSignaturePartiesAfterSend(
           ? (() => {
               const i = buildAraguaiaIntervenientPartyInput({
                 company,
+                mode: araguaiaVendorMode,
               });
               return {
                 name: i.name,

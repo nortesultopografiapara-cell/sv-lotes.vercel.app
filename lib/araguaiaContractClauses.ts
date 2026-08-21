@@ -145,17 +145,23 @@ export function buildAraguaiaPartiesPreambleHtml(
     ctx.sellers[1]?.address ||
     ARAGUAIA_SELLERS_ADDRESS;
   const intervenienteSeat = ARAGUAIA_SELLERS_ADDRESS;
+  const vendorsDenomination =
+    ctx.sellers.length <= 1
+      ? 'PROMITENTE VENDEDOR'
+      : 'PROMITENTES VENDEDORES';
+  const representedWord =
+    ctx.sellers.length <= 1 ? 'neste ato representado(a)' : 'neste ato representados';
 
   return `
     <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
       ${itemP(
         `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${residenceWord} na ${esc(
           sellersAddress,
-        )}, neste ato representados pela pessoa jurídica <strong>${esc(
+        )}, ${representedWord} pela pessoa jurídica <strong>${esc(
           ctx.intervenienteName,
         )}</strong>, com sede na ${esc(
           intervenienteSeat,
-        )} (<strong>INTERVENIENTE</strong>), doravante denominados simplesmente de <strong>PROMITENTES VENDEDORES</strong>, e de outro lado ${buyerQualification(
+        )} (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>${vendorsDenomination}</strong>, e de outro lado ${buyerQualification(
           ctx,
         )}, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`,
       )}

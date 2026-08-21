@@ -28,6 +28,7 @@ import {
 } from '@/lib/projectContractSellers';
 import { resolveAraguaiaPromitenteVendors } from '@/lib/araguaiaCompanyLegalRepresentative';
 import { resolveAraguaiaIntervenientIdentity } from '@/lib/araguaiaIntervenientIdentity';
+import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 
@@ -38,6 +39,8 @@ export type AraguaiaContractParams = {
   block: Record<string, unknown> | null | undefined;
   sale: Record<string, unknown> | null | undefined;
   contractSnapshot?: Record<string, unknown> | null;
+  /** Força path V2 (senão usa gate env + allowlist). */
+  esignV2?: boolean;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
   projectBlocks?: Record<string, unknown>[] | null;
@@ -188,13 +191,27 @@ export function buildAraguaiaContractContext(
   const sale = params.sale || {};
   const pendingFields: string[] = [];
 
+  const companyId = tenant?.id ? String(tenant.id) : null;
+  const esignV2 =
+    params.esignV2 === true ||
+    shouldEnableAraguaiaEsignV2({
+      companyId,
+      contractModel: 'ARAGUAIA',
+    });
+  const vendorMode = esignV2 ? 'v2' : 'legacy';
+
   const sellers = resolveAraguaiaPromitenteVendors({
     company: tenant,
-    project,
+    project: esignV2 ? null : project,
     contractModel: 'ARAGUAIA',
+    mode: vendorMode,
   });
   if (sellers.length < 1) {
-    pendingFields.push('promitentes vendedores do empreendimento');
+    pendingFields.push(
+      esignV2
+        ? 'Representante Legal da empresa (Configurações)'
+        : 'promitentes vendedores do empreendimento',
+    );
   }
   for (const s of sellers) {
     if (!s.nationality) pendingFields.push(`nacionalidade de ${s.name}`);
@@ -205,6 +222,7 @@ export function buildAraguaiaContractContext(
 
   const intervenienteId = resolveAraguaiaIntervenientIdentity({
     company: tenant,
+    mode: vendorMode,
   });
   const intervenienteName = intervenienteId.companyName;
   const intervenienteCnpj = intervenienteId.companyCnpjDisplay;

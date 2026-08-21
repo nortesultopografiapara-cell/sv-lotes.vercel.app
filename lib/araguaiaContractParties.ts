@@ -98,7 +98,7 @@ export function buildAraguaiaPhysicalSignaturesGridHtml(
     ctx.sellers[0]?.name ||
     'Representante Legal';
 
-  const vendorSlots = (ctx.sellers.length > 0 ? ctx.sellers : [null, null])
+  const vendorSlots = (ctx.sellers.length > 0 ? ctx.sellers : [])
     .map((seller, idx) =>
       buildPhysicalSlot({
         role: 'PROMITENTE VENDEDOR',

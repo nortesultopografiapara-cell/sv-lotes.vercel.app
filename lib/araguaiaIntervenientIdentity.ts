@@ -1,7 +1,8 @@
 /**
  * Identidade da INTERVENIENTE ARAGUAIA — mesma fonte do preâmbulo e do e-sign V2.
  * Company/tenant → razão social + CNPJ;
- * Representante → Representante Legal da company (Configurações).
+ * Representante → Representante Legal da company (Configurações) = Vendedor 1.
+ * Nunca usa Vendedor 2 como representante da PJ.
  */
 
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
@@ -35,13 +36,16 @@ function clean(value: unknown): string {
 /**
  * Passar sempre a company/tenant do contrato no fluxo V2.
  * Representante Legal da company — não “1º promitente” hardcoded.
+ * mode 'v2': sem fallback R R / Daniel.
  */
 export function resolveAraguaiaIntervenientIdentity(input?: {
   company?: Record<string, unknown> | null;
   /** @deprecated Ignorado — representante vem do Representante Legal da company. */
   sellers?: Array<{ name?: string | null; cpf?: string | null }> | null;
+  mode?: 'legacy' | 'v2';
 }): AraguaiaIntervenientIdentity {
   const company = input?.company || {};
+  const mode = input?.mode === 'v2' ? 'v2' : 'legacy';
   const companyName =
     clean(company.razao_social) ||
     clean(company.fantasy_name) ||
@@ -50,6 +54,21 @@ export function resolveAraguaiaIntervenientIdentity(input?: {
   const cnpjDigits = onlyDigits(cnpjRaw);
   const usedCompanySource = Boolean(companyName && cnpjDigits.length >= 14);
   const legal = resolveAraguaiaCompanyLegalRepresentative(company);
+
+  if (mode === 'v2') {
+    return {
+      companyName: usedCompanySource ? companyName : '',
+      companyCnpjDisplay: usedCompanySource
+        ? formatCpfCnpj(cnpjDigits) || cnpjRaw || cnpjDigits
+        : '',
+      companyCnpjDigits: usedCompanySource ? cnpjDigits : '',
+      representativeName: legal.usedCompanySource ? legal.name : '',
+      representativeCpfDigits: legal.usedCompanySource ? legal.cpfDigits : '',
+      representativeEmail: legal.usedCompanySource ? legal.email : null,
+      representativePhone: legal.usedCompanySource ? legal.phone : null,
+      usedCompanySource,
+    };
+  }
 
   const representativeName = legal.usedCompanySource
     ? legal.name

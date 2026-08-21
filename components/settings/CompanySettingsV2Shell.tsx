@@ -38,6 +38,10 @@ import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdm
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
+import {
+  emptyContractSecondVendorFields,
+  parseContractSecondVendorJson,
+} from '@/lib/contractSecondVendor';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
 import { FinancialIntegrationPanel } from '@/components/finance/FinancialIntegrationPanel';
 
@@ -70,6 +74,7 @@ type Props = Pick<
   | 'technical'
   | 'submitting'
   | 'handleChange'
+  | 'handleSecondVendorChange'
   | 'handleCheckboxChange'
   | 'handleSave'
   | 'handleLogoUpload'
@@ -165,6 +170,7 @@ export function CompanySettingsV2Shell({
   technical,
   submitting,
   handleChange,
+  handleSecondVendorChange,
   handleCheckboxChange,
   handleSave,
   handleLogoUpload,
@@ -220,6 +226,10 @@ export function CompanySettingsV2Shell({
   const documentRaw = String(company.cnpj || '');
   const partyType = resolveSaasContractPartyType(documentRaw);
   const useTechnicalAsLegal = Boolean(company.use_technical_as_legal_rep);
+  const secondVendor = {
+    ...emptyContractSecondVendorFields(),
+    ...parseContractSecondVendorJson(company.contract_second_vendor_json),
+  };
 
   const legalRepPreview = useMemo(() => {
     if (useTechnicalAsLegal) {
@@ -629,6 +639,137 @@ export function CompanySettingsV2Shell({
                     </div>
                   </section>
                 ) : null}
+
+                <section id="segundo-promitente-vendedor" className="space-y-4 scroll-mt-24">
+                  <h3 className="sv-theme-heading text-base">
+                    Segundo Promitente Vendedor (opcional)
+                  </h3>
+                  <p className="text-xs sv-theme-muted">
+                    Preencha somente quando o contrato possuir um segundo vendedor, como cônjuge ou segundo
+                    proprietário.
+                  </p>
+                  <p className="text-xs sv-theme-muted">
+                    As alterações serão aplicadas somente a novos contratos e novos processos de assinatura.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="md:col-span-2">
+                      <label className="sv-theme-label">Nome completo</label>
+                      <input
+                        type="text"
+                        name="second_vendor_name"
+                        value={secondVendor.name}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                        placeholder="Nome completo"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">CPF</label>
+                      <input
+                        type="text"
+                        name="second_vendor_cpf"
+                        value={secondVendor.cpf}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                        placeholder="000.000.000-00"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">RG</label>
+                      <input
+                        type="text"
+                        name="second_vendor_rg"
+                        value={secondVendor.rg}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">Órgão emissor</label>
+                      <input
+                        type="text"
+                        name="second_vendor_rgIssuer"
+                        value={secondVendor.rgIssuer}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                        placeholder="SSP"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">UF do RG</label>
+                      <input
+                        type="text"
+                        name="second_vendor_rgUf"
+                        value={secondVendor.rgUf}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                        maxLength={2}
+                        placeholder="PA"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">Nacionalidade</label>
+                      <input
+                        type="text"
+                        name="second_vendor_nationality"
+                        value={secondVendor.nationality}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                        placeholder="Brasileira"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">Estado civil</label>
+                      <input
+                        type="text"
+                        name="second_vendor_maritalStatus"
+                        value={secondVendor.maritalStatus}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">Profissão</label>
+                      <input
+                        type="text"
+                        name="second_vendor_profession"
+                        value={secondVendor.profession}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">E-mail</label>
+                      <input
+                        type="email"
+                        name="second_vendor_email"
+                        value={secondVendor.email}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                      />
+                    </div>
+                    <div>
+                      <label className="sv-theme-label">Telefone / WhatsApp</label>
+                      <input
+                        type="text"
+                        name="second_vendor_phone"
+                        value={secondVendor.phone}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="sv-theme-label">Endereço</label>
+                      <input
+                        type="text"
+                        name="second_vendor_address"
+                        value={secondVendor.address}
+                        onChange={handleSecondVendorChange}
+                        className="sv-theme-field"
+                      />
+                    </div>
+                  </div>
+                </section>
 
                 <CollapsibleSection
                   id="campos-avancados-contratos"

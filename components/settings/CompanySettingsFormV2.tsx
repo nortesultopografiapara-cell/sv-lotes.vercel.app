@@ -11,6 +11,7 @@ type Props = Pick<
   | 'technical'
   | 'submitting'
   | 'handleChange'
+  | 'handleSecondVendorChange'
   | 'handleCheckboxChange'
   | 'handleSave'
   | 'handleLogoUpload'

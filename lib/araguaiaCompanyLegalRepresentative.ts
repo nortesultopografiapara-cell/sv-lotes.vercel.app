@@ -8,6 +8,8 @@
  * - legal_representative_email
  * - legal_representative_phone
  * - legal_representative_role
+ *
+ * Path V2: resolveCompanyContractVendors (sem seller_parties_json / sem Daniel-Aldenise).
  */
 
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
@@ -18,6 +20,11 @@ import {
   resolveProjectContractSellers,
 } from '@/lib/projectContractSellers';
 import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
+import {
+  ARAGUAIA_MISSING_LEGAL_REPRESENTATIVE_MESSAGE,
+  isContractSecondVendorComplete,
+  parseContractSecondVendorJson,
+} from '@/lib/contractSecondVendor';
 
 export type AraguaiaCompanyLegalRepresentative = {
   name: string;
@@ -84,19 +91,127 @@ export function resolveAraguaiaCompanyLegalRepresentative(
   };
 }
 
+function companyAddress(company?: Record<string, unknown> | null): string {
+  const c = company || {};
+  return (
+    pickString(c.contract_legal_address, c.address, c.endereco) ||
+    ARAGUAIA_SELLERS_ADDRESS
+  );
+}
+
+function buildVendor1FromLegalRep(
+  company?: Record<string, unknown> | null,
+): ProjectContractSellerParty | null {
+  const legal = resolveAraguaiaCompanyLegalRepresentative(company);
+  if (!legal.usedCompanySource) return null;
+  const c = company || {};
+  const rgNum = pickString(c.contract_legal_rg);
+  const rgIssuer = pickString(c.contract_legal_rg_issuer);
+  const rg =
+    rgNum && rgIssuer
+      ? `${rgNum}-${rgIssuer}`
+      : rgNum || null;
+
+  return {
+    role: 'PROMITENTE_VENDEDOR',
+    order: 1,
+    name: legal.name,
+    cpf: legal.cpfDisplay || legal.cpfDigits,
+    address: companyAddress(company),
+    nationality: pickString(c.contract_legal_nationality) || null,
+    maritalStatus: pickString(c.contract_legal_marital_status) || null,
+    profession:
+      pickString(c.contract_legal_profession) || legal.role || null,
+    rg,
+  };
+}
+
+function buildVendor2FromSecondJson(
+  company?: Record<string, unknown> | null,
+): ProjectContractSellerParty | null {
+  const fields = parseContractSecondVendorJson(
+    company?.contract_second_vendor_json,
+  );
+  if (!isContractSecondVendorComplete(fields)) return null;
+  const rgNum = clean(fields.rg);
+  const rgIssuer = clean(fields.rgIssuer);
+  const rgUf = clean(fields.rgUf);
+  let rg: string | null = null;
+  if (rgNum) {
+    rg = rgIssuer ? `${rgNum}-${rgIssuer}` : rgNum;
+    if (rgUf) rg = `${rg}/${rgUf}`;
+  }
+
+  return {
+    role: 'PROMITENTE_VENDEDOR',
+    order: 2,
+    name: fields.name,
+    cpf: fields.cpf,
+    address: clean(fields.address) || companyAddress(company),
+    nationality: clean(fields.nationality) || null,
+    maritalStatus: clean(fields.maritalStatus) || null,
+    profession: clean(fields.profession) || null,
+    rg,
+  };
+}
+
+export type ResolveCompanyContractVendorsResult = {
+  vendors: ProjectContractSellerParty[];
+  vendor1: ProjectContractSellerParty | null;
+  vendor2: ProjectContractSellerParty | null;
+  error: string | null;
+};
+
+/**
+ * Vendedores do path ARAGUAIA V2:
+ * Vendedor 1 = Representante Legal (obrigatório).
+ * Vendedor 2 = contract_second_vendor_json se completo.
+ * NÃO usa seller_parties_json nem ARAGUAIA_DEFAULT_SELLERS.
+ */
+export function resolveCompanyContractVendors(input?: {
+  company?: Record<string, unknown> | null;
+}): ResolveCompanyContractVendorsResult {
+  const vendor1 = buildVendor1FromLegalRep(input?.company);
+  if (!vendor1) {
+    return {
+      vendors: [],
+      vendor1: null,
+      vendor2: null,
+      error: ARAGUAIA_MISSING_LEGAL_REPRESENTATIVE_MESSAGE,
+    };
+  }
+  const vendor2 = buildVendor2FromSecondJson(input?.company);
+  return {
+    vendors: vendor2 ? [vendor1, vendor2] : [vendor1],
+    vendor1,
+    vendor2,
+    error: null,
+  };
+}
+
 /**
  * PROMITENTES VENDEDORES do contrato ARAGUAIA.
  *
- * Prioridade:
- * 1. `projects.seller_parties_json` (empreendimento explícito);
- * 2. Representante Legal da company (Configurações);
- * 3. fallback legado ARAGUAIA_DEFAULT_SELLERS (somente sem company/projeto).
+ * mode 'v2' (ARAGUAIA e-sign V2):
+ *   Representante Legal + Segundo Promitente opcional.
+ *   seller_parties_json NÃO sobrescreve. Sem fallback Daniel/Aldenise.
+ *
+ * mode 'legacy' (default / V1):
+ *   1. projects.seller_parties_json;
+ *   2. Representante Legal;
+ *   3. ARAGUAIA_DEFAULT_SELLERS.
  */
 export function resolveAraguaiaPromitenteVendors(input?: {
   company?: Record<string, unknown> | null;
   project?: Record<string, unknown> | null;
   contractModel?: string | null;
+  /** 'v2' = path ARAGUAIA e-sign V2 (Configurações). */
+  mode?: 'legacy' | 'v2';
 }): ProjectContractSellerParty[] {
+  if (input?.mode === 'v2') {
+    return resolveCompanyContractVendors({ company: input.company }).vendors;
+  }
+
   const fromProject = resolveProjectContractSellers({
     project: input?.project,
     contractModel: 'ARAGUAIA',

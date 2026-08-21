@@ -124,7 +124,7 @@ function testTechnicalAsLegalWhenChecked() {
 }
 
 function testLegacySaveDoesNotSyncName() {
-  const payload = buildCompanySettingsSavePayload(
+  const built = buildCompanySettingsSavePayload(
     { name: 'RAZÃO ORIGINAL', fantasy_name: 'Fantasia', address: 'Rua A' },
     {
       name: '',
@@ -140,12 +140,14 @@ function testLegacySaveDoesNotSyncName() {
     },
     { normalizeAddress: false, syncNameFromFantasy: false },
   );
-  assert(!('name' in payload), 'save legacy não envia campo name');
+  assert(built.ok, 'save legacy ok');
+  assert(!('name' in built.payload), 'save legacy não envia campo name');
+  assert(built.payload.contract_second_vendor_json === null, 'second vendor null quando vazio');
   console.log('OK testLegacySaveDoesNotSyncName');
 }
 
 function testV2SaveDoesNotSyncNameByDefault() {
-  const payload = buildCompanySettingsSavePayload(
+  const built = buildCompanySettingsSavePayload(
     { name: 'RAZÃO ORIGINAL', fantasy_name: 'Fantasia', address: 'Rua 02, Quadra 123' },
     {
       name: '',
@@ -161,8 +163,9 @@ function testV2SaveDoesNotSyncNameByDefault() {
     },
     { normalizeAddress: true, syncNameFromFantasy: false },
   );
-  assert(!('name' in payload), 'save v2 não sobrescreve name sem flag');
-  assert(!('cnpj' in payload), 'save não envia cnpj');
+  assert(built.ok, 'save v2 ok');
+  assert(!('name' in built.payload), 'save v2 não sobrescreve name sem flag');
+  assert(!('cnpj' in built.payload), 'save não envia cnpj');
   console.log('OK testV2SaveDoesNotSyncNameByDefault');
 }
 

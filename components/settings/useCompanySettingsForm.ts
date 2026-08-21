@@ -5,11 +5,18 @@ import { supabase } from '@/lib/supabase';
 import {
   COMPANY_SETTINGS_COLUMNS,
   COMPANY_SETTINGS_COLUMNS_BASE,
+  COMPANY_SETTINGS_COLUMNS_WITHOUT_SECOND_VENDOR,
   buildCompanySettingsSavePayload,
   technicalFromCompanyRow,
   type TechnicalResponsibleFormState,
 } from '@/lib/companySettingsFields';
+import {
+  emptyContractSecondVendorFields,
+  parseContractSecondVendorJson,
+  type ContractSecondVendorFields,
+} from '@/lib/contractSecondVendor';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE, isDemoProfile } from '@/lib/demoRestrictions';
+import { formatCpfCnpj } from '@/lib/inputMasks';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
@@ -82,6 +89,17 @@ export function useCompanySettingsForm({
         .eq('id', companyId)
         .single();
 
+      if (error && /contract_second_vendor_json/i.test(String(error.message || ''))) {
+        console.warn('[settings] coluna contract_second_vendor_json ausente — select sem ela');
+        const mid = await supabase
+          .from('companies')
+          .select(COMPANY_SETTINGS_COLUMNS_WITHOUT_SECOND_VENDOR)
+          .eq('id', companyId)
+          .single();
+        data = mid.data;
+        error = mid.error;
+      }
+
       if (error) {
         console.warn('[settings] fallback para colunas base (pré-v2)', error.message);
         const fallback = await supabase
@@ -98,8 +116,14 @@ export function useCompanySettingsForm({
       }
 
       if (!error && data) {
-        setCompany(data as Record<string, unknown>);
-        setTechnical(technicalFromCompanyRow(data as Record<string, unknown>));
+        const row = data as Record<string, unknown>;
+        setCompany({
+          ...row,
+          contract_second_vendor_json: parseContractSecondVendorJson(
+            row.contract_second_vendor_json,
+          ),
+        });
+        setTechnical(technicalFromCompanyRow(row));
       }
 
       setLoading(false);
@@ -114,6 +138,25 @@ export function useCompanySettingsForm({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) => {
     setCompany((prev) => (prev ? { ...prev, [e.target.name]: e.target.value } : prev));
+  };
+
+  const handleSecondVendorChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) => {
+    const { name, value } = e.target;
+    const field = name.replace(/^second_vendor_/, '') as keyof ContractSecondVendorFields;
+    setCompany((prev) => {
+      if (!prev) return prev;
+      const current = parseContractSecondVendorJson(prev.contract_second_vendor_json);
+      const nextValue =
+        field === 'cpf' ? formatCpfCnpj(value) || value : value;
+      const next: ContractSecondVendorFields = {
+        ...emptyContractSecondVendorFields(),
+        ...current,
+        [field]: nextValue,
+      };
+      return { ...prev, contract_second_vendor_json: next };
+    });
   };
 
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,10 +274,16 @@ export function useCompanySettingsForm({
 
     setSubmitting(true);
 
-    const payload = buildCompanySettingsSavePayload(company, technical, {
+    const built = buildCompanySettingsSavePayload(company, technical, {
       normalizeAddress: normalizeAddressOnSave,
       syncNameFromFantasy,
     });
+    if (!built.ok) {
+      setSubmitting(false);
+      alert(built.error);
+      return;
+    }
+    const payload = built.payload;
 
     const { data: updateData, error: updateError } = await supabase
       .from('companies')
@@ -276,7 +325,12 @@ export function useCompanySettingsForm({
       return;
     }
 
-    setCompany(reloaded as Record<string, unknown>);
+    setCompany({
+      ...(reloaded as Record<string, unknown>),
+      contract_second_vendor_json: parseContractSecondVendorJson(
+        (reloaded as Record<string, unknown>).contract_second_vendor_json,
+      ),
+    });
     setTechnical(technicalFromCompanyRow(reloaded as Record<string, unknown>));
     setSubmitting(false);
     alert('Configurações salvas com sucesso!');
@@ -291,6 +345,7 @@ export function useCompanySettingsForm({
     technical,
     setTechnical,
     handleChange,
+    handleSecondVendorChange,
     handleCheckboxChange,
     handleSave,
     handleLogoUpload,
