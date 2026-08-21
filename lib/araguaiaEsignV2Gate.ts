@@ -7,38 +7,55 @@
  * 3. companyId estiver na allowlist explícita.
  *
  * Fail closed: sem companyId ⇒ V2 desligada.
- * Empresas fora da allowlist permanecem no fluxo V1 (BUYER + VENDORs [+ SPOUSE n/a]).
+ * Empresas fora da allowlist permanecem no fluxo V1.
  *
  * Preview e Production compartilham o mesmo Supabase — NUNCA ligar V2 global sem allowlist.
+ *
+ * NÃO reutilizar TOPOGRAFIA_COMPANY_ID (5ebfe934-…) do Asaas/settings:
+ * esse UUID NÃO existe em public.companies no banco vivo (Etapa 7 FASE C.1).
  */
-
-import { TOPOGRAFIA_COMPANY_ID } from '@/lib/companySettingsLayout';
 
 /** Liga o gate no ambiente (Preview homologação). Production: ausente/false. */
 export const ARAGUAIA_ESIGN_V2_ENABLED_ENV = 'ARAGUAIA_ESIGN_V2_ENABLED' as const;
 
 /**
- * CSV de company UUID extras (além dos defaults).
- * Ex.: incluir R R NEGÓCIOS após confirmar companies.id no SELECT.
+ * CSV de company UUID extras (além do default de homologação).
+ * 1ª homologação: deixar AUSENTE/vazio — só a empresa de teste entra.
+ * R R NEGÓCIOS: incluir só após 2ª homologação autorizada.
  */
 export const ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV =
   'ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS' as const;
 
 /**
- * Empresas com ID confirmado no código-fonte (não inventar UUID).
- *
- * - SV Topografia e Projetos: `TOPOGRAFIA_COMPANY_ID` em lib/companySettingsLayout.ts
- *   (mesmo ID de referência Asaas / settings piloto).
- * - R R NEGÓCIOS & SERVIÇOS LTDA: **não há UUID no repositório**.
- *   Resolver via SELECT read-only em public.companies e colocar no env.
+ * Empresa de teste confirmada no Supabase (FASE C.1):
+ * S.V TOPOGRAFIA E PROJETO LTDA
+ * - companies.id = f26f2331-1885-4ac6-8d0e-4131cc8a8014
+ * - is_test_company = true
+ * - contract_model = ARAGUAIA
+ * - companies.tenant_id = NULL (irrelevante: o gate usa contracts.company_id)
+ */
+export const ARAGUAIA_ESIGN_V2_HOMOLOG_COMPANY_ID =
+  'f26f2331-1885-4ac6-8d0e-4131cc8a8014' as const;
+
+/**
+ * UUID legado em lib/companySettingsLayout (TOPOGRAFIA_COMPANY_ID).
+ * NÃO está em public.companies no banco atual — NÃO autorizar no gate V2.
+ */
+export const ARAGUAIA_ESIGN_V2_STALE_TOPOGRAFIA_COMPANY_ID =
+  '5ebfe934-e1ae-4252-b3dd-808390c32551' as const;
+
+/**
+ * IDs conhecidos do gate V2 (homologação).
+ * Separado de TOPOGRAFIA_COMPANY_ID (Asaas/settings) de propósito.
  */
 export const ARAGUAIA_ESIGN_V2_KNOWN_COMPANY_IDS = {
-  SV_TOPOGRAFIA: TOPOGRAFIA_COMPANY_ID,
+  /** 1ª homologação — S.V Topografia (teste). */
+  SV_TOPOGRAFIA_TEST: ARAGUAIA_ESIGN_V2_HOMOLOG_COMPANY_ID,
 } as const;
 
-/** Defaults embutidos — só IDs com origem confirmada no repo. */
+/** Defaults embutidos — somente a empresa de teste confirmada no banco. */
 export const ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS: readonly string[] = [
-  ARAGUAIA_ESIGN_V2_KNOWN_COMPANY_IDS.SV_TOPOGRAFIA,
+  ARAGUAIA_ESIGN_V2_HOMOLOG_COMPANY_ID,
 ];
 
 export type AraguaiaEsignV2GateInput = {
@@ -75,7 +92,7 @@ export function isAraguaiaEsignV2EnvEnabled(
 }
 
 /**
- * Allowlist efetiva = defaults conhecidos ∪ CSV do env.
+ * Allowlist efetiva = defaults de homologação ∪ CSV do env.
  * Passar `env` nos testes para isolamento.
  */
 export function getAraguaiaEsignV2AllowedCompanyIds(

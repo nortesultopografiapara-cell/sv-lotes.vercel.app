@@ -1,7 +1,9 @@
 -- FASE B — SELECT read-only: localizar company_id das empresas de homologação.
 -- NÃO alterar dados. Executar no SQL Editor e colar o resultado.
 
--- 1) SV Topografia (ID já referenciado no código: 5ebfe934-e1ae-4252-b3dd-808390c32551)
+-- 1) Empresa de teste homologação V2 (confirmada FASE C.1):
+--    f26f2331-1885-4ac6-8d0e-4131cc8a8014 = S.V TOPOGRAFIA E PROJETO LTDA
+--    NÃO usar 5ebfe934… (TOPOGRAFIA_COMPANY_ID legado / inexistente neste banco)
 SELECT
   id,
   name,
@@ -11,7 +13,7 @@ SELECT
   contract_model,
   created_at
 FROM public.companies
-WHERE id = '5ebfe934-e1ae-4252-b3dd-808390c32551'
+WHERE id = 'f26f2331-1885-4ac6-8d0e-4131cc8a8014'
    OR name ILIKE '%Topografia%'
    OR razao_social ILIKE '%Topografia%'
 ORDER BY name;

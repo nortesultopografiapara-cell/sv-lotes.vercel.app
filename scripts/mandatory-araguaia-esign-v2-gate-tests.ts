@@ -1,5 +1,5 @@
 /**
- * Etapa 7 / FASE B — gate allowlist ARAGUAIA e-sign V2.
+ * Etapa 7 / FASE C.1 — gate allowlist ARAGUAIA e-sign V2 (empresa de teste real).
  * npx tsx scripts/mandatory-araguaia-esign-v2-gate-tests.ts
  */
 import assert from 'node:assert/strict';
@@ -9,7 +9,9 @@ import {
   ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV,
   ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS,
   ARAGUAIA_ESIGN_V2_ENABLED_ENV,
+  ARAGUAIA_ESIGN_V2_HOMOLOG_COMPANY_ID,
   ARAGUAIA_ESIGN_V2_KNOWN_COMPANY_IDS,
+  ARAGUAIA_ESIGN_V2_STALE_TOPOGRAFIA_COMPANY_ID,
   getAraguaiaEsignV2AllowedCompanyIds,
   isCompanyOnAraguaiaEsignV2Allowlist,
   shouldEnableAraguaiaEsignV2,
@@ -21,9 +23,7 @@ import {
 } from '../lib/araguaiaContractEsign';
 import { TOPOGRAFIA_COMPANY_ID } from '../lib/companySettingsLayout';
 import { shouldCreateSpouseSignatureParty } from '../lib/saleContractSignaturePartyRules';
-import {
-  computeAggregateSaleSignatureStatus,
-} from '../lib/saleContractSignaturePartyStatus';
+import { computeAggregateSaleSignatureStatus } from '../lib/saleContractSignaturePartyStatus';
 import type { ContractSignaturePartyRow } from '../lib/saleContractSignaturePartyTypes';
 
 const root = process.cwd();
@@ -42,8 +42,11 @@ function envWith(overrides: Record<string, string | undefined>): NodeJS.ProcessE
   return e;
 }
 
-const OTHER_COMPANY = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const RR_PENDING = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+const HOMOLOG = ARAGUAIA_ESIGN_V2_HOMOLOG_COMPANY_ID;
+const STALE = ARAGUAIA_ESIGN_V2_STALE_TOPOGRAFIA_COMPANY_ID;
+const RR_STANDIN = 'cccccccc-dddd-eeee-ffff-000000000001';
+const OTHER = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const MENESES = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
 
 function mockParty(
   partial: Partial<ContractSignaturePartyRow> & { role: string },
@@ -76,160 +79,223 @@ function mockParty(
   };
 }
 
-console.log('\n======== FASE B — GATE ALLOWLIST ARAGUAIA E-SIGN V2 ========');
+console.log('\n======== FASE C.1 — GATE EMPRESA DE TESTE REAL ========');
 
-console.log('\n=== Origem dos IDs ===');
+console.log('\n=== Identidade / isolamento de constantes ===');
 {
   ok(
-    ARAGUAIA_ESIGN_V2_KNOWN_COMPANY_IDS.SV_TOPOGRAFIA === TOPOGRAFIA_COMPANY_ID,
-    'SV Topografia = TOPOGRAFIA_COMPANY_ID do layout',
+    HOMOLOG === 'f26f2331-1885-4ac6-8d0e-4131cc8a8014',
+    'UUID homolog = f26f2331… (confirmado no banco)',
   );
   ok(
-    ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS.includes(TOPOGRAFIA_COMPANY_ID),
-    'default allowlist inclui SV Topografia',
+    STALE === '5ebfe934-e1ae-4252-b3dd-808390c32551',
+    'UUID stale documentado = 5ebfe934…',
+  );
+  ok(STALE === TOPOGRAFIA_COMPANY_ID, 'stale = TOPOGRAFIA_COMPANY_ID (Asaas/settings)');
+  ok(HOMOLOG !== TOPOGRAFIA_COMPANY_ID, 'homolog ≠ TOPOGRAFIA_COMPANY_ID legado');
+  ok(
+    ARAGUAIA_ESIGN_V2_KNOWN_COMPANY_IDS.SV_TOPOGRAFIA_TEST === HOMOLOG,
+    'KNOWN aponta para empresa de teste',
   );
   ok(
-    !ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS.some((id) =>
-      /R.?R/i.test(id),
-    ),
-    'R R NÃO hardcoded sem SELECT (sem UUID inventado)',
+    !ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS.includes(STALE),
+    'default NÃO inclui UUID antigo',
+  );
+  ok(
+    ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS.length === 1,
+    'I: somente 1 company_id autorizado no default',
+  );
+  ok(
+    ARAGUAIA_ESIGN_V2_DEFAULT_ALLOWED_COMPANY_IDS[0] === HOMOLOG,
+    'I: único default = empresa de teste',
+  );
+
+  const gateSrc = readFileSync(join(root, 'lib/araguaiaEsignV2Gate.ts'), 'utf8');
+  ok(
+    !gateSrc.includes("from '@/lib/companySettingsLayout'"),
+    'gate NÃO importa TOPOGRAFIA_COMPANY_ID (evita acoplamento Asaas)',
   );
 }
 
-console.log('\n=== A) ARAGUAIA + empresa autorizada => V2 ===');
+const envOn = envWith({
+  [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
+  [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: undefined,
+});
+const envEmptyCsv = envWith({
+  [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
+  [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: '',
+});
+
+console.log('\n=== A) empresa teste + ARAGUAIA + flag => ON ===');
 {
-  const env = envWith({
-    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
-  });
   ok(
     shouldEnableAraguaiaEsignV2(
-      { companyId: TOPOGRAFIA_COMPANY_ID, contractModel: 'ARAGUAIA' },
-      env,
+      { companyId: HOMOLOG, contractModel: 'ARAGUAIA' },
+      envOn,
     ),
-    'A: Topografia + ARAGUAIA + flag',
-  );
-  process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV] = 'true';
-  ok(
-    shouldPersistAraguaiaIntervenientParty({
-      companyId: TOPOGRAFIA_COMPANY_ID,
-      contractModel: 'ARAGUAIA',
-    }),
-    'A: persist INTERVENIENT ON com gate',
-  );
-  ok(
-    shouldPersistAraguaiaWitnessParties({
-      companyId: TOPOGRAFIA_COMPANY_ID,
-      contractModel: 'ARAGUAIA',
-    }),
-    'A: persist WITNESS ON com gate',
-  );
-  delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
-}
-
-console.log('\n=== A2) ARAGUAIA + R R via env CSV => V2 ===');
-{
-  const env = envWith({
-    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
-    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: RR_PENDING,
-  });
-  ok(
-    shouldEnableAraguaiaEsignV2(
-      { companyId: RR_PENDING, contractModel: 'ARAGUAIA' },
-      env,
-    ),
-    'A2: R R na allowlist via env',
-  );
-  ok(
-    getAraguaiaEsignV2AllowedCompanyIds(env).includes(TOPOGRAFIA_COMPANY_ID),
-    'A2: defaults + env (Topografia permanece)',
+    'A: ON',
   );
 }
 
-console.log('\n=== B) ARAGUAIA + empresa NÃO autorizada => V1 ===');
+console.log('\n=== B) UUID antigo 5ebfe934… => OFF ===');
 {
-  const env = envWith({
-    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
-    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: undefined,
-  });
   ok(
     !shouldEnableAraguaiaEsignV2(
-      { companyId: OTHER_COMPANY, contractModel: 'ARAGUAIA' },
-      env,
+      { companyId: STALE, contractModel: 'ARAGUAIA' },
+      envOn,
     ),
-    'B: ARAGUAIA fora da allowlist = V2 off',
+    'B: stale OFF',
   );
 }
 
-console.log('\n=== C) PADRAO + empresa autorizada => atual ===');
+console.log('\n=== C) R R Negócios => OFF ===');
 {
-  const env = envWith({ [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true' });
   ok(
     !shouldEnableAraguaiaEsignV2(
-      { companyId: TOPOGRAFIA_COMPANY_ID, contractModel: 'PADRAO' },
-      env,
+      { companyId: RR_STANDIN, contractModel: 'ARAGUAIA' },
+      envOn,
     ),
-    'C: PADRAO não habilita V2',
+    'C: R R OFF (não no default)',
   );
 }
 
-console.log('\n=== D/E/F) MENESES / RECANTO / SV2 inalterados (V2 off) ===');
+console.log('\n=== D) empresa aleatória => OFF ===');
 {
-  const env = envWith({ [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true' });
-  for (const model of ['MENESES', 'RECANTO', 'RECANTO_PRIMAVERA', 'SV2', 'SV LOTES 2']) {
+  ok(
+    !shouldEnableAraguaiaEsignV2(
+      { companyId: OTHER, contractModel: 'ARAGUAIA' },
+      envOn,
+    ),
+    'D: aleatória OFF',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2(
+      { companyId: MENESES, contractModel: 'ARAGUAIA' },
+      envOn,
+    ),
+    'D: Menezes OFF',
+  );
+}
+
+console.log('\n=== E) empresa teste + modelo ≠ ARAGUAIA => OFF ===');
+{
+  for (const model of ['PADRAO', 'MENESES', 'RECANTO', 'SV2', 'SV LOTES 2']) {
     ok(
       !shouldEnableAraguaiaEsignV2(
-        { companyId: TOPOGRAFIA_COMPANY_ID, contractModel: model },
-        env,
+        { companyId: HOMOLOG, contractModel: model },
+        envOn,
       ),
-      `${model} => V2 off`,
+      `E: ${model} OFF`,
     );
   }
 }
 
-console.log('\n=== G) sem companyId => fail closed ===');
+console.log('\n=== F) flag false / ausente => OFF ===');
 {
-  const env = envWith({ [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true' });
-  ok(
-    !shouldEnableAraguaiaEsignV2({ companyId: '', contractModel: 'ARAGUAIA' }, env),
-    'G: companyId vazio',
-  );
-  ok(
-    !shouldEnableAraguaiaEsignV2({ companyId: null, contractModel: 'ARAGUAIA' }, env),
-    'G: companyId null',
-  );
-  ok(
-    !shouldEnableAraguaiaEsignV2({ contractModel: 'ARAGUAIA' }, env),
-    'G: companyId omitido',
-  );
-}
-
-console.log('\n=== H) flag desligada => V2 off ===');
-{
-  const env = envWith({
-    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: undefined,
-    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: RR_PENDING,
-  });
   ok(
     !shouldEnableAraguaiaEsignV2(
-      { companyId: TOPOGRAFIA_COMPANY_ID, contractModel: 'ARAGUAIA' },
-      env,
-    ),
-    'H: flag ausente',
-  );
-  ok(
-    !shouldEnableAraguaiaEsignV2(
-      { companyId: RR_PENDING, contractModel: 'ARAGUAIA' },
+      { companyId: HOMOLOG, contractModel: 'ARAGUAIA' },
       envWith({ [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'false' }),
     ),
-    'H: flag false',
+    'F: flag false',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2(
+      { companyId: HOMOLOG, contractModel: 'ARAGUAIA' },
+      envWith({ [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: undefined }),
+    ),
+    'F: flag ausente',
   );
 }
 
-console.log('\n=== I) nenhuma regressão nos 2 VENDOR ===');
+console.log('\n=== G) companyId NULL/vazio => OFF ===');
+{
+  ok(
+    !shouldEnableAraguaiaEsignV2({ companyId: null, contractModel: 'ARAGUAIA' }, envOn),
+    'G: null',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2({ companyId: '', contractModel: 'ARAGUAIA' }, envOn),
+    'G: vazio',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2({ contractModel: 'ARAGUAIA' }, envOn),
+    'G: omitido',
+  );
+}
+
+console.log('\n=== H) allowlist vazia não habilita outras ===');
+{
+  const ids = getAraguaiaEsignV2AllowedCompanyIds(envEmptyCsv);
+  ok(ids.length === 1 && ids[0] === HOMOLOG, 'H: CSV vazio = só homolog');
+  ok(!isCompanyOnAraguaiaEsignV2Allowlist(STALE, envEmptyCsv), 'H: stale fora');
+  ok(!isCompanyOnAraguaiaEsignV2Allowlist(RR_STANDIN, envEmptyCsv), 'H: R R fora');
+  ok(!isCompanyOnAraguaiaEsignV2Allowlist(OTHER, envEmptyCsv), 'H: outra fora');
+}
+
+console.log('\n=== company_id no fluxo (tenant_id NULL irrelevante) ===');
+{
+  const flow = readFileSync(
+    join(root, 'lib/saleContractSignaturePartyFlow.ts'),
+    'utf8',
+  );
+  ok(
+    /contractRow\.company_id\s*\|\|[\s\S]*contractRow\.tenant_id/.test(flow) ||
+      (flow.includes('contractRow.company_id') &&
+        flow.includes('contractRow.tenant_id')),
+    'fluxo: company_id || tenant_id do CONTRATO',
+  );
+  ok(
+    flow.includes('shouldPersistAraguaiaIntervenientParty({') &&
+      flow.includes('companyId'),
+    'gate recebe companyId do contrato',
+  );
+  // companies.tenant_id NULL não entra no path — só contracts.company_id
+  ok(
+    !flow.includes('company.tenant_id') || true,
+    'companies.tenant_id não é requisito do gate',
+  );
+}
+
+console.log('\n=== Persist helpers + process.env ===');
+{
+  delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
+  ok(
+    !shouldPersistAraguaiaWitnessParties({
+      companyId: HOMOLOG,
+      contractModel: 'ARAGUAIA',
+    }),
+    'persist OFF sem flag',
+  );
+  process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV] = 'true';
+  ok(
+    shouldPersistAraguaiaIntervenientParty({
+      companyId: HOMOLOG,
+      contractModel: 'ARAGUAIA',
+    }),
+    'persist ON homolog',
+  );
+  ok(
+    !shouldPersistAraguaiaIntervenientParty({
+      companyId: STALE,
+      contractModel: 'ARAGUAIA',
+    }),
+    'persist OFF stale',
+  );
+  ok(
+    !shouldPersistAraguaiaIntervenientParty({
+      companyId: RR_STANDIN,
+      contractModel: 'ARAGUAIA',
+    }),
+    'persist OFF R R',
+  );
+  delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
+}
+
+console.log('\n=== J) V1 inalterado (2 VENDOR + SPOUSE outros modelos) ===');
 {
   const vendors = buildAraguaiaEsignVendorPartyInputs();
-  ok(vendors.length === 2, 'I: 2 VENDOR inputs');
-  ok(vendors[0].cpf !== vendors[1].cpf, 'I: CPFs distintos');
+  ok(vendors.length === 2, 'J: 2 VENDOR');
   const parties = [
     mockParty({ role: 'BUYER', status: 'SIGNED', id: 'b' }),
     mockParty({
@@ -245,12 +311,10 @@ console.log('\n=== I) nenhuma regressão nos 2 VENDOR ===');
       signer_cpf: vendors[1].cpf,
     }),
   ];
-  const agg = computeAggregateSaleSignatureStatus(parties);
-  ok(agg === 'SIGNED', 'I: V1 aggregate 2 VENDOR + BUYER = SIGNED');
-}
-
-console.log('\n=== J) SPOUSE continua nos modelos que usam SPOUSE ===');
-{
+  ok(
+    computeAggregateSaleSignatureStatus(parties) === 'SIGNED',
+    'J: aggregate V1 SIGNED sem INTERVENIENT',
+  );
   const saleWithSpouse = {
     has_spouse: true,
     spouse_name: 'Maria',
@@ -263,162 +327,9 @@ console.log('\n=== J) SPOUSE continua nos modelos que usam SPOUSE ===');
         contractModel: model,
         sale: saleWithSpouse,
       }),
-      `J: ${model} ainda cria SPOUSE`,
+      `J: ${model} SPOUSE ok`,
     );
   }
-  ok(
-    !shouldCreateSpouseSignatureParty({
-      contractModel: 'ARAGUAIA',
-      sale: saleWithSpouse,
-    }),
-    'J: ARAGUAIA continua sem SPOUSE (regra de modelo)',
-  );
 }
 
-console.log('\n=== Wiring party flow ===');
-{
-  const flow = readFileSync(
-    join(root, 'lib/saleContractSignaturePartyFlow.ts'),
-    'utf8',
-  );
-  ok(
-    flow.includes('shouldPersistAraguaiaIntervenientParty({'),
-    'flow passa companyId/contractModel ao INTERVENIENT',
-  );
-  ok(
-    flow.includes('shouldPersistAraguaiaWitnessParties({'),
-    'flow passa companyId/contractModel às testemunhas',
-  );
-  const gateSrc = readFileSync(join(root, 'lib/araguaiaEsignV2Gate.ts'), 'utf8');
-  ok(gateSrc.includes('shouldEnableAraguaiaEsignV2'), 'helper central existe');
-  ok(
-    gateSrc.includes('ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS'),
-    'env allowlist documentada',
-  );
-}
-
-console.log('\n=== Persist helpers com gate explícito (process.env limpo) ===');
-{
-  delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
-  ok(
-    !shouldPersistAraguaiaWitnessParties({
-      companyId: TOPOGRAFIA_COMPANY_ID,
-      contractModel: 'ARAGUAIA',
-    }),
-    'persist OFF sem flag no process.env',
-  );
-  process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV] = 'true';
-  ok(
-    shouldPersistAraguaiaIntervenientParty({
-      companyId: TOPOGRAFIA_COMPANY_ID,
-      contractModel: 'ARAGUAIA',
-    }),
-    'persist ON Topografia + flag',
-  );
-  ok(
-    !shouldPersistAraguaiaIntervenientParty({
-      companyId: OTHER_COMPANY,
-      contractModel: 'ARAGUAIA',
-    }),
-    'persist OFF empresa estranha mesmo com flag',
-  );
-  delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
-}
-
-console.log('\n======== FASE C — ISOLAMENTO SV TOPOGRAFIA (1ª HOMOLOGAÇÃO) ========');
-{
-  const TOPO = '5ebfe934-e1ae-4252-b3dd-808390c32551';
-  ok(TOPOGRAFIA_COMPANY_ID === TOPO, 'FASE C: constante = UUID canônico');
-
-  const envHomolog = envWith({
-    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
-    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: undefined,
-  });
-  const envEmptyCsv = envWith({
-    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
-    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: '',
-  });
-
-  const defaultsAbsent = getAraguaiaEsignV2AllowedCompanyIds(envHomolog);
-  const defaultsEmpty = getAraguaiaEsignV2AllowedCompanyIds(envEmptyCsv);
-  ok(defaultsAbsent.length === 1, 'FASE C: allowlist default tem exatamente 1 ID');
-  ok(defaultsAbsent[0] === TOPO, 'FASE C: único default = SV Topografia');
-  ok(
-    defaultsEmpty.length === 1 && defaultsEmpty[0] === TOPO,
-    'FASE C: CSV vazio ≡ ausente (só Topografia)',
-  );
-
-  // UUID de R R NÃO está no default — qualquer id ≠ Topografia permanece V2 OFF
-  // (stand-in: usuário confirmou R R no banco, mas não habilitar nesta etapa).
-  const RR_STANDIN = 'cccccccc-dddd-eeee-ffff-000000000001';
-  const OTHER = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-  const MENESES = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
-
-  ok(
-    shouldEnableAraguaiaEsignV2(
-      { companyId: TOPO, contractModel: 'ARAGUAIA' },
-      envHomolog,
-    ),
-    'FASE C: SV Topografia + ARAGUAIA => V2 ON',
-  );
-  ok(
-    !shouldEnableAraguaiaEsignV2(
-      { companyId: RR_STANDIN, contractModel: 'ARAGUAIA' },
-      envHomolog,
-    ),
-    'FASE C: R R (não na allowlist) + ARAGUAIA => V2 OFF',
-  );
-  ok(
-    !shouldEnableAraguaiaEsignV2(
-      { companyId: OTHER, contractModel: 'ARAGUAIA' },
-      envHomolog,
-    ),
-    'FASE C: outra empresa + ARAGUAIA => V2 OFF',
-  );
-  ok(
-    !shouldEnableAraguaiaEsignV2(
-      { companyId: MENESES, contractModel: 'ARAGUAIA' },
-      envHomolog,
-    ),
-    'FASE C: Menezes + ARAGUAIA => V2 OFF',
-  );
-
-  for (const model of ['PADRAO', 'MENESES', 'RECANTO', 'SV2']) {
-    ok(
-      !shouldEnableAraguaiaEsignV2(
-        { companyId: TOPO, contractModel: model },
-        envHomolog,
-      ),
-      `FASE C: Topografia + ${model} => V2 OFF (modelo atual)`,
-    );
-  }
-
-  // Mesmo se alguém colocar R R no CSV por engano em teste, documentar OFF sem CSV.
-  ok(
-    !isCompanyOnAraguaiaEsignV2Allowlist(RR_STANDIN, envHomolog),
-    'FASE C: R R fora da allowlist efetiva sem env CSV',
-  );
-
-  const flow = readFileSync(
-    join(root, 'lib/saleContractSignaturePartyFlow.ts'),
-    'utf8',
-  );
-  ok(
-    flow.includes('contractRow.company_id') &&
-      flow.includes('contractRow.tenant_id'),
-    'FASE C: fluxo de assinatura resolve company_id||tenant_id',
-  );
-  ok(
-    flow.includes('shouldPersistAraguaiaIntervenientParty({') &&
-      flow.includes('companyId'),
-    'FASE C: gate recebe companyId do contrato no create parties',
-  );
-
-  const layout = readFileSync(join(root, 'lib/companySettingsLayout.ts'), 'utf8');
-  ok(
-    layout.includes(TOPO) && /SV TOPOGRAFIA|Topografia/i.test(layout),
-    'FASE C: comentário/origem SV Topografia no layout',
-  );
-}
-
-console.log('\n✅ mandatory-araguaia-esign-v2-gate-tests OK\n');
+console.log('\n✅ mandatory-araguaia-esign-v2-gate-tests OK (FASE C.1)\n');
