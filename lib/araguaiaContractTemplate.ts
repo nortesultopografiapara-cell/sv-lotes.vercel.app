@@ -12,10 +12,13 @@ import {
   buildAraguaiaSignaturesHtml,
   buildAraguaiaTitleHtml,
 } from '@/lib/araguaiaContractParties';
+import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from '@/lib/araguaiaHtml2PdfPagination';
 import {
   buildContractA4WidthSafeCss,
   CONTRACT_PDF_CONTENT_WIDTH_PX,
 } from '@/lib/contractPaginationEngine';
+
+export { ARAGUAIA_HTML2PDF_PAGINATION_AVOID };
 
 export type GenerateAraguaiaContractParams = AraguaiaContractParams;
 
@@ -147,23 +150,6 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
 }
 </style>`;
 }
-
-export const ARAGUAIA_HTML2PDF_PAGINATION_AVOID = [
-  '.araguaia-clause-keep',
-  '.araguaia-keep-together',
-  '.araguaia-financial-item-1-3',
-  '.araguaia-financial-item-8',
-  '.araguaia-general-conditions-item-3',
-  '.araguaia-general-conditions-item-4',
-  '.araguaia-sixth-letter-b',
-  '.araguaia-sixth-letter-c',
-  '.araguaia-ninth-letter-c',
-  '.contract-closing-and-signatures--araguaia',
-  '.sv-contract-araguaia .signature-slot',
-  '.sv-cert-official-block',
-  '.sv-cert-official-inner',
-  '.sv-cert-official',
-];
 
 export function generateAraguaiaContract(
   params: GenerateAraguaiaContractParams,

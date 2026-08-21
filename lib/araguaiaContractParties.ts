@@ -15,10 +15,8 @@ import {
   normalizeSaleContractSignatureRenderMode,
   type SaleContractSignatureRenderMode,
 } from '@/lib/saleContractSignatureRenderMode';
-import {
-  buildAraguaiaElectronicSignaturesBlockHtml,
-  type AraguaiaElectronicSignatureSlotInput,
-} from '@/lib/araguaiaContractElectronicSignatures';
+import type { AraguaiaElectronicSignatureSlotInput } from '@/lib/araguaiaContractElectronicSignaturesUi';
+import { buildAraguaiaElectronicSignaturesBlockHtml } from '@/lib/araguaiaContractElectronicSignaturesUi';
 
 const SLOT_STYLE =
   'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;';

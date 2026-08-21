@@ -17,7 +17,7 @@ import {
   RECANTO_HTML2PDF_PAGINATION_AVOID,
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
-import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaContractTemplate";
+import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
 

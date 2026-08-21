@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { readPartySignatureEventId } from '@/lib/saleContractSignaturePartyMeta';
 import { buildSaleSignUrl, resolvePartySignatureUrl } from '@/lib/saleContractUrls';
 import { signatureExpiresAt } from '@/lib/saasContractSignatureService';
 import { maskCpfPublic } from '@/lib/signaturePrivacy';
@@ -23,6 +24,8 @@ import {
   saleSignaturePartyStatusLabel,
 } from '@/lib/saleContractSignaturePartyTypes';
 
+export { readPartySignatureEventId };
+
 /**
  * Garante UUID individual da assinatura da party em `signature_data`
  * (mesmo padrão de `signature_event_id` do processo / evidências).
@@ -40,26 +43,6 @@ export function ensurePartySignatureEventData(
     signature_event_id: id,
     signature_id: id,
   };
-}
-
-/** Lê o ID único persistido da party (metadata ou fallback ao party.id). */
-export function readPartySignatureEventId(
-  party: {
-    id?: string | null;
-    signature_data?: Record<string, unknown> | null;
-  } | null | undefined,
-): string | null {
-  if (!party) return null;
-  const data =
-    party.signature_data && typeof party.signature_data === 'object'
-      ? party.signature_data
-      : {};
-  const fromData = String(
-    data.signature_event_id || data.signature_id || '',
-  ).trim();
-  if (fromData) return fromData;
-  const partyId = String(party.id || '').trim();
-  return partyId || null;
 }
 
 export type CreatePartyInput = {
