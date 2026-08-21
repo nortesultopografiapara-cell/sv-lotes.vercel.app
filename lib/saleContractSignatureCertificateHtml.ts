@@ -6,8 +6,10 @@
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import { formatSignatureDateBr, formatSignatureTimeBr } from '@/lib/saasContractSignaturePdf';
 import type { SignatureHistoryEvent } from '@/lib/saleContractSignatureService';
+import { replaceContractSignaturesBlock } from '@/lib/saleContractSignatureHtmlBlocks';
 import { SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE } from '@/lib/saleContractSignatureVerify';
 
+export { replaceContractSignaturesBlock };
 export type { SignatureHistoryEvent };
 
 export type SaleContractSignatureCertificateInput = {
@@ -72,6 +74,41 @@ export type SaleContractSignatureCertificateInput = {
    * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE.
    */
   personVendorCards?: Array<{
+    name: string;
+    cpf?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    signedAt?: string | null;
+    ipAddress?: string | null;
+    signatureHash?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    device?: string | null;
+    approxLocation?: string | null;
+    signatureEventId?: string | null;
+  }> | null;
+  /**
+   * Card PJ INTERVENIENT (ARAGUAIA V2) — distinto dos VENDOR PF.
+   */
+  intervenientCard?: {
+    companyName: string;
+    companyCnpj?: string | null;
+    representativeName?: string | null;
+    representativeCpf?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    signedAt?: string | null;
+    ipAddress?: string | null;
+    signatureHash?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    device?: string | null;
+    approxLocation?: string | null;
+    signatureEventId?: string | null;
+  } | null;
+  /** Cards TESTEMUNHA 1 / 2 (ARAGUAIA V2). */
+  witnessCards?: Array<{
+    role: 'WITNESS_1' | 'WITNESS_2' | string;
     name: string;
     cpf?: string | null;
     email?: string | null;
@@ -438,6 +475,118 @@ function buildPersonVendorCard(input: {
   });
 }
 
+function buildWitnessCard(input: {
+  role: string;
+  name: string;
+  cpf?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  signedAt?: string | null;
+  ipAddress?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+}): string {
+  const roleKey = String(input.role || '').toUpperCase();
+  const roleLabel =
+    roleKey === 'WITNESS_2' ? 'TESTEMUNHA 2' : 'TESTEMUNHA 1';
+  const name = String(input.name || '').trim() || '—';
+  const cpf = input.cpf ? formatCpfCnpj(input.cpf) || input.cpf : '—';
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '👤', label: 'Nome', value: name },
+    { icon: '🪪', label: 'CPF', value: cpf },
+    ...buildEvidenceFields({
+      email: input.email,
+      phone: input.phone,
+      ipAddress: input.ipAddress,
+      signedAt: input.signedAt,
+      browser: input.browser,
+      os: input.os,
+      device: input.device,
+      approxLocation: input.approxLocation,
+      signatureEventId: input.signatureEventId,
+    }),
+  ];
+  return buildOfficialSignatureCard({
+    role: roleLabel,
+    fields,
+    signed: Boolean(input.signedAt),
+  });
+}
+
+function buildWitnessCardsHtml(
+  input: SaleContractSignatureCertificateInput,
+): string {
+  const cards = Array.isArray(input.witnessCards)
+    ? input.witnessCards.filter((c) => String(c?.name || '').trim())
+    : [];
+  if (cards.length === 0) return '';
+  const ordered = [...cards].sort((a, b) => {
+    const ra = String(a.role || '').toUpperCase();
+    const rb = String(b.role || '').toUpperCase();
+    if (ra === rb) return 0;
+    if (ra === 'WITNESS_1') return -1;
+    if (rb === 'WITNESS_1') return 1;
+    return ra.localeCompare(rb);
+  });
+  return ordered.map((c) => buildWitnessCard(c)).join('\n');
+}
+
+function buildIntervenientCard(input: {
+  companyName: string;
+  companyCnpj?: string | null;
+  representativeName?: string | null;
+  representativeCpf?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  signedAt?: string | null;
+  ipAddress?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+}): string {
+  const company = String(input.companyName || '').trim() || '—';
+  const cnpj = input.companyCnpj
+    ? formatCpfCnpj(input.companyCnpj) || input.companyCnpj
+    : '—';
+  const rep = String(input.representativeName || '').trim();
+  const repCpf = input.representativeCpf
+    ? formatCpfCnpj(input.representativeCpf) || input.representativeCpf
+    : '—';
+
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '🏢', label: 'Empresa', value: company },
+    { icon: '🪪', label: 'CNPJ', value: cnpj },
+  ];
+  if (rep) {
+    fields.push({ icon: '👤', label: 'Representante', value: rep });
+    fields.push({ icon: '🪪', label: 'CPF do representante', value: repCpf });
+  }
+  fields.push(
+    ...buildEvidenceFields({
+      email: input.email,
+      phone: input.phone,
+      ipAddress: input.ipAddress,
+      signedAt: input.signedAt,
+      browser: input.browser,
+      os: input.os,
+      device: input.device,
+      approxLocation: input.approxLocation,
+      signatureEventId: input.signatureEventId,
+    }),
+  );
+
+  return buildOfficialSignatureCard({
+    role: 'INTERVENIENTE',
+    fields,
+    signed: Boolean(input.signedAt),
+  });
+}
+
 function buildVendorCardsHtml(input: SaleContractSignatureCertificateInput): string {
   const personCards = Array.isArray(input.personVendorCards)
     ? input.personVendorCards.filter((c) => String(c?.name || '').trim())
@@ -719,39 +868,6 @@ export function stripManualContractSignaturesForSignedPdf(html: string): string 
   return result;
 }
 
-/** Substitui o bloco `.contract-signatures` no HTML do contrato (somente PDF assinado). */
-export function replaceContractSignaturesBlock(html: string, replacement: string): string {
-  const marker = 'class="contract-signatures';
-  const markerIdx = html.indexOf(marker);
-  if (markerIdx < 0) return html;
-
-  const divStart = html.lastIndexOf('<div', markerIdx);
-  if (divStart < 0) return html;
-
-  let depth = 1;
-  let pos = divStart + 4;
-
-  while (pos < html.length) {
-    const openAt = html.indexOf('<div', pos);
-    const closeAt = html.indexOf('</div>', pos);
-    if (closeAt === -1) break;
-
-    if (openAt !== -1 && openAt < closeAt) {
-      depth += 1;
-      pos = openAt + 4;
-      continue;
-    }
-
-    pos = closeAt + 6;
-    depth -= 1;
-    if (depth === 0) {
-      return html.slice(0, divStart) + replacement + html.slice(pos);
-    }
-  }
-
-  return html;
-}
-
 export async function buildSaleContractSignatureCertificateHtmlWithQr(
   input: SaleContractSignatureCertificateInput,
 ): Promise<string> {
@@ -808,6 +924,13 @@ export function buildSaleContractSignatureCertificateHtml(
         ${buildVendorCardsHtml(input)}
         ${buildBuyerCard(input)}
         ${input.spouseName ? buildSpouseCard(input) : ''}
+        ${
+          input.intervenientCard &&
+          String(input.intervenientCard.companyName || '').trim()
+            ? buildIntervenientCard(input.intervenientCard)
+            : ''
+        }
+        ${buildWitnessCardsHtml(input)}
       </div>
 
       <div class="sv-cert-validation">

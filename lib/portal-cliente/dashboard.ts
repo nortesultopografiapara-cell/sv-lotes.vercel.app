@@ -33,9 +33,12 @@ import { resolvePortalClientContract, type PortalContractRow } from '@/lib/porta
 import {
   PORTAL_CONTRACT_DOWNLOAD_PATH,
   PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+  PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
   resolvePortalContractPdfAvailability,
 } from '@/lib/portal-cliente/contractDownload';
 import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
+import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
+import { resolveSignedContractArtifactMeta } from '@/lib/saleContractSignedArtifact';
 
 const CONTRACT_NOT_FOUND_MESSAGE = 'Contrato não encontrado.';
 const CONTRACT_UNAVAILABLE_MESSAGE = 'Contrato ainda não disponível.';
@@ -335,8 +338,27 @@ async function buildPortalDashboardContract(
     signatureRow?.signature_status || contractRow.signature_status || '',
   ).toUpperCase();
 
+  const contractWithSignatureStatus: PortalContractRow = {
+    ...contractRow,
+    signature_status: signatureStatus || contractRow.signature_status,
+  };
+
   const storedHtml = readStoredContractHtml(contractRow as Record<string, unknown>);
-  if (storedHtml) {
+  const electronicallySigned = shouldBlockUnsignedFallbackAfterElectronicSign({
+    signatureStatus,
+    contractStatus: contractRow.status,
+    pdfSignedUrl: contractRow.pdf_signed_url,
+  });
+  const signedMeta = resolveSignedContractArtifactMeta({
+    ...contractRow,
+    signature_status: signatureStatus || contractRow.signature_status,
+  });
+  const hasSignedArtifact = signedMeta.signedArtifactAvailable;
+
+  if (electronicallySigned || hasSignedArtifact) {
+    // Mesma disponibilidade do admin: processo SIGNED e/ou pdf_signed_url.
+    contractViewUrl = hasSignedArtifact ? '/api/portal-cliente/contract' : null;
+  } else if (storedHtml) {
     contractViewUrl = '/api/portal-cliente/contract';
   }
 
@@ -350,9 +372,20 @@ async function buildPortalDashboardContract(
     }
   }
 
-  const contractDownloadAvailable = resolvePortalContractPdfAvailability(contractRow, storedHtml);
+  const contractDownloadAvailable = resolvePortalContractPdfAvailability(
+    contractWithSignatureStatus,
+    storedHtml,
+  );
   const hasDocument = Boolean(signUrl || contractViewUrl || contractDownloadAvailable);
   const generatedAt = contractRow.created_at ? String(contractRow.created_at).slice(0, 10) : null;
+
+  let contractDownloadUnavailableMessage: string | null = null;
+  if (!contractDownloadAvailable) {
+    contractDownloadUnavailableMessage =
+      electronicallySigned || hasSignedArtifact
+        ? PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE
+        : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE;
+  }
 
   return {
     contractNumber: String(contractRow.contract_number || '').trim() || null,
@@ -363,9 +396,7 @@ async function buildPortalDashboardContract(
     contractViewUrl,
     contractDownloadUrl: PORTAL_CONTRACT_DOWNLOAD_PATH,
     contractDownloadAvailable,
-    contractDownloadUnavailableMessage: contractDownloadAvailable
-      ? null
-      : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+    contractDownloadUnavailableMessage,
     emptyMessage: hasDocument ? null : CONTRACT_UNAVAILABLE_MESSAGE,
   };
 }
@@ -511,7 +542,7 @@ async function loadLotSaleDashboard(
   const [companyRes, projectRes, blockRes, receiptsRes] = await Promise.all([
     admin
       .from('companies')
-      .select('id, name, fantasy_name, razao_social, phone')
+      .select('id, name, fantasy_name, phone, cnpj')
       .eq('id', companyId)
       .maybeSingle(),
     sale.project_id
@@ -583,7 +614,7 @@ async function loadLotSaleDashboard(
     if (contractTenantId && contractTenantId !== companyId) {
       const tenantRes = await admin
         .from('companies')
-        .select('id, name, fantasy_name, razao_social, phone')
+        .select('id, name, fantasy_name, phone, cnpj')
         .eq('id', contractTenantId)
         .maybeSingle();
       if (!tenantRes.error && tenantRes.data) {
@@ -751,7 +782,7 @@ async function loadCustomerRecordDashboard(
     admin.from('customers').select('id, name, phone, company_id, tenant_id').eq('id', customerId).maybeSingle(),
     admin
       .from('companies')
-      .select('id, name, fantasy_name, razao_social, phone')
+      .select('id, name, fantasy_name, phone, cnpj')
       .eq('id', companyId)
       .maybeSingle(),
   ]);
@@ -812,7 +843,7 @@ async function loadSaasContractDashboard(
   const companyId = String(scope.companyId || '');
   const { data: company } = await admin
     .from('companies')
-    .select('id, name, fantasy_name, razao_social, phone')
+        .select('id, name, fantasy_name, phone, cnpj')
     .eq('id', companyId)
     .maybeSingle();
 

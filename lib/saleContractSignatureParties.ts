@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { readPartySignatureEventId } from '@/lib/saleContractSignaturePartyMeta';
 import { buildSaleSignUrl, resolvePartySignatureUrl } from '@/lib/saleContractUrls';
 import { signatureExpiresAt } from '@/lib/saasContractSignatureService';
 import { maskCpfPublic } from '@/lib/signaturePrivacy';
@@ -22,6 +23,8 @@ import {
   saleSignaturePartyRoleLabel,
   saleSignaturePartyStatusLabel,
 } from '@/lib/saleContractSignaturePartyTypes';
+
+export { readPartySignatureEventId };
 
 /**
  * Garante UUID individual da assinatura da party em `signature_data`
@@ -42,26 +45,6 @@ export function ensurePartySignatureEventData(
   };
 }
 
-/** Lê o ID único persistido da party (metadata ou fallback ao party.id). */
-export function readPartySignatureEventId(
-  party: {
-    id?: string | null;
-    signature_data?: Record<string, unknown> | null;
-  } | null | undefined,
-): string | null {
-  if (!party) return null;
-  const data =
-    party.signature_data && typeof party.signature_data === 'object'
-      ? party.signature_data
-      : {};
-  const fromData = String(
-    data.signature_event_id || data.signature_id || '',
-  ).trim();
-  if (fromData) return fromData;
-  const partyId = String(party.id || '').trim();
-  return partyId || null;
-}
-
 export type CreatePartyInput = {
   companyId: string;
   contractSignatureId: string;
@@ -72,11 +55,13 @@ export type CreatePartyInput = {
   signerCpf?: string | null;
   signerPhone?: string | null;
   signerEmail?: string | null;
-  /** Gera token público (BUYER/SPOUSE). VENDOR = false. */
+  /** Gera token público (BUYER/SPOUSE). VENDOR = false. INTERVENIENT = false. */
   withPublicToken?: boolean;
   /** Reutilizar token já gerado (ex.: espelhar BUYER no processo). */
   existingToken?: string | null;
   expiresAt?: string | null;
+  /** Metadados iniciais (ex.: PJ INTERVENIENT: company/representative). */
+  signatureData?: Record<string, unknown> | null;
 };
 
 export type CreatedPartyWithToken = {
@@ -199,7 +184,9 @@ export async function insertSignatureParty(
     status: 'PENDING' as SaleSignaturePartyStatus,
     sent_at: sentAt,
     expires_at: expiresAt,
-    signature_data: {},
+    signature_data: input.signatureData
+      ? { ...input.signatureData }
+      : {},
     created_at: sentAt,
     updated_at: sentAt,
   };
@@ -258,6 +245,29 @@ export async function createPartiesForSignatureProcess(
       email?: string | null;
       withPublicToken?: boolean;
     }> | null;
+    /**
+     * INTERVENIENT (ARAGUAIA V2 — PJ). Só persistir quando o schema aceitar o role
+     * Persistência gated por shouldEnableAraguaiaEsignV2 (env + ARAGUAIA + allowlist).
+     */
+    intervenient?: {
+      name?: string | null;
+      cnpj?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      signatureData?: Record<string, unknown> | null;
+    } | null;
+    /**
+     * WITNESS_1 / WITNESS_2 (ARAGUAIA V2). Identidade NULL; token público.
+     * Persistência gated por shouldEnableAraguaiaEsignV2 (env + ARAGUAIA + allowlist).
+     */
+    witnesses?: Array<{
+      role: 'WITNESS_1' | 'WITNESS_2';
+      name?: string | null;
+      cpf?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      withPublicToken?: boolean;
+    }> | null;
     expiresAt: string;
   },
 ): Promise<{
@@ -267,6 +277,13 @@ export async function createPartiesForSignatureProcess(
   buyerSignUrl: string;
   spouseSignUrl: string | null;
   vendorTokens: Array<{ partyId: string; token: string | null; signUrl: string | null }>;
+  intervenientPartyId: string | null;
+  witnessTokens: Array<{
+    role: 'WITNESS_1' | 'WITNESS_2';
+    partyId: string;
+    token: string | null;
+    signUrl: string | null;
+  }>;
 }> {
   const buyerCreated = await insertSignatureParty(supabaseAdmin, {
     companyId: params.companyId,
@@ -353,6 +370,56 @@ export async function createPartiesForSignatureProcess(
     });
   }
 
+  let intervenientPartyId: string | null = null;
+  if (params.intervenient) {
+    const intervenientCreated = await insertSignatureParty(supabaseAdmin, {
+      companyId: params.companyId,
+      contractSignatureId: params.contractSignatureId,
+      contractId: params.contractId,
+      saleId: params.saleId,
+      role: 'INTERVENIENT',
+      signerName: params.intervenient.name,
+      signerCpf: params.intervenient.cnpj,
+      signerPhone: params.intervenient.phone,
+      signerEmail: params.intervenient.email,
+      withPublicToken: false,
+      expiresAt: params.expiresAt,
+      signatureData: params.intervenient.signatureData || null,
+    });
+    parties.push(intervenientCreated.party);
+    intervenientPartyId = intervenientCreated.party.id;
+  }
+
+  const witnessTokens: Array<{
+    role: 'WITNESS_1' | 'WITNESS_2';
+    partyId: string;
+    token: string | null;
+    signUrl: string | null;
+  }> = [];
+
+  for (const witness of params.witnesses || []) {
+    const witnessCreated = await insertSignatureParty(supabaseAdmin, {
+      companyId: params.companyId,
+      contractSignatureId: params.contractSignatureId,
+      contractId: params.contractId,
+      saleId: params.saleId,
+      role: witness.role,
+      signerName: witness.name ?? null,
+      signerCpf: witness.cpf ?? null,
+      signerPhone: witness.phone ?? null,
+      signerEmail: witness.email ?? null,
+      withPublicToken: witness.withPublicToken !== false,
+      expiresAt: params.expiresAt,
+    });
+    parties.push(witnessCreated.party);
+    witnessTokens.push({
+      role: witness.role,
+      partyId: witnessCreated.party.id,
+      token: witnessCreated.token,
+      signUrl: witnessCreated.signUrl,
+    });
+  }
+
   return {
     parties,
     buyerToken: params.buyer.token,
@@ -360,6 +427,8 @@ export async function createPartiesForSignatureProcess(
     buyerSignUrl: buyerCreated.signUrl || buildSaleSignUrl(params.buyer.token),
     spouseSignUrl,
     vendorTokens,
+    intervenientPartyId,
+    witnessTokens,
   };
 }
 
@@ -436,7 +505,7 @@ export async function markPartySigned(
 }
 
 /**
- * Reemite link para BUYER, SPOUSE ou VENDOR (com token público) ainda não assinados.
+ * Reemite link para BUYER, SPOUSE, VENDOR (com token) ou WITNESS_* ainda não assinados.
  */
 export async function reissuePartyPublicLink(
   supabaseAdmin: SupabaseClient,
@@ -446,9 +515,17 @@ export async function reissuePartyPublicLink(
   const isVendorWithLink =
     role === 'VENDOR' &&
     Boolean(party.signature_url || party.signature_token_hash);
-  if (role !== 'BUYER' && role !== 'SPOUSE' && !isVendorWithLink) {
+  const isWitnessWithLink =
+    (role === 'WITNESS_1' || role === 'WITNESS_2') &&
+    Boolean(party.signature_url || party.signature_token_hash);
+  if (
+    role !== 'BUYER' &&
+    role !== 'SPOUSE' &&
+    !isVendorWithLink &&
+    !isWitnessWithLink
+  ) {
     throw new Error(
-      'Somente comprador, cônjuge ou vendedor com link público podem reemitir.',
+      'Somente comprador, cônjuge, vendedor ou testemunha com link público podem reemitir.',
     );
   }
   if (String(party.status).toUpperCase() === 'SIGNED') {
@@ -501,23 +578,46 @@ export function toPublicPartyViews(
     BUYER: 1,
     SPOUSE: 2,
     VENDOR: 3,
+    INTERVENIENT: 4,
+    WITNESS_1: 5,
+    WITNESS_2: 6,
   };
 
   const views = parties.map((party) => {
     const status = String(party.status).toUpperCase() as SaleSignaturePartyStatus;
     const role = party.role;
+    const roleKey = String(role).toUpperCase();
     const resolvedUrl = resolvePartySignatureUrl(party.signature_url);
     const hasPublicLink = Boolean(resolvedUrl || party.signature_url);
-    // BUYER/SPOUSE sempre públicos; VENDOR compartilhável quando tem token/URL (ARAGUAIA).
+    // BUYER/SPOUSE sempre públicos; VENDOR/WITNESS compartilháveis com token/URL.
+    // INTERVENIENT: assinatura administrativa — sem compartilhamento público.
     const shareableRole =
       isPublicPartyRole(role) ||
-      (String(role).toUpperCase() === 'VENDOR' && hasPublicLink);
+      (roleKey === 'VENDOR' && hasPublicLink) ||
+      ((roleKey === 'WITNESS_1' || roleKey === 'WITNESS_2') && hasPublicLink);
     const canShare =
       shareableRole &&
       ['PENDING', 'VIEWED'].includes(status) &&
       hasPublicLink;
     const canResend = canShare;
     const publicUrl = includeUrls && shareableRole ? resolvedUrl || party.signature_url || null : null;
+
+    const sigData =
+      party.signature_data && typeof party.signature_data === 'object'
+        ? party.signature_data
+        : {};
+    const representativeName =
+      roleKey === 'INTERVENIENT'
+        ? String(sigData.representative_name || '').trim() || null
+        : null;
+    const representativeCpf =
+      roleKey === 'INTERVENIENT'
+        ? String(sigData.representative_cpf || '').trim() || null
+        : null;
+    const companyCnpj =
+      roleKey === 'INTERVENIENT'
+        ? String(sigData.company_cnpj || party.signer_cpf || '').trim() || null
+        : null;
 
     return {
       id: party.id,
@@ -552,6 +652,11 @@ export function toPublicPartyViews(
         shareableRole &&
         ['PENDING', 'VIEWED'].includes(status) &&
         !publicUrl,
+      representativeName,
+      representativeCpfMasked: representativeCpf
+        ? maskCpfPublic(representativeCpf)
+        : null,
+      companyCnpjMasked: companyCnpj ? maskCpfPublic(companyCnpj) : null,
     };
   });
 

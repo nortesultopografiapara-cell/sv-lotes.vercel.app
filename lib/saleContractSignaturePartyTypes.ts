@@ -2,9 +2,28 @@
  * Tipos dos participantes da assinatura eletrônica de venda.
  */
 
-export const SALE_SIGNATURE_PARTY_ROLES = ['BUYER', 'SPOUSE', 'VENDOR'] as const;
+export const SALE_SIGNATURE_PARTY_ROLES = [
+  'BUYER',
+  'SPOUSE',
+  'VENDOR',
+  'INTERVENIENT',
+  'WITNESS_1',
+  'WITNESS_2',
+] as const;
 
 export type SaleSignaturePartyRole = (typeof SALE_SIGNATURE_PARTY_ROLES)[number];
+
+/** Um por processo. VENDOR fica de fora de propósito (ARAGUAIA tem 2 PF). */
+export const SALE_SIGNATURE_SINGLETON_ROLES = [
+  'BUYER',
+  'SPOUSE',
+  'INTERVENIENT',
+  'WITNESS_1',
+  'WITNESS_2',
+] as const;
+
+export type SaleSignatureSingletonRole =
+  (typeof SALE_SIGNATURE_SINGLETON_ROLES)[number];
 
 export const SALE_SIGNATURE_PARTY_STATUSES = [
   'PENDING',
@@ -73,6 +92,10 @@ export type SaleSignaturePartyPublicView = {
   canShare: boolean;
   /** Preview: SPOUSE/BUYER pendente sem URL — modal deve exibir erro, não omitir. */
   missingPublicUrl?: boolean;
+  /** INTERVENIENT PJ — nome do representante (signature_data). */
+  representativeName?: string | null;
+  representativeCpfMasked?: string | null;
+  companyCnpjMasked?: string | null;
 };
 
 export function saleSignaturePartyRoleLabel(
@@ -82,7 +105,23 @@ export function saleSignaturePartyRoleLabel(
   if (key === 'BUYER') return 'Comprador';
   if (key === 'SPOUSE') return 'Cônjuge anuente';
   if (key === 'VENDOR') return 'Vendedora';
+  if (key === 'INTERVENIENT') return 'Interveniente';
+  if (key === 'WITNESS_1') return 'Testemunha 1';
+  if (key === 'WITNESS_2') return 'Testemunha 2';
   return 'Signatário';
+}
+
+export function isSaleSignatureSingletonRole(
+  role?: string | null,
+): boolean {
+  const key = String(role || '').toUpperCase();
+  return (
+    key === 'BUYER' ||
+    key === 'SPOUSE' ||
+    key === 'INTERVENIENT' ||
+    key === 'WITNESS_1' ||
+    key === 'WITNESS_2'
+  );
 }
 
 export function saleSignaturePartyStatusLabel(

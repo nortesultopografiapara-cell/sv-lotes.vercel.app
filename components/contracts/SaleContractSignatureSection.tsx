@@ -146,6 +146,7 @@ export const SaleContractSignatureSection = forwardRef<
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [vendorSignOpen, setVendorSignOpen] = useState(false);
+  const [intervenientSignOpen, setIntervenientSignOpen] = useState(false);
   const [signingVendor, setSigningVendor] = useState(false);
   const [vendorSignSuccess, setVendorSignSuccess] = useState<string | null>(null);
   const [vendorDefaults, setVendorDefaults] = useState({
@@ -379,6 +380,24 @@ export const SaleContractSignatureSection = forwardRef<
         document: String(p.signer_cpf || ''),
         email: String(p.signer_email || p.email || ''),
       }));
+  }, [parties]);
+
+  const pendingIntervenientTarget = useMemo(() => {
+    const party = parties.find(
+      (p) =>
+        p.role === 'INTERVENIENT' &&
+        !['SIGNED', 'CANCELLED', 'EXPIRED'].includes(
+          String(p.status || '').toUpperCase(),
+        ),
+    );
+    if (!party) return null;
+    return {
+      partyId: party.id,
+      name: String(party.signer_name || party.name || 'INTERVENIENTE'),
+      document: String(party.signer_cpf || ''),
+      email: String(party.signer_email || party.email || ''),
+      representativeName: party.representativeName || null,
+    };
   }, [parties]);
 
   const vendorPartyCount = useMemo(
@@ -618,7 +637,7 @@ export const SaleContractSignatureSection = forwardRef<
 
       {parties.length > 0 && (
         <div className="border border-[var(--border-color)] rounded-lg p-3 space-y-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
               Assinaturas
             </p>
@@ -629,6 +648,25 @@ export const SaleContractSignatureSection = forwardRef<
               </p>
             )}
           </div>
+          {pendingIntervenientTarget &&
+            (showVendorSignButton ||
+              String(status || '').toUpperCase() === 'PARTIALLY_SIGNED' ||
+              String(status || '').toUpperCase() === 'CLIENT_SIGNED') && (
+            <div className="flex flex-wrap gap-2">
+              <ActionChip
+                icon={ShieldCheck}
+                label={
+                  signingVendor
+                    ? 'Assinando…'
+                    : `Assinar pela ${pendingIntervenientTarget.name} — INTERVENIENTE`
+                }
+                onClick={() => setIntervenientSignOpen(true)}
+                disabled={signingVendor}
+                primary
+              />
+            </div>
+          )}
+          <div className="max-h-72 overflow-y-auto overscroll-contain space-y-3 pr-1">
           {shareParties.map((party) => {
             const contact = resolveSalePartyShareContact(party, {
               fallbackPhone: party.role === 'BUYER' ? buyerPhone : null,
@@ -638,7 +676,9 @@ export const SaleContractSignatureSection = forwardRef<
             const partyMessage =
               party.role === 'BUYER' ||
               party.role === 'SPOUSE' ||
-              party.role === 'VENDOR'
+              party.role === 'VENDOR' ||
+              party.role === 'WITNESS_1' ||
+              party.role === 'WITNESS_2'
                 ? buildSalePartySignatureShareMessage({
                     signerName: party.signer_name || party.roleLabel,
                     role: party.role,
@@ -664,6 +704,18 @@ export const SaleContractSignatureSection = forwardRef<
                     ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
                     : party.statusLabel}
                 </p>
+                {(party.role === 'WITNESS_1' || party.role === 'WITNESS_2') &&
+                  !party.signer_name &&
+                  party.status !== 'SIGNED' && (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Identidade será preenchida pela testemunha ao abrir o link.
+                  </p>
+                )}
+                {party.role === 'INTERVENIENT' && party.representativeName && (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Representante: {party.representativeName}
+                  </p>
+                )}
                 {contactLine && (
                   <p className="text-[11px] text-[var(--text-muted)]">
                     Contato: {contactLine}
@@ -682,6 +734,15 @@ export const SaleContractSignatureSection = forwardRef<
                   String(status || '').toUpperCase() === 'CLIENT_SIGNED' && (
                   <p className="text-[11px] text-emerald-300/80">
                     Liberada para assinar
+                  </p>
+                )}
+                {party.role === 'INTERVENIENT' &&
+                  party.status !== 'SIGNED' &&
+                  !['CANCELLED', 'EXPIRED'].includes(
+                    String(party.status || '').toUpperCase(),
+                  ) && (
+                  <p className="text-[11px] text-emerald-300/80">
+                    Assinatura administrativa pela empresa
                   </p>
                 )}
                 {party.canShare && url && (
@@ -716,6 +777,13 @@ export const SaleContractSignatureSection = forwardRef<
                         });
                       }}
                     />
+                    <ActionChip
+                      icon={ExternalLink}
+                      label="Abrir página"
+                      onClick={() =>
+                        window.open(url, '_blank', 'noopener,noreferrer')
+                      }
+                    />
                     {party.canResend && (
                       <ActionChip
                         icon={Send}
@@ -728,6 +796,7 @@ export const SaleContractSignatureSection = forwardRef<
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -764,7 +833,8 @@ export const SaleContractSignatureSection = forwardRef<
             <ActionChip icon={Share2} label="Compartilhar" onClick={() => setShareOpen(true)} />
           </>
         )}
-        {showVendorSignButton && (
+        {showVendorSignButton &&
+          (vendorPartyCount <= 1 || pendingVendorTargets.length > 0) && (
           <ActionChip
             icon={ShieldCheck}
             label={
@@ -852,6 +922,39 @@ export const SaleContractSignatureSection = forwardRef<
         vendorTargets={multiVendorPending ? pendingVendorTargets : []}
         onSign={handleVendorSign}
       />
+
+      {pendingIntervenientTarget && (
+        <SaleContractVendorSignModal
+          isOpen={intervenientSignOpen}
+          onClose={() => setIntervenientSignOpen(false)}
+          companyName={pendingIntervenientTarget.name}
+          contractNumber={String(contract.contract_number || '')}
+          busy={signingVendor}
+          defaultName={pendingIntervenientTarget.name}
+          defaultDocument={pendingIntervenientTarget.document}
+          defaultEmail={pendingIntervenientTarget.email}
+          documentLabel="CNPJ"
+          vendorTargets={[
+            {
+              partyId: pendingIntervenientTarget.partyId,
+              name: pendingIntervenientTarget.name,
+              document: pendingIntervenientTarget.document,
+              email: pendingIntervenientTarget.email,
+              emailRequired: false,
+            },
+          ]}
+          onSign={async (input) => {
+            await handleVendorSign({
+              ...input,
+              vendorRole: 'Interveniente',
+              partyId: pendingIntervenientTarget.partyId,
+            });
+            setVendorSignSuccess(
+              `Contrato assinado pela INTERVENIENTE (${pendingIntervenientTarget.name}) com sucesso.`,
+            );
+          }}
+        />
+      )}
     </div>
   );
 });

@@ -1,10 +1,15 @@
 /**
  * Orquestração servidor: Liberar lote e encerrar venda.
- * Fases: plano → cancelar Asaas abertas → aplicar local → auditoria.
- * Sem migration — usa status existentes (cancelado / CANCELLED / Disponível).
+ * Fases: plano → cancelar Asaas abertas → cancelar Inter abertas → aplicar local → auditoria.
+ * Parcelas não pagas: UPDATE status=cancelado (auditoria). Listagens operacionais
+ * Financeiro/Cobranças excluem cancelado por padrão — não hard-delete (preserva pagos).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  listOpenInterBankChargeIdsForSale,
+  resolveInterChargesForRelease,
+} from '@/lib/banking/inter/interChargeCancelForRelease';
 import {
   cancelCompanyCharge,
   getCompanyChargeStatus,
@@ -22,6 +27,7 @@ import {
   isCanceledContractStatus,
   isCanceledSaleStatus,
   isLocalAsaasCancelCandidateStatus,
+  isLocalInterCancelCandidateStatus,
   isPaidAsaasChargeStatus,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
@@ -32,6 +38,7 @@ import {
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
   summarizeReleaseCharges,
+  summarizeReleaseInterCharges,
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
   type ReleaseAsaasDisposition,
@@ -56,6 +63,7 @@ export type ReleaseLotStage =
   | 'load_preview'
   | 'validate_motive'
   | 'cancel_asaas'
+  | 'cancel_inter'
   | 'cancel_receipts'
   | 'cancel_commissions'
   | 'cancel_signatures'
@@ -118,6 +126,8 @@ export type ReleaseLotExecuteResult = {
   cancelledUnpaidReceipts: number;
   cancelledAsaasCharges: number;
   failedAsaasCharges: Array<{ chargeId: string; error: string }>;
+  cancelledInterCharges: number;
+  failedInterCharges: Array<{ chargeId: string; error: string }>;
   totalPaidAmount: number;
   motiveCode: ReleaseLotMotiveCode;
   motiveLabel: string;
@@ -277,6 +287,7 @@ async function loadSaleContext(
   contract: Record<string, unknown> | null;
   receipts: ReceiptRow[];
   charges: ChargeRow[];
+  interCharges: ChargeRow[];
   customerName: string | null;
   documentsPreserved: number;
 }> {
@@ -286,6 +297,7 @@ async function loadSaleContext(
       contract: null,
       receipts: [],
       charges: [],
+      interCharges: [],
       customerName: null,
       documentsPreserved: 0,
     };
@@ -384,6 +396,28 @@ async function loadSaleContext(
     .eq('company_id', companyId);
   const charges = (chargeRows || []) as ChargeRow[];
 
+  let interCharges: ChargeRow[] = [];
+  try {
+    const interRows = await listOpenInterBankChargeIdsForSale(
+      admin,
+      companyId,
+      saleId,
+      { financeReceiptIds: receipts.map((r) => r.id) },
+    );
+    interCharges = interRows.map((r) => ({
+      id: r.id,
+      sale_id: saleId,
+      installment_id: r.finance_receipt_id,
+      status: r.status,
+      company_id: companyId,
+    }));
+  } catch (err) {
+    console.warn(
+      '[releaseLot] load bank_charges Inter',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   let customerName: string | null = null;
   const customerId = String((sale as { customer_id?: string }).customer_id || '').trim();
   if (customerId) {
@@ -412,6 +446,7 @@ async function loadSaleContext(
     contract,
     receipts,
     charges,
+    interCharges,
     customerName,
     documentsPreserved,
   };
@@ -425,12 +460,15 @@ function buildPreviewFromContext(params: {
   contract: Record<string, unknown> | null;
   receipts: ReceiptRow[];
   charges: ChargeRow[];
+  interCharges: ChargeRow[];
   customerName: string | null;
   documentsPreserved: number;
 }): ReleaseLotPreview {
-  const { block, companyId, saleId, sale, contract, receipts, charges } = params;
+  const { block, companyId, saleId, sale, contract, receipts, charges, interCharges } =
+    params;
   const receiptSummary = summarizeReleaseReceipts(receipts);
   const chargeSummary = summarizeReleaseCharges(charges);
+  const interSummary = summarizeReleaseInterCharges(interCharges);
 
   const unpaidReceiptIds = receipts
     .filter((r) => isActiveUnpaidFinanceReceipt(r))
@@ -438,10 +476,12 @@ function buildPreviewFromContext(params: {
   const paidReceiptIds = receipts
     .filter((r) => isPaidFinanceReceiptStatus(r))
     .map((r) => r.id);
-  // Candidatas locais (PENDING/REGISTERED/OVERDUE) — a contagem cancelável
-  // efetiva vem após sync remoto em resolveCancelableAsaasCharges.
+  // Candidatas locais Asaas (PENDING/REGISTERED/OVERDUE) — contagem efetiva após sync.
   const candidateChargeIds = charges
     .filter((c) => isLocalAsaasCancelCandidateStatus(c.status))
+    .map((c) => c.id);
+  const candidateInterChargeIds = interCharges
+    .filter((c) => isLocalInterCancelCandidateStatus(c.status))
     .map((c) => c.id);
 
   const saleStatus = sale ? String(sale.status || '') : null;
@@ -461,6 +501,9 @@ function buildPreviewFromContext(params: {
   const signedAt = contract?.signed_at ? String(contract.signed_at) : '';
   const sigStatus = String(contract?.signature_status || '').toUpperCase();
   const contractSigned = Boolean(signedAt) || sigStatus === 'SIGNED';
+
+  const openCancelableCharges =
+    chargeSummary.openAsaasCharges + interSummary.openInterCharges;
 
   return {
     lotId: block.id,
@@ -492,9 +535,16 @@ function buildPreviewFromContext(params: {
     openAsaasCharges: chargeSummary.openAsaasCharges,
     paidAsaasCharges: chargeSummary.paidAsaasCharges,
     alreadyCanceledAsaasCharges: chargeSummary.alreadyCanceledAsaasCharges,
+    openInterCharges: interSummary.openInterCharges,
+    paidInterCharges: interSummary.paidInterCharges,
+    alreadyCanceledInterCharges: interSummary.alreadyCanceledInterCharges,
+    openCancelableCharges,
     asaasBlockedCharges: 0,
     asaasBlockedDetails: [],
+    interBlockedCharges: 0,
+    interBlockedDetails: [],
     openChargeIds: candidateChargeIds,
+    openInterChargeIds: candidateInterChargeIds,
     unpaidReceiptIds,
     paidReceiptIds,
   };
@@ -528,6 +578,7 @@ export async function getReleaseLotPreview(
     contract: ctx.contract,
     receipts: ctx.receipts,
     charges: ctx.charges,
+    interCharges: ctx.interCharges,
     customerName: ctx.customerName,
     documentsPreserved: ctx.documentsPreserved,
   });
@@ -556,6 +607,33 @@ export async function getReleaseLotPreview(
       preview.hasPreservedPayments = true;
     }
   }
+
+  // Sync Inter: situacao remota antes de contar canceláveis.
+  if (preview.openInterChargeIds.length > 0) {
+    const interPlan = await resolveInterChargesForRelease(
+      admin,
+      companyId,
+      preview.openInterChargeIds,
+      { executeCancel: false },
+    );
+    preview.openInterChargeIds = interPlan.cancelableIds;
+    preview.openInterCharges = interPlan.cancelableIds.length;
+    preview.paidInterCharges += interPlan.preservedPaid;
+    preview.alreadyCanceledInterCharges += interPlan.alreadyCancelled;
+    preview.interBlockedCharges = interPlan.failed.length;
+    preview.interBlockedDetails = interPlan.failed.map((f) => ({
+      chargeId: f.chargeId,
+      error: f.error,
+      localStatus: f.localStatus ?? null,
+      remoteStatus: f.remoteStatus ?? null,
+    }));
+    if (interPlan.preservedPaid > 0) {
+      preview.hasPreservedPayments = true;
+    }
+  }
+
+  preview.openCancelableCharges =
+    preview.openAsaasCharges + preview.openInterCharges;
 
   return preview;
 }
@@ -832,6 +910,26 @@ async function applyLocalRelease(
     }
     cancelledUnpaidReceipts = (updated || []).length;
 
+    // Segurança local: inativa bank_charges Inter abertos das parcelas canceladas
+    // (já devem ter sido canceladas no provedor na fase cancel_inter).
+    // Usa finance_receipt_id (não exige sale_id) para cobrir linhas órfãs de vínculo.
+    const { error: bankCancelErr } = await admin
+      .from('bank_charges')
+      .update({
+        status: 'CANCELLED',
+        updated_at: now,
+      })
+      .eq('company_id', companyId)
+      .eq('provider', 'INTER')
+      .in('finance_receipt_id', preview.unpaidReceiptIds)
+      .in('status', ['PENDING', 'REGISTERED', 'OVERDUE']);
+    if (bankCancelErr) {
+      console.warn(
+        '[releaseLot] cancel bank_charges Inter local',
+        bankCancelErr.message,
+      );
+    }
+
     if (preview.paidReceiptIds.length > 0) {
       const { data: stillPaidCheck } = await admin
         .from('finance_receipts')
@@ -1080,6 +1178,8 @@ export async function executeReleaseLot(
       cancelledUnpaidReceipts: 0,
       cancelledAsaasCharges: 0,
       failedAsaasCharges: [],
+      cancelledInterCharges: 0,
+      failedInterCharges: [],
       totalPaidAmount: preview.totalPaidAmount,
       motiveCode: motive.motiveCode,
       motiveLabel: motive.motiveLabel,
@@ -1106,6 +1206,13 @@ export async function executeReleaseLot(
   // Sync remoto antes de qualquer DELETE; falha crítica bloqueia limpeza local.
   let cancelledAsaasCharges = 0;
   let failedAsaasCharges: Array<{
+    chargeId: string;
+    error: string;
+    localStatus?: string | null;
+    remoteStatus?: string | null;
+  }> = [];
+  let cancelledInterCharges = 0;
+  let failedInterCharges: Array<{
     chargeId: string;
     error: string;
     localStatus?: string | null;
@@ -1140,6 +1247,42 @@ export async function executeReleaseLot(
           'ASAAS_CANCEL_FAILED',
           'cancel_asaas',
           { failedAsaasCharges },
+        );
+      }
+    }
+
+    const interCandidateIds = liveCtx.interCharges
+      .filter((c) => isLocalInterCancelCandidateStatus(c.status))
+      .map((c) => c.id);
+
+    if (interCandidateIds.length > 0) {
+      const interResult = await resolveInterChargesForRelease(
+        admin,
+        preview.companyId,
+        interCandidateIds,
+        {
+          executeCancel: true,
+          motiveCode: motive.motiveCode,
+        },
+      );
+      cancelledInterCharges =
+        interResult.cancelled + interResult.alreadyCancelled;
+      failedInterCharges = interResult.failed.map((f) => ({
+        chargeId: f.chargeId,
+        error: f.error,
+        localStatus: f.localStatus ?? null,
+        remoteStatus: f.remoteStatus ?? null,
+      }));
+
+      if (failedInterCharges.length > 0) {
+        throw releaseErr(
+          `Não foi possível cancelar ${failedInterCharges.length} cobrança(s) no Banco Inter. O lote NÃO foi liberado e o contrato NÃO foi cancelado. Cobrança(s): ${failedInterCharges
+            .map((f) => f.chargeId.slice(0, 8))
+            .join(', ')}.`,
+          502,
+          'INTER_CANCEL_FAILED',
+          'cancel_inter',
+          { failedInterCharges },
         );
       }
     }
@@ -1183,6 +1326,8 @@ export async function executeReleaseLot(
     cancelledUnpaidReceipts: local.cancelledUnpaidReceipts,
     cancelledAsaasCharges,
     failedAsaasCharges: [],
+    cancelledInterCharges,
+    failedInterCharges: [],
     totalPaidAmount: preview.totalPaidAmount,
     motiveCode: motive.motiveCode,
     motiveLabel: motive.motiveLabel,

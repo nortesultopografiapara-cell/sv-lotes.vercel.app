@@ -128,7 +128,9 @@ function testPortalContractRoute(): void {
   const route = read('app/api/portal-cliente/contract/route.ts');
   assert(route.includes('validatePortalLotSaleScope'), 'validates sale scope');
   assert(route.includes('resolvePortalClientContract'), 'uses contract lookup');
-  assert(route.includes('readStoredContractHtml'), 'reads stored html only');
+  assert(route.includes('readStoredContractHtml'), 'reads stored html for unsigned');
+  assert(route.includes('shouldBlockUnsignedFallbackAfterElectronicSign'), 'blocks unsigned when SIGNED');
+  assert(route.includes('loadPortalContractPdfForDownload'), 'SIGNED serves pdf_signed_url');
   assert(!route.includes('contractRegeneration'), 'no regeneration');
   assert(!route.includes('/map'), 'no map route');
 }

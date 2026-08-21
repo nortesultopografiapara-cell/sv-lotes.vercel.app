@@ -145,6 +145,96 @@ async function insertRowWithColumnFallback(
   return { data: null, error: { message: `Nenhum campo válido para inserir em ${table}.` } };
 }
 
+/**
+ * Insert em lote com o mesmo fallback de coluna ausente do insert unitário.
+ * Usado para finance_receipts (160–300 parcelas) — evita N round-trips e gravação parcial
+ * no meio do cronograma. Sem RPC/transação nova: ainda depende de rollbackPartialSale
+ * no catch externo se a operação falhar após a venda já criada.
+ *
+ * @returns operations = quantidade de chamadas .insert() (1 para até chunkSize rows).
+ */
+export async function insertRowsWithColumnFallback(
+  supabase: SupabaseClient,
+  table: string,
+  payloads: Record<string, unknown>[],
+  select = 'id',
+  options?: { chunkSize?: number },
+): Promise<{
+  data: Record<string, unknown>[];
+  error: { message?: string } | null;
+  operations: number;
+}> {
+  if (!payloads.length) {
+    return { data: [], error: null, operations: 0 };
+  }
+
+  // 300 rows ≪ limite prático PostgREST; um lote único (como importação de vendas).
+  const chunkSize = Math.max(
+    1,
+    Math.min(options?.chunkSize ?? payloads.length, payloads.length),
+  );
+  let template = { ...payloads[0] };
+  const allInserted: Record<string, unknown>[] = [];
+  let operations = 0;
+
+  for (let offset = 0; offset < payloads.length; offset += chunkSize) {
+    const slice = payloads.slice(offset, offset + chunkSize);
+    let attemptKeys = Object.keys(template);
+
+    while (attemptKeys.length > 0) {
+      const batch = slice.map((row) => {
+        const next: Record<string, unknown> = {};
+        for (const key of attemptKeys) {
+          if (key in row) next[key] = row[key];
+        }
+        return next;
+      });
+
+      const { data, error } = await supabase.from(table).insert(batch).select(select);
+      operations += 1;
+
+      if (!error && data) {
+        allInserted.push(...(data as Record<string, unknown>[]));
+        template = batch[0] ?? template;
+        break;
+      }
+
+      const missingCol = parseMissingColumn(error?.message);
+      if (missingCol && attemptKeys.includes(missingCol)) {
+        attemptKeys = attemptKeys.filter((k) => k !== missingCol);
+        continue;
+      }
+
+      return {
+        data: allInserted,
+        error: error ?? { message: `Falha ao inserir em ${table}.` },
+        operations,
+      };
+    }
+
+    if (attemptKeys.length === 0) {
+      return {
+        data: allInserted,
+        error: { message: `Nenhum campo válido para inserir em ${table}.` },
+        operations,
+      };
+    }
+  }
+
+  return { data: allInserted, error: null, operations };
+}
+
+/** Estimativa de bytes JSON do payload de parcelas (diagnóstico de tamanho). */
+export function estimateFinanceReceiptsPayloadBytes(
+  payloads: Record<string, unknown>[],
+): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(payloads), 'utf8');
+  } catch {
+    return payloads.length * 512;
+  }
+}
+
 async function loadProjectSnapshotForSale(
   supabase: SupabaseClient,
   projectId: string,
@@ -524,22 +614,33 @@ export async function executeGisSaleCreate(
     );
 
     logSaleStep('create_receipts', startedAt, { count: financePayloads.length });
-    let financeData: Record<string, unknown>[] = [];
     if (financePayloads.length > 0) {
-      const insertedReceipts: Record<string, unknown>[] = [];
-      for (const financePayload of financePayloads) {
-        const { data: receiptRow, error: financeError } = await insertRowWithColumnFallback(
-          supabase,
-          'finance_receipts',
-          financePayload,
-          'id, amount, due_date, status, installment_number',
+      const payloadBytes = estimateFinanceReceiptsPayloadBytes(financePayloads);
+      logSaleStep('create_receipts_batch', startedAt, {
+        count: financePayloads.length,
+        approxBytes: payloadBytes,
+      });
+      const {
+        data: insertedReceipts,
+        error: financeError,
+        operations,
+      } = await insertRowsWithColumnFallback(
+        supabase,
+        'finance_receipts',
+        financePayloads,
+        'id, amount, due_date, status, installment_number',
+      );
+      logSaleStep('create_receipts_done', startedAt, {
+        inserted: insertedReceipts.length,
+        operations,
+        approxBytes: payloadBytes,
+      });
+      if (financeError || insertedReceipts.length !== financePayloads.length) {
+        throw new Error(
+          financeError?.message ||
+            `Falha ao criar parcelas (inseridas ${insertedReceipts.length}/${financePayloads.length}).`,
         );
-        if (financeError || !receiptRow) {
-          throw new Error(financeError?.message || 'Falha ao criar parcelas');
-        }
-        insertedReceipts.push(receiptRow);
       }
-      financeData = insertedReceipts;
     }
 
     await replaceSaleBalloonInstallments(supabase, saleId, balloonPlan);

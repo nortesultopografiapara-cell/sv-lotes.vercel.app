@@ -3,6 +3,7 @@ import {
   loadPortalContractPdfForDownload,
   PortalContractPdfUnavailableError,
   PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+  PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
 } from '@/lib/portal-cliente/contractDownload';
 import { resolvePortalClientContract } from '@/lib/portal-cliente/contractLookup';
 import { isClientPortalEnabled } from '@/lib/portal-cliente/config';
@@ -52,14 +53,35 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: 'Contrato não encontrado.' }, { status: 404 });
   }
 
+  const { data: signatureRow } = await admin
+    .from('contract_signatures')
+    .select('signature_status')
+    .eq('contract_id', contract.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const enriched = {
+    ...contract,
+    signature_status:
+      String(signatureRow?.signature_status || contract.signature_status || '') ||
+      contract.signature_status,
+  };
+
   try {
-    const { bytes, contractNumber } = await loadPortalContractPdfForDownload(admin, contract);
+    const { bytes, contractNumber } = await loadPortalContractPdfForDownload(
+      admin,
+      enriched,
+    );
     return createSaleContractPdfResponse(bytes, 'attachment', contractNumber);
   } catch (err) {
     if (err instanceof PortalContractPdfUnavailableError) {
+      const message =
+        err.message || PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE;
+      const isProcessing = message === PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE;
       return NextResponse.json(
-        { ok: false, message: PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE },
-        { status: 404 },
+        { ok: false, message },
+        { status: isProcessing ? 409 : 404 },
       );
     }
 

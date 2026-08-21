@@ -244,7 +244,7 @@ export function filterChargeInstallments(
     const status = view.installmentStatus;
     const matchStatus =
       filters.statusFilter === 'Todas'
-        ? true
+        ? status !== 'cancelado' && status !== 'canceled' && status !== 'cancelled'
         : filters.statusFilter === 'Pago'
           ? status === 'pago' || status === 'paid'
           : filters.statusFilter === 'Pendente'
@@ -252,7 +252,7 @@ export function filterChargeInstallments(
             : filters.statusFilter === 'Vencido'
               ? status === 'atrasado' || status === 'overdue'
               : filters.statusFilter === 'Cancelado'
-                ? status === 'cancelado' || status === 'canceled'
+                ? status === 'cancelado' || status === 'canceled' || status === 'cancelled'
                 : true;
 
     const matchProject =

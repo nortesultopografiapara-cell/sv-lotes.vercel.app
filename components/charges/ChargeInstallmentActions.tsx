@@ -80,6 +80,9 @@ export function resolveChargeInstallmentActionsProps(
     | 'onSendEmail'
   >,
 ): ChargeActionVisibility {
+  const st = String(params.view.installmentStatus || '').toLowerCase();
+  const installmentCanceled =
+    st === 'cancelado' || st === 'canceled' || st === 'cancelled';
   return resolveChargeActionVisibility({
     charge: params.charge,
     installmentPaid: params.installmentPaid,
@@ -90,6 +93,7 @@ export function resolveChargeInstallmentActionsProps(
     installmentId: params.view.id,
     customerPhone: params.customerPhone,
     hasPaidChargeHistory: params.hasPaidChargeHistory,
+    installmentCanceled,
   });
 }
 
@@ -119,6 +123,9 @@ export function ChargeInstallmentActions({
 }: ChargeInstallmentActionsProps) {
   const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
+  const st = String(view.installmentStatus || '').toLowerCase();
+  const installmentCanceled =
+    st === 'cancelado' || st === 'canceled' || st === 'cancelled';
 
   const actions = resolveChargeActionVisibility({
     charge,
@@ -130,6 +137,7 @@ export function ChargeInstallmentActions({
     installmentId: view.id,
     customerPhone,
     hasPaidChargeHistory,
+    installmentCanceled,
   });
 
   const paymentLink = !isInter && charge ? resolveCompanyAsaasPaymentLink(charge) : '';
@@ -141,18 +149,29 @@ export function ChargeInstallmentActions({
   const interActions = isInter
     ? resolveInterIssuedChargeActions({
         charge,
-        installmentPaid,
+        installmentPaid: installmentPaid || installmentCanceled,
         customerEmail,
         customerPhone,
       })
     : null;
   const showGenerate = Boolean(
-    actions.showGenerate && providerReady && !interActions?.hideGenerate,
+    actions.showGenerate &&
+      providerReady &&
+      !interActions?.hideGenerate &&
+      !installmentCanceled,
   );
-  const showCopyBarcodeLine = isInter
-    ? Boolean(interActions?.showCopyLinha)
-    : actions.showCopyBarcodeLine;
-  const showCopyPix = isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix;
+  const showCopyBarcodeLine =
+    !installmentCanceled &&
+    (isInter ? Boolean(interActions?.showCopyLinha) : actions.showCopyBarcodeLine);
+  const showCopyPix =
+    !installmentCanceled &&
+    (isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix);
+
+  if (installmentCanceled) {
+    return (
+      <span className="text-[10px] text-[var(--text-muted)]">Parcela cancelada</span>
+    );
+  }
 
   if (!isInter && !companyAsaasEnabled) {
     return (

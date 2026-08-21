@@ -243,10 +243,13 @@ function testHtmlGeneration() {
   assert(!html.includes('[estado civil pendente]'), 'sem placeholder estado civil');
   assert(!html.includes('[profissão pendente]'), 'sem placeholder profissão');
   assert(!html.includes('[endereço pendente]'), 'sem placeholder endereço');
-  assert(!html.includes('confrontando com'), 'sem confrontações');
-  assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro confrontações');
-  assert(!html.includes('confrontando pela'), 'sem confrontando pela');
-  assert(!html.includes('confrontante'), 'sem palavra confrontante');
+  assert(html.includes('confrontando com'), 'com confrontações dinâmicas');
+  assert(html.includes('Rua Principal'), 'confrontante frente GIS');
+  assert(html.includes('Área verde'), 'confrontante fundo GIS');
+  assert(html.includes('Chácara 13'), 'confrontante lateral direita GIS');
+  assert(html.includes('Chácara 11'), 'confrontante lateral esquerda GIS');
+  assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro lista antiga');
+  assert(!html.includes('confrontando pela'), 'sem confrontando pela (legado)');
   assert(html.includes('medindo:'), 'intro medidas texto corrido');
   assert(html.includes('frente'), 'medida frente');
   assert(html.includes('fundo'), 'medida fundo');
@@ -275,19 +278,27 @@ function testHtmlGeneration() {
   assert(html.includes('araguaia-keep-together'), 'classe keep-together');
   assert(html.includes('Avenida dos Ipês'), 'endereço vendedores');
 
-  const sigMarker = '<div class="contract-closing-and-signatures--araguaia">';
+  const sigMarker = 'contract-closing-and-signatures--araguaia';
   const sigIdx = html.indexOf(sigMarker);
   assert(sigIdx >= 0, 'bloco assinaturas presente');
-  const sigBlock = html.slice(sigIdx);
+  const sigBlock = html.slice(Math.max(0, sigIdx - 40));
   assert(sigBlock.includes('Daniel Roberto Rivelino de Sousa'), 'sig Daniel');
   assert(sigBlock.includes('Aldenise Alves Sousa'), 'sig Aldenise');
   assert(sigBlock.includes('Cliente Teste Araguaia'), 'sig comprador');
+  assert(sigBlock.includes('PROMITENTE COMPRADOR'), 'sig papel comprador');
+  assert(/<p[^>]*>INTERVENIENTE<\/p>/i.test(sigBlock), 'sig INTERVENIENTE no lugar do cônjuge');
+  assert(sigBlock.includes('R R NEGÓCIOS'), 'sig R R no bloco');
+  assert(
+    sigBlock.includes('57.590.706/0001-78') || sigBlock.includes('57590706000178'),
+    'sig CNPJ R R',
+  );
+  assert(sigBlock.includes('Representada por:'), 'sig representada por');
+  assert(sigBlock.includes('signature-slot-intervenient'), 'classe interveniente');
   assert(sigBlock.includes('TESTEMUNHA 1'), 'sig testemunha 1');
   assert(sigBlock.includes('TESTEMUNHA 2'), 'sig testemunha 2');
-  assert(!/<p[^>]*>INTERVENIENTE<\/p>/i.test(sigBlock), 'sig sem INTERVENIENTE');
-  assert(!sigBlock.includes('R R NEGÓCIOS'), 'sig sem R R Negócios');
-  assert(!sigBlock.includes('signature-slot-intervenient'), 'sig sem slot interveniente');
   assert(!sigBlock.includes('CÔNJUGE DO PROMITENTE'), 'sig sem cônjuge (venda sem spouse)');
+  assert(!sigBlock.includes('signature-slot-spouse'), 'sig sem slot spouse');
+  assert(!html.includes('CÔNJUGE ANUENTE'), 'preâmbulo sem qualificação de cônjuge anuente');
 }
 
 function testSignatureBlockWithSpouse() {
@@ -307,17 +318,23 @@ function testSignatureBlockWithSpouse() {
     },
     financeReceipts: RECEIPTS,
   });
-  const sigMarker = '<div class="contract-closing-and-signatures--araguaia">';
+  const sigMarker = 'contract-closing-and-signatures--araguaia';
   const sigIdx = html.indexOf(sigMarker);
   assert(sigIdx >= 0, 'bloco com cônjuge presente');
-  const sigBlock = html.slice(sigIdx);
-  assert(sigBlock.includes('CÔNJUGE DO PROMITENTE COMPRADOR'), 'slot cônjuge');
-  assert(sigBlock.includes('João Cônjuge Araguaia') || sigBlock.includes('Joao Cônjuge'), 'nome cônjuge');
-  assert(sigBlock.includes('390.533.447-05') || sigBlock.includes('39053344705'), 'CPF cônjuge');
-  assert(sigBlock.includes('signature-slot-spouse'), 'classe spouse');
-  assert(!/<p[^>]*>INTERVENIENTE<\/p>/i.test(sigBlock), 'com cônjuge sem INTERVENIENTE');
-  assert(!sigBlock.includes('R R NEGÓCIOS'), 'com cônjuge sem R R no bloco');
-  assert(html.includes('INTERVENIENTE'), 'R R permanece no corpo/preâmbulo');
+  const sigBlock = html.slice(Math.max(0, sigIdx - 40));
+  assert(sigBlock.includes('Daniel Roberto Rivelino de Sousa'), 'com spouse: Daniel');
+  assert(sigBlock.includes('Aldenise Alves Sousa'), 'com spouse: Aldenise');
+  assert(sigBlock.includes('Cliente Teste Araguaia'), 'com spouse: comprador');
+  assert(/<p[^>]*>INTERVENIENTE<\/p>/i.test(sigBlock), 'com spouse: INTERVENIENTE no bloco');
+  assert(sigBlock.includes('R R NEGÓCIOS'), 'com spouse: R R no bloco');
+  assert(sigBlock.includes('Representada por:'), 'com spouse: representada por');
+  assert(sigBlock.includes('TESTEMUNHA 1') && sigBlock.includes('TESTEMUNHA 2'), 'com spouse: testemunhas');
+  assert(!sigBlock.includes('CÔNJUGE DO PROMITENTE COMPRADOR'), 'sem slot cônjuge');
+  assert(!sigBlock.includes('João Cônjuge Araguaia'), 'nome cônjuge fora do bloco de assinatura');
+  assert(!sigBlock.includes('signature-slot-spouse'), 'sem classe spouse');
+  assert(!html.includes('CÔNJUGE ANUENTE'), 'preâmbulo sem cônjuge anuente');
+  assert(html.includes('INTERVENIENTE'), 'R R permanece no preâmbulo');
+  assert(html.includes('anuência do cônjuge'), 'cláusula cessão intacta');
 }
 
 function testOriginalFidelityMarkers() {

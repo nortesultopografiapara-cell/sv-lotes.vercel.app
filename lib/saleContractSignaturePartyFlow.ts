@@ -11,10 +11,21 @@ import {
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
+  ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
+  ARAGUAIA_MISSING_LEGAL_REPRESENTATIVE_MESSAGE,
+  assertAraguaiaEsignV2LegalRepresentativeReady,
   buildAraguaiaEsignVendorPartyInputs,
+  buildAraguaiaIntervenientPartyInput,
+  buildAraguaiaWitnessPartyInputs,
+  findDisallowedAraguaiaRrSignatureParty,
   isAraguaiaSaleContractModel,
+  isAraguaiaWitnessPartyRole,
   resolveAraguaiaVendorSignerEmail,
+  shouldPersistAraguaiaIntervenientParty,
+  shouldPersistAraguaiaWitnessParties,
+  validateAraguaiaWitnessIdentity,
 } from '@/lib/araguaiaContractEsign';
+import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import {
   assertSpouseReadyForSignatureSend,
   hasRecantoSpouse,
@@ -162,7 +173,7 @@ export async function loadSaleAndCompanyForSignature(
   if (projectId) {
     const { data: projectData } = await supabaseAdmin
       .from('projects')
-      .select('id, name, contract_model, company_id')
+      .select('id, name, contract_model, company_id, seller_parties_json')
       .eq('id', projectId)
       .maybeSingle();
     project = (projectData as Record<string, unknown>) || null;
@@ -277,6 +288,20 @@ export async function assertSaleSignaturePartiesReadyBeforeSend(
   if (!spouseCheck.ok) {
     throw new SaleContractSignatureError(spouseCheck.message, 'validation');
   }
+
+  if (
+    shouldEnableAraguaiaEsignV2({
+      companyId: loaded.company?.id ? String(loaded.company.id) : null,
+      contractModel,
+    })
+  ) {
+    const legalBlock = assertAraguaiaEsignV2LegalRepresentativeReady({
+      company: loaded.company,
+    });
+    if (legalBlock) {
+      throw new SaleContractSignatureError(legalBlock, 'validation');
+    }
+  }
 }
 
 /**
@@ -295,7 +320,7 @@ export async function createSignaturePartiesAfterSend(
     supabaseAdmin,
     params.contractRow,
   );
-  const { sale, company, customer, rawContractModel, companyLoadError, saleLoadError } =
+  const { sale, company, customer, rawContractModel, companyLoadError, saleLoadError, project } =
     loaded;
 
   const storedHtml = readStoredContractHtml(params.contractRow) || '';
@@ -333,12 +358,7 @@ export async function createSignaturePartiesAfterSend(
 
   const partiesRequested = ['BUYER'];
   if (spouseRequired) partiesRequested.push('SPOUSE');
-  const araguaiaEsign = isAraguaiaSaleContractModel(contractModel);
-  if (araguaiaEsign) {
-    partiesRequested.push('VENDOR', 'VENDOR');
-  } else {
-    partiesRequested.push('VENDOR');
-  }
+  // Contagem real de VENDOR preenchida após buildAraguaiaEsignVendorPartyInputs.
 
   console.log('[signature-parties] spouse_gate', {
     contractId: String(params.signature.contract_id || '').slice(0, 8),
@@ -381,17 +401,48 @@ export async function createSignaturePartiesAfterSend(
     );
   }
 
+  const araguaiaEsign = isAraguaiaSaleContractModel(contractModel);
+  const araguaiaEsignV2 = shouldEnableAraguaiaEsignV2({
+    companyId: company?.id ? String(company.id) : null,
+    contractModel,
+  });
+  const araguaiaVendorMode = araguaiaEsignV2 ? 'v2' : 'legacy';
+
   const seller = company
     ? normalizeSellerFromCompany(company)
     : { representative: '', representativeCpf: '', email: '', phone: '' };
 
+  if (araguaiaEsignV2) {
+    const legalBlock = assertAraguaiaEsignV2LegalRepresentativeReady({
+      company,
+    });
+    if (legalBlock) {
+      throw new SaleContractSignatureError(legalBlock, 'validation');
+    }
+  }
+
   const araguaiaVendors = araguaiaEsign
-    ? buildAraguaiaEsignVendorPartyInputs()
+    ? buildAraguaiaEsignVendorPartyInputs({
+        company,
+        project: araguaiaEsignV2 ? null : project,
+        companyId: company?.id ? String(company.id) : null,
+        contractModel,
+        mode: araguaiaVendorMode,
+      })
     : null;
+
+  if (araguaiaEsign) {
+    partiesRequested.length = 1; // BUYER
+    if (spouseRequired) partiesRequested.push('SPOUSE');
+    for (let i = 0; i < (araguaiaVendors?.length || 0); i++) {
+      partiesRequested.push('VENDOR');
+    }
+  }
 
   console.log('[signature-parties] araguaia_esign_gate', {
     contractId: String(params.signature.contract_id || '').slice(0, 8),
     araguaiaEsign,
+    araguaiaEsignV2,
     effectiveContractModel: contractModel,
     loadedContractModel: loaded.contractModel,
     projectName: String(loaded.project?.name || '').slice(0, 40),
@@ -404,9 +455,11 @@ export async function createSignaturePartiesAfterSend(
     })),
   });
 
-  if (araguaiaEsign && (!araguaiaVendors || araguaiaVendors.length !== 2)) {
+  if (araguaiaEsign && (!araguaiaVendors || araguaiaVendors.length < 1)) {
     throw new SaleContractSignatureError(
-      'ARAGUAIA: buildAraguaiaEsignVendorPartyInputs deve retornar exatamente 2 VENDOR.',
+      araguaiaEsignV2
+        ? ARAGUAIA_MISSING_LEGAL_REPRESENTATIVE_MESSAGE
+        : 'ARAGUAIA: configure o Representante Legal da empresa (Configurações) ou os promitentes do empreendimento.',
       'validation',
     );
   }
@@ -472,6 +525,42 @@ export async function createSignaturePartiesAfterSend(
             withPublicToken: true,
           }))
         : null,
+      // Persistência remota: schema V2 + env + ARAGUAIA + allowlist company_id.
+      intervenient:
+        araguaiaEsign &&
+        shouldPersistAraguaiaIntervenientParty({
+          companyId,
+          contractModel,
+        })
+          ? (() => {
+              const i = buildAraguaiaIntervenientPartyInput({
+                company,
+                mode: araguaiaVendorMode,
+              });
+              return {
+                name: i.name,
+                cnpj: i.cnpj,
+                phone: i.phone,
+                email: i.email,
+                signatureData: i.signatureData,
+              };
+            })()
+          : null,
+      witnesses:
+        araguaiaEsign &&
+        shouldPersistAraguaiaWitnessParties({
+          companyId,
+          contractModel,
+        })
+          ? buildAraguaiaWitnessPartyInputs().map((w) => ({
+              role: w.role,
+              name: w.name,
+              cpf: w.cpf,
+              phone: w.phone,
+              email: w.email,
+              withPublicToken: true,
+            }))
+          : null,
       expiresAt: params.expiresAt,
     });
 
@@ -496,17 +585,21 @@ export async function createSignaturePartiesAfterSend(
         .map((p) => onlyDigits(p.signer_cpf || ''))
         .filter(Boolean)
         .sort();
-      const expectedCpfs = ['82091226220', '85656011291'];
+      const expectedCpfs = (araguaiaVendors || [])
+        .map((v) => onlyDigits(v.cpf || ''))
+        .filter(Boolean)
+        .sort();
       console.log('[signature-parties] araguaia_vendors_persisted', {
         contractSignatureId: String(params.signature.id).slice(0, 8),
         vendorCount,
         vendorCpfs,
+        expectedCpfs,
         names: vendorParties.map((p) => p.signer_name),
         partyIds: vendorParties.map((p) => p.id),
       });
-      if (vendorCount !== 2) {
+      if (vendorCount !== expectedCpfs.length || vendorCount < 1) {
         throw new SaleContractSignatureError(
-          `ARAGUAIA exige exatamente 2 VENDOR persistidos (recebido ${vendorCount}). Reenvie após correção.`,
+          `ARAGUAIA exige ${expectedCpfs.length} VENDOR persistido(s) (recebido ${vendorCount}). Reenvie após correção.`,
           'validation',
         );
       }
@@ -517,12 +610,16 @@ export async function createSignaturePartiesAfterSend(
           'validation',
         );
       }
-      const hasRrAsParty = persisted.some((p) =>
-        /R\s*R\s*NEG[OÓ]CIOS/i.test(String(p.signer_name || '')),
-      );
-      if (hasRrAsParty) {
+      // V1: R R nunca é party eletrônica.
+      // V2 (gate ON + ARAGUAIA + allowlist): INTERVENIENT com nome R R é esperado.
+      const disallowedRr = findDisallowedAraguaiaRrSignatureParty({
+        parties: persisted,
+        companyId,
+        contractModel,
+      });
+      if (disallowedRr) {
         throw new SaleContractSignatureError(
-          'R R Negócios não deve ser signatária no modelo ARAGUAIA.',
+          ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
           'validation',
         );
       }
@@ -785,6 +882,7 @@ export async function signPartyElectronically(
     signerName: string;
     signerDocument: string;
     signerEmail: string;
+    signerPhone?: string | null;
     ipAddress?: string | null;
     userAgent?: string | null;
   },
@@ -800,7 +898,15 @@ export async function signPartyElectronically(
     throw new SaleContractSignatureError('Link de assinatura inválido.');
   }
 
-  if (party.role !== 'BUYER' && party.role !== 'SPOUSE' && party.role !== 'VENDOR') {
+  const partyRoleKey = String(party.role).toUpperCase();
+  const isWitness = isAraguaiaWitnessPartyRole(partyRoleKey);
+
+  if (
+    party.role !== 'BUYER' &&
+    party.role !== 'SPOUSE' &&
+    party.role !== 'VENDOR' &&
+    !isWitness
+  ) {
     throw new SaleContractSignatureError(
       'Este link não é válido para assinatura pública.',
     );
@@ -834,48 +940,71 @@ export async function signPartyElectronically(
     throw new SaleContractSignatureError('O link de assinatura expirou.');
   }
 
-  const signerName = String(input.signerName || '').trim();
-  const signerDocument = onlyDigits(input.signerDocument);
-  const signerEmailRaw = normalizeSignerEmail(input.signerEmail);
-  const hasEmail = isValidSignerEmail(signerEmailRaw);
-  const partyPhone = String(party.signer_phone || '').trim();
-  const lockedVendorEmail = resolveAraguaiaVendorSignerEmail({
-    cpf: party.signer_cpf || signerDocument,
-    submittedEmail: hasEmail ? signerEmailRaw : null,
-  });
-  const resolvedSignerEmail =
-    lockedVendorEmail !== undefined
-      ? lockedVendorEmail
-      : hasEmail
-        ? signerEmailRaw
-        : party.role === 'VENDOR'
-          ? null
-          : party.signer_email || null;
+  let signerName = String(input.signerName || '').trim();
+  let signerDocument = onlyDigits(input.signerDocument);
+  let resolvedSignerEmail: string | null = null;
+  let resolvedPhone: string | null = String(party.signer_phone || '').trim() || null;
+
+  if (isWitness) {
+    const validated = validateAraguaiaWitnessIdentity({
+      name: input.signerName,
+      cpf: input.signerDocument,
+      phone: input.signerPhone,
+      email: input.signerEmail,
+    });
+    if (!validated.ok) {
+      throw new SaleContractSignatureError(validated.reason);
+    }
+    signerName = validated.value.name;
+    signerDocument = validated.value.cpf;
+    resolvedSignerEmail = validated.value.email;
+    resolvedPhone = validated.value.phone;
+  } else {
+    const signerEmailRaw = normalizeSignerEmail(input.signerEmail);
+    const hasEmail = isValidSignerEmail(signerEmailRaw);
+    const partyPhone = String(party.signer_phone || '').trim();
+    const lockedVendorEmail = resolveAraguaiaVendorSignerEmail({
+      cpf: party.signer_cpf || signerDocument,
+      submittedEmail: hasEmail ? signerEmailRaw : null,
+    });
+    resolvedSignerEmail =
+      lockedVendorEmail !== undefined
+        ? lockedVendorEmail
+        : hasEmail
+          ? signerEmailRaw
+          : party.role === 'VENDOR'
+            ? null
+            : party.signer_email || null;
+    const resolvedHasEmail = isValidSignerEmail(
+      String(resolvedSignerEmail || ''),
+    );
+
+    if (!signerName || signerDocument.length < 11) {
+      throw new SaleContractSignatureError(
+        'Informe nome completo e CPF válidos para assinar.',
+      );
+    }
+
+    if (!resolvedHasEmail && !partyPhone) {
+      throw new SaleContractSignatureError(
+        'Informe um e-mail válido para assinar.',
+      );
+    }
+
+    if (
+      party.signer_cpf &&
+      onlyDigits(party.signer_cpf) &&
+      onlyDigits(party.signer_cpf) !== signerDocument
+    ) {
+      throw new SaleContractSignatureError(
+        `O CPF informado não corresponde ao ${saleSignaturePartyRoleLabel(party.role).toLowerCase()} deste link.`,
+      );
+    }
+  }
+
   const resolvedHasEmail = isValidSignerEmail(
     String(resolvedSignerEmail || ''),
   );
-
-  if (!signerName || signerDocument.length < 11) {
-    throw new SaleContractSignatureError(
-      'Informe nome completo e CPF válidos para assinar.',
-    );
-  }
-
-  if (!resolvedHasEmail && !partyPhone) {
-    throw new SaleContractSignatureError(
-      'Informe um e-mail válido para assinar.',
-    );
-  }
-
-  if (
-    party.signer_cpf &&
-    onlyDigits(party.signer_cpf) &&
-    onlyDigits(party.signer_cpf) !== signerDocument
-  ) {
-    throw new SaleContractSignatureError(
-      `O CPF informado não corresponde ao ${saleSignaturePartyRoleLabel(party.role).toLowerCase()} deste link.`,
-    );
-  }
 
   const { data: contract, error: contractErr } = await supabaseAdmin
     .from('contracts')
@@ -909,7 +1038,7 @@ export async function signPartyElectronically(
     signerEmail: resolvedHasEmail ? String(resolvedSignerEmail) : '',
     signedAt,
     ipAddress: input.ipAddress || '',
-    party: party.role === 'SPOUSE' ? 'CLIENT' : 'CLIENT',
+    party: 'CLIENT',
   });
   const signatureHash = await computeSignatureHash(
     `${party.role}|${hashPayload}`,
@@ -921,13 +1050,14 @@ export async function signPartyElectronically(
     signerName,
     signerCpf: signerDocument,
     signerEmail: resolvedHasEmail ? String(resolvedSignerEmail) : null,
-    signerPhone: party.signer_phone,
+    signerPhone: resolvedPhone,
     signatureHash,
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
     signedAt,
     signatureData: {
       role: party.role,
+      partyId: party.id,
       browser: ua.browser,
       os: ua.os,
       device: ua.device,
@@ -947,7 +1077,9 @@ export async function signPartyElectronically(
       ? 'SPOUSE_SIGNED'
       : party.role === 'VENDOR'
         ? 'VENDOR_SIGNED'
-        : 'BUYER_SIGNED';
+        : isWitness
+          ? 'CLIENT_SIGNED'
+          : 'BUYER_SIGNED';
 
   await logSignatureEvent(supabaseAdmin, {
     signatureToken: token,
@@ -956,6 +1088,7 @@ export async function signPartyElectronically(
     eventType,
     personName: signerName,
     personEmail: resolvedHasEmail ? String(resolvedSignerEmail) : undefined,
+    personPhone: resolvedPhone || undefined,
     ipAddress: input.ipAddress || undefined,
     userAgent: input.userAgent || undefined,
     eventDescription: `Assinatura eletrônica do ${saleSignaturePartyRoleLabel(party.role).toLowerCase()}.`,
@@ -1058,6 +1191,78 @@ export async function markVendorPartySigned(
     signatureData: {
       role: 'VENDOR',
       partyId: vendor.id,
+      browser: ua.browser,
+      os: ua.os,
+      device: ua.device,
+      approx_location: formatApproxLocation(geo),
+    },
+  });
+}
+
+/**
+ * Assina somente a party INTERVENIENT (PJ). Não altera VENDOR Daniel.
+ * Evento e signature_event_id distintos do VENDOR PF.
+ */
+export async function markIntervenientPartySigned(
+  supabaseAdmin: SupabaseClient,
+  parties: ContractSignaturePartyRow[],
+  input: {
+    companyName: string;
+    companyCnpj: string;
+    representativeName: string;
+    representativeCpf: string;
+    representativeEmail?: string | null;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    signatureHash: string;
+    signedAt: string;
+    partyId?: string | null;
+  },
+): Promise<ContractSignaturePartyRow | null> {
+  const intervenients = parties.filter(
+    (p) => String(p.role).toUpperCase() === 'INTERVENIENT',
+  );
+  if (intervenients.length === 0) return null;
+
+  const intervenient =
+    (input.partyId
+      ? intervenients.find((p) => p.id === input.partyId)
+      : undefined) ||
+    intervenients.find((p) => String(p.status).toUpperCase() !== 'SIGNED') ||
+    intervenients[0];
+
+  if (!intervenient) return null;
+  if (String(intervenient.status).toUpperCase() === 'SIGNED') {
+    return intervenient;
+  }
+
+  const ua = parseUserAgent(input.userAgent);
+  const geo = await resolveIpGeoApprox(input.ipAddress);
+  const existingData =
+    intervenient.signature_data && typeof intervenient.signature_data === 'object'
+      ? intervenient.signature_data
+      : {};
+  const cnpjDigits = onlyDigits(input.companyCnpj);
+  const repCpfDigits = onlyDigits(input.representativeCpf);
+
+  return markPartySigned(supabaseAdmin, intervenient.id, {
+    signerName: input.companyName,
+    signerCpf: cnpjDigits,
+    signerEmail: input.representativeEmail || intervenient.signer_email,
+    signerPhone: intervenient.signer_phone,
+    signatureHash: input.signatureHash,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt: input.signedAt,
+    signatureData: {
+      ...existingData,
+      role: 'INTERVENIENT',
+      party_kind: 'LEGAL_ENTITY',
+      partyId: intervenient.id,
+      company_name: input.companyName,
+      company_cnpj: cnpjDigits,
+      representative_name: input.representativeName,
+      representative_cpf: repCpfDigits,
       browser: ua.browser,
       os: ua.os,
       device: ua.device,

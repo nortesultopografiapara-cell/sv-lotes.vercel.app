@@ -8,6 +8,7 @@ import {
   formatSaasContractAddress,
 } from '@/lib/saasContractAddress';
 import { isSaasContractPlaceholderValue } from '@/lib/saasContractCompanyProfile';
+import { normalizeContractSecondVendorForSave } from '@/lib/contractSecondVendor';
 
 /**
  * Colunas base — idênticas à lista funcional pré-v2 (COMPANY_TECHNICAL_COLUMNS).
@@ -20,7 +21,12 @@ export const COMPANY_SETTINGS_COLUMNS_BASE =
 export const COMPANY_SETTINGS_COLUMNS_EXTENDED =
   'cep, created_at, bairro, company_stamp_url, legal_representative_role, legal_representative_email, legal_representative_phone, use_technical_as_legal_rep, settings_layout';
 
-export const COMPANY_SETTINGS_COLUMNS = `${COMPANY_SETTINGS_COLUMNS_BASE}, ${COMPANY_SETTINGS_COLUMNS_EXTENDED}`;
+/** Coluna Etapa 8.4 — nullable; select separado se migration ainda não aplicada. */
+export const COMPANY_SETTINGS_SECOND_VENDOR_COLUMN = 'contract_second_vendor_json';
+
+export const COMPANY_SETTINGS_COLUMNS = `${COMPANY_SETTINGS_COLUMNS_BASE}, ${COMPANY_SETTINGS_COLUMNS_EXTENDED}, ${COMPANY_SETTINGS_SECOND_VENDOR_COLUMN}`;
+
+export const COMPANY_SETTINGS_COLUMNS_WITHOUT_SECOND_VENDOR = `${COMPANY_SETTINGS_COLUMNS_BASE}, ${COMPANY_SETTINGS_COLUMNS_EXTENDED}`;
 
 export type TechnicalResponsibleFormState = {
   name: string;
@@ -110,7 +116,9 @@ export function buildCompanySettingsSavePayload(
   company: Record<string, unknown>,
   technical: TechnicalResponsibleFormState,
   options?: { normalizeAddress?: boolean; syncNameFromFantasy?: boolean },
-): Record<string, unknown> {
+):
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; error: string } {
   const addressNorm = options?.normalizeAddress
     ? normalizeCompanyAddressForSave(company)
     : {
@@ -125,45 +133,56 @@ export function buildCompanySettingsSavePayload(
   const stampUrl =
     (technical.stamp_url || company.technical_stamp_url || '').toString().trim() || null;
 
+  const secondVendor = normalizeContractSecondVendorForSave(
+    company.contract_second_vendor_json,
+  );
+  if (!secondVendor.ok) {
+    return { ok: false, error: secondVendor.error };
+  }
+
   return {
-    ...(options?.syncNameFromFantasy
-      ? { name: String(company.fantasy_name || company.name || '').trim() || company.name }
-      : {}),
-    fantasy_name: company.fantasy_name,
-    phone: company.phone,
-    email: company.email,
-    address: addressNorm.address,
-    city: addressNorm.city,
-    state: addressNorm.state,
-    zip_code: addressNorm.zip_code,
-    bairro: String(company.bairro ?? '').trim() || null,
-    ...legalRep,
-    logo_url: company.logo_url,
-    signature_url: company.signature_url,
-    company_stamp_url: company.company_stamp_url || null,
-    contract_model: normalizeSaleContractModel(company.contract_model as string),
-    contract_legal_nationality: company.contract_legal_nationality || null,
-    contract_legal_marital_status: company.contract_legal_marital_status || null,
-    contract_legal_profession: company.contract_legal_profession || null,
-    contract_legal_rg: company.contract_legal_rg || null,
-    contract_legal_rg_issuer: company.contract_legal_rg_issuer || null,
-    contract_legal_phone: company.contract_legal_phone || null,
-    contract_legal_email: company.contract_legal_email || null,
-    contract_legal_address: company.contract_legal_address || null,
-    contract_bank_name: company.contract_bank_name || null,
-    contract_bank_branch: company.contract_bank_branch || null,
-    contract_bank_account: company.contract_bank_account || null,
-    contract_bank_pix: company.contract_bank_pix || null,
-    contract_bank_beneficiary: company.contract_bank_beneficiary || null,
-    technical_responsible_name: technical.name.trim() || null,
-    technical_responsible_role: technical.title.trim() || null,
-    technical_responsible_crea: technical.crea.trim() || null,
-    technical_responsible_cau: technical.cau.trim() || null,
-    technical_responsible_cft: technical.cft.trim() || null,
-    technical_responsible_cpf: technical.cpf.trim() || null,
-    technical_responsible_phone: technical.phone.trim() || null,
-    technical_responsible_email: technical.email.trim() || null,
-    technical_signature_url: signatureUrl,
-    technical_stamp_url: stampUrl,
+    ok: true,
+    payload: {
+      ...(options?.syncNameFromFantasy
+        ? { name: String(company.fantasy_name || company.name || '').trim() || company.name }
+        : {}),
+      fantasy_name: company.fantasy_name,
+      phone: company.phone,
+      email: company.email,
+      address: addressNorm.address,
+      city: addressNorm.city,
+      state: addressNorm.state,
+      zip_code: addressNorm.zip_code,
+      bairro: String(company.bairro ?? '').trim() || null,
+      ...legalRep,
+      logo_url: company.logo_url,
+      signature_url: company.signature_url,
+      company_stamp_url: company.company_stamp_url || null,
+      contract_model: normalizeSaleContractModel(company.contract_model as string),
+      contract_legal_nationality: company.contract_legal_nationality || null,
+      contract_legal_marital_status: company.contract_legal_marital_status || null,
+      contract_legal_profession: company.contract_legal_profession || null,
+      contract_legal_rg: company.contract_legal_rg || null,
+      contract_legal_rg_issuer: company.contract_legal_rg_issuer || null,
+      contract_legal_phone: company.contract_legal_phone || null,
+      contract_legal_email: company.contract_legal_email || null,
+      contract_legal_address: company.contract_legal_address || null,
+      contract_second_vendor_json: secondVendor.value,
+      contract_bank_name: company.contract_bank_name || null,
+      contract_bank_branch: company.contract_bank_branch || null,
+      contract_bank_account: company.contract_bank_account || null,
+      contract_bank_pix: company.contract_bank_pix || null,
+      contract_bank_beneficiary: company.contract_bank_beneficiary || null,
+      technical_responsible_name: technical.name.trim() || null,
+      technical_responsible_role: technical.title.trim() || null,
+      technical_responsible_crea: technical.crea.trim() || null,
+      technical_responsible_cau: technical.cau.trim() || null,
+      technical_responsible_cft: technical.cft.trim() || null,
+      technical_responsible_cpf: technical.cpf.trim() || null,
+      technical_responsible_phone: technical.phone.trim() || null,
+      technical_responsible_email: technical.email.trim() || null,
+      technical_signature_url: signatureUrl,
+      technical_stamp_url: stampUrl,
+    },
   };
 }

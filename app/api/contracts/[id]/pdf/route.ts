@@ -4,13 +4,9 @@ import {
   getRequestAuthUser,
   resolveCallerProfile,
 } from '@/lib/supabase/server';
+import { createSaleContractPdfResponse } from '@/lib/saleContractPdfHttp';
+import { loadSignedSaleContractArtifact } from '@/lib/saleContractSignedArtifact';
 import {
-  createSaleContractPdfResponse,
-} from '@/lib/saleContractPdfHttp';
-import {
-  getLatestSignedSaleSignature,
-  loadSaleContractPdfForSign,
-  loadSaleSignPageContext,
   SaleContractSignatureError,
 } from '@/lib/saleContractSignatureService';
 import { loadSaleContractContext } from '@/lib/contractRegeneration';
@@ -63,61 +59,23 @@ export async function GET(
     const url = new URL(request.url);
     const download = url.searchParams.get('download') === '1';
 
-    const signature = await getLatestSignedSaleSignature(supabase, contractId);
-    if (!signature) {
+    const artifact = await loadSignedSaleContractArtifact(
+      supabase,
+      contractId,
+      contract as Record<string, unknown>,
+    );
+
+    if (!artifact) {
       return NextResponse.json(
         { error: 'Contrato sem assinatura eletrônica registrada.' },
         { status: 404 },
       );
     }
 
-    const contractRow = contract as Record<string, unknown>;
-
-    const signContext = await loadSaleSignPageContext(supabase, signature);
-
-    try {
-      const { pdf, contractNumber } = await loadSaleContractPdfForSign(
-        supabase,
-        contractId,
-        { signature, signContext },
-      );
-
-      if (pdf.byteLength >= 5) {
-        return createSaleContractPdfResponse(
-          pdf,
-          download ? 'attachment' : 'inline',
-          contractNumber || String(contract.contract_number || ''),
-        );
-      }
-    } catch (regenErr) {
-      console.warn('[CONTRACT_SIGNED_PDF] regeneration failed', regenErr);
-    }
-
-    const storedSignedUrl = String(contractRow.pdf_signed_url || '').trim();
-    if (storedSignedUrl) {
-      try {
-        const storedRes = await fetch(storedSignedUrl, {
-          cache: 'no-store',
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (storedRes.ok) {
-          const storedBytes = new Uint8Array(await storedRes.arrayBuffer());
-          if (storedBytes.byteLength >= 5) {
-            return createSaleContractPdfResponse(
-              storedBytes,
-              download ? 'attachment' : 'inline',
-              String(contract.contract_number || contractId),
-            );
-          }
-        }
-      } catch (storedErr) {
-        console.warn('[CONTRACT_SIGNED_PDF] stored url fetch failed', storedErr);
-      }
-    }
-
-    return NextResponse.json(
-      { error: 'Falha ao gerar PDF assinado.' },
-      { status: 500 },
+    return createSaleContractPdfResponse(
+      artifact.bytes,
+      download ? 'attachment' : 'inline',
+      artifact.contractNumber,
     );
   } catch (err) {
     const message =

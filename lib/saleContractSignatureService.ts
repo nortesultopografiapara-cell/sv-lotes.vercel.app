@@ -749,6 +749,8 @@ export type SignSaleContractInput = {
   signerName: string;
   signerDocument: string;
   signerEmail: string;
+  /** Obrigatório para WITNESS_* (identidade no link público). */
+  signerPhone?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
@@ -1011,10 +1013,107 @@ export async function signSaleContractByVendor(
     signatureRow,
   );
 
+  const allPartiesListed =
+    partiesForVendor.length > 0
+      ? partiesForVendor
+      : await listSignatureParties(supabaseAdmin, signatureRow.id);
+
+  const intervenientTarget =
+    input.partyId
+      ? allPartiesListed.find(
+          (p) =>
+            p.id === input.partyId &&
+            String(p.role).toUpperCase() === 'INTERVENIENT',
+        )
+      : null;
+
+  // Assinatura administrativa da PJ — party distinta do VENDOR Daniel.
+  if (intervenientTarget) {
+    const { markIntervenientPartySigned } = await import(
+      '@/lib/saleContractSignaturePartyFlow'
+    );
+    const {
+      readAraguaiaIntervenientFromSignatureData,
+    } = await import('@/lib/araguaiaContractEsign');
+    const meta = readAraguaiaIntervenientFromSignatureData(
+      intervenientTarget.signature_data,
+    ) || {
+      party_kind: 'LEGAL_ENTITY' as const,
+      company_name: String(intervenientTarget.signer_name || '').trim(),
+      company_cnpj: onlyDigits(intervenientTarget.signer_cpf || ''),
+      representative_name: '',
+      representative_cpf: '',
+    };
+    const signedAt = new Date().toISOString();
+    const vendorName = String(input.vendorName || meta.company_name).trim();
+    const vendorDocument = onlyDigits(
+      input.vendorDocument || meta.company_cnpj,
+    );
+    const hash = await computeSignatureHash(
+      buildSignatureHashPayload({
+        contractId: String(signatureRow.contract_id || contractId),
+        contractNumber: '',
+        signerName: vendorName,
+        signerDocument: vendorDocument,
+        signerEmail: String(input.vendorEmail || '').trim(),
+        signedAt,
+        ipAddress: input.ipAddress || '',
+        party: 'PROVIDER',
+      }),
+    );
+    await markIntervenientPartySigned(supabaseAdmin, allPartiesListed, {
+      companyName: vendorName || meta.company_name,
+      companyCnpj: vendorDocument || meta.company_cnpj,
+      representativeName: meta.representative_name,
+      representativeCpf: meta.representative_cpf,
+      representativeEmail: String(input.vendorEmail || '').trim() || null,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      signatureHash: hash,
+      signedAt,
+      partyId: intervenientTarget.id,
+    });
+    const synced = await syncAggregateSignatureStatus(
+      supabaseAdmin,
+      signatureRow,
+    );
+    await logSignatureEvent(supabaseAdmin, {
+      signatureToken: signatureRow.signature_token,
+      signatureSource: 'SALE',
+      signatureRecordId: signatureRow.id,
+      eventType: 'INTERVENIENT_SIGNED',
+      personName: meta.company_name,
+      personEmail: String(input.vendorEmail || '').trim() || undefined,
+      eventDescription:
+        'Participante INTERVENIENT (PJ) marcado como assinado — distinto do VENDOR PF.',
+      occurredAt: signedAt,
+      metadata: {
+        role: 'INTERVENIENT',
+        partyId: intervenientTarget.id,
+        company_cnpj: meta.company_cnpj,
+        representative_cpf: meta.representative_cpf,
+      },
+    });
+    if (synced.aggregate !== 'SIGNED') {
+      return {
+        signature: synced.signature as ContractSignatureRow,
+        pdfSignedUrl: null,
+      };
+    }
+    // Aggregate SIGNED — segue geração de PDF abaixo (reutiliza fluxo multi-vendor).
+    signatureRow = synced.signature as ContractSignatureRow;
+  }
+
+  // Aggregate SIGNED via INTERVENIENT — segue PDF (pula mark VENDOR).
+  const intervenientJustCompletedProcess = Boolean(
+    intervenientTarget &&
+      String(signatureRow.signature_status || '').toUpperCase() === 'SIGNED',
+  );
+
   const vendorPartyRows = partiesForVendor.filter(
     (p) => String(p.role).toUpperCase() === 'VENDOR',
   );
-  const multiVendor = vendorPartyRows.length > 1;
+  const multiVendor = vendorPartyRows.length > 1 || intervenientJustCompletedProcess;
 
   if (partiesForVendor.length === 0) {
     if (!canVendorSignSaleContract(signatureRow.signature_status)) {
@@ -1101,7 +1200,8 @@ export async function signSaleContractByVendor(
   }
 
   // Multi-VENDOR (ARAGUAIA): marca só a party correspondente; PDF só quando todos assinaram.
-  if (multiVendor) {
+  // Se INTERVENIENT acabou de completar o aggregate, não remarca VENDOR.
+  if (multiVendor && !intervenientJustCompletedProcess) {
     const vendorSignedAtEarly = new Date().toISOString();
     const vendorHashEarly = await computeSignatureHash(
       buildSignatureHashPayload({
@@ -1650,6 +1750,9 @@ export async function loadSaleContractPdfForSign(
       resolveAraguaiaVendorSignerEmail,
     } =
       await import('@/lib/araguaiaContractEsign');
+    const { canProduceElectronicSignedContractDocument } = await import(
+      '@/lib/saleContractSignatureRenderMode'
+    );
     const { readPartySignatureEventId } = await import(
       '@/lib/saleContractSignatureParties'
     );
@@ -1728,25 +1831,113 @@ export async function loadSaleContractPdfForSign(
         })
       : null;
 
-    if (parties.length > 0) {
-      // Selos por papel (VENDOR/BUYER/SPOUSE) — nunca deduplicar por CPF.
-      html = applyElectronicSignatureStampsToContractHtml(
-        html,
-        buildElectronicStampsFromSignatureParties({
-          parties,
-          buyerNameFallback: buyerParty?.signer_name || buyerName,
-          vendorNameFallback:
-            signature.vendor_signer_name ||
-            vendorParty?.signer_name ||
-            seller.representative,
-          legacyBuyerSignedAt: signature.signed_at,
-          legacyVendorSignedAt: signature.vendor_signed_at,
-          legacyVendorSigned: Boolean(signature.vendor_signed_at),
-          legacyBuyerSigned:
-            String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
-            Boolean(signature.signed_at),
-        }),
+    const intervenientParty = parties.find(
+      (p) => String(p.role).toUpperCase() === 'INTERVENIENT',
+    );
+    let intervenientCard: {
+      companyName: string;
+      companyCnpj?: string | null;
+      representativeName?: string | null;
+      representativeCpf?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      signedAt?: string | null;
+      ipAddress?: string | null;
+      signatureHash?: string | null;
+      browser?: string | null;
+      os?: string | null;
+      device?: string | null;
+      approxLocation?: string | null;
+      signatureEventId?: string | null;
+    } | null = null;
+    if (intervenientParty) {
+      const { readAraguaiaIntervenientFromSignatureData } = await import(
+        '@/lib/araguaiaContractEsign'
       );
+      const meta = readAraguaiaIntervenientFromSignatureData(
+        intervenientParty.signature_data,
+      );
+      intervenientCard = {
+        companyName:
+          meta?.company_name ||
+          String(intervenientParty.signer_name || '').trim() ||
+          '—',
+        companyCnpj:
+          meta?.company_cnpj || intervenientParty.signer_cpf || null,
+        representativeName: meta?.representative_name || null,
+        representativeCpf: meta?.representative_cpf || null,
+        email: intervenientParty.signer_email,
+        phone: intervenientParty.signer_phone,
+        signedAt: intervenientParty.signed_at,
+        ipAddress: intervenientParty.ip_address,
+        signatureHash: intervenientParty.signature_hash,
+        signatureEventId: readPartySignatureEventId(intervenientParty),
+        browser: readPartyUaField(intervenientParty, 'browser'),
+        os: readPartyUaField(intervenientParty, 'os'),
+        device: readPartyUaField(intervenientParty, 'device'),
+        approxLocation: readPartyLocation(intervenientParty),
+      };
+    }
+
+    const witnessParties = parties
+      .filter((p) => {
+        const role = String(p.role).toUpperCase();
+        return role === 'WITNESS_1' || role === 'WITNESS_2';
+      })
+      .sort((a, b) =>
+        String(a.role).toUpperCase().localeCompare(String(b.role).toUpperCase()),
+      );
+    const witnessCards =
+      witnessParties.length > 0
+        ? witnessParties.map((p) => ({
+            role: String(p.role).toUpperCase(),
+            name: String(p.signer_name || ''),
+            cpf: p.signer_cpf,
+            email: p.signer_email,
+            phone: p.signer_phone,
+            signedAt: p.signed_at,
+            ipAddress: p.ip_address,
+            signatureHash: p.signature_hash,
+            signatureEventId: readPartySignatureEventId(p),
+            browser: readPartyUaField(p, 'browser'),
+            os: readPartyUaField(p, 'os'),
+            device: readPartyUaField(p, 'device'),
+            approxLocation: readPartyLocation(p),
+          }))
+        : null;
+
+    if (parties.length > 0) {
+      const useAraguaiaElectronicBlock =
+        isAraguaiaSaleContractModel(contractModelForCert) &&
+        canProduceElectronicSignedContractDocument(
+          signature.signature_status,
+        );
+
+      if (useAraguaiaElectronicBlock) {
+        // ELECTRONIC_SIGNED: substitui linhas físicas; certificado detalhado à parte.
+        const { applyAraguaiaElectronicSignaturesToContractHtml } =
+          await import('@/lib/araguaiaContractElectronicSignatures');
+        html = applyAraguaiaElectronicSignaturesToContractHtml(html, parties);
+      } else {
+        // Modelos clássicos / multi-party: selos sobre slots (sem alterar ARAGUAIA V2).
+        html = applyElectronicSignatureStampsToContractHtml(
+          html,
+          buildElectronicStampsFromSignatureParties({
+            parties,
+            buyerNameFallback: buyerParty?.signer_name || buyerName,
+            vendorNameFallback:
+              signature.vendor_signer_name ||
+              vendorParty?.signer_name ||
+              seller.representative,
+            legacyBuyerSignedAt: signature.signed_at,
+            legacyVendorSignedAt: signature.vendor_signed_at,
+            legacyVendorSigned: Boolean(signature.vendor_signed_at),
+            legacyBuyerSigned:
+              String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
+              Boolean(signature.signed_at),
+          }),
+        );
+      }
     } else {
       html = stripManualContractSignaturesForSignedPdf(html);
     }
@@ -1835,6 +2026,8 @@ export async function loadSaleContractPdfForSign(
         ? readPartySignatureEventId(buyerParty)
         : null,
       personVendorCards,
+      intervenientCard,
+      witnessCards,
     });
 
     // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.

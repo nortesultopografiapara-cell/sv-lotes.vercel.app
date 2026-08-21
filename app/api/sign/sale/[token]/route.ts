@@ -243,6 +243,8 @@ export async function GET(
   const partyPhone = String(party?.signer_phone || '').trim() || null;
   const emailOptional =
     partyRole === 'VENDOR' && Boolean(partyPhone) && !prefillEmail;
+  const isWitnessParty =
+    partyRole === 'WITNESS_1' || partyRole === 'WITNESS_2';
 
   return NextResponse.json({
     success: true,
@@ -269,13 +271,14 @@ export async function GET(
         ),
     },
     buyer: {
-      name: buyerName,
-      document:
-        party?.signer_cpf ||
-        customer?.document ||
-        customer?.cpf ||
-        null,
-      email: prefillEmail,
+      name: isWitnessParty ? null : buyerName,
+      document: isWitnessParty
+        ? null
+        : party?.signer_cpf ||
+          customer?.document ||
+          customer?.cpf ||
+          null,
+      email: isWitnessParty ? null : prefillEmail,
     },
     party: partyRole
       ? {
@@ -290,8 +293,10 @@ export async function GET(
               : partyStatus,
           ),
           phone: partyPhone,
-          email: partyEmailForPrefill,
-          emailOptional,
+          email: isWitnessParty ? null : partyEmailForPrefill,
+          emailOptional: isWitnessParty ? false : emailOptional,
+          identityBlank: isWitnessParty && !party?.signer_name,
+          requiresPhone: isWitnessParty,
         }
       : null,
     signature: {
@@ -323,7 +328,13 @@ export async function GET(
       title:
         partyRole === 'SPOUSE'
           ? 'Assinatura do cônjuge anuente'
-          : 'Assinatura do comprador',
+          : partyRole === 'WITNESS_1'
+            ? 'Assinatura da Testemunha 1'
+            : partyRole === 'WITNESS_2'
+              ? 'Assinatura da Testemunha 2'
+              : partyRole === 'VENDOR'
+                ? 'Assinatura do promitente vendedor'
+                : 'Assinatura do comprador',
     },
     pdfUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1`,
     pdfDownloadUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`,
@@ -347,6 +358,7 @@ export async function POST(
       signerName: String(body.signerName || ''),
       signerDocument: String(body.signerDocument || ''),
       signerEmail: String(body.signerEmail || ''),
+      signerPhone: body.signerPhone != null ? String(body.signerPhone) : null,
       ipAddress: resolveClientIp(request),
       userAgent: request.headers.get('user-agent'),
     });

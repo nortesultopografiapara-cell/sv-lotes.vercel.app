@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
+import {
+  loadPortalContractPdfForDownload,
+  PortalContractPdfUnavailableError,
+  PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE,
+  PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+} from '@/lib/portal-cliente/contractDownload';
 import { resolvePortalClientContract } from '@/lib/portal-cliente/contractLookup';
 import { isClientPortalEnabled } from '@/lib/portal-cliente/config';
 import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
@@ -7,11 +13,13 @@ import {
   getClientPortalSessionCookie,
   readClientPortalSessionToken,
 } from '@/lib/portal-cliente/session';
-import { resolvePublicBaseUrl } from '@/lib/signatureVerifyUrls';
+import { createSaleContractPdfResponse } from '@/lib/saleContractPdfHttp';
+import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
 import { createAdminSupabase } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function GET() {
   if (!isClientPortalEnabled()) {
@@ -47,6 +55,52 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: 'Contrato não encontrado.' }, { status: 404 });
   }
 
+  const { data: signatureRow } = await admin
+    .from('contract_signatures')
+    .select('signature_status')
+    .eq('contract_id', contract.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const signatureStatus = String(
+    signatureRow?.signature_status || contract.signature_status || '',
+  ).toUpperCase();
+  const enriched = {
+    ...contract,
+    signature_status: signatureStatus || contract.signature_status,
+  };
+
+  const electronicallySigned = shouldBlockUnsignedFallbackAfterElectronicSign({
+    signatureStatus,
+    contractStatus: contract.status,
+    pdfSignedUrl: (contract as { pdf_signed_url?: string | null }).pdf_signed_url,
+  });
+
+  if (electronicallySigned) {
+    try {
+      const { bytes, contractNumber } = await loadPortalContractPdfForDownload(
+        admin,
+        enriched,
+      );
+      return createSaleContractPdfResponse(bytes, 'inline', contractNumber);
+    } catch (err) {
+      if (err instanceof PortalContractPdfUnavailableError) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+          },
+          { status: 409 },
+        );
+      }
+      const message =
+        err instanceof Error ? err.message : 'Falha ao abrir PDF assinado.';
+      console.error('[portal-cliente/contract] signed view', message);
+      return NextResponse.json({ ok: false, message }, { status: 500 });
+    }
+  }
+
   const html = readStoredContractHtml(contract as Record<string, unknown>);
   if (html) {
     return new NextResponse(html, {
@@ -59,12 +113,8 @@ export async function GET() {
     });
   }
 
-  const signatureToken = String(contract.signature_token || '').trim();
-  const signatureStatus = String(contract.signature_status || '').toUpperCase();
-  if (signatureToken && (signatureStatus === 'SIGNED' || contract.pdf_signed_url)) {
-    const pdfUrl = `${resolvePublicBaseUrl()}/api/sign/sale/${encodeURIComponent(signatureToken)}?pdf=1`;
-    return NextResponse.redirect(pdfUrl);
-  }
-
-  return NextResponse.json({ ok: false, message: 'Contrato ainda não disponível.' }, { status: 404 });
+  return NextResponse.json(
+    { ok: false, message: PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE },
+    { status: 404 },
+  );
 }

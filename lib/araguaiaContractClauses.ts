@@ -1,7 +1,7 @@
 /**
  * Cláusulas jurídicas — Chacreamento Araguaia.
  * Fonte oficial: INSTRUMENTO PARTICULAR DE PROMESSA DE COMPRA E VENDA (original).
- * Única exclusão autorizada: confrontantes do lote. Medidas permanecem.
+ * Confrontantes do lote: mesma fonte canônica do popup GIS (assistedConfrontation).
  */
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
@@ -32,6 +32,27 @@ function moneyPhrase(fmt: string, extensoText: string): string {
 function sideMetersPhrase(fmt: string, extensoText: string): string {
   if (extensoText) return `${strong(fmt)} (${esc(extensoText)})`;
   return strong(fmt);
+}
+
+/** Medida + confrontante GIS (sem inventar vizinho se ausente). */
+function sideMeasureWithConfrontant(
+  metersFmt: string,
+  metersExtenso: string,
+  confrontant: string | null | undefined,
+): string {
+  const measure = sideMetersPhrase(metersFmt, metersExtenso);
+  const label = String(confrontant ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (
+    !label ||
+    /^a\s*definir$/i.test(label) ||
+    label === '—' ||
+    /^n[aã]o\s+informado$/i.test(label)
+  ) {
+    return measure;
+  }
+  return `${measure}, confrontando com ${strong(label)}`;
 }
 
 function parcelsCountPhrase(qtd: number): string {
@@ -127,34 +148,44 @@ export const ARAGUAIA_CONTRACT_TITLE =
 export function buildAraguaiaPartiesPreambleHtml(
   ctx: AraguaiaContractContext,
 ): string {
-  const seller1 = sellerInline(ctx, 0);
-  const seller2 = sellerInline(ctx, 1);
+  const sellerParts = ctx.sellers.map((_, i) => sellerInline(ctx, i));
+  const sellersPhrase =
+    sellerParts.length === 0
+      ? '<em>[promitente vendedor não configurado]</em>'
+      : sellerParts.length === 1
+        ? sellerParts[0]
+        : sellerParts.length === 2
+          ? `${sellerParts[0]} e ${sellerParts[1]}`
+          : `${sellerParts.slice(0, -1).join(', ')} e ${sellerParts[sellerParts.length - 1]}`;
+  const residenceWord =
+    ctx.sellers.length <= 1
+      ? 'residente e domiciliado(a)'
+      : 'ambos residentes e domiciliados';
   const sellersAddress =
     ctx.sellers[0]?.address ||
     ctx.sellers[1]?.address ||
     ARAGUAIA_SELLERS_ADDRESS;
   const intervenienteSeat = ARAGUAIA_SELLERS_ADDRESS;
-
-  const spouseLine = ctx.hasSpouse
-    ? itemP(
-        `e seu(sua) cônjuge anuente ${ctx.spouseQualificationHtml}, doravante designado(a) simplesmente <strong>CÔNJUGE ANUENTE</strong>;`,
-      )
-    : '';
+  const vendorsDenomination =
+    ctx.sellers.length <= 1
+      ? 'PROMITENTE VENDEDOR'
+      : 'PROMITENTES VENDEDORES';
+  const representedWord =
+    ctx.sellers.length <= 1 ? 'neste ato representado(a)' : 'neste ato representados';
 
   return `
     <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
       ${itemP(
-        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${seller1} e ${seller2}, ambos residentes e domiciliados na ${esc(
+        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${residenceWord} na ${esc(
           sellersAddress,
-        )}, neste ato representados pela pessoa jurídica <strong>${esc(
+        )}, ${representedWord} pela pessoa jurídica <strong>${esc(
           ctx.intervenienteName,
         )}</strong>, com sede na ${esc(
           intervenienteSeat,
-        )} (<strong>INTERVENIENTE</strong>), doravante denominados simplesmente de <strong>PROMITENTES VENDEDORES</strong>, e de outro lado ${buyerQualification(
+        )} (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>${vendorsDenomination}</strong>, e de outro lado ${buyerQualification(
           ctx,
         )}, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`,
       )}
-      ${spouseLine}
     </div>`;
 }
 
@@ -176,18 +207,22 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     ? `${strong(ctx.brokerName)}, CPF nº ${strong(ctx.brokerCpf)}`
     : strong(ctx.brokerName);
 
-  const measuresRunning = `medindo: frente ${sideMetersPhrase(
+  const measuresRunning = `medindo: frente ${sideMeasureWithConfrontant(
     ctx.frenteM,
     ctx.frenteMExtenso,
-  )}, fundo ${sideMetersPhrase(
+    ctx.confrontanteFrente,
+  )}, fundo ${sideMeasureWithConfrontant(
     ctx.fundoM,
     ctx.fundoMExtenso,
-  )}, lateral direita ${sideMetersPhrase(
+    ctx.confrontanteFundo,
+  )}, lateral direita ${sideMeasureWithConfrontant(
     ctx.ladoDireitoM,
     ctx.ladoDireitoMExtenso,
-  )} e lateral esquerda ${sideMetersPhrase(
+    ctx.confrontanteDireita,
+  )} e lateral esquerda ${sideMeasureWithConfrontant(
     ctx.ladoEsquerdoM,
     ctx.ladoEsquerdoMExtenso,
+    ctx.confrontanteEsquerda,
   )}`;
 
   return `

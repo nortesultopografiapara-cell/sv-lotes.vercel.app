@@ -1,0 +1,70 @@
+-- ROLLBACK CONCEITUAL — ARAGUAIA e-sign V2
+-- Arquivo: NÃO EXECUTAR automaticamente. Somente referência para janela de homologação.
+--
+-- RISCO CRÍTICO:
+-- Preview e Production compartilham o MESMO projeto Supabase.
+-- Após criar parties INTERVENIENT / WITNESS_* reais, reverter o CHECK
+-- para BUYER|SPOUSE|VENDOR falha se essas linhas existirem.
+--
+-- RECOMENDAÇÃO:
+-- Preferir rollback de APLICAÇÃO (flags OFF + redeploy código antigo)
+-- em vez de rollback destrutivo de schema.
+--
+-- ============================================================
+-- A) Rollback de aplicação (SEGURO — preferencial)
+-- ============================================================
+-- 1. Manter / restaurar:
+--      ARAGUAIA_ESIGN_V2_ENABLED = false (Preview/Production)
+--      (allowlist ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS irrelevante se flag off)
+-- 2. Redeploy do build anterior (sem inserção das novas roles).
+-- 3. Schema pode permanecer ampliado (CHECK com INTERVENIENT/WITNESS)
+--    sem impacto se o código não criar essas parties.
+--
+-- ============================================================
+-- B) Rollback de schema (SÓ se ZERO rows INTERVENIENT/WITNESS_*)
+-- ============================================================
+-- Pré-checagem obrigatória (read-only):
+--
+--   SELECT role, count(*)
+--   FROM public.contract_signature_parties
+--   WHERE role IN ('INTERVENIENT', 'WITNESS_1', 'WITNESS_2')
+--   GROUP BY role;
+--
+-- Se count > 0: NÃO executar o bloco abaixo.
+-- Opções: manter schema ampliado OU migrar/apagar dados com processo formal.
+--
+-- BEGIN;
+--
+-- DROP INDEX IF EXISTS public.idx_contract_signature_parties_unique_singleton_roles;
+--
+-- -- Restaura singleton legado BUYER/SPOUSE (nome histórico).
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_contract_signature_parties_unique_buyer_spouse
+--   ON public.contract_signature_parties (contract_signature_id, role)
+--   WHERE role IN ('BUYER', 'SPOUSE');
+--
+-- ALTER TABLE public.contract_signature_parties
+--   DROP CONSTRAINT IF EXISTS contract_signature_parties_role_check;
+--
+-- ALTER TABLE public.contract_signature_parties
+--   ADD CONSTRAINT contract_signature_parties_role_check
+--   CHECK (role IN ('BUYER', 'SPOUSE', 'VENDOR'));
+--
+-- -- NÃO dropa unique_vendor_cpf / token_hash / signature_role
+-- -- (já existiam antes da V2).
+--
+-- COMMENT ON CONSTRAINT contract_signature_parties_role_check
+--   ON public.contract_signature_parties IS
+--   'BUYER/SPOUSE/VENDOR — roles clássicas.';
+--
+-- NOTIFY pgrst, 'reload schema';
+--
+-- COMMIT;
+--
+-- ============================================================
+-- C) O que NUNCA fazer no rollback
+-- ============================================================
+-- - DROP TABLE contract_signature_parties
+-- - DELETE em massa de parties sem auditoria
+-- - Recriar UNIQUE (contract_signature_id, role) sem predicado
+--   (quebra 2 VENDOR ARAGUAIA já em produção)
+-- - Aplicar este arquivo em Production sem pré-checagem

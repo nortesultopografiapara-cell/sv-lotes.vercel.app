@@ -15,6 +15,7 @@ import {
   getOfficialLotMeasurements,
   parseOfficialSegmentsFromBlock,
 } from '@/lib/officialLotMeasurements';
+import { loadLotConfrontations } from '@/lib/lotConfrontationsPanel';
 
 export type AraguaiaLotDescription = {
   sides: ContractLotSides;
@@ -103,29 +104,65 @@ export function resolveAraguaiaLotDescription(input: {
     areaM2 = Number(block.area);
   }
 
-  const allBlocks = Array.isArray(input.projectBlocks) ? input.projectBlocks : [];
+  const allBlocksIncoming = Array.isArray(input.projectBlocks)
+    ? input.projectBlocks
+    : [];
+  // Mesmo critério do popup GIS (loadLotConfrontations): garante o lote na lista.
+  const allBlocks =
+    allBlocksIncoming.length > 0
+      ? allBlocksIncoming
+      : block.id
+        ? [block]
+        : [];
+  const fromSeg = confrontantsFromSegments(block);
+
   if (allBlocks.length > 0 && block.id) {
     try {
-      const audit = buildLotConfrontationAudit(
-        block,
-        String(block.id),
+      const frontStreetLabel =
+        String(
+          block.front_street_name ??
+            block.frontStreetName ??
+            block.front_street ??
+            '',
+        ).trim() || null;
+      // Mesma entrada do popup GIS (frenteConfrontLabel / frontStreetLabel).
+      const panel = loadLotConfrontations({
+        lot: block,
         allBlocks,
-        (input.streetGuides || []) as Record<string, unknown>[],
-        input.project || {},
-      );
+        streetGuides: (input.streetGuides || []) as Record<string, unknown>[],
+        frenteConfrontLabel: frontStreetLabel,
+        frontStreetLabel,
+      });
+      const audit =
+        panel.audit ||
+        buildLotConfrontationAudit(
+          block,
+          String(block.id),
+          allBlocks,
+          (input.streetGuides || []) as Record<string, unknown>[],
+          input.project || {},
+        );
       const conf = buildOfficialLotConfrontations(audit, {
         block,
         allBlocks,
         project: input.project,
         streetGuides: (input.streetGuides || []) as never[],
+        frenteConfrontLabel: frontStreetLabel,
+        frontStreetLabel,
       });
+      // Preenche lados ainda “a definir” com segments_json (fonte documental GIS).
+      const mergeSide = (official: string, segment: string) => {
+        const o = pendingOr(official);
+        if (o !== 'a definir') return o;
+        return pendingOr(segment);
+      };
       return {
         sides,
         confrontations: {
-          frente: pendingOr(conf.frente),
-          fundo: pendingOr(conf.fundo),
-          ladoDireito: pendingOr(conf.ladoDireito),
-          ladoEsquerdo: pendingOr(conf.ladoEsquerdo),
+          frente: mergeSide(conf.frente, fromSeg.frente),
+          fundo: mergeSide(conf.fundo, fromSeg.fundo),
+          ladoDireito: mergeSide(conf.ladoDireito, fromSeg.ladoDireito),
+          ladoEsquerdo: mergeSide(conf.ladoEsquerdo, fromSeg.ladoEsquerdo),
         },
         areaM2,
         source: 'official_bundle',
@@ -135,7 +172,6 @@ export function resolveAraguaiaLotDescription(input: {
     }
   }
 
-  const fromSeg = confrontantsFromSegments(block);
   const hasAny =
     fromSeg.frente || fromSeg.fundo || fromSeg.ladoDireito || fromSeg.ladoEsquerdo;
   return {

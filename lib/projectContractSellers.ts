@@ -89,16 +89,20 @@ function parseSellerPartiesJson(raw: unknown): ProjectContractSellerParty[] {
 
 /**
  * Resolve promitentes vendedores do empreendimento.
- * Isolado: fallback Araguaia só quando model === 'ARAGUAIA'.
+ * Isolado: fallback Araguaia só quando model === 'ARAGUAIA' e allowDefault !== false.
  */
 export function resolveProjectContractSellers(input: {
   project?: Record<string, unknown> | null;
   contractModel?: string | null;
+  /** false = só seller_parties_json (sem Daniel/Aldenise hardcoded). */
+  allowAraguaiaDefault?: boolean;
 }): ProjectContractSellerParty[] {
   const fromProject = parseSellerPartiesJson(
     input.project?.seller_parties_json ?? input.project?.seller_parties,
   );
   if (fromProject.length > 0) return fromProject;
+
+  if (input.allowAraguaiaDefault === false) return [];
 
   const model = String(input.contractModel || '')
     .trim()

@@ -76,6 +76,9 @@ function roleHeading(role: string): string {
   if (key === 'BUYER') return 'COMPRADOR';
   if (key === 'SPOUSE') return 'CÔNJUGE ANUENTE';
   if (key === 'VENDOR') return 'PROMITENTE VENDEDOR';
+  if (key === 'INTERVENIENT') return 'INTERVENIENTE';
+  if (key === 'WITNESS_1') return 'TESTEMUNHA 1';
+  if (key === 'WITNESS_2') return 'TESTEMUNHA 2';
   return 'SIGNATÁRIO';
 }
 
@@ -107,7 +110,10 @@ function PartyShareCard({
   const email = contact.email;
   const isVendor = party.role === 'VENDOR';
   const isSpouse = party.role === 'SPOUSE';
-  const isExternal = party.role === 'BUYER' || party.role === 'SPOUSE';
+  const isWitness =
+    party.role === 'WITNESS_1' || party.role === 'WITNESS_2';
+  const isExternal =
+    party.role === 'BUYER' || party.role === 'SPOUSE' || isWitness;
   const isPublicVendor = isVendor && Boolean(signatureUrl);
   const canShareLikeExternal = isExternal || isPublicVendor;
   const missingUrl =
@@ -119,7 +125,10 @@ function PartyShareCard({
     return buildSalePartySignatureShareMessage({
       signerName: displayName || party.roleLabel,
       role:
-        party.role === 'SPOUSE' || party.role === 'VENDOR'
+        party.role === 'SPOUSE' ||
+        party.role === 'VENDOR' ||
+        party.role === 'WITNESS_1' ||
+        party.role === 'WITNESS_2'
           ? party.role
           : 'BUYER',
       projectName,
@@ -205,8 +214,14 @@ function PartyShareCard({
             {roleHeading(party.role)}
           </p>
           <p className="text-base font-semibold text-white mt-0.5">
-            {displayName || party.roleLabel}
+            {displayName ||
+              (isWitness ? party.roleLabel : party.roleLabel)}
           </p>
+          {isWitness && !displayName && (
+            <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+              Identidade será preenchida pela testemunha ao abrir o link.
+            </p>
+          )}
           {(contactLine && (!isVendor || isPublicVendor)) ||
           (contact.canShareEmail && emailMasked && emailMasked !== '—') ? (
             <p className="text-[11px] text-gray-400 mt-1 space-x-2">

@@ -24,9 +24,11 @@ import {
 } from '@/lib/installmentCorrectionType';
 import {
   formatSellerCpfDisplay,
-  resolveProjectContractSellers,
   type ProjectContractSellerParty,
 } from '@/lib/projectContractSellers';
+import { resolveAraguaiaPromitenteVendors } from '@/lib/araguaiaCompanyLegalRepresentative';
+import { resolveAraguaiaIntervenientIdentity } from '@/lib/araguaiaIntervenientIdentity';
+import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 
@@ -37,6 +39,8 @@ export type AraguaiaContractParams = {
   block: Record<string, unknown> | null | undefined;
   sale: Record<string, unknown> | null | undefined;
   contractSnapshot?: Record<string, unknown> | null;
+  /** Força path V2 (senão usa gate env + allowlist). */
+  esignV2?: boolean;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
   projectBlocks?: Record<string, unknown>[] | null;
@@ -49,6 +53,8 @@ export type AraguaiaContractContext = {
   intervenienteCnpj: string;
   intervenienteAddress: string;
   intervenienteCityUf: string;
+  intervenienteRepresentativeName: string;
+  intervenienteRepresentativeCpf: string;
   buyerName: string;
   buyerNationality: string;
   buyerMaritalStatus: string;
@@ -185,12 +191,27 @@ export function buildAraguaiaContractContext(
   const sale = params.sale || {};
   const pendingFields: string[] = [];
 
-  const sellers = resolveProjectContractSellers({
-    project,
+  const companyId = tenant?.id ? String(tenant.id) : null;
+  const esignV2 =
+    params.esignV2 === true ||
+    shouldEnableAraguaiaEsignV2({
+      companyId,
+      contractModel: 'ARAGUAIA',
+    });
+  const vendorMode = esignV2 ? 'v2' : 'legacy';
+
+  const sellers = resolveAraguaiaPromitenteVendors({
+    company: tenant,
+    project: esignV2 ? null : project,
     contractModel: 'ARAGUAIA',
+    mode: vendorMode,
   });
-  if (sellers.length < 2) {
-    pendingFields.push('promitentes vendedores do empreendimento');
+  if (sellers.length < 1) {
+    pendingFields.push(
+      esignV2
+        ? 'Representante Legal da empresa (Configurações)'
+        : 'promitentes vendedores do empreendimento',
+    );
   }
   for (const s of sellers) {
     if (!s.nationality) pendingFields.push(`nacionalidade de ${s.name}`);
@@ -199,14 +220,12 @@ export function buildAraguaiaContractContext(
     if (!s.address) pendingFields.push(`endereço de ${s.name}`);
   }
 
-  const intervenienteName =
-    clean(tenant.razao_social) ||
-    clean(tenant.fantasy_name) ||
-    clean(tenant.name) ||
-    'R R NEGÓCIOS & SERVIÇOS LTDA';
-  const intervenienteCnpj =
-    formatCpfCnpj(clean(tenant.cnpj || tenant.document)) ||
-    '57.590.706/0001-78';
+  const intervenienteId = resolveAraguaiaIntervenientIdentity({
+    company: tenant,
+    mode: vendorMode,
+  });
+  const intervenienteName = intervenienteId.companyName;
+  const intervenienteCnpj = intervenienteId.companyCnpjDisplay;
   const intervenienteAddress =
     clean(tenant.address || tenant.endereco) || 'endereço não informado';
   const intervenienteCityUf = [clean(tenant.city || tenant.cidade), clean(tenant.state || tenant.uf)]
@@ -347,6 +366,8 @@ export function buildAraguaiaContractContext(
     intervenienteCnpj,
     intervenienteAddress,
     intervenienteCityUf,
+    intervenienteRepresentativeName: intervenienteId.representativeName,
+    intervenienteRepresentativeCpf: intervenienteId.representativeCpfDigits,
     buyerName,
     buyerNationality,
     buyerMaritalStatus,

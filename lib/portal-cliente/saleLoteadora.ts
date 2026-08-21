@@ -49,6 +49,9 @@ export function extractLoteadoraNameFromContractHtml(
     /PROMITENTE\s+VENDEDOR(?:\(A\))?:?\s*(?:<\/strong>\s*)?(?:<strong>)?([^<,]+)/i,
     /Promitente\s+Vendedor:?\s*(?:<\/strong>\s*)?(?:<strong>)?([^<,]+)/i,
     /PROMITENTE\s+PROPRIET[AÁ]RIO\s+VENDEDOR:?\s*(?:<\/strong>\s*)?(?:<strong>)?([^<,]+)/i,
+    // ARAGUAIA / PJ interveniente no HTML do contrato
+    /(?:INTERVENIENTE|INTERVENIENT)[\s\S]{0,120}?<strong>([^<]{5,120})<\/strong>/i,
+    /pessoa\s+jur[ií]dica\s+<strong>([^<]{5,120})<\/strong>/i,
   ];
 
   for (const re of patterns) {
@@ -72,9 +75,13 @@ export function resolveVendorDisplayNameFromCompany(
 ): string | null {
   if (!company || typeof company !== 'object') return null;
 
-  const fantasyRaw = String(company.fantasy_name || '').trim();
+  const fantasyRaw = String(
+    company.fantasy_name || company.trade_name || '',
+  ).trim();
   const nameRaw = String(company.name || '').trim();
-  const razaoRaw = String(company.razao_social || '').trim();
+  const razaoRaw = String(
+    company.razao_social || company.legal_name || '',
+  ).trim();
 
   const sanitized: Record<string, unknown> = {
     ...company,
@@ -83,13 +90,25 @@ export function resolveVendorDisplayNameFromCompany(
     razao_social: isBlankOrGeneric(razaoRaw) ? '' : razaoRaw,
   };
 
+  // Preferir razão social no helper do contrato (mesmo title-case do PDF).
+  if (sanitized.razao_social) {
+    const fromRazao = cleanDisplayName(
+      getCompanyDisplayName({
+        ...sanitized,
+        fantasy_name: '',
+        name: String(sanitized.razao_social),
+      }),
+    );
+    if (fromRazao) return fromRazao;
+  }
+
   const fromContractHelper = cleanDisplayName(getCompanyDisplayName(sanitized));
   if (fromContractHelper) return fromContractHelper;
 
   for (const candidate of [
-    sanitized.fantasy_name,
     sanitized.razao_social,
     sanitized.name,
+    sanitized.fantasy_name,
   ]) {
     const cleaned = cleanDisplayName(String(candidate || ''));
     if (cleaned) return cleaned;
@@ -115,30 +134,30 @@ export type ResolveSaleLoteadoraInput = {
  * Resolve o nome exibido como “Loteadora” no Resumo da Venda.
  *
  * Prioridade:
- * 1. vendedor explícito;
- * 2. nome no HTML do contrato (Promitente Proprietário Vendedor);
- * 3. company da venda (mesma lógica do contrato);
- * 4. proprietário do empreendimento;
- * 5. tenant company;
- * 6. “Não informado” — nunca “Empresa”.
+ * 1. company da venda (razão/name) — fonte canônica da loteadora;
+ * 2. company do contrato (tenant/company_id) quando distinta;
+ * 3. vendedor explícito;
+ * 4. nome no HTML do contrato (Promitente / INTERVENIENTE PJ);
+ * 5. proprietário do empreendimento;
+ * 6. “Não informado” — nunca “Empresa” nem nome do empreendimento.
  */
 export function resolveSaleLoteadoraDisplayName(
   input: ResolveSaleLoteadoraInput,
 ): string {
+  const fromSaleCompany = resolveVendorDisplayNameFromCompany(input.company);
+  if (fromSaleCompany) return fromSaleCompany;
+
+  const fromTenant = resolveVendorDisplayNameFromCompany(input.tenantCompany);
+  if (fromTenant) return fromTenant;
+
   const explicit = cleanDisplayName(input.explicitSellerName);
   if (explicit) return explicit;
 
   const fromHtml = extractLoteadoraNameFromContractHtml(input.contractHtml);
   if (fromHtml) return fromHtml;
 
-  const fromSaleCompany = resolveVendorDisplayNameFromCompany(input.company);
-  if (fromSaleCompany) return fromSaleCompany;
-
   const fromProject = cleanDisplayName(input.projectOwnerName);
   if (fromProject) return fromProject;
-
-  const fromTenant = resolveVendorDisplayNameFromCompany(input.tenantCompany);
-  if (fromTenant) return fromTenant;
 
   return FALLBACK;
 }
