@@ -135,12 +135,6 @@ export function buildAraguaiaPartiesPreambleHtml(
     ARAGUAIA_SELLERS_ADDRESS;
   const intervenienteSeat = ARAGUAIA_SELLERS_ADDRESS;
 
-  const spouseLine = ctx.hasSpouse
-    ? itemP(
-        `e seu(sua) cônjuge anuente ${ctx.spouseQualificationHtml}, doravante designado(a) simplesmente <strong>CÔNJUGE ANUENTE</strong>;`,
-      )
-    : '';
-
   return `
     <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
       ${itemP(
@@ -154,7 +148,6 @@ export function buildAraguaiaPartiesPreambleHtml(
           ctx,
         )}, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`,
       )}
-      ${spouseLine}
     </div>`;
 }
 

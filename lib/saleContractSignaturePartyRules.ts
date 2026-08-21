@@ -1,13 +1,7 @@
 /**
  * Regras de inclusão e validação do cônjuge como signatário eletrônico.
- * Global: todos os modelos de contrato de venda.
- *
- * has_spouse === false → nunca exige cônjuge (ignora HTML e campos residuais).
- * has_spouse === true  → sempre exige e valida nome + CPF + contato.
- * has_spouse ausente   → legado: nome+CPF da venda OU tag real no HTML
- *                        (nunca texto/seletor dentro de <style>).
- *
- * Não depende do estado civil do comprador.
+ * PADRAO / MENESES / RECANTO / SV2: has_spouse controla a party SPOUSE.
+ * ARAGUAIA: nunca cria party SPOUSE.
  */
 
 import { isValidSignerEmail } from '@/lib/saleContractEmailValidation';
@@ -28,10 +22,12 @@ import {
   stripEmbeddedStyleAndScript,
 } from '@/lib/saleSpouseContractHtml';
 
-/** Todos os modelos suportam party SPOUSE quando a venda tem cônjuge válido. */
-export const SPOUSE_ELECTRONIC_SIGNATURE_MODELS: SaleContractModel[] = [
-  ...SALE_CONTRACT_MODELS,
-];
+/**
+ * Modelos que suportam party SPOUSE quando a venda tem cônjuge válido.
+ * ARAGUAIA fica de fora: o cônjuge do comprador não assina nesse modelo.
+ */
+export const SPOUSE_ELECTRONIC_SIGNATURE_MODELS: SaleContractModel[] =
+  SALE_CONTRACT_MODELS.filter((model) => model !== 'ARAGUAIA');
 
 export const SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE =
   'O contrato possui cônjuge anuente, mas os dados necessários para a assinatura estão incompletos. Informe o nome, o CPF e pelo menos um telefone ou e-mail do cônjuge.';
@@ -100,21 +96,25 @@ export function supportsSpouseElectronicSignature(
   contractModel: unknown,
 ): boolean {
   const model = normalizeSaleContractModel(contractModel);
+  if (model === 'ARAGUAIA') return false;
   return SPOUSE_ELECTRONIC_SIGNATURE_MODELS.includes(model);
 }
 
 /**
  * Cônjuge é signatário eletrônico quando a venda (ou o HTML) indica presença.
- * Independente do modelo (Meneses, Recanto, SV2, Padrão).
+ * PADRAO / MENESES / RECANTO / SV2: inalterado.
+ * ARAGUAIA: nunca cria party SPOUSE (has_spouse, dados e HTML antigo são ignorados).
  */
 export function shouldCreateSpouseSignatureParty(params: {
   contractModel: unknown;
   sale: Record<string, unknown> | null | undefined;
   contractHtml?: string | null;
 }): boolean {
+  const model = normalizeSaleContractModel(params.contractModel);
+  if (model === 'ARAGUAIA') return false;
+
   if (!supportsSpouseElectronicSignature(params.contractModel)) {
     // CUSTOM futuro ainda está na lista; se modelo desconhecido, normaliza para PADRAO.
-    const model = normalizeSaleContractModel(params.contractModel);
     if (!SPOUSE_ELECTRONIC_SIGNATURE_MODELS.includes(model)) return false;
   }
 

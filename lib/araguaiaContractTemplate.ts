@@ -108,28 +108,9 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
 .sv-contract-araguaia .signature-slot-vendor-1 { grid-row: 1; grid-column: 1; }
 .sv-contract-araguaia .signature-slot-vendor-2 { grid-row: 1; grid-column: 2; }
 .sv-contract-araguaia .signature-slot-buyer { grid-row: 2; grid-column: 1; }
-/* Com cônjuge: comprador | cônjuge; testemunhas na linha 3 */
-.sv-contract-araguaia .signature-grid--araguaia-with-spouse .signature-slot-spouse {
-  grid-row: 2;
-  grid-column: 2;
-}
-.sv-contract-araguaia .signature-grid--araguaia-with-spouse .signature-slot-witness-1 {
-  grid-row: 3;
-  grid-column: 1;
-}
-.sv-contract-araguaia .signature-grid--araguaia-with-spouse .signature-slot-witness-2 {
-  grid-row: 3;
-  grid-column: 2;
-}
-/* Sem cônjuge: comprador sozinho na linha 2; testemunhas na linha 3 */
-.sv-contract-araguaia .signature-grid--araguaia-no-spouse .signature-slot-witness-1 {
-  grid-row: 3;
-  grid-column: 1;
-}
-.sv-contract-araguaia .signature-grid--araguaia-no-spouse .signature-slot-witness-2 {
-  grid-row: 3;
-  grid-column: 2;
-}
+.sv-contract-araguaia .signature-slot-intervenient { grid-row: 2; grid-column: 2; }
+.sv-contract-araguaia .signature-slot-witness-1 { grid-row: 3; grid-column: 1; }
+.sv-contract-araguaia .signature-slot-witness-2 { grid-row: 3; grid-column: 2; }
 /* Blocos pontuais ARAGUAIA — não partir entre páginas (1.3, item 8, CG-4, alínea C) */
 .sv-contract-araguaia .araguaia-keep-together,
 .sv-contract-araguaia .araguaia-financial-item-1-3 {
@@ -138,6 +119,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   -webkit-column-break-inside: avoid;
 }
 /* Ajuste mínimo: evita corte do CPF nas testemunhas sem aumentar o pack. */
+.sv-contract-araguaia .signature-slot-intervenient,
 .sv-contract-araguaia .signature-slot-witness-1,
 .sv-contract-araguaia .signature-slot-witness-2 {
   padding-top: 2px;

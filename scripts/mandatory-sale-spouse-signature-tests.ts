@@ -62,6 +62,21 @@ function testModelGating() {
   assert(supportsSpouseElectronicSignature('MENESES'), 'meneses ok');
   assert(supportsSpouseElectronicSignature('SV_LOTES_2'), 'sv2 ok');
   assert(supportsSpouseElectronicSignature('PADRAO'), 'padrao ok');
+  assert(!supportsSpouseElectronicSignature('ARAGUAIA'), 'araguaia sem party SPOUSE');
+
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'ARAGUAIA',
+      sale: {
+        has_spouse: true,
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '12345678901',
+        sale_spouse_phone: '94999999999',
+      },
+      contractHtml: '<p>CÔNJUGE DO PROMITENTE COMPRADOR(A)</p>',
+    }),
+    'ARAGUAIA não cria SPOUSE mesmo com venda/HTML de cônjuge',
+  );
 
   assert(
     !shouldCreateSpouseSignatureParty({

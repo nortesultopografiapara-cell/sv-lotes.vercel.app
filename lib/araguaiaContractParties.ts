@@ -1,8 +1,7 @@
 /**
  * Assinaturas e título — modelo ARAGUAIA (isolado).
- * Bloco visual: Daniel, Aldenise, comprador, cônjuge (se houver), testemunhas.
- * R R Negócios NÃO assina (permanece INTERVENIENTE só no corpo).
- * Motor eletrônico global (BUYER/SPOUSE/VENDOR empresa) não é alterado aqui.
+ * Bloco físico unsigned: Daniel, Aldenise, comprador, INTERVENIENTE (R R), testemunhas.
+ * Sem slot de cônjuge. Party eletrônica INTERVENIENT ainda não é criada aqui.
  */
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
@@ -77,20 +76,12 @@ export function buildAraguaiaBodyHtml(ctx: AraguaiaContractContext): string {
 export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): string {
   const seller1 = ctx.sellers[0];
   const seller2 = ctx.sellers[1];
-  const showSpouse = Boolean(ctx.hasSpouse && ctx.spouseName);
-  const gridMod = showSpouse
-    ? 'signature-grid--araguaia signature-grid--araguaia-with-spouse'
-    : 'signature-grid--araguaia signature-grid--araguaia-no-spouse';
-
-  const spouseSlot = showSpouse
-    ? buildSlot({
-        role: 'CÔNJUGE DO PROMITENTE COMPRADOR(A)',
-        name: ctx.spouseName,
-        meta: ctx.spouseCpf ? [`CPF: ${ctx.spouseCpf}`] : [],
-        dataRole: 'SPOUSE',
-        extraClass: 'signature-slot-spouse',
-      })
-    : '';
+  const intervenienteName =
+    ctx.intervenienteName || 'R R NEGÓCIOS & SERVIÇOS LTDA';
+  const intervenienteCnpj =
+    ctx.intervenienteCnpj || '57.590.706/0001-78';
+  const representativeName =
+    seller1?.name || 'Daniel Roberto Rivelino de Sousa';
 
   return `
     <div class="contract-closing-and-signatures--araguaia">
@@ -103,7 +94,7 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
         </p>
       </div>
       <div class="contract-signatures contract-signatures--araguaia">
-        <div class="signature-grid ${gridMod}">
+        <div class="signature-grid signature-grid--araguaia">
           ${buildSlot({
             role: 'PROMITENTE VENDEDOR',
             name: seller1?.name || 'Promitente Vendedor 1',
@@ -129,17 +120,24 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
             dataRole: 'BUYER',
             extraClass: 'signature-slot-buyer',
           })}
-          ${spouseSlot}
+          ${buildSlot({
+            role: 'INTERVENIENTE',
+            name: intervenienteName,
+            meta: [
+              `CNPJ: ${intervenienteCnpj}`,
+              'Representada por:',
+              representativeName,
+            ],
+            extraClass: 'signature-slot-intervenient',
+          })}
           ${buildSlot({
             role: 'TESTEMUNHA 1',
             meta: ['Nome: ________________________________', 'CPF: ________________________________'],
-            dataRole: 'WITNESS',
             extraClass: 'signature-slot-witness-1',
           })}
           ${buildSlot({
             role: 'TESTEMUNHA 2',
             meta: ['Nome: ________________________________', 'CPF: ________________________________'],
-            dataRole: 'WITNESS',
             extraClass: 'signature-slot-witness-2',
           })}
         </div>

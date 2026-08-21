@@ -262,6 +262,14 @@ function testElectronicPartyGateGlobal() {
       `no party ${model} when unchecked`,
     );
   }
+  assert(!supportsSpouseElectronicSignature('ARAGUAIA'), 'ARAGUAIA sem support SPOUSE');
+  assert(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'ARAGUAIA',
+      sale: SPOUSE,
+    }),
+    'ARAGUAIA não cria party SPOUSE',
+  );
   console.log('OK testElectronicPartyGateGlobal');
 }
 

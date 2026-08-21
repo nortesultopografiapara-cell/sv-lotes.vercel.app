@@ -1,5 +1,5 @@
 /**
- * Testes — assinatura eletrônica ARAGUAIA (2 VENDOR PF + BUYER + SPOUSE).
+ * Testes — assinatura eletrônica ARAGUAIA (2 VENDOR PF + BUYER; sem SPOUSE).
  * npx tsx scripts/mandatory-araguaia-esign-tests.ts
  */
 import assert from 'node:assert/strict';
@@ -28,6 +28,7 @@ import {
   readPartySignatureEventId,
 } from '../lib/saleContractSignatureParties';
 import { normalizeWhatsAppPhone } from '../lib/whatsapp/clickToChat';
+import { shouldCreateSpouseSignatureParty } from '../lib/saleContractSignaturePartyRules';
 
 function ok(cond: unknown, msg: string) {
   assert.ok(cond, msg);
@@ -381,18 +382,43 @@ function testRecantoHeuristicDoesNotStealAraguaia() {
 }
 
 function testExpectedPartyCounts() {
-  // Contagens canônicas do fluxo ARAGUAIA (criação).
-  const withSpouseRoles = ['BUYER', 'SPOUSE', 'VENDOR', 'VENDOR'];
+  const withSpouseRoles = ['BUYER', 'VENDOR', 'VENDOR'];
   const withoutSpouseRoles = ['BUYER', 'VENDOR', 'VENDOR'];
-  ok(withSpouseRoles.length === 4, 'ARAGUAIA+spouse => 4 parties');
+  ok(withSpouseRoles.length === 3, 'ARAGUAIA+spouse => 3 parties (sem SPOUSE)');
   ok(
     withSpouseRoles.filter((r) => r === 'VENDOR').length === 2,
     'ARAGUAIA+spouse => 2 VENDOR',
   );
+  ok(!withSpouseRoles.includes('SPOUSE'), 'ARAGUAIA+spouse não cria SPOUSE');
   ok(withoutSpouseRoles.length === 3, 'ARAGUAIA sem spouse => 3 parties');
   ok(
     withoutSpouseRoles.filter((r) => r === 'VENDOR').length === 2,
     'ARAGUAIA sem spouse => 2 VENDOR',
+  );
+
+  ok(
+    !shouldCreateSpouseSignatureParty({
+      contractModel: 'ARAGUAIA',
+      sale: {
+        has_spouse: true,
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '39053344705',
+        sale_spouse_phone: '94999999999',
+      },
+      contractHtml: '<p>CÔNJUGE DO PROMITENTE COMPRADOR(A)</p>',
+    }),
+    'gate ARAGUAIA ignora has_spouse e HTML antigo',
+  );
+  ok(
+    shouldCreateSpouseSignatureParty({
+      contractModel: 'RECANTO_PRIMAVERA',
+      sale: {
+        has_spouse: true,
+        sale_spouse_name: 'Maria Silva',
+        sale_spouse_cpf: '39053344705',
+      },
+    }),
+    'RECANTO continua criando SPOUSE',
   );
 
   const inputs = buildAraguaiaEsignVendorPartyInputs();
