@@ -68,7 +68,7 @@ export function buildPromissoryNotePdfBytes(draft: PromissoryNoteDraft): Uint8Ar
   y += 40;
 
   const body =
-    `Aos ${draft.dueDateLong}, pagarei(emos), por esta única via de NOTA PROMISSÓRIA, a ${draft.favorecidosPhrase}, ou à sua ordem ou a quem autorizar, a quantia de ${draft.amountFmt} (${draft.amountExtenso}), em moeda corrente nacional.`;
+    `Aos ${draft.dueDateLong}, pagarei (emos), por esta única via de NOTA PROMISSÓRIA, a ${draft.favorecidosPhrase}, ou à sua ordem ou a quem autorizar, a quantia de ${draft.amountFmt} (${draft.amountExtenso}), em moeda corrente nacional.`;
   doc.setFont('times', 'normal');
   doc.setFontSize(11);
   for (const line of wrap(doc, body, maxW)) {
@@ -98,9 +98,6 @@ export function buildPromissoryNotePdfBytes(draft: PromissoryNoteDraft): Uint8Ar
     `CPF: ${draft.buyer.cpf}`,
     draft.buyer.rg ? `RG: ${draft.buyer.rg}` : null,
     draft.buyer.address ? `Endereço: ${draft.buyer.address}` : null,
-    draft.buyer.qualification
-      ? `Qualificação: ${draft.buyer.qualification}`
-      : null,
   ].filter(Boolean) as string[];
   for (const line of emitenteLines) {
     for (const wrapped of wrap(doc, line, maxW)) {
@@ -109,7 +106,7 @@ export function buildPromissoryNotePdfBytes(draft: PromissoryNoteDraft): Uint8Ar
     }
   }
 
-  y = Math.max(y + 28, 230);
+  y = Math.max(y + 36, 235);
   const signW = 70;
   const signX = (PAGE_W - signW) / 2;
   doc.setDrawColor(17, 24, 39);

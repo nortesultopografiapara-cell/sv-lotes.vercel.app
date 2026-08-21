@@ -13,6 +13,7 @@ import {
   PROMISSORY_NOTE_SOURCE,
   buildPromissoryNoteDraft,
   buildPromissoryNoteHtml,
+  buildPromissoryNotePartyLegalQualification,
   hasPromissoryNoteInstallmentBalance,
   isPromissoryNoteAraguaiaModel,
   isPromissoryNoteEmitted,
@@ -61,6 +62,8 @@ const company = {
   contract_legal_nationality: 'Brasileiro',
   contract_legal_marital_status: 'Casado',
   contract_legal_profession: 'Empresário',
+  contract_legal_rg: '1234567',
+  contract_legal_rg_issuer: 'SSP/PA',
 };
 const customer = {
   name: 'MARIA COMPRADORA',
@@ -118,7 +121,7 @@ console.log('\n=== B) Vencimento e local de pagamento ===');
   ok(true, 'última parcela e fallback de praça validados');
 }
 
-console.log('\n=== C) Um vendedor, endereço real e minuta ===');
+console.log('\n=== C) Um vendedor com qualificação e minuta ===');
 const oneVendorDraft = buildPromissoryNoteDraft({
   contractId: 'contract-a',
   contractNumber: '000000014/2026',
@@ -129,13 +132,19 @@ const oneVendorDraft = buildPromissoryNoteDraft({
   company,
   customer,
 });
+const expectedVendor1Qualification =
+  'João Vendedor, Brasileiro, Casado, Empresário, inscrito(a) no CPF sob o nº 390.533.447-05 e no RG nº 1234567-SSP/PA';
 {
   assert.equal(oneVendorDraft.ok, true);
   if (!oneVendorDraft.ok) throw new Error('minuta deveria ser válida');
   assert.equal(oneVendorDraft.draft.vendor1.name, 'João Vendedor');
   assert.equal(oneVendorDraft.draft.vendor1.address, null);
   assert.equal(oneVendorDraft.draft.vendor2, null);
-  assert.equal(oneVendorDraft.draft.favorecidosPhrase, 'João Vendedor');
+  assert.equal(
+    buildPromissoryNotePartyLegalQualification(oneVendorDraft.draft.vendor1),
+    expectedVendor1Qualification,
+  );
+  assert.equal(oneVendorDraft.draft.favorecidosPhrase, expectedVendor1Qualification);
   assert.equal(
     oneVendorDraft.draft.clauseReference,
     'Nota Promissória emitida nos termos da Cláusula Terceira, item 1.2, do Contrato nº 000000014/2026.',
@@ -144,10 +153,12 @@ const oneVendorDraft = buildPromissoryNoteDraft({
     oneVendorDraft.draft.buyer.qualification,
     'Brasileira, Solteira, Engenheira',
   );
-  ok(true, 'um favorecido sem endereço hardcoded');
+  assert.equal(oneVendorDraft.draft.amount, 20_000);
+  assert.equal(oneVendorDraft.draft.dueDateRaw, '2026-10-20');
+  ok(true, '1 vendedor com qualificação completa');
 }
 
-console.log('\n=== D) Dois vendedores ===');
+console.log('\n=== D) Dois vendedores com qualificações ===');
 {
   const second = {
     name: 'ANA VENDEDORA',
@@ -158,6 +169,8 @@ console.log('\n=== D) Dois vendedores ===');
     nationality: 'Brasileira',
     maritalStatus: 'Casada',
     profession: 'Comerciante',
+    email: 'ana@teste.com',
+    phone: '94999999999',
     address: 'Rua Real, 200',
   };
   const resolved = resolvePromissoryNoteVendors({
@@ -166,6 +179,12 @@ console.log('\n=== D) Dois vendedores ===');
   assert.equal(resolved.vendors.length, 2);
   assert.equal(resolved.vendor1?.address, null);
   assert.equal(resolved.vendor2?.address, 'Rua Real, 200');
+  const expectedVendor2Qualification =
+    'Ana Vendedora, Brasileira, Casada, Comerciante, inscrito(a) no CPF sob o nº 111.444.777-35 e no RG nº 7654321-SSP/PA';
+  assert.equal(
+    buildPromissoryNotePartyLegalQualification(resolved.vendor2!),
+    expectedVendor2Qualification,
+  );
   const draft = buildPromissoryNoteDraft({
     contractId: 'contract-a',
     contractNumber: '000000014/2026',
@@ -178,8 +197,41 @@ console.log('\n=== D) Dois vendedores ===');
   });
   assert.equal(draft.ok, true);
   if (!draft.ok) throw new Error('minuta com dois vendedores deveria ser válida');
-  assert.equal(draft.draft.favorecidosPhrase, 'João Vendedor e Ana Vendedora');
-  ok(true, 'dois favorecidos preservados');
+  assert.equal(
+    draft.draft.favorecidosPhrase,
+    `${expectedVendor1Qualification} e ${expectedVendor2Qualification}`,
+  );
+  assert.equal(draft.draft.amount, 20_000);
+  assert.equal(draft.draft.dueDateRaw, '2026-10-20');
+  ok(true, '2 vendedores com qualificações preservadas');
+}
+
+console.log('\n=== D.1) Dados opcionais ausentes não quebram a frase ===');
+{
+  const sparse = buildPromissoryNoteDraft({
+    contractId: 'contract-a',
+    contractNumber: '000000014/2026',
+    saleId: 'sale-a',
+    sale,
+    receipts,
+    project,
+    company: {
+      legal_representative: 'SOMENTE NOME',
+      representative_cpf: '39053344705',
+    },
+    customer: {
+      name: 'COMPRADOR MINIMO',
+      cpf: '52998224725',
+    },
+  });
+  assert.equal(sparse.ok, true);
+  if (!sparse.ok) throw new Error('minuta mínima deveria ser válida');
+  assert.equal(
+    sparse.draft.favorecidosPhrase,
+    'Somente Nome, inscrito(a) no CPF sob o nº 390.533.447-05',
+  );
+  ok(!sparse.draft.favorecidosPhrase.includes('undefined'), 'sem undefined na frase');
+  ok(true, 'ausência de dados opcionais não quebra a frase');
 }
 
 console.log('\n=== E) Elegibilidade e cancelamento ===');
@@ -227,7 +279,13 @@ console.log('\n=== F) HTML, PDF e metadata ===');
   if (!oneVendorDraft.ok) throw new Error('minuta inválida');
   const html = buildPromissoryNoteHtml(oneVendorDraft.draft);
   ok(html.includes(oneVendorDraft.draft.clauseReference), 'HTML contém referência exata');
-  ok(html.includes('João Vendedor'), 'HTML contém favorecido');
+  ok(html.includes(expectedVendor1Qualification), 'HTML contém favorecido qualificado');
+  ok(html.includes('pagarei (emos)'), 'HTML usa pagarei (emos)');
+  ok(!html.includes('pagarei(emos)'), 'HTML não usa pagarei(emos) colado');
+  ok(!html.includes('Qualificação:'), 'HTML sem linha Qualificação no emitente');
+  ok(html.includes('<strong>Nome:</strong>'), 'HTML mantém Nome do emitente');
+  ok(html.includes('<strong>CPF:</strong>'), 'HTML mantém CPF do emitente');
+  ok(html.includes('Assinatura do Emitente'), 'HTML mantém espaço de assinatura');
   ok(buildPromissoryNotePdfBytes(oneVendorDraft.draft).byteLength > 1_000, 'PDF gerado');
   assert.equal(
     buildPromissoryNoteFilename({

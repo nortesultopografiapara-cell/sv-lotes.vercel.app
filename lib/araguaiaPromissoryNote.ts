@@ -34,6 +34,14 @@ export type PromissoryNoteParty = {
   cpf: string;
   rg: string | null;
   address: string | null;
+  /** Dados estruturados para qualificação jurídica no corpo da NP. */
+  nationality: string | null;
+  maritalStatus: string | null;
+  profession: string | null;
+  /**
+   * Resumo interno (nacionalidade/estado civil/profissão).
+   * Não é exibido no bloco EMITENTE da Nota Promissória.
+   */
   qualification: string | null;
 };
 
@@ -283,6 +291,9 @@ export function resolvePromissoryNoteBuyer(
     cpf,
     rg: buildBuyerRg(c),
     address: buildBuyerAddress(c),
+    nationality: nationality || null,
+    maritalStatus: marital || null,
+    profession: profession || null,
     qualification,
   };
 }
@@ -321,15 +332,20 @@ export function resolvePromissoryNoteVendors(input: {
     maritalStatus?: string | null;
     profession?: string | null;
   }): PromissoryNoteParty => {
+    const nationality = clean(p.nationality) || null;
+    const maritalStatus = clean(p.maritalStatus) || null;
+    const profession = clean(p.profession) || null;
     const qualification =
-      [clean(p.nationality), clean(p.maritalStatus), clean(p.profession)]
-        .filter(Boolean)
-        .join(', ') || null;
+      [nationality, maritalStatus, profession].filter(Boolean).join(', ') ||
+      null;
     return {
       name: toContractTitleCase(clean(p.name)),
       cpf: formatCpfCnpj(clean(p.cpf)) || clean(p.cpf),
       rg: clean(p.rg) || null,
       address: clean(p.address) || companyAddress,
+      nationality,
+      maritalStatus,
+      profession,
       qualification,
     };
   };
@@ -470,12 +486,51 @@ export function validatePromissoryNoteRequiredFields(input: {
   return issues;
 }
 
+/**
+ * Qualificação jurídica completa do favorecido (modelo original da NP).
+ * Omite apenas trechos sem dado — não inventa campos.
+ *
+ * Ex.: NOME, nacionalidade, estado civil, profissão,
+ * inscrito(a) no CPF sob o nº X e no RG nº Y-ÓRGÃO/UF
+ */
+export function buildPromissoryNotePartyLegalQualification(
+  party: PromissoryNoteParty,
+): string {
+  const name = clean(party.name);
+  if (!name) return '';
+
+  const attrs = [
+    clean(party.nationality),
+    clean(party.maritalStatus),
+    clean(party.profession),
+  ].filter(Boolean);
+
+  let phrase = attrs.length ? `${name}, ${attrs.join(', ')}` : name;
+
+  const cpf = clean(party.cpf);
+  if (cpf) {
+    phrase += `, inscrito(a) no CPF sob o nº ${cpf}`;
+  }
+
+  const rg = clean(party.rg);
+  if (rg) {
+    phrase += cpf ? ` e no RG nº ${rg}` : `, portador(a) do RG nº ${rg}`;
+  }
+
+  return phrase;
+}
+
+/** Frase dos favorecidos no corpo: 1 ou 2 qualificações completas. */
 export function buildPromissoryNoteFavorecidosPhrase(
   vendor1: PromissoryNoteParty,
   vendor2: PromissoryNoteParty | null,
 ): string {
-  if (vendor2?.name) return `${vendor1.name} e ${vendor2.name}`;
-  return vendor1.name;
+  const q1 = buildPromissoryNotePartyLegalQualification(vendor1);
+  if (vendor2?.name) {
+    const q2 = buildPromissoryNotePartyLegalQualification(vendor2);
+    return `${q1} e ${q2}`;
+  }
+  return q1;
 }
 
 export type PromissoryNoteDraft = {
@@ -589,18 +644,13 @@ function escapeHtml(value: string): string {
 }
 
 export function buildPromissoryNoteHtml(draft: PromissoryNoteDraft): string {
-  const favorecidos = draft.vendor2?.name
-    ? `${escapeHtml(draft.vendor1.name)} e ${escapeHtml(draft.vendor2.name)}`
-    : escapeHtml(draft.vendor1.name);
+  const favorecidos = escapeHtml(draft.favorecidosPhrase);
 
   const buyerRg = draft.buyer.rg
     ? `<div><strong>RG:</strong> ${escapeHtml(draft.buyer.rg)}</div>`
     : '';
   const buyerAddress = draft.buyer.address
     ? `<div><strong>Endereço:</strong> ${escapeHtml(draft.buyer.address)}</div>`
-    : '';
-  const buyerQual = draft.buyer.qualification
-    ? `<div><strong>Qualificação:</strong> ${escapeHtml(draft.buyer.qualification)}</div>`
     : '';
 
   return `<!DOCTYPE html>
@@ -619,8 +669,8 @@ export function buildPromissoryNoteHtml(draft: PromissoryNoteDraft): string {
     .body { font-size: 13.5px; text-align: justify; margin: 20px 0; }
     .ref { font-size: 11px; color: #444; font-style: italic; margin: 18px 0 28px; }
     .emitente h2 { font-size: 13px; margin: 0 0 8px; letter-spacing: 0.06em; }
-    .sign { margin-top: 48px; text-align: center; font-size: 12px; }
-    .sign-line { border-top: 1px solid #111; width: 280px; margin: 56px auto 8px; }
+    .sign { margin-top: 64px; text-align: center; font-size: 12px; }
+    .sign-line { border-top: 1px solid #111; width: 280px; margin: 72px auto 8px; }
   </style>
 </head>
 <body>
@@ -637,7 +687,7 @@ export function buildPromissoryNoteHtml(draft: PromissoryNoteDraft): string {
     </div>
 
     <p class="body">
-      Aos ${escapeHtml(draft.dueDateLong)}, pagarei(emos), por esta única via
+      Aos ${escapeHtml(draft.dueDateLong)}, pagarei (emos), por esta única via
       de NOTA PROMISSÓRIA, a ${favorecidos}, ou à sua ordem
       ou a quem autorizar, a quantia de ${escapeHtml(draft.amountFmt)}
       (${escapeHtml(draft.amountExtenso)}), em moeda corrente nacional.
@@ -651,7 +701,6 @@ export function buildPromissoryNoteHtml(draft: PromissoryNoteDraft): string {
       <div><strong>CPF:</strong> ${escapeHtml(draft.buyer.cpf)}</div>
       ${buyerRg}
       ${buyerAddress}
-      ${buyerQual}
     </div>
 
     <div class="sign">
