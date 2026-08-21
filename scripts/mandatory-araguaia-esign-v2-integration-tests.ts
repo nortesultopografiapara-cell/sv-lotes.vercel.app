@@ -6,8 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT,
-  ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES,
+  isAraguaiaEsignV2PersistEnabled,
   ARAGUAIA_INTERVENIENT_COMPANY_CNPJ,
   ARAGUAIA_INTERVENIENT_COMPANY_NAME,
   ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF,
@@ -250,8 +249,8 @@ ok(
   }),
   'ARAGUAIA sem SPOUSE',
 );
-ok(ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT === false, 'flag INTERVENIENT false');
-ok(ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES === false, 'flag WITNESSES false');
+delete process.env.ARAGUAIA_ESIGN_V2_ENABLED;
+ok(isAraguaiaEsignV2PersistEnabled() === false, 'flag env OFF por default');
 
 const parties = createLocalProcess();
 ok(parties.length === 6, '6 parties criadas');

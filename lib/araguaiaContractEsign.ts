@@ -1,7 +1,8 @@
 /**
  * Signatários eletrônicos — modelo ARAGUAIA (isolado).
  * Destino V2: 2 VENDOR PF + BUYER + INTERVENIENT + WITNESS_1 + WITNESS_2.
- * Sem SPOUSE. Persistência remota de roles V2 só após migration (flags).
+ * Sem SPOUSE. Persistência remota gated por shouldEnableAraguaiaEsignV2
+ * (env + modelo ARAGUAIA + allowlist de company_id).
  */
 
 import { getCpfCnpjValidationState, onlyDigits } from '@/lib/inputMasks';
@@ -12,17 +13,44 @@ import {
 import { isValidSignerEmail, normalizeSignerEmail } from '@/lib/saleContractEmailValidation';
 import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
 import type { SaleSignaturePartyRole } from '@/lib/saleContractSignaturePartyTypes';
+import {
+  isAraguaiaEsignV2EnvEnabled,
+  shouldEnableAraguaiaEsignV2,
+  type AraguaiaEsignV2GateInput,
+} from '@/lib/araguaiaEsignV2Gate';
+
+/** @see isAraguaiaEsignV2EnvEnabled — flag bruta de ambiente. */
+export function isAraguaiaEsignV2PersistEnabled(): boolean {
+  return isAraguaiaEsignV2EnvEnabled();
+}
 
 /**
- * Enquanto o schema remoto não aceita INTERVENIENT, o envio NÃO deve
- * inserir essa party no banco compartilhado. Helpers/UI/aggregate/cert
- * já conhecem o papel; a flag liga a persistência após a Etapa 1 remota.
+ * Persistência INTERVENIENT — exige gate completo (env + ARAGUAIA + allowlist).
+ */
+export function shouldPersistAraguaiaIntervenientParty(
+  params: AraguaiaEsignV2GateInput = {},
+): boolean {
+  return shouldEnableAraguaiaEsignV2(params);
+}
+
+/**
+ * Persistência WITNESS_* — exige gate completo (env + ARAGUAIA + allowlist).
+ */
+export function shouldPersistAraguaiaWitnessParties(
+  params: AraguaiaEsignV2GateInput = {},
+): boolean {
+  return shouldEnableAraguaiaEsignV2(params);
+}
+
+/**
+ * @deprecated Preferir shouldPersistAraguaiaIntervenientParty({ companyId, contractModel }).
+ * Mantido false — NÃO hardcode true.
  */
 export const ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT = false;
 
 /**
- * Schema remoto ainda não aceita WITNESS_*. Tokens/UI/aggregate preparados;
- * insert remoto só após migration.
+ * @deprecated Preferir shouldPersistAraguaiaWitnessParties({ companyId, contractModel }).
+ * Mantido false — NÃO hardcode true.
  */
 export const ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES = false;
 

@@ -264,7 +264,7 @@ export async function createPartiesForSignatureProcess(
     }> | null;
     /**
      * INTERVENIENT (ARAGUAIA V2 — PJ). Só persistir quando o schema aceitar o role
-     * e o caller passar o objeto (ver ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT).
+     * Persistência gated por shouldEnableAraguaiaEsignV2 (env + ARAGUAIA + allowlist).
      */
     intervenient?: {
       name?: string | null;
@@ -275,7 +275,7 @@ export async function createPartiesForSignatureProcess(
     } | null;
     /**
      * WITNESS_1 / WITNESS_2 (ARAGUAIA V2). Identidade NULL; token público.
-     * Persistência gated por ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES.
+     * Persistência gated por shouldEnableAraguaiaEsignV2 (env + ARAGUAIA + allowlist).
      */
     witnesses?: Array<{
       role: 'WITNESS_1' | 'WITNESS_2';

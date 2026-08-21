@@ -11,14 +11,14 @@ import {
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
-  ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT,
-  ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES,
   buildAraguaiaEsignVendorPartyInputs,
   buildAraguaiaIntervenientPartyInput,
   buildAraguaiaWitnessPartyInputs,
   isAraguaiaSaleContractModel,
   isAraguaiaWitnessPartyRole,
   resolveAraguaiaVendorSignerEmail,
+  shouldPersistAraguaiaIntervenientParty,
+  shouldPersistAraguaiaWitnessParties,
   validateAraguaiaWitnessIdentity,
 } from '@/lib/araguaiaContractEsign';
 import {
@@ -478,9 +478,13 @@ export async function createSignaturePartiesAfterSend(
             withPublicToken: true,
           }))
         : null,
-      // Persistência remota só com schema INTERVENIENT + flag. Até lá: helpers/UI/tests.
+      // Persistência remota: schema V2 + env + ARAGUAIA + allowlist company_id.
       intervenient:
-        araguaiaEsign && ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT
+        araguaiaEsign &&
+        shouldPersistAraguaiaIntervenientParty({
+          companyId,
+          contractModel,
+        })
           ? (() => {
               const i = buildAraguaiaIntervenientPartyInput();
               return {
@@ -493,7 +497,11 @@ export async function createSignaturePartiesAfterSend(
             })()
           : null,
       witnesses:
-        araguaiaEsign && ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES
+        araguaiaEsign &&
+        shouldPersistAraguaiaWitnessParties({
+          companyId,
+          contractModel,
+        })
           ? buildAraguaiaWitnessPartyInputs().map((w) => ({
               role: w.role,
               name: w.name,

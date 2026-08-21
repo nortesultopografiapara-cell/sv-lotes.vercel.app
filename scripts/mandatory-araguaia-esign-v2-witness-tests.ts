@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES,
+  isAraguaiaEsignV2PersistEnabled,
+  shouldPersistAraguaiaWitnessParties,
   buildAraguaiaEsignExpectedPartyRoles,
   buildAraguaiaWitnessPartyInputs,
   isAraguaiaSaleContractModel,
@@ -354,7 +355,9 @@ console.log('\n=== M) Outros modelos não criam WITNESS ===');
   for (const model of ['PADRAO', 'MENESES', 'RECANTO', 'SV2']) {
     ok(!isAraguaiaSaleContractModel(model), `${model} não ARAGUAIA`);
   }
-  ok(ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES === false, 'persistência remota OFF');
+  delete process.env.ARAGUAIA_ESIGN_V2_ENABLED;
+  ok(isAraguaiaEsignV2PersistEnabled() === false, 'env OFF por default');
+  ok(shouldPersistAraguaiaWitnessParties() === false, 'persistência remota OFF');
   ok(!isPublicPartyRole('WITNESS_1'), 'WITNESS não é isPublicPartyRole (token via flag)');
   ok(isAraguaiaWitnessPartyRole('WITNESS_1'), 'helper witness role');
 
@@ -363,7 +366,7 @@ console.log('\n=== M) Outros modelos não criam WITNESS ===');
     'utf8',
   );
   ok(
-    flow.includes('ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES'),
+    flow.includes('shouldPersistAraguaiaWitnessParties'),
     'fluxo respeita flag witnesses',
   );
 }

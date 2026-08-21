@@ -1,17 +1,9 @@
--- Fundação ARAGUAIA e-sign V2 — amplia roles de contract_signature_parties.
--- NÃO recria UNIQUE (contract_signature_id, role) sem predicado (bloqueava 2 VENDOR).
--- NÃO cria party_order. NÃO altera status, FKs nem registros existentes.
--- Compatível com o schema real de Production (auditado Etapa 0):
---   - contract_signature_parties_unique_role ausente (Production)
---   - contract_signature_parties_role_check presente (BUYER|SPOUSE|VENDOR)
---   - idx_contract_signature_parties_signature_role
---   - idx_contract_signature_parties_unique_buyer_spouse (legado; substituído abaixo)
---   - idx_contract_signature_parties_unique_vendor_cpf
---   - idx_contract_signature_parties_token_hash (NÃO dropado)
---
--- IDEMPOTENTE: DROP IF EXISTS + CREATE IF NOT EXISTS.
--- APLICADA no Supabase compartilhado (Preview = Production) — Etapa 7 FASE A (SQL Editor).
--- Persistência V2 de parties continua gated por ARAGUAIA_ESIGN_V2_ENABLED + allowlist.
+-- ETAPA 7 / FASE A — aplicação autorizada (schema only).
+-- Arquivo: 20261006140000_contract_signature_parties_araguaia_esign_v2.sql
+-- Preview = Production (mesmo Supabase). Sem DML. Sem flags. Sem deploy.
+-- Executar no SQL Editor: selecionar TODO o bloco BEGIN…COMMIT.
+
+BEGIN;
 
 -- Preview ainda pode ter a UNIQUE antiga; Production já não tem.
 ALTER TABLE public.contract_signature_parties
@@ -65,3 +57,5 @@ COMMENT ON TABLE public.contract_signature_parties IS
   'Participantes individuais (BUYER/SPOUSE/VENDOR/INTERVENIENT/WITNESS_1/WITNESS_2) de um processo contract_signatures. VENDOR pode repetir no mesmo processo (CPF distinto).';
 
 NOTIFY pgrst, 'reload schema';
+
+COMMIT;

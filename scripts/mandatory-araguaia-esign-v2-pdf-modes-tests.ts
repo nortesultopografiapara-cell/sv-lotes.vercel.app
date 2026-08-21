@@ -16,8 +16,7 @@ import {
   buildAraguaiaElectronicSignaturesBlockHtml,
 } from '../lib/araguaiaContractElectronicSignatures';
 import {
-  ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT,
-  ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES,
+  isAraguaiaEsignV2PersistEnabled,
   ARAGUAIA_INTERVENIENT_COMPANY_NAME,
   buildAraguaiaIntervenientSignatureData,
 } from '../lib/araguaiaContractEsign';
@@ -409,8 +408,8 @@ console.log('\n=== M/N/O/P) Artefatos distinct + downloads ===');
 
 console.log('\n=== Flags + wiring ===');
 {
-  ok(ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT === false, 'flag INTERVENIENT false');
-  ok(ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES === false, 'flag WITNESSES false');
+  delete process.env.ARAGUAIA_ESIGN_V2_ENABLED;
+  ok(isAraguaiaEsignV2PersistEnabled() === false, 'flag env OFF por default');
   const service = readFileSync(
     join(root, 'lib/saleContractSignatureService.ts'),
     'utf8',

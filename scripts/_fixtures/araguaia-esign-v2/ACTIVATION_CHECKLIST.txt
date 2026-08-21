@@ -19,11 +19,13 @@ SCHEMA
 9. Validar unique_vendor_cpf / signature_role / token_hash preservados.
 10. Pré-checagem: zero rows com roles novas antes do primeiro envio real (esperado).
 
-APLICAÇÃO
-11. Ligar ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT = true
-12. Ligar ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES = true
+APLICAÇÃO (FASE B — allowlist)
+11. Setar no Vercel Preview: ARAGUAIA_ESIGN_V2_ENABLED=true
+12. Production: ARAGUAIA_ESIGN_V2_ENABLED ausente ou false (código V1)
+12b. Allowlist: default = SV Topografia (TOPOGRAFIA_COMPANY_ID).
+    Incluir R R via ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS=<uuid> após SELECT.
 13. Deploy Preview/branch (não Production) — lembrar: DB já é compartilhado.
-14. Criar venda de teste ARAGUAIA nova.
+14. Criar venda de teste ARAGUAIA nova (somente empresa na allowlist).
 15. Confirmar 6 parties: 2 VENDOR + BUYER + INTERVENIENT + WITNESS_1 + WITNESS_2.
 16. Confirmar zero SPOUSE.
 17. Assinar ciclo 6/6 (BUYER, Daniel, Aldenise, R R, W1, W2).
@@ -33,5 +35,5 @@ APLICAÇÃO
 
 SOMENTE DEPOIS
 21. Considerar Production app deploy (schema já estará ampliado se passo 6 rodou).
-22. Manter rollback de aplicação pronto (flags false + build anterior).
+22. Manter rollback de aplicação pronto (ARAGUAIA_ESIGN_V2_ENABLED=false + build anterior).
 23. NÃO executar rollback.conceptual.sql se já existirem parties V2.

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT,
+  isAraguaiaEsignV2PersistEnabled,
+  shouldPersistAraguaiaIntervenientParty,
   ARAGUAIA_INTERVENIENT_COMPANY_CNPJ,
   ARAGUAIA_INTERVENIENT_COMPANY_NAME,
   ARAGUAIA_INTERVENIENT_REPRESENTATIVE_CPF,
@@ -284,8 +285,10 @@ console.log('\n=== I) Outros modelos não criam INTERVENIENT ===');
     ok(!isAraguaiaSaleContractModel(model), `${model} não é ARAGUAIA`);
   }
   ok(isAraguaiaSaleContractModel('ARAGUAIA'), 'ARAGUAIA detectado');
+  delete process.env.ARAGUAIA_ESIGN_V2_ENABLED;
+  ok(isAraguaiaEsignV2PersistEnabled() === false, 'env OFF por default');
   ok(
-    ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT === false,
+    shouldPersistAraguaiaIntervenientParty() === false,
     'persistência remota INTERVENIENT desligada (schema shared)',
   );
   const flow = readFileSync(
@@ -293,7 +296,7 @@ console.log('\n=== I) Outros modelos não criam INTERVENIENT ===');
     'utf8',
   );
   ok(
-    flow.includes('ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT'),
+    flow.includes('shouldPersistAraguaiaIntervenientParty'),
     'fluxo respeita flag de persistência',
   );
 }

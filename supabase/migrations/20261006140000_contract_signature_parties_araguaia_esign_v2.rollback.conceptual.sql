@@ -14,8 +14,8 @@
 -- A) Rollback de aplicação (SEGURO — preferencial)
 -- ============================================================
 -- 1. Manter / restaurar:
---      ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT = false
---      ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES = false
+--      ARAGUAIA_ESIGN_V2_ENABLED = false (Preview/Production)
+--      (allowlist ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS irrelevante se flag off)
 -- 2. Redeploy do build anterior (sem inserção das novas roles).
 -- 3. Schema pode permanecer ampliado (CHECK com INTERVENIENT/WITNESS)
 --    sem impacto se o código não criar essas parties.
