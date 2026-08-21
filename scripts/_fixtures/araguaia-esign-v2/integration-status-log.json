@@ -1,0 +1,62 @@
+{
+  "statusLog": [
+    {
+      "step": "0/6 início",
+      "signed": 0,
+      "total": 6,
+      "agg": "PENDING"
+    },
+    {
+      "step": "BUYER assinou",
+      "signed": 1,
+      "total": 6,
+      "agg": "CLIENT_SIGNED"
+    },
+    {
+      "step": "Daniel VENDOR assinou",
+      "signed": 2,
+      "total": 6,
+      "agg": "CLIENT_SIGNED"
+    },
+    {
+      "step": "Aldenise VENDOR assinou",
+      "signed": 3,
+      "total": 6,
+      "agg": "CLIENT_SIGNED"
+    },
+    {
+      "step": "INTERVENIENT assinou",
+      "signed": 4,
+      "total": 6,
+      "agg": "CLIENT_SIGNED"
+    },
+    {
+      "step": "WITNESS_1 assinou",
+      "signed": 5,
+      "total": 6,
+      "agg": "CLIENT_SIGNED"
+    },
+    {
+      "step": "WITNESS_2 assinou — 6/6",
+      "signed": 6,
+      "total": 6,
+      "agg": "SIGNED"
+    }
+  ],
+  "partyIds": [
+    "party-buyer",
+    "party-daniel",
+    "party-aldenise",
+    "party-rr",
+    "party-w1",
+    "party-w2"
+  ],
+  "eventIds": [
+    "95972ebc-7279-43cf-a10a-95ea40b57ad0",
+    "e5aa1db7-39c2-475d-8b1b-92ecb1b55ee1",
+    "447d8abf-bcfe-4ee6-a719-ffc8295e1262",
+    "8a39e6f2-11f2-496a-b732-f5f2565f1e1f",
+    "a87271f1-2980-4c19-b167-a9b0f6d753b9",
+    "7aacc01c-230a-429d-b696-f73730f9e6d5"
+  ]
+}

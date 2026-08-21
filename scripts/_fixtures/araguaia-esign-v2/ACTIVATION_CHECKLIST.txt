@@ -1,0 +1,37 @@
+# Checklist — futura ativação ARAGUAIA e-sign V2
+# NÃO EXECUTAR agora. Preview e Production usam o MESMO Supabase.
+
+RISCO EXPLÍCITO
+- Qualquer migration no projeto compartilhado afeta Production imediatamente.
+- Só avançar com autorização explícita e janela controlada.
+
+ANTES
+1. Backup / dump schema de contract_signature_parties (constraints + indexes).
+2. Confirmar role_check atual = BUYER|SPOUSE|VENDOR.
+3. Confirmar unique_vendor_cpf e token_hash intactos.
+4. Confirmar flags ainda false no código a ser deployado até o passo 5.
+5. Garantir branch preview/araguaia-esign-v2 revisada + testes locais verdes.
+
+SCHEMA
+6. Executar migration 20261006140000_contract_signature_parties_araguaia_esign_v2.sql
+7. Validar role_check inclui INTERVENIENT, WITNESS_1, WITNESS_2.
+8. Validar idx_contract_signature_parties_unique_singleton_roles.
+9. Validar unique_vendor_cpf / signature_role / token_hash preservados.
+10. Pré-checagem: zero rows com roles novas antes do primeiro envio real (esperado).
+
+APLICAÇÃO
+11. Ligar ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT = true
+12. Ligar ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES = true
+13. Deploy Preview/branch (não Production) — lembrar: DB já é compartilhado.
+14. Criar venda de teste ARAGUAIA nova.
+15. Confirmar 6 parties: 2 VENDOR + BUYER + INTERVENIENT + WITNESS_1 + WITNESS_2.
+16. Confirmar zero SPOUSE.
+17. Assinar ciclo 6/6 (BUYER, Daniel, Aldenise, R R, W1, W2).
+18. Conferir PDF ELECTRONIC_SIGNED (sem linhas físicas).
+19. Conferir certificado + QR + IDs.
+20. Conferir Portal baixando pdf_signed_url (sem fallback unsigned).
+
+SOMENTE DEPOIS
+21. Considerar Production app deploy (schema já estará ampliado se passo 6 rodou).
+22. Manter rollback de aplicação pronto (flags false + build anterior).
+23. NÃO executar rollback.conceptual.sql se já existirem parties V2.

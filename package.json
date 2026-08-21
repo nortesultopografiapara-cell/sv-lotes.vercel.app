@@ -123,6 +123,8 @@
     "test:araguaia-esign-v2-intervenient": "tsx scripts/mandatory-araguaia-esign-v2-intervenient-tests.ts",
     "test:araguaia-esign-v2-witness": "tsx scripts/mandatory-araguaia-esign-v2-witness-tests.ts",
     "test:araguaia-esign-v2-pdf-modes": "tsx scripts/mandatory-araguaia-esign-v2-pdf-modes-tests.ts",
+    "test:araguaia-esign-v2-integration": "tsx scripts/mandatory-araguaia-esign-v2-integration-tests.ts",
+    "test:araguaia-esign-v2-all": "npm run test:araguaia-esign-v2 && npm run test:araguaia-esign-v2-intervenient && npm run test:araguaia-esign-v2-witness && npm run test:araguaia-esign-v2-pdf-modes && npm run test:araguaia-esign-v2-integration",
     "test:meneses-new-clauses": "tsx scripts/mandatory-meneses-new-clauses-tests.ts",
     "test:meneses-clause-terceira-finance": "tsx scripts/mandatory-meneses-clause-terceira-finance-tests.ts",
     "test:sale-spouse-cpf-reuse": "tsx scripts/mandatory-sale-spouse-cpf-reuse-tests.ts",
