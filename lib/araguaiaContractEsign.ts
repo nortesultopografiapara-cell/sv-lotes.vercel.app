@@ -409,3 +409,75 @@ export function sortAraguaiaVendorParties<
     return String(a.created_at || '').localeCompare(String(b.created_at || ''));
   });
 }
+
+/** Detecta nome da INTERVENIENTE PJ (R R Negócios) em party.signer_name. */
+export function isAraguaiaRrNegociosPartyName(name?: string | null): boolean {
+  return /R\s*R\s*NEG[OÓ]CIOS/i.test(String(name || ''));
+}
+
+export const ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE =
+  'R R Negócios não deve ser signatária no modelo ARAGUAIA.';
+
+/**
+ * V1: R R nunca pode ser party eletrônica.
+ * V2 (gate ON): R R só como INTERVENIENT.
+ */
+export function araguaiaAllowsRrNegociosSignatureParty(
+  params: {
+    companyId?: string | null;
+    contractModel?: string | null;
+    partyRole?: string | null;
+  },
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (
+    !shouldEnableAraguaiaEsignV2(
+      {
+        companyId: params.companyId,
+        contractModel: params.contractModel,
+      },
+      env,
+    )
+  ) {
+    return false;
+  }
+  return (
+    String(params.partyRole || '')
+      .trim()
+      .toUpperCase() === 'INTERVENIENT'
+  );
+}
+
+/**
+ * Pós-persistência: party com nome R R Negócios fora do papel permitido.
+ * Retorna a party inválida ou null se todas as R R forem permitidas.
+ */
+export function findDisallowedAraguaiaRrSignatureParty(
+  params: {
+    parties: Array<{ role?: string | null; signer_name?: string | null }>;
+    companyId?: string | null;
+    contractModel?: string | null;
+  },
+  env: NodeJS.ProcessEnv = process.env,
+): { role: string; signer_name: string } | null {
+  for (const p of params.parties) {
+    if (!isAraguaiaRrNegociosPartyName(p.signer_name)) continue;
+    if (
+      araguaiaAllowsRrNegociosSignatureParty(
+        {
+          companyId: params.companyId,
+          contractModel: params.contractModel,
+          partyRole: p.role,
+        },
+        env,
+      )
+    ) {
+      continue;
+    }
+    return {
+      role: String(p.role || ''),
+      signer_name: String(p.signer_name || ''),
+    };
+  }
+  return null;
+}

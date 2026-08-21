@@ -17,7 +17,10 @@ import {
   shouldEnableAraguaiaEsignV2,
 } from '../lib/araguaiaEsignV2Gate';
 import {
+  ARAGUAIA_INTERVENIENT_COMPANY_NAME,
+  ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
   buildAraguaiaEsignVendorPartyInputs,
+  findDisallowedAraguaiaRrSignatureParty,
   shouldPersistAraguaiaIntervenientParty,
   shouldPersistAraguaiaWitnessParties,
 } from '../lib/araguaiaContractEsign';
@@ -250,6 +253,11 @@ console.log('\n=== company_id no fluxo (tenant_id NULL irrelevante) ===');
       flow.includes('companyId'),
     'gate recebe companyId do contrato',
   );
+  ok(
+    flow.includes('findDisallowedAraguaiaRrSignatureParty') &&
+      flow.includes('ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE'),
+    'fluxo pós-persist usa helper RR gated (não reject cego V1)',
+  );
   // companies.tenant_id NULL não entra no path — só contracts.company_id
   ok(
     !flow.includes('company.tenant_id') || true,
@@ -290,6 +298,85 @@ console.log('\n=== Persist helpers + process.env ===');
     'persist OFF R R',
   );
   delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
+}
+
+console.log('\n=== K) RR party check — V2 ON permite INTERVENIENT; V1 rejeita ===');
+{
+  const rrName = ARAGUAIA_INTERVENIENT_COMPANY_NAME;
+  const intervenientParty = {
+    role: 'INTERVENIENT',
+    signer_name: rrName,
+  };
+  const vendorWithRr = {
+    role: 'VENDOR',
+    signer_name: rrName,
+  };
+  const buyerOk = { role: 'BUYER', signer_name: 'SEVERINO JOSE' };
+
+  ok(
+    !findDisallowedAraguaiaRrSignatureParty(
+      {
+        parties: [buyerOk, intervenientParty],
+        companyId: HOMOLOG,
+        contractModel: 'ARAGUAIA',
+      },
+      envOn,
+    ),
+    'K: Topografia + ARAGUAIA + gate ON → INTERVENIENT R R permitido',
+  );
+  ok(
+    findDisallowedAraguaiaRrSignatureParty(
+      {
+        parties: [buyerOk, intervenientParty],
+        companyId: HOMOLOG,
+        contractModel: 'ARAGUAIA',
+      },
+      envWith({ [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: undefined }),
+    ),
+    'K: gate OFF → INTERVENIENT R R ainda rejeitado (V1)',
+  );
+  ok(
+    findDisallowedAraguaiaRrSignatureParty(
+      {
+        parties: [buyerOk, intervenientParty],
+        companyId: RR_STANDIN,
+        contractModel: 'ARAGUAIA',
+      },
+      envOn,
+    ),
+    'K: R R empresa fora allowlist → rejeita (permanece V1)',
+  );
+  ok(
+    findDisallowedAraguaiaRrSignatureParty(
+      {
+        parties: [buyerOk, vendorWithRr],
+        companyId: HOMOLOG,
+        contractModel: 'ARAGUAIA',
+      },
+      envOn,
+    ),
+    'K: V2 ON ainda rejeita R R como VENDOR (papel errado)',
+  );
+  const msgInEsign = readFileSync(
+    join(root, 'lib/araguaiaContractEsign.ts'),
+    'utf8',
+  );
+  const msgInFlow = readFileSync(
+    join(root, 'lib/saleContractSignaturePartyFlow.ts'),
+    'utf8',
+  );
+  ok(
+    msgInEsign.includes("'R R Negócios não deve ser signatária no modelo ARAGUAIA.'"),
+    'K: mensagem UI/API permanece a mesma constante',
+  );
+  ok(
+    msgInFlow.includes('ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE'),
+    'K: fluxo lança a constante (mesma mensagem)',
+  );
+  ok(
+    !msgInFlow.includes('hasRrAsParty'),
+    'K: reject cego hasRrAsParty removido do fluxo',
+  );
 }
 
 console.log('\n=== J) V1 inalterado (2 VENDOR + SPOUSE outros modelos) ===');

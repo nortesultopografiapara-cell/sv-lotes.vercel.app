@@ -11,9 +11,11 @@ import {
 import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
+  ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
   buildAraguaiaEsignVendorPartyInputs,
   buildAraguaiaIntervenientPartyInput,
   buildAraguaiaWitnessPartyInputs,
+  findDisallowedAraguaiaRrSignatureParty,
   isAraguaiaSaleContractModel,
   isAraguaiaWitnessPartyRole,
   resolveAraguaiaVendorSignerEmail,
@@ -556,12 +558,16 @@ export async function createSignaturePartiesAfterSend(
           'validation',
         );
       }
-      const hasRrAsParty = persisted.some((p) =>
-        /R\s*R\s*NEG[OÓ]CIOS/i.test(String(p.signer_name || '')),
-      );
-      if (hasRrAsParty) {
+      // V1: R R nunca é party eletrônica.
+      // V2 (gate ON + ARAGUAIA + allowlist): INTERVENIENT com nome R R é esperado.
+      const disallowedRr = findDisallowedAraguaiaRrSignatureParty({
+        parties: persisted,
+        companyId,
+        contractModel,
+      });
+      if (disallowedRr) {
         throw new SaleContractSignatureError(
-          'R R Negócios não deve ser signatária no modelo ARAGUAIA.',
+          ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
           'validation',
         );
       }
