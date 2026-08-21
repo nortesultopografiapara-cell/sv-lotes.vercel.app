@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseMissingContractColumn } from '@/lib/contractRegeneration';
+import { resolveCanonicalSaleSignatureStatus } from '@/lib/saleContractDashboardStats';
 
 /** Colunas confirmadas em migrations — sem generated_html. */
 export const CONTRACT_LIST_SELECT_CORE = [
@@ -172,8 +173,13 @@ export async function loadContractsListForTenant(
       if (res.error) {
         return { rows: [], selectUsed: select, error: res.error.message };
       }
+      const adminRows = (res.data as Record<string, unknown>[]) ?? [];
+      const enrichedAdmin = await enrichContractsListWithProcessSignatureStatus(
+        supabase,
+        adminRows,
+      );
       return {
-        rows: (res.data as Record<string, unknown>[]) ?? [],
+        rows: enrichedAdmin,
         selectUsed: select,
         error: null,
       };
@@ -222,15 +228,77 @@ export async function loadContractsListForTenant(
     return tb - ta;
   });
 
+  const enriched = await enrichContractsListWithProcessSignatureStatus(
+    supabase,
+    merged,
+  );
+
   logContractsList('response', {
     activeTenantId: tenantId,
-    count: merged.length,
+    count: enriched.length,
     selectUsed: primary.selectUsed,
   });
 
   return {
-    rows: merged,
+    rows: enriched,
     selectUsed: primary.selectUsed,
     error: primary.error,
   };
+}
+
+/**
+ * Alinha `signature_status` da listagem ao processo eletrônico mais recente
+ * (`contract_signatures`), quando o espelho em `contracts` ficou defasado.
+ * Não altera status comercial/financeiro — só a fonte canônica de assinatura.
+ */
+export async function enrichContractsListWithProcessSignatureStatus(
+  supabase: SupabaseClient,
+  rows: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  const ids = rows
+    .map((r) => String(r.id || '').trim())
+    .filter(Boolean);
+  if (!ids.length) return rows;
+
+  const { data, error } = await supabase
+    .from('contract_signatures')
+    .select('contract_id, signature_status, created_at')
+    .in('contract_id', ids)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    logContractsList('process_signature_enrich_skip', {
+      error: error.message,
+    });
+    return rows;
+  }
+
+  const latestByContract = new Map<string, string>();
+  for (const row of data || []) {
+    const cid = String(
+      (row as { contract_id?: string }).contract_id || '',
+    ).trim();
+    if (!cid || latestByContract.has(cid)) continue;
+    latestByContract.set(
+      cid,
+      String((row as { signature_status?: string }).signature_status || ''),
+    );
+  }
+
+  if (!latestByContract.size) return rows;
+
+  return rows.map((row) => {
+    const id = String(row.id || '').trim();
+    const processStatus = latestByContract.get(id);
+    if (!processStatus) return row;
+    const canonical = resolveCanonicalSaleSignatureStatus({
+      signature_status: row.signature_status as string | null,
+      process_signature_status: processStatus,
+    });
+    return {
+      ...row,
+      process_signature_status: processStatus,
+      signature_status: canonical || row.signature_status,
+    };
+  });
 }

@@ -3,7 +3,10 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isRecantoPrimaveraContractModel } from '@/lib/contractModel';
+import {
+  isAraguaiaContractModel,
+  isRecantoPrimaveraContractModel,
+} from '@/lib/contractModel';
 
 /** Colunas consultadas para HTML salvo (ordem de preferência na leitura). */
 export const CONTRACT_HTML_READ_COLUMNS = [
@@ -29,11 +32,17 @@ export function logContractHtmlGlobal(
   console.log(`[contracts/${channel}]`, step, extra ?? {});
 }
 
-/** Indica se o template precisa carregar todos os lotes do projeto. */
+/**
+ * Indica se o template precisa carregar todos os lotes do projeto.
+ * Recanto (layout) e ARAGUAIA (confrontações geométricas = popup GIS)
+ * precisam dos vizinhos; sem isso só a frente (rua) costuma resolver.
+ */
 export function shouldLoadProjectBlocksForContract(
   tenant: Record<string, unknown> | null | undefined,
 ): boolean {
-  return isRecantoPrimaveraContractModel(tenant);
+  return (
+    isRecantoPrimaveraContractModel(tenant) || isAraguaiaContractModel(tenant)
+  );
 }
 
 /** Localiza coluna preenchida e metadados do HTML no row já carregado. */

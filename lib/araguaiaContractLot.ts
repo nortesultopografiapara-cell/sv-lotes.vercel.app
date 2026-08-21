@@ -15,6 +15,7 @@ import {
   getOfficialLotMeasurements,
   parseOfficialSegmentsFromBlock,
 } from '@/lib/officialLotMeasurements';
+import { loadLotConfrontations } from '@/lib/lotConfrontationsPanel';
 
 export type AraguaiaLotDescription = {
   sides: ContractLotSides;
@@ -117,18 +118,37 @@ export function resolveAraguaiaLotDescription(input: {
 
   if (allBlocks.length > 0 && block.id) {
     try {
-      const audit = buildLotConfrontationAudit(
-        block,
-        String(block.id),
+      const frontStreetLabel =
+        String(
+          block.front_street_name ??
+            block.frontStreetName ??
+            block.front_street ??
+            '',
+        ).trim() || null;
+      // Mesma entrada do popup GIS (frenteConfrontLabel / frontStreetLabel).
+      const panel = loadLotConfrontations({
+        lot: block,
         allBlocks,
-        (input.streetGuides || []) as Record<string, unknown>[],
-        input.project || {},
-      );
+        streetGuides: (input.streetGuides || []) as Record<string, unknown>[],
+        frenteConfrontLabel: frontStreetLabel,
+        frontStreetLabel,
+      });
+      const audit =
+        panel.audit ||
+        buildLotConfrontationAudit(
+          block,
+          String(block.id),
+          allBlocks,
+          (input.streetGuides || []) as Record<string, unknown>[],
+          input.project || {},
+        );
       const conf = buildOfficialLotConfrontations(audit, {
         block,
         allBlocks,
         project: input.project,
         streetGuides: (input.streetGuides || []) as never[],
+        frenteConfrontLabel: frontStreetLabel,
+        frontStreetLabel,
       });
       // Preenche lados ainda “a definir” com segments_json (fonte documental GIS).
       const mergeSide = (official: string, segment: string) => {

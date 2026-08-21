@@ -351,7 +351,11 @@ export async function buildContractViewHtml(
   let projectBlocks: Record<string, unknown>[] = [];
   let streetGuides: Record<string, unknown>[] = [];
 
-  if (projectId && shouldLoadProjectBlocksForContract(params.tenant)) {
+  if (
+    projectId &&
+    (shouldLoadProjectBlocksForContract(params.tenant) ||
+      shouldLoadProjectBlocksForContract(params.project as Record<string, unknown> | null))
+  ) {
     const [blocksFetch, guidesRes] = await Promise.all([
       fetchAllBlocksForProject(supabase, projectId, {
         select: BLOCKS_PROJECT_LIST_SELECT,

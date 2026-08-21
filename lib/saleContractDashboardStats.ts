@@ -15,6 +15,8 @@ export type SaleContractDashboardStats = {
 export type SaleContractDashboardRow = {
   status?: string | null;
   signature_status?: string | null;
+  /** Último processo em contract_signatures (quando enriquecido na listagem). */
+  process_signature_status?: string | null;
   sale_value_display?: number | null;
   sale_value?: number | null;
   sales?: {
@@ -33,12 +35,49 @@ function normalizeContractStatus(status?: string | null): string {
   return st;
 }
 
+/**
+ * Rank do processo eletrônico — maior = mais avançado.
+ * Usado para preferir `contract_signatures.signature_status` quando o
+ * espelho em `contracts.signature_status` ficou defasado.
+ */
+const ELECTRONIC_SIGNATURE_RANK: Record<string, number> = {
+  DRAFT: 0,
+  PENDING: 1,
+  SENT: 1,
+  VIEWED: 2,
+  PARTIALLY_SIGNED: 3,
+  CLIENT_SIGNED: 4,
+  SIGNED: 5,
+  CANCELLED: -1,
+  EXPIRED: -1,
+};
+
+/**
+ * Fonte canônica do estado de assinatura eletrônica:
+ * o mais avançado entre espelho do contrato e processo em contract_signatures.
+ */
+export function resolveCanonicalSaleSignatureStatus(input: {
+  signature_status?: string | null;
+  process_signature_status?: string | null;
+}): string {
+  const mirrored = String(input.signature_status || '').toUpperCase().trim();
+  const process = String(input.process_signature_status || '')
+    .toUpperCase()
+    .trim();
+  if (!process) return mirrored;
+  if (!mirrored) return process;
+  const rMirror = ELECTRONIC_SIGNATURE_RANK[mirrored] ?? 0;
+  const rProcess = ELECTRONIC_SIGNATURE_RANK[process] ?? 0;
+  return rProcess >= rMirror ? process : mirrored;
+}
+
 /** Mesmo critério de SaleContractSignatureSection (isElectronicallySigned). */
 export function isSaleContractFullySigned(contract: {
   status?: string | null;
   signature_status?: string | null;
+  process_signature_status?: string | null;
 }): boolean {
-  const signatureStatus = String(contract.signature_status || '').toUpperCase();
+  const signatureStatus = resolveCanonicalSaleSignatureStatus(contract);
   const contractStatus = String(contract.status || '').toLowerCase();
   return (
     signatureStatus === 'SIGNED' ||
@@ -62,6 +101,7 @@ export function isSaleContractSuperseded(contract: {
 export function classifySaleContractForDashboard(contract: {
   status?: string | null;
   signature_status?: string | null;
+  process_signature_status?: string | null;
 }): SaleContractDashboardBucket {
   if (isSaleContractCancelled(contract)) return 'cancelled';
   if (isSaleContractFullySigned(contract)) return 'signed';
@@ -89,6 +129,7 @@ export function resolveContractSignatureState(input: {
   contract?: {
     status?: string | null;
     signature_status?: string | null;
+    process_signature_status?: string | null;
   } | null;
   contractsAvailable?: boolean;
 }): ContractSignatureState {

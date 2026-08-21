@@ -828,7 +828,11 @@ export async function loadFreshRegenerationEntities(
 
   let projectBlocks: Array<Record<string, unknown>> = [];
   let streetGuides: Array<Record<string, unknown>> = [];
-  if (projectId && shouldLoadProjectBlocksForContract(company)) {
+  if (
+    projectId &&
+    (shouldLoadProjectBlocksForContract(company) ||
+      shouldLoadProjectBlocksForContract(project))
+  ) {
     const [blocksFetch, guidesRes] = await Promise.all([
       fetchAllBlocksForProject(supabase, projectId, {
         select: '*',
