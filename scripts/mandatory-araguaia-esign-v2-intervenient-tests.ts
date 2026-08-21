@@ -75,14 +75,17 @@ function mockParty(partial: Partial<ContractSignaturePartyRow> & {
   };
 }
 
-console.log('\n=== A) Destino esperado ARAGUAIA = 2 VENDOR + BUYER + INTERVENIENT ===');
+console.log('\n=== A) Destino esperado ARAGUAIA = 2 VENDOR + BUYER + INTERVENIENT (+ witnesses na Etapa 4) ===');
 {
   const roles = buildAraguaiaEsignExpectedPartyRoles();
   ok(roles.filter((r) => r === 'VENDOR').length === 2, '2 VENDOR');
   ok(roles.filter((r) => r === 'BUYER').length === 1, '1 BUYER');
   ok(roles.filter((r) => r === 'INTERVENIENT').length === 1, '1 INTERVENIENT');
+  ok(roles.filter((r) => r === 'WITNESS_1').length === 1, '1 WITNESS_1');
+  ok(roles.filter((r) => r === 'WITNESS_2').length === 1, '1 WITNESS_2');
   ok(!roles.includes('SPOUSE'), 'sem SPOUSE no destino');
   ok(buildAraguaiaEsignVendorPartyInputs().length === 2, '2 vendor inputs');
+  ok(roles.length === 6, '6 parties no destino V2');
 }
 
 console.log('\n=== B) Nenhum SPOUSE no ARAGUAIA ===');

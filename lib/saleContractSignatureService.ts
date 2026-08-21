@@ -749,6 +749,8 @@ export type SignSaleContractInput = {
   signerName: string;
   signerDocument: string;
   signerEmail: string;
+  /** Obrigatório para WITNESS_* (identidade no link público). */
+  signerPhone?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
@@ -1870,6 +1872,33 @@ export async function loadSaleContractPdfForSign(
       };
     }
 
+    const witnessParties = parties
+      .filter((p) => {
+        const role = String(p.role).toUpperCase();
+        return role === 'WITNESS_1' || role === 'WITNESS_2';
+      })
+      .sort((a, b) =>
+        String(a.role).toUpperCase().localeCompare(String(b.role).toUpperCase()),
+      );
+    const witnessCards =
+      witnessParties.length > 0
+        ? witnessParties.map((p) => ({
+            role: String(p.role).toUpperCase(),
+            name: String(p.signer_name || ''),
+            cpf: p.signer_cpf,
+            email: p.signer_email,
+            phone: p.signer_phone,
+            signedAt: p.signed_at,
+            ipAddress: p.ip_address,
+            signatureHash: p.signature_hash,
+            signatureEventId: readPartySignatureEventId(p),
+            browser: readPartyUaField(p, 'browser'),
+            os: readPartyUaField(p, 'os'),
+            device: readPartyUaField(p, 'device'),
+            approxLocation: readPartyLocation(p),
+          }))
+        : null;
+
     if (parties.length > 0) {
       // Selos por papel (VENDOR/BUYER/SPOUSE) — nunca deduplicar por CPF.
       html = applyElectronicSignatureStampsToContractHtml(
@@ -1978,6 +2007,7 @@ export async function loadSaleContractPdfForSign(
         : null,
       personVendorCards,
       intervenientCard,
+      witnessCards,
     });
 
     // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.

@@ -273,6 +273,18 @@ export async function createPartiesForSignatureProcess(
       email?: string | null;
       signatureData?: Record<string, unknown> | null;
     } | null;
+    /**
+     * WITNESS_1 / WITNESS_2 (ARAGUAIA V2). Identidade NULL; token público.
+     * Persistência gated por ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES.
+     */
+    witnesses?: Array<{
+      role: 'WITNESS_1' | 'WITNESS_2';
+      name?: string | null;
+      cpf?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      withPublicToken?: boolean;
+    }> | null;
     expiresAt: string;
   },
 ): Promise<{
@@ -283,6 +295,12 @@ export async function createPartiesForSignatureProcess(
   spouseSignUrl: string | null;
   vendorTokens: Array<{ partyId: string; token: string | null; signUrl: string | null }>;
   intervenientPartyId: string | null;
+  witnessTokens: Array<{
+    role: 'WITNESS_1' | 'WITNESS_2';
+    partyId: string;
+    token: string | null;
+    signUrl: string | null;
+  }>;
 }> {
   const buyerCreated = await insertSignatureParty(supabaseAdmin, {
     companyId: params.companyId,
@@ -389,6 +407,36 @@ export async function createPartiesForSignatureProcess(
     intervenientPartyId = intervenientCreated.party.id;
   }
 
+  const witnessTokens: Array<{
+    role: 'WITNESS_1' | 'WITNESS_2';
+    partyId: string;
+    token: string | null;
+    signUrl: string | null;
+  }> = [];
+
+  for (const witness of params.witnesses || []) {
+    const witnessCreated = await insertSignatureParty(supabaseAdmin, {
+      companyId: params.companyId,
+      contractSignatureId: params.contractSignatureId,
+      contractId: params.contractId,
+      saleId: params.saleId,
+      role: witness.role,
+      signerName: witness.name ?? null,
+      signerCpf: witness.cpf ?? null,
+      signerPhone: witness.phone ?? null,
+      signerEmail: witness.email ?? null,
+      withPublicToken: witness.withPublicToken !== false,
+      expiresAt: params.expiresAt,
+    });
+    parties.push(witnessCreated.party);
+    witnessTokens.push({
+      role: witness.role,
+      partyId: witnessCreated.party.id,
+      token: witnessCreated.token,
+      signUrl: witnessCreated.signUrl,
+    });
+  }
+
   return {
     parties,
     buyerToken: params.buyer.token,
@@ -397,6 +445,7 @@ export async function createPartiesForSignatureProcess(
     spouseSignUrl,
     vendorTokens,
     intervenientPartyId,
+    witnessTokens,
   };
 }
 
@@ -473,7 +522,7 @@ export async function markPartySigned(
 }
 
 /**
- * Reemite link para BUYER, SPOUSE ou VENDOR (com token público) ainda não assinados.
+ * Reemite link para BUYER, SPOUSE, VENDOR (com token) ou WITNESS_* ainda não assinados.
  */
 export async function reissuePartyPublicLink(
   supabaseAdmin: SupabaseClient,
@@ -483,9 +532,17 @@ export async function reissuePartyPublicLink(
   const isVendorWithLink =
     role === 'VENDOR' &&
     Boolean(party.signature_url || party.signature_token_hash);
-  if (role !== 'BUYER' && role !== 'SPOUSE' && !isVendorWithLink) {
+  const isWitnessWithLink =
+    (role === 'WITNESS_1' || role === 'WITNESS_2') &&
+    Boolean(party.signature_url || party.signature_token_hash);
+  if (
+    role !== 'BUYER' &&
+    role !== 'SPOUSE' &&
+    !isVendorWithLink &&
+    !isWitnessWithLink
+  ) {
     throw new Error(
-      'Somente comprador, cônjuge ou vendedor com link público podem reemitir.',
+      'Somente comprador, cônjuge, vendedor ou testemunha com link público podem reemitir.',
     );
   }
   if (String(party.status).toUpperCase() === 'SIGNED') {
@@ -549,11 +606,12 @@ export function toPublicPartyViews(
     const roleKey = String(role).toUpperCase();
     const resolvedUrl = resolvePartySignatureUrl(party.signature_url);
     const hasPublicLink = Boolean(resolvedUrl || party.signature_url);
-    // BUYER/SPOUSE sempre públicos; VENDOR compartilhável quando tem token/URL (ARAGUAIA).
+    // BUYER/SPOUSE sempre públicos; VENDOR/WITNESS compartilháveis com token/URL.
     // INTERVENIENT: assinatura administrativa — sem compartilhamento público.
     const shareableRole =
       isPublicPartyRole(role) ||
-      (roleKey === 'VENDOR' && hasPublicLink);
+      (roleKey === 'VENDOR' && hasPublicLink) ||
+      ((roleKey === 'WITNESS_1' || roleKey === 'WITNESS_2') && hasPublicLink);
     const canShare =
       shareableRole &&
       ['PENDING', 'VIEWED'].includes(status) &&

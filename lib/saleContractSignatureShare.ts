@@ -60,7 +60,7 @@ export function buildSaleSignatureShareMessage(input: SaleSignatureShareInput): 
 
 export type SalePartySignatureShareInput = {
   signerName: string;
-  role: 'BUYER' | 'SPOUSE' | 'VENDOR';
+  role: 'BUYER' | 'SPOUSE' | 'VENDOR' | 'WITNESS_1' | 'WITNESS_2';
   projectName: string;
   quadra: string;
   lote: string;
@@ -69,7 +69,7 @@ export type SalePartySignatureShareInput = {
 };
 
 /**
- * Mensagem individual por participante (comprador, cônjuge ou vendedor PF).
+ * Mensagem individual por participante (comprador, cônjuge, vendedor PF ou testemunha).
  * Inclui empreendimento, quadra, lote e contrato — não omitir esses campos.
  */
 export function buildSalePartySignatureShareMessage(
@@ -81,7 +81,9 @@ export function buildSalePartySignatureShareMessage(
       ? 'cônjuge'
       : input.role === 'VENDOR'
         ? 'vendedor'
-        : 'comprador',
+        : input.role === 'WITNESS_1' || input.role === 'WITNESS_2'
+          ? 'testemunha'
+          : 'comprador',
   );
   const project = shareField(input.projectName, '—');
   const quadra = shareField(input.quadra, '—');
@@ -94,7 +96,9 @@ export function buildSalePartySignatureShareMessage(
       ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de cônjuge anuente.'
       : input.role === 'VENDOR'
         ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de promitente vendedor.'
-        : 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda.';
+        : input.role === 'WITNESS_1' || input.role === 'WITNESS_2'
+          ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de testemunha. Ao abrir o link, informe seus dados e assine.'
+          : 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda.';
 
   return [
     'SV LOTES',

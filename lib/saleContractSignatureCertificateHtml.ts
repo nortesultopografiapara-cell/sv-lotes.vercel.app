@@ -104,6 +104,22 @@ export type SaleContractSignatureCertificateInput = {
     approxLocation?: string | null;
     signatureEventId?: string | null;
   } | null;
+  /** Cards TESTEMUNHA 1 / 2 (ARAGUAIA V2). */
+  witnessCards?: Array<{
+    role: 'WITNESS_1' | 'WITNESS_2' | string;
+    name: string;
+    cpf?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    signedAt?: string | null;
+    ipAddress?: string | null;
+    signatureHash?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    device?: string | null;
+    approxLocation?: string | null;
+    signatureEventId?: string | null;
+  }> | null;
 };
 
 export type SaleContractElectronicSignaturesInput = {
@@ -455,6 +471,65 @@ function buildPersonVendorCard(input: {
     fields,
     signed: Boolean(input.signedAt),
   });
+}
+
+function buildWitnessCard(input: {
+  role: string;
+  name: string;
+  cpf?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  signedAt?: string | null;
+  ipAddress?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+}): string {
+  const roleKey = String(input.role || '').toUpperCase();
+  const roleLabel =
+    roleKey === 'WITNESS_2' ? 'TESTEMUNHA 2' : 'TESTEMUNHA 1';
+  const name = String(input.name || '').trim() || '—';
+  const cpf = input.cpf ? formatCpfCnpj(input.cpf) || input.cpf : '—';
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '👤', label: 'Nome', value: name },
+    { icon: '🪪', label: 'CPF', value: cpf },
+    ...buildEvidenceFields({
+      email: input.email,
+      phone: input.phone,
+      ipAddress: input.ipAddress,
+      signedAt: input.signedAt,
+      browser: input.browser,
+      os: input.os,
+      device: input.device,
+      approxLocation: input.approxLocation,
+      signatureEventId: input.signatureEventId,
+    }),
+  ];
+  return buildOfficialSignatureCard({
+    role: roleLabel,
+    fields,
+    signed: Boolean(input.signedAt),
+  });
+}
+
+function buildWitnessCardsHtml(
+  input: SaleContractSignatureCertificateInput,
+): string {
+  const cards = Array.isArray(input.witnessCards)
+    ? input.witnessCards.filter((c) => String(c?.name || '').trim())
+    : [];
+  if (cards.length === 0) return '';
+  const ordered = [...cards].sort((a, b) => {
+    const ra = String(a.role || '').toUpperCase();
+    const rb = String(b.role || '').toUpperCase();
+    if (ra === rb) return 0;
+    if (ra === 'WITNESS_1') return -1;
+    if (rb === 'WITNESS_1') return 1;
+    return ra.localeCompare(rb);
+  });
+  return ordered.map((c) => buildWitnessCard(c)).join('\n');
 }
 
 function buildIntervenientCard(input: {
@@ -886,6 +961,7 @@ export function buildSaleContractSignatureCertificateHtml(
             ? buildIntervenientCard(input.intervenientCard)
             : ''
         }
+        ${buildWitnessCardsHtml(input)}
       </div>
 
       <div class="sv-cert-validation">

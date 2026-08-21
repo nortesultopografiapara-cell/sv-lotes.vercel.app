@@ -1,14 +1,15 @@
 /**
  * Signatários eletrônicos — modelo ARAGUAIA (isolado).
- * Destino V2: 2 VENDOR PF + BUYER + INTERVENIENT (R R Negócios).
- * Sem SPOUSE. Persistência remota de INTERVENIENT só após migration (flag).
+ * Destino V2: 2 VENDOR PF + BUYER + INTERVENIENT + WITNESS_1 + WITNESS_2.
+ * Sem SPOUSE. Persistência remota de roles V2 só após migration (flags).
  */
 
-import { onlyDigits } from '@/lib/inputMasks';
+import { getCpfCnpjValidationState, onlyDigits } from '@/lib/inputMasks';
 import {
   ARAGUAIA_DEFAULT_SELLERS,
   formatSellerCpfDisplay,
 } from '@/lib/projectContractSellers';
+import { isValidSignerEmail, normalizeSignerEmail } from '@/lib/saleContractEmailValidation';
 import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
 import type { SaleSignaturePartyRole } from '@/lib/saleContractSignaturePartyTypes';
 
@@ -18,6 +19,12 @@ import type { SaleSignaturePartyRole } from '@/lib/saleContractSignaturePartyTyp
  * já conhecem o papel; a flag liga a persistência após a Etapa 1 remota.
  */
 export const ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT = false;
+
+/**
+ * Schema remoto ainda não aceita WITNESS_*. Tokens/UI/aggregate preparados;
+ * insert remoto só após migration.
+ */
+export const ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES = false;
 
 export type AraguaiaEsignVendor = {
   order: number;
@@ -135,9 +142,117 @@ export function buildAraguaiaIntervenientPartyInput(): AraguaiaIntervenientParty
   };
 }
 
-/** Papéis obrigatórios do destino ARAGUAIA e-sign V2 (sem SPOUSE, sem testemunhas). */
+/** Papéis obrigatórios do destino ARAGUAIA e-sign V2 (sem SPOUSE). */
 export function buildAraguaiaEsignExpectedPartyRoles(): SaleSignaturePartyRole[] {
-  return ['BUYER', 'VENDOR', 'VENDOR', 'INTERVENIENT'];
+  return [
+    'BUYER',
+    'VENDOR',
+    'VENDOR',
+    'INTERVENIENT',
+    'WITNESS_1',
+    'WITNESS_2',
+  ];
+}
+
+export type AraguaiaWitnessPartyInput = {
+  role: 'WITNESS_1' | 'WITNESS_2';
+  name: null;
+  cpf: null;
+  phone: null;
+  email: null;
+  /** Link público — identidade preenchida pela própria testemunha. */
+  withPublicToken: true;
+};
+
+/** Parties testemunha: identidade NULL até o link público. */
+export function buildAraguaiaWitnessPartyInputs(): AraguaiaWitnessPartyInput[] {
+  return [
+    {
+      role: 'WITNESS_1',
+      name: null,
+      cpf: null,
+      phone: null,
+      email: null,
+      withPublicToken: true,
+    },
+    {
+      role: 'WITNESS_2',
+      name: null,
+      cpf: null,
+      phone: null,
+      email: null,
+      withPublicToken: true,
+    },
+  ];
+}
+
+export function isAraguaiaWitnessPartyRole(role?: string | null): boolean {
+  const key = String(role || '').toUpperCase();
+  return key === 'WITNESS_1' || key === 'WITNESS_2';
+}
+
+export type AraguaiaWitnessIdentityInput = {
+  name?: string | null;
+  cpf?: string | null;
+  phone?: string | null;
+  email?: string | null;
+};
+
+export type AraguaiaWitnessIdentityValidated = {
+  name: string;
+  cpf: string;
+  phone: string;
+  email: string;
+};
+
+/**
+ * Valida identidade obrigatória da testemunha no link público.
+ * Não permite SIGNED com dados incompletos.
+ */
+export function validateAraguaiaWitnessIdentity(
+  input: AraguaiaWitnessIdentityInput,
+):
+  | { ok: true; value: AraguaiaWitnessIdentityValidated }
+  | { ok: false; reason: string } {
+  const name = String(input.name || '').trim();
+  if (!name) {
+    return { ok: false, reason: 'Informe o nome completo da testemunha.' };
+  }
+
+  const cpfDigits = onlyDigits(input.cpf).slice(0, 11);
+  const cpfState = getCpfCnpjValidationState(cpfDigits);
+  if (!cpfState.isCompleteCpf) {
+    return {
+      ok: false,
+      reason: cpfState.message || 'Informe um CPF válido da testemunha.',
+    };
+  }
+
+  const phoneNormalized = normalizeWhatsAppPhone(String(input.phone || ''));
+  if (!phoneNormalized) {
+    return {
+      ok: false,
+      reason: 'Informe um telefone/WhatsApp válido da testemunha.',
+    };
+  }
+
+  const email = normalizeSignerEmail(input.email);
+  if (!isValidSignerEmail(email)) {
+    return {
+      ok: false,
+      reason: 'Informe um e-mail válido da testemunha.',
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      name,
+      cpf: cpfDigits,
+      phone: phoneNormalized,
+      email,
+    },
+  };
 }
 
 export function readAraguaiaIntervenientFromSignatureData(

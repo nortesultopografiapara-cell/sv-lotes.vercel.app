@@ -12,10 +12,14 @@ import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
   ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT,
+  ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES,
   buildAraguaiaEsignVendorPartyInputs,
   buildAraguaiaIntervenientPartyInput,
+  buildAraguaiaWitnessPartyInputs,
   isAraguaiaSaleContractModel,
+  isAraguaiaWitnessPartyRole,
   resolveAraguaiaVendorSignerEmail,
+  validateAraguaiaWitnessIdentity,
 } from '@/lib/araguaiaContractEsign';
 import {
   assertSpouseReadyForSignatureSend,
@@ -488,6 +492,17 @@ export async function createSignaturePartiesAfterSend(
               };
             })()
           : null,
+      witnesses:
+        araguaiaEsign && ARAGUAIA_ESIGN_V2_PERSIST_WITNESSES
+          ? buildAraguaiaWitnessPartyInputs().map((w) => ({
+              role: w.role,
+              name: w.name,
+              cpf: w.cpf,
+              phone: w.phone,
+              email: w.email,
+              withPublicToken: true,
+            }))
+          : null,
       expiresAt: params.expiresAt,
     });
 
@@ -801,6 +816,7 @@ export async function signPartyElectronically(
     signerName: string;
     signerDocument: string;
     signerEmail: string;
+    signerPhone?: string | null;
     ipAddress?: string | null;
     userAgent?: string | null;
   },
@@ -816,7 +832,15 @@ export async function signPartyElectronically(
     throw new SaleContractSignatureError('Link de assinatura inválido.');
   }
 
-  if (party.role !== 'BUYER' && party.role !== 'SPOUSE' && party.role !== 'VENDOR') {
+  const partyRoleKey = String(party.role).toUpperCase();
+  const isWitness = isAraguaiaWitnessPartyRole(partyRoleKey);
+
+  if (
+    party.role !== 'BUYER' &&
+    party.role !== 'SPOUSE' &&
+    party.role !== 'VENDOR' &&
+    !isWitness
+  ) {
     throw new SaleContractSignatureError(
       'Este link não é válido para assinatura pública.',
     );
@@ -850,48 +874,71 @@ export async function signPartyElectronically(
     throw new SaleContractSignatureError('O link de assinatura expirou.');
   }
 
-  const signerName = String(input.signerName || '').trim();
-  const signerDocument = onlyDigits(input.signerDocument);
-  const signerEmailRaw = normalizeSignerEmail(input.signerEmail);
-  const hasEmail = isValidSignerEmail(signerEmailRaw);
-  const partyPhone = String(party.signer_phone || '').trim();
-  const lockedVendorEmail = resolveAraguaiaVendorSignerEmail({
-    cpf: party.signer_cpf || signerDocument,
-    submittedEmail: hasEmail ? signerEmailRaw : null,
-  });
-  const resolvedSignerEmail =
-    lockedVendorEmail !== undefined
-      ? lockedVendorEmail
-      : hasEmail
-        ? signerEmailRaw
-        : party.role === 'VENDOR'
-          ? null
-          : party.signer_email || null;
+  let signerName = String(input.signerName || '').trim();
+  let signerDocument = onlyDigits(input.signerDocument);
+  let resolvedSignerEmail: string | null = null;
+  let resolvedPhone: string | null = String(party.signer_phone || '').trim() || null;
+
+  if (isWitness) {
+    const validated = validateAraguaiaWitnessIdentity({
+      name: input.signerName,
+      cpf: input.signerDocument,
+      phone: input.signerPhone,
+      email: input.signerEmail,
+    });
+    if (!validated.ok) {
+      throw new SaleContractSignatureError(validated.reason);
+    }
+    signerName = validated.value.name;
+    signerDocument = validated.value.cpf;
+    resolvedSignerEmail = validated.value.email;
+    resolvedPhone = validated.value.phone;
+  } else {
+    const signerEmailRaw = normalizeSignerEmail(input.signerEmail);
+    const hasEmail = isValidSignerEmail(signerEmailRaw);
+    const partyPhone = String(party.signer_phone || '').trim();
+    const lockedVendorEmail = resolveAraguaiaVendorSignerEmail({
+      cpf: party.signer_cpf || signerDocument,
+      submittedEmail: hasEmail ? signerEmailRaw : null,
+    });
+    resolvedSignerEmail =
+      lockedVendorEmail !== undefined
+        ? lockedVendorEmail
+        : hasEmail
+          ? signerEmailRaw
+          : party.role === 'VENDOR'
+            ? null
+            : party.signer_email || null;
+    const resolvedHasEmail = isValidSignerEmail(
+      String(resolvedSignerEmail || ''),
+    );
+
+    if (!signerName || signerDocument.length < 11) {
+      throw new SaleContractSignatureError(
+        'Informe nome completo e CPF válidos para assinar.',
+      );
+    }
+
+    if (!resolvedHasEmail && !partyPhone) {
+      throw new SaleContractSignatureError(
+        'Informe um e-mail válido para assinar.',
+      );
+    }
+
+    if (
+      party.signer_cpf &&
+      onlyDigits(party.signer_cpf) &&
+      onlyDigits(party.signer_cpf) !== signerDocument
+    ) {
+      throw new SaleContractSignatureError(
+        `O CPF informado não corresponde ao ${saleSignaturePartyRoleLabel(party.role).toLowerCase()} deste link.`,
+      );
+    }
+  }
+
   const resolvedHasEmail = isValidSignerEmail(
     String(resolvedSignerEmail || ''),
   );
-
-  if (!signerName || signerDocument.length < 11) {
-    throw new SaleContractSignatureError(
-      'Informe nome completo e CPF válidos para assinar.',
-    );
-  }
-
-  if (!resolvedHasEmail && !partyPhone) {
-    throw new SaleContractSignatureError(
-      'Informe um e-mail válido para assinar.',
-    );
-  }
-
-  if (
-    party.signer_cpf &&
-    onlyDigits(party.signer_cpf) &&
-    onlyDigits(party.signer_cpf) !== signerDocument
-  ) {
-    throw new SaleContractSignatureError(
-      `O CPF informado não corresponde ao ${saleSignaturePartyRoleLabel(party.role).toLowerCase()} deste link.`,
-    );
-  }
 
   const { data: contract, error: contractErr } = await supabaseAdmin
     .from('contracts')
@@ -925,7 +972,7 @@ export async function signPartyElectronically(
     signerEmail: resolvedHasEmail ? String(resolvedSignerEmail) : '',
     signedAt,
     ipAddress: input.ipAddress || '',
-    party: party.role === 'SPOUSE' ? 'CLIENT' : 'CLIENT',
+    party: 'CLIENT',
   });
   const signatureHash = await computeSignatureHash(
     `${party.role}|${hashPayload}`,
@@ -937,13 +984,14 @@ export async function signPartyElectronically(
     signerName,
     signerCpf: signerDocument,
     signerEmail: resolvedHasEmail ? String(resolvedSignerEmail) : null,
-    signerPhone: party.signer_phone,
+    signerPhone: resolvedPhone,
     signatureHash,
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
     signedAt,
     signatureData: {
       role: party.role,
+      partyId: party.id,
       browser: ua.browser,
       os: ua.os,
       device: ua.device,
@@ -963,7 +1011,9 @@ export async function signPartyElectronically(
       ? 'SPOUSE_SIGNED'
       : party.role === 'VENDOR'
         ? 'VENDOR_SIGNED'
-        : 'BUYER_SIGNED';
+        : isWitness
+          ? 'CLIENT_SIGNED'
+          : 'BUYER_SIGNED';
 
   await logSignatureEvent(supabaseAdmin, {
     signatureToken: token,
@@ -972,6 +1022,7 @@ export async function signPartyElectronically(
     eventType,
     personName: signerName,
     personEmail: resolvedHasEmail ? String(resolvedSignerEmail) : undefined,
+    personPhone: resolvedPhone || undefined,
     ipAddress: input.ipAddress || undefined,
     userAgent: input.userAgent || undefined,
     eventDescription: `Assinatura eletrônica do ${saleSignaturePartyRoleLabel(party.role).toLowerCase()}.`,

@@ -32,6 +32,8 @@ type SaleSignPageData = {
     phone?: string | null;
     email?: string | null;
     emailOptional?: boolean;
+    identityBlank?: boolean;
+    requiresPhone?: boolean;
   } | null;
   signature: {
     status: string;
@@ -72,6 +74,7 @@ export default function SaleSignContractPage() {
   const [signerName, setSignerName] = useState('');
   const [signerDocument, setSignerDocument] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
+  const [signerPhone, setSignerPhone] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -97,8 +100,11 @@ export default function SaleSignContractPage() {
         }
         const payload = json as SaleSignPageData;
         setData(payload);
-        if (payload.buyer?.name) setSignerName(payload.buyer.name);
-        if (payload.buyer?.document) {
+        const isWitness =
+          payload.party?.role === 'WITNESS_1' ||
+          payload.party?.role === 'WITNESS_2';
+        if (!isWitness && payload.buyer?.name) setSignerName(payload.buyer.name);
+        if (!isWitness && payload.buyer?.document) {
           setSignerDocument(formatCpfCnpj(String(payload.buyer.document)));
         }
         // VENDOR com e-mail NULL (ex.: Aldenise): não pré-preencher e-mail do comprador.
@@ -108,8 +114,11 @@ export default function SaleSignContractPage() {
             : '';
         if (payload.party?.role === 'VENDOR') {
           setSignerEmail(partyEmail);
-        } else if (payload.buyer?.email) {
+        } else if (!isWitness && payload.buyer?.email) {
           setSignerEmail(String(payload.buyer.email));
+        }
+        if (isWitness && payload.party?.phone) {
+          setSignerPhone(String(payload.party.phone));
         }
       } catch {
         setError('Não foi possível carregar o contrato.');
@@ -122,12 +131,22 @@ export default function SaleSignContractPage() {
   const handleSign = async () => {
     setFormError(null);
     const doc = onlyDigits(signerDocument);
+    const isWitness =
+      data?.party?.role === 'WITNESS_1' || data?.party?.role === 'WITNESS_2';
     if (!signerName.trim() || doc.length < 11) {
       setFormError('Preencha nome completo e CPF válidos.');
       return;
     }
     if (!accepted) {
-      setFormError('Você precisa concordar com os termos do contrato.');
+      setFormError(
+        isWitness
+          ? 'Você precisa confirmar que está assinando como testemunha.'
+          : 'Você precisa concordar com os termos do contrato.',
+      );
+      return;
+    }
+    if (isWitness && !signerPhone.trim()) {
+      setFormError('Informe o telefone/WhatsApp da testemunha.');
       return;
     }
     const emailOptional = Boolean(data?.party?.emailOptional);
@@ -153,6 +172,7 @@ export default function SaleSignContractPage() {
           signerName: signerName.trim(),
           signerDocument: doc,
           signerEmail: signerEmail.trim(),
+          ...(isWitness ? { signerPhone: signerPhone.trim() } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -266,14 +286,32 @@ export default function SaleSignContractPage() {
             {data.signature.title ||
               (data.party?.role === 'SPOUSE'
                 ? 'Assinatura do cônjuge anuente'
-                : 'Assinatura do comprador')}
+                : data.party?.role === 'WITNESS_1'
+                  ? 'Assinatura da Testemunha 1'
+                  : data.party?.role === 'WITNESS_2'
+                    ? 'Assinatura da Testemunha 2'
+                    : 'Assinatura do comprador')}
           </h3>
         </div>
 
         {data.party?.roleLabel && (
           <p className="text-xs text-amber-200/80">
             Você está assinando como <strong>{data.party.roleLabel}</strong>
-            {data.buyer.name ? ` — ${data.buyer.name}` : ''}.
+            {data.party.role !== 'WITNESS_1' &&
+            data.party.role !== 'WITNESS_2' &&
+            data.buyer.name
+              ? ` — ${data.buyer.name}`
+              : ''}
+            .
+          </p>
+        )}
+
+        {(data.party?.role === 'WITNESS_1' ||
+          data.party?.role === 'WITNESS_2') &&
+          data.party.identityBlank !== false && (
+          <p className="text-[11px] text-gray-400 leading-relaxed">
+            Identifique-se abaixo. Seus dados serão registrados apenas nesta
+            assinatura de testemunha.
           </p>
         )}
 
@@ -289,6 +327,16 @@ export default function SaleSignContractPage() {
           onChange={(v) => setSignerDocument(formatCpfCnpj(v))}
           placeholder="000.000.000-00"
         />
+        {(data.party?.role === 'WITNESS_1' ||
+          data.party?.role === 'WITNESS_2' ||
+          data.party?.requiresPhone) && (
+          <Field
+            label="Telefone / WhatsApp"
+            value={signerPhone}
+            onChange={setSignerPhone}
+            placeholder="(00) 00000-0000"
+          />
+        )}
         <Field
           label={
             data.party?.emailOptional ? 'E-mail (opcional)' : 'E-mail'
@@ -310,7 +358,12 @@ export default function SaleSignContractPage() {
             onChange={(e) => setAccepted(e.target.checked)}
             className="mt-1 shrink-0"
           />
-          <span>Li e concordo com os termos do contrato de compra e venda.</span>
+          <span>
+            {data.party?.role === 'WITNESS_1' ||
+            data.party?.role === 'WITNESS_2'
+              ? 'Li e concordo que estou assinando eletronicamente este contrato na condição de testemunha.'
+              : 'Li e concordo com os termos do contrato de compra e venda.'}
+          </span>
         </label>
 
         {formError && (
@@ -325,7 +378,12 @@ export default function SaleSignContractPage() {
           onClick={() => void handleSign()}
           className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 font-bold text-sm tracking-wide"
         >
-          {submitting ? 'Registrando assinatura…' : 'ASSINAR CONTRATO'}
+          {submitting
+            ? 'Registrando assinatura…'
+            : data.party?.role === 'WITNESS_1' ||
+                data.party?.role === 'WITNESS_2'
+              ? 'ASSINAR COMO TESTEMUNHA'
+              : 'ASSINAR CONTRATO'}
         </button>
       </div>
     ) : (

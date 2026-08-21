@@ -657,7 +657,9 @@ export const SaleContractSignatureSection = forwardRef<
             const partyMessage =
               party.role === 'BUYER' ||
               party.role === 'SPOUSE' ||
-              party.role === 'VENDOR'
+              party.role === 'VENDOR' ||
+              party.role === 'WITNESS_1' ||
+              party.role === 'WITNESS_2'
                 ? buildSalePartySignatureShareMessage({
                     signerName: party.signer_name || party.roleLabel,
                     role: party.role,
@@ -683,6 +685,13 @@ export const SaleContractSignatureSection = forwardRef<
                     ? `Assinado em ${formatSignatureTimelineDateTime(party.signed_at)}`
                     : party.statusLabel}
                 </p>
+                {(party.role === 'WITNESS_1' || party.role === 'WITNESS_2') &&
+                  !party.signer_name &&
+                  party.status !== 'SIGNED' && (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Identidade será preenchida pela testemunha ao abrir o link.
+                  </p>
+                )}
                 {party.role === 'INTERVENIENT' && party.representativeName && (
                   <p className="text-[11px] text-[var(--text-muted)]">
                     Representante: {party.representativeName}
@@ -748,6 +757,13 @@ export const SaleContractSignatureSection = forwardRef<
                           setCopyFeedback(`Link do ${party.roleLabel} copiado.`);
                         });
                       }}
+                    />
+                    <ActionChip
+                      icon={ExternalLink}
+                      label="Abrir página"
+                      onClick={() =>
+                        window.open(url, '_blank', 'noopener,noreferrer')
+                      }
                     />
                     {party.canResend && (
                       <ActionChip
