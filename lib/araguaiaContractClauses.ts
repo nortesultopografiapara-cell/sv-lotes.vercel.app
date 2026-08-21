@@ -310,7 +310,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     )}
 
     ${clauseHtml(
-      'CLÁUSULA TERCEIRA – CONDIÇÕES GERAIS',
+      'CLÁUSULA QUARTA – CONDIÇÕES GERAIS',
       `Considerando o caráter dessa transação, as partes contratantes reconhecem os termos deste contrato e com eles anuem, especialmente quanto às seguintes condições:`,
       `
       ${itemP(
@@ -341,17 +341,17 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     )}
 
     ${clauseHtml(
-      'CLÁUSULA QUARTA – CIÊNCIA DO CONTRATO',
+      'CLÁUSULA QUINTA – CIÊNCIA DO CONTRATO',
       `O(A/s) PROMITENTE(S) COMPRADOR(A/ES) declara(m) ter pleno conhecimento de todo o teor deste contrato e das cláusulas nele contidas, eximindo os PROMITENTES VENDEDORES de qualquer responsabilidade que não faça parte deste instrumento contratual.`,
     )}
 
     ${clauseHtml(
-      'CLÁUSULA QUINTA – IRREVOGABILIDADE DA TRANSAÇÃO',
+      'CLÁUSULA SEXTA – IRREVOGABILIDADE DA TRANSAÇÃO',
       `O presente instrumento é firmado em caráter <strong>IRREVOGÁVEL E IRRETRATÁVEL</strong>, não podendo haver arrependimento nos termos do disposto no artigo 1.094 do Código Civil Brasileiro, obrigação estas que se estende aos contratantes, seus herdeiros e sucessores a qualquer título, devendo-se aplicar ao presente negócio todas as normas previstas no ordenamento jurídico civil vigentes.`,
     )}
 
     ${clauseHtml(
-      'CLÁUSULA SEXTA – RESCISÃO',
+      'CLÁUSULA SÉTIMA – RESCISÃO',
       `O presente contrato será rescindido por culpa exclusiva do(a/s) PROMITENTE(S) COMPRADOR(A/ES) em qualquer dos seguintes casos:`,
       `
       ${itemP(
@@ -379,17 +379,17 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     )}
 
     ${clauseHtml(
-      'CLÁUSULA SÉTIMA – CESSÃO E TRANSFERÊNCIA',
+      'CLÁUSULA OITAVA – CESSÃO E TRANSFERÊNCIA',
       `É permitida a cessão e transferência dos direitos relativos a este contrato, que deverá ter a anuência do cônjuge, se for o caso, sendo que a cessão ou transferência somente será possível mediante anuência expressa dos PROMITENTES VENDEDORES, devendo o(a/s) PROMITENTE(S) COMPRADOR(A/ES) estar em dia com o pagamento das parcelas devidas, havendo a cobrança de uma taxa referente a esta transação no valor correspondente ao da última parcela paga.`,
     )}
 
     ${clauseHtml(
-      'CLÁUSULA OITAVA – INFRAESTRUTURA DO CHACREAMENTO',
+      'CLÁUSULA NONA – INFRAESTRUTURA DO CHACREAMENTO',
       `O(A/S) PROMITENTE(S) COMPRADOR(A/ES) desde já declara(m) para todos os efeitos legais e necessários, ter plena ciência de que o chacreamento contará com infraestrutura de <strong>arruamento</strong>, cabendo aos compradores a implantação das demais infraestruturas necessárias.`,
     )}
 
     ${clauseHtml(
-      'CLÁUSULA NONA – OBRIGAÇÕES GERAIS',
+      'CLÁUSULA DÉCIMA – OBRIGAÇÕES GERAIS',
       `<strong>A</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) ficam desde já notificados, que, para fins de atendimento das posturas municipais, bem como para que seja mantido o bom aspecto dos demais lotes da quadra como um todo, deverá manter o imóvel adquirido sempre limpo, providenciando ainda o cercamento da área;`,
       `
       ${itemP(
@@ -398,19 +398,19 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${keepTogether(
         'araguaia-ninth-letter-c',
         itemP(
-          `<strong>C</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) se declara(m) ciente(s) de que adquiriu o imóvel com a infraestrutura descrita na cláusula oitava deste contrato, sendo que quaisquer outros serviços ou melhoramentos públicos que vierem a ser exigidos pelos poderes públicos correrão à suas expensas.`,
+          `<strong>C</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) se declara(m) ciente(s) de que adquiriu o imóvel com a infraestrutura descrita na cláusula nona deste contrato, sendo que quaisquer outros serviços ou melhoramentos públicos que vierem a ser exigidos pelos poderes públicos correrão à suas expensas.`,
         ),
       )}
       `,
     )}
 
     ${clauseHtml(
-      'CLÁUSULA DÉCIMA – SUCESSÃO CONTRATUAL',
+      'CLÁUSULA DÉCIMA PRIMEIRA – SUCESSÃO CONTRATUAL',
       `Pelo falecimento de qualquer uma das partes contratantes, bem como do mutuário originário, não caberá desobrigação a qualquer título dos contratantes, obrigando-se a cumpri-lo por seus respectivos herdeiros e sucessores e quaisquer títulos.`,
     )}
 
     ${clauseHtml(
-      'CLÁUSULA DÉCIMA PRIMEIRA – DISPOSIÇÕES GERAIS',
+      'CLÁUSULA DÉCIMA SEGUNDA – DISPOSIÇÕES GERAIS',
         `<strong>1</strong> – Pelo princípio da liberdade de contratar prevista no Código Civil Brasileiro, as partes declaram que concordam com plena legalidade das cláusulas aqui entabuladas, isentado-se assim terceiros de toda e qualquer responsabilidade pela assinatura do presente contrato;`,
       `
       ${itemP(
@@ -429,7 +429,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     )}
 
     ${clauseHtml(
-      'CLÁUSULA DÉCIMA SEGUNDA – FORO',
+      'CLÁUSULA DÉCIMA TERCEIRA – FORO',
       `As partes contratantes elegem o foro da Comarca de Parauapebas – PA, para que, nele venham a ser dirimidas todas as dúvidas ou questões porventura advindas do presente contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja ou venha a ser.`,
     )}
   `;

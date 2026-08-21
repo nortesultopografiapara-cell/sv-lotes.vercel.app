@@ -447,6 +447,81 @@ function testSourceFilesExist() {
   }
 }
 
+/** Etapa 13 — numeração única PRIMEIRA…DÉCIMA TERCEIRA + refs cruzadas. */
+function testAraguaiaClauseNumbering() {
+  const html = generateContractHTML({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+
+  const expectedOrdinals = [
+    'PRIMEIRA',
+    'SEGUNDA',
+    'TERCEIRA',
+    'QUARTA',
+    'QUINTA',
+    'SEXTA',
+    'SÉTIMA',
+    'OITAVA',
+    'NONA',
+    'DÉCIMA',
+    'DÉCIMA PRIMEIRA',
+    'DÉCIMA SEGUNDA',
+    'DÉCIMA TERCEIRA',
+  ] as const;
+
+  const titleRe =
+    /CLÁUSULA\s+(PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA|SÉTIMA|OITAVA|NONA|DÉCIMA(?:\s+PRIMEIRA|\s+SEGUNDA|\s+TERCEIRA)?)\s*[–-]/gi;
+  const titles: { ordinal: string; full: string }[] = [];
+  for (const m of html.matchAll(titleRe)) {
+    titles.push({ ordinal: m[1].replace(/\s+/g, ' ').trim().toUpperCase(), full: m[0] });
+  }
+
+  assert(titles.length === 13, `exatamente 13 títulos (obtido ${titles.length})`);
+
+  const ordinals = titles.map((t) => t.ordinal);
+  for (let i = 0; i < expectedOrdinals.length; i++) {
+    assert(
+      ordinals[i] === expectedOrdinals[i],
+      `ordinal #${i + 1} = ${expectedOrdinals[i]} (obtido ${ordinals[i]})`,
+    );
+  }
+
+  const uniq = new Set(ordinals);
+  assert(uniq.size === 13, 'nenhum ordinal duplicado');
+  assert(
+    /CLÁUSULA\s+DÉCIMA TERCEIRA\s*[–-]\s*FORO/i.test(html),
+    'FORO = DÉCIMA TERCEIRA',
+  );
+
+  assert(
+    /CLÁUSULA\s+QUARTA\s*[–-]\s*CONDIÇÕES GERAIS/i.test(html),
+    'CONDIÇÕES GERAIS = QUARTA',
+  );
+  assert(
+    (html.match(/CLÁUSULA\s+TERCEIRA/gi) || []).length === 1,
+    'somente uma CLÁUSULA TERCEIRA',
+  );
+
+  // Refs cruzadas semânticas
+  assert(
+    /infraestrutura descrita na cláusula nona deste contrato/i.test(html),
+    'ref infraestrutura → cláusula nona',
+  );
+  assert(
+    !/infraestrutura descrita na cláusula oitava deste contrato/i.test(html),
+    'sem ref infraestrutura → cláusula oitava',
+  );
+  assert(
+    /descrito na cláusula segunda deste (instrumento|contrato)/i.test(html),
+    'ref imóvel → cláusula segunda preservada',
+  );
+}
+
 /** Pack Araguaia: não forçar página por y%PAGE_H (página vazia antes do fecho). */
 function testAraguaiaPackNoContinuousForceBreak() {
   const engine = fs.readFileSync(
@@ -481,6 +556,7 @@ function main() {
   testOriginalFidelityMarkers();
   testIsolationOtherModels();
   testSourceFilesExist();
+  testAraguaiaClauseNumbering();
   testAraguaiaPackNoContinuousForceBreak();
   console.log('mandatory-araguaia-contract-tests: all passed');
 }
