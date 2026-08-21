@@ -637,7 +637,7 @@ export const SaleContractSignatureSection = forwardRef<
 
       {parties.length > 0 && (
         <div className="border border-[var(--border-color)] rounded-lg p-3 space-y-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
               Assinaturas
             </p>
@@ -648,6 +648,25 @@ export const SaleContractSignatureSection = forwardRef<
               </p>
             )}
           </div>
+          {pendingIntervenientTarget &&
+            (showVendorSignButton ||
+              String(status || '').toUpperCase() === 'PARTIALLY_SIGNED' ||
+              String(status || '').toUpperCase() === 'CLIENT_SIGNED') && (
+            <div className="flex flex-wrap gap-2">
+              <ActionChip
+                icon={ShieldCheck}
+                label={
+                  signingVendor
+                    ? 'Assinando…'
+                    : `Assinar pela ${pendingIntervenientTarget.name} — INTERVENIENTE`
+                }
+                onClick={() => setIntervenientSignOpen(true)}
+                disabled={signingVendor}
+                primary
+              />
+            </div>
+          )}
+          <div className="max-h-72 overflow-y-auto overscroll-contain space-y-3 pr-1">
           {shareParties.map((party) => {
             const contact = resolveSalePartyShareContact(party, {
               fallbackPhone: party.role === 'BUYER' ? buyerPhone : null,
@@ -777,6 +796,7 @@ export const SaleContractSignatureSection = forwardRef<
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -825,21 +845,6 @@ export const SaleContractSignatureSection = forwardRef<
                   : 'Assinar como vendedor'
             }
             onClick={() => setVendorSignOpen(true)}
-            disabled={signingVendor}
-            primary
-          />
-        )}
-        {pendingIntervenientTarget &&
-          (showVendorSignButton ||
-            String(status || '').toUpperCase() === 'PARTIALLY_SIGNED') && (
-          <ActionChip
-            icon={ShieldCheck}
-            label={
-              signingVendor
-                ? 'Assinando…'
-                : 'Assinar pela R R Negócios — INTERVENIENTE'
-            }
-            onClick={() => setIntervenientSignOpen(true)}
             disabled={signingVendor}
             primary
           />

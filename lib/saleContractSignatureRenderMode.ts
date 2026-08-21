@@ -43,12 +43,16 @@ export function canProduceElectronicSignedContractDocument(
  * Seleção de artefato para download admin/portal.
  * SIGNED quando processo concluído e há URL (ou regeneração signed).
  * UNSIGNED caso contrário — nunca misturar.
+ *
+ * Se já existe pdf_signed_url, o artefato final prevalece mesmo se algum
+ * status auxiliar ainda não refletir SIGNED (ex.: race de sync).
  */
 export function resolveSaleContractDownloadArtifactKind(input: {
   signatureStatus?: string | null;
   contractStatus?: string | null;
   pdfSignedUrl?: string | null;
 }): 'SIGNED' | 'UNSIGNED' {
+  if (String(input.pdfSignedUrl || '').trim()) return 'SIGNED';
   const sig = String(input.signatureStatus || '').toUpperCase();
   const st = String(input.contractStatus || '')
     .toLowerCase()
@@ -59,10 +63,11 @@ export function resolveSaleContractDownloadArtifactKind(input: {
   return 'SIGNED';
 }
 
-/** Portal: após SIGNED, não servir HTML pré-assinatura como fallback. */
+/** Portal: após SIGNED (ou com PDF final), não servir HTML pré-assinatura. */
 export function shouldBlockUnsignedFallbackAfterElectronicSign(input: {
   signatureStatus?: string | null;
   contractStatus?: string | null;
+  pdfSignedUrl?: string | null;
 }): boolean {
   return resolveSaleContractDownloadArtifactKind(input) === 'SIGNED';
 }

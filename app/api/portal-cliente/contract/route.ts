@@ -74,6 +74,7 @@ export async function GET() {
   const electronicallySigned = shouldBlockUnsignedFallbackAfterElectronicSign({
     signatureStatus,
     contractStatus: contract.status,
+    pdfSignedUrl: (contract as { pdf_signed_url?: string | null }).pdf_signed_url,
   });
 
   if (electronicallySigned) {

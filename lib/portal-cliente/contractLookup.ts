@@ -130,6 +130,19 @@ function pickBestPortalContract(rows: PortalContractRow[]): PortalContractRow | 
     const bInactive = INACTIVE_CONTRACT_STATUSES.has(bStatus) || Boolean(b.superseded_by) ? 1 : 0;
     if (aInactive !== bInactive) return aInactive - bInactive;
 
+    // Preferir artefato final assinado (Portal deve entregar PDF certificado).
+    const aSignedPdf = String(a.pdf_signed_url || '').trim() ? 1 : 0;
+    const bSignedPdf = String(b.pdf_signed_url || '').trim() ? 1 : 0;
+    if (aSignedPdf !== bSignedPdf) return bSignedPdf - aSignedPdf;
+
+    const aSig = String(a.signature_status || '').toUpperCase() === 'SIGNED' ? 1 : 0;
+    const bSig = String(b.signature_status || '').toUpperCase() === 'SIGNED' ? 1 : 0;
+    if (aSig !== bSig) return bSig - aSig;
+
+    const aAssinado = aStatus === 'assinado' || aStatus === 'signed' ? 1 : 0;
+    const bAssinado = bStatus === 'assinado' || bStatus === 'signed' ? 1 : 0;
+    if (aAssinado !== bAssinado) return bAssinado - aAssinado;
+
     const aActive = ACTIVE_CONTRACT_STATUSES.has(aStatus) ? 1 : 0;
     const bActive = ACTIVE_CONTRACT_STATUSES.has(bStatus) ? 1 : 0;
     if (aActive !== bActive) return bActive - aActive;

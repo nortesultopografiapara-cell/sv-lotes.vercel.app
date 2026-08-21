@@ -346,11 +346,12 @@ async function buildPortalDashboardContract(
   const electronicallySigned = shouldBlockUnsignedFallbackAfterElectronicSign({
     signatureStatus,
     contractStatus: contractRow.status,
+    pdfSignedUrl: contractRow.pdf_signed_url,
   });
   const hasSignedPdf = Boolean(String(contractRow.pdf_signed_url || '').trim());
 
-  if (electronicallySigned) {
-    // SIGNED: visualizar via rota que serve pdf_signed_url (inline) — nunca HTML.
+  if (electronicallySigned || hasSignedPdf) {
+    // SIGNED / PDF final: visualizar via rota que serve pdf_signed_url — nunca HTML.
     contractViewUrl = hasSignedPdf ? '/api/portal-cliente/contract' : null;
   } else if (storedHtml) {
     contractViewUrl = '/api/portal-cliente/contract';
@@ -535,7 +536,7 @@ async function loadLotSaleDashboard(
   const [companyRes, projectRes, blockRes, receiptsRes] = await Promise.all([
     admin
       .from('companies')
-      .select('id, name, fantasy_name, razao_social, phone')
+      .select('id, name, fantasy_name, phone, cnpj')
       .eq('id', companyId)
       .maybeSingle(),
     sale.project_id
@@ -607,7 +608,7 @@ async function loadLotSaleDashboard(
     if (contractTenantId && contractTenantId !== companyId) {
       const tenantRes = await admin
         .from('companies')
-        .select('id, name, fantasy_name, razao_social, phone')
+        .select('id, name, fantasy_name, phone, cnpj')
         .eq('id', contractTenantId)
         .maybeSingle();
       if (!tenantRes.error && tenantRes.data) {
@@ -775,7 +776,7 @@ async function loadCustomerRecordDashboard(
     admin.from('customers').select('id, name, phone, company_id, tenant_id').eq('id', customerId).maybeSingle(),
     admin
       .from('companies')
-      .select('id, name, fantasy_name, razao_social, phone')
+      .select('id, name, fantasy_name, phone, cnpj')
       .eq('id', companyId)
       .maybeSingle(),
   ]);
@@ -836,7 +837,7 @@ async function loadSaasContractDashboard(
   const companyId = String(scope.companyId || '');
   const { data: company } = await admin
     .from('companies')
-    .select('id, name, fantasy_name, razao_social, phone')
+        .select('id, name, fantasy_name, phone, cnpj')
     .eq('id', companyId)
     .maybeSingle();
 

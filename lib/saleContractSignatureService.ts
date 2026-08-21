@@ -1033,14 +1033,17 @@ export async function signSaleContractByVendor(
       '@/lib/saleContractSignaturePartyFlow'
     );
     const {
-      buildAraguaiaIntervenientPartyInput,
       readAraguaiaIntervenientFromSignatureData,
     } = await import('@/lib/araguaiaContractEsign');
-    const built = buildAraguaiaIntervenientPartyInput();
-    const meta =
-      readAraguaiaIntervenientFromSignatureData(
-        intervenientTarget.signature_data,
-      ) || built.signatureData;
+    const meta = readAraguaiaIntervenientFromSignatureData(
+      intervenientTarget.signature_data,
+    ) || {
+      party_kind: 'LEGAL_ENTITY' as const,
+      company_name: String(intervenientTarget.signer_name || '').trim(),
+      company_cnpj: onlyDigits(intervenientTarget.signer_cpf || ''),
+      representative_name: '',
+      representative_cpf: '',
+    };
     const signedAt = new Date().toISOString();
     const vendorName = String(input.vendorName || meta.company_name).trim();
     const vendorDocument = onlyDigits(

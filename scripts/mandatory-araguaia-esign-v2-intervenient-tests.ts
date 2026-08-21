@@ -325,8 +325,14 @@ console.log('\n=== UI admin reconhece INTERVENIENT ===');
     'utf8',
   );
   ok(
-    section.includes('Assinar pela R R Negócios — INTERVENIENTE'),
-    'botão admin PJ',
+    section.includes('Assinar pela ${pendingIntervenientTarget.name} — INTERVENIENTE') ||
+      (section.includes('Assinar pela ${pendingIntervenientTarget.name}') &&
+        section.includes('INTERVENIENTE')),
+    'botão admin PJ dinâmico (company da party)',
+  );
+  ok(
+    !section.includes('Assinar pela R R Negócios — INTERVENIENTE'),
+    'botão sem hardcode R R Negócios',
   );
   ok(section.includes('Representante:'), 'UI mostra representante');
   ok(

@@ -48,7 +48,9 @@ export function resolveAraguaiaIntervenientIdentity(input?: {
   const mode = input?.mode === 'v2' ? 'v2' : 'legacy';
   const companyName =
     clean(company.razao_social) ||
+    clean(company.legal_name) ||
     clean(company.fantasy_name) ||
+    clean(company.trade_name) ||
     clean(company.name);
   const cnpjRaw = clean(company.cnpj || company.document);
   const cnpjDigits = onlyDigits(cnpjRaw);

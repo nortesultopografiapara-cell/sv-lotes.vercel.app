@@ -43,9 +43,10 @@ export function resolvePortalContractPdfAvailability(
     signatureStatus: (contract as { signature_status?: string | null })
       .signature_status,
     contractStatus: contract.status,
+    pdfSignedUrl: contract.pdf_signed_url,
   });
   if (blockUnsigned) {
-    // SIGNED: só o PDF final assinado.
+    // SIGNED (ou PDF final já persistido): só o PDF assinado.
     return Boolean(String(contract.pdf_signed_url || '').trim());
   }
   return Boolean(
@@ -70,30 +71,28 @@ export async function loadPortalContractPdfForDownload(
     signatureStatus: (contract as { signature_status?: string | null })
       .signature_status,
     contractStatus: contract.status,
+    pdfSignedUrl: contract.pdf_signed_url,
   });
 
   const signedUrl = String(contract.pdf_signed_url || '').trim();
 
-  if (blockUnsignedFallback) {
-    if (!signedUrl) {
-      throw new PortalContractPdfUnavailableError(
-        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
-      );
-    }
-    const bytes = await fetchPdfBytesFromUrl(signedUrl);
-    if (!bytes) {
-      throw new PortalContractPdfUnavailableError(
-        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
-      );
-    }
-    return { bytes, source: 'pdf_signed_url', contractNumber };
-  }
-
+  // Sempre preferir PDF final quando existir — independentemente do status.
   if (signedUrl) {
     const bytes = await fetchPdfBytesFromUrl(signedUrl);
     if (bytes) {
       return { bytes, source: 'pdf_signed_url', contractNumber };
     }
+    if (blockUnsignedFallback) {
+      throw new PortalContractPdfUnavailableError(
+        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+      );
+    }
+  }
+
+  if (blockUnsignedFallback) {
+    throw new PortalContractPdfUnavailableError(
+      PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+    );
   }
 
   const pdfUrl = String(contract.pdf_url || '').trim();
