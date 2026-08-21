@@ -64,6 +64,15 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   orphans: 3;
   widows: 3;
 }
+.sv-contract-araguaia .signature-slot--electronic {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  -webkit-column-break-inside: avoid !important;
+}
+.sv-contract-araguaia .contract-signatures--electronic .signature-slot {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+}
 /* Fecho + data + assinaturas: unidade indivisível.
  * Quebra antecipada (force-break) só se altura > página útil (measure).
  * NÃO forçar por y%PAGE_H — evita página quase vazia antes do pack. */

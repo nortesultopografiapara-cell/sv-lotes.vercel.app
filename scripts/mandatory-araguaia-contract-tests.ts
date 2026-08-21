@@ -275,10 +275,10 @@ function testHtmlGeneration() {
   assert(html.includes('araguaia-keep-together'), 'classe keep-together');
   assert(html.includes('Avenida dos Ipês'), 'endereço vendedores');
 
-  const sigMarker = '<div class="contract-closing-and-signatures--araguaia">';
+  const sigMarker = 'contract-closing-and-signatures--araguaia';
   const sigIdx = html.indexOf(sigMarker);
   assert(sigIdx >= 0, 'bloco assinaturas presente');
-  const sigBlock = html.slice(sigIdx);
+  const sigBlock = html.slice(Math.max(0, sigIdx - 40));
   assert(sigBlock.includes('Daniel Roberto Rivelino de Sousa'), 'sig Daniel');
   assert(sigBlock.includes('Aldenise Alves Sousa'), 'sig Aldenise');
   assert(sigBlock.includes('Cliente Teste Araguaia'), 'sig comprador');
@@ -315,10 +315,10 @@ function testSignatureBlockWithSpouse() {
     },
     financeReceipts: RECEIPTS,
   });
-  const sigMarker = '<div class="contract-closing-and-signatures--araguaia">';
+  const sigMarker = 'contract-closing-and-signatures--araguaia';
   const sigIdx = html.indexOf(sigMarker);
   assert(sigIdx >= 0, 'bloco com cônjuge presente');
-  const sigBlock = html.slice(sigIdx);
+  const sigBlock = html.slice(Math.max(0, sigIdx - 40));
   assert(sigBlock.includes('Daniel Roberto Rivelino de Sousa'), 'com spouse: Daniel');
   assert(sigBlock.includes('Aldenise Alves Sousa'), 'com spouse: Aldenise');
   assert(sigBlock.includes('Cliente Teste Araguaia'), 'com spouse: comprador');

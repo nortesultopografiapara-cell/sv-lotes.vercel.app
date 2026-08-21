@@ -1,9 +1,7 @@
 /**
  * Assinaturas e título — modelo ARAGUAIA (isolado).
- * Bloco físico unsigned: Daniel, Aldenise, comprador, INTERVENIENTE (R R), testemunhas.
- * Sem slot de cônjuge.
- * Party eletrônica INTERVENIENT: ver buildAraguaiaIntervenientPartyInput()
- * (persistência remota gated por ARAGUAIA_ESIGN_V2_PERSIST_INTERVENIENT).
+ * PHYSICAL_UNSIGNED: linhas físicas (Daniel, Aldenise, buyer, INTERVENIENTE, testemunhas).
+ * ELECTRONIC_SIGNED: representação documental sem linhas vazias (via apply helper).
  */
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
@@ -13,6 +11,14 @@ import {
   buildAraguaiaPartiesPreambleHtml,
 } from '@/lib/araguaiaContractClauses';
 import { formatSellerCpfDisplay } from '@/lib/projectContractSellers';
+import {
+  normalizeSaleContractSignatureRenderMode,
+  type SaleContractSignatureRenderMode,
+} from '@/lib/saleContractSignatureRenderMode';
+import {
+  buildAraguaiaElectronicSignaturesBlockHtml,
+  type AraguaiaElectronicSignatureSlotInput,
+} from '@/lib/araguaiaContractElectronicSignatures';
 
 const SLOT_STYLE =
   'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;';
@@ -33,7 +39,7 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function buildSlot(params: {
+function buildPhysicalSlot(params: {
   role: string;
   name?: string;
   meta?: string[];
@@ -75,7 +81,16 @@ export function buildAraguaiaBodyHtml(ctx: AraguaiaContractContext): string {
   `;
 }
 
-export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): string {
+export type BuildAraguaiaSignaturesHtmlOptions = {
+  /** Default: PHYSICAL_UNSIGNED (contrato comum / impressão). */
+  signatureMode?: SaleContractSignatureRenderMode | string | null;
+  /** Slots eletrônicos quando signatureMode = ELECTRONIC_SIGNED. */
+  electronicSlots?: AraguaiaElectronicSignatureSlotInput[] | null;
+};
+
+export function buildAraguaiaPhysicalSignaturesGridHtml(
+  ctx: AraguaiaContractContext,
+): string {
   const seller1 = ctx.sellers[0];
   const seller2 = ctx.sellers[1];
   const intervenienteName =
@@ -86,18 +101,8 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
     seller1?.name || 'Daniel Roberto Rivelino de Sousa';
 
   return `
-    <div class="contract-closing-and-signatures--araguaia">
-      <div class="contract-closing" style="margin: 18px 0 8px 0; text-align: justify;">
-        <p class="araguaia-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
-          E, assim, por estarem justos e contratados, assinam o presente, inclusive o mandatário supracitado, <strong>03</strong> (três) vias de igual teor e forma, para um mesmo efeito, na presença de duas testemunhas abaixo que a tudo assistiram.
-        </p>
-        <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
-          ${esc(ctx.closingLine)}
-        </p>
-      </div>
-      <div class="contract-signatures contract-signatures--araguaia">
-        <div class="signature-grid signature-grid--araguaia">
-          ${buildSlot({
+        <div class="signature-grid signature-grid--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
+          ${buildPhysicalSlot({
             role: 'PROMITENTE VENDEDOR',
             name: seller1?.name || 'Promitente Vendedor 1',
             meta: seller1?.cpf
@@ -106,7 +111,7 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
             dataRole: 'VENDOR',
             extraClass: 'signature-slot-vendor-1',
           })}
-          ${buildSlot({
+          ${buildPhysicalSlot({
             role: 'PROMITENTE VENDEDOR',
             name: seller2?.name || 'Promitente Vendedor 2',
             meta: seller2?.cpf
@@ -115,14 +120,14 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
             dataRole: 'VENDOR',
             extraClass: 'signature-slot-vendor-2',
           })}
-          ${buildSlot({
+          ${buildPhysicalSlot({
             role: 'PROMITENTE COMPRADOR(A)',
             name: ctx.buyerName,
             meta: ctx.buyerCpf ? [`CPF: ${ctx.buyerCpf}`] : [],
             dataRole: 'BUYER',
             extraClass: 'signature-slot-buyer',
           })}
-          ${buildSlot({
+          ${buildPhysicalSlot({
             role: 'INTERVENIENTE',
             name: intervenienteName,
             meta: [
@@ -130,19 +135,54 @@ export function buildAraguaiaSignaturesHtml(ctx: AraguaiaContractContext): strin
               'Representada por:',
               representativeName,
             ],
+            dataRole: 'INTERVENIENT',
             extraClass: 'signature-slot-intervenient',
           })}
-          ${buildSlot({
+          ${buildPhysicalSlot({
             role: 'TESTEMUNHA 1',
             meta: ['Nome: ________________________________', 'CPF: ________________________________'],
+            dataRole: 'WITNESS_1',
             extraClass: 'signature-slot-witness-1',
           })}
-          ${buildSlot({
+          ${buildPhysicalSlot({
             role: 'TESTEMUNHA 2',
             meta: ['Nome: ________________________________', 'CPF: ________________________________'],
+            dataRole: 'WITNESS_2',
             extraClass: 'signature-slot-witness-2',
           })}
-        </div>
+        </div>`;
+}
+
+export function buildAraguaiaSignaturesHtml(
+  ctx: AraguaiaContractContext,
+  options?: BuildAraguaiaSignaturesHtmlOptions,
+): string {
+  const mode = normalizeSaleContractSignatureRenderMode(
+    options?.signatureMode,
+  );
+  const closing = `
+      <div class="contract-closing" style="margin: 18px 0 8px 0; text-align: justify;">
+        <p class="araguaia-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
+          E, assim, por estarem justos e contratados, assinam o presente, inclusive o mandatário supracitado, <strong>03</strong> (três) vias de igual teor e forma, para um mesmo efeito, na presença de duas testemunhas abaixo que a tudo assistiram.
+        </p>
+        <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
+          ${esc(ctx.closingLine)}
+        </p>
+      </div>`;
+
+  if (mode === 'ELECTRONIC_SIGNED' && options?.electronicSlots?.length) {
+    return `
+    <div class="contract-closing-and-signatures--araguaia" data-signature-mode="ELECTRONIC_SIGNED">
+      ${closing}
+      ${buildAraguaiaElectronicSignaturesBlockHtml(options.electronicSlots)}
+    </div>`;
+  }
+
+  return `
+    <div class="contract-closing-and-signatures--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
+      ${closing}
+      <div class="contract-signatures contract-signatures--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
+        ${buildAraguaiaPhysicalSignaturesGridHtml(ctx)}
       </div>
     </div>`;
 }

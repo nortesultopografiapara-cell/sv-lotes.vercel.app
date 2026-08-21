@@ -1747,6 +1747,9 @@ export async function loadSaleContractPdfForSign(
       resolveAraguaiaVendorSignerEmail,
     } =
       await import('@/lib/araguaiaContractEsign');
+    const { canProduceElectronicSignedContractDocument } = await import(
+      '@/lib/saleContractSignatureRenderMode'
+    );
     const { readPartySignatureEventId } = await import(
       '@/lib/saleContractSignatureParties'
     );
@@ -1900,24 +1903,37 @@ export async function loadSaleContractPdfForSign(
         : null;
 
     if (parties.length > 0) {
-      // Selos por papel (VENDOR/BUYER/SPOUSE) — nunca deduplicar por CPF.
-      html = applyElectronicSignatureStampsToContractHtml(
-        html,
-        buildElectronicStampsFromSignatureParties({
-          parties,
-          buyerNameFallback: buyerParty?.signer_name || buyerName,
-          vendorNameFallback:
-            signature.vendor_signer_name ||
-            vendorParty?.signer_name ||
-            seller.representative,
-          legacyBuyerSignedAt: signature.signed_at,
-          legacyVendorSignedAt: signature.vendor_signed_at,
-          legacyVendorSigned: Boolean(signature.vendor_signed_at),
-          legacyBuyerSigned:
-            String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
-            Boolean(signature.signed_at),
-        }),
-      );
+      const useAraguaiaElectronicBlock =
+        isAraguaiaSaleContractModel(contractModelForCert) &&
+        canProduceElectronicSignedContractDocument(
+          signature.signature_status,
+        );
+
+      if (useAraguaiaElectronicBlock) {
+        // ELECTRONIC_SIGNED: substitui linhas físicas; certificado detalhado à parte.
+        const { applyAraguaiaElectronicSignaturesToContractHtml } =
+          await import('@/lib/araguaiaContractElectronicSignatures');
+        html = applyAraguaiaElectronicSignaturesToContractHtml(html, parties);
+      } else {
+        // Modelos clássicos / multi-party: selos sobre slots (sem alterar ARAGUAIA V2).
+        html = applyElectronicSignatureStampsToContractHtml(
+          html,
+          buildElectronicStampsFromSignatureParties({
+            parties,
+            buyerNameFallback: buyerParty?.signer_name || buyerName,
+            vendorNameFallback:
+              signature.vendor_signer_name ||
+              vendorParty?.signer_name ||
+              seller.representative,
+            legacyBuyerSignedAt: signature.signed_at,
+            legacyVendorSignedAt: signature.vendor_signed_at,
+            legacyVendorSigned: Boolean(signature.vendor_signed_at),
+            legacyBuyerSigned:
+              String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
+              Boolean(signature.signed_at),
+          }),
+        );
+      }
     } else {
       html = stripManualContractSignaturesForSignedPdf(html);
     }
