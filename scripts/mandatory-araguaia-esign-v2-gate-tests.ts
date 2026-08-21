@@ -11,6 +11,7 @@ import {
   ARAGUAIA_ESIGN_V2_ENABLED_ENV,
   ARAGUAIA_ESIGN_V2_KNOWN_COMPANY_IDS,
   getAraguaiaEsignV2AllowedCompanyIds,
+  isCompanyOnAraguaiaEsignV2Allowlist,
   shouldEnableAraguaiaEsignV2,
 } from '../lib/araguaiaEsignV2Gate';
 import {
@@ -322,6 +323,102 @@ console.log('\n=== Persist helpers com gate explícito (process.env limpo) ===')
     'persist OFF empresa estranha mesmo com flag',
   );
   delete process.env[ARAGUAIA_ESIGN_V2_ENABLED_ENV];
+}
+
+console.log('\n======== FASE C — ISOLAMENTO SV TOPOGRAFIA (1ª HOMOLOGAÇÃO) ========');
+{
+  const TOPO = '5ebfe934-e1ae-4252-b3dd-808390c32551';
+  ok(TOPOGRAFIA_COMPANY_ID === TOPO, 'FASE C: constante = UUID canônico');
+
+  const envHomolog = envWith({
+    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
+    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: undefined,
+  });
+  const envEmptyCsv = envWith({
+    [ARAGUAIA_ESIGN_V2_ENABLED_ENV]: 'true',
+    [ARAGUAIA_ESIGN_V2_ALLOWED_COMPANY_IDS_ENV]: '',
+  });
+
+  const defaultsAbsent = getAraguaiaEsignV2AllowedCompanyIds(envHomolog);
+  const defaultsEmpty = getAraguaiaEsignV2AllowedCompanyIds(envEmptyCsv);
+  ok(defaultsAbsent.length === 1, 'FASE C: allowlist default tem exatamente 1 ID');
+  ok(defaultsAbsent[0] === TOPO, 'FASE C: único default = SV Topografia');
+  ok(
+    defaultsEmpty.length === 1 && defaultsEmpty[0] === TOPO,
+    'FASE C: CSV vazio ≡ ausente (só Topografia)',
+  );
+
+  // UUID de R R NÃO está no default — qualquer id ≠ Topografia permanece V2 OFF
+  // (stand-in: usuário confirmou R R no banco, mas não habilitar nesta etapa).
+  const RR_STANDIN = 'cccccccc-dddd-eeee-ffff-000000000001';
+  const OTHER = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const MENESES = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
+
+  ok(
+    shouldEnableAraguaiaEsignV2(
+      { companyId: TOPO, contractModel: 'ARAGUAIA' },
+      envHomolog,
+    ),
+    'FASE C: SV Topografia + ARAGUAIA => V2 ON',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2(
+      { companyId: RR_STANDIN, contractModel: 'ARAGUAIA' },
+      envHomolog,
+    ),
+    'FASE C: R R (não na allowlist) + ARAGUAIA => V2 OFF',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2(
+      { companyId: OTHER, contractModel: 'ARAGUAIA' },
+      envHomolog,
+    ),
+    'FASE C: outra empresa + ARAGUAIA => V2 OFF',
+  );
+  ok(
+    !shouldEnableAraguaiaEsignV2(
+      { companyId: MENESES, contractModel: 'ARAGUAIA' },
+      envHomolog,
+    ),
+    'FASE C: Menezes + ARAGUAIA => V2 OFF',
+  );
+
+  for (const model of ['PADRAO', 'MENESES', 'RECANTO', 'SV2']) {
+    ok(
+      !shouldEnableAraguaiaEsignV2(
+        { companyId: TOPO, contractModel: model },
+        envHomolog,
+      ),
+      `FASE C: Topografia + ${model} => V2 OFF (modelo atual)`,
+    );
+  }
+
+  // Mesmo se alguém colocar R R no CSV por engano em teste, documentar OFF sem CSV.
+  ok(
+    !isCompanyOnAraguaiaEsignV2Allowlist(RR_STANDIN, envHomolog),
+    'FASE C: R R fora da allowlist efetiva sem env CSV',
+  );
+
+  const flow = readFileSync(
+    join(root, 'lib/saleContractSignaturePartyFlow.ts'),
+    'utf8',
+  );
+  ok(
+    flow.includes('contractRow.company_id') &&
+      flow.includes('contractRow.tenant_id'),
+    'FASE C: fluxo de assinatura resolve company_id||tenant_id',
+  );
+  ok(
+    flow.includes('shouldPersistAraguaiaIntervenientParty({') &&
+      flow.includes('companyId'),
+    'FASE C: gate recebe companyId do contrato no create parties',
+  );
+
+  const layout = readFileSync(join(root, 'lib/companySettingsLayout.ts'), 'utf8');
+  ok(
+    layout.includes(TOPO) && /SV TOPOGRAFIA|Topografia/i.test(layout),
+    'FASE C: comentário/origem SV Topografia no layout',
+  );
 }
 
 console.log('\n✅ mandatory-araguaia-esign-v2-gate-tests OK\n');
