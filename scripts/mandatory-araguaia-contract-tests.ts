@@ -243,10 +243,13 @@ function testHtmlGeneration() {
   assert(!html.includes('[estado civil pendente]'), 'sem placeholder estado civil');
   assert(!html.includes('[profissão pendente]'), 'sem placeholder profissão');
   assert(!html.includes('[endereço pendente]'), 'sem placeholder endereço');
-  assert(!html.includes('confrontando com'), 'sem confrontações');
-  assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro confrontações');
-  assert(!html.includes('confrontando pela'), 'sem confrontando pela');
-  assert(!html.includes('confrontante'), 'sem palavra confrontante');
+  assert(html.includes('confrontando com'), 'com confrontações dinâmicas');
+  assert(html.includes('Rua Principal'), 'confrontante frente GIS');
+  assert(html.includes('Área verde'), 'confrontante fundo GIS');
+  assert(html.includes('Chácara 13'), 'confrontante lateral direita GIS');
+  assert(html.includes('Chácara 11'), 'confrontante lateral esquerda GIS');
+  assert(!html.includes('confrontando-se da seguinte forma'), 'sem intro lista antiga');
+  assert(!html.includes('confrontando pela'), 'sem confrontando pela (legado)');
   assert(html.includes('medindo:'), 'intro medidas texto corrido');
   assert(html.includes('frente'), 'medida frente');
   assert(html.includes('fundo'), 'medida fundo');

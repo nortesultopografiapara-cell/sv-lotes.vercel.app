@@ -1,7 +1,7 @@
 /**
  * Cláusulas jurídicas — Chacreamento Araguaia.
  * Fonte oficial: INSTRUMENTO PARTICULAR DE PROMESSA DE COMPRA E VENDA (original).
- * Única exclusão autorizada: confrontantes do lote. Medidas permanecem.
+ * Confrontantes do lote: mesma fonte canônica do popup GIS (assistedConfrontation).
  */
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
@@ -32,6 +32,27 @@ function moneyPhrase(fmt: string, extensoText: string): string {
 function sideMetersPhrase(fmt: string, extensoText: string): string {
   if (extensoText) return `${strong(fmt)} (${esc(extensoText)})`;
   return strong(fmt);
+}
+
+/** Medida + confrontante GIS (sem inventar vizinho se ausente). */
+function sideMeasureWithConfrontant(
+  metersFmt: string,
+  metersExtenso: string,
+  confrontant: string | null | undefined,
+): string {
+  const measure = sideMetersPhrase(metersFmt, metersExtenso);
+  const label = String(confrontant ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (
+    !label ||
+    /^a\s*definir$/i.test(label) ||
+    label === '—' ||
+    /^n[aã]o\s+informado$/i.test(label)
+  ) {
+    return measure;
+  }
+  return `${measure}, confrontando com ${strong(label)}`;
 }
 
 function parcelsCountPhrase(qtd: number): string {
@@ -186,18 +207,22 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     ? `${strong(ctx.brokerName)}, CPF nº ${strong(ctx.brokerCpf)}`
     : strong(ctx.brokerName);
 
-  const measuresRunning = `medindo: frente ${sideMetersPhrase(
+  const measuresRunning = `medindo: frente ${sideMeasureWithConfrontant(
     ctx.frenteM,
     ctx.frenteMExtenso,
-  )}, fundo ${sideMetersPhrase(
+    ctx.confrontanteFrente,
+  )}, fundo ${sideMeasureWithConfrontant(
     ctx.fundoM,
     ctx.fundoMExtenso,
-  )}, lateral direita ${sideMetersPhrase(
+    ctx.confrontanteFundo,
+  )}, lateral direita ${sideMeasureWithConfrontant(
     ctx.ladoDireitoM,
     ctx.ladoDireitoMExtenso,
-  )} e lateral esquerda ${sideMetersPhrase(
+    ctx.confrontanteDireita,
+  )} e lateral esquerda ${sideMeasureWithConfrontant(
     ctx.ladoEsquerdoM,
     ctx.ladoEsquerdoMExtenso,
+    ctx.confrontanteEsquerda,
   )}`;
 
   return `
