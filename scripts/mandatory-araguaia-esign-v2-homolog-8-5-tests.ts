@@ -129,7 +129,7 @@ console.log('\n=== 4) Portal PDF: pdf_signed_url prevalece ===');
     'disponível via pdf_signed_url',
   );
   ok(
-    !resolvePortalContractPdfAvailability({
+    resolvePortalContractPdfAvailability({
       id: '1',
       status: 'assinado',
       signature_status: 'SIGNED',
@@ -137,7 +137,7 @@ console.log('\n=== 4) Portal PDF: pdf_signed_url prevalece ===');
       pdf_url: 'https://example.com/original.pdf',
       generated_html: '<html>unsigned</html>',
     } as never),
-    'SIGNED sem pdf_signed_url NÃO entrega original',
+    'SIGNED sem pdf_signed_url ainda disponível (mesma regra admin)',
   );
   ok(
     resolvePortalContractPdfAvailability({
@@ -158,15 +158,15 @@ console.log('\n=== 4) Portal PDF: pdf_signed_url prevalece ===');
     'mensagem processamento documentada',
   );
   ok(
-    download.includes('Sempre preferir PDF final quando existir'),
-    'preferência explícita do PDF assinado',
+    download.includes('loadSignedSaleContractArtifact'),
+    'Portal usa helper canônico do admin',
   );
   const lookup = readFileSync(
     join(root, 'lib/portal-cliente/contractLookup.ts'),
     'utf8',
   );
   ok(
-    lookup.includes('aSignedPdf') || lookup.includes('pdf_signed_url'),
+    lookup.includes('aHasSignedPdf') || lookup.includes('pdf_signed_url'),
     'pickBest prefere contrato com pdf_signed_url',
   );
 }

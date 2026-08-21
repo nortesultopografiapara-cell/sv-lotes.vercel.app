@@ -388,14 +388,14 @@ console.log('\n=== M/N/O/P) Artefatos distinct + downloads ===');
     'P: availability com HTML',
   );
   ok(
-    !resolvePortalContractPdfAvailability({
+    resolvePortalContractPdfAvailability({
       id: '1',
       status: 'assinado',
       signature_status: 'SIGNED',
       generated_html: '<html>unsigned</html>',
       pdf_signed_url: null,
     } as never),
-    'O: assinado sem URL → não disponível via HTML',
+    'O: assinado sem URL → disponível via helper admin (regen)',
   );
   ok(
     resolvePortalContractPdfAvailability({

@@ -38,6 +38,7 @@ import {
 } from '@/lib/portal-cliente/contractDownload';
 import { validatePortalLotSaleScope } from '@/lib/portal-cliente/scopeValidation';
 import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
+import { resolveSignedContractArtifactMeta } from '@/lib/saleContractSignedArtifact';
 
 const CONTRACT_NOT_FOUND_MESSAGE = 'Contrato não encontrado.';
 const CONTRACT_UNAVAILABLE_MESSAGE = 'Contrato ainda não disponível.';
@@ -348,11 +349,15 @@ async function buildPortalDashboardContract(
     contractStatus: contractRow.status,
     pdfSignedUrl: contractRow.pdf_signed_url,
   });
-  const hasSignedPdf = Boolean(String(contractRow.pdf_signed_url || '').trim());
+  const signedMeta = resolveSignedContractArtifactMeta({
+    ...contractRow,
+    signature_status: signatureStatus || contractRow.signature_status,
+  });
+  const hasSignedArtifact = signedMeta.signedArtifactAvailable;
 
-  if (electronicallySigned || hasSignedPdf) {
-    // SIGNED / PDF final: visualizar via rota que serve pdf_signed_url — nunca HTML.
-    contractViewUrl = hasSignedPdf ? '/api/portal-cliente/contract' : null;
+  if (electronicallySigned || hasSignedArtifact) {
+    // Mesma disponibilidade do admin: processo SIGNED e/ou pdf_signed_url.
+    contractViewUrl = hasSignedArtifact ? '/api/portal-cliente/contract' : null;
   } else if (storedHtml) {
     contractViewUrl = '/api/portal-cliente/contract';
   }
@@ -376,9 +381,10 @@ async function buildPortalDashboardContract(
 
   let contractDownloadUnavailableMessage: string | null = null;
   if (!contractDownloadAvailable) {
-    contractDownloadUnavailableMessage = electronicallySigned
-      ? PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE
-      : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE;
+    contractDownloadUnavailableMessage =
+      electronicallySigned || hasSignedArtifact
+        ? PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE
+        : PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE;
   }
 
   return {

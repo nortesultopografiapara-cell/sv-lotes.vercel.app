@@ -146,7 +146,7 @@ console.log('\n=== D) Topo do contrato — ações PDF assinado ===');
   );
 }
 
-console.log('\n=== E/F/G) Portal SIGNED = só pdf_signed_url ===');
+console.log('\n=== E/F/G) Portal SIGNED = mesma fonte do admin ===');
 {
   ok(
     resolvePortalContractPdfAvailability({
@@ -160,7 +160,7 @@ console.log('\n=== E/F/G) Portal SIGNED = só pdf_signed_url ===');
     'E: SIGNED + pdf_signed_url disponível',
   );
   ok(
-    !resolvePortalContractPdfAvailability({
+    resolvePortalContractPdfAvailability({
       id: '1',
       status: 'ativo',
       signature_status: 'SIGNED',
@@ -168,7 +168,7 @@ console.log('\n=== E/F/G) Portal SIGNED = só pdf_signed_url ===');
       generated_html: '<html>unsigned</html>',
       pdf_url: 'https://example.com/original.pdf',
     } as never),
-    'F: SIGNED sem pdf_signed_url NÃO entrega unsigned/pdf_url',
+    'F: SIGNED sem URL ainda disponível (regen igual admin)',
   );
   ok(
     resolvePortalContractPdfAvailability({
@@ -189,9 +189,8 @@ console.log('\n=== E/F/G) Portal SIGNED = só pdf_signed_url ===');
     'F: mensagem processamento',
   );
   ok(
-    download.includes('EXCLUSIVAMENTE pdf_signed_url') ||
-      download.includes('só o PDF final assinado'),
-    'E: regra exclusiva documentada',
+    download.includes('loadSignedSaleContractArtifact'),
+    'E: Portal usa helper canônico do admin',
   );
   const view = readFileSync(
     join(root, 'app/api/portal-cliente/contract/route.ts'),

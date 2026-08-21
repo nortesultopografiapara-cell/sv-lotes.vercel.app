@@ -5,7 +5,8 @@
  *   pdf_signed_url → pdf_url → HTML salvo
  *
  * SIGNED (aggregate/eletrônico concluído):
- *   EXCLUSIVAMENTE pdf_signed_url — sem fallback para pdf_url / generated_html.
+ *   mesma fonte canônica do admin (`loadSignedSaleContractArtifact`):
+ *   regeneração ELECTRONIC_SIGNED → fallback pdf_signed_url.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -14,6 +15,10 @@ import { buildContractPdfChromeFromTenant } from '@/lib/contractPdfPostProcess';
 import type { PortalContractRow } from '@/lib/portal-cliente/contractLookup';
 import { fetchPdfBytesFromUrl } from '@/lib/saasContractPdfHttp';
 import { buildSaleContractPdfFromHtml, loadTenantLogoBase64ForPdf } from '@/lib/saleContractPdf';
+import {
+  loadSignedSaleContractArtifact,
+  resolveSignedContractArtifactMeta,
+} from '@/lib/saleContractSignedArtifact';
 import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
 
 export const PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE =
@@ -24,7 +29,11 @@ export const PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE =
 
 export const PORTAL_CONTRACT_DOWNLOAD_PATH = '/api/portal-cliente/contract/download';
 
-export type PortalContractPdfSource = 'pdf_signed_url' | 'pdf_url' | 'stored_html';
+export type PortalContractPdfSource =
+  | 'pdf_signed_url'
+  | 'regenerated_signed'
+  | 'pdf_url'
+  | 'stored_html';
 
 export class PortalContractPdfUnavailableError extends Error {
   constructor(message = PORTAL_CONTRACT_PDF_UNAVAILABLE_MESSAGE) {
@@ -39,15 +48,16 @@ export function resolvePortalContractPdfAvailability(
 ): boolean {
   const html =
     storedHtml ?? readStoredContractHtml(contract as Record<string, unknown>);
+  const meta = resolveSignedContractArtifactMeta(contract);
   const blockUnsigned = shouldBlockUnsignedFallbackAfterElectronicSign({
     signatureStatus: (contract as { signature_status?: string | null })
       .signature_status,
     contractStatus: contract.status,
     pdfSignedUrl: contract.pdf_signed_url,
   });
-  if (blockUnsigned) {
-    // SIGNED (ou PDF final já persistido): só o PDF assinado.
-    return Boolean(String(contract.pdf_signed_url || '').trim());
+  if (blockUnsigned || meta.signedArtifactAvailable) {
+    // Processo concluído: disponível se admin também conseguir (URL ou SIGNED).
+    return meta.signedArtifactAvailable;
   }
   return Boolean(
     String(contract.pdf_signed_url || '').trim() ||
@@ -67,6 +77,7 @@ export async function loadPortalContractPdfForDownload(
   const contractNumber = String(
     contract.contract_number || contract.id || 'contrato',
   ).trim();
+  const meta = resolveSignedContractArtifactMeta(contract);
   const blockUnsignedFallback = shouldBlockUnsignedFallbackAfterElectronicSign({
     signatureStatus: (contract as { signature_status?: string | null })
       .signature_status,
@@ -74,25 +85,30 @@ export async function loadPortalContractPdfForDownload(
     pdfSignedUrl: contract.pdf_signed_url,
   });
 
-  const signedUrl = String(contract.pdf_signed_url || '').trim();
+  if (meta.signedArtifactAvailable || blockUnsignedFallback) {
+    const artifact = await loadSignedSaleContractArtifact(
+      admin,
+      String(contract.id),
+      contract as Record<string, unknown>,
+    );
+    if (artifact) {
+      return {
+        bytes: artifact.bytes,
+        source: artifact.source,
+        contractNumber: artifact.contractNumber || contractNumber,
+      };
+    }
+    throw new PortalContractPdfUnavailableError(
+      PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
+    );
+  }
 
-  // Sempre preferir PDF final quando existir — independentemente do status.
+  const signedUrl = String(contract.pdf_signed_url || '').trim();
   if (signedUrl) {
     const bytes = await fetchPdfBytesFromUrl(signedUrl);
     if (bytes) {
       return { bytes, source: 'pdf_signed_url', contractNumber };
     }
-    if (blockUnsignedFallback) {
-      throw new PortalContractPdfUnavailableError(
-        PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
-      );
-    }
-  }
-
-  if (blockUnsignedFallback) {
-    throw new PortalContractPdfUnavailableError(
-      PORTAL_CONTRACT_SIGNED_PDF_UNAVAILABLE_MESSAGE,
-    );
   }
 
   const pdfUrl = String(contract.pdf_url || '').trim();

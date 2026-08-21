@@ -120,28 +120,49 @@ function belongsToValidatedScope(row: PortalContractRow, validated: PortalValida
   return true;
 }
 
-function pickBestPortalContract(rows: PortalContractRow[]): PortalContractRow | null {
+function pickBestPortalContract(
+  rows: PortalContractRow[],
+  preferredContractId?: string | null,
+): PortalContractRow | null {
   if (rows.length === 0) return null;
+
+  const preferredId = String(preferredContractId || '').trim();
 
   const ranked = [...rows].sort((a, b) => {
     const aStatus = String(a.status || '').toLowerCase();
     const bStatus = String(b.status || '').toLowerCase();
-    const aInactive = INACTIVE_CONTRACT_STATUSES.has(aStatus) || Boolean(a.superseded_by) ? 1 : 0;
-    const bInactive = INACTIVE_CONTRACT_STATUSES.has(bStatus) || Boolean(b.superseded_by) ? 1 : 0;
-    if (aInactive !== bInactive) return aInactive - bInactive;
-
-    // Preferir artefato final assinado (Portal deve entregar PDF certificado).
-    const aSignedPdf = String(a.pdf_signed_url || '').trim() ? 1 : 0;
-    const bSignedPdf = String(b.pdf_signed_url || '').trim() ? 1 : 0;
-    if (aSignedPdf !== bSignedPdf) return bSignedPdf - aSignedPdf;
-
+    const aHasSignedPdf = String(a.pdf_signed_url || '').trim() ? 1 : 0;
+    const bHasSignedPdf = String(b.pdf_signed_url || '').trim() ? 1 : 0;
     const aSig = String(a.signature_status || '').toUpperCase() === 'SIGNED' ? 1 : 0;
     const bSig = String(b.signature_status || '').toUpperCase() === 'SIGNED' ? 1 : 0;
-    if (aSig !== bSig) return bSig - aSig;
-
     const aAssinado = aStatus === 'assinado' || aStatus === 'signed' ? 1 : 0;
     const bAssinado = bStatus === 'assinado' || bStatus === 'signed' ? 1 : 0;
+    const aHasFinal = aHasSignedPdf || aSig || aAssinado ? 1 : 0;
+    const bHasFinal = bHasSignedPdf || bSig || bAssinado ? 1 : 0;
+
+    // Preferir artefato/processo final mesmo se a linha tiver superseded_by
+    // (ex.: regeneração posterior sem PDF assinado não deve esconder o final).
+    const aInactive =
+      !aHasFinal &&
+      (INACTIVE_CONTRACT_STATUSES.has(aStatus) || Boolean(a.superseded_by))
+        ? 1
+        : 0;
+    const bInactive =
+      !bHasFinal &&
+      (INACTIVE_CONTRACT_STATUSES.has(bStatus) || Boolean(b.superseded_by))
+        ? 1
+        : 0;
+    if (aInactive !== bInactive) return aInactive - bInactive;
+
+    if (aHasSignedPdf !== bHasSignedPdf) return bHasSignedPdf - aHasSignedPdf;
+    if (aSig !== bSig) return bSig - aSig;
     if (aAssinado !== bAssinado) return bAssinado - aAssinado;
+
+    if (preferredId) {
+      const aPref = String(a.id) === preferredId ? 1 : 0;
+      const bPref = String(b.id) === preferredId ? 1 : 0;
+      if (aPref !== bPref) return bPref - aPref;
+    }
 
     const aActive = ACTIVE_CONTRACT_STATUSES.has(aStatus) ? 1 : 0;
     const bActive = ACTIVE_CONTRACT_STATUSES.has(bStatus) ? 1 : 0;
@@ -200,7 +221,7 @@ export async function resolvePortalClientContract(
     );
 
     const scoped = rows.filter((row) => belongsToValidatedScope(row, validated));
-    const picked = pickBestPortalContract(scoped);
+    const picked = pickBestPortalContract(scoped, sessionContractId);
 
     if (error) {
       logContractLookup({
@@ -349,7 +370,7 @@ export async function resolvePortalClientContract(
       }
     }
 
-    const picked = pickBestPortalContract(scoped);
+    const picked = pickBestPortalContract(scoped, sessionContractId);
 
     if (error && scoped.length === 0) {
       return {

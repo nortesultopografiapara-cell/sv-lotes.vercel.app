@@ -563,14 +563,14 @@ console.log('\n--- Admin / Portal pós 6/6 ---');
     'portal available com signed url',
   );
   ok(
-    !resolvePortalContractPdfAvailability({
+    resolvePortalContractPdfAvailability({
       id: '1',
       status: 'assinado',
       signature_status: 'SIGNED',
       pdf_signed_url: null,
       generated_html: '<html>unsigned</html>',
     } as never),
-    'portal NÃO usa HTML quando deveria haver signed',
+    'portal SIGNED sem URL ainda disponível (regen = admin)',
   );
 }
 
