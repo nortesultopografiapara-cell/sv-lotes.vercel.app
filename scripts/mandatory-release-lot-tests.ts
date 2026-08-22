@@ -15,14 +15,19 @@ import {
   isActiveUnpaidFinanceReceipt,
   isAsaasRemoteCancelableStatus,
   isCanceledSaleStatus,
+  isDeferredSaleOperation,
   isLocalAsaasCancelCandidateStatus,
   isLocalInterCancelCandidateStatus,
+  isLotReleaseSaleOperation,
   isOperationalFinanceReceiptForListing,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   canConfirmReleaseLot,
   RELEASE_LOT_MOTIVE_GROUPS,
   RELEASE_LOT_MOTIVE_OPTIONS,
+  SALE_OPERATION_UI_GROUPS,
+  SALE_OPERATION_UI_OPTIONS,
+  showsTerminationSettlement,
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
   summarizeReleaseCharges,
@@ -50,13 +55,28 @@ function testMotiveValidation() {
     motiveDetail: 'Troca administrativa',
   });
   assert(outroOk.ok === true, 'outro ok');
+  const adminShort = validateReleaseLotMotive({
+    motiveCode: 'cancelamento_administrativo',
+    motiveDetail: 'ab',
+  });
+  assert(adminShort.ok === false, 'admin sem justificativa');
+  const adminOk = validateReleaseLotMotive({
+    motiveCode: 'cancelamento_administrativo',
+    motiveDetail: 'Ajuste interno da loteadora',
+  });
+  assert(adminOk.ok === true, 'admin com justificativa');
   assert(RELEASE_LOT_MOTIVE_OPTIONS.length >= 7, 'opções de motivo');
-  const grouped = RELEASE_LOT_MOTIVE_GROUPS.flatMap((g) => g.codes);
+  assert(
+    RELEASE_LOT_MOTIVE_OPTIONS.some((o) => o.value === 'outro'),
+    'backend ainda aceita outro',
+  );
+  const grouped = SALE_OPERATION_UI_GROUPS.flatMap((g) => g.codes);
   assert(
     grouped.join(',') ===
-      'desistencia,distrato,inadimplencia,erro_cadastro,cancelamento_administrativo,troca_lote,outro',
-    'agrupamento visual cobre os 7 códigos sem remover nenhum',
+      'desistencia,distrato,inadimplencia,erro_cadastro,cancelamento_administrativo,troca_lote,transferencia_titularidade',
+    'painel visual tem 7 operações sem Outro',
   );
+  assert(RELEASE_LOT_MOTIVE_GROUPS === SALE_OPERATION_UI_GROUPS, 'alias visual');
   console.log('OK testMotiveValidation');
 }
 
@@ -265,9 +285,11 @@ function testGisWiring() {
   assert(modal.includes('/api/lots/'), 'API no modal');
   assert(modal.includes('method: \'GET\''), 'GET preview');
   assert(modal.includes('method: \'POST\''), 'POST execute');
-  assert(modal.includes('Encerrar venda e liberar lote'), 'título modal');
+  assert(modal.includes('Operações da venda'), 'título modal');
   assert(
-    modal.includes('Esta operação encerra a venda atual e devolve o lote ao estoque disponível.'),
+    modal.includes(
+      'Encerramento devolve o lote ao estoque. Troca de lote e transferência de',
+    ),
     'subtítulo',
   );
   assert(modal.includes('max-w-[1000px]'), 'largura desktop ~1000px');
@@ -279,13 +301,13 @@ function testGisWiring() {
     'checkbox',
   );
   assert(!modal.includes('<select'), 'sem select de motivo');
-  assert(modal.includes('Motivo da liberação'), 'seção de motivo');
+  assert(modal.includes('Escolha a operação da venda'), 'seção de operação');
   assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Troca de lote'"), 'card troca de lote');
   assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Desistência do cliente'"), 'card desistência');
   assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Cancelamento administrativo'"), 'card admin');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_GROUPS.map'), 'cards agrupados visualmente');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.filter'), 'cards renderizam opções oficiais');
-  assert(modal.includes("motiveCode === 'outro'"), 'Outro abre descrição');
+  assert(modal.includes('SALE_OPERATION_UI_GROUPS.map'), 'cards agrupados visualmente');
+  assert(modal.includes('SALE_OPERATION_UI_OPTIONS.filter'), 'cards renderizam opções oficiais');
+  assert(!modal.includes("motiveCode === 'outro'"), 'Outro saiu da UI');
   assert(modal.includes('O que acontecerá'), 'quadro de consequências');
   assert(modal.includes('Cobranças Asaas canceláveis'), 'card Asaas');
   assert(modal.includes('Cobranças bancárias canceláveis'), 'card total bancário');
@@ -349,10 +371,18 @@ function testReleaseLotModalConfirmRules() {
   assert(
     canConfirmReleaseLot({
       ...ready,
-      motiveCode: 'outro',
-      motiveDetail: 'Ajuste interno',
+      motiveCode: 'cancelamento_administrativo',
+      motiveDetail: 'Ajuste interno da loteadora',
     }),
-    'Outro com descrição habilita',
+    'admin com justificativa habilita',
+  );
+  assert(
+    !canConfirmReleaseLot({
+      ...ready,
+      motiveCode: 'cancelamento_administrativo',
+      motiveDetail: '',
+    }),
+    'admin sem justificativa bloqueia',
   );
   assert(
     !canConfirmReleaseLot({ ...ready, asaasBlockedCharges: 1 }),
@@ -371,11 +401,11 @@ function testReleaseLotModalConfirmRules() {
   assert(codes.join(',') === 'desistencia,distrato,inadimplencia,erro_cadastro,troca_lote,cancelamento_administrativo,outro', 'valores internos estáveis');
 
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_GROUPS.map'), 'motivos agrupados visualmente');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.filter'), 'cards nascem das opções oficiais');
+  assert(modal.includes('SALE_OPERATION_UI_GROUPS.map'), 'motivos agrupados visualmente');
+  assert(modal.includes('SALE_OPERATION_UI_OPTIONS.filter'), 'cards nascem das opções oficiais');
   assert(modal.includes('key={option.value}'), 'cards usam value interno');
   assert(modal.includes('{option.label}'), 'cards exibem label oficial');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_DESCRIPTIONS[option.value]'), 'cards têm descrição');
+  assert(modal.includes('{option.description}'), 'cards têm descrição');
   assert(modal.includes('setMotiveCode(option.value)'), 'seleção única por estado');
   assert(
     modal.includes('motiveCode: motive.motiveCode'),
@@ -393,6 +423,80 @@ function testReleaseLotModalConfirmRules() {
   assert(!postBody.includes('password'), 'POST não envia senha');
   assert(!modal.includes('to_customer_id'), 'sem campo de cessionário');
   console.log('OK testReleaseLotModalConfirmRules');
+}
+
+function testSaleOperationsPanel() {
+  const labels = SALE_OPERATION_UI_OPTIONS.map((o) => o.label);
+  assert(SALE_OPERATION_UI_OPTIONS.length === 7, '7 cards');
+  assert(labels.includes('Desistência do cliente'), 'desistência');
+  assert(labels.includes('Distrato'), 'distrato');
+  assert(labels.includes('Inadimplência'), 'inadimplência');
+  assert(labels.includes('Erro de cadastro'), 'erro');
+  assert(labels.includes('Cancelamento administrativo'), 'admin');
+  assert(labels.includes('Troca de lote'), 'troca');
+  assert(labels.includes('Transferência de titularidade'), 'titularidade');
+  assert(!labels.includes('Outro'), 'Outro fora da UI');
+  assert(
+    !SALE_OPERATION_UI_OPTIONS.some((o) => o.value === 'outro'),
+    'código outro fora do painel',
+  );
+  assert(
+    SALE_OPERATION_UI_OPTIONS.some((o) => o.supportLabel === 'Venda de ágio / cessão'),
+    'apoio discreto de ágio',
+  );
+
+  assert(SALE_OPERATION_UI_GROUPS[0].id === 'encerrar_venda', 'grupo encerrar');
+  assert(SALE_OPERATION_UI_GROUPS[0].codes.length === 5, '5 encerrar');
+  assert(SALE_OPERATION_UI_GROUPS[1].id === 'alterar_venda', 'grupo alterar');
+  assert(SALE_OPERATION_UI_GROUPS[1].codes.join(',') === 'troca_lote,transferencia_titularidade');
+
+  assert(showsTerminationSettlement('desistencia'), 'settlement desistência');
+  assert(showsTerminationSettlement('distrato'), 'settlement distrato');
+  assert(showsTerminationSettlement('inadimplencia'), 'settlement inadimplência');
+  assert(showsTerminationSettlement('cancelamento_administrativo'), 'settlement admin');
+  assert(!showsTerminationSettlement('erro_cadastro'), 'erro sem acerto');
+  assert(!showsTerminationSettlement('troca_lote'), 'troca sem acerto');
+  assert(!showsTerminationSettlement('transferencia_titularidade'), 'cessão sem acerto');
+
+  assert(isLotReleaseSaleOperation('erro_cadastro'), 'erro ainda libera lote');
+  assert(!isLotReleaseSaleOperation('troca_lote'), 'troca não é release');
+  assert(!isLotReleaseSaleOperation('transferencia_titularidade'), 'titularidade não é release');
+  assert(isDeferredSaleOperation('troca_lote'), 'troca diferida');
+  assert(isDeferredSaleOperation('transferencia_titularidade'), 'titularidade diferida');
+  assert(!isDeferredSaleOperation('distrato'), 'distrato não diferido');
+
+  const modal = read('components/map/ReleaseLotConfirmModal.tsx');
+  assert(modal.includes('grid-cols-1 md:grid-cols-3'), 'grid desktop 3 colunas / mobile 1');
+  assert(modal.includes('min-h-[148px]'), 'altura mínima uniforme');
+  assert(modal.includes('h-full min-h-[148px] w-full'), 'cards mesma largura/altura');
+  assert(modal.includes('items-stretch'), 'alinhamento uniforme');
+  assert(modal.includes('Escolha a operação da venda'), 'título da seção');
+  assert(
+    modal.includes('Selecione o procedimento que será realizado para esta venda.'),
+    'subtexto',
+  );
+  assert(SALE_OPERATION_UI_GROUPS[0].label === 'Encerrar venda', 'grupo encerrar');
+  assert(SALE_OPERATION_UI_GROUPS[1].label === 'Alterar venda', 'grupo alterar');
+  assert(modal.includes('{group.label}'), 'renderiza rótulo do grupo');
+  assert(!modal.includes("label: 'Outro'"), 'sem card Outro no modal');
+  assert(!modal.includes("motiveCode === 'outro'"), 'sem campo Outro');
+  assert(modal.includes('isDeferredSaleOperation(motiveCode)'), 'guarda diferidos');
+  assert(modal.includes('isLotReleaseSaleOperation(motiveCode)'), 'só release encerra');
+  assert(modal.includes('showsTerminationSettlement(motiveCode)'), 'acerto só no encerramento compatível');
+  const handleSubmit = modal.slice(modal.indexOf('const handleSubmit'), modal.indexOf('if (!mounted)'));
+  assert(handleSubmit.includes('isDeferredSaleOperation(motiveCode)'), 'submit recusa diferidos');
+  assert(handleSubmit.includes('isLotReleaseSaleOperation(motiveCode)'), 'submit só encerrar');
+  assert(handleSubmit.includes("fetch(`/api/lots/${encodeURIComponent(lot.id)}/release`"), 'POST release só no submit de encerrar');
+  assert(handleSubmit.includes("method: 'POST'"), 'submit usa POST');
+  assert(!handleSubmit.includes('/api/contract-operations/'), 'submit sem cessão');
+  assert(modal.includes('Transferência de titularidade em etapa própria'), 'estado informativo cessão');
+  assert(modal.includes('Troca de lote em etapa própria'), 'estado informativo troca');
+  assert(modal.includes('não chama a liberação'), 'titularidade não usa release');
+  assert(modal.includes('nem tornará o lote Disponível por esta tela'), 'troca não libera automaticamente');
+  assert(modal.includes('Justificativa administrativa'), 'admin exige texto');
+  assert(modal.includes('{deferredOperation ? \'Fechar\' : \'Cancelar\'}'), 'footer diferido');
+  assert(RELEASE_LOT_MOTIVE_OPTIONS.some((o) => o.value === 'outro'), 'backend outro intacto');
+  console.log('OK testSaleOperationsPanel');
 }
 
 function testReleaseHomologUsesDevelopOnly() {
@@ -488,6 +592,7 @@ function main() {
   testApiRoute();
   testGisWiring();
   testReleaseLotModalConfirmRules();
+  testSaleOperationsPanel();
   testReleaseHomologUsesDevelopOnly();
   testOperationalListingExcludesCanceled();
   testApiErrorShape();

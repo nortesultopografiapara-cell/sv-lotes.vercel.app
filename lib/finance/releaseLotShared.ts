@@ -17,47 +17,145 @@ export const RELEASE_LOT_MOTIVE_OPTIONS = [
 
 export type ReleaseLotMotiveCode = (typeof RELEASE_LOT_MOTIVE_OPTIONS)[number]['value'];
 
-/** Agrupamento visual da Fase 1 — códigos internos permanecem inalterados. */
-export const RELEASE_LOT_MOTIVE_GROUPS: Array<{
-  id: string;
+/**
+ * Operações exibidas no painel da venda.
+ * `outro` permanece no backend (RELEASE_LOT_MOTIVE_OPTIONS), mas não entra na UI.
+ * `transferencia_titularidade` é só UI nesta etapa — não é motivo de /release.
+ */
+export type SaleOperationUiCode =
+  | 'desistencia'
+  | 'distrato'
+  | 'inadimplencia'
+  | 'erro_cadastro'
+  | 'cancelamento_administrativo'
+  | 'troca_lote'
+  | 'transferencia_titularidade';
+
+export type SaleOperationUiOption = {
+  value: SaleOperationUiCode;
   label: string;
-  codes: ReleaseLotMotiveCode[];
-}> = [
+  description: string;
+  supportLabel?: string;
+};
+
+export const SALE_OPERATION_UI_OPTIONS: SaleOperationUiOption[] = [
   {
-    id: 'distrato_desistencia',
-    label: 'Distrato / Desistência',
-    codes: ['desistencia', 'distrato'],
+    value: 'desistencia',
+    label: 'Desistência do cliente',
+    description: 'O comprador solicita o encerramento da aquisição.',
   },
   {
-    id: 'inadimplencia',
+    value: 'distrato',
+    label: 'Distrato',
+    description: 'Encerramento formal da venda por acordo entre as partes.',
+  },
+  {
+    value: 'inadimplencia',
     label: 'Inadimplência',
-    codes: ['inadimplencia'],
+    description: 'Encerramento por descumprimento das obrigações de pagamento.',
   },
   {
-    id: 'erro_cadastro',
+    value: 'erro_cadastro',
     label: 'Erro de cadastro',
-    codes: ['erro_cadastro'],
+    description: 'Venda lançada incorretamente ou vinculada ao cliente/lote errado.',
   },
   {
-    id: 'cancelamento_administrativo',
+    value: 'cancelamento_administrativo',
     label: 'Cancelamento administrativo',
-    codes: ['cancelamento_administrativo'],
+    description: 'Cancelamento excepcional pela administração, com justificativa obrigatória.',
   },
   {
-    id: 'compatibilidade',
-    label: 'Outros (compatibilidade)',
-    codes: ['troca_lote', 'outro'],
+    value: 'troca_lote',
+    label: 'Troca de lote',
+    description:
+      'O comprador permanece na negociação, mas a unidade vinculada será substituída.',
+  },
+  {
+    value: 'transferencia_titularidade',
+    label: 'Transferência de titularidade',
+    description:
+      'Transferir a posição contratual para um novo comprador, preservando saldo e histórico.',
+    supportLabel: 'Venda de ágio / cessão',
   },
 ];
 
+export const SALE_OPERATION_UI_GROUPS: Array<{
+  id: 'encerrar_venda' | 'alterar_venda';
+  label: string;
+  codes: SaleOperationUiCode[];
+}> = [
+  {
+    id: 'encerrar_venda',
+    label: 'Encerrar venda',
+    codes: [
+      'desistencia',
+      'distrato',
+      'inadimplencia',
+      'erro_cadastro',
+      'cancelamento_administrativo',
+    ],
+  },
+  {
+    id: 'alterar_venda',
+    label: 'Alterar venda',
+    codes: ['troca_lote', 'transferencia_titularidade'],
+  },
+];
+
+/** Encerramento que ainda usa POST /release (lote volta a Disponível). */
+const LOT_RELEASE_OPERATION_CODES: ReadonlySet<string> = new Set([
+  'desistencia',
+  'distrato',
+  'inadimplencia',
+  'erro_cadastro',
+  'cancelamento_administrativo',
+]);
+
+/** Acerto financeiro somente leitura — não inclui erro de cadastro nem alterar venda. */
+const SETTLEMENT_OPERATION_CODES: ReadonlySet<string> = new Set([
+  'desistencia',
+  'distrato',
+  'inadimplencia',
+  'cancelamento_administrativo',
+]);
+
+const DEFERRED_OPERATION_CODES: ReadonlySet<string> = new Set([
+  'troca_lote',
+  'transferencia_titularidade',
+]);
+
+export function isLotReleaseSaleOperation(code?: string | null): boolean {
+  return LOT_RELEASE_OPERATION_CODES.has(String(code || '').trim());
+}
+
+export function showsTerminationSettlement(code?: string | null): boolean {
+  return SETTLEMENT_OPERATION_CODES.has(String(code || '').trim());
+}
+
+export function isDeferredSaleOperation(code?: string | null): boolean {
+  return DEFERRED_OPERATION_CODES.has(String(code || '').trim());
+}
+
+export function saleOperationUiOption(
+  code?: string | null,
+): SaleOperationUiOption | undefined {
+  const value = String(code || '').trim();
+  return SALE_OPERATION_UI_OPTIONS.find((option) => option.value === value);
+}
+
+/** Agrupamento visual legado — o painel usa SALE_OPERATION_UI_GROUPS. */
+export const RELEASE_LOT_MOTIVE_GROUPS = SALE_OPERATION_UI_GROUPS;
+
 /** Textos de UI dos cards — valores internos continuam RELEASE_LOT_MOTIVE_OPTIONS. */
 export const RELEASE_LOT_MOTIVE_DESCRIPTIONS: Record<ReleaseLotMotiveCode, string> = {
-  desistencia: 'O comprador desistiu da aquisição. A venda atual será encerrada.',
-  distrato: 'Encerramento da venda por distrato, com preservação do histórico documental.',
-  inadimplencia: 'Encerramento por inadimplência. Parcelas em aberto seguem a regra atual de cancelamento.',
-  erro_cadastro: 'Correção de lançamento indevido ou erro de cadastro nesta venda.',
-  troca_lote: 'Este lote volta ao estoque. Uma nova venda, se houver, é feita em outro fluxo.',
-  cancelamento_administrativo: 'Encerramento interno pela administração da loteadora.',
+  desistencia: 'O comprador solicita o encerramento da aquisição.',
+  distrato: 'Encerramento formal da venda por acordo entre as partes.',
+  inadimplencia: 'Encerramento por descumprimento das obrigações de pagamento.',
+  erro_cadastro: 'Venda lançada incorretamente ou vinculada ao cliente/lote errado.',
+  troca_lote:
+    'O comprador permanece na negociação, mas a unidade vinculada será substituída.',
+  cancelamento_administrativo:
+    'Cancelamento excepcional pela administração, com justificativa obrigatória.',
   outro: 'Outro motivo. A descrição é obrigatória.',
 };
 
@@ -359,6 +457,9 @@ export function validateReleaseLotMotive(input: {
   const detail = String(input.motiveDetail || '').trim();
   if (code === 'outro' && detail.length < 3) {
     return { ok: false, error: 'Descreva o motivo (campo Outro).' };
+  }
+  if (code === 'cancelamento_administrativo' && detail.length < 3) {
+    return { ok: false, error: 'Informe a justificativa administrativa.' };
   }
   return {
     ok: true,

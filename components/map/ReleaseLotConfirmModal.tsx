@@ -12,10 +12,11 @@ import {
   FileWarning,
   FileX,
   Handshake,
+  Info,
   Loader2,
-  MoreHorizontal,
   ScrollText,
   ShieldAlert,
+  Users,
   UserX,
   X,
 } from 'lucide-react';
@@ -24,10 +25,12 @@ import { calculateTerminationSettlement } from '@/lib/contract-termination/calcu
 import type { SettlementDestination } from '@/lib/contract-termination/types';
 import {
   canConfirmReleaseLot,
-  RELEASE_LOT_MOTIVE_DESCRIPTIONS,
-  RELEASE_LOT_MOTIVE_GROUPS,
-  RELEASE_LOT_MOTIVE_OPTIONS,
-  type ReleaseLotMotiveCode,
+  isDeferredSaleOperation,
+  isLotReleaseSaleOperation,
+  SALE_OPERATION_UI_GROUPS,
+  SALE_OPERATION_UI_OPTIONS,
+  showsTerminationSettlement,
+  type SaleOperationUiCode,
   type ReleaseLotPreview,
   validateReleaseLotMotive,
 } from '@/lib/finance/releaseLotShared';
@@ -37,14 +40,14 @@ import { supabase } from '@/lib/supabase';
 const FIELD_CLASS =
   'form-input-light w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500';
 
-const MOTIVE_ICONS: Record<ReleaseLotMotiveCode, typeof UserX> = {
+const OPERATION_ICONS: Record<SaleOperationUiCode, typeof UserX> = {
   desistencia: UserX,
   distrato: Handshake,
   inadimplencia: Ban,
   erro_cadastro: FileWarning,
   troca_lote: ArrowLeftRight,
   cancelamento_administrativo: ShieldAlert,
-  outro: MoreHorizontal,
+  transferencia_titularidade: Users,
 };
 
 function money(value: number | null | undefined): string {
@@ -105,7 +108,7 @@ export function ReleaseLotConfirmModal({
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(true);
   const [preview, setPreview] = useState<ReleaseLotPreview | null>(null);
-  const [motiveCode, setMotiveCode] = useState<ReleaseLotMotiveCode | ''>('');
+  const [motiveCode, setMotiveCode] = useState<SaleOperationUiCode | ''>('');
   const [motiveDetail, setMotiveDetail] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
   const [hasImprovements, setHasImprovements] = useState<'sim' | 'nao'>('nao');
@@ -181,8 +184,13 @@ export function ReleaseLotConfirmModal({
     preview?.settlementPreview,
   ]);
 
+  const deferredOperation = isDeferredSaleOperation(motiveCode);
+  const releaseOperation = isLotReleaseSaleOperation(motiveCode);
+  const showSettlement = showsTerminationSettlement(motiveCode);
+
   const confirmEnabled = useMemo(
     () =>
+      releaseOperation &&
       canConfirmReleaseLot({
         motiveCode,
         motiveDetail,
@@ -200,6 +208,7 @@ export function ReleaseLotConfirmModal({
       password,
       preview?.asaasBlockedCharges,
       preview?.interBlockedCharges,
+      releaseOperation,
     ],
   );
 
@@ -208,6 +217,16 @@ export function ReleaseLotConfirmModal({
     if (submittingRef.current || loading) return;
     if (!userRole || !userRole.toUpperCase().includes('ADMIN')) {
       setError('Apenas administradores podem liberar o lote.');
+      return;
+    }
+    if (!motiveCode) {
+      setError('Selecione a operação da venda.');
+      return;
+    }
+    if (isDeferredSaleOperation(motiveCode) || !isLotReleaseSaleOperation(motiveCode)) {
+      setError(
+        'Este procedimento será executado em etapa própria. A liberação do lote não se aplica.',
+      );
       return;
     }
     const motive = validateReleaseLotMotive({ motiveCode, motiveDetail });
@@ -291,9 +310,10 @@ export function ReleaseLotConfirmModal({
       <div className="bg-white w-full max-w-[1000px] max-h-[94vh] flex flex-col rounded-xl shadow-2xl animate-in fade-in zoom-in duration-200 z-[10000] text-slate-900">
         <div className="shrink-0 px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-bold text-lg text-slate-900">Encerrar venda e liberar lote</h3>
+            <h3 className="font-bold text-lg text-slate-900">Operações da venda</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Esta operação encerra a venda atual e devolve o lote ao estoque disponível.
+              Encerramento devolve o lote ao estoque. Troca de lote e transferência de
+              titularidade não usam esta liberação.
             </p>
           </div>
           <button
@@ -396,12 +416,15 @@ export function ReleaseLotConfirmModal({
                 )}
 
                 <section>
-                  <p className="text-sm font-semibold text-slate-800 mb-2">
-                    Motivo da liberação <span className="text-red-500">*</span>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Escolha a operação da venda <span className="text-red-500">*</span>
                   </p>
-                  <div className="space-y-4">
-                    {RELEASE_LOT_MOTIVE_GROUPS.map((group) => {
-                      const options = RELEASE_LOT_MOTIVE_OPTIONS.filter((option) =>
+                  <p className="mt-1 mb-3 text-xs text-slate-500">
+                    Selecione o procedimento que será realizado para esta venda.
+                  </p>
+                  <div className="space-y-5">
+                    {SALE_OPERATION_UI_GROUPS.map((group) => {
+                      const options = SALE_OPERATION_UI_OPTIONS.filter((option) =>
                         group.codes.includes(option.value),
                       );
                       return (
@@ -409,22 +432,27 @@ export function ReleaseLotConfirmModal({
                           <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold mb-2">
                             {group.label}
                           </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
                             {options.map((option) => {
-                              const Icon = MOTIVE_ICONS[option.value];
+                              const Icon = OPERATION_ICONS[option.value];
                               const selected = motiveCode === option.value;
                               return (
                                 <button
                                   key={option.value}
                                   type="button"
-                                  onClick={() => setMotiveCode(option.value)}
-                                  className={`text-left rounded-xl border p-3 transition-colors ${
+                                  onClick={() => {
+                                    setMotiveCode(option.value);
+                                    if (option.value !== 'cancelamento_administrativo') {
+                                      setMotiveDetail('');
+                                    }
+                                  }}
+                                  className={`h-full min-h-[148px] w-full text-left rounded-xl border p-3.5 transition-colors ${
                                     selected
                                       ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-400'
                                       : 'border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/40'
                                   }`}
                                 >
-                                  <div className="flex items-start gap-2.5">
+                                  <div className="flex h-full items-start gap-2.5">
                                     <span
                                       className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                                         selected
@@ -434,12 +462,17 @@ export function ReleaseLotConfirmModal({
                                     >
                                       <Icon className="w-4 h-4" />
                                     </span>
-                                    <span>
+                                    <span className="min-w-0">
                                       <span className="block text-sm font-semibold text-slate-900">
                                         {option.label}
                                       </span>
-                                      <span className="mt-0.5 block text-xs text-slate-600 leading-snug">
-                                        {RELEASE_LOT_MOTIVE_DESCRIPTIONS[option.value]}
+                                      {option.supportLabel ? (
+                                        <span className="mt-0.5 block text-[11px] font-medium text-slate-500">
+                                          {option.supportLabel}
+                                        </span>
+                                      ) : null}
+                                      <span className="mt-1 block text-xs text-slate-600 leading-snug">
+                                        {option.description}
                                       </span>
                                     </span>
                                   </div>
@@ -451,23 +484,23 @@ export function ReleaseLotConfirmModal({
                       );
                     })}
                   </div>
-                  {motiveCode === 'outro' && (
+                  {motiveCode === 'cancelamento_administrativo' && (
                     <div className="mt-3">
                       <label className="block text-sm font-semibold text-slate-700 mb-1">
-                        Descreva o motivo <span className="text-red-500">*</span>
+                        Justificativa administrativa <span className="text-red-500">*</span>
                       </label>
                       <textarea
                         value={motiveDetail}
                         onChange={(e) => setMotiveDetail(e.target.value)}
                         className={FIELD_CLASS}
                         rows={2}
-                        placeholder="Informe o motivo (mínimo 3 caracteres)"
+                        placeholder="Informe a justificativa (mínimo 3 caracteres)"
                       />
                     </div>
                   )}
                 </section>
 
-                {motiveCode && liveSettlement && preview?.settlementPreview?.policy ? (
+                {showSettlement && liveSettlement && preview?.settlementPreview?.policy ? (
                   <ReleaseLotSettlementSection
                     policy={preview.settlementPreview.policy}
                     settlement={liveSettlement}
@@ -487,7 +520,7 @@ export function ReleaseLotConfirmModal({
                   />
                 ) : null}
 
-                {motiveCode ? (
+                {releaseOperation ? (
                   <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-sm font-semibold text-slate-800 mb-2">O que acontecerá</p>
                     <ul className="space-y-1.5 text-sm text-slate-700">
@@ -514,53 +547,76 @@ export function ReleaseLotConfirmModal({
                     </ul>
                     <p className="mt-3 text-xs text-slate-500 flex gap-1.5">
                       <FileX className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      Esta tela não transfere titularidade nem troca o comprador. Cessão, se
-                      necessária, é uma operação independente.
+                      Encerramento não transfere titularidade nem substitui a unidade. Troca de
+                      lote e cessão são operações independentes.
                     </p>
                   </section>
                 ) : null}
 
-                <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={acknowledged}
-                    onChange={(e) => setAcknowledged(e.target.checked)}
-                    className="mt-1"
-                  />
-                  <span>
-                    Estou ciente de que esta operação encerrará a venda atual e tornará o lote novamente disponível.
-                  </span>
-                </label>
+                {deferredOperation ? (
+                  <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                    <p className="text-sm font-semibold text-indigo-950 mb-1 inline-flex items-center gap-2">
+                      <Info className="w-4 h-4 shrink-0" />
+                      {motiveCode === 'transferencia_titularidade'
+                        ? 'Transferência de titularidade em etapa própria'
+                        : 'Troca de lote em etapa própria'}
+                    </p>
+                    <p className="text-sm text-indigo-900 leading-snug">
+                      {motiveCode === 'transferencia_titularidade'
+                        ? 'A posição contratual será transferida para um novo comprador em fluxo específico, preservando saldo e histórico. O lote permanece vinculado. Esta tela não chama a liberação, não torna o lote Disponível e não calcula restituição.'
+                        : 'O comprador permanece na negociação e a unidade será substituída em fluxo específico. Esta ação não encerrará a venda nem tornará o lote Disponível por esta tela.'}
+                    </p>
+                    <p className="mt-2 text-xs text-indigo-800">
+                      Nenhuma alteração será gravada agora. Use Cancelar para voltar ao mapa.
+                    </p>
+                  </section>
+                ) : null}
 
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">
-                    Senha de administrador <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative max-w-md">
-                    <input
-                      ref={passwordInputRef}
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={`${FIELD_CLASS} pr-10`}
-                      placeholder="Senha de acesso"
-                      autoComplete="current-password"
-                      style={{
-                        color: '#0f172a',
-                        WebkitTextFillColor: '#0f172a',
-                        caretColor: '#0f172a',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                      tabIndex={-1}
-                    >
-                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </div>
+                {releaseOperation ? (
+                  <>
+                    <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={(e) => setAcknowledged(e.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        Estou ciente de que esta operação encerrará a venda atual e tornará o lote novamente disponível.
+                      </span>
+                    </label>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">
+                        Senha de administrador <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative max-w-md">
+                        <input
+                          ref={passwordInputRef}
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className={`${FIELD_CLASS} pr-10`}
+                          placeholder="Senha de acesso"
+                          autoComplete="current-password"
+                          style={{
+                            color: '#0f172a',
+                            WebkitTextFillColor: '#0f172a',
+                            caretColor: '#0f172a',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          tabIndex={-1}
+                        >
+                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </>
             )}
 
@@ -575,16 +631,18 @@ export function ReleaseLotConfirmModal({
               onClick={onClose}
               className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold rounded-lg text-sm"
             >
-              Cancelar
+              {deferredOperation ? 'Fechar' : 'Cancelar'}
             </button>
-            <button
-              type="submit"
-              disabled={!confirmEnabled}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm inline-flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              Confirmar liberação do lote
-            </button>
+            {releaseOperation || !motiveCode ? (
+              <button
+                type="submit"
+                disabled={!confirmEnabled}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm inline-flex items-center justify-center gap-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Confirmar liberação do lote
+              </button>
+            ) : null}
           </div>
         </form>
       </div>
