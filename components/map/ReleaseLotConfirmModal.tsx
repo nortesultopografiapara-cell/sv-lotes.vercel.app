@@ -20,14 +20,18 @@ import {
   X,
 } from 'lucide-react';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { calculateTerminationSettlement } from '@/lib/contract-termination/calculateSettlement';
+import type { SettlementDestination } from '@/lib/contract-termination/types';
 import {
   canConfirmReleaseLot,
   RELEASE_LOT_MOTIVE_DESCRIPTIONS,
+  RELEASE_LOT_MOTIVE_GROUPS,
   RELEASE_LOT_MOTIVE_OPTIONS,
   type ReleaseLotMotiveCode,
   type ReleaseLotPreview,
   validateReleaseLotMotive,
 } from '@/lib/finance/releaseLotShared';
+import { ReleaseLotSettlementSection } from '@/components/map/ReleaseLotSettlementSection';
 import { supabase } from '@/lib/supabase';
 
 const FIELD_CLASS =
@@ -104,6 +108,12 @@ export function ReleaseLotConfirmModal({
   const [motiveCode, setMotiveCode] = useState<ReleaseLotMotiveCode | ''>('');
   const [motiveDetail, setMotiveDetail] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
+  const [hasImprovements, setHasImprovements] = useState<'sim' | 'nao'>('nao');
+  const [destination, setDestination] = useState<SettlementDestination>('REFUND_CUSTOMER');
+  const [exceptionEnabled, setExceptionEnabled] = useState(false);
+  const [exceptionMode, setExceptionMode] = useState<'amount' | 'percent'>('amount');
+  const [exceptionValue, setExceptionValue] = useState('');
+  const [exceptionJustification, setExceptionJustification] = useState('');
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
 
@@ -138,6 +148,38 @@ export function ReleaseLotConfirmModal({
       cancelled = true;
     };
   }, [lot.id]);
+
+  const liveSettlement = useMemo(() => {
+    const ctx = preview?.settlementPreview;
+    if (!ctx?.policy) return null;
+    const parsedValue = Number(String(exceptionValue).replace(',', '.'));
+    return calculateTerminationSettlement({
+      policy: ctx.policy,
+      receipts: ctx.receipts || [],
+      motiveCode: motiveCode || null,
+      hasImprovements: hasImprovements === 'sim',
+      destination,
+      exceptionOverride: exceptionEnabled
+        ? {
+            enabled: true,
+            refundAmount:
+              exceptionMode === 'amount' && Number.isFinite(parsedValue) ? parsedValue : null,
+            retentionPercent:
+              exceptionMode === 'percent' && Number.isFinite(parsedValue) ? parsedValue : null,
+            justification: exceptionJustification,
+          }
+        : null,
+    });
+  }, [
+    destination,
+    exceptionEnabled,
+    exceptionJustification,
+    exceptionMode,
+    exceptionValue,
+    hasImprovements,
+    motiveCode,
+    preview?.settlementPreview,
+  ]);
 
   const confirmEnabled = useMemo(
     () =>
@@ -357,39 +399,55 @@ export function ReleaseLotConfirmModal({
                   <p className="text-sm font-semibold text-slate-800 mb-2">
                     Motivo da liberação <span className="text-red-500">*</span>
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {RELEASE_LOT_MOTIVE_OPTIONS.map((option) => {
-                      const Icon = MOTIVE_ICONS[option.value];
-                      const selected = motiveCode === option.value;
+                  <div className="space-y-4">
+                    {RELEASE_LOT_MOTIVE_GROUPS.map((group) => {
+                      const options = RELEASE_LOT_MOTIVE_OPTIONS.filter((option) =>
+                        group.codes.includes(option.value),
+                      );
                       return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setMotiveCode(option.value)}
-                          className={`text-left rounded-xl border p-3 transition-colors ${
-                            selected
-                              ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-400'
-                              : 'border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/40'
-                          }`}
-                        >
-                          <div className="flex items-start gap-2.5">
-                            <span
-                              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                                selected ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              <Icon className="w-4 h-4" />
-                            </span>
-                            <span>
-                              <span className="block text-sm font-semibold text-slate-900">
-                                {option.label}
-                              </span>
-                              <span className="mt-0.5 block text-xs text-slate-600 leading-snug">
-                                {RELEASE_LOT_MOTIVE_DESCRIPTIONS[option.value]}
-                              </span>
-                            </span>
+                        <div key={group.id}>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold mb-2">
+                            {group.label}
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {options.map((option) => {
+                              const Icon = MOTIVE_ICONS[option.value];
+                              const selected = motiveCode === option.value;
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setMotiveCode(option.value)}
+                                  className={`text-left rounded-xl border p-3 transition-colors ${
+                                    selected
+                                      ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-400'
+                                      : 'border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/40'
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-2.5">
+                                    <span
+                                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                        selected
+                                          ? 'bg-orange-500 text-white'
+                                          : 'bg-slate-100 text-slate-600'
+                                      }`}
+                                    >
+                                      <Icon className="w-4 h-4" />
+                                    </span>
+                                    <span>
+                                      <span className="block text-sm font-semibold text-slate-900">
+                                        {option.label}
+                                      </span>
+                                      <span className="mt-0.5 block text-xs text-slate-600 leading-snug">
+                                        {RELEASE_LOT_MOTIVE_DESCRIPTIONS[option.value]}
+                                      </span>
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -408,6 +466,25 @@ export function ReleaseLotConfirmModal({
                     </div>
                   )}
                 </section>
+
+                {motiveCode && liveSettlement && preview?.settlementPreview?.policy ? (
+                  <ReleaseLotSettlementSection
+                    policy={preview.settlementPreview.policy}
+                    settlement={liveSettlement}
+                    hasImprovements={hasImprovements}
+                    onHasImprovements={setHasImprovements}
+                    destination={destination}
+                    onDestination={setDestination}
+                    exceptionEnabled={exceptionEnabled}
+                    onExceptionEnabled={setExceptionEnabled}
+                    exceptionMode={exceptionMode}
+                    onExceptionMode={setExceptionMode}
+                    exceptionValue={exceptionValue}
+                    onExceptionValue={setExceptionValue}
+                    exceptionJustification={exceptionJustification}
+                    onExceptionJustification={setExceptionJustification}
+                  />
+                ) : null}
 
                 {motiveCode ? (
                   <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">

@@ -21,6 +21,7 @@ import {
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
   canConfirmReleaseLot,
+  RELEASE_LOT_MOTIVE_GROUPS,
   RELEASE_LOT_MOTIVE_OPTIONS,
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
@@ -50,6 +51,12 @@ function testMotiveValidation() {
   });
   assert(outroOk.ok === true, 'outro ok');
   assert(RELEASE_LOT_MOTIVE_OPTIONS.length >= 7, 'opções de motivo');
+  const grouped = RELEASE_LOT_MOTIVE_GROUPS.flatMap((g) => g.codes);
+  assert(
+    grouped.join(',') ===
+      'desistencia,distrato,inadimplencia,erro_cadastro,cancelamento_administrativo,troca_lote,outro',
+    'agrupamento visual cobre os 7 códigos sem remover nenhum',
+  );
   console.log('OK testMotiveValidation');
 }
 
@@ -276,7 +283,8 @@ function testGisWiring() {
   assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Troca de lote'"), 'card troca de lote');
   assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Desistência do cliente'"), 'card desistência');
   assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Cancelamento administrativo'"), 'card admin');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.map'), 'cards renderizam opções oficiais');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_GROUPS.map'), 'cards agrupados visualmente');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.filter'), 'cards renderizam opções oficiais');
   assert(modal.includes("motiveCode === 'outro'"), 'Outro abre descrição');
   assert(modal.includes('O que acontecerá'), 'quadro de consequências');
   assert(modal.includes('Cobranças Asaas canceláveis'), 'card Asaas');
@@ -363,7 +371,8 @@ function testReleaseLotModalConfirmRules() {
   assert(codes.join(',') === 'desistencia,distrato,inadimplencia,erro_cadastro,troca_lote,cancelamento_administrativo,outro', 'valores internos estáveis');
 
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
-  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.map'), 'cards iteram opções oficiais');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_GROUPS.map'), 'motivos agrupados visualmente');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.filter'), 'cards nascem das opções oficiais');
   assert(modal.includes('key={option.value}'), 'cards usam value interno');
   assert(modal.includes('{option.label}'), 'cards exibem label oficial');
   assert(modal.includes('RELEASE_LOT_MOTIVE_DESCRIPTIONS[option.value]'), 'cards têm descrição');

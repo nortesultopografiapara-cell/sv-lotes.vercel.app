@@ -46,6 +46,7 @@ import {
   type ReleaseLotPreview,
 } from '@/lib/finance/releaseLotShared';
 import { isCanceledBrokerCommission, isPaidBrokerCommission } from '@/lib/brokerCommission';
+import { buildTerminationSettlementPreview } from '@/lib/contract-termination/preview';
 import { logLotAuditEvent } from '@/lib/lotAudit';
 import { isPlatformAdmin, tenantOrClause } from '@/lib/rls';
 import {
@@ -159,6 +160,8 @@ type ReceiptRow = {
   status?: string | null;
   paid_at?: string | null;
   amount?: number | string | null;
+  installment_number?: number | string | null;
+  paid_amount?: number | string | null;
 };
 
 type ChargeRow = {
@@ -303,11 +306,22 @@ async function loadSaleContext(
     };
   }
 
-  const { data: sale, error: saleErr } = await admin
+  const saleFull = await admin
     .from('sales')
-    .select('id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at')
+    .select(
+      'id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at, contract_model',
+    )
     .eq('id', saleId)
     .maybeSingle();
+  const saleQuery = saleFull.error
+    ? await admin
+        .from('sales')
+        .select('id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at')
+        .eq('id', saleId)
+        .maybeSingle()
+    : saleFull;
+  const sale = saleQuery.data;
+  const saleErr = saleQuery.error;
   if (saleErr) {
     console.error('[releaseLot] LOAD_SALE_FAILED', saleErr.message);
     throw releaseErr(
@@ -345,7 +359,9 @@ async function loadSaleContext(
     // Preferência: campos de assinatura; fallback se coluna não existir no ambiente.
     const full = await admin
       .from('contracts')
-      .select('id, status, contract_number, sale_id, signed_at, signature_status')
+      .select(
+        'id, status, contract_number, sale_id, signed_at, signature_status, contract_model',
+      )
       .eq(filter.column, filter.value)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -373,11 +389,20 @@ async function loadSaleContext(
     contract = await loadContractBy({ column: 'sale_id', value: saleId });
   }
 
-  const { data: receiptRows, error: receiptErr } = await admin
+  const receiptFull = await admin
     .from('finance_receipts')
-    .select('id, sale_id, status, paid_at, amount')
+    .select('id, sale_id, status, paid_at, amount, installment_number, paid_amount')
     .eq('sale_id', saleId)
     .or(tenantOrClause(companyId));
+  const receiptQuery = receiptFull.error
+    ? await admin
+        .from('finance_receipts')
+        .select('id, sale_id, status, paid_at, amount')
+        .eq('sale_id', saleId)
+        .or(tenantOrClause(companyId))
+    : receiptFull;
+  const receiptRows = receiptQuery.data;
+  const receiptErr = receiptQuery.error;
   if (receiptErr) {
     console.error('[releaseLot] LOAD_RECEIPTS_FAILED', receiptErr.message);
     throw releaseErr(
@@ -505,6 +530,17 @@ function buildPreviewFromContext(params: {
   const openCancelableCharges =
     chargeSummary.openAsaasCharges + interSummary.openInterCharges;
 
+  const settlementPreview = buildTerminationSettlementPreview({
+    saleContractModel:
+      sale?.contract_model != null ? String(sale.contract_model) : null,
+    contractContractModel:
+      contract?.contract_model != null ? String(contract.contract_model) : null,
+    receipts,
+    hasImprovements: false,
+    destination: 'REFUND_CUSTOMER',
+    exceptionOverride: null,
+  });
+
   return {
     lotId: block.id,
     companyId,
@@ -547,6 +583,7 @@ function buildPreviewFromContext(params: {
     openInterChargeIds: candidateInterChargeIds,
     unpaidReceiptIds,
     paidReceiptIds,
+    settlementPreview,
   };
 }
 

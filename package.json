@@ -133,6 +133,7 @@
     "test:meneses-clause-terceira-finance": "tsx scripts/mandatory-meneses-clause-terceira-finance-tests.ts",
     "test:sale-spouse-cpf-reuse": "tsx scripts/mandatory-sale-spouse-cpf-reuse-tests.ts",
     "test:release-lot": "tsx scripts/mandatory-release-lot-tests.ts",
+    "test:release-settlement": "tsx scripts/mandatory-release-settlement-araguaia-tests.ts",
     "test:lot-reservation-display": "tsx scripts/mandatory-lot-reservation-display-tests.ts",
     "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts",
     "test:street-guides-report": "tsx scripts/mandatory-street-guides-report-tests.ts",

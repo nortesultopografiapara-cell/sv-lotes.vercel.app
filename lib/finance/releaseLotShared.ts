@@ -3,6 +3,8 @@
  * Seguro para client bundle (sem Supabase/Asaas server).
  */
 
+import type { TerminationSettlementPreview } from '@/lib/contract-termination/types';
+
 export const RELEASE_LOT_MOTIVE_OPTIONS = [
   { value: 'desistencia', label: 'Desistência do cliente' },
   { value: 'distrato', label: 'Distrato' },
@@ -14,6 +16,39 @@ export const RELEASE_LOT_MOTIVE_OPTIONS = [
 ] as const;
 
 export type ReleaseLotMotiveCode = (typeof RELEASE_LOT_MOTIVE_OPTIONS)[number]['value'];
+
+/** Agrupamento visual da Fase 1 — códigos internos permanecem inalterados. */
+export const RELEASE_LOT_MOTIVE_GROUPS: Array<{
+  id: string;
+  label: string;
+  codes: ReleaseLotMotiveCode[];
+}> = [
+  {
+    id: 'distrato_desistencia',
+    label: 'Distrato / Desistência',
+    codes: ['desistencia', 'distrato'],
+  },
+  {
+    id: 'inadimplencia',
+    label: 'Inadimplência',
+    codes: ['inadimplencia'],
+  },
+  {
+    id: 'erro_cadastro',
+    label: 'Erro de cadastro',
+    codes: ['erro_cadastro'],
+  },
+  {
+    id: 'cancelamento_administrativo',
+    label: 'Cancelamento administrativo',
+    codes: ['cancelamento_administrativo'],
+  },
+  {
+    id: 'compatibilidade',
+    label: 'Outros (compatibilidade)',
+    codes: ['troca_lote', 'outro'],
+  },
+];
 
 /** Textos de UI dos cards — valores internos continuam RELEASE_LOT_MOTIVE_OPTIONS. */
 export const RELEASE_LOT_MOTIVE_DESCRIPTIONS: Record<ReleaseLotMotiveCode, string> = {
@@ -597,4 +632,6 @@ export type ReleaseLotPreview = {
   openInterChargeIds: string[];
   unpaidReceiptIds: string[];
   paidReceiptIds: string[];
+  /** Acerto financeiro — somente leitura. Não persiste e não altera o POST. */
+  settlementPreview?: TerminationSettlementPreview | null;
 };
