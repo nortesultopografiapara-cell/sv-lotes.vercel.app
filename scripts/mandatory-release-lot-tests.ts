@@ -20,6 +20,7 @@ import {
   isOperationalFinanceReceiptForListing,
   isPaidFinanceReceiptStatus,
   isSoldOrReservedLotStatus,
+  canConfirmReleaseLot,
   RELEASE_LOT_MOTIVE_OPTIONS,
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
@@ -28,6 +29,7 @@ import {
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
 } from '../lib/finance/releaseLotShared';
+import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '../lib/homolog/env';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -254,12 +256,35 @@ function testGisWiring() {
   assert(gis.includes('ReleaseLotConfirmModal'), 'modal importado no GIS');
   assert(gis.includes('lotNeedsReleaseConfirm'), 'helper de gatilho');
   assert(modal.includes('/api/lots/'), 'API no modal');
-  assert(modal.includes('Liberar lote e encerrar venda?'), 'título modal');
-  assert(modal.includes('Liberar lote e encerrar venda'), 'botão destrutivo');
-  assert(modal.includes('Estou ciente de que o lote será liberado'), 'checkbox');
-  assert(modal.includes('Motivo da liberação'), 'motivo obrigatório');
-  assert(modal.includes('Cobranças bancárias canceláveis'), 'conta canceláveis agnóstico');
-  assert(!modal.includes('Cobranças Asaas canceláveis'), 'sem label acoplado só Asaas');
+  assert(modal.includes('method: \'GET\''), 'GET preview');
+  assert(modal.includes('method: \'POST\''), 'POST execute');
+  assert(modal.includes('Encerrar venda e liberar lote'), 'título modal');
+  assert(
+    modal.includes('Esta operação encerra a venda atual e devolve o lote ao estoque disponível.'),
+    'subtítulo',
+  );
+  assert(modal.includes('max-w-[1000px]'), 'largura desktop ~1000px');
+  assert(modal.includes('Confirmar liberação do lote'), 'botão de risco');
+  assert(
+    modal.includes(
+      'Estou ciente de que esta operação encerrará a venda atual e tornará o lote novamente disponível.',
+    ),
+    'checkbox',
+  );
+  assert(!modal.includes('<select'), 'sem select de motivo');
+  assert(modal.includes('Motivo da liberação'), 'seção de motivo');
+  assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Troca de lote'"), 'card troca de lote');
+  assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Desistência do cliente'"), 'card desistência');
+  assert(read('lib/finance/releaseLotShared.ts').includes("label: 'Cancelamento administrativo'"), 'card admin');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.map'), 'cards renderizam opções oficiais');
+  assert(modal.includes("motiveCode === 'outro'"), 'Outro abre descrição');
+  assert(modal.includes('O que acontecerá'), 'quadro de consequências');
+  assert(modal.includes('Cobranças Asaas canceláveis'), 'card Asaas');
+  assert(modal.includes('Cobranças bancárias canceláveis'), 'card total bancário');
+  assert(modal.includes('Documentos preservados'), 'card documentos');
+  assert(modal.includes('Parcelas pagas'), 'card pagas');
+  assert(modal.includes('Parcelas pendentes'), 'card pendentes');
+  assert(modal.includes('Parcelas atrasadas'), 'card atrasadas');
   assert(modal.includes('asaasBlockedCharges'), 'bloqueia submit se Asaas bloqueado');
   assert(modal.includes('interBlockedCharges'), 'bloqueia submit se Inter bloqueado');
   assert(modal.includes('pagamentos preservados'), 'alerta pagamentos');
@@ -267,9 +292,113 @@ function testGisWiring() {
   assert(modal.includes('form-input-light'), 'contraste inputs GIS');
   assert(modal.includes('createPortal'), 'portal no body');
   assert(modal.includes('WebkitTextFillColor'), 'senha com cor forçada');
+  assert(modal.includes('signInWithPassword'), 'senha via Auth');
+  assert(modal.includes('lotReleased: true'), 'sucesso libera lote no mapa');
+  assert(!modal.includes('CESSAO'), 'sem cessão neste modal');
+  assert(!modal.includes('CustomerSearchPicker'), 'sem busca de cessionário');
+  assert(!modal.includes('/api/contract-operations/'), 'não usa API de cessão');
   assert(gis.includes('Liberação comercial'), 'handleLotAction bloqueia bypass');
   assert(!gis.includes('Confirmar limpeza do lote'), 'modal antigo removido');
   console.log('OK testGisWiring');
+}
+
+function testReleaseLotModalConfirmRules() {
+  const ready = {
+    motiveCode: 'distrato',
+    motiveDetail: '',
+    acknowledged: true,
+    password: 'secret',
+  };
+  assert(canConfirmReleaseLot(ready), 'distrato + ciência + senha habilita');
+  assert(
+    !canConfirmReleaseLot({ ...ready, motiveCode: '' }),
+    'sem motivo bloqueia',
+  );
+  assert(
+    !canConfirmReleaseLot({ ...ready, acknowledged: false }),
+    'sem checkbox bloqueia',
+  );
+  assert(
+    !canConfirmReleaseLot({ ...ready, password: '   ' }),
+    'sem senha bloqueia',
+  );
+  assert(
+    !canConfirmReleaseLot({
+      ...ready,
+      motiveCode: 'outro',
+      motiveDetail: '',
+    }),
+    'Outro sem descrição bloqueia',
+  );
+  assert(
+    !canConfirmReleaseLot({
+      ...ready,
+      motiveCode: 'outro',
+      motiveDetail: 'ab',
+    }),
+    'Outro com menos de 3 caracteres bloqueia',
+  );
+  assert(
+    canConfirmReleaseLot({
+      ...ready,
+      motiveCode: 'outro',
+      motiveDetail: 'Ajuste interno',
+    }),
+    'Outro com descrição habilita',
+  );
+  assert(
+    !canConfirmReleaseLot({ ...ready, asaasBlockedCharges: 1 }),
+    'Asaas bloqueada impede',
+  );
+  assert(
+    !canConfirmReleaseLot({ ...ready, interBlockedCharges: 2 }),
+    'Inter bloqueada impede',
+  );
+  assert(
+    !canConfirmReleaseLot({ ...ready, loading: true }),
+    'loading impede double submit',
+  );
+
+  const codes = RELEASE_LOT_MOTIVE_OPTIONS.map((o) => o.value);
+  assert(codes.join(',') === 'desistencia,distrato,inadimplencia,erro_cadastro,troca_lote,cancelamento_administrativo,outro', 'valores internos estáveis');
+
+  const modal = read('components/map/ReleaseLotConfirmModal.tsx');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_OPTIONS.map'), 'cards iteram opções oficiais');
+  assert(modal.includes('key={option.value}'), 'cards usam value interno');
+  assert(modal.includes('{option.label}'), 'cards exibem label oficial');
+  assert(modal.includes('RELEASE_LOT_MOTIVE_DESCRIPTIONS[option.value]'), 'cards têm descrição');
+  assert(modal.includes('setMotiveCode(option.value)'), 'seleção única por estado');
+  assert(
+    modal.includes('motiveCode: motive.motiveCode'),
+    'payload envia motiveCode',
+  );
+  assert(
+    modal.includes('motiveDetail: motive.motiveDetail'),
+    'payload envia motiveDetail',
+  );
+  assert(modal.includes('acknowledged: true'), 'payload envia ciência');
+  const postBody = modal.slice(
+    modal.indexOf('JSON.stringify({'),
+    modal.indexOf('idempotencyKey: preview?.idempotencyKey || null,'),
+  );
+  assert(!postBody.includes('password'), 'POST não envia senha');
+  assert(!modal.includes('to_customer_id'), 'sem campo de cessionário');
+  console.log('OK testReleaseLotModalConfirmRules');
+}
+
+function testReleaseHomologUsesDevelopOnly() {
+  assert(DEVELOP_PROJECT_REF === 'hoynysmynxncdlptuzub', 'ref DEVELOP constante');
+  assert(PRODUCTION_PROJECT_REF === 'aezktedncttwpqeunjej', 'ref Production conhecida');
+  const svc = read('lib/finance/releaseLotService.ts');
+  const route = read('app/api/lots/[lotId]/release/route.ts');
+  const modal = read('components/map/ReleaseLotConfirmModal.tsx');
+  assert(!svc.includes(PRODUCTION_PROJECT_REF), 'serviço de release sem hardcode Production');
+  assert(!route.includes(PRODUCTION_PROJECT_REF), 'rota de release sem hardcode Production');
+  assert(!modal.includes(PRODUCTION_PROJECT_REF), 'modal sem hardcode Production');
+  const homolog = read('scripts/mandatory-develop-homolog-guards-tests.ts');
+  assert(homolog.includes(DEVELOP_PROJECT_REF), 'suite de homologação amarra DEVELOP');
+  assert(homolog.includes(PRODUCTION_PROJECT_REF), 'suite de homologação recusa Production');
+  console.log('OK testReleaseHomologUsesDevelopOnly');
 }
 
 function testOperationalListingExcludesCanceled() {
@@ -349,6 +478,8 @@ function main() {
   testServiceOrchestrationSource();
   testApiRoute();
   testGisWiring();
+  testReleaseLotModalConfirmRules();
+  testReleaseHomologUsesDevelopOnly();
   testOperationalListingExcludesCanceled();
   testApiErrorShape();
   testPaidNeverDeletedGuards();

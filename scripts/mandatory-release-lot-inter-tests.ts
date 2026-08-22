@@ -358,8 +358,9 @@ function testWiringSourceGuards() {
   assert(svc.includes('ASAAS_CANCEL_FAILED'), 'Asaas fail code intacto');
 
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
-  assert(modal.includes('Cobranças bancárias canceláveis'), 'modal agnóstico');
-  assert(!modal.includes('Cobranças Asaas canceláveis'), 'sem label só Asaas');
+  assert(modal.includes('Cobranças Asaas canceláveis'), 'modal mostra Asaas');
+  assert(modal.includes('Cobranças bancárias canceláveis'), 'modal mantém total bancário');
+  assert(modal.includes('openInterCharges'), 'modal não omite Inter');
 }
 
 async function testFullReleaseScenarioWithRealInterChargeShape() {

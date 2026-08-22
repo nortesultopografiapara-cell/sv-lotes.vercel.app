@@ -15,6 +15,17 @@ export const RELEASE_LOT_MOTIVE_OPTIONS = [
 
 export type ReleaseLotMotiveCode = (typeof RELEASE_LOT_MOTIVE_OPTIONS)[number]['value'];
 
+/** Textos de UI dos cards — valores internos continuam RELEASE_LOT_MOTIVE_OPTIONS. */
+export const RELEASE_LOT_MOTIVE_DESCRIPTIONS: Record<ReleaseLotMotiveCode, string> = {
+  desistencia: 'O comprador desistiu da aquisição. A venda atual será encerrada.',
+  distrato: 'Encerramento da venda por distrato, com preservação do histórico documental.',
+  inadimplencia: 'Encerramento por inadimplência. Parcelas em aberto seguem a regra atual de cancelamento.',
+  erro_cadastro: 'Correção de lançamento indevido ou erro de cadastro nesta venda.',
+  troca_lote: 'Este lote volta ao estoque. Uma nova venda, se houver, é feita em outro fluxo.',
+  cancelamento_administrativo: 'Encerramento interno pela administração da loteadora.',
+  outro: 'Outro motivo. A descrição é obrigatória.',
+};
+
 export const SALE_CANCELLED_STATUS = 'CANCELLED';
 export const CONTRACT_CANCELLED_STATUS = 'cancelado';
 export const RECEIPT_CANCELLED_STATUS = 'cancelado';
@@ -320,6 +331,27 @@ export function validateReleaseLotMotive(input: {
     motiveLabel: option.label,
     motiveDetail: detail || null,
   };
+}
+
+/** Habilita o botão de confirmação do modal (senha + ciência + motivo válidos). */
+export function canConfirmReleaseLot(input: {
+  motiveCode: string;
+  motiveDetail: string;
+  acknowledged: boolean;
+  password: string;
+  loading?: boolean;
+  asaasBlockedCharges?: number;
+  interBlockedCharges?: number;
+}): boolean {
+  if (input.loading) return false;
+  if (!input.acknowledged) return false;
+  if (!String(input.password || '').trim()) return false;
+  if ((input.asaasBlockedCharges || 0) > 0) return false;
+  if ((input.interBlockedCharges || 0) > 0) return false;
+  return validateReleaseLotMotive({
+    motiveCode: input.motiveCode,
+    motiveDetail: input.motiveDetail,
+  }).ok;
 }
 
 export type ReleaseReceiptBucket = 'paid' | 'pending' | 'overdue' | 'canceled' | 'other_unpaid';
