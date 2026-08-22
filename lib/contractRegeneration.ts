@@ -16,6 +16,7 @@ import {
   isRecantoPrimaveraContractModel,
   resolveSaleContractModelFromContext,
 } from '@/lib/contractModel';
+import { copyTerminationPolicyPersistFromSale } from '@/lib/contract-termination/snapshot';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import {
   diagnoseContractBalloonAddons,
@@ -1204,6 +1205,7 @@ export async function regenerateSaleContract(
       contract.contract_model ||
       null,
     ...contractPayloadPartial,
+    ...copyTerminationPolicyPersistFromSale(sale),
     created_at: now,
     },
     html,

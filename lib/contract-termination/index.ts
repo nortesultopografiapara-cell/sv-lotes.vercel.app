@@ -3,9 +3,13 @@ export type {
   ClassifiedTerminationReceipt,
   ExceptionOverrideInput,
   ReceiptKind,
+  RetentionBaseRule,
   SettlementDestination,
   TerminationCalculationStatus,
+  TerminationPersistSource,
   TerminationPolicy,
+  TerminationPolicyOrigin,
+  TerminationPolicySnapshot,
   TerminationPolicySource,
   TerminationPolicyStatus,
   TerminationReceiptInput,
@@ -19,11 +23,16 @@ export {
   MISSING_POLICY_MESSAGE,
   POLICY_CATALOG,
   POLICY_CATALOG_KEYS,
+  POLICY_CATALOG_VERSION,
+  canonicalizeCatalogKey,
   getCatalogPolicy,
   missingPolicy,
 } from '@/lib/contract-termination/policyCatalog';
 
-export { resolveTerminationPolicy } from '@/lib/contract-termination/resolvePolicy';
+export {
+  resolveOperationalTerminationPolicy,
+  resolveTerminationPolicy,
+} from '@/lib/contract-termination/resolvePolicy';
 
 export {
   calculateTerminationSettlement,
@@ -42,5 +51,15 @@ export {
   formatPolicyOrigin,
   formatRetentionPercent,
 } from '@/lib/contract-termination/formatSettlement';
+
+export {
+  buildTerminationPolicyOrigin,
+  buildTerminationPolicySnapshot,
+  copyTerminationPolicyPersistFromSale,
+  formatFrozenPolicyModelLine,
+  parseTerminationPolicySnapshot,
+  policyFromSnapshot,
+  resolveLegacyModelForBackfill,
+} from '@/lib/contract-termination/snapshot';
 
 export { buildTerminationSettlementPreview } from '@/lib/contract-termination/preview';

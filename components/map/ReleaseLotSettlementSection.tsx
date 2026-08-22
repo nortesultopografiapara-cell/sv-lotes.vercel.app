@@ -4,12 +4,12 @@ import { AlertTriangle, Landmark, Scale } from 'lucide-react';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import {
   formatAppliedRuleLabel,
-  formatPolicyOrigin,
   formatRetentionPercent,
 } from '@/lib/contract-termination/formatSettlement';
 import type {
   SettlementDestination,
   TerminationPolicy,
+  TerminationPolicyOrigin,
   TerminationSettlement,
 } from '@/lib/contract-termination/types';
 
@@ -33,6 +33,7 @@ function Line({ label, value }: { label: string; value: string }) {
 export type ReleaseLotSettlementSectionProps = {
   policy: TerminationPolicy;
   settlement: TerminationSettlement;
+  origin?: TerminationPolicyOrigin | null;
   hasImprovements: 'sim' | 'nao';
   onHasImprovements: (value: 'sim' | 'nao') => void;
   destination: SettlementDestination;
@@ -50,6 +51,7 @@ export type ReleaseLotSettlementSectionProps = {
 export function ReleaseLotSettlementSection({
   policy,
   settlement,
+  origin,
   hasImprovements,
   onHasImprovements,
   destination,
@@ -81,29 +83,26 @@ export function ReleaseLotSettlementSection({
       </div>
 
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2.5">
-        <p className="text-[11px] uppercase tracking-wide text-indigo-700 font-semibold">
-          Regra aplicada conforme contrato
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[11px] uppercase tracking-wide text-indigo-700 font-semibold">
+            Regra aplicada conforme contrato
+          </p>
+          {origin?.badge ? (
+            <span className="shrink-0 rounded-full border border-indigo-300 bg-white px-2 py-0.5 text-[10px] font-bold tracking-wide text-indigo-800">
+              {origin.badge}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-sm font-semibold text-indigo-950">
+          {origin?.title || 'Regra contratual'}
         </p>
-        <p className="mt-1 text-sm text-indigo-950 leading-snug">{appliedRule}</p>
-        <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-indigo-900">
-          <div>
-            <span className="font-semibold">Modelo: </span>
-            {policy.catalogLabel}
-            {policy.catalogKey ? ` (${policy.catalogKey})` : ''}
-          </div>
-          <div>
-            <span className="font-semibold">Versão da policy: </span>
-            {settlement.policyVersion}
-          </div>
-          <div>
-            <span className="font-semibold">Cláusula de referência: </span>
-            {settlement.clauseReference || '—'}
-          </div>
-          <div>
-            <span className="font-semibold">Origem da policy: </span>
-            {formatPolicyOrigin(policy)}
-          </div>
-        </dl>
+        <p className="mt-0.5 text-sm text-indigo-950">
+          {origin?.modelLine || policy.catalogLabel}
+        </p>
+        <p className="text-xs text-indigo-900">
+          {origin?.clauseLine || settlement.clauseReference || '—'}
+        </p>
+        <p className="mt-2 text-sm text-indigo-950 leading-snug">{appliedRule}</p>
       </div>
 
       <div>

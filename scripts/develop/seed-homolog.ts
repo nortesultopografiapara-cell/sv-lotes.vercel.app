@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { assertDevelopWriteAllowed, loadDevelopEnv } from './guard';
 import { DEVELOP_PROJECT_REF } from '../../lib/homolog/env';
+import { buildTerminationPolicySnapshot } from '../../lib/contract-termination/snapshot';
 
 const HOMOLOG_PASSWORD = 'Homologacao!2026';
 
@@ -201,6 +202,10 @@ async function main() {
 
   const saleId = 'a6000000-0000-4000-8000-000000000001';
   const contractId = 'a7000000-0000-4000-8000-000000000001';
+  const terminationPersist = buildTerminationPolicySnapshot({
+    contractModel: null,
+    persistSource: 'catalog',
+  });
   await upsert(admin, 'sales', {
     id: saleId,
     tenant_id: IDS.companyA,
@@ -220,6 +225,7 @@ async function main() {
     payment_type: 'installments',
     status: 'ACTIVE',
     sale_date: new Date().toISOString().slice(0, 10),
+    ...terminationPersist,
   });
 
   const receipts = [
@@ -257,6 +263,7 @@ async function main() {
     generated_html: '<p>Contrato fictício de homologação — CLIENTE A — lote 03.</p>',
     is_current: true,
     version: 1,
+    ...terminationPersist,
   });
 
   console.log(

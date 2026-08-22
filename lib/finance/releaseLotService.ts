@@ -309,17 +309,26 @@ async function loadSaleContext(
   const saleFull = await admin
     .from('sales')
     .select(
-      'id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at, contract_model',
+      'id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at, contract_model, termination_policy_snapshot, termination_policy_version, termination_policy_source',
     )
     .eq('id', saleId)
     .maybeSingle();
-  const saleQuery = saleFull.error
+  const saleMid = saleFull.error
+    ? await admin
+        .from('sales')
+        .select(
+          'id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at, contract_model',
+        )
+        .eq('id', saleId)
+        .maybeSingle()
+    : saleFull;
+  const saleQuery = saleMid.error
     ? await admin
         .from('sales')
         .select('id, status, customer_id, contract_id, block_id, tenant_id, company_id, created_at')
         .eq('id', saleId)
         .maybeSingle()
-    : saleFull;
+    : saleMid;
   const sale = saleQuery.data;
   const saleErr = saleQuery.error;
   if (saleErr) {
@@ -360,13 +369,24 @@ async function loadSaleContext(
     const full = await admin
       .from('contracts')
       .select(
-        'id, status, contract_number, sale_id, signed_at, signature_status, contract_model',
+        'id, status, contract_number, sale_id, signed_at, signature_status, contract_model, termination_policy_snapshot, termination_policy_version, termination_policy_source',
       )
       .eq(filter.column, filter.value)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (!full.error && full.data) return full.data as Record<string, unknown>;
+
+    const withModel = await admin
+      .from('contracts')
+      .select(
+        'id, status, contract_number, sale_id, signed_at, signature_status, contract_model',
+      )
+      .eq(filter.column, filter.value)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!withModel.error && withModel.data) return withModel.data as Record<string, unknown>;
 
     const lean = await admin
       .from('contracts')
@@ -531,6 +551,16 @@ function buildPreviewFromContext(params: {
     chargeSummary.openAsaasCharges + interSummary.openInterCharges;
 
   const settlementPreview = buildTerminationSettlementPreview({
+    saleSnapshot: sale?.termination_policy_snapshot,
+    contractSnapshot: contract?.termination_policy_snapshot,
+    salePersistSource:
+      sale?.termination_policy_source != null
+        ? String(sale.termination_policy_source)
+        : null,
+    contractPersistSource:
+      contract?.termination_policy_source != null
+        ? String(contract.termination_policy_source)
+        : null,
     saleContractModel:
       sale?.contract_model != null ? String(sale.contract_model) : null,
     contractContractModel:

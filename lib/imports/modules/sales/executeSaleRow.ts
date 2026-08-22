@@ -11,6 +11,12 @@ import {
   buildSaleInsertPayload,
   mapSaleRowToFinanceFormData,
 } from '@/lib/imports/modules/sales/validateRows';
+import {
+  assertSaleContractModelConfigured,
+  detectPreviewAraguaiaNameCoerce,
+} from '@/lib/contractModel';
+import { buildTerminationPolicySnapshot } from '@/lib/contract-termination/snapshot';
+import { insertRowsWithColumnFallback } from '@/lib/gisSaleCreateService';
 
 export type ExecuteSaleRowResult =
   | { ok: true; saleId?: string; blockId: string }
@@ -39,14 +45,49 @@ export async function executeImportableSaleRow(params: {
     const salePayload = buildSaleInsertPayload(row, tenantId, userId);
     salePayload.installment_correction_type = DEFAULT_INSTALLMENT_CORRECTION_TYPE;
 
-    const { data: saleData, error: saleError } = await admin
-      .from('sales')
-      .insert([salePayload])
-      .select('id')
-      .single();
+    const { data: projectRow } = await admin
+      .from('projects')
+      .select('id, name, contract_model, tenant_id, company_id')
+      .eq('id', row.project_id)
+      .maybeSingle();
+    const { data: companyRow } = await admin
+      .from('companies')
+      .select('id, contract_model')
+      .eq('id', tenantId)
+      .maybeSingle();
 
-    if (saleError || !saleData) {
-      return { ok: false, error: saleError?.message || 'Falha ao criar venda.' };
+    const importModel = (() => {
+      try {
+        return assertSaleContractModelConfigured({
+          projectModel: projectRow?.contract_model,
+          projectName: projectRow?.name,
+          companyModel: companyRow?.contract_model,
+          companyFound: Boolean(companyRow),
+        });
+      } catch {
+        return null;
+      }
+    })();
+    const nameCoerce = detectPreviewAraguaiaNameCoerce({
+      projectName: projectRow?.name,
+      projectModel: projectRow?.contract_model,
+    });
+    const terminationPersist = buildTerminationPolicySnapshot({
+      contractModel: importModel,
+      persistSource: 'catalog',
+      warnings: nameCoerce
+        ? [
+            'Modelo ARAGUAIA gravado explicitamente a partir do nome do empreendimento (Preview).',
+          ]
+        : undefined,
+    });
+    if (importModel) salePayload.contract_model = importModel;
+    Object.assign(salePayload, terminationPersist);
+
+    const inserted = await insertRowsWithColumnFallback(admin, 'sales', [salePayload], 'id');
+    const saleData = inserted.data[0];
+    if (inserted.error || !saleData) {
+      return { ok: false, error: inserted.error?.message || 'Falha ao criar venda.' };
     }
 
     const saleId = saleData.id as string;

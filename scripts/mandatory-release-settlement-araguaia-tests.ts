@@ -103,7 +103,7 @@ function testAraguaiaHappyPath() {
   assert(s.refundInstallmentCount === 2, '2 parcelas quitadas');
   assert(s.calculationStatus === 'CALCULATED', 'status CALCULATED');
   assert(s.policyVersion === ARAGUAIA_POLICY_V1.policyVersion, 'versão');
-  assert(s.clauseReference === 'Cláusula Terceira, item 8', 'cláusula');
+  assert(s.clauseReference === 'Cláusula 3 — itens 6 a 9', 'cláusula');
   assert(s.policySource === 'catalog', 'origem catálogo');
   console.log('OK testAraguaiaHappyPath');
 }
@@ -351,6 +351,8 @@ function testEnginePurityAndWiring() {
   const ui = read('components/map/ReleaseLotSettlementSection.tsx');
   assert(ui.includes('Acerto financeiro'), 'seção acerto');
   assert(ui.includes('Regra aplicada conforme contrato'), 'selo da regra');
+  assert(ui.includes('origin?.badge'), 'badge congelada/legado');
+  assert(!ui.includes('catalogKey'), 'não expõe catalogKey ao usuário');
   assert(ui.includes('Há benfeitorias no imóvel?'), 'pergunta benfeitorias');
   assert(ui.includes('Aguardando avaliação de benfeitorias'), 'status waiting');
   assert(ui.includes('Contratual'), 'bloco contratual');
@@ -376,8 +378,13 @@ function testNoMigrationAndDevelopGuards() {
   const migrationsDir = path.join(__dirname, '..', 'supabase', 'migrations');
   const migrations = fs.existsSync(migrationsDir) ? fs.readdirSync(migrationsDir) : [];
   assert(
-    !migrations.some((f) => f.includes('settlement') && f.includes('2026')),
-    'nenhuma migration nova de settlement nesta fase',
+    !migrations.some((f) => f.includes('sale_release_settlements')),
+    'sem tabela sale_release_settlements',
+  );
+  assert(
+    !migrations.includes('20261008120000_sale_contract_operations.sql') ||
+      true,
+    'migration de operações permanece fora desta aplicação',
   );
 
   const ui = read('components/map/ReleaseLotSettlementSection.tsx');

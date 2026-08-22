@@ -471,6 +471,7 @@ export function ReleaseLotConfirmModal({
                   <ReleaseLotSettlementSection
                     policy={preview.settlementPreview.policy}
                     settlement={liveSettlement}
+                    origin={preview.settlementPreview.origin}
                     hasImprovements={hasImprovements}
                     onHasImprovements={setHasImprovements}
                     destination={destination}

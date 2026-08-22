@@ -7,6 +7,60 @@ export type TerminationPolicyStatus = 'COMPLETE' | 'INCOMPLETE';
 
 export type TerminationPolicySource = 'catalog' | 'missing';
 
+/** Origem persistida nas colunas sales/contracts.termination_policy_source. */
+export type TerminationPersistSource = 'catalog' | 'backfill_inferred';
+
+export type RetentionBaseRule =
+  | 'EXCLUDE_NON_REFUNDABLE'
+  | 'NOT_DEFINED';
+
+export type TerminationSnapshotStatus =
+  | TerminationPolicyStatus
+  | 'MISSING_POLICY';
+
+/**
+ * JSON serializável gravado em sales/contracts.
+ * Contém a REGRA, não só o nome do modelo.
+ */
+export type TerminationPolicySnapshot = {
+  status: TerminationSnapshotStatus;
+  policyVersion: string;
+  policySource: TerminationPersistSource | 'missing';
+  catalogKey: string | null;
+  catalogLabel: string;
+  contractModel: string | null;
+  clauseReference: string | null;
+  entryRefundable: boolean;
+  signalRefundable: boolean;
+  otherRefundable: boolean;
+  contractualRetentionPercent: number | null;
+  retentionBaseRule: RetentionBaseRule;
+  refundInstallmentCountRule: RefundInstallmentCountRule;
+  improvementsBlockFinalCalculation: boolean;
+  creditOtherUnitAllowed: boolean;
+  creditOtherUnitAutomatic: false;
+  createdFromPolicyCatalogVersion: string;
+  capturedAt: string;
+  incompleteMessage?: string | null;
+  warnings?: string[];
+};
+
+export type TerminationPolicyOriginKind =
+  | 'sale_snapshot'
+  | 'contract_snapshot'
+  | 'legacy_inferred'
+  | 'missing';
+
+export type TerminationPolicyOrigin = {
+  kind: TerminationPolicyOriginKind;
+  persistSource: TerminationPersistSource | 'missing' | null;
+  frozen: boolean;
+  badge: 'CONGELADA' | 'LEGADO INFERIDO' | null;
+  title: string;
+  modelLine: string;
+  clauseLine: string;
+};
+
 export type RefundInstallmentCountRule = 'PAID_REGULAR_INSTALLMENTS' | 'NOT_DEFINED';
 
 export type SettlementDestination = 'REFUND_CUSTOMER' | 'CREDIT_OTHER_UNIT';
@@ -111,4 +165,5 @@ export type TerminationSettlementPreview = {
   settlement: TerminationSettlement;
   appliedRuleLabel: string;
   incompleteMessage: string | null;
+  origin: TerminationPolicyOrigin;
 };

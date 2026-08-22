@@ -37,6 +37,9 @@ function testGisSaleCreateServiceFlow() {
   );
   assert(service.includes('persistGeneratedContractHtml'), 'persiste HTML do contrato');
   assert(service.includes('buildCommissionSnapshotFields'), 'snapshot de comissão na venda');
+  assert(service.includes('buildTerminationPolicySnapshot'), 'captura snapshot na venda GIS');
+  assert(service.includes('terminationPersist'), 'grava snapshot na sales');
+  assert(service.includes('copyTerminationPolicyPersistFromSale') === false, 'GIS cria, não copia de legado');
   assert(service.includes('resolveSaleCommissionPlan'), 'plano PERCENT/FIXED/NONE');
   console.log('OK testGisSaleCreateServiceFlow');
 }

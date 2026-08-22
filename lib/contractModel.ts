@@ -156,6 +156,16 @@ export function coercePreviewAraguaiaProjectModel(input: {
   return input.projectModel;
 }
 
+export function detectPreviewAraguaiaNameCoerce(input: {
+  projectName?: unknown;
+  projectModel?: unknown;
+}): boolean {
+  const stored = parseOptionalSaleContractModel(input.projectModel);
+  if (stored === 'ARAGUAIA') return false;
+  const coerced = coercePreviewAraguaiaProjectModel(input);
+  return parseOptionalSaleContractModel(coerced) === 'ARAGUAIA';
+}
+
 /**
  * Resolve o modelo efetivo com prioridade de snapshot e empreendimento.
  * Nunca cruza tenant: callers devem passar apenas entidades já isoladas.

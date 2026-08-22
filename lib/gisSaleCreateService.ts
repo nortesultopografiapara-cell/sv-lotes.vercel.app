@@ -38,7 +38,9 @@ import {
 import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
 import {
   assertSaleContractModelConfigured,
+  detectPreviewAraguaiaNameCoerce,
 } from '@/lib/contractModel';
+import { buildTerminationPolicySnapshot } from '@/lib/contract-termination/snapshot';
 import { buildRecantoInstallmentSalesSnapshot } from '@/lib/recantoFixedInstallmentPlan';
 import {
   buildCommissionSnapshotFields,
@@ -408,6 +410,25 @@ export async function executeGisSaleCreate(
     companyFound: Boolean(tenantContractRow),
   });
 
+  const nameCoerce = detectPreviewAraguaiaNameCoerce({
+    projectName: projDataSnapshot?.name,
+    projectModel: projDataSnapshot?.contract_model,
+  });
+  if (nameCoerce) {
+    warnings.push(
+      'Modelo ARAGUAIA gravado explicitamente nesta venda a partir do nome do empreendimento (Preview).',
+    );
+  }
+  const terminationPersist = buildTerminationPolicySnapshot({
+    contractModel: saleContractModel,
+    persistSource: 'catalog',
+    warnings: nameCoerce
+      ? [
+          'Modelo ARAGUAIA gravado explicitamente a partir do nome do empreendimento (Preview).',
+        ]
+      : undefined,
+  });
+
   const resolvedFinancialAccount = await resolveFinancialAccountForSaleOptional(supabase, tenantId, {
     financialAccountId: input.financialAccountId,
     projectId,
@@ -563,6 +584,7 @@ export async function executeGisSaleCreate(
     ...balloonSalesFields,
     ...(financialAccountId ? { financial_account_id: financialAccountId } : {}),
     contract_model: saleContractModel,
+    ...terminationPersist,
     ...buildSaleSpouseDbPatch(customerData),
   };
 
@@ -734,6 +756,7 @@ export async function executeGisSaleCreate(
             contract_model: saleContractModel,
             created_at: new Date().toISOString(),
             ...built.contractPayloadPartial,
+            ...terminationPersist,
           },
           {
             tenant_id: tenantId,
@@ -749,6 +772,7 @@ export async function executeGisSaleCreate(
             generated_html: built.html,
             contract_model: saleContractModel,
             ...built.contractPayloadPartial,
+            ...terminationPersist,
           },
           {
             tenant_id: tenantId,
@@ -760,6 +784,7 @@ export async function executeGisSaleCreate(
             status: 'ativo',
             generated_html: built.html,
             contract_model: saleContractModel,
+            ...terminationPersist,
           },
         ];
 

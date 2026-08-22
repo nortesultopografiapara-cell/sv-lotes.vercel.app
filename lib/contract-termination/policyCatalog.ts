@@ -5,6 +5,8 @@
 
 import type { TerminationPolicy } from '@/lib/contract-termination/types';
 
+export const POLICY_CATALOG_VERSION = 'termination-policy-catalog.v1';
+
 export const INCOMPLETE_POLICY_MESSAGE =
   'Este contrato não possui política de restituição homologada para cálculo automático.';
 
@@ -49,7 +51,7 @@ export const ARAGUAIA_POLICY_V1: TerminationPolicy = {
   policySource: 'catalog',
   catalogKey: 'ARAGUAIA',
   catalogLabel: 'Chacreamento Araguaia',
-  clauseReference: 'Cláusula Terceira, item 8',
+  clauseReference: 'Cláusula 3 — itens 6 a 9',
   incompleteMessage: null,
   entryRefundable: false,
   signalRefundable: false,
@@ -75,6 +77,32 @@ export const POLICY_CATALOG: Record<string, TerminationPolicy> = {
 };
 
 export const POLICY_CATALOG_KEYS = Object.keys(POLICY_CATALOG);
+
+export function canonicalizeCatalogKey(raw: unknown): string | null {
+  const value = String(raw ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/-/g, '_')
+    .replace(/\s+/g, '_');
+  if (!value) return null;
+
+  if (value.includes('ARAGUAIA')) return 'ARAGUAIA';
+  if (
+    value === 'SV_LOTES_2' ||
+    value === 'SV_LOTES_20' ||
+    value.includes('SV_LOTES_2')
+  ) {
+    return 'SV_LOTES_2';
+  }
+  if (value.includes('RECANTO')) return 'RECANTO_PRIMAVERA';
+  if (value === 'MENESES') return 'MENESES';
+  if (value === 'CUSTOM' || value === 'PERSONALIZADO') return 'CUSTOM';
+  if (value === 'PADRAO' || value === 'PADRÃO' || value === 'PADRAO_SV_LOTES') {
+    return 'PADRAO';
+  }
+  if (POLICY_CATALOG[value]) return value;
+  return value;
+}
 
 export function getCatalogPolicy(catalogKey: string | null | undefined): TerminationPolicy | null {
   if (!catalogKey) return null;

@@ -1,14 +1,25 @@
 /**
- * Resolução da política a partir do snapshot da venda/contrato.
+ * Resolução da política a partir de snapshot congelado ou, em legado, do modelo da venda.
  * Não consulta empresa/projeto atuais e não herda ARAGUAIA.
  */
 
 import {
+  canonicalizeCatalogKey,
   getCatalogPolicy,
   missingPolicy,
-  POLICY_CATALOG,
 } from '@/lib/contract-termination/policyCatalog';
-import type { TerminationPolicy } from '@/lib/contract-termination/types';
+import {
+  buildTerminationPolicyOrigin,
+  parseTerminationPolicySnapshot,
+  policyFromSnapshot,
+} from '@/lib/contract-termination/snapshot';
+import type {
+  TerminationPersistSource,
+  TerminationPolicy,
+  TerminationPolicyOrigin,
+} from '@/lib/contract-termination/types';
+
+export { canonicalizeCatalogKey };
 
 export type ResolveTerminationPolicyInput = {
   saleContractModel?: string | null;
@@ -20,35 +31,31 @@ export type ResolvedTerminationPolicy = {
   policy: TerminationPolicy;
 };
 
-function canonicalizeCatalogKey(raw: unknown): string | null {
-  const value = String(raw ?? '')
-    .trim()
-    .toUpperCase()
-    .replace(/-/g, '_')
-    .replace(/\s+/g, '_');
-  if (!value) return null;
+export type ResolveOperationalTerminationPolicyInput = {
+  saleSnapshot?: unknown;
+  contractSnapshot?: unknown;
+  salePersistSource?: string | null;
+  contractPersistSource?: string | null;
+  saleContractModel?: string | null;
+  contractContractModel?: string | null;
+};
 
-  if (value.includes('ARAGUAIA')) return 'ARAGUAIA';
-  if (
-    value === 'SV_LOTES_2' ||
-    value === 'SV_LOTES_20' ||
-    value.includes('SV_LOTES_2')
-  ) {
-    return 'SV_LOTES_2';
-  }
-  if (value.includes('RECANTO')) return 'RECANTO_PRIMAVERA';
-  if (value === 'MENESES') return 'MENESES';
-  if (value === 'CUSTOM' || value === 'PERSONALIZADO') return 'CUSTOM';
-  if (value === 'PADRAO' || value === 'PADRÃO' || value === 'PADRAO_SV_LOTES') {
-    return 'PADRAO';
-  }
-  if (POLICY_CATALOG[value]) return value;
-  return value;
+export type ResolvedOperationalTerminationPolicy = ResolvedTerminationPolicy & {
+  origin: TerminationPolicyOrigin;
+  usedSnapshot: boolean;
+};
+
+function persistSourceOf(
+  raw: string | null | undefined,
+): TerminationPersistSource | 'missing' | null {
+  if (raw === 'catalog' || raw === 'backfill_inferred') return raw;
+  if (raw === 'missing') return 'missing';
+  return null;
 }
 
 /**
- * Snapshot da venda tem prioridade sobre o snapshot do contrato.
- * Ausência de ambos → política missing (erro controlado), nunca PADRAO/ARAGUAIA.
+ * Inferência legado: somente snapshots de modelo da venda/contrato.
+ * Nunca usa o modelo atual da empresa.
  */
 export function resolveTerminationPolicy(
   input: ResolveTerminationPolicyInput,
@@ -67,4 +74,92 @@ export function resolveTerminationPolicy(
   }
 
   return { detectedModel, policy: missingPolicy(detectedModel) };
+}
+
+/**
+ * Prioridade operacional do preview:
+ * 1. snapshot da venda
+ * 2. snapshot do contrato
+ * 3. inferência legado pelo contract_model da venda/contrato
+ *
+ * Snapshot existente (mesmo inválido) NÃO cai no catálogo vigente.
+ */
+export function resolveOperationalTerminationPolicy(
+  input: ResolveOperationalTerminationPolicyInput,
+): ResolvedOperationalTerminationPolicy {
+  const saleParsed = parseTerminationPolicySnapshot(input.saleSnapshot);
+  if (input.saleSnapshot != null && input.saleSnapshot !== '') {
+    if (saleParsed.ok) {
+      const policy = policyFromSnapshot(saleParsed.snapshot);
+      return {
+        detectedModel: saleParsed.snapshot.contractModel || saleParsed.snapshot.catalogKey,
+        policy,
+        usedSnapshot: true,
+        origin: buildTerminationPolicyOrigin({
+          kind: 'sale_snapshot',
+          persistSource:
+            persistSourceOf(input.salePersistSource) ||
+            persistSourceOf(saleParsed.snapshot.policySource),
+          policy,
+        }),
+      };
+    }
+    const policy = missingPolicy(null);
+    return {
+      detectedModel: null,
+      policy,
+      usedSnapshot: true,
+      origin: buildTerminationPolicyOrigin({
+        kind: 'sale_snapshot',
+        persistSource: persistSourceOf(input.salePersistSource),
+        policy,
+      }),
+    };
+  }
+
+  const contractParsed = parseTerminationPolicySnapshot(input.contractSnapshot);
+  if (input.contractSnapshot != null && input.contractSnapshot !== '') {
+    if (contractParsed.ok) {
+      const policy = policyFromSnapshot(contractParsed.snapshot);
+      return {
+        detectedModel:
+          contractParsed.snapshot.contractModel || contractParsed.snapshot.catalogKey,
+        policy,
+        usedSnapshot: true,
+        origin: buildTerminationPolicyOrigin({
+          kind: 'contract_snapshot',
+          persistSource:
+            persistSourceOf(input.contractPersistSource) ||
+            persistSourceOf(contractParsed.snapshot.policySource),
+          policy,
+        }),
+      };
+    }
+    const policy = missingPolicy(null);
+    return {
+      detectedModel: null,
+      policy,
+      usedSnapshot: true,
+      origin: buildTerminationPolicyOrigin({
+        kind: 'contract_snapshot',
+        persistSource: persistSourceOf(input.contractPersistSource),
+        policy,
+      }),
+    };
+  }
+
+  const inferred = resolveTerminationPolicy({
+    saleContractModel: input.saleContractModel,
+    contractContractModel: input.contractContractModel,
+  });
+  const missing = inferred.policy.policySource === 'missing';
+  return {
+    ...inferred,
+    usedSnapshot: false,
+    origin: buildTerminationPolicyOrigin({
+      kind: missing ? 'missing' : 'legacy_inferred',
+      persistSource: missing ? 'missing' : null,
+      policy: inferred.policy,
+    }),
+  };
 }
