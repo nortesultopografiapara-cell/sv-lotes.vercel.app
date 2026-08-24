@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   confrontationRowHasData,
   loadLotConfrontations,
@@ -98,6 +98,12 @@ export function LotConfrontationsPanel({
     setRetryTick((n) => n + 1);
   }, []);
 
+  useEffect(() => {
+    if (!editingOfficialSides) {
+      onEditorSlotReady?.(null);
+    }
+  }, [editingOfficialSides, onEditorSlotReady]);
+
   const selectedSet = useMemo(() => {
     if (selectedSegmentIndexes.length) return new Set(selectedSegmentIndexes);
     if (localSelected != null) return new Set([localSelected]);
@@ -110,7 +116,19 @@ export function LotConfrontationsPanel({
     }
   };
 
-  const handleSegmentClick = (segmentIndex: number, side: SideRole) => {
+  const stopMapLeak = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+    const native = e.nativeEvent;
+    native.stopPropagation();
+    native.stopImmediatePropagation?.();
+  };
+
+  const handleSegmentClick = (
+    e: React.MouseEvent,
+    segmentIndex: number,
+    side: SideRole,
+  ) => {
+    stopMapLeak(e);
     setLocalSelected(segmentIndex);
     if (onStartOfficialSidesEdit) {
       startEdit([segmentIndex]);
@@ -210,86 +228,89 @@ export function LotConfrontationsPanel({
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 min-h-0 flex-1">
-        <section className="lg:col-span-2 min-h-[150px]">
+        <section className="lg:col-span-2 min-h-[140px]">
           <LotConfrontationGeometryPreview
             positions={cleanedCoords}
             selectedIndexes={[...selectedSet]}
           />
         </section>
         <section className="lg:col-span-3 min-h-0 flex flex-col">
-          {editingOfficialSides ? (
-            <>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5 shrink-0">
-                Segmentos e edição
-              </p>
-              <div
-                ref={(el) => {
-                  onEditorSlotReady?.(el);
-                }}
-                className="min-h-0 flex-1 overflow-hidden"
-              />
-            </>
-          ) : (
-            <>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5 shrink-0">
-                Segmentos do lote
-              </p>
-              <div className="min-h-0 flex-1 overflow-y-auto space-y-1.5 pr-0.5">
-                {rows.map((row) => {
-                  const idx = row.segmentIndex;
-                  const isSel = selectedSet.has(idx);
-                  const dist = segmentDistances.get(idx);
-                  const distLabel =
-                    dist != null && Number.isFinite(dist)
-                      ? `${dist.toLocaleString('pt-BR', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })} m`
-                      : null;
-                  return (
-                    <button
-                      key={`${row.key}-${idx}`}
-                      type="button"
-                      onClick={() => handleSegmentClick(idx, row.key)}
-                      className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors ${
-                        isSel
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 bg-white hover:bg-gray-50'
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5 shrink-0">
+            Segmentos do lote
+          </p>
+          <div className="min-h-0 flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+            {rows.map((row) => {
+              const idx = row.segmentIndex;
+              const isSel = selectedSet.has(idx);
+              const dist = segmentDistances.get(idx);
+              const distLabel =
+                dist != null && Number.isFinite(dist)
+                  ? `${dist.toLocaleString('pt-BR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })} m`
+                  : null;
+              return (
+                <button
+                  key={`${row.key}-${idx}`}
+                  type="button"
+                  aria-pressed={isSel}
+                  onMouseDown={stopMapLeak}
+                  onPointerDown={stopMapLeak}
+                  onClick={(e) => handleSegmentClick(e, idx, row.key)}
+                  className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors ${
+                    isSel
+                      ? 'border-blue-400 bg-blue-50/80 ring-1 ring-blue-200'
+                      : 'border-gray-200 bg-white hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900">
+                        Seg. {idx >= 0 ? idx + 1 : '—'}
+                        {distLabel ? (
+                          <span className="text-gray-500 font-semibold">
+                            {' '}
+                            · {distLabel}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                        {row.sideLabel}
+                      </p>
+                      <p
+                        className="text-gray-800 font-medium truncate"
+                        title={row.text}
+                      >
+                        {row.text || '—'}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[9px] shrink-0 ${
+                        isSel ? 'text-blue-600 font-semibold' : 'text-gray-400'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-bold text-gray-900">
-                            Seg. {idx >= 0 ? idx + 1 : '—'}
-                            {distLabel ? (
-                              <span className="text-gray-500 font-semibold">
-                                {' '}
-                                · {distLabel}
-                              </span>
-                            ) : null}
-                          </p>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                            {row.sideLabel}
-                          </p>
-                          <p
-                            className="text-gray-800 font-medium truncate"
-                            title={row.text}
-                          >
-                            {row.text || '—'}
-                          </p>
-                        </div>
-                        <span className="text-[9px] text-gray-400 shrink-0">
-                          {row.origin}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                      {isSel ? 'selecionado' : row.origin}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </section>
       </div>
+
+      {editingOfficialSides ? (
+        <section className="shrink-0 min-h-[220px] max-h-[min(42vh,320px)] overflow-hidden">
+          <div
+            ref={(el) => {
+              onEditorSlotReady?.(el);
+            }}
+            className="h-full min-h-[220px] overflow-hidden"
+            data-testid="official-sides-editor-slot"
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

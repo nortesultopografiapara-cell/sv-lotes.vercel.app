@@ -1867,12 +1867,20 @@ function LotPopupContent({
   const [popupTab, setPopupTab] = useState<
     "resumo" | "confrontacoes" | "comercial" | "historico"
   >("resumo");
+  const popupRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (embedOfficialSidesEditor) {
       setPopupTab("confrontacoes");
     }
   }, [embedOfficialSidesEditor]);
+
+  useEffect(() => {
+    const el = popupRootRef.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, []);
   const [auditHistory, setAuditHistory] = useState<FormattedLotAuditEvent[]>(
     [],
   );
@@ -2151,7 +2159,12 @@ function LotPopupContent({
   ];
 
   return (
-    <div className={GIS_LOT_POPUP_CONTAINER_CLASS}>
+    <div
+      ref={popupRootRef}
+      className={GIS_LOT_POPUP_CONTAINER_CLASS}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="shrink-0 px-4 pt-4 pb-3 pr-10 border-b border-gray-100">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-bold text-base md:text-lg text-gray-900 leading-tight min-w-0">
@@ -3026,13 +3039,16 @@ export default function GISMap({
   const openOfficialSidesEditor = useCallback(
     (l: any, initialSelected?: number[]) => {
       setFrontCorrectLotId(null);
-      setOfficialSidesSelected(
-        Array.isArray(initialSelected) && initialSelected.length > 0
-          ? initialSelected
-          : [],
-      );
-      setOfficialSidesDraft(new Map());
-      setOfficialSidesEditLot(l);
+      const sameLot = officialSidesEditLotRef.current?.id === l?.id;
+      if (Array.isArray(initialSelected) && initialSelected.length > 0) {
+        setOfficialSidesSelected(initialSelected);
+      } else if (!sameLot) {
+        setOfficialSidesSelected([]);
+      }
+      if (!sameLot) {
+        setOfficialSidesDraft(new Map());
+        setOfficialSidesEditLot(l);
+      }
     },
     [],
   );
@@ -5557,7 +5573,15 @@ export default function GISMap({
                       minWidth={GIS_LOT_POPUP_MIN_WIDTH_PX}
                       autoPan
                       autoPanPadding={[32, 32]}
+                      closeOnClick={false}
                       eventHandlers={{
+                        add: (e) => {
+                          const el = (e.target as L.Popup).getElement();
+                          if (el) {
+                            L.DomEvent.disableClickPropagation(el);
+                            L.DomEvent.disableScrollPropagation(el);
+                          }
+                        },
                         remove: () => {
                           const editing = officialSidesEditLotRef.current;
                           if (editing?.id === lot.id) {
@@ -6114,7 +6138,15 @@ export default function GISMap({
                     source: "gis_map",
                   });
                 }
-                closeOfficialSidesEditor();
+                if (isWideDesktop) {
+                  setOfficialSidesEditLot({
+                    ...officialSidesEditLot,
+                    segments_json: rows,
+                  });
+                  setOfficialSidesDraft(new Map());
+                } else {
+                  closeOfficialSidesEditor();
+                }
               } catch (e: unknown) {
                 alert(
                   e instanceof Error

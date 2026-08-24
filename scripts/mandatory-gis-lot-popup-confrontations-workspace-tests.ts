@@ -85,11 +85,36 @@ function testNoSchemaOrDomainLeak() {
   }
 }
 
+function testSegmentClickKeepsPopupOpen() {
+  const gis = read('components/map/GISMap.tsx');
+  const panel = read('components/map/LotConfrontationsPanel.tsx');
+  const editor = read('components/map/LotOfficialSidesEditor.tsx');
+
+  assert(gis.includes('closeOnClick={false}'), 'popup do lote nao fecha no clique do mapa');
+  assert(gis.includes('disableClickPropagation'), 'clique interno nao propaga ao Leaflet');
+  assert(gis.includes('sameLot'), 'troca de segmento no mesmo lote nao reseta draft');
+  assert(gis.includes('if (isWideDesktop)'), 'desktop nao fecha o editor apos salvar');
+  assert(panel.includes('stopPropagation'), 'clique do segmento nao vaza para o mapa');
+  assert(panel.includes('Segmentos do lote'), 'lista de segmentos permanece visivel');
+  assert(panel.includes('editingOfficialSides'), 'slot do editor abaixo da lista');
+  assert(panel.includes('data-testid="official-sides-editor-slot"'), 'slot dedicado do editor');
+  assert(editor.includes('sticky bottom-0'), 'Salvar permanece visivel no rodape');
+  assert(editor.includes('Salvar alterações'), 'rotulo Salvar alteracoes no embedded');
+  assert(editor.includes('Cancelar alterações'), 'rotulo Cancelar alteracoes no embedded');
+  assert(editor.includes('a.side != null'), 'Limpar nao aparece pre-selecionado');
+  assert(editor.includes('liveApply={embedded}'), 'confrontante entra no draft ao digitar');
+  assert(editor.includes('{!embedded ? ('), 'lista interna so no overlay mobile');
+  assert(gis.includes('persistBlockSegmentsJson'), 'mesmo persist existente');
+  assert(editor.includes('applyOfficialEditorDraftToBlock'), 'mesmo motor de draft');
+  assert(editor.includes('previewOfficialSideDraft'), 'agregacao por lado inalterada');
+}
+
 function main() {
   testPopupTabsAndResumoButton();
   testSingleEditorEngine();
   testGeometryReuse();
   testNoSchemaOrDomainLeak();
+  testSegmentClickKeepsPopupOpen();
   console.log('OK — mandatory-gis-lot-popup-confrontations-workspace-tests passed');
 }
 
