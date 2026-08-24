@@ -30,24 +30,60 @@ function testSaleWorkspaceShellAndHeader() {
   assert(modal.includes('useIsWideDesktop'), 'breakpoint desktop largo');
   assert(modal.includes('sv-modal-shell--sale-workspace'), 'shell amplo');
   assert(css.includes('sv-modal-shell--sale-workspace'), 'CSS do workspace');
-  assert(css.includes('1240px'), 'largura ~1240px');
-  assert(css.includes('86vh'), 'altura limitada ao viewport');
-  assert(css.includes('calc(100vw - 48px)'), 'mapa visível ao redor (não 100vw)');
-  assert(modal.includes('Valor do lote'), 'valor do lote no header');
-  assert(modal.includes('projectName'), 'empreendimento no lote');
+  assert(css.includes('1480px'), 'largura até ~1480px em 1920');
+  assert(css.includes('88vh'), 'altura limitada ao viewport');
+  assert(css.includes('900px'), 'teto de altura 900px');
+  assert(css.includes('--sv-sale-workspace-rail'), 'rail da sidebar no cálculo de largura');
+  assert(css.includes('calc(100vw - var(--sv-sale-workspace-rail) - 32px)'), '1366 usa quase toda a largura útil');
+  assert(css.includes('1920x1080'), 'homologação 1920x1080');
+  assert(css.includes('1366x768'), 'homologação 1366x768');
+  assert(modal.includes('VALOR DO LOTE'), 'valor do lote no header');
+  assert(modal.includes('projectName') || modal.includes('projectLabel'), 'empreendimento no lote');
+  assert(modal.includes('sv-sale-workspace-header'), 'header compacto');
   console.log('OK testSaleWorkspaceShellAndHeader');
 }
 
-function testThreeColumnCreateLayout() {
+function testTwoColumnCreateLayout() {
   const modal = read('components/map/CustomerLotFormModal.tsx');
-  assert(modal.includes('sv-sale-workspace-grid'), 'grid de 3 colunas');
-  assert(modal.includes('? "Cliente" : "DADOS DO CLIENTE"'), 'coluna Cliente');
-  assert(modal.includes('Cônjuge'), 'coluna Cônjuge');
+  const css = read('app/mobile-layout.css');
+  assert(modal.includes('sv-sale-workspace-grid'), 'grid do workspace');
+  assert(css.includes('minmax(0, 1.65fr) minmax(20rem, 0.95fr)'), '2 colunas ~62/38');
+  assert(!css.includes('minmax(0, 1.12fr) minmax(0, 0.96fr) minmax(0, 1.12fr)'), 'sem grid de 3 colunas');
+  assert(modal.includes('sv-sale-workspace-col-client'), 'coluna Cliente+Cônjuge');
+  assert(modal.includes('? "Cliente" : "DADOS DO CLIENTE"'), 'bloco Cliente');
+  assert(modal.includes('Possui Cônjuge'), 'cônjuge condicional');
+  assert(modal.includes('sv-sale-workspace-spouse-compact'), 'cônjuge fechado compacto');
   assert(modal.includes('? "Dados da venda" : "DADOS DA VENDA"'), 'coluna Dados da venda');
-  assert(modal.includes('sv-sale-workspace-fields'), 'campos em grid interno');
+  assert(modal.includes('sv-sale-workspace-card--sale'), 'card da venda à direita');
+  assert(modal.includes('sv-sale-workspace-fields'), 'campos do cliente');
+  assert(modal.includes('sv-sale-ws-row--docs'), 'CPF/RG/órgão/UF em linha');
+  assert(modal.includes('sv-sale-ws-row--contact'), 'Telefone/E-mail com proporção');
+  assert(modal.includes('sv-sale-ws-row--city'), 'Cidade/UF/CEP com espaço de máscara');
+  assert(css.includes('minmax(10rem, 0.38fr) minmax(14rem, 0.62fr)'), 'telefone não corta; e-mail maior');
+  assert(css.includes('minmax(8.5rem, 0.9fr)'), 'CEP com largura de máscara');
   assert(modal.includes('sv-modal-footer sticky'), 'rodapé sticky');
   assert(modal.includes('Confirmar Venda'), 'Confirmar Venda visível no rodapé');
-  console.log('OK testThreeColumnCreateLayout');
+  console.log('OK testTwoColumnCreateLayout');
+}
+
+function testSidebarChromeUsesExistingRail() {
+  const layout = read('components/Layout.tsx');
+  const chrome = read('lib/saleWorkspaceChrome.ts');
+  const modal = read('components/map/CustomerLotFormModal.tsx');
+  const css = read('app/mobile-layout.css');
+
+  assert(chrome.includes('SALE_WORKSPACE_CHROME_EVENT'), 'evento único de chrome');
+  assert(!chrome.includes('localStorage'), 'chrome não persiste preferência');
+  assert(modal.includes('setSaleWorkspaceChromeOpen(isSaleWorkspaceDesktop)'), 'abre chrome ao montar workspace');
+  assert(modal.includes('setSaleWorkspaceChromeOpen(false)'), 'restaura ao fechar/cancelar/concluir');
+  assert(layout.includes('SALE_WORKSPACE_CHROME_EVENT'), 'Layout escuta o chrome existente');
+  assert(layout.includes('tenantSidebarRail'), 'tenant usa rail compacta já no menu');
+  assert(layout.includes("w-[72px]"), 'rail ~72px');
+  assert(layout.includes('superAdminSidebarCollapsed'), 'Super Admin reutiliza collapsed');
+  assert(layout.includes("localStorage.setItem('saas_sidebar_collapsed'"), 'preferência do usuário permanece no toggle');
+  assert(css.includes('sv-modal-overlay--sale-workspace'), 'overlay não cobre a rail');
+  assert(css.includes('left: var(--sv-sale-workspace-rail)'), 'workspace começa após a rail');
+  console.log('OK testSidebarChromeUsesExistingRail');
 }
 
 function testCreateHidesRedundantControls() {
@@ -72,7 +108,7 @@ function testPaymentAndSaleLogicUntouched() {
   assert(modal.includes('financial_account_id'), 'conta recebedora intacta');
   assert(modal.includes('has_spouse'), 'cônjuge intacto');
   assert(modal.includes('CustomerSearchPicker'), 'busca de cliente existente intacta');
-  assert(!modal.includes('from(\'sales\')') || modal.includes('handleSubmit'), 'sem reescrita de persistência no modal');
+  assert(!modal.includes("from('sales')") || modal.includes('handleSubmit'), 'sem reescrita de persistência no modal');
   console.log('OK testPaymentAndSaleLogicUntouched');
 }
 
@@ -80,6 +116,7 @@ function testMobileShellPreserved() {
   const modal = read('components/map/CustomerLotFormModal.tsx');
   assert(modal.includes('sv-modal-shell--full-mobile'), 'full-mobile preservado');
   assert(modal.includes('isSaleWorkspaceDesktop ? "sv-sale-workspace-grid" : "space-y-6"'), 'mobile permanece empilhado');
+  assert(modal.includes('isSaleWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"'), 'mobile não ganha coluna extra');
   console.log('OK testMobileShellPreserved');
 }
 
@@ -87,7 +124,9 @@ function testNoMigrationOrProduction() {
   const modal = read('components/map/CustomerLotFormModal.tsx');
   const css = read('app/mobile-layout.css');
   const picker = read('components/customers/CustomerSearchPicker.tsx');
-  const joined = modal + css + picker;
+  const layout = read('components/Layout.tsx');
+  const chrome = read('lib/saleWorkspaceChrome.ts');
+  const joined = modal + css + picker + layout + chrome;
   assert(!joined.includes('aezktedncttwpqeunjej'), 'não aponta Production');
   assert(!joined.includes('create table'), 'sem SQL de schema');
   console.log('OK testNoMigrationOrProduction');
@@ -96,7 +135,8 @@ function testNoMigrationOrProduction() {
 function run() {
   testResumoRemovedEditConfrontationsButton();
   testSaleWorkspaceShellAndHeader();
-  testThreeColumnCreateLayout();
+  testTwoColumnCreateLayout();
+  testSidebarChromeUsesExistingRail();
   testCreateHidesRedundantControls();
   testPaymentAndSaleLogicUntouched();
   testMobileShellPreserved();

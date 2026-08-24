@@ -68,6 +68,10 @@ import {
 } from '@/lib/impersonationStorage';
 import { DemoEnvironmentBanner } from '@/components/demo/DemoEnvironmentBanner';
 import { isDemoProfile } from '@/lib/demoRestrictions';
+import {
+  SALE_WORKSPACE_CHROME_EVENT,
+  type SaleWorkspaceChromeDetail,
+} from '@/lib/saleWorkspaceChrome';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -356,6 +360,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [impersonatingStartedAt, setImpersonatingStartedAt] = useState<string | null>(null);
   const [activeProfileModal, setActiveProfileModal] = useState<'profile' | 'password' | 'security' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [saleWorkspaceChromeOpen, setSaleWorkspaceChromeOpen] = useState(false);
   const [ownerAccess, setOwnerAccess] = useState<{
     rows: OwnerProjectAccessRow[];
     permissions: {
@@ -398,6 +403,23 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
+
+  useEffect(() => {
+    const onChrome = (event: Event) => {
+      const open = Boolean((event as CustomEvent<SaleWorkspaceChromeDetail>).detail?.open);
+      setSaleWorkspaceChromeOpen(open);
+    };
+    window.addEventListener(SALE_WORKSPACE_CHROME_EVENT, onChrome);
+    return () => {
+      window.removeEventListener(SALE_WORKSPACE_CHROME_EVENT, onChrome);
+      setSaleWorkspaceChromeOpen(false);
+      document.body.classList.remove('sv-sale-workspace-open');
+    };
+  }, []);
+
+  const tenantSidebarRail = !isMobile && saleWorkspaceChromeOpen;
+  const superAdminSidebarCollapsed =
+    sidebarCollapsed || (!isMobile && saleWorkspaceChromeOpen);
 
   useEffect(() => {
     async function fetchCompany() {
@@ -607,7 +629,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Super Admin Sidebar */}
       {isMasterConsole && (
         <SuperAdminSidebar
-          collapsed={sidebarCollapsed}
+          collapsed={superAdminSidebarCollapsed}
           onToggleCollapsed={toggleSidebarCollapsed}
           isMobile={isMobile}
           isOpen={isOpen}
@@ -618,20 +640,20 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
       {/* Desktop Sidebar (tenant roles) */}
       {!isMobile && !isMasterConsole && (
-        <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
-          <div className="h-20 flex items-center px-6 gap-3">
+        <aside className={`${tenantSidebarRail ? 'w-[72px]' : 'w-64'} bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0 transition-[width] duration-200`}>
+          <div className={`h-20 flex items-center gap-3 ${tenantSidebarRail ? 'px-2 justify-center' : 'px-6'}`}>
              {company?.logo_url ? (
-                  <img src={company.logo_url} alt="Logo" className="max-h-12 w-full object-contain object-left" />
+                  <img src={company.logo_url} alt="Logo" className={`max-h-12 object-contain ${tenantSidebarRail ? 'w-10' : 'w-full object-left'}`} />
               ) : (
-                  <SvLotesLogo size={44} showText subtitle={company?.fantasy_name || company?.name || undefined} />
+                  <SvLotesLogo size={tenantSidebarRail ? 36 : 44} showText={!tenantSidebarRail} subtitle={tenantSidebarRail ? undefined : (company?.fantasy_name || company?.name || undefined)} />
               )}
           </div>
 
-          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-1 sv-scrollbar sv-scrollbar-dark">
+          <div className={`flex-1 overflow-y-auto py-2 flex flex-col gap-1 sv-scrollbar sv-scrollbar-dark ${tenantSidebarRail ? 'px-1.5' : 'px-3'}`}>
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
-                  <div key={`section-${idx}`} className="px-4 pt-4 pb-2 text-[11px] font-bold text-gray-500 tracking-wider">
+                  <div key={`section-${idx}`} className={`px-4 pt-4 pb-2 text-[11px] font-bold text-gray-500 tracking-wider ${tenantSidebarRail ? 'hidden' : ''}`}>
                     {item.name}
                   </div>
                 );
@@ -641,14 +663,17 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 <Link 
                   key={item.href} 
                   href={item.href!}
-                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-medium ${
+                  title={item.name}
+                  className={`flex items-center rounded-xl transition-all font-medium ${
+                    tenantSidebarRail ? 'justify-center px-0 py-2.5' : 'gap-3 px-4 py-2.5'
+                  } ${
                     isActive 
                       ? 'bg-[var(--color-primary)]/10 text-[var(--text-primary)] border border-[var(--color-primary)]/20 shadow-sm' 
                       : 'text-[var(--color-text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--color-surface)]/50 border border-transparent'
                   }`}
                 >
                   {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
-                  <span className="text-[14px]">{item.name}</span>
+                  <span className={`text-[14px] ${tenantSidebarRail ? 'hidden' : ''}`}>{item.name}</span>
                 </Link>
               );
             })}
