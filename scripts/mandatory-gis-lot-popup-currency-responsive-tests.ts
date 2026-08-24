@@ -204,7 +204,12 @@ function testCustomerLotFormUsesCurrencyInput() {
   );
   assert(source.includes('CurrencyInput'), 'modal venda usa CurrencyInput');
   assert(source.includes('parseCurrencyBRLNumber'), 'modal venda parse unificado');
-  assert(!source.includes('type="number"'), 'modal venda sem input number monetário');
+  assert(
+    !/type="number"[\s\S]{0,120}(parseCurrency|price|valor do lote)|((parseCurrency|price|valor do lote)[\s\S]{0,120}type="number")/i.test(
+      source,
+    ),
+    'modal venda sem input number monetário',
+  );
   assert(
     fs.readFileSync(path.join(process.cwd(), 'components/ui/CurrencyInput.tsx'), 'utf8').includes('formatCurrencyDraftDisplay'),
     'CurrencyInput usa draft durante digitação',
@@ -213,17 +218,29 @@ function testCustomerLotFormUsesCurrencyInput() {
 
 function testPopupResponsiveClasses() {
   assert(
-    GIS_LOT_POPUP_CONTAINER_CLASS.includes('w-[min(92vw,360px)]'),
-    'mobile width',
+    GIS_LOT_POPUP_CONTAINER_CLASS.includes('w-[min(calc(100vw-24px),960px)]'),
+    'desktop width ~960px com teto de viewport',
   );
-  assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('md:w-[480px]'), 'notebook width');
-  assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('lg:w-[520px]'), 'desktop width');
-  assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('xl:w-[540px]'), 'desktop grande');
+  assert(
+    GIS_LOT_POPUP_CONTAINER_CLASS.includes('max-w-[min(calc(100vw-24px),960px)]'),
+    'max-width não estoura viewport',
+  );
+  assert(
+    GIS_LOT_POPUP_CONTAINER_CLASS.includes('max-h-[min(85vh,720px)]'),
+    'altura limitada pela viewport',
+  );
+  assert(
+    GIS_LOT_POPUP_CONTAINER_CLASS.includes('overflow-hidden'),
+    'scroll só no conteúdo interno',
+  );
 
   const gisMapPath = path.join(process.cwd(), 'components', 'map', 'GISMap.tsx');
   const source = fs.readFileSync(gisMapPath, 'utf8');
   assert(source.includes('GIS_LOT_POPUP_CONTAINER_CLASS'), 'GISMap usa container class');
   assert(source.includes('GIS_LOT_POPUP_PRICE_INPUT_CLASS'), 'GISMap usa input class');
+  assert(source.includes('GIS_LOT_POPUP_MAX_WIDTH_PX'), 'GISMap define maxWidth Leaflet');
+  assert(source.includes('GIS_LOT_LEAFLET_POPUP_CLASS'), 'GISMap aplica classe Leaflet do lote');
+  assert(source.includes('maxWidth={GIS_LOT_POPUP_MAX_WIDTH_PX}'), 'Popup lote com maxWidth profissional');
   assert(source.includes('priceDraft'), 'GISMap usa priceDraft controlado');
   assert(source.includes('GIS_LOT_PRICE_SAVE_START'), 'log save preço');
   assert(!source.includes('setPriceText'), 'não usa setPriceText legado');

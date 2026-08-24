@@ -175,6 +175,33 @@ html {
 .leaflet-popup-tip {
   background: var(--color-surface) !important;
 }
+
+/* Popup de lote no GIS — largura profissional, conteúdo sem margem extra do Leaflet. */
+.leaflet-popup.gis-lot-leaflet-popup {
+  margin-bottom: 18px;
+}
+.gis-lot-leaflet-popup .leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  width: auto !important;
+  max-width: min(960px, calc(100vw - 24px));
+}
+.gis-lot-leaflet-popup .leaflet-popup-content {
+  margin: 0 !important;
+  width: auto !important;
+  min-width: 0;
+  max-width: min(960px, calc(100vw - 24px));
+}
+.gis-lot-leaflet-popup a.leaflet-popup-close-button {
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  font-size: 18px;
+  color: #64748b;
+  z-index: 2;
+}
 .leaflet-bar {
   border: none !important;
   box-shadow: var(--shadow-elevated) !important;

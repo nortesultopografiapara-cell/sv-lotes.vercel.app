@@ -107,9 +107,15 @@ import {
 } from "@/lib/currencyBrl";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import {
+  GIS_LOT_LEAFLET_POPUP_CLASS,
   GIS_LOT_POPUP_ACTION_BTN_CLASS,
   GIS_LOT_POPUP_CONTAINER_CLASS,
+  GIS_LOT_POPUP_MAX_WIDTH_PX,
+  GIS_LOT_POPUP_MIN_WIDTH_PX,
   GIS_LOT_POPUP_PRICE_INPUT_CLASS,
+  gisPopupContractLabel,
+  gisPopupDisplayOrDash,
+  gisPopupDisplayText,
 } from "@/lib/gisLotPopupLayout";
 import { normalizeSavedLotPrice } from "@/lib/lotBlockPrice";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
@@ -1704,6 +1710,16 @@ function getOfficialLotMeasurementsForPopup(
   }
 }
 
+function popupMeasureLabel(value: number | null | undefined): string {
+  if (value != null && Number.isFinite(value)) {
+    return `${value.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} m`;
+  }
+  return "—";
+}
+
 /** Único popup comercial do mapa GIS (Disponibilizar / Reservar / Vender / Editar Venda). */
 function LotPopupContent({
   lot,
@@ -1857,6 +1873,16 @@ function LotPopupContent({
   const quadraLabel = String(lot.block ?? lot.block_name ?? "").trim();
   const formattedPrice =
     currentPrice != null ? formatBRL(currentPrice) : "—";
+  const headerCustomer =
+    gisPopupDisplayText(lot.customerName) ||
+    gisPopupDisplayText(reservationDisplay?.customerName);
+  const headerProject = gisPopupDisplayText(lot.projectName);
+  const headerContract = gisPopupContractLabel(
+    lot.contract_number ?? lot.contractNumber ?? lot.contract_no,
+  );
+  const headerMetaLine = [headerProject, headerContract && `Contrato ${headerContract}`]
+    .filter(Boolean)
+    .join(" · ");
 
   const parsedPriceDraft = parseCurrencyBRL(priceDraft);
   const priceChanged =
@@ -2113,43 +2139,44 @@ function LotPopupContent({
 
   return (
     <div className={GIS_LOT_POPUP_CONTAINER_CLASS}>
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-sm text-gray-900 leading-tight">
+      <div className="shrink-0 px-4 pt-4 pb-3 pr-10 border-b border-gray-100">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="font-bold text-base md:text-lg text-gray-900 leading-tight min-w-0">
             Lote {displayNum}
             {quadraLabel ? (
               <span className="text-gray-500 font-semibold">
                 {" "}
-                / QD {quadraLabel}
+                · Quadra {quadraLabel}
               </span>
             ) : null}
           </h3>
-          {lot.customerName &&
-            lot.status !== "Disponível" &&
-            !isLotReservedStatus(lot.status) && (
-            <p className="text-[10px] text-gray-600 truncate mt-0.5">
-              {lot.customerName}
-            </p>
-          )}
+          <span
+            className="shrink-0 text-white text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide"
+            style={{ backgroundColor: color }}
+          >
+            {getStatusLabel(lot.status)}
+          </span>
         </div>
-        <span
-          className="shrink-0 text-white text-[10px] font-bold px-2 py-0.5 rounded"
-          style={{ backgroundColor: color }}
-        >
-          {getStatusLabel(lot.status)}
-        </span>
+        {headerCustomer ? (
+          <p className="mt-1.5 text-sm font-semibold text-gray-800 truncate">
+            {headerCustomer}
+          </p>
+        ) : null}
+        {headerMetaLine ? (
+          <p className="mt-0.5 text-xs text-gray-500 truncate">{headerMetaLine}</p>
+        ) : null}
       </div>
 
-      <div className="flex border-b border-gray-200 mb-2 -mx-0.5">
+      <div className="shrink-0 grid grid-cols-4 border-b border-gray-200">
         {popupTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setPopupTab(tab.id)}
-            className={`flex-1 px-1 py-1.5 text-[10px] font-bold border-b-2 transition-colors ${
+            className={`px-1 py-2.5 text-[11px] md:text-xs font-bold border-b-2 transition-colors ${
               popupTab === tab.id
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-gray-500 hover:text-gray-800"
+                ? "border-blue-600 text-blue-700 bg-blue-50/60"
+                : "border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50"
             }`}
           >
             {tab.label}
@@ -2157,75 +2184,114 @@ function LotPopupContent({
         ))}
       </div>
 
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
       {popupTab === "resumo" && (
-        <div className="space-y-1.5 text-[11px] md:text-xs">
-          <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500">Área</span>
-            <span className="font-medium text-gray-900">
-              {area.toLocaleString("pt-BR", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}{" "}
-              m²
-            </span>
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <section className="rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2.5 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                Imóvel
+              </p>
+              <dl className="space-y-1.5">
+                <div>
+                  <dt className="text-[10px] text-gray-500">Área</dt>
+                  <dd className="font-semibold text-gray-900 text-sm">
+                    {area.toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    m²
+                  </dd>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <dt className="text-[10px] text-gray-500">Quadra</dt>
+                    <dd className="font-semibold text-gray-900">
+                      {gisPopupDisplayOrDash(quadraLabel)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] text-gray-500">Lote</dt>
+                    <dd className="font-semibold text-gray-900">
+                      {gisPopupDisplayOrDash(displayNum)}
+                    </dd>
+                  </div>
+                </div>
+                <div className="rounded-md bg-emerald-50 border border-emerald-100 px-2 py-1.5">
+                  <dt className="text-[10px] text-emerald-800 font-semibold">
+                    Frente para
+                  </dt>
+                  <dd className="font-semibold text-emerald-950 leading-snug">
+                    {gisPopupDisplayOrDash(frontStreetLabel)}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2.5 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                Dimensões
+              </p>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                {(
+                  [
+                    ["Frente", officialMeasures.frente],
+                    ["Fundo", officialMeasures.fundo],
+                    ["Lado direito", officialMeasures.ladoDireito],
+                    ["Lado esquerdo", officialMeasures.ladoEsquerdo],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-[10px] text-gray-500">{label}</dt>
+                    <dd className="font-semibold text-gray-900">
+                      {popupMeasureLabel(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2.5 min-w-0 sm:col-span-2 lg:col-span-1">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                Situação comercial
+              </p>
+              <dl className="space-y-1.5">
+                <div>
+                  <dt className="text-[10px] text-gray-500">Status</dt>
+                  <dd className="font-semibold text-gray-900">
+                    {gisPopupDisplayOrDash(getStatusLabel(lot.status))}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] text-gray-500">Valor</dt>
+                  <dd className="font-semibold text-gray-900 text-sm">
+                    {formattedPrice}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] text-gray-500">Cliente</dt>
+                  <dd className="font-semibold text-gray-900 truncate">
+                    {gisPopupDisplayOrDash(headerCustomer)}
+                  </dd>
+                </div>
+                {headerContract ? (
+                  <div>
+                    <dt className="text-[10px] text-gray-500">Contrato</dt>
+                    <dd className="font-semibold text-gray-900">
+                      {headerContract}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </section>
           </div>
-          <div className="py-0.5 space-y-0.5">
-            <div className="flex justify-between items-center gap-2">
-              <span className="text-gray-500 font-semibold">Medidas:</span>
-            </div>
-            {(
-              [
-                ["Frente", officialMeasures.frente],
-                ["Fundo", officialMeasures.fundo],
-                ["Lado Dir.", officialMeasures.ladoDireito],
-                ["Lado Esq.", officialMeasures.ladoEsquerdo],
-              ] as const
-            ).map(([label, value]) => (
-              <div
-                key={label}
-                className="flex justify-between items-center gap-2 leading-tight"
-              >
-                <span className="text-gray-500 shrink-0">{label}:</span>
-                <span className="font-medium text-gray-900 text-right">
-                  {value != null && Number.isFinite(value)
-                    ? `${value.toLocaleString("pt-BR", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })} m`
-                    : "—"}
-                </span>
-              </div>
-            ))}
-          </div>
-          {frontStreetLabel && (
-            <div className="flex justify-between items-start gap-2 py-0.5 px-1.5 -mx-0.5 rounded bg-emerald-50/80">
-              <span className="text-gray-600 shrink-0">Frente para</span>
-              <span className="text-emerald-800 font-semibold text-right leading-tight">
-                {frontStreetLabel}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500">Valor</span>
-            <span className="font-semibold text-gray-900 text-sm md:text-base">
-              {formattedPrice}
-            </span>
-          </div>
-          {isSold && lot.customerName && (
-            <div className="flex justify-between items-center py-0.5">
-              <span className="text-gray-500">Cliente</span>
-              <span className="font-medium text-gray-900 text-right truncate max-w-[160px]">
-                {lot.customerName}
-              </span>
-            </div>
-          )}
 
           {reservationDisplay && (
             <div
-              className={`mt-1.5 pt-1.5 border-t space-y-1 rounded-md px-1.5 py-1.5 ${
+              className={`pt-1 space-y-1 rounded-md px-2.5 py-2 ${
                 reservationDisplay.situation === "active"
-                  ? "border-sky-200 bg-sky-50/70"
-                  : "border-orange-200 bg-orange-50/70"
+                  ? "border border-sky-200 bg-sky-50/70"
+                  : "border border-orange-200 bg-orange-50/70"
               }`}
             >
               <p
@@ -2240,13 +2306,13 @@ function LotPopupContent({
               <div className="flex justify-between items-start gap-2">
                 <span className="text-gray-500 shrink-0">Cliente reservado</span>
                 <span className="font-medium text-gray-900 text-right leading-tight">
-                  {reservationDisplay.customerName}
+                  {gisPopupDisplayOrDash(reservationDisplay.customerName)}
                 </span>
               </div>
               <div className="flex justify-between items-start gap-2">
                 <span className="text-gray-500 shrink-0">Reserva feita por</span>
                 <span className="font-medium text-gray-900 text-right leading-tight">
-                  {reservationDisplay.reservedByLabel}
+                  {gisPopupDisplayOrDash(reservationDisplay.reservedByLabel)}
                 </span>
               </div>
               {reservationDisplay.reservedAtLabel && (
@@ -2284,7 +2350,7 @@ function LotPopupContent({
             Array.isArray(lot.segments_json) &&
             lot.segments_json.length >= 3 &&
             onStartCorrectFront && (
-              <div className="pt-1.5 border-t border-gray-100">
+              <div className="pt-1">
                 {frontCorrectActive ? (
                   <div className="space-y-1.5">
                     <p className="text-[10px] font-semibold text-amber-800 leading-snug">
@@ -2319,49 +2385,68 @@ function LotPopupContent({
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 min-[300px]:grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => onStartCorrectFront(lot)}
-                      className="w-full py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
-                    >
-                      Corrigir frente do lote
-                    </button>
-                    {onEditOfficialSides ? (
-                      <button
-                        type="button"
-                        onClick={() => onEditOfficialSides(lot)}
-                        className="w-full py-1.5 rounded-lg border border-sky-300 bg-sky-50 hover:bg-sky-100 text-[10px] font-bold text-sky-900"
-                      >
-                        Editar lados do lote
-                      </button>
-                    ) : (
-                      <span className="hidden min-[300px]:block" aria-hidden />
-                    )}
-                    {onGenerateMemorial &&
-                    Array.isArray(lot.segments_json) &&
-                    lot.segments_json.length >= 2 ? (
-                      <button
-                        type="button"
-                        onClick={() => onGenerateMemorial(lot)}
-                        className="w-full py-1.5 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
-                      >
-                        Gerar memorial
-                      </button>
-                    ) : (
-                      <span className="hidden min-[300px]:block" aria-hidden />
-                    )}
-                    {onGenerateLotSheet &&
-                    Array.isArray(lot.segments_json) &&
-                    lot.segments_json.length >= 2 ? (
-                      <button
-                        type="button"
-                        onClick={() => onGenerateLotSheet(lot)}
-                        className="w-full py-1.5 rounded-lg border border-orange-300 bg-orange-50 hover:bg-orange-100 text-[10px] font-bold text-orange-900"
-                      >
-                        Gerar prancha do lote
-                      </button>
-                    ) : null}
+                  <div className="space-y-2.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                      Ações do lote
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-600 mb-1.5">
+                          Cadastro e geometria
+                        </p>
+                        <div className="grid grid-cols-1 min-[300px]:grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onStartCorrectFront(lot)}
+                            className="w-full py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
+                          >
+                            Corrigir frente
+                          </button>
+                          {onEditOfficialSides ? (
+                            <button
+                              type="button"
+                              onClick={() => onEditOfficialSides(lot)}
+                              className="w-full py-1.5 rounded-lg border border-sky-300 bg-sky-50 hover:bg-sky-100 text-[10px] font-bold text-sky-900"
+                            >
+                              Editar confrontações
+                            </button>
+                          ) : (
+                            <span className="hidden min-[300px]:block" aria-hidden />
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-600 mb-1.5">
+                          Documentos
+                        </p>
+                        <div className="grid grid-cols-1 min-[300px]:grid-cols-2 gap-1.5">
+                          {onGenerateMemorial &&
+                          Array.isArray(lot.segments_json) &&
+                          lot.segments_json.length >= 2 ? (
+                            <button
+                              type="button"
+                              onClick={() => onGenerateMemorial(lot)}
+                              className="w-full py-1.5 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
+                            >
+                              Gerar memorial
+                            </button>
+                          ) : (
+                            <span className="hidden min-[300px]:block" aria-hidden />
+                          )}
+                          {onGenerateLotSheet &&
+                          Array.isArray(lot.segments_json) &&
+                          lot.segments_json.length >= 2 ? (
+                            <button
+                              type="button"
+                              onClick={() => onGenerateLotSheet(lot)}
+                              className="w-full py-1.5 rounded-lg border border-orange-300 bg-orange-50 hover:bg-orange-100 text-[10px] font-bold text-orange-900"
+                            >
+                              Gerar prancha
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2373,13 +2458,19 @@ function LotPopupContent({
             onGenerateMemorial &&
             Array.isArray(lot.segments_json) &&
             lot.segments_json.length >= 2 && (
-              <button
-                type="button"
-                onClick={() => onGenerateMemorial(lot)}
-                className="w-full py-1.5 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
-              >
-                Gerar Memorial
-              </button>
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                  Ações do lote
+                </p>
+                <p className="text-[10px] font-semibold text-gray-600">Documentos</p>
+                <button
+                  type="button"
+                  onClick={() => onGenerateMemorial(lot)}
+                  className="w-full py-1.5 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
+                >
+                  Gerar Memorial
+                </button>
+              </div>
             )}
         </div>
       )}
@@ -2644,6 +2735,7 @@ function LotPopupContent({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -5394,7 +5486,13 @@ export default function GISMap({
                 >
                   <SyncPathHitTest interactive={lotHitTest} />
                   {perfToggles.popups && !mapLotPickActive && lotHitTest && (
-                    <Popup>
+                    <Popup
+                      className={GIS_LOT_LEAFLET_POPUP_CLASS}
+                      maxWidth={GIS_LOT_POPUP_MAX_WIDTH_PX}
+                      minWidth={GIS_LOT_POPUP_MIN_WIDTH_PX}
+                      autoPan
+                      autoPanPadding={[32, 32]}
+                    >
                       <LotPopupContent
                         lot={lot}
                         streetGuides={streetGuides}
@@ -5598,7 +5696,13 @@ export default function GISMap({
                   interactive={!(drawStreetActive || gisMeasureToolActive)}
                 />
                 {!(drawStreetActive || gisMeasureToolActive) && (
-                <Popup>
+                <Popup
+                  className={GIS_LOT_LEAFLET_POPUP_CLASS}
+                  maxWidth={GIS_LOT_POPUP_MAX_WIDTH_PX}
+                  minWidth={GIS_LOT_POPUP_MIN_WIDTH_PX}
+                  autoPan
+                  autoPanPadding={[32, 32]}
+                >
                   <LotPopupContent
                     lot={block}
                     streetGuides={streetGuides}
