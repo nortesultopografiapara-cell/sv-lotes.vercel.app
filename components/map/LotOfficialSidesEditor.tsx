@@ -11,6 +11,7 @@ import {
   applyOfficialEditorDraftToBlock,
   draftMapFromBlock,
   looksLikeAggregatedSideConfrontant,
+  OFFICIAL_SIDE_ACTIONS,
   OFFICIAL_SIDES_PANEL_POSITION_CLASS,
   previewOfficialSideDraft,
   resolveIndividualSegmentConfrontantLabel,
@@ -21,13 +22,7 @@ import {
   type OfficialSideDraftMap,
 } from '@/lib/officialSidePersist';
 
-const SIDE_ACTIONS: Array<{ side: OfficialSideKind | null; label: string }> = [
-  { side: 'front', label: 'Frente' },
-  { side: 'back', label: 'Fundo' },
-  { side: 'right', label: 'Lado direito' },
-  { side: 'left', label: 'Lado esquerdo' },
-  { side: null, label: 'Limpar' },
-];
+const SIDE_ACTIONS = OFFICIAL_SIDE_ACTIONS;
 
 const EDITOR_CONFRONTANT_TYPES: Array<{
   type: ConfrontantPresetType;
@@ -383,10 +378,11 @@ export function LotOfficialSidesEditor({
       data-variant={variant}
       className={
         embedded
-          ? 'flex flex-col min-h-0 h-full overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-900'
+          ? 'flex flex-col min-h-0 h-full overflow-hidden bg-white text-gray-900'
           : `${OFFICIAL_SIDES_PANEL_POSITION_CLASS} overflow-hidden rounded-xl border border-[#2d3340] bg-[#1a1f29] text-white shadow-2xl flex flex-col`
       }
     >
+      {embedded ? null : (
       <div
         className={`flex items-center justify-between px-3 py-2 border-b ${hairline} shrink-0`}
       >
@@ -397,25 +393,27 @@ export function LotOfficialSidesEditor({
             {lot.block_name || lot.block
               ? ` · QD ${String(lot.block_name ?? lot.block)}`
               : ''}
-            {embedded ? '' : ' · clique nas arestas do mapa'}
+            {' · clique nas arestas do mapa'}
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className={
-            embedded
-              ? 'p-1.5 rounded-lg text-gray-400 hover:text-gray-800 hover:bg-gray-100'
-              : 'p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10'
-          }
+          className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
+      )}
 
       <div
-        className={`px-3 py-2 border-b ${hairline} flex flex-wrap gap-1 shrink-0`}
+        className={`px-3 py-2 ${embedded ? 'pt-0' : 'border-b'} ${hairline} flex flex-wrap gap-1 shrink-0`}
       >
+        {embedded ? (
+          <p className="w-full text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">
+            Classificação
+          </p>
+        ) : null}
         {SIDE_ACTIONS.map((a) => (
           <button
             key={a.label}
@@ -437,6 +435,7 @@ export function LotOfficialSidesEditor({
         ))}
       </div>
 
+      <div className={embedded ? 'flex-1 min-h-0 overflow-y-auto' : 'contents'}>
       {!embedded ? (
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1">
         {segments.map((s) => {
@@ -572,8 +571,8 @@ export function LotOfficialSidesEditor({
         <div
           className={`px-3 py-1.5 border-t ${hairline} text-[10px] ${muted} shrink-0`}
         >
-          Selecione um segmento para editar o confrontante individual
-          (selected_only).
+          Selecione um segmento da geometria ou da lista para editar sua
+          classificação e confrontação.
         </div>
       )}
 
@@ -630,6 +629,8 @@ export function LotOfficialSidesEditor({
             </div>
           </>
         ) : null}
+        {embedded ? null : (
+        <>
         <p>
           Frente [{validation.indexes.front.map((i) => i + 1).join(',') || '—'}]
           = <strong>{validation.totals.frente.toFixed(2)} m</strong>
@@ -657,6 +658,14 @@ export function LotOfficialSidesEditor({
           ).toFixed(2)}{' '}
           m
         </p>
+        <p className={embedded ? 'text-gray-500' : 'text-gray-500'}>
+          Medição oficial: F {Number(measures.frente ?? 0).toFixed(2)} · D{' '}
+          {Number(measures.ladoDireito ?? 0).toFixed(2)} · Fu{' '}
+          {Number(measures.fundo ?? 0).toFixed(2)} · E{' '}
+          {Number(measures.ladoEsquerdo ?? 0).toFixed(2)}
+        </p>
+        </>
+        )}
         {validation.errors.map((e) => (
           <p key={e} className={embedded ? 'text-red-600' : 'text-red-400'}>
             {e}
@@ -670,17 +679,12 @@ export function LotOfficialSidesEditor({
             {w}
           </p>
         ))}
-        <p className={embedded ? 'text-gray-500' : 'text-gray-500'}>
-          Medição oficial: F {Number(measures.frente ?? 0).toFixed(2)} · D{' '}
-          {Number(measures.ladoDireito ?? 0).toFixed(2)} · Fu{' '}
-          {Number(measures.fundo ?? 0).toFixed(2)} · E{' '}
-          {Number(measures.ladoEsquerdo ?? 0).toFixed(2)}
-        </p>
+      </div>
       </div>
 
       <div
         className={`p-3 border-t ${hairline} flex flex-col gap-2 shrink-0 sticky bottom-0 ${
-          embedded ? 'bg-white' : ''
+          embedded ? 'bg-white' : 'bg-[#1a1f29]'
         }`}
       >
         {embedded ? (
@@ -698,7 +702,7 @@ export function LotOfficialSidesEditor({
           onClick={() => void onRestoreAutomatic(sessionBaselineRef.current)}
           className={
             embedded
-              ? 'w-full py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50'
+              ? 'w-full py-1.5 rounded-lg border border-amber-200 bg-amber-50/80 text-amber-900 text-[10px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50'
               : 'w-full py-2 rounded-lg border border-amber-600/40 text-amber-300 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50'
           }
         >

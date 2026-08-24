@@ -187,6 +187,7 @@ import {
   canEditOfficialSides,
   restoreAutomaticOfficialSides,
   snapshotSegmentsJson,
+  type ConfrontantDraftMap,
   type OfficialSideDraftMap,
 } from "@/lib/officialSidePersist";
 import { LotConfrontationsPanel } from "@/components/map/LotConfrontationsPanel";
@@ -1751,6 +1752,8 @@ function LotPopupContent({
   embedOfficialSidesEditor = false,
   officialSidesSelected = [],
   onOfficialSidesEditorSlot,
+  officialSidesSaving = false,
+  onPersistOfficialSides,
   onPriceSaved,
   canEditLotPrice = false,
 }: {
@@ -1787,6 +1790,12 @@ function LotPopupContent({
   embedOfficialSidesEditor?: boolean;
   officialSidesSelected?: number[];
   onOfficialSidesEditorSlot?: (el: HTMLElement | null) => void;
+  officialSidesSaving?: boolean;
+  onPersistOfficialSides?: (
+    patched: Record<string, unknown>,
+    sideDraft: OfficialSideDraftMap,
+    confrontantDraft: ConfrontantDraftMap,
+  ) => Promise<void>;
   /** Atualiza blocks.price no estado do mapa após salvar manualmente. */
   onPriceSaved?: (lotId: string, price: number | null) => void;
   /** ADMIN / SUPER_ADMIN — OWNER e corretor não editam preço. */
@@ -2545,6 +2554,8 @@ function LotPopupContent({
               ? (l, indexes) => onEditOfficialSides(l, indexes)
               : undefined
           }
+          officialSidesSaving={officialSidesSaving}
+          onPersistOfficialSides={onPersistOfficialSides}
         />
         </div>
       )}
@@ -3039,6 +3050,12 @@ export default function GISMap({
   const openOfficialSidesEditor = useCallback(
     (l: any, initialSelected?: number[]) => {
       setFrontCorrectLotId(null);
+      if (isWideDesktop) {
+        if (Array.isArray(initialSelected) && initialSelected.length > 0) {
+          setOfficialSidesSelected(initialSelected);
+        }
+        return;
+      }
       const sameLot = officialSidesEditLotRef.current?.id === l?.id;
       if (Array.isArray(initialSelected) && initialSelected.length > 0) {
         setOfficialSidesSelected(initialSelected);
@@ -3050,8 +3067,93 @@ export default function GISMap({
         setOfficialSidesEditLot(l);
       }
     },
-    [],
+    [isWideDesktop],
   );
+
+  const persistOfficialSidesForLot = useCallback(
+    async (
+      sourceLot: any,
+      patched: Record<string, unknown>,
+      draft: OfficialSideDraftMap,
+      confrontantDraft: ConfrontantDraftMap,
+    ) => {
+      if (!projectId || !sourceLot?.id) {
+        throw new Error("Lote indisponivel para persistir.");
+      }
+      setOfficialSidesSaving(true);
+      try {
+        const snapshot = snapshotSegmentsJson(sourceLot);
+        const rows = patched.segments_json as Record<string, unknown>[];
+        await persistBlockSegmentsJson(
+          supabase,
+          String(sourceLot.id),
+          rows,
+        );
+        markLocalPatchSuppress([String(sourceLot.id)]);
+        setLots((prev) =>
+          prev.map((l) =>
+            l.id === sourceLot.id ? { ...l, segments_json: rows } : l,
+          ),
+        );
+        const confrontantEdits = [...confrontantDraft.entries()].map(
+          ([segment_index, entry]) => ({
+            segment_index,
+            previous: entry.previous,
+            next: entry.confrontant,
+            confrontant_type: entry.confrontant_type,
+          }),
+        );
+        void logLotAuditEvent(supabase, {
+          ...lotAuditContextFromBlock(sourceLot, { projectId }),
+          userId: user?.id ?? null,
+          action: "official_measure_side_changed",
+          title: "Classificacao oficial de lados",
+          description: `official_side/confrontante atualizado no lote ${String(sourceLot.number ?? "")}`,
+          oldData: { segments_json: snapshot },
+          newData: {
+            official_side_map: Object.fromEntries(draft.entries()),
+            confrontant_edits: confrontantEdits,
+            lot_id: sourceLot.id,
+          },
+          source: "gis_map",
+        });
+        if (confrontantEdits.length > 0) {
+          void logLotAuditEvent(supabase, {
+            ...lotAuditContextFromBlock(sourceLot, { projectId }),
+            userId: user?.id ?? null,
+            action: "confrontation_manual",
+            title: "Confrontante por segmento (editor de lados)",
+            description: `selected_only em ${confrontantEdits.length} segmento(s) do lote ${String(sourceLot.number ?? "")}`,
+            oldData: {
+              segments_json: snapshot,
+              confrontant_edits: confrontantEdits.map((e) => ({
+                segment_index: e.segment_index,
+                confrontant: e.previous,
+              })),
+            },
+            newData: {
+              lot_id: sourceLot.id,
+              confrontant_edits: confrontantEdits,
+              persist_scope: "selected_only",
+            },
+            source: "gis_map",
+          });
+        }
+        const currentEdit = officialSidesEditLotRef.current;
+        if (currentEdit?.id === sourceLot.id) {
+          setOfficialSidesEditLot({
+            ...currentEdit,
+            segments_json: rows,
+          });
+          setOfficialSidesDraft(new Map());
+        }
+      } finally {
+        setOfficialSidesSaving(false);
+      }
+    },
+    [projectId, supabase, user],
+  );
+
   const [confrontEdit, setConfrontEdit] = useState<{
     lot: any;
     side: SideRole;
@@ -5667,6 +5769,19 @@ export default function GISMap({
                             ? setOfficialSidesEditorSlot
                             : undefined
                         }
+                        officialSidesSaving={officialSidesSaving}
+                        onPersistOfficialSides={
+                          ownerMapWriteBlocked ||
+                          !canEditOfficialSides(user?.role)
+                            ? undefined
+                            : (patched, draft, confrontantDraft) =>
+                                persistOfficialSidesForLot(
+                                  lot,
+                                  patched,
+                                  draft,
+                                  confrontantDraft,
+                                )
+                        }
                       />
                     </Popup>
                   )}
@@ -6056,7 +6171,8 @@ export default function GISMap({
 
       {!ownerMapWriteBlocked &&
         officialSidesEditLot &&
-        canEditOfficialSides(user?.role) && (
+        canEditOfficialSides(user?.role) &&
+        !isWideDesktop && (
           <LotOfficialSidesEditor
             key={String(officialSidesEditLot.id)}
             lot={{
@@ -6064,97 +6180,29 @@ export default function GISMap({
               block_name:
                 officialSidesEditLot.block_name ?? officialSidesEditLot.block,
             }}
-            variant={isWideDesktop ? "embedded" : "overlay"}
-            portalTarget={isWideDesktop ? officialSidesEditorSlot : null}
+            variant={"overlay"}
+            portalTarget={null}
             saving={officialSidesSaving}
             selected={officialSidesSelected}
             onSelectedChange={setOfficialSidesSelected}
             onDraftChange={setOfficialSidesDraft}
             onClose={closeOfficialSidesEditor}
             onSave={async (patched, draft, confrontantDraft) => {
-              if (!projectId || !officialSidesEditLot?.id) return;
-              setOfficialSidesSaving(true);
+              if (!officialSidesEditLot?.id) return;
               try {
-                const snapshot = snapshotSegmentsJson(officialSidesEditLot);
-                const rows = patched.segments_json as Record<string, unknown>[];
-                await persistBlockSegmentsJson(
-                  supabase,
-                  String(officialSidesEditLot.id),
-                  rows,
+                await persistOfficialSidesForLot(
+                  officialSidesEditLot,
+                  patched,
+                  draft,
+                  confrontantDraft,
                 );
-                markLocalPatchSuppress([String(officialSidesEditLot.id)]);
-                setLots((prev) =>
-                  prev.map((l) =>
-                    l.id === officialSidesEditLot.id
-                      ? { ...l, segments_json: rows }
-                      : l,
-                  ),
-                );
-                const confrontantEdits = [...confrontantDraft.entries()].map(
-                  ([segment_index, entry]) => ({
-                    segment_index,
-                    previous: entry.previous,
-                    next: entry.confrontant,
-                    confrontant_type: entry.confrontant_type,
-                  }),
-                );
-                void logLotAuditEvent(supabase, {
-                  ...lotAuditContextFromBlock(officialSidesEditLot, {
-                    projectId,
-                  }),
-                  userId: user?.id ?? null,
-                  action: "official_measure_side_changed",
-                  title: "Classificação oficial de lados",
-                  description: `official_side/confrontante atualizado no lote ${String(officialSidesEditLot.number ?? "")}`,
-                  oldData: { segments_json: snapshot },
-                  newData: {
-                    official_side_map: Object.fromEntries(draft.entries()),
-                    confrontant_edits: confrontantEdits,
-                    lot_id: officialSidesEditLot.id,
-                  },
-                  source: "gis_map",
-                });
-                if (confrontantEdits.length > 0) {
-                  void logLotAuditEvent(supabase, {
-                    ...lotAuditContextFromBlock(officialSidesEditLot, {
-                      projectId,
-                    }),
-                    userId: user?.id ?? null,
-                    action: "confrontation_manual",
-                    title: "Confrontante por segmento (editor de lados)",
-                    description: `selected_only em ${confrontantEdits.length} segmento(s) do lote ${String(officialSidesEditLot.number ?? "")}`,
-                    oldData: {
-                      segments_json: snapshot,
-                      confrontant_edits: confrontantEdits.map((e) => ({
-                        segment_index: e.segment_index,
-                        confrontant: e.previous,
-                      })),
-                    },
-                    newData: {
-                      lot_id: officialSidesEditLot.id,
-                      confrontant_edits: confrontantEdits,
-                      persist_scope: "selected_only",
-                    },
-                    source: "gis_map",
-                  });
-                }
-                if (isWideDesktop) {
-                  setOfficialSidesEditLot({
-                    ...officialSidesEditLot,
-                    segments_json: rows,
-                  });
-                  setOfficialSidesDraft(new Map());
-                } else {
-                  closeOfficialSidesEditor();
-                }
+                closeOfficialSidesEditor();
               } catch (e: unknown) {
                 alert(
                   e instanceof Error
                     ? e.message
-                    : "Erro ao salvar classificação de lados",
+                    : "Erro ao salvar classificacao de lados",
                 );
-              } finally {
-                setOfficialSidesSaving(false);
               }
             }}
             onRestoreAutomatic={async (sessionBaseline) => {

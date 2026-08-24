@@ -11,6 +11,7 @@ import { getSegmentConfrontantRecord } from '../lib/segmentConfrontantPersist';
 import {
   applyOfficialSideDraftToBlock,
   applyOfficialEditorDraftToBlock,
+  applySingleOfficialSegmentDraftToBlock,
   canEditOfficialSides,
   draftMapFromBlock,
   looksLikeAggregatedSideConfrontant,
@@ -692,6 +693,39 @@ function testPanelPositionClearsToolbarReserve() {
   console.log('OK testPanelPositionClearsToolbarReserve');
 }
 
+
+function testApplySingleSegmentKeepsOthersAndAggregatesFront() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 10, 10, 'front'),
+    lineSeg(1, 0, 10, 0, 25, 15, 'front'),
+    lineSeg(2, 0, 25, 0, 33, 8, 'front'),
+    lineSeg(3, 0, 33, 20, 33, 20, 'right'),
+    lineSeg(4, 20, 33, 20, 0, 33, 'back'),
+    lineSeg(5, 20, 0, 0, 0, 20, 'left'),
+  ];
+  segs[1].confrontant = 'Lote 37 / Lote 36';
+  const b = block(segs);
+  const { patched, sideDraft } = applySingleOfficialSegmentDraftToBlock(
+    b,
+    1,
+    'front',
+    {
+      name: 'Rua 02',
+      type: 'street',
+      previous: 'Lote 37 / Lote 36',
+    },
+  );
+  const rows = patched.segments_json as Record<string, unknown>[];
+  assert(rows[0].official_side === 'front', 'seg0 frente intacta');
+  assert(rows[1].official_side === 'front', 'seg1 continua frente');
+  assert(String(rows[1].confrontant).includes('Rua 02') || String(rows[1].confrontant) === 'Rua 02', 'confrontante do seg1 atualizado');
+  assert(rows[2].official_side === 'front', 'seg2 frente intacta');
+  assert(rows[3].official_side === 'right', 'seg3 direito intacto');
+  const { measures } = previewOfficialSideDraft(patched, sideDraft);
+  assert(near(measures.frente, 33), 'frente agrega 10+15+8');
+  console.log('OK testApplySingleSegmentKeepsOthersAndAggregatesFront', measures.frente);
+}
+
 testSelectedOnlyDoesNotExpandSide();
 testEntireSideExplicit();
 testConsecutiveSameConfrontantStopsAtBreak();
@@ -711,5 +745,6 @@ testMultipleConfrontantDraftsThenCancelLeavesOriginal();
 testSnapshotRestoreOfficialSideAndConfrontant();
 testSegmentLabelNeverUsesSideAggregationHelper();
 testPanelPositionClearsToolbarReserve();
+testApplySingleSegmentKeepsOthersAndAggregatesFront();
 
 console.log('\nALL mandatory-official-side-editor-tests PASSED');

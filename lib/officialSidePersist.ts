@@ -22,6 +22,18 @@ import {
 
 export type OfficialSideDraftMap = Map<number, OfficialSideKind>;
 
+/** Ações oficiais do seletor de classificação (não criar enum novo). */
+export const OFFICIAL_SIDE_ACTIONS: Array<{
+  side: OfficialSideKind | null;
+  label: string;
+}> = [
+  { side: 'front', label: 'Frente' },
+  { side: 'back', label: 'Fundo' },
+  { side: 'right', label: 'Lado direito' },
+  { side: 'left', label: 'Lado esquerdo' },
+  { side: null, label: 'Limpar' },
+];
+
 export type ConfrontantDraftEntry = {
   confrontant: string;
   confrontant_type: ConfrontantPresetType | string | null;
@@ -201,6 +213,53 @@ export function applyOfficialEditorDraftToBlock(
 ): Record<string, unknown> {
   const withSides = applyOfficialSideDraftToBlock(block, sideDraft);
   return applyConfrontantDraftToBlock(withSides, confrontantDraft);
+}
+
+/**
+ * Aplica classificação/confrontante de UM segmento sobre o draft completo do lote.
+ * Não cria persistência paralela: reusa draftMapFromBlock + applyOfficialEditorDraftToBlock.
+ */
+export function applySingleOfficialSegmentDraftToBlock(
+  block: Record<string, unknown>,
+  segmentIndex: number,
+  side: OfficialSideKind | null,
+  confrontant?: {
+    name: string;
+    type: ConfrontantPresetType | string | null;
+    previous: string;
+  } | null,
+): {
+  patched: Record<string, unknown>;
+  sideDraft: OfficialSideDraftMap;
+  confrontantDraft: ConfrontantDraftMap;
+} {
+  const sideDraft = setDraftSides(
+    draftMapFromBlock(block),
+    [segmentIndex],
+    side,
+  );
+  let confrontantDraft: ConfrontantDraftMap = new Map();
+  const name = String(confrontant?.name ?? '').trim();
+  if (confrontant && name) {
+    confrontantDraft = setConfrontantDraftEntry(
+      confrontantDraft,
+      segmentIndex,
+      {
+        confrontant: name,
+        confrontant_type: confrontant.type,
+        previous: confrontant.previous,
+      },
+    );
+  }
+  return {
+    patched: applyOfficialEditorDraftToBlock(
+      block,
+      sideDraft,
+      confrontantDraft,
+    ),
+    sideDraft,
+    confrontantDraft,
+  };
 }
 
 export function onlyOfficialSideFieldsChanged(

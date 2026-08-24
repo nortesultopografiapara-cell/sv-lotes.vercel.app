@@ -8,9 +8,11 @@
 export function LotConfrontationGeometryPreview({
   positions,
   selectedIndexes = [],
+  onSelectIndex,
 }: {
   positions?: Array<[number, number]> | null;
   selectedIndexes?: number[];
+  onSelectIndex?: (index: number) => void;
 }) {
   const pts = (positions ?? []).filter(
     (p) =>
@@ -22,7 +24,7 @@ export function LotConfrontationGeometryPreview({
 
   if (pts.length < 3) {
     return (
-      <div className="h-full min-h-[140px] rounded-lg border border-gray-200 bg-gray-50/80 flex items-center justify-center px-3">
+      <div className="h-full min-h-[120px] rounded-lg border border-gray-200 bg-gray-50/80 flex items-center justify-center px-3">
         <p className="text-[10px] text-gray-500 text-center leading-snug">
           Geometria do lote indisponível neste popup.
         </p>
@@ -38,7 +40,7 @@ export function LotConfrontationGeometryPreview({
   const maxLng = Math.max(...lngs);
   const latSpan = Math.max(maxLat - minLat, 1e-9);
   const lngSpan = Math.max(maxLng - minLng, 1e-9);
-  const pad = 0.12;
+  const pad = 0.06;
   const vbW = 200;
   const vbH = 200;
 
@@ -58,13 +60,13 @@ export function LotConfrontationGeometryPreview({
     .concat(' Z');
 
   return (
-    <div className="h-full min-h-[140px] rounded-lg border border-gray-200 bg-gray-50/80 p-2">
+    <div className="h-full min-h-[120px] rounded-lg border border-gray-200 bg-gray-50/80 p-2">
       <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">
         Geometria do lote
       </p>
       <svg
         viewBox={`0 0 ${vbW} ${vbH}`}
-        className="w-full h-[calc(100%-18px)] min-h-[120px]"
+        className="w-full h-[calc(100%-18px)] min-h-[110px]"
         role="img"
         aria-label="Polígono do lote"
       >
@@ -79,16 +81,32 @@ export function LotConfrontationGeometryPreview({
           const b = projected[isRing ? (i + 1) % projected.length : i + 1];
           const isSel = selected.has(i);
           return (
-            <line
-              key={`edge-${i}`}
-              x1={a[0]}
-              y1={a[1]}
-              x2={b[0]}
-              y2={b[1]}
-              stroke={isSel ? '#2563eb' : '#64748b'}
-              strokeWidth={isSel ? 4 : 1.6}
-              strokeLinecap="round"
-            />
+            <g key={`edge-${i}`}>
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke="transparent"
+                strokeWidth="14"
+                strokeLinecap="round"
+                className={onSelectIndex ? 'cursor-pointer' : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectIndex?.(i);
+                }}
+              />
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke={isSel ? '#2563eb' : '#64748b'}
+                strokeWidth={isSel ? 4 : 1.6}
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            </g>
           );
         })}
       </svg>
