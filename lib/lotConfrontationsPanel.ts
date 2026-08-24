@@ -6,6 +6,8 @@
 import {
   buildLotConfrontationAudit,
   buildOfficialLotConfrontationSegmentRows,
+  buildCompleteLotConfrontationSegmentRows,
+  UNCLASSIFIED_CONFRONTANT_LABEL,
   type LotConfrontationAudit,
   type OfficialLotConfrontationSegmentRow,
   type SideRole,
@@ -79,15 +81,19 @@ export function loadLotConfrontations(params: {
       allBlocks,
       streetGuides,
     );
-    const rows = buildOfficialLotConfrontationSegmentRows(
+    const officialSideOpts = {
+      streetGuides: streetGuides as never,
+      frenteConfrontLabel: params.frenteConfrontLabel ?? null,
+      frontStreetLabel: params.frontStreetLabel ?? null,
+    };
+    // Soma oficial por lado permanece em buildOfficialLotConfrontationSegmentRows.
+    // A lista editável da aba usa todas as arestas (órfãos/chanfros/sem lado).
+    void buildOfficialLotConfrontationSegmentRows;
+    const rows = buildCompleteLotConfrontationSegmentRows(
       block,
       audit,
       allBlocks,
-      {
-        streetGuides: streetGuides as never,
-        frenteConfrontLabel: params.frenteConfrontLabel ?? null,
-        frontStreetLabel: params.frontStreetLabel ?? null,
-      },
+      officialSideOpts,
     );
 
     if (rows.length === 0) {
@@ -126,7 +132,13 @@ export function confrontationRowHasData(
   const text = String(row.text ?? '')
     .trim()
     .toUpperCase();
-  return Boolean(text) && text !== 'A DEFINIR' && text !== '—';
+  const unclassified = UNCLASSIFIED_CONFRONTANT_LABEL.trim().toUpperCase();
+  return (
+    Boolean(text) &&
+    text !== 'A DEFINIR' &&
+    text !== '—' &&
+    text !== unclassified
+  );
 }
 
 export type { OfficialLotConfrontationSegmentRow, SideRole };

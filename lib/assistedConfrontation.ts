@@ -85,8 +85,16 @@ export type OfficialLotConfrontations = LotSheetSideConfrontants & {
   chanfre?: string;
 };
 
+export const UNCLASSIFIED_CONFRONTATION_ROLE = 'naoClassificado' as const;
+export type ConfrontationListRole =
+  | SideRole
+  | typeof UNCLASSIFIED_CONFRONTATION_ROLE;
+
+export const UNCLASSIFIED_SIDE_LABEL = 'SEM CLASSIFICAÇÃO';
+export const UNCLASSIFIED_CONFRONTANT_LABEL = 'Confrontante não definido';
+
 export type OfficialLotConfrontationSegmentRow = {
-  key: SideRole;
+  key: ConfrontationListRole;
   sideLabel: string;
   segmentIndex: number;
   text: string;
@@ -99,6 +107,15 @@ const OFFICIAL_SIDE_UI_LABELS: ReadonlyArray<[SideRole, string]> = [
   ['ladoDireito', 'Lado Direito'],
   ['ladoEsquerdo', 'Lado Esquerdo'],
 ];
+
+export function isSideRole(value: unknown): value is SideRole {
+  return (
+    value === 'frente' ||
+    value === 'fundo' ||
+    value === 'ladoDireito' ||
+    value === 'ladoEsquerdo'
+  );
+}
 
 function emptyOfficialLotConfrontations(
   chanfre?: string | null,
@@ -190,6 +207,167 @@ export function buildOfficialLotConfrontationSegmentRows(
   return rows;
 }
 
+function readRawSegmentsJsonItems(
+  block: Record<string, unknown>,
+): unknown[] {
+  const raw = block.segments_json ?? block.segmentsJson;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t) return [];
+    try {
+      const parsed = JSON.parse(t) as unknown;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function closedRingEdgeDistances(ring: [number, number][]): number[] {
+  if (!Array.isArray(ring) || ring.length < 3) return [];
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (!first || !last) return [];
+  const dup = Math.hypot(first[0] - last[0], first[1] - last[1]) < 0.02;
+  const n = dup ? ring.length - 1 : ring.length;
+  if (n < 3) return [];
+  const dists: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % n];
+    dists.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  return dists;
+}
+
+function collectAllLotSegmentEntries(
+  block: Record<string, unknown>,
+): Array<{ index: number; distance: number }> {
+  const parsed = parseOfficialSegmentsFromBlock(block);
+  const parsedEntries = parsed
+    .filter(
+      (s) =>
+        Number.isFinite(s.segment_index) && Number.isFinite(s.distance),
+    )
+    .map((s) => ({
+      index: Number(s.segment_index),
+      distance: Number(s.distance),
+    }))
+    .sort((a, b) => a.index - b.index);
+
+  const ring = getOfficialConfrontationRing(block);
+  const ringEntries = ring.ok
+    ? closedRingEdgeDistances(ring.ring).map((distance, index) => ({
+        index,
+        distance,
+      }))
+    : [];
+
+  const rawItems = readRawSegmentsJsonItems(block);
+  const rawEntries: Array<{ index: number; distance: number }> = [];
+  for (let i = 0; i < rawItems.length; i++) {
+    const item = rawItems[i];
+    if (item == null || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const idx =
+      typeof row.segment_index === 'number' && Number.isFinite(row.segment_index)
+        ? row.segment_index
+        : i;
+    const fromParsed = parsedEntries.find((p) => p.index === idx);
+    const north = Number(row.north ?? row.northing ?? row.y);
+    const east = Number(row.east ?? row.easting ?? row.x);
+    const endNorth = Number(row.end_north ?? row.endNorth);
+    const endEast = Number(row.end_east ?? row.endEast);
+    const hypot =
+      Number.isFinite(north) &&
+      Number.isFinite(east) &&
+      Number.isFinite(endNorth) &&
+      Number.isFinite(endEast)
+        ? Math.hypot(endEast - east, endNorth - north)
+        : NaN;
+    const distance = fromParsed?.distance ?? (Number.isFinite(hypot) ? hypot : NaN);
+    if (!Number.isFinite(distance)) continue;
+    rawEntries.push({ index: idx, distance });
+  }
+
+  const jsonEntries =
+    parsedEntries.length >= 2
+      ? parsedEntries
+      : rawEntries.length >= 2
+        ? [...rawEntries].sort((a, b) => a.index - b.index)
+        : [];
+  // Fonte da lista: segments_json completo. O anel so entra se o JSON
+  // nao existir — evita aresta fantasma de fechamento.
+  if (jsonEntries.length >= 2) return jsonEntries;
+  return ringEntries;
+}
+
+/**
+ * Lista editável da aba Confrontações: um card por aresta real do lote.
+ * Não deriva do resumo Frente/Fundo/Direita/Esquerda e não descarta órfãos,
+ * chanfros, curtos ou segmentos sem official_side / confrontante.
+ */
+export function buildCompleteLotConfrontationSegmentRows(
+  block: Record<string, unknown>,
+  audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  options?: {
+    project?: Record<string, unknown> | null;
+    streetGuides?: StreetGuideConfrontInput[];
+    frenteConfrontLabel?: string | null;
+    frontStreetLabel?: string | null;
+  },
+): OfficialLotConfrontationSegmentRow[] {
+  const classified = audit
+    ? buildOfficialLotConfrontationSegmentRows(
+        block,
+        audit,
+        allBlocks,
+        options,
+      )
+    : [];
+  const classifiedByIdx = new Map<number, OfficialLotConfrontationSegmentRow>();
+  for (const row of classified) {
+    if (row.segmentIndex >= 0) classifiedByIdx.set(row.segmentIndex, row);
+  }
+
+  const entries = collectAllLotSegmentEntries(block);
+  if (!entries.length) {
+    return classified.filter((row) => row.segmentIndex >= 0);
+  }
+
+  const rows: OfficialLotConfrontationSegmentRow[] = [];
+  for (const entry of entries) {
+    const existing = classifiedByIdx.get(entry.index);
+    if (existing) {
+      rows.push(existing);
+      continue;
+    }
+    const edge = audit?.segmentEdges.find((e) => e.segmentIndex === entry.index);
+    const manual = getSegmentConfrontantRecord(block, entry.index);
+    const text = (
+      manual?.confrontant ??
+      edge?.confrontant ??
+      UNCLASSIFIED_CONFRONTANT_LABEL
+    ).trim();
+    rows.push({
+      key: UNCLASSIFIED_CONFRONTATION_ROLE,
+      sideLabel: UNCLASSIFIED_SIDE_LABEL,
+      segmentIndex: entry.index,
+      text: text || UNCLASSIFIED_CONFRONTANT_LABEL,
+      origin: manual
+        ? sourceDisplayLabel('manual')
+        : edge?.source
+          ? sourceDisplayLabel(edge.source)
+          : 'órfão',
+    });
+  }
+  rows.sort((a, b) => a.segmentIndex - b.segmentIndex);
+  return rows;
+}
+
 function consolidateSideLabels(labels: string[]): string {
   if (!labels.length) return EMPTY_SIDE_CONFRONTANT;
   const joined = concatDistinctSideConfrontants(labels);
@@ -226,6 +404,7 @@ export function buildOfficialLotConfrontations(
     ladoEsquerdo: [],
   };
   for (const row of rows) {
+    if (!isSideRole(row.key)) continue;
     const text = String(row.text ?? '').trim();
     if (!text || isPendingConfrontantLabel(text)) continue;
     byRole[row.key].push(text);

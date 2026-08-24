@@ -6,6 +6,11 @@ import {
   loadLotConfrontations,
 } from '@/lib/lotConfrontationsPanel';
 import type { SideRole } from '@/lib/assistedConfrontation';
+import {
+  isSideRole,
+  UNCLASSIFIED_CONFRONTATION_ROLE,
+  UNCLASSIFIED_SIDE_LABEL,
+} from '@/lib/assistedConfrontation';
 import { parseOfficialSegmentsFromBlock } from '@/lib/officialLotMeasurements';
 import { LotConfrontationGeometryPreview } from '@/components/map/LotConfrontationGeometryPreview';
 import { useIsWideDesktop } from '@/hooks/use-mobile';
@@ -29,7 +34,7 @@ const SUMMARY_SIDES: Array<{ key: SideRole; fallbackLabel: string }> = [
   { key: 'ladoEsquerdo', fallbackLabel: 'Lado esquerdo' },
 ];
 
-function sideRoleToKind(role: SideRole): OfficialSideKind | null {
+function sideRoleToKind(role: SideRole | string): OfficialSideKind | null {
   if (role === 'frente') return 'front';
   if (role === 'fundo') return 'back';
   if (role === 'ladoDireito') return 'right';
@@ -173,7 +178,7 @@ export function LotConfrontationsPanel({
         : null;
 
   const loadSnap = useCallback(
-    (idx: number, role: SideRole, rowText: string) => {
+    (idx: number, role: SideRole | string, rowText: string) => {
       const official = draftMapFromBlock(lot).get(idx) ?? null;
       const rec = getSegmentConfrontantRecord(lot, idx);
       const name = (rec?.confrontant?.trim() || rowText || '').trim();
@@ -242,7 +247,7 @@ export function LotConfrontationsPanel({
   const handleSegmentClick = (
     e: React.MouseEvent,
     segmentIndex: number,
-    side: SideRole,
+    side: SideRole | string,
   ) => {
     stopMapLeak(e);
     if (isWideDesktop && canEdit && onPersistOfficialSides) {
@@ -254,9 +259,9 @@ export function LotConfrontationsPanel({
       startEdit([segmentIndex]);
       return;
     }
-    if (canEdit && onEditSegment && segmentIndex >= 0) {
+    if (canEdit && onEditSegment && segmentIndex >= 0 && isSideRole(side)) {
       onEditSegment(lot, side, [segmentIndex]);
-    } else if (canEdit && onEditSide) {
+    } else if (canEdit && onEditSide && isSideRole(side)) {
       onEditSide(lot, side);
     }
   };
@@ -464,7 +469,11 @@ export function LotConfrontationsPanel({
                 >
                   <LotSegmentInlineEditor
                     persistedSegLabel={segLabel}
-                    persistedSideLabel={row.sideLabel}
+                    persistedSideLabel={
+                      row.key === UNCLASSIFIED_CONFRONTATION_ROLE
+                        ? UNCLASSIFIED_SIDE_LABEL
+                        : row.sideLabel
+                    }
                     persistedConfrontant={row.text || '—'}
                     draftSide={draftSide}
                     onDraftSideChange={(side) => {
@@ -504,7 +513,9 @@ export function LotConfrontationsPanel({
                     <div className="min-w-0">
                       <p className="font-bold text-gray-900">{segLabel}</p>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                        {row.sideLabel}
+                        {row.key === UNCLASSIFIED_CONFRONTATION_ROLE
+                          ? UNCLASSIFIED_SIDE_LABEL
+                          : row.sideLabel}
                       </p>
                       <p
                         className="text-gray-800 font-medium truncate"
