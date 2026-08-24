@@ -226,7 +226,7 @@ function testPopupResponsiveClasses() {
     'max-width não estoura viewport',
   );
   assert(
-    GIS_LOT_POPUP_CONTAINER_CLASS.includes('max-h-[min(85vh,720px)]'),
+    GIS_LOT_POPUP_CONTAINER_CLASS.includes('max-h-[min(82vh,720px)]'),
     'altura limitada pela viewport',
   );
   assert(

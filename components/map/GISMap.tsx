@@ -2174,9 +2174,9 @@ function LotPopupContent({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="shrink-0 px-4 pt-4 pb-3 pr-10 border-b border-gray-100">
+      <div className="shrink-0 px-4 pt-4 pb-3 pr-10 lg:pt-2.5 lg:pb-2 border-b border-gray-100">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="font-bold text-base md:text-lg text-gray-900 leading-tight min-w-0">
+          <h3 className="font-bold text-base md:text-lg lg:text-base text-gray-900 leading-tight min-w-0">
             Lote {displayNum}
             {quadraLabel ? (
               <span className="text-gray-500 font-semibold">
@@ -2193,7 +2193,7 @@ function LotPopupContent({
           </span>
         </div>
         {headerCustomer ? (
-          <p className="mt-1.5 text-sm font-semibold text-gray-800 truncate">
+          <p className="mt-1.5 lg:mt-1 text-sm font-semibold text-gray-800 truncate">
             {headerCustomer}
           </p>
         ) : null}
@@ -2208,7 +2208,7 @@ function LotPopupContent({
             key={tab.id}
             type="button"
             onClick={() => setPopupTab(tab.id)}
-            className={`px-1 py-2.5 text-[11px] md:text-xs font-bold border-b-2 transition-colors ${
+            className={`px-1 py-2.5 lg:py-1.5 text-[11px] md:text-xs font-bold border-b-2 transition-colors ${
               popupTab === tab.id
                 ? "border-blue-600 text-blue-700 bg-blue-50/60"
                 : "border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50"
@@ -2220,7 +2220,7 @@ function LotPopupContent({
       </div>
 
       <div
-        className={`min-h-0 flex-1 px-4 py-3 ${
+        className={`min-h-0 flex-1 px-4 py-3 lg:py-2 ${
           popupTab === "confrontacoes"
             ? "overflow-hidden flex flex-col"
             : "overflow-y-auto"

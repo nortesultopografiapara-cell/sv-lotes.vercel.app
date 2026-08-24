@@ -8,7 +8,7 @@ export const GIS_LOT_POPUP_MAX_WIDTH_PX = 1000;
 export const GIS_LOT_POPUP_MIN_WIDTH_PX = 280;
 
 export const GIS_LOT_POPUP_CONTAINER_CLASS =
-  'flex flex-col p-0 w-[min(calc(100vw-24px),960px)] max-w-[min(calc(100vw-24px),960px)] max-h-[min(85vh,720px)] overflow-hidden bg-white text-gray-900 rounded-xl font-sans shadow-xl';
+  'flex flex-col p-0 w-[min(calc(100vw-24px),960px)] max-w-[min(calc(100vw-24px),960px)] max-h-[min(82vh,720px)] overflow-hidden bg-white text-gray-900 rounded-xl font-sans shadow-xl';
 
 export const GIS_LOT_POPUP_PRICE_INPUT_CLASS =
   'w-[8.5rem] md:w-36 lg:w-40 px-2 py-1.5 text-right text-xs md:text-sm border border-gray-300 rounded font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-gray-900';

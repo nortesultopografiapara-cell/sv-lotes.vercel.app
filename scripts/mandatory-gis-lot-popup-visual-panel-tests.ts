@@ -55,7 +55,7 @@ function testPanelChrome() {
   );
   assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('flex flex-col'), 'header/tabs fixos + corpo rolável');
   assert(
-    GIS_LOT_POPUP_CONTAINER_CLASS.includes('max-h-[min(85vh,720px)]'),
+    GIS_LOT_POPUP_CONTAINER_CLASS.includes('max-h-[min(82vh,720px)]'),
     'altura dinâmica limitada',
   );
 

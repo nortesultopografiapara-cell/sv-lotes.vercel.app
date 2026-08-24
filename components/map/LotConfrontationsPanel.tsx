@@ -265,13 +265,20 @@ export function LotConfrontationsPanel({
     const container = listRef.current;
     const el = selectedCardRef.current;
     if (!container || !el) return;
-    const cRect = container.getBoundingClientRect();
-    const eRect = el.getBoundingClientRect();
-    if (eRect.bottom > cRect.bottom) {
-      container.scrollTop += eRect.bottom - cRect.bottom + 8;
-    } else if (eRect.top < cRect.top) {
-      container.scrollTop -= cRect.top - eRect.top + 8;
-    }
+    const alignSelectedCard = () => {
+      const cRect = container.getBoundingClientRect();
+      const eRect = el.getBoundingClientRect();
+      const pad = 12;
+      if (eRect.bottom > cRect.bottom - pad) {
+        container.scrollTop += eRect.bottom - cRect.bottom + pad;
+      } else if (eRect.top < cRect.top + pad) {
+        container.scrollTop -= cRect.top - eRect.top + pad;
+      }
+    };
+    const id = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(alignSelectedCard);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [selectedIdx, dirty, guardVisible]);
 
   const handleSave = async () => {
@@ -361,9 +368,9 @@ export function LotConfrontationsPanel({
   );
 
   return (
-    <div className="flex flex-col gap-3 min-h-0 h-full text-[11px]">
+    <div className="flex flex-col gap-2 lg:gap-2 min-h-0 h-full text-[11px]">
       <section className="shrink-0">
-        <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex items-center justify-between gap-2 mb-1">
           <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
             Resumo das confrontações
           </p>
@@ -382,17 +389,17 @@ export function LotConfrontationsPanel({
             Confrontações ainda não definidas (A DEFINIR).
           </p>
         ) : null}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5">
           {summary.map((card) => (
             <div
               key={card.key}
-              className="rounded-lg border border-gray-200 bg-gray-50/70 px-2.5 py-2 min-w-0"
+              className="rounded-md border border-gray-200 bg-gray-50/70 px-2 py-1 min-w-0"
             >
               <p className="text-[10px] text-gray-500 font-semibold">
                 {card.label}
               </p>
               <p
-                className="font-semibold text-gray-900 leading-snug truncate"
+                className="font-semibold text-gray-900 leading-tight truncate text-[11px]"
                 title={card.text}
               >
                 {card.text}
@@ -404,10 +411,10 @@ export function LotConfrontationsPanel({
 
       <div
         data-testid="confrontations-workspace"
-        className="grid grid-cols-1 lg:grid-cols-[minmax(0,38%)_minmax(0,62%)] gap-3 min-h-0 flex-1 lg:min-h-[min(70vh,520px)]"
+        className="grid grid-cols-1 lg:grid-cols-[minmax(0,38%)_minmax(0,62%)] gap-2 lg:gap-3 min-h-0 flex-1 overflow-hidden lg:min-h-0"
       >
         <section className="min-h-0 flex flex-col">
-          <div className="min-h-[170px] lg:min-h-0 lg:flex-1 h-[220px] lg:h-auto">
+          <div className="h-[220px] min-h-[170px] lg:h-full lg:min-h-0 lg:flex-1 overflow-hidden">
             <LotConfrontationGeometryPreview
               positions={cleanedCoords}
               selectedIndexes={[...selectedSet]}
@@ -423,13 +430,13 @@ export function LotConfrontationsPanel({
           </div>
         </section>
         <section className="min-h-0 flex flex-col">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5 shrink-0">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1 shrink-0">
             Segmentos do lote
           </p>
           <div
             ref={listRef}
             data-testid="confrontations-segment-list"
-            className="min-h-0 flex-1 overflow-y-auto space-y-1.5 pr-0.5"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-1.5 pr-0.5 pb-8 scroll-pb-8"
           >
             {rows.map((row) => {
               const idx = row.segmentIndex;
@@ -451,7 +458,7 @@ export function LotConfrontationsPanel({
                   key={`${row.key}-${idx}`}
                   ref={selectedCardRef}
                   data-testid="segment-card-selected"
-                  className="w-full text-left rounded-lg border px-2.5 py-2 border-blue-400 bg-blue-50/80 ring-1 ring-blue-200"
+                  className="w-full text-left rounded-lg border px-2.5 py-2 border-blue-400 bg-blue-50/80 ring-1 ring-blue-200 scroll-mb-3"
                   onMouseDown={stopMapLeak}
                   onPointerDown={stopMapLeak}
                 >
@@ -487,7 +494,7 @@ export function LotConfrontationsPanel({
                   onMouseDown={stopMapLeak}
                   onPointerDown={stopMapLeak}
                   onClick={(e) => handleSegmentClick(e, idx, row.key)}
-                  className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors ${
+                  className={`w-full text-left rounded-lg border px-2.5 py-1.5 transition-colors ${
                     isSel
                       ? 'border-blue-400 bg-blue-50/80 ring-1 ring-blue-200'
                       : 'border-gray-200 bg-white hover:bg-gray-50'

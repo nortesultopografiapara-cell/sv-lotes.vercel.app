@@ -40,7 +40,7 @@ export function LotConfrontationGeometryPreview({
   const maxLng = Math.max(...lngs);
   const latSpan = Math.max(maxLat - minLat, 1e-9);
   const lngSpan = Math.max(maxLng - minLng, 1e-9);
-  const pad = 0.06;
+  const pad = 0.12;
   const vbW = 200;
   const vbH = 200;
 
@@ -60,13 +60,17 @@ export function LotConfrontationGeometryPreview({
     .concat(' Z');
 
   return (
-    <div className="h-full min-h-[120px] rounded-lg border border-gray-200 bg-gray-50/80 p-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">
+    <div
+      data-testid="lot-geometry-preview"
+      className="h-full min-h-[120px] lg:min-h-0 rounded-lg border border-gray-200 bg-gray-50/80 p-1.5 flex flex-col overflow-hidden"
+    >
+      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1 shrink-0">
         Geometria do lote
       </p>
       <svg
         viewBox={`0 0 ${vbW} ${vbH}`}
-        className="w-full h-[calc(100%-18px)] min-h-[110px]"
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full flex-1 min-h-0 overflow-visible"
         role="img"
         aria-label="Polígono do lote"
       >

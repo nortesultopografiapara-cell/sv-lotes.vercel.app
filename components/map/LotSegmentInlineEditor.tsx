@@ -63,8 +63,8 @@ export function LotSegmentInlineEditor({
           {persistedConfrontant || '—'}
         </p>
       </div>
-      <div className="flex-1 min-w-0 border-l border-gray-200 pl-2.5 space-y-2">
-        <div className="flex items-center gap-2">
+      <div className="flex-1 min-w-0 border-l border-gray-200 pl-2.5 space-y-1.5">
+        <div className="flex items-center gap-2 lg:sticky lg:top-0 lg:z-[1] lg:bg-blue-50/95">
           <select
             data-testid="segment-side-select"
             aria-label="selecionar lados"
