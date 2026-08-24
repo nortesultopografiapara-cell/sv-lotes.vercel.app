@@ -193,7 +193,8 @@ function testModalPatterns() {
   const lotForm = read('components/map/CustomerLotFormModal.tsx');
   assert(lotForm.includes('Confirmar Venda'), 'botão confirmar venda GIS');
   assert(lotForm.includes(SV_MODAL_FOOTER_CLASS), 'venda lote com footer fixo');
-  assert(lotForm.includes('sv-modal-shell--full-mobile bg-white'), 'modal venda fundo claro');
+  assert(lotForm.includes('sv-modal-shell--full-mobile'), 'modal venda full-mobile');
+  assert(lotForm.includes('bg-white'), 'modal venda fundo claro');
 }
 
 function testBrokersBrokerFormMobile() {

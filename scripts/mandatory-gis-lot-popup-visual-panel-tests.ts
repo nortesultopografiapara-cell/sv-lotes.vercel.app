@@ -83,12 +83,12 @@ function testGisMapVisualStructure() {
   assert(source.includes('Cadastro e geometria'), 'grupo cadastro');
   assert(source.includes('Documentos'), 'grupo documentos');
   assert(source.includes('Corrigir frente'), 'label visual Corrigir frente');
-  assert(source.includes('Editar confrontações'), 'label visual Editar confrontações');
+  assert(!source.includes('Editar confrontações'), 'Resumo sem botão Editar confrontações');
   assert(source.includes('Gerar memorial'), 'label visual Gerar memorial');
   assert(source.includes('Gerar prancha'), 'label visual Gerar prancha');
 
   assert(source.includes('onStartCorrectFront(lot)'), 'callback corrigir frente');
-  assert(source.includes('onEditOfficialSides(lot)'), 'callback editar lados');
+  assert(source.includes('onEditOfficialSides'), 'callback editar lados permanece na aba Confrontações');
   assert(source.includes('onGenerateMemorial(lot)'), 'callback memorial');
   assert(source.includes('onGenerateLotSheet(lot)'), 'callback prancha');
 

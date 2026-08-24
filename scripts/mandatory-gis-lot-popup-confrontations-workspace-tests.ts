@@ -20,7 +20,8 @@ function testPopupTabsAndResumoButton() {
   assert(gis.includes('label: "Comercial"'), 'aba Comercial');
   assert(gis.includes('label: "Histórico"'), 'aba Histórico');
   assert(gis.includes('setPopupTab("confrontacoes")'), 'Resumo troca para Confrontações');
-  assert(gis.includes('onEditOfficialSides(lot)'), 'Resumo ainda chama o editor oficial');
+  assert(!gis.includes('Editar confrontações'), 'Resumo não tem mais o botão Editar confrontações');
+  assert(gis.includes('onEditOfficialSides'), 'Confrontações ainda usa o editor oficial');
   assert(gis.includes('onStartCorrectFront(lot)'), 'Corrigir frente intacto');
   assert(gis.includes('onGenerateMemorial(lot)'), 'Gerar memorial intacto');
   assert(gis.includes('onGenerateLotSheet(lot)'), 'Gerar prancha intacto');

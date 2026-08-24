@@ -274,4 +274,78 @@
   .sv-modal-shell--full-mobile .sv-modal-footer {
     margin-top: auto;
   }
+
+  /*
+   * Workspace desktop — Nova venda.
+   * Amplo (≈1240px), limitado ao viewport, mapa visível ao redor. Não fullscreen.
+   */
+  @media (min-width: 1024px) {
+    .sv-modal-shell--sale-workspace {
+      width: min(1240px, calc(100vw - 48px));
+      max-width: min(1240px, calc(100vw - 48px));
+      height: min(86vh, 880px);
+      max-height: min(86vh, 880px);
+    }
+
+    .sv-modal-shell--sale-workspace .form-input-light,
+    .sv-modal-shell--sale-workspace select.form-input-light,
+    .sv-modal-shell--sale-workspace textarea.form-input-light {
+      padding-top: 0.4rem;
+      padding-bottom: 0.4rem;
+      font-size: 0.8125rem;
+    }
+  }
+
+  .sv-sale-workspace-grid {
+    display: block;
+  }
+
+  .sv-sale-workspace-card-title {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.35rem;
+    margin-bottom: 0.65rem;
+  }
+
+  @media (min-width: 1024px) {
+    .sv-sale-workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.96fr) minmax(0, 1.12fr);
+      gap: 0.75rem;
+      align-items: start;
+    }
+
+    .sv-sale-workspace-card {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem;
+      padding: 0.7rem 0.8rem 0.85rem;
+      background: #fff;
+    }
+
+    .sv-sale-workspace-card--muted {
+      background: #f8fafc;
+    }
+
+    .sv-sale-workspace-fields {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.45rem 0.6rem;
+    }
+
+    .sv-sale-workspace-fields > .grid {
+      display: contents;
+    }
+
+    .sv-sale-workspace-span-2 {
+      grid-column: 1 / -1;
+    }
+  }
 }

@@ -2443,20 +2443,7 @@ function LotPopupContent({
                           >
                             Corrigir frente
                           </button>
-                          {onEditOfficialSides ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPopupTab("confrontacoes");
-                                onEditOfficialSides(lot);
-                              }}
-                              className="w-full py-1.5 rounded-lg border border-sky-300 bg-sky-50 hover:bg-sky-100 text-[10px] font-bold text-sky-900"
-                            >
-                              Editar confrontações
-                            </button>
-                          ) : (
-                            <span className="hidden min-[300px]:block" aria-hidden />
-                          )}
+                          <span className="hidden min-[300px]:block" aria-hidden />
                         </div>
                       </div>
                       <div>

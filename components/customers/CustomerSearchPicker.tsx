@@ -17,6 +17,9 @@ type Props = {
   formData: CustomerFormValues;
   onFormChange: (data: CustomerFormValues) => void;
   disabled?: boolean;
+  /** false esconde o atalho redundante quando o formulário já cadastra o cliente. */
+  showCreateNewButton?: boolean;
+  compact?: boolean;
 };
 
 export function CustomerSearchPicker({
@@ -25,6 +28,8 @@ export function CustomerSearchPicker({
   formData,
   onFormChange,
   disabled,
+  showCreateNewButton = true,
+  compact = false,
 }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CustomerRecord[]>([]);
@@ -105,18 +110,24 @@ export function CustomerSearchPicker({
   };
 
   return (
-    <div className="space-y-3 p-4 bg-blue-50/80 border border-blue-100 rounded-lg">
+    <div
+      className={`${compact ? 'space-y-2 p-3' : 'space-y-3 p-4'} bg-blue-50/80 border border-blue-100 rounded-lg`}
+    >
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h4 className="text-sm font-bold text-gray-900">Buscar cliente existente</h4>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={startNewCustomer}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          Cadastrar novo cliente
-        </button>
+        <h4 className={`${compact ? 'text-xs' : 'text-sm'} font-bold text-gray-900`}>
+          Buscar cliente existente
+        </h4>
+        {showCreateNewButton ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={startNewCustomer}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Cadastrar novo cliente
+          </button>
+        ) : null}
       </div>
 
       {selectedLabel ? (
