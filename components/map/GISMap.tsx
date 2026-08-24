@@ -35,6 +35,7 @@ import {
   fetchAllBlocksForProject,
 } from "@/lib/blocksFetchAll";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsWideDesktop } from "@/hooks/use-mobile";
 import { isOwnerRole, canManageGisProject } from "@/lib/rolePermissions";
 import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
 import {
@@ -1747,6 +1748,9 @@ function LotPopupContent({
   onGenerateMemorial,
   onGenerateLotSheet,
   onEditOfficialSides,
+  embedOfficialSidesEditor = false,
+  officialSidesSelected = [],
+  onOfficialSidesEditorSlot,
   onPriceSaved,
   canEditLotPrice = false,
 }: {
@@ -1779,7 +1783,10 @@ function LotPopupContent({
   allBlocksForConfront?: Record<string, unknown>[];
   onGenerateMemorial?: (lot: any) => void;
   onGenerateLotSheet?: (lot: any) => void;
-  onEditOfficialSides?: (lot: any) => void;
+  onEditOfficialSides?: (lot: any, initialSelected?: number[]) => void;
+  embedOfficialSidesEditor?: boolean;
+  officialSidesSelected?: number[];
+  onOfficialSidesEditorSlot?: (el: HTMLElement | null) => void;
   /** Atualiza blocks.price no estado do mapa após salvar manualmente. */
   onPriceSaved?: (lotId: string, price: number | null) => void;
   /** ADMIN / SUPER_ADMIN — OWNER e corretor não editam preço. */
@@ -1860,6 +1867,12 @@ function LotPopupContent({
   const [popupTab, setPopupTab] = useState<
     "resumo" | "confrontacoes" | "comercial" | "historico"
   >("resumo");
+
+  useEffect(() => {
+    if (embedOfficialSidesEditor) {
+      setPopupTab("confrontacoes");
+    }
+  }, [embedOfficialSidesEditor]);
   const [auditHistory, setAuditHistory] = useState<FormattedLotAuditEvent[]>(
     [],
   );
@@ -2184,7 +2197,13 @@ function LotPopupContent({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div
+        className={`min-h-0 flex-1 px-4 py-3 ${
+          popupTab === "confrontacoes"
+            ? "overflow-hidden flex flex-col"
+            : "overflow-y-auto"
+        }`}
+      >
       {popupTab === "resumo" && (
         <div className="space-y-3 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2405,7 +2424,10 @@ function LotPopupContent({
                           {onEditOfficialSides ? (
                             <button
                               type="button"
-                              onClick={() => onEditOfficialSides(lot)}
+                              onClick={() => {
+                                setPopupTab("confrontacoes");
+                                onEditOfficialSides(lot);
+                              }}
                               className="w-full py-1.5 rounded-lg border border-sky-300 bg-sky-50 hover:bg-sky-100 text-[10px] font-bold text-sky-900"
                             >
                               Editar confrontações
@@ -2475,7 +2497,14 @@ function LotPopupContent({
         </div>
       )}
 
-      {popupTab === "confrontacoes" && (
+      {(popupTab === "confrontacoes" || embedOfficialSidesEditor) && (
+        <div
+          className={
+            popupTab === "confrontacoes"
+              ? "flex flex-col min-h-0 h-full"
+              : "hidden"
+          }
+        >
         <LotConfrontationsPanel
           lot={lot}
           streetGuides={streetGuides}
@@ -2494,7 +2523,17 @@ function LotPopupContent({
                   onEditConfrontationSegment(l, side, indexes)
               : undefined
           }
+          cleanedCoords={cleanedCoords ?? null}
+          selectedSegmentIndexes={officialSidesSelected}
+          editingOfficialSides={Boolean(embedOfficialSidesEditor)}
+          onEditorSlotReady={onOfficialSidesEditorSlot}
+          onStartOfficialSidesEdit={
+            onEditOfficialSides
+              ? (l, indexes) => onEditOfficialSides(l, indexes)
+              : undefined
+          }
         />
+        </div>
       )}
 
       {popupTab === "comercial" && (
@@ -2971,6 +3010,32 @@ export default function GISMap({
   );
   const [officialSidesDraft, setOfficialSidesDraft] =
     useState<OfficialSideDraftMap>(new Map());
+  const isWideDesktop = useIsWideDesktop();
+  const [officialSidesEditorSlot, setOfficialSidesEditorSlot] =
+    useState<HTMLElement | null>(null);
+  const officialSidesEditLotRef = useRef<any | null>(null);
+  officialSidesEditLotRef.current = officialSidesEditLot;
+
+  const closeOfficialSidesEditor = useCallback(() => {
+    setOfficialSidesEditLot(null);
+    setOfficialSidesSelected([]);
+    setOfficialSidesDraft(new Map());
+    setOfficialSidesEditorSlot(null);
+  }, []);
+
+  const openOfficialSidesEditor = useCallback(
+    (l: any, initialSelected?: number[]) => {
+      setFrontCorrectLotId(null);
+      setOfficialSidesSelected(
+        Array.isArray(initialSelected) && initialSelected.length > 0
+          ? initialSelected
+          : [],
+      );
+      setOfficialSidesDraft(new Map());
+      setOfficialSidesEditLot(l);
+    },
+    [],
+  );
   const [confrontEdit, setConfrontEdit] = useState<{
     lot: any;
     side: SideRole;
@@ -5492,6 +5557,14 @@ export default function GISMap({
                       minWidth={GIS_LOT_POPUP_MIN_WIDTH_PX}
                       autoPan
                       autoPanPadding={[32, 32]}
+                      eventHandlers={{
+                        remove: () => {
+                          const editing = officialSidesEditLotRef.current;
+                          if (editing?.id === lot.id) {
+                            closeOfficialSidesEditor();
+                          }
+                        },
+                      }}
                     >
                       <LotPopupContent
                         lot={lot}
@@ -5555,12 +5628,20 @@ export default function GISMap({
                           ownerMapWriteBlocked ||
                           !canEditOfficialSides(user?.role)
                             ? undefined
-                            : (l) => {
-                                setFrontCorrectLotId(null);
-                                setOfficialSidesSelected([]);
-                                setOfficialSidesDraft(new Map());
-                                setOfficialSidesEditLot(l);
-                              }
+                            : openOfficialSidesEditor
+                        }
+                        embedOfficialSidesEditor={
+                          isWideDesktop && officialSidesEditLot?.id === lot.id
+                        }
+                        officialSidesSelected={
+                          officialSidesEditLot?.id === lot.id
+                            ? officialSidesSelected
+                            : []
+                        }
+                        onOfficialSidesEditorSlot={
+                          officialSidesEditLot?.id === lot.id
+                            ? setOfficialSidesEditorSlot
+                            : undefined
                         }
                       />
                     </Popup>
@@ -5959,15 +6040,13 @@ export default function GISMap({
               block_name:
                 officialSidesEditLot.block_name ?? officialSidesEditLot.block,
             }}
+            variant={isWideDesktop ? "embedded" : "overlay"}
+            portalTarget={isWideDesktop ? officialSidesEditorSlot : null}
             saving={officialSidesSaving}
             selected={officialSidesSelected}
             onSelectedChange={setOfficialSidesSelected}
             onDraftChange={setOfficialSidesDraft}
-            onClose={() => {
-              setOfficialSidesEditLot(null);
-              setOfficialSidesSelected([]);
-              setOfficialSidesDraft(new Map());
-            }}
+            onClose={closeOfficialSidesEditor}
             onSave={async (patched, draft, confrontantDraft) => {
               if (!projectId || !officialSidesEditLot?.id) return;
               setOfficialSidesSaving(true);
@@ -6035,9 +6114,7 @@ export default function GISMap({
                     source: "gis_map",
                   });
                 }
-                setOfficialSidesEditLot(null);
-                setOfficialSidesSelected([]);
-                setOfficialSidesDraft(new Map());
+                closeOfficialSidesEditor();
               } catch (e: unknown) {
                 alert(
                   e instanceof Error
