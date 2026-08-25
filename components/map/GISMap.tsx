@@ -102,7 +102,6 @@ import {
 import { resolveReservationResponsibleName } from "@/lib/lotReservationResolve";
 import {
   formatCurrencyBRL as formatBRL,
-  formatLotAuditDescription,
   parseCurrencyBRL,
   parseCurrencyBRLNumber,
 } from "@/lib/currencyBrl";
@@ -191,6 +190,7 @@ import {
   type OfficialSideDraftMap,
 } from "@/lib/officialSidePersist";
 import { LotConfrontationsPanel } from "@/components/map/LotConfrontationsPanel";
+import { LotHistoryPanel } from "@/components/map/LotHistoryPanel";
 import { loadLotConfrontations } from "@/lib/lotConfrontationsPanel";
 import {
   DistanceMeasureMapContent,
@@ -2221,7 +2221,7 @@ function LotPopupContent({
 
       <div
         className={`min-h-0 flex-1 px-4 py-3 lg:py-2 ${
-          popupTab === "confrontacoes"
+          popupTab === "confrontacoes" || popupTab === "historico"
             ? "overflow-hidden flex flex-col"
             : "overflow-y-auto"
         }`}
@@ -2732,57 +2732,12 @@ function LotPopupContent({
       )}
 
       {popupTab === "historico" && (
-        <div className="text-[11px] md:text-xs max-h-56 md:max-h-64 overflow-y-auto">
-          {auditHistoryLoading ? (
-            <div className="flex justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            </div>
-          ) : auditHistory.length === 0 ? (
-            <p className="text-[10px] text-gray-500 py-4 text-center leading-snug">
-              Sem histórico registrado para este lote.
-            </p>
-          ) : (
-            <ul className="space-y-2.5">
-              {auditHistory.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="border-b border-gray-100 pb-2 last:border-0"
-                >
-                  <div className="flex items-start justify-between gap-1">
-                    <span className="text-[9px] font-mono text-gray-500 shrink-0">
-                      {new Date(entry.createdAt).toLocaleString("pt-BR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                    <span
-                      className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${entry.badgeClass}`}
-                    >
-                      {entry.actionLabel}
-                    </span>
-                  </div>
-                  <p className="font-semibold text-gray-900 text-[11px] mt-0.5 leading-tight">
-                    {entry.title}
-                  </p>
-                  {entry.description && (
-                    <p className="text-[10px] md:text-[11px] text-gray-600 mt-0.5 leading-snug">
-                      {formatLotAuditDescription(entry.description)}
-                    </p>
-                  )}
-                  <p className="text-[9px] text-gray-400 mt-0.5">
-                    {entry.userId
-                      ? auditUserNames[entry.userId] ||
-                        `${entry.userId.slice(0, 8)}…`
-                      : "—"}{" "}
-                    · {entry.sourceLabel}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="flex flex-col min-h-0 h-full">
+          <LotHistoryPanel
+            events={auditHistory}
+            loading={auditHistoryLoading}
+            userNames={auditUserNames}
+          />
         </div>
       )}
       </div>

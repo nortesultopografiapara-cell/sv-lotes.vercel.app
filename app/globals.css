@@ -202,6 +202,39 @@ html {
   color: #64748b;
   z-index: 2;
 }
+
+/*
+ * Aba Histórico do lote — workspace amplo (homolog 1920x1080 / 1366x768).
+ * Um único scroll interno; ocupa a largura do painel abaixo das abas.
+ */
+.gis-lot-history {
+  min-height: 0;
+  width: 100%;
+}
+.gis-lot-history-card {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.65rem;
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+}
+.gis-lot-history-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gis-lot-history-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
+}
+.gis-lot-history-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.gis-lot-history-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
+  border-radius: 999px;
+}
 .leaflet-bar {
   border: none !important;
   box-shadow: var(--shadow-elevated) !important;
