@@ -68,6 +68,16 @@ import {
 } from '@/lib/rolePermissions';
 import { cancelOpenSaleSignatures } from '@/lib/saleContractSignatureService';
 import { resolveCallerProfile } from '@/lib/supabase/server';
+import {
+  documentViewFromSnapshot,
+  freezeTerminationDocumentSnapshot,
+  loadTerminationDocumentBySale,
+  materializeTerminationDocumentPdf,
+  shouldGenerateTerminationDocument,
+  TerminationDocumentError,
+  type TerminationDocumentSnapshot,
+} from '@/lib/termination-documents';
+import { resolveRefundSchedule } from '@/lib/termination-documents/refundSchedule';
 
 export type { ReleaseLotPreview };
 export { resolveBlockLotLabel, resolveBlockQuadraLabel };
@@ -77,6 +87,8 @@ export type ReleaseLotStage =
   | 'load_preview'
   | 'validate_motive'
   | 'persist_settlement'
+  | 'persist_document'
+  | 'generate_document'
   | 'cancel_asaas'
   | 'cancel_inter'
   | 'cancel_receipts'
@@ -120,6 +132,146 @@ function releaseErr(
   return new ReleaseLotError(message, status, code, details, stage);
 }
 
+function desistenciaSuccessMessage(documentNumber: string, pdfOk: boolean): string {
+  if (pdfOk) {
+    return [
+      'Desistência registrada com sucesso.',
+      '',
+      'Termo de Desistência e Acerto Financeiro',
+      `nº ${documentNumber} gerado.`,
+    ].join('\n');
+  }
+  return [
+    'Desistência registrada com sucesso.',
+    '',
+    'O lote foi liberado e o acerto financeiro permanece executado.',
+    `O Termo nº ${documentNumber} foi congelado, mas o PDF não pôde ser gerado. Use Tentar gerar PDF.`,
+  ].join('\n');
+}
+
+async function freezeDesistenciaSnapshotOrThrow(
+  admin: SupabaseClient,
+  params: {
+    settlementId: string;
+    saleId: string;
+    companyId: string;
+    operatorUserId: string;
+  },
+): Promise<TerminationDocumentSnapshot> {
+  try {
+    return await freezeTerminationDocumentSnapshot(admin, {
+      settlementId: params.settlementId,
+      saleId: params.saleId,
+      companyId: params.companyId,
+      operatorUserId: params.operatorUserId,
+    });
+  } catch (err) {
+    const code =
+      err instanceof TerminationDocumentError
+        ? err.code
+        : 'DOCUMENT_SNAPSHOT_FAILED';
+    throw releaseErr(
+      err instanceof Error
+        ? err.message
+        : 'Não foi possível congelar o termo de desistência. O lote NÃO foi liberado.',
+      code === 'CROSS_TENANT' ? 403 : 500,
+      code,
+      'persist_document',
+    );
+  }
+}
+
+async function attachTerminationDocumentAfterExecuted(
+  admin: SupabaseClient,
+  params: {
+    saleId: string | null;
+    companyId: string;
+    settlementId: string | null;
+    operatorUserId: string;
+    motiveCode: string;
+  },
+): Promise<{
+  view: ReleaseLotExecuteResult['terminationDocument'];
+  message: string | null;
+  keepModalOpen: boolean;
+}> {
+  if (
+    !params.saleId ||
+    !params.settlementId ||
+    !shouldGenerateTerminationDocument(params.motiveCode)
+  ) {
+    return { view: null, message: null, keepModalOpen: false };
+  }
+  const loaded = await loadTerminationDocumentBySale(admin, {
+    saleId: params.saleId,
+    companyId: params.companyId,
+  }).catch(() => null);
+  if (!loaded?.snapshot) {
+    return { view: null, message: null, keepModalOpen: false };
+  }
+  if (loaded.documentStatus === 'GENERATED' && loaded.documentId) {
+    const view = documentViewFromSnapshot(loaded.snapshot, 'GENERATED');
+    return {
+      view,
+      message: desistenciaSuccessMessage(loaded.snapshot.documentNumber, true),
+      keepModalOpen: Boolean(view?.canView),
+    };
+  }
+  return materializeDesistenciaPdfSafe(admin, {
+    settlementId: params.settlementId,
+    saleId: params.saleId,
+    companyId: params.companyId,
+    operatorUserId: params.operatorUserId,
+    frozenSnapshot: loaded.snapshot,
+  }).then((part) => ({
+    view: part.view,
+    message: part.message,
+    keepModalOpen: Boolean(part.view?.canView),
+  }));
+}
+
+async function materializeDesistenciaPdfSafe(
+  admin: SupabaseClient,
+  params: {
+    settlementId: string;
+    saleId: string;
+    companyId: string;
+    operatorUserId: string;
+    frozenSnapshot?: TerminationDocumentSnapshot | null;
+  },
+): Promise<{
+  view: ReleaseLotExecuteResult['terminationDocument'];
+  message: string;
+}> {
+  try {
+    const mat = await materializeTerminationDocumentPdf(admin, {
+      settlementId: params.settlementId,
+      saleId: params.saleId,
+      companyId: params.companyId,
+      operatorUserId: params.operatorUserId,
+    });
+    return {
+      view: documentViewFromSnapshot(mat.snapshot, mat.documentStatus),
+      message: desistenciaSuccessMessage(mat.snapshot.documentNumber, true),
+    };
+  } catch (err) {
+    console.error('[releaseLot] PDF failed after EXECUTED', err);
+    let snap = params.frozenSnapshot || null;
+    if (!snap) {
+      const loaded = await loadTerminationDocumentBySale(admin, {
+        saleId: params.saleId,
+        companyId: params.companyId,
+      }).catch(() => null);
+      snap = loaded?.snapshot || null;
+    }
+    const view = documentViewFromSnapshot(snap, 'FAILED');
+    return {
+      view,
+      message: desistenciaSuccessMessage(snap?.documentNumber || '—', false),
+    };
+  }
+}
+
 function settlementFailDetails(err: unknown): Record<string, unknown> {
   const db = err instanceof SettlementPersistError ? err.db : readSettlementDbError(err);
   return {
@@ -145,6 +297,7 @@ export type ReleaseLotExecuteInput = {
   exceptionalReason?: string | null;
   exceptionalRefundAmount?: unknown;
   exceptionalRetentionPercent?: unknown;
+  refundFirstDueDate?: string | null;
 };
 
 export type ReleaseLotExecuteResult = {
@@ -167,6 +320,17 @@ export type ReleaseLotExecuteResult = {
   settlementId?: string | null;
   settlementStatus?: string | null;
   calculationStatus?: string | null;
+  keepModalOpen?: boolean;
+  terminationDocument?: {
+    documentNumber: string | null;
+    documentStatus: string | null;
+    title: string | null;
+    html: string | null;
+    saleId: string | null;
+    settlementId: string | null;
+    canView: boolean;
+    canDownload: boolean;
+  } | null;
 };
 
 type BlockRow = {
@@ -1270,6 +1434,7 @@ export async function executeReleaseLot(
     exceptionalReason: input.exceptionalReason,
     exceptionalRefundAmount: input.exceptionalRefundAmount,
     exceptionalRetentionPercent: input.exceptionalRetentionPercent,
+    refundFirstDueDate: input.refundFirstDueDate,
   });
 
   const preview = await getReleaseLotPreview(admin, input.lotId, input.userId);
@@ -1303,6 +1468,13 @@ export async function executeReleaseLot(
   }
 
   if (existingSettlement?.status === 'EXECUTED') {
+    const docPart = await attachTerminationDocumentAfterExecuted(admin, {
+      saleId: preview.saleId,
+      companyId: preview.companyId,
+      settlementId: existingSettlement.id,
+      operatorUserId: input.userId,
+      motiveCode: motive.motiveCode,
+    });
     return {
       ok: true,
       alreadyReleased: true,
@@ -1319,10 +1491,12 @@ export async function executeReleaseLot(
       totalPaidAmount: preview.totalPaidAmount,
       motiveCode: motive.motiveCode,
       motiveLabel: motive.motiveLabel,
-      message: 'Encerramento já executado. O acerto permanece vinculado à venda original.',
+      message: docPart.message || 'Encerramento já executado. O acerto permanece vinculado à venda original.',
       settlementId: existingSettlement.id,
       settlementStatus: existingSettlement.status,
       calculationStatus: existingSettlement.calculation_status,
+      keepModalOpen: docPart.keepModalOpen,
+      terminationDocument: docPart.view,
     };
   }
 
@@ -1354,6 +1528,13 @@ export async function executeReleaseLot(
         executed_at: new Date().toISOString(),
       };
     }
+    const docPartAlready = await attachTerminationDocumentAfterExecuted(admin, {
+      saleId: preview.saleId,
+      companyId: preview.companyId,
+      settlementId: existingSettlement?.id || null,
+      operatorUserId: input.userId,
+      motiveCode: motive.motiveCode,
+    });
     return {
       ok: true,
       alreadyReleased: true,
@@ -1370,10 +1551,12 @@ export async function executeReleaseLot(
       totalPaidAmount: preview.totalPaidAmount,
       motiveCode: motive.motiveCode,
       motiveLabel: motive.motiveLabel,
-      message: 'Lote já estava disponível e a venda já estava encerrada.',
+      message: docPartAlready.message || 'Lote já estava disponível e a venda já estava encerrada.',
       settlementId: existingSettlement?.id || null,
       settlementStatus: existingSettlement?.status || null,
       calculationStatus: existingSettlement?.calculation_status || null,
+      keepModalOpen: docPartAlready.keepModalOpen,
+      terminationDocument: docPartAlready.view,
     };
   }
 
@@ -1408,6 +1591,7 @@ export async function executeReleaseLot(
   let settlementId: string | null = existingSettlement?.id || null;
   let settlementStatus: string | null = existingSettlement?.status || null;
   let calculationStatus: string | null = existingSettlement?.calculation_status || null;
+  let frozenSnapshot: TerminationDocumentSnapshot | null = null;
 
   if (
     preview.saleId &&
@@ -1438,6 +1622,22 @@ export async function executeReleaseLot(
             : null,
         operator,
       });
+      const scheduleResult = resolveRefundSchedule({
+        destination: prepared.refundDestination,
+        agreedRefundAmount: prepared.settlement.agreedRefundAmount,
+        contractualRefundAmount: prepared.settlement.contractualRefundAmount,
+        installmentCount: prepared.settlement.refundInstallmentCount,
+        calculationStatus: prepared.calculationStatus,
+        firstDueDate: operator.refundFirstDueDate,
+      });
+      if (!scheduleResult.ok) {
+        throw releaseErr(
+          scheduleResult.error,
+          400,
+          scheduleResult.code,
+          'validate_motive',
+        );
+      }
       const upserted = await upsertCalculatedReleaseSettlement(admin, {
         companyId: preview.companyId,
         saleId: preview.saleId,
@@ -1448,13 +1648,20 @@ export async function executeReleaseLot(
         motiveDetail: motive.motiveDetail,
         operatorUserId: input.userId,
         idempotencyKey: preview.idempotencyKey,
-        prepared,
+        prepared: { ...prepared, refundSchedule: scheduleResult.schedule },
         existingId: existingSettlement?.id || null,
       });
       settlementId = upserted.id;
       settlementStatus = upserted.status;
       calculationStatus = prepared.calculationStatus;
       if (upserted.status === 'EXECUTED') {
+        const docPartUpserted = await attachTerminationDocumentAfterExecuted(admin, {
+          saleId: preview.saleId,
+          companyId: preview.companyId,
+          settlementId,
+          operatorUserId: input.userId,
+          motiveCode: motive.motiveCode,
+        });
         return {
           ok: true,
           alreadyReleased: true,
@@ -1471,13 +1678,18 @@ export async function executeReleaseLot(
           totalPaidAmount: preview.totalPaidAmount,
           motiveCode: motive.motiveCode,
           motiveLabel: motive.motiveLabel,
-          message: 'Encerramento já executado. O acerto permanece vinculado à venda original.',
+          message:
+            docPartUpserted.message ||
+            'Encerramento já executado. O acerto permanece vinculado à venda original.',
           settlementId,
           settlementStatus,
           calculationStatus,
+          keepModalOpen: docPartUpserted.keepModalOpen,
+          terminationDocument: docPartUpserted.view,
         };
       }
     } catch (err) {
+      if (err instanceof ReleaseLotError) throw err;
       throw releaseErr(
         'Não foi possível persistir o acerto financeiro na venda original.',
         500,
@@ -1486,6 +1698,20 @@ export async function executeReleaseLot(
         settlementFailDetails(err),
       );
     }
+  }
+
+  if (
+    shouldGenerateTerminationDocument(motive.motiveCode) &&
+    settlementId &&
+    preview.saleId &&
+    settlementStatus !== 'EXECUTED'
+  ) {
+    frozenSnapshot = await freezeDesistenciaSnapshotOrThrow(admin, {
+      settlementId,
+      saleId: preview.saleId,
+      companyId: preview.companyId,
+      operatorUserId: input.userId,
+    });
   }
 
   // Fase Asaas: reconsulta TODAS as candidatas locais (não só IDs da prévia).
@@ -1616,6 +1842,31 @@ export async function executeReleaseLot(
     }
   }
 
+  let message =
+    preview.hasPreservedPayments
+      ? 'Lote liberado. Pagamentos preservados no Financeiro para histórico e eventual devolução.'
+      : 'Lote liberado e venda encerrada. Obrigações não pagas canceladas.';
+  let terminationDocument: ReleaseLotExecuteResult['terminationDocument'] = null;
+  let keepModalOpen = false;
+
+  if (
+    shouldGenerateTerminationDocument(motive.motiveCode) &&
+    settlementId &&
+    preview.saleId &&
+    settlementStatus === 'EXECUTED'
+  ) {
+    const pdfPart = await materializeDesistenciaPdfSafe(admin, {
+      settlementId,
+      saleId: preview.saleId,
+      companyId: preview.companyId,
+      operatorUserId: input.userId,
+      frozenSnapshot,
+    });
+    terminationDocument = pdfPart.view;
+    keepModalOpen = Boolean(pdfPart.view?.canView);
+    message = pdfPart.message;
+  }
+
   return {
     ok: true,
     alreadyReleased: false,
@@ -1632,12 +1883,11 @@ export async function executeReleaseLot(
     totalPaidAmount: preview.totalPaidAmount,
     motiveCode: motive.motiveCode,
     motiveLabel: motive.motiveLabel,
-    message:
-      preview.hasPreservedPayments
-        ? 'Lote liberado. Pagamentos preservados no Financeiro para histórico e eventual devolução.'
-        : 'Lote liberado e venda encerrada. Obrigações não pagas canceladas.',
+    message,
     settlementId,
     settlementStatus,
     calculationStatus,
+    keepModalOpen,
+    terminationDocument,
   };
 }

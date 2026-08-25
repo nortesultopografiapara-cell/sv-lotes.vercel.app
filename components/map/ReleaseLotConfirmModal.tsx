@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   Ban,
   Check,
+  Download,
   Eye,
   EyeOff,
   FileWarning,
@@ -23,6 +24,7 @@ import {
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { calculateTerminationSettlement } from '@/lib/contract-termination/calculateSettlement';
 import type { SettlementDestination } from '@/lib/contract-termination/types';
+import { shouldDefineRefundSchedule } from '@/lib/termination-documents/refundSchedule';
 import {
   canConfirmReleaseLot,
   isDeferredSaleOperation,
@@ -88,6 +90,8 @@ export type ReleaseLotConfirmModalProps = {
     lotReleased?: boolean;
     ownershipTransferred?: boolean;
     newCustomerName?: string | null;
+    keepModalOpen?: boolean;
+    saleId?: string | null;
   }) => void;
 };
 
@@ -117,6 +121,17 @@ export function ReleaseLotConfirmModal({
   const [exceptionMode, setExceptionMode] = useState<'amount' | 'percent'>('amount');
   const [exceptionValue, setExceptionValue] = useState('');
   const [exceptionJustification, setExceptionJustification] = useState('');
+  const [refundFirstDueDate, setRefundFirstDueDate] = useState('');
+  const [documentSuccess, setDocumentSuccess] = useState<{
+    message: string;
+    saleId: string;
+    documentNumber: string | null;
+    documentStatus: string | null;
+    html: string | null;
+    canView: boolean;
+    canDownload: boolean;
+  } | null>(null);
+  const [retryingPdf, setRetryingPdf] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
 
@@ -131,6 +146,12 @@ export function ReleaseLotConfirmModal({
       setExceptionJustification('');
     }
   }, [motiveCode]);
+
+  useEffect(() => {
+    if (destination === 'CREDIT_OTHER_UNIT') {
+      setRefundFirstDueDate('');
+    }
+  }, [destination]);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,6 +216,17 @@ export function ReleaseLotConfirmModal({
   const deferredOperation = isDeferredSaleOperation(motiveCode);
   const releaseOperation = isLotReleaseSaleOperation(motiveCode);
   const showSettlement = showsTerminationSettlement(motiveCode);
+  const needsRefundSchedule = Boolean(
+    showSettlement &&
+      liveSettlement &&
+      shouldDefineRefundSchedule({
+        destination,
+        agreedRefundAmount: liveSettlement.agreedRefundAmount,
+        contractualRefundAmount: liveSettlement.contractualRefundAmount,
+        installmentCount: liveSettlement.refundInstallmentCount,
+        calculationStatus: liveSettlement.calculationStatus,
+      }),
+  );
 
   const confirmEnabled = useMemo(
     () =>
@@ -207,15 +239,18 @@ export function ReleaseLotConfirmModal({
         loading,
         asaasBlockedCharges: preview?.asaasBlockedCharges,
         interBlockedCharges: preview?.interBlockedCharges,
-      }),
+      }) &&
+      (!needsRefundSchedule || Boolean(refundFirstDueDate)),
     [
       acknowledged,
       loading,
       motiveCode,
       motiveDetail,
+      needsRefundSchedule,
       password,
       preview?.asaasBlockedCharges,
       preview?.interBlockedCharges,
+      refundFirstDueDate,
       releaseOperation,
     ],
   );
@@ -248,6 +283,10 @@ export function ReleaseLotConfirmModal({
     }
     if (!password) {
       setError('Informe sua senha para continuar.');
+      return;
+    }
+    if (needsRefundSchedule && !refundFirstDueDate) {
+      setError('Informe o vencimento da 1ª parcela de restituição.');
       return;
     }
     submittingRef.current = true;
@@ -289,6 +328,7 @@ export function ReleaseLotConfirmModal({
             exceptionMode === 'percent'
               ? Number(String(exceptionValue).replace(',', '.'))
               : null,
+          refundFirstDueDate: needsRefundSchedule ? refundFirstDueDate || null : null,
           idempotencyKey: preview?.idempotencyKey || null,
         }),
       });
@@ -301,6 +341,27 @@ export function ReleaseLotConfirmModal({
         );
         return;
       }
+      const term = (json.terminationDocument || null) as {
+        documentNumber?: string | null;
+        documentStatus?: string | null;
+        html?: string | null;
+        canView?: boolean;
+        canDownload?: boolean;
+        saleId?: string | null;
+      } | null;
+      const saleId = String(json.saleId || term?.saleId || lot.saleId || lot.sale_id || '');
+      const keepOpen = json.keepModalOpen === true || Boolean(term?.canView);
+      if (keepOpen && term) {
+        setDocumentSuccess({
+          message: String(json.message || 'Desistência registrada com sucesso.'),
+          saleId,
+          documentNumber: term.documentNumber || null,
+          documentStatus: term.documentStatus || null,
+          html: term.html || null,
+          canView: Boolean(term.canView),
+          canDownload: Boolean(term.canDownload),
+        });
+      }
       onSuccess({
         lotId: String(json.lotId || lot.id),
         message: String(json.message || 'Lote liberado e venda encerrada.'),
@@ -309,12 +370,82 @@ export function ReleaseLotConfirmModal({
         lotReleased: true,
         ownershipTransferred: false,
         newCustomerName: null,
+        keepModalOpen: keepOpen,
+        saleId: saleId || null,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao liberar o lote.');
     } finally {
       submittingRef.current = false;
       setLoading(false);
+    }
+  };
+
+  const openFrozenTerm = () => {
+    if (!documentSuccess) return;
+    if (documentSuccess.html) {
+      const blob = new Blob([documentSuccess.html], { type: 'text/html;charset=utf-8' });
+      window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (documentSuccess.saleId) {
+      window.open(
+        `/api/sales/${encodeURIComponent(documentSuccess.saleId)}/termination-document?format=html`,
+        '_blank',
+        'noopener,noreferrer',
+      );
+    }
+  };
+
+  const downloadTermPdf = () => {
+    if (!documentSuccess?.saleId || !documentSuccess.canDownload) return;
+    window.open(
+      `/api/sales/${encodeURIComponent(documentSuccess.saleId)}/termination-document/pdf`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  };
+
+  const retryTermPdf = async () => {
+    if (!documentSuccess?.saleId || retryingPdf) return;
+    setRetryingPdf(true);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/sales/${encodeURIComponent(documentSuccess.saleId)}/termination-document`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ retry: true }),
+        },
+      );
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || json.success === false) {
+        throw new Error(String(json.error || 'Não foi possível gerar o PDF.'));
+      }
+      setDocumentSuccess((prev) =>
+        prev
+          ? {
+              ...prev,
+              documentNumber: String(json.documentNumber || prev.documentNumber || ''),
+              documentStatus: String(json.documentStatus || 'GENERATED'),
+              html: typeof json.html === 'string' ? json.html : prev.html,
+              canView: json.canView !== false,
+              canDownload: json.canDownload === true,
+              message: [
+                'Desistência registrada com sucesso.',
+                '',
+                'Termo de Desistência e Acerto Financeiro',
+                `nº ${String(json.documentNumber || prev.documentNumber)} gerado.`,
+              ].join('\n'),
+            }
+          : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao gerar o PDF.');
+    } finally {
+      setRetryingPdf(false);
     }
   };
 
@@ -354,7 +485,47 @@ export function ReleaseLotConfirmModal({
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-            {previewLoading ? (
+            {documentSuccess ? (
+              <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                <p className="text-sm font-semibold whitespace-pre-line">{documentSuccess.message}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {documentSuccess.canView ? (
+                    <button
+                      type="button"
+                      onClick={openFrozenTerm}
+                      className="inline-flex items-center gap-2 rounded-lg bg-white border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                    >
+                      <Eye className="w-4 h-4" />
+                      Visualizar termo
+                    </button>
+                  ) : null}
+                  {documentSuccess.canDownload ? (
+                    <button
+                      type="button"
+                      onClick={downloadTermPdf}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+                    >
+                      <Download className="w-4 h-4" />
+                      Baixar PDF
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={retryTermPdf}
+                      disabled={retryingPdf}
+                      className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:bg-slate-300"
+                    >
+                      {retryingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Tentar gerar PDF
+                    </button>
+                  )}
+                </div>
+                <p className="mt-3 text-xs text-emerald-800">
+                  O documento também ficará em Documentos da Venda, vinculado à venda original.
+                  Envio para assinatura não está disponível nesta fase.
+                </p>
+              </section>
+            ) : previewLoading ? (
               <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Carregando posição da venda…
@@ -545,6 +716,8 @@ export function ReleaseLotConfirmModal({
                     onExceptionValue={setExceptionValue}
                     exceptionJustification={exceptionJustification}
                     onExceptionJustification={setExceptionJustification}
+                    refundFirstDueDate={refundFirstDueDate}
+                    onRefundFirstDueDate={setRefundFirstDueDate}
                   />
                 ) : null}
 
@@ -661,7 +834,7 @@ export function ReleaseLotConfirmModal({
             >
               {deferredOperation ? 'Fechar' : 'Cancelar'}
             </button>
-            {releaseOperation || !motiveCode ? (
+            {(releaseOperation || !motiveCode) && !documentSuccess ? (
               <button
                 type="submit"
                 disabled={!confirmEnabled}

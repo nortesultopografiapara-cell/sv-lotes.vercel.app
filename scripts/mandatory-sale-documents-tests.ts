@@ -40,6 +40,13 @@ function testCategoriesAndTypes() {
   const signal = validateSaleDocumentType('SIGNAL_ENTRY', 'DECLARATION');
   assert(signal.valid, 'declaração de sinal');
 
+  const system = validateSaleDocumentType('SYSTEM_GENERATED', 'SYSTEM');
+  assert(system.valid, 'SYSTEM legado continua válido');
+  const note = validateSaleDocumentType('SYSTEM_GENERATED', 'PROMISSORY_NOTE');
+  assert(note.valid, 'PROMISSORY_NOTE legado continua válido');
+  const desistencia = validateSaleDocumentType('SYSTEM_GENERATED', 'DESISTENCIA');
+  assert(desistencia.valid, 'DESISTENCIA system-generated');
+
   console.log('OK testCategoriesAndTypes');
 }
 

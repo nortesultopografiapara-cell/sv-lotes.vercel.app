@@ -154,6 +154,8 @@ export async function POST(
         body.exceptionalReason != null ? String(body.exceptionalReason) : null,
       exceptionalRefundAmount: body.exceptionalRefundAmount,
       exceptionalRetentionPercent: body.exceptionalRetentionPercent,
+      refundFirstDueDate:
+        body.refundFirstDueDate != null ? String(body.refundFirstDueDate) : null,
     });
 
     console.log('[lots/release POST] ok', {

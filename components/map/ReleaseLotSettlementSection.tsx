@@ -12,6 +12,12 @@ import type {
   TerminationPolicyOrigin,
   TerminationSettlement,
 } from '@/lib/contract-termination/types';
+import {
+  formatIsoDateBr,
+  resolveRefundSchedule,
+  shouldDefineRefundSchedule,
+  splitRefundInstallmentAmounts,
+} from '@/lib/termination-documents/refundSchedule';
 
 const FIELD_CLASS =
   'form-input-light w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500';
@@ -47,6 +53,8 @@ export type ReleaseLotSettlementSectionProps = {
   exceptionJustification: string;
   onExceptionJustification: (value: string) => void;
   allowException?: boolean;
+  refundFirstDueDate?: string;
+  onRefundFirstDueDate?: (value: string) => void;
 };
 
 export function ReleaseLotSettlementSection({
@@ -66,6 +74,8 @@ export function ReleaseLotSettlementSection({
   exceptionJustification,
   onExceptionJustification,
   allowException = false,
+  refundFirstDueDate = '',
+  onRefundFirstDueDate,
 }: ReleaseLotSettlementSectionProps) {
   const incomplete =
     settlement.calculationStatus === 'INCOMPLETE' ||
@@ -73,6 +83,37 @@ export function ReleaseLotSettlementSection({
   const waiting = settlement.calculationStatus === 'WAITING_IMPROVEMENT_APPRAISAL';
   const appliedRule = formatAppliedRuleLabel(policy, settlement);
   const retentionLabel = formatRetentionPercent(settlement.contractualRetentionPercent);
+  const showCashRefundSchedule = shouldDefineRefundSchedule({
+    destination,
+    agreedRefundAmount: settlement.agreedRefundAmount,
+    contractualRefundAmount: settlement.contractualRefundAmount,
+    installmentCount: settlement.refundInstallmentCount,
+    calculationStatus: settlement.calculationStatus,
+  });
+  const restitutionTotal =
+    settlement.agreedRefundAmount != null
+      ? Number(settlement.agreedRefundAmount)
+      : Number(settlement.contractualRefundAmount || 0);
+  const installmentCount = Math.max(
+    0,
+    Math.floor(Number(settlement.refundInstallmentCount) || 0),
+  );
+  const installmentAmounts = showCashRefundSchedule
+    ? splitRefundInstallmentAmounts(restitutionTotal, installmentCount)
+    : [];
+  const previewSchedule = showCashRefundSchedule
+    ? resolveRefundSchedule({
+        destination,
+        agreedRefundAmount: settlement.agreedRefundAmount,
+        contractualRefundAmount: settlement.contractualRefundAmount,
+        installmentCount: settlement.refundInstallmentCount,
+        calculationStatus: settlement.calculationStatus,
+        firstDueDate: refundFirstDueDate,
+      })
+    : null;
+  const lastDiffers =
+    installmentAmounts.length > 1 &&
+    installmentAmounts[0] !== installmentAmounts[installmentAmounts.length - 1];
 
   return (
     <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
@@ -137,7 +178,8 @@ export function ReleaseLotSettlementSection({
             <p className="font-semibold">Aguardando avaliação de benfeitorias</p>
             <p className="mt-1">
               O contrato exige avaliação técnica das benfeitorias. Os valores abaixo são
-              provisórios e não constituem acerto definitivo.
+              provisórios e não constituem acerto definitivo. O cronograma de restituição
+              será definido após a conclusão da avaliação e o fechamento do acerto financeiro.
             </p>
           </div>
         </div>
@@ -209,6 +251,59 @@ export function ReleaseLotSettlementSection({
               Simulação — nenhuma transferência financeira será realizada nesta etapa.
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {showCashRefundSchedule ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                Valor de cada parcela
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {money(installmentAmounts[0])}
+              </p>
+              {lastDiffers ? (
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Última parcela {money(installmentAmounts[installmentAmounts.length - 1])} para
+                  fechar o total
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+                Vencimento da 1ª parcela <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={refundFirstDueDate}
+                onChange={(e) => onRefundFirstDueDate?.(e.target.value)}
+                className={FIELD_CLASS}
+                required
+              />
+            </div>
+          </div>
+          {previewSchedule?.ok && previewSchedule.schedule.defined ? (
+            <p className="text-xs text-slate-600">
+              {previewSchedule.schedule.installmentCount} parcela
+              {previewSchedule.schedule.installmentCount === 1 ? '' : 's'} mensais de{' '}
+              {money(previewSchedule.schedule.installments[0]?.amount)}
+              {lastDiffers
+                ? ` (última ${money(
+                    previewSchedule.schedule.installments[
+                      previewSchedule.schedule.installments.length - 1
+                    ]?.amount,
+                  )})`
+                : ''}{' '}
+              — primeira em {formatIsoDateBr(previewSchedule.schedule.firstDueDate)}
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500">
+              As parcelas seguintes avançam um mês civil a partir desta data. Nenhuma data é
+              inventada automaticamente.
+            </p>
+          )}
         </div>
       ) : null}
 

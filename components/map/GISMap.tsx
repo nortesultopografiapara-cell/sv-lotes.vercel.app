@@ -6398,8 +6398,9 @@ export default function GISMap({
                 ),
               );
             });
-            setClearConfirmModal(null);
             onEnterpriseValueRefresh?.();
+            if (result.keepModalOpen) return;
+            setClearConfirmModal(null);
             alert(result.message);
           }}
         />

@@ -359,6 +359,7 @@ function testEnginePurityAndWiring() {
   );
   assert(postBody.includes('hasImprovements'), 'POST do modal envia benfeitorias');
   assert(postBody.includes('refundDestination'), 'POST do modal envia destino');
+  assert(postBody.includes('refundFirstDueDate'), 'POST do modal envia 1ª parcela');
   assert(postBody.includes('exceptionalAgreement'), 'POST do modal envia excepcional só operacional');
   assert(modal.includes("motive.motiveCode === 'distrato' && exceptionEnabled"), 'excepcional só distrato');
   assert(!modal.includes('/api/contract-operations/'), 'sem API de cessão');
@@ -372,6 +373,8 @@ function testEnginePurityAndWiring() {
   assert(ui.includes('Aguardando avaliação de benfeitorias'), 'status waiting');
   assert(ui.includes('Contratual'), 'bloco contratual');
   assert(ui.includes('Acordado'), 'bloco acordado');
+  assert(ui.includes('Valor de cada parcela'), 'valor da parcela de restituição');
+  assert(ui.includes('Vencimento da 1ª parcela'), 'data da 1ª parcela');
   assert(ui.includes('Simulação — nenhuma transferência financeira será realizada nesta etapa.'), 'crédito simulação');
   assert(!ui.includes("'25%'") && !ui.includes('"25%"'), 'UI não hardcoda 25%');
   assert(ui.includes('formatRetentionPercent'), 'percentual vem do engine');

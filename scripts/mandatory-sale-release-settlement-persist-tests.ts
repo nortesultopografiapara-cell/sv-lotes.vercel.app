@@ -37,6 +37,7 @@ function operator(
     exceptionalReason: null,
     exceptionalRefundAmount: null,
     exceptionalRetentionPercent: null,
+    refundFirstDueDate: null,
     ...extra,
   };
 }
@@ -359,10 +360,14 @@ function testMigrationSchemaAndRls() {
   assert(!/\bTRUNCATE TABLE\b/i.test(sql), 'sem TRUNCATE TABLE');
   assert(sql.includes('Reservado para Fase 3B'), 'documento reservado');
   const persist = read('lib/finance/saleReleaseSettlement.ts');
-  assert(persist.includes('document_id: null'), 'document_id null nesta fase');
-  assert(persist.includes('termination_document_snapshot: null'), 'termo reservado');
+  assert(!persist.includes('document_id: null'), 'document_id não é zerado no upsert financeiro');
+  assert(
+    !persist.includes('termination_document_snapshot: null'),
+    'snapshot documental não é zerado no upsert financeiro',
+  );
   assert(persist.includes('credit_other_unit_id: null'), 'crédito não executado');
-  assert(!persist.includes('jsPDF'), 'sem PDF');
+  assert(persist.includes('refundSchedule: params.prepared.refundSchedule'), 'cronograma no calculation_snapshot');
+  assert(!persist.includes('jsPDF'), 'sem PDF no motor financeiro');
   assert(!persist.includes('generateContractHTML'), 'sem HTML de contrato');
   console.log('OK testMigrationSchemaAndRls');
 }

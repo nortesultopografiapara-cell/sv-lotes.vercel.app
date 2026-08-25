@@ -17,6 +17,23 @@ export const SALE_DOCUMENT_CATEGORIES = [
 
 export type SaleDocumentCategory = (typeof SALE_DOCUMENT_CATEGORIES)[number];
 
+/** Tipos SYSTEM_GENERATED já homologados — resolução inalterada. */
+export const SALE_DOCUMENT_LEGACY_SYSTEM_TYPES = [
+  'SYSTEM',
+  'PROMISSORY_NOTE',
+] as const;
+
+/** Tipos novos do fluxo de encerramento/cessão — apenas aditivos. */
+export const SALE_DOCUMENT_CONTRACT_OPERATION_TYPES = [
+  'DISTRATO',
+  'CESSAO',
+  'RESCISAO',
+  'CANCELAMENTO_ADMIN',
+] as const;
+
+/** Termos de encerramento GIS (Fase 3B) — aditivo, sem alterar tipos de cessão. */
+export const SALE_DOCUMENT_TERMINATION_TYPES = ['DESISTENCIA'] as const;
+
 export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
   SaleDocumentCategory,
   readonly string[]
@@ -31,7 +48,11 @@ export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
   BUYER: ['RG', 'CPF', 'CNH', 'CERTIFICATE', 'PROOF_OF_ADDRESS', 'OTHER'],
   SPOUSE: ['RG', 'CPF', 'CNH', 'CERTIFICATE', 'PROOF_OF_ADDRESS', 'OTHER'],
   OTHER: ['OTHER'],
-  SYSTEM_GENERATED: ['SYSTEM', 'PROMISSORY_NOTE'],
+  SYSTEM_GENERATED: [
+    ...SALE_DOCUMENT_LEGACY_SYSTEM_TYPES,
+    ...SALE_DOCUMENT_CONTRACT_OPERATION_TYPES,
+    ...SALE_DOCUMENT_TERMINATION_TYPES,
+  ],
 };
 
 export const SALE_DOCUMENT_CATEGORY_LABELS: Record<SaleDocumentCategory, string> = {
@@ -55,6 +76,11 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   OTHER: 'Outros',
   SYSTEM: 'Documento do sistema',
   PROMISSORY_NOTE: 'Nota Promissória',
+  DISTRATO: 'Instrumento de Distrato',
+  CESSAO: 'Instrumento de Cessão de Direitos',
+  RESCISAO: 'Termo de Rescisão por Inadimplência',
+  CANCELAMENTO_ADMIN: 'Termo Administrativo de Cancelamento',
+  DESISTENCIA: 'Termo de Desistência e Acerto Financeiro',
 };
 
 export const SALE_DOCUMENT_ALLOWED_MIME_TYPES = [

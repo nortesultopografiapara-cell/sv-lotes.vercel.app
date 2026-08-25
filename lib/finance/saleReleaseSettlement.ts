@@ -1,7 +1,8 @@
 /**
  * Persistência do acerto de encerramento (Fase 3A).
  * Recalcula no servidor e grava em sale_release_settlements na sale_id original.
- * Sem documento, sem cash_movements, sem crédito efetivo em outra unidade.
+ * Documento do termo: lib/termination-documents (não zera snapshot/document_id no upsert financeiro).
+ * Sem cash_movements, sem crédito efetivo em outra unidade.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -24,6 +25,8 @@ import {
   money2,
   type ReleaseLotMotiveCode,
 } from '@/lib/finance/releaseLotShared';
+import type { TerminationRefundSchedule } from '@/lib/termination-documents/types';
+import { undefinedRefundSchedule } from '@/lib/termination-documents/refundSchedule';
 
 export const SALE_RELEASE_SETTLEMENT_OPERATION_TYPES = [
   'desistencia',
@@ -50,6 +53,7 @@ export type ReleaseSettlementOperatorInput = {
   exceptionalReason: string | null;
   exceptionalRefundAmount: number | null;
   exceptionalRetentionPercent: number | null;
+  refundFirstDueDate: string | null;
 };
 
 export type ReleaseReceiptSnapshotRow = TerminationReceiptInput & {
@@ -86,6 +90,7 @@ export type PreparedReleaseSettlement = {
   exceptionalRefundAmount: number | null;
   refundDestination: SettlementDestination;
   hasImprovements: boolean;
+  refundSchedule: TerminationRefundSchedule;
 };
 
 export type SaleReleaseSettlementRow = {
@@ -181,6 +186,12 @@ export function parseReleaseSettlementOperatorInput(
       refundNum != null && Number.isFinite(refundNum) ? refundNum : null,
     exceptionalRetentionPercent:
       retentionNum != null && Number.isFinite(retentionNum) ? retentionNum : null,
+    refundFirstDueDate: (() => {
+      const raw = body.refundFirstDueDate ?? body.firstDueDate;
+      if (raw == null) return null;
+      const s = String(raw).trim();
+      return s || null;
+    })(),
   };
 }
 
@@ -427,6 +438,7 @@ export function prepareReleaseSettlement(input: {
       exceptionalRefundAmount: null,
       refundDestination: 'REFUND_CUSTOMER',
       hasImprovements: false,
+      refundSchedule: undefinedRefundSchedule(null),
     };
   }
 
@@ -471,6 +483,7 @@ export function prepareReleaseSettlement(input: {
       : null,
     refundDestination: settlement.destination,
     hasImprovements: input.operator.hasImprovements,
+    refundSchedule: undefinedRefundSchedule(settlement.refundInstallmentCount),
   };
 }
 
@@ -521,7 +534,10 @@ export async function upsertCalculatedReleaseSettlement(
     status: 'CALCULATED' as const,
     policy_snapshot: params.prepared.policySnapshot,
     policy_origin: params.prepared.policyOrigin,
-    calculation_snapshot: s,
+    calculation_snapshot: {
+      ...s,
+      refundSchedule: params.prepared.refundSchedule,
+    },
     receipts_snapshot: params.prepared.receiptsSnapshot,
     total_paid: s.totalPaid,
     entry_amount: s.entryPaid,
@@ -547,8 +563,6 @@ export async function upsertCalculatedReleaseSettlement(
     operator_user_id: params.operatorUserId,
     executed_at: null,
     idempotency_key: params.idempotencyKey,
-    termination_document_snapshot: null,
-    document_id: null,
     updated_at: now,
   };
 
