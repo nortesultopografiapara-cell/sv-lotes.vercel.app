@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server';
-import {
-  executeReleaseLot,
-  getReleaseLotPreview,
-  ReleaseLotError,
-} from '@/lib/finance/releaseLotService';
+import { executeReleaseLot, getReleaseLotPreview, ReleaseLotError } from '@/lib/finance/releaseLotService';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
@@ -107,7 +103,9 @@ export async function GET(
 
 /**
  * Executa liberação do lote + encerramento seguro da venda.
- * Body: { motiveCode, motiveDetail?, acknowledged: true, idempotencyKey?, retry? }
+ * Body: { motiveCode, motiveDetail?, acknowledged: true, idempotencyKey?, retry?,
+ *   hasImprovements?, refundDestination?, exceptionalAgreement?, exceptionalReason?,
+ *   exceptionalRefundAmount?, exceptionalRetentionPercent? }
  */
 export async function POST(
   request: Request,
@@ -148,12 +146,22 @@ export async function POST(
       idempotencyKey:
         body.idempotencyKey != null ? String(body.idempotencyKey) : null,
       retry: body.retry === true,
+      hasImprovements: body.hasImprovements === true,
+      refundDestination:
+        body.refundDestination != null ? String(body.refundDestination) : null,
+      exceptionalAgreement: body.exceptionalAgreement === true,
+      exceptionalReason:
+        body.exceptionalReason != null ? String(body.exceptionalReason) : null,
+      exceptionalRefundAmount: body.exceptionalRefundAmount,
+      exceptionalRetentionPercent: body.exceptionalRetentionPercent,
     });
 
     console.log('[lots/release POST] ok', {
       lotId: result.lotId.slice(0, 8),
       saleId: result.saleId?.slice(0, 8),
       alreadyReleased: result.alreadyReleased,
+      settlementId: result.settlementId?.slice(0, 8),
+      settlementStatus: result.settlementStatus,
     });
 
     return NextResponse.json({ success: true, ...result });

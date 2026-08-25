@@ -47,6 +47,16 @@ import {
 } from '@/lib/finance/releaseLotShared';
 import { isCanceledBrokerCommission, isPaidBrokerCommission } from '@/lib/brokerCommission';
 import { buildTerminationSettlementPreview } from '@/lib/contract-termination/preview';
+import {
+  isSaleReleaseSettlementOperation,
+  loadActiveReleaseSettlement,
+  markReleaseSettlementExecuted,
+  parseReleaseSettlementOperatorInput,
+  prepareReleaseSettlement,
+  upsertCalculatedReleaseSettlement,
+  validateReleaseSettlementOperatorInput,
+  type SaleReleaseSettlementRow,
+} from '@/lib/finance/saleReleaseSettlement';
 import { logLotAuditEvent } from '@/lib/lotAudit';
 import { isPlatformAdmin, tenantOrClause } from '@/lib/rls';
 import {
@@ -63,6 +73,7 @@ export type ReleaseLotStage =
   | 'load_lot'
   | 'load_preview'
   | 'validate_motive'
+  | 'persist_settlement'
   | 'cancel_asaas'
   | 'cancel_inter'
   | 'cancel_receipts'
@@ -71,7 +82,8 @@ export type ReleaseLotStage =
   | 'cancel_contract'
   | 'cancel_sale'
   | 'clear_lot'
-  | 'audit';
+  | 'audit'
+  | 'mark_settlement';
 
 export class ReleaseLotError extends Error {
   status: number;
@@ -114,6 +126,12 @@ export type ReleaseLotExecuteInput = {
   idempotencyKey?: string | null;
   /** Quando true, tenta novamente cancelar cobranças Asaas e concluir local. */
   retry?: boolean;
+  hasImprovements?: boolean;
+  refundDestination?: string | null;
+  exceptionalAgreement?: boolean;
+  exceptionalReason?: string | null;
+  exceptionalRefundAmount?: unknown;
+  exceptionalRetentionPercent?: unknown;
 };
 
 export type ReleaseLotExecuteResult = {
@@ -133,6 +151,9 @@ export type ReleaseLotExecuteResult = {
   motiveCode: ReleaseLotMotiveCode;
   motiveLabel: string;
   message: string;
+  settlementId?: string | null;
+  settlementStatus?: string | null;
+  calculationStatus?: string | null;
 };
 
 type BlockRow = {
@@ -162,6 +183,7 @@ type ReceiptRow = {
   amount?: number | string | null;
   installment_number?: number | string | null;
   paid_amount?: number | string | null;
+  due_date?: string | null;
 };
 
 type ChargeRow = {
@@ -411,16 +433,23 @@ async function loadSaleContext(
 
   const receiptFull = await admin
     .from('finance_receipts')
-    .select('id, sale_id, status, paid_at, amount, installment_number, paid_amount')
+    .select('id, sale_id, status, paid_at, amount, installment_number, paid_amount, due_date')
     .eq('sale_id', saleId)
     .or(tenantOrClause(companyId));
-  const receiptQuery = receiptFull.error
+  const receiptMid = receiptFull.error
+    ? await admin
+        .from('finance_receipts')
+        .select('id, sale_id, status, paid_at, amount, installment_number, paid_amount')
+        .eq('sale_id', saleId)
+        .or(tenantOrClause(companyId))
+    : receiptFull;
+  const receiptQuery = receiptMid.error
     ? await admin
         .from('finance_receipts')
         .select('id, sale_id, status, paid_at, amount')
         .eq('sale_id', saleId)
         .or(tenantOrClause(companyId))
-    : receiptFull;
+    : receiptMid;
   const receiptRows = receiptQuery.data;
   const receiptErr = receiptQuery.error;
   if (receiptErr) {
@@ -954,9 +983,10 @@ async function applyLocalRelease(
     motiveCode: ReleaseLotMotiveCode;
     motiveLabel: string;
     motiveDetail: string | null;
+    settlementId?: string | null;
   },
 ): Promise<{ cancelledUnpaidReceipts: number }> {
-  const { companyId, block, preview, userId, motiveCode, motiveLabel, motiveDetail } = params;
+  const { companyId, block, preview, userId, motiveCode, motiveLabel, motiveDetail, settlementId } = params;
   const now = new Date().toISOString();
   let cancelledUnpaidReceipts = 0;
 
@@ -1140,6 +1170,7 @@ async function applyLocalRelease(
     cancelledUnpaidReceipts: preview.unpaidToCancel,
     openAsaasCharges: preview.openAsaasCharges,
     idempotencyKey: preview.idempotencyKey,
+    settlementId: settlementId || null,
     releasedAt: now,
   };
 
@@ -1219,6 +1250,15 @@ export async function executeReleaseLot(
     throw releaseErr(motive.error, 400, 'MOTIVE_REQUIRED', 'validate_motive');
   }
 
+  const operator = parseReleaseSettlementOperatorInput({
+    hasImprovements: input.hasImprovements,
+    refundDestination: input.refundDestination,
+    exceptionalAgreement: input.exceptionalAgreement,
+    exceptionalReason: input.exceptionalReason,
+    exceptionalRefundAmount: input.exceptionalRefundAmount,
+    exceptionalRetentionPercent: input.exceptionalRetentionPercent,
+  });
+
   const preview = await getReleaseLotPreview(admin, input.lotId, input.userId);
 
   if (
@@ -1226,14 +1266,83 @@ export async function executeReleaseLot(
     input.idempotencyKey !== preview.idempotencyKey &&
     preview.mode !== 'already_released'
   ) {
-    // Aceita chave do preview atual; chave antiga de outra venda no mesmo lote é rejeitada
-    console.warn('[releaseLot] idempotency key mismatch', {
-      expected: preview.idempotencyKey,
-      got: input.idempotencyKey,
-    });
+    throw releaseErr(
+      'Esta confirmação expirou ou refere-se a outra venda. Recarregue a prévia e tente novamente.',
+      409,
+      'IDEMPOTENCY_MISMATCH',
+      'validate_motive',
+    );
+  }
+
+  let existingSettlement: SaleReleaseSettlementRow | null = null;
+  if (preview.saleId) {
+    try {
+      existingSettlement = await loadActiveReleaseSettlement(admin, preview.saleId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw releaseErr(
+        'Não foi possível consultar o acerto financeiro da venda original.',
+        500,
+        'SETTLEMENT_LOAD_FAILED',
+        'persist_settlement',
+        { detail: message },
+      );
+    }
+  }
+
+  if (existingSettlement?.status === 'EXECUTED') {
+    return {
+      ok: true,
+      alreadyReleased: true,
+      lotId: preview.lotId,
+      saleId: preview.saleId,
+      contractId: preview.contractId,
+      mode: preview.mode,
+      preservedPaidReceipts: preview.paidReceipts,
+      cancelledUnpaidReceipts: 0,
+      cancelledAsaasCharges: 0,
+      failedAsaasCharges: [],
+      cancelledInterCharges: 0,
+      failedInterCharges: [],
+      totalPaidAmount: preview.totalPaidAmount,
+      motiveCode: motive.motiveCode,
+      motiveLabel: motive.motiveLabel,
+      message: 'Encerramento já executado. O acerto permanece vinculado à venda original.',
+      settlementId: existingSettlement.id,
+      settlementStatus: existingSettlement.status,
+      calculationStatus: existingSettlement.calculation_status,
+    };
   }
 
   if (preview.mode === 'already_released') {
+    if (
+      existingSettlement?.id &&
+      preview.saleId &&
+      (existingSettlement.status === 'CALCULATED' ||
+        existingSettlement.status === 'FAILED_DOCUMENT')
+    ) {
+      try {
+        await markReleaseSettlementExecuted(
+          admin,
+          existingSettlement.id,
+          preview.saleId,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw releaseErr(
+          'O lote já estava liberado, mas o acerto não pôde ser marcado como executado.',
+          500,
+          'SETTLEMENT_EXECUTE_FAILED',
+          'mark_settlement',
+          { detail: message },
+        );
+      }
+      existingSettlement = {
+        ...existingSettlement,
+        status: 'EXECUTED',
+        executed_at: new Date().toISOString(),
+      };
+    }
     return {
       ok: true,
       alreadyReleased: true,
@@ -1251,7 +1360,20 @@ export async function executeReleaseLot(
       motiveCode: motive.motiveCode,
       motiveLabel: motive.motiveLabel,
       message: 'Lote já estava disponível e a venda já estava encerrada.',
+      settlementId: existingSettlement?.id || null,
+      settlementStatus: existingSettlement?.status || null,
+      calculationStatus: existingSettlement?.calculation_status || null,
     };
+  }
+
+  if (isSaleReleaseSettlementOperation(motive.motiveCode)) {
+    const operatorCheck = validateReleaseSettlementOperatorInput({
+      motiveCode: motive.motiveCode,
+      operator,
+    });
+    if (!operatorCheck.ok) {
+      throw releaseErr(operatorCheck.error, 400, operatorCheck.code, 'validate_motive');
+    }
   }
 
   if (
@@ -1268,6 +1390,93 @@ export async function executeReleaseLot(
   }
 
   const block = await loadBlock(admin, input.lotId);
+  const liveCtx = preview.saleId
+    ? await loadSaleContext(admin, preview.saleId, preview.companyId)
+    : null;
+
+  let settlementId: string | null = existingSettlement?.id || null;
+  let settlementStatus: string | null = existingSettlement?.status || null;
+  let calculationStatus: string | null = existingSettlement?.calculation_status || null;
+
+  if (
+    preview.saleId &&
+    liveCtx &&
+    isSaleReleaseSettlementOperation(motive.motiveCode)
+  ) {
+    try {
+      const prepared = prepareReleaseSettlement({
+        motiveCode: motive.motiveCode,
+        receipts: liveCtx.receipts,
+        saleSnapshot: liveCtx.sale?.termination_policy_snapshot,
+        contractSnapshot: liveCtx.contract?.termination_policy_snapshot,
+        salePersistSource:
+          liveCtx.sale?.termination_policy_source != null
+            ? String(liveCtx.sale.termination_policy_source)
+            : null,
+        contractPersistSource:
+          liveCtx.contract?.termination_policy_source != null
+            ? String(liveCtx.contract.termination_policy_source)
+            : null,
+        saleContractModel:
+          liveCtx.sale?.contract_model != null
+            ? String(liveCtx.sale.contract_model)
+            : null,
+        contractContractModel:
+          liveCtx.contract?.contract_model != null
+            ? String(liveCtx.contract.contract_model)
+            : null,
+        operator,
+      });
+      const upserted = await upsertCalculatedReleaseSettlement(admin, {
+        companyId: preview.companyId,
+        saleId: preview.saleId,
+        contractId: preview.contractId,
+        blockId: block.id,
+        projectId: preview.projectId || (block.project_id ? String(block.project_id) : null),
+        motiveLabel: motive.motiveLabel,
+        motiveDetail: motive.motiveDetail,
+        operatorUserId: input.userId,
+        idempotencyKey: preview.idempotencyKey,
+        prepared,
+        existingId: existingSettlement?.id || null,
+      });
+      settlementId = upserted.id;
+      settlementStatus = upserted.status;
+      calculationStatus = prepared.calculationStatus;
+      if (upserted.status === 'EXECUTED') {
+        return {
+          ok: true,
+          alreadyReleased: true,
+          lotId: preview.lotId,
+          saleId: preview.saleId,
+          contractId: preview.contractId,
+          mode: preview.mode,
+          preservedPaidReceipts: preview.paidReceipts,
+          cancelledUnpaidReceipts: 0,
+          cancelledAsaasCharges: 0,
+          failedAsaasCharges: [],
+          cancelledInterCharges: 0,
+          failedInterCharges: [],
+          totalPaidAmount: preview.totalPaidAmount,
+          motiveCode: motive.motiveCode,
+          motiveLabel: motive.motiveLabel,
+          message: 'Encerramento já executado. O acerto permanece vinculado à venda original.',
+          settlementId,
+          settlementStatus,
+          calculationStatus,
+        };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw releaseErr(
+        'Não foi possível persistir o acerto financeiro na venda original.',
+        500,
+        'SETTLEMENT_PERSIST_FAILED',
+        'persist_settlement',
+        { detail: message },
+      );
+    }
+  }
 
   // Fase Asaas: reconsulta TODAS as candidatas locais (não só IDs da prévia).
   // Sync remoto antes de qualquer DELETE; falha crítica bloqueia limpeza local.
@@ -1286,8 +1495,7 @@ export async function executeReleaseLot(
     remoteStatus?: string | null;
   }> = [];
 
-  if (preview.saleId) {
-    const liveCtx = await loadSaleContext(admin, preview.saleId, preview.companyId);
+  if (preview.saleId && liveCtx) {
     const candidateIds = liveCtx.charges
       .filter((c) => isLocalAsaasCancelCandidateStatus(c.status))
       .map((c) => c.id);
@@ -1380,7 +1588,24 @@ export async function executeReleaseLot(
     motiveCode: motive.motiveCode,
     motiveLabel: motive.motiveLabel,
     motiveDetail: motive.motiveDetail,
+    settlementId,
   });
+
+  if (settlementId && preview.saleId && settlementStatus !== 'EXECUTED') {
+    try {
+      await markReleaseSettlementExecuted(admin, settlementId, preview.saleId);
+      settlementStatus = 'EXECUTED';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw releaseErr(
+        'O lote foi liberado, mas o acerto não pôde ser marcado como executado. Reprocesse para concluir o registro.',
+        500,
+        'SETTLEMENT_EXECUTE_FAILED',
+        'mark_settlement',
+        { detail: message },
+      );
+    }
+  }
 
   return {
     ok: true,
@@ -1402,5 +1627,8 @@ export async function executeReleaseLot(
       preview.hasPreservedPayments
         ? 'Lote liberado. Pagamentos preservados no Financeiro para histórico e eventual devolução.'
         : 'Lote liberado e venda encerrada. Obrigações não pagas canceladas.',
+    settlementId,
+    settlementStatus,
+    calculationStatus,
   };
 }

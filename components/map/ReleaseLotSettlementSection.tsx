@@ -46,6 +46,7 @@ export type ReleaseLotSettlementSectionProps = {
   onExceptionValue: (value: string) => void;
   exceptionJustification: string;
   onExceptionJustification: (value: string) => void;
+  allowException?: boolean;
 };
 
 export function ReleaseLotSettlementSection({
@@ -64,6 +65,7 @@ export function ReleaseLotSettlementSection({
   onExceptionValue,
   exceptionJustification,
   onExceptionJustification,
+  allowException = false,
 }: ReleaseLotSettlementSectionProps) {
   const incomplete =
     settlement.calculationStatus === 'INCOMPLETE' ||
@@ -77,8 +79,8 @@ export function ReleaseLotSettlementSection({
       <div>
         <p className="text-sm font-semibold text-slate-800">Acerto financeiro</p>
         <p className="mt-1 text-xs text-slate-500">
-          Simulação somente leitura. Nenhuma restituição, retenção ou transferência será
-          registrada nesta etapa.
+          Prévia calculada no navegador. O servidor recalcula e persiste o acerto na
+          venda original. Nenhuma restituição será paga nesta etapa.
         </p>
       </div>
 
@@ -210,71 +212,75 @@ export function ReleaseLotSettlementSection({
         </div>
       ) : null}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
-        <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={exceptionEnabled}
-            onChange={(e) => onExceptionEnabled(e.target.checked)}
-            className="mt-1"
-          />
-          <span>
-            Ativar condição excepcional (acordo fora da regra contratual). Não substitui o
-            cálculo contratual e não será persistida nesta fase.
-          </span>
-        </label>
-        {exceptionEnabled ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs font-semibold text-slate-600 mb-1">Tipo do acordo</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => onExceptionMode('amount')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${
-                    exceptionMode === 'amount'
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  Valor acordado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onExceptionMode('percent')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${
-                    exceptionMode === 'percent'
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  Percentual de retenção
-                </button>
+      {allowException ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+          <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={exceptionEnabled}
+              onChange={(e) => onExceptionEnabled(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              Ativar condição excepcional (acordo fora da regra contratual). Somente no
+              distrato. O valor contratual permanece preservado.
+            </span>
+          </label>
+          {exceptionEnabled ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-600 mb-1">Tipo do acordo</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onExceptionMode('amount')}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${
+                      exceptionMode === 'amount'
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    Valor acordado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onExceptionMode('percent')}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${
+                      exceptionMode === 'percent'
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    Percentual de retenção
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={exceptionValue}
+                  onChange={(e) => onExceptionValue(e.target.value)}
+                  className={`${FIELD_CLASS} mt-2`}
+                  placeholder={exceptionMode === 'amount' ? 'Valor em reais' : 'Percentual'}
+                />
               </div>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={exceptionValue}
-                onChange={(e) => onExceptionValue(e.target.value)}
-                className={`${FIELD_CLASS} mt-2`}
-                placeholder={exceptionMode === 'amount' ? 'Valor em reais' : 'Percentual'}
-              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Justificativa <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={exceptionJustification}
+                  onChange={(e) => onExceptionJustification(e.target.value)}
+                  className={FIELD_CLASS}
+                  rows={3}
+                  placeholder="Obrigatória para aplicar o valor acordado"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Justificativa <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={exceptionJustification}
-                onChange={(e) => onExceptionJustification(e.target.value)}
-                className={FIELD_CLASS}
-                rows={3}
-                placeholder="Obrigatória para aplicar o valor acordado"
-              />
-            </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
+      ) : null}
 
+      <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold flex items-center gap-1.5">

@@ -195,11 +195,21 @@ export function calculateTerminationSettlement(
     );
   }
 
+  const motive = String(input.motiveCode || '').trim();
+  const exceptionAllowed = motive === 'distrato';
+  let exceptionInput = input.exceptionOverride;
+  if (!exceptionAllowed && exceptionInput?.enabled) {
+    warnings.push(
+      'Condição excepcional é permitida somente no distrato; o cálculo contratual foi mantido.',
+    );
+    exceptionInput = null;
+  }
+
   const { agreedRefundAmount, exceptionApplied } = waitingImprovements
     ? { agreedRefundAmount: null as number | null, exceptionApplied: false }
     : applyException(
         contractualRefundAmount,
-        input.exceptionOverride,
+        exceptionInput,
         refundableBase,
         warnings,
       );

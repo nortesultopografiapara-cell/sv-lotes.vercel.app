@@ -328,14 +328,27 @@ function testEnginePurityAndWiring() {
   const svc = read('lib/finance/releaseLotService.ts');
   assert(svc.includes('buildTerminationSettlementPreview'), 'GET/preview consome helper');
   assert(svc.includes('settlementPreview'), 'preview expõe settlement');
-  assert(!svc.includes('sale_release_settlements'), 'não persiste settlement');
+  const persistMod = read('lib/finance/saleReleaseSettlement.ts');
+  assert(persistMod.includes('sale_release_settlements'), 'persiste settlement na venda original');
+  assert(svc.includes('upsertCalculatedReleaseSettlement'), 'grava CALCULATED antes do release');
+  assert(svc.includes('markReleaseSettlementExecuted'), 'marca EXECUTED depois do release');
   assert(!svc.includes(".from('cash_movements')"), 'não soma cash_movements no release');
+
+  const execFn = svc.slice(svc.indexOf('export async function executeReleaseLot'));
+  const persistIdx = execFn.indexOf('upsertCalculatedReleaseSettlement');
+  const asaasIdx = execFn.indexOf("{ executeCancel: true }");
+  const localIdx = execFn.indexOf('const local = await applyLocalRelease');
+  const markIdx = execFn.lastIndexOf('markReleaseSettlementExecuted');
+  assert(persistIdx > 0 && persistIdx < asaasIdx, 'settlement CALCULATED antes do Asaas');
+  assert(asaasIdx < localIdx, 'Asaas antes da limpeza local');
+  assert(localIdx < markIdx, 'EXECUTED só depois de applyLocalRelease');
 
   const route = read('app/api/lots/[lotId]/release/route.ts');
   const post = route.slice(route.indexOf('export async function POST'));
-  assert(!post.includes('hasImprovements'), 'POST não lê benfeitorias');
-  assert(!post.includes('exceptionOverride'), 'POST não persiste exceção');
-  assert(!post.includes('CREDIT_OTHER_UNIT'), 'POST não executa crédito');
+  assert(post.includes('hasImprovements'), 'POST lê benfeitorias operacionais');
+  assert(post.includes('exceptionalAgreement'), 'POST lê acordo excepcional');
+  assert(!post.includes('exceptionOverride'), 'POST não usa nome interno exceptionOverride');
+  assert(!post.includes('CREDIT_OTHER_UNIT'), 'POST não executa crédito em outra unidade');
   assert(post.includes('executeReleaseLot'), 'POST permanece no execute atual');
 
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
@@ -344,8 +357,10 @@ function testEnginePurityAndWiring() {
     modal.indexOf('JSON.stringify({'),
     modal.indexOf('idempotencyKey: preview?.idempotencyKey || null,'),
   );
-  assert(!postBody.includes('hasImprovements'), 'POST do modal sem settlement');
-  assert(!postBody.includes('destination'), 'POST do modal sem destino');
+  assert(postBody.includes('hasImprovements'), 'POST do modal envia benfeitorias');
+  assert(postBody.includes('refundDestination'), 'POST do modal envia destino');
+  assert(postBody.includes('exceptionalAgreement'), 'POST do modal envia excepcional só operacional');
+  assert(modal.includes("motive.motiveCode === 'distrato' && exceptionEnabled"), 'excepcional só distrato');
   assert(!modal.includes('/api/contract-operations/'), 'sem API de cessão');
 
   const ui = read('components/map/ReleaseLotSettlementSection.tsx');
@@ -361,6 +376,7 @@ function testEnginePurityAndWiring() {
   assert(!ui.includes("'25%'") && !ui.includes('"25%"'), 'UI não hardcoda 25%');
   assert(ui.includes('formatRetentionPercent'), 'percentual vem do engine');
   assert(!ui.includes('<select'), 'destino sem select');
+  assert(ui.includes('allowException'), 'excepcional só quando a UI autorizar');
   console.log('OK testEnginePurityAndWiring');
 }
 
@@ -378,8 +394,8 @@ function testNoMigrationAndDevelopGuards() {
   const migrationsDir = path.join(__dirname, '..', 'supabase', 'migrations');
   const migrations = fs.existsSync(migrationsDir) ? fs.readdirSync(migrationsDir) : [];
   assert(
-    !migrations.some((f) => f.includes('sale_release_settlements')),
-    'sem tabela sale_release_settlements',
+    migrations.some((f) => f.includes('sale_release_settlements')),
+    'migration sale_release_settlements presente',
   );
   assert(
     !migrations.includes('20261008120000_sale_contract_operations.sql') ||

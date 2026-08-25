@@ -69,7 +69,8 @@ export type TerminationCalculationStatus =
   | 'CALCULATED'
   | 'INCOMPLETE'
   | 'MISSING_POLICY'
-  | 'WAITING_IMPROVEMENT_APPRAISAL';
+  | 'WAITING_IMPROVEMENT_APPRAISAL'
+  | 'NOT_APPLICABLE';
 
 export type ReceiptKind = 'signal' | 'entry' | 'installment' | 'other';
 
@@ -81,6 +82,7 @@ export type TerminationReceiptInput = {
   paid_at?: string | null;
   amount?: number | string | null;
   paid_amount?: number | string | null;
+  due_date?: string | null;
 };
 
 export type ClassifiedTerminationReceipt = TerminationReceiptInput & {

@@ -125,6 +125,14 @@ export function ReleaseLotConfirmModal({
   }, []);
 
   useEffect(() => {
+    if (motiveCode !== 'distrato') {
+      setExceptionEnabled(false);
+      setExceptionValue('');
+      setExceptionJustification('');
+    }
+  }, [motiveCode]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       setPreviewLoading(true);
@@ -262,6 +270,25 @@ export function ReleaseLotConfirmModal({
           motiveCode: motive.motiveCode,
           motiveDetail: motive.motiveDetail,
           acknowledged: true,
+          hasImprovements: hasImprovements === 'sim',
+          refundDestination: destination,
+          exceptionalAgreement: motive.motiveCode === 'distrato' && exceptionEnabled,
+          exceptionalReason:
+            motive.motiveCode === 'distrato' && exceptionEnabled
+              ? exceptionJustification
+              : null,
+          exceptionalRefundAmount:
+            motive.motiveCode === 'distrato' &&
+            exceptionEnabled &&
+            exceptionMode === 'amount'
+              ? Number(String(exceptionValue).replace(',', '.'))
+              : null,
+          exceptionalRetentionPercent:
+            motive.motiveCode === 'distrato' &&
+            exceptionEnabled &&
+            exceptionMode === 'percent'
+              ? Number(String(exceptionValue).replace(',', '.'))
+              : null,
           idempotencyKey: preview?.idempotencyKey || null,
         }),
       });
@@ -509,6 +536,7 @@ export function ReleaseLotConfirmModal({
                     onHasImprovements={setHasImprovements}
                     destination={destination}
                     onDestination={setDestination}
+                    allowException={motiveCode === 'distrato'}
                     exceptionEnabled={exceptionEnabled}
                     onExceptionEnabled={setExceptionEnabled}
                     exceptionMode={exceptionMode}
