@@ -1527,7 +1527,7 @@ export function CustomerLotFormModal({
             )}
 
             {(actionName === 'Vendido' || isEditMode) && (
-              <div className={isSaleWorkspaceDesktop ? "sv-sale-workspace-card sv-sale-workspace-card--muted sv-sale-workspace-card--sale" : "space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100"}>
+              <div className={isSaleWorkspaceDesktop ? "sv-sale-workspace-col-sale sv-sale-workspace-card sv-sale-workspace-card--muted sv-sale-workspace-card--sale" : "space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100"}>
                 <h4 className={isSaleWorkspaceDesktop ? "sv-sale-workspace-card-title" : "text-sm font-bold text-gray-900 border-b pb-1"}>
                   {isSaleWorkspaceDesktop ? "Dados da venda" : "DADOS DA VENDA"}
                 </h4>

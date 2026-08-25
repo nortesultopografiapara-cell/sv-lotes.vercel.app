@@ -279,8 +279,13 @@
   /*
    * Workspace desktop — Nova venda (2 colunas).
    * Sidebar compacta ~72px; mapa visível ao redor. Não fullscreen.
+   * display:block fica ANTES do 1024px — depois do media query ele quebraria o grid.
    */
   /* homolog 1920x1080 / 1366x768 — rail 72px, shell min(1480px, 100vw - rail - 32px) */
+
+  .sv-sale-workspace-grid {
+    display: block;
+  }
 
   @media (min-width: 1024px) {
     .sv-modal-overlay--sale-workspace {
@@ -313,9 +318,14 @@
 
     .sv-sale-workspace-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.65fr) minmax(20rem, 0.95fr);
+      grid-template-columns: minmax(0, 1.65fr) minmax(360px, 1fr);
+      grid-template-rows: auto;
       gap: 0.85rem;
       align-items: start;
+    }
+
+    .sv-sale-workspace-grid > * {
+      min-width: 0;
     }
 
     .sv-sale-workspace-col-client {
@@ -323,6 +333,14 @@
       flex-direction: column;
       gap: 0.7rem;
       min-width: 0;
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .sv-sale-workspace-col-sale {
+      min-width: 0;
+      grid-column: 2;
+      grid-row: 1;
     }
 
     .sv-sale-workspace-card {
@@ -411,10 +429,6 @@
     .sv-sale-workspace-span-2 {
       grid-column: 1 / -1;
     }
-  }
-
-  .sv-sale-workspace-grid {
-    display: block;
   }
 
   .sv-sale-workspace-card-title {
