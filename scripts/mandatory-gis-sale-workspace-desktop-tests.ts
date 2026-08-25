@@ -98,7 +98,7 @@ function testSidebarChromeUsesExistingRail() {
 
   assert(chrome.includes('SALE_WORKSPACE_CHROME_EVENT'), 'evento único de chrome');
   assert(!chrome.includes('localStorage'), 'chrome não persiste preferência');
-  assert(modal.includes('setSaleWorkspaceChromeOpen(isSaleWorkspaceDesktop)'), 'abre chrome ao montar workspace');
+  assert(modal.includes('setSaleWorkspaceChromeOpen(isWorkspaceDesktop)'), 'abre chrome ao montar workspace venda/reserva');
   assert(modal.includes('setSaleWorkspaceChromeOpen(false)'), 'restaura ao fechar/cancelar/concluir');
   assert(layout.includes('SALE_WORKSPACE_CHROME_EVENT'), 'Layout escuta o chrome existente');
   assert(layout.includes('tenantSidebarRail'), 'tenant usa rail compacta já no menu');
@@ -139,8 +139,9 @@ function testPaymentAndSaleLogicUntouched() {
 function testMobileShellPreserved() {
   const modal = read('components/map/CustomerLotFormModal.tsx');
   assert(modal.includes('sv-modal-shell--full-mobile'), 'full-mobile preservado');
-  assert(modal.includes('isSaleWorkspaceDesktop ? "sv-sale-workspace-grid" : "space-y-6"'), 'mobile permanece empilhado');
-  assert(modal.includes('isSaleWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"'), 'mobile não ganha coluna extra');
+  assert(modal.includes('isSaleWorkspaceDesktop ? "sv-sale-workspace-grid"'), 'venda desktop usa grid da venda');
+  assert(modal.includes('"space-y-6"'), 'mobile permanece empilhado');
+  assert(modal.includes('isWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"'), 'mobile não ganha coluna extra');
   console.log('OK testMobileShellPreserved');
 }
 

@@ -287,6 +287,10 @@
     display: block;
   }
 
+  .sv-reservation-workspace-grid {
+    display: block;
+  }
+
   @media (min-width: 1024px) {
     .sv-modal-overlay--sale-workspace {
       left: var(--sv-sale-workspace-rail);
@@ -428,6 +432,41 @@
 
     .sv-sale-workspace-span-2 {
       grid-column: 1 / -1;
+    }
+
+    /*
+     * Workspace desktop — Nova reserva (2 colunas).
+     * Reutiliza rail/overlay da venda. Shell um pouco mais estreito (~1380px).
+     * homolog 1920x1080 / 1366x768 — Dados da reserva pinados à direita.
+     */
+    .sv-modal-shell--reservation-workspace {
+      width: min(1380px, calc(100vw - var(--sv-sale-workspace-rail) - 32px));
+      max-width: min(1380px, calc(100vw - var(--sv-sale-workspace-rail) - 32px));
+      height: min(88vh, 900px);
+      max-height: min(88vh, 900px);
+    }
+
+    .sv-reservation-workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(360px, 1fr);
+      grid-template-rows: auto;
+      gap: 0.85rem;
+      align-items: start;
+    }
+
+    .sv-reservation-workspace-grid > * {
+      min-width: 0;
+    }
+
+    .sv-reservation-workspace-col-data {
+      min-width: 0;
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .sv-reservation-workspace-grid .sv-sale-workspace-col-client {
+      grid-column: 1;
+      grid-row: 1;
     }
   }
 
