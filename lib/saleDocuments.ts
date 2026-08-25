@@ -118,6 +118,52 @@ export function isUploadAllowedForCategory(category: SaleDocumentCategory): bool
   return category !== 'SYSTEM_GENERATED';
 }
 
+const SALE_OPERATION_GENERATED_TYPES = new Set<string>([
+  ...SALE_DOCUMENT_CONTRACT_OPERATION_TYPES,
+  ...SALE_DOCUMENT_TERMINATION_TYPES,
+]);
+
+export function isSaleOperationGeneratedType(documentType?: string | null): boolean {
+  return SALE_OPERATION_GENERATED_TYPES.has(
+    String(documentType || '')
+      .trim()
+      .toUpperCase(),
+  );
+}
+
+/** Número do termo gravado na descrição (`nº TD-000000001/2026`) ou no nome do arquivo. */
+export function parseSaleOperationDocumentNumber(input: {
+  description?: string | null;
+  original_file_name?: string | null;
+}): string | null {
+  const desc = String(input.description || '');
+  const fromDesc = desc.match(/n[ºo°]\s*([A-Z]{1,4}-\d{5,}\/\d{4})/i);
+  if (fromDesc?.[1]) return fromDesc[1].toUpperCase();
+  const name = String(input.original_file_name || '');
+  const fromFile = name.match(/([A-Z]{1,4}-\d{5,})[-_/](\d{4})/i);
+  if (fromFile?.[1] && fromFile[2]) {
+    return `${fromFile[1].toUpperCase()}/${fromFile[2]}`;
+  }
+  return null;
+}
+
+export function saleOperationDocumentStatusLabel(documentType?: string | null): string {
+  const type = String(documentType || '')
+    .trim()
+    .toUpperCase();
+  if (type === 'DESISTENCIA') return 'Gerado';
+  if (SALE_OPERATION_GENERATED_TYPES.has(type)) return 'Gerado';
+  return '—';
+}
+
+export function terminationDocumentViewHref(saleId: string): string {
+  return `/api/sales/${encodeURIComponent(saleId)}/termination-document?format=html`;
+}
+
+export function terminationDocumentPdfHref(saleId: string): string {
+  return `/api/sales/${encodeURIComponent(saleId)}/termination-document/pdf`;
+}
+
 export function validateSaleDocumentType(
   category: SaleDocumentCategory,
   documentType: string,

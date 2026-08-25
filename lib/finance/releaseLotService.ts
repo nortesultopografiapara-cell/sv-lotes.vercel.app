@@ -135,14 +135,14 @@ function releaseErr(
 function desistenciaSuccessMessage(documentNumber: string, pdfOk: boolean): string {
   if (pdfOk) {
     return [
-      'Desistência registrada com sucesso.',
+      'Desistência concluída com sucesso.',
       '',
       'Termo de Desistência e Acerto Financeiro',
       `nº ${documentNumber} gerado.`,
     ].join('\n');
   }
   return [
-    'Desistência registrada com sucesso.',
+    'Desistência concluída com sucesso.',
     '',
     'O lote foi liberado e o acerto financeiro permanece executado.',
     `O Termo nº ${documentNumber} foi congelado, mas o PDF não pôde ser gerado. Use Tentar gerar PDF.`,

@@ -4,6 +4,10 @@
  */
 
 import type { FormattedLotAuditEvent, LotAuditAction, LotAuditSource } from '@/lib/lotAudit';
+import {
+  terminationDocumentPdfHref,
+  terminationDocumentViewHref,
+} from '@/lib/saleDocuments';
 
 export type LotHistoryFilterId = 'all' | 'comercial' | 'gis' | 'contrato' | 'financeiro';
 
@@ -190,4 +194,18 @@ export function resolveLotHistoryActor(
   UUID_RE.lastIndex = 0;
   if (UUID_RE.test(label)) return null;
   return label;
+}
+
+/** Mesmo sale_id/settlement.document_id das APIs de termo — sem segundo PDF. */
+export function lotHistoryTerminationDocumentLinks(
+  event: Pick<FormattedLotAuditEvent, 'action' | 'saleId' | 'motiveCode'>,
+): { viewHref: string; pdfHref: string } | null {
+  if (event.action !== 'sale_cancelled') return null;
+  if (String(event.motiveCode || '').trim() !== 'desistencia') return null;
+  const saleId = String(event.saleId || '').trim();
+  if (!saleId) return null;
+  return {
+    viewHref: terminationDocumentViewHref(saleId),
+    pdfHref: terminationDocumentPdfHref(saleId),
+  };
 }

@@ -6,11 +6,16 @@
 import {
   buildSaleDocumentStoragePath,
   formatFileSizeBytes,
+  isSaleOperationGeneratedType,
   isUploadAllowedForCategory,
   normalizeSaleDocumentCategory,
+  parseSaleOperationDocumentNumber,
   SALE_DOCUMENT_CATEGORIES,
   SALE_DOCUMENT_MAX_BYTES,
   SALE_DOCUMENTS_STORAGE_BUCKET,
+  saleOperationDocumentStatusLabel,
+  terminationDocumentPdfHref,
+  terminationDocumentViewHref,
   validateSaleDocumentFileSize,
   validateSaleDocumentMimeType,
   validateSaleDocumentType,
@@ -117,12 +122,40 @@ function testFormatSize() {
   console.log('OK testFormatSize');
 }
 
+function testOperationDocumentHelpers() {
+  assert(isSaleOperationGeneratedType('DESISTENCIA'), 'DESISTENCIA é operação');
+  assert(!isSaleOperationGeneratedType('PROMISSORY_NOTE'), 'NP não é encerramento');
+  assert(
+    parseSaleOperationDocumentNumber({
+      description: 'Termo de Desistência e Acerto Financeiro nº TD-000000001/2026',
+    }) === 'TD-000000001/2026',
+    'número na descrição',
+  );
+  assert(
+    parseSaleOperationDocumentNumber({
+      original_file_name: 'termo-desistencia-TD-000000009-2026.pdf',
+    }) === 'TD-000000009/2026',
+    'número no arquivo',
+  );
+  assert(saleOperationDocumentStatusLabel('DESISTENCIA') === 'Gerado', 'status gerado');
+  assert(
+    terminationDocumentViewHref('sale-1').includes('/termination-document?format=html'),
+    'visualizar HTML',
+  );
+  assert(
+    terminationDocumentPdfHref('sale-1').includes('/termination-document/pdf'),
+    'baixar PDF',
+  );
+  console.log('OK testOperationDocumentHelpers');
+}
+
 function main() {
   testCategoriesAndTypes();
   testSystemGeneratedNoUpload();
   testMimeAndSize();
   testStoragePathMultitenant();
   testFormatSize();
+  testOperationDocumentHelpers();
   console.log('OK — mandatory-sale-documents-tests passed');
 }
 

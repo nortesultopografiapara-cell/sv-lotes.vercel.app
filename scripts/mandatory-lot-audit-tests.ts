@@ -170,6 +170,26 @@ function testFormatEvent() {
   assert(formatted.actionLabel === 'Venda', 'badge label');
   assert(formatted.title === 'Venda concluída', 'title');
   assert(formatted.badgeClass.includes('emerald'), 'sold badge');
+  assert(formatted.saleId === null, 'saleId nulo quando ausente');
+  const cancelled = formatLotAuditEvent({
+    id: 'e2',
+    company_id: null,
+    project_id: 'p1',
+    block_id: 'b1',
+    lot_id: 'b1',
+    sale_id: 'sale-homolog',
+    contract_id: null,
+    user_id: 'u1',
+    action: 'sale_cancelled',
+    title: 'Lote liberado — venda encerrada',
+    description: 'Desistência do cliente',
+    old_data: null,
+    new_data: { motiveCode: 'desistencia' },
+    created_at: '2026-06-09T10:15:00Z',
+    source: 'gis_map',
+  });
+  assert(cancelled.saleId === 'sale-homolog', 'saleId no histórico');
+  assert(cancelled.motiveCode === 'desistencia', 'motivo no new_data');
   console.log('OK testFormatEvent');
 }
 

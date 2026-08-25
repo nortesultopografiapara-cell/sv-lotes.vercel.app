@@ -81,6 +81,8 @@ export type FormattedLotAuditEvent = {
   userId: string | null;
   source: LotAuditSource;
   sourceLabel: string;
+  saleId: string | null;
+  motiveCode: string | null;
 };
 
 const ACTION_LABELS: Record<LotAuditAction, string> = {
@@ -170,6 +172,11 @@ export function buildLotAuditPayload(
 
 export function formatLotAuditEvent(row: LotAuditLogRow): FormattedLotAuditEvent {
   const action = row.action as LotAuditAction;
+  const newData =
+    row.new_data && typeof row.new_data === 'object' && !Array.isArray(row.new_data)
+      ? row.new_data
+      : null;
+  const motiveRaw = newData?.motiveCode;
   return {
     id: row.id,
     createdAt: row.created_at,
@@ -181,6 +188,8 @@ export function formatLotAuditEvent(row: LotAuditLogRow): FormattedLotAuditEvent
     userId: row.user_id,
     source: row.source as LotAuditSource,
     sourceLabel: formatLotAuditSource(row.source),
+    saleId: row.sale_id ? String(row.sale_id) : null,
+    motiveCode: motiveRaw != null && String(motiveRaw).trim() ? String(motiveRaw).trim() : null,
   };
 }
 

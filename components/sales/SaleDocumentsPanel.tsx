@@ -12,12 +12,17 @@ import {
 import { supabase } from '@/lib/supabase';
 import {
   formatFileSizeBytes,
+  isSaleOperationGeneratedType,
   isUploadAllowedForCategory,
+  parseSaleOperationDocumentNumber,
   SALE_DOCUMENT_CATEGORIES,
   SALE_DOCUMENT_CATEGORY_LABELS,
   SALE_DOCUMENT_MAX_BYTES,
   SALE_DOCUMENT_TYPES_BY_CATEGORY,
   SALE_DOCUMENT_TYPE_LABELS,
+  saleOperationDocumentStatusLabel,
+  terminationDocumentPdfHref,
+  terminationDocumentViewHref,
   type SaleDocumentCategory,
 } from '@/lib/saleDocuments';
 import type { SaleDocumentView } from '@/lib/saleDocumentService';
@@ -98,6 +103,24 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
     }
     return map;
   }, [documents]);
+
+  const operationDocs = useMemo(
+    () =>
+      documents.filter(
+        (doc) =>
+          doc.category === 'SYSTEM_GENERATED' &&
+          isSaleOperationGeneratedType(doc.document_type),
+      ),
+    [documents],
+  );
+
+  const openTerminationDocument = (download: boolean) => {
+    if (!saleId) return;
+    const href = download
+      ? terminationDocumentPdfHref(saleId)
+      : terminationDocumentViewHref(saleId);
+    window.open(href, '_blank', 'noopener,noreferrer');
+  };
 
   const openSignedUrl = async (doc: SaleDocumentView, download: boolean) => {
     if (!saleId) return;
@@ -310,8 +333,96 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
         </div>
       ) : null}
 
+      <section className="rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-sm">
+        <div className="mb-3">
+          <h4 className="text-sm font-bold text-gray-900">
+            Documentos de Encerramento / Operações
+          </h4>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Termos gerados na venda original. O PDF é o mesmo registro de
+            sale_documents, sem cópia.
+          </p>
+        </div>
+        {operationDocs.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            Nenhum documento de encerramento nesta venda.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-600">
+                  <th className="px-2 py-1.5 font-semibold">Número</th>
+                  <th className="px-2 py-1.5 font-semibold">Tipo</th>
+                  <th className="px-2 py-1.5 font-semibold">Data</th>
+                  <th className="px-2 py-1.5 font-semibold">Status</th>
+                  <th className="px-2 py-1.5 font-semibold">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {operationDocs.map((doc) => {
+                  const busy = busyId === doc.id;
+                  const number =
+                    parseSaleOperationDocumentNumber(doc) || '—';
+                  const isDesistencia =
+                    String(doc.document_type || '').toUpperCase() === 'DESISTENCIA';
+                  return (
+                    <tr key={doc.id} className="border-b border-gray-100 bg-white">
+                      <td className="px-2 py-1.5 font-semibold text-gray-900 whitespace-nowrap">
+                        {number}
+                      </td>
+                      <td className="px-2 py-1.5">{doc.document_type_label}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">
+                        {formatUploadDate(doc.created_at)}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {saleOperationDocumentStatusLabel(doc.document_type)}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            title="Visualizar"
+                            disabled={busy || disabled}
+                            onClick={() =>
+                              isDesistencia
+                                ? openTerminationDocument(false)
+                                : void openSignedUrl(doc, false)
+                            }
+                            className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Baixar PDF"
+                            disabled={busy || disabled}
+                            onClick={() =>
+                              isDesistencia
+                                ? openTerminationDocument(true)
+                                : void openSignedUrl(doc, true)
+                            }
+                            className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {SALE_DOCUMENT_CATEGORIES.map((category) => {
-        const docs = byCategory.get(category) || [];
+        const rawDocs = byCategory.get(category) || [];
+        const docs =
+          category === 'SYSTEM_GENERATED'
+            ? rawDocs.filter((doc) => !isSaleOperationGeneratedType(doc.document_type))
+            : rawDocs;
         const canUpload = isUploadAllowedForCategory(category) && !disabled;
         const types = SALE_DOCUMENT_TYPES_BY_CATEGORY[category];
         const uploading = uploadingCategory === category;
@@ -373,15 +484,15 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
                 </div>
               ) : category === 'SYSTEM_GENERATED' ? (
                 <span className="text-[11px] text-slate-500">
-                  Reservado para integração futura
+                  Artefatos do sistema (nota promissória e similares)
                 </span>
               ) : null}
             </div>
 
             {category === 'SYSTEM_GENERATED' && docs.length === 0 ? (
               <p className="text-xs text-slate-500">
-                Nesta fase apenas a estrutura está disponível. Documentos gerados pelo
-                sistema aparecerão aqui em versão futura.
+                Notas promissórias e outros artefatos gerados pelo sistema
+                aparecerão aqui.
               </p>
             ) : docs.length === 0 ? (
               <p className="text-xs text-gray-500">Nenhum arquivo nesta categoria.</p>

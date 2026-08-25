@@ -526,7 +526,7 @@ function testReleaseFlowAtomicityAndRetry() {
   assert(persistMod.includes('assertFrozenHtmlUnchanged'), 'HTML congelado no retry');
   assert(persistMod.includes('REFUND_SCHEDULE_DATE_REQUIRED'), 'freeze exige cronograma quando devido');
   assert(persistMod.includes('parseRefundScheduleFromCalculationSnapshot'), 'lê cronograma persistido');
-  assert(persistMod.includes('undefinedRefundSchedule(row.refund_installments)'), 'sem CALCULATED não congela calendário');
+  assert(persistMod.includes('undefinedRefundSchedule'), 'sem CALCULATED não congela calendário');
   const scheduleSrc = read('lib/termination-documents/refundSchedule.ts');
   assert(scheduleSrc.includes("status !== 'CALCULATED'"), 'data só obrigatória com CALCULATED');
   assert(!svc.includes("from('sale_contract_operations')"), 'não usa sale_contract_operations');
@@ -548,14 +548,27 @@ function testApiUxAndSaleDocuments() {
   assert(modal.includes('Visualizar termo'), 'UX visualizar');
   assert(modal.includes('Baixar PDF'), 'UX baixar');
   assert(modal.includes('Tentar gerar PDF'), 'UX retry');
+  assert(modal.includes('Enviar para assinatura'), 'botão futuro de assinatura');
+  assert(modal.includes('Disponível em fase posterior'), 'assinatura desabilitada');
+  assert(modal.includes('Concluir'), 'botão concluir após sucesso');
   assert(modal.includes('refundFirstDueDate'), 'POST envia 1ª parcela');
-  assert(!modal.includes('Enviar para assinatura'), 'sem enviar assinatura');
+  assert(!modal.includes('/sign/sale/'), 'sem rota de assinatura de contrato');
   const ui = read('components/map/ReleaseLotSettlementSection.tsx');
   assert(ui.includes('Valor de cada parcela'), 'UI valor parcela');
   assert(ui.includes('Vencimento da 1ª parcela'), 'UI data 1ª parcela');
   assert(gis.includes('result.keepModalOpen'), 'GIS mantém modal');
   assert(docs.includes("DESISTENCIA"), 'tipo SYSTEM_GENERATED');
   assert(docs.includes('Termo de Desistência e Acerto Financeiro'), 'label documentos da venda');
+  const saleDocsPanel = read('components/sales/SaleDocumentsPanel.tsx');
+  assert(
+    saleDocsPanel.includes('Documentos de Encerramento / Operações'),
+    'seção encerramento em Documentos da Venda',
+  );
+  assert(saleDocsPanel.includes('terminationDocumentViewHref'), 'visualizar usa API do termo');
+  assert(saleDocsPanel.includes('terminationDocumentPdfHref'), 'PDF usa API do termo');
+  const history = read('components/map/LotHistoryPanel.tsx');
+  assert(history.includes('Ver documento'), 'histórico oferece Ver documento');
+  assert(history.includes('lotHistoryTerminationDocumentLinks'), 'mesmo sale_id do termo');
   const persist = read('lib/termination-documents/persist.ts');
   assert(persist.includes('createSystemGeneratedSaleDocumentMetadata'), 'PDF em sale_documents');
   assert(persist.includes('SALE_DOCUMENT_TYPE_DESISTENCIA'), 'tipo DESISTENCIA');

@@ -494,7 +494,10 @@ function testSaleOperationsPanel() {
   assert(modal.includes('não chama a liberação'), 'titularidade não usa release');
   assert(modal.includes('nem tornará o lote Disponível por esta tela'), 'troca não libera automaticamente');
   assert(modal.includes('Justificativa administrativa'), 'admin exige texto');
-  assert(modal.includes('{deferredOperation ? \'Fechar\' : \'Cancelar\'}'), 'footer diferido');
+  assert(
+    modal.includes("{deferredOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}"),
+    'footer diferido / concluir',
+  );
   assert(RELEASE_LOT_MOTIVE_OPTIONS.some((o) => o.value === 'outro'), 'backend outro intacto');
   console.log('OK testSaleOperationsPanel');
 }

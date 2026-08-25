@@ -12,6 +12,7 @@ import {
   groupLotHistoryByDate,
   listLotHistoryFilterChips,
   lotHistoryDateKey,
+  lotHistoryTerminationDocumentLinks,
   resolveLotHistoryActor,
   splitLotHistoryDescription,
 } from '../lib/lotHistoryPresentation';
@@ -294,6 +295,8 @@ function testPanelWiringAndSingleScroll() {
   assert(panel.includes('Nenhum evento registrado para este lote.'), 'estado vazio');
   assert(panel.includes('gis-lot-history-scroll'), 'scroll único da área');
   assert(panel.includes('Ver detalhes') || panel.includes('Ver mais'), 'expansão de detalhes');
+  assert(panel.includes('Ver documento'), 'link Ver documento no histórico');
+  assert(panel.includes('lotHistoryTerminationDocumentLinks'), 'reusa sale_id do evento');
   assert(panel.includes('formatLotAuditDescription'), 'reusa formatter de descrição');
   assert(!panel.includes("from('lot_audit_logs')"), 'painel não consulta o banco');
   assert(css.includes('gis-lot-history'), 'CSS do workspace');
@@ -302,6 +305,40 @@ function testPanelWiringAndSingleScroll() {
   assert(css.includes('-webkit-line-clamp: 3'), 'descrição longa em 3 linhas');
   assert(layout.includes('max-h-[min(82vh,720px)]'), 'popup não vira fullscreen');
   console.log('OK testPanelWiringAndSingleScroll');
+}
+
+function testTerminationDocumentLinkUsesSameSale() {
+  const withTerm = lotHistoryTerminationDocumentLinks({
+    action: 'sale_cancelled',
+    saleId: 'sale-homolog',
+    motiveCode: 'desistencia',
+  });
+  assert(Boolean(withTerm), 'desistência no histórico tem link');
+  assert(
+    Boolean(withTerm?.viewHref.includes('/sales/sale-homolog/termination-document')),
+    'visualizar usa a mesma API do modal',
+  );
+  assert(
+    Boolean(withTerm?.pdfHref.endsWith('/termination-document/pdf')),
+    'PDF usa a mesma API do modal',
+  );
+  assert(
+    lotHistoryTerminationDocumentLinks({
+      action: 'sale_cancelled',
+      saleId: 'sale-homolog',
+      motiveCode: 'erro_cadastro',
+    }) === null,
+    'erro_cadastro não gera termo nesta fase',
+  );
+  assert(
+    lotHistoryTerminationDocumentLinks({
+      action: 'sold',
+      saleId: 'sale-homolog',
+      motiveCode: 'desistencia',
+    }) === null,
+    'venda concluída sem link de termo',
+  );
+  console.log('OK testTerminationDocumentLinkUsesSameSale');
 }
 
 function testAuditAndPopupUnchanged() {
@@ -324,6 +361,7 @@ function run() {
   testEmptyFewManyAndCount();
   testBadgesAndTechnicalDetails();
   testPanelWiringAndSingleScroll();
+  testTerminationDocumentLinkUsesSameSale();
   testAuditAndPopupUnchanged();
   console.log('OK — mandatory-gis-lot-history-workspace-tests passed');
 }

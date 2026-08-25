@@ -9,6 +9,7 @@ import {
   formatLotHistoryEventCount,
   groupLotHistoryByDate,
   listLotHistoryFilterChips,
+  lotHistoryTerminationDocumentLinks,
   lotHistoryTimeLabel,
   resolveLotHistoryActor,
   splitLotHistoryDescription,
@@ -107,6 +108,7 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
                     const meta = [actor, entry.sourceLabel].filter(Boolean).join(' · ');
                     const needsToggle = split.isLong || split.hasTechnical;
                     const shown = open ? split.full : split.preview;
+                    const termLinks = lotHistoryTerminationDocumentLinks(entry);
 
                     return (
                       <li key={entry.id} className="gis-lot-history-card">
@@ -150,6 +152,21 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
                                   : split.hasTechnical
                                     ? 'Ver detalhes'
                                     : 'Ver mais'}
+                              </button>
+                            ) : null}
+                            {termLinks ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  window.open(
+                                    termLinks.viewHref,
+                                    '_blank',
+                                    'noopener,noreferrer',
+                                  )
+                                }
+                                className="mt-1.5 text-[10px] font-bold text-blue-700 hover:text-blue-800"
+                              >
+                                Ver documento
                               </button>
                             ) : null}
                             {meta ? (

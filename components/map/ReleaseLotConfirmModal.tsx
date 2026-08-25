@@ -15,6 +15,7 @@ import {
   Handshake,
   Info,
   Loader2,
+  PenLine,
   ScrollText,
   ShieldAlert,
   Users,
@@ -353,7 +354,7 @@ export function ReleaseLotConfirmModal({
       const keepOpen = json.keepModalOpen === true || Boolean(term?.canView);
       if (keepOpen && term) {
         setDocumentSuccess({
-          message: String(json.message || 'Desistência registrada com sucesso.'),
+          message: String(json.message || 'Desistência concluída com sucesso.'),
           saleId,
           documentNumber: term.documentNumber || null,
           documentStatus: term.documentStatus || null,
@@ -434,7 +435,7 @@ export function ReleaseLotConfirmModal({
               canView: json.canView !== false,
               canDownload: json.canDownload === true,
               message: [
-                'Desistência registrada com sucesso.',
+                'Desistência concluída com sucesso.',
                 '',
                 'Termo de Desistência e Acerto Financeiro',
                 `nº ${String(json.documentNumber || prev.documentNumber)} gerado.`,
@@ -519,7 +520,22 @@ export function ReleaseLotConfirmModal({
                       Tentar gerar PDF
                     </button>
                   )}
+                  <button
+                    type="button"
+                    disabled
+                    title="Disponível em fase posterior"
+                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-100/70 px-3 py-2 text-sm font-semibold text-emerald-700/70 cursor-not-allowed"
+                  >
+                    <PenLine className="w-4 h-4" />
+                    Enviar para assinatura
+                  </button>
                 </div>
+                {documentSuccess.documentNumber ? (
+                  <p className="mt-3 text-sm text-emerald-900">
+                    Número do termo:{' '}
+                    <strong>{documentSuccess.documentNumber}</strong>
+                  </p>
+                ) : null}
                 <p className="mt-3 text-xs text-emerald-800">
                   O documento também ficará em Documentos da Venda, vinculado à venda original.
                   Envio para assinatura não está disponível nesta fase.
@@ -832,7 +848,7 @@ export function ReleaseLotConfirmModal({
               onClick={onClose}
               className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold rounded-lg text-sm"
             >
-              {deferredOperation ? 'Fechar' : 'Cancelar'}
+              {deferredOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}
             </button>
             {(releaseOperation || !motiveCode) && !documentSuccess ? (
               <button
