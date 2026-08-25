@@ -104,7 +104,8 @@ export async function GET(
 /**
  * Executa liberação do lote + encerramento seguro da venda.
  * Body: { motiveCode, motiveDetail?, acknowledged: true, idempotencyKey?, retry?,
- *   hasImprovements?, refundDestination?, exceptionalAgreement?, exceptionalReason?,
+ *   hasImprovements?, improvementsAppraisalStatus?, improvementsAppraisalCompleted?,
+ *   improvementItems?, refundDestination?, exceptionalAgreement?, exceptionalReason?,
  *   exceptionalRefundAmount?, exceptionalRetentionPercent? }
  */
 export async function POST(
@@ -147,6 +148,12 @@ export async function POST(
         body.idempotencyKey != null ? String(body.idempotencyKey) : null,
       retry: body.retry === true,
       hasImprovements: body.hasImprovements === true,
+      improvementsAppraisalStatus:
+        body.improvementsAppraisalStatus != null
+          ? String(body.improvementsAppraisalStatus)
+          : null,
+      improvementsAppraisalCompleted: body.improvementsAppraisalCompleted === true,
+      improvementItems: body.improvementItems,
       refundDestination:
         body.refundDestination != null ? String(body.refundDestination) : null,
       exceptionalAgreement: body.exceptionalAgreement === true,

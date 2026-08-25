@@ -1,4 +1,9 @@
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import {
+  resolveImprovementsForDocument,
+  type CustomerObligationBreakdown,
+  type ImprovementsRecord,
+} from '@/lib/contract-termination/improvements';
 import { formatIsoDateBr } from '@/lib/termination-documents/refundSchedule';
 import type { TerminationDocumentSnapshot } from '@/lib/termination-documents/types';
 
@@ -40,26 +45,70 @@ function destinationLabel(dest: TerminationDocumentSnapshot['refundDestination']
     : 'Restituição ao comprador (obrigação reconhecida neste ato; pagamento ainda não comprovado neste documento)';
 }
 
-function waitingImprovementAppraisal(status: string | null): boolean {
+function waitingImprovementAppraisal(
+  status: string | null,
+  improvements?: ImprovementsRecord | null,
+): boolean {
+  if (improvements?.appraisalStatus === 'PENDING') return true;
   const s = String(status || '').toUpperCase();
   return s.includes('WAITING');
 }
 
+function resolvedImprovements(snap: TerminationDocumentSnapshot): ImprovementsRecord {
+  return resolveImprovementsForDocument({
+    improvements: snap.improvements,
+    improvementStatus: snap.improvementStatus,
+  });
+}
+
+function resolvedObligation(snap: TerminationDocumentSnapshot): CustomerObligationBreakdown {
+  if (snap.obligation && typeof snap.obligation === 'object') {
+    return snap.obligation;
+  }
+  const improvements = resolvedImprovements(snap);
+  const contractual = Number(snap.agreedRefundAmount || 0);
+  return {
+    contractualRefund: contractual,
+    improvementsTotal: improvements.total,
+    total: contractual + improvements.total,
+  };
+}
+
 function improvementsClause(snap: TerminationDocumentSnapshot): string {
-  if (waitingImprovementAppraisal(snap.improvementStatus)) {
+  const improvements = resolvedImprovements(snap);
+  if (waitingImprovementAppraisal(snap.improvementStatus, improvements)) {
     return `<p>Foi informado que existem benfeitorias na unidade, sujeitas à avaliação técnica prevista na política contratual congelada (${esc(snap.policyVersion || '—')}). Enquanto essa avaliação não for concluída, o quadro de acerto financeiro deste termo <strong>não constitui cálculo final</strong> e <strong>não há quitação financeira definitiva</strong>.</p>`;
   }
-  if (snap.improvementStatus) {
-    return `<p>Situação de benfeitorias registrada no acerto: <strong>${esc(snap.improvementStatus)}</strong>.</p>`;
+  if (improvements.declared && improvements.appraisalStatus === 'COMPLETED') {
+    const rows =
+      improvements.items.length > 0
+        ? `<ul>${improvements.items
+            .map(
+              (item) =>
+                `<li>${esc(item.description || 'Benfeitoria')} — ${money(item.amount)}</li>`,
+            )
+            .join('')}</ul>`
+        : '<p>Foram reconhecidas benfeitorias nesta operação, sem discriminação individual de itens neste registro.</p>';
+    return `<p>Foram identificadas e avaliadas as seguintes benfeitorias existentes na unidade:</p>
+${rows}
+<p><strong>Valor total das benfeitorias reconhecidas: ${money(improvements.total)}.</strong></p>
+<p>O valor das benfeitorias é tratado separadamente do cálculo contratual de restituição da aquisição e integra a obrigação financeira reconhecida nesta operação nos termos deste instrumento.</p>`;
   }
-  return `<p>Não foi informada, neste ato, a existência de benfeitorias sujeitas à avaliação para o acerto financeiro.</p>`;
+  return `<p>As partes declaram que não existem benfeitorias indenizáveis registradas nesta operação.</p>`;
 }
 
 function quitacaoClause(snap: TerminationDocumentSnapshot): string {
   const due = Number(snap.agreedRefundAmount || 0);
-  const waiting = waitingImprovementAppraisal(snap.improvementStatus);
+  const waiting = waitingImprovementAppraisal(snap.improvementStatus, snap.improvements);
+  const obligation = resolvedObligation(snap);
   if (waiting) {
     return `<p>Em face da avaliação de benfeitorias pendente, as partes reconhecem apenas o encerramento da relação de aquisição da unidade, sem declaração de quitação financeira definitiva.</p>`;
+  }
+  if (obligation.improvementsTotal > 0) {
+    const scheduleNote = snap.refundSchedule.defined
+      ? ' com vencimentos formalizados no cronograma deste termo'
+      : ', a ser cumprida na forma operacional/financeira aplicável';
+    return `<p>As partes reconhecem o encerramento da relação contratual referente à aquisição da unidade identificada e o acerto financeiro apurado neste ato. Ficam discriminados: restituição contratual de <strong>${money(obligation.contractualRefund)}</strong>; valor reconhecido das benfeitorias de <strong>${money(obligation.improvementsTotal)}</strong>; e total da obrigação com o cliente de <strong>${money(obligation.total)}</strong>${scheduleNote}. A assinatura deste instrumento reconhece essa obrigação e <strong>não equivale à comprovação futura de pagamento</strong>. A quitação financeira somente ocorrerá quando os pagamentos forem efetivamente realizados.</p>`;
   }
   if (due > 0 && snap.refundSchedule.defined) {
     return `<p>As partes reconhecem o encerramento da relação contratual referente à aquisição da unidade identificada e o acerto financeiro apurado neste ato. Subsiste obrigação de restituição no valor líquido previsto de <strong>${money(due)}</strong>, com vencimentos formalizados no cronograma deste termo. A assinatura deste instrumento não equivale à comprovação futura de pagamento. A quitação financeira ocorrerá somente conforme as parcelas forem efetivamente pagas.</p>`;
@@ -72,21 +121,30 @@ function quitacaoClause(snap: TerminationDocumentSnapshot): string {
 
 function scheduleClause(snap: TerminationDocumentSnapshot): string {
   const due = Number(snap.agreedRefundAmount || 0);
+  const obligation = resolvedObligation(snap);
+  const waiting = waitingImprovementAppraisal(snap.improvementStatus, snap.improvements);
   if (snap.refundDestination === 'CREDIT_OTHER_UNIT') {
     return `<p>O destino reconhecido neste ato é crédito em outra unidade, como intenção. Não há cronograma de restituição em dinheiro neste instrumento.</p>`;
   }
-  if (due <= 0) {
+  const scheduleAmount = obligation.improvementsTotal > 0 ? obligation.total : due;
+  if (scheduleAmount <= 0) {
     return `<p>Não há valor líquido previsto para restituição neste acerto.</p>`;
   }
+  const originPreamble =
+    obligation.improvementsTotal > 0
+      ? `<p>Restituição contratual: <strong>${money(obligation.contractualRefund)}</strong>.</p>
+<p>Benfeitorias: <strong>${money(obligation.improvementsTotal)}</strong>.</p>
+<p>Total reconhecido: <strong>${money(obligation.total)}</strong>.</p>`
+      : '';
   if (!snap.refundSchedule.defined) {
     const n = snap.refundSchedule.installmentCount;
     const qty = n == null ? 'não definida neste ato' : String(n);
-    if (waitingImprovementAppraisal(snap.improvementStatus)) {
-      return `<p>Valor líquido previsto para restituição (provisório): <strong>${money(due)}</strong>.</p>
+    if (waiting) {
+      return `${originPreamble}<p>Valor líquido previsto para restituição (provisório): <strong>${money(due)}</strong>.</p>
 <p>Quantidade prevista de parcelas de restituição: <strong>${esc(qty)}</strong>.</p>
 <p>O cronograma de restituição será definido após a conclusão da avaliação das benfeitorias e o fechamento do acerto financeiro. Não se formalizam neste ato datas de vencimento nem valores individualizados das parcelas, porque o cálculo ainda não é definitivo.</p>`;
     }
-    return `<p>Valor líquido previsto para restituição: <strong>${money(due)}</strong>.</p>
+    return `${originPreamble}<p>Valor líquido previsto para restituição: <strong>${money(due)}</strong>.</p>
 <p>Quantidade prevista de parcelas de restituição: <strong>${esc(qty)}</strong>.</p>
 <p>As datas de vencimento e os valores individualizados das parcelas de restituição não são definidos neste ato e deverão observar o ajuste operacional/financeiro aplicável.</p>`;
   }
@@ -97,13 +155,34 @@ function scheduleClause(snap: TerminationDocumentSnapshot): string {
       return `<tr><td>${esc(seq)}/${esc(total)}</td><td>${esc(formatIsoDateBr(item.dueDate))}</td><td>${money(item.amount)}</td></tr>`;
     })
     .join('');
-  return `<h2>CRONOGRAMA DA RESTITUIÇÃO</h2>
-<p>O valor líquido previsto para restituição é obrigação reconhecida neste ato. As datas abaixo são as obrigações vencíveis acordadas nesta operação. A assinatura deste termo não equivale à comprovação futura de pagamento. A quitação financeira ocorrerá somente conforme as parcelas forem efetivamente pagas.</p>
+  const heading =
+    obligation.improvementsTotal > 0
+      ? 'CRONOGRAMA DA OBRIGAÇÃO'
+      : 'CRONOGRAMA DA RESTITUIÇÃO';
+  const intro =
+    obligation.improvementsTotal > 0
+      ? `<p>O total reconhecido neste ato (${money(obligation.total)}) compreende a restituição contratual (${money(obligation.contractualRefund)}) e as benfeitorias reconhecidas (${money(obligation.improvementsTotal)}). As datas abaixo são as obrigações vencíveis acordadas nesta operação. A assinatura deste termo não equivale à comprovação futura de pagamento. A quitação financeira ocorrerá somente conforme as parcelas forem efetivamente pagas.</p>`
+      : `<p>O valor líquido previsto para restituição é obrigação reconhecida neste ato. As datas abaixo são as obrigações vencíveis acordadas nesta operação. A assinatura deste termo não equivale à comprovação futura de pagamento. A quitação financeira ocorrerá somente conforme as parcelas forem efetivamente pagas.</p>`;
+  return `${originPreamble}<h2>${heading}</h2>
+${intro}
 <table class="acerto cronograma">
   <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
-<p>Este cronograma é a formalização operacional da restituição definida neste ato, a partir do valor líquido já apurado no acerto, sem alterar a política contratual congelada.</p>`;
+<p>Este cronograma é a formalização operacional da obrigação definida neste ato, a partir dos valores já apurados no acerto, sem alterar a política contratual congelada.</p>`;
+}
+
+function obligationTable(snap: TerminationDocumentSnapshot): string {
+  const obligation = resolvedObligation(snap);
+  if (!(obligation.improvementsTotal > 0)) return '';
+  return `<table class="acerto">
+      <thead><tr><th colspan="2">OBRIGAÇÃO COM O CLIENTE</th></tr></thead>
+      <tbody>
+        <tr><td>Restituição contratual</td><td>${money(obligation.contractualRefund)}</td></tr>
+        <tr><td>Benfeitorias</td><td>${money(obligation.improvementsTotal)}</td></tr>
+        <tr class="total"><td>Total da obrigação com o cliente</td><td>${money(obligation.total)}</td></tr>
+      </tbody>
+    </table>`;
 }
 
 function pendingClause(snap: TerminationDocumentSnapshot): string {
@@ -188,6 +267,7 @@ export function buildDesistenciaTermHtml(
         <tr><td>Quantidade prevista de parcelas</td><td>${snap.refundInstallments == null ? '—' : String(snap.refundInstallments)}</td></tr>
       </tbody>
     </table>
+    ${obligationTable(snap)}
     ${scheduleClause(snap)}
     <p>Entrada apurada: ${money(snap.entryAmount)}. Sinal apurado: ${money(snap.signalAmount)}.</p>
 

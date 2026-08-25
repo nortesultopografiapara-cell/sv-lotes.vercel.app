@@ -3,6 +3,11 @@
  * Valores financeiros vêm do settlement persistido — nunca recalculados aqui.
  */
 
+import type {
+  CustomerObligationBreakdown,
+  ImprovementsRecord,
+} from '@/lib/contract-termination/improvements';
+
 export const TERMINATION_DOCUMENT_OPERATION_TYPES = [
   'desistencia',
   'distrato',
@@ -86,6 +91,8 @@ export type TerminationDocumentSnapshot = {
   refundInstallments: number | null;
   refundDestination: 'REFUND_CUSTOMER' | 'CREDIT_OTHER_UNIT';
   improvementStatus: string | null;
+  improvements: ImprovementsRecord;
+  obligation: CustomerObligationBreakdown;
   pendingObligationsCanceled: boolean;
   refundSchedule: TerminationRefundSchedule;
   html: string;

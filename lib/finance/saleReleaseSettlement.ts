@@ -7,6 +7,19 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateTerminationSettlement } from '@/lib/contract-termination/calculateSettlement';
+import {
+  buildCustomerObligation,
+  buildImprovementsRecord,
+  emptyImprovementsRecord,
+  engineHasImprovementsFlag,
+  improvementStatusForPersist,
+  parseImprovementsOperatorFields,
+  validateImprovementsForRelease,
+  type CustomerObligationBreakdown,
+  type ImprovementAppraisalStatus,
+  type ImprovementItemInput,
+  type ImprovementsRecord,
+} from '@/lib/contract-termination/improvements';
 import { classifyTerminationReceipts } from '@/lib/contract-termination/receipts';
 import { resolveOperationalTerminationPolicy } from '@/lib/contract-termination/resolvePolicy';
 import { parseTerminationPolicySnapshot } from '@/lib/contract-termination/snapshot';
@@ -48,6 +61,8 @@ export type SaleReleaseSettlementStatus =
 
 export type ReleaseSettlementOperatorInput = {
   hasImprovements: boolean;
+  improvementsAppraisalStatus: ImprovementAppraisalStatus;
+  improvementItems: ImprovementItemInput[];
   refundDestination: SettlementDestination;
   exceptionalAgreement: boolean;
   exceptionalReason: string | null;
@@ -90,6 +105,8 @@ export type PreparedReleaseSettlement = {
   exceptionalRefundAmount: number | null;
   refundDestination: SettlementDestination;
   hasImprovements: boolean;
+  improvements: ImprovementsRecord;
+  obligation: CustomerObligationBreakdown;
   refundSchedule: TerminationRefundSchedule;
 };
 
@@ -171,8 +188,11 @@ export function parseReleaseSettlementOperatorInput(
       : Number(refundAmountRaw);
   const retentionNum =
     retentionRaw == null || retentionRaw === '' ? null : Number(retentionRaw);
+  const improvementsFields = parseImprovementsOperatorFields(body);
   return {
-    hasImprovements: body.hasImprovements === true || body.hasImprovements === 'sim',
+    hasImprovements: improvementsFields.hasImprovements,
+    improvementsAppraisalStatus: improvementsFields.improvementsAppraisalStatus,
+    improvementItems: improvementsFields.improvementItems,
     refundDestination,
     exceptionalAgreement:
       body.exceptionalAgreement === true || body.exceptionOverride === true,
@@ -231,6 +251,19 @@ export function validateReleaseSettlementOperatorInput(input: {
         code: 'EXCEPTION_VALUE_REQUIRED',
       };
     }
+  }
+  const improvementsCheck = validateImprovementsForRelease({
+    hasImprovements: input.operator.hasImprovements,
+    appraisalStatus: input.operator.improvementsAppraisalStatus,
+    items: input.operator.improvementItems,
+    destination: input.operator.refundDestination,
+  });
+  if (!improvementsCheck.ok) {
+    return {
+      ok: false,
+      error: improvementsCheck.error,
+      code: improvementsCheck.code,
+    };
   }
   return { ok: true };
 }
@@ -438,6 +471,8 @@ export function prepareReleaseSettlement(input: {
       exceptionalRefundAmount: null,
       refundDestination: 'REFUND_CUSTOMER',
       hasImprovements: false,
+      improvements: emptyImprovementsRecord(),
+      obligation: { contractualRefund: 0, improvementsTotal: 0, total: 0 },
       refundSchedule: undefinedRefundSchedule(null),
     };
   }
@@ -452,20 +487,32 @@ export function prepareReleaseSettlement(input: {
         }
       : null;
 
+  const improvements = buildImprovementsRecord({
+    hasImprovements: input.operator.hasImprovements,
+    appraisalStatus: input.operator.improvementsAppraisalStatus,
+    items: input.operator.improvementItems,
+  });
+
   const settlement = calculateTerminationSettlement({
     policy: resolved.policy,
     receipts: input.receipts,
     motiveCode: operationType,
-    hasImprovements: input.operator.hasImprovements,
+    hasImprovements: engineHasImprovementsFlag({
+      hasImprovements: input.operator.hasImprovements,
+      improvementsAppraisalStatus: input.operator.improvementsAppraisalStatus,
+    }),
     destination: input.operator.refundDestination,
     exceptionOverride,
   });
 
-  const improvementStatus = settlement.calculationStatus === 'WAITING_IMPROVEMENT_APPRAISAL'
-    ? 'WAITING_APPRAISAL'
-    : input.operator.hasImprovements
-      ? 'DECLARED'
-      : 'NONE';
+  const improvementStatus = improvementStatusForPersist(improvements);
+  const obligation = buildCustomerObligation({
+    contractualRefund:
+      settlement.agreedRefundAmount != null
+        ? settlement.agreedRefundAmount
+        : settlement.contractualRefundAmount,
+    improvements,
+  });
 
   return {
     operationType,
@@ -483,6 +530,8 @@ export function prepareReleaseSettlement(input: {
       : null,
     refundDestination: settlement.destination,
     hasImprovements: input.operator.hasImprovements,
+    improvements,
+    obligation,
     refundSchedule: undefinedRefundSchedule(settlement.refundInstallmentCount),
   };
 }
@@ -537,6 +586,8 @@ export async function upsertCalculatedReleaseSettlement(
     calculation_snapshot: {
       ...s,
       refundSchedule: params.prepared.refundSchedule,
+      improvements: params.prepared.improvements,
+      obligation: params.prepared.obligation,
     },
     receipts_snapshot: params.prepared.receiptsSnapshot,
     total_paid: s.totalPaid,

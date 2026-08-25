@@ -22,8 +22,13 @@ import {
   UserX,
   X,
 } from 'lucide-react';
-import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { formatCurrencyBRL, parseCurrencyBRL } from '@/lib/currencyBrl';
 import { calculateTerminationSettlement } from '@/lib/contract-termination/calculateSettlement';
+import {
+  engineHasImprovementsFlag,
+  validateImprovementsForRelease,
+  type ImprovementAppraisalStatus,
+} from '@/lib/contract-termination/improvements';
 import type { SettlementDestination } from '@/lib/contract-termination/types';
 import { shouldDefineRefundSchedule } from '@/lib/termination-documents/refundSchedule';
 import {
@@ -37,11 +42,19 @@ import {
   type ReleaseLotPreview,
   validateReleaseLotMotive,
 } from '@/lib/finance/releaseLotShared';
-import { ReleaseLotSettlementSection } from '@/components/map/ReleaseLotSettlementSection';
+import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
 import { supabase } from '@/lib/supabase';
 
 const FIELD_CLASS =
   'form-input-light w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500';
+
+function newImprovementDraft(): ImprovementDraftItem {
+  return {
+    id: `imp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    description: '',
+    amount: '',
+  };
+}
 
 const OPERATION_ICONS: Record<SaleOperationUiCode, typeof UserX> = {
   desistencia: UserX,
@@ -117,6 +130,11 @@ export function ReleaseLotConfirmModal({
   const [motiveDetail, setMotiveDetail] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
   const [hasImprovements, setHasImprovements] = useState<'sim' | 'nao'>('nao');
+  const [improvementsAppraisalStatus, setImprovementsAppraisalStatus] =
+    useState<ImprovementAppraisalStatus>('NONE');
+  const [improvementItems, setImprovementItems] = useState<ImprovementDraftItem[]>([
+    newImprovementDraft(),
+  ]);
   const [destination, setDestination] = useState<SettlementDestination>('REFUND_CUSTOMER');
   const [exceptionEnabled, setExceptionEnabled] = useState(false);
   const [exceptionMode, setExceptionMode] = useState<'amount' | 'percent'>('amount');
@@ -190,7 +208,11 @@ export function ReleaseLotConfirmModal({
       policy: ctx.policy,
       receipts: ctx.receipts || [],
       motiveCode: motiveCode || null,
-      hasImprovements: hasImprovements === 'sim',
+      hasImprovements: engineHasImprovementsFlag({
+        hasImprovements: hasImprovements === 'sim',
+        improvementsAppraisalStatus:
+          hasImprovements === 'sim' ? improvementsAppraisalStatus : 'NONE',
+      }),
       destination,
       exceptionOverride: exceptionEnabled
         ? {
@@ -210,9 +232,37 @@ export function ReleaseLotConfirmModal({
     exceptionMode,
     exceptionValue,
     hasImprovements,
+    improvementsAppraisalStatus,
     motiveCode,
     preview?.settlementPreview,
   ]);
+
+  const parsedImprovementItems = useMemo(
+    () =>
+      improvementItems.map((item, index) => ({
+        id: item.id,
+        order: index + 1,
+        description: item.description,
+        amount: parseCurrencyBRL(item.amount) ?? 0,
+      })),
+    [improvementItems],
+  );
+
+  const improvementsCheck = useMemo(
+    () =>
+      validateImprovementsForRelease({
+        hasImprovements: hasImprovements === 'sim',
+        appraisalStatus: hasImprovements === 'sim' ? improvementsAppraisalStatus : 'NONE',
+        items: parsedImprovementItems,
+        destination,
+      }),
+    [destination, hasImprovements, improvementsAppraisalStatus, parsedImprovementItems],
+  );
+
+  const improvementsTotal =
+    improvementsCheck.ok && improvementsCheck.record.appraisalStatus === 'COMPLETED'
+      ? improvementsCheck.record.total
+      : 0;
 
   const deferredOperation = isDeferredSaleOperation(motiveCode);
   const releaseOperation = isLotReleaseSaleOperation(motiveCode);
@@ -226,6 +276,11 @@ export function ReleaseLotConfirmModal({
         contractualRefundAmount: liveSettlement.contractualRefundAmount,
         installmentCount: liveSettlement.refundInstallmentCount,
         calculationStatus: liveSettlement.calculationStatus,
+        improvementsTotal,
+        scheduleTotal:
+          (liveSettlement.agreedRefundAmount != null
+            ? Number(liveSettlement.agreedRefundAmount)
+            : Number(liveSettlement.contractualRefundAmount || 0)) + improvementsTotal,
       }),
   );
 
@@ -241,9 +296,11 @@ export function ReleaseLotConfirmModal({
         asaasBlockedCharges: preview?.asaasBlockedCharges,
         interBlockedCharges: preview?.interBlockedCharges,
       }) &&
-      (!needsRefundSchedule || Boolean(refundFirstDueDate)),
+      (!needsRefundSchedule || Boolean(refundFirstDueDate)) &&
+      (!showSettlement || improvementsCheck.ok),
     [
       acknowledged,
+      improvementsCheck.ok,
       loading,
       motiveCode,
       motiveDetail,
@@ -253,6 +310,7 @@ export function ReleaseLotConfirmModal({
       preview?.interBlockedCharges,
       refundFirstDueDate,
       releaseOperation,
+      showSettlement,
     ],
   );
 
@@ -290,6 +348,10 @@ export function ReleaseLotConfirmModal({
       setError('Informe o vencimento da 1ª parcela de restituição.');
       return;
     }
+    if (showSettlement && !improvementsCheck.ok) {
+      setError(improvementsCheck.error);
+      return;
+    }
     submittingRef.current = true;
     setLoading(true);
     setError('');
@@ -311,6 +373,14 @@ export function ReleaseLotConfirmModal({
           motiveDetail: motive.motiveDetail,
           acknowledged: true,
           hasImprovements: hasImprovements === 'sim',
+          improvementsAppraisalStatus:
+            hasImprovements === 'sim' ? improvementsAppraisalStatus : 'NONE',
+          improvementsAppraisalCompleted:
+            hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED',
+          improvementItems:
+            hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED'
+              ? parsedImprovementItems
+              : [],
           refundDestination: destination,
           exceptionalAgreement: motive.motiveCode === 'distrato' && exceptionEnabled,
           exceptionalReason:
@@ -720,7 +790,30 @@ export function ReleaseLotConfirmModal({
                     settlement={liveSettlement}
                     origin={preview.settlementPreview.origin}
                     hasImprovements={hasImprovements}
-                    onHasImprovements={setHasImprovements}
+                    onHasImprovements={(value) => {
+                      setHasImprovements(value);
+                      if (value === 'nao') {
+                        setImprovementsAppraisalStatus('NONE');
+                        setImprovementItems([newImprovementDraft()]);
+                      } else {
+                        setImprovementsAppraisalStatus((prev) =>
+                          prev === 'COMPLETED' ? 'COMPLETED' : 'PENDING',
+                        );
+                        setImprovementItems((prev) =>
+                          prev.length > 0 ? prev : [newImprovementDraft()],
+                        );
+                      }
+                    }}
+                    improvementsAppraisalStatus={
+                      hasImprovements === 'sim'
+                        ? improvementsAppraisalStatus === 'NONE'
+                          ? 'PENDING'
+                          : improvementsAppraisalStatus
+                        : 'NONE'
+                    }
+                    onImprovementsAppraisalStatus={setImprovementsAppraisalStatus}
+                    improvementItems={improvementItems}
+                    onImprovementItems={setImprovementItems}
                     destination={destination}
                     onDestination={setDestination}
                     allowException={motiveCode === 'distrato'}

@@ -4,6 +4,7 @@
  */
 
 import type { FormattedLotAuditEvent, LotAuditAction, LotAuditSource } from '@/lib/lotAudit';
+import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import {
   terminationDocumentPdfHref,
   terminationDocumentViewHref,
@@ -194,6 +195,16 @@ export function resolveLotHistoryActor(
   UUID_RE.lastIndex = 0;
   if (UUID_RE.test(label)) return null;
   return label;
+}
+
+/** Mesmo sale_id/settlement.document_id das APIs de termo — sem segundo PDF. */
+export function lotHistoryImprovementsLine(
+  event: Pick<FormattedLotAuditEvent, 'improvementsTotal'>,
+): string | null {
+  const total = Number(event.improvementsTotal);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const money = formatCurrencyBRL(total) || 'R$ 0,00';
+  return `Benfeitorias reconhecidas: ${money}`;
 }
 
 /** Mesmo sale_id/settlement.document_id das APIs de termo — sem segundo PDF. */

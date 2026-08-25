@@ -48,6 +48,11 @@ import {
 import { isCanceledBrokerCommission, isPaidBrokerCommission } from '@/lib/brokerCommission';
 import { buildTerminationSettlementPreview } from '@/lib/contract-termination/preview';
 import {
+  IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE,
+  type CustomerObligationBreakdown,
+  type ImprovementsRecord,
+} from '@/lib/contract-termination/improvements';
+import {
   isSaleReleaseSettlementOperation,
   loadActiveReleaseSettlement,
   markReleaseSettlementExecuted,
@@ -58,6 +63,7 @@ import {
   SettlementPersistError,
   upsertCalculatedReleaseSettlement,
   validateReleaseSettlementOperatorInput,
+  type PreparedReleaseSettlement,
   type SaleReleaseSettlementRow,
 } from '@/lib/finance/saleReleaseSettlement';
 import { logLotAuditEvent } from '@/lib/lotAudit';
@@ -292,6 +298,9 @@ export type ReleaseLotExecuteInput = {
   /** Quando true, tenta novamente cancelar cobranças Asaas e concluir local. */
   retry?: boolean;
   hasImprovements?: boolean;
+  improvementsAppraisalStatus?: string | null;
+  improvementsAppraisalCompleted?: boolean;
+  improvementItems?: unknown;
   refundDestination?: string | null;
   exceptionalAgreement?: boolean;
   exceptionalReason?: string | null;
@@ -1161,9 +1170,26 @@ async function applyLocalRelease(
     motiveLabel: string;
     motiveDetail: string | null;
     settlementId?: string | null;
+    settlementAudit?: {
+      hasImprovements: boolean;
+      improvementStatus: string | null;
+      improvements: ImprovementsRecord;
+      obligation: CustomerObligationBreakdown;
+      contractualRefundAmount: number;
+    } | null;
   },
 ): Promise<{ cancelledUnpaidReceipts: number }> {
-  const { companyId, block, preview, userId, motiveCode, motiveLabel, motiveDetail, settlementId } = params;
+  const {
+    companyId,
+    block,
+    preview,
+    userId,
+    motiveCode,
+    motiveLabel,
+    motiveDetail,
+    settlementId,
+    settlementAudit,
+  } = params;
   const now = new Date().toISOString();
   let cancelledUnpaidReceipts = 0;
 
@@ -1349,6 +1375,15 @@ async function applyLocalRelease(
     idempotencyKey: preview.idempotencyKey,
     settlementId: settlementId || null,
     releasedAt: now,
+    hasImprovements: settlementAudit?.hasImprovements ?? false,
+    improvementStatus: settlementAudit?.improvementStatus ?? null,
+    improvementsAppraisalStatus: settlementAudit?.improvements.appraisalStatus ?? null,
+    improvementItems: settlementAudit?.improvements.items ?? [],
+    improvementsTotal: settlementAudit?.obligation.improvementsTotal ?? 0,
+    contractualRefundAmount: settlementAudit?.obligation.contractualRefund ?? null,
+    obligationTotal: settlementAudit?.obligation.total ?? null,
+    obligation: settlementAudit?.obligation ?? null,
+    improvements: settlementAudit?.improvements ?? null,
   };
 
   await logLotAuditEvent(admin, {
@@ -1429,6 +1464,9 @@ export async function executeReleaseLot(
 
   const operator = parseReleaseSettlementOperatorInput({
     hasImprovements: input.hasImprovements,
+    improvementsAppraisalStatus: input.improvementsAppraisalStatus,
+    improvementsAppraisalCompleted: input.improvementsAppraisalCompleted,
+    improvementItems: input.improvementItems,
     refundDestination: input.refundDestination,
     exceptionalAgreement: input.exceptionalAgreement,
     exceptionalReason: input.exceptionalReason,
@@ -1592,6 +1630,7 @@ export async function executeReleaseLot(
   let settlementStatus: string | null = existingSettlement?.status || null;
   let calculationStatus: string | null = existingSettlement?.calculation_status || null;
   let frozenSnapshot: TerminationDocumentSnapshot | null = null;
+  let preparedSettlement: PreparedReleaseSettlement | null = null;
 
   if (
     preview.saleId &&
@@ -1622,6 +1661,15 @@ export async function executeReleaseLot(
             : null,
         operator,
       });
+      preparedSettlement = prepared;
+      if (prepared.calculationStatus === 'WAITING_IMPROVEMENT_APPRAISAL') {
+        throw releaseErr(
+          IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE,
+          400,
+          'IMPROVEMENTS_APPRAISAL_REQUIRED',
+          'validate_motive',
+        );
+      }
       const scheduleResult = resolveRefundSchedule({
         destination: prepared.refundDestination,
         agreedRefundAmount: prepared.settlement.agreedRefundAmount,
@@ -1629,6 +1677,8 @@ export async function executeReleaseLot(
         installmentCount: prepared.settlement.refundInstallmentCount,
         calculationStatus: prepared.calculationStatus,
         firstDueDate: operator.refundFirstDueDate,
+        improvementsTotal: prepared.obligation.improvementsTotal,
+        scheduleTotal: prepared.obligation.total,
       });
       if (!scheduleResult.ok) {
         throw releaseErr(
@@ -1825,6 +1875,15 @@ export async function executeReleaseLot(
     motiveLabel: motive.motiveLabel,
     motiveDetail: motive.motiveDetail,
     settlementId,
+    settlementAudit: preparedSettlement
+      ? {
+          hasImprovements: preparedSettlement.hasImprovements,
+          improvementStatus: preparedSettlement.improvementStatus,
+          improvements: preparedSettlement.improvements,
+          obligation: preparedSettlement.obligation,
+          contractualRefundAmount: preparedSettlement.settlement.contractualRefundAmount,
+        }
+      : null,
   });
 
   if (settlementId && preview.saleId && settlementStatus !== 'EXECUTED') {

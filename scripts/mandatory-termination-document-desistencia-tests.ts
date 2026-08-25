@@ -66,11 +66,14 @@ function homologPrepared() {
     saleContractModel: 'ARAGUAIA',
     operator: {
       hasImprovements: false,
+      improvementsAppraisalStatus: 'NONE',
+      improvementItems: [],
       refundDestination: 'REFUND_CUSTOMER',
       exceptionalAgreement: false,
       exceptionalReason: null,
       exceptionalRefundAmount: null,
       exceptionalRetentionPercent: null,
+      refundFirstDueDate: null,
     },
   });
 }
@@ -103,6 +106,12 @@ function settlementRowFromPrepared(
     policy_snapshot: prepared.policySnapshot,
     operator_user_id: 'operator-1',
     calculation_status: prepared.calculationStatus,
+    calculation_snapshot: extra.calculation_snapshot ?? {
+      ...s,
+      refundSchedule: prepared.refundSchedule,
+      improvements: prepared.improvements,
+      obligation: prepared.obligation,
+    },
     ...extra,
   };
 }
@@ -330,6 +339,8 @@ function testSnapshotEqualsSettlementAndHtml() {
   assert(snap.html.includes('R$ 1.500,00') || snap.html.includes('1.500'), 'líquido');
   assert(!snap.html.includes('30/60'), 'não inventa 30/60');
   assert(!/plena, geral, irrevogável e irretratável quitação/i.test(snap.html), 'sem quitação plena');
+  assert(snap.html.includes('não existem benfeitorias indenizáveis'), 'cláusula 5 em português');
+  assert(!/\bNONE\b/.test(snap.html), 'não exibe NONE');
   assert(snap.html.includes('A) Identificação'), 'cláusula A');
   assert(snap.html.includes('K) Assinaturas'), 'cláusula K');
   assert(snap.contractId === 'contract-homolog', 'contract_id válido');
@@ -468,6 +479,65 @@ function testImprovementsAndCredit() {
   assert(waitingDateIgnored.refundSchedule.defined === false, 'WAITING ignora cronograma enviado');
   assert(!waitingDateIgnored.html.includes('15/09/2026'), 'WAITING não congela data enviada');
   assert(waitingDateIgnored.html.includes('após a conclusão da avaliação das benfeitorias'), 'WAITING com data ainda informa avaliação');
+  assert(!waiting.html.includes('NONE'), 'WAITING não exibe NONE');
+
+  const appraisedPrepared = prepareReleaseSettlement({
+    motiveCode: 'desistencia',
+    receipts: [rec(0, 2000), rec(1, 1000), rec(2, 1000)],
+    saleSnapshot: araguaiaSnapshot,
+    salePersistSource: 'catalog',
+    saleContractModel: 'ARAGUAIA',
+    operator: {
+      hasImprovements: true,
+      improvementsAppraisalStatus: 'COMPLETED',
+      improvementItems: [
+        { id: 'imp-1', order: 1, description: 'Muro de alvenaria', amount: 8000 },
+        { id: 'imp-2', order: 2, description: 'Fundação', amount: 12000 },
+      ],
+      refundDestination: 'REFUND_CUSTOMER',
+      exceptionalAgreement: false,
+      exceptionalReason: null,
+      exceptionalRefundAmount: null,
+      exceptionalRetentionPercent: null,
+      refundFirstDueDate: '2026-09-15',
+    },
+  });
+  assert(appraisedPrepared.settlement.contractualRefundAmount === 1500, 'retenção contratual intacta');
+  assert(appraisedPrepared.settlement.agreedRefundAmount === 1500, 'acordado contratual intacto');
+  assert(appraisedPrepared.improvements.total === 20000, 'total benfeitorias');
+  assert(appraisedPrepared.obligation.total === 21500, 'obrigação = 1500 + 20000');
+  assert(appraisedPrepared.settlement.calculationStatus === 'CALCULATED', 'avaliação concluída fecha o motor');
+  const appraisedSchedule = resolveRefundSchedule({
+    destination: 'REFUND_CUSTOMER',
+    agreedRefundAmount: 1500,
+    contractualRefundAmount: 1500,
+    installmentCount: 2,
+    calculationStatus: 'CALCULATED',
+    firstDueDate: '2026-09-15',
+    scheduleTotal: appraisedPrepared.obligation.total,
+    improvementsTotal: appraisedPrepared.improvements.total,
+  });
+  assert(appraisedSchedule.ok && appraisedSchedule.schedule.defined, 'cronograma do total');
+  if (appraisedSchedule.ok && appraisedSchedule.schedule.defined) {
+    assert(appraisedSchedule.schedule.installments[0].amount === 10750, '21500/2');
+    assert(appraisedSchedule.schedule.installments[1].amount === 10750, '21500/2 última');
+  }
+  const appraised = buildTerminationDocumentSnapshot({
+    settlement: settlementRowFromPrepared(appraisedPrepared),
+    documentNumber: 'TD-000000014/2026',
+    refundSchedule: appraisedSchedule.ok ? appraisedSchedule.schedule : null,
+    context: {
+      vendor: { role: 'vendedor', name: 'V', document: null, extra: null },
+      buyer: { role: 'comprador', name: 'C', document: null, extra: null },
+    },
+  });
+  assert(appraised.html.includes('Muro de alvenaria'), 'discrimina muro');
+  assert(appraised.html.includes('Fundação'), 'discrimina fundação');
+  assert(appraised.html.includes('Valor total das benfeitorias reconhecidas'), 'total no termo');
+  assert(appraised.html.includes('Total da obrigação com o cliente'), 'obrigação no termo');
+  assert(appraised.html.includes('tratado separadamente do cálculo contratual'), 'origem separada');
+  assert(!/\bNONE\b/.test(appraised.html), 'avaliado sem NONE');
+  assert(appraised.html.includes('não equivale à comprovação futura de pagamento'), 'assinatura ≠ pagamento com benfeitoria');
 
   const credit = buildTerminationDocumentSnapshot({
     settlement: settlementRowFromPrepared(prepared, {
@@ -502,6 +572,7 @@ function testCatalogModelsDoNotChangeEngine() {
 function testReleaseFlowAtomicityAndRetry() {
   const svc = read('lib/finance/releaseLotService.ts');
   const execFn = svc.slice(svc.indexOf('export async function executeReleaseLot'));
+  assert(execFn.includes('IMPROVEMENTS_APPRAISAL_REQUIRED'), 'bloqueia avaliação pendente');
   const persistMod = read('lib/termination-documents/persist.ts');
   const freezeIdx = execFn.indexOf('frozenSnapshot = await freezeDesistenciaSnapshotOrThrow');
   const asaasIdx = execFn.indexOf('resolveAsaasChargesForRelease');

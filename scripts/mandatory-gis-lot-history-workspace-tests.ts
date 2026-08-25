@@ -13,6 +13,7 @@ import {
   listLotHistoryFilterChips,
   lotHistoryDateKey,
   lotHistoryTerminationDocumentLinks,
+  lotHistoryImprovementsLine,
   resolveLotHistoryActor,
   splitLotHistoryDescription,
 } from '../lib/lotHistoryPresentation';
@@ -297,6 +298,7 @@ function testPanelWiringAndSingleScroll() {
   assert(panel.includes('Ver detalhes') || panel.includes('Ver mais'), 'expansão de detalhes');
   assert(panel.includes('Ver documento'), 'link Ver documento no histórico');
   assert(panel.includes('lotHistoryTerminationDocumentLinks'), 'reusa sale_id do evento');
+  assert(panel.includes('lotHistoryImprovementsLine'), 'benfeitorias no detalhe sem poluir o título');
   assert(panel.includes('formatLotAuditDescription'), 'reusa formatter de descrição');
   assert(!panel.includes("from('lot_audit_logs')"), 'painel não consulta o banco');
   assert(css.includes('gis-lot-history'), 'CSS do workspace');
@@ -322,6 +324,27 @@ function testTerminationDocumentLinkUsesSameSale() {
     Boolean(withTerm?.pdfHref.endsWith('/termination-document/pdf')),
     'PDF usa a mesma API do modal',
   );
+  const formatted = formatLotAuditEvent({
+    id: 'e-imp',
+    company_id: null,
+    project_id: 'p1',
+    block_id: 'b1',
+    lot_id: 'b1',
+    sale_id: 'sale-homolog',
+    contract_id: null,
+    user_id: 'u1',
+    action: 'sale_cancelled',
+    title: 'Lote liberado — venda encerrada',
+    description: 'Desistência do cliente · Vendido → Disponível',
+    old_data: null,
+    new_data: { motiveCode: 'desistencia', improvementsTotal: 20000 },
+    created_at: '2026-08-25T12:00:00Z',
+    source: 'gis_map',
+  });
+  assert(formatted.title === 'Lote liberado — venda encerrada', 'título intacto');
+  const impLine = lotHistoryImprovementsLine(formatted) || '';
+  assert(impLine.includes('Benfeitorias reconhecidas'), 'detalhe de benfeitorias no evento');
+  assert(impLine.includes('20.000'), 'valor reconhecido no detalhe');
   assert(
     lotHistoryTerminationDocumentLinks({
       action: 'sale_cancelled',

@@ -11,6 +11,7 @@ import {
   listLotHistoryFilterChips,
   lotHistoryTerminationDocumentLinks,
   lotHistoryTimeLabel,
+  lotHistoryImprovementsLine,
   resolveLotHistoryActor,
   splitLotHistoryDescription,
   type LotHistoryFilterId,
@@ -109,6 +110,7 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
                     const needsToggle = split.isLong || split.hasTechnical;
                     const shown = open ? split.full : split.preview;
                     const termLinks = lotHistoryTerminationDocumentLinks(entry);
+                    const improvementsLine = lotHistoryImprovementsLine(entry);
 
                     return (
                       <li key={entry.id} className="gis-lot-history-card">
@@ -134,6 +136,11 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
                                 }`}
                               >
                                 {shown}
+                              </p>
+                            ) : null}
+                            {improvementsLine ? (
+                              <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                                {improvementsLine}
                               </p>
                             ) : null}
                             {needsToggle ? (

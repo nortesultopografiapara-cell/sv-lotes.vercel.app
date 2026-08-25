@@ -83,6 +83,7 @@ export type FormattedLotAuditEvent = {
   sourceLabel: string;
   saleId: string | null;
   motiveCode: string | null;
+  improvementsTotal: number | null;
 };
 
 const ACTION_LABELS: Record<LotAuditAction, string> = {
@@ -177,6 +178,12 @@ export function formatLotAuditEvent(row: LotAuditLogRow): FormattedLotAuditEvent
       ? row.new_data
       : null;
   const motiveRaw = newData?.motiveCode;
+  const improvementsTotalRaw =
+    newData?.improvementsTotal ??
+    (newData?.obligation && typeof newData.obligation === 'object'
+      ? (newData.obligation as { improvementsTotal?: unknown }).improvementsTotal
+      : null);
+  const improvementsTotalNum = Number(improvementsTotalRaw);
   return {
     id: row.id,
     createdAt: row.created_at,
@@ -190,6 +197,10 @@ export function formatLotAuditEvent(row: LotAuditLogRow): FormattedLotAuditEvent
     sourceLabel: formatLotAuditSource(row.source),
     saleId: row.sale_id ? String(row.sale_id) : null,
     motiveCode: motiveRaw != null && String(motiveRaw).trim() ? String(motiveRaw).trim() : null,
+    improvementsTotal:
+      Number.isFinite(improvementsTotalNum) && improvementsTotalNum > 0
+        ? improvementsTotalNum
+        : null,
   };
 }
 

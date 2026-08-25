@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { parseImprovementsFromCalculationSnapshot, parseObligationFromCalculationSnapshot } from '@/lib/contract-termination/improvements';
 import {
   buildUploadStoragePathForSale,
   createSystemGeneratedSaleDocumentMetadata,
@@ -171,12 +172,22 @@ export async function freezeTerminationDocumentSnapshot(
       TERMINATION_DOCUMENT_PREFIX_DESISTENCIA,
     ));
 
+  const obligation = parseObligationFromCalculationSnapshot(
+    row.calculation_snapshot,
+    row.agreed_refund_amount == null
+      ? Number(row.contractual_refund_amount) || 0
+      : Number(row.agreed_refund_amount) || 0,
+  );
+  const improvements = parseImprovementsFromCalculationSnapshot(row.calculation_snapshot);
   const needed = shouldDefineRefundSchedule({
     destination: row.refund_destination,
     agreedRefundAmount: row.agreed_refund_amount,
     contractualRefundAmount: row.contractual_refund_amount,
     installmentCount: row.refund_installments,
     calculationStatus: row.calculation_status,
+    improvementsTotal: obligation.improvementsTotal,
+    scheduleTotal:
+      improvements.appraisalStatus === 'COMPLETED' ? obligation.total : row.agreed_refund_amount,
   });
   const parsedSchedule = parseRefundScheduleFromCalculationSnapshot(
     row.calculation_snapshot,

@@ -3,6 +3,13 @@
  * e das partes capturadas no ato. Sem recálculo financeiro.
  */
 
+import {
+  buildCustomerObligation,
+  emptyImprovementsRecord,
+  parseImprovementsFromCalculationSnapshot,
+  parseObligationFromCalculationSnapshot,
+  resolveImprovementsForDocument,
+} from '@/lib/contract-termination/improvements';
 import { hashTerminationDocumentHtml } from '@/lib/termination-documents/hash';
 import { buildDesistenciaTermHtml } from '@/lib/termination-documents/desistenciaTemplate';
 import {
@@ -82,6 +89,8 @@ function resolveSnapshotRefundSchedule(input: {
   agreed: number | null;
   refundInstallments: number | null;
   candidate: TerminationRefundSchedule;
+  improvementsTotal?: number | null;
+  scheduleTotal?: number | null;
 }): TerminationRefundSchedule {
   const needed = shouldDefineRefundSchedule({
     destination: input.refundDestination,
@@ -89,6 +98,8 @@ function resolveSnapshotRefundSchedule(input: {
     contractualRefundAmount: input.settlement.contractual_refund_amount,
     installmentCount: input.refundInstallments,
     calculationStatus: input.settlement.calculation_status,
+    improvementsTotal: input.improvementsTotal,
+    scheduleTotal: input.scheduleTotal,
   });
   if (needed && input.candidate.defined) return input.candidate;
   return undefinedRefundSchedule(input.refundInstallments);
@@ -122,6 +133,28 @@ export function buildTerminationDocumentSnapshot(input: {
     text(input.context.quadra) || text(input.context.lote)
       ? `Quadra ${input.context.quadra || '—'} / Lote ${input.context.lote || '—'}`
       : null;
+
+  const improvements = resolveImprovementsForDocument({
+    improvementStatus: text(s.improvement_status),
+    calculationSnapshot: s.calculation_snapshot,
+  });
+  const fromSnap = parseImprovementsFromCalculationSnapshot(s.calculation_snapshot);
+  const improvementsResolved = fromSnap.declared
+    ? fromSnap
+    : improvements.declared
+      ? improvements
+      : emptyImprovementsRecord();
+  const obligation = parseObligationFromCalculationSnapshot(
+    s.calculation_snapshot,
+    agreed || 0,
+  );
+  const obligationResolved =
+    obligation.improvementsTotal > 0 || improvementsResolved.appraisalStatus === 'COMPLETED'
+      ? obligation
+      : buildCustomerObligation({
+          contractualRefund: agreed || 0,
+          improvements: improvementsResolved,
+        });
 
   const draft: Omit<TerminationDocumentSnapshot, 'html' | 'contentHash'> = {
     documentNumber: input.documentNumber,
@@ -161,12 +194,19 @@ export function buildTerminationDocumentSnapshot(input: {
     refundInstallments,
     refundDestination,
     improvementStatus: text(s.improvement_status),
+    improvements: improvementsResolved,
+    obligation: obligationResolved,
     pendingObligationsCanceled: input.context.pendingObligationsCanceled !== false,
     refundSchedule: resolveSnapshotRefundSchedule({
       settlement: s,
       refundDestination,
       agreed,
       refundInstallments,
+      improvementsTotal: obligationResolved.improvementsTotal,
+      scheduleTotal:
+        improvementsResolved.appraisalStatus === 'COMPLETED'
+          ? obligationResolved.total
+          : agreed,
       candidate:
         input.refundSchedule ||
         parseRefundScheduleFromCalculationSnapshot(s.calculation_snapshot) ||
@@ -206,7 +246,12 @@ export function snapshotFinanceMatchesSettlement(
     snapshot.restitutionBase === num(settlement.refundable_base) &&
     snapshot.retentionAmount === num(settlement.retention_amount) &&
     snapshot.agreedRefundAmount === agreed &&
-    snapshot.refundDestination === dest
+    snapshot.refundDestination === dest &&
+    (snapshot.obligation?.improvementsTotal ?? 0) ===
+      parseObligationFromCalculationSnapshot(
+        settlement.calculation_snapshot,
+        agreed || 0,
+      ).improvementsTotal
   );
 }
 

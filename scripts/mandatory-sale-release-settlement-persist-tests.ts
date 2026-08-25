@@ -32,6 +32,8 @@ function operator(
 ): ReleaseSettlementOperatorInput {
   return {
     hasImprovements: false,
+    improvementsAppraisalStatus: 'NONE',
+    improvementItems: [],
     refundDestination: 'REFUND_CUSTOMER',
     exceptionalAgreement: false,
     exceptionalReason: null,
@@ -367,6 +369,8 @@ function testMigrationSchemaAndRls() {
   );
   assert(persist.includes('credit_other_unit_id: null'), 'crédito não executado');
   assert(persist.includes('refundSchedule: params.prepared.refundSchedule'), 'cronograma no calculation_snapshot');
+  assert(persist.includes('improvements: params.prepared.improvements'), 'itens de benfeitoria no snapshot');
+  assert(persist.includes('obligation: params.prepared.obligation'), 'obrigação discriminada no snapshot');
   assert(!persist.includes('jsPDF'), 'sem PDF no motor financeiro');
   assert(!persist.includes('generateContractHTML'), 'sem HTML de contrato');
   console.log('OK testMigrationSchemaAndRls');

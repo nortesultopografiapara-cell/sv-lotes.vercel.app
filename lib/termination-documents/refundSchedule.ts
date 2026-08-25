@@ -13,6 +13,9 @@ export type RefundScheduleResolveInput = {
   installmentCount?: number | null;
   calculationStatus?: string | null;
   firstDueDate?: string | null;
+  /** Total em dinheiro a parcelar. Quando omitido, usa restituição + benfeitorias. */
+  scheduleTotal?: number | null;
+  improvementsTotal?: number | null;
 };
 
 function daysInMonth(year: number, month1to12: number): number {
@@ -44,6 +47,21 @@ export function formatIsoDateBr(isoDate: string | null | undefined): string {
   if (!isIsoDateOnly(raw)) return '—';
   const [y, m, d] = raw.split('-');
   return `${d}/${m}/${y}`;
+}
+
+export function cashScheduleTotal(input: {
+  agreedRefundAmount?: number | null;
+  contractualRefundAmount?: number | null;
+  scheduleTotal?: number | null;
+  improvementsTotal?: number | null;
+}): number {
+  if (input.scheduleTotal != null && Number.isFinite(Number(input.scheduleTotal))) {
+    return roundMoney(Number(input.scheduleTotal));
+  }
+  return roundMoney(
+    restitutionTotalFromSettlement(input) +
+      roundMoney(Math.max(0, Number(input.improvementsTotal) || 0)),
+  );
 }
 
 export function restitutionTotalFromSettlement(input: {
@@ -94,7 +112,7 @@ export function shouldDefineRefundSchedule(input: RefundScheduleResolveInput): b
   if (dest === 'CREDIT_OTHER_UNIT') return false;
   const status = String(input.calculationStatus || '').trim().toUpperCase();
   if (status !== 'CALCULATED') return false;
-  const total = restitutionTotalFromSettlement(input);
+  const total = cashScheduleTotal(input);
   const count = Math.max(0, Math.floor(Number(input.installmentCount) || 0));
   return total > 0 && count > 0;
 }
@@ -119,7 +137,7 @@ export function resolveRefundSchedule(
       code: 'REFUND_SCHEDULE_DATE_REQUIRED',
     };
   }
-  const total = restitutionTotalFromSettlement(input);
+  const total = cashScheduleTotal(input);
   const count = countRaw || 0;
   const amounts = splitRefundInstallmentAmounts(total, count);
   const installments = amounts.map((amount, index) => ({

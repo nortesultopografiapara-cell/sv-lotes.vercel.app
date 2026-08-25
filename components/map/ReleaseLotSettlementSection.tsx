@@ -1,11 +1,15 @@
 'use client';
 
-import { AlertTriangle, Landmark, Scale } from 'lucide-react';
-import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { AlertTriangle, Landmark, Plus, Scale, Trash2 } from 'lucide-react';
+import { formatCurrencyBRL, parseCurrencyBRL } from '@/lib/currencyBrl';
 import {
   formatAppliedRuleLabel,
   formatRetentionPercent,
 } from '@/lib/contract-termination/formatSettlement';
+import {
+  IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE,
+  type ImprovementAppraisalStatus,
+} from '@/lib/contract-termination/improvements';
 import type {
   SettlementDestination,
   TerminationPolicy,
@@ -36,12 +40,22 @@ function Line({ label, value }: { label: string; value: string }) {
   );
 }
 
+export type ImprovementDraftItem = {
+  id: string;
+  description: string;
+  amount: string;
+};
+
 export type ReleaseLotSettlementSectionProps = {
   policy: TerminationPolicy;
   settlement: TerminationSettlement;
   origin?: TerminationPolicyOrigin | null;
   hasImprovements: 'sim' | 'nao';
   onHasImprovements: (value: 'sim' | 'nao') => void;
+  improvementsAppraisalStatus: ImprovementAppraisalStatus;
+  onImprovementsAppraisalStatus: (value: ImprovementAppraisalStatus) => void;
+  improvementItems: ImprovementDraftItem[];
+  onImprovementItems: (items: ImprovementDraftItem[]) => void;
   destination: SettlementDestination;
   onDestination: (value: SettlementDestination) => void;
   exceptionEnabled: boolean;
@@ -63,6 +77,10 @@ export function ReleaseLotSettlementSection({
   origin,
   hasImprovements,
   onHasImprovements,
+  improvementsAppraisalStatus,
+  onImprovementsAppraisalStatus,
+  improvementItems,
+  onImprovementItems,
   destination,
   onDestination,
   exceptionEnabled,
@@ -80,7 +98,21 @@ export function ReleaseLotSettlementSection({
   const incomplete =
     settlement.calculationStatus === 'INCOMPLETE' ||
     settlement.calculationStatus === 'MISSING_POLICY';
-  const waiting = settlement.calculationStatus === 'WAITING_IMPROVEMENT_APPRAISAL';
+  const waiting =
+    hasImprovements === 'sim' && improvementsAppraisalStatus !== 'COMPLETED';
+  const improvementsTotal = improvementItems.reduce((acc, item) => {
+    const n = parseCurrencyBRL(item.amount);
+    return acc + (n != null ? n : 0);
+  }, 0);
+  const appraisalCompleted =
+    hasImprovements === 'sim' && improvementsAppraisalStatus === 'COMPLETED';
+  const contractualRefund =
+    settlement.agreedRefundAmount != null
+      ? Number(settlement.agreedRefundAmount)
+      : Number(settlement.contractualRefundAmount || 0);
+  const obligationTotal = appraisalCompleted
+    ? contractualRefund + improvementsTotal
+    : contractualRefund;
   const appliedRule = formatAppliedRuleLabel(policy, settlement);
   const retentionLabel = formatRetentionPercent(settlement.contractualRetentionPercent);
   const showCashRefundSchedule = shouldDefineRefundSchedule({
@@ -89,11 +121,12 @@ export function ReleaseLotSettlementSection({
     contractualRefundAmount: settlement.contractualRefundAmount,
     installmentCount: settlement.refundInstallmentCount,
     calculationStatus: settlement.calculationStatus,
+    improvementsTotal: appraisalCompleted ? improvementsTotal : 0,
+    scheduleTotal: appraisalCompleted ? obligationTotal : undefined,
   });
-  const restitutionTotal =
-    settlement.agreedRefundAmount != null
-      ? Number(settlement.agreedRefundAmount)
-      : Number(settlement.contractualRefundAmount || 0);
+  const restitutionTotal = showCashRefundSchedule
+    ? obligationTotal
+    : contractualRefund;
   const installmentCount = Math.max(
     0,
     Math.floor(Number(settlement.refundInstallmentCount) || 0),
@@ -109,6 +142,8 @@ export function ReleaseLotSettlementSection({
         installmentCount: settlement.refundInstallmentCount,
         calculationStatus: settlement.calculationStatus,
         firstDueDate: refundFirstDueDate,
+        improvementsTotal: appraisalCompleted ? improvementsTotal : 0,
+        scheduleTotal: appraisalCompleted ? obligationTotal : undefined,
       })
     : null;
   const lastDiffers =
@@ -171,17 +206,125 @@ export function ReleaseLotSettlementSection({
         </div>
       </div>
 
-      {waiting ? (
-        <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-lg p-3 text-xs flex gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+      {hasImprovements === 'sim' ? (
+        <div className="rounded-lg border border-orange-200 bg-white p-3 space-y-3">
+          <p className="text-sm font-semibold text-slate-800">Benfeitorias do imóvel</p>
           <div>
-            <p className="font-semibold">Aguardando avaliação de benfeitorias</p>
-            <p className="mt-1">
-              O contrato exige avaliação técnica das benfeitorias. Os valores abaixo são
-              provisórios e não constituem acerto definitivo. O cronograma de restituição
-              será definido após a conclusão da avaliação e o fechamento do acerto financeiro.
-            </p>
+            <p className="text-xs font-semibold text-slate-600 mb-1.5">Status da avaliação</p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['PENDING', 'Aguardando avaliação'],
+                  ['COMPLETED', 'Avaliação concluída'],
+                ] as const
+              ).map(([value, label]) => {
+                const selected = improvementsAppraisalStatus === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => onImprovementsAppraisalStatus(value)}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-semibold ${
+                      selected
+                        ? 'border-orange-500 bg-orange-50 text-orange-900 ring-1 ring-orange-400'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          {waiting ? (
+            <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-lg p-3 text-xs flex gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Aguardando avaliação de benfeitorias</p>
+                <p className="mt-1">{IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {improvementItems.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-1 sm:grid-cols-[1fr_160px_auto] gap-2 items-end rounded-lg border border-slate-200 bg-slate-50 p-2"
+                >
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+                      Descrição da benfeitoria
+                    </label>
+                    <input
+                      type="text"
+                      value={item.description}
+                      onChange={(e) => {
+                        const next = improvementItems.map((row) =>
+                          row.id === item.id ? { ...row, description: e.target.value } : row,
+                        );
+                        onImprovementItems(next);
+                      }}
+                      className={FIELD_CLASS}
+                      placeholder="Ex.: Muro de alvenaria"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+                      Valor avaliado / reconhecido
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.amount}
+                      onChange={(e) => {
+                        const next = improvementItems.map((row) =>
+                          row.id === item.id ? { ...row, amount: e.target.value } : row,
+                        );
+                        onImprovementItems(next);
+                      }}
+                      className={FIELD_CLASS}
+                      placeholder="R$ 0,00"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = improvementItems.filter((row) => row.id !== item.id);
+                      onImprovementItems(
+                        next.length > 0
+                          ? next
+                          : [{ id: item.id, description: '', amount: '' }],
+                      );
+                    }}
+                    className="mb-0.5 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:border-red-300 hover:text-red-700"
+                    aria-label={`Excluir benfeitoria ${index + 1}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  onImprovementItems([
+                    ...improvementItems,
+                    {
+                      id: `imp-${Date.now()}-${improvementItems.length + 1}`,
+                      description: '',
+                      amount: '',
+                    },
+                  ])
+                }
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-800 hover:text-orange-950"
+              >
+                <Plus className="w-4 h-4" />
+                Adicionar benfeitoria
+              </button>
+              <p className="text-sm font-semibold text-slate-800">
+                Total das benfeitorias: {money(improvementsTotal)}
+              </p>
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -249,6 +392,9 @@ export function ReleaseLotSettlementSection({
           {destination === 'CREDIT_OTHER_UNIT' ? (
             <p className="mt-2 text-xs text-slate-600">
               Simulação — nenhuma transferência financeira será realizada nesta etapa.
+              {appraisalCompleted
+                ? ' Benfeitorias reconhecidas não são convertidas em crédito de outra unidade.'
+                : ''}
             </p>
           ) : null}
         </div>
@@ -404,6 +550,16 @@ export function ReleaseLotSettlementSection({
             </p>
           </div>
         </div>
+        {appraisalCompleted ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Line label="Benfeitorias reconhecidas" value={money(improvementsTotal)} />
+            <Line label="Restituição contratual" value={incomplete || waiting ? '—' : money(contractualRefund)} />
+            <Line
+              label="Total da obrigação com o cliente"
+              value={incomplete || waiting ? '—' : money(obligationTotal)}
+            />
+          </div>
+        ) : null}
       </div>
     </section>
   );
