@@ -10,6 +10,9 @@ import { validateReleaseLotMotive } from '../lib/finance/releaseLotShared';
 import {
   buildReleaseReceiptsSnapshot,
   prepareReleaseSettlement,
+  readSettlementDbError,
+  resolveSettlementContractId,
+  SettlementPersistError,
   validateReleaseSettlementOperatorInput,
   type ReleaseSettlementOperatorInput,
 } from '../lib/finance/saleReleaseSettlement';
@@ -390,6 +393,76 @@ function testRegressionsUntouched() {
   console.log('OK testRegressionsUntouched');
 }
 
+function testOrphanBlockContractIdNeverPersisted() {
+  const realId = '11111111-1111-1111-1111-111111111111';
+  const orphanId = '22222222-2222-2222-2222-222222222222';
+  assert(
+    resolveSettlementContractId({ id: realId }) === realId,
+    'contrato válido → grava contract_id',
+  );
+  assert(resolveSettlementContractId(null) === null, 'sem contrato → null');
+  assert(resolveSettlementContractId(undefined) === null, 'contrato indefinido → null');
+  assert(resolveSettlementContractId({ id: '  ' }) === null, 'id vazio → null');
+  assert(
+    resolveSettlementContractId({ id: realId }) !== orphanId,
+    'UUID órfão do lote não substitui o contrato carregado',
+  );
+
+  const svc = read('lib/finance/releaseLotService.ts');
+  assert(
+    svc.includes('contractId: resolveSettlementContractId(contract)'),
+    'preview só usa contrato carregado',
+  );
+  assert(
+    svc.includes('contractId: resolveSettlementContractId(liveCtx.contract)'),
+    'INSERT do settlement só usa contrato carregado',
+  );
+  assert(
+    !svc.includes('block.contract_id ? String(block.contract_id)'),
+    'não reaproveita blocks.contract_id órfão no settlement',
+  );
+
+  const persist = read('lib/finance/saleReleaseSettlement.ts');
+  const rowAssign = persist.slice(
+    persist.indexOf('const row = {'),
+    persist.indexOf('if (params.existingId)'),
+  );
+  assert(rowAssign.includes('contract_id: params.contractId'), 'persiste contract_id recebido');
+  assert(svc.includes('sale_release_settlements_contract_id_fkey') || persist.includes('REFERENCES public.contracts') || read('supabase/migrations/20261010120000_sale_release_settlements.sql').includes('sale_release_settlements_contract_id_fkey') || read('supabase/migrations/20261010120000_sale_release_settlements.sql').includes('contract_id uuid REFERENCES public.contracts(id)'), 'FK de contrato permanece');
+
+  const sql = read('supabase/migrations/20261010120000_sale_release_settlements.sql');
+  assert(sql.includes('contract_id uuid REFERENCES public.contracts(id)'), 'FK intacto');
+  assert(sql.includes('ENABLE ROW LEVEL SECURITY'), 'RLS intacto');
+
+  const execFn = svc.slice(svc.indexOf('export async function executeReleaseLot'));
+  const persistIdx = execFn.indexOf('upsertCalculatedReleaseSettlement');
+  const asaasIdx = execFn.indexOf('{ executeCancel: true }');
+  const localIdx = execFn.indexOf('const local = await applyLocalRelease');
+  assert(persistIdx > 0 && persistIdx < asaasIdx, 'settlement antes do Asaas');
+  assert(asaasIdx < localIdx, 'Asaas antes de liberar o lote');
+  assert(execFn.includes("status === 'EXECUTED'"), 'segundo POST idempotente');
+  assert(execFn.includes('isSaleReleaseSettlementOperation'), 'cinco operações no mesmo /release');
+
+  const pg = new SettlementPersistError('SETTLEMENT_INSERT_FAILED', {
+    message: 'violates foreign key constraint "sale_release_settlements_contract_id_fkey"',
+    code: '23503',
+    details: 'Key (contract_id)=(22222222-2222-2222-2222-222222222222) is not present in table "contracts".',
+    hint: 'Insert a valid contract or leave contract_id null.',
+  });
+  assert(pg.db.code === '23503', 'preserva code');
+  assert(/fkey/.test(pg.db.message), 'preserva message');
+  assert(/contracts/.test(String(pg.db.details)), 'preserva details');
+  assert(/null/.test(String(pg.db.hint)), 'preserva hint');
+  const fields = readSettlementDbError(pg);
+  assert(fields.message === pg.message, 'wrapper Error.message permanece');
+  assert(svc.includes('settlementFailDetails(err)'), 'response técnico leva code/details/hint');
+  assert(
+    svc.includes("'Não foi possível persistir o acerto financeiro na venda original.'"),
+    'mensagem amigável ao operador',
+  );
+  console.log('OK testOrphanBlockContractIdNeverPersisted');
+}
+
 function main() {
   testAraguaiaRetentionAndNonRefundable();
   testIncompleteDoesNotInheritAraguaia();
@@ -403,6 +476,7 @@ function main() {
   testReleaseFlowGuarantees();
   testMigrationSchemaAndRls();
   testRegressionsUntouched();
+  testOrphanBlockContractIdNeverPersisted();
   console.log('\nALL mandatory-sale-release-settlement-persist-tests PASSED');
 }
 

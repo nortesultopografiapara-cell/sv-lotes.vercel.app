@@ -53,6 +53,9 @@ import {
   markReleaseSettlementExecuted,
   parseReleaseSettlementOperatorInput,
   prepareReleaseSettlement,
+  readSettlementDbError,
+  resolveSettlementContractId,
+  SettlementPersistError,
   upsertCalculatedReleaseSettlement,
   validateReleaseSettlementOperatorInput,
   type SaleReleaseSettlementRow,
@@ -115,6 +118,16 @@ function releaseErr(
   details?: Record<string, unknown>,
 ): ReleaseLotError {
   return new ReleaseLotError(message, status, code, details, stage);
+}
+
+function settlementFailDetails(err: unknown): Record<string, unknown> {
+  const db = err instanceof SettlementPersistError ? err.db : readSettlementDbError(err);
+  return {
+    detail: err instanceof Error ? err.message : String(err),
+    code: db.code,
+    details: db.details,
+    hint: db.hint,
+  };
 }
 
 export type ReleaseLotExecuteInput = {
@@ -612,7 +625,7 @@ function buildPreviewFromContext(params: {
     customerName: params.customerName,
     saleId,
     saleStatus,
-    contractId: contract?.id ? String(contract.id) : block.contract_id ? String(block.contract_id) : null,
+    contractId: resolveSettlementContractId(contract),
     contractNumber:
       contract?.contract_number != null ? String(contract.contract_number) : null,
     contractStatus,
@@ -1279,13 +1292,12 @@ export async function executeReleaseLot(
     try {
       existingSettlement = await loadActiveReleaseSettlement(admin, preview.saleId);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       throw releaseErr(
         'Não foi possível consultar o acerto financeiro da venda original.',
         500,
         'SETTLEMENT_LOAD_FAILED',
         'persist_settlement',
-        { detail: message },
+        settlementFailDetails(err),
       );
     }
   }
@@ -1328,13 +1340,12 @@ export async function executeReleaseLot(
           preview.saleId,
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
         throw releaseErr(
           'O lote já estava liberado, mas o acerto não pôde ser marcado como executado.',
           500,
           'SETTLEMENT_EXECUTE_FAILED',
           'mark_settlement',
-          { detail: message },
+          settlementFailDetails(err),
         );
       }
       existingSettlement = {
@@ -1430,7 +1441,7 @@ export async function executeReleaseLot(
       const upserted = await upsertCalculatedReleaseSettlement(admin, {
         companyId: preview.companyId,
         saleId: preview.saleId,
-        contractId: preview.contractId,
+        contractId: resolveSettlementContractId(liveCtx.contract),
         blockId: block.id,
         projectId: preview.projectId || (block.project_id ? String(block.project_id) : null),
         motiveLabel: motive.motiveLabel,
@@ -1467,13 +1478,12 @@ export async function executeReleaseLot(
         };
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       throw releaseErr(
         'Não foi possível persistir o acerto financeiro na venda original.',
         500,
         'SETTLEMENT_PERSIST_FAILED',
         'persist_settlement',
-        { detail: message },
+        settlementFailDetails(err),
       );
     }
   }
@@ -1596,13 +1606,12 @@ export async function executeReleaseLot(
       await markReleaseSettlementExecuted(admin, settlementId, preview.saleId);
       settlementStatus = 'EXECUTED';
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       throw releaseErr(
         'O lote foi liberado, mas o acerto não pôde ser marcado como executado. Reprocesse para concluir o registro.',
         500,
         'SETTLEMENT_EXECUTE_FAILED',
         'mark_settlement',
-        { detail: message },
+        settlementFailDetails(err),
       );
     }
   }

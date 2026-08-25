@@ -105,6 +105,51 @@ export function isSaleReleaseSettlementOperation(
   );
 }
 
+/** Só persiste contract_id se a linha de contracts foi carregada. Nunca usa blocks.contract_id. */
+export function resolveSettlementContractId(
+  contract?: { id?: unknown } | null,
+): string | null {
+  const id = contract?.id != null ? String(contract.id).trim() : '';
+  return id || null;
+}
+
+export type SettlementDbErrorFields = {
+  message: string;
+  code: string | null;
+  details: string | null;
+  hint: string | null;
+};
+
+export function readSettlementDbError(error: unknown): SettlementDbErrorFields {
+  const e = error as {
+    message?: unknown;
+    code?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+  const text = (value: unknown): string | null => {
+    if (value == null) return null;
+    const s = String(value).trim();
+    return s || null;
+  };
+  return {
+    message: text(e?.message) || String(error),
+    code: text(e?.code),
+    details: text(e?.details),
+    hint: text(e?.hint),
+  };
+}
+
+export class SettlementPersistError extends Error {
+  db: SettlementDbErrorFields;
+  constructor(prefix: string, error: unknown) {
+    const db = readSettlementDbError(error);
+    super(`${prefix}: ${db.message}`);
+    this.name = 'SettlementPersistError';
+    this.db = db;
+  }
+}
+
 export function parseReleaseSettlementOperatorInput(
   body: Record<string, unknown>,
 ): ReleaseSettlementOperatorInput {
@@ -440,7 +485,7 @@ export async function loadActiveReleaseSettlement(
     .in('status', ['CALCULATED', 'EXECUTED', 'FAILED_DOCUMENT'])
     .maybeSingle();
   if (error) {
-    throw new Error(`SETTLEMENT_LOAD_FAILED: ${error.message}`);
+    throw new SettlementPersistError('SETTLEMENT_LOAD_FAILED', error);
   }
   return (data as SaleReleaseSettlementRow) || null;
 }
@@ -517,7 +562,7 @@ export async function upsertCalculatedReleaseSettlement(
       .select('id, status')
       .maybeSingle();
     if (error) {
-      throw new Error(`SETTLEMENT_UPDATE_FAILED: ${error.message}`);
+      throw new SettlementPersistError('SETTLEMENT_UPDATE_FAILED', error);
     }
     if (!data?.id) {
       const existing = await loadActiveReleaseSettlement(admin, params.saleId);
@@ -548,7 +593,7 @@ export async function upsertCalculatedReleaseSettlement(
         });
       }
     }
-    throw new Error(`SETTLEMENT_INSERT_FAILED: ${error.message}`);
+    throw new SettlementPersistError('SETTLEMENT_INSERT_FAILED', error);
   }
   if (!data?.id) {
     throw new Error('SETTLEMENT_INSERT_FAILED: empty id');
@@ -573,6 +618,6 @@ export async function markReleaseSettlementExecuted(
     .eq('sale_id', saleId)
     .in('status', ['CALCULATED', 'FAILED_DOCUMENT']);
   if (error) {
-    throw new Error(`SETTLEMENT_EXECUTE_FAILED: ${error.message}`);
+    throw new SettlementPersistError('SETTLEMENT_EXECUTE_FAILED', error);
   }
 }
