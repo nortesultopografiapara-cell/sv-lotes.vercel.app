@@ -267,10 +267,13 @@ export async function materializeTerminationDocumentPdf(
   }
   assertFrozenHtmlUnchanged(snapshot.html, snapshot.contentHash);
 
-  if (row.document_status === 'GENERATED' && row.document_id) {
+  if (
+    (row.document_status === 'GENERATED' || row.document_status === 'SIGNED') &&
+    row.document_id
+  ) {
     return {
       snapshot,
-      documentStatus: 'GENERATED',
+      documentStatus: row.document_status as TerminationDocumentStatus,
       documentId: String(row.document_id),
     };
   }
@@ -281,12 +284,13 @@ export async function materializeTerminationDocumentPdf(
     params.companyId,
   );
   if (existingDoc?.id) {
+    const keepSigned = row.document_status === 'SIGNED';
     const now = new Date().toISOString();
     const { error } = await admin
       .from('sale_release_settlements')
       .update({
         document_id: existingDoc.id,
-        document_status: 'GENERATED',
+        document_status: keepSigned ? 'SIGNED' : 'GENERATED',
         document_generated_at: now,
         document_generated_by: params.operatorUserId,
         document_hash: snapshot.contentHash,
@@ -301,7 +305,7 @@ export async function materializeTerminationDocumentPdf(
     }
     return {
       snapshot,
-      documentStatus: 'GENERATED',
+      documentStatus: keepSigned ? 'SIGNED' : 'GENERATED',
       documentId: String(existingDoc.id),
     };
   }

@@ -20,6 +20,8 @@ import { isValidSignerEmail } from '@/lib/saleContractEmailValidation';
 import { resolveSalePublicSignPanel } from '@/lib/saleContractPublicSignUi';
 
 type SaleSignPageData = {
+  documentKind?: 'CONTRATO_VENDA' | 'TERMO';
+  documentTitle?: string;
   contract: { id: string; number: string; status: string };
   company: { id: string; name: string; cnpj?: string | null } | null;
   lot: { quadra: string; lote: string; project: string };
@@ -60,6 +62,20 @@ function formatDateTimeBr(iso?: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   })}`;
+}
+
+function isTerminationSign(data?: SaleSignPageData | null): boolean {
+  return data?.documentKind === 'TERMO';
+}
+
+function instrumentTitle(data?: SaleSignPageData | null): string {
+  if (isTerminationSign(data)) {
+    return (
+      data?.documentTitle ||
+      'Termo de Desistência, Rescisão Contratual e Acerto Financeiro'
+    );
+  }
+  return 'Contrato de Compra e Venda';
 }
 
 export default function SaleSignContractPage() {
@@ -121,7 +137,11 @@ export default function SaleSignContractPage() {
           setSignerPhone(String(payload.party.phone));
         }
       } catch {
-        setError('Não foi possível carregar o contrato.');
+        setError(
+          isTerminationSign(payload)
+            ? 'Não foi possível carregar o termo.'
+            : 'Não foi possível carregar o contrato.',
+        );
       } finally {
         setLoading(false);
       }
@@ -141,7 +161,9 @@ export default function SaleSignContractPage() {
       setFormError(
         isWitness
           ? 'Você precisa confirmar que está assinando como testemunha.'
-          : 'Você precisa concordar com os termos do contrato.',
+          : isTerminationSign(data)
+            ? 'Você precisa concordar com os termos deste instrumento.'
+            : 'Você precisa concordar com os termos do contrato.',
       );
       return;
     }
@@ -237,7 +259,11 @@ export default function SaleSignContractPage() {
     (panelKind === 'fully_signed' ? (
       <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 text-center">
         <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-        <h3 className="text-lg font-bold text-emerald-300">Contrato assinado com sucesso</h3>
+        <h3 className="text-lg font-bold text-emerald-300">
+          {isTerminationSign(data)
+            ? 'Termo assinado com sucesso'
+            : 'Contrato assinado com sucesso'}
+        </h3>
         <p className="text-sm text-gray-300 mt-2">
           Assinado por {data.signature.signerName || signerName || 'comprador'}
         </p>
@@ -251,7 +277,7 @@ export default function SaleSignContractPage() {
           className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold"
         >
           <Download className="w-4 h-4" />
-          Baixar contrato
+          {isTerminationSign(data) ? 'Baixar documento assinado' : 'Baixar contrato'}
         </a>
       </div>
     ) : panelKind === 'awaiting_other_buyers' ? (
@@ -271,7 +297,8 @@ export default function SaleSignContractPage() {
         <CheckCircle2 className="w-12 h-12 text-amber-400 mx-auto mb-3" />
         <h3 className="text-lg font-bold text-amber-300">Sua assinatura foi registrada</h3>
         <p className="text-sm text-gray-300 mt-2">
-          Aguardando assinatura do vendedor (imobiliária) para concluir o contrato.
+          Aguardando assinatura da vendedora para concluir o{' '}
+          {isTerminationSign(data) ? 'termo' : 'contrato'}.
         </p>
         <p className="text-xs text-gray-500 mt-2">
           Assinado por {data.signature.signerName || signerName || 'comprador'} em{' '}
@@ -362,7 +389,9 @@ export default function SaleSignContractPage() {
             {data.party?.role === 'WITNESS_1' ||
             data.party?.role === 'WITNESS_2'
               ? 'Li e concordo que estou assinando eletronicamente este contrato na condição de testemunha.'
-              : 'Li e concordo com os termos do contrato de compra e venda.'}
+              : isTerminationSign(data)
+                ? 'Li e concordo com os termos deste Termo de Desistência, Rescisão Contratual e Acerto Financeiro.'
+                : 'Li e concordo com os termos do contrato de compra e venda.'}
           </span>
         </label>
 
@@ -383,7 +412,9 @@ export default function SaleSignContractPage() {
             : data.party?.role === 'WITNESS_1' ||
                 data.party?.role === 'WITNESS_2'
               ? 'ASSINAR COMO TESTEMUNHA'
-              : 'ASSINAR CONTRATO'}
+              : isTerminationSign(data)
+                ? 'ASSINAR TERMO'
+                : 'ASSINAR CONTRATO'}
         </button>
       </div>
     ) : (
@@ -412,7 +443,7 @@ export default function SaleSignContractPage() {
           <div className="min-w-0">
             <p className="text-xs text-gray-400 uppercase tracking-widest">Assinatura eletrônica</p>
             <h1 className="text-base sm:text-lg font-bold truncate">
-              Contrato de Compra e Venda
+              {instrumentTitle(data)}
             </h1>
           </div>
         </div>
@@ -422,7 +453,9 @@ export default function SaleSignContractPage() {
         {loading ? (
           <div className="flex flex-col items-center gap-3 text-gray-400 py-16">
             <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-            <span className="text-sm">Carregando contrato…</span>
+            <span className="text-sm">
+              {isTerminationSign(data) ? 'Carregando termo…' : 'Carregando contrato…'}
+            </span>
           </div>
         ) : error ? (
           <div className="max-w-md mx-auto bg-[#13161c] border border-red-500/30 rounded-xl p-8 text-center">
@@ -463,7 +496,9 @@ export default function SaleSignContractPage() {
               <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <FileText className="w-5 h-5 text-blue-400 shrink-0" />
-                  <h3 className="font-semibold">Dados do contrato</h3>
+                  <h3 className="font-semibold">
+                    {isTerminationSign(data) ? 'Dados do termo' : 'Dados do contrato'}
+                  </h3>
                 </div>
                 <dl className="space-y-2 text-sm">
                   <Row label="Contrato" value={data.contract.number} />
@@ -525,7 +560,7 @@ export default function SaleSignContractPage() {
 
                 <div className="rounded-xl overflow-hidden border border-white/10 bg-[#0b0e14] h-[55vh] lg:h-[65vh]">
                   <iframe
-                    title="Contrato de compra e venda"
+                    title={instrumentTitle(data)}
                     src={data.pdfUrl}
                     className="w-full h-full min-h-[320px]"
                   />

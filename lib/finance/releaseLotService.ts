@@ -143,7 +143,7 @@ function desistenciaSuccessMessage(documentNumber: string, pdfOk: boolean): stri
     return [
       'Desistência concluída com sucesso.',
       '',
-      'Termo de Desistência e Acerto Financeiro',
+      'Termo de Desistência, Rescisão Contratual e Acerto Financeiro',
       `nº ${documentNumber} gerado.`,
     ].join('\n');
   }

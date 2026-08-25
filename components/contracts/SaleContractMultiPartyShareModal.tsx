@@ -58,6 +58,7 @@ export type SaleContractMultiPartyShareModalProps = {
   lote?: string;
   onLinkCopied?: () => void;
   onLinkOpened?: () => void;
+  instrument?: 'sale-contract' | 'termination';
 };
 
 type PartyCardProps = {
@@ -69,13 +70,23 @@ type PartyCardProps = {
   buyerFallbackPhone?: string | null;
   onLinkCopied?: () => void;
   onLinkOpened?: () => void;
+  instrument?: 'sale-contract' | 'termination';
 };
 
-function roleHeading(role: string): string {
+function roleHeading(
+  role: string,
+  instrument: 'sale-contract' | 'termination' = 'sale-contract',
+): string {
   const key = String(role || '').toUpperCase();
-  if (key === 'BUYER') return 'COMPRADOR';
+  if (key === 'BUYER') {
+    return instrument === 'termination' ? 'COMPRADOR/DESISTENTE' : 'COMPRADOR';
+  }
   if (key === 'SPOUSE') return 'CÔNJUGE ANUENTE';
-  if (key === 'VENDOR') return 'PROMITENTE VENDEDOR';
+  if (key === 'VENDOR') {
+    return instrument === 'termination'
+      ? 'REPRESENTANTE AUTORIZADO DA VENDEDORA'
+      : 'PROMITENTE VENDEDOR';
+  }
   if (key === 'INTERVENIENT') return 'INTERVENIENTE';
   if (key === 'WITNESS_1') return 'TESTEMUNHA 1';
   if (key === 'WITNESS_2') return 'TESTEMUNHA 2';
@@ -91,6 +102,7 @@ function PartyShareCard({
   buyerFallbackPhone = null,
   onLinkCopied,
   onLinkOpened,
+  instrument = 'sale-contract',
 }: PartyCardProps) {
   const linkInputRef = useRef<HTMLInputElement>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -136,11 +148,13 @@ function PartyShareCard({
       lote,
       contractNumber,
       signatureUrl,
+      instrument,
     });
   }, [
     canShareLikeExternal,
     contractNumber,
     displayName,
+    instrument,
     lote,
     party.role,
     party.roleLabel,
@@ -151,7 +165,7 @@ function PartyShareCard({
 
   const mailtoUrl = buildSignatureShareMailtoUrl(
     email,
-    buildSaleSignatureEmailSubject(projectName),
+    buildSaleSignatureEmailSubject(projectName, instrument),
     shareMessage,
   );
 
@@ -211,7 +225,7 @@ function PartyShareCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-[10px] uppercase tracking-wide text-blue-300/90 font-semibold">
-            {roleHeading(party.role)}
+            {roleHeading(party.role, instrument)}
           </p>
           <p className="text-base font-semibold text-white mt-0.5">
             {displayName ||
@@ -281,7 +295,7 @@ function PartyShareCard({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={qrDataUrl}
-                  alt={`QR Code — ${roleHeading(party.role)}`}
+                  alt={`QR Code — ${roleHeading(party.role, instrument)}`}
                   width={148}
                   height={148}
                 />
@@ -343,6 +357,7 @@ export function SaleContractMultiPartyShareModal({
   lote = '—',
   onLinkCopied,
   onLinkOpened,
+  instrument = 'sale-contract',
 }: SaleContractMultiPartyShareModalProps) {
   const orderedParties = useMemo(() => {
     const rank = (role: string) => {
@@ -380,10 +395,14 @@ export function SaleContractMultiPartyShareModal({
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-blue-400" />
-              Contrato enviado para assinatura
+              {instrument === 'termination'
+                ? 'Termo enviado para assinatura'
+                : 'Contrato enviado para assinatura'}
             </h3>
             <p className="text-xs text-gray-400 mt-1">
-              Cada participante externo possui link, QR Code e contatos próprios.
+              {instrument === 'termination'
+                ? 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro. Cada participante possui link e contatos próprios.'
+                : 'Cada participante externo possui link, QR Code e contatos próprios.'}
             </p>
           </div>
           <button
@@ -432,6 +451,7 @@ export function SaleContractMultiPartyShareModal({
                 buyerFallbackPhone={legacySignerPhone}
                 onLinkCopied={onLinkCopied}
                 onLinkOpened={onLinkOpened}
+                instrument={instrument}
               />
             ))
           )}

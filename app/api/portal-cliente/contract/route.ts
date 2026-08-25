@@ -14,6 +14,7 @@ import {
   readClientPortalSessionToken,
 } from '@/lib/portal-cliente/session';
 import { createSaleContractPdfResponse } from '@/lib/saleContractPdfHttp';
+import { pickLatestNonTerminationSignature } from '@/lib/saleContractSignatureDocumentType';
 import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
 import { createAdminSupabase } from '@/lib/supabase/server';
 
@@ -55,13 +56,18 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: 'Contrato não encontrado.' }, { status: 404 });
   }
 
-  const { data: signatureRow } = await admin
+  const { data: signatureRows } = await admin
     .from('contract_signatures')
-    .select('signature_status')
+    .select('signature_status, signed_document_type')
     .eq('contract_id', contract.id)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(8);
+  const signatureRow = pickLatestNonTerminationSignature(
+    (signatureRows || []) as Array<{
+      signature_status?: string | null;
+      signed_document_type?: string | null;
+    }>,
+  );
 
   const signatureStatus = String(
     signatureRow?.signature_status || contract.signature_status || '',

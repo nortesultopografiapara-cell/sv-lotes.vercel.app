@@ -26,6 +26,7 @@ import {
   validateAraguaiaWitnessIdentity,
 } from '@/lib/araguaiaContractEsign';
 import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
+import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
 import {
   assertSpouseReadyForSignatureSend,
   hasRecantoSpouse,
@@ -56,7 +57,8 @@ import {
   buildSignatureHashPayload,
   computeSignatureHash,
 } from '@/lib/saasContractSignaturePdf';
-import {  isValidSignerEmail,
+import {
+  isValidSignerEmail,
   normalizeSignerEmail,
 } from '@/lib/saleContractEmailValidation';
 import { logSignatureEvent, type SignatureEventType } from '@/lib/signatureEventService';
@@ -756,6 +758,10 @@ export async function syncAggregateSignatureStatus(
     ...signature,
     ...patch,
   };
+
+  if (isTerminationSaleSignature(signature) || isTerminationSaleSignature(updated)) {
+    return { aggregate, signature: updated, parties: list };
+  }
 
   const contractPatch: Record<string, unknown> = {
     signature_status: aggregate,

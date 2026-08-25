@@ -32,7 +32,10 @@ export const SALE_DOCUMENT_CONTRACT_OPERATION_TYPES = [
 ] as const;
 
 /** Termos de encerramento GIS (Fase 3B) — aditivo, sem alterar tipos de cessão. */
-export const SALE_DOCUMENT_TERMINATION_TYPES = ['DESISTENCIA'] as const;
+export const SALE_DOCUMENT_TERMINATION_TYPES = [
+  'DESISTENCIA',
+  'DESISTENCIA_ASSINADO',
+] as const;
 
 export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
   SaleDocumentCategory,
@@ -80,7 +83,9 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   CESSAO: 'Instrumento de Cessão de Direitos',
   RESCISAO: 'Termo de Rescisão por Inadimplência',
   CANCELAMENTO_ADMIN: 'Termo Administrativo de Cancelamento',
-  DESISTENCIA: 'Termo de Desistência e Acerto Financeiro',
+  DESISTENCIA: 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro',
+  DESISTENCIA_ASSINADO:
+    'Termo de Desistência, Rescisão Contratual e Acerto Financeiro (assinado)',
 };
 
 export const SALE_DOCUMENT_ALLOWED_MIME_TYPES = [
@@ -151,6 +156,7 @@ export function saleOperationDocumentStatusLabel(documentType?: string | null): 
   const type = String(documentType || '')
     .trim()
     .toUpperCase();
+  if (type === 'DESISTENCIA_ASSINADO') return 'Assinado';
   if (type === 'DESISTENCIA') return 'Gerado';
   if (SALE_OPERATION_GENERATED_TYPES.has(type)) return 'Gerado';
   return '—';
@@ -162,6 +168,10 @@ export function terminationDocumentViewHref(saleId: string): string {
 
 export function terminationDocumentPdfHref(saleId: string): string {
   return `/api/sales/${encodeURIComponent(saleId)}/termination-document/pdf`;
+}
+
+export function terminationDocumentSignedPdfHref(saleId: string): string {
+  return `/api/sales/${encodeURIComponent(saleId)}/termination-document/signed-pdf`;
 }
 
 export function validateSaleDocumentType(

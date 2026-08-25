@@ -15,6 +15,7 @@ import {
   isSaleSignatureBlocked,
   saleSignatureStatusLabel,
 } from '@/lib/saleContractSignatureStatus';
+import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
 import {
   getSaleSignatureByToken,
   isSignatureExpired,
@@ -99,6 +100,20 @@ export async function GET(
   if (pdf) {
     const contractNumber = String(contract.contract_number || '');
     try {
+      if (isTerminationSaleSignature(signature)) {
+        const { loadTerminationPdfForSign } = await import(
+          '@/lib/termination-documents/signature'
+        );
+        const { pdf: pdfBytes, documentNumber } = await loadTerminationPdfForSign(
+          supabaseAdmin,
+          signature,
+        );
+        return createSaleContractPdfResponse(
+          pdfBytes,
+          download ? 'attachment' : 'inline',
+          documentNumber || contractNumber,
+        );
+      }
       const { pdf: pdfBytes, contractNumber: resolvedNumber } =
         await loadSaleContractPdfForSign(
           supabaseAdmin,
@@ -126,6 +141,16 @@ export async function GET(
 
       if (!download) {
         try {
+          if (isTerminationSaleSignature(signature)) {
+            const { loadFrozenTerminationHtmlForSignature } = await import(
+              '@/lib/termination-documents/signature'
+            );
+            const frozen = await loadFrozenTerminationHtmlForSignature(
+              supabaseAdmin,
+              signature,
+            );
+            return createSaleContractHtmlPreviewResponse(frozen.html, frozen.documentNumber);
+          }
           const html = await loadSaleContractHtmlForSign(
             supabaseAdmin,
             signature.contract_id,
@@ -220,9 +245,16 @@ export async function GET(
         '',
     ).trim() || null;
 
+  const isTermination = isTerminationSaleSignature(signature);
   const roleLabel = partyRole
-    ? saleSignaturePartyRoleLabel(partyRole)
-    : 'Comprador';
+    ? partyRole === 'VENDOR' && isTermination
+      ? 'Representante autorizado da vendedora'
+      : partyRole === 'BUYER' && isTermination
+        ? 'Comprador/desistente'
+        : saleSignaturePartyRoleLabel(partyRole)
+    : isTermination
+      ? 'Comprador/desistente'
+      : 'Comprador';
 
   const customerEmail =
     String(customer?.email || customer?.contact_email || '').trim() || null;
@@ -248,6 +280,10 @@ export async function GET(
 
   return NextResponse.json({
     success: true,
+    documentKind: isTermination ? 'TERMO' : 'CONTRATO_VENDA',
+    documentTitle: isTermination
+      ? 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro'
+      : 'Contrato de Compra e Venda',
     contract: {
       id: contract.id,
       number: contract.contract_number,
@@ -333,8 +369,12 @@ export async function GET(
             : partyRole === 'WITNESS_2'
               ? 'Assinatura da Testemunha 2'
               : partyRole === 'VENDOR'
-                ? 'Assinatura do promitente vendedor'
-                : 'Assinatura do comprador',
+                ? isTermination
+                  ? 'Assinatura do representante autorizado da vendedora'
+                  : 'Assinatura do promitente vendedor'
+                : isTermination
+                  ? 'Assinatura do comprador/desistente'
+                  : 'Assinatura do comprador',
     },
     pdfUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1`,
     pdfDownloadUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`,

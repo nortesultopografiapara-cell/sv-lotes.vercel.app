@@ -24,6 +24,10 @@ import {
   computeSignatureHash,
 } from '@/lib/saasContractSignaturePdf';
 import {
+  excludeTerminationSignatures,
+  isTerminationSaleSignature,
+} from '@/lib/saleContractSignatureDocumentType';
+import {
   generateSignatureToken,
   isSignatureExpired,
   resolveClientIp,
@@ -375,7 +379,7 @@ export async function listSaleContractSignatures(
     console.warn('[SALE_CONTRACT_SIGN] list', error.message);
     return [];
   }
-  return (data || []) as ContractSignatureRow[];
+  return excludeTerminationSignatures((data || []) as ContractSignatureRow[]);
 }
 
 export function buildSaleSignatureHistory(
@@ -473,6 +477,7 @@ async function mirrorSignatureToContract(
   signature: ContractSignatureRow,
   extra?: Partial<Record<string, unknown>>,
 ): Promise<void> {
+  if (isTerminationSaleSignature(signature)) return;
   const patch: Record<string, unknown> = {
     signature_token: signature.signature_token,
     signature_status: signature.signature_status,
@@ -506,9 +511,13 @@ export async function cancelOpenSaleSignatures(
 ): Promise<void> {
   const { data: openRows } = await supabaseAdmin
     .from('contract_signatures')
-    .select('id')
+    .select('id, signed_document_type')
     .eq('contract_id', contractId)
     .in('signature_status', ['PENDING', 'VIEWED']);
+
+  const saleContractOpen = excludeTerminationSignatures(openRows || []);
+  const ids = saleContractOpen.map((row) => String(row.id));
+  if (ids.length === 0) return;
 
   const { error } = await supabaseAdmin
     .from('contract_signatures')
@@ -516,14 +525,11 @@ export async function cancelOpenSaleSignatures(
       signature_status: 'CANCELLED',
       updated_at: new Date().toISOString(),
     })
-    .eq('contract_id', contractId)
-    .in('signature_status', ['PENDING', 'VIEWED']);
+    .in('id', ids);
 
   if (error) {
     console.warn('[SALE_CONTRACT_SIGN] cancel open', error.message);
   }
-
-  const ids = (openRows || []).map((row) => String(row.id));
   if (ids.length > 0) {
     const now = new Date().toISOString();
     await supabaseAdmin
@@ -1491,6 +1497,13 @@ export async function ensureSignedPdfAfterAllPartiesSigned(
   supabaseAdmin: SupabaseClient,
   signatureRow: ContractSignatureRow,
 ): Promise<string | null> {
+  if (isTerminationSaleSignature(signatureRow)) {
+    const { persistSignedTerminationPdf } = await import(
+      '@/lib/termination-documents/signature'
+    );
+    return persistSignedTerminationPdf(supabaseAdmin, signatureRow);
+  }
+
   const contractId = String(signatureRow.contract_id || '');
   if (!contractId) return null;
 
@@ -2061,9 +2074,9 @@ export async function getLatestSignedSaleSignature(
     .eq('contract_id', contractId)
     .eq('signature_status', 'SIGNED')
     .order('signed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as ContractSignatureRow) || null;
+    .limit(10);
+  const row = excludeTerminationSignatures((data || []) as ContractSignatureRow[])[0];
+  return row || null;
 }
 
 export async function loadSaleSignPageContext(

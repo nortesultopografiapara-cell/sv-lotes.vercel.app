@@ -5,7 +5,7 @@ import {
   SaleDocumentError,
 } from '@/lib/saleDocumentService';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
-import { loadTerminationDocumentBySale } from '@/lib/termination-documents';
+import { SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO } from '@/lib/termination-documents/signature';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,10 @@ export async function GET(
     }
     const { client: admin, configError: adminError } = createAdminSupabase();
     if (!admin || adminError) {
-      return NextResponse.json({ success: false, error: adminError || 'Supabase não configurado' }, { status: 503 });
+      return NextResponse.json(
+        { success: false, error: adminError || 'Supabase não configurado' },
+        { status: 503 },
+      );
     }
 
     const { saleId: raw } = await params;
@@ -31,16 +34,20 @@ export async function GET(
     }
 
     const ctx = await assertSaleDocumentSaleAccess(admin, saleId, user.id);
-    const loaded = await loadTerminationDocumentBySale(admin, {
-      saleId,
-      companyId: ctx.companyId,
-    });
-    if (!loaded?.documentId || (loaded.documentStatus !== 'GENERATED' && loaded.documentStatus !== 'SIGNED')) {
+    const { data } = await admin
+      .from('sale_documents')
+      .select('id')
+      .eq('sale_id', saleId)
+      .eq('company_id', ctx.companyId)
+      .eq('document_type', SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!data?.id) {
       return NextResponse.json(
         {
           success: false,
-          code: 'DOCUMENT_PDF_NOT_READY',
-          error: 'PDF ainda não materializado. Use Tentar gerar PDF.',
+          code: 'SIGNED_PDF_NOT_READY',
+          error: 'Documento assinado ainda não disponível.',
         },
         { status: 409 },
       );
@@ -48,7 +55,7 @@ export async function GET(
 
     const signed = await createSaleDocumentSignedUrl(admin, {
       saleId,
-      documentId: loaded.documentId,
+      documentId: String(data.id),
       companyId: ctx.companyId,
     });
     return NextResponse.redirect(signed.url, 302);
@@ -56,7 +63,10 @@ export async function GET(
     if (err instanceof SaleDocumentError) {
       return NextResponse.json({ success: false, error: err.message }, { status: err.status });
     }
-    console.error('[termination-document pdf GET]', err);
-    return NextResponse.json({ success: false, error: 'Erro ao baixar o PDF do termo.' }, { status: 500 });
+    console.error('[termination-document signed-pdf GET]', err);
+    return NextResponse.json(
+      { success: false, error: 'Erro ao baixar o documento assinado.' },
+      { status: 500 },
+    );
   }
 }

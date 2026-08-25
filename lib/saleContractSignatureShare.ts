@@ -66,6 +66,7 @@ export type SalePartySignatureShareInput = {
   lote: string;
   contractNumber: string;
   signatureUrl: string;
+  instrument?: 'sale-contract' | 'termination';
 };
 
 /**
@@ -91,14 +92,24 @@ export function buildSalePartySignatureShareMessage(
   const contractNumber = shareField(input.contractNumber, '—');
   const signatureUrl = toOfficialSaleSignShareUrl(input.signatureUrl);
 
+  const instrument = input.instrument || 'sale-contract';
+  const term =
+    instrument === 'termination'
+      ? 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro'
+      : 'contrato de compra e venda';
+
   const purpose =
     input.role === 'SPOUSE'
-      ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de cônjuge anuente.'
+      ? `Segue seu link individual para assinatura eletrônica do ${term}, na condição de cônjuge anuente.`
       : input.role === 'VENDOR'
-        ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de promitente vendedor.'
+        ? instrument === 'termination'
+          ? `Segue seu link individual para assinatura eletrônica do ${term}, na condição de representante autorizado da vendedora.`
+          : `Segue seu link individual para assinatura eletrônica do ${term}, na condição de promitente vendedor.`
         : input.role === 'WITNESS_1' || input.role === 'WITNESS_2'
-          ? 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda, na condição de testemunha. Ao abrir o link, informe seus dados e assine.'
-          : 'Segue seu link individual para assinatura eletrônica do contrato de compra e venda.';
+          ? `Segue seu link individual para assinatura eletrônica do ${term}, na condição de testemunha. Ao abrir o link, informe seus dados e assine.`
+          : instrument === 'termination'
+            ? `Segue seu link individual para assinatura eletrônica do ${term}, na condição de comprador/desistente.`
+            : `Segue seu link individual para assinatura eletrônica do ${term}.`;
 
   return [
     'SV LOTES',
@@ -120,7 +131,13 @@ export function buildSalePartySignatureShareMessage(
   ].join('\n');
 }
 
-export function buildSaleSignatureEmailSubject(projectName: string): string {
+export function buildSaleSignatureEmailSubject(
+  projectName: string,
+  instrument: 'sale-contract' | 'termination' = 'sale-contract',
+): string {
+  if (instrument === 'termination') {
+    return `Assinatura eletrônica — Termo de Desistência, Rescisão Contratual e Acerto Financeiro (${projectName})`;
+  }
   return `Assinatura eletrônica — Contrato de compra e venda (${projectName})`;
 }
 

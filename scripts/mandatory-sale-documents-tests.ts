@@ -51,6 +51,8 @@ function testCategoriesAndTypes() {
   assert(note.valid, 'PROMISSORY_NOTE legado continua válido');
   const desistencia = validateSaleDocumentType('SYSTEM_GENERATED', 'DESISTENCIA');
   assert(desistencia.valid, 'DESISTENCIA system-generated');
+  const signed = validateSaleDocumentType('SYSTEM_GENERATED', 'DESISTENCIA_ASSINADO');
+  assert(signed.valid, 'DESISTENCIA_ASSINADO system-generated');
 
   console.log('OK testCategoriesAndTypes');
 }
@@ -124,6 +126,7 @@ function testFormatSize() {
 
 function testOperationDocumentHelpers() {
   assert(isSaleOperationGeneratedType('DESISTENCIA'), 'DESISTENCIA é operação');
+  assert(isSaleOperationGeneratedType('DESISTENCIA_ASSINADO'), 'assinado é operação');
   assert(!isSaleOperationGeneratedType('PROMISSORY_NOTE'), 'NP não é encerramento');
   assert(
     parseSaleOperationDocumentNumber({
@@ -138,6 +141,7 @@ function testOperationDocumentHelpers() {
     'número no arquivo',
   );
   assert(saleOperationDocumentStatusLabel('DESISTENCIA') === 'Gerado', 'status gerado');
+  assert(saleOperationDocumentStatusLabel('DESISTENCIA_ASSINADO') === 'Assinado', 'status assinado');
   assert(
     terminationDocumentViewHref('sale-1').includes('/termination-document?format=html'),
     'visualizar HTML',

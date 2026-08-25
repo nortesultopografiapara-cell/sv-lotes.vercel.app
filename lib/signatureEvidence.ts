@@ -332,7 +332,7 @@ export function documentTypeLabel(type?: string | null): string {
     case 'CONTRATO_VENDA':
       return 'Contrato de Venda de Lote';
     case 'TERMO':
-      return 'Termo';
+      return 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro';
     case 'OUTRO':
       return 'Outro documento';
     default:

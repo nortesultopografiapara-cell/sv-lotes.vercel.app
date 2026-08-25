@@ -340,6 +340,9 @@ function testSnapshotEqualsSettlementAndHtml() {
   assert(!snap.html.includes('30/60'), 'não inventa 30/60');
   assert(!/plena, geral, irrevogável e irretratável quitação/i.test(snap.html), 'sem quitação plena');
   assert(snap.html.includes('não existem benfeitorias indenizáveis'), 'cláusula 5 em português');
+  assert(!snap.html.includes('araguaia.clause3.item8.v1'), 'PDF das partes sem código técnico');
+  assert(snap.html.includes('Cláusula 3 — itens 6 a 9'), 'redação jurídica amigável');
+  assert(!snap.html.includes('política congelada'), 'sem jargão política congelada');
   assert(!/\bNONE\b/.test(snap.html), 'não exibe NONE');
   assert(snap.html.includes('A) Identificação'), 'cláusula A');
   assert(snap.html.includes('K) Assinaturas'), 'cláusula K');
@@ -610,6 +613,7 @@ function testApiUxAndSaleDocuments() {
   const api = read('app/api/sales/[saleId]/termination-document/route.ts');
   const pdf = read('app/api/sales/[saleId]/termination-document/pdf/route.ts');
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
+  const signatureActions = read('components/map/TerminationDocumentSignatureActions.tsx');
   const gis = read('components/map/GISMap.tsx');
   const docs = read('lib/saleDocuments.ts');
   assert(api.includes('loadTerminationDocumentBySale'), 'GET lê snapshot');
@@ -619,17 +623,19 @@ function testApiUxAndSaleDocuments() {
   assert(modal.includes('Visualizar termo'), 'UX visualizar');
   assert(modal.includes('Baixar PDF'), 'UX baixar');
   assert(modal.includes('Tentar gerar PDF'), 'UX retry');
-  assert(modal.includes('Enviar para assinatura'), 'botão futuro de assinatura');
-  assert(modal.includes('Disponível em fase posterior'), 'assinatura desabilitada');
+  assert(signatureActions.includes('Enviar para assinatura'), 'botão de assinatura');
+  assert(modal.includes('TerminationDocumentSignatureActions'), 'ações de assinatura do termo');
+  assert(!modal.includes('Disponível em fase posterior'), 'assinatura ativada');
   assert(modal.includes('Concluir'), 'botão concluir após sucesso');
   assert(modal.includes('refundFirstDueDate'), 'POST envia 1ª parcela');
-  assert(!modal.includes('/sign/sale/'), 'sem rota de assinatura de contrato');
+  assert(!modal.includes('/sign/sale/'), 'modal não cria rota própria de assinatura');
   const ui = read('components/map/ReleaseLotSettlementSection.tsx');
   assert(ui.includes('Valor de cada parcela'), 'UI valor parcela');
   assert(ui.includes('Vencimento da 1ª parcela'), 'UI data 1ª parcela');
   assert(gis.includes('result.keepModalOpen'), 'GIS mantém modal');
   assert(docs.includes("DESISTENCIA"), 'tipo SYSTEM_GENERATED');
-  assert(docs.includes('Termo de Desistência e Acerto Financeiro'), 'label documentos da venda');
+  assert(docs.includes('DESISTENCIA_ASSINADO'), 'tipo PDF assinado');
+  assert(docs.includes('Termo de Desistência, Rescisão Contratual e Acerto Financeiro'), 'label documentos da venda');
   const saleDocsPanel = read('components/sales/SaleDocumentsPanel.tsx');
   assert(
     saleDocsPanel.includes('Documentos de Encerramento / Operações'),
@@ -652,7 +658,10 @@ function testTenantIsolationAndIdempotencySource() {
   assert(persist.includes('CROSS_TENANT'), 'bloqueio cross-tenant');
   assert(persist.includes('.eq(\'company_id\', params.companyId)'), 'update por company');
   assert(persist.includes('existing?.html && existing.documentNumber'), 'reusa snapshot');
-  assert(persist.includes("document_status === 'GENERATED' && row.document_id"), 'idempotência PDF');
+  assert(
+    persist.includes("document_status === 'GENERATED' || row.document_status === 'SIGNED'"),
+    'idempotência PDF',
+  );
   assert(persist.includes('findExistingDesistenciaSaleDocument'), 'reusa sale_documents');
   const numbering = read('lib/termination-documents/numbering.ts');
   assert(numbering.includes('next_sale_operation_document_number'), 'RPC');

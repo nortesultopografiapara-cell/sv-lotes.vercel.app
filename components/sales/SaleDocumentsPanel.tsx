@@ -366,6 +366,8 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
                     parseSaleOperationDocumentNumber(doc) || '—';
                   const isDesistencia =
                     String(doc.document_type || '').toUpperCase() === 'DESISTENCIA';
+                  const isDesistenciaAssinado =
+                    String(doc.document_type || '').toUpperCase() === 'DESISTENCIA_ASSINADO';
                   return (
                     <tr key={doc.id} className="border-b border-gray-100 bg-white">
                       <td className="px-2 py-1.5 font-semibold text-gray-900 whitespace-nowrap">
@@ -395,7 +397,11 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
                           </button>
                           <button
                             type="button"
-                            title="Baixar PDF"
+                            title={
+                              isDesistenciaAssinado
+                                ? 'Baixar documento assinado'
+                                : 'Baixar PDF'
+                            }
                             disabled={busy || disabled}
                             onClick={() =>
                               isDesistencia

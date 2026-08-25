@@ -15,7 +15,6 @@ import {
   Handshake,
   Info,
   Loader2,
-  PenLine,
   ScrollText,
   ShieldAlert,
   Users,
@@ -43,6 +42,7 @@ import {
   validateReleaseLotMotive,
 } from '@/lib/finance/releaseLotShared';
 import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
+import { TerminationDocumentSignatureActions } from '@/components/map/TerminationDocumentSignatureActions';
 import { supabase } from '@/lib/supabase';
 
 const FIELD_CLASS =
@@ -507,7 +507,7 @@ export function ReleaseLotConfirmModal({
               message: [
                 'Desistência concluída com sucesso.',
                 '',
-                'Termo de Desistência e Acerto Financeiro',
+                'Termo de Desistência, Rescisão Contratual e Acerto Financeiro',
                 `nº ${String(json.documentNumber || prev.documentNumber)} gerado.`,
               ].join('\n'),
             }
@@ -590,15 +590,10 @@ export function ReleaseLotConfirmModal({
                       Tentar gerar PDF
                     </button>
                   )}
-                  <button
-                    type="button"
-                    disabled
-                    title="Disponível em fase posterior"
-                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-100/70 px-3 py-2 text-sm font-semibold text-emerald-700/70 cursor-not-allowed"
-                  >
-                    <PenLine className="w-4 h-4" />
-                    Enviar para assinatura
-                  </button>
+                  <TerminationDocumentSignatureActions
+                    saleId={documentSuccess.saleId}
+                    canDownloadOriginal={documentSuccess.canDownload}
+                  />
                 </div>
                 {documentSuccess.documentNumber ? (
                   <p className="mt-3 text-sm text-emerald-900">
@@ -608,7 +603,7 @@ export function ReleaseLotConfirmModal({
                 ) : null}
                 <p className="mt-3 text-xs text-emerald-800">
                   O documento também ficará em Documentos da Venda, vinculado à venda original.
-                  Envio para assinatura não está disponível nesta fase.
+                  Após a assinatura completa, use Baixar documento assinado.
                 </p>
               </section>
             ) : previewLoading ? (

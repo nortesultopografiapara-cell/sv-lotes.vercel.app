@@ -38,4 +38,9 @@ export {
   documentViewFromSnapshot,
   TerminationDocumentError,
 } from '@/lib/termination-documents/persist';
-export { renderTerminationDocumentPdfFromFrozenHtml } from '@/lib/termination-documents/pdf';
+export { renderTerminationHtmlToPdf, renderTerminationDocumentPdfFromFrozenHtml } from '@/lib/termination-documents/pdf';
+export {
+  sendTerminationDocumentForSignature,
+  getTerminationSignatureView,
+  SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO,
+} from '@/lib/termination-documents/signature';

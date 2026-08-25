@@ -20,22 +20,21 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export async function renderTerminationDocumentPdfFromFrozenHtml(
-  snapshot: TerminationDocumentSnapshot,
+export async function renderTerminationHtmlToPdf(
+  html: string,
+  meta: { vendorName: string; documentNumber: string; footerNote?: string },
 ): Promise<Uint8Array> {
-  assertFrozenHtmlUnchanged(snapshot.html, snapshot.contentHash);
-
   const headerTemplate = `
     <div style="font-size:7px; line-height:1.2; width:100%; padding:1px 14mm 1px 14mm; font-family:'Times New Roman', Times, serif; color:#333; box-sizing:border-box;">
       <div style="display:flex; justify-content:space-between; border-bottom:0.8px solid #999; padding-bottom:2px;">
-        <span><strong>${escapeHtml(snapshot.vendor.name || 'SV LOTES')}</strong></span>
-        <span>Termo nº ${escapeHtml(snapshot.documentNumber)}</span>
+        <span><strong>${escapeHtml(meta.vendorName || 'SV LOTES')}</strong></span>
+        <span>Termo nº ${escapeHtml(meta.documentNumber)}</span>
       </div>
     </div>`;
   const footerTemplate = `
     <div style="font-size:6.5px; line-height:1.15; width:100%; padding:1px 14mm 0; font-family:'Times New Roman', Times, serif; color:#666; font-style:italic; box-sizing:border-box;">
       <div style="border-top:0.8px solid #ccc; padding-top:2px; display:flex; justify-content:space-between;">
-        <span>Documento histórico — conteúdo congelado no ato da operação</span>
+        <span>${escapeHtml(meta.footerNote || 'Documento histórico — conteúdo congelado no ato da operação')}</span>
         <span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
       </div>
     </div>`;
@@ -50,7 +49,7 @@ export async function renderTerminationDocumentPdfFromFrozenHtml(
       height: 1123,
       deviceScaleFactor: 1,
     });
-    await page.setContent(snapshot.html, { waitUntil: 'load', timeout: 45_000 });
+    await page.setContent(html, { waitUntil: 'load', timeout: 45_000 });
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -73,4 +72,14 @@ export async function renderTerminationDocumentPdfFromFrozenHtml(
     await page?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
   }
+}
+
+export async function renderTerminationDocumentPdfFromFrozenHtml(
+  snapshot: TerminationDocumentSnapshot,
+): Promise<Uint8Array> {
+  assertFrozenHtmlUnchanged(snapshot.html, snapshot.contentHash);
+  return renderTerminationHtmlToPdf(snapshot.html, {
+    vendorName: snapshot.vendor.name || 'SV LOTES',
+    documentNumber: snapshot.documentNumber,
+  });
 }

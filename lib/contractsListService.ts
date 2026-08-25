@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseMissingContractColumn } from '@/lib/contractRegeneration';
 import { resolveCanonicalSaleSignatureStatus } from '@/lib/saleContractDashboardStats';
+import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
 
 /** Colunas confirmadas em migrations — sem generated_html. */
 export const CONTRACT_LIST_SELECT_CORE = [
@@ -262,7 +263,7 @@ export async function enrichContractsListWithProcessSignatureStatus(
 
   const { data, error } = await supabase
     .from('contract_signatures')
-    .select('contract_id, signature_status, created_at')
+    .select('contract_id, signature_status, created_at, signed_document_type')
     .in('contract_id', ids)
     .order('created_at', { ascending: false });
 
@@ -275,6 +276,9 @@ export async function enrichContractsListWithProcessSignatureStatus(
 
   const latestByContract = new Map<string, string>();
   for (const row of data || []) {
+    if (isTerminationSaleSignature(row as { signed_document_type?: string | null })) {
+      continue;
+    }
     const cid = String(
       (row as { contract_id?: string }).contract_id || '',
     ).trim();

@@ -10,6 +10,7 @@ import { readStoredContractHtml } from '@/lib/contractHtmlGlobal';
 import { formatCompanyAsaasChargeStatusLabel } from '@/lib/finance/companyAsaasChargeWorkflow';
 import { buildSignatureShareWhatsAppUrl } from '@/lib/saasContractSignatureShare';
 import { resolveSaleSignUrl } from '@/lib/saleContractUrls';
+import { pickLatestNonTerminationSignature } from '@/lib/saleContractSignatureDocumentType';
 import { maskCustomerName } from '@/lib/portal-cliente/masking';
 import { resolveSaleLoteadoraDisplayName } from '@/lib/portal-cliente/saleLoteadora';
 import type { ClientPortalSessionScope } from '@/lib/portal-cliente/session';
@@ -313,13 +314,21 @@ async function buildPortalDashboardContract(
   let contractViewUrl: string | null = null;
   let signatureToken: string | null = null;
 
-  const { data: signatureRow, error: signatureError } = await admin
+  const { data: signatureRows, error: signatureError } = await admin
     .from('contract_signatures')
-    .select('signature_token, signature_status, signature_url, expires_at')
+    .select('signature_token, signature_status, signature_url, expires_at, signed_document_type')
     .eq('contract_id', contractRow.id)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(8);
+  const signatureRow = pickLatestNonTerminationSignature(
+    (signatureRows || []) as Array<{
+      signature_token?: string | null;
+      signature_status?: string | null;
+      signature_url?: string | null;
+      expires_at?: string | null;
+      signed_document_type?: string | null;
+    }>,
+  );
 
   if (signatureError) {
     logDashboardQueryResult({

@@ -4,6 +4,7 @@ import {
   type CustomerObligationBreakdown,
   type ImprovementsRecord,
 } from '@/lib/contract-termination/improvements';
+import { partyFacingClauseReference, partyFacingPolicyWording } from '@/lib/termination-documents/partyFacingHtml';
 import { formatIsoDateBr } from '@/lib/termination-documents/refundSchedule';
 import type { TerminationDocumentSnapshot } from '@/lib/termination-documents/types';
 
@@ -77,7 +78,7 @@ function resolvedObligation(snap: TerminationDocumentSnapshot): CustomerObligati
 function improvementsClause(snap: TerminationDocumentSnapshot): string {
   const improvements = resolvedImprovements(snap);
   if (waitingImprovementAppraisal(snap.improvementStatus, improvements)) {
-    return `<p>Foi informado que existem benfeitorias na unidade, sujeitas à avaliação técnica prevista na política contratual congelada (${esc(snap.policyVersion || '—')}). Enquanto essa avaliação não for concluída, o quadro de acerto financeiro deste termo <strong>não constitui cálculo final</strong> e <strong>não há quitação financeira definitiva</strong>.</p>`;
+    return `<p>Foi informado que existem benfeitorias na unidade, sujeitas à avaliação técnica prevista nas disposições do contrato original (${esc(partyFacingClauseReference(snap.clauseReference))}). Enquanto essa avaliação não for concluída, o quadro de acerto financeiro deste termo <strong>não constitui cálculo final</strong> e <strong>não há quitação financeira definitiva</strong>.</p>`;
   }
   if (improvements.declared && improvements.appraisalStatus === 'COMPLETED') {
     const rows =
@@ -169,7 +170,7 @@ ${intro}
   <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
-<p>Este cronograma é a formalização operacional da obrigação definida neste ato, a partir dos valores já apurados no acerto, sem alterar a política contratual congelada.</p>`;
+<p>Este cronograma é a formalização operacional da obrigação definida neste ato, a partir dos valores já apurados no acerto, sem alterar as disposições do contrato original (${esc(partyFacingClauseReference(snap.clauseReference))}).</p>`;
 }
 
 function obligationTable(snap: TerminationDocumentSnapshot): string {
@@ -246,7 +247,7 @@ export function buildDesistenciaTermHtml(
     <p>Considerando que as partes celebraram promessa/contrato de compra e venda da unidade acima, identificado pelo contrato ${esc(snap.contractNumber || 'sem número')}.</p>
     <p>Considerando que o comprador manifestou desistência da aquisição.</p>
     <p>Considerando que as partes reconhecem a necessidade de formalizar o encerramento da relação contratual relativa a essa unidade.</p>
-    <p>Considerando que o acerto financeiro observa as disposições contratuais aplicáveis, conforme a política congelada na venda (${esc(snap.policyVersion || 'não identificada')}${snap.clauseReference ? `; ${esc(snap.clauseReference)}` : ''}).</p>
+    <p>Considerando que o acerto financeiro observa as disposições contratuais aplicáveis, ${esc(partyFacingPolicyWording({ contractNumber: snap.contractNumber, clauseReference: snap.clauseReference }))}.</p>
 
     <h2>C) Cláusula 1 — Objeto e desistência</h2>
     <p>O comprador formaliza, neste ato, a desistência da aquisição da unidade identificada, com o consequente encerramento da relação contratual de compra e venda a ela referente, nos termos do acerto financeiro reconhecido neste instrumento.</p>
@@ -284,7 +285,7 @@ export function buildDesistenciaTermHtml(
     ${quitacaoClause(snap)}
 
     <h2>J) Cláusula 8 — Disposições finais</h2>
-    <p>Este termo integra o histórico do contrato ${esc(snap.contractNumber || 'original da aquisição')}. ${snap.forumCitySnapshot ? `Fica referenciado o foro já documentado: ${esc(snap.forumCitySnapshot)}.` : 'Não se institui foro novo neste ato.'} Eventuais omissões serão resolvidas de acordo com o contrato original e a política congelada na venda.</p>
+    <p>Este termo integra o histórico do contrato ${esc(snap.contractNumber || 'original da aquisição')}. ${snap.forumCitySnapshot ? `Fica referenciado o foro já documentado: ${esc(snap.forumCitySnapshot)}.` : 'Não se institui foro novo neste ato.'} Eventuais omissões serão resolvidas de acordo com o contrato original e ${esc(partyFacingClauseReference(snap.clauseReference))}.</p>
 
     <h2>K) Assinaturas</h2>
     <div class="signs">
