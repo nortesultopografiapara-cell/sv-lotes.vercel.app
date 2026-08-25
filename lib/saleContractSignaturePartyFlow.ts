@@ -27,6 +27,7 @@ import {
 } from '@/lib/araguaiaContractEsign';
 import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
+import { assertOriginalContractAllowsElectronicSignature } from '@/lib/termination-documents/signatureGate';
 import {
   assertSpouseReadyForSignatureSend,
   hasRecantoSpouse,
@@ -1024,16 +1025,11 @@ export async function signPartyElectronically(
 
   const contractRow = contract as Record<string, unknown>;
   const contractStatus = String(contractRow.status || '').toLowerCase();
-  if (['cancelado', 'cancelled', 'canceled'].includes(contractStatus)) {
-    throw new SaleContractSignatureError(
-      'Contrato cancelado. Assinatura não permitida.',
-    );
-  }
-  if (['assinado', 'signed'].includes(contractStatus)) {
-    throw new SaleContractSignatureError(
-      'Este contrato já possui assinatura registrada.',
-    );
-  }
+  await assertOriginalContractAllowsElectronicSignature(
+    supabaseAdmin,
+    signature,
+    contractStatus,
+  );
 
   const signedAt = new Date().toISOString();
   const hashPayload = buildSignatureHashPayload({

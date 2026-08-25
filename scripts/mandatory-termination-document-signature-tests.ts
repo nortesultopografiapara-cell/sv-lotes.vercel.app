@@ -7,7 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { toPartyFacingTerminationHtml } from '../lib/termination-documents/partyFacingHtml';
 import { terminationSignatureUiStatus } from '../lib/termination-documents/signature';
-import { isTerminationSaleSignature } from '../lib/saleContractSignatureDocumentType';
+import {
+  canceledOriginalContractBlocksSignature,
+  isTerminationSaleSignature,
+} from '../lib/saleContractSignatureDocumentType';
 import { buildSalePartySignatureShareMessage } from '../lib/saleContractSignatureShare';
 
 function assert(cond: boolean, msg: string) {
@@ -143,6 +146,89 @@ function testPublicPageReuse() {
   console.log('OK testPublicPageReuse');
 }
 
+function testCanceledOriginalContractAllowsTermoSignature() {
+  assert(
+    canceledOriginalContractBlocksSignature({
+      signedDocumentType: 'TERMO',
+      contractStatus: 'cancelado',
+    }) === false,
+    'TERMO + original contract cancelled = signature allowed',
+  );
+  assert(
+    canceledOriginalContractBlocksSignature({
+      signedDocumentType: 'DESISTENCIA',
+      contractStatus: 'cancelled',
+    }) === false,
+    'alias DESISTENCIA também não bloqueia',
+  );
+  assert(
+    canceledOriginalContractBlocksSignature({
+      signedDocumentType: 'CONTRATO_VENDA',
+      contractStatus: 'cancelado',
+    }) === true,
+    'CONTRACT + contract cancelled = signature denied',
+  );
+  assert(
+    canceledOriginalContractBlocksSignature({
+      signedDocumentType: null,
+      contractStatus: 'canceled',
+    }) === true,
+    'legado sem tipo = contrato e continua bloqueado',
+  );
+  assert(
+    canceledOriginalContractBlocksSignature({
+      signedDocumentType: 'CONTRATO_VENDA',
+      contractStatus: 'ativo',
+    }) === false,
+    'contrato ativo continua permitido',
+  );
+
+  const partyFlow = read('lib/saleContractSignaturePartyFlow.ts');
+  const service = read('lib/saleContractSignatureService.ts');
+  const gate = read('lib/termination-documents/signatureGate.ts');
+  assert(
+    partyFlow.includes('assertOriginalContractAllowsElectronicSignature'),
+    'party pública ramifica vigência do contrato',
+  );
+  assert(
+    service.includes('assertOriginalContractAllowsElectronicSignature'),
+    'legado público ramifica vigência do contrato',
+  );
+  assert(
+    service.includes('canceledOriginalContractBlocksSignature'),
+    'vendor também ramifica TERMO',
+  );
+  assert(
+    gate.includes("'Contrato cancelado. Assinatura não permitida.'"),
+    'mensagem homologada de contrato cancelado permanece',
+  );
+  assert(
+    gate.includes('assertTerminationInstrumentReadyToSign'),
+    'TERMO valida settlement/snapshot/documento',
+  );
+  assert(gate.includes("!== 'EXECUTED'"), 'exige settlement EXECUTED');
+  assert(gate.includes('loaded.snapshot'), 'exige snapshot');
+  assert(gate.includes('loaded.documentId'), 'exige DESISTENCIA original');
+  assert(
+    !gate.includes('calculateTerminationSettlement'),
+    'gate não recalcula acerto',
+  );
+  assert(!gate.includes('executeReleaseLot'), 'gate não reexecuta desistência');
+
+  const partyCanceledIdx = partyFlow.indexOf(
+    "['CANCELLED', 'EXPIRED', 'ERROR'].includes(partyStatus)",
+  );
+  const partyGateIdx = partyFlow.indexOf(
+    'await assertOriginalContractAllowsElectronicSignature',
+  );
+  assert(partyCanceledIdx >= 0, 'TERMO expirado/cancelado da party continua bloqueado');
+  assert(
+    partyCanceledIdx < partyGateIdx,
+    'bloqueio próprio do processo/party ocorre antes da vigência do contrato',
+  );
+  console.log('OK testCanceledOriginalContractAllowsTermoSignature');
+}
+
 function main() {
   testReuseNotSecondEngine();
   testDoesNotRecalculateOrRerun();
@@ -153,6 +239,7 @@ function main() {
   testSignedArtifactSeparate();
   testUiAndShare();
   testPublicPageReuse();
+  testCanceledOriginalContractAllowsTermoSignature();
   console.log('OK — mandatory-termination-document-signature-tests passed');
 }
 

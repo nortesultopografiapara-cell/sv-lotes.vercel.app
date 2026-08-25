@@ -26,3 +26,36 @@ export function pickLatestNonTerminationSignature<
 >(rows: T[] | null | undefined): T | null {
   return excludeTerminationSignatures(rows || [])[0] || null;
 }
+
+export function isCanceledSaleContractStatus(status?: string | null): boolean {
+  const st = String(status || '')
+    .trim()
+    .toLowerCase();
+  return st === 'cancelado' || st === 'cancelled' || st === 'canceled';
+}
+
+export function isSignedSaleContractStatus(status?: string | null): boolean {
+  const st = String(status || '')
+    .trim()
+    .toLowerCase();
+  return st === 'assinado' || st === 'signed';
+}
+
+/**
+ * Vigência comercial do contrato original.
+ * CONTRACT (e legado sem tipo): cancelado bloqueia a assinatura.
+ * TERMO: o contrato original costuma estar cancelado após a desistência — não bloqueia.
+ */
+export function canceledOriginalContractBlocksSignature(input: {
+  signedDocumentType?: string | null;
+  contractStatus?: string | null;
+}): boolean {
+  if (
+    isTerminationSaleSignature({
+      signed_document_type: input.signedDocumentType,
+    })
+  ) {
+    return false;
+  }
+  return isCanceledSaleContractStatus(input.contractStatus);
+}

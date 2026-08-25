@@ -24,9 +24,14 @@ import {
   computeSignatureHash,
 } from '@/lib/saasContractSignaturePdf';
 import {
+  canceledOriginalContractBlocksSignature,
   excludeTerminationSignatures,
   isTerminationSaleSignature,
 } from '@/lib/saleContractSignatureDocumentType';
+import {
+  assertOriginalContractAllowsElectronicSignature,
+  assertTerminationInstrumentReadyToSign,
+} from '@/lib/termination-documents/signatureGate';
 import {
   generateSignatureToken,
   isSignatureExpired,
@@ -870,13 +875,15 @@ export async function signSaleContractElectronically(
   const contractRow = contract as Record<string, unknown>;
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
   const contractStatus = String(contractRow.status || '').toLowerCase();
-  if (['cancelado', 'cancelled', 'canceled'].includes(contractStatus)) {
-    throw new SaleContractSignatureError('Contrato cancelado. Assinatura não permitida.');
-  }
-  if (['assinado', 'signed'].includes(contractStatus)) {
-    throw new SaleContractSignatureError('Este contrato já possui assinatura registrada.');
-  }
-  if (['client_signed'].includes(contractStatus)) {
+  await assertOriginalContractAllowsElectronicSignature(
+    supabaseAdmin,
+    signature,
+    contractStatus,
+  );
+  if (
+    !isTerminationSaleSignature(signature) &&
+    ['client_signed'].includes(contractStatus)
+  ) {
     throw new SaleContractSignatureError(
       'Contrato aguardando assinatura do vendedor.',
     );
@@ -1185,24 +1192,35 @@ export async function signSaleContractByVendor(
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
   const contractStatus = String(contractRow.status || '').toLowerCase();
 
-  if (['cancelado', 'cancelled', 'canceled'].includes(contractStatus)) {
+  if (
+    canceledOriginalContractBlocksSignature({
+      signedDocumentType: signatureRow.signed_document_type,
+      contractStatus,
+    })
+  ) {
     throw new SaleContractSignatureError('Contrato cancelado. Assinatura não permitida.');
   }
-  // Idempotência: já concluído com PDF → devolver sem duplicar eventos/certificado.
-  if (
-    String(signatureRow.signature_status || '').toUpperCase() === 'SIGNED' &&
-    contractRow.pdf_signed_url
-  ) {
-    return {
-      signature: signatureRow,
-      pdfSignedUrl: String(contractRow.pdf_signed_url),
-    };
+  if (isTerminationSaleSignature(signatureRow)) {
+    await assertTerminationInstrumentReadyToSign(supabaseAdmin, signatureRow);
   }
-  if (['assinado', 'signed'].includes(contractStatus) && contractRow.pdf_signed_url) {
-    return {
-      signature: signatureRow,
-      pdfSignedUrl: String(contractRow.pdf_signed_url),
-    };
+  // Idempotência: já concluído com PDF → devolver sem duplicar eventos/certificado.
+  // TERMO não usa contracts.pdf_signed_url (artefato DESISTENCIA_ASSINADO).
+  if (!isTerminationSaleSignature(signatureRow)) {
+    if (
+      String(signatureRow.signature_status || '').toUpperCase() === 'SIGNED' &&
+      contractRow.pdf_signed_url
+    ) {
+      return {
+        signature: signatureRow,
+        pdfSignedUrl: String(contractRow.pdf_signed_url),
+      };
+    }
+    if (['assinado', 'signed'].includes(contractStatus) && contractRow.pdf_signed_url) {
+      return {
+        signature: signatureRow,
+        pdfSignedUrl: String(contractRow.pdf_signed_url),
+      };
+    }
   }
 
   // Multi-VENDOR (ARAGUAIA): marca só a party correspondente; PDF só quando todos assinaram.
