@@ -7,6 +7,7 @@ import type { FormattedLotAuditEvent, LotAuditAction, LotAuditSource } from '@/l
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import {
   terminationDocumentPdfHref,
+  terminationDocumentSignedPdfHref,
   terminationDocumentViewHref,
 } from '@/lib/saleDocuments';
 
@@ -207,16 +208,41 @@ export function lotHistoryImprovementsLine(
   return `Benfeitorias reconhecidas: ${money}`;
 }
 
-/** Mesmo sale_id/settlement.document_id das APIs de termo — sem segundo PDF. */
+export type LotHistoryTerminationDocumentLinks = {
+  saleId: string;
+  signed: boolean;
+  viewHref: string;
+  pdfHref: string;
+  signedPdfHref: string;
+  signedPdfDownloadHref: string;
+};
+
+/** Mesmo sale_id do evento/settlement — nunca blocks.sale_id após a liberação. */
 export function lotHistoryTerminationDocumentLinks(
   event: Pick<FormattedLotAuditEvent, 'action' | 'saleId' | 'motiveCode'>,
-): { viewHref: string; pdfHref: string } | null {
+  options?: { signed?: boolean },
+): LotHistoryTerminationDocumentLinks | null {
   if (event.action !== 'sale_cancelled') return null;
   if (String(event.motiveCode || '').trim() !== 'desistencia') return null;
   const saleId = String(event.saleId || '').trim();
   if (!saleId) return null;
   return {
+    saleId,
+    signed: Boolean(options?.signed),
     viewHref: terminationDocumentViewHref(saleId),
     pdfHref: terminationDocumentPdfHref(saleId),
+    signedPdfHref: terminationDocumentSignedPdfHref(saleId),
+    signedPdfDownloadHref: terminationDocumentSignedPdfHref(saleId, { download: true }),
   };
+}
+
+export function lotHistoryTerminationSaleIds(
+  events: Array<Pick<FormattedLotAuditEvent, 'action' | 'saleId' | 'motiveCode'>>,
+): string[] {
+  const ids = new Set<string>();
+  for (const event of events) {
+    const links = lotHistoryTerminationDocumentLinks(event);
+    if (links) ids.add(links.saleId);
+  }
+  return [...ids];
 }

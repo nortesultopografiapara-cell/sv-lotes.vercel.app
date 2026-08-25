@@ -6,6 +6,7 @@ import {
 } from '@/lib/rolePermissions';
 import { assertSaleDocumentSaleAccess, SaleDocumentError } from '@/lib/saleDocumentService';
 import { createAdminSupabase, getRequestAuthUser, resolveCallerProfile } from '@/lib/supabase/server';
+import { SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO } from '@/lib/termination-documents/types';
 import {
   documentViewFromSnapshot,
   loadTerminationDocumentBySale,
@@ -67,11 +68,38 @@ export async function GET(
       });
     }
 
+    const { data: signedRow } = await auth.admin
+      .from('sale_documents')
+      .select('id')
+      .eq('sale_id', saleId)
+      .eq('company_id', auth.companyId)
+      .eq('document_type', SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO)
+      .is('deleted_at', null)
+      .maybeSingle();
+    const signedArtifactAvailable = Boolean(signedRow?.id);
+
     const view = documentViewFromSnapshot(loaded.snapshot, loaded.documentStatus);
+    if (url.searchParams.get('meta') === '1') {
+      return NextResponse.json({
+        success: true,
+        settlementStatus: loaded.settlementStatus,
+        documentId: loaded.documentId,
+        documentNumber: view?.documentNumber ?? null,
+        documentStatus: view?.documentStatus ?? null,
+        title: view?.title ?? null,
+        saleId: view?.saleId ?? saleId,
+        generatedAt: loaded.snapshot.generatedAt,
+        signedArtifactAvailable,
+        canView: view?.canView ?? false,
+        canDownload: view?.canDownload ?? false,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       settlementStatus: loaded.settlementStatus,
       documentId: loaded.documentId,
+      signedArtifactAvailable,
       ...view,
     });
   } catch (err) {

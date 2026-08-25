@@ -13,6 +13,7 @@ import {
   listLotHistoryFilterChips,
   lotHistoryDateKey,
   lotHistoryTerminationDocumentLinks,
+  lotHistoryTerminationSaleIds,
   lotHistoryImprovementsLine,
   resolveLotHistoryActor,
   splitLotHistoryDescription,
@@ -297,7 +298,13 @@ function testPanelWiringAndSingleScroll() {
   assert(panel.includes('gis-lot-history-scroll'), 'scroll único da área');
   assert(panel.includes('Ver detalhes') || panel.includes('Ver mais'), 'expansão de detalhes');
   assert(panel.includes('Ver documento'), 'link Ver documento no histórico');
+  assert(panel.includes('Visualizar documento assinado'), 'histórico assinado visualizar');
+  assert(panel.includes('Baixar PDF assinado'), 'histórico assinado baixar');
   assert(panel.includes('lotHistoryTerminationDocumentLinks'), 'reusa sale_id do evento');
+  assert(panel.includes('lotHistoryTerminationSaleIds'), 'sale_ids do histórico vêm dos eventos');
+  assert(panel.includes('terminationDocumentMetaHref'), 'meta do termo por sale_id');
+  assert(!panel.includes('lot.saleId'), 'histórico não usa blocks.sale_id do lote');
+  assert(!panel.includes('blocks.sale_id'), 'histórico não lê blocks.sale_id');
   assert(panel.includes('lotHistoryImprovementsLine'), 'benfeitorias no detalhe sem poluir o título');
   assert(panel.includes('formatLotAuditDescription'), 'reusa formatter de descrição');
   assert(!panel.includes("from('lot_audit_logs')"), 'painel não consulta o banco');
@@ -316,6 +323,8 @@ function testTerminationDocumentLinkUsesSameSale() {
     motiveCode: 'desistencia',
   });
   assert(Boolean(withTerm), 'desistência no histórico tem link');
+  assert(withTerm?.saleId === 'sale-homolog', 'sale_id do evento');
+  assert(withTerm?.signed === false, 'sem artefato ainda não marca assinado');
   assert(
     Boolean(withTerm?.viewHref.includes('/sales/sale-homolog/termination-document')),
     'visualizar usa a mesma API do modal',
@@ -323,6 +332,38 @@ function testTerminationDocumentLinkUsesSameSale() {
   assert(
     Boolean(withTerm?.pdfHref.endsWith('/termination-document/pdf')),
     'PDF usa a mesma API do modal',
+  );
+  assert(
+    Boolean(withTerm?.signedPdfHref.endsWith('/termination-document/signed-pdf')),
+    'PDF assinado usa a rota existente',
+  );
+  assert(
+    Boolean(withTerm?.signedPdfDownloadHref.includes('download=1')),
+    'download assinado reusa signed-pdf',
+  );
+  const signedLinks = lotHistoryTerminationDocumentLinks(
+    {
+      action: 'sale_cancelled',
+      saleId: 'sale-homolog',
+      motiveCode: 'desistencia',
+    },
+    { signed: true },
+  );
+  assert(signedLinks?.signed === true, 'flag assinado');
+  assert(
+    lotHistoryTerminationSaleIds([
+      {
+        action: 'sale_cancelled',
+        saleId: 'sale-homolog',
+        motiveCode: 'desistencia',
+      },
+      {
+        action: 'sold',
+        saleId: 'sale-other',
+        motiveCode: 'desistencia',
+      },
+    ]).join(',') === 'sale-homolog',
+    'coleta só o sale_id da desistência no evento',
   );
   const formatted = formatLotAuditEvent({
     id: 'e-imp',

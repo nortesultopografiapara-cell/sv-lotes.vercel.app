@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
 import { formatLotAuditDescription } from '@/lib/currencyBrl';
 import type { FormattedLotAuditEvent } from '@/lib/lotAudit';
@@ -10,12 +10,14 @@ import {
   groupLotHistoryByDate,
   listLotHistoryFilterChips,
   lotHistoryTerminationDocumentLinks,
+  lotHistoryTerminationSaleIds,
   lotHistoryTimeLabel,
   lotHistoryImprovementsLine,
   resolveLotHistoryActor,
   splitLotHistoryDescription,
   type LotHistoryFilterId,
 } from '@/lib/lotHistoryPresentation';
+import { terminationDocumentMetaHref } from '@/lib/saleDocuments';
 
 type Props = {
   events: FormattedLotAuditEvent[];
@@ -23,10 +25,15 @@ type Props = {
   userNames: Record<string, string>;
 };
 
+function openHref(href: string) {
+  window.open(href, '_blank', 'noopener,noreferrer');
+}
+
 export function LotHistoryPanel({ events, loading, userNames }: Props) {
   const [filterId, setFilterId] = useState<LotHistoryFilterId>('all');
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [signedBySaleId, setSignedBySaleId] = useState<Record<string, boolean>>({});
 
   const chips = useMemo(() => listLotHistoryFilterChips(events), [events]);
   const visible = useMemo(
@@ -34,7 +41,37 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
     [events, filterId, query],
   );
   const groups = useMemo(() => groupLotHistoryByDate(visible), [visible]);
+  const terminationSaleIds = useMemo(() => lotHistoryTerminationSaleIds(events), [events]);
   const showSearch = events.length > 0;
+
+  useEffect(() => {
+    if (terminationSaleIds.length === 0) {
+      setSignedBySaleId({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(
+        terminationSaleIds.map(async (saleId) => {
+          try {
+            const res = await fetch(terminationDocumentMetaHref(saleId), {
+              credentials: 'include',
+            });
+            const payload = (await res.json().catch(() => ({}))) as {
+              signedArtifactAvailable?: unknown;
+            };
+            return [saleId, res.ok && Boolean(payload.signedArtifactAvailable)] as const;
+          } catch {
+            return [saleId, false] as const;
+          }
+        }),
+      );
+      if (!cancelled) setSignedBySaleId(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [terminationSaleIds]);
 
   return (
     <div className="gis-lot-history flex flex-col min-h-0 h-full">
@@ -109,7 +146,9 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
                     const meta = [actor, entry.sourceLabel].filter(Boolean).join(' · ');
                     const needsToggle = split.isLong || split.hasTechnical;
                     const shown = open ? split.full : split.preview;
-                    const termLinks = lotHistoryTerminationDocumentLinks(entry);
+                    const termLinks = lotHistoryTerminationDocumentLinks(entry, {
+                      signed: Boolean(entry.saleId && signedBySaleId[entry.saleId]),
+                    });
                     const improvementsLine = lotHistoryImprovementsLine(entry);
 
                     return (
@@ -162,19 +201,42 @@ export function LotHistoryPanel({ events, loading, userNames }: Props) {
                               </button>
                             ) : null}
                             {termLinks ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  window.open(
-                                    termLinks.viewHref,
-                                    '_blank',
-                                    'noopener,noreferrer',
-                                  )
-                                }
-                                className="mt-1.5 text-[10px] font-bold text-blue-700 hover:text-blue-800"
-                              >
-                                Ver documento
-                              </button>
+                              termLinks.signed ? (
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                    Assinado
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openHref(termLinks.signedPdfHref)}
+                                    className="text-[10px] font-bold text-blue-700 hover:text-blue-800"
+                                  >
+                                    Visualizar documento assinado
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openHref(termLinks.signedPdfDownloadHref)}
+                                    className="text-[10px] font-bold text-blue-700 hover:text-blue-800"
+                                  >
+                                    Baixar PDF assinado
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openHref(termLinks.viewHref)}
+                                    className="text-[10px] font-semibold text-gray-500 hover:text-gray-700"
+                                  >
+                                    Documento original
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openHref(termLinks.viewHref)}
+                                  className="mt-1.5 text-[10px] font-bold text-blue-700 hover:text-blue-800"
+                                >
+                                  Ver documento
+                                </button>
+                              )
                             ) : null}
                             {meta ? (
                               <p className="text-[10px] text-gray-400 mt-1.5">

@@ -58,6 +58,25 @@ export async function GET(
       documentId: String(data.id),
       companyId: ctx.companyId,
     });
+    const download = new URL(request.url).searchParams.get('download') === '1';
+    if (download) {
+      const fileRes = await fetch(signed.url);
+      if (fileRes.ok) {
+        const buf = await fileRes.arrayBuffer();
+        const fileName = String(signed.fileName || 'termo-desistencia-assinado.pdf').replace(
+          /"/g,
+          '',
+        );
+        return new NextResponse(buf, {
+          status: 200,
+          headers: {
+            'Content-Type': signed.mimeType || 'application/pdf',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Cache-Control': 'private, no-store',
+          },
+        });
+      }
+    }
     return NextResponse.redirect(signed.url, 302);
   } catch (err) {
     if (err instanceof SaleDocumentError) {

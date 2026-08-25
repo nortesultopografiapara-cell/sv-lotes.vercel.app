@@ -138,6 +138,7 @@
     "test:release-improvements": "tsx scripts/mandatory-release-improvements-tests.ts",
     "test:termination-document": "tsx scripts/mandatory-termination-document-desistencia-tests.ts",
     "test:termination-document-signature": "tsx scripts/mandatory-termination-document-signature-tests.ts",
+    "test:termination-signed-recovery": "tsx scripts/mandatory-termination-document-signed-recovery-tests.ts",
     "test:termination-snapshot": "tsx scripts/mandatory-termination-policy-snapshot-tests.ts",
     "test:lot-reservation-display": "tsx scripts/mandatory-lot-reservation-display-tests.ts",
     "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts",

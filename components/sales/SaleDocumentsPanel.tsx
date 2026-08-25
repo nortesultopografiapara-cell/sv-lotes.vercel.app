@@ -12,16 +12,22 @@ import {
 import { supabase } from '@/lib/supabase';
 import {
   formatFileSizeBytes,
+  hasSignedTerminationArtifact,
+  isOriginalTerminationDocumentType,
   isSaleOperationGeneratedType,
+  isSignedTerminationDocumentType,
   isUploadAllowedForCategory,
   parseSaleOperationDocumentNumber,
+  preferSaleOperationDocuments,
   SALE_DOCUMENT_CATEGORIES,
   SALE_DOCUMENT_CATEGORY_LABELS,
   SALE_DOCUMENT_MAX_BYTES,
   SALE_DOCUMENT_TYPES_BY_CATEGORY,
   SALE_DOCUMENT_TYPE_LABELS,
+  saleOperationDocumentDisplayLabel,
   saleOperationDocumentStatusLabel,
   terminationDocumentPdfHref,
+  terminationDocumentSignedPdfHref,
   terminationDocumentViewHref,
   type SaleDocumentCategory,
 } from '@/lib/saleDocuments';
@@ -106,12 +112,18 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
 
   const operationDocs = useMemo(
     () =>
-      documents.filter(
-        (doc) =>
-          doc.category === 'SYSTEM_GENERATED' &&
-          isSaleOperationGeneratedType(doc.document_type),
+      preferSaleOperationDocuments(
+        documents.filter(
+          (doc) =>
+            doc.category === 'SYSTEM_GENERATED' &&
+            isSaleOperationGeneratedType(doc.document_type),
+        ),
       ),
     [documents],
+  );
+  const signedArtifactAvailable = useMemo(
+    () => hasSignedTerminationArtifact(operationDocs),
+    [operationDocs],
   );
 
   const openTerminationDocument = (download: boolean) => {
@@ -120,6 +132,15 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
       ? terminationDocumentPdfHref(saleId)
       : terminationDocumentViewHref(saleId);
     window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
+  const openSignedTerminationPdf = (download: boolean) => {
+    if (!saleId) return;
+    window.open(
+      terminationDocumentSignedPdfHref(saleId, { download }),
+      '_blank',
+      'noopener,noreferrer',
+    );
   };
 
   const openSignedUrl = async (doc: SaleDocumentView, download: boolean) => {
@@ -364,32 +385,48 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
                   const busy = busyId === doc.id;
                   const number =
                     parseSaleOperationDocumentNumber(doc) || '—';
-                  const isDesistencia =
-                    String(doc.document_type || '').toUpperCase() === 'DESISTENCIA';
-                  const isDesistenciaAssinado =
-                    String(doc.document_type || '').toUpperCase() === 'DESISTENCIA_ASSINADO';
+                  const isDesistencia = isOriginalTerminationDocumentType(doc.document_type);
+                  const isDesistenciaAssinado = isSignedTerminationDocumentType(
+                    doc.document_type,
+                  );
                   return (
                     <tr key={doc.id} className="border-b border-gray-100 bg-white">
                       <td className="px-2 py-1.5 font-semibold text-gray-900 whitespace-nowrap">
                         {number}
                       </td>
-                      <td className="px-2 py-1.5">{doc.document_type_label}</td>
+                      <td className="px-2 py-1.5">
+                        {saleOperationDocumentDisplayLabel(doc.document_type, {
+                          signedArtifactAvailable,
+                        })}
+                      </td>
                       <td className="px-2 py-1.5 whitespace-nowrap">
                         {formatUploadDate(doc.created_at)}
                       </td>
                       <td className="px-2 py-1.5">
-                        {saleOperationDocumentStatusLabel(doc.document_type)}
+                        {isDesistencia && signedArtifactAvailable
+                          ? 'Original'
+                          : saleOperationDocumentStatusLabel(doc.document_type)}
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            title="Visualizar"
+                            title={
+                              isDesistenciaAssinado
+                                ? 'Visualizar documento assinado'
+                                : isDesistencia
+                                  ? signedArtifactAvailable
+                                    ? 'Visualizar documento original'
+                                    : 'Visualizar'
+                                  : 'Visualizar'
+                            }
                             disabled={busy || disabled}
                             onClick={() =>
-                              isDesistencia
-                                ? openTerminationDocument(false)
-                                : void openSignedUrl(doc, false)
+                              isDesistenciaAssinado
+                                ? openSignedTerminationPdf(false)
+                                : isDesistencia
+                                  ? openTerminationDocument(false)
+                                  : void openSignedUrl(doc, false)
                             }
                             className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
                           >
@@ -399,14 +436,18 @@ export function SaleDocumentsPanel({ saleId, disabled }: SaleDocumentsPanelProps
                             type="button"
                             title={
                               isDesistenciaAssinado
-                                ? 'Baixar documento assinado'
-                                : 'Baixar PDF'
+                                ? 'Baixar PDF assinado'
+                                : isDesistencia
+                                  ? 'Baixar PDF'
+                                  : 'Baixar documento assinado'
                             }
                             disabled={busy || disabled}
                             onClick={() =>
-                              isDesistencia
-                                ? openTerminationDocument(true)
-                                : void openSignedUrl(doc, true)
+                              isDesistenciaAssinado
+                                ? openSignedTerminationPdf(true)
+                                : isDesistencia
+                                  ? openTerminationDocument(true)
+                                  : void openSignedUrl(doc, true)
                             }
                             className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
                           >

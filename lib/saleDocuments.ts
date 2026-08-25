@@ -170,8 +170,113 @@ export function terminationDocumentPdfHref(saleId: string): string {
   return `/api/sales/${encodeURIComponent(saleId)}/termination-document/pdf`;
 }
 
-export function terminationDocumentSignedPdfHref(saleId: string): string {
-  return `/api/sales/${encodeURIComponent(saleId)}/termination-document/signed-pdf`;
+export function terminationDocumentMetaHref(saleId: string): string {
+  return `/api/sales/${encodeURIComponent(saleId)}/termination-document?meta=1`;
+}
+
+export function terminationDocumentSignedPdfHref(
+  saleId: string,
+  options?: { download?: boolean },
+): string {
+  const base = `/api/sales/${encodeURIComponent(saleId)}/termination-document/signed-pdf`;
+  return options?.download ? `${base}?download=1` : base;
+}
+
+export function isSignedTerminationDocumentType(documentType?: string | null): boolean {
+  return (
+    String(documentType || '')
+      .trim()
+      .toUpperCase() === 'DESISTENCIA_ASSINADO'
+  );
+}
+
+export function isOriginalTerminationDocumentType(documentType?: string | null): boolean {
+  return (
+    String(documentType || '')
+      .trim()
+      .toUpperCase() === 'DESISTENCIA'
+  );
+}
+
+/** Assinado primeiro; original permanece para auditoria. Não apaga DESISTENCIA. */
+export function preferSaleOperationDocuments<T extends { document_type?: string | null }>(
+  docs: T[],
+): T[] {
+  const signed: T[] = [];
+  const original: T[] = [];
+  const others: T[] = [];
+  for (const doc of docs) {
+    if (isSignedTerminationDocumentType(doc.document_type)) signed.push(doc);
+    else if (isOriginalTerminationDocumentType(doc.document_type)) original.push(doc);
+    else others.push(doc);
+  }
+  return [...signed, ...original, ...others];
+}
+
+export function hasSignedTerminationArtifact<T extends { document_type?: string | null }>(
+  docs: T[],
+): boolean {
+  return docs.some((doc) => isSignedTerminationDocumentType(doc.document_type));
+}
+
+export function saleOperationDocumentDisplayLabel(
+  documentType?: string | null,
+  options?: { signedArtifactAvailable?: boolean },
+): string {
+  if (isOriginalTerminationDocumentType(documentType) && options?.signedArtifactAvailable) {
+    return 'Documento original';
+  }
+  const type = String(documentType || '')
+    .trim()
+    .toUpperCase();
+  return SALE_DOCUMENT_TYPE_LABELS[type] || type || 'Documento';
+}
+
+export type TerminationOperationDocumentRow = {
+  role: 'signed' | 'original';
+  label: string;
+  statusLabel: string;
+  documentNumber: string | null;
+  generatedAt: string | null;
+  viewHref: string;
+  downloadHref: string;
+};
+
+/** Recupera o termo existente: assinado preferencial; original nunca é apagado. */
+export function buildTerminationOperationDocumentRows(input: {
+  saleId: string;
+  documentNumber?: string | null;
+  generatedAt?: string | null;
+  signedArtifactAvailable?: boolean;
+}): TerminationOperationDocumentRow[] {
+  const saleId = String(input.saleId || '').trim();
+  if (!saleId) return [];
+  const documentNumber = input.documentNumber ? String(input.documentNumber) : null;
+  const generatedAt = input.generatedAt ? String(input.generatedAt) : null;
+  const original: TerminationOperationDocumentRow = {
+    role: 'original',
+    label: input.signedArtifactAvailable
+      ? 'Documento original'
+      : SALE_DOCUMENT_TYPE_LABELS.DESISTENCIA,
+    statusLabel: input.signedArtifactAvailable ? 'Original' : 'Gerado',
+    documentNumber,
+    generatedAt,
+    viewHref: terminationDocumentViewHref(saleId),
+    downloadHref: terminationDocumentPdfHref(saleId),
+  };
+  if (!input.signedArtifactAvailable) return [original];
+  return [
+    {
+      role: 'signed',
+      label: SALE_DOCUMENT_TYPE_LABELS.DESISTENCIA,
+      statusLabel: 'Assinado',
+      documentNumber,
+      generatedAt,
+      viewHref: terminationDocumentSignedPdfHref(saleId),
+      downloadHref: terminationDocumentSignedPdfHref(saleId, { download: true }),
+    },
+    original,
+  ];
 }
 
 export function validateSaleDocumentType(

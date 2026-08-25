@@ -65,6 +65,7 @@ import {
   type SaleContractSignatureSectionHandle,
 } from "@/components/contracts/SaleContractSignatureSection";
 import { LegacyContractDocumentsSection } from "@/components/contracts/LegacyContractDocumentsSection";
+import { TerminationOperationDocumentsSection } from "@/components/sales/TerminationOperationDocumentsSection";
 import {
   canResendSaleSignature,
   canSendSaleSignature,
@@ -2523,6 +2524,15 @@ export default function ContractsPage() {
                 {activeTab === "Visualização" && (
                   <>
                     <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
+                      {(selectedContract.status === "cancelado" ||
+                        selectedContract.status === "cancelled") && (
+                        <div className="max-w-[800px] mx-auto mb-4">
+                          <TerminationOperationDocumentsSection
+                            saleId={selectedContract.sale_id}
+                            tone="dark"
+                          />
+                        </div>
+                      )}
                       {contractViewNeedsRegenerar && (
                         <p className="max-w-[800px] mx-auto mb-3 text-xs text-amber-400/90">
                           Este contrato precisa ser regenerado para atualizar a visualização.
@@ -2914,6 +2924,13 @@ export default function ContractsPage() {
                       <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Arquivos Anexados
                       </h3>
+
+                      <div className="mb-6">
+                        <TerminationOperationDocumentsSection
+                          saleId={selectedContract.sale_id}
+                          tone="dark"
+                        />
+                      </div>
 
                       <div className="flex gap-4 mb-8">
                         <button

@@ -15,7 +15,11 @@ import {
   SALE_DOCUMENTS_STORAGE_BUCKET,
   saleOperationDocumentStatusLabel,
   terminationDocumentPdfHref,
+  terminationDocumentSignedPdfHref,
   terminationDocumentViewHref,
+  preferSaleOperationDocuments,
+  saleOperationDocumentDisplayLabel,
+  buildTerminationOperationDocumentRows,
   validateSaleDocumentFileSize,
   validateSaleDocumentMimeType,
   validateSaleDocumentType,
@@ -150,6 +154,35 @@ function testOperationDocumentHelpers() {
     terminationDocumentPdfHref('sale-1').includes('/termination-document/pdf'),
     'baixar PDF',
   );
+  assert(
+    terminationDocumentSignedPdfHref('sale-1').endsWith('/termination-document/signed-pdf'),
+    'PDF assinado',
+  );
+  assert(
+    terminationDocumentSignedPdfHref('sale-1', { download: true }).includes('download=1'),
+    'download assinado',
+  );
+  assert(
+    preferSaleOperationDocuments([
+      { document_type: 'DESISTENCIA' },
+      { document_type: 'DESISTENCIA_ASSINADO' },
+    ]).map((d) => d.document_type).join(',') === 'DESISTENCIA_ASSINADO,DESISTENCIA',
+    'assinado preferencial',
+  );
+  assert(
+    saleOperationDocumentDisplayLabel('DESISTENCIA', { signedArtifactAvailable: true }) ===
+      'Documento original',
+    'original de auditoria',
+  );
+  const rows = buildTerminationOperationDocumentRows({
+    saleId: 'sale-1',
+    documentNumber: 'TD-000000009/2026',
+    generatedAt: '2026-08-25T12:00:00Z',
+    signedArtifactAvailable: true,
+  });
+  assert(rows[0]?.role === 'signed', 'versão assinada principal');
+  assert(rows[0]?.statusLabel === 'Assinado', 'status assinado');
+  assert(rows[1]?.label === 'Documento original', 'original preservado');
   console.log('OK testOperationDocumentHelpers');
 }
 

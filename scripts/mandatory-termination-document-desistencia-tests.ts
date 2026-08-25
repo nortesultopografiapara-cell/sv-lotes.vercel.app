@@ -645,6 +645,7 @@ function testApiUxAndSaleDocuments() {
   assert(saleDocsPanel.includes('terminationDocumentPdfHref'), 'PDF usa API do termo');
   const history = read('components/map/LotHistoryPanel.tsx');
   assert(history.includes('Ver documento'), 'histórico oferece Ver documento');
+  assert(history.includes('Visualizar documento assinado'), 'histórico oferece documento assinado');
   assert(history.includes('lotHistoryTerminationDocumentLinks'), 'mesmo sale_id do termo');
   const persist = read('lib/termination-documents/persist.ts');
   assert(persist.includes('createSystemGeneratedSaleDocumentMetadata'), 'PDF em sale_documents');
