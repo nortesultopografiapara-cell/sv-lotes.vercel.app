@@ -35,6 +35,19 @@ import {
   summarizeReleaseReceipts,
   validateReleaseLotMotive,
 } from '../lib/finance/releaseLotShared';
+import {
+  asaasBlockedReleaseFooterMessage,
+  buildReleaseLotConfirmFooterNotices,
+  computeReleaseLotConfirmEnabled,
+  interBlockedReleaseFooterMessage,
+  passwordStateFromInputValue,
+  REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE,
+} from '../lib/finance/releaseLotConfirmUx';
+import {
+  IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE,
+  IMPROVEMENTS_CREDIT_NOT_ALLOWED_MESSAGE,
+  validateImprovementsForRelease,
+} from '../lib/contract-termination/improvements';
 import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '../lib/homolog/env';
 
 function assert(cond: boolean, msg: string) {
@@ -584,6 +597,208 @@ function testPaidNeverDeletedGuards() {
   console.log('OK testPaidNeverDeletedGuards');
 }
 
+function testReleaseLotConfirmButtonUx() {
+  const ready = {
+    releaseOperation: true,
+    motiveCode: 'desistencia',
+    motiveDetail: '',
+    acknowledged: true,
+    password: 'secret',
+    loading: false,
+    asaasBlockedCharges: 0,
+    interBlockedCharges: 0,
+    needsRefundSchedule: false,
+    refundFirstDueDate: '',
+    showSettlement: true,
+    improvementsCheckOk: true,
+  };
+
+  assert(
+    computeReleaseLotConfirmEnabled(ready),
+    'todas as condições válidas → botão habilitado',
+  );
+  assert(
+    computeReleaseLotConfirmEnabled({ ...ready, password: 'secret' }),
+    'senha manual habilita',
+  );
+
+  const autofilled = passwordStateFromInputValue('autofill-secret');
+  assert(autofilled === 'autofill-secret', 'autofill via input sincroniza state');
+  assert(
+    computeReleaseLotConfirmEnabled({ ...ready, password: autofilled }),
+    'autofill via input sincroniza e habilita',
+  );
+  assert(
+    !computeReleaseLotConfirmEnabled({ ...ready, password: '' }),
+    'senha vazia no state desabilita',
+  );
+
+  const pendingAppraisal = validateImprovementsForRelease({
+    hasImprovements: true,
+    appraisalStatus: 'PENDING',
+    items: [],
+    destination: 'REFUND_CUSTOMER',
+  });
+  assert(!pendingAppraisal.ok, 'avaliação pendente inválida');
+  const pendingNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: pendingAppraisal.ok,
+    improvementsCheckError: pendingAppraisal.ok ? null : pendingAppraisal.error,
+    needsRefundSchedule: false,
+    refundFirstDueDate: '',
+  });
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      ...ready,
+      improvementsCheckOk: pendingAppraisal.ok,
+    }),
+    'benfeitoria inválida mantém desabilitado',
+  );
+  assert(
+    pendingNotices.some((n) => n.message === IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE),
+    'mensagem avaliação ainda não concluída',
+  );
+
+  const missingDescription = validateImprovementsForRelease({
+    hasImprovements: true,
+    appraisalStatus: 'COMPLETED',
+    items: [{ description: '', amount: 100 }],
+    destination: 'REFUND_CUSTOMER',
+  });
+  assert(!missingDescription.ok, 'sem descrição inválida');
+  assert(
+    missingDescription.ok === false &&
+      missingDescription.error.includes('descrição'),
+    'benfeitoria sem descrição',
+  );
+
+  const missingAmount = validateImprovementsForRelease({
+    hasImprovements: true,
+    appraisalStatus: 'COMPLETED',
+    items: [{ description: 'Muro', amount: 0 }],
+    destination: 'REFUND_CUSTOMER',
+  });
+  assert(!missingAmount.ok, 'valor zero inválido');
+  assert(
+    missingAmount.ok === false &&
+      missingAmount.error.includes('maior que zero'),
+    'valor deve ser maior que zero',
+  );
+
+  const creditBlocked = validateImprovementsForRelease({
+    hasImprovements: true,
+    appraisalStatus: 'COMPLETED',
+    items: [{ description: 'Muro', amount: 100 }],
+    destination: 'CREDIT_OTHER_UNIT',
+  });
+  assert(!creditBlocked.ok, 'crédito incompatível');
+  assert(
+    creditBlocked.ok === false &&
+      creditBlocked.error === IMPROVEMENTS_CREDIT_NOT_ALLOWED_MESSAGE,
+    'destino incompatível com benfeitorias reconhecidas',
+  );
+
+  const validImprovements = validateImprovementsForRelease({
+    hasImprovements: true,
+    appraisalStatus: 'COMPLETED',
+    items: [{ description: 'Muro', amount: 1500 }],
+    destination: 'REFUND_CUSTOMER',
+  });
+  assert(validImprovements.ok, 'benfeitoria válida');
+  assert(
+    computeReleaseLotConfirmEnabled({
+      ...ready,
+      improvementsCheckOk: validImprovements.ok,
+    }),
+    'benfeitoria válida habilita',
+  );
+
+  const missingDateNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: true,
+    refundFirstDueDate: '',
+  });
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      ...ready,
+      needsRefundSchedule: true,
+      refundFirstDueDate: '',
+    }),
+    'data faltante mantém desabilitado',
+  );
+  assert(
+    missingDateNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
+    'mensagem de vencimento da 1ª parcela',
+  );
+  assert(
+    computeReleaseLotConfirmEnabled({
+      ...ready,
+      needsRefundSchedule: true,
+      refundFirstDueDate: '2026-09-15',
+    }),
+    'data preenchida habilita quando cronograma é obrigatório',
+  );
+
+  const asaasNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: false,
+    refundFirstDueDate: '',
+    asaasBlockedCharges: 1,
+  });
+  assert(
+    !computeReleaseLotConfirmEnabled({ ...ready, asaasBlockedCharges: 1 }),
+    'Asaas bloqueada mantém desabilitado',
+  );
+  assert(
+    asaasNotices.some((n) => n.message === asaasBlockedReleaseFooterMessage(1)),
+    'aviso Asaas no rodapé',
+  );
+
+  const interNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: false,
+    refundFirstDueDate: '',
+    interBlockedCharges: 2,
+  });
+  assert(
+    !computeReleaseLotConfirmEnabled({ ...ready, interBlockedCharges: 2 }),
+    'Inter bloqueada mantém desabilitado',
+  );
+  assert(
+    interNotices.some((n) => n.message === interBlockedReleaseFooterMessage(2)),
+    'aviso Inter no rodapé',
+  );
+
+  const modal = read('components/map/ReleaseLotConfirmModal.tsx');
+  assert(modal.includes('onInput={(e) => syncPasswordFromInput(e.currentTarget)}'), 'onInput senha');
+  assert(modal.includes('onChange={(e) => syncPasswordFromInput(e.currentTarget)}'), 'onChange senha');
+  assert(modal.includes('confirmFooterNotices'), 'avisos no rodapé');
+  assert(modal.includes('disabled={!confirmEnabled}'), 'disabled inalterado na fórmula');
+  assert(modal.includes('computeReleaseLotConfirmEnabled'), 'habilitação composta');
+  assert(!modal.includes('console.info'), 'sem log de diagnóstico no commit');
+  assert(!modal.includes('console.log(password'), 'não loga senha');
+
+  const shared = read('lib/finance/releaseLotShared.ts');
+  const start = shared.indexOf('export function canConfirmReleaseLot');
+  const end = shared.indexOf('export type ReleaseReceiptBucket');
+  const fn = shared.slice(start, end);
+  assert(fn.includes('if (input.loading) return false;'), 'canConfirm loading');
+  assert(fn.includes('if (!input.acknowledged) return false;'), 'canConfirm ciência');
+  assert(fn.includes("if (!String(input.password || '').trim()) return false;"), 'canConfirm senha');
+  assert(fn.includes('if ((input.asaasBlockedCharges || 0) > 0) return false;'), 'canConfirm Asaas');
+  assert(fn.includes('if ((input.interBlockedCharges || 0) > 0) return false;'), 'canConfirm Inter');
+  assert(fn.includes('return validateReleaseLotMotive({'), 'canConfirm motivo');
+  assert(!shared.includes('releaseLotConfirmUx'), 'motor shared não depende da UX');
+
+  const ux = read('lib/finance/releaseLotConfirmUx.ts');
+  assert(!ux.includes('calculateSettlement'), 'UX não mexe no motor financeiro');
+  assert(ux.includes('canConfirmReleaseLot({'), 'UX reutiliza canConfirmReleaseLot');
+  console.log('OK testReleaseLotConfirmButtonUx');
+}
+
 function main() {
   testMotiveValidation();
   testReceiptClassification();
@@ -600,6 +815,7 @@ function main() {
   testOperationalListingExcludesCanceled();
   testApiErrorShape();
   testPaidNeverDeletedGuards();
+  testReleaseLotConfirmButtonUx();
   console.log('\nALL mandatory-release-lot-tests PASSED');
 }
 

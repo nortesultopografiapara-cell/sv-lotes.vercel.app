@@ -31,6 +31,11 @@ import {
 import type { SettlementDestination } from '@/lib/contract-termination/types';
 import { shouldDefineRefundSchedule } from '@/lib/termination-documents/refundSchedule';
 import {
+  buildReleaseLotConfirmFooterNotices,
+  computeReleaseLotConfirmEnabled,
+  passwordStateFromInputValue,
+} from '@/lib/finance/releaseLotConfirmUx';
+import {
   canConfirmReleaseLot,
   isDeferredSaleOperation,
   isLotReleaseSaleOperation,
@@ -286,8 +291,8 @@ export function ReleaseLotConfirmModal({
 
   const confirmEnabled = useMemo(
     () =>
-      releaseOperation &&
-      canConfirmReleaseLot({
+      computeReleaseLotConfirmEnabled({
+        releaseOperation,
         motiveCode,
         motiveDetail,
         acknowledged,
@@ -295,9 +300,11 @@ export function ReleaseLotConfirmModal({
         loading,
         asaasBlockedCharges: preview?.asaasBlockedCharges,
         interBlockedCharges: preview?.interBlockedCharges,
-      }) &&
-      (!needsRefundSchedule || Boolean(refundFirstDueDate)) &&
-      (!showSettlement || improvementsCheck.ok),
+        needsRefundSchedule,
+        refundFirstDueDate,
+        showSettlement,
+        improvementsCheckOk: improvementsCheck.ok,
+      }),
     [
       acknowledged,
       improvementsCheck.ok,
@@ -313,6 +320,47 @@ export function ReleaseLotConfirmModal({
       showSettlement,
     ],
   );
+
+  const confirmFooterNotices = useMemo(
+    () =>
+      buildReleaseLotConfirmFooterNotices({
+        showSettlement,
+        improvementsCheckOk: improvementsCheck.ok,
+        improvementsCheckError: improvementsCheck.ok ? null : improvementsCheck.error,
+        needsRefundSchedule,
+        refundFirstDueDate,
+        asaasBlockedCharges: preview?.asaasBlockedCharges,
+        interBlockedCharges: preview?.interBlockedCharges,
+      }),
+    [
+      improvementsCheck,
+      needsRefundSchedule,
+      preview?.asaasBlockedCharges,
+      preview?.interBlockedCharges,
+      refundFirstDueDate,
+      showSettlement,
+    ],
+  );
+
+  const syncPasswordFromInput = (el: HTMLInputElement) => {
+    setPassword(passwordStateFromInputValue(el.value));
+  };
+
+  useEffect(() => {
+    if (!releaseOperation) return;
+    const el = passwordInputRef.current;
+    if (!el) return;
+    const sync = () => {
+      setPassword(passwordStateFromInputValue(el.value));
+    };
+    sync();
+    const t1 = window.setTimeout(sync, 50);
+    const t2 = window.setTimeout(sync, 400);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [releaseOperation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -900,7 +948,10 @@ export function ReleaseLotConfirmModal({
                           ref={passwordInputRef}
                           type={showPassword ? 'text' : 'password'}
                           value={password}
-                          onChange={(e) => setPassword(e.target.value)}
+                          onChange={(e) => syncPasswordFromInput(e.currentTarget)}
+                          onInput={(e) => syncPasswordFromInput(e.currentTarget)}
+                          onFocus={(e) => syncPasswordFromInput(e.currentTarget)}
+                          onBlur={(e) => syncPasswordFromInput(e.currentTarget)}
                           className={`${FIELD_CLASS} pr-10`}
                           placeholder="Senha de acesso"
                           autoComplete="current-password"
@@ -930,7 +981,20 @@ export function ReleaseLotConfirmModal({
             )}
           </div>
 
-          <div className="shrink-0 border-t border-slate-100 bg-white px-5 py-3 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+          <div className="shrink-0 border-t border-slate-100 bg-white px-5 py-3 space-y-3">
+            {confirmFooterNotices.length > 0 ? (
+              <div className="space-y-2">
+                {confirmFooterNotices.map((notice) => (
+                  <p
+                    key={notice.kind}
+                    className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3"
+                  >
+                    {notice.message}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
             <button
               type="button"
               onClick={onClose}
@@ -948,6 +1012,7 @@ export function ReleaseLotConfirmModal({
                 Confirmar liberação do lote
               </button>
             ) : null}
+            </div>
           </div>
         </form>
       </div>
