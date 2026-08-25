@@ -320,6 +320,10 @@
       min-height: 0;
     }
 
+    .sv-sale-workspace-edit-tabs {
+      flex-shrink: 0;
+    }
+
     .sv-sale-workspace-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.65fr) minmax(360px, 1fr);

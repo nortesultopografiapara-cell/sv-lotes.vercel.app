@@ -26,7 +26,7 @@ function testReservationDesktopFlagAndShell() {
     'reserva workspace só em create Reservado',
   );
   assert(
-    modal.includes('isSaleWorkspaceDesktop || isReservationWorkspaceDesktop'),
+    modal.includes('isSaleFormWorkspaceDesktop || isReservationWorkspaceDesktop'),
     'chrome compartilhado com a venda',
   );
   assert(modal.includes("? 'Nova reserva'"), 'título Nova reserva no desktop');

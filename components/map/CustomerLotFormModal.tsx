@@ -247,9 +247,13 @@ export function CustomerLotFormModal({
   const isWideDesktop = useIsWideDesktop();
   const isSaleWorkspaceDesktop =
     isWideDesktop && !isEditMode && actionName === 'Vendido';
+  const isSaleEditWorkspaceDesktop = isWideDesktop && isEditMode;
   const isReservationWorkspaceDesktop =
     isWideDesktop && !isEditMode && actionName === 'Reservado';
-  const isWorkspaceDesktop = isSaleWorkspaceDesktop || isReservationWorkspaceDesktop;
+  const isSaleFormWorkspaceDesktop =
+    isSaleWorkspaceDesktop || isSaleEditWorkspaceDesktop;
+  const isWorkspaceDesktop =
+    isSaleFormWorkspaceDesktop || isReservationWorkspaceDesktop;
 
   useEffect(() => {
     setSaleWorkspaceChromeOpen(isWorkspaceDesktop);
@@ -265,9 +269,7 @@ export function CustomerLotFormModal({
   }));
   const [submitting, setSubmitting] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(false);
-  const [prefillBanner, setPrefillBanner] = useState<string | null>(
-    isEditMode ? 'Dados da venda carregados para edição.' : null,
-  );
+  const [prefillBanner, setPrefillBanner] = useState<string | null>(null);
   const [financialAccounts, setFinancialAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
   const [financialAccountsLoading, setFinancialAccountsLoading] = useState(false);
   const [financialAccountsUnavailable, setFinancialAccountsUnavailable] = useState(false);
@@ -947,7 +949,9 @@ export function CustomerLotFormModal({
     setFormData((prev) => ({ ...prev, ...data }));
   };
 
-  const title = isSaleWorkspaceDesktop
+  const title = isSaleEditWorkspaceDesktop
+    ? 'Editar venda'
+    : isSaleWorkspaceDesktop
     ? 'Nova venda'
     : isReservationWorkspaceDesktop
       ? 'Nova reserva'
@@ -959,60 +963,22 @@ export function CustomerLotFormModal({
           : 'Reserva de Lote'
         : `Novo Cliente${actionName === 'Vendido' ? ' - Venda de Lote' : ''}`;
 
-  const workspaceShellClass = isSaleWorkspaceDesktop
+  const workspaceShellClass = isSaleFormWorkspaceDesktop
     ? 'sv-modal-shell--sale-workspace'
     : isReservationWorkspaceDesktop
       ? 'sv-modal-shell--sale-workspace sv-modal-shell--reservation-workspace'
       : '';
 
-  return (
-    <div className={`sv-modal-overlay z-[1000] pointer-events-auto font-sans${isWorkspaceDesktop ? " sv-modal-overlay--sale-workspace" : ""}`}>
-      <div className={`sv-modal-shell sv-modal-shell--full-mobile ${workspaceShellClass} bg-white animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200`}>
-        <div className={`sv-modal-header sticky top-0 z-20 border-b border-gray-100 flex items-center justify-between gap-4 bg-white shadow-sm ${isWorkspaceDesktop ? "px-5 py-2 sv-sale-workspace-header" : "p-4"}`}>
-          <div className="min-w-0 flex-1">
-            <h3 className={`font-bold text-gray-900 tracking-tight ${isWorkspaceDesktop ? "text-base leading-tight" : "text-lg"}`}>{title}</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {isWorkspaceDesktop
-                ? `Lote ${lot.number} · Quadra ${lot.block}${projectLabel ? ` · ${projectLabel}` : ""}`
-                : `Lote ${lot.number} - Quadra ${lot.block} (${actionName})`}
-            </p>
-          </div>
-          <div className="flex items-start gap-3 shrink-0">
-            {isWorkspaceDesktop ? (
-              <div className="text-right pt-0.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                  VALOR DO LOTE
-                </p>
-                <p className="text-base font-bold text-emerald-800 tabular-nums">
-                  {formatCurrencyBRL(price)}
-                </p>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className={`gis-commercial-modal sv-modal-body flex-1 text-slate-900 ${isWorkspaceDesktop ? "p-3 px-4" : "p-5 pr-4"}`}>
-          {prefillLoading && (
-            <div className="mb-4 flex items-center gap-2 text-sm text-blue-700">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Carregando dados da reserva...
-            </div>
-          )}
-          {prefillBanner && (
-            <div className="mb-4 p-3 text-sm bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg">
-              {prefillBanner}
-            </div>
-          )}
-
-          {isEditMode ? (
-          <div className="mb-4 flex flex-nowrap gap-1 border-b border-gray-200 overflow-x-auto">
+  const renderEditTabs = (placement: 'shell' | 'body') => {
+    if (!isEditMode) return null;
+    if (placement === 'shell' && !isSaleEditWorkspaceDesktop) return null;
+    if (placement === 'body' && isSaleEditWorkspaceDesktop) return null;
+    return (
+          <div className={
+            isSaleEditWorkspaceDesktop
+              ? 'sv-sale-workspace-edit-tabs shrink-0 flex flex-nowrap gap-1 border-b border-gray-200 px-5 bg-white'
+              : 'mb-4 flex flex-nowrap gap-1 border-b border-gray-200 overflow-x-auto'
+          }>
             <button
               type="button"
               onClick={() => setActiveTab('dados')}
@@ -1064,7 +1030,67 @@ export function CustomerLotFormModal({
             </button>
             ) : null}
           </div>
-          ) : null}
+    );
+  };
+
+  return (
+    <div className={`sv-modal-overlay z-[1000] pointer-events-auto font-sans${isWorkspaceDesktop ? " sv-modal-overlay--sale-workspace" : ""}`}>
+      <div className={`sv-modal-shell sv-modal-shell--full-mobile ${workspaceShellClass} bg-white animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200`}>
+        <div className={`sv-modal-header sticky top-0 z-20 border-b border-gray-100 flex items-center justify-between gap-4 bg-white shadow-sm ${isWorkspaceDesktop ? "px-5 py-2 sv-sale-workspace-header" : "p-4"}`}>
+          <div className="min-w-0 flex-1">
+            <h3 className={`font-bold text-gray-900 tracking-tight ${isWorkspaceDesktop ? "text-base leading-tight" : "text-lg"}`}>{title}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {isWorkspaceDesktop
+                ? `Lote ${lot.number} · Quadra ${lot.block}${projectLabel ? ` · ${projectLabel}` : ""}`
+                : `Lote ${lot.number} - Quadra ${lot.block} (${actionName})`}
+            </p>
+          </div>
+          <div className="flex items-start gap-3 shrink-0">
+            {isSaleEditWorkspaceDesktop ? (
+              <div className="text-right pt-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                  {lot.status || actionName || 'Venda'}
+                </p>
+                <p className="text-base font-bold text-emerald-800 tabular-nums">
+                  {formatCurrencyBRL(finalValue)}
+                </p>
+              </div>
+            ) : isWorkspaceDesktop ? (
+              <div className="text-right pt-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                  VALOR DO LOTE
+                </p>
+                <p className="text-base font-bold text-emerald-800 tabular-nums">
+                  {formatCurrencyBRL(price)}
+                </p>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {renderEditTabs('shell')}
+
+        <div className={`gis-commercial-modal sv-modal-body flex-1 text-slate-900 ${isWorkspaceDesktop ? "p-3 px-4" : "p-5 pr-4"}`}>
+          {prefillLoading && (
+            <div className="mb-4 flex items-center gap-2 text-sm text-blue-700">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Carregando dados da reserva...
+            </div>
+          )}
+          {prefillBanner && (
+            <div className="mb-4 p-3 text-sm bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg">
+              {prefillBanner}
+            </div>
+          )}
+
+          {renderEditTabs('body')}
 
           {activeTab === 'documentos' ? (
             <SaleDocumentsPanel
@@ -1082,7 +1108,7 @@ export function CustomerLotFormModal({
               disabled={submitting || prefillLoading}
             />
           ) : (
-          <form id="customer-lot-form" onSubmit={handleSubmit} className={isSaleWorkspaceDesktop ? "sv-sale-workspace-grid" : isReservationWorkspaceDesktop ? "sv-reservation-workspace-grid" : "space-y-6"}>
+          <form id="customer-lot-form" onSubmit={handleSubmit} className={isSaleFormWorkspaceDesktop ? "sv-sale-workspace-grid" : isReservationWorkspaceDesktop ? "sv-reservation-workspace-grid" : "space-y-6"}>
             <div className={isWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"}>
             <div className={isWorkspaceDesktop ? "sv-sale-workspace-card" : "space-y-4"}>
             {!isEditMode && (
@@ -1550,9 +1576,9 @@ export function CustomerLotFormModal({
             )}
 
             {(actionName === 'Vendido' || isEditMode) && (
-              <div className={isSaleWorkspaceDesktop ? "sv-sale-workspace-col-sale sv-sale-workspace-card sv-sale-workspace-card--muted sv-sale-workspace-card--sale" : "space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100"}>
-                <h4 className={isSaleWorkspaceDesktop ? "sv-sale-workspace-card-title" : "text-sm font-bold text-gray-900 border-b pb-1"}>
-                  {isSaleWorkspaceDesktop ? "Dados da venda" : "DADOS DA VENDA"}
+              <div className={isSaleFormWorkspaceDesktop ? "sv-sale-workspace-col-sale sv-sale-workspace-card sv-sale-workspace-card--muted sv-sale-workspace-card--sale" : "space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100"}>
+                <h4 className={isSaleFormWorkspaceDesktop ? "sv-sale-workspace-card-title" : "text-sm font-bold text-gray-900 border-b pb-1"}>
+                  {isSaleFormWorkspaceDesktop ? "Dados da venda" : "DADOS DA VENDA"}
                 </h4>
                 {(formData.reservation_signal_paid || 0) > 0 && (
                   <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
@@ -1560,7 +1586,7 @@ export function CustomerLotFormModal({
                     descontado da entrada na venda.
                   </p>
                 )}
-                <div className={`grid grid-cols-1 md:grid-cols-2 ${isSaleWorkspaceDesktop ? "gap-2 sv-sale-workspace-sale-grid" : "gap-4"}`}>
+                <div className={`grid grid-cols-1 md:grid-cols-2 ${isSaleFormWorkspaceDesktop ? "gap-2 sv-sale-workspace-sale-grid" : "gap-4"}`}>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Valor do Lote *</label>
                     <CurrencyInput
@@ -1570,7 +1596,7 @@ export function CustomerLotFormModal({
                       className={`${GIS_INPUT_READONLY} font-medium`}
                     />
                   </div>
-                  <div className={isSaleWorkspaceDesktop ? "sv-sale-ws-span-all" : undefined}>
+                  <div className={isSaleFormWorkspaceDesktop ? "sv-sale-ws-span-all" : undefined}>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Forma de Pagamento *</label>
                     <select
                       value={paymentType}
@@ -2099,8 +2125,8 @@ export function CustomerLotFormModal({
                     </div>
                   </div>
                 )}
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200 ${isSaleWorkspaceDesktop ? "sv-sale-workspace-sale-grid" : ""}`}>
-                  <div className={isSaleWorkspaceDesktop ? "sv-sale-ws-span-all" : undefined}>
+                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200 ${isSaleFormWorkspaceDesktop ? "sv-sale-workspace-sale-grid" : ""}`}>
+                  <div className={isSaleFormWorkspaceDesktop ? "sv-sale-ws-span-all" : undefined}>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
                       Conta recebedora / Conta financeira
                     </label>
@@ -2132,7 +2158,7 @@ export function CustomerLotFormModal({
                       </p>
                     ) : null}
                   </div>
-                  <div className={isSaleWorkspaceDesktop ? "sv-sale-ws-span-all" : undefined}>
+                  <div className={isSaleFormWorkspaceDesktop ? "sv-sale-ws-span-all" : undefined}>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Corretor</label>
                     <select
                       value={formData.broker_id}
@@ -2284,6 +2310,8 @@ export function CustomerLotFormModal({
           >
             {submitting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
+            ) : isSaleEditWorkspaceDesktop ? (
+              'Salvar alterações'
             ) : isEditMode ? (
               'Salvar'
             ) : actionName === 'Vendido' ? (

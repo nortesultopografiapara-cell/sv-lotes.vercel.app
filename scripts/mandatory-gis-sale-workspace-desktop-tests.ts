@@ -116,7 +116,7 @@ function testCreateHidesRedundantControls() {
 
   assert(modal.includes('showCreateNewButton={false}'), 'esconde Cadastrar novo cliente na venda');
   assert(picker.includes('showCreateNewButton'), 'picker ainda pode exibir o atalho em outros fluxos');
-  assert(modal.includes("{isEditMode ? ("), 'abas só na edição');
+  assert(modal.includes("{isEditMode ? (") || modal.includes('if (!isEditMode) return null'), 'abas só na edição');
   assert(modal.includes('isEditMode && saleId'), 'Documentos só com venda existente');
   assert(modal.includes('Documentos da Venda'), 'aba Documentos permanece no Editar Venda');
   assert(modal.includes('SaleDocumentsPanel'), 'painel de documentos intacto');
@@ -139,7 +139,7 @@ function testPaymentAndSaleLogicUntouched() {
 function testMobileShellPreserved() {
   const modal = read('components/map/CustomerLotFormModal.tsx');
   assert(modal.includes('sv-modal-shell--full-mobile'), 'full-mobile preservado');
-  assert(modal.includes('isSaleWorkspaceDesktop ? "sv-sale-workspace-grid"'), 'venda desktop usa grid da venda');
+  assert(modal.includes('isSaleFormWorkspaceDesktop ? "sv-sale-workspace-grid"'), 'venda desktop usa grid da venda');
   assert(modal.includes('"space-y-6"'), 'mobile permanece empilhado');
   assert(modal.includes('isWorkspaceDesktop ? "sv-sale-workspace-col-client" : "contents"'), 'mobile não ganha coluna extra');
   console.log('OK testMobileShellPreserved');
