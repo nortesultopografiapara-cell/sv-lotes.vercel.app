@@ -1,0 +1,18 @@
+{
+  "sellers": [
+    {
+      "name": "Daniel Roberto Rivelino de Sousa",
+      "nationality": null,
+      "maritalStatus": null,
+      "profession": "produtor rural",
+      "rg": null,
+      "cpf": "820.912.262-20",
+      "address": "Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim, Parauapebas - PA"
+    }
+  ],
+  "pendingFields": [
+    "nacionalidade de Daniel Roberto Rivelino de Sousa",
+    "estado civil de Daniel Roberto Rivelino de Sousa",
+    "RG de Daniel Roberto Rivelino de Sousa"
+  ]
+}

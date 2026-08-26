@@ -14,7 +14,7 @@ const outDir = path.join(
   process.cwd(),
   'scripts',
   '_fixtures',
-  'araguaia-hotfix-preamble',
+  'araguaia-text-cleanup',
 );
 
 const TENANT = {

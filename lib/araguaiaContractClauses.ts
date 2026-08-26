@@ -9,6 +9,7 @@ import {
   formatAraguaiaNeutralMaritalStatus,
   formatAraguaiaNeutralNationality,
   formatAraguaiaRgAfterNumeroLabel,
+  stripAraguaiaPresentedSnToken,
 } from '@/lib/araguaiaContractQualification';
 import {
   ARAGUAIA_SELLERS_ADDRESS,
@@ -167,15 +168,17 @@ export function buildAraguaiaPartiesPreambleHtml(
     ctx.sellers.length <= 1
       ? 'residente e domiciliado(a)'
       : 'ambos residentes e domiciliados';
-  const sellersAddress =
+  const sellersAddress = stripAraguaiaPresentedSnToken(
     ctx.sellers[0]?.address ||
-    ctx.sellers[1]?.address ||
+      ctx.sellers[1]?.address ||
+      ctx.intervenienteAddress ||
+      ARAGUAIA_SELLERS_ADDRESS,
+  );
+  const intervenienteSeat = stripAraguaiaPresentedSnToken(
     ctx.intervenienteAddress ||
-    ARAGUAIA_SELLERS_ADDRESS;
-  const intervenienteSeat =
-    ctx.intervenienteAddress ||
-    ctx.sellers[0]?.address ||
-    ARAGUAIA_SELLERS_ADDRESS;
+      ctx.sellers[0]?.address ||
+      ARAGUAIA_SELLERS_ADDRESS,
+  );
   const vendorsDenomination =
     ctx.sellers.length <= 1
       ? 'PROMITENTE VENDEDOR'
@@ -253,7 +256,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
     )}
 
     ${clauseHtml(
-      'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA. DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
+      'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
       `E, assim como possuem, pelo presente e nos melhores termos de direito, os PROMITENTES VENDEDORES prometem e se obrigam a vender o imóvel descrito na cláusula segunda deste instrumento ao(a/s) PROMITENTE(S) COMPRADOR(A/ES), mediante as seguintes cláusulas e condições:`,
       `
       ${itemP(

@@ -31,6 +31,7 @@ import {
   formatAraguaiaNeutralNationality,
   formatAraguaiaRgAfterNumeroLabel,
   formatAraguaiaSeatAddressParts,
+  stripAraguaiaPresentedSnToken,
   stripAraguaiaRgLabelPrefix,
 } from '../lib/araguaiaContractQualification';
 import { resolveAraguaiaPromitenteVendors } from '../lib/araguaiaCompanyLegalRepresentative';
@@ -294,6 +295,16 @@ function testHtmlGeneration() {
   assert(html.includes('inscrito(a) no CPF'), 'inscrito(a) no CPF');
   assert(!html.includes('inscrita no CPF'), 'sem inscrita exclusivo por índice');
   assert(!html.includes('RG nº RG nº'), 'sem RG duplicado no HTML padrão');
+  assert(
+    html.includes(
+      'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
+    ),
+    'título cláusula terceira sem ponto',
+  );
+  assert(!html.includes('VENDA. DO VALOR'), 'sem ponto indevido após VENDA');
+  const preamblePage1 = html.slice(0, html.indexOf('CLÁUSULA PRIMEIRA'));
+  assert(!/S\s*\/\s*N/i.test(preamblePage1), 'preâmbulo sem S/N');
+  assert(!/,\s*,/.test(preamblePage1), 'preâmbulo sem vírgula duplicada');
 
   const sigMarker = 'contract-closing-and-signatures--araguaia';
   const sigIdx = html.indexOf(sigMarker);
@@ -420,6 +431,16 @@ function testPreambleQualificationHotfix() {
   assert(formatAraguaiaNeutralNationality('brasileiro') === 'Brasileiro(a)', 'brasileiro → Brasileiro(a)');
   assert(formatAraguaiaNeutralNationality('') === '', 'nacionalidade vazia não inventa');
   assert(formatAraguaiaNeutralNationality('Italiana') === 'Italiana', 'outra nacionalidade preservada');
+  assert(
+    stripAraguaiaPresentedSnToken('Avenida Dos Ipês, S/N, Quadra 31, Lote 13, Cidade Jardim, Parauapebas, PA') ===
+      'Avenida Dos Ipês, Quadra 31, Lote 13, Cidade Jardim, Parauapebas, PA',
+    'strip S/N vendedores',
+  );
+  assert(
+    stripAraguaiaPresentedSnToken('Avenida Dos Ipes, Quadra 31, Lote 13, S/N, Cidade Jardim, Parauapebas - PA') ===
+      'Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim, Parauapebas - PA',
+    'strip S/N empresa',
+  );
 
   const htmlDup = generateContractHTML({
     tenant: {
@@ -439,6 +460,13 @@ function testPreambleQualificationHotfix() {
   assert(/RG nº 1389803/.test(htmlDup), 'RG nº + documento uma vez');
   assert(/Cidade Jardim/i.test(htmlDup), 'Cidade Jardim no preâmbulo');
   assert(!htmlDup.includes('—, S/N'), 'sem —, S/N');
+  assert(!/S\s*\/\s*N/i.test(htmlDup.slice(0, htmlDup.indexOf('CLÁUSULA PRIMEIRA'))), 'preâmbulo hotfix sem S/N');
+  assert(
+    htmlDup.includes(
+      'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
+    ),
+    'cláusula terceira exata no HTML com RG prefixado',
+  );
   const preamble = htmlDup.slice(0, htmlDup.indexOf('CLÁUSULA PRIMEIRA'));
   assert(preamble.includes('Brasileiro(a)'), 'comprador Brasileiro(a)');
   assert(preamble.includes('inscrito(a)'), 'comprador inscrito(a)');
@@ -463,6 +491,8 @@ function testPreambleQualificationHotfix() {
   );
   assert(/Cidade Jardim/i.test(chrome.addressLine), 'header ARAGUAIA com bairro');
   assert(/Quadra 31/i.test(chrome.addressLine), 'header preserva Quadra');
+  assert(!/S\s*\/\s*N/i.test(chrome.addressLine), 'header ARAGUAIA sem S/N');
+  assert(!/,\s*,/.test(chrome.addressLine), 'header sem vírgula duplicada');
   assert(
     (chrome.addressLine.match(/Cidade Jardim/gi) || []).length === 1,
     'header sem bairro duplicado',
@@ -483,6 +513,7 @@ function testPreambleQualificationHotfix() {
     !/Cidade Jardim/i.test(padraoChrome.addressLine),
     'PADRAO não recebe bairro do helper ARAGUAIA',
   );
+  assert(/S\/N/i.test(padraoChrome.addressLine), 'PADRAO preserva S/N do helper compartilhado');
 
   const seat = formatAraguaiaSeatAddressParts({
     address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
@@ -491,7 +522,9 @@ function testPreambleQualificationHotfix() {
     state: 'PA',
   });
   assert(/Cidade Jardim/i.test(seat.fullInline), 'fullInline com bairro');
-  assert(!seat.fullInline.includes('S/N, S/N'), 'sem S/N duplicado');
+  assert(!/S\s*\/\s*N/i.test(seat.fullInline), 'fullInline sem S/N');
+  assert(!/,\s*,/.test(seat.fullInline), 'fullInline sem vírgula duplicada');
+  assert(/Lote 13, Cidade Jardim/i.test(seat.fullInline), 'Lote seguido de bairro sem S/N');
 
   const incompleteCompany = {
     contract_model: 'ARAGUAIA',
@@ -700,9 +733,12 @@ function testAraguaiaClauseNumbering() {
     'CONDIÇÕES GERAIS = QUARTA',
   );
   assert(
-    (html.match(/CLÁUSULA\s+TERCEIRA/gi) || []).length === 1,
-    'somente uma CLÁUSULA TERCEIRA',
+    html.includes(
+      'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
+    ),
+    'título cláusula terceira exato na numeração',
   );
+  assert(!html.includes('VENDA. DO VALOR'), 'numeração sem VENDA. DO VALOR');
 
   // Refs cruzadas semânticas
   assert(
