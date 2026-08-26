@@ -9,12 +9,8 @@ import {
   formatAraguaiaNeutralMaritalStatus,
   formatAraguaiaNeutralNationality,
   formatAraguaiaRgAfterNumeroLabel,
-  stripAraguaiaPresentedSnToken,
 } from '@/lib/araguaiaContractQualification';
-import {
-  ARAGUAIA_SELLERS_ADDRESS,
-  formatSellerCpfDisplay,
-} from '@/lib/projectContractSellers';
+import { formatSellerCpfDisplay } from '@/lib/projectContractSellers';
 
 const extenso = require('extenso');
 
@@ -91,6 +87,10 @@ function sellerInline(ctx: AraguaiaContractContext, index: number): string {
   if (rg) {
     parts.push(`e no RG nº ${strong(rg)}`);
   }
+  const residence = String(seller.address || '').trim();
+  if (residence) {
+    parts.push(`residente e domiciliado(a) no ${esc(residence)}`);
+  }
   return parts.join(', ');
 }
 
@@ -164,38 +164,23 @@ export function buildAraguaiaPartiesPreambleHtml(
         : sellerParts.length === 2
           ? `${sellerParts[0]} e ${sellerParts[1]}`
           : `${sellerParts.slice(0, -1).join(', ')} e ${sellerParts[sellerParts.length - 1]}`;
-  const residenceWord =
-    ctx.sellers.length <= 1
-      ? 'residente e domiciliado(a)'
-      : 'ambos residentes e domiciliados';
-  const sellersAddress = stripAraguaiaPresentedSnToken(
-    ctx.sellers[0]?.address ||
-      ctx.sellers[1]?.address ||
-      ctx.intervenienteAddress ||
-      ARAGUAIA_SELLERS_ADDRESS,
-  );
-  const intervenienteSeat = stripAraguaiaPresentedSnToken(
-    ctx.intervenienteAddress ||
-      ctx.sellers[0]?.address ||
-      ARAGUAIA_SELLERS_ADDRESS,
-  );
+  const intervenienteSeat = String(ctx.intervenienteAddress || '').trim();
   const vendorsDenomination =
     ctx.sellers.length <= 1
       ? 'PROMITENTE VENDEDOR'
       : 'PROMITENTES VENDEDORES';
   const representedWord =
     ctx.sellers.length <= 1 ? 'neste ato representado(a)' : 'neste ato representados';
+  const seatPhrase = intervenienteSeat
+    ? `, com sede na ${esc(intervenienteSeat)}`
+    : '';
 
   return `
     <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
       ${itemP(
-        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${residenceWord} na ${esc(
-          sellersAddress,
-        )}, ${representedWord} pela pessoa jurídica <strong>${esc(
+        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${representedWord} pela pessoa jurídica <strong>${esc(
           ctx.intervenienteName,
-        )}</strong>, com sede na ${esc(
-          intervenienteSeat,
-        )} (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>${vendorsDenomination}</strong>, e de outro lado ${buyerQualification(
+        )}</strong>${seatPhrase} (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>${vendorsDenomination}</strong>, e de outro lado ${buyerQualification(
           ctx,
         )}, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`,
       )}

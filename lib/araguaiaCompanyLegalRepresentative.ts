@@ -8,12 +8,15 @@
  * - legal_representative_email
  * - legal_representative_phone
  * - legal_representative_role
+ * - contract_legal_rg / contract_legal_rg_issuer / contract_legal_rg_uf
+ * - contract_legal_nationality / contract_legal_marital_status / contract_legal_profession
+ * - legal_representative_address (residência pessoal; NÃO é sede)
  *
- * Path V2: resolveCompanyContractVendors (sem seller_parties_json / sem Daniel-Aldenise).
+ * Path V2 e V1 com Representante Legal cadastrado: Configurações
+ * (sem sobrescrever por ARAGUAIA_DEFAULT_SELLERS).
  */
 
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
-import { formatAraguaiaSeatAddressFromCompany } from '@/lib/araguaiaContractQualification';
 import {
   ARAGUAIA_DEFAULT_SELLERS,
   type ProjectContractSellerParty,
@@ -47,6 +50,22 @@ function pickString(...values: unknown[]): string {
     if (s) return s;
   }
   return '';
+}
+
+export function composeAraguaiaConfiguredRg(input: {
+  rg?: string | null;
+  rgIssuer?: string | null;
+  rgUf?: string | null;
+}): string | null {
+  const rgNum = clean(input.rg);
+  if (!rgNum) return null;
+  const rgIssuer = clean(input.rgIssuer);
+  const rgUf = clean(input.rgUf).toUpperCase();
+  let rg = rgIssuer ? `${rgNum}-${rgIssuer}` : rgNum;
+  if (rgUf && !rg.toUpperCase().endsWith(`/${rgUf}`)) {
+    rg = `${rg}/${rgUf}`;
+  }
+  return rg;
 }
 
 /**
@@ -91,33 +110,27 @@ export function resolveAraguaiaCompanyLegalRepresentative(
   };
 }
 
-function companyAddress(company?: Record<string, unknown> | null): string {
-  return formatAraguaiaSeatAddressFromCompany(company);
-}
-
 function buildVendor1FromLegalRep(
   company?: Record<string, unknown> | null,
 ): ProjectContractSellerParty | null {
   const legal = resolveAraguaiaCompanyLegalRepresentative(company);
   if (!legal.usedCompanySource) return null;
   const c = company || {};
-  const rgNum = pickString(c.contract_legal_rg);
-  const rgIssuer = pickString(c.contract_legal_rg_issuer);
-  const rg =
-    rgNum && rgIssuer
-      ? `${rgNum}-${rgIssuer}`
-      : rgNum || null;
+  const rg = composeAraguaiaConfiguredRg({
+    rg: pickString(c.contract_legal_rg),
+    rgIssuer: pickString(c.contract_legal_rg_issuer),
+    rgUf: pickString(c.contract_legal_rg_uf),
+  });
 
   return {
     role: 'PROMITENTE_VENDEDOR',
     order: 1,
     name: legal.name,
     cpf: legal.cpfDisplay || legal.cpfDigits,
-    address: companyAddress(company),
+    address: pickString(c.legal_representative_address) || null,
     nationality: pickString(c.contract_legal_nationality) || null,
     maritalStatus: pickString(c.contract_legal_marital_status) || null,
-    profession:
-      pickString(c.contract_legal_profession) || legal.role || null,
+    profession: pickString(c.contract_legal_profession) || null,
     rg,
   };
 }
@@ -129,21 +142,18 @@ function buildVendor2FromSecondJson(
     company?.contract_second_vendor_json,
   );
   if (!isContractSecondVendorComplete(fields)) return null;
-  const rgNum = clean(fields.rg);
-  const rgIssuer = clean(fields.rgIssuer);
-  const rgUf = clean(fields.rgUf);
-  let rg: string | null = null;
-  if (rgNum) {
-    rg = rgIssuer ? `${rgNum}-${rgIssuer}` : rgNum;
-    if (rgUf) rg = `${rg}/${rgUf}`;
-  }
+  const rg = composeAraguaiaConfiguredRg({
+    rg: fields.rg,
+    rgIssuer: fields.rgIssuer,
+    rgUf: fields.rgUf,
+  });
 
   return {
     role: 'PROMITENTE_VENDEDOR',
     order: 2,
     name: fields.name,
     cpf: fields.cpf,
-    address: clean(fields.address) || companyAddress(company),
+    address: clean(fields.address) || null,
     nationality: clean(fields.nationality) || null,
     maritalStatus: clean(fields.maritalStatus) || null,
     profession: clean(fields.profession) || null,
@@ -159,10 +169,10 @@ export type ResolveCompanyContractVendorsResult = {
 };
 
 /**
- * Vendedores do path ARAGUAIA V2:
+ * Vendedores a partir das Configurações:
  * Vendedor 1 = Representante Legal (obrigatório).
  * Vendedor 2 = contract_second_vendor_json se completo.
- * NÃO usa seller_parties_json nem ARAGUAIA_DEFAULT_SELLERS.
+ * Sem sede da empresa como residência. Sem fallback cargo → profissão.
  */
 export function resolveCompanyContractVendors(input?: {
   company?: Record<string, unknown> | null;
@@ -193,9 +203,9 @@ export function resolveCompanyContractVendors(input?: {
  *   seller_parties_json NÃO sobrescreve. Sem fallback Daniel/Aldenise.
  *
  * mode 'legacy' (default / V1):
- *   1. projects.seller_parties_json;
- *   2. Representante Legal;
- *   3. ARAGUAIA_DEFAULT_SELLERS.
+ *   1. Configurações (Representante Legal + contract_second_vendor_json);
+ *   2. projects.seller_parties_json;
+ *   3. ARAGUAIA_DEFAULT_SELLERS (último fallback).
  */
 export function resolveAraguaiaPromitenteVendors(input?: {
   company?: Record<string, unknown> | null;
@@ -204,8 +214,13 @@ export function resolveAraguaiaPromitenteVendors(input?: {
   /** 'v2' = path ARAGUAIA e-sign V2 (Configurações). */
   mode?: 'legacy' | 'v2';
 }): ProjectContractSellerParty[] {
+  const fromSettings = resolveCompanyContractVendors({ company: input?.company });
+  if (fromSettings.vendor1) {
+    return fromSettings.vendors;
+  }
+
   if (input?.mode === 'v2') {
-    return resolveCompanyContractVendors({ company: input.company }).vendors;
+    return [];
   }
 
   const fromProject = resolveProjectContractSellers({
@@ -215,11 +230,6 @@ export function resolveAraguaiaPromitenteVendors(input?: {
   });
   if (fromProject.length > 0) {
     return fromProject;
-  }
-
-  const fromLegal = buildVendor1FromLegalRep(input?.company);
-  if (fromLegal) {
-    return [fromLegal];
   }
 
   const model = String(input?.contractModel || '')

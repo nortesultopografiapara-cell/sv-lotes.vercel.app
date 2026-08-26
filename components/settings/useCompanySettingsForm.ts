@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import {
   COMPANY_SETTINGS_COLUMNS,
   COMPANY_SETTINGS_COLUMNS_BASE,
+  COMPANY_SETTINGS_COLUMNS_EXTENDED_CORE_ONLY,
+  COMPANY_SETTINGS_COLUMNS_WITHOUT_LEGAL_QUAL,
   COMPANY_SETTINGS_COLUMNS_WITHOUT_SECOND_VENDOR,
   buildCompanySettingsSavePayload,
   technicalFromCompanyRow,
@@ -94,6 +96,27 @@ export function useCompanySettingsForm({
         const mid = await supabase
           .from('companies')
           .select(COMPANY_SETTINGS_COLUMNS_WITHOUT_SECOND_VENDOR)
+          .eq('id', companyId)
+          .single();
+        data = mid.data;
+        error = mid.error;
+      }
+
+      if (error && /contract_legal_rg_uf|legal_representative_address/i.test(String(error.message || ''))) {
+        console.warn('[settings] colunas de qualificação do representante ausentes — select sem elas');
+        const mid = await supabase
+          .from('companies')
+          .select(COMPANY_SETTINGS_COLUMNS_WITHOUT_LEGAL_QUAL)
+          .eq('id', companyId)
+          .single();
+        data = mid.data;
+        error = mid.error;
+      }
+
+      if (error && /contract_second_vendor_json|contract_legal_rg_uf|legal_representative_address/i.test(String(error.message || ''))) {
+        const mid = await supabase
+          .from('companies')
+          .select(COMPANY_SETTINGS_COLUMNS_EXTENDED_CORE_ONLY)
           .eq('id', companyId)
           .single();
         data = mid.data;

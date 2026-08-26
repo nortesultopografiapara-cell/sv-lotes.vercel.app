@@ -222,6 +222,7 @@ export function CompanySettingsV2Shell({
   if (!company) return null;
 
   const contractModel = normalizeSaleContractModel(company.contract_model as string);
+  const isAraguaiaContract = contractModel === 'ARAGUAIA';
   const isRecantoContract = contractModel === 'RECANTO_PRIMAVERA';
   const documentRaw = String(company.cnpj || '');
   const partyType = resolveSaasContractPartyType(documentRaw);
@@ -562,6 +563,91 @@ export function CompanySettingsV2Shell({
                       </div>
                     </div>
                   )}
+                  {isAraguaiaContract ? (
+                    <div className="space-y-4">
+                      <p className="text-xs sv-theme-muted">
+                        Qualificação civil do primeiro Promitente Vendedor no contrato ARAGUAIA.
+                        O endereço residencial é pessoal e não substitui a sede da empresa.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="sv-theme-label">RG</label>
+                          <input
+                            type="text"
+                            name="contract_legal_rg"
+                            value={String(company.contract_legal_rg || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                          />
+                        </div>
+                        <div>
+                          <label className="sv-theme-label">Órgão emissor do RG</label>
+                          <input
+                            type="text"
+                            name="contract_legal_rg_issuer"
+                            value={String(company.contract_legal_rg_issuer || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                            placeholder="SSP"
+                          />
+                        </div>
+                        <div>
+                          <label className="sv-theme-label">UF do RG</label>
+                          <input
+                            type="text"
+                            name="contract_legal_rg_uf"
+                            value={String(company.contract_legal_rg_uf || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                            maxLength={2}
+                            placeholder="PA"
+                          />
+                        </div>
+                        <div>
+                          <label className="sv-theme-label">Nacionalidade</label>
+                          <input
+                            type="text"
+                            name="contract_legal_nationality"
+                            value={String(company.contract_legal_nationality || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                            placeholder="Brasileira"
+                          />
+                        </div>
+                        <div>
+                          <label className="sv-theme-label">Estado civil</label>
+                          <input
+                            type="text"
+                            name="contract_legal_marital_status"
+                            value={String(company.contract_legal_marital_status || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                          />
+                        </div>
+                        <div>
+                          <label className="sv-theme-label">Profissão</label>
+                          <input
+                            type="text"
+                            name="contract_legal_profession"
+                            value={String(company.contract_legal_profession || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="sv-theme-label">Endereço residencial</label>
+                          <input
+                            type="text"
+                            name="legal_representative_address"
+                            value={String(company.legal_representative_address || '')}
+                            onChange={handleChange}
+                            className="sv-theme-field"
+                            placeholder="Endereço residencial do representante"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </section>
               </div>
             ) : null}
