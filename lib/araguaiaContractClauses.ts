@@ -6,6 +6,11 @@
 
 import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
 import {
+  formatAraguaiaNeutralMaritalStatus,
+  formatAraguaiaNeutralNationality,
+  formatAraguaiaRgAfterNumeroLabel,
+} from '@/lib/araguaiaContractQualification';
+import {
   ARAGUAIA_SELLERS_ADDRESS,
   formatSellerCpfDisplay,
 } from '@/lib/projectContractSellers';
@@ -69,33 +74,34 @@ function sellerInline(ctx: AraguaiaContractContext, index: number): string {
   const seller = ctx.sellers[index];
   if (!seller) return '<em>[promitente vendedor não configurado]</em>';
   const parts: string[] = [strong(seller.name.toUpperCase())];
-  if (seller.nationality) parts.push(esc(seller.nationality));
-  if (seller.maritalStatus) parts.push(esc(seller.maritalStatus));
+  const nationality = formatAraguaiaNeutralNationality(seller.nationality || '');
+  const marital = formatAraguaiaNeutralMaritalStatus(seller.maritalStatus || '');
+  if (nationality) parts.push(esc(nationality));
+  if (marital) parts.push(esc(marital));
   if (seller.profession) parts.push(esc(seller.profession));
   if (seller.cpf) {
     parts.push(
-      `inscrito${index === 1 ? 'a' : ''} no CPF sob o nº ${strong(
+      `inscrito(a) no CPF sob o nº ${strong(
         formatSellerCpfDisplay(seller.cpf) || seller.cpf,
       )}`,
     );
   }
-  if (seller.rg) {
-    parts.push(`e no RG nº ${strong(seller.rg)}`);
+  const rg = formatAraguaiaRgAfterNumeroLabel(seller.rg || '');
+  if (rg) {
+    parts.push(`e no RG nº ${strong(rg)}`);
   }
   return parts.join(', ');
 }
 
 function buyerQualification(ctx: AraguaiaContractContext): string {
-  const parts = [
-    strong(ctx.buyerName),
-    esc(ctx.buyerNationality),
-    esc(ctx.buyerMaritalStatus),
-    esc(ctx.buyerProfession),
-    `e-mail: ${esc(ctx.buyerEmail)}`,
-    `telefone/Whatsapp ${esc(ctx.buyerPhone)}`,
-    `residente e domiciliado(a) na ${esc(ctx.buyerAddress)}`,
-    `inscrito(a) no CPF nº ${strong(ctx.buyerCpf)}`,
-  ];
+  const parts: string[] = [strong(ctx.buyerName)];
+  if (ctx.buyerNationality) parts.push(esc(ctx.buyerNationality));
+  if (ctx.buyerMaritalStatus) parts.push(esc(ctx.buyerMaritalStatus));
+  if (ctx.buyerProfession) parts.push(esc(ctx.buyerProfession));
+  parts.push(`e-mail: ${esc(ctx.buyerEmail)}`);
+  parts.push(`telefone/Whatsapp ${esc(ctx.buyerPhone)}`);
+  parts.push(`residente e domiciliado(a) na ${esc(ctx.buyerAddress)}`);
+  parts.push(`inscrito(a) no CPF sob o nº ${strong(ctx.buyerCpf)}`);
   if (ctx.buyerRgLine && ctx.buyerRgLine !== 'não informado') {
     parts.push(`e no RG nº ${esc(ctx.buyerRgLine)}`);
   }
@@ -164,8 +170,12 @@ export function buildAraguaiaPartiesPreambleHtml(
   const sellersAddress =
     ctx.sellers[0]?.address ||
     ctx.sellers[1]?.address ||
+    ctx.intervenienteAddress ||
     ARAGUAIA_SELLERS_ADDRESS;
-  const intervenienteSeat = ARAGUAIA_SELLERS_ADDRESS;
+  const intervenienteSeat =
+    ctx.intervenienteAddress ||
+    ctx.sellers[0]?.address ||
+    ARAGUAIA_SELLERS_ADDRESS;
   const vendorsDenomination =
     ctx.sellers.length <= 1
       ? 'PROMITENTE VENDEDOR'

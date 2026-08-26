@@ -13,9 +13,9 @@
  */
 
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
+import { formatAraguaiaSeatAddressFromCompany } from '@/lib/araguaiaContractQualification';
 import {
   ARAGUAIA_DEFAULT_SELLERS,
-  ARAGUAIA_SELLERS_ADDRESS,
   type ProjectContractSellerParty,
   resolveProjectContractSellers,
 } from '@/lib/projectContractSellers';
@@ -92,11 +92,7 @@ export function resolveAraguaiaCompanyLegalRepresentative(
 }
 
 function companyAddress(company?: Record<string, unknown> | null): string {
-  const c = company || {};
-  return (
-    pickString(c.contract_legal_address, c.address, c.endereco) ||
-    ARAGUAIA_SELLERS_ADDRESS
-  );
+  return formatAraguaiaSeatAddressFromCompany(company);
 }
 
 function buildVendor1FromLegalRep(
@@ -221,24 +217,9 @@ export function resolveAraguaiaPromitenteVendors(input?: {
     return fromProject;
   }
 
-  const legal = resolveAraguaiaCompanyLegalRepresentative(input?.company);
-  if (legal.usedCompanySource) {
-    const company = input?.company || {};
-    const address =
-      pickString(company.address, company.endereco) || ARAGUAIA_SELLERS_ADDRESS;
-    return [
-      {
-        role: 'PROMITENTE_VENDEDOR',
-        order: 1,
-        name: legal.name,
-        cpf: legal.cpfDisplay || legal.cpfDigits,
-        address,
-        nationality: null,
-        maritalStatus: null,
-        profession: legal.role || null,
-        rg: null,
-      },
-    ];
+  const fromLegal = buildVendor1FromLegalRep(input?.company);
+  if (fromLegal) {
+    return [fromLegal];
   }
 
   const model = String(input?.contractModel || '')
