@@ -64,6 +64,20 @@ export function formatAraguaiaRgAfterNumeroLabel(raw: string): string {
   return stripAraguaiaRgLabelPrefix(raw);
 }
 
+/** Remove o token S/N só na apresentação ARAGUAIA e limpa vírgulas/espaços. */
+export function stripAraguaiaPresentedSnToken(raw: string): string {
+  let s = clean(raw);
+  if (!s) return '';
+  s = s.replace(/\s*S\s*\/\s*N\s*/gi, ' ');
+  s = s.replace(/\s*[–—]\s*/g, ', ');
+  s = s.replace(/,\s*,+/g, ', ');
+  s = s.replace(/\s+,/g, ',');
+  s = s.replace(/,\s+/g, ', ');
+  s = s.replace(/^[,\s]+|[,\s]+$/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
 /** Brasileira / Brasileiro / Brazilian → Brasileiro(a). Outras nacionalidades: cadastro. */
 export function formatAraguaiaNeutralNationality(raw: string): string {
   const value = clean(raw);
@@ -105,12 +119,13 @@ export function formatAraguaiaSeatAddressParts(company?: Record<string, unknown>
   const neighborhoodTitle = neighborhood ? toContractTitleCase(neighborhood) : '';
 
   if (!streetRaw) {
+    const fallback = stripAraguaiaPresentedSnToken(ARAGUAIA_SELLERS_ADDRESS);
     return {
-      streetLine: ARAGUAIA_SELLERS_ADDRESS,
+      streetLine: fallback,
       neighborhood: neighborhoodTitle,
       cityUfLine: '',
-      headerAddressLine: ARAGUAIA_SELLERS_ADDRESS,
-      fullInline: ARAGUAIA_SELLERS_ADDRESS,
+      headerAddressLine: fallback,
+      fullInline: fallback,
     };
   }
 
@@ -130,6 +145,7 @@ export function formatAraguaiaSeatAddressParts(company?: Record<string, unknown>
     .replace(/,\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+  streetLine = stripAraguaiaPresentedSnToken(streetLine);
 
   const cityTitle = city ? toContractTitleCase(city) : '';
   const stateUf = state ? state.toUpperCase() : '';
@@ -150,21 +166,23 @@ export function formatAraguaiaSeatAddressParts(company?: Record<string, unknown>
     inlineParts.push(stateUf);
   }
 
-  const headerAddressLine = [
-    streetLine,
-    neighborhoodTitle && !textIncludesFragment(streetLine, neighborhoodTitle)
-      ? neighborhoodTitle
-      : '',
-  ]
-    .filter(Boolean)
-    .join(', ');
+  const headerAddressLine = stripAraguaiaPresentedSnToken(
+    [
+      streetLine,
+      neighborhoodTitle && !textIncludesFragment(streetLine, neighborhoodTitle)
+        ? neighborhoodTitle
+        : '',
+    ]
+      .filter(Boolean)
+      .join(', '),
+  );
 
   return {
     streetLine,
     neighborhood: neighborhoodTitle,
     cityUfLine,
     headerAddressLine,
-    fullInline: inlineParts.join(', '),
+    fullInline: stripAraguaiaPresentedSnToken(inlineParts.join(', ')),
   };
 }
 
