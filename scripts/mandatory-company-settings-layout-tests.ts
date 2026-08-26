@@ -74,6 +74,8 @@ function testAllCompaniesUseV2Layout() {
 function testSettingsColumnsExcludeCompaniesCpf() {
   const cols = COMPANY_SETTINGS_COLUMNS.split(',').map((s) => s.trim());
   assert(!cols.includes('cpf'), 'SELECT não referencia companies.cpf inexistente');
+  assert(cols.includes('contract_legal_rg_uf'), 'SELECT inclui UF do RG do representante');
+  assert(cols.includes('legal_representative_address'), 'SELECT inclui residência pessoal');
   console.log('OK testSettingsColumnsExcludeCompaniesCpf');
 }
 
@@ -166,6 +168,8 @@ function testV2SaveDoesNotSyncNameByDefault() {
   assert(built.ok, 'save v2 ok');
   assert(!('name' in built.payload), 'save v2 não sobrescreve name sem flag');
   assert(!('cnpj' in built.payload), 'save não envia cnpj');
+  assert('legal_representative_address' in built.payload, 'save inclui residência pessoal');
+  assert('contract_legal_rg_uf' in built.payload, 'save inclui UF do RG');
   console.log('OK testV2SaveDoesNotSyncNameByDefault');
 }
 

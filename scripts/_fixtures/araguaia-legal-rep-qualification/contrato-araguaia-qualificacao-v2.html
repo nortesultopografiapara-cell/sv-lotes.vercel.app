@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>ARAGUAIA V2 — qualificação individual dos vendedores</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+    body { margin: 0; background: #fff; }
+  </style>
+</head>
+<body>
+
+    
+<style id="araguaia-contract-print-css">
+.sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    /* 2px interno evita corte da borda direita de tabelas em width:100% */
+    padding-left: 0 !important;
+    padding-right: 2px !important;
+    overflow-x: clip;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia *,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia *::before,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia *::after {
+    box-sizing: border-box;
+  }
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia img,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia svg,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia canvas {
+    max-width: 100% !important;
+    height: auto;
+  }
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse;
+  }
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia th,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia td {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal !important;
+    max-width: 100%;
+  }
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia p,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia h1,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia h2,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia h3,
+  .sv-contract-document.sv-contract-araguaia, .sv-contract-araguaia li {
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+.sv-contract-araguaia {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #111;
+  background: #fff;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  text-align: justify;
+}
+.sv-contract-araguaia .contract-clause {
+  page-break-inside: auto;
+  break-inside: auto;
+  margin-bottom: 12px;
+}
+/* Título + 1º parágrafo: nunca separar / cortar no rodapé */
+.sv-contract-araguaia .araguaia-clause-keep {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  -webkit-column-break-inside: avoid;
+}
+.sv-contract-araguaia .araguaia-clause-title {
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  orphans: 3;
+  widows: 3;
+}
+.sv-contract-araguaia .araguaia-clause-lead {
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  orphans: 3;
+  widows: 3;
+}
+.sv-contract-araguaia p {
+  orphans: 3;
+  widows: 3;
+}
+.sv-contract-araguaia .signature-slot--electronic {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  -webkit-column-break-inside: avoid !important;
+}
+.sv-contract-araguaia .contract-signatures--electronic .signature-slot {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+}
+/* Fecho + data + assinaturas: unidade indivisível.
+ * Quebra antecipada (force-break) só se altura > página útil (measure).
+ * NÃO forçar por y%PAGE_H — evita página quase vazia antes do pack. */
+.sv-contract-araguaia .contract-closing-and-signatures--araguaia {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-before: auto;
+  break-before: auto;
+  margin-top: 8px;
+}
+.sv-contract-araguaia .contract-closing-and-signatures--araguaia.sv-pagination-force-break {
+  page-break-before: always !important;
+  break-before: page !important;
+}
+.sv-contract-araguaia .araguaia-closing-statement {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  orphans: 4;
+  widows: 4;
+}
+.sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-closing,
+.sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-closing-date,
+.sv-contract-araguaia .contract-closing-and-signatures--araguaia .contract-signatures--araguaia {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+}
+.sv-contract-araguaia .contract-signatures--araguaia .signature-grid--araguaia {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 22px;
+  align-items: start;
+  justify-items: center;
+  width: 100%;
+}
+.sv-contract-araguaia .signature-slot {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+}
+.sv-contract-araguaia .signature-slot-vendor-1 { grid-row: 1; grid-column: 1; }
+.sv-contract-araguaia .signature-slot-vendor-2 { grid-row: 1; grid-column: 2; }
+.sv-contract-araguaia .signature-slot-buyer { grid-row: 2; grid-column: 1; }
+.sv-contract-araguaia .signature-slot-intervenient { grid-row: 2; grid-column: 2; }
+.sv-contract-araguaia .signature-slot-witness-1 { grid-row: 3; grid-column: 1; }
+.sv-contract-araguaia .signature-slot-witness-2 { grid-row: 3; grid-column: 2; }
+/* Blocos pontuais ARAGUAIA — não partir entre páginas (1.3, item 8, CG-4, alínea C) */
+.sv-contract-araguaia .araguaia-keep-together,
+.sv-contract-araguaia .araguaia-financial-item-1-3 {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  -webkit-column-break-inside: avoid;
+}
+/* Ajuste mínimo: evita corte do CPF nas testemunhas sem aumentar o pack. */
+.sv-contract-araguaia .signature-slot-intervenient,
+.sv-contract-araguaia .signature-slot-witness-1,
+.sv-contract-araguaia .signature-slot-witness-2 {
+  padding-top: 2px;
+  padding-bottom: 10px;
+  overflow: visible;
+  box-sizing: border-box;
+}
+.sv-contract-araguaia .signature-slot-witness-1 .signature-line,
+.sv-contract-araguaia .signature-slot-witness-2 .signature-line {
+  margin-top: 18px;
+}
+.sv-contract-araguaia .signature-slot-witness-1 > p,
+.sv-contract-araguaia .signature-slot-witness-2 > p {
+  line-height: 1.35;
+  margin-bottom: 1px;
+}
+</style>
+    <div class="sv-contract-document sv-contract-araguaia" data-contract-model="ARAGUAIA" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: 680px; box-sizing: border-box; text-align: justify;">
+      
+    <div class="contract-header-araguaia" style="text-align: center; margin-bottom: 18px;">
+      <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.6px; margin: 0 0 8px 0; padding: 0; line-height: 1.35;">
+        INSTRUMENTO PARTICULAR DE PROMESSA DE COMPRA E VENDA DE IMÓVEL
+      </h2>
+      <h3 style="font-family: 'Times New Roman', Times, serif; font-size: 13px; font-weight: bold; text-transform: uppercase; margin: 0 0 14px 0; padding: 0;">
+        Chacreamento Araguaia
+      </h3>
+    </div>
+      
+    
+    <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
+      <p style="margin: 0 0 10px 0; text-align: justify;">Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado <strong>DANIEL ROBERTO RIVELINO DE SOUSA</strong>, Brasileiro(a), Casado(a), consultor pecuário de homologação, inscrito(a) no CPF sob o nº <strong>820.912.262-20</strong>, e no RG nº <strong>4606073-PC/PA</strong>, residente e domiciliado(a) no Rua Homologação Vendedor 1, 101, Bairro Teste Norte, Canaã dos Carajás, PA e <strong>ALDENISE ALVES SOUSA</strong>, Brasileiro(a), Casado(a), analista cartográfica de homologação, inscrito(a) no CPF sob o nº <strong>856.560.112-91</strong>, e no RG nº <strong>5279360-PC/PA</strong>, residente e domiciliado(a) no Rua Homologação Vendedora 2, 202, Bairro Teste Sul, Marabá, PA, neste ato representados pela pessoa jurídica <strong>R R NEGÓCIOS &amp; SERVIÇOS LTDA</strong>, com sede na Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim, Parauapebas - PA (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>PROMITENTES VENDEDORES</strong>, e de outro lado <strong>Cliente Teste Araguaia</strong>, Brasileiro(a), Solteiro(a), Comerciante, e-mail: cliente@teste.com, telefone/Whatsapp (94) 99999-1234, residente e domiciliado(a) na Rua A, 10, Centro, Parauapebas, PA, 68515000, inscrito(a) no CPF sob o nº <strong>111.444.777-35</strong>, e no RG nº 1389803, expedida pela PC/PA, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:</p>
+    </div>
+    
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA PRIMEIRA – DESCRIÇÃO DO IMÓVEL</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">Os PROMITENTES VENDEDORES afirmam ser senhores e legítimos possuidores do imóvel rural denominado “Lotes 33, 34 e 36 – parte 01”, situado no Projeto de Assentamento Palmares Sul, Zona Rural, localizado no município de Parauapebas – PA, com área total de <strong>13,0958 ha</strong> (treze hectares, nove ares e cinquenta e oito centiares), conforme consta no título nº <strong>MB034600000389</strong>, expedido pelo Instituto Nacional de Colonização e Reforma Agrária – INCRA, nos autos do processo administrativo nº <strong>54600003311/2010-71</strong>, correspondente aos lotes 33, 34 e 36 do Assentamento Palmares Sul – Município de Parauapebas – PA, totalmente livre e desembaraçado de qualquer ônus, conforme consta assentado na matrícula nº <strong>55.278</strong>, lançada no Livro 02 do Registro Geral, ficha 01, do 1º Ofício de Registro de Imóveis de Parauapebas – PA, este servirá para formação do chacreamento denominado Araguaia, composto de <strong>99 chácaras</strong>.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA SEGUNDA – DESCRIÇÃO DO OBJETO DA PROMESSA DE COMPRA E VENDA</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">Na melhor forma de direito o(s) PROMITENTE(S) VENDEDOR(A/ES) prometem vender e o(s) PROMITENTE(S) COMPRADOR(A/ES) prometem comprar o imóvel rural constituído da chácara nº <strong>12</strong>, Quadra <strong>01</strong>, com área total de <strong>1.250,50 m²</strong> (mil duzentos e cinquenta vírgula cinquenta metros quadrados), medindo: frente <strong>25,00 m</strong> (vinte e cinco metros), confrontando com <strong>Rua Principal</strong>, fundo <strong>25,00 m</strong> (vinte e cinco metros), confrontando com <strong>Área verde</strong>, lateral direita <strong>50,00 m</strong> (cinquenta metros), confrontando com <strong>Chácara 13</strong> e lateral esquerda <strong>50,00 m</strong> (cinquenta metros), confrontando com <strong>Chácara 11</strong>, com área total de <strong>1.250,50 m²</strong> (mil duzentos e cinquenta vírgula cinquenta metros quadrados), constante do chacreamento denominado Araguaia, que é entregue completamente livre de todos e quaisquer ônus judiciais ou extra judicial, foro ou pensão, afirmando ainda sob as penas da lei os ora PROMITENTES VENDEDORES achar-se o imóvel quites de todos os impostos e taxas federais, estaduais e municipais, inclusive condominiais.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">E, assim como possuem, pelo presente e nos melhores termos de direito, os PROMITENTES VENDEDORES prometem e se obrigam a vender o imóvel descrito na cláusula segunda deste instrumento ao(a/s) PROMITENTE(S) COMPRADOR(A/ES), mediante as seguintes cláusulas e condições:</p>
+      </div>
+      
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>1</strong> – O preço certo e total ajustado para a presente promessa de compra e venda do imóvel descrito na cláusula segunda deste contrato é de <strong>R$ 80.000,00</strong> (oitenta mil reais), que será pago a prazo mediante uma entrada no valor de <strong>R$ 10.000,00</strong> (dez mil reais) e a quitação de <strong>24</strong> (vinte e quatro) parcelas mensais e consecutivas no valor de <strong>R$ 2.916,67</strong> (dois mil novecentos e dezesseis reais e sessenta e sete centavos), vencendo a primeira em <strong>20/09/2026</strong>, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do Índice Geral de Preços de Mercado – IGP-M, ou outro que venha substituí-lo.</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>1.1</strong> – O pagamento, contudo, por opção do(a/s) PROMITENTE(S) COMPRADOR(A/ES), com anuência dos PROMITENTES VENDEDORES, também poderá ser feito em parcela única, mantendo-se as partes obrigadas às demais condições e encargos estabelecidos neste contrato.</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>1.2</strong> – As parcelas descritas no item 1 desta cláusula serão representadas por uma única <strong>nota promissória</strong> emitida pelo(a/s) PROMITENTE(S) COMPRADOR(A/ES) a favor e à ordem dos PROMITENTES VENDEDORES, de natureza <strong>“pro solvendo”</strong> do preço, que deverá ser paga onde for posta em cobrança em caso de inadimplência.</p>
+      <div class="araguaia-keep-together araguaia-financial-item-1-3"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>1.3</strong> – Nenhuma parcela poderá ser paga senão em sua totalidade, não sendo admitido o fracionamento do pagamento de qualquer das prestações, salvo se os PROMITENTES VENDEDORES, a seu exclusivo critério e por mera liberalidade, decidir de forma diversa, não se constituindo assim em novação ou alteração dos termos do presente contrato.</p></div>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>2</strong> – O pagamento das parcelas descritas no item 1 desta cláusula será feito mediante a emissão de boletos bancários, sendo que as parcelas serão reajustadas anualmente mediante a aplicação da variação positiva do Índice Geral de Preços do Mercado – IGP-M, ou outro que o substitua.</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>3</strong> – Ocorrendo impontualidade no pagamento de qualquer das parcelas do parcelamento descrito no item 2 deste contrato, a quantia a ser paga será atualizada monetariamente mediante a aplicação do Índice Geral de Preços de Mercado – IGP-M/FGV, desde a data do vencimento da parcela até a data de efetivo pagamento, acrescido ainda de multa moratória de <strong>2%</strong> (dois por cento) calculada sobre o valor total da parcela, acrescida de juros moratórios de <strong>1%</strong> (um por cento) ao mês <em>pro rata die</em>, calculados em <strong>0,0333%</strong> (zero vírgula trinta e três) por dia de atraso, aplicado sobre o valor da parcela devida.</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>4</strong> – Em caso de inadimplência que implique em cobrança judicial ou mesmo extrajudicial, o(a/s) PROMITENTE(S) COMPRADOR(A/ES) arcarão com as custas e honorários advocatícios, estes calculados na base de <strong>20%</strong> (vinte por cento) do valor devido.</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>5</strong> – Em havendo inadimplência superior a <strong>30</strong> (trinta) dias, O(A/S) PROMITENTE(S) COMPRADOR(A/ES) autoriza(m) aos PROMITENTES VENDEDORES a incluir seu nome em bancos de dados de inadimplentes, devendo, para tanto, haver a notificação prévia para quitação do débito inadimplido;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>6</strong> – Na ocorrência de inadimplência superior a <strong>03</strong> (três) parcelas, o imóvel reverterá em favor dos PROMITENTES VENDEDORES, independente de notificação, sendo que as benfeitorias erigidas sobre o imóvel a ele serão incorporadas, cabendo ao(s) PROMITENTE(S) COMPRADOR(A/ES) a devida indenização pelas obras executadas, cujo valor da indenização será calculado por meio de laudo de avaliação técnica;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>7</strong> – Ocorrendo a reversão do imóvel em favor dos PROMITENTES VENDEDORES conforme estabelecido no item 6 desta cláusula, os PROMITENTES VENDEDORES deverão pagar a indenização pelas benfeitorias em parcelas não superiores ao parcelamento cumprido pelo(a/s) PROMITENTE(S) COMPRADOR(A/ES);</p>
+      <div class="araguaia-keep-together araguaia-financial-item-8"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>8</strong> – Em ocorrendo a reversão do imóvel em favor dos PROMITENTES VENDEDORES por inadimplência do(s) PROMITENTE(ES) COMPRADOR(A/ES) sem que tenham sido erigidas benfeitorias no imóvel, deverão os PROMITENTES VENDEDORES proceder com a devolução dos valores pagos, devendo fazê-lo em tantas parcelas quantas tenham sido quitadas, cabendo-lhes o direito de reter <strong>25%</strong> (vinte e cinco por cento) do valor a ser restituído, a título de taxa de administração; exceto a entrada que será revertida em sua totalidade aos PROMITENTES VENDEDORES.</p></div>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>9</strong> – Nos casos de desistência do(s) PROMITENTE(S) COMPRADOR(A/ES) do negócio estabelecido neste contrato, poderá haver a devolução do imóvel objeto deste compromisso de compra e venda, sendo que no caso do(s) adquirente(s) terem adquirido mais de uma unidade, os valores a serem restituídos poderão ser utilizados para quitação das parcelas ainda devidas da chácara remanescente, valor este que será integralmente creditado em favor do(s) PROMITENTE(S) COMPRADOR(A/ES);</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>10</strong> – No ato da quitação do parcelamento do imóvel objeto deste compromisso de compra e venda, deverá os PROMITENTES VENDEDORES expedirem em favor do(s) PROMITENTE(S) COMPRADOR(A/ES) a respectiva <strong>carta de quitação</strong>.</p>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA QUARTA – CONDIÇÕES GERAIS</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">Considerando o caráter dessa transação, as partes contratantes reconhecem os termos deste contrato e com eles anuem, especialmente quanto às seguintes condições:</p>
+      </div>
+      
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>1</strong> – O imóvel objeto deste contrato é entregue ao(s) PROMITENTE(S) COMPRADOR(A/ES) no ato da assinatura deste instrumento contratual e dele tomam posse, tendo ciência que o empreendimento é entregue com o sistema viário devidamente executado, cabendo ao(s) PROMITENTE(S) COMPRADOR(A/ES) a execução das demais benfeitorias, tais como a implantação do sistema de captação de água e abastecimento de energia elétrica, além do sistema próprio de esgotamento sanitário;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>2</strong> – O chacreamento é fruto da área pertencente à matrícula nº <strong>55.278</strong>, lançada no Livro 02 do Registro Geral, ficha 01, do 1º Ofício de Registro de Imóveis de Parauapebas – PA, correspondente aos lotes 33; 34 e 36 – parte 01 do Assentamento Palmares Sul – Parauapebas – PA, cabendo ao(s) PROMITENTE(S) COMPRADOR(A/ES) a responsabilidade pela documentação necessária conforme estabelece a legislação regente, inclusive os serviços de <strong>georreferenciamento</strong>, arcando com todos os custos incidentes;</p>
+      <div class="araguaia-keep-together araguaia-general-conditions-item-3"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>3</strong> – Para efeito da efetivação do desmembramento previsto no item 2 desta cláusula, estando o parcelamento devidamente quitado, caberá aos PROMITENTES VENDEDORES fornecerem ao/à(s) PROMITENTE(S) COMPRADOR(A/ES) toda documentação necessária para a concretização deste procedimento, de acordo com o que for requisitado pelo cartório de títulos e documentos.</p></div>
+      <div class="araguaia-keep-together araguaia-general-conditions-item-4"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>4</strong> – O não cumprimento da obrigação estabelecida no item 3 desta cláusula implicará no pagamento de uma multa fixada em <strong>10%</strong> (dez por cento) do valor original da venda em favor do(s) PROMITENTE(S) COMPRADOR(A/ES);</p></div>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>5</strong> – Observadas as disposições contidas neste contrato, estando quitadas as parcelas devidas, os PROMITENTES VENDEDORES outorgarão a(os) PROMITENTE(S) COMPRADOR(A/ES) a respectiva <strong>escritura</strong> pública de venda e compra do imóvel ora negociado, desde que cumpridas as obrigações previstas neste instrumento contratual, inclusive no que se refere aos procedimentos para efetivação do desmembramento da unidade adquirida da porção original do imóvel.</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>6</strong> – Os trabalhos para a concretização da transferência da titularidade do imóvel objeto deste compromisso de compra e venda serão intermediados pela empresa gestora deste contrato, sendo devido pelos serviços prestados o valor correspondente à última parcela paga pelo(s) PROMITENTE(S) COMPRADOR(A/ES);</p>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA QUINTA – CIÊNCIA DO CONTRATO</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">O(A/s) PROMITENTE(S) COMPRADOR(A/ES) declara(m) ter pleno conhecimento de todo o teor deste contrato e das cláusulas nele contidas, eximindo os PROMITENTES VENDEDORES de qualquer responsabilidade que não faça parte deste instrumento contratual.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA SEXTA – IRREVOGABILIDADE DA TRANSAÇÃO</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">O presente instrumento é firmado em caráter <strong>IRREVOGÁVEL E IRRETRATÁVEL</strong>, não podendo haver arrependimento nos termos do disposto no artigo 1.094 do Código Civil Brasileiro, obrigação estas que se estende aos contratantes, seus herdeiros e sucessores a qualquer título, devendo-se aplicar ao presente negócio todas as normas previstas no ordenamento jurídico civil vigentes.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA SÉTIMA – RESCISÃO</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">O presente contrato será rescindido por culpa exclusiva do(a/s) PROMITENTE(S) COMPRADOR(A/ES) em qualquer dos seguintes casos:</p>
+      </div>
+      
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>A</strong> – Vencida e não paga qualquer parcela, este compromisso será considerado rescindido <strong>90</strong> (noventa) dias após o vencimento, independentemente de notificação judicial ou extrajudicial, valendo como cláusula resolutiva expressa, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);</p>
+      <div class="araguaia-keep-together araguaia-sixth-letter-b"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);</p></div>
+      <div class="araguaia-keep-together araguaia-sixth-letter-c"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>C</strong> – Pela venda, cessão de direitos e obrigações ou transferência realizadas sem a expressa anuência dos PROMITENTES VENDEDORES, ou a existência de ações pessoais, reipersecutórias e executivas que de algum modo afetem os direitos e obrigações objeto deste contrato;</p></div>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>D</strong> – Pelo descumprimento de qualquer das cláusulas deste contrato;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>Parágrafo único</strong> – O(a/s) PROMITENTE(S) COMPRADOR(A/ES) deverá(ão) comunicar aos PROMITENTES VENDEDORES, por escrito, qualquer alteração do seu endereço constante no preâmbulo deste contrato, autorizando senão o fizer a sua convocação, intimação, notificação ou mesmo citação através de edital.</p>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA OITAVA – CESSÃO E TRANSFERÊNCIA</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">É permitida a cessão e transferência dos direitos relativos a este contrato, que deverá ter a anuência do cônjuge, se for o caso, sendo que a cessão ou transferência somente será possível mediante anuência expressa dos PROMITENTES VENDEDORES, devendo o(a/s) PROMITENTE(S) COMPRADOR(A/ES) estar em dia com o pagamento das parcelas devidas, havendo a cobrança de uma taxa referente a esta transação no valor correspondente ao da última parcela paga.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA NONA – INFRAESTRUTURA DO CHACREAMENTO</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">O(A/S) PROMITENTE(S) COMPRADOR(A/ES) desde já declara(m) para todos os efeitos legais e necessários, ter plena ciência de que o chacreamento contará com infraestrutura de <strong>arruamento</strong>, cabendo aos compradores a implantação das demais infraestruturas necessárias.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA – OBRIGAÇÕES GERAIS</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;"><strong>A</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) ficam desde já notificados, que, para fins de atendimento das posturas municipais, bem como para que seja mantido o bom aspecto dos demais lotes da quadra como um todo, deverá manter o imóvel adquirido sempre limpo, providenciando ainda o cercamento da área;</p>
+      </div>
+      
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>B</strong> – A partir da celebração deste contrato, todos os tributos que incidem ou venham a incidir sobre o imóvel ora compromissado, correm às expensas do(a/s) PROMITENTE(S) COMPRADOR(A/ES), que se obriga(m) a pagá-los nas épocas e repartições competentes, ainda que lançados em nome de terceiros.</p>
+      <div class="araguaia-keep-together araguaia-ninth-letter-c"><p style="margin: 0 0 10px 0; text-align: justify;"><strong>C</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) se declara(m) ciente(s) de que adquiriu o imóvel com a infraestrutura descrita na cláusula nona deste contrato, sendo que quaisquer outros serviços ou melhoramentos públicos que vierem a ser exigidos pelos poderes públicos correrão à suas expensas.</p></div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA PRIMEIRA – SUCESSÃO CONTRATUAL</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">Pelo falecimento de qualquer uma das partes contratantes, bem como do mutuário originário, não caberá desobrigação a qualquer título dos contratantes, obrigando-se a cumpri-lo por seus respectivos herdeiros e sucessores e quaisquer títulos.</p>
+      </div>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA SEGUNDA – DISPOSIÇÕES GERAIS</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;"><strong>1</strong> – Pelo princípio da liberdade de contratar prevista no Código Civil Brasileiro, as partes declaram que concordam com plena legalidade das cláusulas aqui entabuladas, isentado-se assim terceiros de toda e qualquer responsabilidade pela assinatura do presente contrato;</p>
+      </div>
+      
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>2</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) declara(m) que visitou(ram) o imóvel prometido conforme descrito na cláusula segunda deste contrato, tendo, portanto, pleno conhecimento quanto à localização, topografia e dimensões;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>3</strong> – Na eventualidade de ser constatada diferença superior a <strong>05%</strong> (cinco por cento) na área do terreno, para mais ou para menos, a parte prejudicada será ressarcida por meio de acordo a ser firmado entre as partes que passará a integrar este contrato sob a forma de anexo, baseando-se o valor do metro quadrado do terreno vigente à data da formalização deste compromisso;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>4</strong> – O(A/s) PROMITENTE(S) COMPRADOR(A/ES) declara(m) que os PROMITENTES VENDEDORES e seus prepostos prestaram amplo esclarecimento acerca da presente transação, notadamente no que se refere às características do imóvel, a forma de pagamento e reajustamento das parcelas, tendo as cláusulas deste contrato sido devidamente esclarecidas e que foi concedida antecedência para leitura dos termos lançados neste instrumento, não restando dúvidas quanto ao que foi aqui pactuado;</p>
+      <p style="margin: 0 0 10px 0; text-align: justify;"><strong>5</strong> – Caberá aos PROMITENTES VENDEDORES arcar com o pagamento da comissão de intermediação e venda realizada pelo corretor de imóveis <strong>Corretor Exemplo</strong>, CPF nº <strong>123.456.789-09</strong>.</p>
+      
+    </div>
+
+    
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="araguaia-clause-keep">
+        <p class="araguaia-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">CLÁUSULA DÉCIMA TERCEIRA – FORO</p>
+        <p class="araguaia-clause-lead" style="margin: 0 0 10px 0;">As partes contratantes elegem o foro da Comarca de Parauapebas – PA, para que, nele venham a ser dirimidas todas as dúvidas ou questões porventura advindas do presente contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja ou venha a ser.</p>
+      </div>
+      
+    </div>
+  
+  
+      
+    <div class="contract-closing-and-signatures--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
+      
+      <div class="contract-closing" style="margin: 18px 0 8px 0; text-align: justify;">
+        <p class="araguaia-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
+          E, assim, por estarem justos e contratados, assinam o presente, inclusive o mandatário supracitado, <strong>03</strong> (três) vias de igual teor e forma, para um mesmo efeito, na presença de duas testemunhas abaixo que a tudo assistiram.
+        </p>
+        <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
+          Parauapebas – PA, 20 de agosto de 2026.
+        </p>
+      </div>
+      <div class="contract-signatures contract-signatures--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
+        
+        <div class="signature-grid signature-grid--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
+          
+    <div class="signature-slot signature-slot-vendor-1" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-line" style="border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;"></div>
+      <p style="margin: 4px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">PROMITENTE VENDEDOR</p>
+      <p style="margin: 0 0 2px 0; font-weight: bold; font-size: 10.5pt; overflow-wrap: break-word; text-align: center;">Daniel Roberto Rivelino de Sousa</p>
+      <p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">CPF: 820.912.262-20</p>
+    </div>
+
+    <div class="signature-slot signature-slot-vendor-2" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-line" style="border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;"></div>
+      <p style="margin: 4px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">PROMITENTE VENDEDOR</p>
+      <p style="margin: 0 0 2px 0; font-weight: bold; font-size: 10.5pt; overflow-wrap: break-word; text-align: center;">Aldenise Alves Sousa</p>
+      <p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">CPF: 856.560.112-91</p>
+    </div>
+          
+    <div class="signature-slot signature-slot-buyer" data-party-role="BUYER" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-line" style="border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;"></div>
+      <p style="margin: 4px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">PROMITENTE COMPRADOR(A)</p>
+      <p style="margin: 0 0 2px 0; font-weight: bold; font-size: 10.5pt; overflow-wrap: break-word; text-align: center;">Cliente Teste Araguaia</p>
+      <p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">CPF: 111.444.777-35</p>
+    </div>
+          
+    <div class="signature-slot signature-slot-intervenient" data-party-role="INTERVENIENT" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-line" style="border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;"></div>
+      <p style="margin: 4px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">INTERVENIENTE</p>
+      <p style="margin: 0 0 2px 0; font-weight: bold; font-size: 10.5pt; overflow-wrap: break-word; text-align: center;">R R NEGÓCIOS &amp; SERVIÇOS LTDA</p>
+      <p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">CNPJ: 57.590.706/0001-78</p>
+<p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">Representada por:</p>
+<p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">Daniel Roberto Rivelino de Sousa</p>
+    </div>
+          
+    <div class="signature-slot signature-slot-witness-1" data-party-role="WITNESS_1" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-line" style="border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;"></div>
+      <p style="margin: 4px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">TESTEMUNHA 1</p>
+      
+      <p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">Nome: ________________________________</p>
+<p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">CPF: ________________________________</p>
+    </div>
+          
+    <div class="signature-slot signature-slot-witness-2" data-party-role="WITNESS_2" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-line" style="border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;"></div>
+      <p style="margin: 4px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">TESTEMUNHA 2</p>
+      
+      <p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">Nome: ________________________________</p>
+<p style="margin: 0; font-size: 9.5pt; font-weight: normal; overflow-wrap: break-word; text-align: center;">CPF: ________________________________</p>
+    </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  
+</body>
+</html>

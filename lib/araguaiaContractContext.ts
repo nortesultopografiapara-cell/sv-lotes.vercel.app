@@ -34,7 +34,7 @@ import { toContractTitleCase } from '@/lib/contractTitleCase';
 import {
   formatAraguaiaNeutralMaritalStatus,
   formatAraguaiaNeutralNationality,
-  formatAraguaiaPartyAddress,
+  formatAraguaiaPresentedResidence,
   formatAraguaiaRgAfterNumeroLabel,
   formatAraguaiaSeatAddressFromCompany,
   stripAraguaiaRgLabelPrefix,
@@ -215,7 +215,7 @@ export function buildAraguaiaContractContext(
     mode: vendorMode,
   }).map((seller) => ({
     ...seller,
-    address: formatAraguaiaPartyAddress(seller.address, tenant),
+    address: formatAraguaiaPresentedResidence(seller.address),
   }));
   if (sellers.length < 1) {
     pendingFields.push(

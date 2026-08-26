@@ -186,6 +186,21 @@ export function formatAraguaiaSeatAddressParts(company?: Record<string, unknown>
   };
 }
 
+/**
+ * Residência pessoal do vendedor ARAGUAIA — só o texto cadastrado.
+ * Não mistura sede, contract_legal_address nem endereço de outra parte.
+ */
+export function formatAraguaiaPresentedResidence(
+  raw: string | null | undefined,
+): string {
+  const value = clean(raw);
+  if (!value) return '';
+  const expanded = value
+    .replace(/\bQD\.?\s*(\d+)/gi, 'Quadra $1')
+    .replace(/\bLT\.?\s*(\d+)/gi, 'Lote $1');
+  return stripAraguaiaPresentedSnToken(expanded);
+}
+
 /** Endereço de parte: rua cadastrada + bairro/cidade da empresa, sem duplicar. */
 export function formatAraguaiaPartyAddress(
   street: string | null | undefined,

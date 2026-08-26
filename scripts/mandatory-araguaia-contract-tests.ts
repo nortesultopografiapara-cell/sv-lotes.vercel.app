@@ -289,6 +289,8 @@ function testHtmlGeneration() {
   assert(html.includes('araguaia-keep-together'), 'classe keep-together');
   assert(/Avenida dos Ip[eê]s/i.test(html), 'endereço vendedores');
   assert(/Cidade Jardim/i.test(html), 'bairro Cidade Jardim');
+  assert(!/ambos residentes e domiciliados/i.test(html), 'sem residência conjunta dos vendedores');
+  assert(/residente e domiciliado\(a\) no/i.test(html), 'residência individual no preâmbulo');
   assert(html.includes('Brasileiro(a)'), 'nacionalidade neutra Brasileiro(a)');
   assert(html.includes('Solteiro(a)'), 'estado civil neutro Solteiro(a)');
   assert(html.includes('Casado(a)'), 'estado civil neutro Casado(a)');
@@ -470,6 +472,7 @@ function testPreambleQualificationHotfix() {
   const preamble = htmlDup.slice(0, htmlDup.indexOf('CLÁUSULA PRIMEIRA'));
   assert(preamble.includes('Brasileiro(a)'), 'comprador Brasileiro(a)');
   assert(preamble.includes('inscrito(a)'), 'comprador inscrito(a)');
+  assert(!/ambos residentes e domiciliados/i.test(preamble), 'hotfix sem residência conjunta');
   assert(
     /DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, Brasileiro\(a\), Casado\(a\), produtor rural, inscrito\(a\) no CPF/i.test(
       preamble,
@@ -550,7 +553,9 @@ function testPreambleQualificationHotfix() {
   assert(incompleteCtx.sellers.length === 1, 'V2: só o representante');
   assert(!incompleteCtx.sellers[0].nationality, 'V2 sem nacionalidade cadastrada');
   assert(!incompleteCtx.sellers[0].maritalStatus, 'V2 sem estado civil cadastrado');
+  assert(!incompleteCtx.sellers[0].profession, 'V2 sem profissão cadastrada');
   assert(!incompleteCtx.sellers[0].rg, 'V2 sem RG cadastrado');
+  assert(!incompleteCtx.sellers[0].address, 'V2 sem residência pessoal cadastrada');
   assert(
     incompleteCtx.pendingFields.some((f) => /nacionalidade de Daniel/i.test(f)),
     'pending nacionalidade Daniel',
@@ -577,11 +582,16 @@ function testPreambleQualificationHotfix() {
     incompleteHtml.indexOf('CLÁUSULA PRIMEIRA'),
   );
   assert(
-    /DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, produtor rural, inscrito\(a\) no CPF/i.test(
+    /DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, inscrito\(a\) no CPF/i.test(
       incompletePreamble,
     ),
     'Daniel incompleto usa só campos existentes',
   );
+  assert(
+    !/DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, produtor rural/i.test(incompletePreamble),
+    'cargo não vira profissão no ARAGUAIA',
+  );
+  assert(!/produtor rural/i.test(incompletePreamble), 'profissão vazia omitida');
   assert(
     !/DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, Brasileiro\(a\)/i.test(incompletePreamble),
     'não inventa Brasileiro(a) para Daniel',
@@ -672,6 +682,7 @@ function testSourceFilesExist() {
     'lib/araguaiaContractQualification.ts',
     'lib/projectContractSellers.ts',
     'supabase/migrations/20260820120000_projects_seller_parties_json.sql',
+    'supabase/migrations/20261012120000_companies_legal_representative_qualification.sql',
   ]) {
     assert(fs.existsSync(path.join(root, rel)), `arquivo ${rel}`);
   }
