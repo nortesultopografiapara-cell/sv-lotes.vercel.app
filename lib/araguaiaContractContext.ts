@@ -31,6 +31,14 @@ import { resolveAraguaiaIntervenientIdentity } from '@/lib/araguaiaIntervenientI
 import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
+import {
+  formatAraguaiaNeutralMaritalStatus,
+  formatAraguaiaNeutralNationality,
+  formatAraguaiaPartyAddress,
+  formatAraguaiaRgAfterNumeroLabel,
+  formatAraguaiaSeatAddressFromCompany,
+  stripAraguaiaRgLabelPrefix,
+} from '@/lib/araguaiaContractQualification';
 
 export type AraguaiaContractParams = {
   tenant: Record<string, unknown> | null | undefined;
@@ -205,7 +213,10 @@ export function buildAraguaiaContractContext(
     project: esignV2 ? null : project,
     contractModel: 'ARAGUAIA',
     mode: vendorMode,
-  });
+  }).map((seller) => ({
+    ...seller,
+    address: formatAraguaiaPartyAddress(seller.address, tenant),
+  }));
   if (sellers.length < 1) {
     pendingFields.push(
       esignV2
@@ -217,6 +228,7 @@ export function buildAraguaiaContractContext(
     if (!s.nationality) pendingFields.push(`nacionalidade de ${s.name}`);
     if (!s.maritalStatus) pendingFields.push(`estado civil de ${s.name}`);
     if (!s.profession) pendingFields.push(`profissão de ${s.name}`);
+    if (!s.rg) pendingFields.push(`RG de ${s.name}`);
     if (!s.address) pendingFields.push(`endereço de ${s.name}`);
   }
 
@@ -226,8 +238,7 @@ export function buildAraguaiaContractContext(
   });
   const intervenienteName = intervenienteId.companyName;
   const intervenienteCnpj = intervenienteId.companyCnpjDisplay;
-  const intervenienteAddress =
-    clean(tenant.address || tenant.endereco) || 'endereço não informado';
+  const intervenienteAddress = formatAraguaiaSeatAddressFromCompany(tenant);
   const intervenienteCityUf = [clean(tenant.city || tenant.cidade), clean(tenant.state || tenant.uf)]
     .filter(Boolean)
     .join('/');
@@ -237,21 +248,33 @@ export function buildAraguaiaContractContext(
   );
   if (!clean(customer.name || customer.full_name)) pendingFields.push('nome do comprador');
 
-  const buyerNationality =
-    toContractTitleCase(clean(customer.nationality || customer.nacionalidade)) ||
-    'Brasileira';
+  const rawBuyerNationality = clean(customer.nationality || customer.nacionalidade);
+  const buyerNationality = formatAraguaiaNeutralNationality(rawBuyerNationality);
+  if (!rawBuyerNationality) pendingFields.push('nacionalidade do comprador');
   const buyerMaritalStatus =
-    toContractTitleCase(clean(customer.civil_state || customer.marital_status)) ||
-    'não informado';
+    formatAraguaiaNeutralMaritalStatus(
+      clean(customer.civil_state || customer.marital_status),
+    ) || 'não informado';
   const buyerProfession =
     toContractTitleCase(clean(customer.profession || customer.profissao)) ||
     'não informado';
   const buyerCpf =
     formatCpfCnpj(clean(customer.cpf_cnpj || customer.document || customer.cpf)) ||
     'não informado';
-  const buyerRgPhrase = formatContractIdentityDocumentPhrase(customer);
+  const customerForRg = {
+    ...customer,
+    rg: stripAraguaiaRgLabelPrefix(
+      String(customer.rg_number || customer.rg || customer.document_rg || ''),
+    ),
+    rg_number: stripAraguaiaRgLabelPrefix(
+      String(customer.rg_number || customer.rg || customer.document_rg || ''),
+    ),
+  };
+  const buyerRgPhrase = formatContractIdentityDocumentPhrase(customerForRg);
   const buyerRgLine = buyerRgPhrase
-    ? buyerRgPhrase.replace(/^Portador da Cédula de Identidade\s*/i, '')
+    ? formatAraguaiaRgAfterNumeroLabel(
+        buyerRgPhrase.replace(/^Portador da Cédula de Identidade\s*/i, ''),
+      )
     : 'não informado';
   const buyerEmail = clean(customer.email) || 'não informado';
   const buyerPhone =
@@ -275,11 +298,17 @@ export function buildAraguaiaContractContext(
     spouseCpf = formatCpfCnpj(sp.cpf) || sp.cpf || '';
     const parts = [
       spouseName,
-      sp.nationality ? `nacionalidade ${toContractTitleCase(sp.nationality)}` : '',
-      sp.maritalStatus ? toContractTitleCase(sp.maritalStatus) : '',
+      sp.nationality
+        ? formatAraguaiaNeutralNationality(sp.nationality)
+        : '',
+      sp.maritalStatus ? formatAraguaiaNeutralMaritalStatus(sp.maritalStatus) : '',
       sp.profession ? `profissão ${toContractTitleCase(sp.profession)}` : '',
       spouseCpf ? `CPF nº ${spouseCpf}` : '',
-      sp.rg ? `RG nº ${sp.rg}${sp.issuer ? ` — ${sp.issuer}` : ''}` : '',
+      sp.rg
+        ? `RG nº ${formatAraguaiaRgAfterNumeroLabel(sp.rg)}${
+            sp.issuer ? ` — ${sp.issuer}` : ''
+          }`
+        : '',
       sp.address ? `residente em ${sp.address}` : '',
     ].filter(Boolean);
     spouseQualificationHtml = escapeHtml(parts.join(', '));

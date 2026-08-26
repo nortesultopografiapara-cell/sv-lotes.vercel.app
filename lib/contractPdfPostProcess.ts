@@ -18,6 +18,7 @@ import {
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
+import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
 
@@ -333,6 +334,19 @@ export function buildContractPdfChromeFromTenant(
 
   if (isSvLotes2ContractModel(row)) {
     return buildSvLotes2PdfChrome(row, contractNumber, logoBase64);
+  }
+
+  if (isAraguaiaContractModel(row)) {
+    const seat = formatAraguaiaSeatAddressParts(row);
+    return {
+      tenantName: getCompanyDisplayName(row),
+      tenantCnpj: formatCpfCnpj(String(row.cnpj || row.document || "")),
+      tenantDocumentLabel: "CNPJ",
+      addressLine: seat.headerAddressLine,
+      cityUfLine: seat.cityUfLine,
+      contractNumber,
+      logoBase64,
+    };
   }
 
   const { addressLine, cityUfLine } = formatCompanyAddressForHeader(row);

@@ -24,6 +24,16 @@ import {
   ARAGUAIA_CONTRACT_TITLE,
   ARAGUAIA_LEGAL_MARKER,
 } from '../lib/araguaiaContractClauses';
+import { generateAraguaiaContract } from '../lib/araguaiaContractTemplate';
+import { buildAraguaiaContractContext } from '../lib/araguaiaContractContext';
+import { buildContractPdfChromeFromTenant } from '../lib/contractPdfPostProcess';
+import {
+  formatAraguaiaNeutralNationality,
+  formatAraguaiaRgAfterNumeroLabel,
+  formatAraguaiaSeatAddressParts,
+  stripAraguaiaRgLabelPrefix,
+} from '../lib/araguaiaContractQualification';
+import { resolveAraguaiaPromitenteVendors } from '../lib/araguaiaCompanyLegalRepresentative';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -276,7 +286,14 @@ function testHtmlGeneration() {
   assert(html.includes('araguaia-sixth-letter-c'), 'wrapper sexta alínea C');
   assert(html.includes('araguaia-ninth-letter-c'), 'wrapper nona alínea C');
   assert(html.includes('araguaia-keep-together'), 'classe keep-together');
-  assert(html.includes('Avenida dos Ipês'), 'endereço vendedores');
+  assert(/Avenida dos Ip[eê]s/i.test(html), 'endereço vendedores');
+  assert(/Cidade Jardim/i.test(html), 'bairro Cidade Jardim');
+  assert(html.includes('Brasileiro(a)'), 'nacionalidade neutra Brasileiro(a)');
+  assert(html.includes('Solteiro(a)'), 'estado civil neutro Solteiro(a)');
+  assert(html.includes('Casado(a)'), 'estado civil neutro Casado(a)');
+  assert(html.includes('inscrito(a) no CPF'), 'inscrito(a) no CPF');
+  assert(!html.includes('inscrita no CPF'), 'sem inscrita exclusivo por índice');
+  assert(!html.includes('RG nº RG nº'), 'sem RG duplicado no HTML padrão');
 
   const sigMarker = 'contract-closing-and-signatures--araguaia';
   const sigIdx = html.indexOf(sigMarker);
@@ -394,6 +411,185 @@ function testOriginalFidelityMarkers() {
   );
 }
 
+function testPreambleQualificationHotfix() {
+  assert(stripAraguaiaRgLabelPrefix('RG nº 1389803') === '1389803', 'strip RG nº');
+  assert(stripAraguaiaRgLabelPrefix('RG n° 1389803') === '1389803', 'strip RG n°');
+  assert(stripAraguaiaRgLabelPrefix('RG nº RG nº 1389803') === '1389803', 'strip duplicado');
+  assert(formatAraguaiaRgAfterNumeroLabel('1389803') === '1389803', 'RG só número');
+  assert(formatAraguaiaNeutralNationality('Brasileira') === 'Brasileiro(a)', 'Brasileira → Brasileiro(a)');
+  assert(formatAraguaiaNeutralNationality('brasileiro') === 'Brasileiro(a)', 'brasileiro → Brasileiro(a)');
+  assert(formatAraguaiaNeutralNationality('') === '', 'nacionalidade vazia não inventa');
+  assert(formatAraguaiaNeutralNationality('Italiana') === 'Italiana', 'outra nacionalidade preservada');
+
+  const htmlDup = generateContractHTML({
+    tenant: {
+      ...TENANT,
+      address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    customer: { ...CUSTOMER, rg: 'RG nº 1389803' },
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(!htmlDup.includes('RG nº RG nº'), 'RG armazenado com prefixo não duplica');
+  assert(/RG nº 1389803/.test(htmlDup), 'RG nº + documento uma vez');
+  assert(/Cidade Jardim/i.test(htmlDup), 'Cidade Jardim no preâmbulo');
+  assert(!htmlDup.includes('—, S/N'), 'sem —, S/N');
+  const preamble = htmlDup.slice(0, htmlDup.indexOf('CLÁUSULA PRIMEIRA'));
+  assert(preamble.includes('Brasileiro(a)'), 'comprador Brasileiro(a)');
+  assert(preamble.includes('inscrito(a)'), 'comprador inscrito(a)');
+  assert(
+    /DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, Brasileiro\(a\), Casado\(a\), produtor rural, inscrito\(a\) no CPF/i.test(
+      preamble,
+    ),
+    'Daniel com qualificação completa dos defaults',
+  );
+
+  const chrome = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'ARAGUAIA',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '000000008/2026',
+  );
+  assert(/Cidade Jardim/i.test(chrome.addressLine), 'header ARAGUAIA com bairro');
+  assert(/Quadra 31/i.test(chrome.addressLine), 'header preserva Quadra');
+  assert(
+    (chrome.addressLine.match(/Cidade Jardim/gi) || []).length === 1,
+    'header sem bairro duplicado',
+  );
+
+  const padraoChrome = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'PADRAO',
+      razao_social: 'Empresa Padrão',
+      address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '1',
+  );
+  assert(
+    !/Cidade Jardim/i.test(padraoChrome.addressLine),
+    'PADRAO não recebe bairro do helper ARAGUAIA',
+  );
+
+  const seat = formatAraguaiaSeatAddressParts({
+    address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
+    neighborhood: 'Cidade Jardim',
+    city: 'Parauapebas',
+    state: 'PA',
+  });
+  assert(/Cidade Jardim/i.test(seat.fullInline), 'fullInline com bairro');
+  assert(!seat.fullInline.includes('S/N, S/N'), 'sem S/N duplicado');
+
+  const incompleteCompany = {
+    contract_model: 'ARAGUAIA',
+    razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+    cnpj: '57590706000178',
+    legal_representative: 'Daniel Roberto Rivelino de Sousa',
+    representative_cpf: '820.912.262-20',
+    legal_representative_role: 'produtor rural',
+    address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
+    neighborhood: 'Cidade Jardim',
+    city: 'Parauapebas',
+    state: 'PA',
+  };
+  const incompleteCtx = buildAraguaiaContractContext({
+    tenant: incompleteCompany,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+    esignV2: true,
+  });
+  assert(incompleteCtx.sellers.length === 1, 'V2: só o representante');
+  assert(!incompleteCtx.sellers[0].nationality, 'V2 sem nacionalidade cadastrada');
+  assert(!incompleteCtx.sellers[0].maritalStatus, 'V2 sem estado civil cadastrado');
+  assert(!incompleteCtx.sellers[0].rg, 'V2 sem RG cadastrado');
+  assert(
+    incompleteCtx.pendingFields.some((f) => /nacionalidade de Daniel/i.test(f)),
+    'pending nacionalidade Daniel',
+  );
+  assert(
+    incompleteCtx.pendingFields.some((f) => /estado civil de Daniel/i.test(f)),
+    'pending estado civil Daniel',
+  );
+  assert(
+    incompleteCtx.pendingFields.some((f) => /RG de Daniel/i.test(f)),
+    'pending RG Daniel',
+  );
+  const incompleteHtml = generateAraguaiaContract({
+    tenant: incompleteCompany,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+    esignV2: true,
+  });
+  const incompletePreamble = incompleteHtml.slice(
+    0,
+    incompleteHtml.indexOf('CLÁUSULA PRIMEIRA'),
+  );
+  assert(
+    /DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, produtor rural, inscrito\(a\) no CPF/i.test(
+      incompletePreamble,
+    ),
+    'Daniel incompleto usa só campos existentes',
+  );
+  assert(
+    !/DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, Brasileiro\(a\)/i.test(incompletePreamble),
+    'não inventa Brasileiro(a) para Daniel',
+  );
+  assert(!/inscrita no CPF/.test(incompletePreamble), 'V2 usa inscrito(a)');
+
+  const completeCompany = {
+    ...incompleteCompany,
+    contract_legal_nationality: 'brasileiro',
+    contract_legal_marital_status: 'casado',
+    contract_legal_profession: 'produtor rural',
+    contract_legal_rg: '4606073',
+    contract_legal_rg_issuer: 'PC/PA',
+  };
+  const completeHtml = generateAraguaiaContract({
+    tenant: completeCompany,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+    esignV2: true,
+  });
+  const completePreamble = completeHtml.slice(0, completeHtml.indexOf('CLÁUSULA PRIMEIRA'));
+  assert(
+    /DANIEL ROBERTO RIVELINO DE SOUSA<\/strong>, Brasileiro\(a\), Casado\(a\), produtor rural, inscrito\(a\) no CPF/i.test(
+      completePreamble,
+    ),
+    'Daniel completo quando cadastro legal tem os campos',
+  );
+  assert(/RG nº <strong>4606073/.test(completePreamble), 'RG Daniel do cadastro legal');
+
+  const otherModelVendors = resolveAraguaiaPromitenteVendors({
+    company: {},
+    project: { name: 'Outro' },
+    contractModel: 'MENESES',
+    mode: 'legacy',
+  });
+  assert(otherModelVendors.length === 0, 'MENESES sem fallback Daniel');
+}
+
 function testIsolationOtherModels() {
   const meneses = generateContractHTML({
     tenant: { ...TENANT, contract_model: 'MENESES', name: 'Meneses' },
@@ -440,6 +636,7 @@ function testSourceFilesExist() {
     'lib/araguaiaContractClauses.ts',
     'lib/araguaiaContractParties.ts',
     'lib/araguaiaContractLot.ts',
+    'lib/araguaiaContractQualification.ts',
     'lib/projectContractSellers.ts',
     'supabase/migrations/20260820120000_projects_seller_parties_json.sql',
   ]) {
@@ -552,6 +749,7 @@ function main() {
   testSellersResolution();
   testAreaExtenso();
   testHtmlGeneration();
+  testPreambleQualificationHotfix();
   testSignatureBlockWithSpouse();
   testOriginalFidelityMarkers();
   testIsolationOtherModels();
