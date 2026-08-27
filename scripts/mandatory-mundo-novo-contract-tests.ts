@@ -3,6 +3,8 @@
  * npx tsx scripts/mandatory-mundo-novo-contract-tests.ts
  */
 import { generateContractHTML } from '../lib/contractTemplate';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   isAraguaiaContractModel,
   isMundoNovoContractModel,
@@ -12,6 +14,8 @@ import {
 } from '../lib/contractModel';
 import { MUNDO_NOVO_INCRA_TITLE, MUNDO_NOVO_MATRICULA, MUNDO_NOVO_MISSING_SELLERS_MESSAGE } from '../lib/mundoNovoContractConstants';
 import { generateMundoNovoContract } from '../lib/mundoNovoContractTemplate';
+import { resolveMundoNovoPdfChromeLogo } from '../lib/mundoNovoContractPdf';
+import { buildContractPdfChromeFromTenant } from '../lib/contractPdfPostProcess';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -185,6 +189,62 @@ assert(html.includes('175.200.962-20'), '4. CPF Adenil');
 assert(!html.includes('820.912.262-20'), '5. CPF do Representante Legal não vira vendedor');
 assert(!html.includes('Daniel Roberto Rivelino de Sousa'), '5. Daniel não é vendedor');
 assert(!html.includes('Aldenise Alves Sousa'), '5. segundo vendedor da empresa não entra');
+assert(!/<img\b/i.test(html), 'logo: HTML Mundo Novo não embute imagem');
+
+assert(
+  resolveMundoNovoPdfChromeLogo({
+    projectLogoUrl: null,
+  }) === null,
+  'logo: sem logo de empreendimento retorna null',
+);
+assert(
+  resolveMundoNovoPdfChromeLogo({}) === null,
+  'logo: companies.logo_url não é lida pelo helper Mundo Novo',
+);
+assert(
+  resolveMundoNovoPdfChromeLogo({
+    projectLogoUrl: 'https://cdn.test/mundo-novo.png',
+  }) === 'https://cdn.test/mundo-novo.png',
+  'logo: aceita somente logo do próprio empreendimento',
+);
+
+{
+  const chrome = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'MUNDO_NOVO',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      logo_url: 'https://cdn.test/chacreamento-araguaia.png',
+      address: 'Avenida dos Ipês, Quadra 31, Lote 13',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '000000007/2026',
+    'data:image/png;base64,ARAGUAIA_LOGO',
+  );
+  assert(chrome.logoBase64 === null, 'logo: chrome Mundo Novo descarta logo da empresa/Araguaia');
+}
+
+{
+  const araguaiaChrome = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'ARAGUAIA',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      logo_url: 'https://cdn.test/chacreamento-araguaia.png',
+      address: 'Avenida Dos Ipes, Quadra 31, Lote 13, S/N',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '000000008/2026',
+    'data:image/png;base64,ARAGUAIA_LOGO',
+  );
+  assert(
+    araguaiaChrome.logoBase64 === 'data:image/png;base64,ARAGUAIA_LOGO',
+    'logo: chrome ARAGUAIA preserva a logo da empresa',
+  );
+}
 
 try {
   generateContractHTML({
@@ -308,5 +368,15 @@ const direct = generateMundoNovoContract({
   financeReceipts: RECEIPTS,
 });
 assert(direct.includes('data-contract-model="MUNDO_NOVO"'), '2. generateMundoNovoContract direto');
+
+{
+  const page = fs.readFileSync(
+    path.join(process.cwd(), 'app/contracts/page.tsx'),
+    'utf8',
+  );
+  assert(page.includes('sv-contract-mundo-novo'), 'PDF client detecta HTML Mundo Novo');
+  assert(page.includes('htmlLooksMundoNovo'), 'PDF client isola chrome Mundo Novo');
+  assert(page.includes('!htmlLooksMundoNovo && getReportHeaderLogoUrl'), 'PDF Mundo Novo não carrega logo da empresa');
+}
 
 console.log('\nOK mandatory-mundo-novo-contract-tests');

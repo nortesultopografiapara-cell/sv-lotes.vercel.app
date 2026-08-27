@@ -966,11 +966,16 @@ export default function ContractsPage() {
       const htmlLooksAraguaia = String(ver.generated_html || '').includes(
         'sv-contract-araguaia',
       );
-      const pdfOptions = htmlLooksAraguaia
-        ? resolveContractHtml2pdfOptions(
-            { ...(tenantData || {}), contract_model: 'ARAGUAIA' },
-            pdfFilename,
-          )
+      const htmlLooksMundoNovo = String(ver.generated_html || '').includes(
+        'sv-contract-mundo-novo',
+      );
+      const pdfChromeTenant = htmlLooksMundoNovo
+        ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
+        : htmlLooksAraguaia
+          ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : tenantData || {};
+      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo
+        ? resolveContractHtml2pdfOptions(pdfChromeTenant, pdfFilename)
         : htmlLooksRecanto
           ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
           : getContractHtml2pdfOptions(pdfFilename);
@@ -986,7 +991,7 @@ export default function ContractsPage() {
               applyContractPdfChrome(
                 pdf,
                 buildContractPdfChromeFromTenant(
-                  tenantData,
+                  pdfChromeTenant,
                   String(
                     ver.contract_number || selectedContract?.contract_number || "",
                   ),
@@ -1080,8 +1085,20 @@ export default function ContractsPage() {
       prepareContractHtmlElementForPagination(element);
       assertContractElementReadyForHtml2PdfCapture(element);
 
+      const htmlLooksAraguaia = String(htmlBody || '').includes(
+        'sv-contract-araguaia',
+      );
+      const htmlLooksMundoNovo = String(htmlBody || '').includes(
+        'sv-contract-mundo-novo',
+      );
+      const pdfChromeTenant = htmlLooksMundoNovo
+        ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
+        : htmlLooksAraguaia
+          ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : tenantData || {};
+
       let logoBase64: string | null = null;
-      if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
+      if (!htmlLooksMundoNovo && getReportHeaderLogoUrl(tenantData?.logo_url)) {
         try {
           logoBase64 = await new Promise<string>((resolve, reject) => {
             const img = new Image();
@@ -1105,13 +1122,8 @@ export default function ContractsPage() {
       }
 
       const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
-      const htmlLooksAraguaia = String(htmlBody || '').includes(
-        'sv-contract-araguaia',
-      );
       const opt = resolveContractHtml2pdfOptions(
-        htmlLooksAraguaia
-          ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
-          : tenantData || {},
+        pdfChromeTenant,
         pdfFilename,
       );
 
@@ -1125,7 +1137,7 @@ export default function ContractsPage() {
             applyContractPdfChrome(
               pdf,
               buildContractPdfChromeFromTenant(
-                tenantData || {},
+                pdfChromeTenant,
                 String(selectedContract.contract_number || ""),
                 logoBase64,
               ),

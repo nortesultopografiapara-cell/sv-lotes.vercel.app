@@ -19,6 +19,7 @@ import {
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
 import { MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID } from "@/lib/mundoNovoHtml2PdfPagination";
+import { resolveMundoNovoPdfChromeLogo } from "@/lib/mundoNovoContractPdf";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
@@ -356,6 +357,23 @@ export function buildContractPdfChromeFromTenant(
       cityUfLine: seat.cityUfLine,
       contractNumber,
       logoBase64,
+    };
+  }
+
+  if (isMundoNovoContractModel(row)) {
+    const { addressLine, cityUfLine } = formatCompanyAddressForHeader(row);
+    return {
+      tenantName: getCompanyDisplayName(row),
+      tenantCnpj: formatCpfCnpj(String(row.cnpj || row.document || "")),
+      tenantDocumentLabel: "CNPJ",
+      addressLine,
+      cityUfLine,
+      contractNumber,
+      logoBase64: resolveMundoNovoPdfChromeLogo({
+        projectLogoUrl: row.project_logo_url ?? row.projectLogoUrl,
+      })
+        ? logoBase64
+        : null,
     };
   }
 

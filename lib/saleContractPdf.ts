@@ -187,6 +187,28 @@ export async function launchSaleContractPdfBrowser(): Promise<Browser> {
 export async function loadTenantLogoBase64ForPdf(
   tenant: Record<string, unknown> | null | undefined,
 ): Promise<string | null> {
+  const { isMundoNovoContractModel } = await import('@/lib/contractModel');
+  if (isMundoNovoContractModel(tenant)) {
+    const { resolveMundoNovoPdfChromeLogo } = await import(
+      '@/lib/mundoNovoContractPdf'
+    );
+    const projectLogo = resolveMundoNovoPdfChromeLogo({
+      projectLogoUrl: tenant?.project_logo_url ?? tenant?.projectLogoUrl,
+    });
+    if (!projectLogo) return null;
+    try {
+      const res = await fetch(projectLogo, { cache: 'no-store' });
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        const mime = res.headers.get('content-type') || 'image/png';
+        return `data:${mime};base64,${buf.toString('base64')}`;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
   const logoUrl = String(tenant?.logo_url || '').trim();
   if (logoUrl) {
     try {
