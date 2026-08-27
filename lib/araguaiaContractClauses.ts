@@ -204,6 +204,14 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
   const V = ctx.vendorInflection;
   const B = ctx.buyerInflection;
   const ciente = B.count === 1 ? 'ciente' : 'cientes';
+  const notificado =
+    B.count === 1
+      ? B.gender === 'f'
+        ? 'notificada'
+        : 'notificado'
+      : B.gender === 'f'
+        ? 'notificadas'
+        : 'notificados';
 
   const brokerLine = ctx.brokerCpf
     ? `${strong(ctx.brokerName)}, CPF nº ${strong(ctx.brokerCpf)}`
@@ -391,12 +399,12 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
 
     ${clauseHtml(
       'CLÁUSULA NONA – INFRAESTRUTURA DO CHACREAMENTO',
-      `${B.The} desde já ${B.declara} para todos os efeitos legais e necessários, ter plena ciência de que o chacreamento contará com infraestrutura de <strong>arruamento</strong>, cabendo aos compradores a implantação das demais infraestruturas necessárias.`,
+      `${B.The} desde já ${B.declara} para todos os efeitos legais e necessários, ter plena ciência de que o chacreamento contará com infraestrutura de <strong>arruamento</strong>, cabendo ${B.to} a implantação das demais infraestruturas necessárias.`,
     )}
 
     ${clauseHtml(
       'CLÁUSULA DÉCIMA – OBRIGAÇÕES GERAIS',
-      `<strong>A</strong> – ${B.The} ${B.ficam} desde já notificados, que, para fins de atendimento das posturas municipais, bem como para que seja mantido o bom aspecto dos demais lotes da quadra como um todo, deverá manter o imóvel adquirido sempre limpo, providenciando ainda o cercamento da área;`,
+      `<strong>A</strong> – ${B.The} ${B.ficam} desde já ${notificado}, que, para fins de atendimento das posturas municipais, bem como para que seja mantido o bom aspecto dos demais lotes da quadra como um todo, deverá manter o imóvel adquirido sempre limpo, providenciando ainda o cercamento da área;`,
       `
       ${itemP(
         `<strong>B</strong> – A partir da celebração deste contrato, todos os tributos que incidem ou venham a incidir sobre o imóvel ora compromissado, correm às expensas ${B.ofPhrase}, que se ${B.obriga} a pagá-los nas épocas e repartições competentes, ainda que lançados em nome de terceiros.`,
