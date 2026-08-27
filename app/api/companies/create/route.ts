@@ -13,6 +13,15 @@ import {
 } from '@/lib/companySubscriptionDates';
 import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 import { describeCompanyAsaasProvision } from '@/lib/finance/companyAsaasAccess';
+import { assertSuperAdmin } from '@/lib/apiSuperAdmin';
+import { authorizeCompanyAdminRequest, type CompanyAdminAuthDeps } from '@/lib/companyAdminApiAuth';
+import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+
+const defaultDeps: CompanyAdminAuthDeps = {
+  getRequestAuthUser,
+  createAdminSupabase,
+  assertSuperAdmin,
+};
 
 function generateSlug(name: string) {
   return name
@@ -25,7 +34,15 @@ function generateSlug(name: string) {
     .replace(/-+/g, "-");
 }
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
+  const gate = await authorizeCompanyAdminRequest(request, defaultDeps);
+  if (!gate.ok) {
+    return NextResponse.json(gate.body, { status: gate.status });
+  }
+  return executeCompanyCreate(request);
+}
+
+async function executeCompanyCreate(req: Request) {
   console.log('[PROVISIONAMENTO MULTI-TENANT] Iniciando criação de empresa...');
   
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
