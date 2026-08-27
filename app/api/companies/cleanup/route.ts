@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertSuperAdmin } from '@/lib/apiSuperAdmin';
+import { authorizeCompanyAdminRequest, type CompanyAdminAuthDeps } from '@/lib/companyAdminApiAuth';
+import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+
+const defaultDeps: CompanyAdminAuthDeps = {
+  getRequestAuthUser,
+  createAdminSupabase,
+  assertSuperAdmin,
+};
 
 function isMarkedTestCompany(company: {
   is_test?: boolean | null;
@@ -8,7 +17,15 @@ function isMarkedTestCompany(company: {
   return company.is_test_company === true || company.is_test === true;
 }
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
+  const gate = await authorizeCompanyAdminRequest(request, defaultDeps);
+  if (!gate.ok) {
+    return NextResponse.json(gate.body, { status: gate.status });
+  }
+  return executeCompanyCleanup(request);
+}
+
+async function executeCompanyCleanup(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: 'Supabase Role Key missing' }, { status: 500 });
   }

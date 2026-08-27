@@ -1,7 +1,24 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertSuperAdmin } from '@/lib/apiSuperAdmin';
+import { authorizeCompanyAdminRequest, type CompanyAdminAuthDeps } from '@/lib/companyAdminApiAuth';
+import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 
-export async function POST(req: Request) {
+const defaultDeps: CompanyAdminAuthDeps = {
+  getRequestAuthUser,
+  createAdminSupabase,
+  assertSuperAdmin,
+};
+
+export async function POST(request: Request) {
+  const gate = await authorizeCompanyAdminRequest(request, defaultDeps);
+  if (!gate.ok) {
+    return NextResponse.json(gate.body, { status: gate.status });
+  }
+  return executeCompanyDeleteTest(request);
+}
+
+async function executeCompanyDeleteTest(req: Request) {
   try {
     const body = await req.json();
     const { companyId } = body;

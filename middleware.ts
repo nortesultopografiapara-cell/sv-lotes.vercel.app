@@ -6,6 +6,10 @@ import {
   bulkRegenerateUnauthorizedJson,
   isBulkRegeneratePath,
 } from '@/lib/bulkContractRegenerateAuth';
+import {
+  companyAdminUnauthorizedJson,
+  isCompanyAdminApiPath,
+} from '@/lib/companyAdminApiAuth';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -101,10 +105,14 @@ export async function middleware(request: NextRequest) {
     isCompanyExportApi ||
     publicRoutes.some((route) => url.pathname === route || url.pathname.startsWith(`${route}/`));
 
-  // Regeneração em massa: nunca pública. Anônimo recebe 401 JSON (não redirect /login).
+  // Regeneração em massa e APIs admin de empresas: nunca públicas. Anônimo recebe 401 JSON.
   if (isBulkRegeneratePath(url.pathname)) {
     if (!user) {
       return NextResponse.json(bulkRegenerateUnauthorizedJson(), { status: 401 });
+    }
+  } else if (isCompanyAdminApiPath(url.pathname)) {
+    if (!user) {
+      return NextResponse.json(companyAdminUnauthorizedJson(), { status: 401 });
     }
   } else if (isPublicRoute) {
     if (user || isDemoMode) {
