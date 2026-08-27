@@ -88,7 +88,7 @@ export function buildAraguaiaElectronicSignatureSlotsFromParties(
     if (role === 'BUYER') {
       slots.push({
         role,
-        roleLabel: 'PROMITENTE COMPRADOR(A)',
+        roleLabel: 'PROMITENTE COMPRADOR',
         name: String(party.signer_name || '').trim() || '—',
         documentLabel: 'CPF',
         document: party.signer_cpf,

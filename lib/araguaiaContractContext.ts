@@ -40,6 +40,11 @@ import {
   stripAraguaiaPresentedSnToken,
   stripAraguaiaRgLabelPrefix,
 } from '@/lib/araguaiaContractQualification';
+import {
+  inflectAraguaiaContractParties,
+  inflectAraguaiaSingleParty,
+  type AraguaiaPartyInflection,
+} from '@/lib/araguaiaContractPartyInflection';
 
 export type AraguaiaContractParams = {
   tenant: Record<string, unknown> | null | undefined;
@@ -73,6 +78,10 @@ export type AraguaiaContractContext = {
   buyerEmail: string;
   buyerPhone: string;
   buyerAddress: string;
+  buyerInflection: AraguaiaPartyInflection;
+  vendorInflection: AraguaiaPartyInflection;
+  vendorSignatureLabels: string[];
+  buyerSignatureLabel: string;
   hasSpouse: boolean;
   spouseQualificationHtml: string;
   spouseName: string;
@@ -281,6 +290,30 @@ export function buildAraguaiaContractContext(
   const buyerPhone =
     clean(customer.phone || customer.whatsapp || customer.mobile) || 'não informado';
   const buyerAddress = buildBuyerAddress(customer) || 'não informado';
+  const buyerInflection = inflectAraguaiaContractParties(
+    [
+      {
+        maritalStatus: clean(customer.civil_state || customer.marital_status),
+        nationality: rawBuyerNationality,
+      },
+    ],
+    'buyer',
+  );
+  const vendorInflection = inflectAraguaiaContractParties(
+    sellers.map((s) => ({
+      maritalStatus: s.maritalStatus,
+      nationality: s.nationality,
+    })),
+    'vendor',
+  );
+  const vendorSignatureLabels = sellers.map(
+    (s) =>
+      inflectAraguaiaSingleParty(
+        { maritalStatus: s.maritalStatus, nationality: s.nationality },
+        'vendor',
+      ).label,
+  );
+  const buyerSignatureLabel = buyerInflection.label;
 
   if (buyerMaritalStatus === 'não informado') pendingFields.push('estado civil do comprador');
   if (buyerProfession === 'não informado') pendingFields.push('profissão do comprador');
@@ -407,6 +440,10 @@ export function buildAraguaiaContractContext(
     buyerEmail,
     buyerPhone,
     buyerAddress,
+    buyerInflection,
+    vendorInflection,
+    vendorSignatureLabels,
+    buyerSignatureLabel,
     hasSpouse,
     spouseQualificationHtml,
     spouseName,
