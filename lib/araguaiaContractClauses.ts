@@ -106,7 +106,7 @@ function buyerQualification(ctx: AraguaiaContractContext): string {
   if (ctx.buyerRgLine && ctx.buyerRgLine !== 'não informado') {
     parts.push(`e no RG nº ${esc(ctx.buyerRgLine)}`);
   }
-  return parts.join(', ');
+  return `<span class="araguaia-buyer-qualification">${parts.join(', ')}</span>`;
 }
 
 function chacaraLabel(ctx: AraguaiaContractContext): string {
@@ -175,15 +175,15 @@ export function buildAraguaiaPartiesPreambleHtml(
     ? `, com sede na ${esc(intervenienteSeat)}`
     : '';
 
+  const preambleText = `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${representedWord} pela pessoa jurídica <strong>${esc(
+    ctx.intervenienteName,
+  )}</strong>${seatPhrase} (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>${vendorsDenomination}</strong>, e de outro lado ${buyerQualification(
+    ctx,
+  )}, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`;
+
   return `
     <div class="contract-clause contract-araguaia-parties" style="margin-bottom: 14px;">
-      ${itemP(
-        `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${representedWord} pela pessoa jurídica <strong>${esc(
-          ctx.intervenienteName,
-        )}</strong>${seatPhrase} (<strong>INTERVENIENTE</strong>), doravante denominado(s) simplesmente de <strong>${vendorsDenomination}</strong>, e de outro lado ${buyerQualification(
-          ctx,
-        )}, doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR(A/ES)</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`,
-      )}
+      <p class="araguaia-parties-lead" style="margin: 0 0 10px 0; text-align: left; word-spacing: normal; letter-spacing: normal;">${preambleText}</p>
     </div>`;
 }
 

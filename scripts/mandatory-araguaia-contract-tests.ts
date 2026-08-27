@@ -443,6 +443,28 @@ function testPreambleQualificationHotfix() {
       'Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim, Parauapebas - PA',
     'strip S/N empresa',
   );
+  assert(
+    stripAraguaiaPresentedSnToken(
+      'Avenida dos Ipês, S/N - Quadra 31, Lote 13, Cidade Jardim',
+    ) === 'Avenida dos Ipês, Quadra 31, Lote 13, Cidade Jardim',
+    'strip S/N com hífen residual',
+  );
+  assert(
+    stripAraguaiaPresentedSnToken('Avenida Dos Ipes, Sn - Quadra 31, Lote 13') ===
+      'Avenida Dos Ipes, Quadra 31, Lote 13',
+    'strip SN sem barra',
+  );
+  assert(
+    stripAraguaiaPresentedSnToken('RUA 02QUADRA 123 LOTE 05, S, NOVA CARAJAS, PARAUAPEBAS, PA') ===
+      'RUA 02QUADRA 123 LOTE 05, NOVA CARAJAS, PARAUAPEBAS, PA',
+    'strip S isolado do comprador',
+  );
+  assert(
+    !/S\s*\/\s*N|\bSN\b|\bS\b/i.test(
+      stripAraguaiaPresentedSnToken('Avenida Dos Ipes, Sn - Quadra 31, Lote 13'),
+    ),
+    'nenhum token SN equivalente restante',
+  );
 
   const htmlDup = generateContractHTML({
     tenant: {
@@ -528,6 +550,82 @@ function testPreambleQualificationHotfix() {
   assert(!/S\s*\/\s*N/i.test(seat.fullInline), 'fullInline sem S/N');
   assert(!/,\s*,/.test(seat.fullInline), 'fullInline sem vírgula duplicada');
   assert(/Lote 13, Cidade Jardim/i.test(seat.fullInline), 'Lote seguido de bairro sem S/N');
+
+  const seatSn = formatAraguaiaSeatAddressParts({
+    address: 'Avenida dos Ipês, S/N - Quadra 31, Lote 13',
+    neighborhood: 'Cidade Jardim',
+    city: 'Parauapebas',
+    state: 'PA',
+  });
+  assert(
+    seatSn.fullInline ===
+      'Avenida Dos Ipês, Quadra 31, Lote 13, Cidade Jardim, Parauapebas - PA',
+    'sede S/N + hífen vira apresentação sem token',
+  );
+  assert(!/S\s*\/\s*N|\bSn\b/i.test(seatSn.headerAddressLine), 'header sem SN equivalente');
+  assert(!/,\s*-/.test(seatSn.headerAddressLine), 'header sem hífen residual');
+
+  const chromeSn = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'ARAGUAIA',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      address: 'Avenida Dos Ipes, Sn - Quadra 31, Lote 13',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '000000005/2026',
+  );
+  assert(
+    chromeSn.addressLine === 'Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim',
+    'chrome ARAGUAIA omite Sn',
+  );
+
+  const buyerCtx = buildAraguaiaContractContext({
+    tenant: { ...TENANT, address: 'Avenida Dos Ipes, Sn - Quadra 31, Lote 13' },
+    customer: {
+      ...CUSTOMER,
+      address: 'RUA 02QUADRA 123 LOTE 05, S',
+      neighborhood: 'NOVA CARAJAS',
+      city: 'PARAUAPEBAS',
+      state: 'PA',
+      zip_code: '68515000',
+    },
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(
+    buyerCtx.buyerAddress ===
+      'RUA 02QUADRA 123 LOTE 05, NOVA CARAJAS, PARAUAPEBAS, PA, 68515000',
+    'endereço do comprador omite S isolado',
+  );
+  assert(!/\bS\/N\b|\bSN\b|\bS\b/i.test(buyerCtx.intervenienteAddress), 'sede do contexto sem SN');
+
+  const layoutHtml = generateAraguaiaContract({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(
+    /class="araguaia-buyer-qualification"/.test(layoutHtml),
+    'qualificação do comprador isolada no preâmbulo',
+  );
+  assert(/class="araguaia-parties-lead"/.test(layoutHtml), 'preâmbulo com classe de espaçamento');
+  const partiesLead = layoutHtml.match(
+    /<p class="araguaia-parties-lead"[^>]*>[\s\S]*?<\/p>/,
+  )?.[0] || '';
+  assert(/text-align:\s*left/.test(partiesLead), 'preâmbulo sem justificação');
+  assert(/Cliente Teste Araguaia/.test(partiesLead), 'preâmbulo preserva nome do comprador');
+  assert(/Comerciante/.test(partiesLead), 'preâmbulo preserva profissão do comprador');
+  assert(
+    /<p style="margin: 0 0 10px 0; text-align: justify;">/.test(layoutHtml),
+    'cláusulas permanecem justificadas',
+  );
 
   const incompleteCompany = {
     contract_model: 'ARAGUAIA',

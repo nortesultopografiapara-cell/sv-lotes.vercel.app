@@ -37,6 +37,7 @@ import {
   formatAraguaiaPresentedResidence,
   formatAraguaiaRgAfterNumeroLabel,
   formatAraguaiaSeatAddressFromCompany,
+  stripAraguaiaPresentedSnToken,
   stripAraguaiaRgLabelPrefix,
 } from '@/lib/araguaiaContractQualification';
 
@@ -172,7 +173,7 @@ function buildBuyerAddress(customer: Record<string, unknown>): string {
     clean(customer.state || customer.state_uf || customer.uf),
     clean(customer.zip_code || customer.cep),
   ].filter(Boolean);
-  return parts.join(', ');
+  return stripAraguaiaPresentedSnToken(parts.join(', '));
 }
 
 function resolveBroker(sale: Record<string, unknown>): {
