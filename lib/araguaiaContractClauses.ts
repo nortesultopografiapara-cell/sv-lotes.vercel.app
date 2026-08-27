@@ -8,6 +8,7 @@ import type { AraguaiaContractContext } from '@/lib/araguaiaContractContext';
 import {
   formatAraguaiaNeutralMaritalStatus,
   formatAraguaiaNeutralNationality,
+  formatAraguaiaResidenceDomicilePhrase,
   formatAraguaiaRgAfterNumeroLabel,
 } from '@/lib/araguaiaContractQualification';
 import { formatSellerCpfDisplay } from '@/lib/projectContractSellers';
@@ -89,7 +90,7 @@ function sellerInline(ctx: AraguaiaContractContext, index: number): string {
   }
   const residence = String(seller.address || '').trim();
   if (residence) {
-    parts.push(`residente e domiciliado(a) no ${esc(residence)}`);
+    parts.push(formatAraguaiaResidenceDomicilePhrase(residence, esc(residence)));
   }
   return parts.join(', ');
 }
@@ -101,7 +102,7 @@ function buyerQualification(ctx: AraguaiaContractContext): string {
   if (ctx.buyerProfession) parts.push(esc(ctx.buyerProfession));
   parts.push(`e-mail: ${esc(ctx.buyerEmail)}`);
   parts.push(`telefone/Whatsapp ${esc(ctx.buyerPhone)}`);
-  parts.push(`residente e domiciliado(a) na ${esc(ctx.buyerAddress)}`);
+  parts.push(formatAraguaiaResidenceDomicilePhrase(ctx.buyerAddress, esc(ctx.buyerAddress)));
   parts.push(`inscrito(a) no CPF sob o nº ${strong(ctx.buyerCpf)}`);
   if (ctx.buyerRgLine && ctx.buyerRgLine !== 'não informado') {
     parts.push(`e no RG nº ${esc(ctx.buyerRgLine)}`);

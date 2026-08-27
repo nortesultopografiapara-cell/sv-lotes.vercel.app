@@ -196,6 +196,11 @@ console.log('\n=== 1) Daniel/V1 com qualificação completa ===');
   ok(/390\.533\.447-05/.test(pre), '1: CPF V1');
   ok(/RG nº <strong>9988776-SSP\/PA/.test(pre), '1: RG + órgão + UF');
   ok(pre.includes(V1_ADDR), '1: endereço próprio V1');
+  ok(
+    pre.includes('residente e domiciliado(a) na Rua das Castanheiras Fixture'),
+    '1: preposição na Rua',
+  );
+  ok(!/residente e domiciliado\(a\) no Rua/i.test(pre), '1: sem no Rua');
   ok(!/produtor rural/i.test(pre), '1: não usa default produtor rural');
   ok(!/Daniel Roberto Rivelino/i.test(pre), '1: não usa default Daniel');
 }
@@ -263,6 +268,11 @@ console.log('\n=== 8) Endereços diferentes permanecem com cada pessoa ===');
   const { first, second } = sellerSlices(generate(configuredCompany(), true));
   ok(first.includes(V1_ADDR) && !first.includes(V2_ADDR), '8: V1 só o próprio');
   ok(second.includes(V2_ADDR) && !second.includes(V1_ADDR), '8: V2 só o próprio');
+  ok(
+    second.includes('residente e domiciliado(a) na Travessa do Igarapé Fixture'),
+    '8: preposição na Travessa',
+  );
+  ok(!/residente e domiciliado\(a\) no Travessa/i.test(second), '8: sem no Travessa');
 }
 
 console.log('\n=== 9) Endereço do V1 vazio não copia V2 nem sede ===');
