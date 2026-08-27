@@ -3,9 +3,12 @@
  * Pipeline HTML: buildContractViewHtml / loadSaleContractHtmlForSign + CONTRACT_PDF_PRINT_CSS.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
+import { MUNDO_NOVO_LOGO_PUBLIC_FILE } from '@/lib/mundoNovoContractPdf';
 import { displayContractNumber } from '@/lib/contractNumber';
 import {
   CONTRACT_PDF_PRINT_CSS,
@@ -184,29 +187,23 @@ export async function launchSaleContractPdfBrowser(): Promise<Browser> {
   }
 }
 
+function loadMundoNovoLogoDataUrl(): string | null {
+  try {
+    const filePath = path.join(process.cwd(), 'public', MUNDO_NOVO_LOGO_PUBLIC_FILE);
+    if (!fs.existsSync(filePath)) return null;
+    const buf = fs.readFileSync(filePath);
+    return `data:image/png;base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadTenantLogoBase64ForPdf(
   tenant: Record<string, unknown> | null | undefined,
 ): Promise<string | null> {
   const { isMundoNovoContractModel } = await import('@/lib/contractModel');
   if (isMundoNovoContractModel(tenant)) {
-    const { resolveMundoNovoPdfChromeLogo } = await import(
-      '@/lib/mundoNovoContractPdf'
-    );
-    const projectLogo = resolveMundoNovoPdfChromeLogo({
-      projectLogoUrl: tenant?.project_logo_url ?? tenant?.projectLogoUrl,
-    });
-    if (!projectLogo) return null;
-    try {
-      const res = await fetch(projectLogo, { cache: 'no-store' });
-      if (res.ok) {
-        const buf = Buffer.from(await res.arrayBuffer());
-        const mime = res.headers.get('content-type') || 'image/png';
-        return `data:${mime};base64,${buf.toString('base64')}`;
-      }
-    } catch {
-      return null;
-    }
-    return null;
+    return loadMundoNovoLogoDataUrl();
   }
 
   const logoUrl = String(tenant?.logo_url || '').trim();

@@ -90,8 +90,34 @@ import { embedRecantoContractSignatureInHtml } from "@/lib/recantoPrimaveraContr
 import {
   loadContractsListForTenant,
 } from "@/lib/contractsListService";
+import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
+
+async function loadPdfChromeLogoBase64(src: string): Promise<string | null> {
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL("image/png"));
+        } else {
+          reject(new Error("canvas"));
+        }
+      };
+      img.onerror = reject;
+      img.src = src;
+    });
+  } catch {
+    return null;
+  }
+}
 
 type PromissoryNoteDocumentView = {
   id: string;
@@ -981,6 +1007,10 @@ export default function ContractsPage() {
           ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
           : getContractHtml2pdfOptions(pdfFilename);
 
+      const versionLogoBase64 = htmlLooksMundoNovo
+        ? await loadPdfChromeLogoBase64(MUNDO_NOVO_LOGO_PATH)
+        : null;
+
       try {
         await html2pdf()
           .from(element)
@@ -996,7 +1026,7 @@ export default function ContractsPage() {
                   String(
                     ver.contract_number || selectedContract?.contract_number || "",
                   ),
-                  null,
+                  versionLogoBase64,
                 ),
               );
             } else {
@@ -1099,27 +1129,12 @@ export default function ContractsPage() {
           : tenantData || {};
 
       let logoBase64: string | null = null;
-      if (!htmlLooksMundoNovo && getReportHeaderLogoUrl(tenantData?.logo_url)) {
-        try {
-          logoBase64 = await new Promise<string>((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = "Anonymous";
-            img.onload = () => {
-              const canvas = document.createElement("canvas");
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.drawImage(img, 0, 0);
-                resolve(canvas.toDataURL("image/png"));
-              } else reject();
-            };
-            img.onerror = reject;
-            img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
-          });
-        } catch {
-          /* ignore */
-        }
+      if (htmlLooksMundoNovo) {
+        logoBase64 = await loadPdfChromeLogoBase64(MUNDO_NOVO_LOGO_PATH);
+      } else if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
+        logoBase64 = await loadPdfChromeLogoBase64(
+          getReportHeaderLogoUrl(tenantData?.logo_url),
+        );
       }
 
       const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
