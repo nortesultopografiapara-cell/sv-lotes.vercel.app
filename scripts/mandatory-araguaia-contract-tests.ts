@@ -23,6 +23,7 @@ import { formatAraguaiaMetersExtenso } from '../lib/araguaiaContractLot';
 import {
   ARAGUAIA_CONTRACT_TITLE,
   ARAGUAIA_LEGAL_MARKER,
+  buildAraguaiaClausesHtml,
 } from '../lib/araguaiaContractClauses';
 import { generateAraguaiaContract } from '../lib/araguaiaContractTemplate';
 import { buildAraguaiaContractContext } from '../lib/araguaiaContractContext';
@@ -287,6 +288,19 @@ function testHtmlGeneration() {
   assert(html.includes('PROMITENTE COMPRADOR'), 'comprador masculino singular');
   assert(!html.includes('PROMITENTES COMPRADORES'), 'um comprador não usa plural');
   assert(html.includes('PROMITENTES VENDEDORES'), 'Daniel+Aldenise misto');
+  assert(
+    html.includes('fica desde já notificado'),
+    'cláusula décima A: singular notificado',
+  );
+  assert(!html.includes('fica desde já notificados'), 'cláusula décima A: sem notificados no singular');
+  assert(
+    html.includes('cabendo ao PROMITENTE COMPRADOR a implantação das demais infraestruturas necessárias'),
+    'cláusula nona: cabendo ao PROMITENTE COMPRADOR',
+  );
+  assert(
+    !html.includes('cabendo aos compradores a implantação'),
+    'cláusula nona: sem cabendo aos compradores no singular',
+  );
   assert(html.includes('araguaia-clause-keep'), 'keep título+lead');
   assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
   assert(html.includes('4606073-PC/PA') || html.includes('4606073'), 'RG Daniel');
@@ -1012,6 +1026,58 @@ function testPartyInflection() {
   assert(femaleHtml.includes('PROMITENTE COMPRADORA'), 'HTML compradora');
   assert(!femaleHtml.includes('PROMITENTE COMPRADOR(A)'), 'HTML sem COMPRADOR(A)');
   assert(!/\(A\/ES\)/.test(femaleHtml), 'HTML compradora sem (A/ES)');
+  assert(
+    femaleHtml.includes('fica desde já notificada'),
+    'cláusula décima A: compradora notificada',
+  );
+  assert(
+    femaleHtml.includes(
+      'cabendo à PROMITENTE COMPRADORA a implantação das demais infraestruturas necessárias',
+    ),
+    'cláusula nona: cabendo à PROMITENTE COMPRADORA',
+  );
+
+  const baseCtx = buildAraguaiaContractContext({
+    tenant: TENANT,
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  const mixedClauses = buildAraguaiaClausesHtml({
+    ...baseCtx,
+    buyerInflection: mixedBuyers,
+  });
+  assert(
+    mixedClauses.includes('ficam desde já notificados'),
+    'cláusula décima A: plural misto notificados',
+  );
+  assert(
+    mixedClauses.includes(
+      'cabendo aos PROMITENTES COMPRADORES a implantação das demais infraestruturas necessárias',
+    ),
+    'cláusula nona: plural misto aos PROMITENTES COMPRADORES',
+  );
+  assert(
+    !mixedClauses.includes('cabendo aos compradores a implantação'),
+    'cláusula nona: plural sem substantivo genérico compradores',
+  );
+
+  const femalePluralClauses = buildAraguaiaClausesHtml({
+    ...baseCtx,
+    buyerInflection: twoFemaleBuyers,
+  });
+  assert(
+    femalePluralClauses.includes('ficam desde já notificadas'),
+    'cláusula décima A: duas compradoras notificadas',
+  );
+  assert(
+    femalePluralClauses.includes(
+      'cabendo às PROMITENTES COMPRADORAS a implantação das demais infraestruturas necessárias',
+    ),
+    'cláusula nona: duas compradoras às PROMITENTES COMPRADORAS',
+  );
 
   const twoFemaleVendorsHtml = generateAraguaiaContract({
     tenant: {
