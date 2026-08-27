@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { resolveLoginRedirectPath } from '@/lib/loginRoleResolution';
 import { isDemoBlockedApi, isDemoBlockedRoute } from '@/lib/demoConfig';
+import {
+  bulkRegenerateUnauthorizedJson,
+  isBulkRegeneratePath,
+} from '@/lib/bulkContractRegenerateAuth';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -70,7 +74,6 @@ export async function middleware(request: NextRequest) {
     '/auth/callback',
     '/verify-email',
     '/api/setup',
-    '/api/regenerate',
     '/api/payments/webhook',
     '/api/finance/asaas/company-webhook',
     '/api/finance/inter/webhook/internal',
@@ -98,7 +101,12 @@ export async function middleware(request: NextRequest) {
     isCompanyExportApi ||
     publicRoutes.some((route) => url.pathname === route || url.pathname.startsWith(`${route}/`));
 
-  if (isPublicRoute) {
+  // Regeneração em massa: nunca pública. Anônimo recebe 401 JSON (não redirect /login).
+  if (isBulkRegeneratePath(url.pathname)) {
+    if (!user) {
+      return NextResponse.json(bulkRegenerateUnauthorizedJson(), { status: 401 });
+    }
+  } else if (isPublicRoute) {
     if (user || isDemoMode) {
       if (isLanding) {
         url.pathname = resolveLoginRedirectPath(userData?.role);
