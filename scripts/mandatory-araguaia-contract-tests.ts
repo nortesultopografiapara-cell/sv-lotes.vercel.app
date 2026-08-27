@@ -35,6 +35,10 @@ import {
   stripAraguaiaRgLabelPrefix,
 } from '../lib/araguaiaContractQualification';
 import { resolveAraguaiaPromitenteVendors } from '../lib/araguaiaCompanyLegalRepresentative';
+import {
+  inflectAraguaiaContractParties,
+  resolveAraguaiaGrammaticalGender,
+} from '../lib/araguaiaContractPartyInflection';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -270,7 +274,19 @@ function testHtmlGeneration() {
   assert(!html.includes('<strong>Frente:</strong>'), 'sem lista Frente:');
   assert(!html.includes('possuindo:'), 'sem intro lista antiga');
   assert(html.includes('araguaia-closing-statement'), 'fecho no pack');
-  assert(html.includes('03'), 'três vias');
+  assert(
+    html.includes('assinam o presente instrumento, inclusive o mandatário supracitado'),
+    'fecho eletrônico sem vias em papel',
+  );
+  assert(!/03\s*\(três\)\s*vias/i.test(html), 'sem 03 (três) vias');
+  assert(!/igual teor e forma/i.test(html), 'sem vias de igual teor e forma');
+  assert(!/\(A\/ES\)/.test(html), 'sem (A/ES)');
+  assert(!/PROMITENTE\(S\)/.test(html), 'sem PROMITENTE(S)');
+  assert(!/COMPRADOR\(A/.test(html), 'sem COMPRADOR(A…');
+  assert(!/VENDEDOR\(A/.test(html), 'sem VENDEDOR(A…');
+  assert(html.includes('PROMITENTE COMPRADOR'), 'comprador masculino singular');
+  assert(!html.includes('PROMITENTES COMPRADORES'), 'um comprador não usa plural');
+  assert(html.includes('PROMITENTES VENDEDORES'), 'Daniel+Aldenise misto');
   assert(html.includes('araguaia-clause-keep'), 'keep título+lead');
   assert(html.includes('metros quadrados') || html.includes('m²'), 'área');
   assert(html.includes('4606073-PC/PA') || html.includes('4606073'), 'RG Daniel');
@@ -753,6 +769,22 @@ function testIsolationOtherModels() {
   });
   assert(!recanto.includes('sv-contract-araguaia'), 'Recanto sem Araguaia');
   assert(!recanto.includes('Daniel Roberto Rivelino'), 'Recanto sem Daniel');
+  assert(recanto.includes('COMPRADOR(A)'), 'Recanto preserva COMPRADOR(A)');
+
+  const padrao = generateContractHTML({
+    tenant: { ...TENANT, contract_model: 'PADRAO', name: 'Padrão Co' },
+    customer: CUSTOMER,
+    project: { name: 'X', city: 'Y', uf: 'PA' },
+    block: { number: '1', block_name: '01', area: 300 },
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(!padrao.includes('sv-contract-araguaia'), 'PADRAO sem Araguaia');
+  assert(!padrao.includes('Daniel Roberto Rivelino'), 'PADRAO sem Daniel');
+  assert(padrao.includes('PROMITENTE VENDEDOR'), 'PADRAO preserva rótulo clássico');
+  assert(!padrao.includes('PROMITENTES VENDEDORES'), 'PADRAO sem flexão ARAGUAIA');
+
+  assert(meneses.includes('PROMISSÁRIO(A) COMPRADOR(A)') || meneses.includes('PROMISSÁRIO'), 'MENESES preserva nomenclatura própria');
 }
 
 function testAreaExtenso() {
@@ -778,6 +810,7 @@ function testSourceFilesExist() {
     'lib/araguaiaContractParties.ts',
     'lib/araguaiaContractLot.ts',
     'lib/araguaiaContractQualification.ts',
+    'lib/araguaiaContractPartyInflection.ts',
     'lib/projectContractSellers.ts',
     'supabase/migrations/20260820120000_projects_seller_parties_json.sql',
     'supabase/migrations/20261012120000_companies_legal_representative_qualification.sql',
@@ -889,6 +922,126 @@ function testAraguaiaPackNoContinuousForceBreak() {
   );
 }
 
+function testPartyInflection() {
+  assert(
+    resolveAraguaiaGrammaticalGender({ maritalStatus: 'Solteiro' }) === 'm',
+    'gênero: Solteiro → m',
+  );
+  assert(
+    resolveAraguaiaGrammaticalGender({ maritalStatus: 'Solteira' }) === 'f',
+    'gênero: Solteira → f',
+  );
+  assert(
+    resolveAraguaiaGrammaticalGender({ maritalStatus: 'Casado(a)' }) === 'unknown',
+    'gênero: Casado(a) não inventa',
+  );
+  assert(
+    resolveAraguaiaGrammaticalGender({ nationality: 'Brasileira' }) === 'f',
+    'gênero: Brasileira → f',
+  );
+  assert(
+    resolveAraguaiaGrammaticalGender({}) === 'unknown',
+    'gênero: sem cadastro estruturado → unknown',
+  );
+  assert(
+    resolveAraguaiaGrammaticalGender({ maritalStatus: 'Solteiro', nationality: 'Brasileira' }) ===
+      'm',
+    'gênero: estado civil prevalece sobre nacionalidade',
+  );
+
+  const maleBuyer = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'solteiro' }],
+    'buyer',
+  );
+  assert(maleBuyer.label === 'PROMITENTE COMPRADOR', '1: comprador homem');
+
+  const femaleBuyer = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'solteira' }],
+    'buyer',
+  );
+  assert(femaleBuyer.label === 'PROMITENTE COMPRADORA', '2: compradora mulher');
+
+  const mixedBuyers = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'casado' }, { maritalStatus: 'casada' }],
+    'buyer',
+  );
+  assert(mixedBuyers.label === 'PROMITENTES COMPRADORES', '3: compradores mistos');
+
+  const twoMaleBuyers = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'solteiro' }, { maritalStatus: 'casado' }],
+    'buyer',
+  );
+  assert(twoMaleBuyers.label === 'PROMITENTES COMPRADORES', '3b: dois compradores homens');
+
+  const twoFemaleBuyers = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'solteira' }, { maritalStatus: 'casada' }],
+    'buyer',
+  );
+  assert(twoFemaleBuyers.label === 'PROMITENTES COMPRADORAS', '4: duas compradoras');
+
+  const oneVendor = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'casado' }],
+    'vendor',
+  );
+  assert(oneVendor.label === 'PROMITENTE VENDEDOR', '5: um vendedor');
+
+  const oneVendorF = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'casada' }],
+    'vendor',
+  );
+  assert(oneVendorF.label === 'PROMITENTE VENDEDORA', '6: uma vendedora');
+
+  const danielAldenise = inflectAraguaiaContractParties(
+    [{ maritalStatus: 'casado' }, { maritalStatus: 'casada' }],
+    'vendor',
+  );
+  assert(danielAldenise.label === 'PROMITENTES VENDEDORES', '7: Daniel+Aldenise misto');
+
+  const unknownSingular = inflectAraguaiaContractParties([{}], 'buyer');
+  assert(unknownSingular.label === 'PROMITENTE COMPRADOR', 'sem dado: masculino não marcado');
+  assert(unknownSingular.limitations.length > 0, 'sem dado: limitações documentadas');
+
+  const femaleHtml = generateAraguaiaContract({
+    tenant: TENANT,
+    customer: { ...CUSTOMER, civil_state: 'Solteira', nationality: 'Brasileira' },
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(femaleHtml.includes('PROMITENTE COMPRADORA'), 'HTML compradora');
+  assert(!femaleHtml.includes('PROMITENTE COMPRADOR(A)'), 'HTML sem COMPRADOR(A)');
+  assert(!/\(A\/ES\)/.test(femaleHtml), 'HTML compradora sem (A/ES)');
+
+  const twoFemaleVendorsHtml = generateAraguaiaContract({
+    tenant: {
+      contract_model: 'ARAGUAIA',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      legal_representative: 'Vendedora Um',
+      representative_cpf: '390.533.447-05',
+      contract_legal_nationality: 'brasileira',
+      contract_legal_marital_status: 'casada',
+      contract_second_vendor_json: {
+        name: 'Vendedora Dois',
+        cpf: '529.982.247-25',
+        nationality: 'brasileira',
+        maritalStatus: 'solteira',
+      },
+    },
+    customer: CUSTOMER,
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+    esignV2: true,
+  });
+  assert(
+    twoFemaleVendorsHtml.includes('PROMITENTES VENDEDORAS'),
+    'HTML duas vendedoras',
+  );
+}
+
 function main() {
   testModelRegistration();
   testSellersResolution();
@@ -901,6 +1054,7 @@ function main() {
   testSourceFilesExist();
   testAraguaiaClauseNumbering();
   testAraguaiaPackNoContinuousForceBreak();
+  testPartyInflection();
   console.log('mandatory-araguaia-contract-tests: all passed');
 }
 

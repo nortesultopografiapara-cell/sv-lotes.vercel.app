@@ -101,7 +101,8 @@ export function buildAraguaiaPhysicalSignaturesGridHtml(
   const vendorSlots = (ctx.sellers.length > 0 ? ctx.sellers : [])
     .map((seller, idx) =>
       buildPhysicalSlot({
-        role: 'PROMITENTE VENDEDOR',
+        role:
+          ctx.vendorSignatureLabels?.[idx] || 'PROMITENTE VENDEDOR',
         name: seller?.name || `Promitente Vendedor ${idx + 1}`,
         meta: seller?.cpf
           ? [`CPF: ${formatSellerCpfDisplay(seller.cpf) || seller.cpf}`]
@@ -116,7 +117,7 @@ export function buildAraguaiaPhysicalSignaturesGridHtml(
         <div class="signature-grid signature-grid--araguaia" data-signature-mode="PHYSICAL_UNSIGNED">
           ${vendorSlots}
           ${buildPhysicalSlot({
-            role: 'PROMITENTE COMPRADOR(A)',
+            role: ctx.buyerSignatureLabel || 'PROMITENTE COMPRADOR',
             name: ctx.buyerName,
             meta: ctx.buyerCpf ? [`CPF: ${ctx.buyerCpf}`] : [],
             dataRole: 'BUYER',
@@ -158,7 +159,7 @@ export function buildAraguaiaSignaturesHtml(
   const closing = `
       <div class="contract-closing" style="margin: 18px 0 8px 0; text-align: justify;">
         <p class="araguaia-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
-          E, assim, por estarem justos e contratados, assinam o presente, inclusive o mandatário supracitado, <strong>03</strong> (três) vias de igual teor e forma, para um mesmo efeito, na presença de duas testemunhas abaixo que a tudo assistiram.
+          E, assim, por estarem justos e contratados, assinam o presente instrumento, inclusive o mandatário supracitado, na presença das testemunhas abaixo que a tudo assistiram.
         </p>
         <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
           ${esc(ctx.closingLine)}

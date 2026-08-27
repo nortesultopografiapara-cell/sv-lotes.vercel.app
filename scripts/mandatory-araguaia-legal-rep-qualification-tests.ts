@@ -145,7 +145,7 @@ function buyerPhrase(html: string): string {
   const pre = preambleOf(html);
   const marker = 'de outro lado ';
   const start = pre.lastIndexOf(marker);
-  const end = pre.indexOf(', doravante denominado(s) <strong>PROMITENTE(S) COMPRADOR');
+  const end = pre.search(/, doravante denominad[oa]s? <strong>/);
   return start >= 0 && end > start ? pre.slice(start + marker.length, end) : '';
 }
 
