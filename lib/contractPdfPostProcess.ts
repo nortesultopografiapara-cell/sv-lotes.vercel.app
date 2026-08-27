@@ -20,6 +20,7 @@ import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
 import { MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID } from "@/lib/mundoNovoHtml2PdfPagination";
 import { mundoNovoPdfChromeLogoSizeMm } from "@/lib/mundoNovoContractPdf";
+import { formatMundoNovoSeatAddressParts } from "@/lib/mundoNovoContractQualification";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
@@ -369,14 +370,14 @@ export function buildContractPdfChromeFromTenant(
   }
 
   if (isMundoNovoContractModel(row)) {
-    const { addressLine, cityUfLine } = formatCompanyAddressForHeader(row);
+    const seat = formatMundoNovoSeatAddressParts(row);
     const logoSize = mundoNovoPdfChromeLogoSizeMm();
     return {
       tenantName: getCompanyDisplayName(row),
       tenantCnpj: formatCpfCnpj(String(row.cnpj || row.document || "")),
       tenantDocumentLabel: "CNPJ",
-      addressLine,
-      cityUfLine,
+      addressLine: seat.headerAddressLine,
+      cityUfLine: seat.cityUfLine,
       contractNumber,
       logoBase64,
       logoWidthMm: logoSize.widthMm,
