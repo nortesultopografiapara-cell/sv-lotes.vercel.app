@@ -30,8 +30,10 @@ import { buildAraguaiaContractContext } from '../lib/araguaiaContractContext';
 import { buildContractPdfChromeFromTenant } from '../lib/contractPdfPostProcess';
 import {
   formatAraguaiaNeutralNationality,
+  formatAraguaiaResidenceDomicilePhrase,
   formatAraguaiaRgAfterNumeroLabel,
   formatAraguaiaSeatAddressParts,
+  resolveAraguaiaResidencePreposition,
   stripAraguaiaPresentedSnToken,
   stripAraguaiaRgLabelPrefix,
 } from '../lib/araguaiaContractQualification';
@@ -320,7 +322,16 @@ function testHtmlGeneration() {
   assert(/Avenida dos Ip[eê]s/i.test(html), 'endereço vendedores');
   assert(/Cidade Jardim/i.test(html), 'bairro Cidade Jardim');
   assert(!/ambos residentes e domiciliados/i.test(html), 'sem residência conjunta dos vendedores');
-  assert(/residente e domiciliado\(a\) no/i.test(html), 'residência individual no preâmbulo');
+  assert(
+    /residente e domiciliado\(a\) na Avenida dos Ip[eê]s/i.test(html),
+    'Daniel: na Avenida dos Ipês (não no)',
+  );
+  assert(!/residente e domiciliado\(a\) no Avenida/i.test(html), 'sem no Avenida');
+  assert(!/residente e domiciliado\(a\) no Rua/i.test(html), 'sem no Rua');
+  assert(
+    /residente e domiciliado\(a\) na Rua A, 10/i.test(html),
+    'comprador: na Rua A',
+  );
   assert(html.includes('Brasileiro(a)'), 'nacionalidade neutra Brasileiro(a)');
   assert(html.includes('Solteiro(a)'), 'estado civil neutro Solteiro(a)');
   assert(html.includes('Casado(a)'), 'estado civil neutro Casado(a)');
@@ -761,6 +772,90 @@ function testPreambleQualificationHotfix() {
   assert(otherModelVendors.length === 0, 'MENESES sem fallback Daniel');
 }
 
+function testResidencePreposition() {
+  assert(resolveAraguaiaResidencePreposition('AVENIDA DOS IPES') === 'na', 'AVENIDA → na');
+  assert(resolveAraguaiaResidencePreposition('Avenida dos Ipês, Quadra 31') === 'na', 'Avenida → na');
+  assert(resolveAraguaiaResidencePreposition('Av. dos Ipês') === 'na', 'Av. → na');
+  assert(resolveAraguaiaResidencePreposition('RUA X') === 'na', 'RUA → na');
+  assert(resolveAraguaiaResidencePreposition('Rua A, 10') === 'na', 'Rua → na');
+  assert(resolveAraguaiaResidencePreposition('Alameda das Flores') === 'na', 'Alameda → na');
+  assert(resolveAraguaiaResidencePreposition('Travessa do Igarapé') === 'na', 'Travessa → na');
+  assert(resolveAraguaiaResidencePreposition('Rodovia PA-160') === 'na', 'Rodovia → na');
+  assert(resolveAraguaiaResidencePreposition('Estrada do Rio Verde') === 'na', 'Estrada → na');
+  assert(resolveAraguaiaResidencePreposition('LOTEAMENTO X') === 'no', 'LOTEAMENTO → no');
+  assert(resolveAraguaiaResidencePreposition('RESIDENCIAL X') === 'no', 'RESIDENCIAL → no');
+  assert(resolveAraguaiaResidencePreposition('Condomínio Parque') === 'no', 'Condomínio → no');
+  assert(resolveAraguaiaResidencePreposition('Setor Novo') === 'no', 'Setor → no');
+  assert(resolveAraguaiaResidencePreposition('Bairro Centro') === 'no', 'Bairro → no');
+  assert(
+    resolveAraguaiaResidencePreposition('Cidade Jardim, Quadra 31') === 'em',
+    'sem tipo reconhecível → em',
+  );
+
+  assert(
+    formatAraguaiaResidenceDomicilePhrase('AVENIDA DOS IPES', 'AVENIDA DOS IPES') ===
+      'residente e domiciliado(a) na AVENIDA DOS IPES',
+    'frase na AVENIDA DOS IPES',
+  );
+  assert(
+    formatAraguaiaResidenceDomicilePhrase('RUA X', 'RUA X') ===
+      'residente e domiciliado(a) na RUA X',
+    'frase na RUA X',
+  );
+  assert(
+    formatAraguaiaResidenceDomicilePhrase('LOTEAMENTO X', 'LOTEAMENTO X') ===
+      'residente e domiciliado(a) no LOTEAMENTO X',
+    'frase no LOTEAMENTO X',
+  );
+  assert(
+    formatAraguaiaResidenceDomicilePhrase('RESIDENCIAL X', 'RESIDENCIAL X') ===
+      'residente e domiciliado(a) no RESIDENCIAL X',
+    'frase no RESIDENCIAL X',
+  );
+
+  const html = generateAraguaiaContract({
+    tenant: {
+      ...TENANT,
+      legal_representative: 'Daniel Roberto Rivelino de Sousa',
+      representative_cpf: '820.912.262-20',
+      contract_legal_nationality: 'brasileiro',
+      contract_legal_marital_status: 'casado',
+      legal_representative_address: 'AVENIDA DOS IPES',
+      contract_second_vendor_json: {
+        name: 'Vendedor Loteamento',
+        cpf: '529.982.247-25',
+        nationality: 'brasileiro',
+        maritalStatus: 'solteiro',
+        address: 'LOTEAMENTO X',
+      },
+    },
+    customer: { ...CUSTOMER, address: 'RUA X' },
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+    esignV2: true,
+  });
+  assert(html.includes('residente e domiciliado(a) na AVENIDA DOS IPES'), 'HTML na AVENIDA DOS IPES');
+  assert(html.includes('residente e domiciliado(a) na RUA X'), 'HTML na RUA X');
+  assert(html.includes('residente e domiciliado(a) no LOTEAMENTO X'), 'HTML no LOTEAMENTO X');
+  assert(!/residente e domiciliado\(a\) no AVENIDA/i.test(html), 'HTML sem no AVENIDA');
+  assert(!/residente e domiciliado\(a\) no RUA/i.test(html), 'HTML sem no RUA');
+
+  const residencialHtml = generateAraguaiaContract({
+    tenant: TENANT,
+    customer: { ...CUSTOMER, address: 'RESIDENCIAL X' },
+    project: PROJECT,
+    block: BLOCK,
+    sale: SALE,
+    financeReceipts: RECEIPTS,
+  });
+  assert(
+    residencialHtml.includes('residente e domiciliado(a) no RESIDENCIAL X'),
+    'HTML no RESIDENCIAL X',
+  );
+}
+
 function testIsolationOtherModels() {
   const meneses = generateContractHTML({
     tenant: { ...TENANT, contract_model: 'MENESES', name: 'Meneses' },
@@ -797,8 +892,25 @@ function testIsolationOtherModels() {
   assert(!padrao.includes('Daniel Roberto Rivelino'), 'PADRAO sem Daniel');
   assert(padrao.includes('PROMITENTE VENDEDOR'), 'PADRAO preserva rótulo clássico');
   assert(!padrao.includes('PROMITENTES VENDEDORES'), 'PADRAO sem flexão ARAGUAIA');
-
   assert(meneses.includes('PROMISSÁRIO(A) COMPRADOR(A)') || meneses.includes('PROMISSÁRIO'), 'MENESES preserva nomenclatura própria');
+
+  const otherSources = [
+    'lib/menesesContractClauses.ts',
+    'lib/recantoPrimaveraContractClauses.ts',
+    'lib/recantoPrimaveraContractParties.ts',
+    'lib/contractTemplate.ts',
+  ];
+  for (const rel of otherSources) {
+    const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    assert(
+      !src.includes('resolveAraguaiaResidencePreposition'),
+      `${rel} sem helper de preposição ARAGUAIA`,
+    );
+    assert(
+      !src.includes('formatAraguaiaResidenceDomicilePhrase'),
+      `${rel} sem frase de domicílio ARAGUAIA`,
+    );
+  }
 }
 
 function testAreaExtenso() {
@@ -1113,6 +1225,7 @@ function main() {
   testSellersResolution();
   testAreaExtenso();
   testHtmlGeneration();
+  testResidencePreposition();
   testPreambleQualificationHotfix();
   testSignatureBlockWithSpouse();
   testOriginalFidelityMarkers();

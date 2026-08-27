@@ -208,6 +208,37 @@ export function formatAraguaiaPresentedResidence(
   return stripAraguaiaPresentedSnToken(expanded);
 }
 
+const FEMININE_LOGRADOURO =
+  /^(avenida|alameda|travessa|rodovia|estrada|rua|av|al|tv|rod)\b/;
+const MASCULINE_LOGRADOURO =
+  /^(loteamento|residencial|condominio|setor|bairro)\b/;
+
+/**
+ * Preposição do endereço residencial ARAGUAIA (na/no) conforme o tipo do logradouro.
+ * Sem tipo reconhecível no início: "em", sem inventar gênero.
+ * Não altera o texto cadastrado — só o artigo na frase.
+ */
+export function resolveAraguaiaResidencePreposition(
+  address: string | null | undefined,
+): 'na' | 'no' | 'em' {
+  const token = normalizeForCompare(clean(address)).replace(/^[.,;:\-–—/\s]+/, '');
+  if (!token) return 'em';
+  if (FEMININE_LOGRADOURO.test(token)) return 'na';
+  if (MASCULINE_LOGRADOURO.test(token)) return 'no';
+  return 'em';
+}
+
+/** Frase de residência. `escapedAddress` é o mesmo endereço já passado por `esc`. */
+export function formatAraguaiaResidenceDomicilePhrase(
+  rawAddress: string,
+  escapedAddress: string,
+): string {
+  const place = clean(escapedAddress);
+  if (!place) return '';
+  const prep = resolveAraguaiaResidencePreposition(rawAddress);
+  return `residente e domiciliado(a) ${prep} ${place}`;
+}
+
 /** Endereço de parte: rua cadastrada + bairro/cidade da empresa, sem duplicar. */
 export function formatAraguaiaPartyAddress(
   street: string | null | undefined,
