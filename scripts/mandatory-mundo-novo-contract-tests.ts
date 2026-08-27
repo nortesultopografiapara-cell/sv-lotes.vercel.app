@@ -196,6 +196,40 @@ assert(html.includes('Maria Elvira de Sousa'), '4. Maria Elvira do JSON');
 assert(html.includes('Adenil Antonio de Sousa'), '4. Adenil do JSON');
 assert(html.includes('248.031.972-53'), '4. CPF Maria Elvira');
 assert(html.includes('175.200.962-20'), '4. CPF Adenil');
+assert(
+  html.includes('brasileira, casada, agricultora'),
+  '4. Maria Elvira: qualificação estruturada do JSON',
+);
+assert(
+  html.includes('brasileiro, casado, agricultor'),
+  '4. Adenil: qualificação estruturada do JSON',
+);
+assert(
+  !/MARIA ELVIRA DE SOUSA[\s\S]{0,160}Brasileiro\(a\)/.test(html),
+  '4. Maria Elvira não usa Brasileiro(a)',
+);
+assert(
+  !/ADENIL ANTONIO DE SOUSA[\s\S]{0,160}Casado\(a\)/.test(html),
+  '4. Adenil não usa Casado(a)',
+);
+
+{
+  const htmlAlt = generate({
+    project: {
+      ...PROJECT,
+      seller_parties_json: [
+        { ...SELLERS[0], profession: 'comerciante', maritalStatus: 'viúva' },
+        { ...SELLERS[1], nationality: 'brasileiro', profession: 'pecuarista' },
+      ],
+    },
+  });
+  assert(
+    htmlAlt.includes('brasileira, viúva, comerciante'),
+    '4. qualificação segue o JSON, sem hardcode',
+  );
+  assert(htmlAlt.includes('pecuarista'), '4. profissão do segundo vendedor vem do JSON');
+  assert(!htmlAlt.includes('agricultora'), '4. agricultora do fixture original não vaza');
+}
 assert(!html.includes('820.912.262-20'), '5. CPF do Representante Legal não vira vendedor');
 assert(!html.includes('Daniel Roberto Rivelino de Sousa'), '5. Daniel não é vendedor');
 assert(!html.includes('Aldenise Alves Sousa'), '5. segundo vendedor da empresa não entra');
@@ -357,6 +391,52 @@ assert(
     logoBase64: 'data:image/png;base64,ARAGUAIA_LOGO',
   });
   assert(addImageCalls[0][4] === 22 && addImageCalls[0][5] === 12, 'logo: ARAGUAIA permanece 22x12 mm');
+}
+
+{
+  const chrome = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'MUNDO_NOVO',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      address: 'Avenida Dos Ipes, Sn - Quadra 31, Lote 13, S/N',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '000000007/2026',
+    null,
+  );
+  const headerNorm = chrome.addressLine
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  assert(
+    headerNorm === 'Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim',
+    'header Mundo Novo: rua, quadra, lote e bairro sem S/N',
+  );
+  assert(!/S\s*\/\s*N|\bSn\b/i.test(chrome.addressLine), 'header Mundo Novo sem token S/N');
+  assert(
+    (chrome.addressLine.match(/Cidade Jardim/gi) || []).length === 1,
+    'header Mundo Novo sem bairro duplicado',
+  );
+}
+
+{
+  const araguaiaHeader = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'ARAGUAIA',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      address: 'Avenida Dos Ipes, Sn - Quadra 31, Lote 13',
+      neighborhood: 'Cidade Jardim',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    '000000008/2026',
+    'data:image/png;base64,ARAGUAIA_LOGO',
+  );
+  assert(/Cidade Jardim/i.test(araguaiaHeader.addressLine), 'header ARAGUAIA inalterado (bairro)');
+  assert(!/S\s*\/\s*N|\bSn\b/i.test(araguaiaHeader.addressLine), 'header ARAGUAIA inalterado (sem SN)');
 }
 
 try {

@@ -25,10 +25,9 @@ import {
   MUNDO_NOVO_ZONE,
 } from '@/lib/mundoNovoContractConstants';
 import {
-  formatMundoNovoNeutralMaritalStatus,
-  formatMundoNovoNeutralNationality,
   formatMundoNovoResidenceDomicilePhrase,
   formatMundoNovoRgAfterNumeroLabel,
+  formatMundoNovoStructuredQualifier,
 } from '@/lib/mundoNovoContractQualification';
 import { formatMundoNovoSellerCpfDisplay } from '@/lib/mundoNovoContractSellers';
 
@@ -82,11 +81,12 @@ function sellerInline(ctx: MundoNovoContractContext, index: number): string {
   const seller = ctx.sellers[index];
   if (!seller) return '<em>[promitente vendedor não configurado]</em>';
   const parts: string[] = [strong(seller.name.toUpperCase())];
-  const nationality = formatMundoNovoNeutralNationality(seller.nationality || '');
-  const marital = formatMundoNovoNeutralMaritalStatus(seller.maritalStatus || '');
+  const nationality = formatMundoNovoStructuredQualifier(seller.nationality);
+  const marital = formatMundoNovoStructuredQualifier(seller.maritalStatus);
+  const profession = formatMundoNovoStructuredQualifier(seller.profession);
   if (nationality) parts.push(esc(nationality));
   if (marital) parts.push(esc(marital));
-  if (seller.profession) parts.push(esc(seller.profession));
+  if (profession) parts.push(esc(profession));
   if (seller.cpf) {
     parts.push(
       `inscrito(a) no CPF sob o nº ${strong(

@@ -133,15 +133,35 @@ export function formatMundoNovoResidenceDomicilePhrase(
   return `residente e domiciliado(a) ${prep} ${place}`;
 }
 
-export function formatMundoNovoSeatAddressFromCompany(
+export function formatMundoNovoSeatAddressParts(
   company?: Record<string, unknown> | null,
-): string {
+): {
+  streetLine: string;
+  neighborhood: string;
+  cityUfLine: string;
+  headerAddressLine: string;
+  fullInline: string;
+} {
   const c = company && typeof company === 'object' ? company : {};
   const streetRaw = pickString(c.contract_legal_address, c.address, c.endereco);
   const neighborhood = pickString(c.neighborhood, c.bairro);
   const city = pickString(c.city, c.cidade);
   const state = pickString(c.state, c.uf, c.state_uf);
-  if (!streetRaw) return '';
+  const neighborhoodTitle = neighborhood ? toContractTitleCase(neighborhood) : '';
+  const cityTitle = city ? toContractTitleCase(city) : '';
+  const stateUf = state ? state.toUpperCase() : '';
+  const cityUfLine =
+    cityTitle && stateUf ? `${cityTitle} - ${stateUf}` : cityTitle || stateUf;
+
+  if (!streetRaw) {
+    return {
+      streetLine: '',
+      neighborhood: neighborhoodTitle,
+      cityUfLine,
+      headerAddressLine: neighborhoodTitle,
+      fullInline: [neighborhoodTitle, cityUfLine].filter(Boolean).join(', '),
+    };
+  }
 
   let expanded = streetRaw
     .replace(/\bQD\.?\s*(\d+)/gi, 'Quadra $1')
@@ -160,12 +180,6 @@ export function formatMundoNovoSeatAddressFromCompany(
     .trim();
   streetLine = stripMundoNovoPresentedSnToken(streetLine);
 
-  const neighborhoodTitle = neighborhood ? toContractTitleCase(neighborhood) : '';
-  const cityTitle = city ? toContractTitleCase(city) : '';
-  const stateUf = state ? state.toUpperCase() : '';
-  const cityUfLine =
-    cityTitle && stateUf ? `${cityTitle} - ${stateUf}` : cityTitle || stateUf;
-
   const inlineParts: string[] = [];
   if (streetLine) inlineParts.push(streetLine);
   if (
@@ -179,5 +193,36 @@ export function formatMundoNovoSeatAddressFromCompany(
   } else if (!cityTitle && stateUf && !textIncludesFragment(inlineParts.join(', '), stateUf)) {
     inlineParts.push(stateUf);
   }
-  return stripMundoNovoPresentedSnToken(inlineParts.join(', '));
+
+  const headerAddressLine = stripMundoNovoPresentedSnToken(
+    [
+      streetLine,
+      neighborhoodTitle && !textIncludesFragment(streetLine, neighborhoodTitle)
+        ? neighborhoodTitle
+        : '',
+    ]
+      .filter(Boolean)
+      .join(', '),
+  );
+
+  return {
+    streetLine,
+    neighborhood: neighborhoodTitle,
+    cityUfLine,
+    headerAddressLine,
+    fullInline: stripMundoNovoPresentedSnToken(inlineParts.join(', ')),
+  };
+}
+
+/** Termo de qualificação a partir do JSON — preserva gênero; não usa (a). */
+export function formatMundoNovoStructuredQualifier(raw: string | null | undefined): string {
+  const value = clean(raw);
+  if (!value) return '';
+  return value.replace(/\s+/g, ' ').toLowerCase();
+}
+
+export function formatMundoNovoSeatAddressFromCompany(
+  company?: Record<string, unknown> | null,
+): string {
+  return formatMundoNovoSeatAddressParts(company).fullInline;
 }
