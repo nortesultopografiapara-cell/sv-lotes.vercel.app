@@ -154,8 +154,9 @@ try {
 
 assert(
   SALE_CONTRACT_MODEL_OPTIONS.includes('MENESES') &&
-    SALE_CONTRACT_MODEL_OPTIONS.includes('RECANTO_PRIMAVERA'),
-  'opções de UI incluem Meneses e Recanto',
+    SALE_CONTRACT_MODEL_OPTIONS.includes('RECANTO_PRIMAVERA') &&
+    SALE_CONTRACT_MODEL_OPTIONS.includes('MUNDO_NOVO'),
+  'opções de UI incluem Meneses, Recanto e Mundo Novo',
 );
 
 console.log('\nOK mandatory-project-contract-model-tests');

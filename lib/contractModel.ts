@@ -11,6 +11,7 @@ export const SALE_CONTRACT_MODELS = [
   'RECANTO_PRIMAVERA',
   'MENESES',
   'ARAGUAIA',
+  'MUNDO_NOVO',
   'CUSTOM',
 ] as const;
 
@@ -22,6 +23,7 @@ export const SALE_CONTRACT_MODEL_LABELS: Record<SaleContractModel, string> = {
   RECANTO_PRIMAVERA: 'Recanto Primavera',
   MENESES: 'Meneses',
   ARAGUAIA: 'Chacreamento Araguaia',
+  MUNDO_NOVO: 'Chacreamento Mundo Novo',
   CUSTOM: 'Personalizado (futuro)',
 };
 
@@ -32,6 +34,7 @@ export const SALE_CONTRACT_MODEL_OPTIONS: SaleContractModel[] = [
   'RECANTO_PRIMAVERA',
   'MENESES',
   'ARAGUAIA',
+  'MUNDO_NOVO',
 ];
 
 export const PROJECT_CONTRACT_MODEL_INHERIT = '';
@@ -73,6 +76,13 @@ export function normalizeSaleContractModel(
   }
   if (value === 'MENESES') {
     return 'MENESES';
+  }
+  if (
+    value === 'MUNDO_NOVO' ||
+    value === 'CHACREAMENTO_MUNDO_NOVO' ||
+    value.includes('MUNDO_NOVO')
+  ) {
+    return 'MUNDO_NOVO';
   }
   if (
     value === 'ARAGUAIA' ||
@@ -259,6 +269,12 @@ export function isAraguaiaContractModel(
   company: Record<string, unknown> | null | undefined,
 ): boolean {
   return resolveSaleContractModel(company) === 'ARAGUAIA';
+}
+
+export function isMundoNovoContractModel(
+  company: Record<string, unknown> | null | undefined,
+): boolean {
+  return resolveSaleContractModel(company) === 'MUNDO_NOVO';
 }
 
 /** Modelos que usam o template clássico (Meneses / Padrão SV LOTES). */

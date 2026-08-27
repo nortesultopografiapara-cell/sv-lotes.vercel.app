@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isAraguaiaContractModel,
+  isMundoNovoContractModel,
   isRecantoPrimaveraContractModel,
 } from '@/lib/contractModel';
 
@@ -41,7 +42,9 @@ export function shouldLoadProjectBlocksForContract(
   tenant: Record<string, unknown> | null | undefined,
 ): boolean {
   return (
-    isRecantoPrimaveraContractModel(tenant) || isAraguaiaContractModel(tenant)
+    isRecantoPrimaveraContractModel(tenant) ||
+    isAraguaiaContractModel(tenant) ||
+    isMundoNovoContractModel(tenant)
   );
 }
 

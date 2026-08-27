@@ -42,6 +42,7 @@ import {
 } from "@/lib/saleContractBalloonFinance";
 import {
   isAraguaiaContractModel,
+  isMundoNovoContractModel,
   isRecantoPrimaveraContractModel,
   isSvLotes2ContractModel,
   resolveSaleContractModel,
@@ -49,6 +50,7 @@ import {
 import { buildMenesesClausesHtml } from "@/lib/menesesContractClauses";
 import { toContractTitleCase } from "@/lib/contractTitleCase";
 import { generateAraguaiaContract } from "@/lib/araguaiaContractTemplate";
+import { generateMundoNovoContract } from "@/lib/mundoNovoContractTemplate";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
@@ -114,6 +116,21 @@ export function generateContractHTML({
 }: GenerateContractParams) {
   if (isAraguaiaContractModel(tenant)) {
     return generateAraguaiaContract({
+      tenant,
+      customer,
+      project,
+      block,
+      sale,
+      contractSnapshot,
+      contractDate,
+      financeReceipts,
+      projectBlocks,
+      streetGuides,
+    });
+  }
+
+  if (isMundoNovoContractModel(tenant)) {
+    return generateMundoNovoContract({
       tenant,
       customer,
       project,
