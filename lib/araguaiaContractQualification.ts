@@ -64,16 +64,23 @@ export function formatAraguaiaRgAfterNumeroLabel(raw: string): string {
   return stripAraguaiaRgLabelPrefix(raw);
 }
 
-/** Remove o token S/N só na apresentação ARAGUAIA e limpa vírgulas/espaços. */
+/**
+ * Remove S/N, SN, s/n e equivalente só na apresentação ARAGUAIA.
+ * Não grava cadastro. Não substitui por outro texto.
+ * Absorve vírgula/hífen residuais do token, sem alterar "Cidade - UF".
+ */
 export function stripAraguaiaPresentedSnToken(raw: string): string {
   let s = clean(raw);
   if (!s) return '';
-  s = s.replace(/\s*S\s*\/\s*N\s*/gi, ' ');
-  s = s.replace(/\s*[–—]\s*/g, ', ');
+  const placeholder = '\u0000';
+  s = s.replace(/S\s*[./]\s*N\.?/gi, placeholder);
+  s = s.replace(/(^|[\s,;:/\-–—])SN(?=[\s,;:/\-–—]|$)/gi, `$1${placeholder}`);
+  s = s.replace(/(^|[\s,;:/\-–—])S(?=[\s,;:/\-–—]|$)/gi, `$1${placeholder}`);
+  s = s.replace(/\s*[,;:/\-–—]*\s*\u0000\s*[,;:/\-–—]*\s*/g, ', ');
   s = s.replace(/,\s*,+/g, ', ');
   s = s.replace(/\s+,/g, ',');
   s = s.replace(/,\s+/g, ', ');
-  s = s.replace(/^[,\s]+|[,\s]+$/g, '');
+  s = s.replace(/^[,\s\-–—/;]+|[,\s\-–—/;]+$/g, '');
   s = s.replace(/\s+/g, ' ').trim();
   return s;
 }

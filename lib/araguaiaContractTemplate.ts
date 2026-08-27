@@ -67,6 +67,22 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-araguaia, .sv-c
   orphans: 3;
   widows: 3;
 }
+/* Preâmbulo: evita rios de espaço da justificação na qualificação do comprador.
+ * Cláusulas permanecem justificadas. */
+.sv-contract-araguaia .contract-araguaia-parties,
+.sv-contract-araguaia .araguaia-parties-lead {
+  text-align: left !important;
+  text-justify: auto;
+  word-spacing: normal !important;
+  letter-spacing: normal !important;
+}
+.sv-contract-araguaia .araguaia-buyer-qualification {
+  word-spacing: normal !important;
+  letter-spacing: normal !important;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+}
 .sv-contract-araguaia .signature-slot--electronic {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
