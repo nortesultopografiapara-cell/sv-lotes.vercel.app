@@ -1,0 +1,474 @@
+/**
+ * Cláusulas jurídicas — Chacreamento Mundo Novo.
+ * Redação do contrato-base. Correção autorizada: Cláusula 10-C → Cláusula Nona.
+ */
+
+import type { MundoNovoContractContext } from '@/lib/mundoNovoContractContext';
+import {
+  MUNDO_NOVO_ADMIN_PROCESS,
+  MUNDO_NOVO_BOOK,
+  MUNDO_NOVO_CITY_UF,
+  MUNDO_NOVO_CONTRACT_TITLE,
+  MUNDO_NOVO_DEVELOPMENT_AREA_HA,
+  MUNDO_NOVO_DEVELOPMENT_NAME,
+  MUNDO_NOVO_GLEBA_AREA_EXTENSO,
+  MUNDO_NOVO_GLEBA_AREA_HA,
+  MUNDO_NOVO_INCRA_TITLE,
+  MUNDO_NOVO_LEGAL_MARKER,
+  MUNDO_NOVO_MATRICULA,
+  MUNDO_NOVO_MOTHER_DENOMINATION,
+  MUNDO_NOVO_PERIMETER,
+  MUNDO_NOVO_REGISTRY_OFFICE,
+  MUNDO_NOVO_SETTLEMENT,
+  MUNDO_NOVO_SHEET,
+  MUNDO_NOVO_UNIT_COUNT_LABEL,
+  MUNDO_NOVO_ZONE,
+} from '@/lib/mundoNovoContractConstants';
+import {
+  formatMundoNovoNeutralMaritalStatus,
+  formatMundoNovoNeutralNationality,
+  formatMundoNovoResidenceDomicilePhrase,
+  formatMundoNovoRgAfterNumeroLabel,
+} from '@/lib/mundoNovoContractQualification';
+import { formatMundoNovoSellerCpfDisplay } from '@/lib/mundoNovoContractSellers';
+
+const extenso = require('extenso');
+
+export { MUNDO_NOVO_CONTRACT_TITLE, MUNDO_NOVO_LEGAL_MARKER };
+
+function esc(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function strong(value: string): string {
+  return `<strong>${esc(value)}</strong>`;
+}
+
+function moneyPhrase(fmt: string, extensoText: string): string {
+  if (extensoText) return `${strong(fmt)} (${esc(extensoText)})`;
+  return strong(fmt);
+}
+
+function usableConfrontant(value: string | null | undefined): string {
+  const label = String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (
+    !label ||
+    /^a\s*definir$/i.test(label) ||
+    label === '—' ||
+    /^n[aã]o\s+informado$/i.test(label)
+  ) {
+    return '';
+  }
+  return label;
+}
+
+function parcelsCountPhrase(qtd: number): string {
+  if (!(qtd > 0)) return '<em>[quantidade de parcelas pendente]</em>';
+  try {
+    const words = String(extenso(String(qtd)));
+    return `${strong(String(qtd))} (${esc(words)})`;
+  } catch {
+    return strong(String(qtd));
+  }
+}
+
+function sellerInline(ctx: MundoNovoContractContext, index: number): string {
+  const seller = ctx.sellers[index];
+  if (!seller) return '<em>[promitente vendedor não configurado]</em>';
+  const parts: string[] = [strong(seller.name.toUpperCase())];
+  const nationality = formatMundoNovoNeutralNationality(seller.nationality || '');
+  const marital = formatMundoNovoNeutralMaritalStatus(seller.maritalStatus || '');
+  if (nationality) parts.push(esc(nationality));
+  if (marital) parts.push(esc(marital));
+  if (seller.profession) parts.push(esc(seller.profession));
+  if (seller.cpf) {
+    parts.push(
+      `inscrito(a) no CPF sob o nº ${strong(
+        formatMundoNovoSellerCpfDisplay(seller.cpf) || seller.cpf,
+      )}`,
+    );
+  }
+  const rg = formatMundoNovoRgAfterNumeroLabel(seller.rg || '');
+  if (rg) {
+    parts.push(`e no RG nº ${strong(rg)}`);
+  }
+  const residence = String(seller.address || '').trim();
+  if (residence) {
+    parts.push(formatMundoNovoResidenceDomicilePhrase(residence, esc(residence)));
+  }
+  return parts.join(', ');
+}
+
+function buyerQualification(ctx: MundoNovoContractContext): string {
+  const parts: string[] = [strong(ctx.buyerName)];
+  if (ctx.buyerNationality) parts.push(esc(ctx.buyerNationality));
+  if (ctx.buyerMaritalStatus) parts.push(esc(ctx.buyerMaritalStatus));
+  if (ctx.buyerProfession) parts.push(esc(ctx.buyerProfession));
+  parts.push(`e-mail: ${esc(ctx.buyerEmail)}`);
+  parts.push(`telefone/Whatsapp ${esc(ctx.buyerPhone)}`);
+  parts.push(formatMundoNovoResidenceDomicilePhrase(ctx.buyerAddress, esc(ctx.buyerAddress)));
+  parts.push(`inscrito(a) no CPF sob o nº ${strong(ctx.buyerCpf)}`);
+  if (ctx.buyerRgLine && ctx.buyerRgLine !== 'não informado') {
+    parts.push(`e no RG nº ${esc(ctx.buyerRgLine)}`);
+  }
+  if (ctx.hasSpouse && ctx.spouseQualificationHtml) {
+    parts.push(`e seu cônjuge ${ctx.spouseQualificationHtml}`);
+  }
+  return `<span class="mundo-novo-buyer-qualification">${parts.join(', ')}</span>`;
+}
+
+function areaPhrase(ctx: MundoNovoContractContext): string {
+  const num = strong(ctx.areaFmt);
+  if (ctx.areaExtenso) return `${num} (${esc(ctx.areaExtenso)})`;
+  return num;
+}
+
+function objectDescriptionHtml(ctx: MundoNovoContractContext): string {
+  const dir = usableConfrontant(ctx.confrontanteDireita);
+  const esq = usableConfrontant(ctx.confrontanteEsquerda);
+  const fundo = usableConfrontant(ctx.confrontanteFundo);
+  const confrontParts: string[] = [];
+  if (dir) confrontParts.push(`pela direita com ${strong(dir)}`);
+  if (esq) confrontParts.push(`pela esquerda com ${strong(esq)}`);
+  if (fundo) confrontParts.push(`aos fundos com ${strong(fundo)}`);
+  const confrontPhrase =
+    confrontParts.length > 0 ? `, confrontando ${confrontParts.join(', ')}` : '';
+  return `chácara nº ${strong(ctx.chacaraNumber)}, com área total de ${areaPhrase(
+    ctx,
+  )}${confrontPhrase}, possuindo ${strong(ctx.ladoDireitoM)} pela lateral direita, ${strong(
+    ctx.ladoEsquerdoM,
+  )} pela lateral esquerda, ${strong(ctx.frenteM)} de frente e ${strong(
+    ctx.fundoM,
+  )} de fundo, com área total de ${areaPhrase(ctx)}`;
+}
+
+function clauseHtml(title: string, leadHtml: string, restHtml = ''): string {
+  return `
+    <div class="contract-clause" style="margin-bottom: 12px; text-align: justify;">
+      <div class="mundo-novo-clause-keep">
+        <p class="mundo-novo-clause-title" style="margin: 0 0 10px 0; text-align: center; font-weight: bold; text-transform: uppercase;">${title}</p>
+        <p class="mundo-novo-clause-lead" style="margin: 0 0 10px 0;">${leadHtml}</p>
+      </div>
+      ${restHtml}
+    </div>`;
+}
+
+function itemP(html: string): string {
+  return `<p style="margin: 0 0 10px 0; text-align: justify;">${html}</p>`;
+}
+
+function keepTogether(extraClass: string, innerHtml: string): string {
+  const cls = ['mundo-novo-keep-together', extraClass].filter(Boolean).join(' ');
+  return `<div class="${cls}">${innerHtml}</div>`;
+}
+
+export function buildMundoNovoPartiesPreambleHtml(
+  ctx: MundoNovoContractContext,
+): string {
+  const sellerParts = ctx.sellers.map((_, i) => sellerInline(ctx, i));
+  const sellersPhrase =
+    sellerParts.length === 0
+      ? '<em>[promitente vendedor não configurado]</em>'
+      : sellerParts.length === 1
+        ? sellerParts[0]
+        : sellerParts.length === 2
+          ? `${sellerParts[0]} e ${sellerParts[1]}`
+          : `${sellerParts.slice(0, -1).join(', ')} e ${sellerParts[sellerParts.length - 1]}`;
+  const intervenienteSeat = String(ctx.intervenienteAddress || '').trim();
+  const V = ctx.vendorInflection;
+  const B = ctx.buyerInflection;
+  const representedWord = `neste ato ${V.represented}`;
+  const seatPhrase = intervenienteSeat
+    ? `, com sede na ${esc(intervenienteSeat)}`
+    : '';
+
+  const preambleText = `Pelo presente Instrumento Particular de Promessa de Compra e Venda, de um lado ${sellersPhrase}, ${representedWord} pela pessoa jurídica <strong>${esc(
+    ctx.intervenienteName,
+  )}</strong>${seatPhrase} (<strong>INTERVENIENTE</strong>), doravante ${V.denominado} simplesmente de <strong>${esc(
+    V.label,
+  )}</strong>, e de outro lado ${buyerQualification(
+    ctx,
+  )}, doravante ${B.denominado} <strong>${esc(
+    B.label,
+  )}</strong>, têm entre si justos e contratados mediante as cláusulas e condições abaixo estabelecidas o presente contrato de promessa de compra e venda de bem imóvel:`;
+
+  return `
+    <div class="contract-clause contract-mundo-novo-parties" style="margin-bottom: 14px;">
+      <p class="mundo-novo-parties-lead" style="margin: 0 0 10px 0; text-align: left; word-spacing: normal; letter-spacing: normal;">${preambleText}</p>
+    </div>`;
+}
+
+export function buildMundoNovoClausesHtml(ctx: MundoNovoContractContext): string {
+  const vencimento =
+    ctx.primeiroVencimentoFmt ||
+    ctx.primeiroVencimentoLong ||
+    '<em>[primeiro vencimento pendente]</em>';
+  const vencimentoHtml =
+    typeof vencimento === 'string' && !vencimento.startsWith('<')
+      ? strong(vencimento)
+      : vencimento;
+
+  const igpmItem1 = 'Índice Geral de Preços de Mercado – IGP-M';
+  const igpmItem2 = 'Índice Geral de Preços do Mercado – IGP-M';
+  const V = ctx.vendorInflection;
+  const B = ctx.buyerInflection;
+  const ciente = B.count === 1 ? 'ciente' : 'cientes';
+  const notificado =
+    B.count === 1
+      ? B.gender === 'f'
+        ? 'notificada'
+        : 'notificado'
+      : B.gender === 'f'
+        ? 'notificadas'
+        : 'notificados';
+  const brokerLine = strong(ctx.brokerName);
+
+  return `
+    ${clauseHtml(
+      MUNDO_NOVO_LEGAL_MARKER,
+      `${V.The} ${V.afirma} ser senhores e legítimos possuidores do imóvel rural denominado “${esc(
+        MUNDO_NOVO_MOTHER_DENOMINATION,
+      )}”, situado no ${esc(MUNDO_NOVO_SETTLEMENT)}, ${esc(
+        MUNDO_NOVO_ZONE,
+      )}, localizado no município de ${esc(
+        MUNDO_NOVO_CITY_UF,
+      )}, com área total de <strong>${esc(
+        MUNDO_NOVO_GLEBA_AREA_HA,
+      )}</strong> (${esc(
+        MUNDO_NOVO_GLEBA_AREA_EXTENSO,
+      )}), conforme consta no título nº <strong>${esc(
+        MUNDO_NOVO_INCRA_TITLE,
+      )}</strong>, expedido pelo Instituto Nacional de Colonização e Reforma Agrária – INCRA, nos autos do processo administrativo nº <strong>${esc(
+        MUNDO_NOVO_ADMIN_PROCESS,
+      )}</strong>, correspondente aos lotes 33, 34 e 36 do Assentamento Palmares Sul – Município de Parauapebas – PA, totalmente livre e desembaraçado de qualquer ônus, conforme consta assentado na matrícula nº <strong>${esc(
+        MUNDO_NOVO_MATRICULA,
+      )}</strong>, lançada no Livro ${esc(
+        MUNDO_NOVO_BOOK,
+      )} do Registro Geral, ficha ${esc(MUNDO_NOVO_SHEET)}, do ${esc(
+        MUNDO_NOVO_REGISTRY_OFFICE,
+      )}, este servirá para formação do chacreamento denominado ${esc(
+        MUNDO_NOVO_DEVELOPMENT_NAME,
+      )}, composto de uma porção de <strong>${esc(
+        MUNDO_NOVO_DEVELOPMENT_AREA_HA,
+      )}</strong>, com área de perímetro de <strong>${esc(
+        MUNDO_NOVO_PERIMETER,
+      )}</strong>, composto de <strong>${esc(MUNDO_NOVO_UNIT_COUNT_LABEL)}</strong>.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA SEGUNDA – DESCRIÇÃO DO OBJETO DA PROMESSA DE COMPRA E VENDA',
+      `Na melhor forma de direito ${V.the} ${V.promete} vender e ${B.the} ${B.promete} comprar o imóvel rural constituído da ${objectDescriptionHtml(
+        ctx,
+      )}, constante do chacreamento denominado ${esc(
+        MUNDO_NOVO_DEVELOPMENT_NAME,
+      )}, que é entregue completamente livre de todos e quaisquer ônus judiciais ou extra judicial, foro ou pensão, afirmando ainda sob as penas da lei ${V.art} ora ${V.label} achar-se o imóvel quites de todos os impostos e taxas federais, estaduais e municipais, inclusive condominiais.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
+      `E, assim como possuem, pelo presente e nos melhores termos de direito, ${V.the} prometem e se obrigam a vender o imóvel descrito na cláusula segunda deste instrumento ${B.to}, mediante as seguintes cláusulas e condições:`,
+      `
+      ${itemP(
+        `<strong>1</strong> – O preço certo e total ajustado para a presente promessa de compra e venda do imóvel descrito na cláusula segunda deste contrato é de ${moneyPhrase(
+          ctx.valorTotalFmt,
+          ctx.valorTotalExtenso,
+        )}, que será pago a prazo mediante uma entrada no valor de ${moneyPhrase(
+          ctx.entradaFmt,
+          ctx.entradaExtenso,
+        )} e a quitação de ${parcelsCountPhrase(
+          ctx.qtdParcelas,
+        )} parcelas mensais e consecutivas no valor de ${moneyPhrase(
+          ctx.parcelaFmt,
+          ctx.parcelaExtenso,
+        )}, vencendo a primeira em ${vencimentoHtml}, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
+          igpmItem1,
+        )}, ou outro que venha substituí-lo.`,
+      )}
+      ${itemP(
+        `<strong>1.1</strong> – O pagamento, contudo, por opção ${B.ofPhrase}, com anuência ${V.of} ${V.label}, também poderá ser feito em parcela única, mantendo-se as partes obrigadas às demais condições e encargos estabelecidos neste contrato.`,
+      )}
+      ${itemP(
+        `<strong>1.2</strong> – As parcelas descritas no item 1 desta cláusula serão representadas por uma única <strong>nota promissória</strong> emitida ${B.by} a favor e à ordem ${V.of} ${V.label}, de natureza <strong>“pro solvendo”</strong> do preço, que deverá ser paga onde for posta em cobrança em caso de inadimplência.`,
+      )}
+      ${keepTogether(
+        'mundo-novo-financial-item-1-3',
+        itemP(
+          `<strong>1.3</strong> – Nenhuma parcela poderá ser paga senão em sua totalidade, não sendo admitido o fracionamento do pagamento de qualquer das prestações, salvo se ${V.the}, a seu exclusivo critério e por mera liberalidade, decidir de forma diversa, não se constituindo assim em novação ou alteração dos termos do presente contrato.`,
+        ),
+      )}
+      ${itemP(
+        `<strong>2</strong> – O pagamento das parcelas descritas no item 1 desta cláusula será feito mediante a emissão de boletos bancários, sendo que as parcelas serão reajustadas anualmente mediante a aplicação da variação positiva do ${esc(
+          igpmItem2,
+        )}, ou outro que o substitua.`,
+      )}
+      ${itemP(
+        `<strong>3</strong> – Ocorrendo impontualidade no pagamento de qualquer das parcelas do parcelamento descrito no item 2 deste contrato, a quantia a ser paga será atualizada monetariamente mediante a aplicação do Índice Geral de Preços de Mercado – IGP-M/FGV, desde a data do vencimento da parcela até a data de efetivo pagamento, acrescido ainda de multa moratória de <strong>2%</strong> (dois por cento) calculada sobre o valor total da parcela, acrescida de juros moratórios de <strong>1%</strong> (um por cento) ao mês <em>pro rata die</em>, calculados em <strong>0,0333%</strong> (zero virgula trinta e três) por dia de atraso, aplicado sobre o valor da parcela devida.`,
+      )}
+      ${itemP(
+        `<strong>4</strong> – Em caso de inadimplência que implique em cobrança judicial ou mesmo extrajudicial, ${B.the} ${B.arcara} com as custas e honorários advocatícios, estes calculados na base de <strong>20%</strong> (vinte por cento) do valor devido.`,
+      )}
+      ${itemP(
+        `<strong>5</strong> – Em havendo inadimplência superior a <strong>30</strong> (trinta) dias, ${B.The} ${B.autoriza} ${V.ao} ${V.label} a incluir seu nome em bancos de dados de inadimplentes, devendo, para tanto, haver a notificação prévia para quitação do débito inadimplido;`,
+      )}
+      ${itemP(
+        `<strong>6</strong> – Na ocorrência de inadimplência superior a <strong>03</strong> (três) parcelas, o imóvel reverterá em favor ${V.of} ${V.label}, independente de notificação, sendo que as benfeitorias erigidas sobre o imóvel a ele serão incorporadas, cabendo ${B.to} a devida indenização pelas obras executadas, cujo valor da indenização será calculado por meio de laudo de avaliação técnica;`,
+      )}
+      ${itemP(
+        `<strong>7</strong> – Ocorrendo a reversão do imóvel em favor ${V.of} ${V.label} conforme estabelecido no item 6 desta cláusula, ${V.the} deverão pagar a indenização pelas benfeitorias em parcelas não superiores ao parcelamento cumprido ${B.by};`,
+      )}
+      ${keepTogether(
+        'mundo-novo-financial-item-8',
+        itemP(
+          `<strong>8</strong> – Em ocorrendo a reversão do imóvel em favor ${V.of} ${V.label} por inadimplência ${B.ofPhrase} sem que tenham sido erigidas benfeitorias no imóvel, deverão ${V.the} proceder com a devolução dos valores pagos, devendo fazê-lo em tantas parcelas quantas tenham sido quitadas, cabendo-lhes o direito de reter <strong>25%</strong> (vinte e cinco por cento) do valor a ser restituído, a título de taxa de administração; exceto a entrada que será revertida em sua totalidade ${V.ao} ${V.label}.`,
+        ),
+      )}
+      ${itemP(
+        `<strong>9</strong> – Nos casos de desistência ${B.ofPhrase} do negócio estabelecido neste contrato, poderá haver a devolução do imóvel objeto deste compromisso de compra e venda, sendo que no caso ${
+          B.count === 1
+            ? 'do adquirente ter adquirido'
+            : 'dos adquirentes terem adquirido'
+        } mais de uma unidade, os valores a serem restituídos poderão ser utilizados para quitação das parcelas ainda devidas da chácara remanescente, valor este que será integralmente creditado ${B.inFavor};`,
+      )}
+      ${itemP(
+        `<strong>10</strong> – No ato da quitação do parcelamento do imóvel objeto deste compromisso de compra e venda, deverá ${V.the} expedirem ${B.inFavor} a respectiva <strong>carta de quitação</strong>.`,
+      )}
+      `,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA QUARTA – CONDIÇÕES GERAIS',
+      `Considerando o caráter dessa transação, as partes contratantes reconhecem os termos deste contrato e com eles anuem, especialmente quanto às seguintes condições:`,
+      `
+      ${itemP(
+        `<strong>1</strong> – O imóvel objeto deste contrato é entregue ${B.to} no ato da assinatura deste instrumento contratual e dele tomam posse, tendo ciência que o empreendimento é entregue com o sistema viário devidamente executado, cabendo ${B.to} a execução das demais benfeitorias, tais como a implantação do sistema de captação de água e abastecimento de energia elétrica, além do sistema próprio de esgotamento sanitário;`,
+      )}
+      ${itemP(
+        `<strong>2</strong> – O chacreamento é fruto da área pertencente à matrícula nº <strong>${esc(
+          MUNDO_NOVO_MATRICULA,
+        )}</strong>, lançada no Livro ${esc(
+          MUNDO_NOVO_BOOK,
+        )} do Registro Geral, ficha ${esc(MUNDO_NOVO_SHEET)}, do ${esc(
+          MUNDO_NOVO_REGISTRY_OFFICE,
+        )}, correspondente aos lotes 33, 34 e 36 – parte 02 do Assentamento Palmares Sul – Parauapebas – PA, cabendo ${B.to} a responsabilidade pela documentação necessária conforme estabelece a legislação regente, inclusive os serviços de <strong>georreferenciamento</strong>, arcando com todos os custos incidentes;`,
+      )}
+      ${keepTogether(
+        'mundo-novo-general-conditions-item-3',
+        itemP(
+          `<strong>3</strong> – Para efeito da efetivação do desmembramento previsto no item 2 desta cláusula, estando o parcelamento devidamente quitado, caberá ${V.ao} ${V.label} fornecerem ${B.to} toda documentação necessária para a concretização deste procedimento, de acordo com o que for requisitado pelo cartório de títulos e documentos.`,
+        ),
+      )}
+      ${keepTogether(
+        'mundo-novo-general-conditions-item-4',
+        itemP(
+          `<strong>4</strong> – O não cumprimento da obrigação estabelecida no item 3 desta cláusula implicará no pagamento de uma multa fixada em <strong>10%</strong> (dez por cento) do valor original da venda ${B.inFavor};`,
+        ),
+      )}
+      ${itemP(
+        `<strong>5</strong> – Observadas as disposições contidas neste contrato, estando quitadas as parcelas devidas, ${V.the} outorgarão ${B.to} a respectiva <strong>escritura</strong> pública de venda e compra do imóvel ora negociado, desde que cumpridas as obrigações previstas neste instrumento contratual, inclusive no que se refere aos procedimentos para efetivação do desmembramento da unidade adquirida da porção original do imóvel.`,
+      )}
+      ${itemP(
+        `<strong>6</strong> – Os trabalhos para a concretização da transferência da titularidade do imóvel objeto deste compromisso de compra e venda serão intermediados pela empresa gestora deste contrato, sendo devido pelos serviços prestados o valor correspondente à última parcela paga ${B.by};`,
+      )}
+      `,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA QUINTA – CIÊNCIA DO CONTRATO',
+      `${B.The} ${B.declara} ter pleno conhecimento de todo o teor deste contrato e das cláusulas nele contidas, eximindo ${V.the} de qualquer responsabilidade que não faça parte deste instrumento contratual.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA SEXTA – IRREVOGABILIDADE DA TRANSAÇÃO',
+      `O presente instrumento é firmado em caráter <strong>IRREVOGÁVEL E IRRETRATÁVEL</strong>, não podendo haver arrependimento nos termos do disposto no artigo 1.094 do Código Civil Brasileiro, obrigação estas que se estende aos contratantes, seus herdeiros e sucessores a qualquer título, devendo-se aplicar ao presente negócio todas as normas previstas no ordenamento jurídico civil vigentes.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA SÉTIMA – RESCISÃO',
+      `O presente contrato será rescindido por culpa exclusiva ${B.ofPhrase} em qualquer dos seguintes casos:`,
+      `
+      ${itemP(
+        `<strong>A</strong> – Vencida e não paga qualquer parcela, este compromisso será considerado rescindido <strong>90</strong> (noventa) dias após o vencimento, independentemente de notificação judicial ou extrajudicial, valendo como cláusula resolutiva expressa, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
+      )}
+      ${keepTogether(
+        'mundo-novo-seventh-letter-b',
+        itemP(
+          `<strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
+        ),
+      )}
+      ${keepTogether(
+        'mundo-novo-seventh-letter-c',
+        itemP(
+          `<strong>C</strong> – Pela venda, cessão de direitos e obrigações ou transferência realizadas sem a expressa anuência ${V.of} ${V.label}, ou a existência de ações pessoais, reipersecutórias e executivas que de algum modo afetem os direitos e obrigações objeto deste contrato;`,
+        ),
+      )}
+      ${itemP(
+        `<strong>D</strong> – Pelo descumprimento de qualquer das cláusulas deste contrato;`,
+      )}
+      ${itemP(
+        `<strong>Parágrafo único</strong> – ${B.The} ${B.devera} comunicar ${V.ao} ${V.label}, por escrito, qualquer alteração do seu endereço constante no preâmbulo deste contrato, autorizando senão o fizer a sua convocação, intimação, notificação ou mesmo citação através de edital.`,
+      )}
+      `,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA OITAVA – CESSÃO E TRANSFERÊNCIA',
+      `É permitida a cessão e transferência dos direitos relativos a este contrato, que deverá ter a anuência do cônjuge, se for o caso, sendo que a cessão ou transferência somente será possível mediante anuência expressa ${V.of} ${V.label}, devendo ${B.the} estar em dia com o pagamento das parcelas devidas, havendo a cobrança de uma taxa referente a esta transação no valor correspondente ao da última parcela paga.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA NONA – INFRAESTRUTURA DO CHACREAMENTO',
+      `${B.The} desde já ${B.declara} para todos os efeitos legais e necessários, ter plena ciência de que o chacreamento contará com infraestrutura de <strong>arruamento</strong>, cabendo ${B.to} a implantação das demais infraestruturas necessárias.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA – OBRIGAÇÕES GERAIS',
+      `<strong>A</strong> – ${B.The} ${B.ficam} desde já ${notificado}, que, para fins de atendimento das posturas municipais, bem como para que seja mantido o bom aspecto dos demais lotes da quadra como um todo, deverá manter o imóvel adquirido sempre limpo, providenciando ainda o cercamento da área;`,
+      `
+      ${itemP(
+        `<strong>B</strong> – A partir da celebração deste contrato, todos os tributos que incidem ou venham a incidir sobre o imóvel ora compromissado, correm às expensas ${B.ofPhrase}, que se ${B.obriga} a pagá-los nas épocas e repartições competentes, ainda que lançados em nome de terceiros.`,
+      )}
+      ${keepTogether(
+        'mundo-novo-tenth-letter-c',
+        itemP(
+          `<strong>C</strong> – ${B.The} se ${B.declara} ${ciente} de que adquiriu o imóvel com a infraestrutura descrita na <strong>Cláusula Nona</strong> deste contrato, sendo que quaisquer outros serviços ou melhoramentos públicos que vierem a ser exigidos pelos poderes públicos correrão à suas expensas.`,
+        ),
+      )}
+      `,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA PRIMEIRA – SUCESSÃO CONTRATUAL',
+      `Pelo falecimento de qualquer uma das partes contratantes, bem como do mutuário originário, não caberá desobrigação a qualquer título dos contratantes, obrigando-se a cumpri-lo por seus respectivos herdeiros e sucessores e quaisquer títulos.`,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA SEGUNDA – DISPOSIÇÕES GERAIS',
+        `<strong>1</strong> – Pelo princípio da liberdade de contratar prevista no Código Civil Brasileiro, as partes declaram que concordam com plena legalidade das cláusulas aqui entabuladas, isentando-se assim terceiros de toda e qualquer responsabilidade pela assinatura do presente contrato;`,
+      `
+      ${itemP(
+        `<strong>2</strong> – ${B.The} ${B.declara} que ${B.visitou} o imóvel prometido conforme descrito na cláusula segunda deste contrato, tendo, portanto, pleno conhecimento quanto à localização, topografia e dimensões;`,
+      )}
+      ${itemP(
+        `<strong>3</strong> – Na eventualidade de ser constatada diferença superior a <strong>05%</strong> (cinco por cento) na área do terreno, para mais ou para menos, a parte prejudicada será ressarcida por meio de acordo a ser firmado entre as partes que passará a integrar este contrato sob a forma de anexo, baseando-se o valor do metro quadrado do terreno vigente à data da formalização deste compromisso;`,
+      )}
+      ${itemP(
+        `<strong>4</strong> – ${B.The} ${B.declara} que ${V.the} e seus prepostos prestaram amplo esclarecimento acerca da presente transação, notadamente no que se refere às características do imóvel, a forma de pagamento e reajustamento das parcelas, tendo as cláusulas deste contrato sido devidamente esclarecidas e que foi concedida antecedência para leitura dos termos lançados neste instrumento, não restando dúvidas quanto ao que foi aqui pactuado;`,
+      )}
+      ${itemP(
+        `<strong>5</strong> – Caberá ${V.ao} ${V.label} arcar com o pagamento da comissão de intermediação e venda realizada pelo corretor de imóveis ${brokerLine}.`,
+      )}
+      `,
+    )}
+
+    ${clauseHtml(
+      'CLÁUSULA DÉCIMA TERCEIRA – FORO',
+      `As partes contratantes elegem o foro da Comarca de Parauapebas – PA, para que, nele venham a ser dirimidas todas as dúvidas ou questões porventura advindas do presente contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja ou venha a ser.`,
+    )}
+  `;
+}

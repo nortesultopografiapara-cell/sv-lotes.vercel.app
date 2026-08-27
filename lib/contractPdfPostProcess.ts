@@ -7,7 +7,7 @@ import {
   formatCompanyAddressForHeader,
   getCompanyDisplayName,
 } from "@/lib/contractCompanyDisplay";
-import { isAraguaiaContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import { isAraguaiaContractModel, isMundoNovoContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import {
   buildClassicContractPaginationCss,
   buildRecantoContractPaginationCss,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
+import { MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID } from "@/lib/mundoNovoHtml2PdfPagination";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
@@ -134,6 +135,15 @@ export function resolveContractHtml2pdfOptions(
       pagebreak: {
         mode: ['css', 'legacy'],
         avoid: [...ARAGUAIA_HTML2PDF_PAGINATION_AVOID],
+      },
+    };
+  }
+  if (isMundoNovoContractModel(tenant)) {
+    return {
+      ...getContractHtml2pdfOptions(filename),
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: [...MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID],
       },
     };
   }
