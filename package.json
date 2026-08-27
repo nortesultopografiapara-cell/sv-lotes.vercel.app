@@ -145,7 +145,8 @@
     "test:enterprise-overview-streets": "tsx scripts/mandatory-enterprise-overview-streets-tests.ts",
     "test:street-guides-report": "tsx scripts/mandatory-street-guides-report-tests.ts",
     "test:supabase-fetch-all": "tsx scripts/mandatory-supabase-fetch-all-tests.ts",
-    "test:araguaia-promissory-note": "tsx scripts/mandatory-araguaia-promissory-note-tests.ts"
+    "test:araguaia-promissory-note": "tsx scripts/mandatory-araguaia-promissory-note-tests.ts",
+    "test:api-regenerate-auth": "tsx scripts/mandatory-api-regenerate-auth-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
