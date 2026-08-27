@@ -19,7 +19,7 @@ import {
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
 import { MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID } from "@/lib/mundoNovoHtml2PdfPagination";
-import { resolveMundoNovoPdfChromeLogo } from "@/lib/mundoNovoContractPdf";
+import { mundoNovoPdfChromeLogoSizeMm } from "@/lib/mundoNovoContractPdf";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
@@ -33,6 +33,10 @@ export type ContractPdfChromeInput = {
   cityUfLine: string;
   contractNumber: string;
   logoBase64: string | null;
+  /** Largura da logo no chrome jsPDF (mm). Padrão 22 — ARAGUAIA inalterado. */
+  logoWidthMm?: number;
+  /** Altura da logo no chrome jsPDF (mm). Padrão 12 — ARAGUAIA inalterado. */
+  logoHeightMm?: number;
   /** Variante visual do cabeçalho/rodapé PDF. */
   printStyle?: 'default' | 'sv-lotes-2';
   /** SV LOTES 2.0 — contato no cabeçalho institucional PDF. */
@@ -271,10 +275,13 @@ export function applyContractPdfChrome(
   for (let i = 1; i <= totalPages; i++) {
     pdf.setPage(i);
 
+    const logoW = data.logoWidthMm ?? 22;
+    const logoH = data.logoHeightMm ?? 12;
+
     let titleX = 14;
     if (data.logoBase64) {
-      pdf.addImage(data.logoBase64, "PNG", 14, 10, 22, 12, undefined, "FAST");
-      titleX = 39;
+      pdf.addImage(data.logoBase64, "PNG", 14, 10, logoW, logoH, undefined, "FAST");
+      titleX = 14 + logoW + 3;
     }
 
     pdf.setFontSize(11);
@@ -304,7 +311,8 @@ export function applyContractPdfChrome(
       yPos += splitAddr.length * 3.5;
     }
 
-    const finalY = Math.max(yPos, 22) + 2;
+    const logoBottom = data.logoBase64 ? 10 + logoH : 0;
+    const finalY = Math.max(yPos, logoBottom, 22) + 2;
 
     pdf.setFontSize(8);
     pdf.setTextColor(100);
@@ -362,6 +370,7 @@ export function buildContractPdfChromeFromTenant(
 
   if (isMundoNovoContractModel(row)) {
     const { addressLine, cityUfLine } = formatCompanyAddressForHeader(row);
+    const logoSize = mundoNovoPdfChromeLogoSizeMm();
     return {
       tenantName: getCompanyDisplayName(row),
       tenantCnpj: formatCpfCnpj(String(row.cnpj || row.document || "")),
@@ -369,11 +378,9 @@ export function buildContractPdfChromeFromTenant(
       addressLine,
       cityUfLine,
       contractNumber,
-      logoBase64: resolveMundoNovoPdfChromeLogo({
-        projectLogoUrl: row.project_logo_url ?? row.projectLogoUrl,
-      })
-        ? logoBase64
-        : null,
+      logoBase64,
+      logoWidthMm: logoSize.widthMm,
+      logoHeightMm: logoSize.heightMm,
     };
   }
 

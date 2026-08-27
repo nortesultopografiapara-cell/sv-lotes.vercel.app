@@ -14,8 +14,18 @@ import {
 } from '../lib/contractModel';
 import { MUNDO_NOVO_INCRA_TITLE, MUNDO_NOVO_MATRICULA, MUNDO_NOVO_MISSING_SELLERS_MESSAGE } from '../lib/mundoNovoContractConstants';
 import { generateMundoNovoContract } from '../lib/mundoNovoContractTemplate';
-import { resolveMundoNovoPdfChromeLogo } from '../lib/mundoNovoContractPdf';
-import { buildContractPdfChromeFromTenant } from '../lib/contractPdfPostProcess';
+import {
+  MUNDO_NOVO_LOGO_PATH,
+  MUNDO_NOVO_LOGO_PUBLIC_FILE,
+  MUNDO_NOVO_LOGO_NATIVE_WIDTH,
+  MUNDO_NOVO_LOGO_NATIVE_HEIGHT,
+  mundoNovoPdfChromeLogoSizeMm,
+  resolveMundoNovoPdfChromeLogo,
+} from '../lib/mundoNovoContractPdf';
+import {
+  applyContractPdfChrome,
+  buildContractPdfChromeFromTenant,
+} from '../lib/contractPdfPostProcess';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -194,21 +204,41 @@ assert(!/<img\b/i.test(html), 'logo: HTML Mundo Novo não embute imagem');
 assert(
   resolveMundoNovoPdfChromeLogo({
     projectLogoUrl: null,
-  }) === null,
-  'logo: sem logo de empreendimento retorna null',
+  }) === MUNDO_NOVO_LOGO_PATH,
+  'logo: helper sempre aponta para o asset oficial',
 );
 assert(
-  resolveMundoNovoPdfChromeLogo({}) === null,
+  resolveMundoNovoPdfChromeLogo({}) === MUNDO_NOVO_LOGO_PATH,
   'logo: companies.logo_url não é lida pelo helper Mundo Novo',
 );
 assert(
   resolveMundoNovoPdfChromeLogo({
-    projectLogoUrl: 'https://cdn.test/mundo-novo.png',
-  }) === 'https://cdn.test/mundo-novo.png',
-  'logo: aceita somente logo do próprio empreendimento',
+    projectLogoUrl: 'https://cdn.test/chacreamento-araguaia.png',
+  }) === MUNDO_NOVO_LOGO_PATH,
+  'logo: ignora URL de projeto/Araguaia e usa o asset próprio',
 );
 
 {
+  const logoFile = path.join(process.cwd(), 'public', MUNDO_NOVO_LOGO_PUBLIC_FILE);
+  assert(fs.existsSync(logoFile), 'logo: PNG oficial existe em public/');
+  assert(fs.statSync(logoFile).size > 10_000, 'logo: PNG oficial não está vazio');
+}
+
+{
+  const size = mundoNovoPdfChromeLogoSizeMm();
+  const nativeRatio = MUNDO_NOVO_LOGO_NATIVE_WIDTH / MUNDO_NOVO_LOGO_NATIVE_HEIGHT;
+  assert(size.widthMm <= 24, 'logo: largura do chrome cabe no cabeçalho');
+  assert(size.heightMm <= 16, 'logo: altura do chrome não ocupa excesso');
+  assert(
+    Math.abs(size.widthMm / size.heightMm - nativeRatio) < 0.02,
+    'logo: chrome preserva proporção nativa 842x566',
+  );
+}
+
+{
+  const logoFile = path.join(process.cwd(), 'public', MUNDO_NOVO_LOGO_PUBLIC_FILE);
+  const officialLogo =
+    'data:image/png;base64,' + fs.readFileSync(logoFile).toString('base64');
   const chrome = buildContractPdfChromeFromTenant(
     {
       contract_model: 'MUNDO_NOVO',
@@ -220,9 +250,36 @@ assert(
       state: 'PA',
     },
     '000000007/2026',
-    'data:image/png;base64,ARAGUAIA_LOGO',
+    officialLogo,
   );
-  assert(chrome.logoBase64 === null, 'logo: chrome Mundo Novo descarta logo da empresa/Araguaia');
+  assert(
+    chrome.logoBase64 === officialLogo,
+    'logo: chrome Mundo Novo usa o asset oficial carregado pelo caller',
+  );
+  assert(
+    !String(chrome.logoBase64 || '').includes('chacreamento-araguaia'),
+    'logo: chrome Mundo Novo não embute URL/logo do Araguaia',
+  );
+  assert(!('logo_url' in chrome), 'logo: chrome não copia companies.logo_url');
+  assert(typeof chrome.logoWidthMm === 'number', 'logo: chrome Mundo Novo define largura');
+  assert(typeof chrome.logoHeightMm === 'number', 'logo: chrome Mundo Novo define altura');
+}
+
+{
+  const chromeEmpty = buildContractPdfChromeFromTenant(
+    {
+      contract_model: 'MUNDO_NOVO',
+      razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      cnpj: '57590706000178',
+      logo_url: 'https://cdn.test/chacreamento-araguaia.png',
+    },
+    '000000007/2026',
+    null,
+  );
+  assert(
+    chromeEmpty.logoBase64 === null,
+    'logo: chrome Mundo Novo não puxa companies.logo_url quando o caller não carrega asset',
+  );
 }
 
 {
@@ -244,6 +301,62 @@ assert(
     araguaiaChrome.logoBase64 === 'data:image/png;base64,ARAGUAIA_LOGO',
     'logo: chrome ARAGUAIA preserva a logo da empresa',
   );
+  assert(
+    araguaiaChrome.logoWidthMm === undefined &&
+      araguaiaChrome.logoHeightMm === undefined,
+    'logo: chrome ARAGUAIA não recebe dimensões do Mundo Novo',
+  );
+}
+
+{
+  const size = mundoNovoPdfChromeLogoSizeMm();
+  const logoFile = path.join(process.cwd(), 'public', MUNDO_NOVO_LOGO_PUBLIC_FILE);
+  const officialLogo =
+    'data:image/png;base64,' + fs.readFileSync(logoFile).toString('base64');
+  const addImageCalls: unknown[][] = [];
+  const fakePdf = {
+    internal: {
+      getNumberOfPages: () => 1,
+      pageSize: { width: 210, height: 297 },
+    },
+    setPage() {},
+    setFontSize() {},
+    setTextColor() {},
+    setFont() {},
+    text() {},
+    splitTextToSize: (text: string) => [text],
+    addImage: (...args: unknown[]) => {
+      addImageCalls.push(args);
+    },
+    setDrawColor() {},
+    setLineWidth() {},
+    line() {},
+    deletePage() {},
+  };
+  const mundoChrome = buildContractPdfChromeFromTenant(
+    { contract_model: 'MUNDO_NOVO', razao_social: 'R R NEGÓCIOS' },
+    '000000007/2026',
+    officialLogo,
+  );
+  applyContractPdfChrome(fakePdf as never, mundoChrome);
+  assert(addImageCalls.length === 1, 'logo: chrome Mundo Novo desenha a imagem');
+  assert(addImageCalls[0][4] === size.widthMm, 'logo: jsPDF usa largura proporcional');
+  assert(addImageCalls[0][5] === size.heightMm, 'logo: jsPDF usa altura proporcional');
+  assert(
+    String(addImageCalls[0][0]).startsWith('data:image/png;base64,'),
+    'logo: jsPDF recebe o PNG oficial',
+  );
+
+  addImageCalls.length = 0;
+  applyContractPdfChrome(fakePdf as never, {
+    tenantName: 'R R NEGÓCIOS',
+    tenantCnpj: '',
+    addressLine: '',
+    cityUfLine: '',
+    contractNumber: '000000008/2026',
+    logoBase64: 'data:image/png;base64,ARAGUAIA_LOGO',
+  });
+  assert(addImageCalls[0][4] === 22 && addImageCalls[0][5] === 12, 'logo: ARAGUAIA permanece 22x12 mm');
 }
 
 try {
@@ -376,7 +489,33 @@ assert(direct.includes('data-contract-model="MUNDO_NOVO"'), '2. generateMundoNov
   );
   assert(page.includes('sv-contract-mundo-novo'), 'PDF client detecta HTML Mundo Novo');
   assert(page.includes('htmlLooksMundoNovo'), 'PDF client isola chrome Mundo Novo');
-  assert(page.includes('!htmlLooksMundoNovo && getReportHeaderLogoUrl'), 'PDF Mundo Novo não carrega logo da empresa');
+  assert(page.includes('MUNDO_NOVO_LOGO_PATH'), 'PDF Mundo Novo carrega asset próprio');
+  assert(
+    !page.includes('!htmlLooksMundoNovo && getReportHeaderLogoUrl'),
+    'PDF Mundo Novo não carrega logo da empresa',
+  );
+}
+
+{
+  const salePdf = fs.readFileSync(
+    path.join(process.cwd(), 'lib/saleContractPdf.ts'),
+    'utf8',
+  );
+  assert(
+    /isMundoNovoContractModel\(tenant\)\) \{\s*return loadMundoNovoLogoDataUrl\(\);/.test(
+      salePdf,
+    ),
+    'PDF server Mundo Novo lê o PNG em public/',
+  );
+}
+
+{
+  const chromeJs = fs.readFileSync(
+    path.join(process.cwd(), 'lib/contractPdfChromeBrowser.js'),
+    'utf8',
+  );
+  assert(chromeJs.includes('logoWidthMm'), 'chrome browser aceita largura da logo');
+  assert(chromeJs.includes('logoHeightMm'), 'chrome browser aceita altura da logo');
 }
 
 console.log('\nOK mandatory-mundo-novo-contract-tests');
