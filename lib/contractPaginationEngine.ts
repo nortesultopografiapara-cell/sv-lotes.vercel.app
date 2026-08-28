@@ -815,6 +815,9 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   const pack = root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
   const sig = root.querySelector('.contract-signatures, .sv2-signatures');
   const cert = root.querySelector('.sv-cert-official-block');
+  const mundoNovoEsign = !!root.querySelector(
+    '.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]',
+  );
   if (pack) pack.classList.remove('sv-pagination-force-break');
   if (sig) sig.classList.remove('sv-pagination-force-break');
   if (cert) cert.classList.remove('sv-pagination-force-break');
@@ -914,8 +917,11 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
       remainingForCert = remainingAt(top);
     }
     certificate = decideBlock(remainingForCert, certH);
-    if (certificate === 'new-page') {
+    if (certificate === 'new-page' && !mundoNovoEsign) {
       cert.classList.add('sv-pagination-force-break');
+    }
+    if (mundoNovoEsign) {
+      certificate = 'same-page';
     }
   }
 
@@ -966,6 +972,11 @@ export function applyContractPaginationBreaksToElement(
   const cert = element.querySelector(
     '.sv-cert-official-block',
   ) as HTMLElement | null;
+  const mundoNovoEsign = Boolean(
+    element.querySelector(
+      '.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]',
+    ),
+  );
 
   if (pack) pack.classList.remove('sv-pagination-force-break');
   if (sig) sig.classList.remove('sv-pagination-force-break');
@@ -1043,13 +1054,13 @@ export function applyContractPaginationBreaksToElement(
     // Araguaia: não força break por resto contínuo (evita página vazia antes do pack).
     sig.classList.add('sv-pagination-compact');
   }
-  if (cert && decisionsCert.certificate === 'new-page') {
+  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
     cert.classList.add('sv-pagination-force-break');
   }
 
   return {
     signature,
-    certificate: decisionsCert.certificate,
+    certificate: mundoNovoEsign ? 'same-page' : decisionsCert.certificate,
     sigH,
     certH,
   };
