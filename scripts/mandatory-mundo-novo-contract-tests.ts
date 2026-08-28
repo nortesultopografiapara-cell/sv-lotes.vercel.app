@@ -17,6 +17,7 @@ import { generateMundoNovoContract } from '../lib/mundoNovoContractTemplate';
 import {
   MUNDO_NOVO_LOGO_PATH,
   MUNDO_NOVO_LOGO_PUBLIC_FILE,
+  MUNDO_NOVO_ELECTRONIC_LOGO_PUBLIC_FILE,
   MUNDO_NOVO_LOGO_NATIVE_WIDTH,
   MUNDO_NOVO_LOGO_NATIVE_HEIGHT,
   mundoNovoPdfChromeLogoSizeMm,
@@ -259,6 +260,18 @@ assert(
   const png = fs.readFileSync(logoFile);
   assert(png.readUInt32BE(16) === 1024, 'logo: largura nativa 1024');
   assert(png.readUInt32BE(20) === 682, 'logo: altura nativa 682');
+}
+
+{
+  const electronicFile = path.join(
+    process.cwd(),
+    'public',
+    MUNDO_NOVO_ELECTRONIC_LOGO_PUBLIC_FILE,
+  );
+  assert(fs.existsSync(electronicFile), 'logo eletrônica exclusiva existe em public/');
+  const epng = fs.readFileSync(electronicFile);
+  assert(epng.readUInt32BE(16) === 1024, 'logo eletrônica: largura 1024');
+  assert(epng.readUInt32BE(20) === 682, 'logo eletrônica: altura 682');
 }
 
 {

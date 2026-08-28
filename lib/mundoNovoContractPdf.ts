@@ -8,11 +8,20 @@
 
 import { displayContractNumber } from '@/lib/contractNumber';
 
-/** Caminho público (browser) do PNG oficial. */
+/** Caminho público (browser) do PNG — chrome físico html2pdf. */
 export const MUNDO_NOVO_LOGO_PATH = '/logo-chacreamento-mundo-novo.png';
 
-/** Nome do ficheiro em public/ (leitura no servidor). */
+/** Nome do ficheiro em public/ (chrome físico). */
 export const MUNDO_NOVO_LOGO_PUBLIC_FILE = 'logo-chacreamento-mundo-novo.png';
+
+/**
+ * Asset exclusivo do cabeçalho ELECTRONIC_SIGNED.
+ * Não reutiliza o filename anterior (cache / tenant.logo_url da R R).
+ */
+export const MUNDO_NOVO_ELECTRONIC_LOGO_PATH =
+  '/logo-chacreamento-mundo-novo-oficial.png';
+export const MUNDO_NOVO_ELECTRONIC_LOGO_PUBLIC_FILE =
+  'logo-chacreamento-mundo-novo-oficial.png';
 
 /** Dimensões nativas do PNG oficial (não deformar). */
 export const MUNDO_NOVO_LOGO_NATIVE_WIDTH = 1024;
