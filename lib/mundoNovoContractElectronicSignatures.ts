@@ -174,7 +174,11 @@ export function applyMundoNovoElectronicSignaturesToContractHtml(
   const slots = buildMundoNovoElectronicSignatureSlotsFromParties(parties);
   if (slots.length === 0) return html;
   const block = buildMundoNovoElectronicSignaturesBlockHtml(slots);
-  return replaceContractSignaturesBlock(html, block);
+  const replaced = replaceContractSignaturesBlock(html, block);
+  return replaced.replace(
+    /class="contract-closing-and-signatures--mundo-novo" data-signature-mode="PHYSICAL_UNSIGNED"/,
+    'class="contract-closing-and-signatures--mundo-novo" data-signature-mode="ELECTRONIC_SIGNED"',
+  );
 }
 
 export function describeMundoNovoElectronicSlotRoles(

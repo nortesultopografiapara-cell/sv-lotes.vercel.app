@@ -1002,7 +1002,11 @@ export default function ContractsPage() {
           ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
           : tenantData || {};
       const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo
-        ? resolveContractHtml2pdfOptions(pdfChromeTenant, pdfFilename)
+        ? resolveContractHtml2pdfOptions(
+            pdfChromeTenant,
+            pdfFilename,
+            String(ver.generated_html || ''),
+          )
         : htmlLooksRecanto
           ? resolveContractHtml2pdfOptions(tenantData || {}, pdfFilename)
           : getContractHtml2pdfOptions(pdfFilename);
@@ -1141,6 +1145,7 @@ export default function ContractsPage() {
       const opt = resolveContractHtml2pdfOptions(
         pdfChromeTenant,
         pdfFilename,
+        String(htmlBody || ''),
       );
 
       try {

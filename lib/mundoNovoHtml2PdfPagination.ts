@@ -1,7 +1,7 @@
 /**
  * Seletores html2pdf — isolados do ARAGUAIA.
  */
-export const MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID = [
+const MUNDO_NOVO_HTML2PDF_CLAUSE_AVOID = [
   '.mundo-novo-clause-keep',
   '.mundo-novo-keep-together',
   '.mundo-novo-financial-item-1-3',
@@ -11,6 +11,36 @@ export const MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID = [
   '.mundo-novo-seventh-letter-b',
   '.mundo-novo-seventh-letter-c',
   '.mundo-novo-tenth-letter-c',
+] as const;
+
+/** Contrato físico — fecho + linhas de assinatura permanecem indivisíveis. */
+export const MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID = [
+  ...MUNDO_NOVO_HTML2PDF_CLAUSE_AVOID,
   '.contract-closing-and-signatures--mundo-novo',
   '.sv-contract-mundo-novo .signature-slot',
 ] as const;
+
+/**
+ * PDF ELECTRONIC_SIGNED — não isola o fecho numa página só de rubricas.
+ * Não listar o wrapper nem o grid inteiro: html2pdf trata cada avoid
+ * de forma independente e empurraria os 6 cards para a página seguinte.
+ * Cards individuais não se partem no meio.
+ */
+export const MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID = [
+  ...MUNDO_NOVO_HTML2PDF_CLAUSE_AVOID,
+  '.sv-contract-mundo-novo .signature-slot--electronic',
+] as const;
+
+export function isMundoNovoElectronicSignedHtml(html?: string | null): boolean {
+  const raw = String(html || '');
+  return (
+    raw.includes('sv-contract-mundo-novo') &&
+    raw.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+  );
+}
+
+export function resolveMundoNovoHtml2pdfAvoid(html?: string | null): readonly string[] {
+  return isMundoNovoElectronicSignedHtml(html)
+    ? MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID
+    : MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID;
+}

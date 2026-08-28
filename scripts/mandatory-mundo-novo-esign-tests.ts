@@ -33,6 +33,11 @@ import {
 } from '../lib/mundoNovoContractElectronicSignatures';
 import { buildMundoNovoSignaturesHtml } from '../lib/mundoNovoContractParties';
 import { mergeMundoNovoSellerPartyContacts } from '../lib/mundoNovoContractSellers';
+import {
+  MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID,
+  MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID,
+  resolveMundoNovoHtml2pdfAvoid,
+} from '../lib/mundoNovoHtml2PdfPagination';
 import { shouldCreateSpouseSignatureParty } from '../lib/saleContractSignaturePartyRules';
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 import { SPOUSE_ELECTRONIC_SIGNATURE_MODELS } from '../lib/saleContractSignaturePartyRules';
@@ -210,6 +215,31 @@ console.log('\n=== Isolamento de arquivos ===');
   ok(
     clauses.includes('CLÁUSULA') && !clauses.includes('ELECTRONIC_SIGNED'),
     'cláusulas homologadas da Fase 1 intactas',
+  );
+  const pagination = readFileSync(
+    join(root, 'lib/mundoNovoHtml2PdfPagination.ts'),
+    'utf8',
+  );
+  const postProcess = readFileSync(
+    join(root, 'lib/contractPdfPostProcess.ts'),
+    'utf8',
+  );
+  const template = readFileSync(
+    join(root, 'lib/mundoNovoContractTemplate.ts'),
+    'utf8',
+  );
+  ok(
+    pagination.includes('MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID'),
+    'paginação eletrônica isolada da física',
+  );
+  ok(
+    postProcess.includes('resolveMundoNovoHtml2pdfAvoid'),
+    'html2pdf Mundo Novo escolhe avoid pelo HTML',
+  );
+  ok(
+    template.includes('page-break-inside: avoid !important') &&
+      template.includes('.contract-closing-and-signatures--mundo-novo'),
+    'template físico ainda evita quebra no fecho+linhas',
   );
 }
 
@@ -573,9 +603,29 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   );
   ok(signedHtml.includes('ELECTRONIC_SIGNED'), 'PDF eletrônico ELECTRONIC_SIGNED');
   ok(
-    signedHtml.includes('ASSINADO ELETRONICAMENTE'),
-    'selo ASSINADO ELETRONICAMENTE',
+    signedHtml.includes('ASSINATURAS ELETRÔNICAS'),
+    'título ASSINATURAS ELETRÔNICAS abaixo do fecho',
   );
+  ok(
+    signedHtml.includes('Assinado eletronicamente'),
+    'selo compacto Assinado eletronicamente',
+  );
+  ok(
+    signedHtml.includes('signature-grid--mundo-novo-electronic'),
+    'grade compacta 2 colunas',
+  );
+  ok(
+    signedHtml.includes(
+      'contract-closing-and-signatures--mundo-novo" data-signature-mode="ELECTRONIC_SIGNED"',
+    ),
+    'wrapper eletrônico libera quebra da página de rubricas isoladas',
+  );
+  ok(
+    signedHtml.includes('page-break-inside: auto !important'),
+    'CSS eletrônico não isola o fecho numa página só',
+  );
+  ok(physical.includes('PHYSICAL_UNSIGNED'), 'físico permanece PHYSICAL_UNSIGNED');
+  ok(!physical.includes('ASSINATURAS ELETRÔNICAS'), 'físico sem bloco eletrônico compacto');
   ok(signedHtml.includes(MARIA.name), 'PDF eletrônico Maria');
   ok(signedHtml.includes(ADENIL.name), 'PDF eletrônico Adenil');
   ok(
@@ -644,6 +694,30 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(!/PROMITENTE VENDEDOR[\s\S]{0,200}Daniel Roberto/i.test(cert), 'Daniel não aparece como VENDOR no certificado');
   ok(cert.includes('evt-maria') && cert.includes('evt-adenil'), 'IDs das parties no certificado');
   ok(cert.includes('evt-rr') && cert.includes('evt-w1') && cert.includes('evt-w2'), 'IDs INTERVENIENT e testemunhas');
+
+  const physicalAvoid = resolveMundoNovoHtml2pdfAvoid(physical);
+  const electronicAvoid = resolveMundoNovoHtml2pdfAvoid(signedHtml);
+  ok(
+    physicalAvoid.includes('.contract-closing-and-signatures--mundo-novo'),
+    'html2pdf físico ainda trata fecho+linhas como unidade',
+  );
+  ok(
+    !electronicAvoid.includes('.contract-closing-and-signatures--mundo-novo'),
+    'html2pdf eletrônico NÃO isola o wrapper de fecho+assinaturas',
+  );
+  ok(
+    !electronicAvoid.some((sel) => sel.includes('contract-signatures--electronic')),
+    'html2pdf eletrônico NÃO empurra o grid inteiro para a página seguinte',
+  );
+  ok(
+    electronicAvoid.includes('.sv-contract-mundo-novo .signature-slot--electronic'),
+    'html2pdf eletrônico evita partir card compacto no meio',
+  );
+  ok(
+    MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID.length !==
+      MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID.length,
+    'listas física e eletrônica são distintas',
+  );
 }
 
 console.log('\nTODOS OS TESTES OBRIGATÓRIOS DO E-SIGN MUNDO NOVO PASSARAM.\n');

@@ -18,7 +18,7 @@ import {
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
-import { MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID } from "@/lib/mundoNovoHtml2PdfPagination";
+import { resolveMundoNovoHtml2pdfAvoid } from "@/lib/mundoNovoHtml2PdfPagination";
 import { mundoNovoPdfChromeLogoSizeMm } from "@/lib/mundoNovoContractPdf";
 import { formatMundoNovoSeatAddressParts } from "@/lib/mundoNovoContractQualification";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
@@ -131,6 +131,7 @@ export function getRecantoContractHtml2pdfOptions(
 export function resolveContractHtml2pdfOptions(
   tenant: Record<string, unknown> | null | undefined,
   filename: string,
+  html?: string | null,
 ): ContractHtml2pdfOptions {
   if (isRecantoPrimaveraContractModel(tenant)) {
     return getRecantoContractHtml2pdfOptions(filename);
@@ -149,7 +150,7 @@ export function resolveContractHtml2pdfOptions(
       ...getContractHtml2pdfOptions(filename),
       pagebreak: {
         mode: ['css', 'legacy'],
-        avoid: [...MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID],
+        avoid: [...resolveMundoNovoHtml2pdfAvoid(html)],
       },
     };
   }
