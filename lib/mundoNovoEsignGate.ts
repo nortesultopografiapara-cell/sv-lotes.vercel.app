@@ -1,10 +1,12 @@
 /**
- * Gate central MUNDO_NOVO e-sign — Preview/develop isolado.
+ * Gate central MUNDO_NOVO e-sign — R R + modelo MUNDO_NOVO.
  *
- * Production (VERCEL_ENV=production OU project ref Production) = SEMPRE off.
- * Preview/dev: modelo MUNDO_NOVO + company na allowlist.
- * Flag MUNDO_NOVO_ESIGN_ENABLED=false desliga mesmo no Preview.
+ * Preview/dev: ON por padrão para a R R na allowlist; false explícito desliga.
+ * Production Vercel: só liga com MUNDO_NOVO_ESIGN_ENABLED=true + company na
+ * allowlist (default = R R NEGÓCIOS & SERVIÇOS LTDA). Outros tenants = OFF.
+ * Preview apontando para banco Production = OFF (não mistura ambientes).
  *
+ * Identificação: params.companyId (companies.id), não project id.
  * NÃO reutilizar ARAGUAIA_ESIGN_V2_* nem buildAraguaiaEsignVendorPartyInputs.
  */
 
@@ -67,15 +69,25 @@ function readSupabaseUrl(env: NodeJS.ProcessEnv): string {
   ).trim();
 }
 
-/** Production Vercel OU banco Production — nunca liga e-sign Mundo Novo. */
+function isProductionVercel(env: NodeJS.ProcessEnv): boolean {
+  return String(env.VERCEL_ENV || '').toLowerCase() === 'production';
+}
+
+function isProductionSupabase(env: NodeJS.ProcessEnv): boolean {
+  if (isProductionSupabaseRuntime(readSupabaseUrl(env))) return true;
+  const ref = String(env.NEXT_PUBLIC_SUPABASE_PROJECT_REF || '').trim();
+  return Boolean(ref && ref === PRODUCTION_PROJECT_REF);
+}
+
+/**
+ * Preview/dev apontando para banco Production — nunca liga e-sign.
+ * Production Vercel não entra aqui: usa flag explícita + allowlist.
+ */
 export function isMundoNovoEsignProductionLocked(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (String(env.VERCEL_ENV || '').toLowerCase() === 'production') return true;
-  if (isProductionSupabaseRuntime(readSupabaseUrl(env))) return true;
-  const ref = String(env.NEXT_PUBLIC_SUPABASE_PROJECT_REF || '').trim();
-  if (ref && ref === PRODUCTION_PROJECT_REF) return true;
-  return false;
+  if (isProductionVercel(env)) return false;
+  return isProductionSupabase(env);
 }
 
 export function isMundoNovoEsignEnvExplicitlyDisabled(
@@ -89,6 +101,9 @@ export function isMundoNovoEsignEnvEnabled(
 ): boolean {
   if (isMundoNovoEsignProductionLocked(env)) return false;
   if (isMundoNovoEsignEnvExplicitlyDisabled(env)) return false;
+  if (isProductionVercel(env)) {
+    return parseTruthyEnv(env[MUNDO_NOVO_ESIGN_ENABLED_ENV]);
+  }
   const raw = env[MUNDO_NOVO_ESIGN_ENABLED_ENV];
   if (raw == null || String(raw).trim() === '') return true;
   return parseTruthyEnv(raw);
@@ -120,8 +135,8 @@ export function isCompanyOnMundoNovoEsignAllowlist(
 
 /**
  * Gate único do e-sign Mundo Novo.
- * Production: sempre false.
- * Preview/dev: MUNDO_NOVO + allowlist (default R R).
+ * Production: ENABLED=true + MUNDO_NOVO + companyId na allowlist (default R R).
+ * Preview/dev: MUNDO_NOVO + allowlist (default R R), salvo flag false.
  */
 export function shouldEnableMundoNovoEsign(
   params: MundoNovoEsignGateInput,

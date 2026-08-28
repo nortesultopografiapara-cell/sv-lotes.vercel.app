@@ -1,5 +1,5 @@
 /**
- * Testes obrigatórios — e-sign MUNDO_NOVO (Preview isolado).
+ * Testes obrigatórios — e-sign MUNDO_NOVO (Preview + Production R R).
  * npx tsx scripts/mandatory-mundo-novo-esign-tests.ts
  */
 import assert from 'node:assert/strict';
@@ -369,25 +369,60 @@ console.log('\n=== Gate Preview × Production ===');
     'sem companyId = OFF',
   );
   ok(
-    isMundoNovoEsignProductionLocked(
+    !isMundoNovoEsignProductionLocked(
       envWith({
         VERCEL_ENV: 'production',
-        NEXT_PUBLIC_SUPABASE_URL: DEVELOP_URL,
+        NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_URL,
         [MUNDO_NOVO_ESIGN_ENABLED_ENV]: 'true',
       }),
     ),
-    'VERCEL_ENV=production trava o gate',
+    'VERCEL_ENV=production não é hard-lock (usa flag + allowlist)',
+  );
+  ok(
+    shouldEnableMundoNovoEsign(
+      { companyId: RR, contractModel: 'MUNDO_NOVO' },
+      envWith({
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_URL,
+        [MUNDO_NOVO_ESIGN_ENABLED_ENV]: 'true',
+      }),
+    ),
+    'Production + R R + MUNDO_NOVO + flag = ON',
   );
   ok(
     !shouldEnableMundoNovoEsign(
       { companyId: RR, contractModel: 'MUNDO_NOVO' },
       envWith({
         VERCEL_ENV: 'production',
-        NEXT_PUBLIC_SUPABASE_URL: DEVELOP_URL,
+        NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_URL,
+      }),
+    ),
+    'Production sem flag explícita = OFF',
+  );
+  ok(
+    !shouldEnableMundoNovoEsign(
+      {
+        companyId: '00000000-0000-0000-0000-000000000000',
+        contractModel: 'MUNDO_NOVO',
+      },
+      envWith({
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_URL,
         [MUNDO_NOVO_ESIGN_ENABLED_ENV]: 'true',
       }),
     ),
-    'Production Vercel nunca liga e-sign Mundo Novo',
+    'Production + outro tenant = OFF',
+  );
+  ok(
+    !shouldEnableMundoNovoEsign(
+      { companyId: RR, contractModel: 'ARAGUAIA' },
+      envWith({
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_URL,
+        [MUNDO_NOVO_ESIGN_ENABLED_ENV]: 'true',
+      }),
+    ),
+    'Production + ARAGUAIA no gate Mundo Novo = OFF',
   );
   ok(
     !shouldEnableMundoNovoEsign(
