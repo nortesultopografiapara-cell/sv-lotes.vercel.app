@@ -135,7 +135,7 @@ function mockParty(
     cancelled_at: null,
     expires_at: null,
     signature_data: partial.signature_data || {},
-    ip_address: null,
+    ip_address: partial.ip_address ?? null,
     user_agent: null,
     signature_hash: null,
     created_at: '2026-08-27T12:00:00.000Z',
@@ -549,6 +549,7 @@ console.log('\n=== Bloco eletrônico + certificado ===');
       signer_name: MARIA.name,
       signer_cpf: '24803197253',
       signed_at: '2026-08-27T15:01:00.000Z',
+      ip_address: '187.10.0.11',
       signature_data: { signature_event_id: 'evt-maria' },
     }),
     mockParty({
@@ -557,6 +558,7 @@ console.log('\n=== Bloco eletrônico + certificado ===');
       signer_name: ADENIL.name,
       signer_cpf: '17520096220',
       signed_at: '2026-08-27T15:02:00.000Z',
+      ip_address: '187.10.0.12',
       signature_data: { signature_event_id: 'evt-adenil' },
     }),
     mockParty({
@@ -565,6 +567,7 @@ console.log('\n=== Bloco eletrônico + certificado ===');
       signer_name: 'Comprador Teste',
       signer_cpf: '11144477735',
       signed_at: '2026-08-27T15:03:00.000Z',
+      ip_address: '187.10.0.13',
       signature_data: { signature_event_id: 'evt-buyer' },
     }),
     mockParty({
@@ -573,6 +576,7 @@ console.log('\n=== Bloco eletrônico + certificado ===');
       signer_name: 'R R NEGÓCIOS & SERVIÇOS LTDA',
       signer_cpf: '57590706000178',
       signed_at: '2026-08-27T15:04:00.000Z',
+      ip_address: '187.10.0.14',
       signature_data: {
         signature_event_id: 'evt-rr',
         party_kind: 'LEGAL_ENTITY',
@@ -588,6 +592,7 @@ console.log('\n=== Bloco eletrônico + certificado ===');
       signer_name: 'Testemunha Um',
       signer_cpf: '39053344705',
       signed_at: '2026-08-27T15:05:00.000Z',
+      ip_address: '187.10.0.15',
       signature_data: { signature_event_id: 'evt-w1' },
     }),
     mockParty({
@@ -596,14 +601,24 @@ console.log('\n=== Bloco eletrônico + certificado ===');
       signer_name: 'Testemunha Dois',
       signer_cpf: '52998224725',
       signed_at: '2026-08-27T15:06:00.000Z',
+      ip_address: '187.10.0.16',
       signature_data: { signature_event_id: 'evt-w2' },
     }),
   ];
 
   const slots = buildMundoNovoElectronicSignatureSlotsFromParties(parties);
   ok(slots.filter((s) => s.role === 'VENDOR').length === 2, 'bloco 2 vendedores');
+  ok(
+    slots.map((s) => s.role).join(',') ===
+      'VENDOR,VENDOR,INTERVENIENT,BUYER,WITNESS_1,WITNESS_2',
+    'ordem 3×2: Maria → Adenil → R R → comprador → testemunhas',
+  );
+  ok(slots[0].roleLabel === 'PROMITENTE VENDEDOR 1', 'rótulo vendedor 1');
+  ok(slots[1].roleLabel === 'PROMITENTE VENDEDOR 2', 'rótulo vendedor 2');
+  ok(slots[0].name.includes('Maria'), 'primeiro card Maria');
+  ok(slots[1].name.includes('Adenil'), 'segundo card Adenil');
+  ok(slots[2].role === 'INTERVENIENT', 'terceiro card INTERVENIENTE');
   ok(slots.some((s) => s.role === 'BUYER'), 'bloco comprador');
-  ok(slots.some((s) => s.role === 'INTERVENIENT'), 'bloco interveniente');
   ok(slots.some((s) => s.role === 'WITNESS_1'), 'bloco testemunha 1');
   ok(slots.some((s) => s.role === 'WITNESS_2'), 'bloco testemunha 2');
   const rrSlot = slots.find((s) => s.role === 'INTERVENIENT');
@@ -633,8 +648,17 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   );
   ok(
     signedHtml.includes('signature-grid--mundo-novo-electronic'),
-    'grade compacta 2 colunas',
+    'grade compacta 3 colunas',
   );
+  ok(
+    signedHtml.includes('repeat(3, minmax(0, 1fr))'),
+    'CSS da grade 3×2',
+  );
+  ok(signedHtml.includes('PROMITENTE VENDEDOR 1'), 'card vendedor 1 na página 7');
+  ok(signedHtml.includes('PROMITENTE VENDEDOR 2'), 'card vendedor 2 na página 7');
+  ok(signedHtml.includes('IP: 187.10.0.11'), 'card com IP real');
+  ok(signedHtml.includes('CPF:'), 'card com CPF');
+  ok(signedHtml.includes('ID: evt-maria'), 'card com ID único');
   ok(
     signedHtml.includes(
       'contract-closing-and-signatures--mundo-novo" data-signature-mode="ELECTRONIC_SIGNED"',
@@ -719,11 +743,46 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(cert.includes('R R NEGÓCIOS'), 'certificado R R');
   ok(cert.includes(MUNDO_NOVO_FORBIDDEN_VENDOR_NAME), 'certificado Daniel representante');
   ok(!/PROMITENTE VENDEDOR[\s\S]{0,200}Daniel Roberto/i.test(cert), 'Daniel não aparece como VENDOR no certificado');
-  ok(cert.includes('evt-maria') && cert.includes('evt-adenil'), 'IDs das parties no certificado');
+  ok(cert.includes('evt-maria') && cert.includes('evt-adenil'), 'IDs das parties no certificado padrão');
   ok(cert.includes('evt-rr') && cert.includes('evt-w1') && cert.includes('evt-w2'), 'IDs INTERVENIENT e testemunhas');
-  const withCert = applyMundoNovoElectronicCertificateNewPage(signedHtml + cert);
+  const compactCert = buildSaleContractSignatureCertificateHtml({
+    contractNumber: '000000010/2026',
+    projectName: 'Chacreamento Mundo Novo',
+    quadra: '01',
+    lote: '12',
+    buyerName: 'Comprador Teste',
+    buyerDocument: '11144477735',
+    signatureStatus: 'ASSINADO ELETRONICAMENTE',
+    companyName: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+    signedAt: '2026-08-27T15:03:00.000Z',
+    signatureToken: 'tok-compact-mn',
+    signatureHash: 'abc123hash',
+    publicUrl: 'https://example.test/verify/tok-compact-mn',
+    qrCodeDataUrl: 'data:image/png;base64,AAA',
+    omitPartyEvidenceCards: true,
+    personVendorCards: [
+      {
+        name: MARIA.name,
+        cpf: '24803197253',
+        signedAt: '2026-08-27T15:01:00.000Z',
+        signatureEventId: 'evt-maria',
+      },
+    ],
+    intervenientCard: {
+      companyName: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      representativeName: MUNDO_NOVO_FORBIDDEN_VENDOR_NAME,
+      representativeCpf: MUNDO_NOVO_FORBIDDEN_VENDOR_CPF_DIGITS,
+      signedAt: '2026-08-27T15:04:00.000Z',
+      signatureEventId: 'evt-rr',
+    },
+  });
+  ok(!compactCert.includes('class="sv-cert-cards"'), 'layout compacto sem fichas extensas');
+  ok(compactCert.includes('tok-compact-mn'), 'token real no certificado compacto');
+  ok(compactCert.includes('abc123hash'), 'hash real no certificado compacto');
+  ok(compactCert.includes('https://example.test/verify/tok-compact-mn'), 'URL pública real');
+  const withCert = applyMundoNovoElectronicCertificateNewPage(signedHtml + compactCert);
   ok(
-    withCert.includes('class="sv-cert-official-block sv-mundo-novo-cert-new-page"') &&
+    withCert.includes('class="sv-cert-official-block sv-mundo-novo-cert-new-page sv-mundo-novo-cert-compact"') &&
       withCert.includes('class="sv-mundo-novo-cert-page-break"'),
     'certificado eletrônico com classe de página própria',
   );
@@ -740,6 +799,24 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(
     split.certificateHtml.includes('class="sv-cert-official-block'),
     'HTML do certificado separado para merge',
+  );
+  ok(
+    !split.certificateHtml.includes('class="sv-cert-cards"'),
+    'página 8 sem fichas extensas de evidência',
+  );
+  ok(
+    split.certificateHtml.includes('Escaneie para validar este documento'),
+    'página 8 com legenda do QR',
+  );
+  ok(
+    split.certificateHtml.includes('sv-mundo-novo-cert-compact'),
+    'página 8 com layout compacto QR + certificado',
+  );
+  ok(
+    split.contractHtml.includes('evt-maria') &&
+      split.contractHtml.includes('evt-adenil') &&
+      split.contractHtml.includes('evt-rr'),
+    'IDs das assinaturas permanecem nos cards da página 7',
   );
 
   const physicalAvoid = resolveMundoNovoHtml2pdfAvoid(physical);

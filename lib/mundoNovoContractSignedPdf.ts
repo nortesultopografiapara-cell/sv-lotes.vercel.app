@@ -57,7 +57,7 @@ async function buildCertificateOnlyPdf(
 <meta charset="utf-8">
 <title>Certificado</title>
 <style>
-  html, body { margin: 0; padding: 0; zoom: 0.62; }
+  html, body { margin: 0; padding: 0; zoom: 0.92; }
 </style>
 </head>
 <body>${certificateHtml}<style id="mundo-novo-cert-standalone-css">
