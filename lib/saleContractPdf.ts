@@ -8,7 +8,10 @@ import path from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
-import { MUNDO_NOVO_LOGO_PUBLIC_FILE } from '@/lib/mundoNovoContractPdf';
+import {
+  MUNDO_NOVO_LOGO_PUBLIC_FILE,
+  buildMundoNovoElectronicSaleContractPrintTemplates,
+} from '@/lib/mundoNovoContractPdf';
 import { displayContractNumber } from '@/lib/contractNumber';
 import {
   CONTRACT_PDF_PRINT_CSS,
@@ -231,9 +234,11 @@ export async function buildSaleContractPdfFromHtml(
     `Contrato ${chrome.contractNumber}`,
   );
   const { headerTemplate, footerTemplate } =
-    chrome.printStyle === 'sv-lotes-2'
-      ? buildSvLotes2SaleContractPrintTemplates(chrome)
-      : buildSaleContractPrintTemplates(chrome);
+    chrome.headerVariant === 'mundo-novo-electronic'
+      ? buildMundoNovoElectronicSaleContractPrintTemplates(chrome)
+      : chrome.printStyle === 'sv-lotes-2'
+        ? buildSvLotes2SaleContractPrintTemplates(chrome)
+        : buildSaleContractPrintTemplates(chrome);
 
   let browser: Browser | null = null;
   let page: Awaited<ReturnType<Browser['newPage']>> | null = null;

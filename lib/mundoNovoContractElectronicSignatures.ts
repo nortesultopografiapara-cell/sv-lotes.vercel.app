@@ -18,6 +18,13 @@ import type { ContractSignaturePartyRow } from '@/lib/saleContractSignatureParty
 import { saleSignaturePartyRoleLabel } from '@/lib/saleContractSignaturePartyTypes';
 import { replaceContractSignaturesBlock } from '@/lib/saleContractSignatureHtmlBlocks';
 
+/** Fecho ELECTRONIC_SIGNED — sem referência a vias físicas. PHYSICAL_UNSIGNED intacto. */
+export const MUNDO_NOVO_ELECTRONIC_CLOSING_STATEMENT =
+  'E, por estarem justos e contratados, as partes assinam o presente instrumento eletronicamente, juntamente com as testemunhas abaixo, para que produza seus efeitos legais.';
+
+export const MUNDO_NOVO_PHYSICAL_CLOSING_VIAS_MARKER =
+  '03(três) vias de igual teor e forma';
+
 export type { MundoNovoElectronicSignatureSlotInput };
 export {
   buildMundoNovoElectronicSignatureSlotHtml,
@@ -210,9 +217,27 @@ export function applyMundoNovoElectronicSignaturesToContractHtml(
   if (slots.length === 0) return html;
   const block = buildMundoNovoElectronicSignaturesBlockHtml(slots);
   const replaced = replaceContractSignaturesBlock(html, block);
-  return replaced.replace(
+  const electronic = replaced.replace(
     /class="contract-closing-and-signatures--mundo-novo" data-signature-mode="PHYSICAL_UNSIGNED"/,
     'class="contract-closing-and-signatures--mundo-novo" data-signature-mode="ELECTRONIC_SIGNED"',
+  );
+  return applyMundoNovoElectronicClosingStatement(electronic);
+}
+
+/**
+ * Troca só o parágrafo de fecho no HTML ELECTRONIC_SIGNED.
+ * Não altera cláusulas nem o PHYSICAL_UNSIGNED.
+ */
+export function applyMundoNovoElectronicClosingStatement(html: string): string {
+  if (
+    !html.includes('contract-closing-and-signatures--mundo-novo') ||
+    !html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+  ) {
+    return html;
+  }
+  return html.replace(
+    /(<p class="mundo-novo-closing-statement"[^>]*>)([\s\S]*?)(<\/p>)/,
+    `$1${MUNDO_NOVO_ELECTRONIC_CLOSING_STATEMENT}$3`,
   );
 }
 

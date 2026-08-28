@@ -12,5 +12,8 @@ export async function buildMundoNovoElectronicSignedPdfFromHtml(
   html: string,
   chrome: ContractPdfChromeInput,
 ): Promise<Uint8Array> {
-  return buildSaleContractPdfFromHtml(html, chrome);
+  return buildSaleContractPdfFromHtml(html, {
+    ...chrome,
+    headerVariant: 'mundo-novo-electronic',
+  });
 }

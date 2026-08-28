@@ -31,7 +31,11 @@ import {
   applyMundoNovoElectronicSignaturesToContractHtml,
   applyMundoNovoElectronicCertificateNewPage,
   buildMundoNovoElectronicSignatureSlotsFromParties,
+  MUNDO_NOVO_ELECTRONIC_CLOSING_STATEMENT,
+  MUNDO_NOVO_PHYSICAL_CLOSING_VIAS_MARKER,
 } from '../lib/mundoNovoContractElectronicSignatures';
+import { buildMundoNovoElectronicSaleContractPrintTemplates } from '../lib/mundoNovoContractPdf';
+import { MUNDO_NOVO_LEGAL_MARKER } from '../lib/mundoNovoContractConstants';
 import { buildMundoNovoSignaturesHtml } from '../lib/mundoNovoContractParties';
 import { mergeMundoNovoSellerPartyContacts } from '../lib/mundoNovoContractSellers';
 import { resolveMundoNovoHtml2pdfAvoid } from '../lib/mundoNovoHtml2PdfPagination';
@@ -214,10 +218,9 @@ console.log('\n=== Isolamento de arquivos ===');
       'utf8',
     );
     ok(
-      signedPdf.includes('buildSaleContractPdfFromHtml') &&
-        !signedPdf.includes('splitMundoNovoContractAndCertificateHtml') &&
-        !signedPdf.includes('mergePdfByteArrays'),
-      'PDF eletrônico Mundo Novo não faz merge de página 8',
+      signedPdf.includes("headerVariant: 'mundo-novo-electronic'") &&
+        signedPdf.includes('buildSaleContractPdfFromHtml'),
+      'PDF eletrônico Mundo Novo usa cabeçalho 3 colunas sem merge de página 8',
     );
   }
   {
@@ -261,9 +264,56 @@ console.log('\n=== Isolamento de arquivos ===');
     'contrato físico Fase 1 permanece PHYSICAL_UNSIGNED',
   );
   ok(
+    parties.includes(MUNDO_NOVO_PHYSICAL_CLOSING_VIAS_MARKER),
+    'fecho físico homologado ainda cita 03 vias',
+  );
+  ok(
     clauses.includes('CLÁUSULA') && !clauses.includes('ELECTRONIC_SIGNED'),
     'cláusulas homologadas da Fase 1 intactas',
   );
+  ok(
+    clauses.includes('MUNDO_NOVO_LEGAL_MARKER') &&
+      MUNDO_NOVO_LEGAL_MARKER === 'CLÁUSULA PRIMEIRA – DESCRIÇÃO DO IMÓVEL',
+    'cláusula homologada presente: CLÁUSULA PRIMEIRA – DESCRIÇÃO DO IMÓVEL',
+  );
+  for (const title of [
+    'CLÁUSULA SEGUNDA – DESCRIÇÃO DO OBJETO DA PROMESSA DE COMPRA E VENDA',
+    'CLÁUSULA TERCEIRA – DA PROMESSA E COMPRA E VENDA DO VALOR DO IMÓVEL E DAS CONDIÇÕES DE PAGAMENTO',
+    'CLÁUSULA QUARTA – CONDIÇÕES GERAIS',
+    'CLÁUSULA QUINTA – CIÊNCIA DO CONTRATO',
+    'CLÁUSULA SEXTA – IRREVOGABILIDADE DA TRANSAÇÃO',
+    'CLÁUSULA SÉTIMA – RESCISÃO',
+    'CLÁUSULA OITAVA – CESSÃO E TRANSFERÊNCIA',
+    'CLÁUSULA NONA – INFRAESTRUTURA DO CHACREAMENTO',
+    'CLÁUSULA DÉCIMA – OBRIGAÇÕES GERAIS',
+    'CLÁUSULA DÉCIMA PRIMEIRA – SUCESSÃO CONTRATUAL',
+    'CLÁUSULA DÉCIMA SEGUNDA – DISPOSIÇÕES GERAIS',
+    'CLÁUSULA DÉCIMA TERCEIRA – FORO',
+  ]) {
+    ok(clauses.includes(title), `cláusula homologada presente: ${title}`);
+  }
+  {
+    const chromePdf = readFileSync(join(root, 'lib/mundoNovoContractPdf.ts'), 'utf8');
+    const salePdf = readFileSync(join(root, 'lib/saleContractPdf.ts'), 'utf8');
+    const chromeTenant = readFileSync(
+      join(root, 'lib/contractPdfPostProcess.ts'),
+      'utf8',
+    );
+    ok(
+      chromePdf.includes('object-fit:contain') &&
+        chromePdf.includes('width:17%') &&
+        chromePdf.includes('width:58%'),
+      'cabeçalho eletrônico Mundo Novo tem 3 colunas e logo sem deformar',
+    );
+    ok(
+      salePdf.includes("headerVariant === 'mundo-novo-electronic'"),
+      'Chromium só troca o cabeçalho no ramo eletrônico Mundo Novo',
+    );
+    ok(
+      !chromeTenant.includes("headerVariant: 'mundo-novo-electronic'"),
+      'chrome físico/ARAGUAIA não ativa o cabeçalho eletrônico',
+    );
+  }
   const pagination = readFileSync(
     join(root, 'lib/mundoNovoHtml2PdfPagination.ts'),
     'utf8',
@@ -564,6 +614,14 @@ console.log('\n=== Contrato físico Fase 1 inalterado ===');
   ok(html.includes('Maria Elvira de Sousa'), 'físico Maria');
   ok(html.includes('Adenil Antonio de Sousa'), 'físico Adenil');
   ok(html.includes('R R NEGÓCIOS'), 'físico R R');
+  ok(
+    html.includes(MUNDO_NOVO_PHYSICAL_CLOSING_VIAS_MARKER),
+    'físico homologado preserva 03 vias',
+  );
+  ok(
+    !html.includes(MUNDO_NOVO_ELECTRONIC_CLOSING_STATEMENT),
+    'físico sem fecho eletrônico',
+  );
 }
 
 console.log('\n=== Bloco eletrônico + certificado ===');
@@ -665,6 +723,14 @@ console.log('\n=== Bloco eletrônico + certificado ===');
     parties,
   );
   ok(signedHtml.includes('ELECTRONIC_SIGNED'), 'PDF eletrônico ELECTRONIC_SIGNED');
+  ok(
+    signedHtml.includes(MUNDO_NOVO_ELECTRONIC_CLOSING_STATEMENT),
+    'fecho eletrônico sem vias físicas',
+  );
+  ok(
+    !signedHtml.includes(MUNDO_NOVO_PHYSICAL_CLOSING_VIAS_MARKER),
+    'ELECTRONIC_SIGNED não cita 03 vias',
+  );
   ok(
     signedHtml.includes('ASSINATURAS ELETRÔNICAS'),
     'título ASSINATURAS ELETRÔNICAS abaixo do fecho',
@@ -879,6 +945,36 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(
     !electronicAvoid.includes('.sv-cert-official-block'),
     'html2pdf eletrônico NÃO empurra o certificado para página 8',
+  );
+}
+
+{
+  const header = buildMundoNovoElectronicSaleContractPrintTemplates({
+    tenantName: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+    tenantCnpj: '57.590.706/0001-78',
+    addressLine: 'Avenida Dos Ipês, Quadra 31, Lote 13, Cidade Jardim',
+    cityUfLine: 'Parauapebas - PA',
+    contractNumber: '000000007/2026',
+    logoBase64: 'data:image/png;base64,AAA',
+    logoWidthMm: 24,
+    logoHeightMm: 16,
+  });
+  ok(header.headerTemplate.includes('width:17%'), 'coluna logo no cabeçalho eletrônico');
+  ok(header.headerTemplate.includes('width:58%'), 'coluna empresa no cabeçalho eletrônico');
+  ok(
+    header.headerTemplate.includes('Contrato nº 000000007/2026'),
+    'número dinâmico no cabeçalho eletrônico',
+  );
+  ok(
+    header.headerTemplate.includes('object-fit:contain') &&
+      header.headerTemplate.includes('height:') &&
+      header.headerTemplate.includes('width:'),
+    'logo eletrônica com proporção preservada',
+  );
+  ok(
+    header.footerTemplate.includes('pageNumber') &&
+      header.footerTemplate.includes('totalPages'),
+    'rodapé eletrônico ainda conta Página X de Y',
   );
 }
 
