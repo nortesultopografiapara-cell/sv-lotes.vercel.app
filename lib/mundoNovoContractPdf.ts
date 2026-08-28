@@ -15,8 +15,8 @@ export const MUNDO_NOVO_LOGO_PATH = '/logo-chacreamento-mundo-novo.png';
 export const MUNDO_NOVO_LOGO_PUBLIC_FILE = 'logo-chacreamento-mundo-novo.png';
 
 /** Dimensões nativas do PNG oficial (não deformar). */
-export const MUNDO_NOVO_LOGO_NATIVE_WIDTH = 842;
-export const MUNDO_NOVO_LOGO_NATIVE_HEIGHT = 566;
+export const MUNDO_NOVO_LOGO_NATIVE_WIDTH = 1024;
+export const MUNDO_NOVO_LOGO_NATIVE_HEIGHT = 682;
 
 const MUNDO_NOVO_LOGO_MAX_WIDTH_MM = 24;
 const MUNDO_NOVO_LOGO_MAX_HEIGHT_MM = 16;
@@ -73,7 +73,9 @@ export function buildMundoNovoElectronicSaleContractPrintTemplates(chrome: {
   const logoW = mmToHeaderPx(size.widthMm);
   const logoH = mmToHeaderPx(size.heightMm);
   const logoImg = chrome.logoBase64
-    ? `<img src="${chrome.logoBase64}" alt="Chacreamento Mundo Novo" width="${logoW}" height="${logoH}" style="width:${logoW}px;height:${logoH}px;max-width:100%;object-fit:contain;object-position:left center;display:block;" />`
+    ? `<div style="width:${logoW}px;height:${logoH}px;max-width:100%;">
+            <img src="${chrome.logoBase64}" alt="Chacreamento Mundo Novo" width="${logoW}" height="${logoH}" style="width:100%;height:100%;object-fit:contain;object-position:left center;display:block;" />
+          </div>`
     : '';
   const docLabel = chrome.tenantDocumentLabel || 'CNPJ';
   const infoLine = [
@@ -87,10 +89,10 @@ export function buildMundoNovoElectronicSaleContractPrintTemplates(chrome: {
     <div style="font-size:8px;line-height:1.25;width:100%;padding:2px 14mm 2px 14mm;font-family:'Times New Roman',Times,serif;color:#222;box-sizing:border-box;">
       <table style="width:100%;border-collapse:collapse;border-bottom:0.8px solid #444;padding-bottom:2px;">
         <tr>
-          <td style="width:17%;vertical-align:middle;padding:2px 8px 3px 0;border-right:0.6px solid #c4c4c4;">
+          <td style="width:17%;vertical-align:middle;padding:2px 8px 3px 0;">
             ${logoImg}
           </td>
-          <td style="width:58%;vertical-align:middle;padding:2px 10px 3px 10px;border-right:0.6px solid #c4c4c4;text-align:left;">
+          <td style="width:58%;vertical-align:middle;padding:2px 10px 3px 10px;text-align:left;">
             <div style="font-weight:bold;font-size:9.5px;line-height:1.2;color:#111;">${escapeMundoNovoHeaderHtml(String(chrome.tenantName || '').toUpperCase())}</div>
             ${infoLine ? `<div style="font-size:7.5px;line-height:1.25;margin-top:1px;">${infoLine}</div>` : ''}
             ${chrome.addressLine ? `<div style="font-size:7.5px;line-height:1.25;">${escapeMundoNovoHeaderHtml(chrome.addressLine)}</div>` : ''}
