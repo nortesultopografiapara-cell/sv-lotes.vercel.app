@@ -70,6 +70,11 @@ export type SaleContractSignatureCertificateInput = {
   /** ID único da party BUYER (preferencial sobre o ID do processo). */
   buyerSignatureEventId?: string | null;
   /**
+   * MUNDO_NOVO ELECTRONIC_SIGNED: omite as fichas extensas (já estão
+   * nos cards compactos da página 7 e na validação pública).
+   */
+  omitPartyEvidenceCards?: boolean;
+  /**
    * Cards PF de múltiplos VENDOR (ARAGUAIA).
    * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE.
    */
@@ -920,7 +925,10 @@ export function buildSaleContractSignatureCertificateHtml(
     <div class="sv-cert-official-block">
     <div class="sv-cert-official-inner">
     <div class="sv-cert-official">
-      <div class="sv-cert-cards">
+      ${
+        input.omitPartyEvidenceCards
+          ? ''
+          : `<div class="sv-cert-cards">
         ${buildVendorCardsHtml(input)}
         ${buildBuyerCard(input)}
         ${input.spouseName ? buildSpouseCard(input) : ''}
@@ -931,7 +939,8 @@ export function buildSaleContractSignatureCertificateHtml(
             : ''
         }
         ${buildWitnessCardsHtml(input)}
-      </div>
+      </div>`
+      }
 
       <div class="sv-cert-validation">
         <div class="sv-cert-validation-inner">

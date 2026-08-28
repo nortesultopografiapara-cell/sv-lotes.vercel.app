@@ -27,13 +27,11 @@ function formatSignedAtBr(iso?: string | null): string {
       minute: '2-digit',
       hour12: false,
     });
-    return `${date} ${time}`;
+    return `${date} ${time} (BRT)`;
   } catch {
     return '—';
   }
 }
-
-const PERSON_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="#166534" aria-hidden="true" style="flex-shrink:0; vertical-align:middle;"><circle cx="12" cy="8" r="4"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></svg>`;
 
 export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
 <style id="mundo-novo-electronic-signatures-css">
@@ -41,13 +39,13 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
   page-break-inside: auto !important;
   break-inside: auto !important;
   -webkit-column-break-inside: auto !important;
-  margin-top: 4px !important;
+  margin-top: 2px !important;
 }
 .sv-contract-mundo-novo .contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"] .mundo-novo-closing-statement {
-  margin-bottom: 8px !important;
+  margin-bottom: 6px !important;
 }
 .sv-contract-mundo-novo .contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"] .contract-closing-date {
-  margin-bottom: 8px !important;
+  margin-bottom: 6px !important;
 }
 .sv-contract-mundo-novo .contract-signatures--mundo-novo.contract-signatures--electronic {
   page-break-before: avoid !important;
@@ -58,18 +56,27 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
   padding: 0 !important;
 }
 .sv-contract-mundo-novo .mundo-novo-esign-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
   margin: 0 0 6px 0 !important;
-  font-size: 8.5pt !important;
+  font-size: 8pt !important;
   font-weight: bold !important;
   letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
   text-align: center !important;
   color: #14532d !important;
 }
+.sv-contract-mundo-novo .mundo-novo-esign-title::before,
+.sv-contract-mundo-novo .mundo-novo-esign-title::after {
+  content: '' !important;
+  flex: 1 1 auto !important;
+  border-top: 1px solid #86efac !important;
+}
 .sv-contract-mundo-novo .signature-grid--mundo-novo-electronic {
   display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  column-gap: 8px !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  column-gap: 6px !important;
   row-gap: 6px !important;
   align-items: stretch !important;
   justify-items: stretch !important;
@@ -84,40 +91,37 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
   border: 1px solid #d1d5db !important;
   border-radius: 6px !important;
   background: #fafafa !important;
-  padding: 5px 7px 4px 7px !important;
+  padding: 4px 6px 3px 6px !important;
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
+}
+.sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-role {
+  margin: 0 0 1px 0 !important;
+  font-size: 6pt !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: #6b7280 !important;
+}
+.sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-status {
+  margin: 0 0 1px 0 !important;
+  font-size: 6.5pt !important;
+  font-weight: 700 !important;
+  color: #166534 !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-name {
   margin: 0 0 1px 0 !important;
   font-weight: bold !important;
-  font-size: 8pt !important;
+  font-size: 7.5pt !important;
   line-height: 1.2 !important;
   color: #111 !important;
   overflow-wrap: break-word !important;
-  display: flex !important;
-  align-items: flex-start !important;
-  gap: 4px !important;
-}
-.sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-role {
-  margin: 0 0 2px 0 !important;
-  font-size: 7pt !important;
-  font-weight: bold !important;
-  letter-spacing: 0.03em !important;
-  text-transform: uppercase !important;
-  color: #374151 !important;
-}
-.sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-status {
-  margin: 0 0 1px 0 !important;
-  font-size: 7pt !important;
-  font-weight: bold !important;
-  color: #166534 !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-meta {
   margin: 0 !important;
-  font-size: 6.5pt !important;
+  font-size: 6pt !important;
   font-weight: normal !important;
-  line-height: 1.25 !important;
+  line-height: 1.2 !important;
   color: #4b5563 !important;
   overflow-wrap: anywhere !important;
 }
@@ -136,6 +140,7 @@ export type MundoNovoElectronicSignatureSlotInput = {
   documentLabel?: 'CPF' | 'CNPJ' | string;
   document?: string | null;
   extraMeta?: string[];
+  ipAddress?: string | null;
   signedAt?: string | null;
   signatureEventId?: string | null;
   dataRole?: string;
@@ -149,8 +154,18 @@ export function buildMundoNovoElectronicSignatureSlotHtml(
     .map((line) => String(line || '').trim())
     .filter(Boolean);
   const eventId = String(input.signatureEventId || '').trim() || '—';
-  const extraHtml = extra
-    .map((line) => `<p class="mundo-novo-esign-meta">${esc(line)}</p>`)
+  const documentLine = formatMundoNovoElectronicDocumentLine(input);
+  const ip = String(input.ipAddress || '').trim();
+  const metaLines = [
+    documentLine,
+    ...extra,
+    ip ? `IP: ${ip}` : 'IP: —',
+    formatSignedAtBr(input.signedAt),
+    `ID: ${eventId}`,
+  ].filter(Boolean);
+
+  const extraHtml = metaLines
+    .map((line) => `<p class="mundo-novo-esign-meta">${esc(String(line))}</p>`)
     .join('\n');
 
   const className = [
@@ -165,12 +180,10 @@ export function buildMundoNovoElectronicSignatureSlotHtml(
     <div class="${className}" ${
       input.dataRole ? `data-party-role="${esc(input.dataRole)}"` : ''
     }>
-      <p class="mundo-novo-esign-name">${PERSON_ICON}<span>${esc(input.name)}</span></p>
       <p class="mundo-novo-esign-role">${esc(input.roleLabel)}</p>
       <p class="mundo-novo-esign-status">✓ Assinado eletronicamente</p>
+      <p class="mundo-novo-esign-name">${esc(input.name)}</p>
       ${extraHtml}
-      <p class="mundo-novo-esign-meta">${esc(formatSignedAtBr(input.signedAt))}</p>
-      <p class="mundo-novo-esign-meta">ID: ${esc(eventId)}</p>
     </div>`;
 }
 

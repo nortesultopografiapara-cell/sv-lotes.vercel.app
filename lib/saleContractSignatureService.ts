@@ -2089,6 +2089,7 @@ export async function loadSaleContractPdfForSign(
       personVendorCards,
       intervenientCard,
       witnessCards,
+      omitPartyEvidenceCards: isMundoNovoSaleContractModel(contractModelForCert),
     });
 
     if (
