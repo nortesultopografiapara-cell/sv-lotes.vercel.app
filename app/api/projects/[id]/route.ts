@@ -4,6 +4,7 @@ import {
   formatProjectUpdateDbError,
   updateProjectWithFallback,
 } from '@/lib/projects-update';
+import { mergeMundoNovoSellerPartyContacts } from '@/lib/mundoNovoContractSellers';
 import {
   createAdminSupabase,
   getRequestAuthUser,
@@ -23,6 +24,12 @@ type UpdateProjectBody = {
   impersonatingTenantId?: string | null;
   financial_account_id?: string | null;
   contract_model?: string | null;
+  seller_party_contacts?: Array<{
+    order?: number;
+    name?: string;
+    email?: string | null;
+    phone?: string | null;
+  }> | null;
 };
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -95,7 +102,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { data: existing, error: fetchError } = await admin
     .from('projects')
-    .select('id, tenant_id, name')
+    .select('id, tenant_id, name, seller_parties_json')
     .eq('id', projectId)
     .maybeSingle();
 
@@ -162,6 +169,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         body.contract_model === undefined
           ? undefined
           : body.contract_model?.trim() || null,
+      seller_parties_json:
+        body.seller_party_contacts === undefined
+          ? undefined
+          : mergeMundoNovoSellerPartyContacts(
+              (existing as { seller_parties_json?: unknown }).seller_parties_json,
+              body.seller_party_contacts,
+            ),
     });
 
     if (error) {

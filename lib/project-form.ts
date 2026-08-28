@@ -1,3 +1,7 @@
+import {
+  listMundoNovoSellerPartiesFromProject,
+} from '@/lib/mundoNovoContractSellers';
+
 export type ProjectModalMode = 'create' | 'edit';
 
 export type ProjectFormInitialData = {
@@ -10,6 +14,13 @@ export type ProjectFormInitialData = {
   financial_account_id: string;
   /** Vazio = herdar modelo padrão da empresa. */
   contract_model: string;
+  /** Contatos e-sign dos promitentes (Mundo Novo). */
+  seller_party_contacts: Array<{
+    order: number;
+    name: string;
+    email: string;
+    phone: string;
+  }>;
 };
 
 export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
@@ -21,6 +32,7 @@ export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
   contract_city: '',
   financial_account_id: '',
   contract_model: '',
+  seller_party_contacts: [],
 };
 
 /** Converte registro do Supabase para o formulário unificado (criar/editar). */
@@ -46,6 +58,15 @@ export function projectToFormInitialData(
     project.forum_city || project.contract_city || city || '',
   ).trim();
 
+  const seller_party_contacts = listMundoNovoSellerPartiesFromProject(project).map(
+    (seller) => ({
+      order: seller.order,
+      name: seller.name,
+      email: String(seller.email || '').trim(),
+      phone: String(seller.phone || '').trim(),
+    }),
+  );
+
   return {
     name: String(project.name || '').trim(),
     city,
@@ -57,5 +78,6 @@ export function projectToFormInitialData(
     contract_city: contractCity,
     financial_account_id: String(project.financial_account_id || '').trim(),
     contract_model: String(project.contract_model || '').trim(),
+    seller_party_contacts,
   };
 }

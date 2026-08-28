@@ -104,6 +104,12 @@ export async function updateProjectThroughApi(
     impersonatingTenantId?: string | null;
     financial_account_id?: string | null;
     contract_model?: string | null;
+    seller_party_contacts?: Array<{
+      order?: number;
+      name?: string;
+      email?: string | null;
+      phone?: string | null;
+    }> | null;
   },
 ): Promise<{ project: Record<string, unknown> }> {
   return callProjectsApi(`/${projectId}`, 'PATCH', payload, 'Editar Projeto');

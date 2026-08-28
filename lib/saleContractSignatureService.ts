@@ -1750,6 +1750,11 @@ export async function loadSaleContractPdfForSign(
       resolveAraguaiaVendorSignerEmail,
     } =
       await import('@/lib/araguaiaContractEsign');
+    const {
+      isMundoNovoSaleContractModel,
+      sortMundoNovoVendorParties,
+      readMundoNovoIntervenientFromSignatureData,
+    } = await import('@/lib/mundoNovoContractEsign');
     const { canProduceElectronicSignedContractDocument } = await import(
       '@/lib/saleContractSignatureRenderMode'
     );
@@ -1785,6 +1790,9 @@ export async function loadSaleContractPdfForSign(
       !vendorParties.some((p) =>
         /R\s*R\s*NEG[OÓ]CIOS/i.test(String(p.signer_name || '')),
       );
+    const useMundoNovoPersonVendors =
+      isMundoNovoSaleContractModel(contractModelForCert) &&
+      vendorParties.length > 0;
 
     const readPartyLocation = (p: (typeof parties)[number]) => {
       const data =
@@ -1829,7 +1837,22 @@ export async function loadSaleContractPdfForSign(
             approxLocation: readPartyLocation(p),
           };
         })
-      : null;
+      : useMundoNovoPersonVendors
+        ? sortMundoNovoVendorParties(vendorParties).map((p) => ({
+            name: String(p.signer_name || ''),
+            cpf: p.signer_cpf,
+            email: p.signer_email || null,
+            phone: p.signer_phone,
+            signedAt: p.signed_at,
+            ipAddress: p.ip_address,
+            signatureHash: p.signature_hash,
+            signatureEventId: readPartySignatureEventId(p),
+            browser: readPartyUaField(p, 'browser'),
+            os: readPartyUaField(p, 'os'),
+            device: readPartyUaField(p, 'device'),
+            approxLocation: readPartyLocation(p),
+          }))
+        : null;
 
     const intervenientParty = parties.find(
       (p) => String(p.role).toUpperCase() === 'INTERVENIENT',
@@ -1851,32 +1874,58 @@ export async function loadSaleContractPdfForSign(
       signatureEventId?: string | null;
     } | null = null;
     if (intervenientParty) {
-      const { readAraguaiaIntervenientFromSignatureData } = await import(
-        '@/lib/araguaiaContractEsign'
-      );
-      const meta = readAraguaiaIntervenientFromSignatureData(
-        intervenientParty.signature_data,
-      );
-      intervenientCard = {
-        companyName:
-          meta?.company_name ||
-          String(intervenientParty.signer_name || '').trim() ||
-          '—',
-        companyCnpj:
-          meta?.company_cnpj || intervenientParty.signer_cpf || null,
-        representativeName: meta?.representative_name || null,
-        representativeCpf: meta?.representative_cpf || null,
-        email: intervenientParty.signer_email,
-        phone: intervenientParty.signer_phone,
-        signedAt: intervenientParty.signed_at,
-        ipAddress: intervenientParty.ip_address,
-        signatureHash: intervenientParty.signature_hash,
-        signatureEventId: readPartySignatureEventId(intervenientParty),
-        browser: readPartyUaField(intervenientParty, 'browser'),
-        os: readPartyUaField(intervenientParty, 'os'),
-        device: readPartyUaField(intervenientParty, 'device'),
-        approxLocation: readPartyLocation(intervenientParty),
-      };
+      if (useMundoNovoPersonVendors) {
+        const meta = readMundoNovoIntervenientFromSignatureData(
+          intervenientParty.signature_data,
+        );
+        intervenientCard = {
+          companyName:
+            meta?.company_name ||
+            String(intervenientParty.signer_name || '').trim() ||
+            '—',
+          companyCnpj:
+            meta?.company_cnpj || intervenientParty.signer_cpf || null,
+          representativeName: meta?.representative_name || null,
+          representativeCpf: meta?.representative_cpf || null,
+          email: intervenientParty.signer_email,
+          phone: intervenientParty.signer_phone,
+          signedAt: intervenientParty.signed_at,
+          ipAddress: intervenientParty.ip_address,
+          signatureHash: intervenientParty.signature_hash,
+          signatureEventId: readPartySignatureEventId(intervenientParty),
+          browser: readPartyUaField(intervenientParty, 'browser'),
+          os: readPartyUaField(intervenientParty, 'os'),
+          device: readPartyUaField(intervenientParty, 'device'),
+          approxLocation: readPartyLocation(intervenientParty),
+        };
+      } else {
+        const { readAraguaiaIntervenientFromSignatureData } = await import(
+          '@/lib/araguaiaContractEsign'
+        );
+        const meta = readAraguaiaIntervenientFromSignatureData(
+          intervenientParty.signature_data,
+        );
+        intervenientCard = {
+          companyName:
+            meta?.company_name ||
+            String(intervenientParty.signer_name || '').trim() ||
+            '—',
+          companyCnpj:
+            meta?.company_cnpj || intervenientParty.signer_cpf || null,
+          representativeName: meta?.representative_name || null,
+          representativeCpf: meta?.representative_cpf || null,
+          email: intervenientParty.signer_email,
+          phone: intervenientParty.signer_phone,
+          signedAt: intervenientParty.signed_at,
+          ipAddress: intervenientParty.ip_address,
+          signatureHash: intervenientParty.signature_hash,
+          signatureEventId: readPartySignatureEventId(intervenientParty),
+          browser: readPartyUaField(intervenientParty, 'browser'),
+          os: readPartyUaField(intervenientParty, 'os'),
+          device: readPartyUaField(intervenientParty, 'device'),
+          approxLocation: readPartyLocation(intervenientParty),
+        };
+      }
     }
 
     const witnessParties = parties
@@ -1912,12 +1961,21 @@ export async function loadSaleContractPdfForSign(
         canProduceElectronicSignedContractDocument(
           signature.signature_status,
         );
+      const useMundoNovoElectronicBlock =
+        isMundoNovoSaleContractModel(contractModelForCert) &&
+        canProduceElectronicSignedContractDocument(
+          signature.signature_status,
+        );
 
       if (useAraguaiaElectronicBlock) {
         // ELECTRONIC_SIGNED: substitui linhas físicas; certificado detalhado à parte.
         const { applyAraguaiaElectronicSignaturesToContractHtml } =
           await import('@/lib/araguaiaContractElectronicSignatures');
         html = applyAraguaiaElectronicSignaturesToContractHtml(html, parties);
+      } else if (useMundoNovoElectronicBlock) {
+        const { applyMundoNovoElectronicSignaturesToContractHtml } =
+          await import('@/lib/mundoNovoContractElectronicSignatures');
+        html = applyMundoNovoElectronicSignaturesToContractHtml(html, parties);
       } else {
         // Modelos clássicos / multi-party: selos sobre slots (sem alterar ARAGUAIA V2).
         html = applyElectronicSignatureStampsToContractHtml(

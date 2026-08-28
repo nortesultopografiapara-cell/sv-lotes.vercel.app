@@ -27,6 +27,19 @@ import {
 } from '@/lib/araguaiaContractEsign';
 import { shouldEnableAraguaiaEsignV2 } from '@/lib/araguaiaEsignV2Gate';
 import {
+  MUNDO_NOVO_DANIEL_VENDOR_FORBIDDEN_MESSAGE,
+  MUNDO_NOVO_ESIGN_DISABLED_MESSAGE,
+  assertMundoNovoIntervenientReady,
+  buildMundoNovoEsignVendorPartyInputs,
+  buildMundoNovoIntervenientPartyInput,
+  buildMundoNovoWitnessPartyInputs,
+  findDisallowedMundoNovoDanielVendor,
+  isMundoNovoSaleContractModel,
+  shouldPersistMundoNovoIntervenientParty,
+  shouldPersistMundoNovoWitnessParties,
+} from '@/lib/mundoNovoContractEsign';
+import { shouldEnableMundoNovoEsign } from '@/lib/mundoNovoEsignGate';
+import {
   assertSpouseReadyForSignatureSend,
   hasRecantoSpouse,
   contractHtmlHasSpouseAnuenteSlot,
@@ -241,7 +254,7 @@ export async function loadSaleAndCompanyForSignature(
 
 /**
  * Modelo efetivo para criação de parties.
- * Heurística Recanto (HTML com cônjuge) NÃO pode sobrescrever ARAGUAIA/MENESES/SV2.
+ * Heurística Recanto (HTML com cônjuge) NÃO pode sobrescrever ARAGUAIA/MUNDO_NOVO/MENESES/SV2.
  */
 export function resolveEffectiveSaleContractModel(
   loadedModel: string,
@@ -252,6 +265,9 @@ export function resolveEffectiveSaleContractModel(
     .toUpperCase();
   if (key === 'ARAGUAIA' || key.includes('ARAGUAIA')) {
     return 'ARAGUAIA';
+  }
+  if (key === 'MUNDO_NOVO' || key.includes('MUNDO_NOVO')) {
+    return 'MUNDO_NOVO';
   }
   if (key === 'MENESES') return 'MENESES';
   if (key === 'SV_LOTES_2' || key.includes('SV_LOTES_2')) return 'SV_LOTES_2';
@@ -300,6 +316,39 @@ export async function assertSaleSignaturePartiesReadyBeforeSend(
     });
     if (legalBlock) {
       throw new SaleContractSignatureError(legalBlock, 'validation');
+    }
+  }
+
+  const mundoNovoCompanyId = String(
+    loaded.company?.id ||
+      contractRow.company_id ||
+      contractRow.tenant_id ||
+      '',
+  );
+  if (isMundoNovoSaleContractModel(contractModel)) {
+    if (
+      !shouldEnableMundoNovoEsign({
+        companyId: mundoNovoCompanyId,
+        contractModel,
+      })
+    ) {
+      throw new SaleContractSignatureError(
+        MUNDO_NOVO_ESIGN_DISABLED_MESSAGE,
+        'validation',
+      );
+    }
+    try {
+      buildMundoNovoEsignVendorPartyInputs({ project: loaded.project });
+      const legalBlock = assertMundoNovoIntervenientReady({
+        company: loaded.company,
+      });
+      if (legalBlock) {
+        throw new SaleContractSignatureError(legalBlock, 'validation');
+      }
+    } catch (err) {
+      if (err instanceof SaleContractSignatureError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw new SaleContractSignatureError(message, 'validation');
     }
   }
 }
@@ -408,9 +457,29 @@ export async function createSignaturePartiesAfterSend(
   });
   const araguaiaVendorMode = araguaiaEsignV2 ? 'v2' : 'legacy';
 
+  const mundoNovoCompanyId = String(
+    params.contractRow.company_id ||
+      params.contractRow.tenant_id ||
+      company?.id ||
+      params.signature.tenant_id ||
+      '',
+  );
+  const mundoNovoEsign = isMundoNovoSaleContractModel(contractModel);
+  const mundoNovoEsignEnabled = shouldEnableMundoNovoEsign({
+    companyId: mundoNovoCompanyId,
+    contractModel,
+  });
+
   const seller = company
     ? normalizeSellerFromCompany(company)
     : { representative: '', representativeCpf: '', email: '', phone: '' };
+
+  if (mundoNovoEsign && !mundoNovoEsignEnabled) {
+    throw new SaleContractSignatureError(
+      MUNDO_NOVO_ESIGN_DISABLED_MESSAGE,
+      'validation',
+    );
+  }
 
   if (araguaiaEsignV2) {
     const legalBlock = assertAraguaiaEsignV2LegalRepresentativeReady({
@@ -431,12 +500,37 @@ export async function createSignaturePartiesAfterSend(
       })
     : null;
 
+  let mundoNovoVendors: ReturnType<
+    typeof buildMundoNovoEsignVendorPartyInputs
+  > | null = null;
+  if (mundoNovoEsign && mundoNovoEsignEnabled) {
+    try {
+      mundoNovoVendors = buildMundoNovoEsignVendorPartyInputs({ project });
+      const legalBlock = assertMundoNovoIntervenientReady({ company });
+      if (legalBlock) {
+        throw new SaleContractSignatureError(legalBlock, 'validation');
+      }
+    } catch (err) {
+      if (err instanceof SaleContractSignatureError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw new SaleContractSignatureError(message, 'validation');
+    }
+  }
+
   if (araguaiaEsign) {
     partiesRequested.length = 1; // BUYER
     if (spouseRequired) partiesRequested.push('SPOUSE');
     for (let i = 0; i < (araguaiaVendors?.length || 0); i++) {
       partiesRequested.push('VENDOR');
     }
+  }
+
+  if (mundoNovoEsign) {
+    partiesRequested.length = 1; // BUYER — Mundo Novo nunca cria SPOUSE
+    for (let i = 0; i < (mundoNovoVendors?.length || 0); i++) {
+      partiesRequested.push('VENDOR');
+    }
+    partiesRequested.push('INTERVENIENT', 'WITNESS_1', 'WITNESS_2');
   }
 
   console.log('[signature-parties] araguaia_esign_gate', {
@@ -448,6 +542,20 @@ export async function createSignaturePartiesAfterSend(
     projectName: String(loaded.project?.name || '').slice(0, 40),
     vendorPayloadCount: araguaiaVendors?.length ?? 0,
     vendorPayload: araguaiaVendors?.map((v) => ({
+      name: v.name,
+      cpf: v.cpf,
+      phone: v.phone,
+      email: v.email,
+    })),
+  });
+
+  console.log('[signature-parties] mundo_novo_esign_gate', {
+    contractId: String(params.signature.contract_id || '').slice(0, 8),
+    mundoNovoEsign,
+    mundoNovoEsignEnabled,
+    effectiveContractModel: contractModel,
+    vendorPayloadCount: mundoNovoVendors?.length ?? 0,
+    vendorPayload: mundoNovoVendors?.map((v) => ({
       name: v.name,
       cpf: v.cpf,
       phone: v.phone,
@@ -498,7 +606,10 @@ export async function createSignaturePartiesAfterSend(
         email: buyerEmail,
         token: params.buyerToken,
       },
-      spouse: spouseData
+      spouse:
+        mundoNovoEsign
+          ? null
+          : spouseData
         ? {
             name: spouseData.name,
             cpf: spouseData.cpf,
@@ -506,7 +617,7 @@ export async function createSignaturePartiesAfterSend(
             email: spouseData.email || null,
           }
         : null,
-      vendor: araguaiaVendors
+      vendor: araguaiaVendors || mundoNovoVendors
         ? null
         : {
             name:
@@ -524,19 +635,24 @@ export async function createSignaturePartiesAfterSend(
             email: v.email,
             withPublicToken: true,
           }))
+        : mundoNovoVendors
+        ? mundoNovoVendors.map((v) => ({
+            name: v.name,
+            cpf: v.cpf,
+            phone: v.phone,
+            email: v.email,
+            withPublicToken: true,
+          }))
         : null,
       // Persistência remota: schema V2 + env + ARAGUAIA + allowlist company_id.
       intervenient:
-        araguaiaEsign &&
-        shouldPersistAraguaiaIntervenientParty({
+        mundoNovoEsign &&
+        shouldPersistMundoNovoIntervenientParty({
           companyId,
           contractModel,
         })
           ? (() => {
-              const i = buildAraguaiaIntervenientPartyInput({
-                company,
-                mode: araguaiaVendorMode,
-              });
+              const i = buildMundoNovoIntervenientPartyInput({ company });
               return {
                 name: i.name,
                 cnpj: i.cnpj,
@@ -545,14 +661,32 @@ export async function createSignaturePartiesAfterSend(
                 signatureData: i.signatureData,
               };
             })()
-          : null,
+          : araguaiaEsign &&
+              shouldPersistAraguaiaIntervenientParty({
+                companyId,
+                contractModel,
+              })
+            ? (() => {
+                const i = buildAraguaiaIntervenientPartyInput({
+                  company,
+                  mode: araguaiaVendorMode,
+                });
+                return {
+                  name: i.name,
+                  cnpj: i.cnpj,
+                  phone: i.phone,
+                  email: i.email,
+                  signatureData: i.signatureData,
+                };
+              })()
+            : null,
       witnesses:
-        araguaiaEsign &&
-        shouldPersistAraguaiaWitnessParties({
+        mundoNovoEsign &&
+        shouldPersistMundoNovoWitnessParties({
           companyId,
           contractModel,
         })
-          ? buildAraguaiaWitnessPartyInputs().map((w) => ({
+          ? buildMundoNovoWitnessPartyInputs().map((w) => ({
               role: w.role,
               name: w.name,
               cpf: w.cpf,
@@ -560,7 +694,20 @@ export async function createSignaturePartiesAfterSend(
               email: w.email,
               withPublicToken: true,
             }))
-          : null,
+          : araguaiaEsign &&
+              shouldPersistAraguaiaWitnessParties({
+                companyId,
+                contractModel,
+              })
+            ? buildAraguaiaWitnessPartyInputs().map((w) => ({
+                role: w.role,
+                name: w.name,
+                cpf: w.cpf,
+                phone: w.phone,
+                email: w.email,
+                withPublicToken: true,
+              }))
+            : null,
       expiresAt: params.expiresAt,
     });
 
@@ -620,6 +767,69 @@ export async function createSignaturePartiesAfterSend(
       if (disallowedRr) {
         throw new SaleContractSignatureError(
           ARAGUAIA_RR_NOT_SIGNATURE_PARTY_MESSAGE,
+          'validation',
+        );
+      }
+    }
+    if (mundoNovoEsign) {
+      const vendorParties = persisted.filter(
+        (p) => String(p.role).toUpperCase() === 'VENDOR',
+      );
+      const expectedCpfs = (mundoNovoVendors || [])
+        .map((v) => onlyDigits(v.cpf || ''))
+        .filter(Boolean)
+        .sort();
+      const vendorCpfs = vendorParties
+        .map((p) => onlyDigits(p.signer_cpf || ''))
+        .filter(Boolean)
+        .sort();
+      const createdRoles = persisted.map((p) => String(p.role).toUpperCase());
+      console.log('[signature-parties] mundo_novo_vendors_persisted', {
+        contractSignatureId: String(params.signature.id).slice(0, 8),
+        vendorCount: vendorParties.length,
+        vendorCpfs,
+        expectedCpfs,
+        names: vendorParties.map((p) => p.signer_name),
+        roles: createdRoles,
+      });
+      if (vendorParties.length !== expectedCpfs.length || vendorParties.length < 2) {
+        throw new SaleContractSignatureError(
+          `Mundo Novo exige ${expectedCpfs.length || 2} VENDOR persistido(s) (recebido ${vendorParties.length}). Reenvie após correção.`,
+          'validation',
+        );
+      }
+      const missingCpf = expectedCpfs.filter((cpf) => !vendorCpfs.includes(cpf));
+      if (missingCpf.length > 0) {
+        throw new SaleContractSignatureError(
+          `Mundo Novo: CPFs de VENDOR incompletos (faltando ${missingCpf.join(', ')}).`,
+          'validation',
+        );
+      }
+      const danielVendor = findDisallowedMundoNovoDanielVendor(persisted);
+      if (danielVendor) {
+        throw new SaleContractSignatureError(
+          MUNDO_NOVO_DANIEL_VENDOR_FORBIDDEN_MESSAGE,
+          'validation',
+        );
+      }
+      if (createdRoles.includes('SPOUSE')) {
+        throw new SaleContractSignatureError(
+          'Mundo Novo não cria party SPOUSE nesta fase.',
+          'validation',
+        );
+      }
+      if (!createdRoles.includes('INTERVENIENT')) {
+        throw new SaleContractSignatureError(
+          'Mundo Novo exige a party INTERVENIENT (R R NEGÓCIOS & SERVIÇOS LTDA).',
+          'validation',
+        );
+      }
+      if (
+        !createdRoles.includes('WITNESS_1') ||
+        !createdRoles.includes('WITNESS_2')
+      ) {
+        throw new SaleContractSignatureError(
+          'Mundo Novo exige WITNESS_1 e WITNESS_2 com link público.',
           'validation',
         );
       }

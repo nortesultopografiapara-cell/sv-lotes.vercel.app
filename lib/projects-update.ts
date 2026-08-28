@@ -11,6 +11,7 @@ export const PROJECT_UPDATE_KNOWN_COLUMNS = [
   'forum_city',
   'financial_account_id',
   'contract_model',
+  'seller_parties_json',
 ] as const;
 
 export type ProjectUpdateInput = {
@@ -30,6 +31,11 @@ export type ProjectUpdateInput = {
    * undefined = não alterar o campo.
    */
   contract_model?: string | null;
+  /**
+   * PROMITENTES VENDEDORES do empreendimento (JSON).
+   * undefined = não alterar. Usado pelo e-sign Mundo Novo (email/telefone).
+   */
+  seller_parties_json?: unknown;
 };
 
 function cleanPayload(
@@ -75,6 +81,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
     full.contract_model =
       raw == null || String(raw).trim() === '' ? null : String(raw).trim();
   }
+  if (input.seller_parties_json !== undefined) {
+    full.seller_parties_json = input.seller_parties_json;
+  }
 
   return [
     full,
@@ -86,6 +95,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       ...(input.contract_model !== undefined
         ? { contract_model: full.contract_model }
         : {}),
+      ...(input.seller_parties_json !== undefined
+        ? { seller_parties_json: full.seller_parties_json }
+        : {}),
     },
     {
       name: full.name,
@@ -96,7 +108,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       name: full.name,
       location: full.location,
     },
-  ].map((payload) => cleanPayload(payload, ['contract_model']));
+  ].map((payload) =>
+    cleanPayload(payload, ['contract_model', 'seller_parties_json']),
+  );
 }
 
 export function formatProjectUpdateDbError(message: string): string {

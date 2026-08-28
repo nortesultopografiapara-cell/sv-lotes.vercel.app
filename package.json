@@ -119,6 +119,7 @@
     "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts",
     "test:araguaia-contract": "tsx scripts/mandatory-araguaia-contract-tests.ts",
     "test:mundo-novo-contract": "tsx scripts/mandatory-mundo-novo-contract-tests.ts",
+    "test:mundo-novo-esign": "tsx scripts/mandatory-mundo-novo-esign-tests.ts",
     "test:araguaia-esign": "tsx scripts/mandatory-araguaia-esign-tests.ts",
     "test:araguaia-esign-v2": "tsx scripts/mandatory-araguaia-esign-v2-foundation-tests.ts",
     "test:araguaia-esign-v2-intervenient": "tsx scripts/mandatory-araguaia-esign-v2-intervenient-tests.ts",

@@ -18,6 +18,9 @@ export type ProjectContractSellerParty = {
   rg?: string | null;
   cpf?: string | null;
   address?: string | null;
+  /** Contato e-sign (seller_parties_json). Sem migration — só JSON. */
+  email?: string;
+  phone?: string;
 };
 
 /** Endereço comum dos promitentes / interveniente — modelo ARAGUAIA (fixo original). */
@@ -82,6 +85,8 @@ function parseSellerPartiesJson(raw: unknown): ProjectContractSellerParty[] {
       rg: clean(r.rg) || null,
       cpf: clean(r.cpf || r.document) || null,
       address: clean(r.address || r.endereco) || null,
+      email: clean(r.email || r.e_mail || r.mail) || undefined,
+      phone: clean(r.phone || r.telefone || r.whatsapp) || undefined,
     });
   }
   return out.sort((a, b) => a.order - b.order);
