@@ -306,6 +306,12 @@ console.log('\n=== Isolamento de arquivos ===');
       'cabeçalho eletrônico Mundo Novo tem 3 colunas e logo sem deformar',
     );
     ok(
+      !chromePdf.includes('border-right') &&
+        !chromePdf.includes('border-left') &&
+        chromePdf.includes('border-bottom:0.8px solid #444'),
+      'cabeçalho eletrônico sem divisórias verticais e com linha horizontal inferior',
+    );
+    ok(
       salePdf.includes("headerVariant === 'mundo-novo-electronic'"),
       'Chromium só troca o cabeçalho no ramo eletrônico Mundo Novo',
     );
@@ -964,6 +970,15 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(
     header.headerTemplate.includes('Contrato nº 000000007/2026'),
     'número dinâmico no cabeçalho eletrônico',
+  );
+  ok(
+    !header.headerTemplate.includes('border-right') &&
+      !header.headerTemplate.includes('border-left'),
+    'cabeçalho eletrônico sem linhas verticais entre as 3 áreas',
+  );
+  ok(
+    header.headerTemplate.includes('border-bottom:0.8px solid #444'),
+    'linha horizontal inferior do cabeçalho permanece',
   );
   ok(
     header.headerTemplate.includes('object-fit:contain') &&

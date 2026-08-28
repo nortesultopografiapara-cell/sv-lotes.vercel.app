@@ -256,6 +256,9 @@ assert(
   const logoFile = path.join(process.cwd(), 'public', MUNDO_NOVO_LOGO_PUBLIC_FILE);
   assert(fs.existsSync(logoFile), 'logo: PNG oficial existe em public/');
   assert(fs.statSync(logoFile).size > 10_000, 'logo: PNG oficial não está vazio');
+  const png = fs.readFileSync(logoFile);
+  assert(png.readUInt32BE(16) === 1024, 'logo: largura nativa 1024');
+  assert(png.readUInt32BE(20) === 682, 'logo: altura nativa 682');
 }
 
 {
@@ -265,7 +268,7 @@ assert(
   assert(size.heightMm <= 16, 'logo: altura do chrome não ocupa excesso');
   assert(
     Math.abs(size.widthMm / size.heightMm - nativeRatio) < 0.02,
-    'logo: chrome preserva proporção nativa 842x566',
+    'logo: chrome preserva proporção nativa 1024x682',
   );
 }
 
