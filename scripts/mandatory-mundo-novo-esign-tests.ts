@@ -205,6 +205,25 @@ console.log('\n=== Isolamento de arquivos ===');
     service.includes('buildMundoNovoElectronicSignedPdfFromHtml'),
     'PDF eletrônico Mundo Novo força certificado em página própria',
   );
+  {
+    const loadFn = service.slice(
+      service.indexOf('export async function loadSaleContractPdfForSign'),
+      service.indexOf('export async function getLatestSignedSaleSignature'),
+    );
+    const importPos = loadFn.indexOf("'@/lib/mundoNovoContractEsign'");
+    const certIfPos = loadFn.indexOf('shouldIssueSaleCertificate');
+    const pdfBranchPos = loadFn.indexOf(
+      'buildMundoNovoElectronicSignedPdfFromHtml',
+    );
+    ok(
+      importPos >= 0 && certIfPos >= 0 && importPos < certIfPos,
+      'isMundoNovoSaleContractModel importado no escopo de loadSaleContractPdfForSign, antes do if do certificado',
+    );
+    ok(
+      pdfBranchPos > importPos,
+      'ramo PDF eletrônico usa isMundoNovoSaleContractModel já importado',
+    );
+  }
   ok(
     service.includes('applyAraguaiaElectronicSignaturesToContractHtml'),
     'PDF ARAGUAIA permanece no serviço compartilhado',

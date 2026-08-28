@@ -1728,9 +1728,13 @@ export async function loadSaleContractPdfForSign(
   const { buildSaleContractPdfFromHtml, loadTenantLogoBase64ForPdf } = await import(
     '@/lib/saleContractPdf'
   );
+  const { isMundoNovoSaleContractModel } = await import(
+    '@/lib/mundoNovoContractEsign'
+  );
 
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
+  let contractModelForCert = '';
   const signature = options?.signature;
   if (
     signature &&
@@ -1782,7 +1786,6 @@ export async function loadSaleContractPdfForSign(
     } =
       await import('@/lib/araguaiaContractEsign');
     const {
-      isMundoNovoSaleContractModel,
       sortMundoNovoVendorParties,
       readMundoNovoIntervenientFromSignatureData,
     } = await import('@/lib/mundoNovoContractEsign');
@@ -1793,7 +1796,7 @@ export async function loadSaleContractPdfForSign(
       '@/lib/saleContractSignatureParties'
     );
 
-    let contractModelForCert = String(
+    contractModelForCert = String(
       contractCtx?.contract_model ||
         project?.contract_model ||
         company?.contract_model ||
