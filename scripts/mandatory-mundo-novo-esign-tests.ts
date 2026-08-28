@@ -29,15 +29,13 @@ import {
 } from '../lib/mundoNovoContractEsign';
 import {
   applyMundoNovoElectronicSignaturesToContractHtml,
+  applyMundoNovoElectronicCertificateNewPage,
   buildMundoNovoElectronicSignatureSlotsFromParties,
 } from '../lib/mundoNovoContractElectronicSignatures';
 import { buildMundoNovoSignaturesHtml } from '../lib/mundoNovoContractParties';
 import { mergeMundoNovoSellerPartyContacts } from '../lib/mundoNovoContractSellers';
-import {
-  MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID,
-  MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID,
-  resolveMundoNovoHtml2pdfAvoid,
-} from '../lib/mundoNovoHtml2PdfPagination';
+import { resolveMundoNovoHtml2pdfAvoid } from '../lib/mundoNovoHtml2PdfPagination';
+import { splitMundoNovoContractAndCertificateHtml } from '../lib/mundoNovoContractSignedPdf';
 import { shouldCreateSpouseSignatureParty } from '../lib/saleContractSignaturePartyRules';
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 import { SPOUSE_ELECTRONIC_SIGNATURE_MODELS } from '../lib/saleContractSignaturePartyRules';
@@ -202,6 +200,10 @@ console.log('\n=== Isolamento de arquivos ===');
   ok(
     service.includes('applyMundoNovoElectronicSignaturesToContractHtml'),
     'PDF assinado aplica bloco eletrônico Mundo Novo',
+  );
+  ok(
+    service.includes('buildMundoNovoElectronicSignedPdfFromHtml'),
+    'PDF eletrônico Mundo Novo força certificado em página própria',
   );
   ok(
     service.includes('applyAraguaiaElectronicSignaturesToContractHtml'),
@@ -624,6 +626,12 @@ console.log('\n=== Bloco eletrônico + certificado ===');
     signedHtml.includes('page-break-inside: auto !important'),
     'CSS eletrônico não isola o fecho numa página só',
   );
+  ok(
+    signedHtml.includes(
+      'body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]) .sv-cert-official-block',
+    ) && signedHtml.includes('page-break-before: always !important'),
+    'certificado eletrônico começa em página própria',
+  );
   ok(physical.includes('PHYSICAL_UNSIGNED'), 'físico permanece PHYSICAL_UNSIGNED');
   ok(!physical.includes('ASSINATURAS ELETRÔNICAS'), 'físico sem bloco eletrônico compacto');
   ok(signedHtml.includes(MARIA.name), 'PDF eletrônico Maria');
@@ -694,6 +702,26 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(!/PROMITENTE VENDEDOR[\s\S]{0,200}Daniel Roberto/i.test(cert), 'Daniel não aparece como VENDOR no certificado');
   ok(cert.includes('evt-maria') && cert.includes('evt-adenil'), 'IDs das parties no certificado');
   ok(cert.includes('evt-rr') && cert.includes('evt-w1') && cert.includes('evt-w2'), 'IDs INTERVENIENT e testemunhas');
+  const withCert = applyMundoNovoElectronicCertificateNewPage(signedHtml + cert);
+  ok(
+    withCert.includes('class="sv-cert-official-block sv-mundo-novo-cert-new-page"') &&
+      withCert.includes('class="sv-mundo-novo-cert-page-break"'),
+    'certificado eletrônico com classe de página própria',
+  );
+  ok(
+    !physical.includes('sv-mundo-novo-cert-new-page'),
+    'físico sem classe de certificado eletrônico',
+  );
+  const split = splitMundoNovoContractAndCertificateHtml(withCert);
+  ok(
+    split.contractHtml.includes('ASSINATURAS ELETRÔNICAS') &&
+      !split.contractHtml.includes('class="sv-cert-official-block'),
+    'HTML do contrato eletrônico sem certificado',
+  );
+  ok(
+    split.certificateHtml.includes('class="sv-cert-official-block'),
+    'HTML do certificado separado para merge',
+  );
 
   const physicalAvoid = resolveMundoNovoHtml2pdfAvoid(physical);
   const electronicAvoid = resolveMundoNovoHtml2pdfAvoid(signedHtml);
@@ -714,9 +742,13 @@ console.log('\n=== Bloco eletrônico + certificado ===');
     'html2pdf eletrônico evita partir card compacto no meio',
   );
   ok(
-    MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID.length !==
-      MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID.length,
+    physicalAvoid.includes('.contract-closing-and-signatures--mundo-novo') &&
+      !electronicAvoid.includes('.contract-closing-and-signatures--mundo-novo'),
     'listas física e eletrônica são distintas',
+  );
+  ok(
+    electronicAvoid.includes('.sv-cert-official-block'),
+    'html2pdf eletrônico mantém certificado inteiro',
   );
 }
 

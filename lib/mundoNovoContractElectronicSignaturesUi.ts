@@ -121,6 +121,11 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
   color: #4b5563 !important;
   overflow-wrap: anywhere !important;
 }
+body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]) .sv-cert-official-block,
+.sv-cert-official-block.sv-mundo-novo-cert-new-page {
+  page-break-before: always !important;
+  break-before: page !important;
+}
 </style>
 `;
 

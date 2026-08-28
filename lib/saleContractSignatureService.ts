@@ -2119,6 +2119,16 @@ export async function loadSaleContractPdfForSign(
       witnessCards,
     });
 
+    if (
+      isMundoNovoSaleContractModel(contractModelForCert) &&
+      html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+    ) {
+      const { applyMundoNovoElectronicCertificateNewPage } = await import(
+        '@/lib/mundoNovoContractElectronicSignatures'
+      );
+      html = applyMundoNovoElectronicCertificateNewPage(html);
+    }
+
     // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.
     const moved = extractContractInstitutionalFooter(html);
     html = moved.html + (moved.footerHtml || '');
@@ -2128,10 +2138,18 @@ export async function loadSaleContractPdfForSign(
     const { buildContractPdfChromeFromTenant } = await import(
       '@/lib/contractPdfPostProcess'
     );
-    const pdf = await buildSaleContractPdfFromHtml(
-      html,
-      buildContractPdfChromeFromTenant(tenant, contractNumber, logoBase64),
+    const chrome = buildContractPdfChromeFromTenant(
+      tenant,
+      contractNumber,
+      logoBase64,
     );
+    const pdf =
+      isMundoNovoSaleContractModel(contractModelForCert) &&
+      html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+        ? await (
+            await import('@/lib/mundoNovoContractSignedPdf')
+          ).buildMundoNovoElectronicSignedPdfFromHtml(html, chrome)
+        : await buildSaleContractPdfFromHtml(html, chrome);
 
     return { pdf, contractNumber };
   } catch (err) {
