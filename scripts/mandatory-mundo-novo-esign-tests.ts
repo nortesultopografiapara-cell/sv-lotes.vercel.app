@@ -34,7 +34,7 @@ import {
   MUNDO_NOVO_ELECTRONIC_CLOSING_STATEMENT,
   MUNDO_NOVO_PHYSICAL_CLOSING_VIAS_MARKER,
 } from '../lib/mundoNovoContractElectronicSignatures';
-import { buildMundoNovoElectronicSaleContractPrintTemplates } from '../lib/mundoNovoContractPdf';
+import { buildMundoNovoElectronicSaleContractPrintTemplates, MUNDO_NOVO_ELECTRONIC_LOGO_PUBLIC_FILE } from '../lib/mundoNovoContractPdf';
 import { MUNDO_NOVO_LEGAL_MARKER } from '../lib/mundoNovoContractConstants';
 import { buildMundoNovoSignaturesHtml } from '../lib/mundoNovoContractParties';
 import { mergeMundoNovoSellerPartyContacts } from '../lib/mundoNovoContractSellers';
@@ -43,6 +43,7 @@ import { shouldCreateSpouseSignatureParty } from '../lib/saleContractSignaturePa
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 import { SPOUSE_ELECTRONIC_SIGNATURE_MODELS } from '../lib/saleContractSignaturePartyRules';
 import { resolveEffectiveSaleContractModel } from '../lib/saleContractSignaturePartyFlow';
+import { loadMundoNovoElectronicLogoDataUrl } from '../lib/mundoNovoContractSignedPdf';
 import { PROJECT_UPDATE_KNOWN_COLUMNS } from '../lib/projects-update';
 import { EMPTY_PROJECT_FORM, projectToFormInitialData } from '../lib/project-form';
 import type { ContractSignaturePartyRow } from '../lib/saleContractSignaturePartyTypes';
@@ -219,8 +220,16 @@ console.log('\n=== Isolamento de arquivos ===');
     );
     ok(
       signedPdf.includes("headerVariant: 'mundo-novo-electronic'") &&
-        signedPdf.includes('buildSaleContractPdfFromHtml'),
+        signedPdf.includes('buildSaleContractPdfFromHtml') &&
+        signedPdf.includes('loadMundoNovoElectronicLogoDataUrl') &&
+        signedPdf.includes('MUNDO_NOVO_ELECTRONIC_LOGO_PUBLIC_FILE'),
       'PDF eletrônico Mundo Novo usa cabeçalho 3 colunas sem merge de página 8',
+    );
+    ok(
+      signedPdf.includes('logoBase64') &&
+        signedPdf.includes('loadMundoNovoElectronicLogoDataUrl()') &&
+        !signedPdf.includes('logoBase64: chrome.logoBase64'),
+      'Chromium eletrônico ignora tenant.logo_url e lê o PNG oficial exclusivo',
     );
   }
   {
@@ -1025,6 +1034,39 @@ console.log('\n=== Bloco eletrônico + certificado ===');
     header.footerTemplate.includes('pageNumber') &&
       header.footerTemplate.includes('totalPages'),
     'rodapé eletrônico ainda conta Página X de Y',
+  );
+}
+
+{
+  const efile = join(root, 'public', MUNDO_NOVO_ELECTRONIC_LOGO_PUBLIC_FILE);
+  const buf = readFileSync(efile);
+  ok(buf.length > 10_000, 'asset eletrônico exclusivo existe');
+  ok(buf.readUInt32BE(16) === 1024 && buf.readUInt32BE(20) === 682, 'asset eletrônico 1024x682');
+  const dataUrl = loadMundoNovoElectronicLogoDataUrl();
+  ok(
+    Boolean(dataUrl && dataUrl.startsWith('data:image/png;base64,') && dataUrl.length > 10_000),
+    'Chromium recebe data URI do PNG oficial exclusivo',
+  );
+  const live = buildMundoNovoElectronicSaleContractPrintTemplates({
+    tenantName: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+    tenantCnpj: '57.590.706/0001-78',
+    addressLine: 'Avenida Dos Ipes, Quadra 31, Lote 13, Cidade Jardim',
+    cityUfLine: 'Parauapebas - PA',
+    contractNumber: '000000012/2026',
+    logoBase64: dataUrl,
+  });
+  ok(
+    Boolean(dataUrl && live.headerTemplate.includes(dataUrl.slice(0, 48))),
+    'headerTemplate embute o data URI oficial, não tenant.logo_url',
+  );
+  ok(
+    !live.headerTemplate.includes('chacreamento-araguaia') &&
+      !live.headerTemplate.includes('logo-sv-lotes'),
+    'header eletrônico sem logo Araguaia/SV LOTES',
+  );
+  ok(
+    live.headerTemplate.includes('Contrato nº 000000012/2026'),
+    'número do contrato permanece dinâmico',
   );
 }
 
