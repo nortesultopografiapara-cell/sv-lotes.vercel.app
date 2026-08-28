@@ -21,15 +21,14 @@ export const MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID = [
 ] as const;
 
 /**
- * PDF ELECTRONIC_SIGNED — não isola o fecho numa página só de rubricas.
- * Não listar o wrapper nem o grid inteiro: html2pdf trata cada avoid
- * de forma independente e empurraria os 6 cards para a página seguinte.
+ * PDF ELECTRONIC_SIGNED — fecho+cards+certificado na última página.
+ * Não listar o wrapper, o grid nem o certificado: html2pdf trataria
+ * cada avoid de forma independente e empurraria o certificado à pág. 8.
  * Cards individuais não se partem no meio.
  */
 export const MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID = [
   ...MUNDO_NOVO_HTML2PDF_CLAUSE_AVOID,
   '.sv-contract-mundo-novo .signature-slot--electronic',
-  '.sv-cert-official-block',
 ] as const;
 
 export function isMundoNovoElectronicSignedHtml(html?: string | null): boolean {

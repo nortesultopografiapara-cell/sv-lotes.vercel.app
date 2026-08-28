@@ -35,7 +35,6 @@ import {
 import { buildMundoNovoSignaturesHtml } from '../lib/mundoNovoContractParties';
 import { mergeMundoNovoSellerPartyContacts } from '../lib/mundoNovoContractSellers';
 import { resolveMundoNovoHtml2pdfAvoid } from '../lib/mundoNovoHtml2PdfPagination';
-import { splitMundoNovoContractAndCertificateHtml } from '../lib/mundoNovoContractSignedPdf';
 import { shouldCreateSpouseSignatureParty } from '../lib/saleContractSignaturePartyRules';
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 import { SPOUSE_ELECTRONIC_SIGNATURE_MODELS } from '../lib/saleContractSignaturePartyRules';
@@ -203,8 +202,36 @@ console.log('\n=== Isolamento de arquivos ===');
   );
   ok(
     service.includes('buildMundoNovoElectronicSignedPdfFromHtml'),
-    'PDF eletrônico Mundo Novo força certificado em página própria',
+    'PDF eletrônico Mundo Novo usa builder Chromium dedicado',
   );
+  ok(
+    service.includes('applyMundoNovoElectronicCertificateNewPage'),
+    'PDF eletrônico Mundo Novo compacta certificado na mesma página 7',
+  );
+  {
+    const signedPdf = readFileSync(
+      join(root, 'lib/mundoNovoContractSignedPdf.ts'),
+      'utf8',
+    );
+    ok(
+      signedPdf.includes('buildSaleContractPdfFromHtml') &&
+        !signedPdf.includes('splitMundoNovoContractAndCertificateHtml') &&
+        !signedPdf.includes('mergePdfByteArrays'),
+      'PDF eletrônico Mundo Novo não faz merge de página 8',
+    );
+  }
+  {
+    const engine = readFileSync(
+      join(root, 'lib/contractPaginationEngine.ts'),
+      'utf8',
+    );
+    ok(
+      engine.includes(
+        ".sv-contract-mundo-novo [data-signature-mode=\"ELECTRONIC_SIGNED\"]",
+      ) && engine.includes('mundoNovoEsign'),
+      'engine de paginação não força página nova no certificado eletrônico Mundo Novo',
+    );
+  }
   {
     const loadFn = service.slice(
       service.indexOf('export async function loadSaleContractPdfForSign'),
@@ -672,8 +699,8 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(
     signedHtml.includes(
       'body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]) .sv-cert-official-block',
-    ) && signedHtml.includes('page-break-before: always !important'),
-    'certificado eletrônico começa em página própria',
+    ) && signedHtml.includes('page-break-before: avoid !important'),
+    'certificado eletrônico permanece na mesma página das 6 rubricas',
   );
   ok(physical.includes('PHYSICAL_UNSIGNED'), 'físico permanece PHYSICAL_UNSIGNED');
   ok(!physical.includes('ASSINATURAS ELETRÔNICAS'), 'físico sem bloco eletrônico compacto');
@@ -782,40 +809,41 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   ok(compactCert.includes('https://example.test/verify/tok-compact-mn'), 'URL pública real');
   const withCert = applyMundoNovoElectronicCertificateNewPage(signedHtml + compactCert);
   ok(
-    withCert.includes('class="sv-cert-official-block sv-mundo-novo-cert-new-page sv-mundo-novo-cert-compact"') &&
-      withCert.includes('class="sv-mundo-novo-cert-page-break"'),
-    'certificado eletrônico com classe de página própria',
+    withCert.includes('class="sv-cert-official-block sv-mundo-novo-cert-compact"'),
+    'certificado eletrônico compacto na mesma página 7',
   );
   ok(
-    !physical.includes('sv-mundo-novo-cert-new-page'),
+    !/<div class="sv-mundo-novo-cert-page-break"/.test(withCert) &&
+      !/class="sv-cert-official-block[^"]*sv-mundo-novo-cert-new-page/.test(
+        withCert,
+      ) &&
+      !/class="sv-cert-official-block[^"]*sv-pagination-force-break/.test(
+        withCert,
+      ),
+    'certificado eletrônico sem quebra forçada de página',
+  );
+  ok(
+    !physical.includes('sv-mundo-novo-cert-compact') &&
+      !physical.includes('sv-mundo-novo-cert-new-page'),
     'físico sem classe de certificado eletrônico',
   );
-  const split = splitMundoNovoContractAndCertificateHtml(withCert);
   ok(
-    split.contractHtml.includes('ASSINATURAS ELETRÔNICAS') &&
-      !split.contractHtml.includes('class="sv-cert-official-block'),
-    'HTML do contrato eletrônico sem certificado',
+    withCert.includes('ASSINATURAS ELETRÔNICAS') &&
+      withCert.includes('class="sv-cert-official-block sv-mundo-novo-cert-compact"'),
+    'HTML eletrônico contém 6 cards e certificado na mesma página',
   );
   ok(
-    split.certificateHtml.includes('class="sv-cert-official-block'),
-    'HTML do certificado separado para merge',
+    !withCert.includes('class="sv-cert-cards"'),
+    'certificado compacto sem fichas extensas de evidência',
   );
   ok(
-    !split.certificateHtml.includes('class="sv-cert-cards"'),
-    'página 8 sem fichas extensas de evidência',
+    withCert.includes('Escaneie para validar este documento'),
+    'certificado compacto com legenda do QR',
   );
   ok(
-    split.certificateHtml.includes('Escaneie para validar este documento'),
-    'página 8 com legenda do QR',
-  );
-  ok(
-    split.certificateHtml.includes('sv-mundo-novo-cert-compact'),
-    'página 8 com layout compacto QR + certificado',
-  );
-  ok(
-    split.contractHtml.includes('evt-maria') &&
-      split.contractHtml.includes('evt-adenil') &&
-      split.contractHtml.includes('evt-rr'),
+    withCert.includes('evt-maria') &&
+      withCert.includes('evt-adenil') &&
+      withCert.includes('evt-rr'),
     'IDs das assinaturas permanecem nos cards da página 7',
   );
 
@@ -843,8 +871,8 @@ console.log('\n=== Bloco eletrônico + certificado ===');
     'listas física e eletrônica são distintas',
   );
   ok(
-    electronicAvoid.includes('.sv-cert-official-block'),
-    'html2pdf eletrônico mantém certificado inteiro',
+    !electronicAvoid.includes('.sv-cert-official-block'),
+    'html2pdf eletrônico NÃO empurra o certificado para página 8',
   );
 }
 

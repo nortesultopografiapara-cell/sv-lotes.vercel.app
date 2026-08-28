@@ -39,28 +39,28 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
   page-break-inside: auto !important;
   break-inside: auto !important;
   -webkit-column-break-inside: auto !important;
-  margin-top: 2px !important;
+  margin-top: 0 !important;
 }
 .sv-contract-mundo-novo .contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"] .mundo-novo-closing-statement {
-  margin-bottom: 6px !important;
+  margin-bottom: 3px !important;
 }
 .sv-contract-mundo-novo .contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"] .contract-closing-date {
-  margin-bottom: 6px !important;
+  margin-bottom: 3px !important;
 }
 .sv-contract-mundo-novo .contract-signatures--mundo-novo.contract-signatures--electronic {
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
   margin: 0 !important;
   padding: 0 !important;
 }
 .sv-contract-mundo-novo .mundo-novo-esign-title {
   display: flex !important;
   align-items: center !important;
-  gap: 8px !important;
-  margin: 0 0 6px 0 !important;
-  font-size: 8pt !important;
+  gap: 6px !important;
+  margin: 0 0 3px 0 !important;
+  font-size: 7.5pt !important;
   font-weight: bold !important;
   letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
@@ -76,11 +76,14 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
 .sv-contract-mundo-novo .signature-grid--mundo-novo-electronic {
   display: grid !important;
   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  column-gap: 6px !important;
-  row-gap: 6px !important;
+  column-gap: 5px !important;
+  row-gap: 4px !important;
   align-items: stretch !important;
   justify-items: stretch !important;
   width: 100% !important;
+  margin-bottom: 4px !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic {
   text-align: left !important;
@@ -89,46 +92,53 @@ export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
   width: 100% !important;
   box-sizing: border-box !important;
   border: 1px solid #d1d5db !important;
-  border-radius: 6px !important;
+  border-radius: 5px !important;
   background: #fafafa !important;
-  padding: 4px 6px 3px 6px !important;
+  padding: 3px 5px 2px 5px !important;
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-role {
-  margin: 0 0 1px 0 !important;
-  font-size: 6pt !important;
+  margin: 0 !important;
+  font-size: 5.5pt !important;
   font-weight: 700 !important;
   letter-spacing: 0.04em !important;
   text-transform: uppercase !important;
   color: #6b7280 !important;
+  line-height: 1.15 !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-status {
-  margin: 0 0 1px 0 !important;
-  font-size: 6.5pt !important;
+  margin: 0 !important;
+  font-size: 6pt !important;
   font-weight: 700 !important;
   color: #166534 !important;
+  line-height: 1.15 !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-name {
-  margin: 0 0 1px 0 !important;
+  margin: 0 !important;
   font-weight: bold !important;
-  font-size: 7.5pt !important;
-  line-height: 1.2 !important;
+  font-size: 7pt !important;
+  line-height: 1.15 !important;
   color: #111 !important;
   overflow-wrap: break-word !important;
 }
 .sv-contract-mundo-novo .signature-slot--electronic .mundo-novo-esign-meta {
   margin: 0 !important;
-  font-size: 6pt !important;
+  font-size: 5.5pt !important;
   font-weight: normal !important;
-  line-height: 1.2 !important;
+  line-height: 1.12 !important;
   color: #4b5563 !important;
   overflow-wrap: anywhere !important;
 }
 body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]) .sv-cert-official-block,
-.sv-cert-official-block.sv-mundo-novo-cert-new-page {
-  page-break-before: always !important;
-  break-before: page !important;
+body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]) .sv-cert-official-block.sv-pagination-force-break,
+.sv-cert-official-block.sv-mundo-novo-cert-compact,
+.sv-cert-official-block.sv-mundo-novo-cert-compact.sv-pagination-force-break {
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  margin-top: 2px !important;
 }
 </style>
 `;
