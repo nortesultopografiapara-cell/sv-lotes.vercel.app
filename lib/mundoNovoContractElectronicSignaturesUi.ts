@@ -56,6 +56,7 @@ body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"])
 }
 .sv-contract-mundo-novo .contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"] .contract-closing-date {
   margin-bottom: 3px !important;
+  text-align: center !important;
 }
 .sv-contract-mundo-novo .contract-signatures--mundo-novo.contract-signatures--electronic {
   page-break-before: avoid !important;

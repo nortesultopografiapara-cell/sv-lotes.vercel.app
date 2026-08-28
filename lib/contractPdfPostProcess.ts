@@ -40,6 +40,8 @@ export type ContractPdfChromeInput = {
   logoHeightMm?: number;
   /** Variante visual do cabeçalho/rodapé PDF. */
   printStyle?: 'default' | 'sv-lotes-2';
+  /** Cabeçalho 3 colunas — só PDF ELECTRONIC_SIGNED MUNDO_NOVO. */
+  headerVariant?: 'mundo-novo-electronic';
   /** SV LOTES 2.0 — contato no cabeçalho institucional PDF. */
   tenantPhone?: string;
   tenantEmail?: string;
