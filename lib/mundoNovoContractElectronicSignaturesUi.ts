@@ -36,6 +36,8 @@ function formatSignedAtBr(iso?: string | null): string {
 export const MUNDO_NOVO_ELECTRONIC_SIGNATURES_CSS = `
 <style id="mundo-novo-electronic-signatures-css">
 .sv-contract-mundo-novo .contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"] {
+  page-break-before: always !important;
+  break-before: page !important;
   page-break-inside: auto !important;
   break-inside: auto !important;
   -webkit-column-break-inside: auto !important;
