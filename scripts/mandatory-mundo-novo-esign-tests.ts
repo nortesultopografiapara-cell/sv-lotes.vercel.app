@@ -698,6 +698,12 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   );
   ok(
     signedHtml.includes(
+      '.contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"]',
+    ) && signedHtml.includes('page-break-before: always !important'),
+    'fecho eletrônico inicia a página 7',
+  );
+  ok(
+    signedHtml.includes(
       'body:has(.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]) .sv-cert-official-block',
     ) && signedHtml.includes('page-break-before: avoid !important'),
     'certificado eletrônico permanece na mesma página das 6 rubricas',
