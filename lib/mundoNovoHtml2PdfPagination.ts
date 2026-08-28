@@ -29,6 +29,7 @@ export const MUNDO_NOVO_HTML2PDF_PAGINATION_AVOID = [
 export const MUNDO_NOVO_ELECTRONIC_HTML2PDF_PAGINATION_AVOID = [
   ...MUNDO_NOVO_HTML2PDF_CLAUSE_AVOID,
   '.sv-contract-mundo-novo .signature-slot--electronic',
+  '.sv-cert-official-block',
 ] as const;
 
 export function isMundoNovoElectronicSignedHtml(html?: string | null): boolean {

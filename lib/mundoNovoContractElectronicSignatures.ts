@@ -181,6 +181,59 @@ export function applyMundoNovoElectronicSignaturesToContractHtml(
   );
 }
 
+/**
+ * O script de medição remove `sv-pagination-force-break` se o certificado
+ * ainda couber no resto da página. Esta classe não é tocada — o certificado
+ * eletrônico MUNDO_NOVO fica sempre na última página, sozinho.
+ */
+export function applyMundoNovoElectronicCertificateNewPage(html: string): string {
+  if (
+    !html.includes('sv-contract-mundo-novo') ||
+    !html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+  ) {
+    return html;
+  }
+  let next = html;
+  if (!next.includes('class="sv-cert-official-block sv-mundo-novo-cert-new-page"')) {
+    next = next.replace(
+      /class="sv-cert-official-block"/,
+      'class="sv-cert-official-block sv-mundo-novo-cert-new-page"',
+    );
+  }
+  if (!next.includes('class="sv-mundo-novo-cert-page-break"')) {
+    next = next.replace(
+      /<div class="sv-cert-official-block sv-mundo-novo-cert-new-page"/,
+      '<div class="sv-mundo-novo-cert-page-break" aria-hidden="true" style="page-break-after:always;break-after:page;display:block;min-height:12px;line-height:12px;">&nbsp;</div><div class="sv-cert-official-block sv-mundo-novo-cert-new-page" style="page-break-before:always;break-before:page;overflow:visible;"',
+    );
+  }
+  if (!next.includes('id="mundo-novo-cert-new-page-css"')) {
+    next += `<style id="mundo-novo-cert-new-page-css">
+.sv-mundo-novo-cert-page-break {
+  display: block !important;
+  min-height: 12px !important;
+  height: 12px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  page-break-after: always !important;
+  break-after: page !important;
+}
+.sv-cert-official-block.sv-mundo-novo-cert-new-page,
+.sv-cert-official-block.sv-mundo-novo-cert-new-page .sv-cert-official-inner,
+.sv-cert-official-block.sv-mundo-novo-cert-new-page .sv-cert-official {
+  overflow: visible !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
+}
+.sv-cert-official-block.sv-mundo-novo-cert-new-page {
+  page-break-before: always !important;
+  break-before: page !important;
+}
+</style>`;
+  }
+  return next;
+}
+
 export function describeMundoNovoElectronicSlotRoles(
   slots: MundoNovoElectronicSignatureSlotInput[],
 ): string[] {
