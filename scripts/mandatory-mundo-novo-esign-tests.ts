@@ -698,9 +698,9 @@ console.log('\n=== Bloco eletrônico + certificado ===');
   );
   ok(
     signedHtml.includes(
-      '.contract-closing-and-signatures--mundo-novo[data-signature-mode="ELECTRONIC_SIGNED"]',
+      '.contract-clause:has(+ .contract-closing-and-signatures--mundo-novo)',
     ) && signedHtml.includes('page-break-before: always !important'),
-    'fecho eletrônico inicia a página 7',
+    'cláusula 13 eletrônica inicia a página 7',
   );
   ok(
     signedHtml.includes(
