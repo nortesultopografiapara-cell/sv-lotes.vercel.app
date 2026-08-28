@@ -1,7 +1,7 @@
 /**
  * Regras de inclusão e validação do cônjuge como signatário eletrônico.
  * PADRAO / MENESES / RECANTO / SV2: has_spouse controla a party SPOUSE.
- * ARAGUAIA: nunca cria party SPOUSE.
+ * ARAGUAIA e MUNDO_NOVO: nunca cria party SPOUSE.
  */
 
 import { isValidSignerEmail } from '@/lib/saleContractEmailValidation';
@@ -24,10 +24,12 @@ import {
 
 /**
  * Modelos que suportam party SPOUSE quando a venda tem cônjuge válido.
- * ARAGUAIA fica de fora: o cônjuge do comprador não assina nesse modelo.
+ * ARAGUAIA e MUNDO_NOVO ficam de fora: o cônjuge do comprador não assina nesses modelos.
  */
 export const SPOUSE_ELECTRONIC_SIGNATURE_MODELS: SaleContractModel[] =
-  SALE_CONTRACT_MODELS.filter((model) => model !== 'ARAGUAIA');
+  SALE_CONTRACT_MODELS.filter(
+    (model) => model !== 'ARAGUAIA' && model !== 'MUNDO_NOVO',
+  );
 
 export const SPOUSE_SIGNATURE_INCOMPLETE_MESSAGE =
   'O contrato possui cônjuge anuente, mas os dados necessários para a assinatura estão incompletos. Informe o nome, o CPF e pelo menos um telefone ou e-mail do cônjuge.';
@@ -79,9 +81,11 @@ export function contractHtmlLooksLikeRecanto(
     lower.includes('sv-contract-araguaia') ||
     lower.includes('sv-contract-meneses') ||
     lower.includes('sv-contract-sv-lotes-2') ||
+    lower.includes('sv-contract-mundo-novo') ||
     /data-contract-model=["']?araguaia/i.test(raw) ||
     /data-contract-model=["']?meneses/i.test(raw) ||
-    /data-contract-model=["']?sv_lotes_2/i.test(raw)
+    /data-contract-model=["']?sv_lotes_2/i.test(raw) ||
+    /data-contract-model=["']?mundo_novo/i.test(raw)
   ) {
     return false;
   }
@@ -96,14 +100,14 @@ export function supportsSpouseElectronicSignature(
   contractModel: unknown,
 ): boolean {
   const model = normalizeSaleContractModel(contractModel);
-  if (model === 'ARAGUAIA') return false;
+  if (model === 'ARAGUAIA' || model === 'MUNDO_NOVO') return false;
   return SPOUSE_ELECTRONIC_SIGNATURE_MODELS.includes(model);
 }
 
 /**
  * Cônjuge é signatário eletrônico quando a venda (ou o HTML) indica presença.
  * PADRAO / MENESES / RECANTO / SV2: inalterado.
- * ARAGUAIA: nunca cria party SPOUSE (has_spouse, dados e HTML antigo são ignorados).
+ * ARAGUAIA e MUNDO_NOVO: nunca cria party SPOUSE (has_spouse, dados e HTML antigo são ignorados).
  */
 export function shouldCreateSpouseSignatureParty(params: {
   contractModel: unknown;
@@ -111,7 +115,7 @@ export function shouldCreateSpouseSignatureParty(params: {
   contractHtml?: string | null;
 }): boolean {
   const model = normalizeSaleContractModel(params.contractModel);
-  if (model === 'ARAGUAIA') return false;
+  if (model === 'ARAGUAIA' || model === 'MUNDO_NOVO') return false;
 
   if (!supportsSpouseElectronicSignature(params.contractModel)) {
     // CUSTOM futuro ainda está na lista; se modelo desconhecido, normaliza para PADRAO.

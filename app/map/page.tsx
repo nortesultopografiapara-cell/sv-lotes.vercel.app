@@ -555,6 +555,9 @@ export default function MapPage() {
   const [newProjectForum, setNewProjectForum] = useState('');
   const [newProjectFinancialAccountId, setNewProjectFinancialAccountId] = useState('');
   const [newProjectContractModel, setNewProjectContractModel] = useState('');
+  const [mundoNovoSellerContacts, setMundoNovoSellerContacts] = useState<
+    Array<{ order: number; name: string; email: string; phone: string }>
+  >([]);
   const [companyDefaultContractModel, setCompanyDefaultContractModel] =
     useState<SaleContractModel>('PADRAO');
   const [projectFinancialAccounts, setProjectFinancialAccounts] = useState<
@@ -1879,6 +1882,7 @@ export default function MapPage() {
     setNewProjectForum(initialData.contract_city);
     setNewProjectFinancialAccountId(initialData.financial_account_id);
     setNewProjectContractModel(initialData.contract_model);
+    setMundoNovoSellerContacts(initialData.seller_party_contacts || []);
   };
 
   const resetProjectForm = () => {
@@ -1982,6 +1986,12 @@ export default function MapPage() {
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
         financial_account_id: newProjectFinancialAccountId || null,
         contract_model: newProjectContractModel || null,
+        seller_party_contacts:
+          normalizeSaleContractModel(
+            newProjectContractModel || companyDefaultContractModel,
+          ) === 'MUNDO_NOVO'
+            ? mundoNovoSellerContacts
+            : undefined,
       });
 
       const updatedFields = {
@@ -2000,6 +2010,8 @@ export default function MapPage() {
         contract_model:
           (saved.contract_model as string | null) ??
           (newProjectContractModel || null),
+        seller_parties_json:
+          saved.seller_parties_json ?? editingProject.seller_parties_json,
       };
 
       setProjects((prev) =>
@@ -3176,7 +3188,7 @@ export default function MapPage() {
 
   const renderProjectFormModal = () => (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-lg overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
             <h3 className="font-bold text-[var(--text-primary)] text-lg">
               {projectFormMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
@@ -3323,6 +3335,49 @@ export default function MapPage() {
                 ))}
               </select>
             </div>
+            {normalizeSaleContractModel(
+              newProjectContractModel || companyDefaultContractModel,
+            ) === 'MUNDO_NOVO' &&
+              mundoNovoSellerContacts.length > 0 && (
+              <div className="rounded-lg border border-[var(--color-border)] p-3 flex flex-col gap-3">
+                <p className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+                  Contato dos PROMITENTES VENDEDORES (e-sign)
+                </p>
+                {mundoNovoSellerContacts.map((seller, idx) => (
+                  <div key={`${seller.order}-${seller.name}`} className="flex flex-col gap-2">
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
+                      {seller.name}
+                    </p>
+                    <input
+                      type="email"
+                      value={seller.email}
+                      onChange={(e) =>
+                        setMundoNovoSellerContacts((prev) =>
+                          prev.map((row, rowIdx) =>
+                            rowIdx === idx ? { ...row, email: e.target.value } : row,
+                          ),
+                        )
+                      }
+                      placeholder="E-mail"
+                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+                    />
+                    <input
+                      type="tel"
+                      value={seller.phone}
+                      onChange={(e) =>
+                        setMundoNovoSellerContacts((prev) =>
+                          prev.map((row, rowIdx) =>
+                            rowIdx === idx ? { ...row, phone: e.target.value } : row,
+                          ),
+                        )
+                      }
+                      placeholder="Telefone / WhatsApp"
+                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
 
             <button
               type="submit"
