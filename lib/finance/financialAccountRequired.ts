@@ -7,7 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const FINANCIAL_ACCOUNT_REQUIRED = 'FINANCIAL_ACCOUNT_REQUIRED' as const;
 
-export type FinancialProviderLookup = 'INTER' | 'ASAAS_COMPANY';
+export type FinancialProviderLookup = 'INTER' | 'ASAAS_COMPANY' | 'C6';
 
 export type ProviderFinancialAccountRef = {
   id: string;
@@ -15,7 +15,8 @@ export type ProviderFinancialAccountRef = {
 };
 
 export function financialAccountRequiredMessage(provider: FinancialProviderLookup): string {
-  const label = provider === 'INTER' ? 'Banco Inter' : 'Asaas';
+  const label =
+    provider === 'INTER' ? 'Banco Inter' : provider === 'C6' ? 'C6 Bank' : 'Asaas';
   return `${FINANCIAL_ACCOUNT_REQUIRED}: há mais de uma conta ${label} ativa. Informe financial_account_id.`;
 }
 

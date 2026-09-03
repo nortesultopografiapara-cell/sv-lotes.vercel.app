@@ -654,6 +654,7 @@ function testFinancialIntegrationSource(): void {
 
   const uiBanks = read('lib/finance/financialIntegrationUi.ts');
   assert(uiBanks.includes("'INTER'"), 'UI roadmap Inter');
+  assert(uiBanks.includes("'C6'"), 'UI roadmap C6');
   assert(uiBanks.includes("'NUBANK'"), 'UI roadmap Nubank');
   assert(uiBanks.includes("'CORA'"), 'UI roadmap Cora');
   assert(!uiBanks.includes("'SICOOB'"), 'Sicoob oculto na UI financeira');

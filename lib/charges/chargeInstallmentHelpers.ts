@@ -20,7 +20,7 @@ export type ChargeInstallmentView = {
   chargeStatusLabel: string;
   financialAccountId: string | null;
   financialAccountLabel: string;
-  chargeProvider: 'ASAAS_COMPANY' | 'INTER';
+  chargeProvider: 'ASAAS_COMPANY' | 'INTER' | 'C6';
 };
 
 export type ChargeKpiSummary = {
@@ -71,7 +71,7 @@ export function buildChargeInstallmentView(
     hasChargeHistory?: boolean;
     environmentMismatch?: boolean;
     legacySandbox?: boolean;
-    chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+    chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
   },
 ): ChargeInstallmentView {
   const projects = row.projects as { name?: string } | undefined;
@@ -109,9 +109,16 @@ export function buildChargeInstallmentView(
       '',
   ).trim() || null;
 
-  const chargeProvider = options?.chargeProvider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+  const chargeProvider =
+    options?.chargeProvider === 'INTER'
+      ? 'INTER'
+      : options?.chargeProvider === 'C6'
+        ? 'C6'
+        : 'ASAAS_COMPANY';
   const asaasStatusLabel =
-    chargeProvider === 'INTER'
+    chargeProvider === 'C6'
+      ? 'Em homologação'
+      : chargeProvider === 'INTER'
       ? asaasCharge
         ? formatInterChargeStatusLabel({
             situacao: asaasCharge.asaasRemoteStatus,

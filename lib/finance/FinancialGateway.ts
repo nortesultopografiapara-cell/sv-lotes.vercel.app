@@ -13,6 +13,7 @@ export const FINANCIAL_GATEWAY_PROVIDERS = [
   'SANTANDER',
   'ITAU',
   'INTER',
+  'C6',
   'NUBANK',
   'CORA',
 ] as const;
@@ -45,6 +46,7 @@ export function listFinancialGatewayProviders(): {
     SANTANDER: 'Santander',
     ITAU: 'Itaú',
     INTER: 'Inter',
+    C6: 'C6 Bank',
     NUBANK: 'Nubank',
     CORA: 'Cora',
   };

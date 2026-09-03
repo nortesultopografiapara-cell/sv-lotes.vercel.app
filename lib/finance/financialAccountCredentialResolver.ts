@@ -1,16 +1,17 @@
 /**
  * Resolução de credenciais pela conta financeira (identidade operacional).
- * INTER / ASAAS_COMPANY hoje; C6 e outros entram no mesmo contrato depois.
+ * INTER / ASAAS_COMPANY emitem; C6 é reconhecido e bloqueado nesta fase.
  * Nunca logar secrets. Nunca escolher "a integração do provider da empresa".
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { loadInterSecretsForServer } from '@/lib/banking/inter/interConfigRepository';
 import { getCompanyFinancialAccountById } from '@/lib/finance/companyFinancialAccountRepository';
 import { loadAsaasApiKeyForFinancialAccount } from '@/lib/finance/companyFinancialAccountRepository';
 
-export type FinancialProviderCode = 'INTER' | 'ASAAS_COMPANY';
+export type FinancialProviderCode = 'INTER' | 'ASAAS_COMPANY' | 'C6';
 
 export type InterAccountSecrets = {
   provider: 'INTER';
@@ -39,6 +40,7 @@ function asProvider(raw: string | null | undefined): FinancialProviderCode | nul
   const p = String(raw || '').trim().toUpperCase();
   if (p === 'INTER') return 'INTER';
   if (p === 'ASAAS_COMPANY' || p === 'ASAAS') return 'ASAAS_COMPANY';
+  if (p === 'C6') return 'C6';
   return null;
 }
 
@@ -59,6 +61,10 @@ export async function resolveFinancialAccountSecrets(
     throw new Error(
       `Provider ${account.provider || 'desconhecido'} ainda não possui resolução de credenciais por conta.`,
     );
+  }
+
+  if (provider === 'C6') {
+    throw new C6EmissionNotHomologatedError();
   }
 
   if (provider === 'INTER') {
