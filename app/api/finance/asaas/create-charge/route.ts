@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { authorizeCompanyAsaasRoute } from '@/lib/banking/bankingRouteGuard';
+import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
+import {
+  UnknownChargesProviderError,
+} from '@/lib/charges/chargeProviderRouting';
 import {
   assertCompanyAsaasChargeResponseSafe,
   createCompanyInstallmentCharge,
@@ -38,6 +42,12 @@ export async function POST(request: Request) {
     assertCompanyAsaasChargeResponseSafe(charge);
     return NextResponse.json({ charge });
   } catch (err) {
+    if (err instanceof C6EmissionNotHomologatedError) {
+      return NextResponse.json({ error: err.message, code: 'C6_NOT_HOMOLOGATED' }, { status: 409 });
+    }
+    if (err instanceof UnknownChargesProviderError) {
+      return NextResponse.json({ error: err.message, code: 'UNKNOWN_PROVIDER' }, { status: 400 });
+    }
     if (err instanceof CompanyAsaasWrongProviderError) {
       return NextResponse.json({ error: err.message, code: 'WRONG_PROVIDER' }, { status: 400 });
     }

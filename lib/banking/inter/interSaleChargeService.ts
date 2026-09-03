@@ -26,6 +26,7 @@ import {
   SALE_CHARGES_GENERATE_BATCH_LIMIT,
   type MissingChargeInstallmentPreview,
 } from '@/lib/finance/generateMissingSaleChargesPlan';
+import { throwIfC6EmissionAttempt } from '@/lib/banking/c6/c6EmitGuard';
 import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 import {
   buildSaleChargesSummaryFromRows,
@@ -416,6 +417,7 @@ export async function getInterSaleChargesSummary(
   const installments = await loadSaleScopedInstallments(admin, companyId, saleId);
   const ctx = await loadSaleContext(admin, companyId, saleId);
   const providerInfo = await resolveSaleChargesProvider(admin, companyId, saleId);
+  throwIfC6EmissionAttempt(providerInfo.provider);
   if (providerInfo.provider !== 'INTER') {
     throw new Error('Conta financeira desta venda não está vinculada ao Banco Inter.');
   }
@@ -583,6 +585,7 @@ export async function createInterInstallmentCharge(
 
   const saleId = String(receipt.sale_id || '');
   const resolved = await resolveSaleChargesProvider(admin, input.companyId, saleId);
+  throwIfC6EmissionAttempt(resolved.provider);
   if (resolved.provider !== 'INTER' || !resolved.bankIntegrationId) {
     throw new Error('Conta financeira não vinculada ao Banco Inter.');
   }
@@ -751,6 +754,7 @@ export async function generateMissingInterSaleChargesBatch(
     params.companyId,
     params.saleId,
   );
+  throwIfC6EmissionAttempt(providerInfo.provider);
   if (providerInfo.provider !== 'INTER') {
     throw new Error('Conta financeira desta venda não está vinculada ao Banco Inter.');
   }

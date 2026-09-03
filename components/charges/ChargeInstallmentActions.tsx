@@ -12,6 +12,7 @@ import {
   RotateCcw,
   XCircle,
 } from 'lucide-react';
+import { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '@/lib/banking/c6/c6EmitGuard';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import {
   resolveCompanyAsaasBoletoUrl,
@@ -47,7 +48,7 @@ export type ChargeInstallmentActionsProps = {
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
   /** Provider da conta financeira da parcela. */
-  chargeProvider?: 'ASAAS_COMPANY' | 'INTER';
+  chargeProvider?: 'ASAAS_COMPANY' | 'INTER' | 'C6';
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
@@ -121,6 +122,12 @@ export function ChargeInstallmentActions({
   onDownloadPdf,
   onSendEmail,
 }: ChargeInstallmentActionsProps) {
+  const isC6 = chargeProvider === 'C6' || view.chargeProvider === 'C6';
+  if (isC6) {
+    return (
+      <span className="text-[10px] text-amber-300">{C6_EMIT_NOT_HOMOLOGATED_MESSAGE}</span>
+    );
+  }
   const isInter = chargeProvider === 'INTER' || view.chargeProvider === 'INTER';
   const providerReady = isInter ? true : companyAsaasEnabled && integrationActive;
   const st = String(view.installmentStatus || '').toLowerCase();

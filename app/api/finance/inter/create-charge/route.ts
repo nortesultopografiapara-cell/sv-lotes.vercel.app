@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { C6EmissionNotHomologatedError } from '@/lib/banking/c6/c6EmitGuard';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
 import {
   bankChargeToSummaryLike,
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
       charge: bankChargeToSummaryLike(persisted, auth.tenantId),
     });
   } catch (err) {
+    if (err instanceof C6EmissionNotHomologatedError) {
+      return NextResponse.json({ error: err.message, code: 'C6_NOT_HOMOLOGATED' }, { status: 409 });
+    }
     const message = err instanceof Error ? err.message : 'Erro ao gerar cobrança Inter.';
     console.error('[finance/inter/create-charge]', message);
     const status = /já está paga|não encontrada|não pertence|não vinculada|ausentes/i.test(

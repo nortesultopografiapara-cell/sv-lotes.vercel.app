@@ -1,13 +1,18 @@
 /**
  * Resolve o provider de cobrança da venda pela conta financeira vinculada.
- * ASAAS_COMPANY = fluxo atual (intocado). INTER = bank_charges.
+ * ASAAS_COMPANY = fluxo atual. INTER = bank_charges. C6 = fundação (sem emissão).
+ * Provider desconhecido nunca cai no Asaas.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  normalizeChargesEmitProvider,
+  type ChargesEmitProvider,
+} from '@/lib/charges/chargeProviderRouting';
 import { resolveFinancialAccountForSaleOptional } from '@/lib/finance/companyFinancialAccountResolver';
 import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 
-export type SaleChargesProviderCode = 'ASAAS_COMPANY' | 'INTER';
+export type SaleChargesProviderCode = ChargesEmitProvider;
 
 export async function resolveSaleChargesProvider(
   admin: SupabaseClient,
@@ -78,17 +83,9 @@ export async function resolveSaleChargesProvider(
     provider: providerRaw || account.provider || null,
   });
 
-  if (providerRaw === 'INTER') {
-    return {
-      provider: 'INTER',
-      financialAccountId: account.id,
-      financialAccountName: labeled,
-      bankIntegrationId: account.bankIntegrationId,
-    };
-  }
-
+  const provider = normalizeChargesEmitProvider(providerRaw || account.provider);
   return {
-    provider: 'ASAAS_COMPANY',
+    provider,
     financialAccountId: account.id,
     financialAccountName: labeled,
     bankIntegrationId: account.bankIntegrationId,

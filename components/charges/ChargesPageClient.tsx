@@ -36,6 +36,7 @@ import {
 import {
   resolveChargesEmitProviderByAccountId,
   isConfirmedPersistedProviderCharge,
+  C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
   type ChargesEmitProvider,
 } from '@/lib/charges/chargeProviderRouting';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
@@ -878,6 +879,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
 
     const provider = resolveRowProvider(row);
+    if (provider === 'C6') {
+      showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+      return;
+    }
     if (provider === 'ASAAS_COMPANY' && !integrationReady) {
       showToast('Integração Asaas não está ativa.', true);
       return;
@@ -1243,6 +1248,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       const row = payments.find((p) => String(p.id) === installmentId);
       if (!row) continue;
       const provider = resolveRowProvider(row);
+      if (provider === 'C6') {
+        errCount += 1;
+        if (errCount === 1) {
+          showToast(C6_EMIT_NOT_HOMOLOGATED_MESSAGE, true);
+        }
+        continue;
+      }
       const isInter = provider === 'INTER';
       if (!isInter && !integrationReady) {
         skipCount += 1;

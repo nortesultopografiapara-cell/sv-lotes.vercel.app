@@ -31,7 +31,8 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
             <p className="text-sm text-[var(--text-secondary)] mt-1">
               O <strong className="font-semibold text-[var(--text-primary)]">Inter</strong> já
               permite cadastrar credenciais (Fase A). Emissão de cobranças virá nas próximas fases.
-              Nubank e Cora permanecem em preparação. O Asaas continua na aba própria, sem alteração.
+              Nubank e Cora permanecem em preparação. O C6 Bank está em homologação (sem emissão).
+              O Asaas continua na aba própria, sem alteração.
             </p>
           </div>
         </div>
@@ -40,6 +41,7 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {DEVELOPMENT_BANKS.map((bank) => {
           const isInter = bank.code === 'INTER';
+          const isC6 = bank.code === 'C6';
           return (
             <div
               key={bank.code}
@@ -54,13 +56,15 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
                       : 'bg-amber-500/15 text-amber-300'
                   }`}
                 >
-                  {isInter ? 'Configuração' : 'Em desenvolvimento'}
+                  {isInter ? 'Configuração' : isC6 ? 'Em homologação' : 'Em desenvolvimento'}
                 </span>
               </div>
               <p className="text-xs text-[var(--text-muted)] mt-2">
                 {isInter
                   ? 'Cadastre Client ID, Secret, certificado e chave privada.'
-                  : 'Provider registrado na arquitetura — configuração indisponível nesta versão.'}
+                  : isC6
+                    ? 'Fundação interna em homologação. Emissão ainda não disponível.'
+                    : 'Provider registrado na arquitetura — configuração indisponível nesta versão.'}
               </p>
               {isInter ? (
                 <button

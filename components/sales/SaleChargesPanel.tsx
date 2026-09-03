@@ -23,6 +23,7 @@ import {
   splitGenerateMissingChargesBatches,
   type SaleChargesSummary,
 } from '@/lib/finance/saleChargesShared';
+import { C6_EMIT_NOT_HOMOLOGATED_MESSAGE } from '@/lib/banking/c6/c6EmitGuard';
 import { normalizeWhatsAppPhone, openWhatsApp } from '@/lib/whatsapp/clickToChat';
 
 type SaleChargesPanelProps = {
@@ -75,7 +76,9 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [emailBusy, setEmailBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [info, setInfo] = useState('');
-  const [chargeProvider, setChargeProvider] = useState<'ASAAS_COMPANY' | 'INTER'>('ASAAS_COMPANY');
+  const [chargeProvider, setChargeProvider] = useState<
+    'ASAAS_COMPANY' | 'INTER' | 'C6'
+  >('ASAAS_COMPANY');
 
   const loadSummary = useCallback(async () => {
     if (!saleId) return;
@@ -87,9 +90,19 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
         { credentials: 'include' },
       );
       const providerData = await providerRes.json().catch(() => ({}));
+      const providerRaw = String(providerData.provider || '').toUpperCase();
       const provider =
-        providerRes.ok && providerData.provider === 'INTER' ? 'INTER' : 'ASAAS_COMPANY';
+        providerRes.ok && providerRaw === 'INTER'
+          ? 'INTER'
+          : providerRes.ok && providerRaw === 'C6'
+            ? 'C6'
+            : 'ASAAS_COMPANY';
       setChargeProvider(provider);
+      if (provider === 'C6') {
+        setError(C6_EMIT_NOT_HOMOLOGATED_MESSAGE);
+        setSummary(null);
+        return;
+      }
 
       const summaryPath =
         provider === 'INTER'
@@ -174,6 +187,10 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   }
 
   async function runGenerateMissing() {
+    if (chargeProvider === 'C6') {
+      setError(C6_EMIT_NOT_HOMOLOGATED_MESSAGE);
+      return;
+    }
     if (!saleId || !summary || generating) return;
     const quantity = clampGenerateMissingChargesQuantity(
       quantityMode === 'custom' ? customQuantity : Number(quantityMode),

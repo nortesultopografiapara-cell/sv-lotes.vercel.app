@@ -30,6 +30,12 @@ export const FINANCIAL_INTEGRATION_UI_CARDS: FinancialIntegrationUiCard[] = [
     description: 'Configuração de credenciais disponível (Fase A).',
   },
   {
+    code: 'C6',
+    label: 'C6 Bank',
+    status: 'development',
+    description: 'Fundação interna em homologação. Emissão ainda não disponível.',
+  },
+  {
     code: 'NUBANK',
     label: 'Nubank',
     status: 'development',

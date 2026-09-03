@@ -37,6 +37,7 @@ export function countSelectedGeneratableCharges(params: {
     const row = params.payments.find((p) => String(p.id) === installmentId);
     if (!row) continue;
     const provider = params.resolveProvider?.(row) ?? 'ASAAS_COMPANY';
+    if (provider === 'C6') continue;
     const isInter = provider === 'INTER';
     if (
       canGenerateAsaasCharge({

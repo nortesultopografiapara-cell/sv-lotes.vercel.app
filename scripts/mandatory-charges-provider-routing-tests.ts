@@ -19,12 +19,24 @@ function testRoutingHelpers() {
     resolveChargesEmitProviderByAccountId,
     isConfirmedPersistedProviderCharge,
     INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE,
+    UnknownChargesProviderError,
+    C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
   } = require('../lib/charges/chargeProviderRouting') as typeof import('../lib/charges/chargeProviderRouting');
 
   assert.equal(normalizeChargesEmitProvider('INTER'), 'INTER');
   assert.equal(normalizeChargesEmitProvider('inter'), 'INTER');
   assert.equal(normalizeChargesEmitProvider('ASAAS'), 'ASAAS_COMPANY');
   assert.equal(normalizeChargesEmitProvider(null), 'ASAAS_COMPANY');
+  assert.equal(normalizeChargesEmitProvider('C6'), 'C6');
+
+  assert.throws(
+    () => normalizeChargesEmitProvider('SICOOB'),
+    (err: unknown) => err instanceof UnknownChargesProviderError,
+  );
+  assert.equal(
+    C6_EMIT_NOT_HOMOLOGATED_MESSAGE,
+    'Integração C6 Bank ainda não homologada para emissão.',
+  );
 
   assert.equal(
     resolveChargesEmitProviderForAccount({ provider: 'INTER' }),
@@ -86,6 +98,7 @@ function testAsaasGuard() {
   assert.match(service, /CompanyAsaasWrongProviderError/);
   assert.match(service, /provider === 'INTER'/);
   assert.match(service, /INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE/);
+  assert.match(service, /throwIfC6EmissionAttempt/);
 
   const route = read('app/api/finance/asaas/create-charge/route.ts');
   assert.match(route, /CompanyAsaasWrongProviderError/);

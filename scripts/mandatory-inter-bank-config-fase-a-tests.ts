@@ -211,8 +211,10 @@ async function main() {
   {
     assert(BANK_PROVIDERS.includes('INTER'), 'INTER no enum TypeScript');
     assert(BANK_PROVIDERS.includes('ASAAS_COMPANY'), 'ASAAS_COMPANY preservado');
+    assert(BANK_PROVIDERS.includes('C6'), 'C6 no enum TypeScript');
     assert(getBankProvider('INTER')?.providerCode === 'INTER', 'registry INTER');
     assert(getBankProvider('ASAAS_COMPANY') == null, 'Asaas fora do registry genérico');
+    assert(getBankProvider('C6') == null, 'C6 fora do registry genérico');
 
     const repo = fs.readFileSync(
       path.join(process.cwd(), 'lib/banking/inter/interConfigRepository.ts'),

@@ -53,7 +53,13 @@ import {
   resolveCustomerDocumentDigits,
   type CustomerRecord,
 } from '@/lib/customerIdentity';
-import { INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE } from '@/lib/charges/chargeProviderRouting';
+import {
+  INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE,
+  UnknownChargesProviderError,
+} from '@/lib/charges/chargeProviderRouting';
+import {
+  throwIfC6EmissionAttempt,
+} from '@/lib/banking/c6/c6EmitGuard';
 
 type InstallmentRow = {
   id: string;
@@ -139,8 +145,12 @@ async function resolveCompanyAsaasCredentials(
   const account = resolved.account;
 
   const provider = String(account.provider || '').trim().toUpperCase();
+  throwIfC6EmissionAttempt(provider);
   if (provider === 'INTER') {
     throw new CompanyAsaasWrongProviderError();
+  }
+  if (provider && provider !== 'ASAAS_COMPANY' && provider !== 'ASAAS') {
+    throw new UnknownChargesProviderError(provider);
   }
 
   if (!account.bankIntegrationId) {

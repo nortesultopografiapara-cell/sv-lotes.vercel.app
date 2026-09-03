@@ -65,6 +65,10 @@ export function isInterFinancialProvider(provider: string | null | undefined): b
   return String(provider || '').trim().toUpperCase() === 'INTER';
 }
 
+export function isC6FinancialProvider(provider: string | null | undefined): boolean {
+  return String(provider || '').trim().toUpperCase() === 'C6';
+}
+
 export const COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS: Record<CompanyFinancialAccountType, string> = {
   IMOBILIARIA: 'Imobiliária',
   PROPRIETARIO: 'Proprietário',
@@ -116,6 +120,7 @@ export function formatFinancialAccountProviderLabel(
   const p = String(provider || '').trim().toUpperCase();
   if (!p) return 'Sem provider';
   if (p === 'INTER') return 'Banco Inter';
+  if (p === 'C6') return 'C6 Bank';
   if (p === 'ASAAS_COMPANY' || p === 'ASAAS') return 'Asaas';
   return p;
 }
