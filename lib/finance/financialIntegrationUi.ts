@@ -33,7 +33,7 @@ export const FINANCIAL_INTEGRATION_UI_CARDS: FinancialIntegrationUiCard[] = [
     code: 'C6',
     label: 'C6 Bank',
     status: 'development',
-    description: 'Fundação interna em homologação. Emissão ainda não disponível.',
+    description: 'Credenciais locais em homologação. Emissão ainda não disponível.',
   },
   {
     code: 'NUBANK',

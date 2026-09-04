@@ -5,6 +5,7 @@ import { Construction } from 'lucide-react';
 import { listFinancialGatewayProviders } from '@/lib/finance/FinancialGateway';
 import { FINANCIAL_INTEGRATION_VISIBLE_BANK_CODES } from '@/lib/finance/financialIntegrationUi';
 import { InterBankConfigPanel } from '@/components/finance/InterBankConfigPanel';
+import { C6BankConfigPanel } from '@/components/finance/C6BankConfigPanel';
 
 const VISIBLE_BANK_CODES = new Set(FINANCIAL_INTEGRATION_VISIBLE_BANK_CODES);
 
@@ -18,6 +19,7 @@ type Props = {
 
 export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
   const [interOpen, setInterOpen] = useState(false);
+  const [c6Open, setC6Open] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -31,8 +33,9 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
             <p className="text-sm text-[var(--text-secondary)] mt-1">
               O <strong className="font-semibold text-[var(--text-primary)]">Inter</strong> já
               permite cadastrar credenciais (Fase A). Emissão de cobranças virá nas próximas fases.
-              Nubank e Cora permanecem em preparação. O C6 Bank está em homologação (sem emissão).
-              O Asaas continua na aba própria, sem alteração.
+              Nubank e Cora permanecem em preparação. O C6 Bank aceita cadastro local de
+              credenciais em homologação (sem emissão). O Asaas continua na aba própria, sem
+              alteração.
             </p>
           </div>
         </div>
@@ -63,7 +66,7 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
                 {isInter
                   ? 'Cadastre Client ID, Secret, certificado e chave privada.'
                   : isC6
-                    ? 'Fundação interna em homologação. Emissão ainda não disponível.'
+                    ? 'Cadastre credenciais locais. Emissão ainda não disponível.'
                     : 'Provider registrado na arquitetura — configuração indisponível nesta versão.'}
               </p>
               {isInter ? (
@@ -75,6 +78,15 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
                   {interOpen ? 'Ocultar configuração' : 'Configurar Banco Inter'}
                 </button>
               ) : null}
+              {isC6 ? (
+                <button
+                  type="button"
+                  onClick={() => setC6Open((v) => !v)}
+                  className="mt-3 rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-800"
+                >
+                  {c6Open ? 'Ocultar configuração' : 'Configurar C6 Bank'}
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -84,6 +96,13 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
         <InterBankConfigPanel
           readOnlyDemo={readOnlyDemo}
           onClose={() => setInterOpen(false)}
+        />
+      ) : null}
+
+      {c6Open ? (
+        <C6BankConfigPanel
+          readOnlyDemo={readOnlyDemo}
+          onClose={() => setC6Open(false)}
         />
       ) : null}
     </div>
