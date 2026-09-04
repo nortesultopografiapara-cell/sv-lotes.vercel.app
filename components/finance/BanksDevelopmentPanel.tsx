@@ -23,6 +23,18 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
 
   return (
     <div className="space-y-6">
+      <style>{`
+        @keyframes sv-c6-homolog-breathe {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.62; }
+        }
+        .sv-c6-homolog-badge {
+          animation: sv-c6-homolog-breathe 2.8s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .sv-c6-homolog-badge { animation: none; }
+        }
+      `}</style>
       <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
         <div className="flex items-start gap-3">
           <Construction className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -56,7 +68,9 @@ export function BanksDevelopmentPanel({ readOnlyDemo = false }: Props) {
                   className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                     isInter
                       ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-amber-500/15 text-amber-300'
+                      : isC6
+                        ? 'sv-c6-homolog-badge bg-amber-500/15 text-amber-300'
+                        : 'bg-amber-500/15 text-amber-300'
                   }`}
                 >
                   {isInter ? 'Configuração' : isC6 ? 'Em homologação' : 'Em desenvolvimento'}
