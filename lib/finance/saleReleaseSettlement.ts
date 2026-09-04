@@ -172,6 +172,26 @@ export class SettlementPersistError extends Error {
   }
 }
 
+/**
+ * PostgREST maybeSingle() devolve PGRST116 tanto para 0 linhas quanto para N>1.
+ * 0 linhas = ainda não há acerto (venda nova / sem pagamentos) — não é falha.
+ * N>1 é distinguido por "contains N rows" em details.
+ */
+export function isAbsentSettlementQueryError(error: unknown): boolean {
+  const db = error instanceof SettlementPersistError ? error.db : readSettlementDbError(error);
+  const code = String(db.code || '').toUpperCase();
+  const blob = `${db.message || ''} ${db.details || ''} ${db.hint || ''}`;
+  if (/\bcontains\s+[1-9]\d*\s+rows\b/i.test(blob)) return false;
+  if (/\bcontains\s+0\s+rows\b/i.test(blob)) return true;
+  if (code === 'PGRST116') return true;
+  if (code === '406' && /0 rows|no rows|single json object/i.test(blob)) return true;
+  return false;
+}
+
+export function isZeroPaidReleaseSettlement(snapshot: ReleaseReceiptsSnapshot): boolean {
+  return snapshot.paid.count === 0 && money2(snapshot.paid.amount) === 0;
+}
+
 export function parseReleaseSettlementOperatorInput(
   body: Record<string, unknown>,
 ): ReleaseSettlementOperatorInput {
@@ -445,6 +465,9 @@ export function prepareReleaseSettlement(input: {
     operationType === 'erro_cadastro' ||
     (operationType === 'cancelamento_administrativo' && receiptsSnapshot.paid.count === 0);
 
+  // Desistência/Distrato/Inadimplência com zero pagos: o motor calcula totais zerados.
+  // Não usar ausência de pagamento para mudar o motivo nem para lançar SETTLEMENT_LOAD_FAILED.
+
   if (skipFinancialCalc) {
     const base = fillPaidTotals(
       emptySettlement(
@@ -493,7 +516,7 @@ export function prepareReleaseSettlement(input: {
     items: input.operator.improvementItems,
   });
 
-  const settlement = calculateTerminationSettlement({
+  let settlement = calculateTerminationSettlement({
     policy: resolved.policy,
     receipts: input.receipts,
     motiveCode: operationType,
@@ -504,6 +527,17 @@ export function prepareReleaseSettlement(input: {
     destination: input.operator.refundDestination,
     exceptionOverride,
   });
+
+  if (
+    isZeroPaidReleaseSettlement(receiptsSnapshot) &&
+    settlement.calculationStatus === 'CALCULATED'
+  ) {
+    settlement = {
+      ...settlement,
+      agreedRefundAmount:
+        settlement.agreedRefundAmount == null ? 0 : settlement.agreedRefundAmount,
+    };
+  }
 
   const improvementStatus = improvementStatusForPersist(improvements);
   const obligation = buildCustomerObligation({
@@ -545,11 +579,12 @@ export async function loadActiveReleaseSettlement(
     .select('id, sale_id, status, calculation_status, operation_type, executed_at')
     .eq('sale_id', saleId)
     .in('status', ['CALCULATED', 'EXECUTED', 'FAILED_DOCUMENT'])
-    .maybeSingle();
-  if (error) {
+    .limit(1);
+  if (error && !isAbsentSettlementQueryError(error)) {
     throw new SettlementPersistError('SETTLEMENT_LOAD_FAILED', error);
   }
-  return (data as SaleReleaseSettlementRow) || null;
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as SaleReleaseSettlementRow) || null;
 }
 
 export async function upsertCalculatedReleaseSettlement(

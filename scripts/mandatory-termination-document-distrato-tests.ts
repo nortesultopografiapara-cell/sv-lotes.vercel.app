@@ -328,6 +328,34 @@ function testTemplateIsolationAndResolverHook() {
   console.log('OK testTemplateIsolationAndResolverHook');
 }
 
+function testZeroPaidDistratoDocument() {
+  const prepared = preparedDistrato({
+    receipts: [{ id: 'open-dt', installment_number: 1, status: 'pendente', amount: 1800 }],
+  });
+  assert(prepared.settlement.totalPaid === 0, 'distrato sem pagamentos: total 0');
+  assert(prepared.calculationStatus === 'CALCULATED', 'distrato zerado CALCULATED');
+  const snap = buildTerminationDocumentSnapshot({
+    settlement: settlementRow(prepared, { reason_detail: 'cliente desistiu antes de pagar' }),
+    documentNumber: 'DT-000000099/2026',
+    context: {
+      contractNumber: '000000099/2026',
+      contractModel: 'ARAGUAIA',
+      projectName: 'Loteamento Homolog',
+      quadra: '01',
+      lote: '09',
+      vendor: { role: 'vendedor', name: 'SV LOTES SPE', document: null, extra: null },
+      buyer: { role: 'comprador', name: 'Cliente Sem Pagamento', document: null, extra: null },
+      pendingObligationsCanceled: true,
+    },
+  });
+  assert(snap.operationType === 'distrato', 'motivo distrato escolhido');
+  assert(snap.documentNumber.startsWith('DT-'), 'prefixo DT');
+  assert(snap.totalPaid === 0, 'documento total 0');
+  assert(snap.agreedRefundAmount === 0, 'documento restituição 0');
+  assert(snap.html.includes(DISTRATO_DOCUMENT_TITLE), 'documento gerado');
+  console.log('OK testZeroPaidDistratoDocument');
+}
+
 function testReleaseMotorUnchangedAndSource() {
   const svc = read('lib/finance/releaseLotService.ts');
   assert(svc.includes('shouldGenerateTerminationDocument(motive.motiveCode)'), 'documento via gate');
@@ -365,6 +393,7 @@ function main() {
   testImprovementsAndExceptionStayDistratoOnly();
   testHistoryAndKinds();
   testTemplateIsolationAndResolverHook();
+  testZeroPaidDistratoDocument();
   testReleaseMotorUnchangedAndSource();
   console.log('ALL mandatory-termination-document-distrato-tests passed');
 }

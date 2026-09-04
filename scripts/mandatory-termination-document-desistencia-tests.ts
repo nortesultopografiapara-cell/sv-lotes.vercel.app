@@ -675,6 +675,48 @@ function testEnvGuard() {
   console.log('OK testEnvGuard');
 }
 
+function testZeroPaidDesistenciaDocument() {
+  const prepared = prepareReleaseSettlement({
+    motiveCode: 'desistencia',
+    receipts: [{ id: 'open-1', installment_number: 1, status: 'pendente', amount: 2500 }],
+    saleSnapshot: araguaiaSnapshot,
+    salePersistSource: 'catalog',
+    saleContractModel: 'ARAGUAIA',
+    operator: {
+      hasImprovements: false,
+      improvementsAppraisalStatus: 'NONE',
+      improvementItems: [],
+      refundDestination: 'REFUND_CUSTOMER',
+      exceptionalAgreement: false,
+      exceptionalReason: null,
+      exceptionalRefundAmount: null,
+      exceptionalRetentionPercent: null,
+      refundFirstDueDate: null,
+    },
+  });
+  const snap = buildTerminationDocumentSnapshot({
+    settlement: settlementRowFromPrepared(prepared),
+    documentNumber: 'TD-000000099/2026',
+    context: {
+      contractNumber: '000000099/2026',
+      contractModel: 'ARAGUAIA',
+      projectName: 'Homolog Zero',
+      quadra: '01',
+      lote: '09',
+      vendor: { role: 'vendedor', name: 'SV LOTES SPE', document: null, extra: null },
+      buyer: { role: 'comprador', name: 'Cliente Sem Pagamento', document: null, extra: null },
+      pendingObligationsCanceled: true,
+    },
+  });
+  assert(prepared.settlement.totalPaid === 0, 'settlement zerado');
+  assert(snap.totalPaid === 0, 'documento total 0');
+  assert(snap.agreedRefundAmount === 0, 'documento restituição 0');
+  assert(snap.retentionAmount === 0, 'documento retenção 0');
+  assert(snap.html.includes('TD-000000099/2026'), 'documento gerado');
+  assert(snap.operationType === 'desistencia', 'motivo desistência');
+  console.log('OK testZeroPaidDesistenciaDocument');
+}
+
 function main() {
   testHomologAraguaiaNumbers();
   testRefundScheduleSplitsAndCalendar();
@@ -687,6 +729,7 @@ function main() {
   testApiUxAndSaleDocuments();
   testTenantIsolationAndIdempotencySource();
   testEnvGuard();
+  testZeroPaidDesistenciaDocument();
   console.log('ALL mandatory-termination-document-desistencia-tests PASSED');
 }
 

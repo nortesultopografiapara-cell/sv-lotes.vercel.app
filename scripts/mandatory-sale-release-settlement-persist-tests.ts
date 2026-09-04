@@ -9,6 +9,8 @@ import { buildTerminationPolicySnapshot } from '../lib/contract-termination/snap
 import { validateReleaseLotMotive } from '../lib/finance/releaseLotShared';
 import {
   buildReleaseReceiptsSnapshot,
+  isAbsentSettlementQueryError,
+  isZeroPaidReleaseSettlement,
   prepareReleaseSettlement,
   readSettlementDbError,
   resolveSettlementContractId,
@@ -297,6 +299,110 @@ function testCancelamentoAdministrativo() {
   console.log('OK testCancelamentoAdministrativo');
 }
 
+function pendingOnly(amount = 1000): TerminationReceiptInput {
+  return {
+    id: `open-${amount}`,
+    installment_number: 1,
+    status: 'pendente',
+    amount,
+  };
+}
+
+function testZeroPaidDesistenciaAndDistrato() {
+  const openReceipts = [pendingOnly(1500), pendingOnly(2000)];
+  const desist = prepareReleaseSettlement({
+    motiveCode: 'desistencia',
+    receipts: openReceipts,
+    saleSnapshot: araguaiaSnapshot,
+    salePersistSource: 'catalog',
+    saleContractModel: 'ARAGUAIA',
+    operator: operator(),
+  });
+  assert(desist.operationType === 'desistencia', 'motivo desistência preservado');
+  assert(isZeroPaidReleaseSettlement(desist.receiptsSnapshot), 'sem pagamentos');
+  assert(desist.calculationStatus === 'CALCULATED', 'settlement zerado válido');
+  assert(desist.settlement.totalPaid === 0, 'total pago 0');
+  assert(desist.settlement.agreedRefundAmount === 0, 'restituição 0');
+  assert(desist.settlement.contractualRetentionAmount === 0, 'retenção 0');
+  assert(desist.settlement.nonRefundableAmount === 0, 'não reembolsável 0');
+  assert(desist.improvements.total === 0, 'benfeitorias 0');
+  assert(desist.receiptsSnapshot.pending.count === 2, 'abertas no snapshot');
+  assert(desist.calculationStatus !== 'NOT_APPLICABLE', 'não vira N/A');
+
+  const emptyDesist = prepareReleaseSettlement({
+    motiveCode: 'desistencia',
+    receipts: [],
+    saleSnapshot: araguaiaSnapshot,
+    salePersistSource: 'catalog',
+    saleContractModel: 'ARAGUAIA',
+    operator: operator(),
+  });
+  assert(emptyDesist.settlement.totalPaid === 0, 'sem recibos: total 0');
+  assert(emptyDesist.calculationStatus === 'CALCULATED', 'sem recibos: CALCULATED');
+
+  const distrato = prepareReleaseSettlement({
+    motiveCode: 'distrato',
+    receipts: openReceipts,
+    saleSnapshot: araguaiaSnapshot,
+    salePersistSource: 'catalog',
+    saleContractModel: 'ARAGUAIA',
+    operator: operator(),
+  });
+  assert(distrato.operationType === 'distrato', 'motivo distrato só se o operador escolheu');
+  assert(distrato.calculationStatus === 'CALCULATED', 'distrato zerado válido');
+  assert(distrato.settlement.totalPaid === 0, 'distrato total 0');
+  assert(distrato.settlement.agreedRefundAmount === 0, 'distrato restituição 0');
+  assert(distrato.exceptionalAgreement === false, 'exceção não entra sozinha');
+
+  const paid = prepareReleaseSettlement({
+    motiveCode: 'desistencia',
+    receipts: [rec(0, 10000), rec(1, 20000)],
+    saleSnapshot: araguaiaSnapshot,
+    salePersistSource: 'catalog',
+    saleContractModel: 'ARAGUAIA',
+    operator: operator(),
+  });
+  assert(paid.settlement.totalPaid === 30000, 'venda com pagamentos intacta');
+  assert(paid.settlement.contractualRetentionAmount === 5000, 'retenção com pagamentos intacta');
+  assert(paid.settlement.contractualRefundAmount === 15000, 'restituição com pagamentos intacta');
+
+  assert(
+    !isAbsentSettlementQueryError({
+      code: 'PGRST116',
+      details: 'The result contains 2 rows',
+      message: 'JSON object requested, multiple (or no) rows returned',
+    }),
+    'N>1 linhas não é ausência',
+  );
+  assert(
+    isAbsentSettlementQueryError({
+      code: 'PGRST116',
+      details: 'The result contains 0 rows',
+      message: 'JSON object requested, multiple (or no) rows returned',
+    }),
+    '0 linhas é ausência',
+  );
+  assert(
+    isAbsentSettlementQueryError({
+      code: 'PGRST116',
+      message: 'JSON object requested, multiple (or no) rows returned',
+    }),
+    'PGRST116 sem details = ausência (índice único)',
+  );
+
+  const persist = read('lib/finance/saleReleaseSettlement.ts');
+  assert(persist.includes('.limit(1)'), 'load não usa maybeSingle vazio como falha');
+  assert(persist.includes('isAbsentSettlementQueryError'), 'ausência ≠ falha');
+  assert(
+    !persist.includes("operationType === 'desistencia' && receiptsSnapshot.paid.count === 0"),
+    'desistência não muda de motivo por falta de pagamento',
+  );
+  const svc = read('lib/finance/releaseLotService.ts');
+  assert(svc.includes('if (isAbsentSettlementQueryError(err))'), 'POST /release segue sem acerto prévio');
+  assert(svc.includes("'SETTLEMENT_LOAD_FAILED'"), 'erro real de load permanece');
+  console.log('OK testZeroPaidDesistenciaAndDistrato');
+}
+
 function testReceiptsSnapshotBeforeMutation() {
   const snap = buildReleaseReceiptsSnapshot([
     rec(0, 1000),
@@ -481,6 +587,7 @@ function main() {
   testInadimplenciaFreezesOverdueSnapshot();
   testErroCadastroNotApplicable();
   testCancelamentoAdministrativo();
+  testZeroPaidDesistenciaAndDistrato();
   testReceiptsSnapshotBeforeMutation();
   testReleaseFlowGuarantees();
   testMigrationSchemaAndRls();

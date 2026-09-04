@@ -53,6 +53,7 @@ import {
   type ImprovementsRecord,
 } from '@/lib/contract-termination/improvements';
 import {
+  isAbsentSettlementQueryError,
   isSaleReleaseSettlementOperation,
   loadActiveReleaseSettlement,
   markReleaseSettlementExecuted,
@@ -1495,13 +1496,17 @@ export async function executeReleaseLot(
     try {
       existingSettlement = await loadActiveReleaseSettlement(admin, preview.saleId);
     } catch (err) {
-      throw releaseErr(
-        'Não foi possível consultar o acerto financeiro da venda original.',
-        500,
-        'SETTLEMENT_LOAD_FAILED',
-        'persist_settlement',
-        settlementFailDetails(err),
-      );
+      if (isAbsentSettlementQueryError(err)) {
+        existingSettlement = null;
+      } else {
+        throw releaseErr(
+          'Não foi possível consultar o acerto financeiro da venda original.',
+          500,
+          'SETTLEMENT_LOAD_FAILED',
+          'persist_settlement',
+          settlementFailDetails(err),
+        );
+      }
     }
   }
 

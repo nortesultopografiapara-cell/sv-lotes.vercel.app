@@ -815,6 +815,23 @@ function testReleaseLotConfirmButtonUx() {
   console.log('OK testReleaseLotConfirmButtonUx');
 }
 
+function testZeroPaidReleaseDoesNotFailLoad() {
+  const persist = read('lib/finance/saleReleaseSettlement.ts');
+  assert(persist.includes('export function isAbsentSettlementQueryError'), 'helper ausência');
+  assert(persist.includes('export function isZeroPaidReleaseSettlement'), 'helper zero pagos');
+  assert(persist.includes('.limit(1)'), 'load com limit(1)');
+  const loadFn = persist.slice(
+    persist.indexOf('export async function loadActiveReleaseSettlement'),
+    persist.indexOf('export async function upsertCalculatedReleaseSettlement'),
+  );
+  assert(!loadFn.includes('.maybeSingle()'), 'load não falha com maybeSingle vazio');
+  const svc = read('lib/finance/releaseLotService.ts');
+  const execFn = svc.slice(svc.indexOf('export async function executeReleaseLot'));
+  assert(execFn.includes('if (isAbsentSettlementQueryError(err))'), 'ausência não bloqueia /release');
+  assert(execFn.includes('existingSettlement = null'), 'segue com settlement a persistir');
+  console.log('OK testZeroPaidReleaseDoesNotFailLoad');
+}
+
 function main() {
   testMotiveValidation();
   testReceiptClassification();
@@ -832,6 +849,7 @@ function main() {
   testApiErrorShape();
   testPaidNeverDeletedGuards();
   testReleaseLotConfirmButtonUx();
+  testZeroPaidReleaseDoesNotFailLoad();
   console.log('\nALL mandatory-release-lot-tests PASSED');
 }
 
