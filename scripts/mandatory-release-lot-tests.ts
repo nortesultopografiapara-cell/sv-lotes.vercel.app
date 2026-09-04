@@ -60,7 +60,14 @@ function read(rel: string): string {
 
 function testMotiveValidation() {
   assert(validateReleaseLotMotive({ motiveCode: '' }).ok === false, 'motivo vazio');
-  assert(validateReleaseLotMotive({ motiveCode: 'distrato' }).ok === true, 'distrato ok');
+  assert(validateReleaseLotMotive({ motiveCode: 'distrato' }).ok === false, 'distrato exige justificativa');
+  assert(
+    validateReleaseLotMotive({
+      motiveCode: 'distrato',
+      motiveDetail: 'acordo entre as partes',
+    }).ok === true,
+    'distrato com justificativa',
+  );
   const outro = validateReleaseLotMotive({ motiveCode: 'outro', motiveDetail: 'ab' });
   assert(outro.ok === false, 'outro curto');
   const outroOk = validateReleaseLotMotive({
@@ -348,11 +355,19 @@ function testGisWiring() {
 function testReleaseLotModalConfirmRules() {
   const ready = {
     motiveCode: 'distrato',
-    motiveDetail: '',
+    motiveDetail: 'acordo entre as partes',
     acknowledged: true,
     password: 'secret',
   };
-  assert(canConfirmReleaseLot(ready), 'distrato + ciência + senha habilita');
+  assert(canConfirmReleaseLot(ready), 'distrato + ciência + senha + justificativa habilita');
+  assert(
+    !canConfirmReleaseLot({ ...ready, motiveDetail: '' }),
+    'distrato sem justificativa bloqueia',
+  );
+  assert(
+    !canConfirmReleaseLot({ ...ready, motiveDetail: 'ab' }),
+    'distrato com menos de 3 caracteres bloqueia',
+  );
   assert(
     !canConfirmReleaseLot({ ...ready, motiveCode: '' }),
     'sem motivo bloqueia',
@@ -507,6 +522,7 @@ function testSaleOperationsPanel() {
   assert(modal.includes('não chama a liberação'), 'titularidade não usa release');
   assert(modal.includes('nem tornará o lote Disponível por esta tela'), 'troca não libera automaticamente');
   assert(modal.includes('Justificativa administrativa'), 'admin exige texto');
+  assert(modal.includes('Motivo / justificativa do distrato'), 'distrato exige texto');
   assert(
     modal.includes("{deferredOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}"),
     'footer diferido / concluir',

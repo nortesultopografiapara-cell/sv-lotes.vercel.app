@@ -96,7 +96,8 @@ function testPartyFacingOverlayDoesNotRewriteHashSource() {
 function testSignedArtifactSeparate() {
   const sig = read('lib/termination-documents/signature.ts');
   assert(sig.includes("SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO"), 'tipo assinado');
-  assert(sig.includes("document_type', SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO"), 'não sobrescreve DESISTENCIA');
+  assert(sig.includes('terminationSignedSaleDocumentType'), 'tipo assinado por operação');
+  assert(!sig.includes("documentType: SALE_DOCUMENT_TYPE_DESISTENCIA,"), 'não sobrescreve DESISTENCIA');
   assert(sig.includes('assertFrozenHtmlUnchanged'), 'valida HTML congelado antes do overlay');
   const publicRoute = read('app/api/sign/sale/[token]/route.ts');
   assert(publicRoute.includes('loadTerminationPdfForSign'), 'página pública ramifica TERMO');

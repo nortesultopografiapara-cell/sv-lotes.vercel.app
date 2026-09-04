@@ -95,6 +95,8 @@ export type TerminationDocumentSnapshot = {
   obligation: CustomerObligationBreakdown;
   pendingObligationsCanceled: boolean;
   refundSchedule: TerminationRefundSchedule;
+  /** Justificativa persistida no settlement (distrato). Ausente na Desistência homologada. */
+  reasonDetail?: string | null;
   html: string;
   contentHash: string;
   signatureStatus: TerminationDocumentSignatureStatus;
@@ -103,5 +105,10 @@ export type TerminationDocumentSnapshot = {
 export const DESISTENCIA_DOCUMENT_TITLE =
   'TERMO DE DESISTÊNCIA, RESCISÃO CONTRATUAL E ACERTO FINANCEIRO';
 
+export const DISTRATO_DOCUMENT_TITLE =
+  'INSTRUMENTO PARTICULAR DE DISTRATO E ACERTO FINANCEIRO';
+
 export const SALE_DOCUMENT_TYPE_DESISTENCIA = 'DESISTENCIA';
 export const SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO = 'DESISTENCIA_ASSINADO';
+export const SALE_DOCUMENT_TYPE_DISTRATO = 'DISTRATO';
+export const SALE_DOCUMENT_TYPE_DISTRATO_ASSINADO = 'DISTRATO_ASSINADO';

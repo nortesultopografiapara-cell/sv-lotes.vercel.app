@@ -51,6 +51,10 @@ import {
 } from '@/lib/termination-documents/persist';
 import { renderTerminationHtmlToPdf } from '@/lib/termination-documents/pdf';
 import { DESISTENCIA_DOCUMENT_TITLE } from '@/lib/termination-documents/types';
+import {
+  terminationDocumentFileSlug,
+  terminationSignedSaleDocumentType,
+} from '@/lib/termination-documents/documentKinds';
 
 export {
   TERMINATION_SIGNED_DOCUMENT_TYPE,
@@ -468,7 +472,7 @@ async function appendTerminationCertificateHtml(
   admin: SupabaseClient,
   signature: ContractSignatureRow,
   partyHtml: string,
-  meta: { documentNumber: string; contractNumber: string | null },
+  meta: { documentNumber: string; contractNumber: string | null; title?: string | null },
 ): Promise<string> {
   if (String(signature.signature_status || '').toUpperCase() !== 'SIGNED') {
     return partyHtml;
@@ -510,8 +514,9 @@ async function appendTerminationCertificateHtml(
     validationPublicUrl: signature.validation_public_url,
     signatureUrl: signature.signature_url,
     historyEvents: buildSaleSignatureHistory(signature),
-    certificateTitle:
-      'CERTIFICADO DE ASSINATURA ELETRÔNICA — TERMO DE DESISTÊNCIA, RESCISÃO CONTRATUAL E ACERTO FINANCEIRO',
+    certificateTitle: `CERTIFICADO DE ASSINATURA ELETRÔNICA — ${
+      meta.title || DESISTENCIA_DOCUMENT_TITLE
+    }`,
     vendorSignedAt: signature.vendor_signed_at || vendor?.signed_at,
     vendorEmail: signature.vendor_signer_email || vendor?.signer_email,
     vendorSignatureHash: signature.vendor_signature_hash || vendor?.signature_hash,
@@ -532,6 +537,7 @@ export async function loadTerminationPdfForSign(
   const html = await appendTerminationCertificateHtml(admin, signature, partyHtml, {
     documentNumber: loaded.snapshot.documentNumber,
     contractNumber: loaded.snapshot.contractNumber,
+    title: loaded.snapshot.title,
   });
   const pdf = await renderTerminationHtmlToPdf(html, {
     vendorName: loaded.snapshot.vendor.name || 'SV LOTES',
@@ -548,13 +554,14 @@ async function findExistingSignedTerminationDocument(
   admin: SupabaseClient,
   saleId: string,
   companyId: string,
+  operationType?: string | null,
 ): Promise<{ id: string; storage_path: string } | null> {
   const { data } = await admin
     .from('sale_documents')
     .select('id, storage_path')
     .eq('sale_id', saleId)
     .eq('company_id', companyId)
-    .eq('document_type', SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO)
+    .eq('document_type', terminationSignedSaleDocumentType(operationType))
     .is('deleted_at', null)
     .maybeSingle();
   if (!data?.id || !data.storage_path) return null;
@@ -570,6 +577,7 @@ export async function persistSignedTerminationPdf(
     admin,
     saleId,
     loaded.snapshot.companyId,
+    loaded.snapshot.operationType,
   );
   if (existing) {
     await admin
@@ -585,7 +593,7 @@ export async function persistSignedTerminationPdf(
   }
 
   const { pdf, documentNumber } = await loadTerminationPdfForSign(admin, signatureRow);
-  const fileName = `termo-desistencia-assinado-${documentNumber.replace(/\//g, '-')}.pdf`;
+  const fileName = `${terminationDocumentFileSlug(loaded.snapshot.operationType)}-assinado-${documentNumber.replace(/\//g, '-')}.pdf`;
   const ctx = {
     tenantId: String(signatureRow.tenant_id || loaded.snapshot.companyId),
     companyId: String(loaded.snapshot.companyId),
@@ -614,8 +622,8 @@ export async function persistSignedTerminationPdf(
     saleId,
     ctx,
     userId: String(loaded.snapshot.operatorUserId || signatureRow.tenant_id || ''),
-    documentType: SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO,
-    description: `${DESISTENCIA_DOCUMENT_TITLE} (assinado) nº ${documentNumber}`,
+    documentType: terminationSignedSaleDocumentType(loaded.snapshot.operationType),
+    description: `${loaded.snapshot.title || DESISTENCIA_DOCUMENT_TITLE} (assinado) nº ${documentNumber}`,
     originalFileName: fileName,
     storagePath,
     mimeType: 'application/pdf',

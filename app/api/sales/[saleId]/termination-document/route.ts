@@ -6,7 +6,7 @@ import {
 } from '@/lib/rolePermissions';
 import { assertSaleDocumentSaleAccess, SaleDocumentError } from '@/lib/saleDocumentService';
 import { createAdminSupabase, getRequestAuthUser, resolveCallerProfile } from '@/lib/supabase/server';
-import { SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO } from '@/lib/termination-documents/types';
+import { terminationSignedSaleDocumentType } from '@/lib/termination-documents/documentKinds';
 import {
   documentViewFromSnapshot,
   loadTerminationDocumentBySale,
@@ -73,7 +73,10 @@ export async function GET(
       .select('id')
       .eq('sale_id', saleId)
       .eq('company_id', auth.companyId)
-      .eq('document_type', SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO)
+      .eq(
+        'document_type',
+        terminationSignedSaleDocumentType(loaded.snapshot.operationType),
+      )
       .is('deleted_at', null)
       .maybeSingle();
     const signedArtifactAvailable = Boolean(signedRow?.id);

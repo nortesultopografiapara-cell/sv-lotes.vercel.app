@@ -223,7 +223,8 @@ export function lotHistoryTerminationDocumentLinks(
   options?: { signed?: boolean },
 ): LotHistoryTerminationDocumentLinks | null {
   if (event.action !== 'sale_cancelled') return null;
-  if (String(event.motiveCode || '').trim() !== 'desistencia') return null;
+  const motive = String(event.motiveCode || '').trim();
+  if (motive !== 'desistencia' && motive !== 'distrato') return null;
   const saleId = String(event.saleId || '').trim();
   if (!saleId) return null;
   return {

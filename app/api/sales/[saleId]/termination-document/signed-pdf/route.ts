@@ -6,6 +6,8 @@ import {
 } from '@/lib/saleDocumentService';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 import { SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO } from '@/lib/termination-documents/signature';
+import { loadTerminationDocumentBySale } from '@/lib/termination-documents/persist';
+import { terminationSignedSaleDocumentType } from '@/lib/termination-documents/documentKinds';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,12 +36,19 @@ export async function GET(
     }
 
     const ctx = await assertSaleDocumentSaleAccess(admin, saleId, user.id);
+    const loaded = await loadTerminationDocumentBySale(admin, {
+      saleId,
+      companyId: ctx.companyId,
+    });
+    const signedType = loaded
+      ? terminationSignedSaleDocumentType(loaded.snapshot.operationType)
+      : SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO;
     const { data } = await admin
       .from('sale_documents')
       .select('id')
       .eq('sale_id', saleId)
       .eq('company_id', ctx.companyId)
-      .eq('document_type', SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO)
+      .eq('document_type', signedType)
       .is('deleted_at', null)
       .maybeSingle();
     if (!data?.id) {

@@ -458,6 +458,9 @@ export function validateReleaseLotMotive(input: {
   if (code === 'outro' && detail.length < 3) {
     return { ok: false, error: 'Descreva o motivo (campo Outro).' };
   }
+  if (code === 'distrato' && detail.length < 3) {
+    return { ok: false, error: 'Informe o motivo/justificativa do distrato.' };
+  }
   if (code === 'cancelamento_administrativo' && detail.length < 3) {
     return { ok: false, error: 'Informe a justificativa administrativa.' };
   }

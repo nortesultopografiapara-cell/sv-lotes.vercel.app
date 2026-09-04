@@ -825,6 +825,20 @@ export function ReleaseLotConfirmModal({
                       />
                     </div>
                   )}
+                  {motiveCode === 'distrato' && (
+                    <div className="mt-3">
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">
+                        Motivo / justificativa do distrato <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={motiveDetail}
+                        onChange={(e) => setMotiveDetail(e.target.value)}
+                        className={FIELD_CLASS}
+                        rows={2}
+                        placeholder="Informe o motivo do distrato (mínimo 3 caracteres)"
+                      />
+                    </div>
+                  )}
                 </section>
 
                 {showSettlement && liveSettlement && preview?.settlementPreview?.policy ? (

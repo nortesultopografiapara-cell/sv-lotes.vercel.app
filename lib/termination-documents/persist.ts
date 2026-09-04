@@ -17,6 +17,11 @@ import {
   allocateSaleOperationDocumentNumber,
   TERMINATION_DOCUMENT_PREFIX_DESISTENCIA,
 } from '@/lib/termination-documents/numbering';
+import {
+  terminationDocumentFileSlug,
+  terminationDocumentPrefixForType,
+  terminationOriginalSaleDocumentType,
+} from '@/lib/termination-documents/documentKinds';
 import { renderTerminationDocumentPdfFromFrozenHtml } from '@/lib/termination-documents/pdf';
 import {
   buildTerminationDocumentSnapshot,
@@ -46,7 +51,7 @@ export class TerminationDocumentError extends Error {
 }
 
 const SETTLEMENT_DOC_COLUMNS =
-  'id, company_id, tenant_id, sale_id, contract_id, block_id, project_id, operation_type, status, calculation_status, total_paid, entry_amount, signal_amount, non_refundable_amount, refundable_base, retention_percent, retention_amount, agreed_refund_amount, contractual_refund_amount, refund_installments, refund_destination, improvement_status, policy_snapshot, calculation_snapshot, operator_user_id, document_number, document_status, document_id, termination_document_snapshot, document_hash';
+  'id, company_id, tenant_id, sale_id, contract_id, block_id, project_id, operation_type, status, calculation_status, total_paid, entry_amount, signal_amount, non_refundable_amount, refundable_base, retention_percent, retention_amount, agreed_refund_amount, contractual_refund_amount, refund_installments, refund_destination, improvement_status, policy_snapshot, calculation_snapshot, operator_user_id, document_number, document_status, document_id, termination_document_snapshot, document_hash, reason, reason_detail';
 
 export type SettlementDocumentRow = FrozenSettlementFinance & {
   tenant_id?: string | null;
@@ -89,13 +94,14 @@ async function findExistingDesistenciaSaleDocument(
   admin: SupabaseClient,
   saleId: string,
   companyId: string,
+  documentType: string = SALE_DOCUMENT_TYPE_DESISTENCIA,
 ): Promise<{ id: string } | null> {
   const { data, error } = await admin
     .from('sale_documents')
     .select('id')
     .eq('sale_id', saleId)
     .eq('company_id', companyId)
-    .eq('document_type', SALE_DOCUMENT_TYPE_DESISTENCIA)
+    .eq('document_type', documentType)
     .eq('category', 'SYSTEM_GENERATED')
     .is('deleted_at', null)
     .maybeSingle();
@@ -169,7 +175,8 @@ export async function freezeTerminationDocumentSnapshot(
     (await allocateSaleOperationDocumentNumber(
       admin,
       params.companyId,
-      TERMINATION_DOCUMENT_PREFIX_DESISTENCIA,
+      terminationDocumentPrefixForType(row.operation_type) ||
+        TERMINATION_DOCUMENT_PREFIX_DESISTENCIA,
     ));
 
   const obligation = parseObligationFromCalculationSnapshot(
@@ -282,6 +289,7 @@ export async function materializeTerminationDocumentPdf(
     admin,
     params.saleId,
     params.companyId,
+    terminationOriginalSaleDocumentType(snapshot.operationType),
   );
   if (existingDoc?.id) {
     const keepSigned = row.document_status === 'SIGNED';
@@ -312,7 +320,7 @@ export async function materializeTerminationDocumentPdf(
 
   try {
     const pdfBytes = await renderTerminationDocumentPdfFromFrozenHtml(snapshot);
-    const fileName = `termo-desistencia-${snapshot.documentNumber.replace(/\//g, '-')}.pdf`;
+    const fileName = `${terminationDocumentFileSlug(snapshot.operationType)}-${snapshot.documentNumber.replace(/\//g, '-')}.pdf`;
     const storagePath = buildUploadStoragePathForSale({
       ctx: {
         tenantId: String(row.tenant_id || params.companyId),
@@ -346,7 +354,7 @@ export async function materializeTerminationDocumentPdf(
         buyerId: snapshot.customerId,
       },
       userId: params.operatorUserId,
-      documentType: SALE_DOCUMENT_TYPE_DESISTENCIA,
+      documentType: terminationOriginalSaleDocumentType(snapshot.operationType),
       description: `${snapshot.title} nº ${snapshot.documentNumber}`,
       originalFileName: fileName,
       storagePath,

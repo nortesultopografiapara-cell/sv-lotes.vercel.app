@@ -11,13 +11,13 @@ import {
   resolveImprovementsForDocument,
 } from '@/lib/contract-termination/improvements';
 import { hashTerminationDocumentHtml } from '@/lib/termination-documents/hash';
-import { buildDesistenciaTermHtml } from '@/lib/termination-documents/desistenciaTemplate';
+import { resolveTerminationDocumentHtmlBuilder } from '@/lib/termination-documents/resolveTemplate';
 import {
   parseRefundScheduleFromCalculationSnapshot,
   shouldDefineRefundSchedule,
   undefinedRefundSchedule,
 } from '@/lib/termination-documents/refundSchedule';
-import { terminationDocumentTitleForType } from '@/lib/termination-documents/titles';
+import { shouldGenerateTerminationDocument, terminationDocumentTitleForType } from '@/lib/termination-documents/titles';
 import type {
   TerminationDocumentOperationType,
   TerminationDocumentParty,
@@ -49,6 +49,8 @@ export type FrozenSettlementFinance = {
   policy_snapshot?: Record<string, unknown> | null;
   operator_user_id?: string | null;
   calculation_snapshot?: Record<string, unknown> | null;
+  reason?: string | null;
+  reason_detail?: string | null;
 };
 
 export type TerminationDocumentContext = {
@@ -114,7 +116,7 @@ export function buildTerminationDocumentSnapshot(input: {
 }): TerminationDocumentSnapshot {
   const s = input.settlement;
   const operationType = String(s.operation_type || '').trim() as TerminationDocumentOperationType;
-  if (operationType !== 'desistencia') {
+  if (!shouldGenerateTerminationDocument(operationType)) {
     throw new Error('TERMINATION_DOCUMENT_TYPE_UNSUPPORTED');
   }
   const destRaw = String(s.refund_destination || 'REFUND_CUSTOMER').toUpperCase();
@@ -197,6 +199,7 @@ export function buildTerminationDocumentSnapshot(input: {
     improvements: improvementsResolved,
     obligation: obligationResolved,
     pendingObligationsCanceled: input.context.pendingObligationsCanceled !== false,
+    reasonDetail: text(s.reason_detail),
     refundSchedule: resolveSnapshotRefundSchedule({
       settlement: s,
       refundDestination,
@@ -215,7 +218,10 @@ export function buildTerminationDocumentSnapshot(input: {
     signatureStatus: 'NOT_STARTED',
   };
 
-  const html = buildDesistenciaTermHtml(draft);
+  const html = resolveTerminationDocumentHtmlBuilder({
+    operationType,
+    contractModel: draft.contractModel,
+  })(draft);
   return {
     ...draft,
     html,
@@ -263,6 +269,6 @@ export function parseTerminationDocumentSnapshot(
   if (!row.documentNumber || !row.html || !row.contentHash || !row.settlementId) {
     return null;
   }
-  if (row.operationType !== 'desistencia') return null;
+  if (!shouldGenerateTerminationDocument(row.operationType)) return null;
   return row as TerminationDocumentSnapshot;
 }

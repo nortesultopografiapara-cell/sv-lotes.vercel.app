@@ -35,6 +35,7 @@ export const SALE_DOCUMENT_CONTRACT_OPERATION_TYPES = [
 export const SALE_DOCUMENT_TERMINATION_TYPES = [
   'DESISTENCIA',
   'DESISTENCIA_ASSINADO',
+  'DISTRATO_ASSINADO',
 ] as const;
 
 export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
@@ -79,7 +80,9 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   OTHER: 'Outros',
   SYSTEM: 'Documento do sistema',
   PROMISSORY_NOTE: 'Nota Promissória',
-  DISTRATO: 'Instrumento de Distrato',
+  DISTRATO: 'Instrumento Particular de Distrato e Acerto Financeiro',
+  DISTRATO_ASSINADO:
+    'Instrumento Particular de Distrato e Acerto Financeiro (assinado)',
   CESSAO: 'Instrumento de Cessão de Direitos',
   RESCISAO: 'Termo de Rescisão por Inadimplência',
   CANCELAMENTO_ADMIN: 'Termo Administrativo de Cancelamento',
@@ -156,8 +159,8 @@ export function saleOperationDocumentStatusLabel(documentType?: string | null): 
   const type = String(documentType || '')
     .trim()
     .toUpperCase();
-  if (type === 'DESISTENCIA_ASSINADO') return 'Assinado';
-  if (type === 'DESISTENCIA') return 'Gerado';
+  if (type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO') return 'Assinado';
+  if (type === 'DESISTENCIA' || type === 'DISTRATO') return 'Gerado';
   if (SALE_OPERATION_GENERATED_TYPES.has(type)) return 'Gerado';
   return '—';
 }
@@ -183,19 +186,17 @@ export function terminationDocumentSignedPdfHref(
 }
 
 export function isSignedTerminationDocumentType(documentType?: string | null): boolean {
-  return (
-    String(documentType || '')
-      .trim()
-      .toUpperCase() === 'DESISTENCIA_ASSINADO'
-  );
+  const type = String(documentType || '')
+    .trim()
+    .toUpperCase();
+  return type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO';
 }
 
 export function isOriginalTerminationDocumentType(documentType?: string | null): boolean {
-  return (
-    String(documentType || '')
-      .trim()
-      .toUpperCase() === 'DESISTENCIA'
-  );
+  const type = String(documentType || '')
+    .trim()
+    .toUpperCase();
+  return type === 'DESISTENCIA' || type === 'DISTRATO';
 }
 
 /** Assinado primeiro; original permanece para auditoria. Não apaga DESISTENCIA. */
