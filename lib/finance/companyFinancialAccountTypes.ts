@@ -55,6 +55,7 @@ export type CompanyFinancialAccountResponse = {
 /** Nome inicial de rascunho — nunca herdar nome de outra conta/provider. */
 export const NEW_ASAAS_FINANCIAL_ACCOUNT_NAME = 'Nova conta Asaas';
 export const NEW_INTER_FINANCIAL_ACCOUNT_NAME = 'Nova conta Banco Inter';
+export const NEW_C6_FINANCIAL_ACCOUNT_NAME = 'Nova conta C6 Bank';
 
 export function isAsaasFinancialProvider(provider: string | null | undefined): boolean {
   const p = String(provider || '').trim().toUpperCase();

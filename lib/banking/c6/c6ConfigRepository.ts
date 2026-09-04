@@ -1,7 +1,7 @@
 /**
- * Persistência isolada da integração C6 Bank (Fase 1).
+ * Persistência isolada da integração C6 Bank (Fase 2 — config local).
  * Reutiliza bank_integrations + bank_credentials + AES existente.
- * Sem client HTTP C6. Sem OAuth/webhook.
+ * Sem client HTTP C6. Sem OAuth/webhook/emissão.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -330,14 +330,50 @@ export async function saveCompanyC6BankConfig(
 
   const faId = clean(input.financialAccountId) || clean(lookup?.financialAccountId);
   if (faId && integrationId) {
-    const { data: fa } = await admin
+    const { data: fa, error: faErr } = await admin
       .from('company_financial_accounts')
       .select('id, bank_integration_id')
       .eq('id', faId)
       .eq('company_id', companyId)
       .maybeSingle();
-    if (fa?.id && !fa.bank_integration_id) {
-      await admin
+    if (faErr) throw new Error(faErr.message);
+    if (!fa?.id) throw new Error('Conta financeira não encontrada.');
+
+    const currentIntegrationId = fa.bank_integration_id
+      ? String(fa.bank_integration_id)
+      : '';
+    if (currentIntegrationId && currentIntegrationId !== integrationId) {
+      const { data: currentInt } = await admin
+        .from('bank_integrations')
+        .select('provider')
+        .eq('id', currentIntegrationId)
+        .eq('company_id', companyId)
+        .maybeSingle();
+      const currentProvider = String(currentInt?.provider || '').toUpperCase();
+      if (currentProvider === 'ASAAS_COMPANY' || currentProvider === 'ASAAS') {
+        throw new Error(
+          'Esta conta já está vinculada ao Asaas. Crie uma nova conta financeira C6 Bank.',
+        );
+      }
+      if (currentProvider === 'INTER') {
+        throw new Error(
+          'Esta conta já está vinculada ao Banco Inter. Crie uma nova conta financeira C6 Bank.',
+        );
+      }
+      if (currentProvider && currentProvider !== 'C6') {
+        throw new Error(
+          `Esta conta já está vinculada ao provider ${currentProvider}. Crie uma nova conta financeira C6 Bank.`,
+        );
+      }
+      if (currentProvider === 'C6') {
+        throw new Error(
+          'Esta conta já está vinculada a outra integração C6. Use uma conta financeira própria.',
+        );
+      }
+    }
+
+    if (!currentIntegrationId) {
+      const { error: linkErr } = await admin
         .from('company_financial_accounts')
         .update({
           bank_integration_id: integrationId,
@@ -345,6 +381,7 @@ export async function saveCompanyC6BankConfig(
         })
         .eq('id', faId)
         .eq('company_id', companyId);
+      if (linkErr) throw new Error(linkErr.message);
     }
   }
 
