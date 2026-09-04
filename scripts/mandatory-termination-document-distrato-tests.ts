@@ -334,6 +334,11 @@ function testReleaseMotorUnchangedAndSource() {
   assert(svc.includes('export async function executeReleaseLot'), 'motor único');
   assert(!svc.includes('completeContractOperation'), 'sem segunda arquitetura');
   assert(!svc.includes("from('sale_contract_operations')"), 'sem tabela WIP');
+  const barrel = read('lib/termination-documents/index.ts');
+  assert(
+    (barrel.match(/SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO/g) || []).length === 1,
+    'sem export duplicado no barrel',
+  );
   const persist = read('lib/termination-documents/persist.ts');
   assert(persist.includes('terminationDocumentPrefixForType'), 'prefixo por operação');
   assert(persist.includes('TERMINATION_DOCUMENT_PREFIX_DESISTENCIA'), 'TD permanece no persist');
