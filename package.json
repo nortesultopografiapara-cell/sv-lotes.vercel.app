@@ -36,6 +36,8 @@
     "test:broker-commissions-bulk-adjust": "tsx scripts/mandatory-broker-commission-bulk-adjust-tests.ts",
     "test:broker-commission": "tsx scripts/mandatory-broker-commission-tests.ts",
     "test:gis-delete-individual-lot": "tsx scripts/mandatory-gis-delete-individual-lot-tests.ts",
+    "test:gis-sale-create": "tsx scripts/mandatory-gis-sale-create-tests.ts",
+    "test:gis-sale-contract-required": "tsx scripts/mandatory-gis-sale-contract-required-tests.ts",
     "test:recanto-finance": "tsx scripts/mandatory-recanto-primavera-finance-installment-tests.ts",
     "test:saas-payment": "tsx scripts/mandatory-saas-payment-tests.ts",
     "test:saas-charge-delete": "tsx scripts/mandatory-saas-charge-delete-tests.ts",

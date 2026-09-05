@@ -5137,6 +5137,11 @@ export default function GISMap({
             error || data?.error || "Não foi possível concluir a venda.",
           );
         }
+        if (!String(data.contractId || "").trim()) {
+          throw new Error(
+            "Não foi possível concluir a venda: o contrato não foi gerado. O lote permanece disponível.",
+          );
+        }
 
         if (wasReserved) {
           void logLotAuditEvent(supabase, {

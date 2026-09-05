@@ -1237,6 +1237,16 @@ export async function regenerateSaleContract(
       .eq('id', (contract.block_id || block.id) as string);
   }
 
+  if (saleId && newRow.id) {
+    const { error: saleLinkErr } = await supabase
+      .from('sales')
+      .update({ contract_id: newRow.id })
+      .eq('id', saleId);
+    if (saleLinkErr) {
+      console.warn('[REGENERATE] sales.contract_id', saleLinkErr.message);
+    }
+  }
+
   const versions = await listSaleContractVersions(supabase, saleId);
 
   console.log('CONTRACT_REGENERATE_NEW_VERSION', {

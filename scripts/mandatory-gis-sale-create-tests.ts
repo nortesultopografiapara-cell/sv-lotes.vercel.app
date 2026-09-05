@@ -21,13 +21,22 @@ function testGisSaleCreateServiceFlow() {
   const service = fs.readFileSync('lib/gisSaleCreateService.ts', 'utf8');
   assert(service.includes("logSaleStep('create_sale'"), 'log create_sale');
   assert(service.includes("logSaleStep('create_receipts'"), 'log create_receipts');
-  assert(service.includes("logSaleStep('update_lot_status'"), 'lote vendido antes do contrato');
+  assert(service.includes("logSaleStep('update_lot_status'"), 'log update_lot_status');
   assert(service.includes("logSaleStep('generate_contract'"), 'log generate_contract');
   assert(
-    service.indexOf("logSaleStep('update_lot_status'") <
-      service.indexOf("logSaleStep('generate_contract'"),
-    'update_lot_status antes de generate_contract',
+    service.indexOf("logSaleStep('generate_contract'") <
+      service.indexOf("logSaleStep('update_lot_status'"),
+    'generate_contract antes de marcar lote vendido',
   );
+  assert(
+    service.includes('SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE'),
+    'falha de contrato impede concluir a venda',
+  );
+  assert(
+    !service.includes('warnings.push(`Contrato não gerado:'),
+    'falha de contrato não vira só warning',
+  );
+  assert(service.includes('persistSaleContractLink'), 'grava sales.contract_id');
   assert(service.includes('CONTRACT_GENERATION_TIMEOUT_MS'), 'timeout no contrato');
   assert(service.includes('rollbackPartialSale'), 'rollback em falha parcial');
   assert(service.includes('insertRowsWithColumnFallback'), 'parcelas em lote');
@@ -53,6 +62,10 @@ function testGisMapUsesSalesCreateApi() {
   assert(
     handler.indexOf('/api/sales/create') < handler.indexOf('resolveOrCreateCustomer'),
     'venda via API antes do resolveOrCreateCustomer no handler',
+  );
+  assert(
+    handler.includes('!String(data.contractId || "").trim()'),
+    'GIS recusa venda sem contractId persistido',
   );
   console.log('OK testGisMapUsesSalesCreateApi');
 }

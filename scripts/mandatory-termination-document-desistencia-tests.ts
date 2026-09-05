@@ -606,6 +606,11 @@ function testReleaseFlowAtomicityAndRetry() {
   assert(!svc.includes("from('sale_contract_operations')"), 'não usa sale_contract_operations');
   assert(!persistMod.includes('saleContractSignatureService'), 'sem assinatura de contrato');
   assert(!persistMod.includes('/sign/sale/'), 'sem rota de assinatura de contrato');
+  assert(svc.includes("'Desistência concluída com sucesso.'"), 'mensagem homologada Desistência');
+  assert(
+    svc.includes('function terminationOperationSuccessMessage'),
+    'mensagem de sucesso escolhe pelo motiveCode',
+  );
   console.log('OK testReleaseFlowAtomicityAndRetry');
 }
 
@@ -629,6 +634,14 @@ function testApiUxAndSaleDocuments() {
   assert(modal.includes('Concluir'), 'botão concluir após sucesso');
   assert(modal.includes('refundFirstDueDate'), 'POST envia 1ª parcela');
   assert(!modal.includes('/sign/sale/'), 'modal não cria rota própria de assinatura');
+  assert(
+    modal.includes("'Desistência concluída com sucesso.'"),
+    'fallback homologado da Desistência permanece',
+  );
+  assert(
+    modal.includes('terminationSuccessFallbackMessage(motiveCode)'),
+    'fallback do modal usa motiveCode',
+  );
   const ui = read('components/map/ReleaseLotSettlementSection.tsx');
   assert(ui.includes('Valor de cada parcela'), 'UI valor parcela');
   assert(ui.includes('Vencimento da 1ª parcela'), 'UI data 1ª parcela');

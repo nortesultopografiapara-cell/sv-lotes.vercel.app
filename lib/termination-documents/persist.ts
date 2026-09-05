@@ -10,7 +10,7 @@ import {
   createSystemGeneratedSaleDocumentMetadata,
 } from '@/lib/saleDocumentService';
 import { SALE_DOCUMENTS_STORAGE_BUCKET } from '@/lib/saleDocuments';
-import { resolveSettlementContractId } from '@/lib/finance/saleReleaseSettlement';
+import { loadHistoricalSaleContractId } from '@/lib/saleHistoricalContract';
 import { loadTerminationDocumentContext } from '@/lib/termination-documents/context';
 import { assertFrozenHtmlUnchanged } from '@/lib/termination-documents/hash';
 import {
@@ -159,9 +159,10 @@ export async function freezeTerminationDocumentSnapshot(
     return existing;
   }
 
-  const contractId = resolveSettlementContractId(
-    row.contract_id ? { id: row.contract_id } : null,
-  );
+  const contractId = await loadHistoricalSaleContractId(admin, {
+    saleId: params.saleId,
+    settlementContractId: row.contract_id,
+  });
   const context = await loadTerminationDocumentContext(admin, {
     companyId: params.companyId,
     saleId: params.saleId,
@@ -414,6 +415,7 @@ export async function loadTerminationDocumentBySale(
   settlementId: string;
   documentId: string | null;
   settlementStatus: string | null;
+  settlementContractId: string | null;
 } | null> {
   const { data, error } = await admin
     .from('sale_release_settlements')
@@ -432,6 +434,7 @@ export async function loadTerminationDocumentBySale(
     settlementId: String(row.id),
     documentId: row.document_id ? String(row.document_id) : null,
     settlementStatus: row.status ? String(row.status) : null,
+    settlementContractId: row.contract_id ? String(row.contract_id) : null,
   };
 }
 

@@ -378,6 +378,21 @@ function testReleaseMotorUnchangedAndSource() {
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
   assert(modal.includes('Motivo / justificativa do distrato'), 'campo distrato');
   assert(modal.includes('Justificativa administrativa'), 'admin intacto');
+  assert(svc.includes("'Distrato concluído com sucesso.'"), 'sucesso Distrato pelo motiveCode');
+  assert(
+    svc.includes('motiveCode: motive.motiveCode'),
+    'PDF materializa com motiveCode da operação',
+  );
+  assert(svc.includes("'Desistência concluída com sucesso.'"), 'Desistência homologada intacta');
+  assert(modal.includes("'Distrato concluído com sucesso.'"), 'fallback modal Distrato');
+  assert(
+    modal.includes('terminationSuccessFallbackMessage(motiveCode)'),
+    'fallback modal determinado pelo motiveCode',
+  );
+  assert(
+    modal.includes('terminationRetrySuccessMessage('),
+    'retry PDF não força texto de Desistência',
+  );
   const migrations = fs.readdirSync(path.join(__dirname, '..', 'supabase/migrations'));
   assert(
     !migrations.includes('20261008120000_sale_contract_operations.sql'),

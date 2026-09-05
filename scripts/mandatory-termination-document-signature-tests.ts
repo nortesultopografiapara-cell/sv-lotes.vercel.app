@@ -59,6 +59,9 @@ function testOriginalContractIsolation() {
   const api = read('app/api/sales/[saleId]/termination-document/signature/route.ts');
   assert(api.includes('sendTerminationDocumentForSignature'), 'API própria do termo');
   assert(!api.includes('sendSaleContractForSignature'), 'não usa POST de contrato');
+  const sig = read('lib/termination-documents/signature.ts');
+  assert(sig.includes('loadHistoricalSaleContractId'), 'e-sign resolve contrato da própria venda');
+  assert(!sig.includes('loaded.snapshot.contractId'), 'não usa snapshot cego');
   console.log('OK testOriginalContractIsolation');
 }
 
@@ -112,7 +115,13 @@ function testUiAndShare() {
   assert(actions.includes('Enviar para assinatura'), 'botão enviar');
   assert(actions.includes('Baixar documento assinado'), 'download assinado');
   assert(actions.includes('instrument="termination"'), 'share do termo');
-  assert(modal.includes('Termo de Desistência, Rescisão Contratual e Acerto Financeiro'), 'nomenclatura');
+  assert(modal.includes('Desistência concluída com sucesso.'), 'sucesso Desistência no modal');
+  assert(
+    read('lib/saleDocuments.ts').includes(
+      'Termo de Desistência, Rescisão Contratual e Acerto Financeiro',
+    ),
+    'nomenclatura',
+  );
   assert(panel.includes('Baixar documento assinado'), 'painel documentos');
   const msg = buildSalePartySignatureShareMessage({
     signerName: 'Cliente',

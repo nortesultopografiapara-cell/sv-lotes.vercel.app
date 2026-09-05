@@ -43,6 +43,7 @@ import {
 import { SALE_DOCUMENTS_STORAGE_BUCKET } from '@/lib/saleDocuments';
 import { logSignatureEvent } from '@/lib/signatureEventService';
 import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
+import { loadHistoricalSaleContractId } from '@/lib/saleHistoricalContract';
 import { assertFrozenHtmlUnchanged } from '@/lib/termination-documents/hash';
 import { toPartyFacingTerminationHtml } from '@/lib/termination-documents/partyFacingHtml';
 import {
@@ -169,7 +170,12 @@ export async function sendTerminationDocumentForSignature(
     );
   }
 
-  const contractId = String(loaded.snapshot.contractId || '').trim();
+  const contractId = String(
+    (await loadHistoricalSaleContractId(admin, {
+      saleId: input.saleId,
+      settlementContractId: loaded.settlementContractId,
+    })) || '',
+  ).trim();
   if (!contractId) {
     throw new TerminationDocumentError(
       'Não é possível enviar o termo para assinatura sem o contrato original vinculado.',
@@ -187,6 +193,15 @@ export async function sendTerminationDocumentForSignature(
   if (contractErr || !contractRow) {
     throw new TerminationDocumentError(
       'Contrato original não encontrado para reutilizar os signatários.',
+      'CONTRACT_REQUIRED',
+    );
+  }
+  if (
+    String((contractRow as { sale_id?: string | null }).sale_id || '').trim() &&
+    String((contractRow as { sale_id?: string | null }).sale_id) !== input.saleId
+  ) {
+    throw new TerminationDocumentError(
+      'Não é possível enviar o termo para assinatura sem o contrato original vinculado.',
       'CONTRACT_REQUIRED',
     );
   }

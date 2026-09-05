@@ -606,12 +606,25 @@ async function loadSaleContext(
   }
 
   let contract: Record<string, unknown> | null = null;
-  const contractId =
+  const saleRowContractId =
     String((sale as { contract_id?: string }).contract_id || '').trim() || null;
 
   async function loadContractBy(
     filter: { column: 'id' | 'sale_id'; value: string },
   ): Promise<Record<string, unknown> | null> {
+    if (filter.column === 'sale_id') {
+      const current = await admin
+        .from('contracts')
+        .select(
+          'id, status, contract_number, sale_id, signed_at, signature_status, contract_model, termination_policy_snapshot, termination_policy_version, termination_policy_source, is_current, created_at',
+        )
+        .eq('sale_id', filter.value)
+        .eq('is_current', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!current.error && current.data) return current.data as Record<string, unknown>;
+    }
     // Preferência: campos de assinatura; fallback se coluna não existir no ambiente.
     const full = await admin
       .from('contracts')
@@ -649,11 +662,22 @@ async function loadSaleContext(
     return (lean.data as Record<string, unknown>) || null;
   }
 
-  if (contractId) {
-    contract = await loadContractBy({ column: 'id', value: contractId });
+  function contractBelongsToSale(
+    row: Record<string, unknown> | null,
+  ): Record<string, unknown> | null {
+    if (!row) return null;
+    const rowSale = String(row.sale_id || '').trim();
+    if (rowSale && rowSale !== saleId) return null;
+    return row;
   }
-  if (!contract) {
-    contract = await loadContractBy({ column: 'sale_id', value: saleId });
+
+  contract = contractBelongsToSale(
+    await loadContractBy({ column: 'sale_id', value: saleId }),
+  );
+  if (!contract && saleRowContractId) {
+    contract = contractBelongsToSale(
+      await loadContractBy({ column: 'id', value: saleRowContractId }),
+    );
   }
 
   const receiptFull = await admin
@@ -1336,6 +1360,7 @@ async function applyLocalRelease(
   }
 
   if (preview.saleId && !isCanceledSaleStatus(preview.saleStatus)) {
+    // Encerramento preserva sales.contract_id da venda histórica.
     const { error: saleErr } = await admin
       .from('sales')
       .update({ status: SALE_CANCELLED_STATUS })

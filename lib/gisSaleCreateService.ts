@@ -1,6 +1,6 @@
 /**
  * Criação de venda pelo GIS — core transacional com logs [sales/create].
- * Contrato é gerado após marcar lote vendido; falha no contrato não reverte a venda.
+ * A venda só é concluída depois do contrato persistido. Falha no contrato reverte a venda.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -47,6 +47,7 @@ import {
   resolveSaleCommissionPlan,
   shouldCreatePendingCommissionFromPlan,
 } from '@/lib/brokerCommissionMode';
+import { SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE } from '@/lib/saleHistoricalContract';
 
 const CONTRACT_GENERATION_TIMEOUT_MS = 25_000;
 
@@ -78,7 +79,7 @@ export type GisSaleCreateResult = {
   success: true;
   saleId: string;
   customerId: string;
-  contractId: string | null;
+  contractId: string;
   warnings: string[];
 };
 
@@ -279,6 +280,23 @@ async function loadProjectSnapshotForSale(
   throw new Error(withContractModel.error.message);
 }
 
+async function persistSaleContractLink(
+  supabase: SupabaseClient,
+  saleId: string,
+  contractId: string,
+) {
+  const { error } = await supabase
+    .from('sales')
+    .update({ contract_id: contractId })
+    .eq('id', saleId);
+  if (error) {
+    throw new Error(
+      error.message || 'Não foi possível gravar sales.contract_id nesta venda.',
+    );
+  }
+}
+
+/** Sempre INSERT de contrato novo da venda. Nunca UPDATE/reuso por block_id. */
 async function insertContractForSale(
   supabase: SupabaseClient,
   payloads: Record<string, unknown>[],
@@ -332,10 +350,13 @@ async function rollbackPartialSale(
     await supabase.from('sale_balloon_installments').delete().eq('sale_id', params.saleId);
     await supabase.from('finance_receipts').delete().eq('sale_id', params.saleId);
     await supabase.from('broker_commissions').delete().eq('sale_id', params.saleId);
-    await supabase.from('sales').delete().eq('id', params.saleId);
+    await supabase.from('contracts').delete().eq('sale_id', params.saleId);
   }
   if (params.contractId) {
     await supabase.from('contracts').delete().eq('id', params.contractId);
+  }
+  if (params.saleId) {
+    await supabase.from('sales').delete().eq('id', params.saleId);
   }
   await supabase
     .from('blocks')
@@ -667,28 +688,9 @@ export async function executeGisSaleCreate(
 
     await replaceSaleBalloonInstallments(supabase, saleId, balloonPlan);
 
-    logSaleStep('update_lot_status', startedAt, { saleId });
-    const { error: blockUpdErr } = await supabase
-      .from('blocks')
-      .update({
-        status: 'Vendido',
-        price: finalPrice,
-        customer_id: customerId,
-        sale_id: saleId,
-        contract_id: null,
-        broker_id: brokerId,
-      })
-      .eq('id', lotId);
-
-    if (blockUpdErr) {
-      throw new Error(blockUpdErr.message || 'Falha ao marcar lote como vendido');
-    }
-
     logSaleStep('generate_contract', startedAt);
     try {
       await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
-        // Após persistir venda + finance_receipts + lote, recarrega o contexto oficial
-        // pelo mesmo loader da regeneração (não usa payload parcial do formulário).
         const contractNumber = await getNextContractNumber(
           supabase,
           tenantId,
@@ -792,14 +794,17 @@ export async function executeGisSaleCreate(
           await insertContractForSale(supabase, contractPayloads);
 
         if (contractInsertError || !insertedContract) {
-          warnings.push(
-            `Contrato não criado: ${contractInsertError?.message || 'erro desconhecido'}.`,
+          throw new Error(
+            contractInsertError?.message || 'Falha ao persistir o contrato da venda.',
           );
-          return;
         }
 
-        contractId = String(insertedContract.id || '');
-        if (built.html && contractId) {
+        contractId = String(insertedContract.id || '').trim();
+        if (!contractId) {
+          throw new Error('Contrato persistido sem identificador.');
+        }
+
+        if (built.html) {
           const hasHtml = Boolean(
             insertedContract.generated_html &&
               String(insertedContract.generated_html).trim().length > 0,
@@ -814,17 +819,33 @@ export async function executeGisSaleCreate(
           }
         }
 
-        if (contractId) {
-          await supabase
-            .from('blocks')
-            .update({ contract_id: contractId })
-            .eq('id', lotId);
-        }
+        await persistSaleContractLink(supabase, saleId, contractId);
       });
     } catch (contractErr: unknown) {
       const msg =
         contractErr instanceof Error ? contractErr.message : String(contractErr);
-      warnings.push(`Contrato não gerado: ${msg}`);
+      throw new Error(`${SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE} ${msg}`);
+    }
+
+    if (!contractId) {
+      throw new Error(SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE);
+    }
+
+    logSaleStep('update_lot_status', startedAt, { saleId, contractId });
+    const { error: blockUpdErr } = await supabase
+      .from('blocks')
+      .update({
+        status: 'Vendido',
+        price: finalPrice,
+        customer_id: customerId,
+        sale_id: saleId,
+        contract_id: contractId,
+        broker_id: brokerId,
+      })
+      .eq('id', lotId);
+
+    if (blockUpdErr) {
+      throw new Error(blockUpdErr.message || 'Falha ao marcar lote como vendido');
     }
 
     // Comissão: snapshot na época da venda (não depende só do role BROKER).
@@ -878,6 +899,10 @@ export async function executeGisSaleCreate(
         console.warn('[sales/create] broker_commission_failed', commErr);
         warnings.push('Comissão do corretor não registrada automaticamente.');
       }
+    }
+
+    if (!contractId) {
+      throw new Error(SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE);
     }
 
     logSaleStep('response', startedAt, {
