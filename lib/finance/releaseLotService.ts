@@ -156,6 +156,30 @@ function desistenciaSuccessMessage(documentNumber: string, pdfOk: boolean): stri
   ].join('\n');
 }
 
+function terminationOperationSuccessMessage(
+  motiveCode: string,
+  documentNumber: string,
+  pdfOk: boolean,
+): string {
+  if (String(motiveCode || '').trim() === 'distrato') {
+    if (pdfOk) {
+      return [
+        'Distrato concluído com sucesso.',
+        '',
+        'Instrumento Particular de Distrato e Acerto Financeiro',
+        `nº ${documentNumber} gerado.`,
+      ].join('\n');
+    }
+    return [
+      'Distrato concluído com sucesso.',
+      '',
+      'O lote foi liberado e o acerto financeiro permanece executado.',
+      `O Instrumento nº ${documentNumber} foi congelado, mas o PDF não pôde ser gerado. Use Tentar gerar PDF.`,
+    ].join('\n');
+  }
+  return desistenciaSuccessMessage(documentNumber, pdfOk);
+}
+
 async function freezeDesistenciaSnapshotOrThrow(
   admin: SupabaseClient,
   params: {
@@ -220,7 +244,11 @@ async function attachTerminationDocumentAfterExecuted(
     const view = documentViewFromSnapshot(loaded.snapshot, 'GENERATED');
     return {
       view,
-      message: desistenciaSuccessMessage(loaded.snapshot.documentNumber, true),
+      message: terminationOperationSuccessMessage(
+        params.motiveCode,
+        loaded.snapshot.documentNumber,
+        true,
+      ),
       keepModalOpen: Boolean(view?.canView),
     };
   }
@@ -229,6 +257,7 @@ async function attachTerminationDocumentAfterExecuted(
     saleId: params.saleId,
     companyId: params.companyId,
     operatorUserId: params.operatorUserId,
+    motiveCode: params.motiveCode,
     frozenSnapshot: loaded.snapshot,
   }).then((part) => ({
     view: part.view,
@@ -244,6 +273,7 @@ async function materializeDesistenciaPdfSafe(
     saleId: string;
     companyId: string;
     operatorUserId: string;
+    motiveCode: string;
     frozenSnapshot?: TerminationDocumentSnapshot | null;
   },
 ): Promise<{
@@ -259,7 +289,11 @@ async function materializeDesistenciaPdfSafe(
     });
     return {
       view: documentViewFromSnapshot(mat.snapshot, mat.documentStatus),
-      message: desistenciaSuccessMessage(mat.snapshot.documentNumber, true),
+      message: terminationOperationSuccessMessage(
+        params.motiveCode,
+        mat.snapshot.documentNumber,
+        true,
+      ),
     };
   } catch (err) {
     console.error('[releaseLot] PDF failed after EXECUTED', err);
@@ -274,7 +308,11 @@ async function materializeDesistenciaPdfSafe(
     const view = documentViewFromSnapshot(snap, 'FAILED');
     return {
       view,
-      message: desistenciaSuccessMessage(snap?.documentNumber || '—', false),
+      message: terminationOperationSuccessMessage(
+        params.motiveCode,
+        snap?.documentNumber || '—',
+        false,
+      ),
     };
   }
 }
@@ -1924,6 +1962,7 @@ export async function executeReleaseLot(
       saleId: preview.saleId,
       companyId: preview.companyId,
       operatorUserId: input.userId,
+      motiveCode: motive.motiveCode,
       frozenSnapshot,
     });
     terminationDocument = pdfPart.view;

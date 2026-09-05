@@ -48,7 +48,31 @@ import {
 } from '@/lib/finance/releaseLotShared';
 import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
 import { TerminationDocumentSignatureActions } from '@/components/map/TerminationDocumentSignatureActions';
+import { SALE_DOCUMENT_TYPE_LABELS } from '@/lib/saleDocuments';
 import { supabase } from '@/lib/supabase';
+
+function terminationSuccessFallbackMessage(code: string): string {
+  return String(code || '').trim() === 'distrato'
+    ? 'Distrato concluído com sucesso.'
+    : 'Desistência concluída com sucesso.';
+}
+
+function terminationRetrySuccessMessage(code: string, documentNumber: string): string {
+  if (String(code || '').trim() === 'distrato') {
+    return [
+      'Distrato concluído com sucesso.',
+      '',
+      SALE_DOCUMENT_TYPE_LABELS.DISTRATO,
+      `nº ${documentNumber} gerado.`,
+    ].join('\n');
+  }
+  return [
+    'Desistência concluída com sucesso.',
+    '',
+    SALE_DOCUMENT_TYPE_LABELS.DESISTENCIA,
+    `nº ${documentNumber} gerado.`,
+  ].join('\n');
+}
 
 const FIELD_CLASS =
   'form-input-light w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500';
@@ -472,7 +496,7 @@ export function ReleaseLotConfirmModal({
       const keepOpen = json.keepModalOpen === true || Boolean(term?.canView);
       if (keepOpen && term) {
         setDocumentSuccess({
-          message: String(json.message || 'Desistência concluída com sucesso.'),
+          message: String(json.message || terminationSuccessFallbackMessage(motiveCode)),
           saleId,
           documentNumber: term.documentNumber || null,
           documentStatus: term.documentStatus || null,
@@ -552,12 +576,10 @@ export function ReleaseLotConfirmModal({
               html: typeof json.html === 'string' ? json.html : prev.html,
               canView: json.canView !== false,
               canDownload: json.canDownload === true,
-              message: [
-                'Desistência concluída com sucesso.',
-                '',
-                'Termo de Desistência, Rescisão Contratual e Acerto Financeiro',
-                `nº ${String(json.documentNumber || prev.documentNumber)} gerado.`,
-              ].join('\n'),
+              message: terminationRetrySuccessMessage(
+                motiveCode,
+                String(json.documentNumber || prev.documentNumber),
+              ),
             }
           : prev,
       );
