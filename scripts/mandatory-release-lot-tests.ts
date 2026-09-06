@@ -94,10 +94,14 @@ function testMotiveValidation() {
   const grouped = SALE_OPERATION_UI_GROUPS.flatMap((g) => g.codes);
   assert(
     grouped.join(',') ===
-      'desistencia,distrato,inadimplencia,cancelamento_administrativo,troca_lote,transferencia_titularidade',
-    'painel visual oferece 6 operações (sem Outro e sem Erro de cadastro)',
+      'desistencia,distrato,inadimplencia,troca_lote,transferencia_titularidade',
+    'painel visual oferece 5 operações (sem Outro, Erro de cadastro e Cancelamento administrativo)',
   );
   assert(!grouped.includes('erro_cadastro'), 'erro_cadastro fora da oferta visual');
+  assert(
+    !grouped.includes('cancelamento_administrativo'),
+    'cancelamento_administrativo fora da oferta visual',
+  );
   assert(
     validateReleaseLotMotive({ motiveCode: 'erro_cadastro' }).ok === true,
     'backend ainda aceita erro_cadastro legado',
@@ -105,6 +109,18 @@ function testMotiveValidation() {
   assert(
     saleOperationUiOption('erro_cadastro')?.label === 'Erro de cadastro',
     'label legado de erro de cadastro continua legível',
+  );
+  assert(
+    validateReleaseLotMotive({
+      motiveCode: 'cancelamento_administrativo',
+      motiveDetail: 'Ajuste interno da loteadora',
+    }).ok === true,
+    'backend ainda aceita cancelamento_administrativo legado',
+  );
+  assert(
+    saleOperationUiOption('cancelamento_administrativo')?.label ===
+      'Cancelamento administrativo',
+    'label legado de cancelamento administrativo continua legível',
   );
   assert(RELEASE_LOT_MOTIVE_GROUPS === SALE_OPERATION_UI_GROUPS, 'alias visual');
   console.log('OK testMotiveValidation');
@@ -473,7 +489,7 @@ function testSaleOperationsPanel() {
   assert(labels.includes('Distrato'), 'distrato');
   assert(labels.includes('Inadimplência'), 'inadimplência');
   assert(labels.includes('Erro de cadastro'), 'label legado permanece no catálogo');
-  assert(labels.includes('Cancelamento administrativo'), 'admin');
+  assert(labels.includes('Cancelamento administrativo'), 'label legado permanece no catálogo');
   assert(labels.includes('Troca de lote'), 'troca');
   assert(labels.includes('Transferência de titularidade'), 'titularidade');
   assert(!labels.includes('Outro'), 'Outro fora da UI');
@@ -483,21 +499,24 @@ function testSaleOperationsPanel() {
   );
   assert(
     offered.join(',') ===
-      'Desistência do cliente,Distrato,Inadimplência,Cancelamento administrativo,Troca de lote,Transferência de titularidade',
-    'cards oferecidos sem Erro de cadastro',
+      'Desistência do cliente,Distrato,Inadimplência,Troca de lote,Transferência de titularidade',
+    'cards oferecidos sem Erro de cadastro e sem Cancelamento administrativo',
   );
   assert(!offered.includes('Erro de cadastro'), 'card Erro de cadastro não é oferecido');
+  assert(
+    !offered.includes('Cancelamento administrativo'),
+    'card Cancelamento administrativo não é oferecido',
+  );
   assert(
     SALE_OPERATION_UI_OPTIONS.some((o) => o.supportLabel === 'Venda de ágio / cessão'),
     'apoio discreto de ágio',
   );
 
   assert(SALE_OPERATION_UI_GROUPS[0].id === 'encerrar_venda', 'grupo encerrar');
-  assert(SALE_OPERATION_UI_GROUPS[0].codes.length === 4, '4 encerrar');
+  assert(SALE_OPERATION_UI_GROUPS[0].codes.length === 3, '3 encerrar');
   assert(
-    SALE_OPERATION_UI_GROUPS[0].codes.join(',') ===
-      'desistencia,distrato,inadimplencia,cancelamento_administrativo',
-    'encerrar sem erro de cadastro',
+    SALE_OPERATION_UI_GROUPS[0].codes.join(',') === 'desistencia,distrato,inadimplencia',
+    'encerrar sem erro de cadastro e sem cancelamento administrativo',
   );
   assert(SALE_OPERATION_UI_GROUPS[1].id === 'alterar_venda', 'grupo alterar');
   assert(
@@ -514,6 +533,7 @@ function testSaleOperationsPanel() {
   assert(!showsTerminationSettlement('transferencia_titularidade'), 'cessão sem acerto');
 
   assert(isLotReleaseSaleOperation('erro_cadastro'), 'erro ainda libera lote');
+  assert(isLotReleaseSaleOperation('cancelamento_administrativo'), 'admin legado ainda libera lote');
   assert(!isLotReleaseSaleOperation('troca_lote'), 'troca não é release');
   assert(!isLotReleaseSaleOperation('transferencia_titularidade'), 'titularidade não é release');
   assert(isDeferredSaleOperation('troca_lote'), 'troca diferida');
