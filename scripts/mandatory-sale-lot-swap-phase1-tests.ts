@@ -260,7 +260,7 @@ function testIsolationFromReleaseLot() {
   assert(!isLotReleaseSaleOperation('troca_lote'), 'troca_lote não é ReleaseLot');
   assert(!showsTerminationSettlement('troca_lote'), 'troca não aceita settlement');
   assert(!isSaleReleaseSettlementOperation('troca_lote'), 'troca fora do catálogo de settlement');
-  assert(isDeferredSaleOperation('troca_lote'), 'continua diferida no painel atual');
+  assert(!isDeferredSaleOperation('troca_lote'), 'troca saiu do diferimento e ganhou prévia própria');
   assert(isLotReleaseSaleOperation('desistencia'), 'Desistência intacta no ReleaseLot');
   assert(isLotReleaseSaleOperation('distrato'), 'Distrato intacto no ReleaseLot');
   assert(isLotReleaseSaleOperation('inadimplencia'), 'Inadimplência intacta no ReleaseLot');
@@ -284,7 +284,6 @@ function testIsolationFromReleaseLot() {
     'lib/finance/saleReleaseSettlement.ts',
     'lib/finance/releaseLotShared.ts',
     'app/api/lots/[lotId]/release/route.ts',
-    'components/map/ReleaseLotConfirmModal.tsx',
   ];
   for (const rel of releaseTouched) {
     const src = read(rel);
@@ -319,6 +318,11 @@ function testNoExecutionSurface() {
   assert(!swapMod.includes('.from("sale_lot_swaps")'), 'sem client supabase nesta fase');
   assert(swapMod.includes('SECURITY DEFINER'), 'atomicidade futura documentada');
   assert(swapMod.includes('FOR UPDATE'), 'locks futuros documentados');
+  const previewSvc = read('lib/finance/saleLotSwapPreviewService.ts');
+  assert(!/\.insert\(/.test(previewSvc), 'preview sem insert');
+  assert(!/\.update\(/.test(previewSvc), 'preview sem update');
+  assert(!/\.delete\(/.test(previewSvc), 'preview sem delete');
+  assert(exists('app/api/sales/[saleId]/lot-swap/route.ts'), 'rota de prévia existe');
   const apply = read('scripts/develop/apply-sale-lot-swaps.ts');
   assert(apply.includes('assertDevelopWriteAllowed'), 'apply só DEVELOP');
   assert(apply.includes('assertNotContractOperationsMigration'), 'bloqueia operations');
@@ -333,7 +337,7 @@ function testProtectedSurfacesUntouchedInSource() {
   assert(mundo.includes('resolveMundoNovoPromitenteVendors'), 'Mundo Novo intacto');
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');
   assert(modal.includes('isDeferredSaleOperation(motiveCode)'), 'painel ainda recusa diferidos');
-  assert(modal.includes('Troca de lote em etapa própria'), 'copy de troca diferida intacta');
+  assert(modal.includes('LotSwapPreviewPanel'), 'troca usa painel de prévia');
   const releaseSql = read('supabase/migrations/20261010120000_sale_release_settlements.sql');
   assert(releaseSql.includes('sale_release_settlements'), 'settlement intacto');
   assert(

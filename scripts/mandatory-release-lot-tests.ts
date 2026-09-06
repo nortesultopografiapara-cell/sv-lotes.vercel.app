@@ -547,7 +547,7 @@ function testSaleOperationsPanel() {
   assert(isLotReleaseSaleOperation('cancelamento_administrativo'), 'admin legado ainda libera lote');
   assert(!isLotReleaseSaleOperation('troca_lote'), 'troca não é release');
   assert(!isLotReleaseSaleOperation('transferencia_titularidade'), 'titularidade não é release');
-  assert(isDeferredSaleOperation('troca_lote'), 'troca diferida');
+  assert(!isDeferredSaleOperation('troca_lote'), 'troca agora tem etapa própria de prévia');
   assert(isDeferredSaleOperation('transferencia_titularidade'), 'titularidade diferida');
   assert(!isDeferredSaleOperation('distrato'), 'distrato não diferido');
 
@@ -576,9 +576,15 @@ function testSaleOperationsPanel() {
   assert(handleSubmit.includes("method: 'POST'"), 'submit usa POST');
   assert(!handleSubmit.includes('/api/contract-operations/'), 'submit sem cessão');
   assert(modal.includes('Transferência de titularidade em etapa própria'), 'estado informativo cessão');
-  assert(modal.includes('Troca de lote em etapa própria'), 'estado informativo troca');
+  assert(modal.includes('LotSwapPreviewPanel'), 'troca abre painel próprio de prévia');
+  assert(modal.includes('isSaleLotSwapOperation'), 'card troca usa operação própria');
   assert(modal.includes('não chama a liberação'), 'titularidade não usa release');
-  assert(modal.includes('nem tornará o lote Disponível por esta tela'), 'troca não libera automaticamente');
+  assert(
+    read('components/map/LotSwapPreviewPanel.tsx').includes(
+      'Nenhum lote, parcela, contrato',
+    ),
+    'prévia sem mutação',
+  );
   assert(modal.includes('Justificativa administrativa'), 'admin exige texto');
   assert(modal.includes('Motivo / justificativa do distrato'), 'distrato exige texto');
   assert(
@@ -586,7 +592,7 @@ function testSaleOperationsPanel() {
     'inadimplência exige texto',
   );
   assert(
-    modal.includes("{deferredOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}"),
+    modal.includes("{deferredOperation || lotSwapOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}"),
     'footer diferido / concluir',
   );
   assert(RELEASE_LOT_MOTIVE_OPTIONS.some((o) => o.value === 'outro'), 'backend outro intacto');

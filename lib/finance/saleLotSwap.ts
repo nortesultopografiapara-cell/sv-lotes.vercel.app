@@ -60,6 +60,12 @@ export const LOT_SWAP_DESTINATION_AFTER_EXECUTE_STATUS = 'Vendido';
 
 export const LOT_SWAP_CREDIT_EXCEEDS_PRICE = 'LOT_SWAP_CREDIT_EXCEEDS_PRICE';
 
+export const LOT_SWAP_CREDIT_EXCEEDS_PRICE_MESSAGE =
+  'O crédito acumulado nesta venda é superior ao valor do lote selecionado. Esta situação exige tratamento financeiro específico antes da troca.';
+
+export const LOT_SWAP_SCHEDULE_PREVIEW_NOTICE =
+  'O cronograma definitivo será calculado na próxima fase.';
+
 export type SaleLotSwapFinancialInput = {
   oldSalePrice: number;
   newLotPrice: number;

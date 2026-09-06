@@ -119,7 +119,6 @@ const SETTLEMENT_OPERATION_CODES: ReadonlySet<string> = new Set([
 ]);
 
 const DEFERRED_OPERATION_CODES: ReadonlySet<string> = new Set([
-  'troca_lote',
   'transferencia_titularidade',
 ]);
 

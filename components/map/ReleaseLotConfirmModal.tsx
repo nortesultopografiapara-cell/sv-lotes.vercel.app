@@ -46,7 +46,9 @@ import {
   type ReleaseLotPreview,
   validateReleaseLotMotive,
 } from '@/lib/finance/releaseLotShared';
+import { isSaleLotSwapOperation } from '@/lib/finance/saleLotSwap';
 import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
+import { LotSwapPreviewPanel } from '@/components/map/LotSwapPreviewPanel';
 import { TerminationDocumentSignatureActions } from '@/components/map/TerminationDocumentSignatureActions';
 import { SALE_DOCUMENT_TYPE_LABELS } from '@/lib/saleDocuments';
 import {
@@ -308,8 +310,10 @@ export function ReleaseLotConfirmModal({
       : 0;
 
   const deferredOperation = isDeferredSaleOperation(motiveCode);
+  const lotSwapOperation = isSaleLotSwapOperation(motiveCode);
   const releaseOperation = isLotReleaseSaleOperation(motiveCode);
   const showSettlement = showsTerminationSettlement(motiveCode);
+  const swapSaleId = String(lot.saleId || lot.sale_id || preview?.saleId || '').trim();
   const needsRefundSchedule = Boolean(
     showSettlement &&
       liveSettlement &&
@@ -1006,18 +1010,24 @@ export function ReleaseLotConfirmModal({
                   </section>
                 ) : null}
 
+                {lotSwapOperation ? (
+                  swapSaleId ? (
+                    <LotSwapPreviewPanel saleId={swapSaleId} onClose={onClose} />
+                  ) : (
+                    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                      Não foi possível identificar a venda deste lote para simular a troca.
+                    </section>
+                  )
+                ) : null}
+
                 {deferredOperation ? (
                   <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
                     <p className="text-sm font-semibold text-indigo-950 mb-1 inline-flex items-center gap-2">
                       <Info className="w-4 h-4 shrink-0" />
-                      {motiveCode === 'transferencia_titularidade'
-                        ? 'Transferência de titularidade em etapa própria'
-                        : 'Troca de lote em etapa própria'}
+                      Transferência de titularidade em etapa própria
                     </p>
                     <p className="text-sm text-indigo-900 leading-snug">
-                      {motiveCode === 'transferencia_titularidade'
-                        ? 'A posição contratual será transferida para um novo comprador em fluxo específico, preservando saldo e histórico. O lote permanece vinculado. Esta tela não chama a liberação, não torna o lote Disponível e não calcula restituição.'
-                        : 'O comprador permanece na negociação e a unidade será substituída em fluxo específico. Esta ação não encerrará a venda nem tornará o lote Disponível por esta tela.'}
+                      A posição contratual será transferida para um novo comprador em fluxo específico, preservando saldo e histórico. O lote permanece vinculado. Esta tela não chama a liberação, não torna o lote Disponível e não calcula restituição.
                     </p>
                     <p className="mt-2 text-xs text-indigo-800">
                       Nenhuma alteração será gravada agora. Use Cancelar para voltar ao mapa.
@@ -1100,7 +1110,7 @@ export function ReleaseLotConfirmModal({
               onClick={onClose}
               className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold rounded-lg text-sm"
             >
-              {deferredOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}
+              {deferredOperation || lotSwapOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}
             </button>
             {(releaseOperation || !motiveCode) && !documentSuccess ? (
               <button
