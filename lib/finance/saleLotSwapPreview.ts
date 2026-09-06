@@ -36,6 +36,116 @@ export const LOT_SWAP_DESTINATION_NOT_AVAILABLE = 'LOT_SWAP_DESTINATION_NOT_AVAI
 export const LOT_SWAP_DESTINATION_HAS_SALE = 'LOT_SWAP_DESTINATION_HAS_SALE';
 export const LOT_SWAP_DESTINATION_HAS_CONTRACT = 'LOT_SWAP_DESTINATION_HAS_CONTRACT';
 
+/**
+ * Colunas de leitura em public.sales para o preview da Troca de lote.
+ * `sale_price` NÃO existe no schema oficial (agreed_price + lot_price).
+ * Incluir sale_price no SELECT do PostgREST quebra as três tentativas e
+ * devolve HTTP 500 "Não foi possível carregar a venda."
+ */
+export const SALE_LOT_SWAP_SALE_SELECT_COLUMNS = [
+  'id',
+  'status',
+  'customer_id',
+  'broker_id',
+  'contract_id',
+  'block_id',
+  'lot_id',
+  'project_id',
+  'tenant_id',
+  'company_id',
+  'agreed_price',
+  'lot_price',
+  'total_value',
+  'financial_account_id',
+  'installment_correction_type',
+] as const;
+
+export const LOT_SWAP_PREVIEW_GENERIC_LOAD_SALE_MESSAGE =
+  'Não foi possível carregar a venda.';
+
+export function parseMissingSelectColumn(message: string | undefined): string | null {
+  if (!message) return null;
+  const match = message.match(/Could not find the '(\w+)' column/i);
+  return match?.[1] ?? null;
+}
+
+export function dropColumnFromSelectList(
+  columns: readonly string[],
+  missing: string,
+): string[] {
+  return columns.filter((column) => column !== missing);
+}
+
+/**
+ * Identidade da venda já carregada no modal Operações da venda.
+ * Prefere o saleId resolvido pelo GET /api/lots/:id/release.
+ * Nunca usa blockId (lote GIS) nem contractId.
+ */
+export function resolveLotSwapPreviewSaleId(input: {
+  previewSaleId?: string | null;
+  lotSaleId?: string | null;
+  lotSaleIdSnake?: string | null;
+  lotId?: string | null;
+  contractId?: string | null;
+}): string {
+  const previewSaleId = String(input.previewSaleId || '').trim();
+  const lotSaleId = String(input.lotSaleId || '').trim();
+  const lotSaleIdSnake = String(input.lotSaleIdSnake || '').trim();
+  const resolved = previewSaleId || lotSaleId || lotSaleIdSnake;
+  const lotId = String(input.lotId || '').trim();
+  const contractId = String(input.contractId || '').trim();
+  if (resolved && resolved === lotId) return '';
+  if (resolved && resolved === contractId) return '';
+  return resolved;
+}
+
+export function mapLotSwapPreviewUserMessage(input: {
+  status?: number;
+  code?: string | null;
+  message?: string | null;
+  error?: string | null;
+}): string {
+  const code = String(input.code || '').trim();
+  const fromServer = String(input.message || input.error || '').trim();
+  if (code === 'SALE_NOT_FOUND') {
+    return 'Venda não encontrada.';
+  }
+  if (code === 'CROSS_TENANT') {
+    return 'A venda não pertence à empresa atual.';
+  }
+  if (code === 'UNAUTHORIZED' || code === 'NO_PROFILE' || input.status === 401) {
+    return 'Sessão ou autorização inválida.';
+  }
+  if (code === 'LOAD_FINANCE_FAILED') {
+    return 'Erro ao carregar dados financeiros da venda.';
+  }
+  if (code === LOT_SWAP_SALE_NOT_ACTIVE || code === LOT_SWAP_SALE_CANCELLED) {
+    return lotSwapPreviewBlockMessage(code) || fromServer;
+  }
+  if (code === 'SALE_ID_REQUIRED') {
+    return 'Não foi possível identificar a venda.';
+  }
+  if (code === 'LOAD_SALE_FAILED') {
+    return 'Erro interno inesperado ao carregar a prévia.';
+  }
+  if (
+    fromServer &&
+    fromServer !== LOT_SWAP_PREVIEW_GENERIC_LOAD_SALE_MESSAGE
+  ) {
+    return fromServer;
+  }
+  if (input.status === 403) {
+    return 'A venda não pertence à empresa atual.';
+  }
+  if (input.status === 404) {
+    return fromServer || 'Venda não encontrada.';
+  }
+  if (input.status === 409) {
+    return fromServer || 'A troca de lote exige uma venda ativa.';
+  }
+  return 'Erro interno inesperado ao carregar a prévia.';
+}
+
 const PAID_STATUSES = new Set(['pago', 'paid']);
 const CANCELED_STATUSES = new Set(['cancelado', 'canceled', 'cancelled']);
 

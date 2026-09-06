@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, Info, Loader2 } from 'lucide-react';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import type { LotSwapPreviewPayload } from '@/lib/finance/saleLotSwapPreviewService';
 import { LOT_SWAP_SCHEDULE_PREVIEW_NOTICE } from '@/lib/finance/saleLotSwap';
+import { mapLotSwapPreviewUserMessage } from '@/lib/finance/saleLotSwapPreview';
 
 function money(value: number | null | undefined): string {
   return formatCurrencyBRL(Number(value) || 0) || 'R$ 0,00';
@@ -48,16 +49,24 @@ export function LotSwapPreviewPanel({
         const qs = selected ? `?toBlockId=${encodeURIComponent(selected)}` : '';
         const res = await fetch(
           `/api/sales/${encodeURIComponent(saleId)}/lot-swap${qs}`,
-          { method: 'GET' },
+          { method: 'GET', credentials: 'include' },
         );
         const data = (await res.json().catch(() => ({}))) as {
           success?: boolean;
           preview?: LotSwapPreviewPayload;
+          code?: string;
           message?: string;
           error?: string;
         };
         if (!res.ok || !data.success || !data.preview) {
-          throw new Error(data.message || data.error || 'Não foi possível carregar a prévia.');
+          throw new Error(
+            mapLotSwapPreviewUserMessage({
+              status: res.status,
+              code: data.code,
+              message: data.message,
+              error: data.error,
+            }),
+          );
         }
         setPayload(data.preview);
         if (selected) setToBlockId(selected);

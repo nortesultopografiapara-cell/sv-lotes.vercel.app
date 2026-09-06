@@ -13,11 +13,14 @@ import {
   evaluateLotSwapDestination,
   assertOriginBelongsToSale,
   assertSaleEligibleForLotSwapPreview,
+  dropColumnFromSelectList,
   isLotSwapFutureReceipt,
   lotSwapPreviewBlockMessage,
+  parseMissingSelectColumn,
   simulateLotSwapSchedule,
   sumLotSwapPaidAmount,
   LOT_SWAP_ORIGIN_MISMATCH,
+  SALE_LOT_SWAP_SALE_SELECT_COLUMNS,
   type LotSwapBlockSnapshot,
   type LotSwapReceiptLike,
   type LotSwapSchedulePreview,
@@ -26,7 +29,6 @@ import {
   LOT_SWAP_CREDIT_EXCEEDS_PRICE,
   type SaleLotSwapFinancialFields,
 } from '@/lib/finance/saleLotSwap';
-import { resolveCallerProfile } from '@/lib/supabase/server';
 
 const PLATFORM_ADMIN_ROLES = new Set([
   'SUPER_ADMIN',
@@ -124,6 +126,73 @@ function snapshotBlock(row: Record<string, unknown>): LotSwapBlockSnapshot {
   };
 }
 
+const CALLER_PROFILE_SELECT = 'id, role, tenant_id, email, full_name, status';
+
+export async function loadSaleRowForLotSwapPreview(
+  admin: SupabaseClient,
+  saleId: string,
+): Promise<Record<string, unknown>> {
+  let columns: string[] = [...SALE_LOT_SWAP_SALE_SELECT_COLUMNS];
+  let lastMessage = '';
+
+  while (columns.length > 0) {
+    const query = await admin
+      .from('sales')
+      .select(columns.join(', '))
+      .eq('id', saleId)
+      .maybeSingle();
+
+    if (!query.error) {
+      if (!query.data) {
+        throw new LotSwapPreviewError('Venda não encontrada.', 'SALE_NOT_FOUND', 404);
+      }
+      return query.data as unknown as Record<string, unknown>;
+    }
+
+    lastMessage = String(query.error.message || '');
+    const missing = parseMissingSelectColumn(lastMessage);
+    if (missing && columns.includes(missing)) {
+      columns = dropColumnFromSelectList(columns, missing);
+      continue;
+    }
+
+    console.error('[lot-swap preview] LOAD_SALE_FAILED', lastMessage);
+    throw new LotSwapPreviewError(
+      'Erro interno inesperado ao carregar a venda.',
+      'LOAD_SALE_FAILED',
+      500,
+    );
+  }
+
+  console.error('[lot-swap preview] LOAD_SALE_FAILED', lastMessage);
+  throw new LotSwapPreviewError(
+    'Erro interno inesperado ao carregar a venda.',
+    'LOAD_SALE_FAILED',
+    500,
+  );
+}
+
+async function loadCallerProfile(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const full = await admin
+    .from('users')
+    .select(CALLER_PROFILE_SELECT)
+    .eq('id', userId)
+    .maybeSingle();
+  if (!full.error && full.data) return full.data as Record<string, unknown>;
+  const core = await admin
+    .from('users')
+    .select('id, role, tenant_id')
+    .eq('id', userId)
+    .maybeSingle();
+  if (core.error) {
+    console.error('[lot-swap preview] LOAD_PROFILE_FAILED', core.error.message);
+  }
+  return (core.data as Record<string, unknown> | null) || null;
+}
+
 async function loadBlock(
   admin: SupabaseClient,
   blockId: string,
@@ -159,12 +228,20 @@ export async function loadSaleLotSwapPreview(
     throw new LotSwapPreviewError('saleId obrigatório.', 'SALE_ID_REQUIRED', 400);
   }
   if (!userId) {
-    throw new LotSwapPreviewError('Não autenticado.', 'UNAUTHORIZED', 401);
+    throw new LotSwapPreviewError(
+      'Sessão ou autorização inválida.',
+      'UNAUTHORIZED',
+      401,
+    );
   }
 
-  const profile = await resolveCallerProfile(admin, userId);
+  const profile = await loadCallerProfile(admin, userId);
   if (!profile) {
-    throw new LotSwapPreviewError('Perfil de usuário não encontrado.', 'NO_PROFILE', 403);
+    throw new LotSwapPreviewError(
+      'Sessão ou autorização inválida.',
+      'NO_PROFILE',
+      403,
+    );
   }
   const callerRole = String(profile.role || '').toUpperCase();
   const callerTenant = String(
@@ -172,46 +249,15 @@ export async function loadSaleLotSwapPreview(
   ).trim();
   const isSuperAdmin = PLATFORM_ADMIN_ROLES.has(callerRole);
 
-  const saleFull = await admin
-    .from('sales')
-    .select(
-      'id, status, customer_id, broker_id, contract_id, block_id, lot_id, project_id, tenant_id, company_id, agreed_price, sale_price, lot_price, financial_account_id, installment_correction_type',
-    )
-    .eq('id', saleId)
-    .maybeSingle();
-  const saleMid = saleFull.error
-    ? await admin
-        .from('sales')
-        .select(
-          'id, status, customer_id, broker_id, contract_id, block_id, project_id, tenant_id, company_id, agreed_price, sale_price, lot_price, financial_account_id, installment_correction_type',
-        )
-        .eq('id', saleId)
-        .maybeSingle()
-    : saleFull;
-  const saleQuery = saleMid.error
-    ? await admin
-        .from('sales')
-        .select(
-          'id, status, customer_id, broker_id, contract_id, block_id, project_id, tenant_id, company_id, agreed_price, sale_price, lot_price',
-        )
-        .eq('id', saleId)
-        .maybeSingle()
-    : saleMid;
-  if (saleQuery.error) {
-    throw new LotSwapPreviewError(
-      'Não foi possível carregar a venda.',
-      'LOAD_SALE_FAILED',
-      500,
-    );
-  }
-  const sale = saleQuery.data as Record<string, unknown> | null;
-  if (!sale) {
-    throw new LotSwapPreviewError('Venda não encontrada.', 'SALE_NOT_FOUND', 404);
-  }
+  const sale = await loadSaleRowForLotSwapPreview(admin, saleId);
 
   const companyId = String(sale.company_id || sale.tenant_id || '').trim();
   if (!isSuperAdmin && callerTenant && companyId && callerTenant !== companyId) {
-    throw new LotSwapPreviewError('Sem permissão para esta venda.', 'CROSS_TENANT', 403);
+    throw new LotSwapPreviewError(
+      'A venda não pertence à empresa atual.',
+      'CROSS_TENANT',
+      403,
+    );
   }
 
   const saleEligible = assertSaleEligibleForLotSwapPreview({
@@ -301,15 +347,26 @@ export async function loadSaleLotSwapPreview(
     .from('finance_receipts')
     .select('id, installment_number, status, paid_at, amount, due_date')
     .eq('sale_id', saleId);
+  if (receiptsQuery.error) {
+    console.error(
+      '[lot-swap preview] LOAD_FINANCE_FAILED',
+      receiptsQuery.error.message,
+    );
+    throw new LotSwapPreviewError(
+      'Erro ao carregar dados financeiros da venda.',
+      'LOAD_FINANCE_FAILED',
+      500,
+    );
+  }
   const receipts = (receiptsQuery.data || []) as LotSwapReceiptLike[];
   const paid = sumLotSwapPaidAmount(receipts);
   const oldSalePrice = money2(
-    sale.agreed_price ?? sale.sale_price ?? sale.lot_price ?? origin.price,
+    sale.agreed_price ?? sale.lot_price ?? sale.total_value ?? origin.price,
   );
 
   const destSelect =
     'id, status, price, sale_id, contract_id, project_id, block_name, name, number, lot_number, area';
-  let destQuery = await admin
+  const destFull = await admin
     .from('blocks')
     .select(destSelect)
     .eq('project_id', projectId || '')
@@ -318,8 +375,11 @@ export async function loadSaleLotSwapPreview(
     .neq('id', origin.id)
     .order('block_name', { ascending: true })
     .order('number', { ascending: true });
-  if (destQuery.error) {
-    destQuery = await admin
+  let destRows = (!destFull.error && destFull.data
+    ? destFull.data
+    : null) as Record<string, unknown>[] | null;
+  if (!destRows) {
+    const destCore = await admin
       .from('blocks')
       .select(
         'id, status, price, sale_id, contract_id, project_id, block_name, name, number, lot_number',
@@ -329,9 +389,10 @@ export async function loadSaleLotSwapPreview(
       .is('sale_id', null)
       .neq('id', origin.id)
       .order('number', { ascending: true });
+    destRows = (destCore.data || []) as Record<string, unknown>[];
   }
 
-  const destinations = ((destQuery.data || []) as Record<string, unknown>[])
+  const destinations = destRows
     .map(snapshotBlock)
     .filter((block) => evaluateLotSwapDestination(block, origin).ok);
 

@@ -47,6 +47,7 @@ import {
   validateReleaseLotMotive,
 } from '@/lib/finance/releaseLotShared';
 import { isSaleLotSwapOperation } from '@/lib/finance/saleLotSwap';
+import { resolveLotSwapPreviewSaleId } from '@/lib/finance/saleLotSwapPreview';
 import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
 import { LotSwapPreviewPanel } from '@/components/map/LotSwapPreviewPanel';
 import { TerminationDocumentSignatureActions } from '@/components/map/TerminationDocumentSignatureActions';
@@ -313,7 +314,13 @@ export function ReleaseLotConfirmModal({
   const lotSwapOperation = isSaleLotSwapOperation(motiveCode);
   const releaseOperation = isLotReleaseSaleOperation(motiveCode);
   const showSettlement = showsTerminationSettlement(motiveCode);
-  const swapSaleId = String(lot.saleId || lot.sale_id || preview?.saleId || '').trim();
+  const swapSaleId = resolveLotSwapPreviewSaleId({
+    previewSaleId: preview?.saleId,
+    lotSaleId: lot.saleId,
+    lotSaleIdSnake: lot.sale_id,
+    lotId: lot.id,
+    contractId: lot.contractId || lot.contract_id,
+  });
   const needsRefundSchedule = Boolean(
     showSettlement &&
       liveSettlement &&

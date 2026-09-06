@@ -29,8 +29,8 @@ async function authorize(request: Request) {
         {
           success: false,
           code: 'UNAUTHORIZED',
-          message: configError || 'Não autenticado',
-          error: configError || 'Não autenticado',
+          message: configError || 'Sessão ou autorização inválida.',
+          error: configError || 'Sessão ou autorização inválida.',
           mutation: false,
         },
         { status: 401 },
