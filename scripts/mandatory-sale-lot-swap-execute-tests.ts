@@ -23,6 +23,10 @@ import {
   nextLotSwapExecuteStatus,
   parseLotSwapExecuteRpcError,
 } from '../lib/finance/saleLotSwapExecute';
+import {
+  LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE,
+  mapLotSwapExecuteUserMessage,
+} from '../lib/finance/saleLotSwapPreview';
 import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '../lib/homolog/env';
 
 function assert(cond: boolean, msg: string) {
@@ -150,7 +154,185 @@ function testSqlAtomicRpc() {
   assert(apply.includes('assertDevelopWriteAllowed'), 'apply só DEVELOP');
   assert(apply.includes('ABORT: DATABASE_URL aponta para Production'), 'recusa Production');
   assert(apply.includes('executesLotSwap: false'), 'apply não executa troca');
+  const fix = read(
+    'supabase/migrations/20261014120100_fix_execute_sale_lot_swap_uuid_coalesce.sql',
+  );
+  assert(fix.includes('CREATE OR REPLACE FUNCTION public.execute_sale_lot_swap'), 'fix replace');
+  assert(fix.includes('SECURITY DEFINER'), 'fix definer');
+  assert(fix.includes('FOR UPDATE'), 'fix locks');
+  assert(
+    fix.includes("COALESCE(v_from.company_id, NULLIF(btrim(v_from.tenant_id), '')::uuid)"),
+    'origem: tenant_id text → uuid',
+  );
+  assert(
+    fix.includes("COALESCE(v_to.company_id, NULLIF(btrim(v_to.tenant_id), '')::uuid)"),
+    'destino: tenant_id text → uuid',
+  );
+  assert(!/coalesce\(v_from\.company_id,\s*v_from\.tenant_id\)/i.test(fix), 'sem uuid+text na origem');
+  assert(!/coalesce\(v_to\.company_id,\s*v_to\.tenant_id\)/i.test(fix), 'sem uuid+text no destino');
+  assert(fix.includes("status = 'EXECUTING'"), 'fix preserva EXECUTING');
+  assert(fix.includes("status = 'EXECUTED'"), 'fix preserva EXECUTED');
+  assert(fix.includes("status = 'superseded'"), 'fix preserva superseded');
+  assert(!fix.includes('seller_parties_json'), 'fix não toca Mundo Novo');
+  const applyFix = read('scripts/develop/apply-fix-execute-sale-lot-swap-uuid-coalesce.ts');
+  assert(applyFix.includes('assertDevelopWriteAllowed'), 'apply fix só DEVELOP');
+  assert(applyFix.includes('executesLotSwap: false'), 'apply fix não executa troca');
   console.log('OK testSqlAtomicRpc');
+}
+
+function extractContractsInsertColumns(sql: string): string {
+  const match = sql.match(/INSERT INTO public\.contracts \(\s*([\s\S]*?)\)\s*VALUES/i);
+  assert(Boolean(match), 'INSERT de contracts presente');
+  return String(match?.[1] || '');
+}
+
+function testDueDateAndContractInsertCompatibility() {
+  const sql = read(
+    'supabase/migrations/20261014120200_fix_execute_sale_lot_swap_due_date_contract_insert.sql',
+  );
+  assert(sql.includes('CREATE OR REPLACE FUNCTION public.execute_sale_lot_swap'), 'replace aditivo');
+  assert(
+    sql.includes("COALESCE(NULLIF(v_rec->>'due_date', '')::date, (CURRENT_DATE + 30))"),
+    'due_date válido e fallback CURRENT_DATE + 30 são date',
+  );
+  assert(
+    !/COALESCE\(NULLIF\(v_rec->>'due_date', ''\), \(CURRENT_DATE \+ 30\)\)::date/.test(sql),
+    'não há COALESCE text+date em due_date',
+  );
+  assert(
+    sql.includes("COALESCE(v_from.company_id, NULLIF(btrim(v_from.tenant_id), '')::uuid)"),
+    'mantém COALESCE uuid da origem',
+  );
+  const insertCols = extractContractsInsertColumns(sql);
+  assert(!/\bregenerated_by\b/.test(insertCols), 'schema sem contracts.regenerated_by no INSERT');
+  assert(!/\binstallments\b/.test(insertCols), 'schema sem contracts.installments no INSERT');
+  assert(!/\bneeds_regenerar\b/.test(insertCols), 'schema sem contracts.needs_regenerar no INSERT');
+  assert(!/\bpdf_url\b/.test(insertCols), 'schema sem contracts.pdf_url no INSERT');
+  assert(!/\bsale_value\b/.test(insertCols), 'schema sem contracts.sale_value no INSERT');
+  assert(!/\bsuperseded_by\b/.test(insertCols), 'superseded_by não vai no INSERT');
+  const developContractColumns = new Set([
+    'id',
+    'tenant_id',
+    'sale_id',
+    'customer_id',
+    'project_id',
+    'block_id',
+    'contract_number',
+    'generated_html',
+    'status',
+    'created_at',
+    'project_name_snapshot',
+    'project_city_snapshot',
+    'project_uf_snapshot',
+    'forum_city_snapshot',
+    'company_id',
+    'broker_id',
+    'down_payment',
+    'discount',
+    'final_value',
+    'payment_method',
+    'regenerated_at',
+    'regenerated_from',
+    'version',
+    'is_current',
+    'html_content',
+    'pdf_signed_url',
+    'signature_token',
+    'signature_status',
+    'signature_sent_at',
+    'signature_viewed_at',
+    'signed_at',
+    'signed_by_name',
+    'signed_by_cpf',
+    'signed_ip',
+    'signed_user_agent',
+    'signature_expires_at',
+    'contract_model',
+    'termination_policy_snapshot',
+    'termination_policy_version',
+    'termination_policy_source',
+  ]);
+  const insertColNames = insertCols
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const missingOnDevelop = insertColNames.filter((c) => !developContractColumns.has(c));
+  assert(missingOnDevelop.length === 0, `INSERT usa colunas ausentes no DEVELOP: ${missingOnDevelop.join(',')}`);
+  assert(/\bsale_id\b/.test(insertCols), 'mesmo sale_id');
+  assert(/\bblock_id\b/.test(insertCols), 'block_id do destino');
+  assert(/\bcontract_number\b/.test(insertCols), 'número novo');
+  assert(/\bregenerated_from\b/.test(insertCols), 'regenerated_from do contrato antigo');
+  assert(/\bis_current\b/.test(insertCols), 'is_current do novo');
+  assert(/\bstatus\b/.test(insertCols), 'status do novo');
+  assert(/\bversion\b/.test(insertCols), 'version do novo');
+  assert(/\bgenerated_html\b/.test(insertCols), 'HTML do novo contrato');
+  assert(sql.includes("column_name = 'regenerated_by'"), 'regenerated_by opcional via information_schema');
+  assert(sql.includes("column_name = 'installments'"), 'installments opcional via information_schema');
+  assert(sql.includes("column_name = 'needs_regenerar'"), 'needs_regenerar opcional');
+  assert(sql.includes("column_name = 'pdf_url'"), 'pdf_url opcional');
+  assert(sql.includes("column_name = 'sale_value'"), 'sale_value opcional');
+  assert(sql.includes("column_name = 'superseded_by'"), 'superseded_by opcional no contrato antigo');
+  assert(sql.includes("column_name = 'html_content'"), 'html_content opcional');
+  assert(!/\bALTER TABLE\s+public\.contracts\b/i.test(sql), 'não cria colunas no DEVELOP');
+  assert(sql.includes("status = 'superseded'"), 'contrato antigo superseded');
+  assert(sql.includes("status = 'cancelado'"), 'futuras canceladas');
+  assert(sql.includes('v_created_ids'), 'novas parcelas criadas');
+  assert(sql.includes('EXCEPTION'), 'rollback integral em erro');
+  assert(sql.includes("status = 'EXECUTED'"), 'idempotência EXECUTED');
+  assert(sql.includes('sale_id_unchanged'), 'mesma sale_id');
+  assert(!sql.includes('company_asaas_charges'), 'Asaas intacto');
+  assert(!sql.includes('bank_charges'), 'Inter intacto');
+  assert(!sql.includes('seller_parties_json'), 'não toca Mundo Novo');
+  const apply = read(
+    'scripts/develop/apply-fix-execute-sale-lot-swap-due-date-contract-insert.ts',
+  );
+  assert(apply.includes('assertDevelopWriteAllowed'), 'apply corretivo só DEVELOP');
+  assert(apply.includes('executesLotSwap: false'), 'apply corretivo não executa troca');
+  assert(apply.includes('20261014120200_fix_execute_sale_lot_swap_due_date_contract_insert.sql'), 'migration 202');
+  console.log('OK testDueDateAndContractInsertCompatibility');
+}
+
+function testExecuteErrorUx() {
+  const ui = read('components/map/LotSwapPreviewPanel.tsx');
+  assert(ui.includes('mapLotSwapExecuteUserMessage'), 'mapper específico de execução');
+  assert(ui.includes('executeError'), 'estado de erro de execução separado');
+  assert(ui.includes('scrollIntoView'), 'scroll até o erro');
+  assert(ui.includes('Executar troca de lote'), 'botão de execução');
+  const executeFn = ui.slice(ui.indexOf('const executeSwap'), ui.indexOf('const current'));
+  assert(executeFn.includes('mapLotSwapExecuteUserMessage'), 'POST execute usa mapper de execução');
+  assert(!executeFn.includes('mapLotSwapPreviewUserMessage'), 'POST execute não usa mapper de prévia');
+  assert(executeFn.includes('setExecuteError'), 'grava erro de execução');
+  assert(!executeFn.includes('setError('), 'não mistura com erro de prévia');
+  const loadFn = ui.slice(ui.indexOf('const load = useCallback'), ui.indexOf('useEffect'));
+  assert(!loadFn.includes('setExecuteError'), 'GET da prévia não apaga o erro de execução');
+  assert(!loadFn.includes('setPrepared(null)'), 'GET da prévia não esconde o botão Executar');
+  assert(ui.includes('disabled={executing || !ackExecute}'), 'botão libera após erro seguro');
+  const mapperSrc = read('lib/finance/saleLotSwapPreview.ts');
+  assert(
+    mapperSrc.includes('LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE'),
+    'mensagem específica de execução',
+  );
+  assert(
+    mapLotSwapExecuteUserMessage({
+      status: 409,
+      message: 'COALESCE types date and text cannot be matched',
+    }) === LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE,
+    '409 de Postgres não vira “carregar a prévia”',
+  );
+  assert(
+    mapLotSwapExecuteUserMessage({
+      status: 409,
+      code: 'PLAN_NOT_CALCULATED',
+    }) === 'Confirme o plano CALCULATED antes de executar a troca.',
+    '409 de plano',
+  );
+  assert(
+    !mapLotSwapExecuteUserMessage({ status: 409, message: 'column regenerated_by does not exist' }).includes(
+      'prévia',
+    ),
+    'schema DEVELOP não usa texto de prévia',
+  );
+  console.log('OK testExecuteErrorUx');
 }
 
 function testExecuteServiceContractCompatibility() {
@@ -232,7 +414,9 @@ testReceiptMutationsPreservePaidAndReplaceFuture();
 testContractNumberNotReused();
 testRpcErrorParserAndSaleIdentity();
 testSqlAtomicRpc();
+testDueDateAndContractInsertCompatibility();
 testExecuteServiceContractCompatibility();
 testUiExecuteAfterCalculated();
+testExecuteErrorUx();
 testRegressionReleaseAndDocuments();
 console.log('OK mandatory-sale-lot-swap-execute-tests');

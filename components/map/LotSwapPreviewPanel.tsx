@@ -1,10 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, Info, Loader2 } from 'lucide-react';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import type { LotSwapPreviewPayload } from '@/lib/finance/saleLotSwapPreviewService';
-import { mapLotSwapPreviewUserMessage } from '@/lib/finance/saleLotSwapPreview';
+import {
+  LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE,
+  mapLotSwapExecuteUserMessage,
+  mapLotSwapPreviewUserMessage,
+} from '@/lib/finance/saleLotSwapPreview';
 import {
   LOT_SWAP_PLAN_NOTICE,
   LOT_SWAP_REASON_MIN_LENGTH,
@@ -96,6 +100,8 @@ export function LotSwapPreviewPanel({
   const [loading, setLoading] = useState(true);
   const [comparing, setComparing] = useState(false);
   const [error, setError] = useState('');
+  const [executeError, setExecuteError] = useState('');
+  const executeErrorRef = useRef<HTMLDivElement | null>(null);
   const [toBlockId, setToBlockId] = useState('');
   const [payload, setPayload] = useState<LotSwapPreviewPayload | null>(null);
   const [reason, setReason] = useState('');
@@ -136,9 +142,6 @@ export function LotSwapPreviewPanel({
         }
         setPayload(data.preview);
         if (selected) setToBlockId(selected);
-        setPrepared(null);
-        setExecuted(null);
-        setAckExecute(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar a prévia.');
       } finally {
@@ -152,6 +155,11 @@ export function LotSwapPreviewPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!executeError) return;
+    executeErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [executeError]);
 
   const confirmPlan = useCallback(async () => {
     setConfirming(true);
@@ -198,7 +206,7 @@ export function LotSwapPreviewPanel({
   const executeSwap = useCallback(async () => {
     if (!prepared?.swapId) return;
     setExecuting(true);
-    setError('');
+    setExecuteError('');
     try {
       const res = await fetch(
         `/api/sales/${encodeURIComponent(saleId)}/lot-swap/execute`,
@@ -221,7 +229,7 @@ export function LotSwapPreviewPanel({
       };
       if (!res.ok || !data.success || !data.executed) {
         throw new Error(
-          mapLotSwapPreviewUserMessage({
+          mapLotSwapExecuteUserMessage({
             status: res.status,
             code: data.code,
             message: data.message,
@@ -231,7 +239,9 @@ export function LotSwapPreviewPanel({
       }
       setExecuted(data.executed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao executar a troca.');
+      setExecuteError(
+        err instanceof Error ? err.message : LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE,
+      );
     } finally {
       setExecuting(false);
     }
@@ -309,6 +319,10 @@ export function LotSwapPreviewPanel({
               onChange={(e) => {
                 const next = e.target.value;
                 setToBlockId(next);
+                setPrepared(null);
+                setExecuted(null);
+                setAckExecute(false);
+                setExecuteError('');
                 if (next) void load(next);
               }}
               className="form-input-light w-full max-w-xl px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -433,6 +447,16 @@ export function LotSwapPreviewPanel({
                               permanece no histórico.
                             </span>
                           </label>
+                          {executeError ? (
+                            <div
+                              ref={executeErrorRef}
+                              role="alert"
+                              className="bg-red-50 border border-red-200 text-red-900 rounded-lg p-3 text-sm flex gap-2"
+                            >
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <div>{executeError}</div>
+                            </div>
+                          ) : null}
                           <button
                             type="button"
                             disabled={executing || !ackExecute}

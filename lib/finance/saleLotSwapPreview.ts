@@ -173,6 +173,62 @@ export function mapLotSwapPreviewUserMessage(input: {
   return 'Erro interno inesperado ao carregar a prévia.';
 }
 
+export const LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE =
+  'Não foi possível executar a troca de lote. Nenhum lote, parcela ou contrato foi alterado.';
+
+export function mapLotSwapExecuteUserMessage(input: {
+  status?: number;
+  code?: string | null;
+  message?: string | null;
+  error?: string | null;
+}): string {
+  const code = String(input.code || '').trim();
+  const fromServer = String(input.message || input.error || '').trim();
+  if (code === 'UNAUTHORIZED' || code === 'NO_PROFILE' || input.status === 401) {
+    return 'Sessão ou autorização inválida.';
+  }
+  if (code === 'PLAN_NOT_CALCULATED' || code === 'NOT_CALCULATED') {
+    return 'Confirme o plano CALCULATED antes de executar a troca.';
+  }
+  if (code === 'EXECUTING_IN_PROGRESS' || code === 'PLAN_IN_FLIGHT') {
+    return 'Já existe uma troca em execução para esta venda.';
+  }
+  if (code === 'DESTINATION_NOT_AVAILABLE') {
+    return 'O lote destino precisa estar Disponível, sem venda e sem contrato.';
+  }
+  if (code === 'ORIGIN_MISMATCH') {
+    return 'O lote origem não está mais vinculado a esta venda. Recalcule o plano.';
+  }
+  if (code === 'RECEIPT_PAID_SINCE_PLAN' || code === 'PRESERVE_RECEIPT_CHANGED') {
+    return 'As parcelas mudaram depois do plano. Recalcule o plano antes de executar.';
+  }
+  if (code === 'CONTRACT_NUMBER_REUSED' || code === 'CONTRACT_NUMBER_INVALID') {
+    return 'Não foi possível numerar o novo contrato. O número anterior não pode ser reutilizado.';
+  }
+  if (code === 'CONTRACT_HTML_REQUIRED' || code === 'CONTRACT_HTML_FAILED') {
+    return 'Não foi possível gerar o novo contrato da unidade destino.';
+  }
+  if (code === 'ALREADY_EXECUTED') {
+    return fromServer || 'Esta troca já foi executada.';
+  }
+  if (code === 'TENANT_MISMATCH' || input.status === 403) {
+    return fromServer || 'A troca não pertence à empresa atual.';
+  }
+  const looksLikePostgres =
+    /coalesce types|could not find the .* column|column .* does not exist|invalid input syntax/i.test(
+      fromServer,
+    );
+  if (
+    fromServer &&
+    fromServer !== LOT_SWAP_PREVIEW_GENERIC_LOAD_SALE_MESSAGE &&
+    fromServer !== 'Erro interno inesperado ao carregar a prévia.' &&
+    !looksLikePostgres
+  ) {
+    return fromServer;
+  }
+  return LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE;
+}
+
 const PAID_STATUSES = new Set(['pago', 'paid']);
 const CANCELED_STATUSES = new Set(['cancelado', 'canceled', 'cancelled']);
 
