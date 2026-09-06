@@ -24,6 +24,11 @@ import {
   validateReleaseLotMotive,
 } from '../lib/finance/releaseLotShared';
 import { prepareReleaseSettlement } from '../lib/finance/saleReleaseSettlement';
+import {
+  buildReleaseLotConfirmFooterNotices,
+  computeReleaseLotConfirmEnabled,
+  REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE,
+} from '../lib/finance/releaseLotConfirmUx';
 import { formatLotAuditEvent } from '../lib/lotAudit';
 import { lotHistoryTerminationDocumentLinks } from '../lib/lotHistoryPresentation';
 import {
@@ -46,6 +51,10 @@ import {
   isInadimplenciaTerminationOperation,
   shouldGenerateTerminationDocument,
   terminationDocumentTitleForType,
+  terminationShareModalDescription,
+  DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+  INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
+  TERMINATION_SHARE_MODAL_HEADING,
 } from '../lib/termination-documents/titles';
 import {
   DESISTENCIA_DOCUMENT_TITLE,
@@ -485,6 +494,102 @@ function testRegressionDesistenciaDistratoAndSource() {
   console.log('OK testRegressionDesistenciaDistratoAndSource');
 }
 
+function testUxIneligibleNoticesAndShareModal() {
+  const blockedNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: true,
+    refundFirstDueDate: '',
+    motiveCode: 'inadimplencia',
+    inadimplenciaEligible: false,
+  });
+  assert(blockedNotices.length === 1, 'somente o erro de inelegibilidade');
+  assert(blockedNotices[0]?.message === INADIMPLENCIA_NO_DEFAULT_MESSAGE, 'mensagem homologada');
+  assert(
+    !blockedNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
+    'sem aviso de restituição simultâneo',
+  );
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      releaseOperation: true,
+      motiveCode: 'inadimplencia',
+      motiveDetail: 'parcelas vencidas sem regularização',
+      acknowledged: true,
+      password: 'secret',
+      needsRefundSchedule: true,
+      refundFirstDueDate: '',
+      showSettlement: true,
+      improvementsCheckOk: true,
+      inadimplenciaEligible: false,
+      inadimplenciaPolicyOk: true,
+    }),
+    'botão bloqueado',
+  );
+  assert(
+    computeReleaseLotConfirmEnabled({
+      releaseOperation: true,
+      motiveCode: 'inadimplencia',
+      motiveDetail: 'parcelas vencidas sem regularização',
+      acknowledged: true,
+      password: 'secret',
+      needsRefundSchedule: false,
+      refundFirstDueDate: '',
+      showSettlement: true,
+      improvementsCheckOk: true,
+      inadimplenciaEligible: true,
+      inadimplenciaPolicyOk: true,
+    }),
+    'inadimplência elegível confirma',
+  );
+
+  assert(
+    terminationShareModalDescription({ title: INADIMPLENCIA_DOCUMENT_TITLE }) ===
+      INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
+    'modal INADIMPLENCIA pelo título',
+  );
+  assert(
+    terminationShareModalDescription({ documentType: 'INADIMPLENCIA' }) ===
+      INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
+    'modal INADIMPLENCIA pelo tipo',
+  );
+  assert(
+    terminationShareModalDescription({ operationType: 'inadimplencia' }) ===
+      INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
+    'modal INADIMPLENCIA pela operação',
+  );
+  assert(
+    terminationShareModalDescription({ title: DESISTENCIA_DOCUMENT_TITLE }) ===
+      DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+    'Desistência mantém texto atual',
+  );
+  assert(
+    terminationShareModalDescription({ documentType: 'DESISTENCIA' }) ===
+      DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+    'tipo DESISTENCIA intacto',
+  );
+  assert(
+    terminationShareModalDescription({ title: DISTRATO_DOCUMENT_TITLE }) ===
+      DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+    'Distrato mantém texto atual do modal compartilhado',
+  );
+  assert(
+    terminationShareModalDescription({ documentType: 'DISTRATO' }) ===
+      DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+    'tipo DISTRATO intacto no modal',
+  );
+  assert(TERMINATION_SHARE_MODAL_HEADING === 'Termo enviado para assinatura', 'título do modal');
+
+  const shareModal = read('components/contracts/SaleContractMultiPartyShareModal.tsx');
+  assert(shareModal.includes('terminationShareModalDescription'), 'modal resolve pelo tipo');
+  assert(shareModal.includes('TERMINATION_SHARE_MODAL_HEADING'), 'heading compartilhado');
+  const actions = read('components/map/TerminationDocumentSignatureActions.tsx');
+  assert(actions.includes('terminationTitle={view?.title}'), 'passa título do termo gerado');
+  assert(actions.includes('instrument="termination"'), 'instrumento termo intacto');
+  const sig = read('lib/termination-documents/signature.ts');
+  assert(sig.includes("signed_document_type: TERMINATION_SIGNED_DOCUMENT_TYPE"), 'e-sign TERMO intacto');
+  console.log('OK testUxIneligibleNoticesAndShareModal');
+}
+
 function main() {
   testBlockWithoutOverdue();
   testExecuteWithOverdueAndDueDate();
@@ -493,6 +598,7 @@ function main() {
   testDocumentInadimplencia();
   testHistoryBadgeAndKinds();
   testRegressionDesistenciaDistratoAndSource();
+  testUxIneligibleNoticesAndShareModal();
   console.log('\nALL mandatory-termination-document-inadimplencia-tests PASSED');
 }
 

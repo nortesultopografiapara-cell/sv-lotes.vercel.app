@@ -33,6 +33,10 @@ import {
   type SignatureStatus,
 } from '@/lib/saasContractStatus';
 import { sortAraguaiaVendorParties } from '@/lib/araguaiaContractEsign';
+import {
+  TERMINATION_SHARE_MODAL_HEADING,
+  terminationShareModalDescription,
+} from '@/lib/termination-documents/titles';
 
 const VENDOR_INTERNAL_MESSAGE =
   'A assinatura da vendedora será realizada internamente no sistema após a conclusão das assinaturas do comprador e do cônjuge.';
@@ -59,6 +63,10 @@ export type SaleContractMultiPartyShareModalProps = {
   onLinkCopied?: () => void;
   onLinkOpened?: () => void;
   instrument?: 'sale-contract' | 'termination';
+  /** Título/tipo do termo congelado. Só altera a cópia do cabeçalho do modal. */
+  terminationTitle?: string | null;
+  terminationDocumentType?: string | null;
+  terminationOperationType?: string | null;
 };
 
 type PartyCardProps = {
@@ -358,6 +366,9 @@ export function SaleContractMultiPartyShareModal({
   onLinkCopied,
   onLinkOpened,
   instrument = 'sale-contract',
+  terminationTitle,
+  terminationDocumentType,
+  terminationOperationType,
 }: SaleContractMultiPartyShareModalProps) {
   const orderedParties = useMemo(() => {
     const rank = (role: string) => {
@@ -396,12 +407,16 @@ export function SaleContractMultiPartyShareModal({
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-blue-400" />
               {instrument === 'termination'
-                ? 'Termo enviado para assinatura'
+                ? TERMINATION_SHARE_MODAL_HEADING
                 : 'Contrato enviado para assinatura'}
             </h3>
             <p className="text-xs text-gray-400 mt-1">
               {instrument === 'termination'
-                ? 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro. Cada participante possui link e contatos próprios.'
+                ? terminationShareModalDescription({
+                    operationType: terminationOperationType,
+                    documentType: terminationDocumentType,
+                    title: terminationTitle,
+                  })
                 : 'Cada participante externo possui link, QR Code e contatos próprios.'}
             </p>
           </div>

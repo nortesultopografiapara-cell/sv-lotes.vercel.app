@@ -29,6 +29,38 @@ export function isInadimplenciaTerminationOperation(operationType?: string | nul
   return String(operationType || '').trim() === 'inadimplencia';
 }
 
+export const TERMINATION_SHARE_MODAL_HEADING = 'Termo enviado para assinatura';
+
+export const DESISTENCIA_SHARE_MODAL_DESCRIPTION =
+  'Termo de Desistência, Rescisão Contratual e Acerto Financeiro. Cada participante possui link e contatos próprios.';
+
+export const INADIMPLENCIA_SHARE_MODAL_DESCRIPTION =
+  'Termo de Rescisão Contratual por Inadimplência. Cada participante possui link e contatos próprios.';
+
+/** Cópia do modal compartilhado de envio — não altera WhatsApp, e-mail, QR nem o fluxo de assinatura. */
+export function terminationShareModalDescription(input?: {
+  operationType?: string | null;
+  documentType?: string | null;
+  title?: string | null;
+}): string {
+  const type = String(input?.documentType || '')
+    .trim()
+    .toUpperCase();
+  const title = String(input?.title || '')
+    .trim()
+    .toUpperCase();
+  if (
+    isInadimplenciaTerminationOperation(input?.operationType) ||
+    type === 'INADIMPLENCIA' ||
+    type === 'INADIMPLENCIA_ASSINADO' ||
+    title.includes('POR INADIMPLÊNCIA') ||
+    title.includes('POR INADIMPLENCIA')
+  ) {
+    return INADIMPLENCIA_SHARE_MODAL_DESCRIPTION;
+  }
+  return DESISTENCIA_SHARE_MODAL_DESCRIPTION;
+}
+
 export function terminationDocumentTitleForType(
   operationType?: string | null,
 ): string {

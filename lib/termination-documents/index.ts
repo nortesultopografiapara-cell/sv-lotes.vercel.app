@@ -16,6 +16,10 @@ export {
   terminationDocumentTitleForType,
   isDistratoTerminationOperation,
   isInadimplenciaTerminationOperation,
+  terminationShareModalDescription,
+  TERMINATION_SHARE_MODAL_HEADING,
+  DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+  INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
 } from '@/lib/termination-documents/titles';
 export {
   formatSaleOperationDocumentNumber,

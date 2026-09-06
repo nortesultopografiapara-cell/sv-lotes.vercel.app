@@ -151,6 +151,7 @@ export function TerminationDocumentSignatureActions({
         quadra={view?.quadra || undefined}
         lote={view?.lote || undefined}
         instrument="termination"
+        terminationTitle={view?.title}
       />
     </>
   );

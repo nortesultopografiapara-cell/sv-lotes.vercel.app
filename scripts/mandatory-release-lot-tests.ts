@@ -914,14 +914,55 @@ function testReleaseLotConfirmButtonUx() {
   const noDefaultNotices = buildReleaseLotConfirmFooterNotices({
     showSettlement: true,
     improvementsCheckOk: true,
-    needsRefundSchedule: false,
+    needsRefundSchedule: true,
     refundFirstDueDate: '',
     motiveCode: 'inadimplencia',
     inadimplenciaEligible: false,
   });
   assert(
-    noDefaultNotices.some((n) => n.message.includes('não possui parcelas vencidas')),
+    noDefaultNotices.length === 1,
+    'inadimplência inelegível: um único aviso',
+  );
+  assert(
+    noDefaultNotices[0]?.message ===
+      'Esta venda não possui parcelas vencidas ou condição de inadimplência suficiente para este encerramento.',
     'aviso amigável sem inadimplência efetiva',
+  );
+  assert(
+    !noDefaultNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
+    'não mistura vencimento da restituição com inelegibilidade',
+  );
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      ...inadimplenciaReady,
+      inadimplenciaEligible: false,
+      needsRefundSchedule: true,
+      refundFirstDueDate: '',
+    }),
+    'botão permanece bloqueado sem inadimplência efetiva',
+  );
+  const eligibleScheduleNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: true,
+    refundFirstDueDate: '',
+    motiveCode: 'inadimplencia',
+    inadimplenciaEligible: true,
+  });
+  assert(
+    eligibleScheduleNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
+    'inadimplência elegível ainda exige vencimento da restituição quando aplicável',
+  );
+  const desistenciaScheduleNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: true,
+    refundFirstDueDate: '',
+    motiveCode: 'desistencia',
+  });
+  assert(
+    desistenciaScheduleNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
+    'Desistência preserva aviso de restituição',
   );
   console.log('OK testReleaseLotConfirmButtonUx');
 }

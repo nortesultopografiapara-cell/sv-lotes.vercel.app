@@ -79,12 +79,16 @@ export function buildReleaseLotConfirmFooterNotices(input: {
   inadimplenciaPolicyError?: string | null;
 }): ReleaseLotConfirmFooterNotice[] {
   const notices: ReleaseLotConfirmFooterNotice[] = [];
-  if (input.motiveCode === 'inadimplencia' && input.inadimplenciaEligible === false) {
+  const inadimplenciaIneligible =
+    input.motiveCode === 'inadimplencia' && input.inadimplenciaEligible === false;
+  if (inadimplenciaIneligible) {
     notices.push({
       kind: 'inadimplencia',
       message: INADIMPLENCIA_NO_DEFAULT_MESSAGE,
     });
-  } else if (
+    return notices;
+  }
+  if (
     input.motiveCode === 'inadimplencia' &&
     String(input.inadimplenciaPolicyError || '').trim()
   ) {

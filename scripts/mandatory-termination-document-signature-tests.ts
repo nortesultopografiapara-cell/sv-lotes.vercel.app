@@ -12,6 +12,13 @@ import {
   isTerminationSaleSignature,
 } from '../lib/saleContractSignatureDocumentType';
 import { buildSalePartySignatureShareMessage } from '../lib/saleContractSignatureShare';
+import {
+  DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+  INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
+  TERMINATION_SHARE_MODAL_HEADING,
+  terminationShareModalDescription,
+} from '../lib/termination-documents/titles';
+import { DESISTENCIA_DOCUMENT_TITLE, INADIMPLENCIA_DOCUMENT_TITLE } from '../lib/termination-documents/types';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -146,6 +153,29 @@ function testUiAndShare() {
     signatureUrl: 'https://www.svlotes.com.br/sign/sale/token-abc',
   });
   assert(contractMsg.includes('contrato de compra e venda'), 'share de contrato intacto');
+  assert(
+    terminationShareModalDescription() === DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+    'modal de termo sem tipo continua Desistência',
+  );
+  assert(
+    terminationShareModalDescription({ title: DESISTENCIA_DOCUMENT_TITLE }) ===
+      DESISTENCIA_SHARE_MODAL_DESCRIPTION,
+    'Desistência no modal compartilhado',
+  );
+  assert(
+    terminationShareModalDescription({ title: INADIMPLENCIA_DOCUMENT_TITLE }) ===
+      INADIMPLENCIA_SHARE_MODAL_DESCRIPTION,
+    'Inadimplência no modal compartilhado',
+  );
+  assert(TERMINATION_SHARE_MODAL_HEADING === 'Termo enviado para assinatura', 'heading do termo');
+  const shareModal = read('components/contracts/SaleContractMultiPartyShareModal.tsx');
+  assert(shareModal.includes('terminationShareModalDescription'), 'cópia do modal por tipo');
+  assert(
+    !shareModal.includes(
+      "? 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro. Cada participante possui link e contatos próprios.'",
+    ),
+    'não hardcoda Desistência para todo termo',
+  );
   console.log('OK testUiAndShare');
 }
 
