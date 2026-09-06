@@ -40,6 +40,12 @@ export const SALE_DOCUMENT_TERMINATION_TYPES = [
   'INADIMPLENCIA_ASSINADO',
 ] as const;
 
+/** Termo aditivo de Troca de lote — Fase 6 futura. Sem PDF nesta fase. */
+export const SALE_DOCUMENT_LOT_SWAP_TYPES = [
+  'TROCA_LOTE',
+  'TROCA_LOTE_ASSINADO',
+] as const;
+
 export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
   SaleDocumentCategory,
   readonly string[]
@@ -58,6 +64,7 @@ export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
     ...SALE_DOCUMENT_LEGACY_SYSTEM_TYPES,
     ...SALE_DOCUMENT_CONTRACT_OPERATION_TYPES,
     ...SALE_DOCUMENT_TERMINATION_TYPES,
+    ...SALE_DOCUMENT_LOT_SWAP_TYPES,
   ],
 };
 
@@ -94,6 +101,9 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   INADIMPLENCIA: 'Termo de Rescisão Contratual por Inadimplência',
   INADIMPLENCIA_ASSINADO:
     'Termo de Rescisão Contratual por Inadimplência (assinado)',
+  TROCA_LOTE: 'Termo Aditivo de Troca de Lote / Substituição de Unidade',
+  TROCA_LOTE_ASSINADO:
+    'Termo Aditivo de Troca de Lote / Substituição de Unidade (assinado)',
 };
 
 export const SALE_DOCUMENT_ALLOWED_MIME_TYPES = [
@@ -134,6 +144,7 @@ export function isUploadAllowedForCategory(category: SaleDocumentCategory): bool
 const SALE_OPERATION_GENERATED_TYPES = new Set<string>([
   ...SALE_DOCUMENT_CONTRACT_OPERATION_TYPES,
   ...SALE_DOCUMENT_TERMINATION_TYPES,
+  ...SALE_DOCUMENT_LOT_SWAP_TYPES,
 ]);
 
 export function isSaleOperationGeneratedType(documentType?: string | null): boolean {
@@ -164,8 +175,8 @@ export function saleOperationDocumentStatusLabel(documentType?: string | null): 
   const type = String(documentType || '')
     .trim()
     .toUpperCase();
-  if (type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO' || type === 'INADIMPLENCIA_ASSINADO') return 'Assinado';
-  if (type === 'DESISTENCIA' || type === 'DISTRATO' || type === 'INADIMPLENCIA') return 'Gerado';
+  if (type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO' || type === 'INADIMPLENCIA_ASSINADO' || type === 'TROCA_LOTE_ASSINADO') return 'Assinado';
+  if (type === 'DESISTENCIA' || type === 'DISTRATO' || type === 'INADIMPLENCIA' || type === 'TROCA_LOTE') return 'Gerado';
   if (SALE_OPERATION_GENERATED_TYPES.has(type)) return 'Gerado';
   return '—';
 }
