@@ -37,7 +37,14 @@ import {
   assertLotSwapPlanPersistable,
   type LotSwapFinancialPlan,
 } from '@/lib/finance/saleLotSwapPlan';
-import { LotSwapPreviewError } from '@/lib/finance/saleLotSwapPreviewService';
+import {
+  loadLotSwapCallerProfile,
+  LotSwapPreviewError,
+} from '@/lib/finance/saleLotSwapPreviewService';
+import {
+  assertLotSwapCallerOwnsCompany,
+  LOT_SWAP_CROSS_TENANT,
+} from '@/lib/finance/saleLotSwapPreview';
 import { embedRecantoContractSignatureInHtml } from '@/lib/recantoPrimaveraContractAssets';
 import { assertCustomerValidForContract } from '@/lib/validateCustomerForContract';
 
@@ -248,6 +255,19 @@ export async function executeSaleLotSwap(
     );
   }
 
+  const profile = await loadLotSwapCallerProfile(admin, text(input.userId));
+  if (!profile) {
+    throw new LotSwapPreviewError(
+      'Sessão ou autorização inválida.',
+      'NO_PROFILE',
+      403,
+    );
+  }
+  const callerTenant = text(
+    profile.tenant_id || (profile as { company_id?: string }).company_id,
+  );
+  const callerRole = text(profile.role);
+
   let loaded = text(input.swapId)
     ? await admin
         .from(SALE_LOT_SWAP_TABLE)
@@ -285,6 +305,20 @@ export async function executeSaleLotSwap(
       'Confirme o plano CALCULATED antes de executar a troca.',
       'PLAN_NOT_CALCULATED',
       409,
+    );
+  }
+
+  const companyId = text(swap.company_id || swap.tenant_id);
+  const tenantGuard = assertLotSwapCallerOwnsCompany({
+    callerTenantId: callerTenant,
+    resourceCompanyId: companyId,
+    callerRole,
+  });
+  if (!tenantGuard.ok) {
+    throw new LotSwapPreviewError(
+      'A venda não pertence à empresa atual.',
+      LOT_SWAP_CROSS_TENANT,
+      403,
     );
   }
 
@@ -352,7 +386,6 @@ export async function executeSaleLotSwap(
     );
   }
 
-  const companyId = text(swap.company_id || swap.tenant_id);
   const fromContractId = swap.from_contract_id ? String(swap.from_contract_id) : null;
   let previousNumber: string | null = null;
   if (fromContractId) {

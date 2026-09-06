@@ -32,6 +32,8 @@ DECLARE
   v_new_contract_id uuid;
   v_old_contract_id uuid;
   v_old_number text;
+  v_old_contract_company uuid;
+  v_old_contract_tenant uuid;
   v_new_number text;
   v_html text;
   v_version integer;
@@ -224,11 +226,14 @@ BEGIN
 
   v_old_contract_id := v_swap.from_contract_id;
   IF v_old_contract_id IS NOT NULL THEN
-    SELECT contract_number, generated_html
-      INTO v_old_number, v_from_html
+    SELECT contract_number, generated_html, company_id, tenant_id
+      INTO v_old_number, v_from_html, v_old_contract_company, v_old_contract_tenant
     FROM public.contracts
     WHERE id = v_old_contract_id
     FOR UPDATE;
+    IF COALESCE(v_old_contract_company, v_old_contract_tenant) IS DISTINCT FROM v_company_id THEN
+      RAISE EXCEPTION 'LOT_SWAP_EXECUTE:TENANT_MISMATCH:O contrato anterior não pertence à empresa atual.';
+    END IF;
     IF v_old_number IS NOT NULL AND btrim(v_old_number) = v_new_number THEN
       RAISE EXCEPTION 'LOT_SWAP_EXECUTE:CONTRACT_NUMBER_REUSED:A troca não pode reutilizar o número do contrato anterior.';
     END IF;

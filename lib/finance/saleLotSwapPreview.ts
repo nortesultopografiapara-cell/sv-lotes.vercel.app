@@ -35,6 +35,116 @@ export const LOT_SWAP_DESTINATION_RESERVED = 'LOT_SWAP_DESTINATION_RESERVED';
 export const LOT_SWAP_DESTINATION_NOT_AVAILABLE = 'LOT_SWAP_DESTINATION_NOT_AVAILABLE';
 export const LOT_SWAP_DESTINATION_HAS_SALE = 'LOT_SWAP_DESTINATION_HAS_SALE';
 export const LOT_SWAP_DESTINATION_HAS_CONTRACT = 'LOT_SWAP_DESTINATION_HAS_CONTRACT';
+export const LOT_SWAP_CROSS_TENANT = 'CROSS_TENANT';
+
+export const LOT_SWAP_PLATFORM_ADMIN_ROLES = new Set([
+  'SUPER_ADMIN',
+  'MASTER',
+  'MASTER_ADMIN',
+  'MASTER-ADMIN',
+]);
+
+export function isLotSwapPlatformAdminRole(role?: string | null): boolean {
+  return LOT_SWAP_PLATFORM_ADMIN_ROLES.has(String(role || '').trim().toUpperCase());
+}
+
+export function resolveLotSwapResourceCompanyId(input: {
+  companyId?: string | null;
+  tenantId?: string | null;
+}): string {
+  return String(input.companyId || input.tenantId || '').trim();
+}
+
+/**
+ * Isolamento entre empresas. Super admin da plataforma pode operar qualquer tenant.
+ * Qualquer outro perfil só acessa o tenant do próprio perfil.
+ */
+export function assertLotSwapCallerOwnsCompany(input: {
+  callerTenantId?: string | null;
+  resourceCompanyId?: string | null;
+  callerRole?: string | null;
+}): { ok: true; code: null } | { ok: false; code: typeof LOT_SWAP_CROSS_TENANT } {
+  if (isLotSwapPlatformAdminRole(input.callerRole)) {
+    return { ok: true, code: null };
+  }
+  const caller = String(input.callerTenantId || '').trim();
+  const resource = String(input.resourceCompanyId || '').trim();
+  if (!caller || !resource || caller === resource) {
+    if (!caller || !resource) {
+      return { ok: false, code: LOT_SWAP_CROSS_TENANT };
+    }
+    return { ok: true, code: null };
+  }
+  return { ok: false, code: LOT_SWAP_CROSS_TENANT };
+}
+
+/**
+ * Simula dois tenants distintos sem I/O. Usado para provar que empresa A
+ * não visualiza nem executa troca da empresa B, mesmo conhecendo UUIDs.
+ */
+export function simulateLotSwapCrossTenantAccess(input: {
+  callerTenantId: string;
+  callerRole?: string | null;
+  saleCompanyId: string;
+  originLotCompanyId: string;
+  destLotCompanyId: string;
+  originProjectId: string;
+  destProjectId: string;
+  destStatus?: string | null;
+  destSaleId?: string | null;
+  destContractId?: string | null;
+}): {
+  canPreviewSale: boolean;
+  canListDestination: boolean;
+  canExecute: boolean;
+  codes: string[];
+} {
+  const codes: string[] = [];
+  const saleGuard = assertLotSwapCallerOwnsCompany({
+    callerTenantId: input.callerTenantId,
+    resourceCompanyId: input.saleCompanyId,
+    callerRole: input.callerRole,
+  });
+  if (!saleGuard.ok) codes.push(saleGuard.code);
+  const originGuard = assertLotSwapCallerOwnsCompany({
+    callerTenantId: input.callerTenantId,
+    resourceCompanyId: input.originLotCompanyId,
+    callerRole: input.callerRole,
+  });
+  if (!originGuard.ok) codes.push(originGuard.code);
+  const destCompanyGuard = assertLotSwapCallerOwnsCompany({
+    callerTenantId: input.callerTenantId,
+    resourceCompanyId: input.destLotCompanyId,
+    callerRole: input.callerRole,
+  });
+  if (!destCompanyGuard.ok) codes.push(destCompanyGuard.code);
+  const destVerdict = evaluateLotSwapDestination(
+    {
+      id: 'dest-lot',
+      projectId: input.destProjectId,
+      status: input.destStatus || 'Disponível',
+      saleId: input.destSaleId || null,
+      contractId: input.destContractId || null,
+      companyId: input.destLotCompanyId,
+      quadra: '02',
+      lote: '62',
+      area: null,
+      price: 50,
+    },
+    {
+      id: 'origin-lot',
+      projectId: input.originProjectId,
+      companyId: input.originLotCompanyId,
+    },
+  );
+  if (!destVerdict.ok && destVerdict.code) codes.push(destVerdict.code);
+  const unique = Array.from(new Set(codes));
+  const canPreviewSale = saleGuard.ok;
+  const canListDestination = canPreviewSale && destVerdict.ok && destCompanyGuard.ok;
+  const canExecute =
+    canPreviewSale && originGuard.ok && destCompanyGuard.ok && destVerdict.ok;
+  return { canPreviewSale, canListDestination, canExecute, codes: unique };
+}
 
 /**
  * Colunas de leitura em public.sales para o preview da Troca de lote.
@@ -238,6 +348,7 @@ export type LotSwapBlockSnapshot = {
   status: string | null;
   saleId: string | null;
   contractId: string | null;
+  companyId?: string | null;
   quadra: string | null;
   lote: string | null;
   area: number | null;
@@ -341,12 +452,17 @@ export function assertOriginBelongsToSale(input: {
 
 export function evaluateLotSwapDestination(
   destination: LotSwapBlockSnapshot,
-  origin: Pick<LotSwapBlockSnapshot, 'id' | 'projectId'>,
+  origin: Pick<LotSwapBlockSnapshot, 'id' | 'projectId' | 'companyId'>,
 ): LotSwapDestinationVerdict {
   const destId = String(destination.id || '').trim();
   const originId = String(origin.id || '').trim();
   if (!destId || destId === originId) {
     return { ok: false, code: LOT_SWAP_SAME_BLOCK };
+  }
+  const destCompany = String(destination.companyId || '').trim();
+  const originCompany = String(origin.companyId || '').trim();
+  if (destCompany && originCompany && destCompany !== originCompany) {
+    return { ok: false, code: LOT_SWAP_CROSS_TENANT };
   }
   if (!isSameProjectLotSwap(origin.projectId, destination.projectId)) {
     return { ok: false, code: LOT_SWAP_CROSS_PROJECT };
@@ -469,6 +585,9 @@ export function lotSwapPreviewBlockMessage(code?: string | null): string | null 
   }
   if (code === LOT_SWAP_CROSS_PROJECT) {
     return 'A troca na V1 só é permitida dentro do mesmo empreendimento.';
+  }
+  if (code === LOT_SWAP_CROSS_TENANT) {
+    return 'A venda não pertence à empresa atual.';
   }
   if (code === LOT_SWAP_DESTINATION_RESERVED) {
     return 'Lote Reservado não é aceito como destino na V1.';

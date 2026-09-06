@@ -26,6 +26,7 @@ import {
 import {
   LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE,
   mapLotSwapExecuteUserMessage,
+  simulateLotSwapCrossTenantAccess,
 } from '../lib/finance/saleLotSwapPreview';
 import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '../lib/homolog/env';
 
@@ -283,6 +284,13 @@ function testDueDateAndContractInsertCompatibility() {
   assert(!sql.includes('company_asaas_charges'), 'Asaas intacto');
   assert(!sql.includes('bank_charges'), 'Inter intacto');
   assert(!sql.includes('seller_parties_json'), 'não toca Mundo Novo');
+  assert(sql.includes('current_tenant_id()'), 'guard current_tenant_id');
+  assert(sql.includes('SECURITY DEFINER'), 'SECURITY DEFINER global');
+  assert(sql.includes('FOR UPDATE'), 'locks globais');
+  assert(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(sql), 'sem UUID hardcoded');
+  assert(!/Araguaia|Mundo Novo|S\.V Topografia|hoynys/i.test(sql), 'sem empresa/homolog hardcoded');
+  assert(sql.includes('information_schema.columns'), 'colunas opcionais pelo schema, não pela empresa');
+  assert(sql.includes('O contrato anterior não pertence à empresa atual'), 'contrato antigo no mesmo tenant');
   const apply = read(
     'scripts/develop/apply-fix-execute-sale-lot-swap-due-date-contract-insert.ts',
   );
@@ -350,6 +358,8 @@ function testExecuteServiceContractCompatibility() {
   assert(!svc.includes('bank_charges'), 'sem Inter');
   assert(svc.includes(`rpc(LOT_SWAP_EXECUTE_RPC`) || svc.includes(`rpc('${LOT_SWAP_EXECUTE_RPC}'`), 'chama RPC');
   assert(svc.includes("status === 'EXECUTED'"), 'idempotência EXECUTED');
+  assert(svc.includes('loadLotSwapCallerProfile'), 'execute carrega o tenant do operador');
+  assert(svc.includes('assertLotSwapCallerOwnsCompany'), 'execute recusa CROSS_TENANT');
   const route = read('app/api/sales/[saleId]/lot-swap/execute/route.ts');
   assert(route.includes('executeSaleLotSwap'), 'rota de execução');
   assert(route.includes('persistCharges: false'), 'Fase 5 não entra');
@@ -409,6 +419,84 @@ function testRegressionReleaseAndDocuments() {
   console.log('OK testRegressionReleaseAndDocuments');
 }
 
+function testGlobalMultitenantIsolation() {
+  const tenantA = 'company-sv-topografia';
+  const tenantB = 'company-outro-loteamento';
+  const same = simulateLotSwapCrossTenantAccess({
+    callerTenantId: tenantA,
+    callerRole: 'ADMIN',
+    saleCompanyId: tenantA,
+    originLotCompanyId: tenantA,
+    destLotCompanyId: tenantA,
+    originProjectId: 'proj-araguaia',
+    destProjectId: 'proj-araguaia',
+  });
+  assert(same.canPreviewSale && same.canListDestination && same.canExecute, 'mesma empresa pode operar');
+
+  const otherSale = simulateLotSwapCrossTenantAccess({
+    callerTenantId: tenantA,
+    callerRole: 'ADMIN',
+    saleCompanyId: tenantB,
+    originLotCompanyId: tenantB,
+    destLotCompanyId: tenantB,
+    originProjectId: 'proj-b',
+    destProjectId: 'proj-b',
+  });
+  assert(!otherSale.canPreviewSale, 'empresa A não visualiza venda de B');
+  assert(!otherSale.canExecute, 'empresa A não executa venda de B');
+  assert(otherSale.codes.includes('CROSS_TENANT'), 'CROSS_TENANT na venda');
+
+  const stolenDestUuid = simulateLotSwapCrossTenantAccess({
+    callerTenantId: tenantA,
+    callerRole: 'ADMIN',
+    saleCompanyId: tenantA,
+    originLotCompanyId: tenantA,
+    destLotCompanyId: tenantB,
+    originProjectId: 'proj-araguaia',
+    destProjectId: 'proj-araguaia',
+  });
+  assert(stolenDestUuid.canPreviewSale, 'venda própria segue visível');
+  assert(!stolenDestUuid.canListDestination, 'não lista lote de outra empresa');
+  assert(!stolenDestUuid.canExecute, 'UUID de lote alheio não executa');
+  assert(stolenDestUuid.codes.includes('CROSS_TENANT'), 'CROSS_TENANT no lote destino');
+
+  const stolenOrigin = simulateLotSwapCrossTenantAccess({
+    callerTenantId: tenantB,
+    callerRole: 'ADMIN',
+    saleCompanyId: tenantA,
+    originLotCompanyId: tenantA,
+    destLotCompanyId: tenantA,
+    originProjectId: 'proj-mundo-novo',
+    destProjectId: 'proj-mundo-novo',
+  });
+  assert(!stolenOrigin.canPreviewSale && !stolenOrigin.canExecute, 'B não usa venda/lote de A');
+
+  const superAdmin = simulateLotSwapCrossTenantAccess({
+    callerTenantId: tenantA,
+    callerRole: 'SUPER_ADMIN',
+    saleCompanyId: tenantB,
+    originLotCompanyId: tenantB,
+    destLotCompanyId: tenantB,
+    originProjectId: 'proj-b',
+    destProjectId: 'proj-b',
+  });
+  assert(superAdmin.canPreviewSale && superAdmin.canExecute, 'super admin da plataforma não é uma empresa');
+
+  const sql = read(
+    'supabase/migrations/20261014120200_fix_execute_sale_lot_swap_due_date_contract_insert.sql',
+  );
+  assert(sql.includes('v_swap.company_id IS DISTINCT FROM v_company_id'), 'RPC confere tenant do swap');
+  assert(sql.includes('Os lotes não pertencem à empresa atual'), 'RPC recusa lote de outro tenant');
+  const mundo = read('lib/mundoNovoContractSellers.ts');
+  assert(mundo.includes('somente projects.seller_parties_json'), 'Mundo Novo só JSON do projeto');
+  assert(!mundo.toLowerCase().includes('representante legal') || mundo.includes('nunca cai no Representante Legal'), 'sem fallback RL');
+  const template = read('lib/contractTemplate.ts');
+  assert(template.includes('generateMundoNovoContract'), 'HTML Mundo Novo');
+  assert(template.includes('isAraguaiaContractModel') || read('lib/contractModel.ts').includes('ARAGUAIA'), 'ARAGUAIA');
+  assert(template.includes('generateRecantoPrimaveraContract'), 'RECANTO_PRIMAVERA');
+  console.log('OK testGlobalMultitenantIsolation');
+}
+
 testStateMachineAndIdempotency();
 testReceiptMutationsPreservePaidAndReplaceFuture();
 testContractNumberNotReused();
@@ -419,4 +507,5 @@ testExecuteServiceContractCompatibility();
 testUiExecuteAfterCalculated();
 testExecuteErrorUx();
 testRegressionReleaseAndDocuments();
+testGlobalMultitenantIsolation();
 console.log('OK mandatory-sale-lot-swap-execute-tests');

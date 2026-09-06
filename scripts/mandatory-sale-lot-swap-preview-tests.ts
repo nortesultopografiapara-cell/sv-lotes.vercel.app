@@ -19,6 +19,7 @@ import {
   LOT_SWAP_CREDIT_EXCEEDS_PRICE,
   LOT_SWAP_CREDIT_EXCEEDS_PRICE_MESSAGE,
   LOT_SWAP_CROSS_PROJECT,
+  LOT_SWAP_CROSS_TENANT,
   LOT_SWAP_DESTINATION_HAS_CONTRACT,
   LOT_SWAP_DESTINATION_HAS_SALE,
   LOT_SWAP_DESTINATION_NOT_AVAILABLE,
@@ -111,6 +112,13 @@ function testDestinationFilters() {
     evaluateLotSwapDestination(block({ id: 'lot-ct', contractId: 'ct-x' }), origin).code ===
       LOT_SWAP_DESTINATION_HAS_CONTRACT,
     'destino com contract_id recusado',
+  );
+  assert(
+    evaluateLotSwapDestination(
+      block({ id: 'lot-foreign', companyId: 'company-2' }),
+      { ...origin, companyId: 'company-1' },
+    ).code === LOT_SWAP_CROSS_TENANT,
+    'lote de outra empresa recusado mesmo conhecendo o UUID',
   );
   console.log('OK testDestinationFilters');
 }
@@ -469,6 +477,21 @@ function homologPreviewDb() {
         lot_number: '01',
         area: 150,
       },
+      {
+        id: 'block-foreign-company',
+        status: 'Disponível',
+        price: 80000,
+        sale_id: null,
+        contract_id: null,
+        project_id: 'proj-a',
+        tenant_id: 'company-2',
+        company_id: 'company-2',
+        block_name: '02',
+        name: '02',
+        number: '99',
+        lot_number: '99',
+        area: 140,
+      },
     ],
     projects: [{ id: 'proj-a', name: 'Residencial Homolog' }],
     customers: [{ id: 'cust-1', name: 'Maria Compradora' }],
@@ -649,6 +672,10 @@ async function testGisOperationsLotSwapPreviewLoad() {
   assert(!destIds.includes('block-res'), '11 reservado não aparece');
   assert(!destIds.includes('block-origin-uuid'), '12 origem não aparece');
   assert(!destIds.includes('block-other-proj'), '13 outro empreendimento não aparece');
+  assert(
+    !destIds.includes('block-foreign-company'),
+    'lote de outra empresa não aparece mesmo no mesmo project_id',
+  );
   console.log('OK testGisOperationsLotSwapPreviewLoad');
 }
 

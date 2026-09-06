@@ -17,8 +17,10 @@ import {
   isLotSwapFutureReceipt,
   lotSwapPreviewBlockMessage,
   parseMissingSelectColumn,
+  assertLotSwapCallerOwnsCompany,
   simulateLotSwapSchedule,
   sumLotSwapPaidAmount,
+  LOT_SWAP_CROSS_TENANT,
   LOT_SWAP_ORIGIN_MISMATCH,
   SALE_LOT_SWAP_SALE_SELECT_COLUMNS,
   type LotSwapBlockSnapshot,
@@ -33,13 +35,6 @@ import {
   buildLotSwapFinancialPlan,
   type LotSwapFinancialPlan,
 } from '@/lib/finance/saleLotSwapPlan';
-
-const PLATFORM_ADMIN_ROLES = new Set([
-  'SUPER_ADMIN',
-  'MASTER',
-  'MASTER_ADMIN',
-  'MASTER-ADMIN',
-]);
 
 export class LotSwapPreviewError extends Error {
   status: number;
@@ -124,6 +119,7 @@ function snapshotBlock(row: Record<string, unknown>): LotSwapBlockSnapshot {
     status: text(row.status),
     saleId: text(row.sale_id),
     contractId: text(row.contract_id),
+    companyId: text(row.company_id) || text(row.tenant_id) || null,
     quadra: quadraOf(row),
     lote: loteOf(row),
     area: Number.isFinite(areaNum) && areaNum > 0 ? money2(areaNum) : null,
@@ -177,7 +173,7 @@ export async function loadSaleRowForLotSwapPreview(
   );
 }
 
-async function loadCallerProfile(
+export async function loadLotSwapCallerProfile(
   admin: SupabaseClient,
   userId: string,
 ): Promise<Record<string, unknown> | null> {
@@ -240,7 +236,7 @@ export async function loadSaleLotSwapPreview(
     );
   }
 
-  const profile = await loadCallerProfile(admin, userId);
+  const profile = await loadLotSwapCallerProfile(admin, userId);
   if (!profile) {
     throw new LotSwapPreviewError(
       'Sessão ou autorização inválida.',
@@ -248,19 +244,23 @@ export async function loadSaleLotSwapPreview(
       403,
     );
   }
-  const callerRole = String(profile.role || '').toUpperCase();
+  const callerRole = String(profile.role || '').trim();
   const callerTenant = String(
     profile.tenant_id || (profile as { company_id?: string }).company_id || '',
   ).trim();
-  const isSuperAdmin = PLATFORM_ADMIN_ROLES.has(callerRole);
 
   const sale = await loadSaleRowForLotSwapPreview(admin, saleId);
 
   const companyId = String(sale.company_id || sale.tenant_id || '').trim();
-  if (!isSuperAdmin && callerTenant && companyId && callerTenant !== companyId) {
+  const tenantGuard = assertLotSwapCallerOwnsCompany({
+    callerTenantId: callerTenant,
+    resourceCompanyId: companyId,
+    callerRole,
+  });
+  if (!tenantGuard.ok) {
     throw new LotSwapPreviewError(
       'A venda não pertence à empresa atual.',
-      'CROSS_TENANT',
+      LOT_SWAP_CROSS_TENANT,
       403,
     );
   }
@@ -380,7 +380,7 @@ export async function loadSaleLotSwapPreview(
   );
 
   const destSelect =
-    'id, status, price, sale_id, contract_id, project_id, block_name, name, number, lot_number, area';
+    'id, status, price, sale_id, contract_id, project_id, tenant_id, company_id, block_name, name, number, lot_number, area';
   const destFull = await admin
     .from('blocks')
     .select(destSelect)
@@ -397,7 +397,7 @@ export async function loadSaleLotSwapPreview(
     const destCore = await admin
       .from('blocks')
       .select(
-        'id, status, price, sale_id, contract_id, project_id, block_name, name, number, lot_number',
+        'id, status, price, sale_id, contract_id, project_id, tenant_id, company_id, block_name, name, number, lot_number',
       )
       .eq('project_id', projectId || '')
       .eq('status', 'Disponível')
