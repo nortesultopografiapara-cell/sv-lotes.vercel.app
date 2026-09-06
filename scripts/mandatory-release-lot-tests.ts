@@ -69,6 +69,17 @@ function testMotiveValidation() {
     }).ok === true,
     'distrato com justificativa',
   );
+  assert(
+    validateReleaseLotMotive({ motiveCode: 'inadimplencia' }).ok === false,
+    'inadimplência exige justificativa',
+  );
+  assert(
+    validateReleaseLotMotive({
+      motiveCode: 'inadimplencia',
+      motiveDetail: 'parcelas vencidas sem regularização',
+    }).ok === true,
+    'inadimplência com justificativa',
+  );
   const outro = validateReleaseLotMotive({ motiveCode: 'outro', motiveDetail: 'ab' });
   assert(outro.ok === false, 'outro curto');
   const outroOk = validateReleaseLotMotive({
@@ -571,6 +582,10 @@ function testSaleOperationsPanel() {
   assert(modal.includes('Justificativa administrativa'), 'admin exige texto');
   assert(modal.includes('Motivo / justificativa do distrato'), 'distrato exige texto');
   assert(
+    modal.includes('Motivo / justificativa da inadimplência'),
+    'inadimplência exige texto',
+  );
+  assert(
     modal.includes("{deferredOperation ? 'Fechar' : documentSuccess ? 'Concluir' : 'Cancelar'}"),
     'footer diferido / concluir',
   );
@@ -859,6 +874,55 @@ function testReleaseLotConfirmButtonUx() {
   const ux = read('lib/finance/releaseLotConfirmUx.ts');
   assert(!ux.includes('calculateSettlement'), 'UX não mexe no motor financeiro');
   assert(ux.includes('canConfirmReleaseLot({'), 'UX reutiliza canConfirmReleaseLot');
+
+  const inadimplenciaReady = {
+    ...ready,
+    motiveCode: 'inadimplencia',
+    motiveDetail: 'parcelas vencidas sem regularização',
+    inadimplenciaEligible: true,
+    inadimplenciaPolicyOk: true,
+  };
+  assert(
+    computeReleaseLotConfirmEnabled(inadimplenciaReady),
+    'inadimplência elegível habilita confirmação',
+  );
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      ...inadimplenciaReady,
+      inadimplenciaEligible: false,
+    }),
+    'sem parcela vencida desabilita confirmação',
+  );
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      ...inadimplenciaReady,
+      inadimplenciaEligible: undefined,
+    }),
+    'preview ainda sem elegibilidade desabilita',
+  );
+  assert(
+    !computeReleaseLotConfirmEnabled({
+      ...inadimplenciaReady,
+      inadimplenciaPolicyOk: false,
+    }),
+    'policy incompleta desabilita inadimplência',
+  );
+  assert(
+    computeReleaseLotConfirmEnabled(ready),
+    'Desistência permanece habilitada sem os gates de inadimplência',
+  );
+  const noDefaultNotices = buildReleaseLotConfirmFooterNotices({
+    showSettlement: true,
+    improvementsCheckOk: true,
+    needsRefundSchedule: false,
+    refundFirstDueDate: '',
+    motiveCode: 'inadimplencia',
+    inadimplenciaEligible: false,
+  });
+  assert(
+    noDefaultNotices.some((n) => n.message.includes('não possui parcelas vencidas')),
+    'aviso amigável sem inadimplência efetiva',
+  );
   console.log('OK testReleaseLotConfirmButtonUx');
 }
 

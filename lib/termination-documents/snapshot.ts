@@ -49,6 +49,7 @@ export type FrozenSettlementFinance = {
   policy_snapshot?: Record<string, unknown> | null;
   operator_user_id?: string | null;
   calculation_snapshot?: Record<string, unknown> | null;
+  receipts_snapshot?: unknown;
   reason?: string | null;
   reason_detail?: string | null;
 };
@@ -107,6 +108,28 @@ function resolveSnapshotRefundSchedule(input: {
   return undefinedRefundSchedule(input.refundInstallments);
 }
 
+function parseReceiptsSnapshotStats(raw: unknown): {
+  overdueReceiptCount: number;
+  overdueAmount: number;
+  paidReceiptCount: number;
+} {
+  const obj =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+  const overdue =
+    obj?.overdue && typeof obj.overdue === 'object'
+      ? (obj.overdue as Record<string, unknown>)
+      : {};
+  const paid =
+    obj?.paid && typeof obj.paid === 'object' ? (obj.paid as Record<string, unknown>) : {};
+  return {
+    overdueReceiptCount: num(overdue.count),
+    overdueAmount: num(overdue.amount),
+    paidReceiptCount: num(paid.count),
+  };
+}
+
 export function buildTerminationDocumentSnapshot(input: {
   settlement: FrozenSettlementFinance;
   context: TerminationDocumentContext;
@@ -150,6 +173,7 @@ export function buildTerminationDocumentSnapshot(input: {
     s.calculation_snapshot,
     agreed || 0,
   );
+  const receiptStats = parseReceiptsSnapshotStats(s.receipts_snapshot);
   const obligationResolved =
     obligation.improvementsTotal > 0 || improvementsResolved.appraisalStatus === 'COMPLETED'
       ? obligation
@@ -200,6 +224,9 @@ export function buildTerminationDocumentSnapshot(input: {
     obligation: obligationResolved,
     pendingObligationsCanceled: input.context.pendingObligationsCanceled !== false,
     reasonDetail: text(s.reason_detail),
+    overdueReceiptCount: receiptStats.overdueReceiptCount,
+    overdueAmount: receiptStats.overdueAmount,
+    paidReceiptCount: receiptStats.paidReceiptCount,
     refundSchedule: resolveSnapshotRefundSchedule({
       settlement: s,
       refundDestination,

@@ -95,8 +95,11 @@ export type TerminationDocumentSnapshot = {
   obligation: CustomerObligationBreakdown;
   pendingObligationsCanceled: boolean;
   refundSchedule: TerminationRefundSchedule;
-  /** Justificativa persistida no settlement (distrato). Ausente na Desistência homologada. */
+  /** Justificativa persistida no settlement (distrato / inadimplência). Ausente na Desistência homologada. */
   reasonDetail?: string | null;
+  overdueReceiptCount?: number;
+  overdueAmount?: number;
+  paidReceiptCount?: number;
   html: string;
   contentHash: string;
   signatureStatus: TerminationDocumentSignatureStatus;
@@ -108,7 +111,12 @@ export const DESISTENCIA_DOCUMENT_TITLE =
 export const DISTRATO_DOCUMENT_TITLE =
   'INSTRUMENTO PARTICULAR DE DISTRATO E ACERTO FINANCEIRO';
 
+export const INADIMPLENCIA_DOCUMENT_TITLE =
+  'TERMO DE RESCISÃO CONTRATUAL POR INADIMPLÊNCIA';
+
 export const SALE_DOCUMENT_TYPE_DESISTENCIA = 'DESISTENCIA';
 export const SALE_DOCUMENT_TYPE_DESISTENCIA_ASSINADO = 'DESISTENCIA_ASSINADO';
 export const SALE_DOCUMENT_TYPE_DISTRATO = 'DISTRATO';
 export const SALE_DOCUMENT_TYPE_DISTRATO_ASSINADO = 'DISTRATO_ASSINADO';
+export const SALE_DOCUMENT_TYPE_INADIMPLENCIA = 'INADIMPLENCIA';
+export const SALE_DOCUMENT_TYPE_INADIMPLENCIA_ASSINADO = 'INADIMPLENCIA_ASSINADO';

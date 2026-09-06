@@ -188,7 +188,11 @@ export function formatLotAuditEvent(row: LotAuditLogRow): FormattedLotAuditEvent
     id: row.id,
     createdAt: row.created_at,
     action,
-    actionLabel: formatLotAuditAction(action),
+    actionLabel:
+      action === 'sale_cancelled' &&
+      String(motiveRaw || '').trim() === 'inadimplencia'
+        ? 'Venda cancelada por inadimplência'
+        : formatLotAuditAction(action),
     badgeClass: ACTION_BADGE_CLASS[action] || 'bg-gray-100 text-gray-700',
     title: row.title,
     description: row.description,

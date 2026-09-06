@@ -7,7 +7,11 @@
 
 import { buildDesistenciaTermHtml } from '@/lib/termination-documents/desistenciaTemplate';
 import { buildDistratoTermHtml } from '@/lib/termination-documents/distratoTemplate';
-import { isDistratoTerminationOperation } from '@/lib/termination-documents/titles';
+import { buildInadimplenciaTermHtml } from '@/lib/termination-documents/inadimplenciaTemplate';
+import {
+  isDistratoTerminationOperation,
+  isInadimplenciaTerminationOperation,
+} from '@/lib/termination-documents/titles';
 import type { TerminationDocumentSnapshot } from '@/lib/termination-documents/types';
 
 export type TerminationDocumentHtmlBuilder = (
@@ -20,6 +24,9 @@ export function resolveTerminationDocumentHtmlBuilder(input: {
   contractModel?: string | null;
 }): TerminationDocumentHtmlBuilder {
   void input.contractModel;
+  if (isInadimplenciaTerminationOperation(input.operationType)) {
+    return buildInadimplenciaTermHtml;
+  }
   if (isDistratoTerminationOperation(input.operationType)) {
     return buildDistratoTermHtml;
   }

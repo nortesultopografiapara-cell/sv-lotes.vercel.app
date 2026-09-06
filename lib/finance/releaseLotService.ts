@@ -45,6 +45,12 @@ import {
   type ReleaseLotMotiveCode,
   type ReleaseLotPreview,
 } from '@/lib/finance/releaseLotShared';
+import {
+  INADIMPLENCIA_NO_DEFAULT_MESSAGE,
+  evaluateInadimplenciaPreconditions,
+  buildInadimplenciaDefaultSnapshot,
+  hasEffectiveInadimplencia,
+} from '@/lib/finance/inadimplenciaGuards';
 import { isCanceledBrokerCommission, isPaidBrokerCommission } from '@/lib/brokerCommission';
 import { buildTerminationSettlementPreview } from '@/lib/contract-termination/preview';
 import {
@@ -175,6 +181,22 @@ function terminationOperationSuccessMessage(
       '',
       'O lote foi liberado e o acerto financeiro permanece executado.',
       `O Instrumento nº ${documentNumber} foi congelado, mas o PDF não pôde ser gerado. Use Tentar gerar PDF.`,
+    ].join('\n');
+  }
+  if (String(motiveCode || '').trim() === 'inadimplencia') {
+    if (pdfOk) {
+      return [
+        'Inadimplência concluída com sucesso.',
+        '',
+        'Termo de Rescisão Contratual por Inadimplência',
+        `nº ${documentNumber} gerado.`,
+      ].join('\n');
+    }
+    return [
+      'Inadimplência concluída com sucesso.',
+      '',
+      'O lote foi liberado e o acerto financeiro permanece executado.',
+      `O Termo nº ${documentNumber} foi congelado, mas o PDF não pôde ser gerado. Use Tentar gerar PDF.`,
     ].join('\n');
   }
   return desistenciaSuccessMessage(documentNumber, pdfOk);
@@ -849,6 +871,8 @@ function buildPreviewFromContext(params: {
     exceptionOverride: null,
   });
 
+  const inadimplenciaSnap = buildInadimplenciaDefaultSnapshot(receipts, saleStatus);
+
   return {
     lotId: block.id,
     companyId,
@@ -873,6 +897,10 @@ function buildPreviewFromContext(params: {
     pendingReceipts: receiptSummary.pendingReceipts,
     overdueReceipts: receiptSummary.overdueReceipts,
     unpaidToCancel: receiptSummary.unpaidToCancel,
+    inadimplenciaEligible:
+      inadimplenciaSnap.overdueCount > 0 || inadimplenciaSnap.markedDefault,
+    inadimplenciaOverdueCount: inadimplenciaSnap.overdueCount,
+    inadimplenciaOverdueAmount: inadimplenciaSnap.overdueAmount,
     totalPaidAmount: receiptSummary.totalPaidAmount,
     lastPaidAt: receiptSummary.lastPaidAt,
     hasPreservedPayments: receiptSummary.hasPreservedPayments,
@@ -1694,6 +1722,18 @@ export async function executeReleaseLot(
     ? await loadSaleContext(admin, preview.saleId, preview.companyId)
     : null;
 
+  if (motive.motiveCode === 'inadimplencia') {
+    const receipts = liveCtx?.receipts || [];
+    if (!hasEffectiveInadimplencia(receipts, preview.saleStatus)) {
+      throw releaseErr(
+        INADIMPLENCIA_NO_DEFAULT_MESSAGE,
+        400,
+        'INADIMPLENCIA_NOT_DEFAULT',
+        'validate_motive',
+      );
+    }
+  }
+
   let settlementId: string | null = existingSettlement?.id || null;
   let settlementStatus: string | null = existingSettlement?.status || null;
   let calculationStatus: string | null = existingSettlement?.calculation_status || null;
@@ -1730,6 +1770,16 @@ export async function executeReleaseLot(
         operator,
       });
       preparedSettlement = prepared;
+      if (motive.motiveCode === 'inadimplencia') {
+        const gate = evaluateInadimplenciaPreconditions({
+          receipts: liveCtx.receipts,
+          saleStatus: preview.saleStatus,
+          calculationStatus: prepared.calculationStatus,
+        });
+        if (!gate.ok) {
+          throw releaseErr(gate.error, 400, gate.code, 'validate_motive');
+        }
+      }
       if (prepared.calculationStatus === 'WAITING_IMPROVEMENT_APPRAISAL') {
         throw releaseErr(
           IMPROVEMENTS_APPRAISAL_REQUIRED_MESSAGE,

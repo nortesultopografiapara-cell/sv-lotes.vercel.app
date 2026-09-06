@@ -5,6 +5,7 @@
  */
 
 import { canConfirmReleaseLot } from '@/lib/finance/releaseLotShared';
+import { INADIMPLENCIA_NO_DEFAULT_MESSAGE } from '@/lib/finance/inadimplenciaGuards';
 
 export const REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE =
   'Informe o vencimento da 1ª parcela da restituição para concluir a operação.';
@@ -35,7 +36,15 @@ export function computeReleaseLotConfirmEnabled(input: {
   refundFirstDueDate: string;
   showSettlement: boolean;
   improvementsCheckOk: boolean;
+  inadimplenciaEligible?: boolean;
+  inadimplenciaPolicyOk?: boolean;
 }): boolean {
+  if (input.motiveCode === 'inadimplencia' && input.inadimplenciaEligible !== true) {
+    return false;
+  }
+  if (input.motiveCode === 'inadimplencia' && input.inadimplenciaPolicyOk === false) {
+    return false;
+  }
   return (
     input.releaseOperation &&
     canConfirmReleaseLot({
@@ -53,7 +62,7 @@ export function computeReleaseLotConfirmEnabled(input: {
 }
 
 export type ReleaseLotConfirmFooterNotice = {
-  kind: 'improvements' | 'schedule' | 'asaas' | 'inter';
+  kind: 'improvements' | 'schedule' | 'asaas' | 'inter' | 'inadimplencia';
   message: string;
 };
 
@@ -65,8 +74,25 @@ export function buildReleaseLotConfirmFooterNotices(input: {
   refundFirstDueDate: string;
   asaasBlockedCharges?: number;
   interBlockedCharges?: number;
+  motiveCode?: string;
+  inadimplenciaEligible?: boolean;
+  inadimplenciaPolicyError?: string | null;
 }): ReleaseLotConfirmFooterNotice[] {
   const notices: ReleaseLotConfirmFooterNotice[] = [];
+  if (input.motiveCode === 'inadimplencia' && input.inadimplenciaEligible === false) {
+    notices.push({
+      kind: 'inadimplencia',
+      message: INADIMPLENCIA_NO_DEFAULT_MESSAGE,
+    });
+  } else if (
+    input.motiveCode === 'inadimplencia' &&
+    String(input.inadimplenciaPolicyError || '').trim()
+  ) {
+    notices.push({
+      kind: 'inadimplencia',
+      message: String(input.inadimplenciaPolicyError).trim(),
+    });
+  }
   if (input.showSettlement && !input.improvementsCheckOk) {
     const message = String(input.improvementsCheckError || '').trim();
     if (message) {

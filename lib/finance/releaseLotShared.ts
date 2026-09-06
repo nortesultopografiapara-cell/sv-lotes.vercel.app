@@ -460,6 +460,9 @@ export function validateReleaseLotMotive(input: {
   if (code === 'distrato' && detail.length < 3) {
     return { ok: false, error: 'Informe o motivo/justificativa do distrato.' };
   }
+  if (code === 'inadimplencia' && detail.length < 3) {
+    return { ok: false, error: 'Informe o motivo/justificativa da inadimplência.' };
+  }
   if (code === 'cancelamento_administrativo' && detail.length < 3) {
     return { ok: false, error: 'Informe a justificativa administrativa.' };
   }
@@ -705,6 +708,10 @@ export type ReleaseLotPreview = {
   pendingReceipts: number;
   overdueReceipts: number;
   unpaidToCancel: number;
+  /** Parcela vencida (status ou due_date) ou venda marcada inadimplente. */
+  inadimplenciaEligible: boolean;
+  inadimplenciaOverdueCount: number;
+  inadimplenciaOverdueAmount: number;
   totalPaidAmount: number;
   lastPaidAt: string | null;
   hasPreservedPayments: boolean;

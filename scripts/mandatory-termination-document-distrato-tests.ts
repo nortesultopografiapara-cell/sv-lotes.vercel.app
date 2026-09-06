@@ -292,7 +292,7 @@ function testHistoryAndKinds() {
 function testTemplateIsolationAndResolverHook() {
   assert(shouldGenerateTerminationDocument('distrato'), 'gera termo');
   assert(shouldGenerateTerminationDocument('desistencia'), 'desistência continua gerando');
-  assert(!shouldGenerateTerminationDocument('inadimplencia'), 'inadimplência sem termo');
+  assert(shouldGenerateTerminationDocument('inadimplencia'), 'inadimplência gera termo próprio');
   assert(!shouldGenerateTerminationDocument('erro_cadastro'), 'erro sem termo');
   assert(!shouldGenerateTerminationDocument('cancelamento_administrativo'), 'admin sem termo');
   assert(

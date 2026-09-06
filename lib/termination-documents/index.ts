@@ -1,9 +1,12 @@
 export {
   DESISTENCIA_DOCUMENT_TITLE,
   DISTRATO_DOCUMENT_TITLE,
+  INADIMPLENCIA_DOCUMENT_TITLE,
   SALE_DOCUMENT_TYPE_DESISTENCIA,
   SALE_DOCUMENT_TYPE_DISTRATO,
   SALE_DOCUMENT_TYPE_DISTRATO_ASSINADO,
+  SALE_DOCUMENT_TYPE_INADIMPLENCIA,
+  SALE_DOCUMENT_TYPE_INADIMPLENCIA_ASSINADO,
   type TerminationDocumentOperationType,
   type TerminationDocumentSnapshot,
   type TerminationDocumentStatus,
@@ -12,6 +15,7 @@ export {
   shouldGenerateTerminationDocument,
   terminationDocumentTitleForType,
   isDistratoTerminationOperation,
+  isInadimplenciaTerminationOperation,
 } from '@/lib/termination-documents/titles';
 export {
   formatSaleOperationDocumentNumber,
@@ -20,6 +24,7 @@ export {
   allocateSaleOperationDocumentNumber,
   TERMINATION_DOCUMENT_PREFIX_DESISTENCIA,
   TERMINATION_DOCUMENT_PREFIX_DISTRATO,
+  TERMINATION_DOCUMENT_PREFIX_INADIMPLENCIA,
 } from '@/lib/termination-documents/numbering';
 export {
   splitRefundInstallmentAmounts,
@@ -31,6 +36,7 @@ export {
 export { hashTerminationDocumentHtml } from '@/lib/termination-documents/hash';
 export { buildDesistenciaTermHtml } from '@/lib/termination-documents/desistenciaTemplate';
 export { buildDistratoTermHtml } from '@/lib/termination-documents/distratoTemplate';
+export { buildInadimplenciaTermHtml } from '@/lib/termination-documents/inadimplenciaTemplate';
 export { resolveTerminationDocumentHtmlBuilder } from '@/lib/termination-documents/resolveTemplate';
 export {
   buildTerminationDocumentSnapshot,

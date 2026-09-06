@@ -425,7 +425,7 @@ function testNumberingAndMigration() {
 function testTitlesAndErroCadastro() {
   assert(shouldGenerateTerminationDocument('desistencia'), 'desistência gera termo');
   assert(shouldGenerateTerminationDocument('distrato'), 'distrato gera termo próprio');
-  assert(!shouldGenerateTerminationDocument('inadimplencia'), 'inadimplência não');
+  assert(shouldGenerateTerminationDocument('inadimplencia'), 'inadimplência gera termo próprio');
   assert(!shouldGenerateTerminationDocument('erro_cadastro'), 'erro_cadastro NÃO gera termo');
   assert(!shouldGenerateTerminationDocument('cancelamento_administrativo'), 'admin não');
   assert(!showsTerminationSettlement('erro_cadastro'), 'erro sem acerto na UI');

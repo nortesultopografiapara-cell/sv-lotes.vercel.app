@@ -36,6 +36,8 @@ export const SALE_DOCUMENT_TERMINATION_TYPES = [
   'DESISTENCIA',
   'DESISTENCIA_ASSINADO',
   'DISTRATO_ASSINADO',
+  'INADIMPLENCIA',
+  'INADIMPLENCIA_ASSINADO',
 ] as const;
 
 export const SALE_DOCUMENT_TYPES_BY_CATEGORY: Record<
@@ -89,6 +91,9 @@ export const SALE_DOCUMENT_TYPE_LABELS: Record<string, string> = {
   DESISTENCIA: 'Termo de Desistência, Rescisão Contratual e Acerto Financeiro',
   DESISTENCIA_ASSINADO:
     'Termo de Desistência, Rescisão Contratual e Acerto Financeiro (assinado)',
+  INADIMPLENCIA: 'Termo de Rescisão Contratual por Inadimplência',
+  INADIMPLENCIA_ASSINADO:
+    'Termo de Rescisão Contratual por Inadimplência (assinado)',
 };
 
 export const SALE_DOCUMENT_ALLOWED_MIME_TYPES = [
@@ -159,8 +164,8 @@ export function saleOperationDocumentStatusLabel(documentType?: string | null): 
   const type = String(documentType || '')
     .trim()
     .toUpperCase();
-  if (type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO') return 'Assinado';
-  if (type === 'DESISTENCIA' || type === 'DISTRATO') return 'Gerado';
+  if (type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO' || type === 'INADIMPLENCIA_ASSINADO') return 'Assinado';
+  if (type === 'DESISTENCIA' || type === 'DISTRATO' || type === 'INADIMPLENCIA') return 'Gerado';
   if (SALE_OPERATION_GENERATED_TYPES.has(type)) return 'Gerado';
   return '—';
 }
@@ -189,14 +194,14 @@ export function isSignedTerminationDocumentType(documentType?: string | null): b
   const type = String(documentType || '')
     .trim()
     .toUpperCase();
-  return type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO';
+  return type === 'DESISTENCIA_ASSINADO' || type === 'DISTRATO_ASSINADO' || type === 'INADIMPLENCIA_ASSINADO';
 }
 
 export function isOriginalTerminationDocumentType(documentType?: string | null): boolean {
   const type = String(documentType || '')
     .trim()
     .toUpperCase();
-  return type === 'DESISTENCIA' || type === 'DISTRATO';
+  return type === 'DESISTENCIA' || type === 'DISTRATO' || type === 'INADIMPLENCIA';
 }
 
 /** Assinado primeiro; original permanece para auditoria. Não apaga DESISTENCIA. */

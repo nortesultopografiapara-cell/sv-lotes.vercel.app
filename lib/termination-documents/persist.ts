@@ -51,7 +51,7 @@ export class TerminationDocumentError extends Error {
 }
 
 const SETTLEMENT_DOC_COLUMNS =
-  'id, company_id, tenant_id, sale_id, contract_id, block_id, project_id, operation_type, status, calculation_status, total_paid, entry_amount, signal_amount, non_refundable_amount, refundable_base, retention_percent, retention_amount, agreed_refund_amount, contractual_refund_amount, refund_installments, refund_destination, improvement_status, policy_snapshot, calculation_snapshot, operator_user_id, document_number, document_status, document_id, termination_document_snapshot, document_hash, reason, reason_detail';
+  'id, company_id, tenant_id, sale_id, contract_id, block_id, project_id, operation_type, status, calculation_status, total_paid, entry_amount, signal_amount, non_refundable_amount, refundable_base, retention_percent, retention_amount, agreed_refund_amount, contractual_refund_amount, refund_installments, refund_destination, improvement_status, policy_snapshot, calculation_snapshot, receipts_snapshot, operator_user_id, document_number, document_status, document_id, termination_document_snapshot, document_hash, reason, reason_detail';
 
 export type SettlementDocumentRow = FrozenSettlementFinance & {
   tenant_id?: string | null;

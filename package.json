@@ -143,6 +143,7 @@
     "test:release-improvements": "tsx scripts/mandatory-release-improvements-tests.ts",
     "test:termination-document": "tsx scripts/mandatory-termination-document-desistencia-tests.ts",
     "test:termination-document-distrato": "tsx scripts/mandatory-termination-document-distrato-tests.ts",
+    "test:termination-document-inadimplencia": "tsx scripts/mandatory-termination-document-inadimplencia-tests.ts",
     "test:termination-document-signature": "tsx scripts/mandatory-termination-document-signature-tests.ts",
     "test:termination-signed-recovery": "tsx scripts/mandatory-termination-document-signed-recovery-tests.ts",
     "test:termination-snapshot": "tsx scripts/mandatory-termination-policy-snapshot-tests.ts",

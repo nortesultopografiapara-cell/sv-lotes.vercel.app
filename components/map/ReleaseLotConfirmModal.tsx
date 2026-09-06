@@ -49,20 +49,34 @@ import {
 import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
 import { TerminationDocumentSignatureActions } from '@/components/map/TerminationDocumentSignatureActions';
 import { SALE_DOCUMENT_TYPE_LABELS } from '@/lib/saleDocuments';
+import {
+  evaluateInadimplenciaPolicy,
+  INADIMPLENCIA_NO_DEFAULT_MESSAGE,
+} from '@/lib/finance/inadimplenciaGuards';
 import { supabase } from '@/lib/supabase';
 
 function terminationSuccessFallbackMessage(code: string): string {
-  return String(code || '').trim() === 'distrato'
-    ? 'Distrato concluído com sucesso.'
-    : 'Desistência concluída com sucesso.';
+  const key = String(code || '').trim();
+  if (key === 'distrato') return 'Distrato concluído com sucesso.';
+  if (key === 'inadimplencia') return 'Inadimplência concluída com sucesso.';
+  return 'Desistência concluída com sucesso.';
 }
 
 function terminationRetrySuccessMessage(code: string, documentNumber: string): string {
-  if (String(code || '').trim() === 'distrato') {
+  const key = String(code || '').trim();
+  if (key === 'distrato') {
     return [
       'Distrato concluído com sucesso.',
       '',
       SALE_DOCUMENT_TYPE_LABELS.DISTRATO,
+      `nº ${documentNumber} gerado.`,
+    ].join('\n');
+  }
+  if (key === 'inadimplencia') {
+    return [
+      'Inadimplência concluída com sucesso.',
+      '',
+      SALE_DOCUMENT_TYPE_LABELS.INADIMPLENCIA,
       `nº ${documentNumber} gerado.`,
     ].join('\n');
   }
@@ -313,6 +327,14 @@ export function ReleaseLotConfirmModal({
       }),
   );
 
+  const inadimplenciaPolicy = useMemo(
+    () =>
+      motiveCode === 'inadimplencia'
+        ? evaluateInadimplenciaPolicy(liveSettlement?.calculationStatus)
+        : { ok: true, error: null, code: null },
+    [liveSettlement?.calculationStatus, motiveCode],
+  );
+
   const confirmEnabled = useMemo(
     () =>
       computeReleaseLotConfirmEnabled({
@@ -328,16 +350,21 @@ export function ReleaseLotConfirmModal({
         refundFirstDueDate,
         showSettlement,
         improvementsCheckOk: improvementsCheck.ok,
+        inadimplenciaEligible:
+          motiveCode === 'inadimplencia' ? Boolean(preview?.inadimplenciaEligible) : true,
+        inadimplenciaPolicyOk: inadimplenciaPolicy.ok,
       }),
     [
       acknowledged,
       improvementsCheck.ok,
+      inadimplenciaPolicy.ok,
       loading,
       motiveCode,
       motiveDetail,
       needsRefundSchedule,
       password,
       preview?.asaasBlockedCharges,
+      preview?.inadimplenciaEligible,
       preview?.interBlockedCharges,
       refundFirstDueDate,
       releaseOperation,
@@ -355,11 +382,18 @@ export function ReleaseLotConfirmModal({
         refundFirstDueDate,
         asaasBlockedCharges: preview?.asaasBlockedCharges,
         interBlockedCharges: preview?.interBlockedCharges,
+        motiveCode,
+        inadimplenciaEligible:
+          motiveCode === 'inadimplencia' ? preview?.inadimplenciaEligible : undefined,
+        inadimplenciaPolicyError: inadimplenciaPolicy.error,
       }),
     [
       improvementsCheck,
+      inadimplenciaPolicy.error,
+      motiveCode,
       needsRefundSchedule,
       preview?.asaasBlockedCharges,
+      preview?.inadimplenciaEligible,
       preview?.interBlockedCharges,
       refundFirstDueDate,
       showSettlement,
@@ -407,6 +441,16 @@ export function ReleaseLotConfirmModal({
     if (!motive.ok) {
       setError(motive.error);
       return;
+    }
+    if (motive.motiveCode === 'inadimplencia') {
+      if (preview && preview.inadimplenciaEligible === false) {
+        setError(INADIMPLENCIA_NO_DEFAULT_MESSAGE);
+        return;
+      }
+      if (!inadimplenciaPolicy.ok) {
+        setError(inadimplenciaPolicy.error || INADIMPLENCIA_NO_DEFAULT_MESSAGE);
+        return;
+      }
     }
     if (!acknowledged) {
       setError('Marque a confirmação de ciência.');
@@ -859,6 +903,26 @@ export function ReleaseLotConfirmModal({
                         rows={2}
                         placeholder="Informe o motivo do distrato (mínimo 3 caracteres)"
                       />
+                    </div>
+                  )}
+                  {motiveCode === 'inadimplencia' && (
+                    <div className="mt-3">
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">
+                        Motivo / justificativa da inadimplência{' '}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={motiveDetail}
+                        onChange={(e) => setMotiveDetail(e.target.value)}
+                        className={FIELD_CLASS}
+                        rows={2}
+                        placeholder="Informe o motivo da inadimplência (mínimo 3 caracteres)"
+                      />
+                      {preview && preview.inadimplenciaEligible === false ? (
+                        <p className="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          {INADIMPLENCIA_NO_DEFAULT_MESSAGE}
+                        </p>
+                      ) : null}
                     </div>
                   )}
                 </section>

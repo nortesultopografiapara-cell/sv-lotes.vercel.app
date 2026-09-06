@@ -387,6 +387,16 @@ function testTerminationDocumentLinkUsesSameSale() {
   assert(impLine.includes('Benfeitorias reconhecidas'), 'detalhe de benfeitorias no evento');
   assert(impLine.includes('20.000'), 'valor reconhecido no detalhe');
   assert(
+    Boolean(
+      lotHistoryTerminationDocumentLinks({
+        action: 'sale_cancelled',
+        saleId: 'sale-homolog',
+        motiveCode: 'inadimplencia',
+      }),
+    ),
+    'inadimplência no histórico tem link do termo',
+  );
+  assert(
     lotHistoryTerminationDocumentLinks({
       action: 'sale_cancelled',
       saleId: 'sale-homolog',
