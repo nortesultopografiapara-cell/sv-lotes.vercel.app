@@ -125,6 +125,9 @@ export function mapLotSwapPreviewUserMessage(input: {
   if (code === 'SALE_ID_REQUIRED') {
     return 'Não foi possível identificar a venda.';
   }
+  if (code === 'LOT_SWAP_REASON_REQUIRED' || code === 'DESTINATION_REQUIRED') {
+    return fromServer || 'Informe o motivo da troca de lote.';
+  }
   if (code === 'LOAD_SALE_FAILED') {
     return 'Erro interno inesperado ao carregar a prévia.';
   }
@@ -167,6 +170,7 @@ export type LotSwapReceiptLike = {
   status?: string | null;
   paid_at?: string | null;
   amount?: number | string | null;
+  paid_amount?: number | string | null;
   due_date?: string | null;
 };
 

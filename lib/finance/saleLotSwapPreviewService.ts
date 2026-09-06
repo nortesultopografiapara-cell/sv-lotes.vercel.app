@@ -29,6 +29,10 @@ import {
   LOT_SWAP_CREDIT_EXCEEDS_PRICE,
   type SaleLotSwapFinancialFields,
 } from '@/lib/finance/saleLotSwap';
+import {
+  buildLotSwapFinancialPlan,
+  type LotSwapFinancialPlan,
+} from '@/lib/finance/saleLotSwapPlan';
 
 const PLATFORM_ADMIN_ROLES = new Set([
   'SUPER_ADMIN',
@@ -80,6 +84,7 @@ export type LotSwapPreviewComparison = {
   blockMessage: string | null;
   schedule: LotSwapSchedulePreview;
   destination: LotSwapBlockSnapshot;
+  plan: LotSwapFinancialPlan;
 };
 
 export type LotSwapPreviewPayload = {
@@ -343,22 +348,32 @@ export async function loadSaleLotSwapPreview(
     if (!byId.error && byId.data) contract = byId.data as Record<string, unknown>;
   }
 
-  const receiptsQuery = await admin
+  let receiptRows: LotSwapReceiptLike[] | null = null;
+  const receiptsFull = await admin
     .from('finance_receipts')
-    .select('id, installment_number, status, paid_at, amount, due_date')
+    .select('id, installment_number, status, paid_at, amount, paid_amount, due_date')
     .eq('sale_id', saleId);
-  if (receiptsQuery.error) {
-    console.error(
-      '[lot-swap preview] LOAD_FINANCE_FAILED',
-      receiptsQuery.error.message,
-    );
-    throw new LotSwapPreviewError(
-      'Erro ao carregar dados financeiros da venda.',
-      'LOAD_FINANCE_FAILED',
-      500,
-    );
+  if (!receiptsFull.error && receiptsFull.data) {
+    receiptRows = receiptsFull.data as LotSwapReceiptLike[];
+  } else {
+    const receiptsCore = await admin
+      .from('finance_receipts')
+      .select('id, installment_number, status, paid_at, amount, due_date')
+      .eq('sale_id', saleId);
+    if (receiptsCore.error) {
+      console.error(
+        '[lot-swap preview] LOAD_FINANCE_FAILED',
+        receiptsCore.error.message,
+      );
+      throw new LotSwapPreviewError(
+        'Erro ao carregar dados financeiros da venda.',
+        'LOAD_FINANCE_FAILED',
+        500,
+      );
+    }
+    receiptRows = (receiptsCore.data || []) as LotSwapReceiptLike[];
   }
-  const receipts = (receiptsQuery.data || []) as LotSwapReceiptLike[];
+  const receipts = receiptRows;
   const paid = sumLotSwapPaidAmount(receipts);
   const oldSalePrice = money2(
     sale.agreed_price ?? sale.lot_price ?? sale.total_value ?? origin.price,
@@ -403,6 +418,17 @@ export async function loadSaleLotSwapPreview(
     .order('installment_number', { ascending: true });
   const balloons = balloonsQuery.error ? [] : balloonsQuery.data || [];
 
+  const asaasQuery = await admin
+    .from('company_asaas_charges')
+    .select('id, installment_id, status')
+    .eq('sale_id', saleId);
+  const asaasCharges = asaasQuery.error ? [] : asaasQuery.data || [];
+  const interQuery = await admin
+    .from('bank_charges')
+    .select('id, finance_receipt_id, status')
+    .eq('sale_id', saleId);
+  const interCharges = interQuery.error ? [] : interQuery.data || [];
+
   const correctionLabel = formatInstallmentCorrectionLabel(sale.installment_correction_type);
 
   let comparison: LotSwapPreviewComparison | null = null;
@@ -423,6 +449,18 @@ export async function loadSaleLotSwapPreview(
       newLotPrice: destination.price,
       appropriatedToAcquisitionPrice: paid.totalPaid,
     });
+    const plan = buildLotSwapFinancialPlan({
+      oldSalePrice,
+      newLotPrice: destination.price,
+      receipts,
+      balloons,
+      asaasCharges,
+      interCharges,
+      correctionType: text(sale.installment_correction_type),
+      correctionLabel,
+      financialAccountId: text(sale.financial_account_id),
+      financialAccountName: text((account as { name?: string } | null)?.name),
+    });
     comparison = {
       financials: financials.fields,
       blocked: financials.blocked,
@@ -438,6 +476,7 @@ export async function loadSaleLotSwapPreview(
         correctionLabel,
       }),
       destination,
+      plan,
     };
   }
 

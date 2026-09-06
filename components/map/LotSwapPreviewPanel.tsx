@@ -4,8 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, Info, Loader2 } from 'lucide-react';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import type { LotSwapPreviewPayload } from '@/lib/finance/saleLotSwapPreviewService';
-import { LOT_SWAP_SCHEDULE_PREVIEW_NOTICE } from '@/lib/finance/saleLotSwap';
 import { mapLotSwapPreviewUserMessage } from '@/lib/finance/saleLotSwapPreview';
+import {
+  LOT_SWAP_PLAN_NOTICE,
+  LOT_SWAP_REASON_MIN_LENGTH,
+  type LotSwapFinancialPlan,
+} from '@/lib/finance/saleLotSwapPlan';
+import type { LotSwapPreparedPlan } from '@/lib/finance/saleLotSwapPlanService';
 
 function money(value: number | null | undefined): string {
   return formatCurrencyBRL(Number(value) || 0) || 'R$ 0,00';
@@ -26,6 +31,59 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PlanSummary({ plan }: { plan: LotSwapFinancialPlan }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Plano financeiro completo
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <SummaryCard label="Parcelas pagas (preservar)" value={String(plan.receipts.preserve.length)} />
+        <SummaryCard label="Parcelas futuras (cancelar depois)" value={String(plan.receipts.cancel.length)} />
+        <SummaryCard label="Novas parcelas planejadas" value={String(plan.receipts.create.length)} />
+        <SummaryCard label="Novo saldo planejado" value={money(plan.financials.new_balance)} />
+        <SummaryCard
+          label="1º vencimento novo"
+          value={plan.schedule.firstFutureDueDate || '—'}
+        />
+        <SummaryCard label="Correção" value={plan.schedule.correctionLabel || '—'} />
+        <SummaryCard
+          label="Conta financeira"
+          value={plan.schedule.financialAccountName || '—'}
+        />
+        <SummaryCard label="Balões (snapshot)" value={String(plan.balloons.length)} />
+        <SummaryCard
+          label="Cobranças Asaas abertas"
+          value={String(plan.charges.asaasOpen.length)}
+        />
+        <SummaryCard
+          label="Cobranças Asaas pagas"
+          value={String(plan.charges.asaasPaid.length)}
+        />
+        <SummaryCard
+          label="Cobranças Inter abertas"
+          value={String(plan.charges.interOpen.length)}
+        />
+        <SummaryCard
+          label="Cobranças Inter pagas"
+          value={String(plan.charges.interPaid.length)}
+        />
+      </div>
+      {plan.receipts.create.length > 0 ? (
+        <ul className="text-xs text-slate-600 space-y-1">
+          {plan.receipts.create.map((item) => (
+            <li key={`new-${item.installmentNumber}`}>
+              Nova parcela {item.installmentNumber}: {money(item.amount)}
+              {item.dueDate ? ` · ${item.dueDate}` : ''}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="text-xs text-slate-500">{plan.notice}</p>
+    </div>
+  );
+}
+
 export function LotSwapPreviewPanel({
   saleId,
   onClose,
@@ -38,6 +96,9 @@ export function LotSwapPreviewPanel({
   const [error, setError] = useState('');
   const [toBlockId, setToBlockId] = useState('');
   const [payload, setPayload] = useState<LotSwapPreviewPayload | null>(null);
+  const [reason, setReason] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [prepared, setPrepared] = useState<LotSwapPreparedPlan | null>(null);
 
   const load = useCallback(
     async (destId?: string) => {
@@ -70,6 +131,7 @@ export function LotSwapPreviewPanel({
         }
         setPayload(data.preview);
         if (selected) setToBlockId(selected);
+        setPrepared(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar a prévia.');
       } finally {
@@ -84,6 +146,48 @@ export function LotSwapPreviewPanel({
     void load();
   }, [load]);
 
+  const confirmPlan = useCallback(async () => {
+    setConfirming(true);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/sales/${encodeURIComponent(saleId)}/lot-swap/plan`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toBlockId,
+            reason,
+            execute: false,
+          }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        prepared?: LotSwapPreparedPlan;
+        code?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.success || !data.prepared) {
+        throw new Error(
+          mapLotSwapPreviewUserMessage({
+            status: res.status,
+            code: data.code,
+            message: data.message,
+            error: data.error,
+          }),
+        );
+      }
+      setPrepared(data.prepared);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao confirmar o plano.');
+    } finally {
+      setConfirming(false);
+    }
+  }, [reason, saleId, toBlockId]);
+
   const current = payload?.current;
   const comparison = payload?.comparison;
   const originLabel = current
@@ -95,11 +199,12 @@ export function LotSwapPreviewPanel({
       <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
         <p className="text-sm font-semibold text-indigo-950 mb-1 inline-flex items-center gap-2">
           <Info className="w-4 h-4 shrink-0" />
-          Troca de lote — simulação (sem gravar)
+          Troca de lote — plano financeiro (sem executar)
         </p>
         <p className="text-sm text-indigo-900 leading-snug">
-          O comprador permanece na mesma venda. Nenhum lote, parcela, contrato ou
-          cobrança será alterado nesta etapa.
+          O comprador permanece na mesma venda. Confirmar o plano grava somente
+          o registro CALCULATED. Nenhum lote, parcela, contrato ou cobrança será
+          alterado nesta etapa.
         </p>
       </div>
 
@@ -240,52 +345,46 @@ export function LotSwapPreviewPanel({
                   <div>{comparison.blockMessage}</div>
                 </div>
               ) : (
-                <div className="rounded-xl border border-slate-200 p-4 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Cronograma preliminar
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <SummaryCard
-                      label="Parcelas futuras atuais"
-                      value={String(comparison.schedule.futureInstallmentCount)}
-                    />
-                    <SummaryCard
-                      label="Novo saldo"
-                      value={money(comparison.schedule.newBalance)}
-                    />
-                    <SummaryCard
-                      label="Valor médio estimado"
-                      value={
-                        comparison.schedule.estimatedAverageAmount != null
-                          ? money(comparison.schedule.estimatedAverageAmount)
-                          : '—'
-                      }
-                    />
-                    <SummaryCard
-                      label="Primeira data futura"
-                      value={comparison.schedule.firstFutureDueDate || '—'}
-                    />
-                    <SummaryCard
-                      label="Correção"
-                      value={comparison.schedule.correctionLabel || '—'}
-                    />
-                    <SummaryCard
-                      label="Balões existentes"
-                      value={String(comparison.schedule.balloons.length)}
-                    />
-                  </div>
-                  {comparison.schedule.balloons.length > 0 ? (
-                    <ul className="text-xs text-slate-600 space-y-1">
-                      {comparison.schedule.balloons.map((b) => (
-                        <li key={`${b.installmentNumber}-${b.dueDate || ''}`}>
-                          Parcela {b.installmentNumber}: {money(b.additionalAmount)}
-                          {b.dueDate ? ` · ${b.dueDate}` : ''}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <p className="text-xs text-slate-500">{LOT_SWAP_SCHEDULE_PREVIEW_NOTICE}</p>
-                </div>
+                <>
+                  <PlanSummary plan={comparison.plan} />
+                  {prepared ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 space-y-1">
+                      <p className="font-semibold">Plano confirmado (CALCULATED)</p>
+                      <p>Registro {prepared.swapId}. A venda e os lotes continuam iguais.</p>
+                      <p className="text-xs">
+                        Motivo: {prepared.reason}. Execução da troca não foi iniciada.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+                      <label className="block">
+                        <span className="text-sm font-semibold text-slate-700">
+                          Motivo da troca <span className="text-red-500">*</span>
+                        </span>
+                        <textarea
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          rows={3}
+                          className="form-input-light mt-1 w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="Descreva o motivo da substituição de unidade."
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={
+                          confirming ||
+                          reason.trim().length < LOT_SWAP_REASON_MIN_LENGTH
+                        }
+                        onClick={() => void confirmPlan()}
+                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:bg-slate-300"
+                      >
+                        {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        Confirmar plano (sem executar)
+                      </button>
+                      <p className="text-xs text-slate-500">{LOT_SWAP_PLAN_NOTICE}</p>
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : null}
@@ -294,7 +393,9 @@ export function LotSwapPreviewPanel({
 
       {onClose ? (
         <p className="text-xs text-slate-500">
-          Nenhuma alteração será gravada agora. Use Fechar para voltar ao mapa.
+          {prepared
+            ? 'Plano congelado. Venda, lotes, parcelas, contrato e cobranças permanecem iguais. Use Fechar para voltar ao mapa.'
+            : 'A confirmação grava só o plano CALCULATED. Use Fechar para voltar ao mapa.'}
         </p>
       ) : null}
     </section>
