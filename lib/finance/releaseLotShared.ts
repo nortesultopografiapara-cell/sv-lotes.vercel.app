@@ -18,8 +18,10 @@ export const RELEASE_LOT_MOTIVE_OPTIONS = [
 export type ReleaseLotMotiveCode = (typeof RELEASE_LOT_MOTIVE_OPTIONS)[number]['value'];
 
 /**
- * Operações exibidas no painel da venda.
+ * Catálogo de operações da venda (labels + histórico).
  * `outro` permanece no backend (RELEASE_LOT_MOTIVE_OPTIONS), mas não entra na UI.
+ * `erro_cadastro` permanece no catálogo/histórico e no POST /release, mas não é mais oferecido como card.
+ * Correção cadastral deve usar Editar Venda — não encerrar a venda.
  * `transferencia_titularidade` é só UI nesta etapa — não é motivo de /release.
  */
 export type SaleOperationUiCode =
@@ -54,6 +56,7 @@ export const SALE_OPERATION_UI_OPTIONS: SaleOperationUiOption[] = [
     label: 'Inadimplência',
     description: 'Encerramento por descumprimento das obrigações de pagamento.',
   },
+  // Catálogo legado: não entra em SALE_OPERATION_UI_GROUPS (correção cadastral = Editar Venda).
   {
     value: 'erro_cadastro',
     label: 'Erro de cadastro',
@@ -91,7 +94,6 @@ export const SALE_OPERATION_UI_GROUPS: Array<{
       'desistencia',
       'distrato',
       'inadimplencia',
-      'erro_cadastro',
       'cancelamento_administrativo',
     ],
   },

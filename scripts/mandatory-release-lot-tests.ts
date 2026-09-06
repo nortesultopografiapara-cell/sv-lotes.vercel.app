@@ -27,6 +27,7 @@ import {
   RELEASE_LOT_MOTIVE_OPTIONS,
   SALE_OPERATION_UI_GROUPS,
   SALE_OPERATION_UI_OPTIONS,
+  saleOperationUiOption,
   showsTerminationSettlement,
   resolveBlockLotLabel,
   resolveBlockQuadraLabel,
@@ -93,8 +94,17 @@ function testMotiveValidation() {
   const grouped = SALE_OPERATION_UI_GROUPS.flatMap((g) => g.codes);
   assert(
     grouped.join(',') ===
-      'desistencia,distrato,inadimplencia,erro_cadastro,cancelamento_administrativo,troca_lote,transferencia_titularidade',
-    'painel visual tem 7 operações sem Outro',
+      'desistencia,distrato,inadimplencia,cancelamento_administrativo,troca_lote,transferencia_titularidade',
+    'painel visual oferece 6 operações (sem Outro e sem Erro de cadastro)',
+  );
+  assert(!grouped.includes('erro_cadastro'), 'erro_cadastro fora da oferta visual');
+  assert(
+    validateReleaseLotMotive({ motiveCode: 'erro_cadastro' }).ok === true,
+    'backend ainda aceita erro_cadastro legado',
+  );
+  assert(
+    saleOperationUiOption('erro_cadastro')?.label === 'Erro de cadastro',
+    'label legado de erro de cadastro continua legível',
   );
   assert(RELEASE_LOT_MOTIVE_GROUPS === SALE_OPERATION_UI_GROUPS, 'alias visual');
   console.log('OK testMotiveValidation');
@@ -455,28 +465,45 @@ function testReleaseLotModalConfirmRules() {
 
 function testSaleOperationsPanel() {
   const labels = SALE_OPERATION_UI_OPTIONS.map((o) => o.label);
-  assert(SALE_OPERATION_UI_OPTIONS.length === 7, '7 cards');
+  const offered = SALE_OPERATION_UI_GROUPS.flatMap((g) =>
+    SALE_OPERATION_UI_OPTIONS.filter((o) => g.codes.includes(o.value)).map((o) => o.label),
+  );
+  assert(SALE_OPERATION_UI_OPTIONS.length === 7, 'catálogo interno com 7 códigos (inclui legado)');
   assert(labels.includes('Desistência do cliente'), 'desistência');
   assert(labels.includes('Distrato'), 'distrato');
   assert(labels.includes('Inadimplência'), 'inadimplência');
-  assert(labels.includes('Erro de cadastro'), 'erro');
+  assert(labels.includes('Erro de cadastro'), 'label legado permanece no catálogo');
   assert(labels.includes('Cancelamento administrativo'), 'admin');
   assert(labels.includes('Troca de lote'), 'troca');
   assert(labels.includes('Transferência de titularidade'), 'titularidade');
   assert(!labels.includes('Outro'), 'Outro fora da UI');
   assert(
-    !SALE_OPERATION_UI_OPTIONS.some((o) => o.value === 'outro'),
+    !SALE_OPERATION_UI_OPTIONS.some((o) => String(o.value) === 'outro'),
     'código outro fora do painel',
   );
+  assert(
+    offered.join(',') ===
+      'Desistência do cliente,Distrato,Inadimplência,Cancelamento administrativo,Troca de lote,Transferência de titularidade',
+    'cards oferecidos sem Erro de cadastro',
+  );
+  assert(!offered.includes('Erro de cadastro'), 'card Erro de cadastro não é oferecido');
   assert(
     SALE_OPERATION_UI_OPTIONS.some((o) => o.supportLabel === 'Venda de ágio / cessão'),
     'apoio discreto de ágio',
   );
 
   assert(SALE_OPERATION_UI_GROUPS[0].id === 'encerrar_venda', 'grupo encerrar');
-  assert(SALE_OPERATION_UI_GROUPS[0].codes.length === 5, '5 encerrar');
+  assert(SALE_OPERATION_UI_GROUPS[0].codes.length === 4, '4 encerrar');
+  assert(
+    SALE_OPERATION_UI_GROUPS[0].codes.join(',') ===
+      'desistencia,distrato,inadimplencia,cancelamento_administrativo',
+    'encerrar sem erro de cadastro',
+  );
   assert(SALE_OPERATION_UI_GROUPS[1].id === 'alterar_venda', 'grupo alterar');
-  assert(SALE_OPERATION_UI_GROUPS[1].codes.join(',') === 'troca_lote,transferencia_titularidade');
+  assert(
+    SALE_OPERATION_UI_GROUPS[1].codes.join(',') === 'troca_lote,transferencia_titularidade',
+    'alterar: troca e titularidade',
+  );
 
   assert(showsTerminationSettlement('desistencia'), 'settlement desistência');
   assert(showsTerminationSettlement('distrato'), 'settlement distrato');
