@@ -144,27 +144,39 @@ export function buildLotSwapContractFinanceContext(plan: LotSwapFinancialPlan): 
   };
 }
 
+export function hasLotSwapContractFinance(
+  snapshot: LotSwapContractFinanceSnapshot | null | undefined,
+): boolean {
+  return Boolean(snapshot);
+}
+
 export function lotSwapContractUsesContinuityPayment(
   snapshot: LotSwapContractFinanceSnapshot | null | undefined,
 ): boolean {
   return Boolean(snapshot && snapshot.total_paid > 0);
 }
 
-/** Frase compartilhada: valor já pago da mesma negociação, sem nova entrada. */
+export function lotSwapHasRemainingBalance(
+  snapshot: LotSwapContractFinanceSnapshot | null | undefined,
+): boolean {
+  return Boolean(
+    snapshot &&
+      snapshot.new_balance > 0 &&
+      snapshot.remaining_installments.length > 0,
+  );
+}
+
+/** Frase compartilhada: continuidade da mesma negociação, sem nova entrada. */
 export function buildLotSwapContinuityPaymentNarrative(input: {
   creditedPhrase: string;
   balancePhrase: string;
   hasRemaining: boolean;
+  hasCreditedPayment: boolean;
   parcelsCountPhrase?: string;
   schedulePhrase?: string;
   installmentPhrase?: string;
   firstDueHtml?: string;
 }): string {
-  const credited =
-    `do qual já se encontra pago e aproveitado nesta mesma negociação o valor de ${input.creditedPhrase}, sem constituir nova entrada`;
-  if (!input.hasRemaining) {
-    return `${credited}, não restando saldo parcelado.`;
-  }
   const parcels = input.parcelsCountPhrase
     ? ` a ser quitado em ${input.parcelsCountPhrase} parcelas mensais e consecutivas`
     : '';
@@ -174,9 +186,30 @@ export function buildLotSwapContinuityPaymentNarrative(input: {
       ? ` no valor de ${input.installmentPhrase}`
       : '';
   const due = input.firstDueHtml
-    ? `, vencendo a primeira em ${input.firstDueHtml}`
+    ? `, vencendo a primeira parcela do saldo remanescente em ${input.firstDueHtml}`
     : '';
-  return `${credited}, restando o saldo de ${input.balancePhrase},${parcels}${schedule}${due}`;
+  if (input.hasCreditedPayment) {
+    const credited =
+      `do qual já se encontra pago e aproveitado nesta mesma negociação o valor de ${input.creditedPhrase}, sem constituir nova entrada`;
+    if (!input.hasRemaining) {
+      return `${credited}, não restando saldo parcelado.`;
+    }
+    return `${credited}, restando o saldo de ${input.balancePhrase},${parcels}${schedule}${due}`;
+  }
+  if (!input.hasRemaining) {
+    return `sem nova entrada, não restando saldo parcelado.`;
+  }
+  return `sem nova entrada, restando o saldo de ${input.balancePhrase},${parcels}${schedule}${due}`;
+}
+
+/** Item 8 ARAGUAIA/MUNDO_NOVO: restituição sem regime jurídico de entrada inexistente. */
+export function buildLotSwapAraguaiaItem8TailHtml(): string {
+  return 'não havendo nova entrada neste instrumento, os valores já pagos e aproveitados nesta mesma negociação submetem-se a esta mesma regra de restituição, sem destinação autônoma de entrada.';
+}
+
+/** Alínea B de rescisão: primeira prestação da obrigação remanescente após a troca. */
+export function buildLotSwapAraguaiaRescissionLetterBHtml(): string {
+  return `<strong>B</strong> – O não pagamento da primeira parcela do saldo remanescente em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`;
 }
 
 export function buildLotSwapPadraoClauseQuartaHtml(input: {
@@ -193,19 +226,22 @@ export function buildLotSwapPadraoClauseQuartaHtml(input: {
   const remaining = input.snapshot.remaining_installments;
   const schedule = buildLotSwapRemainingSchedulePhrase(remaining);
   const count = remaining.length;
+  const hasRemaining = lotSwapHasRemainingBalance(input.snapshot);
   const narrative = buildLotSwapContinuityPaymentNarrative({
     creditedPhrase: `<strong>${credited}</strong>`,
     balancePhrase: `<strong>${balance}</strong>`,
-    hasRemaining: count > 0 && input.snapshot.new_balance > 0,
-    parcelsCountPhrase: count > 0 ? `<strong>${count}</strong>` : undefined,
-    schedulePhrase: schedule || undefined,
-    firstDueHtml: input.dataPrimeiraParcelaFmt
-      ? `<strong>${input.dataPrimeiraParcelaFmt}</strong>`
-      : undefined,
+    hasRemaining,
+    hasCreditedPayment: lotSwapContractUsesContinuityPayment(input.snapshot),
+    parcelsCountPhrase: hasRemaining ? `<strong>${count}</strong>` : undefined,
+    schedulePhrase: hasRemaining ? schedule || undefined : undefined,
+    firstDueHtml:
+      hasRemaining && input.dataPrimeiraParcelaFmt
+        ? `<strong>${input.dataPrimeiraParcelaFmt}</strong>`
+        : undefined,
   });
   const last =
-    count > 1 && input.dataUltimaParcelaFmt
-      ? ` A última parcela vence em <strong>${input.dataUltimaParcelaFmt}</strong>.`
+    hasRemaining && count > 1 && input.dataUltimaParcelaFmt
+      ? ` A última parcela do saldo remanescente vence em <strong>${input.dataUltimaParcelaFmt}</strong>.`
       : '';
   return `<p style="margin-bottom: 0;">
                     <strong>Cláusula Quarta:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR o valor de <strong>${input.valorTotalFmt} (${input.valorTotalExtenso})</strong>, ${narrative}.${last}${taxes}
@@ -220,12 +256,14 @@ export function buildLotSwapAraguaiaStyleItem1Html(input: {
   schedulePhrase: string;
   firstDueHtml: string;
   reajusteSuffix: string;
+  hasCreditedPayment: boolean;
 }): string {
   const hasRemaining = Boolean(String(input.schedulePhrase || '').trim());
   const narrative = buildLotSwapContinuityPaymentNarrative({
     creditedPhrase: input.creditedPhrase,
     balancePhrase: input.balancePhrase,
     hasRemaining,
+    hasCreditedPayment: input.hasCreditedPayment,
     parcelsCountPhrase: hasRemaining ? input.parcelsCountPhrase : undefined,
     schedulePhrase: input.schedulePhrase || undefined,
     firstDueHtml: hasRemaining ? input.firstDueHtml : undefined,

@@ -193,6 +193,44 @@ function generateSwapHtml(input: {
   });
 }
 
+function generateNormalHtml(input: {
+  contractModel: string;
+  tenant?: Record<string, unknown>;
+  project?: Record<string, unknown>;
+  companyName?: string;
+}) {
+  const tenant = {
+    contract_model: input.contractModel,
+    razao_social: input.companyName || 'Empresa Venda Normal LTDA',
+    name: input.companyName || 'Empresa Venda Normal LTDA',
+    cnpj: '57590706000178',
+    address: 'Rua Teste, 100',
+    city: 'Parauapebas',
+    state: 'PA',
+    ...input.tenant,
+  };
+  const project = {
+    name: 'Empreendimento Normal',
+    city: 'Parauapebas',
+    uf: 'PA',
+    contract_model: input.contractModel,
+    ...input.project,
+  };
+  return generateContractHTML({
+    tenant,
+    customer: CUSTOMER,
+    project,
+    block: BLOCK,
+    sale: staleSaleFinance({ total_value: 100, agreed_price: 100 }),
+    financeReceipts: [
+      { installment_number: 0, amount: 20, due_date: '2026-08-10' },
+      { installment_number: 1, amount: 26.67, due_date: '2026-09-10' },
+      { installment_number: 2, amount: 26.67, due_date: '2026-10-10' },
+    ],
+    balloonAddons: [],
+  });
+}
+
 function assertHomologFinance(html: string, label: string) {
   const text = norm(html);
   assert(text.includes('50,00'), `${label}: valor do novo lote`);
@@ -211,6 +249,60 @@ function assertHomologFinance(html: string, label: string) {
     !/2 parcelas iguais[^.]{0,80}26,67/i.test(text),
     `${label}: não reapresenta 2 x 26,67`,
   );
+}
+
+function assertSwapWithoutPhantomEntry(
+  html: string,
+  label: string,
+  opts: { hasCredited: boolean; hasRemaining: boolean },
+) {
+  const text = norm(html);
+  assert(
+    !text.includes('exceto a entrada que será revertida'),
+    `${label}: sem reversão total de entrada inexistente`,
+  );
+  assert(
+    !/mediante uma entrada no valor de/i.test(text),
+    `${label}: item 1 sem nova entrada`,
+  );
+  assert(
+    !text.includes('pagos a título de entrada'),
+    `${label}: sem título de entrada sobre o histórico`,
+  );
+  assert(
+    !text.includes('Sendo a primeira parcela para o dia'),
+    `${label}: sem primeira parcela de venda nova`,
+  );
+  assert(
+    !text.includes('o valor pago a título de sinal não possui natureza de entrada'),
+    `${label}: histórico não é tratado como sinal novo`,
+  );
+  assert(
+    !text.includes('e o pagamento do sinal, o(a) COMPRADOR(A) recebe a posse'),
+    `${label}: posse não depende de novo sinal`,
+  );
+  if (opts.hasRemaining) {
+    assert(
+      text.includes('primeira parcela do saldo remanescente'),
+      `${label}: primeira parcela = saldo remanescente`,
+    );
+  } else {
+    assert(
+      !text.includes('O não pagamento da primeira parcela'),
+      `${label}: sem rescisão por primeira parcela sem saldo`,
+    );
+  }
+  if (opts.hasCredited) {
+    assert(
+      text.includes('pago e aproveitado') || text.includes('já pagos e aproveitados'),
+      `${label}: histórico como valor já pago/aproveitado`,
+    );
+  } else {
+    assert(
+      !text.includes('já se encontra pago e aproveitado'),
+      `${label}: sem crédito inventado no item financeiro`,
+    );
+  }
 }
 
 function testPlanSnapshotMatchesHomolog() {
@@ -251,6 +343,7 @@ function testPadraoClauseAndQuadro() {
   assert(text.includes('pago e aproveitado'), 'PADRAO: continuidade');
   assert(text.includes('46,67'), 'PADRAO: crédito');
   assert(text.includes('3,33'), 'PADRAO: saldo');
+  assert(text.includes('primeira parcela do saldo remanescente'), 'PADRAO: primeira do saldo');
   assert(!text.includes('entrada de'), 'PADRAO: sem nova entrada');
   assert(!text.includes('26,67'), 'PADRAO cláusula sem 26,67');
 
@@ -260,6 +353,7 @@ function testPadraoClauseAndQuadro() {
   const quadro = norm(
     require('../lib/saleContractPaymentSummary').buildSaleContractPaymentSummaryHtml(breakdown),
   );
+  assert(breakdown.hasLotSwapFinance, 'quadro marca troca');
   assert(breakdown.lotSwapUsesContinuity, 'quadro marca continuidade');
   assert(breakdown.entryAmount === 0, 'quadro não usa entrada 20');
   assert(breakdown.installmentBalance === 3.33, 'quadro saldo 3,33');
@@ -271,6 +365,7 @@ function testPadraoClauseAndQuadro() {
 function testModelsHomologCase() {
   const padrao = generateSwapHtml({ contractModel: 'PADRAO' });
   assertHomologFinance(padrao, 'PADRAO');
+  assertSwapWithoutPhantomEntry(padrao, 'PADRAO', { hasCredited: true, hasRemaining: true });
   assert(norm(padrao).includes('pago e aproveitado'), 'PADRAO narrativa');
 
   const araguaia = generateSwapHtml({
@@ -279,8 +374,13 @@ function testModelsHomologCase() {
     project: { name: 'Chacreamento Araguaia', contract_model: 'ARAGUAIA' },
   });
   assertHomologFinance(araguaia, 'ARAGUAIA');
+  assertSwapWithoutPhantomEntry(araguaia, 'ARAGUAIA', { hasCredited: true, hasRemaining: true });
   assert(norm(araguaia).includes('pago e aproveitado'), 'ARAGUAIA narrativa');
   assert(!/entrada no valor de[^.]{0,40}20,00/i.test(norm(araguaia)), 'ARAGUAIA sem entrada 20');
+  assert(
+    norm(araguaia).includes('sem destinação autônoma de entrada'),
+    'ARAGUAIA item 8 sem regime de entrada',
+  );
 
   const recanto = generateSwapHtml({
     contractModel: 'RECANTO_PRIMAVERA',
@@ -288,9 +388,14 @@ function testModelsHomologCase() {
     project: { name: 'Recanto Primavera', contract_model: 'RECANTO_PRIMAVERA' },
   });
   assertHomologFinance(recanto, 'RECANTO_PRIMAVERA');
+  assertSwapWithoutPhantomEntry(recanto, 'RECANTO_PRIMAVERA', {
+    hasCredited: true,
+    hasRemaining: true,
+  });
   assert(norm(recanto).includes('pago e aproveitado'), 'RECANTO narrativa');
   assert(norm(recanto).includes('VALOR JÁ PAGO/APROVEITADO'), 'RECANTO quadro da troca');
   assert(!norm(recanto).includes('>SINAL<'), 'RECANTO não trata o pago como sinal novo');
+  assert(norm(recanto).includes('permanece na posse'), 'RECANTO posse de continuidade');
 
   const mundo = generateSwapHtml({
     contractModel: 'MUNDO_NOVO',
@@ -305,24 +410,39 @@ function testModelsHomologCase() {
     },
   });
   assertHomologFinance(mundo, 'MUNDO_NOVO');
+  assertSwapWithoutPhantomEntry(mundo, 'MUNDO_NOVO', { hasCredited: true, hasRemaining: true });
   assert(norm(mundo).includes('pago e aproveitado'), 'MUNDO_NOVO narrativa');
+  assert(
+    norm(mundo).includes('sem destinação autônoma de entrada'),
+    'MUNDO_NOVO item 8 sem regime de entrada',
+  );
   console.log('OK testModelsHomologCase');
 }
 
 function testNewLotMoreExpensive() {
   const plan = homologPlan({ newLotPrice: 150 });
-  const html = norm(generateSwapHtml({ contractModel: 'ARAGUAIA', plan }));
-  assert(html.includes('150,00'), 'lote mais caro');
-  assert(html.includes('46,67'), 'crédito preservado');
-  assert(html.includes('103,33'), 'saldo maior');
-  assert(!html.includes('26,67'), 'sem parcela antiga');
+  const html = generateSwapHtml({ contractModel: 'ARAGUAIA', plan });
+  const text = norm(html);
+  assert(text.includes('150,00'), 'lote mais caro');
+  assert(text.includes('46,67'), 'crédito preservado');
+  assert(text.includes('103,33'), 'saldo maior');
+  assert(!text.includes('26,67'), 'sem parcela antiga');
+  assertSwapWithoutPhantomEntry(html, 'lote mais caro', { hasCredited: true, hasRemaining: true });
   console.log('OK testNewLotMoreExpensive');
 }
 
 function testNewLotCheaper() {
-  const html = norm(generateSwapHtml({ contractModel: 'PADRAO', plan: homologPlan({ newLotPrice: 50 }) }));
-  assert(html.includes('50,00'), 'lote mais barato');
-  assert(html.includes('3,33'), 'saldo menor');
+  const html = generateSwapHtml({
+    contractModel: 'PADRAO',
+    plan: homologPlan({ newLotPrice: 50 }),
+  });
+  const text = norm(html);
+  assert(text.includes('50,00'), 'lote mais barato');
+  assert(text.includes('3,33'), 'saldo menor');
+  assertSwapWithoutPhantomEntry(html, 'lote mais barato', {
+    hasCredited: true,
+    hasRemaining: true,
+  });
   console.log('OK testNewLotCheaper');
 }
 
@@ -348,15 +468,21 @@ function testNoPaidInstallments() {
     ],
     asOf: '2026-09-06',
   });
-  const html = norm(generateSwapHtml({ contractModel: 'ARAGUAIA', plan }));
+  const html = generateSwapHtml({ contractModel: 'ARAGUAIA', plan });
+  const text = norm(html);
   assert(plan.financials.total_paid === 0, 'nada pago');
-  assert(!html.includes('pago e aproveitado'), 'sem narrativa de continuidade');
-  assert(!html.includes('46,67'), 'sem crédito inventado');
+  assert(!text.includes('46,67'), 'sem crédito inventado');
+  assertSwapWithoutPhantomEntry(html, 'sem parcelas pagas', {
+    hasCredited: false,
+    hasRemaining: true,
+  });
+  assert(text.includes('sem nova entrada'), 'ARAGUAIA sem entrada quando nada foi pago');
   console.log('OK testNoPaidInstallments');
 }
 
 function testSeveralPaidInstallments() {
   const plan = homologPlan({
+    newLotPrice: 150,
     receipts: [
       { id: 'p0', installment_number: 0, status: 'pago', amount: 20, paid_amount: 20, due_date: '2026-06-10' },
       { id: 'p1', installment_number: 1, status: 'pago', amount: 20, paid_amount: 20, due_date: '2026-07-10' },
@@ -366,10 +492,28 @@ function testSeveralPaidInstallments() {
     ],
   });
   assert(plan.financials.total_paid === 60, 'três pagas');
-  const html = norm(generateSwapHtml({ contractModel: 'PADRAO', plan }));
-  assert(html.includes('60,00'), 'crédito das várias pagas');
-  assert(html.includes('pago e aproveitado'), 'continuidade com várias pagas');
+  assert(plan.financials.new_balance > 0, 'ainda há saldo após várias pagas');
+  const html = generateSwapHtml({ contractModel: 'PADRAO', plan });
+  const text = norm(html);
+  assert(text.includes('60,00'), 'crédito das várias pagas');
+  assert(text.includes('pago e aproveitado'), 'continuidade com várias pagas');
+  assertSwapWithoutPhantomEntry(html, 'várias pagas', { hasCredited: true, hasRemaining: true });
   console.log('OK testSeveralPaidInstallments');
+}
+
+function testZeroRemainingBalance() {
+  const plan = homologPlan({ newLotPrice: 46.67 });
+  assert(plan.financials.new_balance === 0, 'saldo zerado permitido pela regra atual');
+  assert(!plan.blocked, 'igualdade crédito=preço não bloqueia');
+  assert(plan.receipts.create.length === 0, 'sem novas parcelas');
+  const html = generateSwapHtml({ contractModel: 'ARAGUAIA', plan });
+  const text = norm(html);
+  assert(text.includes('não restando saldo parcelado'), 'item 1 saldo zerado');
+  assertSwapWithoutPhantomEntry(html, 'saldo zerado', {
+    hasCredited: true,
+    hasRemaining: false,
+  });
+  console.log('OK testZeroRemainingBalance');
 }
 
 function testCentavoRounding() {
@@ -391,6 +535,8 @@ function testMultitenantSameLogic() {
   });
   assertHomologFinance(a, 'tenant A');
   assertHomologFinance(b, 'tenant B');
+  assertSwapWithoutPhantomEntry(a, 'tenant A', { hasCredited: true, hasRemaining: true });
+  assertSwapWithoutPhantomEntry(b, 'tenant B', { hasCredited: true, hasRemaining: true });
   assert(norm(a).includes('Empresa Alfa'), 'empresa A no HTML');
   assert(norm(b).includes('Empresa Beta'), 'empresa B no HTML');
   assert(!a.includes('339327bb'), 'sem sale_id de homolog');
@@ -399,30 +545,88 @@ function testMultitenantSameLogic() {
 }
 
 function testNormalSaleUnchanged() {
-  const html = norm(
-    generateContractHTML({
-      tenant: {
-        contract_model: 'PADRAO',
-        razao_social: 'Empresa Venda Normal LTDA',
-        cnpj: '57590706000178',
-        city: 'Parauapebas',
-        state: 'PA',
-      },
-      customer: CUSTOMER,
-      project: { name: 'Empreendimento Normal', city: 'Parauapebas', uf: 'PA' },
-      block: BLOCK,
-      sale: staleSaleFinance({ total_value: 100, agreed_price: 100 }),
-      financeReceipts: [
-        { installment_number: 0, amount: 20, due_date: '2026-08-10' },
-        { installment_number: 1, amount: 26.67, due_date: '2026-09-10' },
-        { installment_number: 2, amount: 26.67, due_date: '2026-10-10' },
-      ],
+  const padrao = norm(
+    generateNormalHtml({
+      contractModel: 'PADRAO',
+      companyName: 'Empresa Venda Normal LTDA',
     }),
   );
-  assert(html.includes('entrada'), 'venda normal segue com entrada');
-  assert(html.includes('20,00'), 'entrada 20 da venda normal');
-  assert(html.includes('26,67'), 'parcelas da venda normal');
-  assert(!html.includes('pago e aproveitado'), 'venda normal sem narrativa de troca');
+  assert(padrao.includes('entrada'), 'venda normal PADRAO segue com entrada');
+  assert(padrao.includes('20,00'), 'entrada 20 da venda normal');
+  assert(padrao.includes('26,67'), 'parcelas da venda normal');
+  assert(padrao.includes('entrada de'), 'PADRAO normal: entrada de');
+  assert(padrao.includes('Sendo a primeira parcela para o dia'), 'PADRAO normal: primeira parcela');
+  assert(!padrao.includes('pago e aproveitado'), 'venda normal sem narrativa de troca');
+  assert(!padrao.includes('saldo remanescente'), 'PADRAO normal sem saldo remanescente da troca');
+
+  const araguaia = norm(
+    generateNormalHtml({
+      contractModel: 'ARAGUAIA',
+      tenant: { contract_model: 'ARAGUAIA' },
+      project: { name: 'Chacreamento Araguaia', contract_model: 'ARAGUAIA' },
+    }),
+  );
+  assert(
+    araguaia.includes('exceto a entrada que será revertida em sua totalidade'),
+    'ARAGUAIA normal: item 8 de entrada intacto',
+  );
+  assert(
+    araguaia.includes('O não pagamento da primeira parcela em até'),
+    'ARAGUAIA normal: alínea B intacta',
+  );
+  assert(
+    !araguaia.includes('primeira parcela do saldo remanescente'),
+    'ARAGUAIA normal sem redação de troca',
+  );
+  assert(araguaia.includes('mediante uma entrada no valor de'), 'ARAGUAIA normal: item 1 com entrada');
+
+  const recanto = norm(
+    generateNormalHtml({
+      contractModel: 'RECANTO_PRIMAVERA',
+      tenant: { contract_model: 'RECANTO_PRIMAVERA', name: 'Recanto Co' },
+      project: { name: 'Recanto Primavera', contract_model: 'RECANTO_PRIMAVERA' },
+    }),
+  );
+  assert(
+    recanto.includes('o valor pago a título de sinal não possui natureza de entrada'),
+    'RECANTO normal: parágrafo do sinal intacto',
+  );
+  assert(
+    recanto.includes('e o pagamento do sinal, o(a) COMPRADOR(A) recebe a posse'),
+    'RECANTO normal: posse vinculada ao sinal',
+  );
+  assert(!recanto.includes('permanece na posse'), 'RECANTO normal sem posse de continuidade');
+  assert(
+    !recanto.includes('primeira parcela do saldo remanescente'),
+    'RECANTO normal sem redação de troca',
+  );
+
+  const mundo = norm(
+    generateNormalHtml({
+      contractModel: 'MUNDO_NOVO',
+      tenant: {
+        contract_model: 'MUNDO_NOVO',
+        razao_social: 'R R NEGÓCIOS & SERVIÇOS LTDA',
+      },
+      project: {
+        name: 'Chacreamento Mundo Novo',
+        contract_model: 'MUNDO_NOVO',
+        seller_parties_json: MUNDO_NOVO_SELLERS,
+      },
+    }),
+  );
+  assert(
+    mundo.includes('exceto a entrada que será revertida em sua totalidade'),
+    'MUNDO_NOVO normal: item 8 de entrada intacto',
+  );
+  assert(
+    mundo.includes('O não pagamento da primeira parcela em até'),
+    'MUNDO_NOVO normal: alínea B intacta',
+  );
+  assert(
+    !mundo.includes('primeira parcela do saldo remanescente'),
+    'MUNDO_NOVO normal sem redação de troca',
+  );
   console.log('OK testNormalSaleUnchanged');
 }
 
@@ -459,6 +663,7 @@ testNewLotMoreExpensive();
 testNewLotCheaper();
 testNoPaidInstallments();
 testSeveralPaidInstallments();
+testZeroRemainingBalance();
 testCentavoRounding();
 testMultitenantSameLogic();
 testNormalSaleUnchanged();

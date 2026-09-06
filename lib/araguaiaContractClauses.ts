@@ -13,8 +13,12 @@ import {
 } from '@/lib/araguaiaContractQualification';
 import { formatSellerCpfDisplay } from '@/lib/projectContractSellers';
 import {
+  buildLotSwapAraguaiaItem8TailHtml,
+  buildLotSwapAraguaiaRescissionLetterBHtml,
   buildLotSwapAraguaiaStyleItem1Html,
+  hasLotSwapContractFinance,
   lotSwapContractUsesContinuityPayment,
+  lotSwapHasRemainingBalance,
 } from '@/lib/finance/saleLotSwapContractContext';
 
 const extenso = require('extenso');
@@ -262,7 +266,7 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       `E, assim como possuem, pelo presente e nos melhores termos de direito, ${V.the} prometem e se obrigam a vender o imóvel descrito na cláusula segunda deste instrumento ${B.to}, mediante as seguintes cláusulas e condições:`,
       `
       ${itemP(
-        lotSwapContractUsesContinuityPayment(ctx.lotSwapFinance)
+        hasLotSwapContractFinance(ctx.lotSwapFinance)
           ? buildLotSwapAraguaiaStyleItem1Html({
               pricePhrase: moneyPhrase(ctx.valorTotalFmt, ctx.valorTotalExtenso),
               creditedPhrase: moneyPhrase(
@@ -279,6 +283,9 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
               reajusteSuffix: `, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
                 igpmItem1,
               )}, ou outro que venha substituí-lo.`,
+              hasCreditedPayment: lotSwapContractUsesContinuityPayment(
+                ctx.lotSwapFinance,
+              ),
             })
           : `<strong>1</strong> – O preço certo e total ajustado para a presente promessa de compra e venda do imóvel descrito na cláusula segunda deste contrato é de ${moneyPhrase(
           ctx.valorTotalFmt,
@@ -330,7 +337,11 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${keepTogether(
         'araguaia-financial-item-8',
         itemP(
-          `<strong>8</strong> – Em ocorrendo a reversão do imóvel em favor ${V.of} ${V.label} por inadimplência ${B.ofPhrase} sem que tenham sido erigidas benfeitorias no imóvel, deverão ${V.the} proceder com a devolução dos valores pagos, devendo fazê-lo em tantas parcelas quantas tenham sido quitadas, cabendo-lhes o direito de reter <strong>25%</strong> (vinte e cinco por cento) do valor a ser restituído, a título de taxa de administração; exceto a entrada que será revertida em sua totalidade ${V.ao} ${V.label}.`,
+          `<strong>8</strong> – Em ocorrendo a reversão do imóvel em favor ${V.of} ${V.label} por inadimplência ${B.ofPhrase} sem que tenham sido erigidas benfeitorias no imóvel, deverão ${V.the} proceder com a devolução dos valores pagos, devendo fazê-lo em tantas parcelas quantas tenham sido quitadas, cabendo-lhes o direito de reter <strong>25%</strong> (vinte e cinco por cento) do valor a ser restituído, a título de taxa de administração; ${
+            hasLotSwapContractFinance(ctx.lotSwapFinance)
+              ? buildLotSwapAraguaiaItem8TailHtml()
+              : `exceto a entrada que será revertida em sua totalidade ${V.ao} ${V.label}.`
+          }`,
         ),
       )}
       ${itemP(
@@ -394,12 +405,21 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       ${itemP(
         `<strong>A</strong> – Vencida e não paga qualquer parcela, este compromisso será considerado rescindido <strong>90</strong> (noventa) dias após o vencimento, independentemente de notificação judicial ou extrajudicial, valendo como cláusula resolutiva expressa, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
       )}
-      ${keepTogether(
-        'araguaia-sixth-letter-b',
-        itemP(
-          `<strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
-        ),
-      )}
+      ${
+        hasLotSwapContractFinance(ctx.lotSwapFinance)
+          ? lotSwapHasRemainingBalance(ctx.lotSwapFinance)
+            ? keepTogether(
+                'araguaia-sixth-letter-b',
+                itemP(buildLotSwapAraguaiaRescissionLetterBHtml()),
+              )
+            : ''
+          : keepTogether(
+              'araguaia-sixth-letter-b',
+              itemP(
+                `<strong>B</strong> – O não pagamento da primeira parcela em até <strong>30</strong> (trinta) dias contados após seu vencimento acarretará a automática rescisão do presente contrato, valendo como cláusula resolutiva, nos termos do disposto no artigo 474 do Código Civil (Lei 10.406/2002);`,
+              ),
+            )
+      }
       ${keepTogether(
         'araguaia-sixth-letter-c',
         itemP(

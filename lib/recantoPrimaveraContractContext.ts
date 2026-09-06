@@ -40,6 +40,7 @@ import {
 } from '@/lib/saleBrokerSnapshot';
 import {
   buildLotSwapRemainingSchedulePhrase,
+  hasLotSwapContractFinance,
   lotSwapContractUsesContinuityPayment,
   readLotSwapContractFinance,
 } from '@/lib/finance/saleLotSwapContractContext';
@@ -160,6 +161,7 @@ export type RecantoPrimaveraContractContext = {
   lotParcelamentoClauseText: string;
   lotSwapCreditedFmt: string;
   lotSwapSchedulePhrase: string;
+  hasLotSwapFinance: boolean;
   lotSwapUsesContinuity: boolean;
   paymentMode: SalePaymentMode;
   isCashPayment: boolean;
@@ -812,6 +814,7 @@ export function buildRecantoPrimaveraContractContext(
     lotSwapSchedulePhrase: swapFinance
       ? buildLotSwapRemainingSchedulePhrase(swapFinance.remaining_installments)
       : '',
+    hasLotSwapFinance: hasLotSwapContractFinance(swapFinance),
     lotSwapUsesContinuity: lotSwapContractUsesContinuityPayment(swapFinance),
     paymentMode,
     isCashPayment,

@@ -84,6 +84,7 @@ export type SaleContractPaymentBreakdown = {
   singlePaymentDueFmt: string;
   singlePaymentDueLongFmt: string;
   balloonSummary?: SaleContractBalloonFinanceSummary | null;
+  hasLotSwapFinance: boolean;
   lotSwapUsesContinuity: boolean;
   lotSwapCreditedFmt: string | null;
 };
@@ -178,6 +179,7 @@ export function resolveSaleContractPaymentBreakdown(
     singlePaymentDueFmt: singlePaymentDueRaw ? singleDue.fmt : '',
     singlePaymentDueLongFmt: singlePaymentDueRaw ? singleDue.longFmt : '',
     balloonSummary,
+    hasLotSwapFinance: Boolean(swapFinance),
     lotSwapUsesContinuity: lotSwapContractUsesContinuityPayment(swapFinance),
     lotSwapCreditedFmt: swapFinance ? formatBRL(swapFinance.total_paid) : null,
   };
@@ -227,7 +229,7 @@ export function buildSaleContractPaymentSummaryHtml(
     });
   }
 
-  const rows: Array<[string, string]> = breakdown.lotSwapUsesContinuity
+  const rows: Array<[string, string]> = breakdown.hasLotSwapFinance
     ? [
         ['Valor do lote', breakdown.lotPriceFmt],
         ['Desconto concedido', breakdown.discountFmt],

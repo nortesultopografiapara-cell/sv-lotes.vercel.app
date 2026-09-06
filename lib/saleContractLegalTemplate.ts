@@ -10,7 +10,6 @@ import {
 } from '@/lib/salePaymentMode';
 import {
   buildLotSwapPadraoClauseQuartaHtml,
-  lotSwapContractUsesContinuityPayment,
   type LotSwapContractFinanceSnapshot,
 } from '@/lib/finance/saleLotSwapContractContext';
 
@@ -122,10 +121,7 @@ export function buildSaleContractClauseQuartaHtml(params: {
   const taxes =
     ' Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.';
 
-  if (
-    lotSwapContractUsesContinuityPayment(params.lotSwapSnapshot) &&
-    params.lotSwapSnapshot
-  ) {
+  if (params.lotSwapSnapshot) {
     return buildLotSwapPadraoClauseQuartaHtml({
       valorTotalFmt: params.valorTotalFmt,
       valorTotalExtenso: params.valorTotalExtenso,

@@ -108,7 +108,7 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
   }
 
   const hasBalloon = Boolean(
-    !ctx.lotSwapUsesContinuity &&
+    !ctx.hasLotSwapFinance &&
       ctx.hasBalloonInstallments &&
       ctx.balloonSummary?.hasBalloon,
   );
@@ -163,17 +163,17 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
         <thead>
           <tr>
             <th style="border: 1px solid #111; padding: 8px; text-align: center; width: 35%;">${
-              ctx.lotSwapUsesContinuity ? 'VALOR JÁ PAGO/APROVEITADO' : 'SINAL'
+              ctx.hasLotSwapFinance ? 'VALOR JÁ PAGO/APROVEITADO' : 'SINAL'
             }</th>
             <th style="border: 1px solid #111; padding: 8px; text-align: center;">${
-              ctx.lotSwapUsesContinuity ? 'SALDO REMANESCENTE' : 'SALDO PARCELADO'
+              ctx.hasLotSwapFinance ? 'SALDO REMANESCENTE' : 'SALDO PARCELADO'
             }</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${
-              ctx.lotSwapUsesContinuity ? ctx.lotSwapCreditedFmt : sinalDetail
+              ctx.hasLotSwapFinance ? ctx.lotSwapCreditedFmt : sinalDetail
             }</strong></td>
             <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong></td>
           </tr>
@@ -188,15 +188,23 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
     ? `, mediante pagamento na conta bancária indicada pelo(a) VENDEDOR(A): ${ctx.bankBoletoText}`
     : ', mediante pagamento na conta bancária indicada pelo(a) VENDEDOR(A)';
 
+  const remainingDueIntro = ctx.hasLotSwapFinance
+    ? 'O vencimento das parcelas do saldo remanescente ocorrerá mensalmente'
+    : 'O vencimento das parcelas ocorrerá mensalmente';
+  const remainingFirstDue = ctx.hasLotSwapFinance
+    ? 'com início da primeira parcela do saldo remanescente em'
+    : 'com início em';
   /** Nunca afirma valor único “cada” — parcelas podem variar por complemento do sinal e centavos. */
   const dueText =
-    ctx.dueDay && ctx.dataPrimeiraParcelaFmt
-      ? `O vencimento das parcelas ocorrerá mensalmente, todo dia <strong>${ctx.dueDay}</strong>, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
-      : ctx.dueDay
-        ? `O vencimento das parcelas ocorrerá mensalmente, todo dia <strong>${ctx.dueDay}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
-        : ctx.dataPrimeiraParcelaFmt
-          ? `O vencimento das parcelas ocorrerá mensalmente, com início em <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
-          : 'O vencimento das parcelas ocorrerá mensalmente, observando-se os valores constantes no quadro de pagamento deste contrato.';
+    ctx.hasLotSwapFinance && ctx.qtdParcelas <= 0
+      ? 'Não restam parcelas do saldo remanescente neste instrumento.'
+      : ctx.dueDay && ctx.dataPrimeiraParcelaFmt
+        ? `${remainingDueIntro}, todo dia <strong>${ctx.dueDay}</strong>, ${remainingFirstDue} <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
+        : ctx.dueDay
+          ? `${remainingDueIntro}, todo dia <strong>${ctx.dueDay}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
+          : ctx.dataPrimeiraParcelaFmt
+            ? `${remainingDueIntro}, ${remainingFirstDue} <strong>${ctx.dataPrimeiraParcelaFmt}</strong>, observando-se os valores constantes no quadro de pagamento deste contrato.`
+            : `${remainingDueIntro}, observando-se os valores constantes no quadro de pagamento deste contrato.`;
 
   if (ctx.paymentMode === 'SINGLE_FUTURE') {
     const dueLong = String(ctx.singleFutureDueLongFmt || '').trim() || '—';
@@ -241,8 +249,10 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
       ${buildPaymentTableHtml(ctx)}
       <p style="margin-bottom: 10px;">
         <strong>Parágrafo Primeiro:</strong> ${
-          ctx.signalClauseText ||
-          'Fica estabelecido que o valor pago a título de sinal não possui natureza de entrada, não sendo abatido do valor da chácara, destinando-se à confirmação do negócio.'
+          ctx.hasLotSwapFinance
+            ? 'Os valores já pagos e aproveitados nesta mesma negociação não constituem nova entrada. Permanecem aplicáveis as regras deste modelo quanto ao sinal, quando houver sinal contratado, o qual não possui natureza de entrada e não é abatido do valor da chácara.'
+            : ctx.signalClauseText ||
+              'Fica estabelecido que o valor pago a título de sinal não possui natureza de entrada, não sendo abatido do valor da chácara, destinando-se à confirmação do negócio.'
         }
       </p>
       <p style="margin-bottom: 10px;">
@@ -313,7 +323,11 @@ export function buildRecantoPrimaveraClausesHtml(
 
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 10px;">
-        <strong>CLÁUSULA QUINTA – DA POSSE E PROPRIEDADE:</strong> Com a assinatura do presente instrumento e o pagamento do sinal, o(a) COMPRADOR(A) recebe a posse direta do imóvel, com todos os direitos possessórios inerentes, limitada ao lote adquirido, sem direito a desmembramento individual do imóvel rural.
+        <strong>CLÁUSULA QUINTA – DA POSSE E PROPRIEDADE:</strong> ${
+          ctx.hasLotSwapFinance
+            ? 'Com a assinatura do presente instrumento, o(a) COMPRADOR(A) permanece na posse direta do imóvel'
+            : 'Com a assinatura do presente instrumento e o pagamento do sinal, o(a) COMPRADOR(A) recebe a posse direta do imóvel'
+        }, com todos os direitos possessórios inerentes, limitada ao lote adquirido, sem direito a desmembramento individual do imóvel rural.
       </p>
       <p style="margin-bottom: 10px;">
         O(A) COMPRADOR(A) adquire, ainda, a fração ideal correspondente ao lote no empreendimento, comprometendo-se a aguardar a regularização futura do loteamento e a documentação pertinente, quando aplicável.
