@@ -11,6 +11,8 @@ import {
   type LotSwapFinancialPlan,
 } from '@/lib/finance/saleLotSwapPlan';
 import type { LotSwapPreparedPlan } from '@/lib/finance/saleLotSwapPlanService';
+import { LOT_SWAP_EXECUTE_NOTICE } from '@/lib/finance/saleLotSwapExecute';
+import type { LotSwapExecutedResult } from '@/lib/finance/saleLotSwapExecuteService';
 
 function money(value: number | null | undefined): string {
   return formatCurrencyBRL(Number(value) || 0) || 'R$ 0,00';
@@ -99,6 +101,9 @@ export function LotSwapPreviewPanel({
   const [reason, setReason] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [prepared, setPrepared] = useState<LotSwapPreparedPlan | null>(null);
+  const [ackExecute, setAckExecute] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [executed, setExecuted] = useState<LotSwapExecutedResult | null>(null);
 
   const load = useCallback(
     async (destId?: string) => {
@@ -132,6 +137,8 @@ export function LotSwapPreviewPanel({
         setPayload(data.preview);
         if (selected) setToBlockId(selected);
         setPrepared(null);
+        setExecuted(null);
+        setAckExecute(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar a prévia.');
       } finally {
@@ -188,6 +195,48 @@ export function LotSwapPreviewPanel({
     }
   }, [reason, saleId, toBlockId]);
 
+  const executeSwap = useCallback(async () => {
+    if (!prepared?.swapId) return;
+    setExecuting(true);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/sales/${encodeURIComponent(saleId)}/lot-swap/execute`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            swapId: prepared.swapId,
+            idempotencyKey: prepared.idempotencyKey,
+          }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        executed?: LotSwapExecutedResult;
+        code?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.success || !data.executed) {
+        throw new Error(
+          mapLotSwapPreviewUserMessage({
+            status: res.status,
+            code: data.code,
+            message: data.message,
+            error: data.error,
+          }),
+        );
+      }
+      setExecuted(data.executed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao executar a troca.');
+    } finally {
+      setExecuting(false);
+    }
+  }, [prepared, saleId]);
+
   const current = payload?.current;
   const comparison = payload?.comparison;
   const originLabel = current
@@ -199,12 +248,14 @@ export function LotSwapPreviewPanel({
       <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
         <p className="text-sm font-semibold text-indigo-950 mb-1 inline-flex items-center gap-2">
           <Info className="w-4 h-4 shrink-0" />
-          Troca de lote — plano financeiro (sem executar)
+          Troca de lote — mesma venda, nova unidade
         </p>
         <p className="text-sm text-indigo-900 leading-snug">
           O comprador permanece na mesma venda. Confirmar o plano grava somente
           o registro CALCULATED. Nenhum lote, parcela, contrato ou cobrança será
-          alterado nesta etapa.
+          alterado nesta etapa. A execução atômica só ocorre depois, no botão
+          Executar troca de lote. Cobranças Asaas/Inter não são alteradas nesta
+          fase.
         </p>
       </div>
 
@@ -348,12 +399,51 @@ export function LotSwapPreviewPanel({
                 <>
                   <PlanSummary plan={comparison.plan} />
                   {prepared ? (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 space-y-1">
-                      <p className="font-semibold">Plano confirmado (CALCULATED)</p>
-                      <p>Registro {prepared.swapId}. A venda e os lotes continuam iguais.</p>
-                      <p className="text-xs">
-                        Motivo: {prepared.reason}. Execução da troca não foi iniciada.
-                      </p>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 space-y-3">
+                      <div className="space-y-1">
+                        <p className="font-semibold">Plano confirmado (CALCULATED)</p>
+                        <p>Registro {prepared.swapId}. A venda ainda não foi mutada.</p>
+                        <p className="text-xs">Motivo: {prepared.reason}.</p>
+                      </div>
+                      {executed ? (
+                        <div className="rounded-lg border border-emerald-300 bg-white p-3 space-y-1 text-emerald-950">
+                          <p className="font-semibold">Troca executada</p>
+                          <p className="text-xs">
+                            A mesma venda {executed.saleId} permanece. Contrato
+                            vigente: {executed.toContractNumber || executed.toContractId}.
+                          </p>
+                          {executed.reused ? (
+                            <p className="text-xs">Requisição repetida: a troca não foi executada de novo.</p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3 text-amber-950">
+                          <p className="text-xs leading-snug">{LOT_SWAP_EXECUTE_NOTICE}</p>
+                          <label className="flex items-start gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={ackExecute}
+                              onChange={(e) => setAckExecute(e.target.checked)}
+                            />
+                            <span>
+                              Entendo que a origem volta para Disponível, o destino
+                              fica Vendido, as parcelas futuras são substituídas e
+                              um novo contrato vigente é criado. O contrato anterior
+                              permanece no histórico.
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            disabled={executing || !ackExecute}
+                            onClick={() => void executeSwap()}
+                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:bg-slate-300"
+                          >
+                            {executing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                            Executar troca de lote
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-xl border border-slate-200 p-4 space-y-3">
@@ -393,8 +483,10 @@ export function LotSwapPreviewPanel({
 
       {onClose ? (
         <p className="text-xs text-slate-500">
-          {prepared
-            ? 'Plano congelado. Venda, lotes, parcelas, contrato e cobranças permanecem iguais. Use Fechar para voltar ao mapa.'
+          {executed
+            ? 'Troca concluída nesta venda. Use Fechar e recarregue o mapa para ver os lotes atualizados.'
+            : prepared
+            ? 'Plano congelado. A execução atômica só ocorre no botão Executar troca de lote. Cobranças Asaas/Inter ficam para a Fase 5.'
             : 'A confirmação grava só o plano CALCULATED. Use Fechar para voltar ao mapa.'}
         </p>
       ) : null}

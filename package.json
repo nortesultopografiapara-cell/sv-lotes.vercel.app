@@ -141,6 +141,7 @@
     "test:sale-lot-swap": "tsx scripts/mandatory-sale-lot-swap-phase1-tests.ts",
     "test:sale-lot-swap-preview": "tsx scripts/mandatory-sale-lot-swap-preview-tests.ts",
     "test:sale-lot-swap-plan": "tsx scripts/mandatory-sale-lot-swap-plan-tests.ts",
+    "test:sale-lot-swap-execute": "tsx scripts/mandatory-sale-lot-swap-execute-tests.ts",
     "test:release-settlement": "tsx scripts/mandatory-release-settlement-araguaia-tests.ts",
     "test:release-settlement-persist": "tsx scripts/mandatory-sale-release-settlement-persist-tests.ts",
     "test:release-improvements": "tsx scripts/mandatory-release-improvements-tests.ts",

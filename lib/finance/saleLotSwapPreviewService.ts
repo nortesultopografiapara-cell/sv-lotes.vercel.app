@@ -2,8 +2,8 @@
  * Carrega a prévia da Troca de lote (Fase 2).
  * Somente leitura. Não grava sale_lot_swaps, sales, blocks, receipts ou contratos.
  *
- * Fase 4 (não implementada): repetir estas validações com SELECT … FOR UPDATE
- * em transação RPC. Este preview não usa lock.
+ * Fase 4: a mutação crítica usa SELECT … FOR UPDATE na RPC execute_sale_lot_swap.
+ * Este preview não usa lock e não muta venda/lote/parcelas/contrato.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';

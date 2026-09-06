@@ -6,12 +6,9 @@
  *
  * Prefixo documental homologado: TL (RPC next_sale_operation_document_number).
  *
- * Atomicidade (Fase 4 — somente documentação, sem implementação):
- * A mutação crítica deve ser uma função Postgres SECURITY DEFINER (RPC) em
- * transação única: SELECT … FOR UPDATE em sales, from_block e to_block;
- * revalidar origem/destino; aplicar financeiro + venda + dois lotes + auditoria;
- * honrar idempotency_key. Não encadear UPDATEs independentes no cliente
- * supabase-js (não há transação multi-statement no PostgREST).
+ * Atomicidade (Fase 4): mutação crítica em RPC Postgres
+ * `execute_sale_lot_swap` (SECURITY DEFINER, SELECT … FOR UPDATE).
+ * Não encadear UPDATEs independentes no cliente supabase-js.
  */
 
 import {

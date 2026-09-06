@@ -128,6 +128,30 @@ export function mapLotSwapPreviewUserMessage(input: {
   if (code === 'LOT_SWAP_REASON_REQUIRED' || code === 'DESTINATION_REQUIRED') {
     return fromServer || 'Informe o motivo da troca de lote.';
   }
+  if (code === 'PLAN_NOT_CALCULATED' || code === 'NOT_CALCULATED') {
+    return 'Confirme o plano CALCULATED antes de executar a troca.';
+  }
+  if (code === 'EXECUTING_IN_PROGRESS' || code === 'PLAN_IN_FLIGHT') {
+    return 'Já existe uma troca em execução para esta venda.';
+  }
+  if (code === 'DESTINATION_NOT_AVAILABLE') {
+    return 'O lote destino precisa estar Disponível, sem venda e sem contrato.';
+  }
+  if (code === 'ORIGIN_MISMATCH') {
+    return 'O lote origem não está mais vinculado a esta venda. Recalcule o plano.';
+  }
+  if (code === 'RECEIPT_PAID_SINCE_PLAN' || code === 'PRESERVE_RECEIPT_CHANGED') {
+    return 'As parcelas mudaram depois do plano. Recalcule o plano antes de executar.';
+  }
+  if (code === 'CONTRACT_NUMBER_REUSED' || code === 'CONTRACT_NUMBER_INVALID') {
+    return 'Não foi possível numerar o novo contrato. O número anterior não pode ser reutilizado.';
+  }
+  if (code === 'CONTRACT_HTML_REQUIRED' || code === 'CONTRACT_HTML_FAILED') {
+    return 'Não foi possível gerar o novo contrato da unidade destino.';
+  }
+  if (code === 'ALREADY_EXECUTED') {
+    return fromServer || 'Esta troca já foi executada.';
+  }
   if (code === 'LOAD_SALE_FAILED') {
     return 'Erro interno inesperado ao carregar a prévia.';
   }
