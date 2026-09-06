@@ -35,6 +35,10 @@ import {
   buildLotSwapFinancialPlan,
   type LotSwapFinancialPlan,
 } from '@/lib/finance/saleLotSwapPlan';
+import {
+  loadLotSwapExternalChargePreview,
+  type LotSwapExternalChargePreview,
+} from '@/lib/finance/saleLotSwapExternalCharges';
 
 export class LotSwapPreviewError extends Error {
   status: number;
@@ -80,6 +84,7 @@ export type LotSwapPreviewComparison = {
   schedule: LotSwapSchedulePreview;
   destination: LotSwapBlockSnapshot;
   plan: LotSwapFinancialPlan;
+  externalCharges: LotSwapExternalChargePreview;
 };
 
 export type LotSwapPreviewPayload = {
@@ -461,6 +466,11 @@ export async function loadSaleLotSwapPreview(
       financialAccountId: text(sale.financial_account_id),
       financialAccountName: text((account as { name?: string } | null)?.name),
     });
+    const externalCharges = await loadLotSwapExternalChargePreview(admin, {
+      companyId,
+      saleId,
+      plan,
+    });
     comparison = {
       financials: financials.fields,
       blocked: financials.blocked,
@@ -477,6 +487,7 @@ export async function loadSaleLotSwapPreview(
       }),
       destination,
       plan,
+      externalCharges,
     };
   }
 

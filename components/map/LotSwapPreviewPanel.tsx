@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, Info, Loader2 } from 'lucide-react';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import type { LotSwapPreviewPayload } from '@/lib/finance/saleLotSwapPreviewService';
+import type { LotSwapExternalChargePreview } from '@/lib/finance/saleLotSwapExternalCharges';
 import {
   LOT_SWAP_EXECUTE_GENERIC_FAILURE_MESSAGE,
   mapLotSwapExecuteUserMessage,
@@ -37,7 +38,13 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PlanSummary({ plan }: { plan: LotSwapFinancialPlan }) {
+function PlanSummary({
+  plan,
+  externalCharges,
+}: {
+  plan: LotSwapFinancialPlan;
+  externalCharges?: LotSwapExternalChargePreview | null;
+}) {
   return (
     <div className="rounded-xl border border-slate-200 p-4 space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -86,6 +93,46 @@ function PlanSummary({ plan }: { plan: LotSwapFinancialPlan }) {
         </ul>
       ) : null}
       <p className="text-xs text-slate-500">{plan.notice}</p>
+      {externalCharges ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+            Cobranças externas (Fase 5A — só classificação)
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <SummaryCard
+              label="Provider ativo"
+              value={externalCharges.activeProvider || 'nenhum'}
+            />
+            <SummaryCard
+              label="Pagas (preservar)"
+              value={String(externalCharges.paid.length)}
+            />
+            <SummaryCard
+              label="Canceláveis (Fase 5B)"
+              value={String(externalCharges.wouldCancel.length)}
+            />
+            <SummaryCard
+              label="Não canceláveis"
+              value={String(externalCharges.nonCancelable.length)}
+            />
+            <SummaryCard
+              label="Novas a gerar (5B)"
+              value={String(externalCharges.wouldGenerate.length)}
+            />
+            <SummaryCard
+              label="Status 5A"
+              value={externalCharges.phase5Status}
+            />
+          </div>
+          {externalCharges.wouldBlock ? (
+            <p className="text-xs text-amber-800">
+              {externalCharges.blockMessage}
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500">{externalCharges.notice}</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -411,7 +458,10 @@ export function LotSwapPreviewPanel({
                 </div>
               ) : (
                 <>
-                  <PlanSummary plan={comparison.plan} />
+                  <PlanSummary
+                    plan={comparison.plan}
+                    externalCharges={comparison.externalCharges}
+                  />
                   {prepared ? (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 space-y-3">
                       <div className="space-y-1">

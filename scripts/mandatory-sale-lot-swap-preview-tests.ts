@@ -526,6 +526,9 @@ function homologPreviewDb() {
     ],
     sale_balloon_installments: [],
     company_financial_accounts: [{ id: 'acc-1', name: 'Conta principal' }],
+    company_asaas_charges: [],
+    bank_charges: [],
+    bank_integrations: [],
   };
 }
 
@@ -533,6 +536,7 @@ class HomologQuery {
   private cols = '*';
   private eqFilters: Record<string, unknown> = {};
   private neqFilters: Record<string, unknown> = {};
+  private inFilters: Record<string, unknown[]> = {};
   private nullKeys: string[] = [];
 
   constructor(
@@ -550,6 +554,10 @@ class HomologQuery {
   }
   neq(key: string, value: unknown) {
     this.neqFilters[key] = value;
+    return this;
+  }
+  in(key: string, values: unknown[]) {
+    this.inFilters[key] = values;
     return this;
   }
   is(key: string, value: unknown) {
@@ -584,6 +592,9 @@ class HomologQuery {
       }
       for (const [key, value] of Object.entries(this.neqFilters)) {
         if (String(row[key] ?? '') === String(value ?? '')) return false;
+      }
+      for (const [key, values] of Object.entries(this.inFilters)) {
+        if (!values.map((v) => String(v)).includes(String(row[key] ?? ''))) return false;
       }
       for (const key of this.nullKeys) {
         if (row[key] != null) return false;
