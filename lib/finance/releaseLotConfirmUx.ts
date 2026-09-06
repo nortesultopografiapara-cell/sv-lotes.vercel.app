@@ -5,7 +5,6 @@
  */
 
 import { canConfirmReleaseLot } from '@/lib/finance/releaseLotShared';
-import { INADIMPLENCIA_NO_DEFAULT_MESSAGE } from '@/lib/finance/inadimplenciaGuards';
 
 export const REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE =
   'Informe o vencimento da 1ª parcela da restituição para concluir a operação.';
@@ -82,10 +81,8 @@ export function buildReleaseLotConfirmFooterNotices(input: {
   const inadimplenciaIneligible =
     input.motiveCode === 'inadimplencia' && input.inadimplenciaEligible === false;
   if (inadimplenciaIneligible) {
-    notices.push({
-      kind: 'inadimplencia',
-      message: INADIMPLENCIA_NO_DEFAULT_MESSAGE,
-    });
+    // Aviso contextual já aparece abaixo da justificativa. Rodapé vazio evita
+    // duplicar a mesma mensagem e também suprime o vencimento da restituição.
     return notices;
   }
   if (

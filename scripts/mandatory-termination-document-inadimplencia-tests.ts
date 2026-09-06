@@ -503,11 +503,19 @@ function testUxIneligibleNoticesAndShareModal() {
     motiveCode: 'inadimplencia',
     inadimplenciaEligible: false,
   });
-  assert(blockedNotices.length === 1, 'somente o erro de inelegibilidade');
-  assert(blockedNotices[0]?.message === INADIMPLENCIA_NO_DEFAULT_MESSAGE, 'mensagem homologada');
+  assert(blockedNotices.length === 0, 'rodapé não repete o aviso contextual');
+  assert(
+    !blockedNotices.some((n) => n.message === INADIMPLENCIA_NO_DEFAULT_MESSAGE),
+    'mensagem de inelegibilidade não vai ao rodapé',
+  );
   assert(
     !blockedNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
     'sem aviso de restituição simultâneo',
+  );
+  const releaseModal = read('components/map/ReleaseLotConfirmModal.tsx');
+  assert(
+    releaseModal.includes('{INADIMPLENCIA_NO_DEFAULT_MESSAGE}'),
+    'aviso único permanece abaixo da justificativa',
   );
   assert(
     !computeReleaseLotConfirmEnabled({

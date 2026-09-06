@@ -919,18 +919,15 @@ function testReleaseLotConfirmButtonUx() {
     motiveCode: 'inadimplencia',
     inadimplenciaEligible: false,
   });
-  assert(
-    noDefaultNotices.length === 1,
-    'inadimplência inelegível: um único aviso',
-  );
-  assert(
-    noDefaultNotices[0]?.message ===
-      'Esta venda não possui parcelas vencidas ou condição de inadimplência suficiente para este encerramento.',
-    'aviso amigável sem inadimplência efetiva',
-  );
+  assert(noDefaultNotices.length === 0, 'rodapé não repete o aviso contextual da seção');
   assert(
     !noDefaultNotices.some((n) => n.message === REFUND_FIRST_DUE_DATE_REQUIRED_MESSAGE),
     'não mistura vencimento da restituição com inelegibilidade',
+  );
+  const modalSrc = read('components/map/ReleaseLotConfirmModal.tsx');
+  assert(
+    modalSrc.includes('{INADIMPLENCIA_NO_DEFAULT_MESSAGE}'),
+    'aviso único permanece abaixo da justificativa',
   );
   assert(
     !computeReleaseLotConfirmEnabled({
