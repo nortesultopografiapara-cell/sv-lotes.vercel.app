@@ -2,18 +2,23 @@
  * Camada genérica de cobrança externa (Fase 5A).
  * A Troca de lote fala só com esta interface. Novos bancos entram como adapter.
  *
- * Fase 5A: listar + classificar. cancel/generate existem no contrato e
- * recusam mutação até a Fase 5B. Sem API bancária real nesta fase.
+ * Fase 5A: listar + classificar.
+ * Fase 5B: cancel/generate nos adapters Asaas/Inter via services oficiais.
+ * C6/Bradesco/Nubank e futuros: unimplemented, non_cancelable, sem API.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type {
+  ExternalChargeCancelResult,
+  ExternalChargeGenerateResult,
+} from '@/lib/finance/externalCharges/mutationTypes';
 
 export const EXTERNAL_CHARGE_PROVIDER_ASAAS = 'ASAAS';
 export const EXTERNAL_CHARGE_PROVIDER_INTER = 'INTER';
 
 export const LOT_SWAP_CHARGES_MUTATION_DISABLED = 'LOT_SWAP_CHARGES_MUTATION_DISABLED';
 export const LOT_SWAP_CHARGES_MUTATION_DISABLED_MESSAGE =
-  'Cancelamento e geração de cobrança externa ficam para a Fase 5B. A Fase 5A só classifica.';
+  'Este provider ainda não implementa cancelamento/geração de cobrança.';
 
 export type ExternalChargeClassification =
   | 'paid'
@@ -51,11 +56,11 @@ export type ExternalChargeProvider = {
   cancelCancelableCharge(
     admin: SupabaseClient,
     input: { companyId: string; chargeId: string },
-  ): Promise<never>;
+  ): Promise<ExternalChargeCancelResult>;
   generateMissingCharges(
     admin: SupabaseClient,
     input: { companyId: string; saleId: string; receiptIds: string[] },
-  ): Promise<never>;
+  ): Promise<ExternalChargeGenerateResult>;
 };
 
 export class ExternalChargeMutationDisabledError extends Error {

@@ -416,47 +416,36 @@ async function testLoadPreviewDoesNotCallRemoteApis() {
   console.log('OK testLoadPreviewDoesNotCallRemoteApis');
 }
 
-function testMutationDisabledOnRealAdapters() {
-  let asaasCancel = false;
-  let asaasGen = false;
-  let interCancel = false;
-  let interGen = false;
+function testUnimplementedStillRefusesMutation() {
+  const c6 = createUnimplementedExternalChargeProvider('C6');
+  let cancel = false;
+  let gen = false;
   try {
-    asaasExternalChargeProvider.cancelCancelableCharge({} as never, {
-      companyId: 'x',
-      chargeId: 'y',
-    });
+    c6.cancelCancelableCharge({} as never, { companyId: 'x', chargeId: 'y' });
   } catch (err) {
-    asaasCancel = err instanceof ExternalChargeMutationDisabledError;
+    cancel = err instanceof ExternalChargeMutationDisabledError;
   }
   try {
-    asaasExternalChargeProvider.generateMissingCharges({} as never, {
+    c6.generateMissingCharges({} as never, {
       companyId: 'x',
       saleId: 's',
       receiptIds: ['r'],
     });
   } catch (err) {
-    asaasGen = err instanceof ExternalChargeMutationDisabledError;
+    gen = err instanceof ExternalChargeMutationDisabledError;
   }
-  try {
-    interExternalChargeProvider.cancelCancelableCharge({} as never, {
-      companyId: 'x',
-      chargeId: 'y',
-    });
-  } catch (err) {
-    interCancel = err instanceof ExternalChargeMutationDisabledError;
-  }
-  try {
-    interExternalChargeProvider.generateMissingCharges({} as never, {
-      companyId: 'x',
-      saleId: 's',
-      receiptIds: ['r'],
-    });
-  } catch (err) {
-    interGen = err instanceof ExternalChargeMutationDisabledError;
-  }
-  assert(asaasCancel && asaasGen && interCancel && interGen, '5A recusa mutação Asaas/Inter');
-  console.log('OK testMutationDisabledOnRealAdapters');
+  assert(cancel && gen, 'C6/unimplemented continua sem mutação');
+  assert(
+    asaasExternalChargeProvider.supportsCancellation &&
+      asaasExternalChargeProvider.supportsGeneration,
+    'Asaas 5B implementa mutação',
+  );
+  assert(
+    interExternalChargeProvider.supportsCancellation &&
+      interExternalChargeProvider.supportsGeneration,
+    'Inter 5B implementa mutação',
+  );
+  console.log('OK testUnimplementedStillRefusesMutation');
 }
 
 function testPhase4StillIdempotentAndUntouched() {
@@ -481,8 +470,6 @@ function testSourceNoRealBankApisAndNoReleaseLot() {
   const files = [
     'lib/finance/externalCharges/types.ts',
     'lib/finance/externalCharges/registry.ts',
-    'lib/finance/externalCharges/asaasAdapter.ts',
-    'lib/finance/externalCharges/interAdapter.ts',
     'lib/finance/externalCharges/unimplementedAdapter.ts',
     'lib/finance/externalCharges/index.ts',
     'lib/finance/saleLotSwapExternalCharges.ts',
@@ -500,6 +487,15 @@ function testSourceNoRealBankApisAndNoReleaseLot() {
     assert(!src.includes('interCancelMotivoFromReleaseMotive'), `${rel} sem motivo ReleaseLot`);
     assert(!src.includes('seller_parties_json'), `${rel} sem Mundo Novo`);
   }
+  const asaas = read('lib/finance/externalCharges/asaasAdapter.ts');
+  const inter = read('lib/finance/externalCharges/interAdapter.ts');
+  assert(asaas.includes('cancelCompanyCharge'), 'adapter Asaas reusa cancel oficial');
+  assert(asaas.includes('createCompanyInstallmentCharge'), 'adapter Asaas reusa create oficial');
+  assert(inter.includes('cancelInterInstallmentCharge'), 'adapter Inter reusa cancel oficial');
+  assert(inter.includes('createInterInstallmentCharge'), 'adapter Inter reusa create oficial');
+  assert(!asaas.includes('fetch('), 'adapter Asaas sem HTTP próprio');
+  assert(!inter.includes('cancelInterCobranca'), 'adapter Inter sem HTTP próprio');
+  assert(!inter.includes('createInterCobranca'), 'adapter Inter sem create HTTP próprio');
   const ui = read('components/map/LotSwapPreviewPanel.tsx');
   assert(ui.includes('Fase 5A'), 'UI mostra classificação 5A');
   const previewSvc = read('lib/finance/saleLotSwapPreviewService.ts');
@@ -534,7 +530,7 @@ async function main() {
   testMultiproviderAndTenants();
   await testTenantIsolationOnList();
   await testLoadPreviewDoesNotCallRemoteApis();
-  testMutationDisabledOnRealAdapters();
+  testUnimplementedStillRefusesMutation();
   testPhase4StillIdempotentAndUntouched();
   testSourceNoRealBankApisAndNoReleaseLot();
   console.log('OK mandatory-sale-lot-swap-phase5a-tests');

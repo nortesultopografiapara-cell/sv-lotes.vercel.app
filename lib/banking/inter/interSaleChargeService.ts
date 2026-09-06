@@ -8,6 +8,7 @@ import {
   createInterCobranca,
   fetchInterCobrancaByCodigo,
   pollInterCobrancaUntilReady,
+  cancelInterCobranca,
   type InterCobrancaDetail,
   type InterCreateCobrancaInput,
 } from '@/lib/banking/inter/interCobrancaClient';
@@ -868,4 +869,93 @@ export async function refreshInterSaleCharges(
     }
   }
   return { refreshed, paidSettled, errors };
+}
+
+/**
+ * Cancela uma cobrança Inter da empresa (não é ReleaseLot).
+ * Motivo padrão ACERTOS. Recusa paga. Idempotente se já CANCELLED.
+ */
+export async function cancelInterInstallmentCharge(
+  admin: SupabaseClient,
+  input: {
+    companyId: string;
+    chargeId: string;
+    fetchFn?: InterOAuthFetchFn;
+  },
+): Promise<{ ok: true; reused: boolean; chargeId: string; status: string }> {
+  const companyId = String(input.companyId || '').trim();
+  const chargeId = String(input.chargeId || '').trim();
+  if (!companyId || !chargeId) {
+    throw new Error('companyId e chargeId obrigatórios.');
+  }
+  const { data, error } = await admin
+    .from('bank_charges')
+    .select(
+      'id, company_id, provider, status, external_id, financial_account_id, integration_id, metadata',
+    )
+    .eq('id', chargeId)
+    .eq('company_id', companyId)
+    .eq('provider', 'INTER')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error('Cobrança Inter não encontrada nesta empresa.');
+  const status = String(data.status || '').toUpperCase();
+  if (status === 'PAID') {
+    throw new Error('Cobrança já paga — cancelamento não permitido.');
+  }
+  if (status === 'CANCELLED' || status === 'EXPIRED' || status === 'FAILED') {
+    return { ok: true, reused: true, chargeId, status };
+  }
+  const codigo = String(data.external_id || '').trim();
+  if (!codigo) {
+    throw new Error('Cobrança Inter sem identificador remoto.');
+  }
+  const secrets = await loadInterSecretsForServer(admin, companyId, {
+    integrationId: data.integration_id ? String(data.integration_id) : null,
+    financialAccountId: data.financial_account_id
+      ? String(data.financial_account_id)
+      : null,
+  });
+  if (!secrets) {
+    throw new Error('Credenciais Inter ausentes para esta conta financeira.');
+  }
+  const creds: InterOAuthCredentials = {
+    companyId,
+    integrationId: secrets.integrationId,
+    environment: secrets.environment,
+    clientId: secrets.clientId,
+    clientSecret: secrets.clientSecret,
+    certificatePem: secrets.certificatePem,
+    privateKeyPem: secrets.privateKeyPem,
+  };
+  await cancelInterCobranca(creds, codigo, {
+    fetchFn: input.fetchFn,
+    motivoCancelamento: 'ACERTOS',
+  });
+  const prevMeta =
+    data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+      ? (data.metadata as Record<string, unknown>)
+      : {};
+  const updated = await admin
+    .from('bank_charges')
+    .update({
+      status: 'CANCELLED',
+      metadata: {
+        ...prevMeta,
+        interSituacao: 'CANCELADO',
+        lotSwapCancelledAt: new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', chargeId)
+    .eq('company_id', companyId)
+    .select('status')
+    .maybeSingle();
+  if (updated.error) throw new Error(updated.error.message);
+  return {
+    ok: true,
+    reused: false,
+    chargeId,
+    status: String(updated.data?.status || 'CANCELLED'),
+  };
 }

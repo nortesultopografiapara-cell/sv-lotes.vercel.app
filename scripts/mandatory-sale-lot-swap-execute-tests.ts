@@ -375,7 +375,11 @@ function testExecuteServiceContractCompatibility() {
 function testUiExecuteAfterCalculated() {
   const ui = read('components/map/LotSwapPreviewPanel.tsx');
   assert(ui.includes('Confirmar plano (sem executar)'), 'ainda confirma plano');
-  assert(ui.includes('/lot-swap/execute'), 'POST execute separado');
+  assert(ui.includes('/lot-swap/charges/execute'), 'POST 5B charges execute');
+  assert(
+    read('app/api/sales/[saleId]/lot-swap/execute/route.ts').includes('executeSaleLotSwap'),
+    'rota Fase 4 pura permanece',
+  );
   assert(ui.includes('Executar troca de lote'), 'botão de execução');
   assert(!ui.includes('/release'), 'não chama ReleaseLot');
   const modal = read('components/map/ReleaseLotConfirmModal.tsx');

@@ -1,10 +1,15 @@
 /**
- * Adapter Banco Inter — fino sobre classifiers e bank_charges já homologados.
- * Fase 5A: só listagem local + classificação. Sem POST /cobrancas/{id}/cancelar.
+ * Adapter Banco Inter — fino sobre classifiers e services oficiais.
+ * Cancel/generate reutilizam cancelInterInstallmentCharge e createInterInstallmentCharge.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { classifyInterBankChargeForRelease } from '@/lib/finance/releaseLotShared';
+import {
+  cancelInterInstallmentCharge,
+  createInterInstallmentCharge,
+} from '@/lib/banking/inter/interSaleChargeService';
+import { getExternalChargeMutationFns } from '@/lib/finance/externalCharges/mutationDeps';
 import type {
   ExternalChargeProvider,
   ExternalChargeRecord,
@@ -13,8 +18,8 @@ import type {
 import {
   EXTERNAL_CHARGE_PROVIDER_INTER,
   mapReleaseBucketToExternalClassification,
-  rejectExternalChargeMutation,
 } from '@/lib/finance/externalCharges/types';
+import type { ExternalChargeGenerateResult } from '@/lib/finance/externalCharges/mutationTypes';
 
 function text(v: unknown): string | null {
   const s = String(v ?? '').trim();
@@ -92,10 +97,47 @@ export const interExternalChargeProvider: ExternalChargeProvider = {
     }
     return [...byId.values()];
   },
-  cancelCancelableCharge() {
-    return rejectExternalChargeMutation();
+  async cancelCancelableCharge(admin, input) {
+    const companyId = String(input.companyId || '').trim();
+    const chargeId = String(input.chargeId || '').trim();
+    if (!companyId || !chargeId) throw new Error('companyId e chargeId obrigatórios.');
+    const injected = getExternalChargeMutationFns().cancelInterCharge;
+    if (injected) return injected(admin, companyId, chargeId);
+    return cancelInterInstallmentCharge(admin, { companyId, chargeId });
   },
-  generateMissingCharges() {
-    return rejectExternalChargeMutation();
+  async generateMissingCharges(admin, input) {
+    const companyId = String(input.companyId || '').trim();
+    const saleId = String(input.saleId || '').trim();
+    const receiptIds = (input.receiptIds || []).map((id) => String(id).trim()).filter(Boolean);
+    if (!companyId) throw new Error('companyId obrigatório.');
+    const injected = getExternalChargeMutationFns().generateInterCharges;
+    if (injected) return injected(admin, { companyId, saleId, receiptIds });
+
+    const result: ExternalChargeGenerateResult = {
+      ok: true,
+      created: 0,
+      reused: 0,
+      skipped: 0,
+      errors: [],
+    };
+    for (const receiptId of receiptIds) {
+      try {
+        const created = await createInterInstallmentCharge(admin, {
+          companyId,
+          installmentId: receiptId,
+        });
+        if (created.reused) result.reused += 1;
+        else result.created += 1;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (/já está paga|já foi paga/i.test(message)) {
+          result.skipped += 1;
+          continue;
+        }
+        result.ok = false;
+        result.errors.push({ receiptId, message });
+      }
+    }
+    return result;
   },
 };

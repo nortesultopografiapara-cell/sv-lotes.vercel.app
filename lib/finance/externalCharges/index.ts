@@ -38,6 +38,10 @@ export {
 export { createUnimplementedExternalChargeProvider } from '@/lib/finance/externalCharges/unimplementedAdapter';
 export { resetExternalChargeProviderRegistryForTests } from '@/lib/finance/externalCharges/registry';
 export {
+  resetExternalChargeMutationFnsForTests,
+  setExternalChargeMutationFnsForTests,
+} from '@/lib/finance/externalCharges/mutationDeps';
+export {
   EXTERNAL_CHARGE_PROVIDER_ASAAS,
   EXTERNAL_CHARGE_PROVIDER_INTER,
   LOT_SWAP_CHARGES_MUTATION_DISABLED,
@@ -51,3 +55,7 @@ export type {
   ExternalChargeRecord,
   ListExternalChargesInput,
 } from '@/lib/finance/externalCharges/types';
+export type {
+  ExternalChargeCancelResult,
+  ExternalChargeGenerateResult,
+} from '@/lib/finance/externalCharges/mutationTypes';

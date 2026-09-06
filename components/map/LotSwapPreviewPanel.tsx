@@ -256,7 +256,7 @@ export function LotSwapPreviewPanel({
     setExecuteError('');
     try {
       const res = await fetch(
-        `/api/sales/${encodeURIComponent(saleId)}/lot-swap/execute`,
+        `/api/sales/${encodeURIComponent(saleId)}/lot-swap/charges/execute`,
         {
           method: 'POST',
           credentials: 'include',
@@ -269,20 +269,23 @@ export function LotSwapPreviewPanel({
       );
       const data = (await res.json().catch(() => ({}))) as {
         success?: boolean;
-        executed?: LotSwapExecutedResult;
+        executed?: LotSwapExecutedResult | null;
         code?: string;
         message?: string;
         error?: string;
       };
+      const mapped = mapLotSwapExecuteUserMessage({
+        status: res.status,
+        code: data.code,
+        message: data.message,
+        error: data.error,
+      });
+      if (data.executed && data.code === 'LOT_SWAP_CHARGES_GENERATE_FAILED') {
+        setExecuted(data.executed);
+        throw new Error(mapped);
+      }
       if (!res.ok || !data.success || !data.executed) {
-        throw new Error(
-          mapLotSwapExecuteUserMessage({
-            status: res.status,
-            code: data.code,
-            message: data.message,
-            error: data.error,
-          }),
-        );
+        throw new Error(mapped);
       }
       setExecuted(data.executed);
     } catch (err) {
@@ -478,6 +481,16 @@ export function LotSwapPreviewPanel({
                           </p>
                           {executed.reused ? (
                             <p className="text-xs">Requisição repetida: a troca não foi executada de novo.</p>
+                          ) : null}
+                          {executeError ? (
+                            <div
+                              ref={executeErrorRef}
+                              role="alert"
+                              className="bg-amber-50 border border-amber-200 text-amber-950 rounded-lg p-3 text-sm flex gap-2 mt-2"
+                            >
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <div>{executeError}</div>
+                            </div>
                           ) : null}
                         </div>
                       ) : (
