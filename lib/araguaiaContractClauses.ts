@@ -12,6 +12,10 @@ import {
   formatAraguaiaRgAfterNumeroLabel,
 } from '@/lib/araguaiaContractQualification';
 import { formatSellerCpfDisplay } from '@/lib/projectContractSellers';
+import {
+  buildLotSwapAraguaiaStyleItem1Html,
+  lotSwapContractUsesContinuityPayment,
+} from '@/lib/finance/saleLotSwapContractContext';
 
 const extenso = require('extenso');
 
@@ -258,7 +262,25 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       `E, assim como possuem, pelo presente e nos melhores termos de direito, ${V.the} prometem e se obrigam a vender o imóvel descrito na cláusula segunda deste instrumento ${B.to}, mediante as seguintes cláusulas e condições:`,
       `
       ${itemP(
-        `<strong>1</strong> – O preço certo e total ajustado para a presente promessa de compra e venda do imóvel descrito na cláusula segunda deste contrato é de ${moneyPhrase(
+        lotSwapContractUsesContinuityPayment(ctx.lotSwapFinance)
+          ? buildLotSwapAraguaiaStyleItem1Html({
+              pricePhrase: moneyPhrase(ctx.valorTotalFmt, ctx.valorTotalExtenso),
+              creditedPhrase: moneyPhrase(
+                ctx.lotSwapCreditedFmt,
+                ctx.lotSwapCreditedExtenso,
+              ),
+              balancePhrase: moneyPhrase(
+                ctx.lotSwapBalanceFmt,
+                ctx.lotSwapBalanceExtenso,
+              ),
+              parcelsCountPhrase: parcelsCountPhrase(ctx.qtdParcelas),
+              schedulePhrase: ctx.lotSwapSchedulePhrase,
+              firstDueHtml: vencimentoHtml,
+              reajusteSuffix: `, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
+                igpmItem1,
+              )}, ou outro que venha substituí-lo.`,
+            })
+          : `<strong>1</strong> – O preço certo e total ajustado para a presente promessa de compra e venda do imóvel descrito na cláusula segunda deste contrato é de ${moneyPhrase(
           ctx.valorTotalFmt,
           ctx.valorTotalExtenso,
         )}, que será pago a prazo mediante uma entrada no valor de ${moneyPhrase(

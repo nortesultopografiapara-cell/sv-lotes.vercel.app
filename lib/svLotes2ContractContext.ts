@@ -20,7 +20,10 @@ import {
   formatContractSaleDateLongBr,
   normalizeSaleRecordForContractDates,
 } from '@/lib/contractPaymentDates';
-import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
+import {
+  buildSaleContractPaymentSummaryHtml,
+  resolveSaleContractPaymentBreakdown,
+} from '@/lib/saleContractPaymentSummary';
 import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import {
   buildCompactBalloonFinanceScheduleHtml,
@@ -88,22 +91,6 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     Number(block?.price) ||
     0;
 
-  const balloonSummary = resolveSaleContractBalloonFinance({
-    sale: sale as Record<string, unknown>,
-    financeReceipts,
-    balloonAddons: params.balloonAddons,
-    isCashPayment: base.paymentMode !== 'INSTALLMENT',
-  });
-
-  let valorParcela = 0;
-  if (base.paymentMode === 'INSTALLMENT' && qtdParcelas > 0) {
-    valorParcela = balloonSummary.hasBalloon
-      ? balloonSummary.baseInstallmentValue
-      : Math.max(0, (valTotal - valEntrada) / qtdParcelas);
-  }
-
-  const valorParcelaFmt = formatCurrencyBRL(valorParcela);
-
   const paymentBreakdown = resolveSaleContractPaymentBreakdown(
     sale as Record<string, unknown>,
     {
@@ -112,6 +99,26 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
       balloonAddons: params.balloonAddons,
     },
   );
+
+  const balloonSummary = paymentBreakdown.lotSwapUsesContinuity
+    ? null
+    : resolveSaleContractBalloonFinance({
+        sale: sale as Record<string, unknown>,
+        financeReceipts,
+        balloonAddons: params.balloonAddons,
+        isCashPayment: base.paymentMode !== 'INSTALLMENT',
+      });
+
+  let valorParcela = 0;
+  if (paymentBreakdown.lotSwapUsesContinuity) {
+    valorParcela = paymentBreakdown.installmentValue;
+  } else if (base.paymentMode === 'INSTALLMENT' && qtdParcelas > 0) {
+    valorParcela = balloonSummary?.hasBalloon
+      ? balloonSummary.baseInstallmentValue
+      : Math.max(0, (valTotal - valEntrada) / qtdParcelas);
+  }
+
+  const valorParcelaFmt = formatCurrencyBRL(valorParcela);
 
   const singleFutureDueLongFmt =
     paymentBreakdown.singlePaymentDueLongFmt ||
@@ -164,7 +171,11 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     firstDueDateFmt: vencimentoLabel || null,
   };
 
-  const balloonFinanceHtml = balloonSummary.hasBalloon
+  const balloonFinanceHtml = paymentBreakdown.lotSwapUsesContinuity
+    ? buildSaleContractPaymentSummaryHtml(paymentBreakdown, {
+        firstDueDateFmt: vencimentoLabel || null,
+      })
+    : balloonSummary?.hasBalloon
     ? buildCompactBalloonFinanceScheduleHtml(balloonSummary, financeExtras)
     : buildContractFinanceQuadroHtml({
         saleTotalFmt: formatCurrencyBRL(valTotal),
@@ -200,7 +211,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     paymentBreakdown,
     balloonSummary,
     balloonFinanceHtml,
-    hasBalloonInstallments: balloonSummary.hasBalloon,
+    hasBalloonInstallments: Boolean(balloonSummary?.hasBalloon),
     singleFutureDueLongFmt,
     area,
     municipio,

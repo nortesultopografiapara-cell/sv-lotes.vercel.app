@@ -48,6 +48,7 @@ import {
 } from '@/lib/salePaymentMode';
 import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
+import { readLotSwapContractFinance } from '@/lib/finance/saleLotSwapContractContext';
 
 export type SaleContractRenderParams = {
   tenant: Record<string, unknown>;
@@ -340,6 +341,7 @@ export function buildSaleContractRenderContext(
   }
   if (valTotal <= 0 && block?.price) valTotal = Number(block.price);
 
+  const swapFinance = readLotSwapContractFinance(sale as Record<string, unknown>);
   const valEntrada = Number(sale?.down_payment || 0);
   const valorTotalFmt = formatBRL(valTotal);
   let valorTotalExtenso = '';
@@ -367,9 +369,13 @@ export function buildSaleContractRenderContext(
     valorEntradaExtenso = '';
   }
 
-  const qtdParcelas = Number(sale?.installments_count) || 1;
+  const qtdParcelas = swapFinance
+    ? swapFinance.remaining_installments.length
+    : Number(sale?.installments_count) || 1;
   let valorParcela = 0;
-  if (qtdParcelas > 0) {
+  if (swapFinance?.remaining_installments[0]) {
+    valorParcela = swapFinance.remaining_installments[0].amount;
+  } else if (qtdParcelas > 0) {
     valorParcela = (valTotal - valEntrada) / qtdParcelas;
   }
   const valorParcelaFmt = formatBRL(valorParcela);
@@ -392,14 +398,16 @@ export function buildSaleContractRenderContext(
       dueDate: r.due_date ?? null,
     }))
     .filter((r) => Number.isFinite(r.installmentNumber));
-  const balloonSummary = resolveSaleContractBalloonFinance({
-    sale: sale as Record<string, unknown>,
-    financeReceipts,
-    balloonAddons: params.balloonAddons,
-    isCashPayment: !paymentModeResolution.isInstallment,
-  });
-  const hasVariableInstallments = balloonSummary.hasBalloon;
-  if (hasVariableInstallments) {
+  const balloonSummary = swapFinance
+    ? null
+    : resolveSaleContractBalloonFinance({
+        sale: sale as Record<string, unknown>,
+        financeReceipts,
+        balloonAddons: params.balloonAddons,
+        isCashPayment: !paymentModeResolution.isInstallment,
+      });
+  const hasVariableInstallments = Boolean(balloonSummary?.hasBalloon);
+  if (hasVariableInstallments && balloonSummary) {
     valorParcela = balloonSummary.baseInstallmentValue;
   }
   const valorParcelaFmtFinal = formatBRL(valorParcela);
@@ -414,7 +422,7 @@ export function buildSaleContractRenderContext(
     }
   }
 
-  const balloonClauseBody = balloonSummary.hasBalloon
+  const balloonClauseBody = balloonSummary?.hasBalloon
     ? buildBalloonAwarePaymentClauseText({
         summary: balloonSummary,
         valorTotalFmt,
@@ -454,6 +462,7 @@ export function buildSaleContractRenderContext(
     singleFutureDueLongFmt,
     hasVariableInstallments,
     balloonClauseBodyHtml: balloonClauseBody,
+    lotSwapSnapshot: swapFinance,
   });
 
   const projectDescParts: string[] = [];

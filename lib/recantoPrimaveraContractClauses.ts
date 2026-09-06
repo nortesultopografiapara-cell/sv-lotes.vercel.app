@@ -107,7 +107,11 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
     </p>`;
   }
 
-  const hasBalloon = Boolean(ctx.hasBalloonInstallments && ctx.balloonSummary?.hasBalloon);
+  const hasBalloon = Boolean(
+    !ctx.lotSwapUsesContinuity &&
+      ctx.hasBalloonInstallments &&
+      ctx.balloonSummary?.hasBalloon,
+  );
 
   const saldoLine = hasBalloon
     ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt}), com parcelas balão discriminadas no Quadro Financeiro`
@@ -158,13 +162,19 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       <table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11pt;">
         <thead>
           <tr>
-            <th style="border: 1px solid #111; padding: 8px; text-align: center; width: 35%;">SINAL</th>
-            <th style="border: 1px solid #111; padding: 8px; text-align: center;">SALDO PARCELADO</th>
+            <th style="border: 1px solid #111; padding: 8px; text-align: center; width: 35%;">${
+              ctx.lotSwapUsesContinuity ? 'VALOR JÁ PAGO/APROVEITADO' : 'SINAL'
+            }</th>
+            <th style="border: 1px solid #111; padding: 8px; text-align: center;">${
+              ctx.lotSwapUsesContinuity ? 'SALDO REMANESCENTE' : 'SALDO PARCELADO'
+            }</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${sinalDetail}</strong></td>
+            <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${
+              ctx.lotSwapUsesContinuity ? ctx.lotSwapCreditedFmt : sinalDetail
+            }</strong></td>
             <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong></td>
           </tr>
         </tbody>
@@ -219,6 +229,15 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
       <p style="margin-bottom: 10px;">
         <strong>CLÁUSULA TERCEIRA – DO PREÇO E FORMA DE PAGAMENTO:</strong> O preço total da chácara é de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''}, a ser pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) nas condições abaixo:
       </p>
+      ${
+        ctx.lotSwapUsesContinuity
+          ? `<p style="margin-bottom: 10px;">Já se encontra pago e aproveitado nesta mesma negociação o valor de <strong>${ctx.lotSwapCreditedFmt}</strong>, sem natureza de nova entrada${
+              ctx.lotSwapSchedulePhrase
+                ? `, restando o saldo de <strong>${ctx.valorSaldoParceladoFmt}</strong> (${ctx.lotSwapSchedulePhrase})`
+                : ''
+            }.</p>`
+          : ''
+      }
       ${buildPaymentTableHtml(ctx)}
       <p style="margin-bottom: 10px;">
         <strong>Parágrafo Primeiro:</strong> ${

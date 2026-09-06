@@ -39,6 +39,11 @@ import {
   resolveBrokerFromSaleRecord,
 } from '@/lib/saleBrokerSnapshot';
 import {
+  buildLotSwapRemainingSchedulePhrase,
+  lotSwapContractUsesContinuityPayment,
+  readLotSwapContractFinance,
+} from '@/lib/finance/saleLotSwapContractContext';
+import {
   buildRecantoFullAddress,
   formatRecantoDocument,
   formatRecantoPhone,
@@ -153,6 +158,9 @@ export type RecantoPrimaveraContractContext = {
   hasResidualInstallment: boolean;
   valorResidualFmt: string;
   lotParcelamentoClauseText: string;
+  lotSwapCreditedFmt: string;
+  lotSwapSchedulePhrase: string;
+  lotSwapUsesContinuity: boolean;
   paymentMode: SalePaymentMode;
   isCashPayment: boolean;
   singleFutureDueLongFmt: string;
@@ -451,11 +459,16 @@ export function buildRecantoPrimaveraContractContext(
   if (valTotal <= 0 && sale?.receipts_sum) valTotal = Number(sale.receipts_sum);
   if (!Number.isFinite(valTotal) || valTotal < 0) valTotal = 0;
 
-  const valSinal = Math.max(
-    0,
-    Number(sale?.signal_contract_value ?? sale?.down_payment ?? 0),
-  );
-  const qtdParcelas = Math.max(1, Number(sale?.installments_count) || 1);
+  const swapFinance = readLotSwapContractFinance(sale as Record<string, unknown>);
+  const valSinal = swapFinance
+    ? Math.max(0, Number(sale?.signal_contract_value ?? 0))
+    : Math.max(
+        0,
+        Number(sale?.signal_contract_value ?? sale?.down_payment ?? 0),
+      );
+  const qtdParcelas = swapFinance
+    ? swapFinance.remaining_installments.length
+    : Math.max(1, Number(sale?.installments_count) || 1);
   const paymentModeResolution = resolveSalePaymentMode(sale);
   const paymentMode = paymentModeResolution.mode;
   const isCashPayment = paymentModeResolution.isImmediateCash;
@@ -490,22 +503,22 @@ export function buildRecantoPrimaveraContractContext(
       : 0;
 
   const lotPlan =
-    !isSinglePayment && installmentDefinitionMode === 'FIXED_AMOUNT'
-      ? resolveRecantoLotInstallmentPlan({
-          lotValue: valTotal,
-          regularCount: qtdParcelas,
-          mode: 'FIXED_AMOUNT',
-          regularAmount: fixedRegularAmount,
-          generateResidual,
-          useBalloon: Boolean(sale?.use_balloon_installments),
-        })
-      : !isSinglePayment
+    swapFinance || isSinglePayment
+      ? null
+      : installmentDefinitionMode === 'FIXED_AMOUNT'
         ? resolveRecantoLotInstallmentPlan({
             lotValue: valTotal,
             regularCount: qtdParcelas,
-            mode: 'BY_COUNT',
+            mode: 'FIXED_AMOUNT',
+            regularAmount: fixedRegularAmount,
+            generateResidual,
+            useBalloon: Boolean(sale?.use_balloon_installments),
           })
-        : null;
+        : resolveRecantoLotInstallmentPlan({
+            lotValue: valTotal,
+            regularCount: qtdParcelas,
+            mode: 'BY_COUNT',
+          });
 
   const hasResidualInstallment = Boolean(lotPlan?.hasResidual);
   const residualAmount = lotPlan?.residualAmount ?? 0;
@@ -513,8 +526,9 @@ export function buildRecantoPrimaveraContractContext(
     ? buildRecantoLotParcelamentoClauseText(lotPlan)
     : '';
 
-  const valorParcelaBase =
-    !isSinglePayment && qtdParcelas > 0
+  const valorParcelaBase = swapFinance
+    ? swapFinance.remaining_installments[0]?.amount || 0
+    : !isSinglePayment && qtdParcelas > 0
       ? lotPlan?.regularAmount ??
         resolveInstallmentPrincipal({
           totalValue: valTotal,
@@ -522,20 +536,27 @@ export function buildRecantoPrimaveraContractContext(
           contractModel: 'RECANTO_PRIMAVERA',
         }) / qtdParcelas
       : 0;
-  const regularBaseAmounts = !isSinglePayment
-    ? installmentDefinitionMode === 'FIXED_AMOUNT' && lotPlan
-      ? lotPlan.baseAmounts.slice(0, lotPlan.regularCount)
-      : splitInstallmentAmounts(
-          resolveInstallmentPrincipal({
-            totalValue: valTotal,
-            downPayment: valSinal,
-            contractModel: 'RECANTO_PRIMAVERA',
-          }),
-          qtdParcelas,
-        )
-    : [];
-  const compositions =
-    hasExplicitSignalPaid && !isSinglePayment
+  const regularBaseAmounts = swapFinance
+    ? swapFinance.remaining_installments.map((row) => row.amount)
+    : !isSinglePayment
+      ? installmentDefinitionMode === 'FIXED_AMOUNT' && lotPlan
+        ? lotPlan.baseAmounts.slice(0, lotPlan.regularCount)
+        : splitInstallmentAmounts(
+            resolveInstallmentPrincipal({
+              totalValue: valTotal,
+              downPayment: valSinal,
+              contractModel: 'RECANTO_PRIMAVERA',
+            }),
+            qtdParcelas,
+          )
+      : [];
+  const compositions = swapFinance
+    ? regularBaseAmounts.map((baseAmount) => ({
+        baseAmount,
+        signalAddonAmount: 0,
+        amount: baseAmount,
+      }))
+    : hasExplicitSignalPaid && !isSinglePayment
       ? applySignalAddonToInstallmentAmounts(regularBaseAmounts, signalPlan)
       : regularBaseAmounts.map((baseAmount) => ({
           baseAmount,
@@ -545,9 +566,10 @@ export function buildRecantoPrimaveraContractContext(
   const valorParcela = compositions[0]?.amount ?? valorParcelaBase;
   const valorParcelaComAcrescimo =
     compositions.find((c) => c.signalAddonAmount > 0)?.amount ?? valorParcela;
-  const signalClauseText = hasExplicitSignalPaid
-    ? buildRecantoSignalClauseText(signalPlan, qtdParcelas)
-    : '';
+  const signalClauseText =
+    swapFinance || !hasExplicitSignalPaid
+      ? ''
+      : buildRecantoSignalClauseText(signalPlan, qtdParcelas);
 
   const baseDisplay = regularBaseAmounts[0] ?? valorParcelaBase;
   const addonDisplay = signalPlan.remainingInstallmentValue;
@@ -642,13 +664,15 @@ export function buildRecantoPrimaveraContractContext(
   });
   const singleFutureDueLongFmt = singleFutureDue.longFmt;
   const singleFutureDueFmt = singleFutureDue.fmt;
-  const balloonSummary = resolveSaleContractBalloonFinance({
-    sale: sale as Record<string, unknown>,
-    financeReceipts,
-    balloonAddons,
-    isCashPayment: isSinglePayment,
-  });
-  const hasBalloonInstallments = balloonSummary.hasBalloon;
+  const balloonSummary = swapFinance
+    ? null
+    : resolveSaleContractBalloonFinance({
+        sale: sale as Record<string, unknown>,
+        financeReceipts,
+        balloonAddons,
+        isCashPayment: isSinglePayment,
+      });
+  const hasBalloonInstallments = Boolean(balloonSummary?.hasBalloon);
   const dueDay = extractDueDay(paymentDates.firstInstallmentDueRaw);
   const broker = resolveBroker(sale, contractSnapshot);
 
@@ -762,14 +786,21 @@ export function buildRecantoPrimaveraContractContext(
     qtdParcelasSinalRestante: signalPlan.remainingInstallments || 0,
     signalRemainingPaymentMode: signalPlan.paymentMode,
     signalClauseText,
-    hasSignalRemaining: signalPlan.hasRemaining && hasExplicitSignalPaid,
-    signalPaidFullyAtSale:
-      hasExplicitSignalPaid && !signalPlan.hasRemaining && valSinal > 0,
+    hasSignalRemaining: Boolean(
+      !swapFinance && signalPlan.hasRemaining && hasExplicitSignalPaid,
+    ),
+    signalPaidFullyAtSale: Boolean(
+      !swapFinance && hasExplicitSignalPaid && !signalPlan.hasRemaining && valSinal > 0,
+    ),
     valorParcelaBaseFmt: formatBRL(baseDisplay),
     valorParcelaComAcrescimoFmt: formatBRL(totalComAddonDisplay),
     parcelasResumoSinalHtml,
-    valorSaldoParceladoFmt: formatBRL(valTotal),
-    valorSaldoParceladoExtenso: formatExtensoCurrency(valTotal),
+    valorSaldoParceladoFmt: formatBRL(
+      swapFinance ? swapFinance.new_balance : valTotal,
+    ),
+    valorSaldoParceladoExtenso: formatExtensoCurrency(
+      swapFinance ? swapFinance.new_balance : valTotal,
+    ),
     valorParcelaFmt: formatBRL(valorParcela),
     valorParcelaExtenso: formatExtensoCurrency(valorParcela),
     qtdParcelas,
@@ -777,6 +808,11 @@ export function buildRecantoPrimaveraContractContext(
     hasResidualInstallment,
     valorResidualFmt: formatBRL(residualAmount),
     lotParcelamentoClauseText,
+    lotSwapCreditedFmt: formatBRL(swapFinance?.total_paid || 0),
+    lotSwapSchedulePhrase: swapFinance
+      ? buildLotSwapRemainingSchedulePhrase(swapFinance.remaining_installments)
+      : '',
+    lotSwapUsesContinuity: lotSwapContractUsesContinuityPayment(swapFinance),
     paymentMode,
     isCashPayment,
     singleFutureDueLongFmt,

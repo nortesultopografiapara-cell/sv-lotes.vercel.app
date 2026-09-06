@@ -20,6 +20,10 @@ import {
   resolveSalePaymentMode,
   type SalePaymentMode,
 } from '@/lib/salePaymentMode';
+import {
+  lotSwapContractUsesContinuityPayment,
+  readLotSwapContractFinance,
+} from '@/lib/finance/saleLotSwapContractContext';
 
 function formatBRL(val: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -80,6 +84,8 @@ export type SaleContractPaymentBreakdown = {
   singlePaymentDueFmt: string;
   singlePaymentDueLongFmt: string;
   balloonSummary?: SaleContractBalloonFinanceSummary | null;
+  lotSwapUsesContinuity: boolean;
+  lotSwapCreditedFmt: string | null;
 };
 
 export function resolveSaleContractPaymentBreakdown(
@@ -91,38 +97,47 @@ export function resolveSaleContractPaymentBreakdown(
     balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
   },
 ): SaleContractPaymentBreakdown {
+  const swapFinance = readLotSwapContractFinance(sale);
   const lotPrice =
+    swapFinance?.new_lot_price ||
     Number(sale.lot_price) ||
     Number(sale.agreed_price) ||
     Number(sale.total_value) ||
     0;
   const discountAmount = Math.max(0, Number(sale.discount) || 0);
   const netValue = Math.max(0, lotPrice - discountAmount);
-  const entryAmount = Math.max(0, Number(sale.down_payment) || 0);
-  const installmentsCount = Math.max(1, Number(sale.installments_count) || 1);
+  const entryAmount = swapFinance
+    ? 0
+    : Math.max(0, Number(sale.down_payment) || 0);
+  const remainingCount = swapFinance?.remaining_installments.length || 0;
+  const installmentsCount = swapFinance
+    ? remainingCount
+    : Math.max(1, Number(sale.installments_count) || 1);
   const paymentMode = resolveSalePaymentMode(sale);
   const isCashPayment =
     options?.isCashPayment ?? paymentMode.isImmediateCash;
 
-  const installmentBalance =
-    paymentMode.isImmediateCash || paymentMode.isSingleFuture
+  const installmentBalance = swapFinance
+    ? Math.max(0, swapFinance.new_balance)
+    : paymentMode.isImmediateCash || paymentMode.isSingleFuture
       ? 0
       : downPaymentReducesInstallmentBase(options?.contractModel)
         ? Math.max(0, netValue - entryAmount)
         : netValue;
 
   const balloonSummary =
-    paymentMode.isInstallment && options?.financeReceipts
-      ? resolveSaleContractBalloonFinance({
+    swapFinance || !paymentMode.isInstallment || !options?.financeReceipts
+      ? null
+      : resolveSaleContractBalloonFinance({
           sale,
           financeReceipts: options.financeReceipts,
           balloonAddons: options.balloonAddons,
           isCashPayment: false,
-        })
-      : null;
+        });
 
-  const installmentValue =
-    paymentMode.isImmediateCash || paymentMode.isSingleFuture
+  const installmentValue = swapFinance
+    ? swapFinance.remaining_installments[0]?.amount || 0
+    : paymentMode.isImmediateCash || paymentMode.isSingleFuture
       ? 0
       : balloonSummary?.hasBalloon
         ? balloonSummary.baseInstallmentValue
@@ -163,6 +178,8 @@ export function resolveSaleContractPaymentBreakdown(
     singlePaymentDueFmt: singlePaymentDueRaw ? singleDue.fmt : '',
     singlePaymentDueLongFmt: singlePaymentDueRaw ? singleDue.longFmt : '',
     balloonSummary,
+    lotSwapUsesContinuity: lotSwapContractUsesContinuityPayment(swapFinance),
+    lotSwapCreditedFmt: swapFinance ? formatBRL(swapFinance.total_paid) : null,
   };
 }
 
@@ -210,26 +227,49 @@ export function buildSaleContractPaymentSummaryHtml(
     });
   }
 
-  const rows: Array<[string, string]> = [
-    ['Valor do lote', breakdown.lotPriceFmt],
-    ['Desconto concedido', breakdown.discountFmt],
-    ['Valor da entrada', breakdown.isCashPayment ? '—' : breakdown.entryFmt],
-    [
-      'Saldo parcelado',
-      breakdown.isCashPayment ? '—' : breakdown.installmentBalanceFmt,
-    ],
-    [
-      'Quantidade de parcelas',
-      breakdown.isCashPayment
-        ? 'À vista'
-        : `${breakdown.installmentsCount} parcela(s)`,
-    ],
-    [
-      'Valor da parcela',
-      breakdown.isCashPayment ? '—' : breakdown.installmentValueFmt,
-    ],
-    ['Correção das parcelas', breakdown.correctionLabel],
-  ];
+  const rows: Array<[string, string]> = breakdown.lotSwapUsesContinuity
+    ? [
+        ['Valor do lote', breakdown.lotPriceFmt],
+        ['Desconto concedido', breakdown.discountFmt],
+        [
+          'Valor já pago/aproveitado',
+          breakdown.lotSwapCreditedFmt || '—',
+        ],
+        ['Saldo remanescente', breakdown.installmentBalanceFmt],
+        [
+          'Quantidade de parcelas',
+          breakdown.installmentsCount > 0
+            ? `${breakdown.installmentsCount} parcela(s)`
+            : '—',
+        ],
+        [
+          'Valor da parcela',
+          breakdown.installmentsCount > 0
+            ? breakdown.installmentValueFmt
+            : '—',
+        ],
+        ['Correção das parcelas', breakdown.correctionLabel],
+      ]
+    : [
+        ['Valor do lote', breakdown.lotPriceFmt],
+        ['Desconto concedido', breakdown.discountFmt],
+        ['Valor da entrada', breakdown.isCashPayment ? '—' : breakdown.entryFmt],
+        [
+          'Saldo parcelado',
+          breakdown.isCashPayment ? '—' : breakdown.installmentBalanceFmt,
+        ],
+        [
+          'Quantidade de parcelas',
+          breakdown.isCashPayment
+            ? 'À vista'
+            : `${breakdown.installmentsCount} parcela(s)`,
+        ],
+        [
+          'Valor da parcela',
+          breakdown.isCashPayment ? '—' : breakdown.installmentValueFmt,
+        ],
+        ['Correção das parcelas', breakdown.correctionLabel],
+      ];
 
   const body = rows
     .map(

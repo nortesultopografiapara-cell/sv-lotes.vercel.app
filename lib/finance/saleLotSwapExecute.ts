@@ -10,6 +10,7 @@ import {
   LOT_SWAP_SOURCE_AFTER_EXECUTE_STATUS,
   SALE_LOT_SWAP_OPERATION_CODE,
 } from '@/lib/finance/saleLotSwap';
+import { buildLotSwapContractFinanceReceipts } from '@/lib/finance/saleLotSwapContractContext';
 import type { LotSwapFinancialPlan } from '@/lib/finance/saleLotSwapPlan';
 
 export const LOT_SWAP_EXECUTE_RPC = 'execute_sale_lot_swap';
@@ -119,26 +120,14 @@ export function buildLotSwapExecuteReceiptMutations(plan: LotSwapFinancialPlan):
   };
 }
 
+/** Recibos do HTML do novo contrato: só o saldo futuro da troca. */
 export function buildSyntheticContractReceipts(plan: LotSwapFinancialPlan): Array<{
   installment_number: number;
   amount: number;
   due_date: string | null;
   status: string;
 }> {
-  return [
-    ...plan.receipts.preserve.map((item) => ({
-      installment_number: item.installmentNumber,
-      amount: item.amount,
-      due_date: item.dueDate,
-      status: 'pago',
-    })),
-    ...plan.receipts.create.map((item) => ({
-      installment_number: item.installmentNumber,
-      amount: item.amount,
-      due_date: item.dueDate,
-      status: 'pendente',
-    })),
-  ];
+  return buildLotSwapContractFinanceReceipts(plan);
 }
 
 export function parseLotSwapExecuteRpcError(message?: string | null): {

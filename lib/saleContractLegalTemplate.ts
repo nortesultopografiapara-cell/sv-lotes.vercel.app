@@ -8,6 +8,11 @@ import {
   resolveSalePaymentMode,
   type SalePaymentMode,
 } from '@/lib/salePaymentMode';
+import {
+  buildLotSwapPadraoClauseQuartaHtml,
+  lotSwapContractUsesContinuityPayment,
+  type LotSwapContractFinanceSnapshot,
+} from '@/lib/finance/saleLotSwapContractContext';
 
 export { normalizeSalePaymentType, resolveSalePaymentMode };
 export type { SalePaymentMode };
@@ -111,9 +116,25 @@ export function buildSaleContractClauseQuartaHtml(params: {
   hasVariableInstallments?: boolean;
   /** Texto completo já montado pelo helper de balão (opcional). */
   balloonClauseBodyHtml?: string | null;
+  /** Snapshot financeiro da troca de lote — não reusa entrada/parcelas da venda antiga. */
+  lotSwapSnapshot?: LotSwapContractFinanceSnapshot | null;
 }): string {
   const taxes =
     ' Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.';
+
+  if (
+    lotSwapContractUsesContinuityPayment(params.lotSwapSnapshot) &&
+    params.lotSwapSnapshot
+  ) {
+    return buildLotSwapPadraoClauseQuartaHtml({
+      valorTotalFmt: params.valorTotalFmt,
+      valorTotalExtenso: params.valorTotalExtenso,
+      snapshot: params.lotSwapSnapshot,
+      dataPrimeiraParcelaFmt: params.dataPrimeiraParcelaFmt,
+      dataUltimaParcelaFmt: params.dataUltimaParcelaFmt,
+      taxes,
+    });
+  }
 
   const mode: SalePaymentMode =
     params.mode ?? (params.isCash ? 'IMMEDIATE_CASH' : 'INSTALLMENT');

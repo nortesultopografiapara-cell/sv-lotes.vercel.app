@@ -78,8 +78,13 @@ function testReceiptMutationsPreservePaidAndReplaceFuture() {
   assert(mut.create[0].amount === 100000, 'novo saldo');
   assert(mut.create[0].financial_account_id === 'acc-1', 'conta financeira');
   const synthetic = buildSyntheticContractReceipts(plan);
-  assert(synthetic[0].status === 'pago', 'HTML vê pago histórico');
-  assert(synthetic[1].status === 'pendente', 'HTML vê nova pendente');
+  assert(synthetic.length === 1, 'HTML do contrato só vê o saldo novo');
+  assert(synthetic[0].status === 'pendente', 'pago preservado não vira parcela/entrada no HTML');
+  assert(synthetic[0].amount === 100000, 'HTML vê o saldo remanescente');
+  assert(
+    synthetic.every((row) => row.status === 'pendente'),
+    'recibos sintéticos do contrato são só CREATE',
+  );
   console.log('OK testReceiptMutationsPreservePaidAndReplaceFuture');
 }
 
@@ -347,6 +352,7 @@ function testExecuteServiceContractCompatibility() {
   const svc = read('lib/finance/saleLotSwapExecuteService.ts');
   assert(svc.includes('getNextContractNumber'), 'numeração oficial');
   assert(svc.includes('generateContractHTML'), 'geradores oficiais');
+  assert(svc.includes('buildLotSwapContractFinanceContext'), 'contexto financeiro da troca');
   assert(svc.includes('resolveSaleContractModelFromContext'), 'PADRAO/ARAGUAIA/RECANTO/MUNDO_NOVO');
   assert(svc.includes('loadFreshRegenerationEntities'), 'dados vigentes da venda');
   assert(svc.includes("balloonAddons: []"), 'não regrava balões');

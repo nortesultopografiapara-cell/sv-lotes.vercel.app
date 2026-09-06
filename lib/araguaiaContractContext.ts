@@ -45,6 +45,11 @@ import {
   inflectAraguaiaSingleParty,
   type AraguaiaPartyInflection,
 } from '@/lib/araguaiaContractPartyInflection';
+import {
+  buildLotSwapRemainingSchedulePhrase,
+  readLotSwapContractFinance,
+  type LotSwapContractFinanceSnapshot,
+} from '@/lib/finance/saleLotSwapContractContext';
 
 export type AraguaiaContractParams = {
   tenant: Record<string, unknown> | null | undefined;
@@ -112,6 +117,12 @@ export type AraguaiaContractContext = {
   primeiroVencimentoFmt: string;
   primeiroVencimentoLong: string;
   correctionLabel: string;
+  lotSwapFinance: LotSwapContractFinanceSnapshot | null;
+  lotSwapSchedulePhrase: string;
+  lotSwapCreditedFmt: string;
+  lotSwapCreditedExtenso: string;
+  lotSwapBalanceFmt: string;
+  lotSwapBalanceExtenso: string;
   brokerName: string;
   brokerCpf: string;
   cityUf: string;
@@ -368,20 +379,26 @@ export function buildAraguaiaContractContext(
     pendingFields.push('confrontante da lateral esquerda');
   }
 
+  const swapFinance = readLotSwapContractFinance(sale);
   const valTotal =
+    swapFinance?.new_lot_price ||
     Number(sale.total_value) ||
     Number(sale.final_value) ||
     Number(sale.agreed_price) ||
     Number(block.price) ||
     0;
-  const valEntrada = Number(sale.down_payment || 0);
-  const qtdParcelas = Number(sale.installments_count) || 0;
+  const valEntrada = swapFinance ? 0 : Number(sale.down_payment || 0);
+  const qtdParcelas = swapFinance
+    ? swapFinance.remaining_installments.length
+    : Number(sale.installments_count) || 0;
   let valorParcela = Number(sale.installment_value) || 0;
   if (!(valorParcela > 0) && qtdParcelas > 0) {
     valorParcela = (valTotal - valEntrada) / qtdParcelas;
   }
   const receipts = params.financeReceipts || null;
-  if (receipts?.length) {
+  if (swapFinance?.remaining_installments[0]) {
+    valorParcela = swapFinance.remaining_installments[0].amount;
+  } else if (receipts?.length) {
     const firstInstallment = receipts
       .filter((r) => Number(r.installment_number) >= 1)
       .sort((a, b) => Number(a.installment_number) - Number(b.installment_number))[0];
@@ -474,6 +491,14 @@ export function buildAraguaiaContractContext(
     primeiroVencimentoFmt,
     primeiroVencimentoLong,
     correctionLabel,
+    lotSwapFinance: swapFinance,
+    lotSwapSchedulePhrase: swapFinance
+      ? buildLotSwapRemainingSchedulePhrase(swapFinance.remaining_installments)
+      : '',
+    lotSwapCreditedFmt: formatBRL(swapFinance?.total_paid || 0),
+    lotSwapCreditedExtenso: currencyExtenso(swapFinance?.total_paid || 0),
+    lotSwapBalanceFmt: formatBRL(swapFinance?.new_balance || 0),
+    lotSwapBalanceExtenso: currencyExtenso(swapFinance?.new_balance || 0),
     brokerName: broker.name || 'não informado',
     brokerCpf: broker.cpf || '',
     cityUf,

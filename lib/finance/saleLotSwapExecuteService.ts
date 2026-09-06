@@ -27,12 +27,12 @@ import { SALE_LOT_SWAP_TABLE } from '@/lib/finance/saleLotSwap';
 import {
   assertContractNumberNotReused,
   buildLotSwapExecuteReceiptMutations,
-  buildSyntheticContractReceipts,
   LOT_SWAP_EXECUTE_RPC,
   parseLotSwapExecuteRpcError,
   type LotSwapExecuteRpcPayload,
   type LotSwapExecuteRpcResult,
 } from '@/lib/finance/saleLotSwapExecute';
+import { buildLotSwapContractFinanceContext } from '@/lib/finance/saleLotSwapContractContext';
 import {
   assertLotSwapPlanPersistable,
   type LotSwapFinancialPlan,
@@ -136,21 +136,15 @@ async function buildLotSwapReplacementContractHtml(
   }
 
   const fresh = await loadFreshRegenerationEntities(admin, sourceContract, session);
-  const syntheticReceipts = buildSyntheticContractReceipts(input.plan);
-  const receiptsSum = syntheticReceipts.reduce(
-    (sum, row) => sum + money2(row.amount),
-    0,
-  );
+  const contractFinance = buildLotSwapContractFinanceContext(input.plan);
+  const syntheticReceipts = contractFinance.financeReceipts;
+  const receiptsSum = money2(input.plan.financials.new_lot_price);
   const saleWithNewUnit: Record<string, unknown> = {
     ...fresh.sale,
     id: input.saleId,
     block_id: input.toBlockId,
     lot_id: input.toBlockId,
-    agreed_price: input.plan.financials.new_lot_price,
-    lot_price: input.plan.financials.new_lot_price,
-    total_value: input.plan.financials.new_lot_price,
-    installments_count: input.plan.schedule.newInstallmentCount,
-    receipts_sum: receiptsSum,
+    ...contractFinance.salePatch,
     finance_receipts: syntheticReceipts,
   };
   const destBlock = enrichBlockForContract({
@@ -218,7 +212,7 @@ async function buildLotSwapReplacementContractHtml(
     html,
     contractNumber: input.contractNumber,
     contractModel: effectiveModel.model ? String(effectiveModel.model) : null,
-    downPayment: money2(saleWithNewUnit.down_payment) || null,
+    downPayment: 0,
     snapshots,
     blockNumber:
       text(destBlock.block_name) ||
