@@ -200,6 +200,21 @@ export function assertTitleTransferLotUnchanged(input: {
   return { ok: true, code: null };
 }
 
+export function sanitizeTitleTransferOperatorMessage(raw?: string | null): string {
+  const s = String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return '';
+  if (
+    /token|secret|password|authorization|cert(?:ificate)?|private.?key|client.?secret|api.?key|bearer|BEGIN [A-Z]/i.test(
+      s,
+    )
+  ) {
+    return '';
+  }
+  return s.slice(0, 500);
+}
+
 export function mapTitleTransferPreviewUserMessage(input: {
   status?: number;
   code?: string | null;
@@ -257,7 +272,11 @@ export function mapTitleTransferPreviewUserMessage(input: {
     return 'O cancelamento bancário desta transferência não está autorizado neste ambiente.';
   }
   if (code === 'TITLE_TRANSFER_CHARGES_CANCEL_FAILED') {
-    return 'Falha ao cancelar cobrança bancária do titular anterior. A transferência local não foi executada.';
+    const safe = sanitizeTitleTransferOperatorMessage(fromServer);
+    return (
+      safe ||
+      'Falha ao cancelar cobrança bancária do titular anterior. A transferência local não foi executada.'
+    );
   }
   if (code === 'UNAUTHORIZED' || code === 'NO_PROFILE' || input.status === 401) {
     return 'Sessão ou autorização inválida.';

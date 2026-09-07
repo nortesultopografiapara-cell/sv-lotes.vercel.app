@@ -17,7 +17,7 @@ import {
   resolveAsaasStatusDisplayLabel,
 } from '../lib/charges/chargeOperationsHelpers';
 import { resolveInterIssuedChargeActions } from '../lib/charges/interChargeActions';
-import { summarizeTitleTransferFinance } from '../lib/finance/saleTitleTransferPreview';
+import { summarizeTitleTransferFinance, mapTitleTransferPreviewUserMessage } from '../lib/finance/saleTitleTransferPreview';
 import {
   assertExternalChargeCancelConfirmed,
   titleTransferChargeNeedsCancel,
@@ -185,6 +185,26 @@ function testCancelConfirmHelpers() {
   console.log('OK testCancelConfirmHelpers');
 }
 
+function testOperationalCancelMessage() {
+  const labeled =
+    'Inter — Parcela 2/4 — cancelamento não confirmado. POST aceito, porém consulta permaneceu A_RECEBER. HTTP 202. codigoSolicitacao: dcd8ceee-a72f-4a2c-bd38-f23eb64d0923 A transferência local não foi executada.';
+  assert(
+    mapTitleTransferPreviewUserMessage({
+      code: 'TITLE_TRANSFER_CHARGES_CANCEL_FAILED',
+      message: labeled,
+    }) === labeled,
+    'UI mostra erro operacional sanitizado',
+  );
+  assert(
+    mapTitleTransferPreviewUserMessage({
+      code: 'TITLE_TRANSFER_CHARGES_CANCEL_FAILED',
+      message: 'Bearer secret',
+    }).includes('Falha ao cancelar cobrança bancária'),
+    'não vaza segredo',
+  );
+  console.log('OK testOperationalCancelMessage');
+}
+
 function testProtectedModulesUntouched() {
   const files = [
     'lib/mundoNovoContractSellers.ts',
@@ -209,6 +229,7 @@ function main() {
   testHomologReceiptModel();
   testCancelledChargeActions();
   testCancelConfirmHelpers();
+  testOperationalCancelMessage();
   testProtectedModulesUntouched();
   console.log('OK mandatory-sale-title-transfer-phase5-tests');
 }

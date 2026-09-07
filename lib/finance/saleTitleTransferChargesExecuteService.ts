@@ -39,11 +39,30 @@ import {
   TITLE_TRANSFER_CROSS_TENANT,
   mapTitleTransferPreviewUserMessage,
 } from '@/lib/finance/saleTitleTransferPreview';
+import { InterRemoteCancelError, sanitizeInterOperatorDetail } from '@/lib/banking/inter/interCobrancaClient';
 import { TitleTransferPreviewError } from '@/lib/finance/saleTitleTransferPreviewService';
 import { loadLotSwapCallerProfile } from '@/lib/finance/saleLotSwapPreviewService';
 import { assertTitleTransferCallerOwnsCompany } from '@/lib/finance/saleTitleTransferPreview';
 
 export { TitleTransferPreviewError };
+
+function formatTitleTransferBankCancelFailure(input: {
+  providerLabel: string;
+  index: number;
+  total: number;
+  cause: unknown;
+}): string {
+  const index = Math.max(1, input.index);
+  const total = Math.max(index, input.total);
+  if (input.cause instanceof InterRemoteCancelError) {
+    return `${input.cause.withParcelLabel(index, total)} A transferência local não foi executada.`;
+  }
+  const detail =
+    sanitizeInterOperatorDetail(
+      input.cause instanceof Error ? input.cause.message : String(input.cause || ''),
+    ) || 'Falha ao cancelar cobrança bancária do titular anterior.';
+  return `${input.providerLabel} — Parcela ${index}/${total} — ${detail} A transferência local não foi executada.`;
+}
 
 type LocalExecuteFn = typeof executeSaleTitleTransfer;
 let localExecuteImpl: LocalExecuteFn = executeSaleTitleTransfer;
@@ -438,7 +457,8 @@ export async function executeSaleTitleTransferWithExternalCharges(
       phase: 'CANCELLING',
       snapshot: { canceledChargeIds, phase: 'CANCELLING' },
     });
-    for (const charge of wouldCancel) {
+    for (let i = 0; i < wouldCancel.length; i += 1) {
+      const charge = wouldCancel[i];
       if (charge.classification === 'paid') continue;
       if (canceledChargeIds.includes(charge.chargeId)) continue;
       const provider = getExternalChargeProvider(charge.provider);
@@ -451,7 +471,12 @@ export async function executeSaleTitleTransferWithExternalCharges(
         assertExternalChargeCancelConfirmed(result);
         canceledChargeIds.push(charge.chargeId);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = formatTitleTransferBankCancelFailure({
+          providerLabel: provider.displayName || charge.provider,
+          index: i + 1,
+          total: wouldCancel.length,
+          cause: err,
+        });
         await persistChargesPhase(admin, {
           transferId,
           companyId,
@@ -460,7 +485,7 @@ export async function executeSaleTitleTransferWithExternalCharges(
           error: TITLE_TRANSFER_CHARGES_CANCEL_FAILED,
         });
         throw new TitleTransferPreviewError(
-          'Falha ao cancelar cobrança bancária do titular anterior. A transferência local não foi executada.',
+          message,
           TITLE_TRANSFER_CHARGES_CANCEL_FAILED,
           409,
         );

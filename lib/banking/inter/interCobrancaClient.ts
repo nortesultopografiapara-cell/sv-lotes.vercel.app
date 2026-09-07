@@ -115,6 +115,93 @@ export class InterCobrancaHttpError extends Error {
   }
 }
 
+export type InterCancelStage =
+  | 'consulta_inicial'
+  | 'pedido_cancelamento'
+  | 'confirmacao';
+
+const OPERATOR_SECRET_RE =
+  /token|secret|password|authorization|cert(?:ificate)?|private.?key|client.?secret|api.?key|bearer|BEGIN [A-Z]/i;
+
+export function sanitizeInterOperatorDetail(raw?: string | null): string {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!s || OPERATOR_SECRET_RE.test(s)) return '';
+  return s.slice(0, 280);
+}
+
+export function extractInterHttpStatusFromError(err: unknown): number | null {
+  if (err instanceof InterCobrancaHttpError) return err.status;
+  const msg = err instanceof Error ? err.message : String(err || '');
+  const m = msg.match(/HTTP\s+(\d{3})/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Erro operacional do cancelamento Inter — sem token/certificado. */
+export class InterRemoteCancelError extends Error {
+  stage: InterCancelStage;
+  httpStatus: number | null;
+  situacao: string | null;
+  codigoSolicitacao: string | null;
+
+  constructor(input: {
+    stage: InterCancelStage;
+    httpStatus?: number | null;
+    situacao?: string | null;
+    codigoSolicitacao?: string | null;
+    detail?: string | null;
+  }) {
+    const situacao = String(input.situacao || '')
+      .trim()
+      .toUpperCase() || null;
+    const codigo = String(input.codigoSolicitacao || '').trim() || null;
+    const httpStatus = input.httpStatus ?? null;
+    const detail = sanitizeInterOperatorDetail(input.detail);
+    const stageLabel =
+      input.stage === 'consulta_inicial'
+        ? 'consulta inicial'
+        : input.stage === 'pedido_cancelamento'
+          ? 'pedido de cancelamento'
+          : 'confirmação';
+    const parts: string[] = [];
+    if (input.stage === 'confirmacao' && situacao && situacao !== 'CANCELADO' && situacao !== 'EXPIRADO') {
+      parts.push('Inter — cancelamento não confirmado.');
+      if (httpStatus != null && httpStatus >= 200 && httpStatus < 300) {
+        parts.push(`POST aceito, porém consulta permaneceu ${situacao}.`);
+      } else {
+        parts.push(`consulta permaneceu ${situacao}.`);
+      }
+    } else {
+      parts.push(`Inter — ${stageLabel}.`);
+      if (detail) parts.push(detail);
+    }
+    if (httpStatus != null && !parts.some((p) => p.includes(`HTTP ${httpStatus}`))) {
+      parts.push(`HTTP ${httpStatus}.`);
+    }
+    if (situacao && input.stage !== 'confirmacao') parts.push(`situação ${situacao}.`);
+    if (codigo) parts.push(`codigoSolicitacao: ${codigo}`);
+    super(parts.join(' ').replace(/\s+/g, ' ').trim());
+    this.name = 'InterRemoteCancelError';
+    this.stage = input.stage;
+    this.httpStatus = httpStatus;
+    this.situacao = situacao;
+    this.codigoSolicitacao = codigo;
+  }
+
+  withParcelLabel(index: number, total: number): string {
+    const n = Math.max(1, index);
+    const t = Math.max(n, total);
+    return this.message.replace(/^Inter —/, `Inter — Parcela ${n}/${t} —`);
+  }
+}
+
+export const INTER_CANCEL_CONFIRM_POLL = {
+  maxAttempts: 5,
+  initialDelayMs: 500,
+  maxDelayMs: 2000,
+} as const;
+
 function createMtlsAgent(creds: InterOAuthCredentials): https.Agent {
   return new https.Agent({
     cert: creds.certificatePem,
@@ -355,6 +442,39 @@ export async function pollInterCobrancaUntilReady(
     }
   }
   if (!last) throw new Error('Timeout ao consultar cobrança Inter.');
+  return last;
+}
+
+/**
+ * Após POST /cancelar (tipicamente 202 assíncrono).
+ * Não trata boleto/PIX já emitido como sucesso — só situacao terminal
+ * (CANCELADO / EXPIRADO / RECEBIDO).
+ */
+export async function pollInterCobrancaUntilCancelSettled(
+  creds: InterOAuthCredentials,
+  codigoSolicitacao: string,
+  options?: InterPollOptions,
+): Promise<InterCobrancaDetail> {
+  const maxAttempts = options?.maxAttempts ?? INTER_CANCEL_CONFIRM_POLL.maxAttempts;
+  const initialDelayMs =
+    options?.initialDelayMs ?? INTER_CANCEL_CONFIRM_POLL.initialDelayMs;
+  const maxDelayMs = options?.maxDelayMs ?? INTER_CANCEL_CONFIRM_POLL.maxDelayMs;
+  const sleepFn = options?.sleepFn || defaultSleep;
+
+  let last: InterCobrancaDetail | null = null;
+  let delay = initialDelayMs;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (delay > 0) await sleepFn(delay);
+    last = await fetchInterCobrancaByCodigo(creds, codigoSolicitacao, {
+      fetchFn: options?.fetchFn,
+    });
+    if (isInterSituacaoTerminal(last.situacao)) return last;
+    delay = Math.min(
+      maxDelayMs,
+      Math.round(Math.max(delay, initialDelayMs || 400) * 1.6),
+    );
+  }
+  if (!last) throw new Error('Timeout ao confirmar cancelamento Inter.');
   return last;
 }
 

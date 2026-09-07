@@ -8,9 +8,15 @@ import {
   createInterCobranca,
   fetchInterCobrancaByCodigo,
   pollInterCobrancaUntilReady,
+  pollInterCobrancaUntilCancelSettled,
   cancelInterCobranca,
+  InterCobrancaHttpError,
+  InterRemoteCancelError,
+  INTER_CANCEL_CONFIRM_POLL,
+  extractInterHttpStatusFromError,
   type InterCobrancaDetail,
   type InterCreateCobrancaInput,
+  type InterPollOptions,
 } from '@/lib/banking/inter/interCobrancaClient';
 import { isInterSituacaoRecebido, mapInterSituacaoToBankStatus } from '@/lib/banking/inter/interStatus';
 import { settleInterPaidCharge } from '@/lib/banking/inter/interPaymentSettlement';
@@ -887,7 +893,8 @@ export async function refreshInterSaleCharges(
 }
 
 /**
- * Cancela uma cobrança Inter da empresa (mesmo caminho oficial da Troca/adapter).
+ * Cancela uma cobrança Inter da empresa (mesmo GET/POST/codigoSolicitacao/ACERTOS
+ * do ReleaseLot). POST /cancelar é assíncrono (202): confirma com polling GET.
  * Motivo ACERTOS. Recusa paga.
  * Nunca marca CANCELLED local sem GET confirmar situacao CANCELADO/EXPIRADO.
  */
@@ -897,6 +904,8 @@ export async function cancelInterInstallmentCharge(
     companyId: string;
     chargeId: string;
     fetchFn?: InterOAuthFetchFn;
+    secretsLoader?: typeof loadInterSecretsForServer;
+    poll?: InterPollOptions;
   },
 ): Promise<{
   ok: true;
@@ -923,7 +932,11 @@ export async function cancelInterInstallmentCharge(
   if (!data) throw new Error('Cobrança Inter não encontrada nesta empresa.');
   const status = String(data.status || '').toUpperCase();
   if (status === 'PAID') {
-    throw new Error('Cobrança já paga — cancelamento não permitido.');
+    throw new InterRemoteCancelError({
+      stage: 'consulta_inicial',
+      situacao: 'RECEBIDO',
+      detail: 'Cobrança já paga — cancelamento não permitido.',
+    });
   }
   const codigo = String(data.external_id || '').trim();
   if (!codigo) {
@@ -936,16 +949,24 @@ export async function cancelInterInstallmentCharge(
         status,
       };
     }
-    throw new Error('Cobrança Inter sem identificador remoto.');
+    throw new InterRemoteCancelError({
+      stage: 'consulta_inicial',
+      detail: 'Cobrança Inter sem codigoSolicitacao (external_id).',
+    });
   }
-  const secrets = await loadInterSecretsForServer(admin, companyId, {
+  const secretsLoader = input.secretsLoader || loadInterSecretsForServer;
+  const secrets = await secretsLoader(admin, companyId, {
     integrationId: data.integration_id ? String(data.integration_id) : null,
     financialAccountId: data.financial_account_id
       ? String(data.financial_account_id)
       : null,
   });
   if (!secrets) {
-    throw new Error('Credenciais Inter ausentes para esta conta financeira.');
+    throw new InterRemoteCancelError({
+      stage: 'consulta_inicial',
+      codigoSolicitacao: codigo,
+      detail: 'Credenciais Inter ausentes para esta conta financeira.',
+    });
   }
   const creds: InterOAuthCredentials = {
     companyId,
@@ -957,16 +978,10 @@ export async function cancelInterInstallmentCharge(
     privateKeyPem: secrets.privateKeyPem,
   };
 
-  const readRemote = async () => {
-    const detail = await fetchInterCobrancaByCodigo(creds, codigo, {
-      fetchFn: input.fetchFn,
-    });
-    const situacao = normalizeInterSituacaoForRelease(detail.situacao);
-    return {
-      situacao,
-      disposition: classifyRemoteInterSituacaoForRelease(detail.situacao),
-    };
-  };
+  const classifyDetail = (situacao: string) => ({
+    situacao: normalizeInterSituacaoForRelease(situacao),
+    disposition: classifyRemoteInterSituacaoForRelease(situacao),
+  });
 
   const persistConfirmedCancelled = async (situacao: string) => {
     const prevMeta = asMeta(data.metadata);
@@ -992,9 +1007,27 @@ export async function cancelInterInstallmentCharge(
     return String(updated.data?.status || 'CANCELLED');
   };
 
-  let remote = await readRemote();
+  let remote: ReturnType<typeof classifyDetail>;
+  try {
+    const detail = await fetchInterCobrancaByCodigo(creds, codigo, {
+      fetchFn: input.fetchFn,
+    });
+    remote = classifyDetail(detail.situacao);
+  } catch (err) {
+    throw new InterRemoteCancelError({
+      stage: 'consulta_inicial',
+      httpStatus: extractInterHttpStatusFromError(err),
+      codigoSolicitacao: codigo,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
   if (remote.disposition === 'preserve_paid') {
-    throw new Error('Cobrança já paga — cancelamento não permitido.');
+    throw new InterRemoteCancelError({
+      stage: 'consulta_inicial',
+      situacao: remote.situacao,
+      codigoSolicitacao: codigo,
+      detail: 'Cobrança já paga — cancelamento não permitido.',
+    });
   }
   if (remote.disposition === 'already_cancelled') {
     const nextStatus = await persistConfirmedCancelled(remote.situacao);
@@ -1007,20 +1040,69 @@ export async function cancelInterInstallmentCharge(
     };
   }
   if (remote.disposition !== 'cancel') {
-    throw new Error(
-      `Cobrança Inter com situação remota "${remote.situacao || 'desconhecida'}" não é cancelável.`,
-    );
+    throw new InterRemoteCancelError({
+      stage: 'consulta_inicial',
+      situacao: remote.situacao,
+      codigoSolicitacao: codigo,
+      detail: `Cobrança Inter com situação remota "${remote.situacao || 'desconhecida'}" não é cancelável.`,
+    });
   }
 
-  await cancelInterCobranca(creds, codigo, {
-    fetchFn: input.fetchFn,
-    motivoCancelamento: 'ACERTOS',
-  });
-  remote = await readRemote();
+  let postStatus = 0;
+  try {
+    const posted = await cancelInterCobranca(creds, codigo, {
+      fetchFn: input.fetchFn,
+      motivoCancelamento: 'ACERTOS',
+    });
+    postStatus = posted.status;
+  } catch (err) {
+    throw new InterRemoteCancelError({
+      stage: 'pedido_cancelamento',
+      httpStatus:
+        err instanceof InterCobrancaHttpError
+          ? err.status
+          : extractInterHttpStatusFromError(err),
+      situacao: remote.situacao,
+      codigoSolicitacao: codigo,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    const confirmed = await pollInterCobrancaUntilCancelSettled(creds, codigo, {
+      fetchFn: input.fetchFn,
+      maxAttempts: input.poll?.maxAttempts ?? INTER_CANCEL_CONFIRM_POLL.maxAttempts,
+      initialDelayMs:
+        input.poll?.initialDelayMs ?? INTER_CANCEL_CONFIRM_POLL.initialDelayMs,
+      maxDelayMs: input.poll?.maxDelayMs ?? INTER_CANCEL_CONFIRM_POLL.maxDelayMs,
+      sleepFn: input.poll?.sleepFn,
+    });
+    remote = classifyDetail(confirmed.situacao);
+  } catch (err) {
+    throw new InterRemoteCancelError({
+      stage: 'confirmacao',
+      httpStatus: extractInterHttpStatusFromError(err) ?? postStatus,
+      situacao: remote.situacao,
+      codigoSolicitacao: codigo,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+  if (remote.disposition === 'preserve_paid') {
+    throw new InterRemoteCancelError({
+      stage: 'confirmacao',
+      httpStatus: postStatus,
+      situacao: remote.situacao,
+      codigoSolicitacao: codigo,
+      detail: 'Cobrança foi recebida durante o cancelamento — preservar, não cancelar.',
+    });
+  }
   if (remote.disposition !== 'already_cancelled') {
-    throw new Error(
-      `Banco Inter não confirmou o cancelamento (situação ${remote.situacao || 'inconclusiva'}).`,
-    );
+    throw new InterRemoteCancelError({
+      stage: 'confirmacao',
+      httpStatus: postStatus,
+      situacao: remote.situacao,
+      codigoSolicitacao: codigo,
+    });
   }
   const nextStatus = await persistConfirmedCancelled(remote.situacao);
   return {

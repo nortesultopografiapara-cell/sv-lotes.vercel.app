@@ -961,9 +961,8 @@ function testSourceArchitecture() {
   const executeLib = read('lib/finance/saleTitleTransferExecute.ts');
   assert(executeLib.includes(TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT), 'texto do checkbox');
   const cancelInter = read('lib/banking/inter/interSaleChargeService.ts');
-  assert(cancelInter.includes('fetchInterCobrancaByCodigo'), 'GET Inter antes/depois');
-  assert(cancelInter.includes('remoteCancelConfirmed: true'), 'só persiste após GET');
-  assert(cancelInter.includes('Banco Inter não confirmou o cancelamento'), 'GET pós-POST obrigatório');
+  assert(cancelInter.includes('pollInterCobrancaUntilCancelSettled'), 'polling GET após 202');
+  assert(cancelInter.includes('InterRemoteCancelError'), 'erro operacional Inter');
   assert(cancelInter.includes('classifyRemoteInterSituacaoForRelease'), 'classifica situacao real');
   console.log('OK testSourceArchitecture');
 }
@@ -1011,6 +1010,91 @@ function testRpcUuidCoalesceFix() {
   console.log('OK testRpcUuidCoalesceFix');
 }
 
+async function testFourInterChargesOneFailureBlocks() {
+  ensureExternalChargeProvidersRegistered();
+  const store = baseStore();
+  store.finance_receipts = [
+    store.finance_receipts[0],
+    ...[1, 2, 3, 4].map((n) => ({
+      id: `r-f${n}`,
+      sale_id: 'sale-1',
+      status: 'pendente',
+      amount: 10,
+      due_date: `2026-0${n + 8}-08`,
+      installment_number: n,
+      customer_id: 'cust-a',
+    })),
+  ];
+  store.bank_charges = [1, 2, 3, 4].map((n) => ({
+    id: `i-open-${n}`,
+    company_id: 'co-1',
+    sale_id: 'sale-1',
+    finance_receipt_id: `r-f${n}`,
+    status: 'REGISTERED',
+    provider: 'INTER',
+    external_id: `sol-${n}`,
+  }));
+  setTitleTransferChargesLiveScopeEnvForTests({
+    NEXT_PUBLIC_SUPABASE_URL: 'https://hoynysmynxncdlptuzub.supabase.co',
+  });
+  const canceled: string[] = [];
+  setExternalChargeMutationFnsForTests({
+    cancelInterCharge: async (_admin, _company, chargeId) => {
+      if (chargeId === 'i-open-2') {
+        throw new Error('POST aceito, porém consulta permaneceu A_RECEBER.');
+      }
+      canceled.push(chargeId);
+      return { ok: true as const, reused: false, remoteConfirmed: true, chargeId, status: 'CANCELLED' };
+    },
+  });
+  let localCalled = 0;
+  setTitleTransferLocalExecuteForTests(async () => {
+    localCalled += 1;
+    return localResult(store, 'x');
+  });
+  try {
+    await executeSaleTitleTransferWithExternalCharges(adminFrom(store) as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      toCustomerId: 'cust-b',
+      expectedContractId: 'ct-1',
+      expectedBlockId: 'block-1',
+      confirmTransfer: true,
+    });
+    throw new Error('uma falha entre quatro deveria bloquear');
+  } catch (err) {
+    const tt = asTtError(err);
+    assert(tt.code === TITLE_TRANSFER_CHARGES_CANCEL_FAILED, 'cancel failed');
+    assert(/Parcela \d\/4/.test(tt.message), `erro operacional parcela N/4: ${tt.message}`);
+    assert(/A transferência local não foi executada/.test(tt.message), 'fail-closed na mensagem');
+  }
+  assert(!canceled.includes('i-open-3') || canceled.length < 4, 'não conclui as quatro após falha');
+  assert(localCalled === 0, 'nenhuma transferência local');
+
+  canceled.length = 0;
+  setExternalChargeMutationFnsForTests({
+    cancelInterCharge: async (_admin, _company, chargeId) => {
+      canceled.push(chargeId);
+      return { ok: true as const, reused: false, remoteConfirmed: true, chargeId, status: 'CANCELLED' };
+    },
+  });
+  const ok = await executeSaleTitleTransferWithExternalCharges(adminFrom(store) as never, {
+    saleId: 'sale-1',
+    userId: 'user-1',
+    toCustomerId: 'cust-b',
+    expectedContractId: 'ct-1',
+    expectedBlockId: 'block-1',
+    confirmTransfer: true,
+  });
+  assert(ok.canceledChargeIds.length === 4, 'retry seguro: as quatro confirmadas antes da RPC');
+  assert(localCalled === 1, 'RPC só depois das quatro');
+
+  setExternalChargeMutationFnsForTests({});
+  setTitleTransferLocalExecuteForTests(null);
+  setTitleTransferChargesLiveScopeEnvForTests(null);
+  console.log('OK testFourInterChargesOneFailureBlocks');
+}
+
 async function main() {
   testContractHtmlContinuity();
   testOfficialChargesMissingAfterCancel();
@@ -1022,6 +1106,7 @@ async function main() {
   await testChainPreviousTransferId();
   await testInterEquivalentAndRetry();
   await testLocalCancelledStillRequiresRemoteConfirm();
+  await testFourInterChargesOneFailureBlocks();
   await testPreviewFingerprintGuards();
   testSourceArchitecture();
   testRpcUuidCoalesceFix();
