@@ -605,6 +605,116 @@ async function testCrossTenantBlocked() {
   console.log('OK testCrossTenantBlocked');
 }
 
+async function testParkedLocalExecutedLiveOffDoesNotRestamp() {
+  await withHarness(async () => {
+    const executedAt = '2026-09-07T10:03:33.308762+00:00';
+    const parkedAt = '2026-09-07T10:03:33.902+00:00';
+    const snapshotUpdatedAt = '2026-09-07T10:03:33.902Z';
+    const chargesSnapshot = {
+      live: false,
+      error: 'Geração remota desligada nesta entrega. Retry seguro depois da autorização.',
+      phase: 'LOCAL_EXECUTED',
+      updatedAt: snapshotUpdatedAt,
+      failedStage: null,
+      localExecuted: true,
+      reusedReceiptIds: [] as string[],
+      canceledChargeIds: [] as string[],
+      generatedReceiptIds: [] as string[],
+    };
+    const tables = baseTables({ company_asaas_charges: [], bank_charges: [] });
+    Object.assign(tables.sale_lot_swaps[0], {
+      status: 'EXECUTED',
+      executed_at: executedAt,
+      idempotency_key: 'idem-parked-1',
+      charges_phase: 'LOCAL_EXECUTED',
+      charges_error: LOT_SWAP_CHARGES_LIVE_DISABLED,
+      charges_phase_updated_at: parkedAt,
+      updated_at: parkedAt,
+      charges_snapshot: { ...chargesSnapshot },
+    });
+    tables.finance_receipts = [
+      {
+        id: 'r-paid',
+        sale_id: 'sale-1',
+        status: 'pago',
+        paid_at: '2026-08-10',
+        installment_number: 3,
+      },
+      {
+        id: 'r-future',
+        sale_id: 'sale-1',
+        status: 'cancelado',
+        installment_number: 4,
+      },
+      { id: 'r-new', sale_id: 'sale-1', status: 'pendente', installment_number: 1 },
+    ];
+    const ctx = createStore(tables);
+    let localCalls = 0;
+    setSaleLotSwapLocalExecuteForTests(async (_admin, input) => {
+      localCalls += 1;
+      const swap = ctx.store.sale_lot_swaps[0];
+      assert(String(swap.status) === 'EXECUTED', 'Fase 4 já EXECUTED');
+      assert(String(swap.executed_at) === executedAt, 'executed_at não pode mudar');
+      assert(ctx.store.finance_receipts.length === 3, 'não criar parcela no reused');
+      return executedResult(input.saleId, String(input.swapId || 'swap-1'), true);
+    });
+    let http = 0;
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async () => {
+        http += 1;
+        throw new Error('HTTP Asaas cancel não autorizado');
+      },
+      generateAsaasCharges: async () => {
+        http += 1;
+        throw new Error('HTTP Asaas generate não autorizado');
+      },
+      cancelInterCharge: async () => {
+        http += 1;
+        throw new Error('HTTP Inter cancel não autorizado');
+      },
+      generateInterCharges: async () => {
+        http += 1;
+        throw new Error('HTTP Inter generate não autorizado');
+      },
+    });
+
+    const receiptsBefore = JSON.stringify(ctx.store.finance_receipts);
+    const asaasBefore = JSON.stringify(ctx.store.company_asaas_charges);
+    const bankBefore = JSON.stringify(ctx.store.bank_charges);
+    const swapCountBefore = ctx.store.sale_lot_swaps.length;
+
+    const second = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      swapId: 'swap-1',
+      idempotencyKey: 'idem-parked-1',
+      live: false,
+    });
+
+    assert(second.chargesPhase === 'LOCAL_EXECUTED', 'permanece LOCAL_EXECUTED');
+    assert(second.local?.reused === true, 'local.reused');
+    assert(second.remoteApiCalled === false, 'sem API remota');
+    assert(second.live === false, 'LIVE OFF');
+    assert(http === 0, 'nenhum HTTP de provider');
+    assert(localCalls === 1, 'Fase 4 reused uma vez');
+    const swap = ctx.store.sale_lot_swaps[0];
+    assert(String(swap.charges_phase) === 'LOCAL_EXECUTED', 'phase intacta');
+    assert(String(swap.charges_error) === LOT_SWAP_CHARGES_LIVE_DISABLED, 'erro intacto');
+    assert(String(swap.charges_phase_updated_at) === parkedAt, 'charges_phase_updated_at intacto');
+    assert(String(swap.updated_at) === parkedAt, 'sale_lot_swaps.updated_at intacto');
+    const snap = swap.charges_snapshot as { updatedAt?: string };
+    assert(String(snap.updatedAt) === snapshotUpdatedAt, 'charges_snapshot.updatedAt intacto');
+    assert(JSON.stringify(swap.charges_snapshot) === JSON.stringify(chargesSnapshot), 'snapshot material intacto');
+    assert(String(swap.status) === 'EXECUTED', 'status Fase 4 intacto');
+    assert(String(swap.executed_at) === executedAt, 'executed_at intacto');
+    assert(ctx.store.sale_lot_swaps.length === swapCountBefore, 'nenhum swap novo');
+    assert(JSON.stringify(ctx.store.finance_receipts) === receiptsBefore, 'parcelas intactas');
+    assert(JSON.stringify(ctx.store.company_asaas_charges) === asaasBefore, 'Asaas intacto');
+    assert(JSON.stringify(ctx.store.bank_charges) === bankBefore, 'bank_charges intacto');
+  });
+  console.log('OK testParkedLocalExecutedLiveOffDoesNotRestamp');
+}
+
 async function testAdapterPaidAndReusedWithoutOfficialHttp() {
   const paidAdmin = createStore({
     company_asaas_charges: [
@@ -653,6 +763,7 @@ async function testAdapterPaidAndReusedWithoutOfficialHttp() {
 
 function testSourceArchitecture() {
   const orch = read('lib/finance/saleLotSwapChargesExecuteService.ts');
+  assert(orch.includes('isParkedLocalExecutedLiveOff'), 'retry parked LIVE OFF sem restamp');
   assert(orch.includes('getExternalChargeProvider(charge.provider)'), 'cancel via registry');
   assert(orch.includes('getExternalChargeProvider(preview.activeProvider)'), 'generate via registry');
   assert(!orch.includes('cancelCompanyCharge'), 'orquestrador sem Asaas direto');
@@ -709,6 +820,7 @@ async function main() {
   await testInterMockCancelAndGenerate();
   await testC6BlockedNoApi();
   await testCrossTenantBlocked();
+  await testParkedLocalExecutedLiveOffDoesNotRestamp();
   await testAdapterPaidAndReusedWithoutOfficialHttp();
   testSourceArchitecture();
   console.log('OK mandatory-sale-lot-swap-phase5b-tests');

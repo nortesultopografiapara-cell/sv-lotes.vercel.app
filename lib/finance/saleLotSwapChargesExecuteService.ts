@@ -101,13 +101,33 @@ function isCancelAlreadyDone(swap: Record<string, unknown>): boolean {
   const phase = phaseOf(swap);
   if (phase === 'CANCELED') return true;
   if (phase === 'FAILED') {
-    const snap =
-      swap.charges_snapshot && typeof swap.charges_snapshot === 'object'
-        ? (swap.charges_snapshot as LotSwapChargesSnapshot)
-        : null;
-    return Boolean(snap?.localExecuted);
+    return Boolean(chargesSnapshotOf(swap)?.localExecuted);
   }
   return false;
+}
+
+function chargesSnapshotOf(swap: Record<string, unknown>): LotSwapChargesSnapshot | null {
+  return swap.charges_snapshot && typeof swap.charges_snapshot === 'object'
+    ? (swap.charges_snapshot as LotSwapChargesSnapshot)
+    : null;
+}
+
+/**
+ * Retry já estacionado em LOCAL_EXECUTED com LIVE OFF: devolver o estado
+ * persistido sem regravar charges_phase_updated_at / updated_at / snapshot.updatedAt.
+ * Geração pendente não é informação nova — é o motivo do estacionamento.
+ */
+function isParkedLocalExecutedLiveOff(
+  swap: Record<string, unknown>,
+  live: boolean,
+): boolean {
+  if (live) return false;
+  if (text(swap.status) !== 'EXECUTED') return false;
+  if (phaseOf(swap) !== 'LOCAL_EXECUTED') return false;
+  if (text(swap.charges_error) !== LOT_SWAP_CHARGES_LIVE_DISABLED) return false;
+  const snap = chargesSnapshotOf(swap);
+  if (snap && snap.live === true) return false;
+  return true;
 }
 
 async function persistChargesPhase(
@@ -283,8 +303,8 @@ export async function executeSaleLotSwapWithExternalCharges(
     live,
     failedStage: null,
     localExecuted: isLocalAlreadyExecuted(swap),
-    canceledChargeIds: Array.isArray((swap.charges_snapshot as LotSwapChargesSnapshot | null)?.canceledChargeIds)
-      ? [...((swap.charges_snapshot as LotSwapChargesSnapshot).canceledChargeIds || [])]
+    canceledChargeIds: Array.isArray(chargesSnapshotOf(swap)?.canceledChargeIds)
+      ? [...(chargesSnapshotOf(swap)?.canceledChargeIds || [])]
       : [],
     generatedReceiptIds: [],
     reusedReceiptIds: [],
@@ -295,6 +315,38 @@ export async function executeSaleLotSwapWithExternalCharges(
   let local: LotSwapExecutedResult | undefined;
   let remoteApiCalled = false;
   const localAlready = isLocalAlreadyExecuted(swap);
+
+  const reuseParked = (): LotSwapChargesExecuteResult => ({
+    mutation: true,
+    execute: true,
+    persistCharges: true,
+    live,
+    remoteApiCalled: false,
+    chargesPhase: 'LOCAL_EXECUTED',
+    swapId,
+    saleId,
+    local,
+    canceledChargeIds: [...(chargesSnapshotOf(swap)?.canceledChargeIds || canceledChargeIds)],
+    generatedReceiptIds: [...(chargesSnapshotOf(swap)?.generatedReceiptIds || [])],
+    reusedReceiptIds: [...(chargesSnapshotOf(swap)?.reusedReceiptIds || [])],
+  });
+
+  if (isParkedLocalExecutedLiveOff(swap, live) && !preview.wouldBlock) {
+    const knownCanceled = new Set(canceledChargeIds);
+    const newCancelables = preview.wouldCancel.filter(
+      (charge) => charge.classification !== 'paid' && !knownCanceled.has(charge.chargeId),
+    );
+    if (newCancelables.length === 0) {
+      local = await localExecuteImpl(admin, {
+        saleId,
+        userId,
+        swapId,
+        idempotencyKey: input.idempotencyKey,
+        callerRole: callerRole || input.callerRole,
+      });
+      return reuseParked();
+    }
+  }
 
   if (preview.wouldBlock && !localAlready) {
     snapshot.failedStage = 'BLOCK';
