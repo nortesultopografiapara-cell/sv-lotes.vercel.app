@@ -117,7 +117,12 @@ export function isCanceledFinanceReceipt(row: {
   const s = String(row.status || '')
     .trim()
     .toLowerCase();
-  return s === 'cancelado' || s === 'canceled' || s === 'cancelled';
+  return (
+    s === 'cancelado' ||
+    s === 'canceled' ||
+    s === 'cancelled' ||
+    s === 'cancelada'
+  );
 }
 
 export function isEligibleInstallmentForAsaasCharge(row: SaleChargeInstallmentRow): boolean {
@@ -303,6 +308,12 @@ export function buildSaleChargesSummaryFromRows(params: {
   const dueDates: string[] = [];
 
   for (const row of installments) {
+    // Histórico da Troca: parcelas canceladas permanecem no banco, mas
+    // não entram no cronograma vigente (total, pago, pendente, vencimentos).
+    if (isCanceledFinanceReceipt(row)) {
+      continue;
+    }
+
     const amount = money(row.amount);
     totalAmount += amount;
     const due = row.due_date ? String(row.due_date).slice(0, 10) : null;
@@ -311,10 +322,6 @@ export function buildSaleChargesSummaryFromRows(params: {
     const charge = byInstallment.get(String(row.id)) || null;
     if (charge && isPrintablePendingCharge(charge)) {
       printable += 1;
-    }
-
-    if (isCanceledFinanceReceipt(row)) {
-      continue;
     }
 
     if (isPaidFinanceReceipt(row) || charge?.status === 'PAID') {

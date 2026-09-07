@@ -1175,6 +1175,10 @@ function testOfficialChargesSummaryAfterSwap() {
     'parcela antiga cancelada não entra como faltante',
   );
   assert(!summary.missingInstallmentIds.includes('r-paid'), 'paga não entra como faltante');
+  assert(summary.totalInstallments === 2, 'ativa = paga + nova');
+  assert(summary.totalAmount === 200, 'total vigente sem cancelada');
+  assert(summary.totalPaid === 100, 'paga preservada');
+  assert(summary.totalPending === 100, 'só a nova pendente');
   console.log('OK testOfficialChargesSummaryAfterSwap');
 }
 

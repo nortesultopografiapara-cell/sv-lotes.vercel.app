@@ -80,6 +80,148 @@ function charge(
   };
 }
 
+const EMPTY_CONTEXT = {
+  customerName: 'Cliente',
+  customerEmail: null as string | null,
+  customerPhone: null as string | null,
+  projectName: 'Emp',
+  quadra: '1',
+  lote: '1',
+  lotLabel: null as string | null,
+  contractNumber: '000000017/2026',
+  financialAccountId: 'fa1',
+};
+
+function testActiveTotalsExcludeCanceledAfterLotSwap() {
+  const rows = [
+    installment({
+      id: 'r-paid',
+      installment_number: 0,
+      amount: 20,
+      status: 'pago',
+      paid_at: '2026-08-01',
+      due_date: '2026-08-01',
+    }),
+    installment({
+      id: 'r-old-1',
+      installment_number: 1,
+      amount: 20,
+      status: 'cancelado',
+      due_date: '2026-09-01',
+    }),
+    installment({
+      id: 'r-old-2',
+      installment_number: 2,
+      amount: 20,
+      status: 'canceled',
+      due_date: '2026-10-01',
+    }),
+    installment({
+      id: 'r-old-3',
+      installment_number: 3,
+      amount: 20,
+      status: 'cancelled',
+      due_date: '2026-11-01',
+    }),
+    installment({
+      id: 'r-old-4',
+      installment_number: 4,
+      amount: 20,
+      status: 'cancelada',
+      due_date: '2026-12-01',
+    }),
+    installment({
+      id: 'r-new-1',
+      installment_number: 1,
+      amount: 15,
+      status: 'pendente',
+      due_date: '2026-10-10',
+    }),
+    installment({
+      id: 'r-new-2',
+      installment_number: 2,
+      amount: 15,
+      status: 'pendente',
+      due_date: '2026-11-10',
+    }),
+    installment({
+      id: 'r-new-3',
+      installment_number: 3,
+      amount: 15,
+      status: 'pendente',
+      due_date: '2026-12-10',
+    }),
+    installment({
+      id: 'r-new-4',
+      installment_number: 4,
+      amount: 15,
+      status: 'pendente',
+      due_date: '2027-01-10',
+    }),
+  ];
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments: rows,
+    charges: [],
+    context: EMPTY_CONTEXT,
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.totalInstallments === 5, 'quantidade ativa 5');
+  assert(summary.paidInstallments === 1, '1 paga preservada');
+  assert(summary.totalAmount === 80, 'total vigente 80, sem canceladas de 80');
+  assert(summary.totalPaid === 20, 'já pago 20');
+  assert(summary.totalPending === 60, 'pendente 60');
+  assert(summary.chargesMissing === 4, '4 faltantes');
+  assert(
+    summary.missingInstallmentIds.join() === 'r-new-1,r-new-2,r-new-3,r-new-4',
+    'faltantes só as novas',
+  );
+  assert(
+    !summary.missingInstallmentIds.some((id) => id.startsWith('r-old')),
+    'canceladas fora de missing',
+  );
+  assert(summary.firstDueDate === '2026-08-01', 'primeiro venc. da paga vigente');
+  assert(summary.lastDueDate === '2027-01-10', 'último venc. das novas');
+  console.log('OK testActiveTotalsExcludeCanceledAfterLotSwap');
+}
+
+function testNormalSaleSummaryUnchangedWithoutSwap() {
+  const rows = [
+    installment({
+      id: 'p0',
+      installment_number: 0,
+      amount: 20,
+      status: 'pago',
+      paid_at: '2026-08-01',
+      due_date: '2026-08-01',
+    }),
+    installment({ id: 'p1', installment_number: 1, amount: 15, due_date: '2026-10-10' }),
+    installment({ id: 'p2', installment_number: 2, amount: 15, due_date: '2026-11-10' }),
+    installment({ id: 'p3', installment_number: 3, amount: 15, due_date: '2026-12-10' }),
+    installment({ id: 'p4', installment_number: 4, amount: 15, due_date: '2027-01-10' }),
+  ];
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co1',
+    installments: rows,
+    charges: [],
+    context: EMPTY_CONTEXT,
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+  });
+  assert(summary.totalInstallments === 5, 'venda normal 5 parcelas');
+  assert(summary.paidInstallments === 1, 'venda normal 1 paga');
+  assert(summary.totalAmount === 80, 'venda normal total 80');
+  assert(summary.totalPaid === 20, 'venda normal pago 20');
+  assert(summary.totalPending === 60, 'venda normal pendente 60');
+  assert(summary.chargesMissing === 4, 'venda normal 4 faltantes');
+  console.log('OK testNormalSaleSummaryUnchangedWithoutSwap');
+}
+
 function testScopeOnlySelectedSale() {
   const rows = [
     installment({ id: 'a', sale_id: 'sale-1' }),
@@ -164,6 +306,9 @@ function testIgnorePaidAndCanceled() {
     'pago inelegível',
   );
   assert(isCanceledFinanceReceipt({ status: 'cancelado' }), 'cancelado');
+  assert(isCanceledFinanceReceipt({ status: 'canceled' }), 'canceled');
+  assert(isCanceledFinanceReceipt({ status: 'cancelled' }), 'cancelled');
+  assert(isCanceledFinanceReceipt({ status: 'cancelada' }), 'cancelada');
   assert(
     !isEligibleInstallmentForAsaasCharge(
       installment({ id: 'y', status: 'cancelado' }),
@@ -800,6 +945,8 @@ function testPdfThreePerPageSource() {
 }
 
 function main() {
+  testActiveTotalsExcludeCanceledAfterLotSwap();
+  testNormalSaleSummaryUnchangedWithoutSwap();
   testScopeOnlySelectedSale();
   testMissingOnly();
   testNoDuplicateWhenActive();
