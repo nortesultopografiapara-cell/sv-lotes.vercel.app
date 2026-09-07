@@ -238,10 +238,14 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
         <strong>CLÁUSULA TERCEIRA – DO PREÇO E FORMA DE PAGAMENTO:</strong> O preço total da chácara é de <strong>${ctx.valorTotalFmt}</strong>${ctx.valorTotalExtenso ? ` (${ctx.valorTotalExtenso})` : ''}, a ser pago pelo(a) COMPRADOR(A) ao(à) VENDEDOR(A) nas condições abaixo:
       </p>
       ${
-        ctx.lotSwapUsesContinuity
+          ctx.lotSwapUsesContinuity
           ? `<p style="margin-bottom: 10px;">Já se encontra pago e aproveitado nesta mesma negociação o valor de <strong>${ctx.lotSwapCreditedFmt}</strong>, sem natureza de nova entrada${
+              ctx.hasTitleTransferFinance ? ' do cessionário' : ''
+            }${
               ctx.lotSwapSchedulePhrase
-                ? `, restando o saldo de <strong>${ctx.valorSaldoParceladoFmt}</strong> (${ctx.lotSwapSchedulePhrase})`
+                ? `, restando o saldo de <strong>${ctx.valorSaldoParceladoFmt}</strong>${
+                    ctx.hasTitleTransferFinance ? ' assumido pelo cessionário' : ''
+                  } (${ctx.lotSwapSchedulePhrase})`
                 : ''
             }.</p>`
           : ''

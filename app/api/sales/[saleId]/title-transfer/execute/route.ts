@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prepareTitleTransferPlanPreview } from '@/lib/finance/saleTitleTransferPlanService';
+import { executeSaleTitleTransferWithExternalCharges } from '@/lib/finance/saleTitleTransferChargesExecuteService';
 import { TitleTransferPreviewError } from '@/lib/finance/saleTitleTransferPreviewService';
 import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
 
@@ -7,8 +7,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * P3 — preview A → B da Transferência de titularidade.
- * POST de validação. mutation: false. Não persiste. Não executa.
+ * P4 — execução da Transferência de titularidade.
+ * Cancela cobranças abertas do titular A (registry) e só então chama a RPC local.
+ * Não gera boleto/Pix. Não chama /release. Não reusa a RPC da Troca.
  */
 
 function errorResponse(err: TitleTransferPreviewError) {
@@ -18,14 +19,6 @@ function errorResponse(err: TitleTransferPreviewError) {
       code: err.code,
       message: err.message,
       error: err.message,
-      mutation: false,
-      persistTransfer: false,
-      persistSale: false,
-      persistLot: false,
-      persistContract: false,
-      persistReceipts: false,
-      persistCharges: false,
-      cancelCharges: false,
       generateCharges: false,
     },
     { status: err.status },
@@ -41,7 +34,7 @@ export async function POST(
     const saleId = String(raw || '').trim();
     if (!saleId) {
       return NextResponse.json(
-        { success: false, code: 'SALE_ID_REQUIRED', message: 'saleId obrigatório.', mutation: false },
+        { success: false, code: 'SALE_ID_REQUIRED', message: 'saleId obrigatório.' },
         { status: 400 },
       );
     }
@@ -52,7 +45,6 @@ export async function POST(
           success: false,
           code: 'UNAUTHORIZED',
           message: configError || 'Sessão ou autorização inválida.',
-          mutation: false,
         },
         { status: 401 },
       );
@@ -64,56 +56,56 @@ export async function POST(
           success: false,
           code: 'SUPABASE_CONFIG',
           message: adminError || 'Supabase não configurado',
-          mutation: false,
         },
         { status: 503 },
       );
     }
     const body = (await request.json().catch(() => ({}))) as {
-      toCustomerId?: string | null;
+      toCustomerId?: string;
       transferDate?: string | null;
       declaredAgioAmount?: string | number | null;
       notes?: string | null;
       expectedContractId?: string | null;
       expectedFromCustomerId?: string | null;
       expectedBlockId?: string | null;
-      persistTransfer?: boolean;
-      execute?: boolean;
+      confirmTransfer?: boolean;
+      idempotencyKey?: string | null;
+      generateCharges?: boolean;
     };
-    if (body.persistTransfer === true || body.execute === true) {
+    if (body.generateCharges === true) {
       return NextResponse.json(
         {
           success: false,
-          code: 'TITLE_TRANSFER_EXECUTE_DISABLED',
-          message: 'A execução da transferência não está disponível nesta etapa.',
-          mutation: false,
-          persistTransfer: false,
+          code: 'TITLE_TRANSFER_GENERATE_DISABLED',
+          message: 'A transferência não gera boleto ou Pix. Use Editar venda → Cobranças.',
+          generateCharges: false,
         },
         { status: 409 },
       );
     }
-    const plan = await prepareTitleTransferPlanPreview(admin, {
+    const executed = await executeSaleTitleTransferWithExternalCharges(admin, {
       saleId,
       userId: user.id,
-      toCustomerId: body.toCustomerId,
+      toCustomerId: String(body.toCustomerId || ''),
       transferDate: body.transferDate,
       declaredAgioAmount: body.declaredAgioAmount,
       notes: body.notes,
       expectedContractId: body.expectedContractId,
       expectedFromCustomerId: body.expectedFromCustomerId,
       expectedBlockId: body.expectedBlockId,
+      confirmTransfer: body.confirmTransfer === true,
+      idempotencyKey: body.idempotencyKey,
     });
     return NextResponse.json({
       success: true,
-      mutation: false,
-      persistTransfer: false,
-      plan,
+      generateCharges: false,
+      executed,
     });
   } catch (err) {
     if (err instanceof TitleTransferPreviewError) return errorResponse(err);
-    const message = err instanceof Error ? err.message : 'Erro ao montar o preview da transferência.';
+    const message = err instanceof Error ? err.message : 'Erro ao executar a transferência.';
     return NextResponse.json(
-      { success: false, code: 'PLAN_FAILED', message, error: message, mutation: false },
+      { success: false, code: 'EXECUTE_FAILED', message, error: message, generateCharges: false },
       { status: 500 },
     );
   }

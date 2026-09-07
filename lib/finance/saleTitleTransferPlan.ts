@@ -10,6 +10,7 @@ export const TITLE_TRANSFER_SAME_TITULAR = 'TITLE_TRANSFER_SAME_TITULAR';
 export const TITLE_TRANSFER_CUSTOMER_NOT_FOUND = 'TITLE_TRANSFER_CUSTOMER_NOT_FOUND';
 export const TITLE_TRANSFER_CUSTOMER_CROSS_TENANT = 'TITLE_TRANSFER_CUSTOMER_CROSS_TENANT';
 export const TITLE_TRANSFER_CONTRACT_CHANGED = 'TITLE_TRANSFER_CONTRACT_CHANGED';
+export const TITLE_TRANSFER_TITULAR_CHANGED = 'TITLE_TRANSFER_TITULAR_CHANGED';
 export const TITLE_TRANSFER_SALE_NOT_ACTIVE = 'TITLE_TRANSFER_SALE_NOT_ACTIVE';
 export const TITLE_TRANSFER_CUSTOMER_REQUIRED = 'TITLE_TRANSFER_CUSTOMER_REQUIRED';
 export const TITLE_TRANSFER_AGIO_INVALID = 'TITLE_TRANSFER_AGIO_INVALID';
@@ -133,6 +134,18 @@ export function assertTitleTransferContractUnchanged(input: {
   const current = String(input.currentContractId || '').trim();
   if (expected !== current) {
     return { ok: false, code: TITLE_TRANSFER_CONTRACT_CHANGED };
+  }
+  return { ok: true, code: null };
+}
+
+export function assertTitleTransferTitularUnchanged(input: {
+  expectedFromCustomerId?: string | null;
+  currentTitularId?: string | null;
+}): { ok: true; code: null } | { ok: false; code: typeof TITLE_TRANSFER_TITULAR_CHANGED } {
+  const expected = String(input.expectedFromCustomerId || '').trim();
+  if (!expected) return { ok: true, code: null };
+  if (expected !== String(input.currentTitularId || '').trim()) {
+    return { ok: false, code: TITLE_TRANSFER_TITULAR_CHANGED };
   }
   return { ok: true, code: null };
 }

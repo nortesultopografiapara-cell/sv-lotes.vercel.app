@@ -50,6 +50,11 @@ import {
   readLotSwapContractFinance,
   type LotSwapContractFinanceSnapshot,
 } from '@/lib/finance/saleLotSwapContractContext';
+import {
+  buildTitleTransferRemainingSchedulePhrase,
+  readTitleTransferContractFinance,
+  type TitleTransferContractFinanceSnapshot,
+} from '@/lib/finance/saleTitleTransferContractContext';
 
 export type AraguaiaContractParams = {
   tenant: Record<string, unknown> | null | undefined;
@@ -123,6 +128,12 @@ export type AraguaiaContractContext = {
   lotSwapCreditedExtenso: string;
   lotSwapBalanceFmt: string;
   lotSwapBalanceExtenso: string;
+  titleTransferFinance: TitleTransferContractFinanceSnapshot | null;
+  titleTransferSchedulePhrase: string;
+  titleTransferPaidFmt: string;
+  titleTransferPaidExtenso: string;
+  titleTransferBalanceFmt: string;
+  titleTransferBalanceExtenso: string;
   brokerName: string;
   brokerCpf: string;
   cityUf: string;
@@ -380,23 +391,29 @@ export function buildAraguaiaContractContext(
   }
 
   const swapFinance = readLotSwapContractFinance(sale);
+  const titleTransferFinance = readTitleTransferContractFinance(sale);
   const valTotal =
+    titleTransferFinance?.sale_price ||
     swapFinance?.new_lot_price ||
     Number(sale.total_value) ||
     Number(sale.final_value) ||
     Number(sale.agreed_price) ||
     Number(block.price) ||
     0;
-  const valEntrada = swapFinance ? 0 : Number(sale.down_payment || 0);
-  const qtdParcelas = swapFinance
-    ? swapFinance.remaining_installments.length
-    : Number(sale.installments_count) || 0;
+  const valEntrada = titleTransferFinance || swapFinance ? 0 : Number(sale.down_payment || 0);
+  const qtdParcelas = titleTransferFinance
+    ? titleTransferFinance.remaining_installments.length
+    : swapFinance
+      ? swapFinance.remaining_installments.length
+      : Number(sale.installments_count) || 0;
   let valorParcela = Number(sale.installment_value) || 0;
   if (!(valorParcela > 0) && qtdParcelas > 0) {
     valorParcela = (valTotal - valEntrada) / qtdParcelas;
   }
   const receipts = params.financeReceipts || null;
-  if (swapFinance?.remaining_installments[0]) {
+  if (titleTransferFinance?.remaining_installments[0]) {
+    valorParcela = titleTransferFinance.remaining_installments[0].amount;
+  } else if (swapFinance?.remaining_installments[0]) {
     valorParcela = swapFinance.remaining_installments[0].amount;
   } else if (receipts?.length) {
     const firstInstallment = receipts
@@ -499,6 +516,18 @@ export function buildAraguaiaContractContext(
     lotSwapCreditedExtenso: currencyExtenso(swapFinance?.total_paid || 0),
     lotSwapBalanceFmt: formatBRL(swapFinance?.new_balance || 0),
     lotSwapBalanceExtenso: currencyExtenso(swapFinance?.new_balance || 0),
+    titleTransferFinance,
+    titleTransferSchedulePhrase: titleTransferFinance
+      ? buildTitleTransferRemainingSchedulePhrase(
+          titleTransferFinance.remaining_installments,
+        )
+      : '',
+    titleTransferPaidFmt: formatBRL(titleTransferFinance?.total_paid || 0),
+    titleTransferPaidExtenso: currencyExtenso(titleTransferFinance?.total_paid || 0),
+    titleTransferBalanceFmt: formatBRL(titleTransferFinance?.remaining_balance || 0),
+    titleTransferBalanceExtenso: currencyExtenso(
+      titleTransferFinance?.remaining_balance || 0,
+    ),
     brokerName: broker.name || 'não informado',
     brokerCpf: broker.cpf || '',
     cityUf,

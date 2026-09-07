@@ -13,6 +13,7 @@ import {
   TITLE_TRANSFER_OPEN_CHARGES_NOTICE,
   type TitleTransferAssigneeSearchRow,
 } from '@/lib/finance/saleTitleTransferPlan';
+import { TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT } from '@/lib/finance/saleTitleTransferExecute';
 import type { TitleTransferPlanPayload } from '@/lib/finance/saleTitleTransferPlanService';
 import type { TitleTransferPreviewPayload } from '@/lib/finance/saleTitleTransferPreviewService';
 
@@ -58,6 +59,10 @@ export function TitleTransferPreviewPanel({
   const [planLoading, setPlanLoading] = useState(false);
   const [planError, setPlanError] = useState('');
   const [plan, setPlan] = useState<TitleTransferPlanPayload | null>(null);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [executeLoading, setExecuteLoading] = useState(false);
+  const [executeError, setExecuteError] = useState('');
+  const [executeDone, setExecuteDone] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,6 +143,9 @@ export function TitleTransferPreviewPanel({
     setPlanLoading(true);
     setPlanError('');
     setPlan(null);
+    setConfirmChecked(false);
+    setExecuteDone(false);
+    setExecuteError('');
     try {
       const res = await fetch(
         `/api/sales/${encodeURIComponent(saleId)}/title-transfer/plan`,
@@ -151,6 +159,7 @@ export function TitleTransferPreviewPanel({
             declaredAgioAmount: agioDraft,
             notes,
             expectedContractId: payload.current.contract.id,
+            expectedFromCustomerId: payload.current.titular.id,
             expectedBlockId: payload.current.property.blockId,
             persistTransfer: false,
             execute: false,
@@ -180,6 +189,57 @@ export function TitleTransferPreviewPanel({
       setPlanError(err instanceof Error ? err.message : 'Não foi possível montar o preview A → B.');
     } finally {
       setPlanLoading(false);
+    }
+  }
+
+  async function executeTransfer() {
+    if (!payload || !selected || !plan || !confirmChecked || selected.isCurrentTitular) return;
+    setExecuteLoading(true);
+    setExecuteError('');
+    try {
+      const res = await fetch(
+        `/api/sales/${encodeURIComponent(saleId)}/title-transfer/execute`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toCustomerId: selected.id,
+            transferDate,
+            declaredAgioAmount: agioDraft,
+            notes,
+            expectedContractId: payload.current.contract.id,
+            expectedFromCustomerId: payload.current.titular.id,
+            expectedBlockId: payload.current.property.blockId,
+            confirmTransfer: true,
+            generateCharges: false,
+          }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        code?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.success) {
+        setExecuteError(
+          mapTitleTransferPreviewUserMessage({
+            status: res.status,
+            code: data.code,
+            message: data.message,
+            error: data.error,
+          }),
+        );
+        return;
+      }
+      setExecuteDone(true);
+    } catch (err) {
+      setExecuteError(
+        err instanceof Error ? err.message : 'Não foi possível executar a transferência.',
+      );
+    } finally {
+      setExecuteLoading(false);
     }
   }
 
@@ -549,7 +609,7 @@ export function TitleTransferPreviewPanel({
             </p>
           ) : null}
           <p className="text-xs text-slate-600">
-            Nenhuma transferência real será executada agora. sale_id e block_id permanecem
+            sale_id e block_id permanecem
             {` ${plan.futureExecution.saleId} / ${plan.futureExecution.blockId}`}.
             {plan.futureExecution.previousTransferId
               ? ` Próximo elo usará previous_transfer_id ${plan.futureExecution.previousTransferId}.`
@@ -558,9 +618,73 @@ export function TitleTransferPreviewPanel({
         </div>
       ) : null}
 
+      {confirmation ? (
+        <div className="rounded-xl border border-indigo-300 bg-white p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
+            Transferir titularidade
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <SummaryCard
+              label="DE"
+              value={`${confirmation.from.name || '—'} · ${formatCpfCnpj(confirmation.from.document) || '—'}`}
+            />
+            <SummaryCard
+              label="PARA"
+              value={`${confirmation.to.name || '—'} · ${formatCpfCnpj(confirmation.to.document) || '—'}`}
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <SummaryCard label="Imóvel" value={confirmationLot} />
+            <SummaryCard label="Pago preservado" value={money(confirmation.finance.totalPaid)} />
+            <SummaryCard label="Saldo assumido" value={money(confirmation.finance.remainingBalance)} />
+            <SummaryCard
+              label="Parcelas restantes"
+              value={String(confirmation.finance.pendingCount)}
+            />
+            <SummaryCard
+              label="Ágio declarado"
+              value={
+                confirmation.declaredAgioAmount
+                  ? money(confirmation.declaredAgioAmount)
+                  : 'não informado'
+              }
+            />
+            <SummaryCard
+              label="Cobranças pagas/preservar"
+              value={String(payload.externalCharges.paid.length)}
+            />
+            <SummaryCard
+              label="Cobranças abertas a cancelar"
+              value={String(payload.externalCharges.open.length)}
+            />
+          </div>
+          <label className="flex items-start gap-2 text-sm text-slate-800">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={confirmChecked}
+              onChange={(e) => setConfirmChecked(e.target.checked)}
+              disabled={executeDone}
+            />
+            <span>{TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT}</span>
+          </label>
+          <button
+            type="button"
+            disabled={!confirmChecked || executeLoading || executeDone}
+            onClick={() => void executeTransfer()}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
+          >
+            {executeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {executeDone ? 'Titularidade transferida' : 'Transferir titularidade'}
+          </button>
+          {executeError ? <p className="text-sm text-amber-800">{executeError}</p> : null}
+        </div>
+      ) : null}
+
       {onClose ? (
         <p className="text-xs text-slate-500">
-          Nenhuma alteração será gravada agora. Use Fechar para voltar ao mapa.
+          A transferência só ocorre após marcar a ciência e confirmar Transferir
+          titularidade. Use Fechar para voltar ao mapa sem executar.
         </p>
       ) : null}
     </section>

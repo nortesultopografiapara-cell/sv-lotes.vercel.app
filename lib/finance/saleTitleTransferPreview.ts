@@ -244,6 +244,21 @@ export function mapTitleTransferPreviewUserMessage(input: {
   if (code === TITLE_TRANSFER_DATE_INVALID) {
     return 'Informe uma data de transferência válida.';
   }
+  if (code === 'TITLE_TRANSFER_CONFIRM_REQUIRED') {
+    return 'Confirme a transferência antes de executar.';
+  }
+  if (code === 'TITLE_TRANSFER_TITULAR_CHANGED') {
+    return 'O titular da venda mudou desde a prévia. Recarregue a tela.';
+  }
+  if (code === 'TITLE_TRANSFER_CHARGES_NON_CANCELABLE') {
+    return 'Há cobrança bancária incompatível. A transferência local não foi executada.';
+  }
+  if (code === 'TITLE_TRANSFER_CHARGES_LIVE_DISABLED') {
+    return 'O cancelamento bancário desta transferência não está autorizado neste ambiente.';
+  }
+  if (code === 'TITLE_TRANSFER_CHARGES_CANCEL_FAILED') {
+    return 'Falha ao cancelar cobrança bancária do titular anterior. A transferência local não foi executada.';
+  }
   if (code === 'UNAUTHORIZED' || code === 'NO_PROFILE' || input.status === 401) {
     return 'Sessão ou autorização inválida.';
   }

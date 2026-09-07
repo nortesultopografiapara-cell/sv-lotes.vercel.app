@@ -65,6 +65,7 @@ import {
 import { resolveSalePaymentMode } from "@/lib/salePaymentMode";
 import { resolveSingleFuturePaymentDueDateFmt } from "@/lib/resolveSingleFuturePaymentDueDate";
 import { readLotSwapContractFinance } from "@/lib/finance/saleLotSwapContractContext";
+import { readTitleTransferContractFinance } from "@/lib/finance/saleTitleTransferContractContext";
 
 export type { ContractFinanceReceiptRef, ContractPaymentDates };
 export { formatContractDueDateBr, formatContractSaleDateBr, resolveContractPaymentDates };
@@ -390,7 +391,10 @@ export function generateContractHTML({
   if (valTotal <= 0 && block?.price) valTotal = Number(block.price);
 
   const swapFinance = readLotSwapContractFinance(sale as Record<string, unknown>);
-  const valEntrada = Number(sale?.down_payment || 0);
+  const titleTransferFinance = readTitleTransferContractFinance(
+    sale as Record<string, unknown>,
+  );
+  const valEntrada = titleTransferFinance ? 0 : Number(sale?.down_payment || 0);
 
   const valorTotalFmt = formatBRL(valTotal);
 
@@ -416,11 +420,15 @@ export function generateContractHTML({
       });
   } catch (e) {}
 
-  const qtdParcelas = swapFinance
-    ? swapFinance.remaining_installments.length
-    : sale?.installments_count || 1;
+  const qtdParcelas = titleTransferFinance
+    ? titleTransferFinance.remaining_installments.length
+    : swapFinance
+      ? swapFinance.remaining_installments.length
+      : sale?.installments_count || 1;
   let valorParcela = 0;
-  if (swapFinance?.remaining_installments[0]) {
+  if (titleTransferFinance?.remaining_installments[0]) {
+    valorParcela = titleTransferFinance.remaining_installments[0].amount;
+  } else if (swapFinance?.remaining_installments[0]) {
     valorParcela = swapFinance.remaining_installments[0].amount;
   } else if (qtdParcelas > 0) {
     valorParcela = (valTotal - valEntrada) / qtdParcelas;
@@ -591,6 +599,7 @@ export function generateContractHTML({
           hasVariableInstallments,
           balloonClauseBodyHtml: balloonClauseBody,
           lotSwapSnapshot: swapFinance,
+          titleTransferSnapshot: titleTransferFinance,
         });
         const electronicSignatureClauseHtml =
           buildSaleContractElectronicSignatureClauseHtml();

@@ -9,6 +9,10 @@ import {
   type SalePaymentMode,
 } from '@/lib/salePaymentMode';
 import {
+  buildTitleTransferPadraoClauseQuartaHtml,
+  type TitleTransferContractFinanceSnapshot,
+} from '@/lib/finance/saleTitleTransferContractContext';
+import {
   buildLotSwapPadraoClauseQuartaHtml,
   type LotSwapContractFinanceSnapshot,
 } from '@/lib/finance/saleLotSwapContractContext';
@@ -117,9 +121,20 @@ export function buildSaleContractClauseQuartaHtml(params: {
   balloonClauseBodyHtml?: string | null;
   /** Snapshot financeiro da troca de lote — não reusa entrada/parcelas da venda antiga. */
   lotSwapSnapshot?: LotSwapContractFinanceSnapshot | null;
+  /** Snapshot da transferência de titularidade — continuidade, sem nova entrada do cessionário. */
+  titleTransferSnapshot?: TitleTransferContractFinanceSnapshot | null;
 }): string {
   const taxes =
     ' Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.';
+
+  if (params.titleTransferSnapshot) {
+    return buildTitleTransferPadraoClauseQuartaHtml({
+      valorTotalFmt: params.valorTotalFmt,
+      valorTotalExtenso: params.valorTotalExtenso,
+      snapshot: params.titleTransferSnapshot,
+      taxes,
+    });
+  }
 
   if (params.lotSwapSnapshot) {
     return buildLotSwapPadraoClauseQuartaHtml({

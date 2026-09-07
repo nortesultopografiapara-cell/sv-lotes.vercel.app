@@ -20,6 +20,10 @@ import {
   lotSwapContractUsesContinuityPayment,
   lotSwapHasRemainingBalance,
 } from '@/lib/finance/saleLotSwapContractContext';
+import {
+  buildTitleTransferAraguaiaStyleItem1Html,
+  hasTitleTransferContractFinance,
+} from '@/lib/finance/saleTitleTransferContractContext';
 
 const extenso = require('extenso');
 
@@ -266,7 +270,25 @@ export function buildAraguaiaClausesHtml(ctx: AraguaiaContractContext): string {
       `E, assim como possuem, pelo presente e nos melhores termos de direito, ${V.the} prometem e se obrigam a vender o imóvel descrito na cláusula segunda deste instrumento ${B.to}, mediante as seguintes cláusulas e condições:`,
       `
       ${itemP(
-        hasLotSwapContractFinance(ctx.lotSwapFinance)
+        hasTitleTransferContractFinance(ctx.titleTransferFinance)
+          ? buildTitleTransferAraguaiaStyleItem1Html({
+              pricePhrase: moneyPhrase(ctx.valorTotalFmt, ctx.valorTotalExtenso),
+              paidPhrase: moneyPhrase(
+                ctx.titleTransferPaidFmt,
+                ctx.titleTransferPaidExtenso,
+              ),
+              balancePhrase: moneyPhrase(
+                ctx.titleTransferBalanceFmt,
+                ctx.titleTransferBalanceExtenso,
+              ),
+              parcelsCountPhrase: parcelsCountPhrase(ctx.qtdParcelas),
+              schedulePhrase: ctx.titleTransferSchedulePhrase,
+              reajusteSuffix: `, com incidência de reajustamento monetário aplicado anualmente tendo por base a variação positiva dos 12 meses antecedentes do ${esc(
+                igpmItem1,
+              )}, ou outro que venha substituí-lo.`,
+              hasPaid: (ctx.titleTransferFinance?.total_paid || 0) > 0,
+            })
+          : hasLotSwapContractFinance(ctx.lotSwapFinance)
           ? buildLotSwapAraguaiaStyleItem1Html({
               pricePhrase: moneyPhrase(ctx.valorTotalFmt, ctx.valorTotalExtenso),
               creditedPhrase: moneyPhrase(

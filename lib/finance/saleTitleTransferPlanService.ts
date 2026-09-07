@@ -17,6 +17,7 @@ import {
   assertTitleTransferContractUnchanged,
   assertTitleTransferNewTitular,
   assertTitleTransferSaleStillActive,
+  assertTitleTransferTitularUnchanged,
   customerBelongsToTitleTransferCompany,
   matchesTitleTransferCustomerSearch,
   parseDeclaredAgioAmount,
@@ -241,6 +242,7 @@ export async function prepareTitleTransferPlanPreview(
     declaredAgioAmount?: string | number | null;
     notes?: string | null;
     expectedContractId?: string | null;
+    expectedFromCustomerId?: string | null;
     expectedBlockId?: string | null;
     todayIso?: string;
   },
@@ -277,6 +279,18 @@ export async function prepareTitleTransferPlanPreview(
     throw new TitleTransferPreviewError(
       mapTitleTransferPreviewUserMessage({ code: contractGuard.code }),
       contractGuard.code,
+      409,
+    );
+  }
+
+  const titularUnchanged = assertTitleTransferTitularUnchanged({
+    expectedFromCustomerId: input.expectedFromCustomerId,
+    currentTitularId: preview.current.titular.id,
+  });
+  if (!titularUnchanged.ok) {
+    throw new TitleTransferPreviewError(
+      mapTitleTransferPreviewUserMessage({ code: titularUnchanged.code }),
+      titularUnchanged.code,
       409,
     );
   }

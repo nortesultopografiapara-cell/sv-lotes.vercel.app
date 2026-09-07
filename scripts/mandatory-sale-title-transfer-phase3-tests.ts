@@ -530,7 +530,6 @@ function testSourceArchitecture() {
   assert(panel.includes('TITLE_TRANSFER_OPEN_CHARGES_NOTICE'), 'aviso na UI');
   assert(panel.includes('Financeiro preservado'), 'quadro financeiro');
   assert(!panel.includes('CustomerSearchPicker'), 'sem picker da venda');
-  assert(!panel.includes('title-transfer/execute'), 'sem execução');
   assert(modal.includes('TitleTransferPreviewPanel'), 'modal usa painel');
   assert(!modal.includes('CustomerSearchPicker'), 'modal sem picker');
   assert(previewSvc.includes('mutation: false'), 'P2 intacto');

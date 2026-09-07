@@ -24,6 +24,7 @@ import {
   lotSwapContractUsesContinuityPayment,
   readLotSwapContractFinance,
 } from '@/lib/finance/saleLotSwapContractContext';
+import { readTitleTransferContractFinance } from '@/lib/finance/saleTitleTransferContractContext';
 
 function formatBRL(val: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -87,6 +88,7 @@ export type SaleContractPaymentBreakdown = {
   hasLotSwapFinance: boolean;
   lotSwapUsesContinuity: boolean;
   lotSwapCreditedFmt: string | null;
+  hasTitleTransferFinance: boolean;
 };
 
 export function resolveSaleContractPaymentBreakdown(
@@ -98,7 +100,17 @@ export function resolveSaleContractPaymentBreakdown(
     balloonAddons?: Array<{ installment_number: number; additional_amount: number }> | null;
   },
 ): SaleContractPaymentBreakdown {
-  const swapFinance = readLotSwapContractFinance(sale);
+  const transferFinance = readTitleTransferContractFinance(sale);
+  const swapFinanceRaw = readLotSwapContractFinance(sale);
+  const swapFinance = swapFinanceRaw || (transferFinance
+    ? {
+        new_lot_price: transferFinance.sale_price,
+        total_paid: transferFinance.total_paid,
+        transferable_credit: transferFinance.total_paid,
+        new_balance: transferFinance.remaining_balance,
+        remaining_installments: transferFinance.remaining_installments,
+      }
+    : null);
   const lotPrice =
     swapFinance?.new_lot_price ||
     Number(sale.lot_price) ||
@@ -182,6 +194,7 @@ export function resolveSaleContractPaymentBreakdown(
     hasLotSwapFinance: Boolean(swapFinance),
     lotSwapUsesContinuity: lotSwapContractUsesContinuityPayment(swapFinance),
     lotSwapCreditedFmt: swapFinance ? formatBRL(swapFinance.total_paid) : null,
+    hasTitleTransferFinance: Boolean(transferFinance),
   };
 }
 
@@ -237,7 +250,12 @@ export function buildSaleContractPaymentSummaryHtml(
           'Valor já pago/aproveitado',
           breakdown.lotSwapCreditedFmt || '—',
         ],
-        ['Saldo remanescente', breakdown.installmentBalanceFmt],
+        [
+          breakdown.hasTitleTransferFinance
+            ? 'Saldo assumido pelo cessionário'
+            : 'Saldo remanescente',
+          breakdown.installmentBalanceFmt,
+        ],
         [
           'Quantidade de parcelas',
           breakdown.installmentsCount > 0

@@ -49,6 +49,7 @@ import {
 import { resolveSingleFuturePaymentDueDateFmt } from '@/lib/resolveSingleFuturePaymentDueDate';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 import { readLotSwapContractFinance } from '@/lib/finance/saleLotSwapContractContext';
+import { readTitleTransferContractFinance } from '@/lib/finance/saleTitleTransferContractContext';
 
 export type SaleContractRenderParams = {
   tenant: Record<string, unknown>;
@@ -342,7 +343,10 @@ export function buildSaleContractRenderContext(
   if (valTotal <= 0 && block?.price) valTotal = Number(block.price);
 
   const swapFinance = readLotSwapContractFinance(sale as Record<string, unknown>);
-  const valEntrada = Number(sale?.down_payment || 0);
+  const titleTransferFinance = readTitleTransferContractFinance(
+    sale as Record<string, unknown>,
+  );
+  const valEntrada = titleTransferFinance ? 0 : Number(sale?.down_payment || 0);
   const valorTotalFmt = formatBRL(valTotal);
   let valorTotalExtenso = '';
   try {
@@ -463,6 +467,7 @@ export function buildSaleContractRenderContext(
     hasVariableInstallments,
     balloonClauseBodyHtml: balloonClauseBody,
     lotSwapSnapshot: swapFinance,
+    titleTransferSnapshot: titleTransferFinance,
   });
 
   const projectDescParts: string[] = [];

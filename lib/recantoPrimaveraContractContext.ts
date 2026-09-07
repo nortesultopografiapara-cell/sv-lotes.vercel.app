@@ -44,6 +44,7 @@ import {
   lotSwapContractUsesContinuityPayment,
   readLotSwapContractFinance,
 } from '@/lib/finance/saleLotSwapContractContext';
+import { readTitleTransferContractFinance } from '@/lib/finance/saleTitleTransferContractContext';
 import {
   buildRecantoFullAddress,
   formatRecantoDocument,
@@ -163,6 +164,7 @@ export type RecantoPrimaveraContractContext = {
   lotSwapSchedulePhrase: string;
   hasLotSwapFinance: boolean;
   lotSwapUsesContinuity: boolean;
+  hasTitleTransferFinance: boolean;
   paymentMode: SalePaymentMode;
   isCashPayment: boolean;
   singleFutureDueLongFmt: string;
@@ -461,7 +463,17 @@ export function buildRecantoPrimaveraContractContext(
   if (valTotal <= 0 && sale?.receipts_sum) valTotal = Number(sale.receipts_sum);
   if (!Number.isFinite(valTotal) || valTotal < 0) valTotal = 0;
 
-  const swapFinance = readLotSwapContractFinance(sale as Record<string, unknown>);
+  const transferFinance = readTitleTransferContractFinance(sale as Record<string, unknown>);
+  const swapFinanceRaw = readLotSwapContractFinance(sale as Record<string, unknown>);
+  const swapFinance = swapFinanceRaw || (transferFinance
+    ? {
+        new_lot_price: transferFinance.sale_price,
+        total_paid: transferFinance.total_paid,
+        transferable_credit: transferFinance.total_paid,
+        new_balance: transferFinance.remaining_balance,
+        remaining_installments: transferFinance.remaining_installments,
+      }
+    : null);
   const valSinal = swapFinance
     ? Math.max(0, Number(sale?.signal_contract_value ?? 0))
     : Math.max(
@@ -816,6 +828,7 @@ export function buildRecantoPrimaveraContractContext(
       : '',
     hasLotSwapFinance: hasLotSwapContractFinance(swapFinance),
     lotSwapUsesContinuity: lotSwapContractUsesContinuityPayment(swapFinance),
+    hasTitleTransferFinance: Boolean(transferFinance),
     paymentMode,
     isCashPayment,
     singleFutureDueLongFmt,
