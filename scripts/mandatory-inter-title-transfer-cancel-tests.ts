@@ -7,7 +7,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { cancelInterInstallmentCharge } from '../lib/banking/inter/interSaleChargeService';
+import { cancelInterInstallmentCharge, diagnoseIsolatedInterCancel } from '../lib/banking/inter/interSaleChargeService';
 import {
   INTER_CANCEL_CONFIRM_POLL,
   INTER_COBRANCA_V3_CANCEL_ACCEPT,
@@ -460,6 +460,85 @@ function testSanitizeKeepsUnknownFieldsAndRedactsCpf() {
   assert(empty.empty === true, 'body vazio');
 }
 
+async function testPersistLocalFalseDoesNotUpdate() {
+  const { result, state } = await runCancel(
+    openCharge(),
+    { getSituacoes: ['A_RECEBER', 'CANCELADO'] },
+  );
+  assert(result.ok && result.remoteConfirmed, 'GET CANCELADO confirma remoto');
+  assert(state.charges[0].status === 'CANCELLED', 'default persiste local');
+
+  const state2 = { charges: [openCharge('bc-diag')], updates: [] as Array<{ id: string; patch: Record<string, unknown> }> };
+  const { fetchFn } = makeFetch({ getSituacoes: ['A_RECEBER', 'CANCELADO'] });
+  const isolated = await cancelInterInstallmentCharge(makeMockAdmin(state2) as never, {
+    companyId: 'co-1',
+    chargeId: 'bc-diag',
+    fetchFn,
+    secretsLoader: fakeSecretsLoader as never,
+    poll: INSTANT_POLL,
+    persistLocalCancelled: false,
+  });
+  assert(isolated.remoteConfirmed === true, 'isolado confirma remoto');
+  assert(state2.charges[0].status === 'REGISTERED', 'isolado não marca CANCELLED');
+  assert(state2.updates.length === 0, 'isolado sem UPDATE');
+}
+
+async function testDiagnoseIsolatedAReceber() {
+  const state = { charges: [openCharge('bc-iso')], updates: [] as Array<{ id: string; patch: Record<string, unknown> }> };
+  const { fetchFn, cancelAccepts } = makeFetch({
+    getSituacoes: ['A_RECEBER', 'A_RECEBER', 'A_RECEBER'],
+    cancelStatus: 202,
+  });
+  const prev = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = 'preview';
+  try {
+    const diag = await diagnoseIsolatedInterCancel(makeMockAdmin(state) as never, {
+      companyId: 'co-1',
+      chargeId: 'bc-iso',
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as never,
+      poll: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0, sleepFn: async () => {} },
+    });
+    assert(diag.ok === false, 'A_RECEBER não é sucesso');
+    assert(diag.remoteConfirmed === false, 'sem confirmação remota');
+    assert(diag.markedLocalCancelled === false, 'não marcou local');
+    assert(diag.executedTransfer === false, 'sem RPC');
+    assert(diag.localStatus === 'REGISTERED', 'status local intacto');
+    assert(diag.post.accept === 'application/problem+json', 'Accept problem+json');
+    assert(diag.post.contentType === 'application/json', 'Content-Type json');
+    assert(diag.post.motivo === 'Solicitado Pela Empresa', 'motivo bolepix');
+    assert(diag.post.httpStatus === 202, 'POST 202');
+    assert(diag.gets.length >= 1, 'registrou GETs posteriores');
+    assert(diag.gets.every((g) => typeof g.elapsedMsFromPost === 'number'), 'tempo desde POST');
+    assert(diag.situacaoBeforePost === 'A_RECEBER', 'situação antes do POST');
+    assert(state.updates.length === 0, 'diagnóstico sem UPDATE');
+    assert(cancelAccepts[0] === 'application/problem+json', 'Accept exclusivo no POST');
+  } finally {
+    process.env.VERCEL_ENV = prev;
+  }
+}
+
+async function testDiagnoseIsolatedRemoteCancelNoLocalWrite() {
+  const state = { charges: [openCharge('bc-ok')], updates: [] as Array<{ id: string; patch: Record<string, unknown> }> };
+  const { fetchFn } = makeFetch({ getSituacoes: ['A_RECEBER', 'CANCELADO'] });
+  const prev = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = 'preview';
+  try {
+    const diag = await diagnoseIsolatedInterCancel(makeMockAdmin(state) as never, {
+      companyId: 'co-1',
+      chargeId: 'bc-ok',
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as never,
+      poll: INSTANT_POLL,
+    });
+    assert(diag.ok === true && diag.remoteConfirmed === true, 'GET CANCELADO = sucesso remoto');
+    assert(diag.localStatus === 'REGISTERED', 'mesmo com GET CANCELADO não persiste local');
+    assert(state.updates.length === 0, 'sem UPDATE em sucesso remoto isolado');
+  } finally {
+    process.env.VERCEL_ENV = prev;
+  }
+}
+
 async function testHttpErrorNoLocalCancel() {
   const state = {
     charges: [openCharge()],
@@ -532,8 +611,13 @@ function testSourceAndReleaseLotUntouched() {
   assert(releaseShared.includes("return 'ACERTOS'"), 'ReleaseLot ainda mapeia ACERTOS');
   assert(orch.includes('formatTitleTransferBankCancelFailure'), 'erro operacional no orquestrador');
   assert(!orch.includes("provider === 'INTER'"), 'orquestrador sem if INTER');
-  const lotSwap = read('lib/finance/externalCharges/interAdapter.ts');
-  assert(lotSwap.includes('cancelInterInstallmentCharge'), 'Troca reusa o mesmo adapter');
+  const api = read('app/api/finance/inter/diagnose-cancel/route.ts');
+  assert(api.includes('diagnoseIsolatedInterCancel'), 'rota de diagnóstico isolado');
+  assert(api.includes('execute_sale_title_transfer: false'), 'rota não dispara RPC');
+  assert(api.includes("error: 'Not found'"), '404 fora de DEVELOP/Preview');
+  const transferOrch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
+  assert(transferOrch.includes('cancelCancelableCharge'), 'Transferência usa registry');
+  assert(!transferOrch.includes('diagnoseIsolatedInterCancel'), 'orquestrador sem diagnóstico isolado');
 }
 
 async function main() {
@@ -547,6 +631,9 @@ async function main() {
   await testGetAReceberWithProcessingError();
   await testEmpty202BodyStaysFailClosed();
   testSanitizeKeepsUnknownFieldsAndRedactsCpf();
+  await testPersistLocalFalseDoesNotUpdate();
+  await testDiagnoseIsolatedAReceber();
+  await testDiagnoseIsolatedRemoteCancelNoLocalWrite();
   await testHttpErrorNoLocalCancel();
   await testOperatorMessageAndUi();
   testSourceAndReleaseLotUntouched();

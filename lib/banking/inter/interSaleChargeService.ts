@@ -17,7 +17,12 @@ import {
   resolveInterCobrancaV3CancelMotivo,
   sanitizeInterCobrancaHttpPayload,
   logInterCancelDiagnostics,
+  pickInterDiagnosticRawKeys,
+  shouldLogInterCancelDiagnostics,
+  INTER_COBRANCA_V3_CANCEL_ACCEPT,
+  INTER_BOLEPIX_CANCEL_MOTIVO,
   type InterCobrancaDetail,
+  type InterCancelPollAttempt,
   type InterCreateCobrancaInput,
   type InterPollOptions,
 } from '@/lib/banking/inter/interCobrancaClient';
@@ -910,6 +915,22 @@ export async function cancelInterInstallmentCharge(
     fetchFn?: InterOAuthFetchFn;
     secretsLoader?: typeof loadInterSecretsForServer;
     poll?: InterPollOptions;
+    persistLocalCancelled?: boolean;
+    onConsultaInicial?: (info: {
+      situacao: string;
+      keys: string[];
+      diagnosticKeys: string[];
+      processingError: string | null;
+    }) => void;
+    onPosted?: (info: {
+      path: string;
+      accept: string;
+      contentType: string;
+      motivo: string;
+      httpStatus: number;
+      headers: Record<string, string>;
+      bodyText: string;
+    }) => void;
   },
 ): Promise<{
   ok: true;
@@ -1017,6 +1038,23 @@ export async function cancelInterInstallmentCharge(
       fetchFn: input.fetchFn,
     });
     remote = classifyDetail(detail.situacao);
+    input.onConsultaInicial?.({
+      situacao: detail.situacao,
+      keys: Object.keys(detail.raw || {}),
+      diagnosticKeys: pickInterDiagnosticRawKeys(detail.raw),
+      processingError: detail.processingError || null,
+    });
+    logInterCancelDiagnostics({
+      stage: 'consulta_inicial',
+      codigoSolicitacao: codigo,
+      method: 'GET',
+      path: `/cobrancas/${encodeURIComponent(codigo)}`,
+      httpStatus: 200,
+      getSituacao: detail.situacao,
+      getKeys: Object.keys(detail.raw || {}),
+      diagnosticKeys: pickInterDiagnosticRawKeys(detail.raw),
+      processingError: detail.processingError,
+    });
   } catch (err) {
     throw new InterRemoteCancelError({
       stage: 'consulta_inicial',
@@ -1034,6 +1072,15 @@ export async function cancelInterInstallmentCharge(
     });
   }
   if (remote.disposition === 'already_cancelled') {
+    if (input.persistLocalCancelled === false) {
+      return {
+        ok: true,
+        reused: true,
+        remoteConfirmed: true,
+        chargeId,
+        status,
+      };
+    }
     const nextStatus = await persistConfirmedCancelled(remote.situacao);
     return {
       ok: true,
@@ -1085,6 +1132,15 @@ export async function cancelInterInstallmentCharge(
       responseHeaders: posted.headers,
       responseBody: sanitizedPost,
     });
+    input.onPosted?.({
+      path: posted.path,
+      accept: posted.accept,
+      contentType: posted.contentType,
+      motivo: posted.motivo,
+      httpStatus: posted.status,
+      headers: posted.headers,
+      bodyText: posted.bodyText,
+    });
   } catch (err) {
     throw new InterRemoteCancelError({
       stage: 'pedido_cancelamento',
@@ -1099,6 +1155,7 @@ export async function cancelInterInstallmentCharge(
   }
 
   let confirmedDetail: InterCobrancaDetail | null = null;
+  const postStartedAt = Date.now();
   try {
     confirmedDetail = await pollInterCobrancaUntilCancelSettled(creds, codigo, {
       fetchFn: input.fetchFn,
@@ -1107,19 +1164,24 @@ export async function cancelInterInstallmentCharge(
         input.poll?.initialDelayMs ?? INTER_CANCEL_CONFIRM_POLL.initialDelayMs,
       maxDelayMs: input.poll?.maxDelayMs ?? INTER_CANCEL_CONFIRM_POLL.maxDelayMs,
       sleepFn: input.poll?.sleepFn,
+      elapsedFromMs: input.poll?.elapsedFromMs ?? postStartedAt,
+      onAttempt: (attempt) => {
+        input.poll?.onAttempt?.(attempt);
+        logInterCancelDiagnostics({
+          stage: 'confirmacao',
+          codigoSolicitacao: codigo,
+          method: 'GET',
+          path: `/cobrancas/${encodeURIComponent(codigo)}`,
+          httpStatus: 200,
+          elapsedMsFromPost: attempt.elapsedMsFromPost,
+          getSituacao: attempt.situacao,
+          getKeys: attempt.keys,
+          diagnosticKeys: attempt.diagnosticKeys,
+          processingError: attempt.processingError,
+        });
+      },
     });
     remote = classifyDetail(confirmedDetail.situacao);
-    logInterCancelDiagnostics({
-      stage: 'confirmacao',
-      codigoSolicitacao: codigo,
-      method: 'GET',
-      path: `/cobrancas/${encodeURIComponent(codigo)}`,
-      httpStatus: 200,
-      getSituacao: confirmedDetail.situacao,
-      getKeys: Object.keys(confirmedDetail.raw || {}),
-      processingError: confirmedDetail.processingError || null,
-      responseBody: sanitizeInterCobrancaHttpPayload(JSON.stringify(confirmedDetail.raw || {})),
-    });
   } catch (err) {
     throw new InterRemoteCancelError({
       stage: 'confirmacao',
@@ -1148,6 +1210,15 @@ export async function cancelInterInstallmentCharge(
       detail: [processing, postBodySummary].filter(Boolean).join(' '),
     });
   }
+  if (input.persistLocalCancelled === false) {
+    return {
+      ok: true,
+      reused: false,
+      remoteConfirmed: true,
+      chargeId,
+      status,
+    };
+  }
   const nextStatus = await persistConfirmedCancelled(remote.situacao);
   return {
     ok: true,
@@ -1156,4 +1227,186 @@ export async function cancelInterInstallmentCharge(
     chargeId,
     status: nextStatus,
   };
+}
+
+export type IsolatedInterCancelDiagnostic = {
+  ok: boolean;
+  remoteConfirmed: boolean;
+  localStatusUnchanged: true;
+  localStatus: string;
+  executedTransfer: false;
+  alteredSales: false;
+  alteredBlocks: false;
+  alteredReceipts: false;
+  markedLocalCancelled: false;
+  codigoSolicitacao: string | null;
+  chargeId: string;
+  chargeType: string | null;
+  situacaoBeforePost: string | null;
+  post: {
+    method: 'POST';
+    path: string | null;
+    accept: string;
+    contentType: string;
+    motivo: string | null;
+    httpStatus: number | null;
+    responseContentType: string | null;
+    headers: Record<string, string>;
+    bodyEmpty: boolean | null;
+    body: Record<string, unknown> | null;
+  };
+  gets: InterCancelPollAttempt[];
+  conclusion: string;
+  error: string | null;
+};
+
+/**
+ * Homologação isolada do cancelamento Inter (DEVELOP/Preview).
+ * Reusa cancelInterInstallmentCharge (mesmo método da Transferência).
+ * Não executa RPC, não altera sales/blocks/contratos/recibos,
+ * não marca bank_charges CANCELLED.
+ */
+export async function diagnoseIsolatedInterCancel(
+  admin: SupabaseClient,
+  input: {
+    companyId: string;
+    chargeId: string;
+    fetchFn?: InterOAuthFetchFn;
+    secretsLoader?: typeof loadInterSecretsForServer;
+    poll?: InterPollOptions;
+  },
+): Promise<IsolatedInterCancelDiagnostic> {
+  if (!shouldLogInterCancelDiagnostics()) {
+    throw new Error(
+      'Diagnóstico isolado de cancelamento Inter só está disponível no DEVELOP/Preview.',
+    );
+  }
+  const chargeId = String(input.chargeId || '').trim();
+  const before = await admin
+    .from('bank_charges')
+    .select('id, status, charge_type, external_id')
+    .eq('id', chargeId)
+    .eq('company_id', input.companyId)
+    .eq('provider', 'INTER')
+    .maybeSingle();
+  if (before.error) throw new Error(before.error.message);
+  if (!before.data) throw new Error('Cobrança Inter não encontrada nesta empresa.');
+  const localBefore = String(before.data.status || '');
+  const codigo = String(before.data.external_id || '').trim() || null;
+  const chargeType = before.data.charge_type ? String(before.data.charge_type) : null;
+
+  let situacaoBeforePost: string | null = null;
+  const gets: InterCancelPollAttempt[] = [];
+  let postPath: string | null = null;
+  let postMotivo: string | null = null;
+  let postStatus: number | null = null;
+  let postHeaders: Record<string, string> = {};
+  let postBodyText = '';
+  let error: string | null = null;
+  let remoteConfirmed = false;
+  let conclusion = 'NAO_EXECUTADO';
+
+  try {
+    const result = await cancelInterInstallmentCharge(admin, {
+      companyId: input.companyId,
+      chargeId,
+      fetchFn: input.fetchFn,
+      secretsLoader: input.secretsLoader,
+      persistLocalCancelled: false,
+      poll: {
+        ...input.poll,
+        onAttempt: (attempt) => {
+          gets.push(attempt);
+          input.poll?.onAttempt?.(attempt);
+        },
+      },
+      onConsultaInicial: (info) => {
+        situacaoBeforePost = info.situacao;
+      },
+      onPosted: (info) => {
+        postPath = info.path;
+        postMotivo = info.motivo;
+        postStatus = info.httpStatus;
+        postHeaders = info.headers;
+        postBodyText = info.bodyText;
+      },
+    });
+    remoteConfirmed = Boolean(result.remoteConfirmed);
+    conclusion = remoteConfirmed ? 'CANCELADO_OU_EXPIRADO' : 'INCONCLUSIVO';
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+    if (err instanceof InterRemoteCancelError) {
+      conclusion = String(err.situacao || 'FALHOU');
+    } else {
+      conclusion = 'FALHOU';
+    }
+  }
+
+  const after = await admin
+    .from('bank_charges')
+    .select('status')
+    .eq('id', chargeId)
+    .eq('company_id', input.companyId)
+    .maybeSingle();
+  const localAfter = String(after.data?.status || localBefore);
+  if (localAfter !== localBefore) {
+    throw new Error('ABORT: diagnóstico isolado alterou bank_charges.status.');
+  }
+
+  const sanitizedPost = sanitizeInterCobrancaHttpPayload(postBodyText);
+  const diagnostic: IsolatedInterCancelDiagnostic = {
+    ok: remoteConfirmed,
+    remoteConfirmed,
+    localStatusUnchanged: true,
+    localStatus: localAfter,
+    executedTransfer: false,
+    alteredSales: false,
+    alteredBlocks: false,
+    alteredReceipts: false,
+    markedLocalCancelled: false,
+    codigoSolicitacao: codigo,
+    chargeId,
+    chargeType,
+    situacaoBeforePost,
+    post: {
+      method: 'POST',
+      path: postPath,
+      accept: INTER_COBRANCA_V3_CANCEL_ACCEPT,
+      contentType: 'application/json',
+      motivo: postMotivo,
+      httpStatus: postStatus,
+      responseContentType: postHeaders['content-type'] || null,
+      headers: postHeaders,
+      bodyEmpty: postStatus == null ? null : sanitizedPost.empty === true,
+      body: postStatus == null ? null : sanitizedPost,
+    },
+    gets,
+    conclusion,
+    error,
+  };
+  logInterCancelDiagnostics({
+    stage: 'diagnostico_isolado',
+    codigoSolicitacao: codigo || '',
+    method: 'POST',
+    path: postPath || undefined,
+    accept: INTER_COBRANCA_V3_CANCEL_ACCEPT,
+    contentType: 'application/json',
+    motivo: postMotivo || INTER_BOLEPIX_CANCEL_MOTIVO,
+    httpStatus: postStatus,
+    requestBody: { motivoCancelamento: postMotivo, persistLocalCancelled: false },
+    responseHeaders: postHeaders,
+    responseBody: {
+      ...sanitizedPost,
+      situacaoBeforePost,
+      gets: gets.map((row) => ({
+        attempt: row.attempt,
+        elapsedMsFromPost: row.elapsedMsFromPost,
+        situacao: row.situacao,
+        diagnosticKeys: row.diagnosticKeys,
+      })),
+      conclusion,
+      localStatus: localAfter,
+    },
+  });
+  return diagnostic;
 }

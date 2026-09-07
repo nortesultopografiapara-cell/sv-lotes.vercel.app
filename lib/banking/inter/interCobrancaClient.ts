@@ -161,6 +161,26 @@ export function sanitizeInterCobrancaHttpPayload(bodyText: string): Record<strin
   }
 }
 
+export function pickInterDiagnosticRawKeys(raw: Record<string, unknown> | null | undefined): string[] {
+  const keys: string[] = [];
+  const visit = (value: unknown, prefix: string, depth: number) => {
+    if (!value || typeof value !== 'object' || depth > 3) return;
+    if (Array.isArray(value)) {
+      value.slice(0, 8).forEach((item, idx) => visit(item, `${prefix}[${idx}]`, depth + 1));
+      return;
+    }
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (/situacao|erro|falha|mensagem|violac|title|detail|status|origem/i.test(key)) {
+        keys.push(path);
+      }
+      visit(item, path, depth + 1);
+    }
+  };
+  visit(raw || {}, '', 0);
+  return [...new Set(keys)].slice(0, 40);
+}
+
 export function isInterCancelPostRejected(
   status: number,
   json: Record<string, unknown> | null,
@@ -569,12 +589,23 @@ export async function createInterCobranca(
   return { codigoSolicitacao: codigo, raw: res.json };
 }
 
+export type InterCancelPollAttempt = {
+  attempt: number;
+  elapsedMsFromPost: number;
+  situacao: string;
+  processingError: string | null;
+  keys: string[];
+  diagnosticKeys: string[];
+};
+
 export type InterPollOptions = {
   fetchFn?: InterOAuthFetchFn;
   maxAttempts?: number;
   initialDelayMs?: number;
   maxDelayMs?: number;
   sleepFn?: (ms: number) => Promise<void>;
+  elapsedFromMs?: number;
+  onAttempt?: (attempt: InterCancelPollAttempt) => void;
 };
 
 function defaultSleep(ms: number): Promise<void> {
@@ -626,6 +657,7 @@ export async function pollInterCobrancaUntilCancelSettled(
     options?.initialDelayMs ?? INTER_CANCEL_CONFIRM_POLL.initialDelayMs;
   const maxDelayMs = options?.maxDelayMs ?? INTER_CANCEL_CONFIRM_POLL.maxDelayMs;
   const sleepFn = options?.sleepFn || defaultSleep;
+  const startedAt = options?.elapsedFromMs ?? Date.now();
 
   let last: InterCobrancaDetail | null = null;
   let delay = initialDelayMs;
@@ -633,6 +665,14 @@ export async function pollInterCobrancaUntilCancelSettled(
     if (delay > 0) await sleepFn(delay);
     last = await fetchInterCobrancaByCodigo(creds, codigoSolicitacao, {
       fetchFn: options?.fetchFn,
+    });
+    options?.onAttempt?.({
+      attempt,
+      elapsedMsFromPost: Math.max(0, Date.now() - startedAt),
+      situacao: last.situacao,
+      processingError: last.processingError || null,
+      keys: Object.keys(last.raw || {}),
+      diagnosticKeys: pickInterDiagnosticRawKeys(last.raw),
     });
     if (isInterSituacaoTerminal(last.situacao)) return last;
     if (last.processingError) return last;
@@ -733,11 +773,13 @@ export function logInterCancelDiagnostics(entry: {
   contentType?: string;
   motivo?: string;
   httpStatus?: number | null;
+  elapsedMsFromPost?: number | null;
   requestBody?: Record<string, unknown>;
   responseHeaders?: Record<string, string>;
   responseBody?: Record<string, unknown>;
   getSituacao?: string | null;
   getKeys?: string[];
+  diagnosticKeys?: string[];
   processingError?: string | null;
 }): void {
   if (!shouldLogInterCancelDiagnostics()) return;
@@ -751,11 +793,13 @@ export function logInterCancelDiagnostics(entry: {
     codigoSolicitacao: entry.codigoSolicitacao,
     scopes: INTER_OAUTH_SCOPES,
     httpStatus: entry.httpStatus ?? null,
+    elapsedMsFromPost: entry.elapsedMsFromPost ?? null,
     requestBody: entry.requestBody || null,
     responseHeaders: entry.responseHeaders || null,
     responseBody: entry.responseBody || null,
     getSituacao: entry.getSituacao || null,
     getKeys: entry.getKeys || null,
+    diagnosticKeys: entry.diagnosticKeys || null,
     processingError: entry.processingError || null,
   });
 }
