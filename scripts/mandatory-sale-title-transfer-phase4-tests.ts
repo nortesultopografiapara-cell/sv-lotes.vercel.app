@@ -846,6 +846,8 @@ function testSourceArchitecture() {
   assert(sql.includes('lote precisa permanecer Vendido'), 'lote vendido');
   assert(sql.includes('CONTRACT_CHANGED'), 'fingerprint contrato na RPC');
   assert(!/\bDROP TABLE\b/i.test(sql), 'sem DROP');
+  const p1 = read('supabase/migrations/20261016120000_sale_title_transfers.sql');
+  assert(p1.includes('CREATE TABLE IF NOT EXISTS public.sale_title_transfers'), 'P1 intacta');
   const orch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
   assert(!orch.includes('if (') || orch.includes('getExternalChargeProvider'), 'registry');
   assert(!orch.includes("provider === 'ASAAS'"), 'sem if ASAAS');
@@ -857,11 +859,48 @@ function testSourceArchitecture() {
   const panel = read('components/map/TitleTransferPreviewPanel.tsx');
   assert(panel.includes('Transferir titularidade'), 'UI executar');
   assert(panel.includes('TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT'), 'checkbox constante');
+  assert(panel.includes('Transferência de titularidade concluída'), 'UX sucesso');
   const executeLib = read('lib/finance/saleTitleTransferExecute.ts');
   assert(executeLib.includes(TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT), 'texto do checkbox');
-  const p1 = read('supabase/migrations/20261016120000_sale_title_transfers.sql');
-  assert(p1.includes('CREATE TABLE IF NOT EXISTS public.sale_title_transfers'), 'P1 intacta');
   console.log('OK testSourceArchitecture');
+}
+
+function assertUuidCoalesceSafe(sql: string, label: string) {
+  assert(!/coalesce\s*\(\s*v_sale\.company_id\s*,\s*v_sale\.tenant_id\s*\)/i.test(sql), `${label} sale coalesce`);
+  assert(
+    !/COALESCE\s*\(\s*v_to_customer\.company_id\s*,\s*v_to_customer\.tenant_id\s*\)/i.test(sql),
+    `${label} customer coalesce`,
+  );
+  assert(
+    !/COALESCE\s*\(\s*v_old_contract_company\s*,\s*v_old_contract_tenant\s*\)/i.test(sql),
+    `${label} contract coalesce`,
+  );
+  assert(sql.includes("NULLIF(btrim(v_sale.tenant_id::text), '')::uuid"), `${label} sale cast`);
+  assert(sql.includes("NULLIF(btrim(v_to_customer.tenant_id::text), '')::uuid"), `${label} customer cast`);
+  assert(sql.includes("NULLIF(btrim(v_old_contract_tenant), '')::uuid"), `${label} contract cast`);
+  assert(sql.includes("NULLIF(p_payload->>'transfer_id', '')::uuid"), `${label} payload transfer_id`);
+  assert(sql.includes("NULLIF(p_payload->>'expected_from_customer_id', '')::uuid"), `${label} payload from`);
+  assert(sql.includes("NULLIF(p_payload->>'expected_to_customer_id', '')::uuid"), `${label} payload to`);
+  assert(sql.includes("NULLIF(p_payload->>'expected_contract_id', '')::uuid"), `${label} payload contract`);
+  assert(sql.includes("NULLIF(p_payload->>'expected_block_id', '')::uuid"), `${label} payload block`);
+  assert(sql.includes("NULLIF(btrim(x), '')::uuid"), `${label} receipt ids vazios`);
+  assert(sql.includes('previous_transfer_id'), `${label} previous_transfer_id`);
+  assert(!/\bALTER TABLE\b/i.test(sql), `${label} sem ALTER TABLE`);
+  assert(!/\bDROP TABLE\b/i.test(sql), `${label} sem DROP`);
+}
+
+function testRpcUuidCoalesceFix() {
+  const original = read('supabase/migrations/20261017120000_execute_sale_title_transfer.sql');
+  const fix = read(
+    'supabase/migrations/20261017120100_fix_execute_sale_title_transfer_uuid_coalesce.sql',
+  );
+  assertUuidCoalesceSafe(original, '17120000');
+  assertUuidCoalesceSafe(fix, '17120100');
+  assert(fix.includes('CREATE OR REPLACE FUNCTION public.execute_sale_title_transfer'), 'fix OR REPLACE');
+  assert(!fix.includes("provider === 'ASAAS'"), 'fix sem Asaas');
+  assert(!fix.includes('execute_sale_lot_swap'), 'fix sem RPC da troca');
+  assert(!fix.includes('/release'), 'fix sem release');
+  console.log('OK testRpcUuidCoalesceFix');
 }
 
 async function main() {
@@ -876,6 +915,7 @@ async function main() {
   await testInterEquivalentAndRetry();
   await testPreviewFingerprintGuards();
   testSourceArchitecture();
+  testRpcUuidCoalesceFix();
   console.log('OK mandatory-sale-title-transfer-phase4-tests');
 }
 

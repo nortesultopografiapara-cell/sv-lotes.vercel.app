@@ -63,6 +63,17 @@ export function TitleTransferPreviewPanel({
   const [executeLoading, setExecuteLoading] = useState(false);
   const [executeError, setExecuteError] = useState('');
   const [executeDone, setExecuteDone] = useState(false);
+  const [executedSummary, setExecutedSummary] = useState<{
+    fromName: string;
+    fromDocument: string;
+    toName: string;
+    toDocument: string;
+    lot: string;
+    paid: number;
+    balance: number;
+    fromContract: string;
+    toContract: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,6 +232,13 @@ export function TitleTransferPreviewPanel({
         code?: string;
         message?: string;
         error?: string;
+        executed?: {
+          local?: {
+            fromContractId?: string | null;
+            toContractId?: string | null;
+            toContractNumber?: string | null;
+          };
+        };
       };
       if (!res.ok || !data.success) {
         setExecuteError(
@@ -233,6 +251,27 @@ export function TitleTransferPreviewPanel({
         );
         return;
       }
+      const lot =
+        plan.confirmation.property.quadra && plan.confirmation.property.lote
+          ? `QD ${plan.confirmation.property.quadra} • LT ${plan.confirmation.property.lote}`
+          : plan.confirmation.property.blockId || payload.current.property.blockId;
+      setExecutedSummary({
+        fromName: plan.confirmation.from.name || '—',
+        fromDocument: formatCpfCnpj(plan.confirmation.from.document) || '—',
+        toName: plan.confirmation.to.name || '—',
+        toDocument: formatCpfCnpj(plan.confirmation.to.document) || '—',
+        lot,
+        paid: plan.confirmation.finance.totalPaid,
+        balance: plan.confirmation.finance.remainingBalance,
+        fromContract:
+          payload.current.contract.number ||
+          data.executed?.local?.fromContractId ||
+          '—',
+        toContract:
+          data.executed?.local?.toContractNumber ||
+          data.executed?.local?.toContractId ||
+          '—',
+      });
       setExecuteDone(true);
     } catch (err) {
       setExecuteError(
@@ -618,7 +657,7 @@ export function TitleTransferPreviewPanel({
         </div>
       ) : null}
 
-      {confirmation ? (
+      {confirmation && !executeDone ? (
         <div className="rounded-xl border border-indigo-300 bg-white p-4 space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
             Transferir titularidade
@@ -681,7 +720,41 @@ export function TitleTransferPreviewPanel({
         </div>
       ) : null}
 
-      {onClose ? (
+      {executeDone && executedSummary ? (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 space-y-3">
+          <p className="text-sm font-semibold text-emerald-950">
+            Transferência de titularidade concluída
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <SummaryCard
+              label="DE"
+              value={`${executedSummary.fromName} · ${executedSummary.fromDocument}`}
+            />
+            <SummaryCard
+              label="PARA"
+              value={`${executedSummary.toName} · ${executedSummary.toDocument}`}
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <SummaryCard label="Imóvel" value={executedSummary.lot} />
+            <SummaryCard label="Pago preservado" value={money(executedSummary.paid)} />
+            <SummaryCard label="Saldo assumido" value={money(executedSummary.balance)} />
+            <SummaryCard label="Contrato antigo" value={executedSummary.fromContract} />
+            <SummaryCard label="Contrato novo" value={executedSummary.toContract} />
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center rounded-lg bg-emerald-800 text-white text-sm font-semibold px-3 py-2"
+            >
+              Concluir
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {onClose && !executeDone ? (
         <p className="text-xs text-slate-500">
           A transferência só ocorre após marcar a ciência e confirmar Transferir
           titularidade. Use Fechar para voltar ao mapa sem executar.

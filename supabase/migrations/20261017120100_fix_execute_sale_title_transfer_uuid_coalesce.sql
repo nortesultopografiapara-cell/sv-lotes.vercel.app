@@ -1,7 +1,10 @@
--- P4 — RPC atômica da Transferência de titularidade / cessão.
--- Aditivo. Não edita 20261016120000 (tabela já aplicada no DEVELOP).
--- Não reusa execute_sale_lot_swap. Não altera preço, parcelas (valor/vencimento/status)
--- nem status do lote. Sem ReleaseLot. Sem geração de cobrança bancária.
+-- Correção pontual — COALESCE uuid/text em public.execute_sale_title_transfer(p_payload jsonb).
+-- 20261017120000 já foi aplicada no DEVELOP hoynysmynxncdlptuzub.
+-- CREATE OR REPLACE da função. Sem mudar tabela/schema. Sem backfill. Sem executar transferência.
+--
+-- Causa: COALESCE misturava company_id (uuid) com tenant_id (text) em
+-- customers, e o mesmo padrão arriscado em sales/contracts.
+-- Payload JSON continua text; IDs entram via NULLIF(... )::uuid.
 
 CREATE OR REPLACE FUNCTION public.execute_sale_title_transfer(p_payload jsonb)
 RETURNS jsonb
