@@ -10,8 +10,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Fase 5B — cancela cobranças externas canceláveis, executa a Fase 4 e gera faltantes.
- * Sem if de banco nesta rota. Live default off: sem chamada Asaas/Inter real.
+ * Fase 5B — cancela cobranças externas antigas canceláveis e executa a Fase 4.
+ * Não gera cobranças das parcelas novas. Live default off: sem chamada Asaas/Inter real.
  */
 export async function POST(
   request: Request,

@@ -22,6 +22,8 @@ import {
 import type { ExternalChargeRecord } from '../lib/finance/externalCharges/types';
 import { ExternalChargeMutationDisabledError } from '../lib/finance/externalCharges/types';
 import {
+  LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE,
+  LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE,
   buildLotSwapExternalChargePreviewFromPlan,
   classifyLotSwapExternalCharges,
   loadLotSwapExternalChargePreview,
@@ -167,8 +169,22 @@ function testAsaasLotSwapActions() {
   });
   assert(previewOk.wouldPreservePaid.some((row) => row.chargeId === 'a-paid'), 'Asaas paga preservada');
   assert(previewOk.wouldCancel.some((row) => row.chargeId === 'a-open'), 'Asaas pendente iria cancelar na 5B');
-  assert(previewOk.wouldGenerate.length === 1, 'Asaas gera cobrança da nova parcela');
+  assert(previewOk.wouldGenerate.length === 1, 'parcela nova aparece como missing no resumo oficial');
+  assert(
+    previewOk.notice === LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE,
+    'aviso: cancelar antigas, gerar depois em Cobranças',
+  );
   assert(previewOk.wouldBlock === false, 'Asaas cancelável não bloqueia 5A');
+
+  const none = buildLotSwapExternalChargePreviewFromPlan(plan, [], {
+    code: 'ASAAS',
+    provider: asaasExternalChargeProvider,
+  });
+  assert(none.wouldCancel.length === 0, 'sem cobrança antiga');
+  assert(
+    none.notice === LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE,
+    'aviso: nenhuma cobrança antiga a cancelar',
+  );
 
   const overduePreview = classifyLotSwapExternalCharges({
     charges: [overdue],
@@ -225,7 +241,7 @@ function testInterLotSwapActions() {
   });
   assert(preview.wouldPreservePaid.length === 1, 'Inter paga preservada');
   assert(preview.wouldCancel.length === 1, 'Inter pendente cancelável');
-  assert(preview.wouldGenerate.length === 1, 'Inter gera nova cobrança');
+  assert(preview.wouldGenerate.length === 1, 'Inter classifica parcela nova como missing');
   const blocked = classifyLotSwapExternalCharges({
     charges: [
       charge({
@@ -411,7 +427,11 @@ async function testLoadPreviewDoesNotCallRemoteApis() {
   assert(preview.mutation === false && preview.persistCharges === false, 'sem mutação');
   assert(preview.paid.length === 1, 'pagamento histórico preservado');
   assert(preview.wouldCancel.length === 1, 'antiga aberta classificada para cancelar');
-  assert(preview.wouldGenerate.length === 1, 'nova parcela geraria cobrança na 5B');
+  assert(preview.wouldGenerate.length === 1, 'parcela nova classificada como missing no módulo Cobranças');
+  assert(
+    preview.notice === LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE,
+    'preview usa aviso de cancel-only',
+  );
   assert(preview.phase5Status === 'PREPARED', '5A prepared');
   console.log('OK testLoadPreviewDoesNotCallRemoteApis');
 }
@@ -498,6 +518,13 @@ function testSourceNoRealBankApisAndNoReleaseLot() {
   assert(!inter.includes('createInterCobranca'), 'adapter Inter sem create HTTP próprio');
   const ui = read('components/map/LotSwapPreviewPanel.tsx');
   assert(ui.includes('Fase 5A'), 'UI mostra classificação 5A');
+  assert(!ui.includes('Novas a gerar'), 'UI sem geração automática na troca');
+  assert(!/geradas automaticamente/i.test(ui), 'UI sem texto de geração automática');
+  assert(
+    ui.includes('Editar venda → Cobranças') ||
+      ui.includes('Editar venda \u2192 Cobranças'),
+    'UI aponta geração posterior em Cobranças',
+  );
   const previewSvc = read('lib/finance/saleLotSwapPreviewService.ts');
   assert(previewSvc.includes('loadLotSwapExternalChargePreview'), 'preview carrega 5A');
   assert(!/\.insert\(/.test(previewSvc), 'preview continua sem INSERT');

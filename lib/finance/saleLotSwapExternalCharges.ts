@@ -4,18 +4,16 @@
  * Sem cancelamento remoto. Sem geração remota. Sem ReleaseLot.
  * Sem alterar a RPC/execução da Fase 4.
  *
- * Estratégia compensatória (documentada para a 5B, não executada aqui):
+ * Estratégia compensatória da 5B (cancel-only):
  * Postgres e APIs bancárias não são atômicos. Não fingir rollback remoto.
- * Ordem segura futura:
  *   PREPARED   — classificar (esta fase) e congelar snapshot
  *   CANCELLING — cancelar cobranças abertas das parcelas que serão CANCEL
- *                Falha remota → FAILED e NÃO executar a mutação financeira
+ *                Falha remota → FAILED e NÃO executar a Fase 4
  *   CANCELED   — remoto ok; aí sim efetivar a Fase 4 já homologada
- *   GENERATING — gerar faltantes nas novas parcelas, com idempotência do provider
- *   COMPLETED  — geração ok
- *   FAILED     — persistir erro; retry não cancela duas vezes nem duplica boleto/Pix
+ *   COMPLETED  — troca local ok; novas parcelas ficam em Editar venda → Cobranças
+ *   FAILED     — persistir erro; retry não cancela duas vezes
  * Cobrança paga jamais entra em cancelamento. Pagamento histórico permanece
- * na mesma sale_id. Sem restituição.
+ * na mesma sale_id. Sem restituição. Sem geração automática na troca.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -37,7 +35,22 @@ export const LOT_SWAP_EXTERNAL_CHARGES_PHASE = '5A' as const;
 export const LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE =
   'LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE';
 export const LOT_SWAP_EXTERNAL_CHARGES_NOTICE =
-  'Fase 5A: classificação local das cobranças externas. Nenhuma API bancária é chamada. Cancelamento e geração ficam para a Fase 5B.';
+  'Fase 5A: classificação local das cobranças externas. Nenhuma API bancária é chamada. A Fase 5B só cancela títulos antigos abertos. As cobranças das novas parcelas ficam em Editar venda → Cobranças.';
+
+export const LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE =
+  'Cobranças externas abertas das parcelas substituídas serão canceladas antes da troca. As cobranças das novas parcelas poderão ser geradas posteriormente em Editar venda → Cobranças.';
+
+export const LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE =
+  'Nenhuma cobrança externa antiga precisa ser cancelada.';
+
+export function lotSwapExternalChargesOperatorNotice(input: {
+  wouldCancel?: unknown[] | null;
+}): string {
+  if ((input.wouldCancel || []).length > 0) {
+    return LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE;
+  }
+  return LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE;
+}
 
 export type LotSwapExternalChargePhase5Status = 'PREPARED' | 'BLOCKED';
 
@@ -186,8 +199,7 @@ export function classifyLotSwapExternalCharges(input: {
     }
   }
 
-  const unimplementedBlocks = Boolean(activeProvider && !implemented && (input.createCount || 0) > 0);
-  const wouldBlock = blocking.length > 0 || unimplementedBlocks;
+  const wouldBlock = blocking.length > 0;
   return {
     phase5Status: wouldBlock ? 'BLOCKED' : 'PREPARED',
     activeProvider,
@@ -205,7 +217,7 @@ export function classifyLotSwapExternalCharges(input: {
     wouldBlock,
     blockCode: wouldBlock ? LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE : null,
     blockMessage: wouldBlock
-      ? 'Há cobrança externa incompatível (não cancelável ou provider ainda não implementado). A Fase 4 permanece intacta; a Fase 5B não deve cancelar nem gerar até revisão.'
+      ? 'Há cobrança externa incompatível (não cancelável ou provider ainda não implementado). A Fase 4 permanece intacta; a Fase 5B não cancela até revisão.'
       : null,
   };
 }
@@ -236,7 +248,7 @@ export function buildLotSwapExternalChargePreviewFromPlan(
     persistCharges: false,
     remoteApiCalled: false,
     phase: LOT_SWAP_EXTERNAL_CHARGES_PHASE,
-    notice: LOT_SWAP_EXTERNAL_CHARGES_NOTICE,
+    notice: lotSwapExternalChargesOperatorNotice(classified),
     ...classified,
   };
 }

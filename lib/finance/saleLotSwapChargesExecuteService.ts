@@ -1,13 +1,12 @@
 /**
- * Fase 5B — orquestra cobranças externas da Troca de lote.
+ * Fase 5B — cancela cobranças externas antigas da Troca de lote, depois executa a Fase 4.
  * Fala só com ExternalChargeProvider (registry). Sem if/switch de banco.
- * Não altera a RPC da Fase 4. Não finge atomicidade com APIs externas.
+ * Não altera a RPC da Fase 4. Não gera cobranças das parcelas novas.
  *
  * Ordem:
- *   PREPARED → CANCELLING → CANCELED → executeSaleLotSwap → LOCAL_EXECUTED
- *   → GENERATING → COMPLETED
+ *   PREPARED → (CANCELLING → CANCELED) → executeSaleLotSwap → COMPLETED
+ * Sem cobrança antiga a cancelar: PREPARED → Fase 4 → COMPLETED (sem LIVE).
  * Falha no cancelamento: FAILED e NÃO executa a Fase 4.
- * Falha na geração: troca local permanece EXECUTED; charges_phase FAILED + localExecuted.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -18,8 +17,8 @@ import {
 import { SALE_LOT_SWAP_TABLE } from '@/lib/finance/saleLotSwap';
 import {
   isLotSwapChargesPhase,
+  isLotSwapChargesPhaseTerminalSuccess,
   LOT_SWAP_CHARGES_CANCEL_FAILED,
-  LOT_SWAP_CHARGES_GENERATE_FAILED,
   LOT_SWAP_CHARGES_LIVE_DISABLED,
   type LotSwapChargesPhase,
   type LotSwapChargesSnapshot,
@@ -40,8 +39,6 @@ import {
 } from '@/lib/finance/saleLotSwapExternalCharges';
 import {
   assertLotSwapCallerOwnsCompany,
-  isLotSwapFutureReceipt,
-  isLotSwapPaidReceipt,
   LOT_SWAP_CROSS_TENANT,
 } from '@/lib/finance/saleLotSwapPreview';
 import { loadLotSwapCallerProfile } from '@/lib/finance/saleLotSwapPreviewService';
@@ -96,8 +93,7 @@ function phaseOf(swap: Record<string, unknown>): LotSwapChargesPhase | null {
 
 function isLocalAlreadyExecuted(swap: Record<string, unknown>): boolean {
   if (text(swap.status) === 'EXECUTED') return true;
-  const phase = phaseOf(swap);
-  return phase === 'LOCAL_EXECUTED' || phase === 'GENERATING' || phase === 'COMPLETED';
+  return isLotSwapChargesPhaseTerminalSuccess(phaseOf(swap));
 }
 
 function isCancelAlreadyDone(swap: Record<string, unknown>): boolean {
@@ -117,21 +113,14 @@ function chargesSnapshotOf(swap: Record<string, unknown>): LotSwapChargesSnapsho
 }
 
 /**
- * Retry já estacionado em LOCAL_EXECUTED com LIVE OFF: devolver o estado
- * persistido sem regravar charges_phase_updated_at / updated_at / snapshot.updatedAt.
- * Geração pendente não é informação nova — é o motivo do estacionamento.
+ * Retry já estacionado após a Fase 4, sem cobrança antiga nova a cancelar:
+ * devolver o estado persistido sem regravar timestamps.
+ * Aceita COMPLETED (máquina atual) e LOCAL_EXECUTED (legado LIVE OFF / generate).
  */
-function isParkedLocalExecutedLiveOff(
-  swap: Record<string, unknown>,
-  live: boolean,
-): boolean {
-  if (live) return false;
+function isParkedAfterLocalExecute(swap: Record<string, unknown>): boolean {
   if (text(swap.status) !== 'EXECUTED') return false;
-  if (phaseOf(swap) !== 'LOCAL_EXECUTED') return false;
-  if (text(swap.charges_error) !== LOT_SWAP_CHARGES_LIVE_DISABLED) return false;
-  const snap = chargesSnapshotOf(swap);
-  if (snap && snap.live === true) return false;
-  return true;
+  const phase = phaseOf(swap);
+  return phase === 'COMPLETED' || phase === 'LOCAL_EXECUTED' || phase === 'GENERATING';
 }
 
 async function persistChargesPhase(
@@ -348,16 +337,16 @@ export async function executeSaleLotSwapWithExternalCharges(
     persistCharges: true,
     live,
     remoteApiCalled: false,
-    chargesPhase: 'LOCAL_EXECUTED',
+    chargesPhase: phaseOf(swap) || 'COMPLETED',
     swapId,
     saleId,
     local,
     canceledChargeIds: [...(chargesSnapshotOf(swap)?.canceledChargeIds || canceledChargeIds)],
-    generatedReceiptIds: [...(chargesSnapshotOf(swap)?.generatedReceiptIds || [])],
-    reusedReceiptIds: [...(chargesSnapshotOf(swap)?.reusedReceiptIds || [])],
+    generatedReceiptIds: [],
+    reusedReceiptIds: [],
   });
 
-  if (isParkedLocalExecutedLiveOff(swap, live) && !preview.wouldBlock) {
+  if (isParkedAfterLocalExecute(swap) && !preview.wouldBlock) {
     const knownCanceled = new Set(canceledChargeIds);
     const newCancelables = preview.wouldCancel.filter(
       (charge) => charge.classification !== 'paid' && !knownCanceled.has(charge.chargeId),
@@ -429,6 +418,7 @@ export async function executeSaleLotSwapWithExternalCharges(
         });
         for (const charge of preview.wouldCancel) {
           if (charge.classification === 'paid') continue;
+          if (canceledChargeIds.includes(charge.chargeId)) continue;
           const provider = getExternalChargeProvider(charge.provider);
           try {
             remoteApiCalled = true;
@@ -456,16 +446,15 @@ export async function executeSaleLotSwapWithExternalCharges(
             );
           }
         }
+        snapshot.canceledChargeIds = canceledChargeIds;
+        await persistChargesPhase(admin, {
+          swapId,
+          companyId,
+          phase: 'CANCELED',
+          snapshot: { ...snapshot, phase: 'CANCELED', canceledChargeIds },
+        });
       }
     }
-
-    snapshot.canceledChargeIds = canceledChargeIds;
-    await persistChargesPhase(admin, {
-      swapId,
-      companyId,
-      phase: 'CANCELED',
-      snapshot: { ...snapshot, phase: 'CANCELED', canceledChargeIds },
-    });
 
     local = await localExecuteImpl(admin, {
       saleId,
@@ -486,145 +475,8 @@ export async function executeSaleLotSwapWithExternalCharges(
 
   snapshot.localExecuted = true;
   snapshot.canceledChargeIds = canceledChargeIds;
-  await persistChargesPhase(admin, {
-    swapId,
-    companyId,
-    phase: 'LOCAL_EXECUTED',
-    snapshot: { ...snapshot, phase: 'LOCAL_EXECUTED', localExecuted: true },
-  });
-
-  const receiptsQuery = await admin
-    .from('finance_receipts')
-    .select('id, status, paid_at, installment_number')
-    .eq('sale_id', saleId);
-  const receiptRows = (receiptsQuery.data || []) as Array<{
-    id?: string;
-    status?: string | null;
-    paid_at?: string | null;
-  }>;
-  const newReceiptIds = receiptRows
-    .filter((row) => isLotSwapFutureReceipt(row) && !isLotSwapPaidReceipt(row))
-    .map((row) => String(row.id || ''))
-    .filter(Boolean);
-
-  const generatedReceiptIds: string[] = [];
-  const reusedReceiptIds: string[] = [];
-
-  const done = (phase: LotSwapChargesPhase, extra?: Partial<LotSwapChargesExecuteResult>) =>
-    ({
-      mutation: true as const,
-      execute: true,
-      persistCharges: true as const,
-      live,
-      remoteApiCalled,
-      chargesPhase: phase,
-      swapId,
-      saleId,
-      local,
-      canceledChargeIds,
-      generatedReceiptIds,
-      reusedReceiptIds,
-      ...extra,
-    }) satisfies LotSwapChargesExecuteResult;
-
-  if (newReceiptIds.length === 0 || !preview.supportsGeneration) {
-    await persistChargesPhase(admin, {
-      swapId,
-      companyId,
-      phase: 'COMPLETED',
-      snapshot: {
-        ...snapshot,
-        phase: 'COMPLETED',
-        localExecuted: true,
-        canceledChargeIds,
-        error: null,
-      },
-    });
-    return done('COMPLETED');
-  }
-
-  if (!live) {
-    await persistChargesPhase(admin, {
-      swapId,
-      companyId,
-      phase: 'LOCAL_EXECUTED',
-      snapshot: {
-        ...snapshot,
-        phase: 'LOCAL_EXECUTED',
-        localExecuted: true,
-        error: 'Geração remota desligada nesta entrega. Retry seguro depois da autorização.',
-      },
-      error: LOT_SWAP_CHARGES_LIVE_DISABLED,
-    });
-    return done('LOCAL_EXECUTED');
-  }
-
-  await persistChargesPhase(admin, {
-    swapId,
-    companyId,
-    phase: 'GENERATING',
-    snapshot: { ...snapshot, phase: 'GENERATING', localExecuted: true },
-  });
-
-  const generator = getExternalChargeProvider(preview.activeProvider);
-  try {
-    remoteApiCalled = true;
-    const generated = await generator.generateMissingCharges(admin, {
-      companyId,
-      saleId,
-      receiptIds: newReceiptIds,
-    });
-    for (const receiptId of newReceiptIds) {
-      if (generated.reused > reusedReceiptIds.length && reusedReceiptIds.length < generated.reused) {
-        reusedReceiptIds.push(receiptId);
-      } else if (generated.created > generatedReceiptIds.length) {
-        generatedReceiptIds.push(receiptId);
-      }
-    }
-    if (!generated.ok || generated.errors.length) {
-      const message = generated.errors[0]?.message || 'Falha ao gerar cobrança da nova parcela.';
-      snapshot.failedStage = 'GENERATE';
-      snapshot.error = message;
-      await persistChargesPhase(admin, {
-        swapId,
-        companyId,
-        phase: 'FAILED',
-        snapshot: {
-          ...snapshot,
-          phase: 'FAILED',
-          localExecuted: true,
-          generatedReceiptIds,
-          reusedReceiptIds,
-        },
-        error: message,
-      });
-      throw new LotSwapChargesPhaseError(
-        'A troca local foi concluída, mas a geração da cobrança externa falhou. Retry não duplica boleto/Pix.',
-        LOT_SWAP_CHARGES_GENERATE_FAILED,
-        409,
-        { chargesPhase: 'FAILED', local, remoteApiCalled: true },
-      );
-    }
-  } catch (err) {
-    if (err instanceof LotSwapChargesPhaseError) throw err;
-    const message = err instanceof Error ? err.message : String(err);
-    snapshot.failedStage = 'GENERATE';
-    snapshot.error = message;
-    await persistChargesPhase(admin, {
-      swapId,
-      companyId,
-      phase: 'FAILED',
-      snapshot: { ...snapshot, phase: 'FAILED', localExecuted: true },
-      error: message,
-    });
-    throw new LotSwapChargesPhaseError(
-      'A troca local foi concluída, mas a geração da cobrança externa falhou. Retry não duplica boleto/Pix.',
-      LOT_SWAP_CHARGES_GENERATE_FAILED,
-      409,
-      { chargesPhase: 'FAILED', local, remoteApiCalled: true },
-    );
-  }
-
+  snapshot.generatedReceiptIds = [];
+  snapshot.reusedReceiptIds = [];
   await persistChargesPhase(admin, {
     swapId,
     companyId,
@@ -634,11 +486,22 @@ export async function executeSaleLotSwapWithExternalCharges(
       phase: 'COMPLETED',
       localExecuted: true,
       canceledChargeIds,
-      generatedReceiptIds,
-      reusedReceiptIds,
       error: null,
     },
   });
 
-  return done('COMPLETED');
+  return {
+    mutation: true,
+    execute: true,
+    persistCharges: true,
+    live,
+    remoteApiCalled,
+    chargesPhase: 'COMPLETED',
+    swapId,
+    saleId,
+    local,
+    canceledChargeIds,
+    generatedReceiptIds: [],
+    reusedReceiptIds: [],
+  };
 }

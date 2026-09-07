@@ -116,10 +116,6 @@ function PlanSummary({
               value={String(externalCharges.nonCancelable.length)}
             />
             <SummaryCard
-              label="Novas a gerar (5B)"
-              value={String(externalCharges.wouldGenerate.length)}
-            />
-            <SummaryCard
               label="Status 5A"
               value={externalCharges.phase5Status}
             />
@@ -280,7 +276,7 @@ export function LotSwapPreviewPanel({
         message: data.message,
         error: data.error,
       });
-      if (data.executed && data.code === 'LOT_SWAP_CHARGES_GENERATE_FAILED') {
+      if (data.executed && data.code === 'LOT_SWAP_CHARGES_CANCEL_FAILED') {
         setExecuted(data.executed);
         throw new Error(mapped);
       }
@@ -573,7 +569,7 @@ export function LotSwapPreviewPanel({
           {executed
             ? 'Troca concluída nesta venda. Use Fechar e recarregue o mapa para ver os lotes atualizados.'
             : prepared
-            ? 'Plano congelado. A execução atômica só ocorre no botão Executar troca de lote. Cobranças Asaas/Inter ficam para a Fase 5.'
+            ? 'Plano congelado. A execução cancela títulos externos antigos abertos e depois troca o lote. Cobranças das novas parcelas ficam em Editar venda → Cobranças.'
             : 'A confirmação grava só o plano CALCULATED. Use Fechar para voltar ao mapa.'}
         </p>
       ) : null}

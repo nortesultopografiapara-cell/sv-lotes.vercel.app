@@ -23,14 +23,18 @@ import {
 } from '../lib/finance/saleLotSwapChargesExecuteService';
 import {
   LOT_SWAP_CHARGES_CANCEL_FAILED,
-  LOT_SWAP_CHARGES_GENERATE_FAILED,
   LOT_SWAP_CHARGES_LIVE_DISABLED,
 } from '../lib/finance/saleLotSwapChargesPhase';
 import { setLotSwapChargesLiveScopeEnvForTests } from '../lib/finance/saleLotSwapChargesLiveScope';
 import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '../lib/homolog/env';
 import type { LotSwapExecutedResult } from '../lib/finance/saleLotSwapExecuteService';
-import { LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE } from '../lib/finance/saleLotSwapExternalCharges';
+import {
+  LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE,
+  LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE,
+  LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE,
+} from '../lib/finance/saleLotSwapExternalCharges';
 import { LOT_SWAP_CROSS_TENANT } from '../lib/finance/saleLotSwapPreview';
+import { buildSaleChargesSummaryFromRows } from '../lib/finance/saleChargesShared';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -279,18 +283,14 @@ async function testPaidNeverCancelledAndPendingCancelled() {
     const ctx = createStore(baseTables());
     const localCalls = installLocalExecute(ctx);
     const canceled: string[] = [];
-    const generated: string[][] = [];
     setExternalChargeMutationFnsForTests({
       cancelAsaasCharge: async (_admin, companyId, chargeId) => {
         assert(companyId === 'co-1', 'tenant no cancel');
         canceled.push(chargeId);
         return { ok: true, reused: canceled.filter((id) => id === chargeId).length > 1, chargeId, status: 'CANCELLED' };
       },
-      generateAsaasCharges: async (_admin, input) => {
-        assert(input.companyId === 'co-1', 'tenant no generate');
-        generated.push([...input.receiptIds]);
-        const reused = generated.length > 1;
-        return { ok: true, created: reused ? 0 : input.receiptIds.length, reused: reused ? input.receiptIds.length : 0, skipped: 0, errors: [] };
+      generateAsaasCharges: async () => {
+        throw new Error('5B cancel-only não gera cobrança Asaas');
       },
     });
     const first = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
@@ -303,9 +303,10 @@ async function testPaidNeverCancelledAndPendingCancelled() {
     assert(canceled.join() === 'a-open', 'só a pendente foi cancelada');
     assert(!canceled.includes('a-paid'), 'paga nunca cancelada');
     assert(localCalls() === 1, 'Fase 4 uma vez');
-    assert(generated.length === 1 && generated[0].includes('r-new'), 'gerou nova parcela');
-    assert(!generated[0].includes('r-paid'), 'não gera para paga');
+    assert(first.generatedReceiptIds.length === 0, 'não gera parcelas novas');
     assert(String(ctx.store.sale_lot_swaps[0].status) === 'EXECUTED', 'local EXECUTED');
+    const phases = (ctx.store.sale_lot_swaps[0].charges_snapshot as { phase?: string }).phase;
+    assert(phases === 'COMPLETED', 'snapshot COMPLETED');
 
     const second = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
       saleId: 'sale-1',
@@ -316,8 +317,6 @@ async function testPaidNeverCancelledAndPendingCancelled() {
     assert(second.chargesPhase === 'COMPLETED', 'retry COMPLETED');
     assert(canceled.length === 1, 'retry não cancela de novo');
     assert(localCalls() === 2 && second.local?.reused === true, 'Fase 4 reused');
-    assert(generated.length === 2, 'retry gera de novo via service idempotente');
-    assert(generated[1].join() === generated[0].join(), 'mesmos receipts no retry');
   });
   console.log('OK testPaidNeverCancelledAndPendingCancelled');
 }
@@ -393,31 +392,80 @@ async function testNonCancelableBlocksBeforePhase4() {
   console.log('OK testNonCancelableBlocksBeforePhase4');
 }
 
-async function testGenerateFailKeepsLocalAndRetryReuses() {
+async function testNoOldChargesCompletesWithoutLive() {
+  await withHarness(async () => {
+    const tables = baseTables({ company_asaas_charges: [], bank_charges: [] });
+    const ctx = createStore(tables);
+    const localCalls = installLocalExecute(ctx);
+    let http = 0;
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async () => {
+        http += 1;
+        throw new Error('HTTP Asaas não autorizado');
+      },
+      generateAsaasCharges: async () => {
+        http += 1;
+        throw new Error('generate não deve rodar');
+      },
+    });
+    const result = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      swapId: 'swap-1',
+      live: false,
+    });
+    assert(result.chargesPhase === 'COMPLETED', 'COMPLETED sem cobrança antiga');
+    assert(result.live === false, 'sem LIVE');
+    assert(result.remoteApiCalled === false, 'zero API remota');
+    assert(result.canceledChargeIds.length === 0, 'nada a cancelar');
+    assert(localCalls() === 1, 'Fase 4 executou');
+    assert(http === 0, 'zero HTTP');
+    assert(String(ctx.store.sale_lot_swaps[0].status) === 'EXECUTED', 'Fase 4 EXECUTED');
+    assert(String(ctx.store.sale_lot_swaps[0].charges_phase) === 'COMPLETED', 'phase COMPLETED');
+  });
+  console.log('OK testNoOldChargesCompletesWithoutLive');
+}
+
+async function testRetryAfterPartialCancelIsIdempotent() {
   await withHarness(async () => {
     setLotSwapChargesLiveScopeEnvForTests(developScopedLiveEnv());
-    const ctx = createStore(baseTables());
+    const tables = baseTables();
+    tables.company_asaas_charges = [
+      {
+        id: 'a-paid',
+        company_id: 'co-1',
+        sale_id: 'sale-1',
+        installment_id: 'r-paid',
+        status: 'PAID',
+      },
+      {
+        id: 'a-open-1',
+        company_id: 'co-1',
+        sale_id: 'sale-1',
+        installment_id: 'r-future',
+        status: 'PENDING',
+      },
+      {
+        id: 'a-open-2',
+        company_id: 'co-1',
+        sale_id: 'sale-1',
+        installment_id: 'r-future',
+        status: 'PENDING',
+      },
+    ];
+    const ctx = createStore(tables);
     const localCalls = installLocalExecute(ctx);
-    let generateCalls = 0;
+    const canceled: string[] = [];
     setExternalChargeMutationFnsForTests({
-      cancelAsaasCharge: async (_a, _c, chargeId) => ({
-        ok: true,
-        reused: false,
-        chargeId,
-        status: 'CANCELLED',
-      }),
-      generateAsaasCharges: async (_a, input) => {
-        generateCalls += 1;
-        if (generateCalls === 1) {
-          return {
-            ok: false,
-            created: 0,
-            reused: 0,
-            skipped: 0,
-            errors: [{ receiptId: input.receiptIds[0] || 'r-new', message: 'mock generate 500' }],
-          };
+      cancelAsaasCharge: async (_a, _c, chargeId) => {
+        canceled.push(chargeId);
+        if (chargeId === 'a-open-2' && canceled.filter((id) => id === 'a-open-2').length === 1) {
+          throw new Error('asaas mock 500 na segunda');
         }
-        return { ok: true, created: 0, reused: input.receiptIds.length, skipped: 0, errors: [] };
+        return { ok: true, reused: false, chargeId, status: 'CANCELLED' };
+      },
+      generateAsaasCharges: async () => {
+        throw new Error('generate não deve rodar');
       },
     });
     try {
@@ -427,15 +475,15 @@ async function testGenerateFailKeepsLocalAndRetryReuses() {
         swapId: 'swap-1',
         live: true,
       });
-      throw new Error('deveria falhar generate');
+      throw new Error('deveria falhar no segundo cancel');
     } catch (err) {
       assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
-      assert(err.code === LOT_SWAP_CHARGES_GENERATE_FAILED, 'generate failed');
-      assert(err.local?.status === 'EXECUTED', 'local executado');
+      assert(err.code === LOT_SWAP_CHARGES_CANCEL_FAILED, 'cancel failed');
     }
-    assert(String(ctx.store.sale_lot_swaps[0].status) === 'EXECUTED', 'troca permanece EXECUTED');
-    assert(String(ctx.store.sale_lot_swaps[0].charges_phase) === 'FAILED', 'pendência externa');
-    assert(localCalls() === 1, 'uma execução local');
+    assert(localCalls() === 0, 'Fase 4 não rodou no fail');
+    assert(canceled.join() === 'a-open-1,a-open-2', 'tentou as duas');
+    assert(String(ctx.store.sale_lot_swaps[0].status) === 'CALCULATED', 'Fase 4 intacta');
+    assert(String(ctx.store.sale_lot_swaps[0].charges_phase) === 'FAILED', 'FAILED');
 
     const retry = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
       saleId: 'sale-1',
@@ -444,14 +492,14 @@ async function testGenerateFailKeepsLocalAndRetryReuses() {
       live: true,
     });
     assert(retry.chargesPhase === 'COMPLETED', 'retry COMPLETED');
-    assert(retry.local?.reused === true, 'retry não remuta Fase 4');
-    assert(generateCalls === 2, 'retry só generate');
-    assert(localCalls() === 2, 'segunda chamada reused');
+    assert(canceled.filter((id) => id === 'a-open-1').length === 1, 'não recancela a primeira');
+    assert(canceled.filter((id) => id === 'a-open-2').length === 2, 'retry só a segunda');
+    assert(localCalls() === 1, 'Fase 4 só depois do cancel ok');
   });
-  console.log('OK testGenerateFailKeepsLocalAndRetryReuses');
+  console.log('OK testRetryAfterPartialCancelIsIdempotent');
 }
 
-async function testInterMockCancelAndGenerate() {
+async function testInterMockCancelOnly() {
   await withHarness(async () => {
     const tables = baseTables({
       company_asaas_charges: [],
@@ -511,16 +559,14 @@ async function testInterMockCancelAndGenerate() {
       developScopedLiveEnv({ LOT_SWAP_CHARGES_LIVE_PROVIDERS: 'INTER' }),
     );
     const canceled: string[] = [];
-    let generateCalls = 0;
     setExternalChargeMutationFnsForTests({
       cancelInterCharge: async (_a, companyId, chargeId) => {
         assert(companyId === 'co-1', 'Inter tenant');
         canceled.push(chargeId);
         return { ok: true, reused: false, chargeId, status: 'CANCELLED' };
       },
-      generateInterCharges: async (_a, input) => {
-        generateCalls += 1;
-        return { ok: true, created: input.receiptIds.length, reused: 0, skipped: 0, errors: [] };
+      generateInterCharges: async () => {
+        throw new Error('5B cancel-only não gera cobrança Inter');
       },
     });
     const result = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
@@ -532,64 +578,72 @@ async function testInterMockCancelAndGenerate() {
     assert(result.chargesPhase === 'COMPLETED', 'Inter COMPLETED');
     assert(canceled.join() === 'i-open', 'Inter cancelou só a aberta');
     assert(!canceled.includes('i-paid'), 'Inter não cancela paga');
-    assert(generateCalls === 1, 'Inter gerou uma vez');
+    assert(result.generatedReceiptIds.length === 0, 'Inter não gera na 5B');
     assert(localCalls() === 1, 'Fase 4 após cancel Inter');
   });
-  console.log('OK testInterMockCancelAndGenerate');
+  console.log('OK testInterMockCancelOnly');
 }
 
-async function testC6BlockedNoApi() {
-  await withHarness(async () => {
-    const tables = baseTables({
-      company_asaas_charges: [],
-      bank_charges: [
-        {
-          id: 'c6-1',
-          company_id: 'co-1',
-          sale_id: 'sale-1',
-          finance_receipt_id: 'r-future',
-          status: 'PENDING',
-          provider: 'C6',
-        },
-      ],
-    });
-    const ctx = createStore(tables);
-    const localCalls = installLocalExecute(ctx, { fail: true });
-    let mutation = 0;
-    setExternalChargeMutationFnsForTests({
-      cancelAsaasCharge: async () => {
-        mutation += 1;
-        return { ok: true, reused: false, chargeId: 'x', status: 'CANCELLED' };
-      },
-      cancelInterCharge: async () => {
-        mutation += 1;
-        return { ok: true, reused: false, chargeId: 'x', status: 'CANCELLED' };
-      },
-    });
-    try {
-      await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
-        saleId: 'sale-1',
-        userId: 'user-1',
-        swapId: 'swap-1',
-        live: true,
+async function testUnimplementedProvidersRemainBlocked() {
+  for (const provider of ['C6', 'BRADESCO', 'NUBANK'] as const) {
+    await withHarness(async () => {
+      const tables = baseTables({
+        company_asaas_charges: [],
+        bank_charges: [
+          {
+            id: `${provider.toLowerCase()}-1`,
+            company_id: 'co-1',
+            sale_id: 'sale-1',
+            finance_receipt_id: 'r-future',
+            status: 'PENDING',
+            provider,
+          },
+        ],
       });
-      throw new Error('C6 deveria bloquear');
-    } catch (err) {
-      assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
-      assert(err.code === LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE, 'C6 non_cancelable');
-    }
-    assert(mutation === 0, 'C6 sem API');
-    assert(localCalls() === 0, 'C6 não executa Fase 4');
-    const c6 = createUnimplementedExternalChargeProvider('C6');
-    let refused = false;
-    try {
-      c6.cancelCancelableCharge({} as never, { companyId: 'co-1', chargeId: 'c6-1' });
-    } catch (err) {
-      refused = err instanceof ExternalChargeMutationDisabledError;
-    }
-    assert(refused, 'C6 unimplemented recusa mutação');
-  });
-  console.log('OK testC6BlockedNoApi');
+      const ctx = createStore(tables);
+      const localCalls = installLocalExecute(ctx, { fail: true });
+      let mutation = 0;
+      setExternalChargeMutationFnsForTests({
+        cancelAsaasCharge: async () => {
+          mutation += 1;
+          return { ok: true, reused: false, chargeId: 'x', status: 'CANCELLED' };
+        },
+        cancelInterCharge: async () => {
+          mutation += 1;
+          return { ok: true, reused: false, chargeId: 'x', status: 'CANCELLED' };
+        },
+      });
+      try {
+        await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+          saleId: 'sale-1',
+          userId: 'user-1',
+          swapId: 'swap-1',
+          live: true,
+        });
+        throw new Error(`${provider} deveria bloquear`);
+      } catch (err) {
+        assert(err instanceof LotSwapChargesPhaseError, `${provider} erro de fase`);
+        assert(
+          err.code === LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE,
+          `${provider} non_cancelable`,
+        );
+      }
+      assert(mutation === 0, `${provider} sem API`);
+      assert(localCalls() === 0, `${provider} não executa Fase 4`);
+      const unimplemented = createUnimplementedExternalChargeProvider(provider);
+      let refused = false;
+      try {
+        unimplemented.cancelCancelableCharge({} as never, {
+          companyId: 'co-1',
+          chargeId: `${provider.toLowerCase()}-1`,
+        });
+      } catch (err) {
+        refused = err instanceof ExternalChargeMutationDisabledError;
+      }
+      assert(refused, `${provider} unimplemented recusa mutação`);
+    });
+  }
+  console.log('OK testUnimplementedProvidersRemainBlocked');
 }
 
 async function testCrossTenantBlocked() {
@@ -963,15 +1017,78 @@ async function testAdapterPaidAndReusedWithoutOfficialHttp() {
   console.log('OK testAdapterPaidAndReusedWithoutOfficialHttp');
 }
 
+function testOfficialChargesSummaryAfterSwap() {
+  const summary = buildSaleChargesSummaryFromRows({
+    saleId: 'sale-1',
+    companyId: 'co-1',
+    installments: [
+      {
+        id: 'r-paid',
+        sale_id: 'sale-1',
+        installment_number: 3,
+        due_date: '2026-08-10',
+        amount: 100,
+        status: 'pago',
+        paid_at: '2026-08-10',
+      },
+      {
+        id: 'r-future',
+        sale_id: 'sale-1',
+        installment_number: 4,
+        due_date: '2026-09-10',
+        amount: 100,
+        status: 'cancelado',
+      },
+      {
+        id: 'r-new',
+        sale_id: 'sale-1',
+        installment_number: 1,
+        due_date: '2026-10-10',
+        amount: 100,
+        status: 'pendente',
+      },
+    ],
+    charges: [],
+    context: {
+      customerName: 'Cliente',
+      customerEmail: null,
+      customerPhone: null,
+      projectName: 'Emp',
+      quadra: '1',
+      lote: '1',
+      lotLabel: null,
+      contractNumber: null,
+      financialAccountId: 'acc1',
+    },
+    financialAccountName: 'Conta',
+    hasFinancialAccount: true,
+    financialAccountBlockReason: null,
+    installmentCorrectionType: 'FIXED',
+  });
+  assert(summary.missingInstallmentIds.includes('r-new'), 'parcela nova entra como faltante');
+  assert(
+    !summary.missingInstallmentIds.includes('r-future'),
+    'parcela antiga cancelada não entra como faltante',
+  );
+  assert(!summary.missingInstallmentIds.includes('r-paid'), 'paga não entra como faltante');
+  console.log('OK testOfficialChargesSummaryAfterSwap');
+}
+
 function testSourceArchitecture() {
   const orch = read('lib/finance/saleLotSwapChargesExecuteService.ts');
-  assert(orch.includes('isParkedLocalExecutedLiveOff'), 'retry parked LIVE OFF sem restamp');
+  assert(orch.includes('isParkedAfterLocalExecute'), 'retry parked sem restamp');
   assert(orch.includes('resolveLotSwapExternalChargesLiveScope'), 'LIVE via helper');
   assert(orch.includes('isLotSwapExternalChargesLiveAuthorized'), 'LIVE por provider do registry');
   assert(!orch.includes("isLotSwapExternalChargeLiveEnabled"), 'orquestrador sem flag global');
   assert(!/LOT_SWAP_EXTERNAL_CHARGES_LIVE \|\| ''\)\.trim\(\) === 'true'/.test(orch), 'sem true global');
   assert(orch.includes('getExternalChargeProvider(charge.provider)'), 'cancel via registry');
-  assert(orch.includes('getExternalChargeProvider(preview.activeProvider)'), 'generate via registry');
+  assert(!orch.includes('generateMissingCharges'), 'orquestrador sem generate');
+  assert(
+    !orch.includes('getExternalChargeProvider(preview.activeProvider)'),
+    'sem generate via activeProvider',
+  );
+  assert(!orch.includes("phase: 'GENERATING'"), 'não grava GENERATING');
+  assert(!orch.includes("phase: 'LOCAL_EXECUTED'"), 'não grava LOCAL_EXECUTED novo');
   assert(!orch.includes('cancelCompanyCharge'), 'orquestrador sem Asaas direto');
   assert(!orch.includes('cancelInterCobranca'), 'orquestrador sem Inter HTTP');
   assert(!orch.includes('createCompanyInstallmentCharge'), 'orquestrador sem create Asaas');
@@ -1004,10 +1121,23 @@ function testSourceArchitecture() {
   const route5 = read('app/api/sales/[saleId]/lot-swap/charges/execute/route.ts');
   assert(route5.includes('executeSaleLotSwapWithExternalCharges'), 'rota 5B');
   assert(!route5.includes('cancelCompanyCharge'), 'rota 5B sem if de banco');
+  assert(route5.includes('Não gera cobranças'), 'rota 5B cancela só');
 
   const apply = read('scripts/develop/apply-sale-lot-swaps-charges-phase.ts');
   assert(apply.includes('assertDevelopWriteAllowed'), 'apply só DEVELOP');
   assert(apply.includes('20261015120000_sale_lot_swaps_charges_phase.sql'), 'migration 5B');
+
+  const ui = read('components/map/LotSwapPreviewPanel.tsx');
+  assert(!ui.includes('Novas a gerar'), 'UI sem card de geração 5B');
+  assert(!/geradas automaticamente/i.test(ui), 'UI sem geração automática');
+  assert(ui.includes('Editar venda → Cobranças'), 'UI aponta módulo Cobranças');
+
+  const notices = read('lib/finance/saleLotSwapExternalCharges.ts');
+  assert(
+    notices.includes(LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE),
+    'aviso cancel then official',
+  );
+  assert(notices.includes(LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE), 'aviso nenhuma antiga');
 
   assert(
     String(process.env.LOT_SWAP_EXTERNAL_CHARGES_LIVE || '') !== 'true' &&
@@ -1025,13 +1155,14 @@ function testSourceArchitecture() {
 
 async function main() {
   ensureExternalChargeProvidersRegistered();
+  await testNoOldChargesCompletesWithoutLive();
   await testLiveOffDoesNotCancelOrExecute();
   await testPaidNeverCancelledAndPendingCancelled();
   await testCancelFailureDoesNotExecuteLocal();
+  await testRetryAfterPartialCancelIsIdempotent();
   await testNonCancelableBlocksBeforePhase4();
-  await testGenerateFailKeepsLocalAndRetryReuses();
-  await testInterMockCancelAndGenerate();
-  await testC6BlockedNoApi();
+  await testInterMockCancelOnly();
+  await testUnimplementedProvidersRemainBlocked();
   await testCrossTenantBlocked();
   await testParkedLocalExecutedLiveOffDoesNotRestamp();
   await testProductionScopedEnvStaysOff();
@@ -1039,6 +1170,7 @@ async function main() {
   await testAsaasAllowlistDoesNotCancelInter();
   await testC6BlockedEvenWithScopedLive();
   await testAdapterPaidAndReusedWithoutOfficialHttp();
+  testOfficialChargesSummaryAfterSwap();
   testSourceArchitecture();
   console.log('OK mandatory-sale-lot-swap-phase5b-tests');
 }
