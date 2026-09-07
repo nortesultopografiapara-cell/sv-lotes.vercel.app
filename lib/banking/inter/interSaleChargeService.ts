@@ -15,7 +15,8 @@ import {
   INTER_CANCEL_CONFIRM_POLL,
   extractInterHttpStatusFromError,
   resolveInterCobrancaV3CancelMotivo,
-  sanitizeInterApiErrorBody,
+  sanitizeInterCobrancaHttpPayload,
+  logInterCancelDiagnostics,
   type InterCobrancaDetail,
   type InterCreateCobrancaInput,
   type InterPollOptions,
@@ -1061,17 +1062,28 @@ export async function cancelInterInstallmentCharge(
       motivoCancelamento: motivo,
     });
     postStatus = posted.status;
-    const sanitizedPost = sanitizeInterApiErrorBody(posted.bodyText || JSON.stringify(posted.raw || {}));
+    const sanitizedPost = sanitizeInterCobrancaHttpPayload(posted.bodyText || '');
     postBodySummary = JSON.stringify({
-      status: sanitizedPost.status ?? posted.raw?.status ?? null,
-      mensagem: sanitizedPost.mensagem ?? posted.raw?.mensagem ?? null,
+      empty: sanitizedPost.empty === true,
+      status: sanitizedPost.status ?? null,
+      mensagem: sanitizedPost.mensagem ?? null,
+      title: sanitizedPost.title ?? null,
+      detail: sanitizedPost.detail ?? null,
+      keys: sanitizedPost.keys ?? [],
+      contentType: posted.headers['content-type'] || null,
     });
-    console.log('[inter][cancel][post]', {
+    logInterCancelDiagnostics({
+      stage: 'pedido_cancelamento',
       codigoSolicitacao: codigo,
-      chargeType: chargeType || null,
-      motivo,
+      method: 'POST',
+      path: posted.path,
+      accept: posted.accept,
+      contentType: posted.contentType,
+      motivo: posted.motivo,
       httpStatus: posted.status,
-      body: sanitizedPost,
+      requestBody: { motivoCancelamento: posted.motivo },
+      responseHeaders: posted.headers,
+      responseBody: sanitizedPost,
     });
   } catch (err) {
     throw new InterRemoteCancelError({
@@ -1097,6 +1109,17 @@ export async function cancelInterInstallmentCharge(
       sleepFn: input.poll?.sleepFn,
     });
     remote = classifyDetail(confirmedDetail.situacao);
+    logInterCancelDiagnostics({
+      stage: 'confirmacao',
+      codigoSolicitacao: codigo,
+      method: 'GET',
+      path: `/cobrancas/${encodeURIComponent(codigo)}`,
+      httpStatus: 200,
+      getSituacao: confirmedDetail.situacao,
+      getKeys: Object.keys(confirmedDetail.raw || {}),
+      processingError: confirmedDetail.processingError || null,
+      responseBody: sanitizeInterCobrancaHttpPayload(JSON.stringify(confirmedDetail.raw || {})),
+    });
   } catch (err) {
     throw new InterRemoteCancelError({
       stage: 'confirmacao',

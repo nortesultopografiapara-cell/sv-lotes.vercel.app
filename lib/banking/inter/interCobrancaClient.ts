@@ -5,13 +5,17 @@
 
 import https from 'node:https';
 import type { BankEnvironment } from '@/lib/banking/types';
-import { getInterCobrancaV3BaseUrl } from '@/lib/banking/inter/interEndpoints';
+import { getInterCobrancaV3BaseUrl, INTER_OAUTH_SCOPES } from '@/lib/banking/inter/interEndpoints';
 import {
   requestInterAccessToken,
   type InterOAuthCredentials,
   type InterOAuthFetchFn,
 } from '@/lib/banking/inter/interOAuthClient';
 import { isInterSituacaoTerminal } from '@/lib/banking/inter/interStatus';
+import {
+  isDevelopHomologRuntime,
+  isProductionSupabaseRuntime,
+} from '@/lib/homolog/env';
 
 export type InterCobrancaDetail = {
   codigoSolicitacao: string;
@@ -33,11 +37,27 @@ export type InterCobrancaDetail = {
 /** Motivo da API antiga de boleto (`/{nossoNumero}/cancelar`, HTTP 204). */
 export const INTER_LEGACY_BOLETO_CANCEL_MOTIVO = 'ACERTOS' as const;
 /**
- * Motivo da Cobrança V3 bolepix (BOLETO+PIX), usado pelo ACBr no IndicadorPix.
- * ACERTOS da API antiga não confirma CANCELADO neste produto — o Inter fica
- * A_RECEBER com “Erro ao processar” após HTTP 202.
+ * Motivo bolepix usado pelo ACBr/Postman com Accept problem+json.
+ * O exemplo oficial da Cobrança v3 é CLIENTE_DESISTIU.
  */
 export const INTER_BOLEPIX_CANCEL_MOTIVO = 'Solicitado Pela Empresa' as const;
+/** Exemplo documentado da Cobrança v3 (não é da API antiga de boleto). */
+export const INTER_COBRANCA_V3_DOCUMENTED_CANCEL_MOTIVO = 'CLIENTE_DESISTIU' as const;
+/**
+ * Accept exclusivo do POST /cancelar. NÃO misturar application/json:
+ * o Inter recusa Accept json neste endpoint (violacao problem+json).
+ * Isto é Accept, não Content-Type. O body continua application/json.
+ */
+export const INTER_COBRANCA_V3_CANCEL_ACCEPT = 'application/problem+json' as const;
+
+const SAFE_RESPONSE_HEADER_KEYS = new Set([
+  'content-type',
+  'location',
+  'retry-after',
+  'x-request-id',
+  'x-correlation-id',
+  'x-ratelimit-remaining',
+]);
 
 export function resolveInterCobrancaV3CancelMotivo(chargeType?: string | null): string {
   const type = String(chargeType || '')
@@ -51,26 +71,94 @@ export function extractInterCobrancaProcessingError(
   raw: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!raw) return null;
-  const cobranca = asRecord(raw.cobranca) || raw;
-  const candidates = [
-    cobranca.mensagemErro,
-    cobranca.descricaoErro,
-    cobranca.codigoErro,
-    cobranca.falha,
-    cobranca.erro,
-    cobranca.origem,
-    cobranca.observacao,
-    raw.mensagemErro,
-    raw.descricaoErro,
-    raw.codigoErro,
-    raw.falha,
-    raw.erro,
-  ];
-  for (const item of candidates) {
-    const s = sanitizeInterOperatorDetail(String(item || ''));
-    if (s && /erro|falha|process/i.test(s)) return s;
+  const found: string[] = [];
+  const visit = (value: unknown, depth: number) => {
+    if (depth > 4 || value == null) return;
+    if (Array.isArray(value)) {
+      value.slice(0, 20).forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    if (typeof value !== 'object') return;
+    const rec = value as Record<string, unknown>;
+    for (const [key, item] of Object.entries(rec)) {
+      if (/falha|erro|mensagem|detail|title|origem|observacao|violac/i.test(key)) {
+        if (typeof item !== 'string') continue;
+        const s = sanitizeInterOperatorDetail(item);
+        if (s && /erro|falha|process|violac/i.test(s)) found.push(`${key}:${s}`);
+      }
+      visit(item, depth + 1);
+    }
+  };
+  visit(raw, 0);
+  return found[0] || null;
+}
+
+export function shouldLogInterCancelDiagnostics(): boolean {
+  const vercel = String(process.env.VERCEL_ENV || '').toLowerCase();
+  if (vercel === 'production') return false;
+  if (isProductionSupabaseRuntime()) return false;
+  return vercel === 'preview' || process.env.NODE_ENV === 'development' || isDevelopHomologRuntime();
+}
+
+function redactPersonalIds(value: string): string {
+  return String(value || '')
+    .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, '[cpf-redacted]')
+    .replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, '[cnpj-redacted]')
+    .replace(/\d{11,14}/g, '[id-redacted]');
+}
+
+function redactSensitivePayload(value: unknown, depth = 0): unknown {
+  if (depth > 6) return '[truncated]';
+  if (typeof value === 'string') return redactPersonalIds(value).slice(0, 500);
+  if (Array.isArray(value)) return value.slice(0, 30).map((item) => redactSensitivePayload(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (SENSITIVE_KEY_RE.test(key)) {
+      out[key] = '[REDACTED]';
+      continue;
+    }
+    out[key] = redactSensitivePayload(v, depth + 1);
   }
-  return null;
+  return out;
+}
+
+export function pickSafeInterResponseHeaders(
+  headers?: Record<string, string> | null,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!headers) return out;
+  for (const [key, value] of Object.entries(headers)) {
+    const k = key.toLowerCase();
+    if (!SAFE_RESPONSE_HEADER_KEYS.has(k)) continue;
+    const s = String(value || '').trim();
+    if (s && !OPERATOR_SECRET_RE.test(s)) out[k] = s.slice(0, 180);
+  }
+  return out;
+}
+
+/** Body HTTP Inter completo (POST/GET), sem token/certificado/CPF. */
+export function sanitizeInterCobrancaHttpPayload(bodyText: string): Record<string, unknown> {
+  const raw = String(bodyText || '').trim();
+  if (!raw) return { empty: true, bodyLength: 0 };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const redacted = redactSensitivePayload(parsed);
+    if (!redacted || typeof redacted !== 'object' || Array.isArray(redacted)) {
+      return { empty: false, bodyLength: raw.length, value: redacted };
+    }
+    const rec = redacted as Record<string, unknown>;
+    const violacoes = Array.isArray(rec.violacoes) ? rec.violacoes : [];
+    return {
+      empty: false,
+      bodyLength: raw.length,
+      keys: Object.keys(rec),
+      ...rec,
+      violacoes,
+    };
+  } catch {
+    return { empty: false, unparsedPreview: redactPersonalIds(raw).slice(0, 2000) };
+  }
 }
 
 export function isInterCancelPostRejected(
@@ -276,28 +364,36 @@ function createMtlsAgent(creds: InterOAuthCredentials): https.Agent {
 }
 
 const defaultFetch: InterOAuthFetchFn = async (url, init) => {
-  const { statusCode, body } = await new Promise<{ statusCode: number; body: string }>(
-    (resolve, reject) => {
-      const req = https.request(
-        url,
-        { method: init.method, headers: init.headers, agent: init.agent },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-          res.on('end', () => {
-            resolve({
-              statusCode: res.statusCode || 0,
-              body: Buffer.concat(chunks).toString('utf8'),
-            });
+  const { statusCode, body, headers } = await new Promise<{
+    statusCode: number;
+    body: string;
+    headers: Record<string, string>;
+  }>((resolve, reject) => {
+    const req = https.request(
+      url,
+      { method: init.method, headers: init.headers, agent: init.agent },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        res.on('end', () => {
+          const hdrs: Record<string, string> = {};
+          for (const [key, value] of Object.entries(res.headers || {})) {
+            if (typeof value === 'string') hdrs[key.toLowerCase()] = value;
+            else if (Array.isArray(value) && value[0]) hdrs[key.toLowerCase()] = String(value[0]);
+          }
+          resolve({
+            statusCode: res.statusCode || 0,
+            body: Buffer.concat(chunks).toString('utf8'),
+            headers: hdrs,
           });
-        },
-      );
-      req.on('error', reject);
-      req.write(init.body);
-      req.end();
-    },
-  );
-  return { status: statusCode, bodyText: body };
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(init.body);
+    req.end();
+  });
+  return { status: statusCode, bodyText: body, headers };
 };
 
 async function authorizedRequest(
@@ -305,7 +401,12 @@ async function authorizedRequest(
   path: string,
   init: { method: string; body?: unknown; accept?: string },
   options?: { fetchFn?: InterOAuthFetchFn },
-): Promise<{ status: number; json: Record<string, unknown> | null; bodyText: string }> {
+): Promise<{
+  status: number;
+  json: Record<string, unknown> | null;
+  bodyText: string;
+  headers: Record<string, string>;
+}> {
   const token = await requestInterAccessToken(creds, { fetchFn: options?.fetchFn });
   if (!token.ok) {
     throw new Error(token.message);
@@ -341,7 +442,7 @@ async function authorizedRequest(
     } catch {
       json = null;
     }
-    return { status: res.status, json, bodyText: res.bodyText };
+    return { status: res.status, json, bodyText: res.bodyText, headers: res.headers || {} };
   } finally {
     try {
       agent.destroy();
@@ -566,8 +667,8 @@ export async function fetchInterCobrancaByCodigo(
 /**
  * POST /cobranca/v3/cobrancas/{codigoSolicitacao}/cancelar
  * Escopo: boleto-cobranca.write. Resposta típica: 202 Accepted + PROCESSANDO.
- * HTTP 202 NÃO confirma CANCELADO. Cancelamento bolepix usa
- * "Solicitado Pela Empresa"; ACERTOS é da API antiga de boleto.
+ * HTTP 202 NÃO confirma CANCELADO. Sem identificador de operação — o
+ * acompanhamento é o GET da mesma cobrança. Accept exclusivo problem+json.
  */
 export async function cancelInterCobranca(
   creds: InterOAuthCredentials,
@@ -576,19 +677,31 @@ export async function cancelInterCobranca(
     fetchFn?: InterOAuthFetchFn;
     motivoCancelamento?: string;
   },
-): Promise<{ status: number; raw: Record<string, unknown> | null; bodyText: string }> {
+): Promise<{
+  status: number;
+  raw: Record<string, unknown> | null;
+  bodyText: string;
+  headers: Record<string, string>;
+  accept: string;
+  contentType: string;
+  motivo: string;
+  path: string;
+}> {
   const code = encodeURIComponent(String(codigoSolicitacao || '').trim());
   if (!code) throw new Error('codigoSolicitacao ausente para cancelamento Inter.');
   const motivo =
     String(options?.motivoCancelamento || INTER_BOLEPIX_CANCEL_MOTIVO).trim() ||
     INTER_BOLEPIX_CANCEL_MOTIVO;
+  const path = `/cobrancas/${code}/cancelar`;
+  const accept = INTER_COBRANCA_V3_CANCEL_ACCEPT;
+  const contentType = 'application/json';
   const res = await authorizedRequest(
     creds,
-    `/cobrancas/${code}/cancelar`,
+    path,
     {
       method: 'POST',
       body: { motivoCancelamento: motivo },
-      accept: 'application/problem+json, application/json',
+      accept,
     },
     { fetchFn: options?.fetchFn },
   );
@@ -599,7 +712,52 @@ export async function cancelInterCobranca(
       'cancelar',
     );
   }
-  return { status: res.status, raw: res.json, bodyText: res.bodyText };
+  return {
+    status: res.status,
+    raw: res.json,
+    bodyText: res.bodyText,
+    headers: pickSafeInterResponseHeaders(res.headers),
+    accept,
+    contentType,
+    motivo,
+    path,
+  };
+}
+
+export function logInterCancelDiagnostics(entry: {
+  stage: string;
+  codigoSolicitacao: string;
+  method?: string;
+  path?: string;
+  accept?: string;
+  contentType?: string;
+  motivo?: string;
+  httpStatus?: number | null;
+  requestBody?: Record<string, unknown>;
+  responseHeaders?: Record<string, string>;
+  responseBody?: Record<string, unknown>;
+  getSituacao?: string | null;
+  getKeys?: string[];
+  processingError?: string | null;
+}): void {
+  if (!shouldLogInterCancelDiagnostics()) return;
+  console.log('[inter][cancel][diag]', {
+    stage: entry.stage,
+    method: entry.method || null,
+    path: entry.path || null,
+    accept: entry.accept || null,
+    contentType: entry.contentType || null,
+    motivo: entry.motivo || null,
+    codigoSolicitacao: entry.codigoSolicitacao,
+    scopes: INTER_OAUTH_SCOPES,
+    httpStatus: entry.httpStatus ?? null,
+    requestBody: entry.requestBody || null,
+    responseHeaders: entry.responseHeaders || null,
+    responseBody: entry.responseBody || null,
+    getSituacao: entry.getSituacao || null,
+    getKeys: entry.getKeys || null,
+    processingError: entry.processingError || null,
+  });
 }
 
 export function decodeInterCobrancaPdfPayload(

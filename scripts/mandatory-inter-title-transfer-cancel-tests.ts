@@ -10,7 +10,9 @@ import path from 'node:path';
 import { cancelInterInstallmentCharge } from '../lib/banking/inter/interSaleChargeService';
 import {
   INTER_CANCEL_CONFIRM_POLL,
+  INTER_COBRANCA_V3_CANCEL_ACCEPT,
   InterRemoteCancelError,
+  sanitizeInterCobrancaHttpPayload,
 } from '../lib/banking/inter/interCobrancaClient';
 import { INTER_OAUTH_SCOPES } from '../lib/banking/inter/interEndpoints';
 import type { InterOAuthCredentials, InterOAuthFetchFn } from '../lib/banking/inter/interOAuthClient';
@@ -125,6 +127,7 @@ function makeFetch(opts: {
   getExtra?: Record<string, unknown>;
   cancelStatus?: number;
   cancelFail?: boolean;
+  cancelEmptyBody?: boolean;
   cancelBody?: Record<string, unknown>;
 }): {
   fetchFn: InterOAuthFetchFn;
@@ -169,6 +172,9 @@ function makeFetch(opts: {
       cancelPosts.push(u);
       cancelBodies.push(String(init.body || ''));
       cancelAccepts.push(String(init.headers?.Accept || ''));
+      if (opts.cancelEmptyBody) {
+        return { status: opts.cancelStatus || 202, bodyText: '' };
+      }
       if (opts.cancelFail) {
         return {
           status: opts.cancelStatus || 400,
@@ -247,10 +253,8 @@ async function testGetThenPostThenCancelled() {
     JSON.parse(cancelBodies[0]).motivoCancelamento === 'Solicitado Pela Empresa',
     'BOLETO_PIX envia motivo Solicitado Pela Empresa',
   );
-  assert(
-    cancelAccepts[0].includes('application/problem+json'),
-    'Accept inclui application/problem+json',
-  );
+  assert(cancelAccepts[0] === 'application/problem+json', 'Accept exclusivo problem+json');
+  assert(!cancelAccepts[0].includes('application/json'), 'Accept não mistura application/json');
   assert(state.charges[0].status === 'CANCELLED', 'local CANCELLED só após GET CANCELADO');
   assert(
     (state.updates[0]?.patch.metadata as { remoteCancelConfirmed?: boolean })?.remoteCancelConfirmed ===
@@ -408,6 +412,54 @@ async function testGetAReceberWithProcessingError() {
   assert(state.updates.length === 0, 'nenhum UPDATE local');
 }
 
+async function testEmpty202BodyStaysFailClosed() {
+  const state = {
+    charges: [openCharge()],
+    updates: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+  };
+  const { fetchFn } = makeFetch({
+    getSituacoes: ['A_RECEBER', 'A_RECEBER', 'A_RECEBER'],
+    cancelEmptyBody: true,
+    cancelStatus: 202,
+  });
+  try {
+    await cancelInterInstallmentCharge(makeMockAdmin(state) as never, {
+      companyId: 'co-1',
+      chargeId: 'bc-open',
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as never,
+      poll: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0, sleepFn: async () => {} },
+    });
+    throw new Error('deveria falhar 202 vazio');
+  } catch (err) {
+    const cancelErr = asCancelError(err);
+    assert(cancelErr.stage === 'confirmacao', '202 vazio segue para confirmação');
+    assert(cancelErr.message.includes('"empty":true'), 'erro operacional registra POST sem body');
+    assert(!/token|secret|BEGIN /i.test(cancelErr.message), '202 vazio sem segredo');
+  }
+  assert(state.charges[0].status === 'REGISTERED', '202 vazio não marca CANCELLED');
+}
+
+function testSanitizeKeepsUnknownFieldsAndRedactsCpf() {
+  const sanitized = sanitizeInterCobrancaHttpPayload(
+    JSON.stringify({
+      status: 'PROCESSANDO',
+      mensagem: 'Cancelamento solicitado',
+      violacoes: [],
+      origem: { falha: 'Erro ao processar' },
+      pagador: { cpfCnpj: '65082028200', nome: 'SEVERINO' },
+      access_token: 'leak',
+    }),
+  );
+  assert(sanitized.empty === false, 'body presente');
+  assert(sanitized.status === 'PROCESSANDO', 'preserva status');
+  assert((sanitized.origem as { falha?: string })?.falha === 'Erro ao processar', 'preserva nested falha');
+  assert(String((sanitized.pagador as { cpfCnpj?: string })?.cpfCnpj) === '[cpf-redacted]', 'redige CPF');
+  assert(sanitized.access_token === '[REDACTED]', 'redige token');
+  const empty = sanitizeInterCobrancaHttpPayload('');
+  assert(empty.empty === true, 'body vazio');
+}
+
 async function testHttpErrorNoLocalCancel() {
   const state = {
     charges: [openCharge()],
@@ -467,7 +519,11 @@ function testSourceAndReleaseLotUntouched() {
   const orch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
   assert(client.includes('pollInterCobrancaUntilCancelSettled'), 'helper de polling compartilhado');
   assert(client.includes("INTER_BOLEPIX_CANCEL_MOTIVO = 'Solicitado Pela Empresa'"), 'motivo bolepix');
+  assert(client.includes("INTER_COBRANCA_V3_CANCEL_ACCEPT = 'application/problem+json'"), 'Accept exclusivo');
+  assert(!client.includes("accept: 'application/problem+json, application/json'"), 'sem Accept misto');
+  assert(INTER_COBRANCA_V3_CANCEL_ACCEPT === 'application/problem+json', 'constante Accept');
   assert(cancel.includes('resolveInterCobrancaV3CancelMotivo'), 'adapter escolhe motivo por charge_type');
+  assert(cancel.includes('logInterCancelDiagnostics'), 'diag DEVELOP sanitizado');
   assert(!cancel.includes("motivoCancelamento: 'ACERTOS'"), 'adapter não força ACERTOS em bolepix');
   assert(INTER_OAUTH_SCOPES === 'boleto-cobranca.read boleto-cobranca.write', 'scopes oficiais');
   assert(INTER_CANCEL_CONFIRM_POLL.maxAttempts === 5, 'limite pequeno de tentativas');
@@ -489,6 +545,8 @@ async function main() {
   await testBoletoPuroStillAcertos();
   await test202ViolacoesNoLocalCancel();
   await testGetAReceberWithProcessingError();
+  await testEmpty202BodyStaysFailClosed();
+  testSanitizeKeepsUnknownFieldsAndRedactsCpf();
   await testHttpErrorNoLocalCancel();
   await testOperatorMessageAndUi();
   testSourceAndReleaseLotUntouched();

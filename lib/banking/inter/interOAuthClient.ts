@@ -67,7 +67,7 @@ export type InterOAuthFetchFn = (
     body: string;
     agent: https.Agent;
   },
-) => Promise<{ status: number; bodyText: string }>;
+) => Promise<{ status: number; bodyText: string; headers?: Record<string, string> }>;
 
 function sanitizeInterErrorBody(raw: string): string {
   return String(raw || '')
