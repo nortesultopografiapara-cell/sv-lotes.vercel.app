@@ -2,7 +2,7 @@
  * Fase 5B — cobranças externas da Troca de lote (mutação com APIs mockadas).
  * npx tsx scripts/mandatory-sale-lot-swap-phase5b-tests.ts
  *
- * Sem chamada Asaas/Inter real. Live só entra via override `live: true` + inject.
+ * Sem chamada Asaas/Inter real. LIVE só via helper scoped + inject mockado.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +26,8 @@ import {
   LOT_SWAP_CHARGES_GENERATE_FAILED,
   LOT_SWAP_CHARGES_LIVE_DISABLED,
 } from '../lib/finance/saleLotSwapChargesPhase';
+import { setLotSwapChargesLiveScopeEnvForTests } from '../lib/finance/saleLotSwapChargesLiveScope';
+import { DEVELOP_PROJECT_REF, PRODUCTION_PROJECT_REF } from '../lib/homolog/env';
 import type { LotSwapExecutedResult } from '../lib/finance/saleLotSwapExecuteService';
 import { LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE } from '../lib/finance/saleLotSwapExternalCharges';
 import { LOT_SWAP_CROSS_TENANT } from '../lib/finance/saleLotSwapPreview';
@@ -216,6 +218,18 @@ function installLocalExecute(ctx: ReturnType<typeof createStore>, opts?: { fail?
   return () => calls;
 }
 
+function developScopedLiveEnv(extra?: Record<string, string | undefined>): Record<string, string> {
+  return {
+    NEXT_PUBLIC_SUPABASE_URL: `https://${DEVELOP_PROJECT_REF}.supabase.co`,
+    LOT_SWAP_EXTERNAL_CHARGES_LIVE: 'scoped',
+    LOT_SWAP_CHARGES_LIVE_PROVIDERS: 'ASAAS',
+    LOT_SWAP_CHARGES_LIVE_COMPANY_IDS: 'co-1',
+    LOT_SWAP_CHARGES_LIVE_SALE_IDS: 'sale-1',
+    LOT_SWAP_CHARGES_LIVE_SWAP_IDS: 'swap-1',
+    ...extra,
+  };
+}
+
 async function withHarness<T>(fn: () => Promise<T>): Promise<T> {
   try {
     ensureExternalChargeProvidersRegistered();
@@ -223,6 +237,7 @@ async function withHarness<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     resetExternalChargeMutationFnsForTests();
     setSaleLotSwapLocalExecuteForTests(null);
+    setLotSwapChargesLiveScopeEnvForTests(null);
   }
 }
 
@@ -260,6 +275,7 @@ async function testLiveOffDoesNotCancelOrExecute() {
 
 async function testPaidNeverCancelledAndPendingCancelled() {
   await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(developScopedLiveEnv());
     const ctx = createStore(baseTables());
     const localCalls = installLocalExecute(ctx);
     const canceled: string[] = [];
@@ -308,6 +324,7 @@ async function testPaidNeverCancelledAndPendingCancelled() {
 
 async function testCancelFailureDoesNotExecuteLocal() {
   await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(developScopedLiveEnv());
     const ctx = createStore(baseTables());
     const localCalls = installLocalExecute(ctx, { fail: true });
     setExternalChargeMutationFnsForTests({
@@ -378,6 +395,7 @@ async function testNonCancelableBlocksBeforePhase4() {
 
 async function testGenerateFailKeepsLocalAndRetryReuses() {
   await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(developScopedLiveEnv());
     const ctx = createStore(baseTables());
     const localCalls = installLocalExecute(ctx);
     let generateCalls = 0;
@@ -489,6 +507,9 @@ async function testInterMockCancelAndGenerate() {
     tables.sales[0].financial_account_id = 'fa-inter';
     const ctx = createStore(tables);
     const localCalls = installLocalExecute(ctx);
+    setLotSwapChargesLiveScopeEnvForTests(
+      developScopedLiveEnv({ LOT_SWAP_CHARGES_LIVE_PROVIDERS: 'INTER' }),
+    );
     const canceled: string[] = [];
     let generateCalls = 0;
     setExternalChargeMutationFnsForTests({
@@ -715,6 +736,187 @@ async function testParkedLocalExecutedLiveOffDoesNotRestamp() {
   console.log('OK testParkedLocalExecutedLiveOffDoesNotRestamp');
 }
 
+async function testProductionScopedEnvStaysOff() {
+  await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(
+      developScopedLiveEnv({
+        NEXT_PUBLIC_SUPABASE_URL: `https://${PRODUCTION_PROJECT_REF}.supabase.co`,
+      }),
+    );
+    const ctx = createStore(baseTables());
+    const localCalls = installLocalExecute(ctx, { fail: true });
+    let http = 0;
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async () => {
+        http += 1;
+        throw new Error('HTTP Asaas não autorizado');
+      },
+    });
+    try {
+      await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+        saleId: 'sale-1',
+        userId: 'user-1',
+        swapId: 'swap-1',
+      });
+      throw new Error('Production deveria permanecer OFF');
+    } catch (err) {
+      assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
+      assert(err.code === LOT_SWAP_CHARGES_LIVE_DISABLED, 'LIVE_DISABLED');
+    }
+    assert(http === 0, 'zero HTTP');
+    assert(localCalls() === 0, 'Fase 4 não executou');
+  });
+  console.log('OK testProductionScopedEnvStaysOff');
+}
+
+async function testDevelopTrueDoesNotEnableLive() {
+  await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(
+      developScopedLiveEnv({ LOT_SWAP_EXTERNAL_CHARGES_LIVE: 'true' }),
+    );
+    const ctx = createStore(baseTables());
+    const localCalls = installLocalExecute(ctx, { fail: true });
+    let http = 0;
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async () => {
+        http += 1;
+        return { ok: true, reused: false, chargeId: 'a-open', status: 'CANCELLED' };
+      },
+    });
+    try {
+      await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+        saleId: 'sale-1',
+        userId: 'user-1',
+        swapId: 'swap-1',
+        live: true,
+      });
+      throw new Error('true global deveria ser OFF');
+    } catch (err) {
+      assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
+      assert(err.code === LOT_SWAP_CHARGES_LIVE_DISABLED, 'true inválido');
+    }
+    assert(http === 0 && localCalls() === 0, 'sem HTTP e sem Fase 4');
+  });
+  console.log('OK testDevelopTrueDoesNotEnableLive');
+}
+
+async function testAsaasAllowlistDoesNotCancelInter() {
+  await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(developScopedLiveEnv());
+    const tables = baseTables({
+      company_asaas_charges: [],
+      bank_charges: [
+        {
+          id: 'i-open',
+          company_id: 'co-1',
+          sale_id: 'sale-1',
+          finance_receipt_id: 'r-future',
+          status: 'PENDING',
+          provider: 'INTER',
+        },
+      ],
+      company_financial_accounts: [
+        {
+          id: 'fa-inter',
+          company_id: 'co-1',
+          name: 'Inter',
+          account_type: 'PROPRIETARIO',
+          beneficiary_name: 'X',
+          document: '1',
+          email: null,
+          phone: null,
+          environment: 'sandbox',
+          bank_integration_id: 'bi-inter',
+          is_default: true,
+          active: true,
+          notes: null,
+          created_at: '2026-01-01',
+          updated_at: '2026-01-01',
+        },
+      ],
+      bank_integrations: [
+        {
+          id: 'bi-inter',
+          company_id: 'co-1',
+          provider: 'INTER',
+          status: 'ACTIVE',
+          metadata: { connectionStatus: 'CONNECTED' },
+        },
+      ],
+    });
+    tables.sales[0].financial_account_id = 'fa-inter';
+    const ctx = createStore(tables);
+    const localCalls = installLocalExecute(ctx, { fail: true });
+    let http = 0;
+    setExternalChargeMutationFnsForTests({
+      cancelInterCharge: async () => {
+        http += 1;
+        return { ok: true, reused: false, chargeId: 'i-open', status: 'CANCELLED' };
+      },
+    });
+    try {
+      await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+        saleId: 'sale-1',
+        userId: 'user-1',
+        swapId: 'swap-1',
+      });
+      throw new Error('INTER não deveria passar com allowlist ASAAS');
+    } catch (err) {
+      assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
+      assert(err.code === LOT_SWAP_CHARGES_LIVE_DISABLED, 'INTER bloqueado');
+    }
+    assert(http === 0 && localCalls() === 0, 'sem HTTP Inter');
+  });
+  console.log('OK testAsaasAllowlistDoesNotCancelInter');
+}
+
+async function testC6BlockedEvenWithScopedLive() {
+  await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests(
+      developScopedLiveEnv({ LOT_SWAP_CHARGES_LIVE_PROVIDERS: 'C6' }),
+    );
+    const tables = baseTables({
+      company_asaas_charges: [],
+      bank_charges: [
+        {
+          id: 'c6-1',
+          company_id: 'co-1',
+          sale_id: 'sale-1',
+          finance_receipt_id: 'r-future',
+          status: 'PENDING',
+          provider: 'C6',
+        },
+      ],
+    });
+    const ctx = createStore(tables);
+    const localCalls = installLocalExecute(ctx, { fail: true });
+    let http = 0;
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async () => {
+        http += 1;
+        return { ok: true, reused: false, chargeId: 'x', status: 'CANCELLED' };
+      },
+      cancelInterCharge: async () => {
+        http += 1;
+        return { ok: true, reused: false, chargeId: 'x', status: 'CANCELLED' };
+      },
+    });
+    try {
+      await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+        saleId: 'sale-1',
+        userId: 'user-1',
+        swapId: 'swap-1',
+      });
+      throw new Error('C6 deveria bloquear mesmo com LIVE scoped');
+    } catch (err) {
+      assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
+      assert(err.code === LOT_SWAP_EXTERNAL_CHARGES_NON_CANCELABLE, 'C6 non_cancelable');
+    }
+    assert(http === 0 && localCalls() === 0, 'C6 sem API');
+  });
+  console.log('OK testC6BlockedEvenWithScopedLive');
+}
+
 async function testAdapterPaidAndReusedWithoutOfficialHttp() {
   const paidAdmin = createStore({
     company_asaas_charges: [
@@ -764,6 +966,10 @@ async function testAdapterPaidAndReusedWithoutOfficialHttp() {
 function testSourceArchitecture() {
   const orch = read('lib/finance/saleLotSwapChargesExecuteService.ts');
   assert(orch.includes('isParkedLocalExecutedLiveOff'), 'retry parked LIVE OFF sem restamp');
+  assert(orch.includes('resolveLotSwapExternalChargesLiveScope'), 'LIVE via helper');
+  assert(orch.includes('isLotSwapExternalChargesLiveAuthorized'), 'LIVE por provider do registry');
+  assert(!orch.includes("isLotSwapExternalChargeLiveEnabled"), 'orquestrador sem flag global');
+  assert(!/LOT_SWAP_EXTERNAL_CHARGES_LIVE \|\| ''\)\.trim\(\) === 'true'/.test(orch), 'sem true global');
   assert(orch.includes('getExternalChargeProvider(charge.provider)'), 'cancel via registry');
   assert(orch.includes('getExternalChargeProvider(preview.activeProvider)'), 'generate via registry');
   assert(!orch.includes('cancelCompanyCharge'), 'orquestrador sem Asaas direto');
@@ -804,9 +1010,16 @@ function testSourceArchitecture() {
   assert(apply.includes('20261015120000_sale_lot_swaps_charges_phase.sql'), 'migration 5B');
 
   assert(
-    String(process.env.LOT_SWAP_EXTERNAL_CHARGES_LIVE || '') !== 'true',
-    'live default off neste processo',
+    String(process.env.LOT_SWAP_EXTERNAL_CHARGES_LIVE || '') !== 'true' &&
+      String(process.env.LOT_SWAP_EXTERNAL_CHARGES_LIVE || '') !== 'scoped',
+    'live scoped default off neste processo',
   );
+  const helper = read('lib/finance/saleLotSwapChargesLiveScope.ts');
+  assert(helper.includes("mode === LOT_SWAP_CHARGES_LIVE_MODE_SCOPED"), 'só scoped');
+  assert(helper.includes('isProductionSupabaseRuntime'), 'Production sempre OFF');
+  assert(!helper.includes('14e1b66b'), 'sem swap de homolog');
+  assert(!helper.includes('1ce13cf0'), 'sem sale de homolog');
+  assert(!helper.includes('59d38b25'), 'sem company de homolog');
   console.log('OK testSourceArchitecture');
 }
 
@@ -821,6 +1034,10 @@ async function main() {
   await testC6BlockedNoApi();
   await testCrossTenantBlocked();
   await testParkedLocalExecutedLiveOffDoesNotRestamp();
+  await testProductionScopedEnvStaysOff();
+  await testDevelopTrueDoesNotEnableLive();
+  await testAsaasAllowlistDoesNotCancelInter();
+  await testC6BlockedEvenWithScopedLive();
   await testAdapterPaidAndReusedWithoutOfficialHttp();
   testSourceArchitecture();
   console.log('OK mandatory-sale-lot-swap-phase5b-tests');

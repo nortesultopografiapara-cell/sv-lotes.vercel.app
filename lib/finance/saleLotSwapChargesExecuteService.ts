@@ -18,13 +18,17 @@ import {
 import { SALE_LOT_SWAP_TABLE } from '@/lib/finance/saleLotSwap';
 import {
   isLotSwapChargesPhase,
-  isLotSwapExternalChargeLiveEnabled,
   LOT_SWAP_CHARGES_CANCEL_FAILED,
   LOT_SWAP_CHARGES_GENERATE_FAILED,
   LOT_SWAP_CHARGES_LIVE_DISABLED,
   type LotSwapChargesPhase,
   type LotSwapChargesSnapshot,
 } from '@/lib/finance/saleLotSwapChargesPhase';
+import {
+  isLotSwapExternalChargesLiveAuthorized,
+  logLotSwapChargesLiveScopeSanitized,
+  resolveLotSwapExternalChargesLiveScope,
+} from '@/lib/finance/saleLotSwapChargesLiveScope';
 import {
   executeSaleLotSwap,
   LotSwapPreviewError,
@@ -216,7 +220,6 @@ export async function executeSaleLotSwapWithExternalCharges(
       401,
     );
   }
-  const live = isLotSwapExternalChargeLiveEnabled(input.live);
 
   const profile = await loadLotSwapCallerProfile(admin, userId);
   if (!profile) {
@@ -296,6 +299,29 @@ export async function executeSaleLotSwapWithExternalCharges(
     companyId,
     saleId,
     plan,
+  });
+
+  const liveScope = resolveLotSwapExternalChargesLiveScope({
+    companyId,
+    saleId,
+    swapId,
+    provider: preview.activeProvider,
+  });
+  const liveDecision = isLotSwapExternalChargesLiveAuthorized({
+    companyId,
+    saleId,
+    swapId,
+    providers: [
+      preview.activeProvider,
+      ...preview.wouldCancel.map((charge) => charge.provider),
+    ],
+  });
+  const live = liveDecision.live;
+  logLotSwapChargesLiveScopeSanitized({
+    live,
+    liveScoped: liveDecision.liveScoped,
+    provider: liveDecision.provider || liveScope.provider,
+    matches: liveScope.matches,
   });
 
   const snapshot: LotSwapChargesSnapshot = {

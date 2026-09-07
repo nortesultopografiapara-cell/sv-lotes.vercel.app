@@ -1,6 +1,7 @@
 /**
  * Injeção de mutações oficiais para testes (APIs mockadas).
- * Produção/Preview usam os services reais só quando LOT_SWAP_EXTERNAL_CHARGES_LIVE=true.
+ * Produção/Preview usam os services reais só com LIVE scoped autorizado.
+ * LOT_SWAP_EXTERNAL_CHARGES_LIVE=true é inválido.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';

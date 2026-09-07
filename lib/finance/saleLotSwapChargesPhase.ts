@@ -23,9 +23,12 @@ export function isLotSwapChargesPhase(value?: string | null): value is LotSwapCh
   return (LOT_SWAP_CHARGES_PHASES as readonly string[]).includes(String(value || ''));
 }
 
-export function isLotSwapExternalChargeLiveEnabled(override?: boolean): boolean {
-  if (typeof override === 'boolean') return override;
-  return String(process.env.LOT_SWAP_EXTERNAL_CHARGES_LIVE || '').trim() === 'true';
+/**
+ * Flag global `true` é inválida. LIVE só via resolveLotSwapExternalChargesLiveScope.
+ * Sem contexto escopado, fail closed.
+ */
+export function isLotSwapExternalChargeLiveEnabled(_override?: boolean): boolean {
+  return false;
 }
 
 export type LotSwapChargesSnapshot = {
