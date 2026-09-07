@@ -20,6 +20,8 @@ import {
 import {
   BOLETO_UNAVAILABLE_WARNING,
   CHARGES_WHATSAPP_TOOLTIP,
+  formatCancelledChargeHistoryLabel,
+  isLocallyCancelledChargeStatus,
   resolveChargeActionVisibility,
   resolveCompanyAsaasDetailsUrl,
   resolveCompanyAsaasReceiptUrl,
@@ -167,9 +169,15 @@ export function ChargeInstallmentActions({
     !installmentCanceled &&
     (isInter ? Boolean(interActions?.showCopyPix) : actions.showCopyPix);
 
-  if (installmentCanceled) {
+  if (installmentCanceled || isLocallyCancelledChargeStatus(charge?.status)) {
+    const confirmed = formatCancelledChargeHistoryLabel({
+      charge,
+      provider: chargeProvider,
+    });
     return (
-      <span className="text-[10px] text-[var(--text-muted)]">Parcela cancelada</span>
+      <span className="text-[10px] text-[var(--text-muted)]">
+        {confirmed || (installmentCanceled ? 'Parcela cancelada' : 'Cobrança sem confirmação remota de cancelamento')}
+      </span>
     );
   }
 

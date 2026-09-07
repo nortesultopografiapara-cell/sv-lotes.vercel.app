@@ -8,6 +8,8 @@ export type ExternalChargeCancelResult = {
   reused: boolean;
   chargeId: string;
   status: string;
+  /** true somente após o provider confirmar o cancelamento remoto. false bloqueia a RPC. */
+  remoteConfirmed?: boolean;
 };
 
 export type ExternalChargeGenerateResult = {

@@ -112,6 +112,7 @@ export const asaasExternalChargeProvider: ExternalChargeProvider = {
     return {
       ok: true as const,
       reused: false,
+      remoteConfirmed: true,
       chargeId,
       status: String(updated.status || 'CANCELLED'),
     };

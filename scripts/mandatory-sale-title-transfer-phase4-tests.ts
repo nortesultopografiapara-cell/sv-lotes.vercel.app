@@ -154,6 +154,13 @@ function testOfficialChargesMissingAfterCancel() {
     }) === true,
     'parcela pendente volta a faltar após cancelar título antigo',
   );
+  assert(
+    installmentNeedsAsaasCharge({
+      installment: { ...pending, id: 'r-old', status: 'cancelado' },
+      charge: { status: 'CANCELLED' } as never,
+    }) === false,
+    'parcela antiga cancelada não entra em Gerar cobranças faltantes',
+  );
   console.log('OK testOfficialChargesMissingAfterCancel');
 }
 
@@ -788,6 +795,89 @@ async function testInterEquivalentAndRetry() {
   console.log('OK testInterEquivalentAndRetry');
 }
 
+async function testLocalCancelledStillRequiresRemoteConfirm() {
+  ensureExternalChargeProvidersRegistered();
+  const store = baseStore();
+  store.bank_charges = [
+    {
+      id: 'i-stale',
+      company_id: 'co-1',
+      sale_id: 'sale-1',
+      finance_receipt_id: 'r-future',
+      status: 'CANCELLED',
+      provider: 'INTER',
+      external_id: 'inter-stale',
+    },
+  ];
+  setTitleTransferChargesLiveScopeEnvForTests({
+    NEXT_PUBLIC_SUPABASE_URL: 'https://hoynysmynxncdlptuzub.supabase.co',
+  });
+  const canceled: string[] = [];
+  setExternalChargeMutationFnsForTests({
+    cancelInterCharge: async (_admin, _company, chargeId) => {
+      canceled.push(chargeId);
+      return {
+        ok: true as const,
+        reused: true,
+        remoteConfirmed: false,
+        chargeId,
+        status: 'CANCELLED',
+      };
+    },
+  });
+  let localCalled = 0;
+  setTitleTransferLocalExecuteForTests(async () => {
+    localCalled += 1;
+    return localResult(store, 'x');
+  });
+  try {
+    await executeSaleTitleTransferWithExternalCharges(adminFrom(store) as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      toCustomerId: 'cust-b',
+      expectedContractId: 'ct-1',
+      expectedBlockId: 'block-1',
+      confirmTransfer: true,
+    });
+    throw new Error('CANCELLED local sem confirmação remota deveria falhar');
+  } catch (err) {
+    const tt = asTtError(err);
+    assert(tt.code === TITLE_TRANSFER_CHARGES_CANCEL_FAILED, 'cancel failed');
+    assert(canceled.includes('i-stale'), 'ainda chama o provider');
+    assert(localCalled === 0, 'não executou RPC local');
+  }
+
+  canceled.length = 0;
+  setExternalChargeMutationFnsForTests({
+    cancelInterCharge: async (_admin, _company, chargeId) => {
+      canceled.push(chargeId);
+      return {
+        ok: true as const,
+        reused: false,
+        remoteConfirmed: true,
+        chargeId,
+        status: 'CANCELLED',
+      };
+    },
+  });
+  const ok = await executeSaleTitleTransferWithExternalCharges(adminFrom(store) as never, {
+    saleId: 'sale-1',
+    userId: 'user-1',
+    toCustomerId: 'cust-b',
+    expectedContractId: 'ct-1',
+    expectedBlockId: 'block-1',
+    confirmTransfer: true,
+  });
+  assert(canceled.includes('i-stale'), 'reconfirma Inter stale');
+  assert(ok.canceledChargeIds.includes('i-stale'), 'stale entra na lista');
+  assert(ok.generateCharges === false, 'sem boleto novo');
+
+  setExternalChargeMutationFnsForTests({});
+  setTitleTransferLocalExecuteForTests(null);
+  setTitleTransferChargesLiveScopeEnvForTests(null);
+  console.log('OK testLocalCancelledStillRequiresRemoteConfirm');
+}
+
 async function testPreviewFingerprintGuards() {
   const titularStore = baseStore();
   titularStore.sales[0].customer_id = 'cust-c';
@@ -837,31 +927,44 @@ async function testPreviewFingerprintGuards() {
 }
 
 function testSourceArchitecture() {
-  const sql = read('supabase/migrations/20261017120000_execute_sale_title_transfer.sql');
+  const sql = read('supabase/migrations/20261017120200_fix_execute_sale_title_transfer_receipts.sql');
   assert(sql.includes('CREATE OR REPLACE FUNCTION public.execute_sale_title_transfer'), 'RPC');
   assert(!sql.includes('public.execute_sale_lot_swap'), 'não reusa RPC da troca');
-  assert(!/UPDATE public\.finance_receipts[\s\S]*status = 'cancelado'/.test(sql), 'não cancela parcela interna');
-  assert(sql.includes('SET customer_id = v_to_expected'), 'retarget payer');
+  assert(/UPDATE public\.finance_receipts[\s\S]*status = 'cancelado'/.test(sql), 'cancela futuras antigas');
+  assert(
+    !/UPDATE public\.finance_receipts\s+SET customer_id = v_to_expected/.test(sql),
+    'não reatribui pagas ao novo titular',
+  );
+  assert(sql.includes("p_payload->'new_receipts'"), 'cria parcelas de B');
+  assert(sql.includes("p_payload->'cancel_receipt_ids'"), 'cancela por id');
   assert(sql.includes("status = 'superseded'"), 'supersede contrato A');
+  assert(sql.includes('v_new_contract_id := gen_random_uuid()'), 'contrato B id novo');
   assert(sql.includes('lote precisa permanecer Vendido'), 'lote vendido');
   assert(sql.includes('CONTRACT_CHANGED'), 'fingerprint contrato na RPC');
   assert(!/\bDROP TABLE\b/i.test(sql), 'sem DROP');
   const p1 = read('supabase/migrations/20261016120000_sale_title_transfers.sql');
   assert(p1.includes('CREATE TABLE IF NOT EXISTS public.sale_title_transfers'), 'P1 intacta');
   const orch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
-  assert(!orch.includes('if (') || orch.includes('getExternalChargeProvider'), 'registry');
+  assert(orch.includes('getExternalChargeProvider'), 'registry');
   assert(!orch.includes("provider === 'ASAAS'"), 'sem if ASAAS');
+  assert(!orch.includes("provider === 'INTER'"), 'sem if INTER');
   assert(!orch.includes('generateMissingCharges'), 'sem gerar');
   assert(!orch.includes('createCompanyInstallmentCharge'), 'sem create Asaas');
   assert(!orch.includes('LOT_SWAP_EXTERNAL_CHARGES_LIVE'), 'LIVE isolado');
   assert(!orch.includes('/api/lots/'), 'sem release');
   assert(!orch.includes('seller_parties_json'), 'sem Mundo Novo');
+  assert(orch.includes('assertExternalChargeCancelConfirmed'), 'exige confirmação remota');
   const panel = read('components/map/TitleTransferPreviewPanel.tsx');
   assert(panel.includes('Transferir titularidade'), 'UI executar');
   assert(panel.includes('TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT'), 'checkbox constante');
   assert(panel.includes('Transferência de titularidade concluída'), 'UX sucesso');
   const executeLib = read('lib/finance/saleTitleTransferExecute.ts');
   assert(executeLib.includes(TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT), 'texto do checkbox');
+  const cancelInter = read('lib/banking/inter/interSaleChargeService.ts');
+  assert(cancelInter.includes('fetchInterCobrancaByCodigo'), 'GET Inter antes/depois');
+  assert(cancelInter.includes('remoteCancelConfirmed: true'), 'só persiste após GET');
+  assert(cancelInter.includes('Banco Inter não confirmou o cancelamento'), 'GET pós-POST obrigatório');
+  assert(cancelInter.includes('classifyRemoteInterSituacaoForRelease'), 'classifica situacao real');
   console.log('OK testSourceArchitecture');
 }
 
@@ -894,12 +997,17 @@ function testRpcUuidCoalesceFix() {
   const fix = read(
     'supabase/migrations/20261017120100_fix_execute_sale_title_transfer_uuid_coalesce.sql',
   );
+  const receipts = read(
+    'supabase/migrations/20261017120200_fix_execute_sale_title_transfer_receipts.sql',
+  );
   assertUuidCoalesceSafe(original, '17120000');
   assertUuidCoalesceSafe(fix, '17120100');
+  assertUuidCoalesceSafe(receipts, '17120200');
   assert(fix.includes('CREATE OR REPLACE FUNCTION public.execute_sale_title_transfer'), 'fix OR REPLACE');
+  assert(receipts.includes('CREATE OR REPLACE FUNCTION public.execute_sale_title_transfer'), 'receipts OR REPLACE');
   assert(!fix.includes("provider === 'ASAAS'"), 'fix sem Asaas');
-  assert(!fix.includes('execute_sale_lot_swap'), 'fix sem RPC da troca');
-  assert(!fix.includes('/release'), 'fix sem release');
+  assert(!receipts.includes('execute_sale_lot_swap'), 'receipts sem RPC da troca');
+  assert(!receipts.includes('/release'), 'receipts sem release');
   console.log('OK testRpcUuidCoalesceFix');
 }
 
@@ -913,6 +1021,7 @@ async function main() {
   await testGuardsAACrossTenantAndConfirm();
   await testChainPreviousTransferId();
   await testInterEquivalentAndRetry();
+  await testLocalCancelledStillRequiresRemoteConfirm();
   await testPreviewFingerprintGuards();
   testSourceArchitecture();
   testRpcUuidCoalesceFix();

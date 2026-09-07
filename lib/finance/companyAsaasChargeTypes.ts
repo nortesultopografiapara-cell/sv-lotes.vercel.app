@@ -67,6 +67,10 @@ export type CompanyAsaasChargeResponse = {
   barCode?: string | null;
   /** Número do documento bancário (invoiceNumber). */
   invoiceNumber?: string | null;
+  /** true só depois de GET/API confirmar CANCELADO no provider. */
+  remoteCancelConfirmed?: boolean;
+  /** Instantâneo local do cancelamento confirmado (ISO). */
+  cancelledAt?: string | null;
 };
 
 export type CreateCompanyInstallmentChargeInput = {

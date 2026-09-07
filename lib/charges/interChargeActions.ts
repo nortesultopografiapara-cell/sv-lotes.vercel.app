@@ -36,16 +36,25 @@ export function resolveInterIssuedChargeActions(params: {
   const phone = String(params.customerPhone || '').replace(/\D/g, '');
   const email = String(params.customerEmail || '').trim();
   const hasShareableArtifacts = Boolean(linha || pix);
+  const hidePaymentActions = paid || charge?.status === 'CANCELLED' || charge?.status === 'EXPIRED';
 
   return {
     hasExternalId,
     hideGenerate: hasExternalId,
-    showCopyLinha: Boolean(linha) && !paid,
-    showCopyPix: Boolean(pix) && !paid,
-    showOfficialPdf: hasExternalId,
-    showRefresh: hasExternalId,
-    showWhatsApp: hasExternalId && phone.length >= 10 && hasShareableArtifacts && !paid,
-    showEmail: hasExternalId && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && hasShareableArtifacts,
+    showCopyLinha: Boolean(linha) && !hidePaymentActions,
+    showCopyPix: Boolean(pix) && !hidePaymentActions,
+    showOfficialPdf: hasExternalId && !hidePaymentActions,
+    showRefresh: hasExternalId && !hidePaymentActions,
+    showWhatsApp:
+      hasExternalId &&
+      phone.length >= 10 &&
+      hasShareableArtifacts &&
+      !hidePaymentActions,
+    showEmail:
+      hasExternalId &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+      hasShareableArtifacts &&
+      !hidePaymentActions,
     artifactsPending,
     officialPdfUnavailableReason: artifactsPending
       ? INTER_PDF_NOT_MATERIALIZED_HINT

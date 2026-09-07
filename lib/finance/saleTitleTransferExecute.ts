@@ -6,7 +6,7 @@
 
 export const TITLE_TRANSFER_EXECUTE_RPC = 'execute_sale_title_transfer';
 export const TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT =
-  'Entendo que o imóvel permanece vendido, os pagamentos e parcelas internas são preservados, as cobranças bancárias abertas do titular anterior serão canceladas e o saldo remanescente passará ao novo titular.';
+  'Entendo que o imóvel permanece vendido, os pagamentos históricos do titular anterior são preservados, as parcelas futuras antigas serão canceladas, as cobranças bancárias abertas serão canceladas no banco e o saldo remanescente passará ao novo titular em novas parcelas, sem emitir boleto agora.';
 
 export const TITLE_TRANSFER_CHARGES_NON_CANCELABLE = 'TITLE_TRANSFER_CHARGES_NON_CANCELABLE';
 export const TITLE_TRANSFER_CHARGES_LIVE_DISABLED = 'TITLE_TRANSFER_CHARGES_LIVE_DISABLED';
@@ -25,7 +25,14 @@ export type TitleTransferExecuteRpcPayload = {
   expected_to_customer_id: string;
   expected_contract_id: string | null;
   expected_block_id: string;
-  retarget_receipt_ids: string[];
+  cancel_receipt_ids: string[];
+  new_receipts: Array<{
+    installment_number: number;
+    amount: number;
+    due_date: string | null;
+    financial_account_id?: string | null;
+  }>;
+  remaining_balance?: number;
   new_contract: {
     generated_html: string;
     contract_number: string;
@@ -83,4 +90,38 @@ export function buildTitleTransferIdempotencyKey(input: {
     String(input.toCustomerId || '').trim(),
     String(input.contractId || '').trim() || 'none',
   ].join(':');
+}
+
+export function isLocallyCancelledExternalChargeStatus(status?: string | null): boolean {
+  const st = String(status || '')
+    .trim()
+    .toUpperCase();
+  return st === 'CANCELLED' || st === 'CANCELED' || st === 'CANCELADO';
+}
+
+export function titleTransferChargeNeedsCancel(row: {
+  classification?: string | null;
+  status?: string | null;
+  externalId?: string | null;
+}): boolean {
+  const classification = String(row.classification || '');
+  if (classification === 'paid' || classification === 'non_cancelable') return false;
+  if (classification === 'cancelable') return true;
+  return (
+    classification === 'absent' &&
+    isLocallyCancelledExternalChargeStatus(row.status) &&
+    Boolean(String(row.externalId || '').trim())
+  );
+}
+
+export function assertExternalChargeCancelConfirmed(result: {
+  ok?: boolean;
+  remoteConfirmed?: boolean;
+} | null): void {
+  if (!result?.ok) {
+    throw new Error('Cancelamento recusado pelo provider.');
+  }
+  if (result.remoteConfirmed === false) {
+    throw new Error('Provider não confirmou o cancelamento remoto.');
+  }
 }

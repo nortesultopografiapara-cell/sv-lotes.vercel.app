@@ -229,8 +229,9 @@ export async function executeSaleTitleTransfer(
       installment_number?: number | null;
       amount?: number | string | null;
       due_date?: string | null;
+      financial_account_id?: string | null;
     }>;
-    retargetReceiptIds: string[];
+    cancelReceiptIds: string[];
   },
 ): Promise<TitleTransferExecutedResult> {
   const saleId = text(input.saleId);
@@ -402,7 +403,16 @@ export async function executeSaleTitleTransfer(
     expected_to_customer_id: String(row.to_customer_id),
     expected_contract_id: fromContractId,
     expected_block_id: String(row.block_id),
-    retarget_receipt_ids: input.retargetReceiptIds,
+    cancel_receipt_ids: input.cancelReceiptIds,
+    new_receipts: input.remainingInstallments.map((item) => ({
+      installment_number: Number(item.installment_number) || 1,
+      amount: money2(item.amount),
+      due_date: item.due_date ? String(item.due_date).slice(0, 10) : null,
+      financial_account_id: item.financial_account_id
+        ? String(item.financial_account_id)
+        : null,
+    })),
+    remaining_balance: money2(input.finance.remainingBalance),
     new_contract: {
       generated_html: built.html,
       contract_number: built.contractNumber,

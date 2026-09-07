@@ -29,6 +29,10 @@ import {
 } from '@/lib/finance/generateMissingSaleChargesPlan';
 import { resolveSaleChargesProvider } from '@/lib/finance/saleChargesProvider';
 import {
+  classifyRemoteInterSituacaoForRelease,
+  normalizeInterSituacaoForRelease,
+} from '@/lib/finance/releaseLotShared';
+import {
   buildSaleChargesSummaryFromRows,
   type SaleChargeInstallmentRow,
   type SaleChargesSummary,
@@ -206,6 +210,17 @@ export function bankChargeToSummaryLike(
       return seu || null;
     })(),
     asaasRemoteStatus: String((row.metadata as Record<string, unknown>)?.interSituacao || status),
+    remoteCancelConfirmed: Boolean(
+      (row.metadata as Record<string, unknown> | undefined)?.remoteCancelConfirmed,
+    ),
+    cancelledAt: (() => {
+      const meta =
+        row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const raw = String(meta.providerCancelledAt || meta.lotSwapCancelledAt || '').trim();
+      return raw || null;
+    })(),
   };
 }
 
@@ -872,8 +887,9 @@ export async function refreshInterSaleCharges(
 }
 
 /**
- * Cancela uma cobrança Inter da empresa (não é ReleaseLot).
- * Motivo padrão ACERTOS. Recusa paga. Idempotente se já CANCELLED.
+ * Cancela uma cobrança Inter da empresa (mesmo caminho oficial da Troca/adapter).
+ * Motivo ACERTOS. Recusa paga.
+ * Nunca marca CANCELLED local sem GET confirmar situacao CANCELADO/EXPIRADO.
  */
 export async function cancelInterInstallmentCharge(
   admin: SupabaseClient,
@@ -882,7 +898,13 @@ export async function cancelInterInstallmentCharge(
     chargeId: string;
     fetchFn?: InterOAuthFetchFn;
   },
-): Promise<{ ok: true; reused: boolean; chargeId: string; status: string }> {
+): Promise<{
+  ok: true;
+  reused: boolean;
+  remoteConfirmed: boolean;
+  chargeId: string;
+  status: string;
+}> {
   const companyId = String(input.companyId || '').trim();
   const chargeId = String(input.chargeId || '').trim();
   if (!companyId || !chargeId) {
@@ -903,11 +925,17 @@ export async function cancelInterInstallmentCharge(
   if (status === 'PAID') {
     throw new Error('Cobrança já paga — cancelamento não permitido.');
   }
-  if (status === 'CANCELLED' || status === 'EXPIRED' || status === 'FAILED') {
-    return { ok: true, reused: true, chargeId, status };
-  }
   const codigo = String(data.external_id || '').trim();
   if (!codigo) {
+    if (status === 'CANCELLED' || status === 'EXPIRED' || status === 'FAILED') {
+      return {
+        ok: true,
+        reused: true,
+        remoteConfirmed: false,
+        chargeId,
+        status,
+      };
+    }
     throw new Error('Cobrança Inter sem identificador remoto.');
   }
   const secrets = await loadInterSecretsForServer(admin, companyId, {
@@ -928,34 +956,78 @@ export async function cancelInterInstallmentCharge(
     certificatePem: secrets.certificatePem,
     privateKeyPem: secrets.privateKeyPem,
   };
+
+  const readRemote = async () => {
+    const detail = await fetchInterCobrancaByCodigo(creds, codigo, {
+      fetchFn: input.fetchFn,
+    });
+    const situacao = normalizeInterSituacaoForRelease(detail.situacao);
+    return {
+      situacao,
+      disposition: classifyRemoteInterSituacaoForRelease(detail.situacao),
+    };
+  };
+
+  const persistConfirmedCancelled = async (situacao: string) => {
+    const prevMeta = asMeta(data.metadata);
+    const now = new Date().toISOString();
+    const updated = await admin
+      .from('bank_charges')
+      .update({
+        status: 'CANCELLED',
+        metadata: {
+          ...prevMeta,
+          interSituacao: situacao || 'CANCELADO',
+          remoteCancelConfirmed: true,
+          providerCancelledAt: prevMeta.providerCancelledAt || now,
+          lotSwapCancelledAt: prevMeta.lotSwapCancelledAt || now,
+        },
+        updated_at: now,
+      })
+      .eq('id', chargeId)
+      .eq('company_id', companyId)
+      .select('status')
+      .maybeSingle();
+    if (updated.error) throw new Error(updated.error.message);
+    return String(updated.data?.status || 'CANCELLED');
+  };
+
+  let remote = await readRemote();
+  if (remote.disposition === 'preserve_paid') {
+    throw new Error('Cobrança já paga — cancelamento não permitido.');
+  }
+  if (remote.disposition === 'already_cancelled') {
+    const nextStatus = await persistConfirmedCancelled(remote.situacao);
+    return {
+      ok: true,
+      reused: true,
+      remoteConfirmed: true,
+      chargeId,
+      status: nextStatus,
+    };
+  }
+  if (remote.disposition !== 'cancel') {
+    throw new Error(
+      `Cobrança Inter com situação remota "${remote.situacao || 'desconhecida'}" não é cancelável.`,
+    );
+  }
+
   await cancelInterCobranca(creds, codigo, {
     fetchFn: input.fetchFn,
     motivoCancelamento: 'ACERTOS',
   });
-  const prevMeta =
-    data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
-      ? (data.metadata as Record<string, unknown>)
-      : {};
-  const updated = await admin
-    .from('bank_charges')
-    .update({
-      status: 'CANCELLED',
-      metadata: {
-        ...prevMeta,
-        interSituacao: 'CANCELADO',
-        lotSwapCancelledAt: new Date().toISOString(),
-      },
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', chargeId)
-    .eq('company_id', companyId)
-    .select('status')
-    .maybeSingle();
-  if (updated.error) throw new Error(updated.error.message);
+  remote = await readRemote();
+  if (remote.disposition !== 'already_cancelled') {
+    throw new Error(
+      `Banco Inter não confirmou o cancelamento (situação ${remote.situacao || 'inconclusiva'}).`,
+    );
+  }
+  const nextStatus = await persistConfirmedCancelled(remote.situacao);
   return {
     ok: true,
     reused: false,
+    remoteConfirmed: true,
     chargeId,
-    status: String(updated.data?.status || 'CANCELLED'),
+    status: nextStatus,
   };
 }

@@ -20,7 +20,9 @@ import {
   TITLE_TRANSFER_CONFIRM_REQUIRED,
   TITLE_TRANSFER_INFLIGHT,
   TITLE_TRANSFER_TITULAR_CHANGED,
+  assertExternalChargeCancelConfirmed,
   buildTitleTransferIdempotencyKey,
+  titleTransferChargeNeedsCancel,
 } from '@/lib/finance/saleTitleTransferExecute';
 import {
   executeSaleTitleTransfer,
@@ -328,23 +330,27 @@ export async function executeSaleTitleTransferWithExternalCharges(
 
   const receiptRes = await admin
     .from('finance_receipts')
-    .select('id, status, amount, paid_at, due_date, installment_number, sale_id')
+    .select(
+      'id, status, amount, paid_at, due_date, installment_number, sale_id, financial_account_id, project_id',
+    )
     .eq('sale_id', saleId);
   const receipts = ((receiptRes.data || []) as Array<Record<string, unknown>>).filter(
     (row) => String(row.sale_id || '') === saleId,
   );
-  const remainingInstallments = receipts
-    .filter(
-      (row) =>
-        !isTitleTransferPaidReceipt(row) && !isTitleTransferCanceledReceipt(row),
-    )
-    .map((row) => ({
-      installment_number: Number(row.installment_number) || 0,
-      amount: Number(row.amount) || 0,
-      due_date: row.due_date ? String(row.due_date) : null,
-    }));
-  const retargetReceiptIds = receipts.map((row) => String(row.id));
-  const receiptIds = retargetReceiptIds;
+  const remainingRows = receipts.filter(
+    (row) =>
+      !isTitleTransferPaidReceipt(row) && !isTitleTransferCanceledReceipt(row),
+  );
+  const remainingInstallments = remainingRows.map((row) => ({
+    installment_number: Number(row.installment_number) || 0,
+    amount: Number(row.amount) || 0,
+    due_date: row.due_date ? String(row.due_date) : null,
+    financial_account_id: row.financial_account_id
+      ? String(row.financial_account_id)
+      : null,
+  }));
+  const cancelReceiptIds = remainingRows.map((row) => String(row.id));
+  const receiptIds = receipts.map((row) => String(row.id));
 
   const listed: ExternalChargeRecord[] = [...plan.preview.externalCharges.paid, ...plan.preview.externalCharges.open, ...plan.preview.externalCharges.nonCancelable];
   const unknown = await discoverUnknownBankProviders(admin, companyId, saleId);
@@ -371,7 +377,7 @@ export async function executeSaleTitleTransferWithExternalCharges(
   for (const row of listed) unique.set(`${row.provider}:${row.chargeId}`, row);
   const charges = [...unique.values()];
   const paid = charges.filter((row) => row.classification === 'paid');
-  const wouldCancel = charges.filter((row) => row.classification === 'cancelable');
+  const wouldCancel = charges.filter((row) => titleTransferChargeNeedsCancel(row));
   const nonCancelable = charges.filter((row) => row.classification === 'non_cancelable');
 
   const liveDecision = isTitleTransferExternalChargesLiveAuthorized({
@@ -442,9 +448,7 @@ export async function executeSaleTitleTransferWithExternalCharges(
           companyId,
           chargeId: charge.chargeId,
         });
-        if (!result?.ok) {
-          throw new Error('Cancelamento recusado pelo provider.');
-        }
+        assertExternalChargeCancelConfirmed(result);
         canceledChargeIds.push(charge.chargeId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -486,7 +490,7 @@ export async function executeSaleTitleTransferWithExternalCharges(
     salePrice: plan.confirmation.salePrice,
     declaredAgioAmount: plan.confirmation.declaredAgioAmount,
     remainingInstallments,
-    retargetReceiptIds,
+    cancelReceiptIds,
   });
 
   await persistChargesPhase(admin, {

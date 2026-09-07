@@ -49,6 +49,42 @@ export function isInstallmentPaidForCharges(row: FinanceReceiptRow, todayStr?: s
   return status === 'pago' || status === 'paid';
 }
 
+export function isLocallyCancelledChargeStatus(status?: string | null): boolean {
+  const st = String(status || '')
+    .trim()
+    .toUpperCase();
+  return st === 'CANCELLED' || st === 'CANCELED' || st === 'EXPIRED';
+}
+
+export function isRemotelyConfirmedCancelledCharge(
+  charge: CompanyAsaasChargeResponse | null | undefined,
+): boolean {
+  if (!charge) return false;
+  if (charge.remoteCancelConfirmed === true) return true;
+  const remote = String(charge.asaasRemoteStatus || '').toUpperCase();
+  return remote === 'DELETED' || remote === 'CANCELED';
+}
+
+export function formatCancelledChargeHistoryLabel(input: {
+  charge?: CompanyAsaasChargeResponse | null;
+  provider?: 'ASAAS_COMPANY' | 'INTER' | string | null;
+}): string | null {
+  if (!isRemotelyConfirmedCancelledCharge(input.charge)) return null;
+  const whenRaw = String(input.charge?.cancelledAt || input.charge?.updatedAt || '').trim();
+  let when = '';
+  if (whenRaw) {
+    const d = new Date(whenRaw);
+    if (!Number.isNaN(d.getTime())) {
+      when = d.toLocaleDateString('pt-BR');
+    }
+  }
+  const isInter = String(input.provider || '')
+    .toUpperCase()
+    .includes('INTER');
+  const bank = isInter ? 'Banco Inter' : 'Asaas';
+  return when ? `Cancelado no ${bank} em ${when}` : `Cancelado no ${bank}`;
+}
+
 export function resolveAsaasStatusDisplayLabel(
   charge: CompanyAsaasChargeResponse | null | undefined,
   options?: {
@@ -80,6 +116,13 @@ export function resolveAsaasStatusDisplayLabel(
 
   if (charge.status === 'FAILED') return 'Erro';
   if (charge.status === 'PAID') return 'Pago';
+  if (isLocallyCancelledChargeStatus(charge.status)) {
+    if (isRemotelyConfirmedCancelledCharge(charge)) return 'Cancelada';
+    if (remote === 'CANCELADO' || remote === 'EXPIRADO') {
+      return 'Confirmação remota pendente';
+    }
+    return 'Cancelada';
+  }
   return formatCompanyAsaasChargeStatusLabel(charge.status);
 }
 
@@ -207,7 +250,7 @@ export function resolveChargeActionVisibility(params: {
   /** Parcela cancelada (venda encerrada) — sem ações operacionais. */
   installmentCanceled?: boolean;
 }): ChargeActionVisibility {
-  if (params.installmentCanceled) {
+  if (params.installmentCanceled || isLocallyCancelledChargeStatus(params.charge?.status)) {
     return {
       showGenerate: false,
       showOpenCharge: false,
