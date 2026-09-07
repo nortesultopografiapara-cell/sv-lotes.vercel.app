@@ -9,6 +9,16 @@ import {
   LOT_SWAP_CROSS_TENANT,
 } from '@/lib/finance/saleLotSwapPreview';
 import { isPaidFinanceReceiptStatus } from '@/lib/finance/releaseLotShared';
+import {
+  TITLE_TRANSFER_AGIO_INVALID,
+  TITLE_TRANSFER_CONTRACT_CHANGED,
+  TITLE_TRANSFER_CUSTOMER_CROSS_TENANT,
+  TITLE_TRANSFER_CUSTOMER_NOT_FOUND,
+  TITLE_TRANSFER_CUSTOMER_REQUIRED,
+  TITLE_TRANSFER_DATE_INVALID,
+  TITLE_TRANSFER_SALE_NOT_ACTIVE,
+  TITLE_TRANSFER_SAME_TITULAR,
+} from '@/lib/finance/saleTitleTransferPlan';
 import { TITLE_TRANSFER_LOT_REQUIRED_STATUS } from '@/lib/finance/saleTitleTransfer';
 
 export const TITLE_TRANSFER_CROSS_TENANT = LOT_SWAP_CROSS_TENANT;
@@ -209,6 +219,30 @@ export function mapTitleTransferPreviewUserMessage(input: {
   }
   if (code === TITLE_TRANSFER_ORIGIN_MISMATCH) {
     return 'O lote desta venda não confere. Recarregue o mapa.';
+  }
+  if (code === TITLE_TRANSFER_SAME_TITULAR) {
+    return 'O novo titular não pode ser o titular atual.';
+  }
+  if (code === TITLE_TRANSFER_CUSTOMER_NOT_FOUND) {
+    return 'Cliente não encontrado nesta empresa.';
+  }
+  if (code === TITLE_TRANSFER_CUSTOMER_CROSS_TENANT) {
+    return 'O cliente pertence a outra empresa.';
+  }
+  if (code === TITLE_TRANSFER_CONTRACT_CHANGED) {
+    return 'O contrato vigente mudou desde a prévia. Recarregue a tela.';
+  }
+  if (code === TITLE_TRANSFER_SALE_NOT_ACTIVE) {
+    return 'A venda precisa estar ativa para transferir a titularidade.';
+  }
+  if (code === TITLE_TRANSFER_CUSTOMER_REQUIRED) {
+    return 'Selecione exatamente um cliente existente.';
+  }
+  if (code === TITLE_TRANSFER_AGIO_INVALID) {
+    return 'Informe um valor de ágio válido em reais, ou deixe em branco.';
+  }
+  if (code === TITLE_TRANSFER_DATE_INVALID) {
+    return 'Informe uma data de transferência válida.';
   }
   if (code === 'UNAUTHORIZED' || code === 'NO_PROFILE' || input.status === 401) {
     return 'Sessão ou autorização inválida.';

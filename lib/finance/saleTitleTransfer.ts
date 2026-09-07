@@ -1,7 +1,7 @@
 /**
  * Transferência de titularidade / cessão (P1).
  * Isolada de ReleaseLot, sale_lot_swaps e execute_sale_lot_swap.
- * P2 (preview) não persiste nesta tabela.
+ * P2 (preview) e P3 (seleção/plan) NÃO persistem nesta tabela.
  */
 
 export const SALE_TITLE_TRANSFER_OPERATION_CODE = 'transferencia_titularidade' as const;
