@@ -1,5 +1,6 @@
 /**
  * Identidade de ambiente SV LOTES.
+ * Helpers de project ref — não autorizam escrita e não copiam dados entre bancos.
  * Production permanece inalterada: estes helpers só ativam no project ref DEVELOP.
  */
 
