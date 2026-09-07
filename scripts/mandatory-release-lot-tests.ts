@@ -575,10 +575,19 @@ function testSaleOperationsPanel() {
   assert(handleSubmit.includes("fetch(`/api/lots/${encodeURIComponent(lot.id)}/release`"), 'POST release só no submit de encerrar');
   assert(handleSubmit.includes("method: 'POST'"), 'submit usa POST');
   assert(!handleSubmit.includes('/api/contract-operations/'), 'submit sem cessão');
-  assert(modal.includes('Transferência de titularidade em etapa própria'), 'estado informativo cessão');
+  assert(modal.includes('TitleTransferPreviewPanel'), 'titularidade abre painel próprio de prévia');
+  assert(
+    read('components/map/TitleTransferPreviewPanel.tsx').includes(
+      'Transferência de titularidade em etapa própria',
+    ),
+    'estado informativo cessão',
+  );
   assert(modal.includes('LotSwapPreviewPanel'), 'troca abre painel próprio de prévia');
   assert(modal.includes('isSaleLotSwapOperation'), 'card troca usa operação própria');
-  assert(modal.includes('não chama a liberação'), 'titularidade não usa release');
+  assert(
+    read('components/map/TitleTransferPreviewPanel.tsx').includes('não chama a liberação'),
+    'titularidade não usa release',
+  );
   assert(
     read('components/map/LotSwapPreviewPanel.tsx').includes(
       'Nenhum lote, parcela, contrato',

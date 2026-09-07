@@ -13,7 +13,6 @@ import {
   FileWarning,
   FileX,
   Handshake,
-  Info,
   Loader2,
   ScrollText,
   ShieldAlert,
@@ -48,6 +47,7 @@ import {
 } from '@/lib/finance/releaseLotShared';
 import { isSaleLotSwapOperation } from '@/lib/finance/saleLotSwap';
 import { resolveLotSwapPreviewSaleId } from '@/lib/finance/saleLotSwapPreview';
+import { TitleTransferPreviewPanel } from '@/components/map/TitleTransferPreviewPanel';
 import { ReleaseLotSettlementSection, type ImprovementDraftItem } from '@/components/map/ReleaseLotSettlementSection';
 import { LotSwapPreviewPanel } from '@/components/map/LotSwapPreviewPanel';
 import { TerminationDocumentSignatureActions } from '@/components/map/TerminationDocumentSignatureActions';
@@ -1028,18 +1028,14 @@ export function ReleaseLotConfirmModal({
                 ) : null}
 
                 {deferredOperation ? (
-                  <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-                    <p className="text-sm font-semibold text-indigo-950 mb-1 inline-flex items-center gap-2">
-                      <Info className="w-4 h-4 shrink-0" />
-                      Transferência de titularidade em etapa própria
-                    </p>
-                    <p className="text-sm text-indigo-900 leading-snug">
-                      A posição contratual será transferida para um novo comprador em fluxo específico, preservando saldo e histórico. O lote permanece vinculado. Esta tela não chama a liberação, não torna o lote Disponível e não calcula restituição.
-                    </p>
-                    <p className="mt-2 text-xs text-indigo-800">
-                      Nenhuma alteração será gravada agora. Use Cancelar para voltar ao mapa.
-                    </p>
-                  </section>
+                  swapSaleId ? (
+                    <TitleTransferPreviewPanel saleId={swapSaleId} onClose={onClose} />
+                  ) : (
+                    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                      Não foi possível identificar a venda deste lote para a transferência de
+                      titularidade.
+                    </section>
+                  )
                 ) : null}
 
                 {releaseOperation ? (
