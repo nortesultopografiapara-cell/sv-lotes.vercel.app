@@ -26,8 +26,69 @@ export type InterCobrancaDetail = {
   linhaDigitavel?: string | null;
   pixCopiaECola?: string | null;
   txid?: string | null;
+  processingError?: string | null;
   raw: Record<string, unknown>;
 };
+
+/** Motivo da API antiga de boleto (`/{nossoNumero}/cancelar`, HTTP 204). */
+export const INTER_LEGACY_BOLETO_CANCEL_MOTIVO = 'ACERTOS' as const;
+/**
+ * Motivo da Cobrança V3 bolepix (BOLETO+PIX), usado pelo ACBr no IndicadorPix.
+ * ACERTOS da API antiga não confirma CANCELADO neste produto — o Inter fica
+ * A_RECEBER com “Erro ao processar” após HTTP 202.
+ */
+export const INTER_BOLEPIX_CANCEL_MOTIVO = 'Solicitado Pela Empresa' as const;
+
+export function resolveInterCobrancaV3CancelMotivo(chargeType?: string | null): string {
+  const type = String(chargeType || '')
+    .trim()
+    .toUpperCase();
+  if (type === 'BOLETO') return INTER_LEGACY_BOLETO_CANCEL_MOTIVO;
+  return INTER_BOLEPIX_CANCEL_MOTIVO;
+}
+
+export function extractInterCobrancaProcessingError(
+  raw: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!raw) return null;
+  const cobranca = asRecord(raw.cobranca) || raw;
+  const candidates = [
+    cobranca.mensagemErro,
+    cobranca.descricaoErro,
+    cobranca.codigoErro,
+    cobranca.falha,
+    cobranca.erro,
+    cobranca.origem,
+    cobranca.observacao,
+    raw.mensagemErro,
+    raw.descricaoErro,
+    raw.codigoErro,
+    raw.falha,
+    raw.erro,
+  ];
+  for (const item of candidates) {
+    const s = sanitizeInterOperatorDetail(String(item || ''));
+    if (s && /erro|falha|process/i.test(s)) return s;
+  }
+  return null;
+}
+
+export function isInterCancelPostRejected(
+  status: number,
+  json: Record<string, unknown> | null,
+): boolean {
+  if (status >= 400) return true;
+  if (!json) return false;
+  const violacoes = Array.isArray(json.violacoes) ? json.violacoes : [];
+  if (violacoes.length > 0) return true;
+  const title = String(json.title || '');
+  const detail = String(json.detail || json.mensagem || '');
+  if (/falha|not supported|não suportado|invalido|inválido/i.test(`${title} ${detail}`)) {
+    return true;
+  }
+  const queued = String(json.status || '').toUpperCase();
+  return queued === 'ERRO' || queued === 'FALHA' || queued === 'ERROR';
+}
 
 export type InterCreateCobrancaInput = {
   seuNumero: string;
@@ -96,6 +157,8 @@ export function sanitizeInterApiErrorBody(bodyText: string): Record<string, unkn
       title: parsed.title ?? null,
       detail: parsed.detail ?? null,
       timestamp: parsed.timestamp ?? null,
+      status: parsed.status ?? null,
+      mensagem: parsed.mensagem ?? null,
       violacoes,
     }) as Record<string, unknown>;
   } catch {
@@ -172,6 +235,7 @@ export class InterRemoteCancelError extends Error {
       } else {
         parts.push(`consulta permaneceu ${situacao}.`);
       }
+      if (detail) parts.push(detail);
     } else {
       parts.push(`Inter — ${stageLabel}.`);
       if (detail) parts.push(detail);
@@ -239,7 +303,7 @@ const defaultFetch: InterOAuthFetchFn = async (url, init) => {
 async function authorizedRequest(
   creds: InterOAuthCredentials,
   path: string,
-  init: { method: string; body?: unknown },
+  init: { method: string; body?: unknown; accept?: string },
   options?: { fetchFn?: InterOAuthFetchFn },
 ): Promise<{ status: number; json: Record<string, unknown> | null; bodyText: string }> {
   const token = await requestInterAccessToken(creds, { fetchFn: options?.fetchFn });
@@ -263,7 +327,7 @@ async function authorizedRequest(
       method: init.method,
       headers: {
         Authorization: `Bearer ${token.accessToken}`,
-        Accept: 'application/json',
+        Accept: init.accept || 'application/json',
         ...(body
           ? { 'Content-Type': 'application/json' }
           : {}),
@@ -365,6 +429,7 @@ export function normalizeInterCobrancaDetail(
       raw.pixCopiaECola,
     ),
     txid: pickNonEmptyString(cobranca.txid, pix.txid, raw.txid),
+    processingError: extractInterCobrancaProcessingError(raw),
     raw,
   };
 }
@@ -469,6 +534,7 @@ export async function pollInterCobrancaUntilCancelSettled(
       fetchFn: options?.fetchFn,
     });
     if (isInterSituacaoTerminal(last.situacao)) return last;
+    if (last.processingError) return last;
     delay = Math.min(
       maxDelayMs,
       Math.round(Math.max(delay, initialDelayMs || 400) * 1.6),
@@ -499,7 +565,9 @@ export async function fetchInterCobrancaByCodigo(
 
 /**
  * POST /cobranca/v3/cobrancas/{codigoSolicitacao}/cancelar
- * Escopo: boleto-cobranca.write. Resposta típica: 202 Accepted.
+ * Escopo: boleto-cobranca.write. Resposta típica: 202 Accepted + PROCESSANDO.
+ * HTTP 202 NÃO confirma CANCELADO. Cancelamento bolepix usa
+ * "Solicitado Pela Empresa"; ACERTOS é da API antiga de boleto.
  */
 export async function cancelInterCobranca(
   creds: InterOAuthCredentials,
@@ -508,25 +576,30 @@ export async function cancelInterCobranca(
     fetchFn?: InterOAuthFetchFn;
     motivoCancelamento?: string;
   },
-): Promise<{ status: number; raw: Record<string, unknown> | null }> {
+): Promise<{ status: number; raw: Record<string, unknown> | null; bodyText: string }> {
   const code = encodeURIComponent(String(codigoSolicitacao || '').trim());
   if (!code) throw new Error('codigoSolicitacao ausente para cancelamento Inter.');
-  const motivo = String(options?.motivoCancelamento || 'ACERTOS').trim() || 'ACERTOS';
+  const motivo =
+    String(options?.motivoCancelamento || INTER_BOLEPIX_CANCEL_MOTIVO).trim() ||
+    INTER_BOLEPIX_CANCEL_MOTIVO;
   const res = await authorizedRequest(
     creds,
     `/cobrancas/${code}/cancelar`,
-    { method: 'POST', body: { motivoCancelamento: motivo } },
+    {
+      method: 'POST',
+      body: { motivoCancelamento: motivo },
+      accept: 'application/problem+json, application/json',
+    },
     { fetchFn: options?.fetchFn },
   );
-  // 202 Accepted / 200 OK
-  if (res.status < 200 || res.status >= 300) {
+  if (res.status < 200 || res.status >= 300 || isInterCancelPostRejected(res.status, res.json)) {
     throw new InterCobrancaHttpError(
       res.status,
       res.bodyText || JSON.stringify(res.json || {}),
       'cancelar',
     );
   }
-  return { status: res.status, raw: res.json };
+  return { status: res.status, raw: res.json, bodyText: res.bodyText };
 }
 
 export function decodeInterCobrancaPdfPayload(

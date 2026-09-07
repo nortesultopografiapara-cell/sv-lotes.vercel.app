@@ -53,6 +53,7 @@ const fakeSecretsLoader = async () => ({
 type BankChargeRow = {
   id: string;
   status: string;
+  charge_type?: string | null;
   external_id: string | null;
   integration_id: string | null;
   financial_account_id: string | null;
@@ -121,10 +122,20 @@ function makeMockAdmin(state: {
 
 function makeFetch(opts: {
   getSituacoes: string[];
+  getExtra?: Record<string, unknown>;
   cancelStatus?: number;
   cancelFail?: boolean;
-}): { fetchFn: InterOAuthFetchFn; cancelPosts: string[]; getUrls: string[] } {
+  cancelBody?: Record<string, unknown>;
+}): {
+  fetchFn: InterOAuthFetchFn;
+  cancelPosts: string[];
+  cancelBodies: string[];
+  cancelAccepts: string[];
+  getUrls: string[];
+} {
   const cancelPosts: string[] = [];
+  const cancelBodies: string[] = [];
+  const cancelAccepts: string[] = [];
   const getUrls: string[] = [];
   let getIdx = 0;
   const fetchFn: InterOAuthFetchFn = async (url, init) => {
@@ -150,28 +161,35 @@ function makeFetch(opts: {
           codigoSolicitacao: 'dcd8ceee-a72f-4a2c-bd38-f23eb64d0923',
           situacao,
           valorNominal: 10,
+          ...(opts.getExtra || {}),
         }),
       };
     }
     if (init.method === 'POST' && u.includes('/cancelar')) {
       cancelPosts.push(u);
+      cancelBodies.push(String(init.body || ''));
+      cancelAccepts.push(String(init.headers?.Accept || ''));
       if (opts.cancelFail) {
         return {
           status: opts.cancelStatus || 400,
-          bodyText: JSON.stringify({
-            title: 'Erro',
-            detail: 'Falha simulada ao cancelar',
-          }),
+          bodyText: JSON.stringify(
+            opts.cancelBody || {
+              title: 'Erro',
+              detail: 'Falha simulada ao cancelar',
+            },
+          ),
         };
       }
       return {
         status: opts.cancelStatus || 202,
-        bodyText: JSON.stringify({ status: 'PROCESSANDO' }),
+        bodyText: JSON.stringify(
+          opts.cancelBody || { status: 'PROCESSANDO' },
+        ),
       };
     }
     return { status: 404, bodyText: '{}' };
   };
-  return { fetchFn, cancelPosts, getUrls };
+  return { fetchFn, cancelPosts, cancelBodies, cancelAccepts, getUrls };
 }
 
 const INSTANT_POLL = {
@@ -181,10 +199,11 @@ const INSTANT_POLL = {
   sleepFn: async () => {},
 };
 
-function openCharge(id = 'bc-open'): BankChargeRow {
+function openCharge(id = 'bc-open', chargeType = 'BOLETO_PIX'): BankChargeRow {
   return {
     id,
     status: 'REGISTERED',
+    charge_type: chargeType,
     external_id: 'dcd8ceee-a72f-4a2c-bd38-f23eb64d0923',
     integration_id: 'int-1',
     financial_account_id: 'fa-1',
@@ -200,7 +219,7 @@ async function runCancel(
   poll = INSTANT_POLL,
 ) {
   const state = { charges: [charge], updates: [] as Array<{ id: string; patch: Record<string, unknown> }> };
-  const { fetchFn, cancelPosts, getUrls } = makeFetch(fetchOpts);
+  const { fetchFn, cancelPosts, cancelBodies, cancelAccepts, getUrls } = makeFetch(fetchOpts);
   const result = await cancelInterInstallmentCharge(makeMockAdmin(state) as never, {
     companyId: 'co-1',
     chargeId: charge.id,
@@ -208,13 +227,14 @@ async function runCancel(
     secretsLoader: fakeSecretsLoader as never,
     poll,
   });
-  return { result, state, cancelPosts, getUrls };
+  return { result, state, cancelPosts, cancelBodies, cancelAccepts, getUrls };
 }
 
 async function testGetThenPostThenCancelled() {
-  const { result, state, cancelPosts, getUrls } = await runCancel(openCharge(), {
-    getSituacoes: ['A_RECEBER', 'CANCELADO'],
-  });
+  const { result, state, cancelPosts, cancelBodies, cancelAccepts, getUrls } = await runCancel(
+    openCharge(),
+    { getSituacoes: ['A_RECEBER', 'CANCELADO'] },
+  );
   assert(result.ok && result.remoteConfirmed === true, 'GET A_RECEBER → POST → GET CANCELADO confirma');
   assert(result.reused === false, 'não é reuse');
   assert(cancelPosts.length === 1, 'POST /cancelar 1x');
@@ -223,6 +243,14 @@ async function testGetThenPostThenCancelled() {
     'POST usa codigoSolicitacao UUID, não seuNumero',
   );
   assert(getUrls[0].includes('/cobrancas/dcd8ceee-a72f-4a2c-bd38-f23eb64d0923'), 'GET usa o mesmo UUID');
+  assert(
+    JSON.parse(cancelBodies[0]).motivoCancelamento === 'Solicitado Pela Empresa',
+    'BOLETO_PIX envia motivo Solicitado Pela Empresa',
+  );
+  assert(
+    cancelAccepts[0].includes('application/problem+json'),
+    'Accept inclui application/problem+json',
+  );
   assert(state.charges[0].status === 'CANCELLED', 'local CANCELLED só após GET CANCELADO');
   assert(
     (state.updates[0]?.patch.metadata as { remoteCancelConfirmed?: boolean })?.remoteCancelConfirmed ===
@@ -306,6 +334,80 @@ async function testTimeoutInconclusiveNoLocalCancel() {
   assert(state.updates.length === 0, 'nenhum UPDATE local');
 }
 
+async function testBoletoPuroStillAcertos() {
+  const { cancelBodies } = await runCancel(openCharge('bc-boleto', 'BOLETO'), {
+    getSituacoes: ['A_RECEBER', 'CANCELADO'],
+  });
+  assert(
+    JSON.parse(cancelBodies[0]).motivoCancelamento === 'ACERTOS',
+    'BOLETO puro permanece ACERTOS',
+  );
+}
+
+async function test202ViolacoesNoLocalCancel() {
+  const state = {
+    charges: [openCharge()],
+    updates: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+  };
+  const { fetchFn, cancelPosts } = makeFetch({
+    getSituacoes: ['A_RECEBER'],
+    cancelStatus: 202,
+    cancelBody: {
+      title: 'Falha durante a execução da request.',
+      detail: 'Verifique os dados informados',
+      status: 'ERRO',
+      violacoes: [{ razao: 'motivoCancelamento inválido' }],
+    },
+  });
+  try {
+    await cancelInterInstallmentCharge(makeMockAdmin(state) as never, {
+      companyId: 'co-1',
+      chargeId: 'bc-open',
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as never,
+      poll: INSTANT_POLL,
+    });
+    throw new Error('deveria recusar 202 com violacoes');
+  } catch (err) {
+    const cancelErr = asCancelError(err);
+    assert(cancelErr.stage === 'pedido_cancelamento', '202+violacoes = pedido_cancelamento');
+    assert(cancelErr.httpStatus === 202, 'HTTP 202 rejeitado pelo body');
+    assert(/violacoes|motivoCancelamento|Falha/i.test(cancelErr.message), 'body sanitizado no erro');
+  }
+  assert(cancelPosts.length === 1, 'POST ocorreu');
+  assert(state.charges[0].status === 'REGISTERED', '202 rejeitado não marca CANCELLED');
+  assert(state.updates.length === 0, 'nenhum UPDATE local');
+}
+
+async function testGetAReceberWithProcessingError() {
+  const state = {
+    charges: [openCharge()],
+    updates: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+  };
+  const { fetchFn } = makeFetch({
+    getSituacoes: ['A_RECEBER', 'A_RECEBER'],
+    cancelStatus: 202,
+    getExtra: { falha: 'Erro ao processar' },
+  });
+  try {
+    await cancelInterInstallmentCharge(makeMockAdmin(state) as never, {
+      companyId: 'co-1',
+      chargeId: 'bc-open',
+      fetchFn,
+      secretsLoader: fakeSecretsLoader as never,
+      poll: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0, sleepFn: async () => {} },
+    });
+    throw new Error('deveria falhar com falha de processamento');
+  } catch (err) {
+    const cancelErr = asCancelError(err);
+    assert(cancelErr.stage === 'confirmacao', 'etapa confirmação');
+    assert(cancelErr.situacao === 'A_RECEBER', 'permaneceu A_RECEBER');
+    assert(/Erro ao processar/.test(cancelErr.message), 'expõe substatus de processamento');
+  }
+  assert(state.charges[0].status === 'REGISTERED', 'GET com falha não marca CANCELLED');
+  assert(state.updates.length === 0, 'nenhum UPDATE local');
+}
+
 async function testHttpErrorNoLocalCancel() {
   const state = {
     charges: [openCharge()],
@@ -361,13 +463,17 @@ function testSourceAndReleaseLotUntouched() {
   const cancel = read('lib/banking/inter/interSaleChargeService.ts');
   const client = read('lib/banking/inter/interCobrancaClient.ts');
   const release = read('lib/banking/inter/interChargeCancelForRelease.ts');
+  const releaseShared = read('lib/finance/releaseLotShared.ts');
   const orch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
   assert(client.includes('pollInterCobrancaUntilCancelSettled'), 'helper de polling compartilhado');
-  assert(cancel.includes('motivoCancelamento: \'ACERTOS\''), 'motivo ACERTOS');
+  assert(client.includes("INTER_BOLEPIX_CANCEL_MOTIVO = 'Solicitado Pela Empresa'"), 'motivo bolepix');
+  assert(cancel.includes('resolveInterCobrancaV3CancelMotivo'), 'adapter escolhe motivo por charge_type');
+  assert(!cancel.includes("motivoCancelamento: 'ACERTOS'"), 'adapter não força ACERTOS em bolepix');
   assert(INTER_OAUTH_SCOPES === 'boleto-cobranca.read boleto-cobranca.write', 'scopes oficiais');
   assert(INTER_CANCEL_CONFIRM_POLL.maxAttempts === 5, 'limite pequeno de tentativas');
   assert(release.includes('await cancelInterCobranca'), 'ReleaseLot segue POST homologado');
   assert(!release.includes('pollInterCobrancaUntilCancelSettled'), 'ReleaseLot não foi reescrito');
+  assert(releaseShared.includes("return 'ACERTOS'"), 'ReleaseLot ainda mapeia ACERTOS');
   assert(orch.includes('formatTitleTransferBankCancelFailure'), 'erro operacional no orquestrador');
   assert(!orch.includes("provider === 'INTER'"), 'orquestrador sem if INTER');
   const lotSwap = read('lib/finance/externalCharges/interAdapter.ts');
@@ -380,6 +486,9 @@ async function main() {
   await testAlreadyCancelledIdempotent();
   await testPaidNeverPosts();
   await testTimeoutInconclusiveNoLocalCancel();
+  await testBoletoPuroStillAcertos();
+  await test202ViolacoesNoLocalCancel();
+  await testGetAReceberWithProcessingError();
   await testHttpErrorNoLocalCancel();
   await testOperatorMessageAndUi();
   testSourceAndReleaseLotUntouched();

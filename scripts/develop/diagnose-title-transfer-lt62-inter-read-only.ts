@@ -174,12 +174,23 @@ async function main() {
       [SALE_ID],
     );
     const charges = await client.query(
-      `select id, finance_receipt_id, status, provider, external_id, our_number,
-              barcode, digitable_line, metadata, amount, due_date
+      `select id, finance_receipt_id, status, provider, charge_type, external_id, our_number,
+              barcode, digitable_line, metadata, amount, due_date, updated_at
        from public.bank_charges
        where sale_id = $1
        order by due_date nulls last, created_at`,
       [SALE_ID],
+    );
+    const cancelledPeers = await client.query(
+      `select id, sale_id, status, charge_type, external_id, our_number, metadata, updated_at
+       from public.bank_charges
+       where provider = 'INTER'
+         and (
+           status in ('CANCELLED','CANCELED','EXPIRED')
+           or coalesce(metadata->>'interSituacao','') in ('CANCELADO','EXPIRADO')
+         )
+       order by updated_at desc
+       limit 20`,
     );
     const transfers = await client.query(
       `select id, status, charges_phase, charges_error, from_customer_id, to_customer_id,
@@ -221,7 +232,9 @@ async function main() {
         bank_charge_id: row.id,
         finance_receipt_id: row.finance_receipt_id,
         provider: row.provider,
+        charge_type: row.charge_type || null,
         status_local: row.status,
+        updated_at: row.updated_at,
         amount: row.amount,
         due_date: row.due_date,
         external_id: externalId,
@@ -234,6 +247,7 @@ async function main() {
         digitable_line: row.digitable_line || null,
         interSituacao: meta?.interSituacao || null,
         remoteCancelConfirmed: meta?.remoteCancelConfirmed ?? null,
+        metadata_keys: meta ? Object.keys(meta) : [],
         metadata_safe: pickMeta(meta),
         matchesInternetBankingDocs: matchedDocs,
         get_uses: externalId,
@@ -277,6 +291,25 @@ async function main() {
           receipts: receipts.rows,
           charges: mappedCharges,
           transfers: snapshotErrors,
+          locallyCancelledInterPeers: cancelledPeers.rows.map((row) => {
+            const meta =
+              row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+                ? (row.metadata as Record<string, unknown>)
+                : {};
+            return {
+              id: row.id,
+              sale_id: row.sale_id,
+              status: row.status,
+              charge_type: row.charge_type || null,
+              external_id: row.external_id,
+              our_number: row.our_number,
+              seuNumero: meta.seuNumero || null,
+              interSituacao: meta.interSituacao || null,
+              remoteCancelConfirmed: meta.remoteCancelConfirmed ?? null,
+              metadata_keys: Object.keys(meta),
+              updated_at: row.updated_at,
+            };
+          }),
           bankDocsFromInternetBanking: BANK_DOCS,
           note:
             'GET e POST oficiais usam bank_charges.external_id como codigoSolicitacao. Documentos do Internet Banking são número/nosso número se não forem UUID.',

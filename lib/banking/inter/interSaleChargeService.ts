@@ -14,6 +14,8 @@ import {
   InterRemoteCancelError,
   INTER_CANCEL_CONFIRM_POLL,
   extractInterHttpStatusFromError,
+  resolveInterCobrancaV3CancelMotivo,
+  sanitizeInterApiErrorBody,
   type InterCobrancaDetail,
   type InterCreateCobrancaInput,
   type InterPollOptions,
@@ -893,9 +895,10 @@ export async function refreshInterSaleCharges(
 }
 
 /**
- * Cancela uma cobrança Inter da empresa (mesmo GET/POST/codigoSolicitacao/ACERTOS
+ * Cancela uma cobrança Inter da empresa (mesmo GET/POST/codigoSolicitacao
  * do ReleaseLot). POST /cancelar é assíncrono (202): confirma com polling GET.
- * Motivo ACERTOS. Recusa paga.
+ * Bolepix (BOLETO+PIX) usa motivo "Solicitado Pela Empresa"; boleto puro
+ * permanece ACERTOS. HTTP 202 não confirma CANCELADO.
  * Nunca marca CANCELLED local sem GET confirmar situacao CANCELADO/EXPIRADO.
  */
 export async function cancelInterInstallmentCharge(
@@ -922,7 +925,7 @@ export async function cancelInterInstallmentCharge(
   const { data, error } = await admin
     .from('bank_charges')
     .select(
-      'id, company_id, provider, status, external_id, financial_account_id, integration_id, metadata',
+      'id, company_id, provider, status, charge_type, external_id, financial_account_id, integration_id, metadata',
     )
     .eq('id', chargeId)
     .eq('company_id', companyId)
@@ -1049,12 +1052,27 @@ export async function cancelInterInstallmentCharge(
   }
 
   let postStatus = 0;
+  let postBodySummary = '';
+  const chargeType = String((data as { charge_type?: string | null }).charge_type || '').trim();
+  const motivo = resolveInterCobrancaV3CancelMotivo(chargeType);
   try {
     const posted = await cancelInterCobranca(creds, codigo, {
       fetchFn: input.fetchFn,
-      motivoCancelamento: 'ACERTOS',
+      motivoCancelamento: motivo,
     });
     postStatus = posted.status;
+    const sanitizedPost = sanitizeInterApiErrorBody(posted.bodyText || JSON.stringify(posted.raw || {}));
+    postBodySummary = JSON.stringify({
+      status: sanitizedPost.status ?? posted.raw?.status ?? null,
+      mensagem: sanitizedPost.mensagem ?? posted.raw?.mensagem ?? null,
+    });
+    console.log('[inter][cancel][post]', {
+      codigoSolicitacao: codigo,
+      chargeType: chargeType || null,
+      motivo,
+      httpStatus: posted.status,
+      body: sanitizedPost,
+    });
   } catch (err) {
     throw new InterRemoteCancelError({
       stage: 'pedido_cancelamento',
@@ -1068,8 +1086,9 @@ export async function cancelInterInstallmentCharge(
     });
   }
 
+  let confirmedDetail: InterCobrancaDetail | null = null;
   try {
-    const confirmed = await pollInterCobrancaUntilCancelSettled(creds, codigo, {
+    confirmedDetail = await pollInterCobrancaUntilCancelSettled(creds, codigo, {
       fetchFn: input.fetchFn,
       maxAttempts: input.poll?.maxAttempts ?? INTER_CANCEL_CONFIRM_POLL.maxAttempts,
       initialDelayMs:
@@ -1077,7 +1096,7 @@ export async function cancelInterInstallmentCharge(
       maxDelayMs: input.poll?.maxDelayMs ?? INTER_CANCEL_CONFIRM_POLL.maxDelayMs,
       sleepFn: input.poll?.sleepFn,
     });
-    remote = classifyDetail(confirmed.situacao);
+    remote = classifyDetail(confirmedDetail.situacao);
   } catch (err) {
     throw new InterRemoteCancelError({
       stage: 'confirmacao',
@@ -1097,11 +1116,13 @@ export async function cancelInterInstallmentCharge(
     });
   }
   if (remote.disposition !== 'already_cancelled') {
+    const processing = confirmedDetail?.processingError || '';
     throw new InterRemoteCancelError({
       stage: 'confirmacao',
       httpStatus: postStatus,
       situacao: remote.situacao,
       codigoSolicitacao: codigo,
+      detail: [processing, postBodySummary].filter(Boolean).join(' '),
     });
   }
   const nextStatus = await persistConfirmedCancelled(remote.situacao);
