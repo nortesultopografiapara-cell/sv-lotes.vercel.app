@@ -1,7 +1,10 @@
 /**
- * LIVE scoped da Fase 5B — fail closed.
+ * LIVE da Fase 5B — fail closed.
+ * Production: sempre OFF.
+ * LIVE=true global: inválido.
+ * DEVELOP sem LIVE=scoped: cancela Asaas/Inter automaticamente (como Limpar lote).
+ * LIVE=scoped: allowlist company/provider/sale/swap no DEVELOP.
  * Sem IDs de homologação neste arquivo. Sem if/switch de banco.
- * Production permanece sempre OFF.
  */
 
 import {
@@ -134,6 +137,15 @@ export function resolveLotSwapExternalChargesLiveScope(
     return off('MODE_GLOBAL_TRUE', { provider, matches });
   }
   if (!modeScoped) {
+    if (developRuntime) {
+      return {
+        live: true,
+        liveScoped: false,
+        reason: 'DEVELOP_HOMOLOG_AUTO',
+        provider,
+        matches: { ...matches, developRuntime: true },
+      };
+    }
     return off('MODE_NOT_SCOPED', { provider, matches });
   }
   if (!developRuntime) {

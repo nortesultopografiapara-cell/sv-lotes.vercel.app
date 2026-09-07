@@ -19,7 +19,7 @@ export const LOT_SWAP_EXECUTING_STATUS = 'EXECUTING' as const;
 export const LOT_SWAP_FAILED_STATUS = 'FAILED' as const;
 
 export const LOT_SWAP_EXECUTE_NOTICE =
-  'A execução é atômica: a mesma venda permanece, o lote origem volta para Disponível, o destino passa a Vendido e um novo contrato vigente é criado. Cobranças Asaas/Inter não são alteradas nesta fase.';
+  'A execução cancela automaticamente as cobranças bancárias abertas das parcelas antigas e, só depois, efetua a troca local: a mesma venda permanece, o lote origem volta para Disponível, o destino passa a Vendido e um novo contrato vigente é criado. Boletos e Pix das parcelas novas ficam em Editar venda → Cobranças.';
 
 export type LotSwapExecuteStatusEvent =
   | 'start'

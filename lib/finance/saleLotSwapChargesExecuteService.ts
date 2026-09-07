@@ -6,6 +6,8 @@
  * Ordem:
  *   PREPARED → (CANCELLING → CANCELED) → executeSaleLotSwap → COMPLETED
  * Sem cobrança antiga a cancelar: PREPARED → Fase 4 → COMPLETED (sem LIVE).
+ * DEVELOP: cancela automaticamente via registry (Asaas/Inter) sem LIVE=true.
+ * Production: LIVE sempre OFF.
  * Falha no cancelamento: FAILED e NÃO executa a Fase 4.
  */
 
@@ -402,7 +404,7 @@ export async function executeSaleLotSwapWithExternalCharges(
           error: LOT_SWAP_CHARGES_LIVE_DISABLED,
         });
         throw new LotSwapChargesPhaseError(
-          'Há cobranças externas a cancelar. A homologação bancária real ainda não está autorizada.',
+          'O cancelamento bancário desta troca não está autorizado neste ambiente. Nenhum lote, parcela ou contrato foi alterado.',
           LOT_SWAP_CHARGES_LIVE_DISABLED,
           409,
           { chargesPhase: 'PREPARED', remoteApiCalled: false },
@@ -438,8 +440,14 @@ export async function executeSaleLotSwapWithExternalCharges(
               snapshot: { ...snapshot, phase: 'FAILED', canceledChargeIds },
               error: message,
             });
+            const pendingCount = preview.wouldCancel.filter(
+              (row) =>
+                row.classification !== 'paid' &&
+                !canceledChargeIds.includes(row.chargeId),
+            ).length;
+            const providerLabel = charge.provider || preview.activeProvider || 'banco';
             throw new LotSwapChargesPhaseError(
-              'Falha ao cancelar cobrança externa. A troca local não foi executada.',
+              `Não foi possível cancelar ${pendingCount} cobrança(s) no ${providerLabel}. A troca não foi executada: lote origem, lote destino, parcelas e contrato permanecem inalterados.`,
               LOT_SWAP_CHARGES_CANCEL_FAILED,
               409,
               { chargesPhase: 'FAILED', remoteApiCalled },

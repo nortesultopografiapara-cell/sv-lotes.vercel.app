@@ -321,6 +321,18 @@ export function mapLotSwapExecuteUserMessage(input: {
   if (code === 'ALREADY_EXECUTED') {
     return fromServer || 'Esta troca já foi executada.';
   }
+  if (code === 'LOT_SWAP_CHARGES_LIVE_DISABLED') {
+    return (
+      fromServer ||
+      'O cancelamento bancário desta troca não está autorizado neste ambiente. Nenhum lote, parcela ou contrato foi alterado.'
+    );
+  }
+  if (code === 'LOT_SWAP_CHARGES_CANCEL_FAILED') {
+    return (
+      fromServer ||
+      'Não foi possível cancelar as cobranças bancárias antigas. A troca não foi executada.'
+    );
+  }
   if (code === 'TENANT_MISMATCH' || input.status === 403) {
     return fromServer || 'A troca não pertence à empresa atual.';
   }

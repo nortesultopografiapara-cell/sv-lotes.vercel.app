@@ -247,6 +247,9 @@ async function withHarness<T>(fn: () => Promise<T>): Promise<T> {
 
 async function testLiveOffDoesNotCancelOrExecute() {
   await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests({
+      NEXT_PUBLIC_SUPABASE_URL: `https://${PRODUCTION_PROJECT_REF}.supabase.co`,
+    });
     const ctx = createStore(baseTables());
     const localCalls = installLocalExecute(ctx, { fail: true });
     let cancelCalls = 0;
@@ -342,6 +345,7 @@ async function testCancelFailureDoesNotExecuteLocal() {
     } catch (err) {
       assert(err instanceof LotSwapChargesPhaseError, 'erro de fase');
       assert(err.code === LOT_SWAP_CHARGES_CANCEL_FAILED, 'cancel failed');
+      assert(/1 cobrança\(s\) no ASAAS/.test(err.message), 'informa provider e quantidade');
       assert(!err.local, 'sem execute local');
     }
     assert(localCalls() === 0, 'Fase 4 não rodou');
@@ -424,6 +428,106 @@ async function testNoOldChargesCompletesWithoutLive() {
     assert(String(ctx.store.sale_lot_swaps[0].charges_phase) === 'COMPLETED', 'phase COMPLETED');
   });
   console.log('OK testNoOldChargesCompletesWithoutLive');
+}
+
+async function testDevelopHomologAutoCancelsWithoutScopedLive() {
+  await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests({
+      NEXT_PUBLIC_SUPABASE_URL: `https://${DEVELOP_PROJECT_REF}.supabase.co`,
+    });
+    const ctx = createStore(baseTables());
+    const localCalls = installLocalExecute(ctx);
+    const canceled: string[] = [];
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async (_a, _c, chargeId) => {
+        canceled.push(chargeId);
+        return { ok: true, reused: false, chargeId, status: 'CANCELLED' };
+      },
+      generateAsaasCharges: async () => {
+        throw new Error('não gera boleto novo');
+      },
+    });
+    const result = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      swapId: 'swap-1',
+    });
+    assert(result.chargesPhase === 'COMPLETED', 'COMPLETED no DEVELOP sem scoped');
+    assert(canceled.join() === 'a-open', 'cancelou a aberta');
+    assert(!canceled.includes('a-paid'), 'paga preservada');
+    assert(localCalls() === 1, 'Fase 4 depois do cancel');
+    assert(result.generatedReceiptIds.length === 0, 'não gera boleto');
+  });
+  console.log('OK testDevelopHomologAutoCancelsWithoutScopedLive');
+}
+
+async function testOnePaidFourOpenThenPhase4() {
+  await withHarness(async () => {
+    setLotSwapChargesLiveScopeEnvForTests({
+      NEXT_PUBLIC_SUPABASE_URL: `https://${DEVELOP_PROJECT_REF}.supabase.co`,
+    });
+    const plan = buildLotSwapFinancialPlan({
+      oldSalePrice: 100,
+      newLotPrice: 80,
+      receipts: [
+        { id: 'r-paid', installment_number: 0, status: 'pago', amount: 20, paid_at: '2026-08-10' },
+        { id: 'r-f1', installment_number: 1, status: 'pendente', amount: 20, due_date: '2026-09-10' },
+        { id: 'r-f2', installment_number: 2, status: 'pendente', amount: 20, due_date: '2026-10-10' },
+        { id: 'r-f3', installment_number: 3, status: 'pendente', amount: 20, due_date: '2026-11-10' },
+        { id: 'r-f4', installment_number: 4, status: 'pendente', amount: 20, due_date: '2026-12-10' },
+      ],
+    });
+    assert(plan.receipts.preserve.length === 1, '1 parcela paga preservada');
+    assert(plan.receipts.cancel.length === 4, '4 parcelas futuras a cancelar internamente');
+    assert(plan.financials.new_balance === 60, 'saldo 80-20=60');
+    const tables = baseTables();
+    tables.sale_lot_swaps[0].financial_snapshot = { plan };
+    tables.finance_receipts = [
+      { id: 'r-paid', sale_id: 'sale-1', status: 'pago', paid_at: '2026-08-10', installment_number: 0 },
+      { id: 'r-f1', sale_id: 'sale-1', status: 'pendente', installment_number: 1 },
+      { id: 'r-f2', sale_id: 'sale-1', status: 'pendente', installment_number: 2 },
+      { id: 'r-f3', sale_id: 'sale-1', status: 'pendente', installment_number: 3 },
+      { id: 'r-f4', sale_id: 'sale-1', status: 'pendente', installment_number: 4 },
+    ];
+    tables.company_asaas_charges = [
+      { id: 'a-paid', company_id: 'co-1', sale_id: 'sale-1', installment_id: 'r-paid', status: 'PAID' },
+      { id: 'a-1', company_id: 'co-1', sale_id: 'sale-1', installment_id: 'r-f1', status: 'PENDING' },
+      { id: 'a-2', company_id: 'co-1', sale_id: 'sale-1', installment_id: 'r-f2', status: 'PENDING' },
+      { id: 'a-3', company_id: 'co-1', sale_id: 'sale-1', installment_id: 'r-f3', status: 'PENDING' },
+      { id: 'a-4', company_id: 'co-1', sale_id: 'sale-1', installment_id: 'r-f4', status: 'PENDING' },
+    ];
+    const ctx = createStore(tables);
+    const localCalls = installLocalExecute(ctx);
+    const canceled: string[] = [];
+    setExternalChargeMutationFnsForTests({
+      cancelAsaasCharge: async (_a, _c, chargeId) => {
+        canceled.push(chargeId);
+        return { ok: true, reused: false, chargeId, status: 'CANCELLED' };
+      },
+      generateAsaasCharges: async () => {
+        throw new Error('não gera boleto das novas parcelas');
+      },
+    });
+    const first = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      swapId: 'swap-1',
+    });
+    assert(first.chargesPhase === 'COMPLETED', 'COMPLETED');
+    assert(canceled.sort().join() === 'a-1,a-2,a-3,a-4', '4 abertas canceladas');
+    assert(!canceled.includes('a-paid'), 'paga nunca cancelada');
+    assert(localCalls() === 1, 'Fase 4 uma vez');
+    assert(first.generatedReceiptIds.length === 0, 'sem boleto novo');
+    const retry = await executeSaleLotSwapWithExternalCharges(ctx.admin as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      swapId: 'swap-1',
+    });
+    assert(retry.local?.reused === true, 'retry reused');
+    assert(canceled.length === 4, 'retry não cancela de novo');
+    assert(localCalls() === 2, 'Fase 4 reused na segunda');
+  });
+  console.log('OK testOnePaidFourOpenThenPhase4');
 }
 
 async function testRetryAfterPartialCancelIsIdempotent() {
@@ -1131,6 +1235,9 @@ function testSourceArchitecture() {
   assert(!ui.includes('Novas a gerar'), 'UI sem card de geração 5B');
   assert(!/geradas automaticamente/i.test(ui), 'UI sem geração automática');
   assert(ui.includes('Editar venda → Cobranças'), 'UI aponta módulo Cobranças');
+  assert(ui.includes('canceladas automaticamente'), 'UI cancela automaticamente');
+  assert(!/cancelar manualmente/i.test(ui), 'UI sem instrução de cancelar na mão');
+  assert(!/homologação bancária real ainda não está autorizada/i.test(ui), 'UI sem aviso de homologação');
 
   const notices = read('lib/finance/saleLotSwapExternalCharges.ts');
   assert(
@@ -1157,6 +1264,8 @@ async function main() {
   ensureExternalChargeProvidersRegistered();
   await testNoOldChargesCompletesWithoutLive();
   await testLiveOffDoesNotCancelOrExecute();
+  await testDevelopHomologAutoCancelsWithoutScopedLive();
+  await testOnePaidFourOpenThenPhase4();
   await testPaidNeverCancelledAndPendingCancelled();
   await testCancelFailureDoesNotExecuteLocal();
   await testRetryAfterPartialCancelIsIdempotent();

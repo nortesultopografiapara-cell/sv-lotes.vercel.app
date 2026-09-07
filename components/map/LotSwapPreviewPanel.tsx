@@ -96,7 +96,7 @@ function PlanSummary({
       {externalCharges ? (
         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
-            Cobranças externas (Fase 5A — só classificação)
+            Cobranças externas — canceladas automaticamente na execução
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <SummaryCard
@@ -108,7 +108,7 @@ function PlanSummary({
               value={String(externalCharges.paid.length)}
             />
             <SummaryCard
-              label="Canceláveis (Fase 5B)"
+              label="A cancelar automaticamente"
               value={String(externalCharges.wouldCancel.length)}
             />
             <SummaryCard
@@ -308,10 +308,11 @@ export function LotSwapPreviewPanel({
         </p>
         <p className="text-sm text-indigo-900 leading-snug">
           O comprador permanece na mesma venda. Confirmar o plano grava somente
-          o registro CALCULATED. Nenhum lote, parcela, contrato ou cobrança será
-          alterado nesta etapa. A execução atômica só ocorre depois, no botão
-          Executar troca de lote. Cobranças Asaas/Inter não são alteradas nesta
-          fase.
+          o registro CALCULATED. Nenhum lote, parcela, contrato ou cobrança é
+          alterado nesta etapa. Ao executar, as cobranças bancárias abertas das
+          parcelas antigas são canceladas automaticamente; em seguida a troca
+          local cria as novas parcelas e o novo contrato. Boletos e Pix das
+          parcelas novas continuam em Editar venda → Cobranças.
         </p>
       </div>
 
@@ -501,9 +502,10 @@ export function LotSwapPreviewPanel({
                             />
                             <span>
                               Entendo que a origem volta para Disponível, o destino
-                              fica Vendido, as parcelas futuras são substituídas e
-                              um novo contrato vigente é criado. O contrato anterior
-                              permanece no histórico.
+                              fica Vendido, as cobranças bancárias antigas abertas
+                              são canceladas automaticamente, as parcelas futuras
+                              são substituídas e um novo contrato vigente é criado.
+                              O contrato anterior permanece no histórico.
                             </span>
                           </label>
                           {executeError ? (

@@ -517,7 +517,7 @@ function testSourceNoRealBankApisAndNoReleaseLot() {
   assert(!inter.includes('cancelInterCobranca'), 'adapter Inter sem HTTP próprio');
   assert(!inter.includes('createInterCobranca'), 'adapter Inter sem create HTTP próprio');
   const ui = read('components/map/LotSwapPreviewPanel.tsx');
-  assert(ui.includes('Fase 5A'), 'UI mostra classificação 5A');
+  assert(ui.includes('canceladas automaticamente'), 'UI mostra cancelamento automático');
   assert(!ui.includes('Novas a gerar'), 'UI sem geração automática na troca');
   assert(!/geradas automaticamente/i.test(ui), 'UI sem texto de geração automática');
   assert(

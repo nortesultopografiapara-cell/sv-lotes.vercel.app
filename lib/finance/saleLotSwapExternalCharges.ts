@@ -38,7 +38,7 @@ export const LOT_SWAP_EXTERNAL_CHARGES_NOTICE =
   'Fase 5A: classificação local das cobranças externas. Nenhuma API bancária é chamada. A Fase 5B só cancela títulos antigos abertos. As cobranças das novas parcelas ficam em Editar venda → Cobranças.';
 
 export const LOT_SWAP_CHARGES_CANCEL_THEN_OFFICIAL_GENERATE_NOTICE =
-  'Cobranças externas abertas das parcelas substituídas serão canceladas antes da troca. As cobranças das novas parcelas poderão ser geradas posteriormente em Editar venda → Cobranças.';
+  'Ao executar a troca, as cobranças bancárias abertas das parcelas antigas serão canceladas automaticamente. As novas parcelas internas são criadas na troca. Boletos e Pix das parcelas novas ficam em Editar venda → Cobranças.';
 
 export const LOT_SWAP_CHARGES_NO_OLD_CANCEL_NOTICE =
   'Nenhuma cobrança externa antiga precisa ser cancelada.';

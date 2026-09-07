@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Fase 5B — cancela cobranças externas antigas canceláveis e executa a Fase 4.
- * Não gera cobranças das parcelas novas. Live default off: sem chamada Asaas/Inter real.
+ * Não gera cobranças das parcelas novas.
+ * DEVELOP: cancelamento automático via adapters oficiais. Production: OFF.
  */
 export async function POST(
   request: Request,

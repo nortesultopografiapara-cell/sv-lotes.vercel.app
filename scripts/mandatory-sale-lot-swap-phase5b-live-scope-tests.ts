@@ -44,6 +44,17 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   }
 }
 
+function testDevelopHomologAutoWithoutScoped() {
+  const result = withEnv(
+    { NEXT_PUBLIC_SUPABASE_URL: DEVELOP_URL },
+    () => resolveLotSwapExternalChargesLiveScope(MATCH),
+  );
+  assert(result.live === true, 'DEVELOP sem scoped = auto cancel');
+  assert(result.reason === 'DEVELOP_HOMOLOG_AUTO', 'DEVELOP_HOMOLOG_AUTO');
+  assert(result.liveScoped === false, 'não é allowlist scoped');
+  console.log('OK testDevelopHomologAutoWithoutScoped');
+}
+
 function testProductionAlwaysOff() {
   const result = withEnv(
     { ...COMPLETE, NEXT_PUBLIC_SUPABASE_URL: PRODUCTION_URL },
@@ -167,6 +178,7 @@ function testNoHomologIdsInHelper() {
 }
 
 function main() {
+  testDevelopHomologAutoWithoutScoped();
   testProductionAlwaysOff();
   testDevelopGlobalTrueOff();
   testMissingProviderListOff();
