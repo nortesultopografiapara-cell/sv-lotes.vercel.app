@@ -784,7 +784,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
         {/* Desktop Top Header inside Main Content */}
         {!isMobile && (
-          <header className="h-16 w-full flex items-center justify-between px-6 lg:px-8 border-b border-[var(--border-subtle)] flex-shrink-0 bg-[var(--bg-navbar)]">
+          <header className="h-16 w-full flex items-center justify-between gap-4 px-6 lg:px-8 border-b border-[var(--border-subtle)] flex-shrink-0 bg-[var(--bg-navbar)]">
             <div className="min-w-0">
               <h1 className="text-base font-medium text-[var(--text-primary)] flex items-center gap-1.5 truncate">
                 <span className="text-[var(--text-secondary)] font-normal">Olá,</span>
@@ -794,6 +794,17 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 {resolveRoleDisplayLabel(user?.role)}
               </p>
             </div>
+
+            {pathname === '/finance' ? (
+              <div className="sv-layout-finance-title hidden min-w-0 flex-1 text-right xl:block">
+                <p className="truncate text-lg font-bold leading-tight tracking-tight text-[var(--text-primary)]">
+                  Módulo Financeiro
+                </p>
+                <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                  Contratos · Títulos · Inadimplência
+                </p>
+              </div>
+            ) : null}
 
             <div className="flex items-center gap-3 shrink-0">
               <OfflineStatusBar />

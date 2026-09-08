@@ -49,6 +49,16 @@ function testFinanceLayoutWiring() {
   assert(css.includes('repeat(6, minmax(0, 1fr))'), 'resumo financeiro em 1 linha no desktop');
   assert(css.includes('.finance-toolbar-actions'), 'CSS da barra de ações');
   assert(css.includes('.finance-module-header'), 'CSS do cabeçalho limpo');
+  assert(
+    css.includes('.finance-premium .finance-module-header') &&
+      css.includes('@media (min-width: 1280px)'),
+    'título da página some no desktop largo',
+  );
+
+  const layout = read('components/Layout.tsx');
+  assert(layout.includes("pathname === '/finance'"), 'título só no Financeiro');
+  assert(layout.includes('sv-layout-finance-title'), 'faixa única no header global');
+  assert(layout.includes('hidden min-w-0 flex-1 text-right xl:block'), 'desktop largo; notebook/mobile empilha');
 
   assert(summary.includes('totalRecebido'), 'valor recebido preservado');
   assert(summary.includes('saldoAReceber'), 'saldo a receber preservado');
