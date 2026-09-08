@@ -63,7 +63,7 @@ export function DashboardTopKpi({
   return (
     <div className="dash-kpi-top group">
       <div
-        className="absolute -right-8 -top-8 h-28 w-28 rounded-full opacity-20 blur-3xl transition-opacity group-hover:opacity-35"
+        className="absolute -right-8 -top-8 h-20 w-20 rounded-full opacity-16 blur-2xl transition-opacity group-hover:opacity-28"
         style={{ backgroundColor: color }}
       />
       <div className="relative flex items-start justify-between gap-3 h-full">
@@ -71,16 +71,16 @@ export function DashboardTopKpi({
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">
             {title}
           </p>
-          <h3 className="text-2xl xl:text-[1.65rem] font-bold text-[var(--text-primary)] tabular-nums tracking-tight">
+          <h3 className="text-xl xl:text-[1.35rem] font-bold text-[var(--text-primary)] tabular-nums tracking-tight leading-tight">
             {loading ? (
-              <span className="dash-skeleton inline-block h-8 w-24" />
+              <span className="dash-skeleton inline-block h-7 w-20" />
             ) : isCurrency ? (
               formatDashboardKpiPrimaryValue(safeValue, true)
             ) : (
               <CountUp end={safeValue} duration={1.2} separator="." decimals={0} />
             )}
           </h3>
-          <p className="text-[11px] text-[var(--text-muted)] mt-1 truncate">
+          <p className="text-[10px] text-[var(--text-muted)] mt-0.5 truncate">
             {safeSubtitle ||
               (percent ? (
                 <span style={{ color }}>
@@ -90,10 +90,10 @@ export function DashboardTopKpi({
           </p>
         </div>
         <div
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--border-subtle)]"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)]"
           style={{ backgroundColor: `${color}18`, color }}
         >
-          <Icon className="h-5 w-5" strokeWidth={1.75} />
+          <Icon className="h-4 w-4" strokeWidth={1.75} />
         </div>
       </div>
     </div>
@@ -135,12 +135,12 @@ export function DashboardMetricKpi({
           <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
         </div>
       )}
-      <div className="flex items-center gap-3 h-full">
+      <div className="flex items-center gap-2.5 h-full">
         <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)]"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)]"
           style={{ backgroundColor: `${color}14`, color }}
         >
-          <Icon className="h-4 w-4" strokeWidth={1.75} />
+          <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] truncate">
@@ -196,11 +196,11 @@ export function DashboardActivityItem({
   iconColor: string;
 }) {
   return (
-    <div className="flex gap-3 items-start p-2.5 rounded-lg hover:bg-white/[0.03] border border-transparent hover:border-[var(--border-subtle)] transition-all duration-200">
+    <div className="flex gap-2.5 items-start px-2 py-1.5 rounded-lg hover:bg-white/[0.03] border border-transparent hover:border-[var(--border-subtle)] transition-all duration-200">
       <div
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] ${iconColor}`}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-subtle)] ${iconColor}`}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className="h-3.5 w-3.5" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
@@ -220,13 +220,27 @@ export function DashboardActivityItem({
 
 export function DashboardEmptyActivities() {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-center px-4 py-8">
-      <div className="w-14 h-14 rounded-2xl bg-white/5 border border-[var(--border-subtle)] flex items-center justify-center mb-3">
-        <span className="text-2xl opacity-60">📋</span>
+    <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center px-4 py-6">
+      <div className="w-11 h-11 rounded-xl bg-white/5 border border-[var(--border-subtle)] flex items-center justify-center mb-2.5">
+        <span className="text-xl opacity-60">📋</span>
       </div>
       <p className="text-sm font-medium text-[var(--text-secondary)]">Nenhuma atividade recente</p>
       <p className="text-xs text-[var(--text-muted)] mt-1">
         Vendas, reservas e contratos aparecerão aqui
+      </p>
+    </div>
+  );
+}
+
+export function DashboardActivitiesError({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center px-4 py-6">
+      <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-2.5">
+        <span className="text-xl opacity-80">!</span>
+      </div>
+      <p className="text-sm font-medium text-rose-300">Não foi possível carregar as atividades</p>
+      <p className="text-xs text-[var(--text-muted)] mt-1 max-w-[240px]">
+        {message || 'Erro ao consultar o histórico operacional.'}
       </p>
     </div>
   );
@@ -294,15 +308,15 @@ export const LotsDonutChart = memo(function LotsDonutChart({
 }) {
   return (
     <div className="flex h-full items-center gap-2">
-      <div className="relative h-[180px] w-[48%] min-w-[120px]">
+      <div className="relative h-[150px] w-[48%] min-w-[110px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={pieData}
               cx="50%"
               cy="50%"
-              innerRadius={52}
-              outerRadius={72}
+              innerRadius={42}
+              outerRadius={60}
               paddingAngle={4}
               dataKey="value"
               stroke="none"
@@ -382,46 +396,45 @@ export function FinancialSummaryCard({
 }) {
   const positive = saldo >= 0;
   const margemClamped = Math.min(100, Math.max(0, margemPercent));
+  const margemLabel = loading
+    ? '—'
+    : `${margemPercent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
   return (
-    <div className="dash-chart-body flex flex-col justify-between gap-3 py-1">
-      <div className="space-y-2">
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-[var(--text-muted)]">Entradas</span>
-          <span className="font-semibold text-emerald-400 tabular-nums">
+    <div className="dash-finance-summary-body">
+      <div className="dash-finance-metrics">
+        <div className="dash-finance-metric">
+          <span className="dash-finance-metric-label">Entradas</span>
+          <span className="dash-finance-metric-value text-emerald-400">
             {loading ? '—' : formatCurrency(entradas)}
           </span>
         </div>
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-[var(--text-muted)]">Saídas</span>
-          <span className="font-semibold text-rose-400 tabular-nums">
+        <div className="dash-finance-metric">
+          <span className="dash-finance-metric-label">Saídas</span>
+          <span className="dash-finance-metric-value text-rose-400">
             {loading ? '—' : formatCurrency(saidas)}
           </span>
         </div>
-        <div className="flex justify-between items-center pt-2 border-t border-[var(--border-subtle)] text-sm">
-          <span className="text-[var(--text-secondary)] font-medium">Saldo</span>
+        <div className="dash-finance-metric">
+          <span className="dash-finance-metric-label">Saldo</span>
           <span
-            className={`font-bold tabular-nums flex items-center gap-1 ${positive ? 'text-blue-400' : 'text-rose-400'}`}
+            className={`dash-finance-metric-value flex items-center gap-0.5 ${positive ? 'text-blue-400' : 'text-rose-400'}`}
           >
             {positive ? (
-              <ArrowUpRight className="h-3.5 w-3.5" />
+              <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
             ) : (
-              <ArrowDownRight className="h-3.5 w-3.5" />
+              <ArrowDownRight className="h-3.5 w-3.5 shrink-0" />
             )}
             {loading ? '—' : formatCurrency(saldo)}
           </span>
         </div>
+        <div className="dash-finance-metric">
+          <span className="dash-finance-metric-label">Margem</span>
+          <span className="dash-finance-metric-value text-[var(--text-primary)]">{margemLabel}</span>
+        </div>
       </div>
       <div>
-        <div className="flex justify-between text-[10px] mb-1">
-          <span className="text-[var(--text-muted)] uppercase tracking-wider font-semibold">Margem</span>
-          <span className="text-[var(--text-primary)] font-bold">
-            {loading
-              ? '—'
-              : `${margemPercent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
-          </span>
-        </div>
-        <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-700 ${positive ? 'bg-gradient-to-r from-blue-600 to-blue-400' : 'bg-gradient-to-r from-rose-600 to-rose-400'}`}
             style={{ width: `${margemClamped}%` }}
