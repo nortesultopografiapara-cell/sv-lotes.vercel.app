@@ -117,6 +117,7 @@
     "test:master-executive-scroll-browser": "tsx scripts/mandatory-master-executive-scroll-browser-tests.ts",
     "test:dashboard-company-aggregates": "tsx scripts/mandatory-dashboard-company-aggregates-tests.ts",
     "test:enterprise-value-summary": "tsx scripts/mandatory-enterprise-value-summary-tests.ts",
+    "test:finance-layout-compact": "tsx scripts/mandatory-finance-layout-compact-tests.ts",
     "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts",
     "test:dashboard-v2-layout": "tsx scripts/mandatory-dashboard-v2-layout-tests.ts",
     "test:dashboard-financial-evolution": "tsx scripts/mandatory-dashboard-financial-evolution-tests.ts",

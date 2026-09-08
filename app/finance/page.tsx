@@ -3145,7 +3145,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="finance-premium sv-page--mobile-pad flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto sv-scrollbar sv-scrollbar-dark p-4 md:p-6 lg:p-7 h-full font-sans">
+    <div className="finance-premium sv-page--mobile-pad flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto sv-scrollbar sv-scrollbar-dark p-3 md:p-4 lg:p-5 h-full font-sans">
       {financeToast && (
         <div
           role="status"
@@ -3160,75 +3160,33 @@ export default function FinancePage() {
         </div>
       )}
 
-      {/* HEADER */}
-      <header className="mb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 min-w-0 max-w-full">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
-            Módulo Financeiro
-          </h1>
-          <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-[0.2em] mt-0.5">
-            Contratos · Títulos · Inadimplência
-          </p>
-        </div>
-        <div className="finance-header-actions mt-4 md:mt-0 md:w-auto">
-          {!ownerReadOnly ? (
-          <>
-          <button onClick={handleBulkDelete} className="bg-transparent border border-[var(--danger)]/30 hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--danger)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
-            <Trash2 className="w-4 h-4" />
-            Limpar
-          </button>
-          
-          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
-          </>
-          ) : null}
-
-          <button onClick={handleExportResumidoPDF} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
-            <FileText className="w-4 h-4 text-[#e74c3c]" />
-            PDF Res.
-          </button>
-          <button onClick={handleExportResumidoExcel} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
-            <Download className="w-4 h-4 text-[#27ae60]" />
-            Excel Res.
-          </button>
-
-          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
-
-          <button onClick={() => setShowProjectReportModal(true)} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all text-sm w-full md:w-auto">
-            <PieChart className="w-4 h-4" />
-            Fluxo por Empreendimento
-          </button>
-
-          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
-
-          {!ownerReadOnly ? (
-          <button onClick={() => { setEditingCashMovementId(null); setSaidaForm({ ...INITIAL_SAIDA_FORM }); setShowSaidaModal(true); }} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
-            <TrendingDown className="w-4 h-4" />
-            Registrar Saída
-          </button>
-          ) : null}
-
-          {!ownerReadOnly ? (
-          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
-          ) : null}
-
-          <button onClick={handleExportPDF} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
-            <FileText className="w-4 h-4" />
-            PDF Compl.
-          </button>
-          <button onClick={handleExportExcel} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
-            <Download className="w-4 h-4" />
-            Excel Compl.
-          </button>
-        </div>
+      {/* HEADER — título limpo; ações vão para a barra abaixo dos filtros */}
+      <header className="finance-module-header">
+        <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
+          Módulo Financeiro
+        </h1>
+        <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-[0.2em] mt-0.5">
+          Contratos · Títulos · Inadimplência
+        </p>
       </header>
 
       {showEnterpriseValues && enterpriseSummary && enterpriseFinanceTotals ? (
-        <>
-          <p className="finance-section-title">
-            {projectFilter === 'Todos os projetos'
-              ? 'Resumo financeiro global'
-              : 'Resumo do empreendimento'}
-          </p>
+        <section className="finance-global-block">
+          <div className="finance-block-head">
+            <p className="finance-section-title">
+              {projectFilter === 'Todos os projetos'
+                ? 'Resumo financeiro global'
+                : 'Resumo do empreendimento'}
+            </p>
+            <p className="finance-scope-label">
+              Escopo:{' '}
+              <span>
+                {projectFilter === 'Todos os projetos'
+                  ? 'Todos os empreendimentos'
+                  : projectFilter}
+              </span>
+            </p>
+          </div>
           <EnterpriseFinanceSummary
             summary={enterpriseSummary}
             totalRecebido={enterpriseFinanceTotals.totalRecebido}
@@ -3236,12 +3194,11 @@ export default function FinancePage() {
             projectName={projectFilter}
             mode={projectFilter === 'Todos os projetos' ? 'global' : 'project'}
           />
-        </>
+        </section>
       ) : null}
 
-      {/* KPIs — 3 colunas desktop, compactos */}
       <p className="finance-section-title">Resumo financeiro</p>
-      <div className="finance-kpi-grid mb-5">
+      <div className="finance-kpi-grid finance-kpi-grid--summary">
         <FinanceStatCard
           title="Entradas Totais"
           value={formatCurrency(stats.entradasCaixa)}
@@ -3305,7 +3262,7 @@ export default function FinancePage() {
       {companyAsaasActive && bankingUiEnabled && asaasAccessAvailable ? (
         <>
           <p className="finance-section-title">Cobranças Asaas</p>
-          <div className="finance-kpi-grid mb-5">
+          <div className="finance-kpi-grid finance-kpi-grid--asaas">
             <FinanceStatCard
               title="Cobranças emitidas"
               value={String(asaasChargeSummary?.totalCharges ?? 0)}
@@ -3350,8 +3307,6 @@ export default function FinancePage() {
         </button>
       </div>
 
-      {activeTab === 'parcelas' && (
-      <>
       {/* FILTERS — barra compacta sticky */}
       <div className="finance-filters-bar" role="search">
         <div className="relative finance-filter-search">
@@ -3429,8 +3384,61 @@ export default function FinancePage() {
         </button>
       </div>
 
+      <div className="finance-header-actions finance-toolbar-actions">
+          {!ownerReadOnly ? (
+          <>
+          <button onClick={handleBulkDelete} className="bg-transparent border border-[var(--danger)]/30 hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--danger)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap">
+            <Trash2 className="w-4 h-4" />
+            Limpar
+          </button>
+          
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
+          </>
+          ) : null}
+
+          <button onClick={handleExportResumidoPDF} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap">
+            <FileText className="w-4 h-4 text-[#e74c3c]" />
+            PDF Res.
+          </button>
+          <button onClick={handleExportResumidoExcel} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap">
+            <Download className="w-4 h-4 text-[#27ae60]" />
+            Excel Res.
+          </button>
+
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
+
+          <button onClick={() => setShowProjectReportModal(true)} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all text-sm w-full md:w-auto">
+            <PieChart className="w-4 h-4" />
+            Fluxo por Empreendimento
+          </button>
+
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
+
+          {!ownerReadOnly ? (
+          <button onClick={() => { setEditingCashMovementId(null); setSaidaForm({ ...INITIAL_SAIDA_FORM }); setShowSaidaModal(true); }} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
+            <TrendingDown className="w-4 h-4" />
+            Registrar Saída
+          </button>
+          ) : null}
+
+          {!ownerReadOnly ? (
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
+          ) : null}
+
+          <button onClick={handleExportPDF} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap">
+            <FileText className="w-4 h-4" />
+            PDF Compl.
+          </button>
+          <button onClick={handleExportExcel} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap">
+            <Download className="w-4 h-4" />
+            Excel Compl.
+          </button>
+      </div>
+
+      {activeTab === 'parcelas' && (
+      <>
       {/* TABELA PARCELAS — prioridade visual */}
-      <div className="finance-table-panel mb-6 flex flex-col min-w-0 max-w-full">
+      <div className="finance-table-panel mb-3 flex flex-col min-w-0 max-w-full">
         <div className="finance-table-scroll">
           <table className="finance-table finance-table-parcels text-left">
             <colgroup>
@@ -3568,7 +3576,7 @@ export default function FinancePage() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-card)]/50 px-4 py-3 mb-4 text-xs text-[var(--text-muted)]">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-card)]/50 px-3 py-1.5 mb-2 text-xs text-[var(--text-muted)]">
         <BookOpen className="w-4 h-4 text-blue-400/70 shrink-0" />
         <span>
           Use os filtros para refinar · <Eye className="w-3 h-3 inline" /> detalhes ·{' '}
