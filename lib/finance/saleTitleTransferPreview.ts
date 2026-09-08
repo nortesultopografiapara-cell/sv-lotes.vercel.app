@@ -24,6 +24,7 @@ import {
   TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES_MESSAGE,
   TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE,
 } from '@/lib/finance/saleTitleTransferExternalCharges';
+import { TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE } from '@/lib/finance/saleTitleTransferExecute';
 
 export const TITLE_TRANSFER_CROSS_TENANT = LOT_SWAP_CROSS_TENANT;
 export const TITLE_TRANSFER_SALE_NOT_FOUND = 'SALE_NOT_FOUND';
@@ -277,6 +278,9 @@ export function mapTitleTransferPreviewUserMessage(input: {
   }
   if (code === 'TITLE_TRANSFER_ORPHAN_OPEN_CHARGES') {
     return TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE;
+  }
+  if (code === 'TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING') {
+    return TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE;
   }
   if (code === 'TITLE_TRANSFER_ORPHAN_NOT_INTER') {
     return 'Há cobrança órfã que não é Inter. A resolução não a cancela automaticamente.';

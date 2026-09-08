@@ -10,7 +10,18 @@ import {
   listRegisteredExternalChargeProviders,
 } from '@/lib/finance/externalCharges';
 import type { ExternalChargeRecord } from '@/lib/finance/externalCharges/types';
-import { reduceTitleTransferExternalCharges } from '@/lib/finance/saleTitleTransferExternalCharges';
+import {
+  reduceTitleTransferExternalCharges,
+  TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES,
+} from '@/lib/finance/saleTitleTransferExternalCharges';
+import {
+  TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING,
+  TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE,
+} from '@/lib/finance/saleTitleTransferExecute';
+import {
+  isTitleTransferOrphanResolveUiEnabled,
+  titleTransferHasProductionInterRemoteCancelPending,
+} from '@/lib/finance/saleTitleTransferChargesLiveScope';
 import { loadLotSwapCallerProfile } from '@/lib/finance/saleLotSwapPreviewService';
 import {
   dropColumnFromSelectList,
@@ -79,6 +90,7 @@ export type TitleTransferPreviewPayload = {
   remoteApiCalled: false;
   cancelCharges: false;
   generateCharges: false;
+  orphanResolveEnabled: boolean;
   notice: string;
   current: {
     saleId: string;
@@ -224,6 +236,18 @@ function classifyExternalCharges(
     [...providers].find((code) => code === 'ASAAS' || code === 'INTER') ||
     [...providers][0] ||
     null;
+  let blockCode = reduced.blockCode;
+  let blockMessage = reduced.blockMessage;
+  if (
+    reduced.blockCode !== TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES &&
+    titleTransferHasProductionInterRemoteCancelPending({
+      open: reduced.open,
+      orphans: reduced.orphans,
+    })
+  ) {
+    blockCode = TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING;
+    blockMessage = TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE;
+  }
   return {
     mutation: false,
     remoteApiCalled: false,
@@ -236,8 +260,8 @@ function classifyExternalCharges(
     nonCancelable: reduced.nonCancelable,
     orphans: reduced.orphans,
     ambiguousReceiptIds: reduced.ambiguousReceiptIds,
-    blockCode: reduced.blockCode,
-    blockMessage: reduced.blockMessage,
+    blockCode,
+    blockMessage,
   };
 }
 
@@ -440,6 +464,7 @@ export async function loadSaleTitleTransferPreview(
     remoteApiCalled: false,
     cancelCharges: false,
     generateCharges: false,
+    orphanResolveEnabled: isTitleTransferOrphanResolveUiEnabled(),
     notice: TITLE_TRANSFER_PREVIEW_NOTICE,
     current: {
       saleId,

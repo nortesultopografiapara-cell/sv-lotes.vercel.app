@@ -22,6 +22,8 @@ import {
   TITLE_TRANSFER_CHARGES_LIVE_DISABLED,
   TITLE_TRANSFER_CHARGES_NON_CANCELABLE,
   TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT,
+  TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING,
+  TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE,
   TITLE_TRANSFER_TITULAR_CHANGED,
   buildTitleTransferIdempotencyKey,
   parseTitleTransferExecuteRpcError,
@@ -169,12 +171,24 @@ function testLiveScopeAndRpcParser() {
     NEXT_PUBLIC_SUPABASE_URL: `https://${PRODUCTION_PROJECT_REF}.supabase.co`,
     [TITLE_TRANSFER_EXTERNAL_CHARGES_LIVE_ENV]: 'true',
   });
-  const prod = isTitleTransferExternalChargesLiveAuthorized({
+  const asaas = isTitleTransferExternalChargesLiveAuthorized({
     companyId: 'co-1',
     saleId: 'sale-1',
     providers: ['ASAAS'],
   });
-  assert(prod.live === false, 'Production LIVE off');
+  assert(asaas.live === true, 'Production Asaas LIVE on');
+  const inter = isTitleTransferExternalChargesLiveAuthorized({
+    companyId: 'co-1',
+    saleId: 'sale-1',
+    providers: ['INTER'],
+  });
+  assert(inter.live === false, 'Production Inter LIVE off');
+  const mixed = isTitleTransferExternalChargesLiveAuthorized({
+    companyId: 'co-1',
+    saleId: 'sale-1',
+    providers: ['ASAAS', 'INTER'],
+  });
+  assert(mixed.live === false, 'Production Asaas+Inter LIVE off');
   setTitleTransferChargesLiveScopeEnvForTests(null);
   const parsed = parseTitleTransferExecuteRpcError(
     'TITLE_TRANSFER_EXECUTE:CROSS_TENANT:A venda não pertence à empresa atual.',
@@ -598,6 +612,160 @@ async function testC6BlockedAndLiveOff() {
   console.log('OK testC6BlockedAndLiveOff');
 }
 
+async function testProductionAsaasOnInterBlockedWithoutPost() {
+  ensureExternalChargeProvidersRegistered();
+  const prodUrl = `https://${PRODUCTION_PROJECT_REF}.supabase.co`;
+  setTitleTransferChargesLiveScopeEnvForTests({
+    NEXT_PUBLIC_SUPABASE_URL: prodUrl,
+    VERCEL_ENV: 'production',
+  });
+
+  const asaasStore = baseStore();
+  asaasStore.company_asaas_charges = [
+    {
+      id: 'ch-open',
+      company_id: 'co-1',
+      sale_id: 'sale-1',
+      installment_id: 'r-future',
+      status: 'PENDING',
+      asaas_payment_id: 'pay_open',
+    },
+  ];
+  const asaasCanceled: string[] = [];
+  setExternalChargeMutationFnsForTests({
+    cancelAsaasCharge: async (_admin, _company, chargeId) => {
+      asaasCanceled.push(chargeId);
+      return { ok: true, reused: false, remoteConfirmed: true, chargeId, status: 'CANCELLED' };
+    },
+    cancelInterCharge: async () => {
+      throw new Error('não deve POST Inter em Production');
+    },
+  });
+  let asaasLocal = 0;
+  setTitleTransferLocalExecuteForTests(async (_admin, input) => {
+    asaasLocal += 1;
+    return localResult(asaasStore, input.transferId || 'tr-asaas');
+  });
+  const asaasOk = await executeSaleTitleTransferWithExternalCharges(adminFrom(asaasStore) as never, {
+    saleId: 'sale-1',
+    userId: 'user-1',
+    toCustomerId: 'cust-b',
+    expectedContractId: 'ct-1',
+    expectedBlockId: 'block-1',
+    confirmTransfer: true,
+  });
+  assert(asaasCanceled.includes('ch-open'), 'Production cancela Asaas');
+  assert(asaasLocal === 1, 'RPC depois do Asaas confirmado');
+  assert(asaasOk.canceledChargeIds.includes('ch-open'), 'Asaas na lista cancelada');
+
+  const interStore = baseStore();
+  interStore.bank_charges = [
+    {
+      id: 'i-open',
+      company_id: 'co-1',
+      sale_id: 'sale-1',
+      finance_receipt_id: 'r-future',
+      status: 'PENDING',
+      provider: 'INTER',
+      external_id: 'inter-open',
+    },
+  ];
+  const interPosted: string[] = [];
+  setExternalChargeMutationFnsForTests({
+    cancelInterCharge: async (_admin, _company, chargeId) => {
+      interPosted.push(chargeId);
+      return { ok: true, reused: false, remoteConfirmed: true, chargeId, status: 'CANCELLED' };
+    },
+    cancelAsaasCharge: async () => {
+      throw new Error('não deve cancelar Asaas neste caso');
+    },
+  });
+  let interLocal = 0;
+  setTitleTransferLocalExecuteForTests(async () => {
+    interLocal += 1;
+    return localResult(interStore, 'x');
+  });
+  try {
+    await executeSaleTitleTransferWithExternalCharges(adminFrom(interStore) as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      toCustomerId: 'cust-b',
+      expectedContractId: 'ct-1',
+      expectedBlockId: 'block-1',
+      confirmTransfer: true,
+    });
+    throw new Error('Inter Production deveria bloquear');
+  } catch (err) {
+    const tt = asTtError(err);
+    assert(tt.code === TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING, 'Inter BLOCKED');
+    assert(tt.message === TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE, 'mensagem Inter');
+    assert(interPosted.length === 0, 'sem POST Inter');
+    assert(interLocal === 0, 'sem RPC');
+  }
+
+  const mixed = baseStore();
+  mixed.company_asaas_charges = [
+    {
+      id: 'ch-open',
+      company_id: 'co-1',
+      sale_id: 'sale-1',
+      installment_id: 'r-future',
+      status: 'PENDING',
+      asaas_payment_id: 'pay_open',
+    },
+  ];
+  mixed.bank_charges = [
+    {
+      id: 'i-open',
+      company_id: 'co-1',
+      sale_id: 'sale-1',
+      finance_receipt_id: 'r-paid',
+      status: 'PENDING',
+      provider: 'INTER',
+      external_id: 'inter-orphan',
+    },
+  ];
+  const mixedAsaas: string[] = [];
+  const mixedInter: string[] = [];
+  setExternalChargeMutationFnsForTests({
+    cancelAsaasCharge: async (_admin, _company, chargeId) => {
+      mixedAsaas.push(chargeId);
+      return { ok: true, reused: false, remoteConfirmed: true, chargeId, status: 'CANCELLED' };
+    },
+    cancelInterCharge: async (_admin, _company, chargeId) => {
+      mixedInter.push(chargeId);
+      return { ok: true, reused: false, remoteConfirmed: true, chargeId, status: 'CANCELLED' };
+    },
+  });
+  let mixedLocal = 0;
+  setTitleTransferLocalExecuteForTests(async () => {
+    mixedLocal += 1;
+    return localResult(mixed, 'x');
+  });
+  try {
+    await executeSaleTitleTransferWithExternalCharges(adminFrom(mixed) as never, {
+      saleId: 'sale-1',
+      userId: 'user-1',
+      toCustomerId: 'cust-b',
+      expectedContractId: 'ct-1',
+      expectedBlockId: 'block-1',
+      confirmTransfer: true,
+    });
+    throw new Error('Asaas+Inter deveria bloquear antes do Asaas');
+  } catch (err) {
+    const tt = asTtError(err);
+    assert(tt.code === TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING, 'mix BLOCKED');
+    assert(mixedAsaas.length === 0, 'não cancela Asaas no mix');
+    assert(mixedInter.length === 0, 'sem POST Inter no mix');
+    assert(mixedLocal === 0, 'sem RPC no mix');
+  }
+
+  setExternalChargeMutationFnsForTests({});
+  setTitleTransferLocalExecuteForTests(null);
+  setTitleTransferChargesLiveScopeEnvForTests(null);
+  console.log('OK testProductionAsaasOnInterBlockedWithoutPost');
+}
+
 async function testGuardsAACrossTenantAndConfirm() {
   const store = baseStore();
   try {
@@ -954,9 +1122,10 @@ function testSourceArchitecture() {
   assert(!orch.includes('LOT_SWAP_EXTERNAL_CHARGES_LIVE'), 'LIVE isolado');
   assert(!orch.includes('/api/lots/'), 'sem release');
   assert(!orch.includes('seller_parties_json'), 'sem Mundo Novo');
+  assert(orch.includes('titleTransferHasProductionInterRemoteCancelPending'), 'gate Inter Production');
   assert(orch.includes('assertExternalChargeCancelConfirmed'), 'exige confirmação remota');
   const panel = read('components/map/TitleTransferPreviewPanel.tsx');
-  assert(panel.includes('Transferir titularidade'), 'UI executar');
+  assert(panel.includes('orphanResolveEnabled'), 'órfãs só fora de Production');
   assert(panel.includes('TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT'), 'checkbox constante');
   assert(panel.includes('Transferência de titularidade concluída'), 'UX sucesso');
   const executeLib = read('lib/finance/saleTitleTransferExecute.ts');
@@ -1103,6 +1272,7 @@ async function main() {
   await testExecuteABNoExternalCharges();
   await testCancelOpenThenLocalAndFailureBlocks();
   await testC6BlockedAndLiveOff();
+  await testProductionAsaasOnInterBlockedWithoutPost();
   await testGuardsAACrossTenantAndConfirm();
   await testChainPreviousTransferId();
   await testInterEquivalentAndRetry();

@@ -11,6 +11,10 @@ export const TITLE_TRANSFER_EXECUTE_CONFIRM_TEXT =
 export const TITLE_TRANSFER_CHARGES_NON_CANCELABLE = 'TITLE_TRANSFER_CHARGES_NON_CANCELABLE';
 export const TITLE_TRANSFER_CHARGES_LIVE_DISABLED = 'TITLE_TRANSFER_CHARGES_LIVE_DISABLED';
 export const TITLE_TRANSFER_CHARGES_CANCEL_FAILED = 'TITLE_TRANSFER_CHARGES_CANCEL_FAILED';
+export const TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING =
+  'TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING';
+export const TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE =
+  'Há título Inter em aberto. O cancelamento automático pelo Banco Inter ainda não está homologado. Cancele os títulos no Internet Banking, sincronize as cobranças no SV LOTES até que estejam canceladas e depois execute novamente a transferência de titularidade.';
 export {
   TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES,
   TITLE_TRANSFER_ORPHAN_OPEN_CHARGES,

@@ -19,6 +19,8 @@ import {
   TITLE_TRANSFER_CHARGES_NON_CANCELABLE,
   TITLE_TRANSFER_CONFIRM_REQUIRED,
   TITLE_TRANSFER_INFLIGHT,
+  TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING,
+  TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE,
   TITLE_TRANSFER_TITULAR_CHANGED,
   assertExternalChargeCancelConfirmed,
   buildTitleTransferIdempotencyKey,
@@ -38,6 +40,7 @@ import {
 import {
   isTitleTransferExternalChargesLiveAuthorized,
   resolveTitleTransferExternalChargesLiveScope,
+  titleTransferHasProductionInterRemoteCancelPending,
 } from '@/lib/finance/saleTitleTransferChargesLiveScope';
 import { prepareTitleTransferPlanPreview } from '@/lib/finance/saleTitleTransferPlanService';
 import {
@@ -431,6 +434,33 @@ export async function executeSaleTitleTransferWithExternalCharges(
     ? [...(existingSnap?.canceledChargeIds as string[])]
     : [];
   let remoteApiCalled = false;
+
+  if (
+    titleTransferHasProductionInterRemoteCancelPending({
+      open: reduced.open,
+      orphans: reduced.orphans,
+      wouldCancel,
+    })
+  ) {
+    await persistChargesPhase(admin, {
+      transferId,
+      companyId,
+      phase: 'FAILED',
+      snapshot: {
+        failedStage: 'BLOCK',
+        canceledChargeIds,
+        orphanChargeIds: reduced.orphans.map((row) => row.chargeId),
+        interRemoteCancelPending: true,
+        remoteApiCalled: false,
+      },
+      error: TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING,
+    });
+    throw new TitleTransferPreviewError(
+      TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE,
+      TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING,
+      409,
+    );
+  }
 
   if (reduced.blockCode) {
     await persistChargesPhase(admin, {

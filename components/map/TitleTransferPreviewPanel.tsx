@@ -302,7 +302,12 @@ export function TitleTransferPreviewPanel({
   }
 
   async function resolveOrphanCharges() {
-    if (!payload || payload.externalCharges.orphans.length === 0 || resolveOrphansLoading) {
+    if (
+      !payload ||
+      !payload.orphanResolveEnabled ||
+      payload.externalCharges.orphans.length === 0 ||
+      resolveOrphansLoading
+    ) {
       return;
     }
     setResolveOrphansLoading(true);
@@ -494,8 +499,8 @@ export function TitleTransferPreviewPanel({
           />
         </div>
         <p className="text-xs text-slate-500">
-          Classificação local. Nenhum título Asaas/Inter será cancelado ou gerado agora,
-          salvo pela ação Resolver cobranças órfãs.
+          Classificação local. Nenhum título Asaas/Inter será cancelado ou gerado agora
+          {payload.orphanResolveEnabled ? ', salvo pela ação Resolver cobranças órfãs.' : '.'}
         </p>
         {externalCharges.blockMessage ? (
           <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -520,17 +525,21 @@ export function TitleTransferPreviewPanel({
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              disabled={resolveOrphansLoading || executeLoading || executeDone}
-              onClick={() => void resolveOrphanCharges()}
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
-            >
-              {resolveOrphansLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              Resolver cobranças órfãs
-            </button>
-            {resolveOrphansError ? (
-              <p className="text-sm text-amber-800">{resolveOrphansError}</p>
+            {payload.orphanResolveEnabled ? (
+              <>
+                <button
+                  type="button"
+                  disabled={resolveOrphansLoading || executeLoading || executeDone}
+                  onClick={() => void resolveOrphanCharges()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
+                >
+                  {resolveOrphansLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Resolver cobranças órfãs
+                </button>
+                {resolveOrphansError ? (
+                  <p className="text-sm text-amber-800">{resolveOrphansError}</p>
+                ) : null}
+              </>
             ) : null}
           </div>
         ) : null}
@@ -818,17 +827,21 @@ export function TitleTransferPreviewPanel({
                   </li>
                 ))}
               </ul>
-              <button
-                type="button"
-                disabled={resolveOrphansLoading || executeLoading || executeDone}
-                onClick={() => void resolveOrphanCharges()}
-                className="inline-flex items-center gap-2 rounded-lg bg-amber-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
-              >
-                {resolveOrphansLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Resolver cobranças órfãs
-              </button>
-              {resolveOrphansError ? (
-                <p className="text-sm text-amber-800">{resolveOrphansError}</p>
+              {payload.orphanResolveEnabled ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={resolveOrphansLoading || executeLoading || executeDone}
+                    onClick={() => void resolveOrphanCharges()}
+                    className="inline-flex items-center gap-2 rounded-lg bg-amber-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
+                  >
+                    {resolveOrphansLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Resolver cobranças órfãs
+                  </button>
+                  {resolveOrphansError ? (
+                    <p className="text-sm text-amber-800">{resolveOrphansError}</p>
+                  ) : null}
+                </>
               ) : null}
             </div>
           ) : null}

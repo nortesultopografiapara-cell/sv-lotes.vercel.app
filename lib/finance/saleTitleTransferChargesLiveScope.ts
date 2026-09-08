@@ -1,7 +1,7 @@
 /**
  * LIVE do cancelamento externo da Transferência de titularidade — fail closed.
  * Isolado de LOT_SWAP_EXTERNAL_CHARGES_LIVE.
- * Production: sempre OFF.
+ * Production: Asaas homologado ON; Inter remoto BLOCKED (sem POST /cancelar).
  * LIVE=true global: inválido.
  * DEVELOP sem LIVE=scoped: cancela Asaas/Inter automaticamente (homologação).
  */
@@ -10,7 +10,12 @@ import {
   isDevelopHomologRuntime,
   isProductionSupabaseRuntime,
 } from '@/lib/homolog/env';
-import { normalizeExternalChargeProviderCode } from '@/lib/finance/externalCharges/types';
+import {
+  EXTERNAL_CHARGE_PROVIDER_ASAAS,
+  EXTERNAL_CHARGE_PROVIDER_INTER,
+  normalizeExternalChargeProviderCode,
+} from '@/lib/finance/externalCharges/types';
+import { TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE } from '@/lib/finance/saleTitleTransferExecute';
 
 export const TITLE_TRANSFER_EXTERNAL_CHARGES_LIVE_ENV =
   'TITLE_TRANSFER_EXTERNAL_CHARGES_LIVE';
@@ -89,13 +94,23 @@ export function resolveTitleTransferExternalChargesLiveScope(
   input: TitleTransferChargesLiveScopeInput,
 ): TitleTransferChargesLiveScopeResult {
   const url = supabaseUrlFrom(input);
-  const productionRuntime = isProductionSupabaseRuntime(url);
+  const productionRuntime =
+    isProductionSupabaseRuntime(url) ||
+    String(readEnv('VERCEL_ENV') || '').toLowerCase() === 'production';
   const developRuntime = isDevelopHomologRuntime(url);
   const mode = readEnv(TITLE_TRANSFER_EXTERNAL_CHARGES_LIVE_ENV);
   const modeScoped = mode === TITLE_TRANSFER_CHARGES_LIVE_MODE_SCOPED;
   const provider = normalizeExternalChargeProviderCode(input.provider);
 
   if (productionRuntime) {
+    if (provider === EXTERNAL_CHARGE_PROVIDER_ASAAS) {
+      return {
+        live: true,
+        liveScoped: false,
+        reason: 'PRODUCTION_ASAAS_HOMOLOGATED',
+        provider,
+      };
+    }
     return { live: false, liveScoped: false, reason: 'PRODUCTION', provider };
   }
   if (mode === 'true') {
@@ -166,3 +181,46 @@ export function isTitleTransferExternalChargesLiveAuthorized(input: {
   }
   return { live: true, liveScoped, provider: lastProvider };
 }
+
+export function isTitleTransferProductionRuntime(supabaseUrl?: string | null): boolean {
+  const url = String(
+    supabaseUrl ||
+      readEnv('NEXT_PUBLIC_SUPABASE_URL') ||
+      readEnv('SUPABASE_URL') ||
+      '',
+  ).trim();
+  if (isProductionSupabaseRuntime(url)) return true;
+  return String(readEnv('VERCEL_ENV') || '').toLowerCase() === 'production';
+}
+
+export function isTitleTransferOrphanResolveUiEnabled(supabaseUrl?: string | null): boolean {
+  if (isTitleTransferProductionRuntime(supabaseUrl)) return false;
+  const url = String(
+    supabaseUrl ||
+      readEnv('NEXT_PUBLIC_SUPABASE_URL') ||
+      readEnv('SUPABASE_URL') ||
+      '',
+  ).trim();
+  return isDevelopHomologRuntime(url);
+}
+
+function isInterChargeRow(row: { provider?: string | null }): boolean {
+  return normalizeExternalChargeProviderCode(row.provider) === EXTERNAL_CHARGE_PROVIDER_INTER;
+}
+
+export function titleTransferHasProductionInterRemoteCancelPending(input: {
+  open?: Array<{ provider?: string | null }>;
+  orphans?: Array<{ provider?: string | null }>;
+  wouldCancel?: Array<{ provider?: string | null }>;
+  supabaseUrl?: string | null;
+}): boolean {
+  if (!isTitleTransferProductionRuntime(input.supabaseUrl)) return false;
+  const rows = [
+    ...(input.open || []),
+    ...(input.orphans || []),
+    ...(input.wouldCancel || []),
+  ];
+  return rows.some(isInterChargeRow);
+}
+
+export { TITLE_TRANSFER_INTER_REMOTE_CANCEL_PENDING_MESSAGE };

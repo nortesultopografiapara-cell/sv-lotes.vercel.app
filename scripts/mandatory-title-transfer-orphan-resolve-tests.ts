@@ -579,14 +579,21 @@ function testSourceIsolation() {
   assert(!route.includes('execute_sale_title_transfer'), 'API sem RPC');
   assert(!route.includes('title-transfer/execute'), 'não chama execute');
 
-  const probe = read('app/api/finance/preview-inter-orphan-resolve/route.ts');
-  assert(probe.includes('cb342d20-caf8-4b1d-b477-1590992e6a90'), 'allowlist órfã 1');
-  assert(probe.includes('dc092750-4759-4409-b8c2-1afd4aa93c4a'), 'allowlist órfã 2');
-  assert(probe.includes('39ca3467-270e-4434-81b9-7ab145275f81'), 'venda LT 22');
-  assert(probe.includes('executeTransfer: false'), 'probe sem transferência');
+  assert(
+    !fs.existsSync(path.join(__dirname, '..', 'app/api/finance/preview-inter-orphan-get/route.ts')),
+    'probe GET removido',
+  );
+  assert(
+    !fs.existsSync(path.join(__dirname, '..', 'app/api/finance/preview-inter-orphan-resolve/route.ts')),
+    'probe resolve removido',
+  );
+  const mw = read('middleware.ts');
+  assert(!mw.includes('preview-inter-orphan-get'), 'middleware sem probe GET');
+  assert(!mw.includes('preview-inter-orphan-resolve'), 'middleware sem probe resolve');
 
   const panel = read('components/map/TitleTransferPreviewPanel.tsx');
-  assert(panel.includes('Resolver cobranças órfãs'), 'botão na UI');
+  assert(panel.includes('Resolver cobranças órfãs'), 'botão na UI DEVELOP');
+  assert(panel.includes('orphanResolveEnabled'), 'botão oculto em Production');
   assert(panel.includes('title-transfer/resolve-orphans'), 'POST resolver órfãs');
   assert(panel.includes('orphans.length > 0'), 'bloqueia Transfer com órfãs');
   assert(!panel.includes('title-transfer/execute') || panel.includes('executeTransfer'), 'Transfer permanece ação à parte');

@@ -611,13 +611,12 @@ function testSourceAndReleaseLotUntouched() {
   assert(releaseShared.includes("return 'ACERTOS'"), 'ReleaseLot ainda mapeia ACERTOS');
   assert(orch.includes('formatTitleTransferBankCancelFailure'), 'erro operacional no orquestrador');
   assert(!orch.includes("provider === 'INTER'"), 'orquestrador sem if INTER');
-  const api = read('app/api/finance/inter/diagnose-cancel/route.ts');
-  assert(api.includes('diagnoseIsolatedInterCancel'), 'rota de diagnóstico isolado');
-  assert(api.includes('execute_sale_title_transfer: false'), 'rota não dispara RPC');
-  assert(api.includes("error: 'Not found'"), '404 fora de DEVELOP/Preview');
+  assert(!fs.existsSync(path.join(__dirname, '..', 'app/api/finance/inter/diagnose-cancel/route.ts')), 'probe diagnose-cancel removido');
+  assert(cancel.includes('diagnoseIsolatedInterCancel'), 'helper de diagnóstico permanece');
   const transferOrch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
   assert(transferOrch.includes('cancelCancelableCharge'), 'Transferência usa registry');
   assert(!transferOrch.includes('diagnoseIsolatedInterCancel'), 'orquestrador sem diagnóstico isolado');
+  assert(transferOrch.includes('titleTransferHasProductionInterRemoteCancelPending'), 'gate Production Inter');
 }
 
 async function main() {
