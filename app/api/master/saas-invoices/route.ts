@@ -123,6 +123,7 @@ export async function POST(request: Request) {
         success: true,
         created: false,
         skipped: result.skipped,
+        skipCode: result.skipCode ?? null,
         invoice: result.invoice,
       });
     }

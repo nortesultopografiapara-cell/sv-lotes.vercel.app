@@ -380,6 +380,7 @@ function testMonthlyAsaasChargeFlow() {
   const page = read('app/saas-finance/page.tsx');
   assert(page.includes('Faturas completadas com PIX'), 'alerta mensal detalhado');
   assert(page.includes('Erros por empresa'), 'erros por empresa no alerta');
+  assert(page.includes('Empresas ignoradas:'), 'alerta mensal lista skips por empresa');
   assert(page.includes("setPanelView('cobrancas')"), 'view cobranças após geração mensal');
 }
 

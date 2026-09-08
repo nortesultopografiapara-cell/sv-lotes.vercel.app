@@ -1,5 +1,9 @@
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import {
+  isSplitBrainActiveFalse,
+  shouldPreserveValidSubscription,
+} from '@/lib/saasBillableStatus';
+import {
   formatReferenceMonthLabel,
   isPaidMasterSaasPayment,
   referenceMonthFromDate,
@@ -113,18 +117,50 @@ export function resolveCompanyOperationalStatus(company: {
   return company.active === false ? 'Inativa' : 'Ativa';
 }
 
+/** Normaliza leftover Ativa+active=false / canceled com pagamento ou vencimento futuro. */
+export function normalizeSaasFinancialStatusInput(
+  input: SaasFinancialStatusInput,
+): SaasFinancialStatusInput {
+  const company = { ...input.company };
+  if (isSplitBrainActiveFalse(company)) {
+    company.active = true;
+  }
+
+  let subscription = input.subscription ?? null;
+  const nextDue = input.nextDueDate ?? subscription?.next_due_date ?? null;
+  const preserve = shouldPreserveValidSubscription({
+    company: input.company,
+    subscription,
+    payments: input.payments,
+    nextDueDate: nextDue,
+    today: input.today,
+  });
+
+  if (subscription && subscription.contract_status === 'canceled' && preserve) {
+    subscription = { ...subscription, contract_status: 'active' };
+  }
+
+  return {
+    ...input,
+    company,
+    subscription,
+    nextDueDate: nextDue,
+  };
+}
+
 export function resolveSaasFinancialSituation(
   input: SaasFinancialStatusInput,
 ): SaasFinancialStatusResult {
-  const companyId = String(input.company.id || '');
-  const paidMonths = input.paidReferenceMonths ?? new Map<string, Set<string>>();
-  const latestPayments = buildLatestPaymentByCompany(input.payments ?? []);
+  const normalized = normalizeSaasFinancialStatusInput(input);
+  const companyId = String(normalized.company.id || '');
+  const paidMonths = normalized.paidReferenceMonths ?? new Map<string, Set<string>>();
+  const latestPayments = buildLatestPaymentByCompany(normalized.payments ?? []);
   const latest = companyId ? latestPayments.get(companyId) ?? null : null;
-  const today = startOfDay(input.today ?? new Date());
-  const opStatus = (input.company.status_operacional || '').toLowerCase().trim();
-  const subscription = input.subscription ?? null;
+  const today = startOfDay(normalized.today ?? new Date());
+  const opStatus = (normalized.company.status_operacional || '').toLowerCase().trim();
+  const subscription = normalized.subscription ?? null;
   const nextDueRaw =
-    input.nextDueDate ?? subscription?.next_due_date ?? null;
+    normalized.nextDueDate ?? subscription?.next_due_date ?? null;
 
   const lastPaymentDate = latest?.paid_at ?? null;
   const lastPaymentReference = latest?.reference_month ?? null;
@@ -144,7 +180,7 @@ export function resolveSaasFinancialSituation(
   }
 
   if (
-    input.company.active === false ||
+    normalized.company.active === false ||
     opStatus === 'inativo' ||
     opStatus === 'inativa' ||
     opStatus === 'bloqueada' ||

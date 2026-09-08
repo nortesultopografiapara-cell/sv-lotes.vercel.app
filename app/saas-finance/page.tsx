@@ -693,6 +693,15 @@ function SaaSFinancePageContent() {
           parts.push(`• ${err}`);
         }
       }
+      if (Array.isArray(json.skippedDetails) && json.skippedDetails.length > 0) {
+        parts.push('', 'Empresas ignoradas:');
+        for (const skip of json.skippedDetails as Array<Record<string, unknown>>) {
+          const name = String(skip.company_name || skip.company_id || 'empresa');
+          const code = String(skip.code || 'skipped');
+          const reason = String(skip.reason || '');
+          parts.push(`• ${name}: [${code}] ${reason}`.trim());
+        }
+      }
       alert(parts.join('\n'));
       if (created + completed > 0) {
         setPanelView('cobrancas');

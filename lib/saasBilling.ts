@@ -11,10 +11,16 @@ import {
   todayIsoDate,
 } from '@/lib/companySubscriptionDates';
 import {
-  isBillableCompany,
   resolveCompanyPricing,
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
+import {
+  COMPANY_NOT_BILLABLE_SKIP_CODE,
+  formatMonthlyBillableSkip,
+  logBillableSkip,
+  shouldReactivateCompanyOnPayment,
+  type MonthlyBillableSkip,
+} from '@/lib/saasBillableStatus';
 import { getGatewayBillingProvider } from '@/lib/gatewayBillingProvider';
 import {
   formatReferenceMonthLabel,
@@ -355,9 +361,20 @@ export async function generateInvoiceForCompany(
   company: CompanyPricingSource & { id: string; name?: string | null },
   subscription: CompanySubscription | null | undefined,
   options?: GenerateInvoiceOptions,
-): Promise<{ invoice: MasterSaasInvoice | null; created: boolean; skipped?: string }> {
-  if (!isBillableCompany(company)) {
-    return { invoice: null, created: false, skipped: 'Empresa não faturável' };
+): Promise<{
+  invoice: MasterSaasInvoice | null;
+  created: boolean;
+  skipped?: string;
+  skipCode?: typeof COMPANY_NOT_BILLABLE_SKIP_CODE;
+}> {
+  const billable = logBillableSkip(company, { stage: 'generateInvoiceForCompany' });
+  if (!billable.billable) {
+    return {
+      invoice: null,
+      created: false,
+      skipped: 'Empresa não faturável',
+      skipCode: COMPANY_NOT_BILLABLE_SKIP_CODE,
+    };
   }
 
   const referenceMonth = options?.referenceMonth || currentReferenceMonth();
@@ -474,6 +491,7 @@ export type GenerateMonthlyInvoicesResult = {
   skipped: number;
   errors: string[];
   invoices: MasterSaasInvoice[];
+  skippedDetails: MonthlyBillableSkip[];
 };
 
 /** Gera cobranças mensais para todas as empresas faturáveis (sem duplicar competência). */
@@ -487,6 +505,7 @@ export async function generateMonthlyInvoices(
     skipped: 0,
     errors: [],
     invoices: [],
+    skippedDetails: [],
   };
 
   const { data: companies, error: companiesErr } = await supabaseAdmin
@@ -503,7 +522,12 @@ export async function generateMonthlyInvoices(
   const subMap = new Map((subscriptions || []).map((s) => [s.company_id, s as CompanySubscription]));
 
   for (const company of companies || []) {
-    if (!isBillableCompany(company)) continue;
+    const billable = logBillableSkip(company, { stage: 'generateMonthlyInvoices' });
+    if (!billable.billable) {
+      result.skipped += 1;
+      result.skippedDetails.push(formatMonthlyBillableSkip(company));
+      continue;
+    }
 
     const subscription = subMap.get(company.id) ?? null;
     try {
@@ -799,12 +823,11 @@ export async function reactivateCompanyOnPayment(
 ): Promise<void> {
   const { data: company } = await supabaseAdmin
     .from('companies')
-    .select('status_operacional')
+    .select('status_operacional, active')
     .eq('id', companyId)
     .maybeSingle();
 
-  const status = (company?.status_operacional || '').toLowerCase();
-  if (status !== 'suspensa' && status !== 'inadimplente') return;
+  if (!shouldReactivateCompanyOnPayment(company || {})) return;
 
   const { data: openOverdue } = await supabaseAdmin
     .from('master_saas_invoices')

@@ -10,6 +10,7 @@ import {
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import { resolveSaasFinancialSituation } from '@/lib/masterSaasFinancialStatus';
+import { isSplitBrainActiveFalse } from '@/lib/saasBillableStatus';
 import {
   calculateMrrFromCompanies,
   getCompanyMonthlyPrice,
@@ -27,6 +28,7 @@ export { calculateMrrFromCompanies, getCompanyMonthlyPrice, getStandardPlanMonth
 export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
   const status = (company.status_operacional || '').toLowerCase().trim();
   if (['inativo', 'inativa', 'bloqueada', 'suspensa'].includes(status)) return false;
+  if (isSplitBrainActiveFalse(company)) return true;
   return company.active !== false;
 }
 
@@ -71,7 +73,7 @@ export function augmentCompanyBilling<T extends CompanyLike>(
   const subscription_status =
     financial.situation === 'VENCIDO' || (company.status_operacional || '').toLowerCase() === 'inadimplente'
       ? ('Inadimplente' as const)
-      : subscription?.contract_status === 'canceled' || financial.situation === 'INATIVO'
+      : financial.situation === 'INATIVO'
         ? ('Inativa' as const)
         : financial.situation === 'SUSPENSO'
           ? ('Suspensa' as const)

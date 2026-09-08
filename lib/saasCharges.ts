@@ -26,7 +26,12 @@ import {
   resolveAsaasDueDate,
   resolveSaasChargeDueDate,
 } from '@/lib/saasPixValidation';
-import { isBillableCompany } from '@/lib/companyPricing';
+import {
+  COMPANY_NOT_BILLABLE_SKIP_CODE,
+  formatMonthlyBillableSkip,
+  logBillableSkip,
+  type MonthlyBillableSkip,
+} from '@/lib/saasBillableStatus';
 import { todayIsoDate, toIsoDateOnly } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { logMasterApiStep } from '@/lib/masterApiPerfLog';
@@ -281,6 +286,7 @@ export type SaasPixChargeOutcome = 'created' | 'completed' | 'skipped';
 
 export type SaasChargeSkipCode =
   | 'invoice_missing'
+  | 'company_not_billable'
   | 'active_local_charge'
   | 'asaas_external_charge'
   | 'confirmed_manual_payment';
@@ -778,6 +784,7 @@ export type GenerateMonthlySaasChargesResult = {
   errors: string[];
   charges: SaasCharge[];
   invoices: MasterSaasInvoice[];
+  skippedDetails: MonthlyBillableSkip[];
 };
 
 /** Gera cobranças mensais reais (Asaas) para empresas faturáveis. */
@@ -795,6 +802,7 @@ export async function generateMonthlySaasCharges(
     errors: [],
     charges: [],
     invoices: [],
+    skippedDetails: [],
   };
 
   const { data: companies, error: companiesErr } = await supabaseAdmin
@@ -813,7 +821,12 @@ export async function generateMonthlySaasCharges(
   );
 
   for (const company of companies || []) {
-    if (!isBillableCompany(company)) continue;
+    const billable = logBillableSkip(company, { stage: 'generateMonthlySaasCharges' });
+    if (!billable.billable) {
+      result.skipped += 1;
+      result.skippedDetails.push(formatMonthlyBillableSkip(company));
+      continue;
+    }
 
     const subscription = subMap.get(company.id) ?? null;
     try {
@@ -842,6 +855,16 @@ export async function generateMonthlySaasCharges(
         if (gen.charge?.id) result.charges.push(gen.charge);
       } else {
         result.skipped += 1;
+        if (gen.skipped) {
+          result.skippedDetails.push({
+            company_id: String(company.id || ''),
+            company_name: String(company.name || company.id || ''),
+            code: gen.skipCode || 'skipped',
+            reason: gen.skipped,
+            active: company.active ?? null,
+            status_operacional: String(company.status_operacional || ''),
+          });
+        }
       }
     } catch (err) {
       result.errors.push(
@@ -884,7 +907,10 @@ export async function createSaasPixCharge(
   if (!invoice) {
     const referenceMonth = options?.referenceMonth || currentReferenceMonth();
     return returnSaasPixChargeSkipped(supabaseAdmin, {
-      reason: 'invoice_missing',
+      reason:
+        invoiceResult.skipCode === COMPANY_NOT_BILLABLE_SKIP_CODE
+          ? 'company_not_billable'
+          : 'invoice_missing',
       message: invoiceResult.skipped || 'Não foi possível gerar fatura',
       companyId: company.id,
       referenceMonth,
