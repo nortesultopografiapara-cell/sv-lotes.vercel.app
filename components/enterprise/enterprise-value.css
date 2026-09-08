@@ -61,19 +61,25 @@
 
 .enterprise-value-finance-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 640px) {
+  .enterprise-value-finance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
   .enterprise-value-finance-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
 .enterprise-value-finance-card {
-  padding: 0.65rem 0.75rem;
+  padding: 0.45rem 0.65rem;
   border-radius: 0.65rem;
   border: 1px solid var(--border-color);
   background: color-mix(in srgb, var(--bg-card) 90%, transparent);

@@ -1,5 +1,7 @@
 'use client';
 
+import { FileText, Landmark, Package, TrendingUp, Wallet } from 'lucide-react';
+import { FinanceStatCard } from '@/components/finance/FinancePremiumUI';
 import {
   formatEnterpriseCurrency,
   type EnterpriseValueSummary,
@@ -22,32 +24,45 @@ export function EnterpriseFinanceSummary({
 }: EnterpriseFinanceSummaryProps) {
   const scopeLabel =
     mode === 'global' ? 'Todos os empreendimentos' : projectName;
+  const soldLotCount = summary.soldCount + summary.paidCount;
 
   return (
     <div className="enterprise-value-finance-grid" data-testid="enterprise-finance-summary">
-      <div className="enterprise-value-finance-card">
-        <p>{mode === 'global' ? 'Valor global' : 'Valor total'}</p>
-        <p>{formatEnterpriseCurrency(summary.totalValue)}</p>
-      </div>
-      <div className="enterprise-value-finance-card">
-        <p>Valor vendido</p>
-        <p>{formatEnterpriseCurrency(summary.soldValue)}</p>
-      </div>
-      <div className="enterprise-value-finance-card">
-        <p>Valor recebido</p>
-        <p>{formatEnterpriseCurrency(totalRecebido)}</p>
-      </div>
-      <div className="enterprise-value-finance-card">
-        <p>Saldo a receber</p>
-        <p>{formatEnterpriseCurrency(saldoAReceber)}</p>
-      </div>
-      <div className="enterprise-value-finance-card">
-        <p>Valor disponível</p>
-        <p>{formatEnterpriseCurrency(summary.availableValue)}</p>
-      </div>
-      <p className="col-span-full text-[11px] text-[var(--text-muted)] -mt-1">
-        Escopo: <span className="text-[var(--text-secondary)]">{scopeLabel}</span>
-      </p>
+      <FinanceStatCard
+        title={mode === 'global' ? 'Valor Global' : 'Valor total'}
+        value={formatEnterpriseCurrency(summary.totalValue)}
+        subtitle={scopeLabel}
+        icon={<Landmark />}
+        iconWrapClass="bg-violet-500/12 text-violet-400"
+      />
+      <FinanceStatCard
+        title="Valor Disponível"
+        value={formatEnterpriseCurrency(summary.availableValue)}
+        subtitle={`${summary.availableCount} lotes disponíveis`}
+        icon={<Package />}
+        iconWrapClass="bg-emerald-500/12 text-emerald-400"
+      />
+      <FinanceStatCard
+        title="Valor Vendido"
+        value={formatEnterpriseCurrency(summary.soldValue)}
+        subtitle={`${soldLotCount} lotes vendidos/quitados`}
+        icon={<TrendingUp />}
+        iconWrapClass="bg-rose-500/12 text-rose-400"
+      />
+      <FinanceStatCard
+        title="Valor recebido"
+        value={formatEnterpriseCurrency(totalRecebido)}
+        subtitle="Pagamentos registrados"
+        icon={<Wallet />}
+        iconWrapClass="bg-emerald-500/12 text-emerald-400"
+      />
+      <FinanceStatCard
+        title="Saldo a receber"
+        value={formatEnterpriseCurrency(saldoAReceber)}
+        subtitle="Parcelas em aberto"
+        icon={<FileText />}
+        iconWrapClass="bg-blue-500/12 text-blue-400"
+      />
     </div>
   );
 }
