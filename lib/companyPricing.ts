@@ -4,6 +4,7 @@
  */
 
 import { parseCurrencyBRL } from '@/lib/currencyBrl';
+import { diagnoseBillableCompany } from '@/lib/saasBillableStatus';
 import {
   getCompanySaasPlan,
   isPersonalizadoPlanKey,
@@ -198,9 +199,7 @@ export function resolveCompanyPricing(
 }
 
 export function isBillableCompany(company: CompanyPricingSource): boolean {
-  if (company.active === false) return false;
-  const status = (company.status_operacional || '').toLowerCase();
-  return !['suspensa', 'bloqueada', 'inativo', 'inativa'].includes(status);
+  return diagnoseBillableCompany(company).billable;
 }
 
 export function calculateMrrFromCompanies(companies: CompanyPricingSource[]): number {

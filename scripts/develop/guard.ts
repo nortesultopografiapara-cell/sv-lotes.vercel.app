@@ -55,7 +55,13 @@ export function loadDevelopEnv(): {
   ref: string | null;
   source: string;
 } {
-  const files = ['.env.develop.apply', '.env.local', '.env.vercel.preview.live'];
+  const extra = process.env.SV_LOTES_DEVELOP_ENV;
+  const files = [
+    extra,
+    '.env.develop.apply',
+    '.env.local',
+    '.env.vercel.preview.live',
+  ].filter((f): f is string => Boolean(f));
   let merged: Record<string, string> = {};
   let source = 'process.env';
   for (const file of files) {

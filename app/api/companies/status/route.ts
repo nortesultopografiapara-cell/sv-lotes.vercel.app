@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { buildCompanyStatusUpdatePatch } from '@/lib/saasBillableStatus';
+import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 
 let supabaseAdmin: SupabaseClient | null = null;
 
@@ -71,7 +73,7 @@ export async function PATCH(request: Request) {
     // Prevent blocking the master company if it exists (assuming master logic)
     const { data: company, error: compError } = await supabaseAdmin
        .from('companies')
-       .select('id, name')
+       .select('id, name, status_operacional, active')
        .eq('id', companyId)
        .single();
        
@@ -87,13 +89,26 @@ export async function PATCH(request: Request) {
        // The UI already avoids showing block button for the Main one.
     }
 
+    const statusPatch = buildCompanyStatusUpdatePatch(status_operacional);
     const { error: updateError } = await supabaseAdmin
       .from('companies')
-      .update({ status_operacional })
+      .update({
+        ...statusPatch,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', companyId);
 
     if (updateError) {
       throw updateError;
+    }
+
+    try {
+      await updateCompanyFinancialStatus(supabaseAdmin, companyId);
+    } catch (financialErr) {
+      console.warn('[companies/status] updateCompanyFinancialStatus', {
+        companyId,
+        error: financialErr instanceof Error ? financialErr.message : String(financialErr),
+      });
     }
 
     // Audit Log
@@ -101,7 +116,12 @@ export async function PATCH(request: Request) {
        tenant_id: companyId,
        user_id: userId || callerId,
        action: 'COMPANY_STATUS_CHANGED',
-       details: JSON.stringify({ old_status: company.status_operacional, new: status_operacional })
+       details: JSON.stringify({
+         old_status: company.status_operacional,
+         old_active: company.active,
+         new: statusPatch.status_operacional,
+         new_active: statusPatch.active,
+       })
     }).then();
 
     return NextResponse.json({ success: true, message: 'Status atualizado com sucesso' });
