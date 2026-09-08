@@ -371,6 +371,7 @@ html[data-brand='purple'] {
 
 [data-theme='light'] .dashboard-premium .dash-analytics-card,
 [data-theme='light'] .dashboard-premium .dash-finance-card,
+[data-theme='light'] .dashboard-premium .dash-evolution-card,
 [data-theme='light'] .dashboard-premium .dash-chart-card,
 [data-theme='light'] .dashboard-premium .dash-kpi-metric,
 [data-theme='light'] .finance-premium .finance-table thead th,

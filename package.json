@@ -119,6 +119,7 @@
     "test:enterprise-value-summary": "tsx scripts/mandatory-enterprise-value-summary-tests.ts",
     "test:dashboard-lot-count-kpi": "tsx scripts/mandatory-dashboard-lot-count-kpi-tests.ts",
     "test:dashboard-v2-layout": "tsx scripts/mandatory-dashboard-v2-layout-tests.ts",
+    "test:dashboard-financial-evolution": "tsx scripts/mandatory-dashboard-financial-evolution-tests.ts",
     "test:contract-inline-signature-status": "tsx scripts/mandatory-contract-inline-signature-status-tests.ts",
     "test:global-sale-spouse-contract-models": "tsx scripts/mandatory-global-sale-spouse-contract-models-tests.ts",
     "test:araguaia-contract": "tsx scripts/mandatory-araguaia-contract-tests.ts",

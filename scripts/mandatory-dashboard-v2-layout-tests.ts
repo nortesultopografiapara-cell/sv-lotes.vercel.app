@@ -171,11 +171,11 @@ function testDashboardPageWiring() {
   assert(page.includes('buildDashboardLotDistribution'), 'mesma fonte dos KPIs');
   assert(page.includes('summarizeDashboardParcelStatus'), 'parcelas dos receipts');
   assert(page.includes('dash-finance-row'), 'reserva de layout para evolução futura');
-  assert(!page.includes('CashFlowBarChartPanel'), 'gráfico 6 meses adiado');
+  assert(page.includes('CashFlowBarChartPanel'), 'gráfico 6 meses ativado com dados paginados');
+  assert(page.includes('fetchAllCashMovementsPaged'), 'cash paginado');
   assert(!css.includes('min-height: 260px'), 'cards analíticos sem min-height inflado');
   assert(page.includes('FinancialIntegrationDashboardCard'), 'card Asaas');
   assert(page.includes('DashboardActivitiesError'), 'erro explícito da timeline');
-  assert(!page.includes('CashFlowBarChartPanel'), 'gráfico 6 meses adiado');
   assert(!page.includes('1247'), 'sem número mockado');
   assert(!page.includes('Não recebido'), 'sem categoria fictícia');
   assert(!page.includes('.insert('), 'dashboard sem insert');
