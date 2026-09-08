@@ -45,29 +45,47 @@ function testLotDonutUsesSameKpiSource() {
   console.log('OK testLotDonutUsesSameKpiSource');
 }
 
-function testParcelStatusUsesPersistedAtrasadoOnly() {
-  const counts = summarizeDashboardParcelStatus([
-    { status: 'pago' },
-    { status: 'paid' },
-    { status: 'pendente' },
-    { status: 'pending' },
-    { status: 'atrasado' },
-    { status: 'overdue' },
-    { status: 'cancelado' },
-    {
-      status: 'pendente',
-      due_date: '2000-01-01',
-    } as { status: string; due_date: string },
-  ]);
-  assert(counts.pago === 2, `pago=${counts.pago}`);
-  assert(counts.pendente === 3, `pendente inclui vencido persistido como pendente: ${counts.pendente}`);
-  assert(counts.atrasado === 2, `atrasado persistido=${counts.atrasado}`);
-  assert(counts.total === 7, 'cancelado fora do total');
+function testParcelStatusMatchesFinanceiroClassification() {
+  const today = '2026-09-08';
+  const counts = summarizeDashboardParcelStatus(
+    [
+      { status: 'pago', amount: 10 },
+      { status: 'paid', amount: 20 },
+      { status: 'pendente', due_date: '2026-09-08', amount: 30 },
+      { status: 'pending', due_date: '2099-01-01', amount: 40 },
+      { status: 'atrasado', amount: 50 },
+      { status: 'overdue', amount: 60 },
+      { status: 'cancelado', amount: 999 },
+      { status: 'pendente', due_date: '2000-01-01', amount: 1000 },
+      { status: 'pago', due_date: '2000-01-01', amount: 5 },
+    ],
+    today,
+  );
+  assert(counts.pago === 3, `pago=${counts.pago}`);
+  assert(counts.pendente === 2, `pendente futuro/hoje=${counts.pendente}`);
+  assert(counts.atrasado === 3, `atrasado operacional=${counts.atrasado}`);
+  assert(counts.total === 8, 'cancelado fora do total');
+  assert(counts.atrasadoAmount === 1110, `atrasadoAmount=${counts.atrasadoAmount}`);
+  assert(counts.pendenteAmount === 70, `pendenteAmount=${counts.pendenteAmount}`);
 
   const pie = buildDashboardParcelPieData(counts);
   assert(pie.map((s) => s.name).join('|') === 'Pago|Pendente|Atrasado', pie.map((s) => s.name).join('|'));
+  assert(pie.find((s) => s.name === 'Atrasado')?.value === 3, 'donut usa os mesmos atrasados');
   assert(!pie.some((s) => /outros|não recebido/i.test(s.name)), 'sem categorias fictícias');
-  console.log('OK testParcelStatusUsesPersistedAtrasadoOnly');
+  console.log('OK testParcelStatusMatchesFinanceiroClassification');
+}
+
+function testDashboardReusesFinanceiroHelper() {
+  const helper = read('lib/charges/chargeInstallmentHelpers.ts');
+  const dash = read('lib/dashboardParcelStatus.ts');
+  const page = read('app/dashboard/page.tsx');
+  assert(helper.includes('export function computeInstallmentStatus'), 'helper Financeiro/Cobranças');
+  assert(dash.includes('computeInstallmentStatus'), 'dashboard reutiliza o helper');
+  assert(page.includes('summarizeDashboardParcelStatus'), 'KPI e donut pelo mesmo resumo');
+  assert(page.includes('parcelSummary.atrasadoAmount'), 'KPI inadimplência do mesmo resumo');
+  assert(page.includes('parcelSummary.pendenteAmount'), 'A receber = pendente operacional');
+  assert(!page.includes('.update('), 'dashboard sem update');
+  console.log('OK testDashboardReusesFinanceiroHelper');
 }
 
 function testActivitiesMapRealLotAuditOnly() {
@@ -152,6 +170,9 @@ function testDashboardPageWiring() {
   assert(page.includes('LotsDonutChart'), 'donut de lotes');
   assert(page.includes('buildDashboardLotDistribution'), 'mesma fonte dos KPIs');
   assert(page.includes('summarizeDashboardParcelStatus'), 'parcelas dos receipts');
+  assert(page.includes('dash-finance-row'), 'reserva de layout para evolução futura');
+  assert(!page.includes('CashFlowBarChartPanel'), 'gráfico 6 meses adiado');
+  assert(!css.includes('min-height: 260px'), 'cards analíticos sem min-height inflado');
   assert(page.includes('FinancialIntegrationDashboardCard'), 'card Asaas');
   assert(page.includes('DashboardActivitiesError'), 'erro explícito da timeline');
   assert(!page.includes('CashFlowBarChartPanel'), 'gráfico 6 meses adiado');
@@ -182,7 +203,8 @@ function testNoNewFinancialRuleInCashFlow() {
 
 function main() {
   testLotDonutUsesSameKpiSource();
-  testParcelStatusUsesPersistedAtrasadoOnly();
+  testParcelStatusMatchesFinanceiroClassification();
+  testDashboardReusesFinanceiroHelper();
   testActivitiesMapRealLotAuditOnly();
   testDashboardPageWiring();
   testNoNewFinancialRuleInCashFlow();

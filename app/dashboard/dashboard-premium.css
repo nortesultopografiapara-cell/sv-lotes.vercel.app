@@ -157,7 +157,20 @@
   border-radius: 0.75rem;
   border: 1px solid var(--dash-border);
   background: var(--bg-card);
+}
+
+.dashboard-premium .dash-finance-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
   margin-bottom: 0.65rem;
+}
+
+/* Quando a série de 6 meses estiver segura, um segundo filho ocupa a coluna direita. */
+@media (min-width: 1280px) {
+  .dashboard-premium .dash-finance-row:has(.dash-evolution-card) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  }
 }
 
 .dashboard-premium .dash-finance-summary-body {
@@ -207,6 +220,7 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.65rem;
+  align-items: stretch;
 }
 
 @media (min-width: 768px) {
@@ -225,18 +239,13 @@
   min-height: 0;
   min-width: 0;
   height: auto;
-  padding: 0.75rem 0.85rem;
+  padding: 0.55rem 0.7rem 0.5rem;
   border-radius: 0.75rem;
   border: 1px solid var(--dash-border);
   background: var(--bg-card);
   display: flex;
   flex-direction: column;
-}
-
-@media (min-width: 1280px) {
-  .dashboard-premium .dash-analytics-card {
-    min-height: 260px;
-  }
+  justify-content: flex-start;
 }
 
 .dashboard-premium .dash-analytics-card-title {
@@ -245,27 +254,49 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-primary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
   flex-shrink: 0;
 }
 
 .dashboard-premium .dash-analytics-body {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
-.dashboard-premium .dash-activity-scroll {
-  flex: 1;
-  overflow-y: auto;
-  max-height: 240px;
-  padding: 0.15rem;
-  scrollbar-width: thin;
+.dashboard-premium .dash-donut {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 0;
 }
 
-@media (min-width: 1280px) {
-  .dashboard-premium .dash-activity-scroll {
-    max-height: none;
-  }
+.dashboard-premium .dash-donut-chart {
+  position: relative;
+  height: 112px;
+  width: 44%;
+  min-width: 96px;
+  flex-shrink: 0;
+}
+
+.dashboard-premium .dash-donut-legend {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.dashboard-premium .dash-donut-legend-item {
+  min-width: 0;
+}
+
+.dashboard-premium .dash-activity-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  max-height: 148px;
+  padding: 0.1rem;
+  scrollbar-width: thin;
 }
 
 .dashboard-premium .dash-compact-panel {

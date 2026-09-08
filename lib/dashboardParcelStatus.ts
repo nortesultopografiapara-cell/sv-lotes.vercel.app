@@ -1,11 +1,11 @@
 /**
  * Situação das parcelas no Dashboard — leitura dos finance_receipts já carregados.
- * Categorias persistidas: Pago | Pendente | Atrasado.
- *
- * NÃO aplica a regra de UI do Financeiro (pendente + due_date vencido = atrasado).
- * Essa diferença fica registrada para tarefa futura; o KPI Inadimplência permanece
- * apenas com status persistido atrasado/overdue.
+ * Classificação operacional: mesma regra do Financeiro/Cobranças
+ * (`computeInstallmentStatus`) — pendente + due_date < hoje vira atrasado
+ * só na UI, sem persistir status.
  */
+
+import { computeInstallmentStatus } from '@/lib/charges/chargeInstallmentHelpers';
 
 export type DashboardFinanceReceiptRow = {
   id?: string;
@@ -30,11 +30,15 @@ export type DashboardFinanceReceiptRow = {
   } | null;
 };
 
+export type DashboardParcelBucket = 'pago' | 'pendente' | 'atrasado' | 'cancelado' | 'other';
+
 export type DashboardParcelStatusCounts = {
   pago: number;
   pendente: number;
   atrasado: number;
   total: number;
+  pendenteAmount: number;
+  atrasadoAmount: number;
 };
 
 export type DashboardParcelPieSlice = {
@@ -43,38 +47,66 @@ export type DashboardParcelPieSlice = {
   color: string;
 };
 
+export const EMPTY_DASHBOARD_PARCEL_STATUS: DashboardParcelStatusCounts = {
+  pago: 0,
+  pendente: 0,
+  atrasado: 0,
+  total: 0,
+  pendenteAmount: 0,
+  atrasadoAmount: 0,
+};
+
 const PARCEL_SLICE_COLORS = {
   pago: '#10b981',
   pendente: '#f59e0b',
   atrasado: '#ef4444',
 } as const;
 
-function normalizeReceiptStatus(status: unknown): string {
-  return String(status || '')
-    .trim()
-    .toLowerCase();
+/** Mesma classificação operacional do Financeiro (via computeInstallmentStatus). */
+export function classifyDashboardParcelBucket(
+  row: { status?: string | null; due_date?: string | null },
+  todayStr?: string,
+): DashboardParcelBucket {
+  const computed = computeInstallmentStatus(row, todayStr).toLowerCase();
+  if (computed === 'pago' || computed === 'paid') return 'pago';
+  if (computed === 'cancelado' || computed === 'canceled' || computed === 'cancelled') {
+    return 'cancelado';
+  }
+  if (computed === 'atrasado' || computed === 'overdue') return 'atrasado';
+  if (computed === 'pendente' || computed === 'pending') return 'pendente';
+  return 'other';
 }
 
-/** Conta parcelas pelos status persistidos. Canceladas ficam de fora do total. */
+/** Conta parcelas pela classificação operacional. Canceladas ficam de fora do total. */
 export function summarizeDashboardParcelStatus(
-  receipts: Array<{ status?: string | null }>,
+  receipts: Array<{
+    status?: string | null;
+    due_date?: string | null;
+    amount?: number | string | null;
+  }>,
+  todayStr?: string,
 ): DashboardParcelStatusCounts {
   let pago = 0;
   let pendente = 0;
   let atrasado = 0;
+  let pendenteAmount = 0;
+  let atrasadoAmount = 0;
 
   for (const receipt of receipts || []) {
-    const st = normalizeReceiptStatus(receipt.status);
-    if (st === 'pago' || st === 'paid') {
+    const bucket = classifyDashboardParcelBucket(receipt, todayStr);
+    const amount = Number(receipt.amount) || 0;
+    if (bucket === 'pago') {
       pago += 1;
       continue;
     }
-    if (st === 'atrasado' || st === 'overdue') {
+    if (bucket === 'atrasado') {
       atrasado += 1;
+      atrasadoAmount += amount;
       continue;
     }
-    if (st === 'pendente' || st === 'pending') {
+    if (bucket === 'pendente') {
       pendente += 1;
+      pendenteAmount += amount;
     }
   }
 
@@ -83,6 +115,8 @@ export function summarizeDashboardParcelStatus(
     pendente,
     atrasado,
     total: pago + pendente + atrasado,
+    pendenteAmount,
+    atrasadoAmount,
   };
 }
 

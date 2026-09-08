@@ -220,7 +220,7 @@ export function DashboardActivityItem({
 
 export function DashboardEmptyActivities() {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center px-4 py-6">
+    <div className="flex flex-col items-center justify-center h-full min-h-[96px] text-center px-3 py-3">
       <div className="w-11 h-11 rounded-xl bg-white/5 border border-[var(--border-subtle)] flex items-center justify-center mb-2.5">
         <span className="text-xl opacity-60">📋</span>
       </div>
@@ -234,7 +234,7 @@ export function DashboardEmptyActivities() {
 
 export function DashboardActivitiesError({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center px-4 py-6">
+    <div className="flex flex-col items-center justify-center h-full min-h-[96px] text-center px-3 py-3">
       <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-2.5">
         <span className="text-xl opacity-80">!</span>
       </div>
@@ -307,17 +307,17 @@ export const LotsDonutChart = memo(function LotsDonutChart({
   totalLotes: number;
 }) {
   return (
-    <div className="flex h-full items-center gap-2">
-      <div className="relative h-[150px] w-[48%] min-w-[110px]">
+    <div className="dash-donut">
+      <div className="dash-donut-chart">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={pieData}
               cx="50%"
               cy="50%"
-              innerRadius={42}
-              outerRadius={60}
-              paddingAngle={4}
+              innerRadius={34}
+              outerRadius={50}
+              paddingAngle={3}
               dataKey="value"
               stroke="none"
             >
@@ -329,21 +329,21 @@ export const LotsDonutChart = memo(function LotsDonutChart({
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">Total</span>
-          <span className="text-xl font-bold text-[var(--text-primary)]">{totalLotes}</span>
+          <span className="text-[8px] text-[var(--text-muted)] uppercase tracking-wider">Total</span>
+          <span className="text-lg font-bold text-[var(--text-primary)] leading-tight">{totalLotes}</span>
         </div>
       </div>
-      <div className="flex-1 space-y-2.5 pr-1">
+      <div className="dash-donut-legend">
         {pieData.map((d) => (
-          <div key={d.name}>
-            <div className="flex items-center gap-2">
+          <div key={d.name} className="dash-donut-legend-item">
+            <div className="flex items-center gap-1.5 min-w-0">
               <span
-                className="h-2 w-2 rounded-full shrink-0"
+                className="h-1.5 w-1.5 rounded-full shrink-0"
                 style={{ backgroundColor: d.color }}
               />
-              <span className="text-xs text-[var(--text-secondary)]">{d.name}</span>
+              <span className="text-[11px] text-[var(--text-secondary)] truncate">{d.name}</span>
             </div>
-            <span className="text-[10px] text-[var(--text-muted)] pl-4 block">
+            <span className="text-[10px] text-[var(--text-muted)] pl-[14px] block leading-tight">
               {d.value} ({totalLotes > 0 ? ((d.value / totalLotes) * 100).toFixed(1) : 0}%)
             </span>
           </div>
