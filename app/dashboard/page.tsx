@@ -37,6 +37,10 @@ import { applyTenantFilter, applyTenantIdEq, resolveRlsContext } from '@/lib/rls
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 import { calculateFinancialTotals } from '@/lib/financeCashFlow';
 import { fetchAllFinanceReceiptsPaged } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import {
+  fetchAllBrokerCommissionsPaged,
+  fetchAllCashMovementsPaged,
+} from '@/lib/finance/fetchFinanceCompanionPaged';
 import { buildDashboardLotDistribution } from '@/lib/dashboardLotDistribution';
 import {
   DASHBOARD_FINANCE_RECEIPTS_SELECT,
@@ -46,6 +50,10 @@ import {
   summarizeDashboardParcelStatus,
   type DashboardFinanceReceiptRow,
 } from '@/lib/dashboardParcelStatus';
+import {
+  buildDashboardFinancialEvolution,
+  type DashboardEvolutionPoint,
+} from '@/lib/dashboardFinancialEvolution';
 import {
   DASHBOARD_ACTIVITY_ACTIONS,
   DASHBOARD_ACTIVITY_LIMIT,
@@ -70,6 +78,7 @@ import {
   DashboardActivitiesError,
   FinancialSummaryCard,
   LotsDonutChart,
+  CashFlowBarChartPanel,
 } from '@/components/dashboard/DashboardPremiumUI';
 import { LotReportExportModal } from '@/components/dashboard/LotReportExportModal';
 import {
@@ -150,6 +159,9 @@ function OperationalDashboard({ user }: { user: any }) {
   const [activities, setActivities] = useState<DashboardActivityItemData[]>([]);
   const [activitiesError, setActivitiesError] = useState<string | null>(null);
   const [parcelStatus, setParcelStatus] = useState(EMPTY_DASHBOARD_PARCEL_STATUS);
+  const [evolutionSeries, setEvolutionSeries] = useState<DashboardEvolutionPoint[]>(
+    () => buildDashboardFinancialEvolution([], [], [], new Date()),
+  );
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -320,13 +332,17 @@ function OperationalDashboard({ user }: { user: any }) {
             });
             const receiptsData = receiptsPaged.rows;
 
-            let cashQuery = supabase.from('cash_movements').select('*');
-            cashQuery = applyTenantFilter(cashQuery, rlsCtx, 'cash_movements');
-            const { data: cashData } = await cashQuery;
+            const cashPaged = await fetchAllCashMovementsPaged({
+              supabase,
+              rlsCtx,
+            });
+            const cashData = cashPaged.rows;
 
-            let commQuery = supabase.from('broker_commissions').select('*');
-            commQuery = applyTenantFilter(commQuery, rlsCtx, 'broker_commissions');
-            const { data: commsData } = await commQuery;
+            const commsPaged = await fetchAllBrokerCommissionsPaged({
+              supabase,
+              rlsCtx,
+            });
+            const commsData = commsPaged.rows;
 
             const scopedReceipts = filterRowsByOwnerProjects<DashboardFinanceReceiptRow>(
               receiptsData || [],
@@ -389,9 +405,20 @@ function OperationalDashboard({ user }: { user: any }) {
             setParcelStatus(parcelSummary);
             aReceber = parcelSummary.pendenteAmount;
             inadimplenciaVal = parcelSummary.atrasadoAmount;
+            setEvolutionSeries(
+              buildDashboardFinancialEvolution(
+                scopedReceipts,
+                scopedCash,
+                scopedComms,
+                currentTime,
+              ),
+            );
         } catch (e) {
             console.error('[DASHBOARD] erro financeiro', e);
             setParcelStatus(EMPTY_DASHBOARD_PARCEL_STATUS);
+            setEvolutionSeries(
+              buildDashboardFinancialEvolution([], [], [], currentTime),
+            );
         }
 
         // Timeline operacional: lot_audit_logs (somente leitura, limite pequeno).
@@ -922,6 +949,19 @@ function OperationalDashboard({ user }: { user: any }) {
                 <DashboardEmptyActivities />
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="dash-evolution-card">
+          <h2 className="dash-analytics-card-title">Evolução financeira (últimos 6 meses)</h2>
+          <div className="dash-evolution-body">
+            {loading ? (
+              <div className="flex items-center justify-center h-full min-h-[180px]">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+              </div>
+            ) : (
+              <CashFlowBarChartPanel data={evolutionSeries} />
+            )}
           </div>
         </div>
       </div>

@@ -299,6 +299,23 @@
   scrollbar-width: thin;
 }
 
+.dashboard-premium .dash-evolution-card {
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.75rem 0.45rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--dash-border);
+  background: var(--bg-card);
+  min-height: 0;
+  height: 228px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-premium .dash-evolution-body {
+  flex: 1;
+  min-height: 0;
+}
+
 .dashboard-premium .dash-compact-panel {
   border-radius: 0.75rem;
   border: 1px solid var(--dash-border);

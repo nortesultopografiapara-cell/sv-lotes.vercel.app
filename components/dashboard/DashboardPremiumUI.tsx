@@ -356,11 +356,11 @@ export const LotsDonutChart = memo(function LotsDonutChart({
 export const CashFlowBarChartPanel = memo(function CashFlowBarChartPanel({
   data,
 }: {
-  data: { name: string; recebimentos: number; despesas: number }[];
+  data: { name: string; entradas: number; saidas: number }[];
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 8, right: 4, left: -18, bottom: 0 }} barSize={28}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barSize={22} barGap={4}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
         <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
         <YAxis
@@ -368,12 +368,21 @@ export const CashFlowBarChartPanel = memo(function CashFlowBarChartPanel({
           fontSize={10}
           tickLine={false}
           axisLine={false}
-          tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v) =>
+            Number(v) >= 1000 ? `R$${(Number(v) / 1000).toFixed(0)}k` : `R$${Number(v)}`
+          }
         />
-        <Tooltip cursor={{ fill: 'rgba(255,255,255,0.04)' }} contentStyle={CHART_TOOLTIP} />
+        <Tooltip
+          cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+          contentStyle={CHART_TOOLTIP}
+          formatter={(value, name) => [
+            `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            String(name),
+          ]}
+        />
         <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', color: '#94a3b8' }} />
-        <Bar dataKey="recebimentos" name="Recebimentos" fill="#10b981" radius={[6, 6, 0, 0]} />
-        <Bar dataKey="despesas" name="Despesas" fill="#ef4444" radius={[6, 6, 0, 0]} />
+        <Bar dataKey="entradas" name="Entradas" fill="#10b981" radius={[6, 6, 0, 0]} />
+        <Bar dataKey="saidas" name="Saídas" fill="#ef4444" radius={[6, 6, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
