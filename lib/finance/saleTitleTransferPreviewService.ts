@@ -10,6 +10,7 @@ import {
   listRegisteredExternalChargeProviders,
 } from '@/lib/finance/externalCharges';
 import type { ExternalChargeRecord } from '@/lib/finance/externalCharges/types';
+import { reduceTitleTransferExternalCharges } from '@/lib/finance/saleTitleTransferExternalCharges';
 import { loadLotSwapCallerProfile } from '@/lib/finance/saleLotSwapPreviewService';
 import {
   dropColumnFromSelectList,
@@ -61,6 +62,10 @@ export type TitleTransferExternalChargesPreview = {
   open: ExternalChargeRecord[];
   cancelledReusable: ExternalChargeRecord[];
   nonCancelable: ExternalChargeRecord[];
+  orphans: ExternalChargeRecord[];
+  ambiguousReceiptIds: string[];
+  blockCode: string | null;
+  blockMessage: string | null;
 };
 
 export type TitleTransferPreviewPayload = {
@@ -208,18 +213,12 @@ async function loadBlock(
 
 function classifyExternalCharges(
   charges: ExternalChargeRecord[],
+  receipts: Array<{ id?: string | null; status?: string | null }>,
 ): TitleTransferExternalChargesPreview {
-  const paid: ExternalChargeRecord[] = [];
-  const open: ExternalChargeRecord[] = [];
-  const cancelledReusable: ExternalChargeRecord[] = [];
-  const nonCancelable: ExternalChargeRecord[] = [];
+  const reduced = reduceTitleTransferExternalCharges({ receipts, charges });
   const providers = new Set<string>();
   for (const row of charges) {
     if (row.provider) providers.add(row.provider);
-    if (row.classification === 'paid') paid.push(row);
-    else if (row.classification === 'cancelable') open.push(row);
-    else if (row.classification === 'absent') cancelledReusable.push(row);
-    else nonCancelable.push(row);
   }
   const activeProvider =
     [...providers].find((code) => code === 'ASAAS' || code === 'INTER') ||
@@ -231,10 +230,14 @@ function classifyExternalCharges(
     cancelCharges: false,
     generateCharges: false,
     activeProvider,
-    paid,
-    open,
-    cancelledReusable,
-    nonCancelable,
+    paid: reduced.paid,
+    open: reduced.open,
+    cancelledReusable: reduced.cancelledReusable,
+    nonCancelable: reduced.nonCancelable,
+    orphans: reduced.orphans,
+    ambiguousReceiptIds: reduced.ambiguousReceiptIds,
+    blockCode: reduced.blockCode,
+    blockMessage: reduced.blockMessage,
   };
 }
 
@@ -460,7 +463,7 @@ export async function loadSaleTitleTransferPreview(
       contracts,
       finance,
     },
-    externalCharges: classifyExternalCharges(listed),
+    externalCharges: classifyExternalCharges(listed, receipts),
     history: {
       isOriginalHolder: chain.length === 0,
       notice: chain.length

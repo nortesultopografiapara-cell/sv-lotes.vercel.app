@@ -946,6 +946,7 @@ function testSourceArchitecture() {
   assert(p1.includes('CREATE TABLE IF NOT EXISTS public.sale_title_transfers'), 'P1 intacta');
   const orch = read('lib/finance/saleTitleTransferChargesExecuteService.ts');
   assert(orch.includes('getExternalChargeProvider'), 'registry');
+  assert(orch.includes('reduceTitleTransferExternalCharges'), 'execução reduz cobrança vigente');
   assert(!orch.includes("provider === 'ASAAS'"), 'sem if ASAAS');
   assert(!orch.includes("provider === 'INTER'"), 'sem if INTER');
   assert(!orch.includes('generateMissingCharges'), 'sem gerar');

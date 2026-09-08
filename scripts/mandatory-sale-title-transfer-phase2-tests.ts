@@ -21,6 +21,12 @@ import {
   loadSaleTitleTransferPreview,
   TitleTransferPreviewError,
 } from '../lib/finance/saleTitleTransferPreviewService';
+import {
+  reduceTitleTransferExternalCharges,
+  TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES,
+  TITLE_TRANSFER_ORPHAN_OPEN_CHARGES,
+} from '../lib/finance/saleTitleTransferExternalCharges';
+import type { ExternalChargeRecord } from '../lib/finance/externalCharges/types';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -28,6 +34,99 @@ function assert(cond: boolean, msg: string) {
 
 function read(rel: string): string {
   return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+}
+
+function charge(partial: Partial<ExternalChargeRecord> & { chargeId: string }): ExternalChargeRecord {
+  return {
+    provider: 'INTER',
+    companyId: 'co-1',
+    saleId: 'sale-1',
+    receiptId: null,
+    status: 'REGISTERED',
+    externalId: partial.chargeId,
+    classification: 'cancelable',
+    ...partial,
+  };
+}
+
+function testReduceTitleTransferCharges() {
+  const receipts = [
+    { id: 'r-paid', status: 'pago' },
+    { id: 'r-1', status: 'pendente' },
+    { id: 'r-2', status: 'pendente' },
+    { id: 'r-old', status: 'cancelado' },
+  ];
+  const lt22 = reduceTitleTransferExternalCharges({
+    receipts,
+    charges: [
+      charge({
+        chargeId: 'orphan-oct',
+        receiptId: null,
+        classification: 'cancelable',
+      }),
+      charge({
+        chargeId: 'orphan-nov',
+        receiptId: null,
+        classification: 'cancelable',
+      }),
+      charge({
+        chargeId: 'paid-entry',
+        receiptId: 'r-paid',
+        status: 'PAID',
+        classification: 'paid',
+      }),
+      charge({
+        chargeId: 'open-1',
+        receiptId: 'r-1',
+        classification: 'cancelable',
+      }),
+      charge({
+        chargeId: 'open-2',
+        receiptId: 'r-2',
+        classification: 'cancelable',
+      }),
+    ],
+  });
+  assert(lt22.paid.length === 1, 'LT22: 1 paga');
+  assert(lt22.open.length === 2, 'LT22: 2 abertas vigentes');
+  assert(lt22.open.map((row) => row.chargeId).sort().join() === 'open-1,open-2', 'LT22: só parcelas 1 e 2');
+  assert(lt22.orphans.length === 2, 'LT22: 2 órfãs');
+  assert(lt22.blockCode === TITLE_TRANSFER_ORPHAN_OPEN_CHARGES, 'LT22: bloqueia órfãs');
+
+  const asaasOk = reduceTitleTransferExternalCharges({
+    receipts: [
+      { id: 'r-paid', status: 'pago' },
+      { id: 'r-new', status: 'pendente' },
+    ],
+    charges: [
+      charge({
+        provider: 'ASAAS',
+        chargeId: 'asaas-paid',
+        receiptId: 'r-paid',
+        classification: 'paid',
+      }),
+      charge({
+        provider: 'ASAAS',
+        chargeId: 'asaas-open',
+        receiptId: 'r-new',
+        classification: 'cancelable',
+      }),
+    ],
+  });
+  assert(asaasOk.paid.length === 1 && asaasOk.open.length === 1, 'Asaas homolog: 1+1');
+  assert(asaasOk.blockCode === null, 'Asaas homolog: sem bloqueio');
+
+  const dup = reduceTitleTransferExternalCharges({
+    receipts: [{ id: 'r-1', status: 'pendente' }],
+    charges: [
+      charge({ chargeId: 'a', receiptId: 'r-1', classification: 'cancelable' }),
+      charge({ chargeId: 'b', receiptId: 'r-1', classification: 'cancelable' }),
+    ],
+  });
+  assert(dup.open.length === 0, 'duplicata: não escolhe uma');
+  assert(dup.ambiguousReceiptIds.join() === 'r-1', 'duplicata: parcela marcada');
+  assert(dup.blockCode === TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES, 'duplicata: bloqueia');
+  console.log('OK testReduceTitleTransferCharges');
 }
 
 function testCanceledExcludedFromKpis() {
@@ -333,6 +432,7 @@ async function testPreviewOriginalHolderNoMutation() {
   assert(payload.history.isOriginalHolder === true, 'titular original');
   assert(payload.externalCharges.paid.length === 1, '1 paga preservar');
   assert(payload.externalCharges.open.length === 1, '1 aberta');
+  assert(payload.externalCharges.blockCode === null, 'Asaas sem órfã');
   assert(payload.externalCharges.remoteApiCalled === false, 'sem API remota');
   assert(JSON.stringify(store) === before, 'store intacto');
   assert(payload.notice === TITLE_TRANSFER_PREVIEW_NOTICE, 'aviso somente leitura');
@@ -396,6 +496,7 @@ function testSourceArchitecture() {
   assert(!/\brpc\(\s*['"]execute_sale_lot_swap/.test(svc), 'sem RPC da troca');
   assert(!svc.includes('/api/lots/'), 'sem release');
   assert(!svc.includes('cancelCancelableCharge'), 'sem cancelar banco');
+  assert(svc.includes('reduceTitleTransferExternalCharges'), 'preview reduz cobrança vigente');
   assert(!svc.includes('createCompanyInstallmentCharge'), 'sem gerar boleto');
   assert(!svc.includes('LOT_SWAP_EXTERNAL_CHARGES_LIVE'), 'sem LIVE da troca');
   assert(!svc.includes('seller_parties_json'), 'sem Mundo Novo');
@@ -415,6 +516,7 @@ function testSourceArchitecture() {
 
 async function main() {
   testCanceledExcludedFromKpis();
+  testReduceTitleTransferCharges();
   testNormalSaleUnchangedWithoutTransfer();
   testHistoryChain();
   testLotAndTenantGuards();

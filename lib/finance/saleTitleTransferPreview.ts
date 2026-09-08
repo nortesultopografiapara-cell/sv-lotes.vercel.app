@@ -20,6 +20,10 @@ import {
   TITLE_TRANSFER_SAME_TITULAR,
 } from '@/lib/finance/saleTitleTransferPlan';
 import { TITLE_TRANSFER_LOT_REQUIRED_STATUS } from '@/lib/finance/saleTitleTransfer';
+import {
+  TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES_MESSAGE,
+  TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE,
+} from '@/lib/finance/saleTitleTransferExternalCharges';
 
 export const TITLE_TRANSFER_CROSS_TENANT = LOT_SWAP_CROSS_TENANT;
 export const TITLE_TRANSFER_SALE_NOT_FOUND = 'SALE_NOT_FOUND';
@@ -267,6 +271,12 @@ export function mapTitleTransferPreviewUserMessage(input: {
   }
   if (code === 'TITLE_TRANSFER_CHARGES_NON_CANCELABLE') {
     return 'Há cobrança bancária incompatível. A transferência local não foi executada.';
+  }
+  if (code === 'TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES') {
+    return TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES_MESSAGE;
+  }
+  if (code === 'TITLE_TRANSFER_ORPHAN_OPEN_CHARGES') {
+    return TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE;
   }
   if (code === 'TITLE_TRANSFER_CHARGES_LIVE_DISABLED') {
     return 'O cancelamento bancário desta transferência não está autorizado neste ambiente.';

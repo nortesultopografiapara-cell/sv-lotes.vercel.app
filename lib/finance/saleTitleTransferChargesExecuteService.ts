@@ -25,6 +25,13 @@ import {
   titleTransferChargeNeedsCancel,
 } from '@/lib/finance/saleTitleTransferExecute';
 import {
+  reduceTitleTransferExternalCharges,
+  TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES,
+  TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES_MESSAGE,
+  TITLE_TRANSFER_ORPHAN_OPEN_CHARGES,
+  TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE,
+} from '@/lib/finance/saleTitleTransferExternalCharges';
+import {
   executeSaleTitleTransfer,
   type TitleTransferExecutedResult,
 } from '@/lib/finance/saleTitleTransferExecuteService';
@@ -394,10 +401,15 @@ export async function executeSaleTitleTransferWithExternalCharges(
 
   const unique = new Map<string, ExternalChargeRecord>();
   for (const row of listed) unique.set(`${row.provider}:${row.chargeId}`, row);
-  const charges = [...unique.values()];
-  const paid = charges.filter((row) => row.classification === 'paid');
-  const wouldCancel = charges.filter((row) => titleTransferChargeNeedsCancel(row));
-  const nonCancelable = charges.filter((row) => row.classification === 'non_cancelable');
+  const reduced = reduceTitleTransferExternalCharges({
+    receipts,
+    charges: [...unique.values()],
+  });
+  const paid = reduced.paid;
+  const wouldCancel = [...reduced.open, ...reduced.cancelledReusable].filter((row) =>
+    titleTransferChargeNeedsCancel(row),
+  );
+  const nonCancelable = reduced.nonCancelable;
 
   const liveDecision = isTitleTransferExternalChargesLiveAuthorized({
     companyId,
@@ -419,6 +431,31 @@ export async function executeSaleTitleTransferWithExternalCharges(
     ? [...(existingSnap?.canceledChargeIds as string[])]
     : [];
   let remoteApiCalled = false;
+
+  if (reduced.blockCode) {
+    await persistChargesPhase(admin, {
+      transferId,
+      companyId,
+      phase: 'FAILED',
+      snapshot: {
+        failedStage: 'BLOCK',
+        canceledChargeIds,
+        orphanChargeIds: reduced.orphans.map((row) => row.chargeId),
+        ambiguousReceiptIds: reduced.ambiguousReceiptIds,
+      },
+      error: reduced.blockCode,
+    });
+    throw new TitleTransferPreviewError(
+      reduced.blockMessage ||
+        (reduced.blockCode === TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES
+          ? TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES_MESSAGE
+          : TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE),
+      reduced.blockCode === TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES
+        ? TITLE_TRANSFER_AMBIGUOUS_OPEN_CHARGES
+        : TITLE_TRANSFER_ORPHAN_OPEN_CHARGES,
+      409,
+    );
+  }
 
   if (nonCancelable.length > 0) {
     await persistChargesPhase(admin, {

@@ -204,7 +204,16 @@ export function TitleTransferPreviewPanel({
   }
 
   async function executeTransfer() {
-    if (!payload || !selected || !plan || !confirmChecked || selected.isCurrentTitular) return;
+    if (
+      !payload ||
+      !selected ||
+      !plan ||
+      !confirmChecked ||
+      selected.isCurrentTitular ||
+      payload.externalCharges.blockCode
+    ) {
+      return;
+    }
     setExecuteLoading(true);
     setExecuteError('');
     try {
@@ -427,6 +436,11 @@ export function TitleTransferPreviewPanel({
         <p className="text-xs text-slate-500">
           Classificação local. Nenhum título Asaas/Inter será cancelado ou gerado agora.
         </p>
+        {externalCharges.blockMessage ? (
+          <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            {externalCharges.blockMessage}
+          </p>
+        ) : null}
         {externalCharges.open.length > 0 ? (
           <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             {TITLE_TRANSFER_OPEN_CHARGES_NOTICE}
@@ -697,6 +711,11 @@ export function TitleTransferPreviewPanel({
               value={String(payload.externalCharges.open.length)}
             />
           </div>
+          {payload.externalCharges.blockMessage ? (
+            <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {payload.externalCharges.blockMessage}
+            </p>
+          ) : null}
           <label className="flex items-start gap-2 text-sm text-slate-800">
             <input
               type="checkbox"
@@ -709,7 +728,12 @@ export function TitleTransferPreviewPanel({
           </label>
           <button
             type="button"
-            disabled={!confirmChecked || executeLoading || executeDone}
+            disabled={
+              !confirmChecked ||
+              executeLoading ||
+              executeDone ||
+              Boolean(payload.externalCharges.blockCode)
+            }
             onClick={() => void executeTransfer()}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
           >
