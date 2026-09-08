@@ -46,6 +46,8 @@ function mapRow(
     status: text(row.status),
     externalId: text(row.external_id),
     classification: classify(text(row.status)),
+    amount: row.amount == null || row.amount === '' ? null : Number(row.amount),
+    dueDate: text(row.due_date),
   };
 }
 
@@ -77,7 +79,7 @@ export const interExternalChargeProvider: ExternalChargeProvider = {
       const byReceipt = await admin
         .from('bank_charges')
         .select(
-          'id, company_id, sale_id, finance_receipt_id, status, external_id, provider',
+          'id, company_id, sale_id, finance_receipt_id, status, external_id, provider, amount, due_date',
         )
         .eq('company_id', companyId)
         .eq('provider', 'INTER')
@@ -88,7 +90,7 @@ export const interExternalChargeProvider: ExternalChargeProvider = {
       const bySale = await admin
         .from('bank_charges')
         .select(
-          'id, company_id, sale_id, finance_receipt_id, status, external_id, provider',
+          'id, company_id, sale_id, finance_receipt_id, status, external_id, provider, amount, due_date',
         )
         .eq('company_id', companyId)
         .eq('provider', 'INTER')

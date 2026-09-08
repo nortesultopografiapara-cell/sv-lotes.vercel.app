@@ -151,6 +151,7 @@
     "test:sale-title-transfer-p4": "tsx scripts/mandatory-sale-title-transfer-phase4-tests.ts",
     "test:sale-title-transfer-p5": "tsx scripts/mandatory-sale-title-transfer-phase5-tests.ts",
     "test:sale-title-transfer-inter-cancel": "tsx scripts/mandatory-inter-title-transfer-cancel-tests.ts",
+    "test:sale-title-transfer-orphan-resolve": "tsx scripts/mandatory-title-transfer-orphan-resolve-tests.ts",
     "test:release-settlement": "tsx scripts/mandatory-release-settlement-araguaia-tests.ts",
     "test:release-settlement-persist": "tsx scripts/mandatory-sale-release-settlement-persist-tests.ts",
     "test:release-improvements": "tsx scripts/mandatory-release-improvements-tests.ts",

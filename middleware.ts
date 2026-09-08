@@ -82,6 +82,7 @@ export async function middleware(request: NextRequest) {
     '/api/finance/asaas/company-webhook',
     '/api/finance/inter/webhook/internal',
     '/api/finance/preview-inter-orphan-get',
+    '/api/finance/preview-inter-orphan-resolve',
     '/api/master/corporate-finance/asaas/webhook',
     '/api/cron',
     '/validar',

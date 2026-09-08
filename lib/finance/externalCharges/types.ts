@@ -35,6 +35,8 @@ export type ExternalChargeRecord = {
   status: string | null;
   externalId: string | null;
   classification: ExternalChargeClassification;
+  amount?: number | null;
+  dueDate?: string | null;
 };
 
 export type ListExternalChargesInput = {

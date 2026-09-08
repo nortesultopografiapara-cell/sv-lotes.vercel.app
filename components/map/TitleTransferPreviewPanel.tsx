@@ -30,6 +30,13 @@ function todayIsoSaoPaulo(): string {
   }).format(new Date());
 }
 
+function formatDueDate(iso?: string | null): string {
+  const d = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return 'sem vencimento';
+  const [year, month, day] = d.split('-');
+  return `${day}/${month}/${year}`;
+}
+
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 min-w-0">
@@ -74,6 +81,8 @@ export function TitleTransferPreviewPanel({
     fromContract: string;
     toContract: string;
   } | null>(null);
+  const [resolveOrphansLoading, setResolveOrphansLoading] = useState(false);
+  const [resolveOrphansError, setResolveOrphansError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,7 +219,8 @@ export function TitleTransferPreviewPanel({
       !plan ||
       !confirmChecked ||
       selected.isCurrentTitular ||
-      payload.externalCharges.blockCode
+      payload.externalCharges.blockCode ||
+      payload.externalCharges.orphans.length > 0
     ) {
       return;
     }
@@ -288,6 +298,52 @@ export function TitleTransferPreviewPanel({
       );
     } finally {
       setExecuteLoading(false);
+    }
+  }
+
+  async function resolveOrphanCharges() {
+    if (!payload || payload.externalCharges.orphans.length === 0 || resolveOrphansLoading) {
+      return;
+    }
+    setResolveOrphansLoading(true);
+    setResolveOrphansError('');
+    try {
+      const res = await fetch(
+        `/api/sales/${encodeURIComponent(saleId)}/title-transfer/resolve-orphans`,
+        {
+          method: 'POST',
+          credentials: 'include',
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        code?: string;
+        message?: string;
+        error?: string;
+        executeTransfer?: boolean;
+      };
+      if (data.executeTransfer) {
+        setResolveOrphansError('A resolução de órfãs recusou executar a transferência.');
+        return;
+      }
+      if (!res.ok || !data.success) {
+        setResolveOrphansError(
+          mapTitleTransferPreviewUserMessage({
+            status: res.status,
+            code: data.code,
+            message: data.message,
+            error: data.error,
+          }),
+        );
+        return;
+      }
+    } catch (err) {
+      setResolveOrphansError(
+        err instanceof Error ? err.message : 'Não foi possível resolver as cobranças órfãs.',
+      );
+    } finally {
+      await load();
+      setResolveOrphansLoading(false);
     }
   }
 
@@ -432,9 +488,14 @@ export function TitleTransferPreviewPanel({
             label="Não canceláveis"
             value={String(externalCharges.nonCancelable.length)}
           />
+          <SummaryCard
+            label="Órfãs ativas"
+            value={String(externalCharges.orphans.length)}
+          />
         </div>
         <p className="text-xs text-slate-500">
-          Classificação local. Nenhum título Asaas/Inter será cancelado ou gerado agora.
+          Classificação local. Nenhum título Asaas/Inter será cancelado ou gerado agora,
+          salvo pela ação Resolver cobranças órfãs.
         </p>
         {externalCharges.blockMessage ? (
           <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -445,6 +506,33 @@ export function TitleTransferPreviewPanel({
           <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             {TITLE_TRANSFER_OPEN_CHARGES_NOTICE}
           </p>
+        ) : null}
+        {externalCharges.orphans.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+              Cobranças órfãs
+            </p>
+            <ul className="text-sm text-slate-800 space-y-1">
+              {externalCharges.orphans.map((row) => (
+                <li key={row.chargeId} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  {money(row.amount)} · {formatDueDate(row.dueDate)} · {row.provider} ·{' '}
+                  {row.status || 'sem situação'}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              disabled={resolveOrphansLoading || executeLoading || executeDone}
+              onClick={() => void resolveOrphanCharges()}
+              className="inline-flex items-center gap-2 rounded-lg bg-amber-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
+            >
+              {resolveOrphansLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Resolver cobranças órfãs
+            </button>
+            {resolveOrphansError ? (
+              <p className="text-sm text-amber-800">{resolveOrphansError}</p>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -710,11 +798,39 @@ export function TitleTransferPreviewPanel({
               label="Cobranças abertas a cancelar"
               value={String(payload.externalCharges.open.length)}
             />
+            <SummaryCard
+              label="Órfãs ativas"
+              value={String(payload.externalCharges.orphans.length)}
+            />
           </div>
           {payload.externalCharges.blockMessage ? (
             <p className="text-sm text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               {payload.externalCharges.blockMessage}
             </p>
+          ) : null}
+          {payload.externalCharges.orphans.length > 0 ? (
+            <div className="space-y-2">
+              <ul className="text-sm text-slate-800 space-y-1">
+                {payload.externalCharges.orphans.map((row) => (
+                  <li key={row.chargeId} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    {money(row.amount)} · {formatDueDate(row.dueDate)} · {row.provider} ·{' '}
+                    {row.status || 'sem situação'}
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                disabled={resolveOrphansLoading || executeLoading || executeDone}
+                onClick={() => void resolveOrphanCharges()}
+                className="inline-flex items-center gap-2 rounded-lg bg-amber-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"
+              >
+                {resolveOrphansLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Resolver cobranças órfãs
+              </button>
+              {resolveOrphansError ? (
+                <p className="text-sm text-amber-800">{resolveOrphansError}</p>
+              ) : null}
+            </div>
           ) : null}
           <label className="flex items-start gap-2 text-sm text-slate-800">
             <input
@@ -732,7 +848,9 @@ export function TitleTransferPreviewPanel({
               !confirmChecked ||
               executeLoading ||
               executeDone ||
-              Boolean(payload.externalCharges.blockCode)
+              resolveOrphansLoading ||
+              Boolean(payload.externalCharges.blockCode) ||
+              payload.externalCharges.orphans.length > 0
             }
             onClick={() => void executeTransfer()}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-800 text-white text-sm font-semibold px-3 py-2 disabled:opacity-50"

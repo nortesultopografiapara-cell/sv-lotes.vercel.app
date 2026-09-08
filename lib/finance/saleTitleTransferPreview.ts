@@ -278,6 +278,22 @@ export function mapTitleTransferPreviewUserMessage(input: {
   if (code === 'TITLE_TRANSFER_ORPHAN_OPEN_CHARGES') {
     return TITLE_TRANSFER_ORPHAN_OPEN_CHARGES_MESSAGE;
   }
+  if (code === 'TITLE_TRANSFER_ORPHAN_NOT_INTER') {
+    return 'Há cobrança órfã que não é Inter. A resolução não a cancela automaticamente.';
+  }
+  if (code === 'TITLE_TRANSFER_ORPHAN_PAID') {
+    return 'Há cobrança órfã já paga. Ela não será cancelada e a transferência permanece bloqueada.';
+  }
+  if (code === 'TITLE_TRANSFER_ORPHAN_RESOLVE_DISABLED') {
+    return 'Resolver órfãs só está disponível no DEVELOP/Preview.';
+  }
+  if (code === 'TITLE_TRANSFER_ORPHAN_RESOLVE_FAILED') {
+    const safe = sanitizeTitleTransferOperatorMessage(fromServer);
+    return (
+      safe ||
+      'Falha ao resolver cobrança órfã Inter. A transferência local não foi executada.'
+    );
+  }
   if (code === 'TITLE_TRANSFER_CHARGES_LIVE_DISABLED') {
     return 'O cancelamento bancário desta transferência não está autorizado neste ambiente.';
   }
