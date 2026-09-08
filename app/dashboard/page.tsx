@@ -13,9 +13,8 @@ import {
   Building2,
   FileSpreadsheet,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   canViewEnterpriseValues,
@@ -34,9 +33,25 @@ import {
   resolveReceiptProjectId,
 } from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
-import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import { applyTenantFilter, applyTenantIdEq, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 import { calculateFinancialTotals } from '@/lib/financeCashFlow';
+import { fetchAllFinanceReceiptsPaged } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import { buildDashboardLotDistribution } from '@/lib/dashboardLotDistribution';
+import {
+  DASHBOARD_FINANCE_RECEIPTS_SELECT,
+  DASHBOARD_FINANCE_RECEIPTS_SELECT_FALLBACK,
+  buildDashboardParcelPieData,
+  summarizeDashboardParcelStatus,
+  type DashboardFinanceReceiptRow,
+} from '@/lib/dashboardParcelStatus';
+import {
+  DASHBOARD_ACTIVITY_ACTIONS,
+  DASHBOARD_ACTIVITY_LIMIT,
+  mapLotAuditRowsToDashboardActivities,
+  type DashboardActivityItemData,
+} from '@/lib/dashboardRecentActivities';
+import type { LotAuditLogRow } from '@/lib/lotAudit';
 import {
   calculateEnterpriseValueSummary,
   filterEnterpriseLotsByProject,
@@ -51,7 +66,9 @@ import {
   DashboardMetricKpi,
   DashboardActivityItem,
   DashboardEmptyActivities,
+  DashboardActivitiesError,
   FinancialSummaryCard,
+  LotsDonutChart,
 } from '@/components/dashboard/DashboardPremiumUI';
 import { LotReportExportModal } from '@/components/dashboard/LotReportExportModal';
 import {
@@ -129,7 +146,14 @@ function OperationalDashboard({ user }: { user: any }) {
     saldo_atual: 0,
     margem_percent: 0,
   });
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<DashboardActivityItemData[]>([]);
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
+  const [parcelStatus, setParcelStatus] = useState({
+    pago: 0,
+    pendente: 0,
+    atrasado: 0,
+    total: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -292,11 +316,13 @@ function OperationalDashboard({ user }: { user: any }) {
               currentTime.getMonth(),
               1,
             );
-            const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
-
-            let recQuery = supabase.from('finance_receipts').select('*');
-            recQuery = applyTenantFilter(recQuery, rlsCtx, 'finance_receipts');
-            const { data: receiptsData } = await recQuery;
+            const receiptsPaged = await fetchAllFinanceReceiptsPaged<DashboardFinanceReceiptRow>({
+              supabase,
+              rlsCtx,
+              select: DASHBOARD_FINANCE_RECEIPTS_SELECT,
+              selectFallback: DASHBOARD_FINANCE_RECEIPTS_SELECT_FALLBACK,
+            });
+            const receiptsData = receiptsPaged.rows;
 
             let cashQuery = supabase.from('cash_movements').select('*');
             cashQuery = applyTenantFilter(cashQuery, rlsCtx, 'cash_movements');
@@ -306,7 +332,7 @@ function OperationalDashboard({ user }: { user: any }) {
             commQuery = applyTenantFilter(commQuery, rlsCtx, 'broker_commissions');
             const { data: commsData } = await commQuery;
 
-            const scopedReceipts = filterRowsByOwnerProjects(
+            const scopedReceipts = filterRowsByOwnerProjects<DashboardFinanceReceiptRow>(
               receiptsData || [],
               ownerDashboardProjectIds,
               resolveReceiptProjectId,
@@ -316,10 +342,10 @@ function OperationalDashboard({ user }: { user: any }) {
                 : true,
             );
             const scopedCash = filterRowsByOwnerProjects(
-              cashData || [],
+              (cashData || []) as any[],
               ownerDashboardProjectIds,
               resolveCashMovementProjectId,
-            ).filter((c) => {
+            ).filter((c: any) => {
               if (!selectedProjectId) return true;
               const name =
                 c.projects?.name ||
@@ -329,10 +355,10 @@ function OperationalDashboard({ user }: { user: any }) {
               return name === selectedProjectName;
             });
             const scopedComms = filterRowsByOwnerProjects(
-              commsData || [],
+              (commsData || []) as any[],
               ownerDashboardProjectIds,
               resolveCommissionProjectId,
-            ).filter((c) => {
+            ).filter((c: any) => {
               if (!selectedProjectId) return true;
               const name =
                 c.sales?.projects?.name || c.contracts?.projects?.name || '';
@@ -353,7 +379,7 @@ function OperationalDashboard({ user }: { user: any }) {
             scopedReceipts.forEach((r) => {
               const st = String(r.status || '').toLowerCase();
               const amt = Number(r.paid_amount) || Number(r.amount) || 0;
-              const paidAt = r.paid_at ? new Date(r.paid_at) : null;
+              const paidAt = r.paid_at ? new Date(String(r.paid_at)) : null;
               if (
                 (st === 'pago' || st === 'paid') &&
                 paidAt &&
@@ -368,23 +394,60 @@ function OperationalDashboard({ user }: { user: any }) {
                 inadimplenciaVal += Number(r.amount) || 0;
               }
             });
+
+            setParcelStatus(summarizeDashboardParcelStatus(scopedReceipts));
         } catch (e) {
             console.error('[DASHBOARD] erro financeiro', e);
+            setParcelStatus({ pago: 0, pendente: 0, atrasado: 0, total: 0 });
         }
 
-        // Load Activities / Logs
-        let logsQuery = supabase
-          .from('logs')
-          .select('*, users(full_name)')
-          .order('created_at', { ascending: false })
-          .limit(5);
-        if (!rlsCtx.isSuperAdmin && resolvedTenantId) {
-          logsQuery = logsQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-        }
-        
-        const { data: logsData } = await logsQuery;
-        setActivities(logsData || []);
-        
+        // Timeline operacional: lot_audit_logs (somente leitura, limite pequeno).
+        setActivitiesError(null);
+        try {
+          let auditQuery = supabase
+            .from('lot_audit_logs')
+            .select(
+              'id, action, title, description, created_at, project_id, source, company_id, user_id, sale_id, block_id, lot_id, contract_id, old_data, new_data',
+            );
+          auditQuery = applyTenantIdEq(
+            auditQuery,
+            rlsCtx,
+            'lot_audit_logs',
+            'company_id',
+          );
+          if (selectedProjectId) {
+            auditQuery = auditQuery.eq('project_id', selectedProjectId);
+          }
+          const { data: auditData, error: auditError } = await auditQuery
+            .in('action', DASHBOARD_ACTIVITY_ACTIONS)
+            .order('created_at', { ascending: false })
+            .limit(DASHBOARD_ACTIVITY_LIMIT);
+          if (auditError) {
+            setActivities([]);
+            setActivitiesError(
+              auditError.message || 'Erro ao consultar lot_audit_logs.',
+            );
+          } else {
+            const ownerScopedAudit = filterRowsByOwnerProjects(
+              (auditData || []) as LotAuditLogRow[],
+              ownerDashboardProjectIds,
+              (row) => row.project_id,
+            );
+            setActivities(
+              mapLotAuditRowsToDashboardActivities(
+                ownerScopedAudit,
+                DASHBOARD_ACTIVITY_LIMIT,
+              ),
+            );
+          }
+        } catch (auditErr) {
+          const msg =
+            auditErr instanceof Error
+              ? auditErr.message
+              : 'Erro ao consultar o histórico operacional.';
+          setActivities([]);
+          setActivitiesError(msg);
+        } 
         setStats({
           globalEnterpriseTotal: globalEnterprise.totalValue,
           enterpriseTotal: enterprise.totalValue,
@@ -435,43 +498,47 @@ function OperationalDashboard({ user }: { user: any }) {
   };
 
   const getActionIcon = (action: string) => {
-    const act = String(action).toUpperCase();
-    if (act.includes('CANCEL')) {
+    const act = String(action).toLowerCase();
+    if (act === 'sale_cancelled' || act === 'payment_reversed' || act.includes('cancel')) {
       return {
         icon: AlertCircle,
         color: 'bg-rose-500/10 text-rose-400',
         dotColor: '#ef4444',
       };
     }
-    if (act.includes('RESERV')) {
+    if (act === 'reserved' || act.includes('reserv')) {
       return {
         icon: Calendar,
         color: 'bg-amber-500/10 text-amber-300',
         dotColor: '#f59e0b',
       };
     }
-    if (act.includes('VEND')) {
+    if (act === 'sold' || act.includes('vend')) {
       return {
         icon: Tag,
         color: 'bg-emerald-500/10 text-emerald-400',
         dotColor: '#22c55e',
       };
     }
-    if (act.includes('CONTRACT') || act.includes('CONTRATO')) {
+    if (act.includes('contract') || act.includes('contrato')) {
       return {
         icon: FileText,
         color: 'bg-blue-500/10 text-blue-400',
         dotColor: '#3b82f6',
       };
     }
-    if (act.includes('CLIENT')) {
+    if (act === 'customer_changed' || act.includes('client')) {
       return {
         icon: UserPlus,
         color: 'bg-purple-500/10 text-purple-400',
         dotColor: '#a855f7',
       };
     }
-    if (act.includes('PAG') || act.includes('COMMISSION')) {
+    if (
+      act === 'payment_received' ||
+      act === 'finance_created' ||
+      act.includes('pag')
+    ) {
       return {
         icon: Wallet,
         color: 'bg-violet-500/10 text-violet-400',
@@ -485,8 +552,21 @@ function OperationalDashboard({ user }: { user: any }) {
     };
   };
 
-  const totalLotes =
-    stats.available + stats.reserved + stats.sold + stats.paid;
+  const lotDistribution = useMemo(
+    () =>
+      buildDashboardLotDistribution({
+        available: stats.available,
+        reserved: stats.reserved,
+        sold: stats.sold,
+        paid: stats.paid,
+      }),
+    [stats.available, stats.reserved, stats.sold, stats.paid],
+  );
+  const parcelPieData = useMemo(
+    () => buildDashboardParcelPieData(parcelStatus),
+    [parcelStatus],
+  );
+  const totalLotes = lotDistribution.totalLotes;
 
   const selectedProjectLabel = selectedProjectId
     ? projects.find((p) => p.id === selectedProjectId)?.name || 'Empreendimento'
@@ -560,33 +640,33 @@ function OperationalDashboard({ user }: { user: any }) {
     <div className="dashboard-premium dashboard-premium--compact sv-page sv-page--scroll-y relative flex flex-col min-h-0">
       <div className="dash-page-inner p-3 md:p-4 lg:p-5 flex-1 max-w-full w-full mx-auto min-w-0">
         <header className="dash-header">
-          <div>
+          <div className="dash-header-greet min-w-0">
             <motion.h1
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-xl md:text-2xl font-semibold text-[var(--text-primary)] tracking-tight"
+              className="text-lg md:text-xl font-semibold text-[var(--text-primary)] tracking-tight"
             >
               {getGreeting()}, {user?.name?.split(' ')[0] || 'Admin'}{' '}
               <span className="inline-block">👋</span>
             </motion.h1>
-            <p className="text-[var(--text-muted)] text-sm mt-0.5">
+            <p className="text-[var(--text-muted)] text-xs mt-0.5 truncate">
               Bem-vindo ao painel de gestão da sua loteadora
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-right">
-              <p className="text-[var(--text-primary)] font-mono text-lg font-semibold tabular-nums">
+          <div className="dash-header-tools">
+            <div className="text-right shrink-0">
+              <p className="text-[var(--text-primary)] font-mono text-base font-semibold tabular-nums leading-tight">
                 {currentTime.toLocaleTimeString('pt-BR', {
                   hour: '2-digit',
                   minute: '2-digit',
                   second: '2-digit',
                 })}
               </p>
-              <p className="text-[11px] text-[var(--text-muted)] capitalize max-w-[220px]">
+              <p className="text-[10px] text-[var(--text-muted)] capitalize max-w-[220px] leading-tight">
                 {formatDateBR(currentTime)}
               </p>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]/90 px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]/90 px-2 py-1">
               <label
                 htmlFor="project-select"
                 className="text-[var(--text-muted)] text-[10px] font-semibold uppercase tracking-wide pl-1"
@@ -643,7 +723,7 @@ function OperationalDashboard({ user }: { user: any }) {
 
         {showEnterpriseValues ? (
           <>
-            <div className="dash-kpi-primary">
+            <div className={`dash-kpi-primary${selectedProjectId ? ' dash-kpi-primary--five' : ''}`}>
               <DashboardTopKpi
                 title="Valor global"
                 value={stats.globalEnterpriseTotal}
@@ -752,8 +832,8 @@ function OperationalDashboard({ user }: { user: any }) {
           </>
         ) : null}
 
-        <div className="dash-bottom-grid">
-          {bankingUiEnabled && asaasAccessAvailable ? (
+        {bankingUiEnabled && asaasAccessAvailable ? (
+          <div className="dash-asaas-slot">
             <FinancialIntegrationDashboardCard
               loading={asaasLoading}
               connectionStatus={asaasIntegration?.connectionStatus ?? 'DISCONNECTED'}
@@ -761,40 +841,65 @@ function OperationalDashboard({ user }: { user: any }) {
               lastSyncAt={asaasIntegration?.sync.lastAt ?? null}
               chargesCount={asaasIntegration?.sync.chargesCount ?? 0}
             />
-          ) : null}
-          <div className="dash-compact-panel">
-            <div className="px-4 py-2.5 border-b border-[var(--border-subtle)] shrink-0">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Resumo financeiro</h2>
-            </div>
-            <div className="dash-compact-scroll p-3">
-              <FinancialSummaryCard
-                loading={loading}
-                entradas={stats.total_entradas}
-                saidas={stats.total_saidas}
-                saldo={stats.saldo_atual}
-                margemPercent={stats.margem_percent}
-                formatCurrency={formatCurrency}
-              />
+          </div>
+        ) : null}
+
+        <div className="dash-finance-card">
+          <h2 className="dash-analytics-card-title">Resumo financeiro</h2>
+          <FinancialSummaryCard
+            loading={loading}
+            entradas={stats.total_entradas}
+            saidas={stats.total_saidas}
+            saldo={stats.saldo_atual}
+            margemPercent={stats.margem_percent}
+            formatCurrency={formatCurrency}
+          />
+        </div>
+
+        <div className="dash-analytics-grid">
+          <div className="dash-analytics-card">
+            <h2 className="dash-analytics-card-title">Distribuição dos lotes</h2>
+            <div className="dash-analytics-body">
+              {loading ? (
+                <div className="flex items-center justify-center h-[150px]">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                </div>
+              ) : (
+                <LotsDonutChart
+                  pieData={lotDistribution.pieData}
+                  totalLotes={lotDistribution.totalLotes}
+                />
+              )}
             </div>
           </div>
 
-          <div className="dash-compact-panel">
-            <div className="px-4 py-2.5 flex items-center justify-between border-b border-[var(--border-subtle)] shrink-0">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Atividades recentes</h2>
-              <Link
-                href="/logs"
-                className="text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                Ver todas
-              </Link>
+          <div className="dash-analytics-card">
+            <h2 className="dash-analytics-card-title">Situação das parcelas</h2>
+            <div className="dash-analytics-body">
+              {loading ? (
+                <div className="flex items-center justify-center h-[150px]">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                </div>
+              ) : (
+                <LotsDonutChart
+                  pieData={parcelPieData}
+                  totalLotes={parcelStatus.total}
+                />
+              )}
             </div>
-            <div className="dash-compact-scroll sv-scrollbar sv-scrollbar-dark">
+          </div>
+
+          <div className="dash-analytics-card">
+            <h2 className="dash-analytics-card-title">Atividades recentes</h2>
+            <div className="dash-activity-scroll sv-scrollbar sv-scrollbar-dark">
               {loading ? (
                 <div className="flex items-center justify-center h-24">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
+              ) : activitiesError ? (
+                <DashboardActivitiesError message={activitiesError} />
               ) : activities.length > 0 ? (
-                activities.slice(0, 4).map((activity, idx) => {
+                activities.map((activity, idx) => {
                   const { icon, color, dotColor } = getActionIcon(activity.action);
                   return (
                     <motion.div
@@ -804,12 +909,9 @@ function OperationalDashboard({ user }: { user: any }) {
                       transition={{ delay: idx * 0.05 }}
                     >
                       <DashboardActivityItem
-                        time={formatTimeAgo(activity.created_at)}
-                        title={activity.details?.title || activity.action}
-                        subtitle={
-                          activity.details?.subtitle ||
-                          `Por ${activity.users?.full_name || 'Usuário'}`
-                        }
+                        time={formatTimeAgo(activity.createdAt)}
+                        title={activity.title}
+                        subtitle={activity.subtitle}
                         icon={icon}
                         iconColor={color}
                         dotColor={dotColor}
