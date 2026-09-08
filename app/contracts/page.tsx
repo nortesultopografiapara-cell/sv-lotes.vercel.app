@@ -25,7 +25,13 @@ import {
   History,
   ShieldCheck,
   ExternalLink,
+  Layers,
+  Eye,
+  FolderOpen,
+  LayoutList,
 } from "lucide-react";
+import "./contracts-mobile.css";
+import "./contracts-workspace.css";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import { canShowMobileVendorSignAction } from "@/lib/saleContractBilateralSignature";
@@ -839,6 +845,28 @@ export default function ContractsPage() {
     if (st === "pending" || st === "pendente") return "Pendente";
     if (st === "rascunho" || st === "draft") return "Rascunho";
     return st ? st.charAt(0).toUpperCase() + st.slice(1) : "Ativo";
+  };
+
+  const visibleContractVersions = (
+    contractVersions.length > 0
+      ? [...contractVersions]
+      : selectedContract
+        ? [selectedContract]
+        : []
+  ).sort(
+    (a: any, b: any) =>
+      Number(a.version ?? 1) - Number(b.version ?? 1) ||
+      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+  );
+
+  const contractVersionNote = (ver: any) => {
+    const isCurrent =
+      ver?.is_current === true || ver?.id === selectedContract?.id;
+    if (isCurrent) return "Atual";
+    if (ver?.regenerated_from) return "Regenerado";
+    const st = normalizeContractStatus(ver?.status);
+    if (st === "superseded") return "Substituído";
+    return getStatusLabel(ver?.status);
   };
 
   const isSupersededContract = (c: any) =>
@@ -2007,70 +2035,74 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* Desktop / tablet: cards de resumo */}
-      <div className="hidden md:grid md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[var(--bg-card)] min-w-0">
-        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
-          <div>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">
-              Contratos Ativos
-            </p>
-            <h3 className="text-2xl font-bold">{stats.ativos}</h3>
+      {/* Desktop / tablet: título + cards de resumo */}
+      <div className="contracts-workspace-header">
+        <div>
+          <h1 className="contracts-workspace-title">Contratos</h1>
+          <p className="contracts-workspace-subtitle">
+            Gestão de contratos de compra e venda.
+          </p>
+        </div>
+      </div>
+      <div className="contracts-kpi-row hidden md:grid md:grid-cols-5 gap-3 px-4 sm:px-5 pb-4 pt-3 border-b border-[var(--color-border)] bg-[var(--bg-card)] min-w-0">
+        <div className="contracts-kpi-card">
+          <div className="min-w-0">
+            <p className="contracts-kpi-label">Ativos</p>
+            <h3 className="contracts-kpi-value">{stats.ativos}</h3>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)]">
-            <FileText className="w-5 h-5" />
+          <div className="contracts-kpi-icon bg-[var(--color-info)]/10 text-[var(--color-info)]">
+            <FileText className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
-          <div>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Assinados</p>
-            <h3 className="text-2xl font-bold">{stats.assinados}</h3>
-            <p className="text-[10px] text-[var(--color-success)] mt-1 font-medium">
+        <div className="contracts-kpi-card">
+          <div className="min-w-0">
+            <p className="contracts-kpi-label">Assinados</p>
+            <h3 className="contracts-kpi-value">{stats.assinados}</h3>
+            <p className="contracts-kpi-hint text-[var(--color-success)]">
               {saleContractDashboardPercent(stats.assinados, stats.ativos)}% do total
             </p>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[var(--color-success)]/10 flex items-center justify-center text-[var(--color-success)]">
-            <CheckCircle2 className="w-5 h-5" />
+          <div className="contracts-kpi-icon bg-[var(--color-success)]/10 text-[var(--color-success)]">
+            <CheckCircle2 className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
-          <div>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Pendentes</p>
-            <h3 className="text-2xl font-bold">{stats.pendentes}</h3>
-            <p className="text-[10px] text-[var(--color-warning)] mt-1 font-medium">
+        <div className="contracts-kpi-card">
+          <div className="min-w-0">
+            <p className="contracts-kpi-label">Pendentes</p>
+            <h3 className="contracts-kpi-value">{stats.pendentes}</h3>
+            <p className="contracts-kpi-hint text-[var(--color-warning)]">
               {saleContractDashboardPercent(stats.pendentes, stats.ativos)}% do total
             </p>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[var(--color-warning)]/10 flex items-center justify-center text-[var(--color-warning)]">
-            <Clock className="w-5 h-5" />
+          <div className="contracts-kpi-icon bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
+            <Clock className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
-          <div>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Cancelados</p>
-            <h3 className="text-2xl font-bold">{stats.cancelados}</h3>
+        <div className="contracts-kpi-card">
+          <div className="min-w-0">
+            <p className="contracts-kpi-label">Cancelados</p>
+            <h3 className="contracts-kpi-value">{stats.cancelados}</h3>
           </div>
-          <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 flex items-center justify-center text-[var(--color-danger)]">
-            <XCircle className="w-5 h-5" />
+          <div className="contracts-kpi-icon bg-[var(--color-danger)]/10 text-[var(--color-danger)]">
+            <XCircle className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
-          <div>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">
-              Val Total Contratado
-            </p>
-            <h3 className="text-xl lg:text-2xl font-bold">
+        <div className="contracts-kpi-card">
+          <div className="min-w-0">
+            <p className="contracts-kpi-label">Valor total contratado</p>
+            <h3 className="contracts-kpi-value text-base lg:text-xl">
               {new Intl.NumberFormat("pt-BR", {
                 style: "currency",
                 currency: "BRL",
               }).format(stats.valorTotal)}
             </h3>
           </div>
-          <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-400">
-            <Wallet className="w-5 h-5" />
+          <div className="contracts-kpi-icon bg-[var(--color-success)]/10 text-[var(--color-success)]">
+            <Wallet className="w-4 h-4" />
           </div>
         </div>
       </div>
@@ -2084,7 +2116,7 @@ export default function ContractsPage() {
               : "max-md:flex-1 max-md:max-h-none"
           }`}
         >
-          <div className="hidden md:block p-4 border-b border-[var(--border-color)] shrink-0">
+          <div className="hidden md:block p-3 border-b border-[var(--border-color)] shrink-0">
             <div className="relative mb-2">
               <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-[var(--text-muted)]" />
               <input
@@ -2117,7 +2149,7 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 contracts-list-scroll sv-scrollbar sv-scrollbar-dark">
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 contracts-list-scroll sv-scrollbar sv-scrollbar-dark">
             {loading ? (
               <div className="flex justify-center p-8">
                 <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
@@ -2157,10 +2189,10 @@ export default function ContractsPage() {
                   <button
                     key={c.id}
                     onClick={() => setSelectedContract(c)}
-                    className={`w-full text-left p-3 max-md:p-3 md:p-3.5 rounded-xl border transition-all duration-200 ${
+                    className={`contracts-list-card w-full text-left p-2.5 max-md:p-3 rounded-xl border transition-all duration-200 ${
                       isSelected
-                        ? "bg-[var(--bg-card-alt)] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]"
-                        : "bg-[var(--bg-card)] border-[var(--border-color)] hover:border-[var(--border-color)] hover:bg-[var(--bg-card-alt)]"
+                        ? "is-selected bg-[var(--bg-card-alt)] border-[var(--color-primary)]/55"
+                        : "bg-[var(--bg-card)] border-[var(--border-color)] hover:border-[var(--color-primary)]/25 hover:bg-[var(--bg-card-alt)]"
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
@@ -2171,46 +2203,43 @@ export default function ContractsPage() {
                           toggleContractSelection(c.id, e as any)
                         }
                         onClick={(e) => e.stopPropagation()}
-                        className="rounded border-gray-600 bg-[var(--bg-card)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-1 shrink-0"
+                        className="rounded border-gray-600 bg-[var(--bg-card)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-0.5 shrink-0"
                       />
                       <FileText
-                        className={`w-4 h-4 shrink-0 mt-1 ${isSelected ? "text-[var(--color-primary)]" : "text-[var(--text-secondary)]"}`}
+                        className={`w-4 h-4 shrink-0 mt-0.5 ${isSelected ? "text-[var(--color-primary)]" : "text-[var(--text-secondary)]"}`}
                       />
-                      <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="min-w-0 flex-1 space-y-0.5">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="font-mono text-sm font-bold text-[var(--text-primary)] break-words">
-                            Contrato nº {cnum}
+                          <span className="contracts-list-card-num break-words">
+                            {cnum}
                           </span>
-                          <span className="text-[var(--text-muted)] hidden sm:inline">|</span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(c.status)}`}
+                            className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${getStatusColor(c.status)}`}
                           >
                             {getStatusLabel(c.status)}
                           </span>
                         </div>
-                        <p className="text-sm font-semibold text-[var(--text-primary)] leading-snug break-words whitespace-normal">
-                          Cliente:{' '}
+                        <p className="contracts-list-card-client break-words whitespace-normal">
                           {c.customer_name || c.customers?.name || "Cliente não informado"}
                         </p>
-                        <p className="text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal">
-                          Projeto: {projName}
-                          {loc && loc !== "Localização não informada" ? (
-                            <span className="text-[var(--text-muted)]"> | {loc}</span>
-                          ) : null}
+                        <p className="contracts-list-card-meta break-words whitespace-normal">
+                          {projName}
+                          {loc && loc !== "Localização não informada" ? ` | ${loc}` : ""}
                         </p>
-                        <p className="text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal">
-                          Valor:{' '}
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(val)}
-                          <span className="text-[var(--text-muted)] mx-1.5">|</span>
-                          Data:{' '}
-                          {new Date(c.created_at).toLocaleDateString("pt-BR")}
+                        <p className="contracts-list-card-meta flex flex-wrap items-center gap-x-2">
+                          <span>
+                            {new Intl.NumberFormat("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            }).format(val)}
+                          </span>
+                          <span className="text-[var(--text-muted)]">
+                            {new Date(c.created_at).toLocaleDateString("pt-BR")}
+                          </span>
                         </p>
                         {(c.customers?.document || c.customers?.cpf) && (
                           <p className="text-[10px] text-[var(--text-muted)] break-words">
-                            CPF/CNPJ: {c.customers?.document || c.customers?.cpf}
+                            {c.customers?.document || c.customers?.cpf}
                           </p>
                         )}
                       </div>
@@ -2230,31 +2259,24 @@ export default function ContractsPage() {
         >
           {selectedContract ? (
             <>
-              <div className="p-6 border-b border-[var(--border-color)] shrink-0">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-[var(--color-primary)]" />
+              <div className="contracts-detail-head border-b border-[var(--border-color)] shrink-0">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center shrink-0">
+                      <FileText className="w-4.5 h-4.5 w-4 h-4 text-[var(--color-primary)]" />
                     </div>
-                    <div>
-                      <h2 className="text-xl font-bold flex items-center gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <h2 className="contracts-detail-title flex items-center gap-2 flex-wrap">
                         {displayContractNumber(selectedContract.contract_number)}
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-[var(--border-subtle)] bg-white/5 text-[var(--text-secondary)]">
-                          Versão {selectedContract.version ?? 1}
-                        </span>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}
+                          className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}
                         >
                           {getStatusLabel(selectedContract.status)}
                         </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-[var(--border-subtle)] bg-white/5 text-[var(--text-secondary)]">
+                          Versão {selectedContract.version ?? 1}
+                        </span>
                       </h2>
-                      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                        Gerado em:{" "}
-                        {new Date(
-                          selectedContract.regenerated_at ||
-                            selectedContract.created_at,
-                        ).toLocaleString("pt-BR")}
-                      </p>
                     </div>
                   </div>
                   <div className="contracts-header-actions-desktop flex flex-wrap items-center gap-2 justify-end">
@@ -2385,19 +2407,6 @@ export default function ContractsPage() {
                         </button>
                       </div>
                     </div>
-                    {canShowRegenerateContract && (
-                      <button
-                        type="button"
-                        onClick={openRegenerateModal}
-                        disabled={regeneratingContract}
-                        className="flex items-center gap-2 px-4 py-2 sv-brand-btn-primary rounded-lg transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
-                      >
-                        <RefreshCw
-                          className={`w-4 h-4 ${regeneratingContract ? "animate-spin" : ""}`}
-                        />
-                        Regenerar contrato
-                      </button>
-                    )}
                     {isSaleContractFullySigned(selectedContract) &&
                       String(
                         (selectedContract as { pdf_signed_url?: string | null })
@@ -2435,22 +2444,6 @@ export default function ContractsPage() {
                           </button>
                         </>
                       )}
-                    {!(
-                      isSaleContractFullySigned(selectedContract) &&
-                      String(
-                        (selectedContract as { pdf_signed_url?: string | null })
-                          .pdf_signed_url || "",
-                      ).trim()
-                    ) && (
-                      <button
-                        type="button"
-                        onClick={() => void handleBaixarPDF()}
-                        className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium"
-                      >
-                        <Download className="w-4 h-4" />
-                        Baixar PDF
-                      </button>
-                    )}
                   </div>
                 </div>
 
@@ -2460,6 +2453,7 @@ export default function ContractsPage() {
                   userRole={user?.role}
                   loggedInUserEmail={user?.email}
                   authUser={user}
+                  compact
                   onCapabilitiesChange={setSignatureCaps}
                   onSigned={async () => {
                     const rows = await reloadContractsList();
@@ -2471,81 +2465,65 @@ export default function ContractsPage() {
                   }}
                 />
 
-                {/* Header Infos */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 text-sm mt-4">
-                  <div>
-                    <p className="text-[var(--text-muted)] text-xs mb-1">Cliente</p>
-                    <p className="font-semibold text-[var(--text-primary)]">
+                <div className="contracts-meta-strip">
+                  <span>
+                    <strong>
                       {selectedContract.customer_name ||
                         selectedContract.customers?.name ||
                         "Cliente não informado"}
-                    </p>
-                    <p className="text-[10px] text-[var(--text-muted)]">
-                      CPF:{" "}
-                      {selectedContract.customers?.document ||
-                        selectedContract.customers?.cpf ||
-                        "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[var(--text-muted)] text-xs mb-1">Projeto</p>
-                    <p className="font-semibold text-[var(--text-primary)]">
-                      {selectedContract.project_name ||
-                        selectedContract.project_name_snapshot ||
-                        selectedContract.sales?.projects?.name ||
-                        selectedContract.blocks?.projects?.name ||
-                        selectedContract.projects?.name ||
-                        "Projeto não informado"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[var(--text-muted)] text-xs mb-1">Localização</p>
-                    <p className="font-semibold text-[var(--text-primary)]">
-                      {selectedContract.location_display ||
-                        buildLocationDisplay(
-                          resolveBlockQuadra(selectedContract.blocks),
-                          resolveLotNumber(
-                            selectedContract.blocks,
-                            selectedContract,
-                          ),
-                        )}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[var(--text-muted)] text-xs mb-1">
-                      Valor do Contrato
-                    </p>
-                    <p className="font-semibold text-[var(--text-primary)]">
-                      {new Intl.NumberFormat("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      }).format(
-                        Number(selectedContract.sale_value_display) ||
-                          resolveContractSaleValue(
-                            selectedContract,
-                            selectedContract.sales,
-                            selectedContract.blocks,
-                          ),
+                    </strong>
+                  </span>
+                  <span>
+                    {selectedContract.project_name ||
+                      selectedContract.project_name_snapshot ||
+                      selectedContract.sales?.projects?.name ||
+                      selectedContract.blocks?.projects?.name ||
+                      selectedContract.projects?.name ||
+                      "Projeto não informado"}
+                  </span>
+                  <span>
+                    {selectedContract.location_display ||
+                      buildLocationDisplay(
+                        resolveBlockQuadra(selectedContract.blocks),
+                        resolveLotNumber(
+                          selectedContract.blocks,
+                          selectedContract,
+                        ),
                       )}
-                    </p>
-                  </div>
+                  </span>
+                  <span>
+                    {new Intl.NumberFormat("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    }).format(
+                      Number(selectedContract.sale_value_display) ||
+                        resolveContractSaleValue(
+                          selectedContract,
+                          selectedContract.sales,
+                          selectedContract.blocks,
+                        ),
+                    )}
+                  </span>
                 </div>
               </div>
 
               {/* Tabs */}
-              <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 border-b border-[var(--border-color)] overflow-x-auto min-w-0 shrink-0 sv-scrollbar sv-scrollbar-dark">
-                {[
-                  "Visualização",
-                  "Dados do Contrato",
-                  "Parcelas",
-                  "Arquivos",
-                  "Histórico",
-                ].map((tab) => (
+              <div className="contracts-tabs flex items-center gap-1 sm:gap-2 px-4 sm:px-5 border-b border-[var(--border-color)] overflow-x-auto min-w-0 shrink-0 sv-scrollbar sv-scrollbar-dark">
+                {(
+                  [
+                    ["Visualização", Eye],
+                    ["Dados do Contrato", LayoutList],
+                    ["Parcelas", Wallet],
+                    ["Arquivos", FolderOpen],
+                    ["Histórico", History],
+                  ] as const
+                ).map(([tab, Icon]) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`py-3 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                    className={`contracts-tab py-2.5 px-1 sm:px-2 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                   >
+                    <Icon />
                     {tab}
                   </button>
                 ))}
@@ -2555,10 +2533,10 @@ export default function ContractsPage() {
               <div className="flex-1 overflow-hidden flex bg-[var(--bg-main)] min-w-0 min-h-0">
                 {activeTab === "Visualização" && (
                   <>
-                    <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
+                    <div className="contracts-doc-wrap flex-1 min-w-0 p-3 sm:p-4 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
                       {(selectedContract.status === "cancelado" ||
                         selectedContract.status === "cancelled") && (
-                        <div className="max-w-[800px] mx-auto mb-4">
+                        <div className="contracts-doc-paper mx-auto mb-4">
                           <TerminationOperationDocumentsSection
                             saleId={selectedContract.sale_id}
                             tone="dark"
@@ -2566,11 +2544,11 @@ export default function ContractsPage() {
                         </div>
                       )}
                       {contractViewNeedsRegenerar && (
-                        <p className="max-w-[800px] mx-auto mb-3 text-xs text-amber-400/90">
+                        <p className="contracts-doc-paper mx-auto mb-3 text-xs text-amber-400/90">
                           Este contrato precisa ser regenerado para atualizar a visualização.
                         </p>
                       )}
-                      <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[var(--border-color)] origin-top p-8 text-black min-h-[800px]">
+                      <div className="contracts-doc-paper mx-auto bg-white rounded shadow-lg overflow-hidden border border-[var(--border-color)] origin-top p-6 sm:p-8 text-black">
                         {contractViewLoading && !resolvedContractHtml ? (
                           <div className="flex items-center justify-center py-32 text-[var(--text-muted)]">
                             <Loader2 className="w-8 h-8 animate-spin mr-2" />
@@ -2622,108 +2600,6 @@ export default function ContractsPage() {
                             </p>
                           </div>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Timeline Sidebar inside preview */}
-                    <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[var(--border-color)] bg-[var(--bg-card)] p-4 sm:p-6 overflow-y-auto sv-scrollbar sv-scrollbar-dark shrink-0">
-                      <h3 className="text-sm font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                        <History className="w-4 h-4 text-[var(--text-secondary)]" />
-                        Histórico de versões
-                      </h3>
-                      <div className="space-y-2 mb-6">
-                        {(contractVersions.length > 0
-                          ? contractVersions
-                          : [selectedContract]
-                        ).map((ver: any) => (
-                          <div
-                            key={ver.id}
-                            className="flex items-center justify-between gap-2 p-3 rounded-lg bg-[var(--bg-main)] border border-[var(--border-color)] text-xs"
-                          >
-                            <div>
-                              <p className="font-semibold text-[var(--text-primary)]">
-                                Versão {ver.version ?? 1}
-                                <span
-                                  className={`ml-2 px-1.5 py-0.5 rounded text-[10px] border ${getStatusColor(ver.status)}`}
-                                >
-                                  {getStatusLabel(ver.status)}
-                                </span>
-                              </p>
-                              <p className="text-[var(--text-muted)] mt-0.5">
-                                {new Date(
-                                  ver.regenerated_at || ver.created_at,
-                                ).toLocaleString("pt-BR")}
-                              </p>
-                              {ver.regenerated_from && (
-                                <p className="text-amber-400/90 mt-0.5">
-                                  Regenerado (v
-                                  {Math.max(1, (ver.version ?? 2) - 1)} → v
-                                  {ver.version ?? 1})
-                                </p>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => void handleDownloadVersion(ver)}
-                              className="text-[var(--color-primary)] hover:underline shrink-0 flex items-center gap-1"
-                            >
-                              <Download className="w-3 h-3" />
-                              Baixar
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">
-                        Linha do Tempo
-                      </h3>
-                      <div className="space-y-6">
-                        <TimelineItem
-                          icon={<FileText />}
-                          color="success"
-                          title="Contrato criado"
-                          date={new Date(
-                            selectedContract.created_at,
-                          ).toLocaleString("pt-BR")}
-                          author="Admin"
-                          active
-                        />
-                        <TimelineItem
-                          icon={<CheckCircle2 />}
-                          color="success"
-                          title="Cliente cadastrado"
-                          date={new Date(
-                            selectedContract.customers?.created_at ||
-                              selectedContract.created_at,
-                          ).toLocaleString("pt-BR")}
-                          author="Admin"
-                          active
-                        />
-                        <TimelineItem
-                          icon={<Wallet />}
-                          color="info"
-                          title="Entrada registrada"
-                          subtitle="No momento da venda"
-                          active={
-                            Number(selectedContract.sales?.down_payment) > 0
-                          }
-                        />
-                        <TimelineItem
-                          icon={<FileText />}
-                          color="purple"
-                          title="PDF gerado"
-                          subtitle="Sistema"
-                          active={!!selectedContract.generated_html}
-                        />
-                        <TimelineItem
-                          icon={<Clock />}
-                          color="warning"
-                          title="Assinatura pendente"
-                          subtitle="Aguardando assinatura do cliente"
-                          active={
-                            getStatusLabel(selectedContract.status) ===
-                            "Pendente"
-                          }
-                        />
                       </div>
                     </div>
                   </>
@@ -3167,7 +3043,8 @@ export default function ContractsPage() {
               </div>
 
               {/* BOTTOM ACTION BAR — desktop/tablet */}
-              <div className="contracts-desktop-action-bar p-4 border-t border-[var(--border-color)] bg-[var(--bg-card)] flex flex-wrap items-center justify-center gap-3">
+              <div className="contracts-desktop-action-bar p-3 border-t border-[var(--border-color)] bg-[var(--bg-card)] flex flex-wrap items-center gap-3">
+                <div className="contracts-action-cluster">
                 <ActionBtn
                   onClick={handleBaixarPDF}
                   icon={<Download />}
@@ -3183,7 +3060,7 @@ export default function ContractsPage() {
                 <ActionBtn
                   onClick={handleReenviar}
                   icon={<Send />}
-                  label="Reenviar"
+                  label="Reenviar para assinatura"
                   color="purple"
                 />
                 <ActionBtn
@@ -3211,17 +3088,61 @@ export default function ContractsPage() {
                   label="Cancelar"
                   color="danger"
                 />
-
-                <div className="h-8 w-[1px] bg-[var(--border-color)] mx-2 hidden sm:block"></div>
-
-                <button
+                <ActionBtn
                   onClick={handleGerarCarne}
-                  className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Receipt className="w-4 h-4" />
-                  Gerar Carnê
-                  <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
-                </button>
+                  icon={<Receipt />}
+                  label="Gerar Carnê"
+                  color="warning"
+                />
+                </div>
+
+                <div className="contracts-action-bar-end">
+                  <details className="contracts-version-select">
+                    <summary>
+                      <Layers className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                      Versão {selectedContract.version ?? 1}
+                      <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                    </summary>
+                    <div className="contracts-version-menu">
+                      {visibleContractVersions.map((ver: any) => {
+                        const isCurrent =
+                          ver.is_current === true ||
+                          ver.id === selectedContract.id;
+                        const dateLabel = new Date(
+                          ver.regenerated_at || ver.created_at,
+                        ).toLocaleDateString("pt-BR");
+                        return (
+                          <button
+                            key={ver.id}
+                            type="button"
+                            className="contracts-version-row"
+                            onClick={() => void handleDownloadVersion(ver)}
+                          >
+                            <span
+                              className={`contracts-version-dot ${isCurrent ? "is-current" : ""}`}
+                            />
+                            <span>
+                              <span className="contracts-version-name">
+                                Versão {ver.version ?? 1}
+                              </span>
+                              <span className="contracts-version-sub">
+                                {dateLabel} — {contractVersionNote(ver)}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="contracts-version-history"
+                        onClick={() => setActiveTab("Histórico")}
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        Ver histórico completo
+                      </button>
+                    </div>
+                  </details>
+                </div>
               </div>
             </>
           ) : (
@@ -3379,6 +3300,49 @@ export default function ContractsPage() {
                 <X />
                 Cancelar
               </button>
+              <details className="contracts-version-select contracts-mobile-version-select">
+                <summary className="contracts-mobile-action-btn">
+                  <Layers />
+                  Versão {selectedContract.version ?? 1}
+                </summary>
+                <div className="contracts-version-menu">
+                  {visibleContractVersions.map((ver: any) => {
+                    const isCurrent =
+                      ver.is_current === true || ver.id === selectedContract.id;
+                    const dateLabel = new Date(
+                      ver.regenerated_at || ver.created_at,
+                    ).toLocaleDateString("pt-BR");
+                    return (
+                      <button
+                        key={ver.id}
+                        type="button"
+                        className="contracts-version-row"
+                        onClick={() => void handleDownloadVersion(ver)}
+                      >
+                        <span
+                          className={`contracts-version-dot ${isCurrent ? "is-current" : ""}`}
+                        />
+                        <span>
+                          <span className="contracts-version-name">
+                            Versão {ver.version ?? 1}
+                          </span>
+                          <span className="contracts-version-sub">
+                            {dateLabel} — {contractVersionNote(ver)}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className="contracts-version-history"
+                    onClick={() => setActiveTab("Histórico")}
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    Ver histórico completo
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
         </div>
