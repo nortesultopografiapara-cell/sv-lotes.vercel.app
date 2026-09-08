@@ -594,6 +594,12 @@
   max-width: 100%;
 }
 
+@media (min-width: 1280px) {
+  .finance-premium .finance-module-header {
+    display: none;
+  }
+}
+
 .finance-premium .finance-global-block {
   margin-bottom: 0.65rem;
   min-width: 0;
