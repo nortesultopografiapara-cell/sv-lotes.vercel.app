@@ -12,41 +12,39 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.375rem;
   min-width: 0;
-  padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
   border: 1px solid var(--color-border);
   background: var(--bg-elevated);
 }
 
 .contracts-kpi-label {
-  margin: 0 0 0.125rem;
-  font-size: 0.6875rem;
+  margin: 0;
+  font-size: 0.5625rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .contracts-kpi-value {
   margin: 0;
-  font-size: 1.375rem;
+  font-size: 0.9375rem;
   font-weight: 700;
-  line-height: 1.15;
+  line-height: 1.1;
   color: var(--text-primary);
 }
 
 .contracts-kpi-hint {
-  margin: 0.125rem 0 0;
-  font-size: 0.625rem;
-  font-weight: 600;
+  display: none;
 }
 
 .contracts-kpi-icon {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: 9999px;
   display: flex;
   align-items: center;
@@ -83,27 +81,47 @@
 }
 
 .contracts-detail-head {
-  padding: 0.75rem 1.25rem 0.625rem;
+  padding: 0.5rem 1rem 0.4rem;
 }
 
 .contracts-detail-title {
-  font-size: 1.125rem;
+  font-size: 1.0625rem;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
-.contracts-meta-strip {
-  display: flex;
+.contracts-signature-strip {
+  margin-top: 0.4rem;
+}
+
+.contracts-signature-strip > div {
+  display: flex !important;
+  flex-direction: row;
   flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
-  margin-top: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+  align-items: center;
+  gap: 0.35rem 0.75rem !important;
+  padding: 0.25rem 0.625rem !important;
+  border-radius: 0.5rem;
 }
 
-.contracts-meta-strip strong {
-  color: var(--text-primary);
-  font-weight: 600;
+.contracts-signature-strip > div > div:first-of-type {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.contracts-signature-strip > div > div:first-of-type > div {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+.contracts-signature-strip > div > div:first-of-type p {
+  margin: 0 !important;
 }
 
 .contracts-tabs {
@@ -134,26 +152,29 @@
 .contracts-desktop-action-bar {
   justify-content: space-between;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 
 .contracts-action-cluster {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
+  justify-content: flex-start;
+  gap: 0.375rem;
   min-width: 0;
 }
 
 .contracts-action-bar-end {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.375rem;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .contracts-version-select {
@@ -165,15 +186,16 @@
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
   border: 1px solid var(--color-border);
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
 
 .contracts-version-select > summary::-webkit-details-marker {
@@ -265,24 +287,50 @@
 @media (min-width: 768px) {
   .contracts-workspace-header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 1rem 1.25rem 0.25rem;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--bg-card);
+    flex-shrink: 0;
+  }
+
+  .contracts-workspace-heading {
+    flex: 0 1 14rem;
+    min-width: 10.5rem;
   }
 
   .contracts-workspace-title {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: -0.02em;
+    line-height: 1.15;
     color: var(--text-primary);
   }
 
   .contracts-workspace-subtitle {
-    margin: 0.125rem 0 0;
-    font-size: 0.8125rem;
+    margin: 0.1rem 0 0;
+    font-size: 0.75rem;
     color: var(--text-muted);
+    line-height: 1.25;
+  }
+
+  .contracts-kpi-row {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: stretch;
+    gap: 0.375rem;
+    min-width: 0;
+  }
+
+  .contracts-kpi-card {
+    flex: 1 1 0;
+  }
+
+  .contracts-kpi-card--valor {
+    flex: 1.35 1 0;
   }
 }
 
