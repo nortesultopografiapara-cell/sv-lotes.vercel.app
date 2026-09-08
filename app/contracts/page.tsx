@@ -96,6 +96,15 @@ import {
   loadContractsListForTenant,
 } from "@/lib/contractsListService";
 import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
+import {
+  CONTRACT_FINANCE_RECEIPTS_SELECT,
+  contractReceiptStatusClassName,
+  formatContractReceiptInstallmentLabel,
+  formatPaidAmountDisplay,
+  resolveContractInstallmentAmountDisplay,
+  resolveContractInstallmentsCount,
+  resolveContractReceiptDisplayStatus,
+} from "@/lib/contractReceiptsDisplay";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
@@ -247,9 +256,6 @@ async function loadContractsList(
   });
   return { rows: result.rows, error: result.error };
 }
-
-const FINANCE_RECEIPTS_LIST_SELECT =
-  "id, sale_id, due_date, amount, status, installment_number, description, payment_date";
 
 /** Oculta versões substituídas na lista principal (histórico fica na aba do contrato). */
 function isContractVisibleInList(c: any): boolean {
@@ -550,6 +556,7 @@ export default function ContractsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("Visualização");
   const [receipts, setReceipts] = useState<any[]>([]);
+  const [receiptsLoadError, setReceiptsLoadError] = useState<string | null>(null);
   const [contractVersions, setContractVersions] = useState<any[]>([]);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regeneratingContract, setRegeneratingContract] = useState(false);
@@ -695,20 +702,42 @@ export default function ContractsPage() {
   useEffect(() => {
     let active = true;
     const fetchReceipts = async () => {
-      if (selectedContract?.sale_id) {
-        const { data } = await supabase
-          .from("finance_receipts")
-          .select(FINANCE_RECEIPTS_LIST_SELECT)
-          .eq("sale_id", selectedContract.sale_id)
-          .order("due_date", { ascending: true });
-        if (active) setReceipts(data || []);
-      } else {
-        if (active) setReceipts([]);
+      if (!selectedContract?.sale_id) {
+        if (active) {
+          setReceipts([]);
+          setReceiptsLoadError(
+            selectedContract
+              ? "Não foi possível carregar as parcelas: contrato sem venda vinculada."
+              : null,
+          );
+        }
+        return;
       }
+      const { data, error } = await supabase
+        .from("finance_receipts")
+        .select(CONTRACT_FINANCE_RECEIPTS_SELECT)
+        .eq("sale_id", selectedContract.sale_id)
+        .order("due_date", { ascending: true })
+        .order("installment_number", { ascending: true });
+      if (!active) return;
+      if (error) {
+        console.error("[CONTRATOS] finance_receipts", error);
+        setReceipts([]);
+        setReceiptsLoadError(
+          formatClientFetchError({
+            apiError: error.message,
+          }) || "Não foi possível carregar as parcelas deste contrato.",
+        );
+        return;
+      }
+      setReceipts(data || []);
+      setReceiptsLoadError(null);
     };
     fetchReceipts();
-    return () => { active = false; };
-  }, [selectedContract?.sale_id]);
+    return () => {
+      active = false;
+    };
+  }, [selectedContract?.id, selectedContract?.sale_id]);
 
   useEffect(() => {
     let active = true;
@@ -1892,6 +1921,14 @@ export default function ContractsPage() {
     setStats(computeSaleContractDashboardStats(data));
   };
 
+  const contractInstallmentsCount = resolveContractInstallmentsCount(
+    selectedContract?.sales,
+  );
+  const contractInstallmentAmount = resolveContractInstallmentAmountDisplay(
+    selectedContract?.sales,
+    receipts,
+  );
+
   const showMobileSignatureAction = useMemo(() => {
     if (!selectedContract) return false;
     if (isSaleContractFullySigned(selectedContract)) {
@@ -2658,7 +2695,7 @@ export default function ContractsPage() {
                             Quantidade de Parcelas
                           </p>
                           <p className="font-semibold text-[var(--text-primary)]">
-                            {selectedContract.sales?.installments || "-"}
+                            {contractInstallmentsCount ?? "-"}
                           </p>
                         </div>
                         <div>
@@ -2666,14 +2703,12 @@ export default function ContractsPage() {
                             Valor da Parcela
                           </p>
                           <p className="font-semibold text-[var(--text-primary)]">
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(
-                              Number(
-                                selectedContract.sales?.installment_value || 0,
-                              ),
-                            )}
+                            {contractInstallmentAmount == null
+                              ? "-"
+                              : new Intl.NumberFormat("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL",
+                                }).format(contractInstallmentAmount)}
                           </p>
                         </div>
                         <div>
@@ -2701,7 +2736,14 @@ export default function ContractsPage() {
                       <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Parcelas do Contrato
                       </h3>
-                      {receipts.length > 0 ? (
+                      {receiptsLoadError ? (
+                        <div className="text-center py-10 text-[var(--text-muted)]">
+                          <Wallet className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                          <p className="text-red-400 font-medium">
+                            {receiptsLoadError}
+                          </p>
+                        </div>
+                      ) : receipts.length > 0 ? (
                         <table className="w-full text-left text-sm text-[var(--text-secondary)]">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] text-[var(--text-muted)]">
@@ -2714,13 +2756,24 @@ export default function ContractsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {receipts.map((r, idx) => (
+                            {receipts.map((r) => {
+                              const paidAmount = formatPaidAmountDisplay(
+                                r.paid_amount,
+                              );
+                              const displayStatus =
+                                resolveContractReceiptDisplayStatus(
+                                  r.status,
+                                  r.due_date,
+                                );
+                              return (
                               <tr
                                 key={r.id}
                                 className="border-b border-[var(--border-color)]/50 last:border-0 border-t-transparent hover:bg-[var(--bg-card-alt)]/20 transition-colors"
                               >
                                 <td className="py-3 font-mono">
-                                  {r.installment_number || idx + 1}
+                                  {formatContractReceiptInstallmentLabel(
+                                    r.installment_number,
+                                  )}
                                 </td>
                                 <td className="py-3">
                                   {r.due_date
@@ -2737,37 +2790,31 @@ export default function ContractsPage() {
                                   }).format(Number(r.amount))}
                                 </td>
                                 <td className="py-3 text-green-400">
-                                  {r.amount_paid
+                                  {paidAmount != null
                                     ? new Intl.NumberFormat("pt-BR", {
                                         style: "currency",
                                         currency: "BRL",
-                                      }).format(Number(r.amount_paid))
+                                      }).format(paidAmount)
                                     : "-"}
                                 </td>
                                 <td className="py-3">
                                   <span
-                                    className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${r.status === "paid" ? "bg-green-500/10 text-[var(--color-success)] border border-[var(--color-success)]/20" : r.status === "overdue" || (r.status === "pending" && new Date(r.due_date) < new Date()) ? "bg-red-500/10 text-red-500 border border-red-500/20" : "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20"}`}
+                                    className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${contractReceiptStatusClassName(displayStatus.key)}`}
                                   >
-                                    {r.status === "paid"
-                                      ? "Pago"
-                                      : r.status === "overdue" ||
-                                          (r.status === "pending" &&
-                                            new Date(r.due_date) < new Date())
-                                        ? "Vencido"
-                                        : "Pendente"}
+                                    {displayStatus.label}
                                   </span>
                                 </td>
                                 <td className="py-3">
-                                  {r.payment_date
-                                    ? new Date(
-                                        r.payment_date,
-                                      ).toLocaleDateString("pt-BR", {
-                                        timeZone: "UTC",
-                                      })
+                                  {r.paid_at
+                                    ? new Date(r.paid_at).toLocaleDateString(
+                                        "pt-BR",
+                                        { timeZone: "UTC" },
+                                      )
                                     : "-"}
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       ) : (
