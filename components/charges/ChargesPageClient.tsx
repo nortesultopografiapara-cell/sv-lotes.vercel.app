@@ -5,6 +5,8 @@ import {
   AlertCircle,
   Banknote,
   Calendar,
+  Download,
+  FileText,
   Filter,
   Loader2,
   MessageCircle,
@@ -91,6 +93,11 @@ import {
   paginateFinanceReceiptRows,
   type FinanceReceiptsUiPageSize,
 } from '@/lib/finance/fetchFinanceReceiptsPaged';
+import {
+  CHARGE_LIST_EXPORT_SCOPE,
+  downloadChargeListExcel,
+  downloadChargeListPdf,
+} from '@/lib/charges/chargeListExport';
 
 const STATUS_OPTIONS = ['Todas', 'Pendente', 'Vencido', 'Pago', 'Cancelado'] as const;
 
@@ -149,6 +156,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [itemsPerPage, setItemsPerPage] = useState<FinanceReceiptsUiPageSize>(
     DEFAULT_FINANCE_RECEIPTS_UI_PAGE_SIZE,
   );
+  const [exportingKind, setExportingKind] = useState<'pdf' | 'excel' | null>(null);
 
   const ownerReadOnly = isOwnerRole(user?.role);
   const [asaasAccessAvailable, setAsaasAccessAvailable] = useState(true);
@@ -706,6 +714,29 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   }, [currentPage, pagination.totalPages]);
 
   const pageRows = pagination.pageRows;
+
+  const filteredViews = useMemo(
+    () =>
+      filteredRows.map((row) => {
+        const installmentId = String(row.id);
+        const provider = resolveRowProvider(row);
+        const charge = chargeForInstallment(installmentId, provider);
+        return buildChargeInstallmentView(row, charge, undefined, financialAccountLabels, {
+          hasChargeHistory:
+            provider === 'INTER'
+              ? Boolean(charge?.asaasPaymentId)
+              : asaasChargeHistoryIds.has(installmentId) || Boolean(charge?.asaasPaymentId),
+          chargeProvider: provider,
+        });
+      }),
+    [
+      filteredRows,
+      resolveRowProvider,
+      chargeForInstallment,
+      financialAccountLabels,
+      asaasChargeHistoryIds,
+    ],
+  );
 
   const kpis = useMemo(() => computeChargeKpiSummary(payments), [payments]);
 
@@ -1361,6 +1392,48 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     await loadInstallments({ syncAsaasStatuses: integrationReady && !ownerReadOnly });
   };
 
+  const chargeExportMeta = {
+    generatedAtLabel: new Date().toLocaleString('pt-BR'),
+    statusFilter: statusFilter === 'Todas' ? 'Todas as situações' : statusFilter,
+    projectFilter:
+      projectFilter === 'Todos os projetos' ? 'Todos os empreendimentos' : projectFilter,
+    accountFilter: financialAccountFilter,
+    startDate,
+    endDate,
+    search,
+    rowCount: filteredViews.length,
+  };
+
+  const handleExportFilteredPdf = async () => {
+    if (!filteredViews.length) {
+      showToast('Nenhum registro na listagem filtrada para exportar.', true);
+      return;
+    }
+    setExportingKind('pdf');
+    try {
+      await downloadChargeListPdf(filteredViews, chargeExportMeta);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Falha ao gerar PDF.', true);
+    } finally {
+      setExportingKind(null);
+    }
+  };
+
+  const handleExportFilteredExcel = async () => {
+    if (!filteredViews.length) {
+      showToast('Nenhum registro na listagem filtrada para exportar.', true);
+      return;
+    }
+    setExportingKind('excel');
+    try {
+      await downloadChargeListExcel(filteredViews, chargeExportMeta);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Falha ao gerar Excel.', true);
+    } finally {
+      setExportingKind(null);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex h-full items-center justify-center p-8">
@@ -1370,52 +1443,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   }
 
   return (
-    <div className="finance-premium sv-page sv-page--scroll-y h-full w-full p-4 sm:p-6 lg:p-8">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="mb-1 flex items-center gap-2">
-            <Banknote className="h-6 w-6 text-violet-400" />
-            <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">Cobranças</h1>
-          </div>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Central operacional de parcelas e cobranças da empresa.
-          </p>
+    <div className="finance-premium sv-page sv-page--scroll-y h-full w-full p-3 md:p-4 lg:p-5">
+      <div className="charges-page-header">
+        <div className="mb-1 flex items-center gap-2">
+          <Banknote className="h-6 w-6 text-violet-400" />
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">Cobranças</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void handleRefreshList()}
-            disabled={loading || bulkBusy}
-            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Atualizar lista
-          </button>
-          {!ownerReadOnly && (integrationReady || hasVisibleInterCharges) ? (
-            <div className="flex flex-col items-stretch gap-1 sm:items-end">
-              <button
-                type="button"
-                onClick={() => void runRefreshAllCharges()}
-                disabled={Boolean(refreshAllBlockReason)}
-                className="inline-flex items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-                title={
-                  refreshAllBlockMessage ||
-                  'Consultar status das cobranças visíveis (Asaas e/ou Banco Inter)'
-                }
-              >
-                {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Atualizar todas as cobranças
-              </button>
-              {refreshAllBlockMessage && refreshAllBlockReason !== 'busy' && refreshAllBlockReason !== 'loading' ? (
-                <span className="text-[11px] text-amber-200/90">{refreshAllBlockMessage}</span>
-              ) : null}
-            </div>
-          ) : ownerReadOnly ? null : hasAsaasRows ? (
-            <span className="text-[11px] text-amber-200/90">
-              {formatRefreshAllChargesBlockReason('integration_unavailable')}
-            </span>
-          ) : null}
-        </div>
+        <p className="text-sm text-[var(--text-secondary)]">
+          Central operacional de parcelas e cobranças da empresa.
+        </p>
       </div>
 
       {loadError ? (
@@ -1443,7 +1479,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         </div>
       ) : null}
 
-      <div className="finance-kpi-grid mb-6">
+      <div className="finance-kpi-grid charges-kpi-grid">
         <FinanceStatCard
           title="Em aberto"
           value={formatCurrency(kpis.emAberto)}
@@ -1493,6 +1529,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           iconWrapClass="bg-violet-500/10 text-violet-400"
           loading={loading}
         />
+      </div>
+
+      <div className="charges-ops-row">
         <FinanceStatCard
           title="Cobranças emitidas"
           value={formatCurrency(asaasKpis.cobrancasEmitidas)}
@@ -1501,9 +1540,72 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           iconWrapClass="bg-cyan-500/10 text-cyan-400"
           loading={loading}
         />
+        <div className="charges-ops-actions">
+          <button
+            type="button"
+            onClick={() => void handleExportFilteredPdf()}
+            disabled={loading || Boolean(exportingKind) || !installmentsDataReady}
+            title={`Exporta a listagem filtrada completa já carregada (${CHARGE_LIST_EXPORT_SCOPE}), não somente a página visível.`}
+            className="charges-ops-btn border border-rose-500/40 bg-transparent text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"
+          >
+            {exportingKind === 'pdf' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4" />
+            )}
+            Relatório PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportFilteredExcel()}
+            disabled={loading || Boolean(exportingKind) || !installmentsDataReady}
+            title={`Exporta a listagem filtrada completa já carregada (${CHARGE_LIST_EXPORT_SCOPE}), não somente a página visível.`}
+            className="charges-ops-btn border border-emerald-500/40 bg-transparent text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+          >
+            {exportingKind === 'excel' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Relatório Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRefreshList()}
+            disabled={loading || bulkBusy}
+            className="charges-ops-btn border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Atualizar lista
+          </button>
+          {!ownerReadOnly && (integrationReady || hasVisibleInterCharges) ? (
+            <div className="charges-ops-refresh">
+              <button
+                type="button"
+                onClick={() => void runRefreshAllCharges()}
+                disabled={Boolean(refreshAllBlockReason)}
+                className="charges-ops-btn border border-violet-500/40 bg-violet-600/90 text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+                title={
+                  refreshAllBlockMessage ||
+                  'Consultar status das cobranças visíveis (Asaas e/ou Banco Inter)'
+                }
+              >
+                {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Atualizar todas as cobranças
+              </button>
+              {refreshAllBlockMessage && refreshAllBlockReason !== 'busy' && refreshAllBlockReason !== 'loading' ? (
+                <span className="text-[11px] text-amber-200/90">{refreshAllBlockMessage}</span>
+              ) : null}
+            </div>
+          ) : ownerReadOnly ? null : hasAsaasRows ? (
+            <span className="text-[11px] text-amber-200/90">
+              {formatRefreshAllChargesBlockReason('integration_unavailable')}
+            </span>
+          ) : null}
+        </div>
       </div>
 
-      <div className="finance-filters-bar mb-4" role="search">
+      <div className="finance-filters-bar mb-3" role="search">
         <div className="relative finance-filter-search">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)] pointer-events-none" />
           <input

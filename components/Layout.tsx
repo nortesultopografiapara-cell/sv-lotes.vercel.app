@@ -795,14 +795,28 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               </p>
             </div>
 
-            {pathname === '/finance' ? (
+            {pathname === '/finance' || pathname === '/charges' ? (
               <div className="sv-layout-finance-title hidden min-w-0 flex-1 text-right xl:block">
-                <p className="truncate text-lg font-bold leading-tight tracking-tight text-[var(--text-primary)]">
-                  Módulo Financeiro
-                </p>
-                <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                  Contratos · Títulos · Inadimplência
-                </p>
+                {pathname === '/charges' ? (
+                  <>
+                    <p className="flex items-center justify-end gap-1.5 truncate text-lg font-bold leading-tight tracking-tight text-[var(--text-primary)]">
+                      <Banknote className="h-4 w-4 shrink-0 text-violet-400" />
+                      Cobranças
+                    </p>
+                    <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                      Central operacional de parcelas e cobranças da empresa.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="truncate text-lg font-bold leading-tight tracking-tight text-[var(--text-primary)]">
+                      Módulo Financeiro
+                    </p>
+                    <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                      Contratos · Títulos · Inadimplência
+                    </p>
+                  </>
+                )}
               </div>
             ) : null}
 
