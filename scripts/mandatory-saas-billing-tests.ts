@@ -27,6 +27,7 @@ import {
   SaasBoletoMinimumError,
 } from '../lib/saasPixValidation';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '../lib/saasMasterConfig';
+import { resolveSaasGenerateChargeDueDate } from '../lib/saasGenerateChargeDueDate';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
 
 function assert(cond: boolean, msg: string) {
@@ -71,6 +72,23 @@ function testResolveInvoiceDueDate() {
   const due = resolveInvoiceDueDate(company, null, '2026-07');
   assert(due === '2026-07-27', 'vencimento dia 27 julho/2026');
   console.log('OK testResolveInvoiceDueDate');
+}
+
+function testGenerateChargeDueDateFollowsCompetence() {
+  const company = {
+    ...menesesCompanyFixture(),
+    next_payment_date: '2026-09-27',
+    next_due_date: '2026-09-27',
+  };
+  assert(
+    resolveSaasGenerateChargeDueDate(company, '2026-09') === '2026-09-27',
+    'setembro usa next_due 27/09',
+  );
+  assert(
+    resolveSaasGenerateChargeDueDate(company, '2026-10') === '2026-10-27',
+    'outubro avança para 27/10',
+  );
+  console.log('OK testGenerateChargeDueDateFollowsCompetence');
 }
 
 function testCurrentReferenceMonth() {
@@ -446,6 +464,7 @@ async function main() {
   testInvoiceNumberFormat();
   testComputeInvoiceAmounts();
   testResolveInvoiceDueDate();
+  testGenerateChargeDueDateFollowsCompetence();
   testCurrentReferenceMonth();
   testBillingMetrics();
   testMenesesSplitMetrics();

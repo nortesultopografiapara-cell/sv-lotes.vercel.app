@@ -101,7 +101,10 @@ function toGenerateChargeCompany(
     id: String((company as { id?: string }).id || ''),
     name: company.name || '—',
     next_payment_date: (company as { next_payment_date?: string | null }).next_payment_date,
-    next_due_date: (company as { next_due_date?: string | null }).next_due_date,
+    next_due_date:
+      (company as { next_due_date?: string | null }).next_due_date ||
+      sub?.next_due_date ||
+      null,
     subscription_due_day: (company as { subscription_due_day?: number | null }).subscription_due_day,
     plan: (company as { plan?: string | null }).plan,
     plan_type: (company as { plan_type?: string | null }).plan_type,

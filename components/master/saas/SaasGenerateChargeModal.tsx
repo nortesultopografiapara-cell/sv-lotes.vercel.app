@@ -8,6 +8,7 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import { currentReferenceMonth } from '@/lib/saasBilling';
+import { resolveSaasGenerateChargeDueDate } from '@/lib/saasGenerateChargeDueDate';
 import { ASAAS_BOLETO_MIN_AMOUNT, type SaasMasterBillingType } from '@/lib/saasMasterConfig';
 
 export type SaasGenerateChargeCompany = CompanyPricingSource & {
@@ -31,28 +32,6 @@ type Props = {
     dueDate: string;
   }) => void | Promise<void>;
 };
-
-function defaultDueDate(
-  company: SaasGenerateChargeCompany | null,
-  referenceMonth: string = currentReferenceMonth(),
-): string {
-  const ref = referenceMonth || currentReferenceMonth();
-  const fromCompany =
-    company?.next_payment_date || company?.next_due_date || null;
-  if (fromCompany) {
-    const iso = String(fromCompany).split('T')[0];
-    if (iso.slice(0, 7) === ref) return iso;
-  }
-
-  const [y, m] = ref.split('-').map(Number);
-  const dayRaw = Number(company?.subscription_due_day);
-  const day =
-    Number.isFinite(dayRaw) && dayRaw >= 1 && dayRaw <= 31
-      ? dayRaw
-      : 10;
-  const lastDay = new Date(y, m, 0).getDate();
-  return `${y}-${String(m).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
-}
 
 export function SaasGenerateChargeModal({
   open,
@@ -85,7 +64,7 @@ export function SaasGenerateChargeModal({
     const ref = currentReferenceMonth();
     setBillingType('PIX');
     setReferenceMonth(ref);
-    setDueDate(defaultDueDate(company, ref));
+    setDueDate(resolveSaasGenerateChargeDueDate(company, ref));
     setLocalError(null);
   }, [open, company]);
 
@@ -130,7 +109,11 @@ export function SaasGenerateChargeModal({
               <input
                 type="month"
                 value={referenceMonth}
-                onChange={(e) => setReferenceMonth(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setReferenceMonth(next);
+                  setDueDate(resolveSaasGenerateChargeDueDate(company, next));
+                }}
                 className="w-full rounded-lg border border-white/10 bg-[#0B0E14] px-3 py-2 text-sm text-white"
               />
             </Field>
