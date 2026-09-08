@@ -98,69 +98,100 @@ export async function GET(request: Request) {
   }
 
   const admin = createClient(url, key, { auth: { persistSession: false } });
-  const secrets = await loadInterSecretsForServer(admin, COMPANY);
-  if (!secrets) {
-    return NextResponse.json({ error: 'Credenciais Inter ausentes.' }, { status: 500 });
+  const local = await admin
+    .from('bank_charges')
+    .select('id, financial_account_id, integration_id')
+    .eq('company_id', COMPANY)
+    .eq('provider', 'INTER')
+    .eq('external_id', codigo)
+    .maybeSingle();
+  if (local.error) {
+    return NextResponse.json({ error: local.error.message, writes: false }, { status: 500 });
   }
 
-  const creds: InterOAuthCredentials = {
-    companyId: COMPANY,
-    integrationId: secrets.integrationId,
-    environment: secrets.environment,
-    clientId: secrets.clientId,
-    clientSecret: secrets.clientSecret,
-    certificatePem: secrets.certificatePem,
-    privateKeyPem: secrets.privateKeyPem,
-  };
+  try {
+    const secrets = await loadInterSecretsForServer(admin, COMPANY, {
+      integrationId: local.data?.integration_id ? String(local.data.integration_id) : null,
+      financialAccountId: local.data?.financial_account_id
+        ? String(local.data.financial_account_id)
+        : null,
+    });
+    if (!secrets) {
+      return NextResponse.json({ error: 'Credenciais Inter ausentes.' }, { status: 500 });
+    }
 
-  const detail = await fetchInterCobrancaByCodigo(creds, codigo);
-  const raw = (detail.raw || {}) as Record<string, unknown>;
-  const cobranca = asRecord(raw.cobranca) || raw;
-  const boleto = asRecord(raw.boleto) || asRecord(cobranca.boleto) || {};
-  const situacao = String(detail.situacao || '').trim().toUpperCase();
-  const disposition = classifyRemoteInterSituacaoForRelease(situacao);
-  const origem = asRecord(cobranca.origem) || asRecord(raw.origem);
-  const mensagem = pickString(cobranca.mensagem, raw.mensagem, cobranca.observacao, raw.observacao);
-  const falha = pickString(cobranca.falha, raw.falha, origem?.falha);
+    const creds: InterOAuthCredentials = {
+      companyId: COMPANY,
+      integrationId: secrets.integrationId,
+      environment: secrets.environment,
+      clientId: secrets.clientId,
+      clientSecret: secrets.clientSecret,
+      certificatePem: secrets.certificatePem,
+      privateKeyPem: secrets.privateKeyPem,
+    };
 
-  return NextResponse.json({
-    ok: true,
-    writes: false,
-    persistAttempted: false,
-    refreshAttempted: false,
-    cancelAttempted: false,
-    emitAttempted: false,
-    asaasAttempted: false,
-    transferAttempted: false,
-    httpMethod: 'GET',
-    path: `/cobrancas/${codigo}`,
-    dbRef: ref,
-    interEnvironment: secrets.environment,
-    codigoSolicitacao: detail.codigoSolicitacao || codigo,
-    nossoNumero: detail.nossoNumero || null,
-    seuNumero: detail.seuNumero || null,
-    situacao: situacao || null,
-    valorNominal: detail.valorNominal ?? null,
-    vencimento: pickString(
-      cobranca.dataVencimento,
-      cobranca.dataDeVencimento,
-      raw.dataVencimento,
-      boleto.dataVencimento,
-    ),
-    tipo: pickString(cobranca.tipoCobranca, cobranca.tipo, raw.tipoCobranca, raw.tipo),
-    formasRecebimento: pickString(
-      cobranca.formasRecebimento,
-      raw.formasRecebimento,
-      cobranca.formaRecebimento,
-    ),
-    dataHoraSituacao: detail.dataHoraSituacao || null,
-    processingError: detail.processingError
-      ? sanitizeInterOperatorDetail(detail.processingError)
-      : null,
-    mensagem: mensagem ? sanitizeInterOperatorDetail(mensagem) : null,
-    falha: falha ? sanitizeInterOperatorDetail(falha) : null,
-    violacoes: extractViolacoes(raw),
-    disposition,
-    classificacao: CLASSIFICATION_LABEL[disposition] || 'bloqueada',
-  });
+    const detail = await fetchInterCobrancaByCodigo(creds, codigo);
+    const raw = (detail.raw || {}) as Record<string, unknown>;
+    const cobranca = asRecord(raw.cobranca) || raw;
+    const boleto = asRecord(raw.boleto) || asRecord(cobranca.boleto) || {};
+    const situacao = String(detail.situacao || '').trim().toUpperCase();
+    const disposition = classifyRemoteInterSituacaoForRelease(situacao);
+    const origem = asRecord(cobranca.origem) || asRecord(raw.origem);
+    const mensagem = pickString(cobranca.mensagem, raw.mensagem, cobranca.observacao, raw.observacao);
+    const falha = pickString(cobranca.falha, raw.falha, origem?.falha);
+
+    return NextResponse.json({
+      ok: true,
+      writes: false,
+      persistAttempted: false,
+      refreshAttempted: false,
+      cancelAttempted: false,
+      emitAttempted: false,
+      asaasAttempted: false,
+      transferAttempted: false,
+      httpMethod: 'GET',
+      path: `/cobrancas/${codigo}`,
+      dbRef: ref,
+      interEnvironment: secrets.environment,
+      codigoSolicitacao: detail.codigoSolicitacao || codigo,
+      nossoNumero: detail.nossoNumero || null,
+      seuNumero: detail.seuNumero || null,
+      situacao: situacao || null,
+      valorNominal: detail.valorNominal ?? null,
+      vencimento: pickString(
+        cobranca.dataVencimento,
+        cobranca.dataDeVencimento,
+        raw.dataVencimento,
+        boleto.dataVencimento,
+      ),
+      tipo: pickString(cobranca.tipoCobranca, cobranca.tipo, raw.tipoCobranca, raw.tipo),
+      formasRecebimento: pickString(
+        cobranca.formasRecebimento,
+        raw.formasRecebimento,
+        cobranca.formaRecebimento,
+      ),
+      dataHoraSituacao: detail.dataHoraSituacao || null,
+      processingError: detail.processingError
+        ? sanitizeInterOperatorDetail(detail.processingError)
+        : null,
+      mensagem: mensagem ? sanitizeInterOperatorDetail(mensagem) : null,
+      falha: falha ? sanitizeInterOperatorDetail(falha) : null,
+      violacoes: extractViolacoes(raw),
+      disposition,
+      classificacao: CLASSIFICATION_LABEL[disposition] || 'bloqueada',
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        ok: false,
+        writes: false,
+        persistAttempted: false,
+        refreshAttempted: false,
+        cancelAttempted: false,
+        error: sanitizeInterOperatorDetail(message) || 'Falha ao consultar cobrança Inter.',
+      },
+      { status: 500 },
+    );
+  }
 }
