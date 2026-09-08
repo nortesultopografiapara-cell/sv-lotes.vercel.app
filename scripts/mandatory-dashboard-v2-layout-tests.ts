@@ -179,6 +179,9 @@ function testDashboardPageWiring() {
   assert(page.includes('dash-analytics-activity'), 'atividades na coluna direita');
   assert(css.includes("'lots parcels activity'"), 'grid desktop linha 1');
   assert(css.includes("'evolution evolution activity'"), 'grid desktop linha 2');
+  assert(css.includes('max-content minmax(300px, 1fr)'), 'donuts compactos e evolução dominante');
+  assert(css.includes('height: 100px'), 'container do donut compacto');
+  assert(!css.includes('minmax(220px, 228px)'), 'sem teto antigo da evolução');
   assert(!css.includes('min-height: 260px'), 'cards analíticos sem min-height inflado');
   assert(page.includes('FinancialIntegrationDashboardCard'), 'card Asaas');
   assert(page.includes('DashboardActivitiesError'), 'erro explícito da timeline');

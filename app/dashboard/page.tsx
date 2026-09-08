@@ -887,7 +887,7 @@ function OperationalDashboard({ user }: { user: any }) {
             <h2 className="dash-analytics-card-title">Distribuição dos lotes</h2>
             <div className="dash-analytics-body">
               {loading ? (
-                <div className="flex items-center justify-center h-[112px]">
+                <div className="flex items-center justify-center h-[100px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
               ) : (
@@ -903,7 +903,7 @@ function OperationalDashboard({ user }: { user: any }) {
             <h2 className="dash-analytics-card-title">Situação das parcelas</h2>
             <div className="dash-analytics-body">
               {loading ? (
-                <div className="flex items-center justify-center h-[112px]">
+                <div className="flex items-center justify-center h-[100px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
               ) : (
@@ -919,7 +919,7 @@ function OperationalDashboard({ user }: { user: any }) {
             <h2 className="dash-analytics-card-title">Evolução financeira (últimos 6 meses)</h2>
             <div className="dash-evolution-body">
               {loading ? (
-                <div className="flex items-center justify-center h-full min-h-[180px]">
+                <div className="flex items-center justify-center h-full min-h-[240px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
               ) : (
