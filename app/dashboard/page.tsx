@@ -41,6 +41,7 @@ import { buildDashboardLotDistribution } from '@/lib/dashboardLotDistribution';
 import {
   DASHBOARD_FINANCE_RECEIPTS_SELECT,
   DASHBOARD_FINANCE_RECEIPTS_SELECT_FALLBACK,
+  EMPTY_DASHBOARD_PARCEL_STATUS,
   buildDashboardParcelPieData,
   summarizeDashboardParcelStatus,
   type DashboardFinanceReceiptRow,
@@ -148,12 +149,7 @@ function OperationalDashboard({ user }: { user: any }) {
   });
   const [activities, setActivities] = useState<DashboardActivityItemData[]>([]);
   const [activitiesError, setActivitiesError] = useState<string | null>(null);
-  const [parcelStatus, setParcelStatus] = useState({
-    pago: 0,
-    pendente: 0,
-    atrasado: 0,
-    total: 0,
-  });
+  const [parcelStatus, setParcelStatus] = useState(EMPTY_DASHBOARD_PARCEL_STATUS);
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -387,18 +383,15 @@ function OperationalDashboard({ user }: { user: any }) {
               ) {
                 recebimentosMes += amt;
               }
-              if (st === 'pendente' || st === 'pending') {
-                aReceber += Number(r.amount) || 0;
-              }
-              if (st === 'atrasado' || st === 'overdue') {
-                inadimplenciaVal += Number(r.amount) || 0;
-              }
             });
 
-            setParcelStatus(summarizeDashboardParcelStatus(scopedReceipts));
+            const parcelSummary = summarizeDashboardParcelStatus(scopedReceipts);
+            setParcelStatus(parcelSummary);
+            aReceber = parcelSummary.pendenteAmount;
+            inadimplenciaVal = parcelSummary.atrasadoAmount;
         } catch (e) {
             console.error('[DASHBOARD] erro financeiro', e);
-            setParcelStatus({ pago: 0, pendente: 0, atrasado: 0, total: 0 });
+            setParcelStatus(EMPTY_DASHBOARD_PARCEL_STATUS);
         }
 
         // Timeline operacional: lot_audit_logs (somente leitura, limite pequeno).
@@ -826,7 +819,11 @@ function OperationalDashboard({ user }: { user: any }) {
                 color="#ef4444"
                 loading={loading}
                 isCurrency
-                subtitle="Valor em atraso"
+                subtitle={
+                  parcelStatus.atrasado === 1
+                    ? '1 parcela em atraso'
+                    : `${parcelStatus.atrasado} parcelas em atraso`
+                }
               />
             </div>
           </>
@@ -844,16 +841,18 @@ function OperationalDashboard({ user }: { user: any }) {
           </div>
         ) : null}
 
-        <div className="dash-finance-card">
-          <h2 className="dash-analytics-card-title">Resumo financeiro</h2>
-          <FinancialSummaryCard
-            loading={loading}
-            entradas={stats.total_entradas}
-            saidas={stats.total_saidas}
-            saldo={stats.saldo_atual}
-            margemPercent={stats.margem_percent}
-            formatCurrency={formatCurrency}
-          />
+        <div className="dash-finance-row">
+          <div className="dash-finance-card">
+            <h2 className="dash-analytics-card-title">Resumo financeiro</h2>
+            <FinancialSummaryCard
+              loading={loading}
+              entradas={stats.total_entradas}
+              saidas={stats.total_saidas}
+              saldo={stats.saldo_atual}
+              margemPercent={stats.margem_percent}
+              formatCurrency={formatCurrency}
+            />
+          </div>
         </div>
 
         <div className="dash-analytics-grid">
@@ -861,7 +860,7 @@ function OperationalDashboard({ user }: { user: any }) {
             <h2 className="dash-analytics-card-title">Distribuição dos lotes</h2>
             <div className="dash-analytics-body">
               {loading ? (
-                <div className="flex items-center justify-center h-[150px]">
+                <div className="flex items-center justify-center h-[112px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
               ) : (
@@ -877,7 +876,7 @@ function OperationalDashboard({ user }: { user: any }) {
             <h2 className="dash-analytics-card-title">Situação das parcelas</h2>
             <div className="dash-analytics-body">
               {loading ? (
-                <div className="flex items-center justify-center h-[150px]">
+                <div className="flex items-center justify-center h-[112px]">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 </div>
               ) : (
