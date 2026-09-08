@@ -883,7 +883,7 @@ function OperationalDashboard({ user }: { user: any }) {
         </div>
 
         <div className="dash-analytics-grid">
-          <div className="dash-analytics-card">
+          <div className="dash-analytics-card dash-analytics-lots">
             <h2 className="dash-analytics-card-title">Distribuição dos lotes</h2>
             <div className="dash-analytics-body">
               {loading ? (
@@ -899,7 +899,7 @@ function OperationalDashboard({ user }: { user: any }) {
             </div>
           </div>
 
-          <div className="dash-analytics-card">
+          <div className="dash-analytics-card dash-analytics-parcels">
             <h2 className="dash-analytics-card-title">Situação das parcelas</h2>
             <div className="dash-analytics-body">
               {loading ? (
@@ -915,7 +915,20 @@ function OperationalDashboard({ user }: { user: any }) {
             </div>
           </div>
 
-          <div className="dash-analytics-card">
+          <div className="dash-evolution-card dash-analytics-evolution">
+            <h2 className="dash-analytics-card-title">Evolução financeira (últimos 6 meses)</h2>
+            <div className="dash-evolution-body">
+              {loading ? (
+                <div className="flex items-center justify-center h-full min-h-[180px]">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                </div>
+              ) : (
+                <CashFlowBarChartPanel data={evolutionSeries} />
+              )}
+            </div>
+          </div>
+
+          <div className="dash-analytics-card dash-analytics-activity">
             <h2 className="dash-analytics-card-title">Atividades recentes</h2>
             <div className="dash-activity-scroll sv-scrollbar sv-scrollbar-dark">
               {loading ? (
@@ -949,19 +962,6 @@ function OperationalDashboard({ user }: { user: any }) {
                 <DashboardEmptyActivities />
               )}
             </div>
-          </div>
-        </div>
-
-        <div className="dash-evolution-card">
-          <h2 className="dash-analytics-card-title">Evolução financeira (últimos 6 meses)</h2>
-          <div className="dash-evolution-body">
-            {loading ? (
-              <div className="flex items-center justify-center h-full min-h-[180px]">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
-              </div>
-            ) : (
-              <CashFlowBarChartPanel data={evolutionSeries} />
-            )}
           </div>
         </div>
       </div>

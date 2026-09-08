@@ -173,6 +173,12 @@ function testDashboardPageWiring() {
   assert(page.includes('dash-finance-row'), 'reserva de layout para evolução futura');
   assert(page.includes('CashFlowBarChartPanel'), 'gráfico 6 meses ativado com dados paginados');
   assert(page.includes('fetchAllCashMovementsPaged'), 'cash paginado');
+  assert(page.includes('dash-analytics-lots'), 'área lots');
+  assert(page.includes('dash-analytics-parcels'), 'área parcels');
+  assert(page.includes('dash-analytics-evolution'), 'evolução na grade');
+  assert(page.includes('dash-analytics-activity'), 'atividades na coluna direita');
+  assert(css.includes("'lots parcels activity'"), 'grid desktop linha 1');
+  assert(css.includes("'evolution evolution activity'"), 'grid desktop linha 2');
   assert(!css.includes('min-height: 260px'), 'cards analíticos sem min-height inflado');
   assert(page.includes('FinancialIntegrationDashboardCard'), 'card Asaas');
   assert(page.includes('DashboardActivitiesError'), 'erro explícito da timeline');

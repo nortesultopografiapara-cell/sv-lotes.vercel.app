@@ -218,20 +218,68 @@
 
 .dashboard-premium .dash-analytics-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.65rem;
   align-items: stretch;
+  min-width: 0;
 }
 
-@media (min-width: 768px) {
+.dashboard-premium .dash-analytics-lots,
+.dashboard-premium .dash-analytics-parcels,
+.dashboard-premium .dash-analytics-evolution,
+.dashboard-premium .dash-analytics-activity {
+  min-width: 0;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
   .dashboard-premium .dash-analytics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'lots parcels'
+      'evolution evolution'
+      'activity activity';
+  }
+
+  .dashboard-premium .dash-analytics-lots {
+    grid-area: lots;
+  }
+
+  .dashboard-premium .dash-analytics-parcels {
+    grid-area: parcels;
+  }
+
+  .dashboard-premium .dash-analytics-evolution {
+    grid-area: evolution;
+  }
+
+  .dashboard-premium .dash-analytics-activity {
+    grid-area: activity;
   }
 }
 
-@media (min-width: 1280px) {
+@media (min-width: 1024px) {
   .dashboard-premium .dash-analytics-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(220px, 228px);
+    grid-template-areas:
+      'lots parcels activity'
+      'evolution evolution activity';
+  }
+
+  .dashboard-premium .dash-analytics-lots {
+    grid-area: lots;
+  }
+
+  .dashboard-premium .dash-analytics-parcels {
+    grid-area: parcels;
+  }
+
+  .dashboard-premium .dash-analytics-evolution {
+    grid-area: evolution;
+  }
+
+  .dashboard-premium .dash-analytics-activity {
+    grid-area: activity;
   }
 }
 
@@ -294,21 +342,36 @@
 .dashboard-premium .dash-activity-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
-  max-height: 148px;
+  min-height: 0;
   padding: 0.1rem;
   scrollbar-width: thin;
 }
 
 .dashboard-premium .dash-evolution-card {
-  margin-top: 0.65rem;
   padding: 0.55rem 0.75rem 0.45rem;
   border-radius: 0.75rem;
   border: 1px solid var(--dash-border);
   background: var(--bg-card);
-  min-height: 0;
-  height: 228px;
+  min-height: 220px;
+  height: auto;
   display: flex;
   flex-direction: column;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-premium .dash-evolution-card {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .dashboard-premium .dash-analytics-card.dash-analytics-activity {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .dashboard-premium .dash-analytics-activity .dash-activity-scroll {
+    max-height: none;
+  }
 }
 
 .dashboard-premium .dash-evolution-body {
