@@ -79,7 +79,6 @@ import {
 import {
   computeSaleContractDashboardStats,
   isSaleContractFullySigned,
-  saleContractDashboardPercent,
 } from "@/lib/saleContractDashboardStats";
 import {
   applyContractPdfChrome,
@@ -2035,23 +2034,22 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* Desktop / tablet: título + cards de resumo */}
+      {/* Desktop / tablet: título + mini KPIs na mesma faixa */}
       <div className="contracts-workspace-header">
-        <div>
+        <div className="contracts-workspace-heading">
           <h1 className="contracts-workspace-title">Contratos</h1>
           <p className="contracts-workspace-subtitle">
             Gestão de contratos de compra e venda.
           </p>
         </div>
-      </div>
-      <div className="contracts-kpi-row hidden md:grid md:grid-cols-5 gap-3 px-4 sm:px-5 pb-4 pt-3 border-b border-[var(--color-border)] bg-[var(--bg-card)] min-w-0">
+        <div className="contracts-kpi-row" aria-label="Resumo de contratos">
         <div className="contracts-kpi-card">
           <div className="min-w-0">
             <p className="contracts-kpi-label">Ativos</p>
             <h3 className="contracts-kpi-value">{stats.ativos}</h3>
           </div>
           <div className="contracts-kpi-icon bg-[var(--color-info)]/10 text-[var(--color-info)]">
-            <FileText className="w-4 h-4" />
+            <FileText className="w-3 h-3" />
           </div>
         </div>
 
@@ -2059,12 +2057,9 @@ export default function ContractsPage() {
           <div className="min-w-0">
             <p className="contracts-kpi-label">Assinados</p>
             <h3 className="contracts-kpi-value">{stats.assinados}</h3>
-            <p className="contracts-kpi-hint text-[var(--color-success)]">
-              {saleContractDashboardPercent(stats.assinados, stats.ativos)}% do total
-            </p>
           </div>
           <div className="contracts-kpi-icon bg-[var(--color-success)]/10 text-[var(--color-success)]">
-            <CheckCircle2 className="w-4 h-4" />
+            <CheckCircle2 className="w-3 h-3" />
           </div>
         </div>
 
@@ -2072,12 +2067,9 @@ export default function ContractsPage() {
           <div className="min-w-0">
             <p className="contracts-kpi-label">Pendentes</p>
             <h3 className="contracts-kpi-value">{stats.pendentes}</h3>
-            <p className="contracts-kpi-hint text-[var(--color-warning)]">
-              {saleContractDashboardPercent(stats.pendentes, stats.ativos)}% do total
-            </p>
           </div>
           <div className="contracts-kpi-icon bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
-            <Clock className="w-4 h-4" />
+            <Clock className="w-3 h-3" />
           </div>
         </div>
 
@@ -2087,14 +2079,14 @@ export default function ContractsPage() {
             <h3 className="contracts-kpi-value">{stats.cancelados}</h3>
           </div>
           <div className="contracts-kpi-icon bg-[var(--color-danger)]/10 text-[var(--color-danger)]">
-            <XCircle className="w-4 h-4" />
+            <XCircle className="w-3 h-3" />
           </div>
         </div>
 
-        <div className="contracts-kpi-card">
+        <div className="contracts-kpi-card contracts-kpi-card--valor">
           <div className="min-w-0">
-            <p className="contracts-kpi-label">Valor total contratado</p>
-            <h3 className="contracts-kpi-value text-base lg:text-xl">
+            <p className="contracts-kpi-label">Valor total</p>
+            <h3 className="contracts-kpi-value">
               {new Intl.NumberFormat("pt-BR", {
                 style: "currency",
                 currency: "BRL",
@@ -2102,8 +2094,9 @@ export default function ContractsPage() {
             </h3>
           </div>
           <div className="contracts-kpi-icon bg-[var(--color-success)]/10 text-[var(--color-success)]">
-            <Wallet className="w-4 h-4" />
+            <Wallet className="w-3 h-3" />
           </div>
+        </div>
         </div>
       </div>
 
@@ -2260,7 +2253,7 @@ export default function ContractsPage() {
           {selectedContract ? (
             <>
               <div className="contracts-detail-head border-b border-[var(--border-color)] shrink-0">
-                <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center shrink-0">
                       <FileText className="w-4.5 h-4.5 w-4 h-4 text-[var(--color-primary)]" />
@@ -2447,6 +2440,7 @@ export default function ContractsPage() {
                   </div>
                 </div>
 
+                <div className="contracts-signature-strip">
                 <SaleContractSignatureSection
                   ref={signatureSectionRef}
                   contract={selectedContract}
@@ -2464,46 +2458,6 @@ export default function ContractsPage() {
                     }
                   }}
                 />
-
-                <div className="contracts-meta-strip">
-                  <span>
-                    <strong>
-                      {selectedContract.customer_name ||
-                        selectedContract.customers?.name ||
-                        "Cliente não informado"}
-                    </strong>
-                  </span>
-                  <span>
-                    {selectedContract.project_name ||
-                      selectedContract.project_name_snapshot ||
-                      selectedContract.sales?.projects?.name ||
-                      selectedContract.blocks?.projects?.name ||
-                      selectedContract.projects?.name ||
-                      "Projeto não informado"}
-                  </span>
-                  <span>
-                    {selectedContract.location_display ||
-                      buildLocationDisplay(
-                        resolveBlockQuadra(selectedContract.blocks),
-                        resolveLotNumber(
-                          selectedContract.blocks,
-                          selectedContract,
-                        ),
-                      )}
-                  </span>
-                  <span>
-                    {new Intl.NumberFormat("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    }).format(
-                      Number(selectedContract.sale_value_display) ||
-                        resolveContractSaleValue(
-                          selectedContract,
-                          selectedContract.sales,
-                          selectedContract.blocks,
-                        ),
-                    )}
-                  </span>
                 </div>
               </div>
 
@@ -2521,7 +2475,7 @@ export default function ContractsPage() {
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`contracts-tab py-2.5 px-1 sm:px-2 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                    className={`contracts-tab py-2 px-1 sm:px-2 text-xs sm:text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                   >
                     <Icon />
                     {tab}
@@ -3043,7 +2997,7 @@ export default function ContractsPage() {
               </div>
 
               {/* BOTTOM ACTION BAR — desktop/tablet */}
-              <div className="contracts-desktop-action-bar p-3 border-t border-[var(--border-color)] bg-[var(--bg-card)] flex flex-wrap items-center gap-3">
+              <div className="contracts-desktop-action-bar border-t border-[var(--border-color)] bg-[var(--bg-card)] flex items-center gap-2">
                 <div className="contracts-action-cluster">
                 <ActionBtn
                   onClick={handleBaixarPDF}
@@ -3503,9 +3457,9 @@ function ActionBtn({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${colorClasses[color] || colorClasses.primary}`}
+      className={`contracts-action-btn flex items-center gap-1 px-2.5 py-1 border rounded-md text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 ${colorClasses[color] || colorClasses.primary}`}
     >
-      <div className="w-4 h-4">{icon}</div>
+      <div className="w-3.5 h-3.5">{icon}</div>
       <span className="hidden sm:inline">{label}</span>
     </button>
   );
