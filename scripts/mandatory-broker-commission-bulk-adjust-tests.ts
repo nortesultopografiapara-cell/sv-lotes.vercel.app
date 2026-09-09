@@ -372,6 +372,10 @@ function testUiDoesNotAutoApply() {
   assert(page.includes('Resumo Comercial'), 'painel resumo comercial');
   assert(page.includes('Destaque do período'), 'destaque do corretor');
   assert(page.includes('Lista de Corretores'), 'lista em largura total');
+  assert(page.includes('Ver ranking completo'), 'ranking completo fora do painel');
+  assert(page.includes('visibleActivities'), 'atividades compactas na tela');
+  assert(page.includes('rankingAll.slice(0, 3)'), 'top 3 no painel');
+  assert(page.includes('Ver todas'), 'histórico completo em modal');
   assert(page.includes('Visualizar'), 'ação visualizar');
   assert(page.includes('Desativar corretor'), 'ação desativar');
   assert(page.includes('Pagar comissão') || page.includes('Pagar Comissão'), 'ação pagar');

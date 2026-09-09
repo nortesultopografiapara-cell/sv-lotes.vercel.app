@@ -153,6 +153,8 @@ export default function CorretoresPage() {
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [togglingBrokerId, setTogglingBrokerId] = useState<string | null>(null);
+  const [rankingModalOpen, setRankingModalOpen] = useState(false);
+  const [activitiesModalOpen, setActivitiesModalOpen] = useState(false);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -1275,7 +1277,8 @@ export default function CorretoresPage() {
     return { text: 'Estável vs período anterior', className: 'text-[var(--text-muted)]' };
   };
 
-  const topCorretores = rankBrokersByMonthlySales(corretores, 5);
+  const rankingAll = rankBrokersByMonthlySales(corretores, 100);
+  const topCorretores = rankingAll.slice(0, 3);
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309'];
   const highlightBroker = pickBrokerHighlight(corretores);
   const highlightCommission = highlightBroker
@@ -1321,11 +1324,10 @@ export default function CorretoresPage() {
       change: formatChange(computeChangePercent(ticketAtual, ticketAnterior)),
     },
   ];
-  const periodActivities = recentActivities
-    .filter((act) =>
-      isSaleInStatsPeriod({ sale_date: act.date.toISOString() }, statsPeriod),
-    )
-    .slice(0, 6);
+  const periodActivities = recentActivities.filter((act) =>
+    isSaleInStatsPeriod({ sale_date: act.date.toISOString() }, statsPeriod),
+  );
+  const visibleActivities = periodActivities.slice(0, 3);
   const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
   const showCommissionMaintenance = canShowBrokerCommissionMaintenanceUi(
     user?.role,
@@ -1338,7 +1340,7 @@ export default function CorretoresPage() {
       : null;
 
   return (
-    <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-5 lg:p-6 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
       
       <header className="mb-4 xl:hidden">
         <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">Corretores</h1>
@@ -1459,7 +1461,7 @@ export default function CorretoresPage() {
         </section>
       ) : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6 min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-3 min-w-0">
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500 shrink-0">
@@ -1530,45 +1532,37 @@ export default function CorretoresPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6 min-w-0">
-        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg p-4 min-w-0">
-          <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-3 min-w-0">
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg px-3 py-2.5 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
             <div className="min-w-0">
               <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Desempenho da Equipe</h3>
-              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Ranking por VGV no período selecionado</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Top 3 por VGV · {periodLabel}</p>
             </div>
-            <div className="flex flex-wrap gap-1">
-              {BROKER_DASHBOARD_PERIODS.map((period) => (
-                <button
-                  key={period}
-                  type="button"
-                  onClick={() => setStatsPeriod(period)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-colors ${
-                    statsPeriod === period
-                      ? 'bg-orange-500 text-[var(--text-primary)]'
-                      : 'bg-[var(--bg-card-alt)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                  }`}
-                >
-                  {BROKER_DASHBOARD_PERIOD_LABELS[period]}
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => setRankingModalOpen(true)}
+              className="text-[10px] font-bold text-orange-400 hover:text-orange-300 whitespace-nowrap disabled:opacity-40"
+              disabled={rankingAll.length === 0}
+            >
+              Ver ranking completo
+            </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[420px]">
+            <table className="w-full text-left min-w-[380px]">
               <thead>
-                <tr className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
-                  <th className="pb-2 pr-2">#</th>
-                  <th className="pb-2 pr-2">Corretor</th>
-                  <th className="pb-2 pr-2 text-center">Vendas</th>
-                  <th className="pb-2 pr-2 text-right">VGV</th>
-                  <th className="pb-2 text-right">Comissão</th>
+                <tr className="text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                  <th className="pb-1 pr-2">#</th>
+                  <th className="pb-1 pr-2">Corretor</th>
+                  <th className="pb-1 pr-2 text-center">Vendas</th>
+                  <th className="pb-1 pr-2 text-right">VGV</th>
+                  <th className="pb-1 text-right">Comissão</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
                 {topCorretores.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-xs text-[var(--text-muted)]">
+                    <td colSpan={5} className="py-3 text-center text-xs text-[var(--text-muted)]">
                       Nenhuma venda no período.
                     </td>
                   </tr>
@@ -1580,28 +1574,24 @@ export default function CorretoresPage() {
                     ).generated;
                     return (
                       <tr key={c.id || idx}>
-                        <td className="py-2.5 pr-2">
-                          {idx < 3 ? (
-                            <Medal className="w-4 h-4" style={{ color: medalColors[idx] }} />
-                          ) : (
-                            <span className="text-xs text-[var(--text-muted)]">{idx + 1}</span>
-                          )}
+                        <td className="py-1.5 pr-2">
+                          <Medal className="w-3.5 h-3.5" style={{ color: medalColors[idx] }} />
                         </td>
-                        <td className="py-2.5 pr-2">
-                          <div className="flex items-center gap-2 min-w-0">
+                        <td className="py-1.5 pr-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
                             {c.avatar_url ? (
-                              <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                              <img src={c.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                             ) : (
-                              <div className="w-7 h-7 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
+                              <div className="w-6 h-6 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
                                 {c.name?.charAt(0)}
                               </div>
                             )}
                             <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
                           </div>
                         </td>
-                        <td className="py-2.5 pr-2 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
-                        <td className="py-2.5 pr-2 text-right text-xs font-mono text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</td>
-                        <td className="py-2.5 text-right text-xs font-mono text-purple-300">{formatCurrency(generated)}</td>
+                        <td className="py-1.5 pr-2 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
+                        <td className="py-1.5 pr-2 text-right text-[11px] font-mono text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</td>
+                        <td className="py-1.5 text-right text-[11px] font-mono text-purple-300">{formatCurrency(generated)}</td>
                       </tr>
                     );
                   })
@@ -1611,48 +1601,59 @@ export default function CorretoresPage() {
           </div>
         </section>
 
-        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg p-4 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Resumo Comercial</h3>
-              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{periodLabel}</p>
-            </div>
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg px-3 py-2.5 min-w-0">
+          <div className="flex items-baseline justify-between gap-2 mb-1.5">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Resumo Comercial</h3>
+            <p className="text-[10px] text-[var(--text-muted)]">{periodLabel}</p>
           </div>
-          <div className="flex flex-col divide-y divide-[var(--border-color)]">
-            {commercialRows.map((row) => (
-              <div key={row.label} className="py-2.5 first:pt-0 last:pb-0">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xs text-[var(--text-secondary)]">{row.label}</span>
-                  <span className="text-sm font-bold text-[var(--text-primary)] text-right">{row.value}</span>
-                </div>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-1.5">
+            {commercialRows.map((row, index) => (
+              <div
+                key={row.label}
+                className={`rounded-lg bg-[var(--bg-main)]/50 px-2 py-1.5 min-w-0 ${
+                  index < 3 ? 'lg:col-span-2' : 'lg:col-span-3'
+                }`}
+              >
+                <div className="text-[10px] text-[var(--text-secondary)] truncate">{row.label}</div>
+                <div className="text-xs font-bold text-[var(--text-primary)] truncate">{row.value}</div>
                 {row.change ? (
-                  <div className={`text-[10px] mt-0.5 ${row.change.className}`}>{row.change.text}</div>
+                  <div className={`text-[9px] mt-0.5 truncate ${row.change.className}`}>{row.change.text}</div>
                 ) : null}
               </div>
             ))}
           </div>
         </section>
 
-        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg p-4 min-w-0 flex flex-col max-h-[340px]">
-          <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight mb-3">Atividades Recentes</h3>
-          <div className="flex flex-col gap-2.5 overflow-y-auto pr-1 min-h-0">
-            {periodActivities.length === 0 ? (
-              <div className="text-xs text-[var(--text-muted)] text-center py-6">Nenhuma atividade no período.</div>
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg px-3 py-2.5 min-w-0 flex flex-col">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Atividades Recentes</h3>
+            <button
+              type="button"
+              onClick={() => setActivitiesModalOpen(true)}
+              className="text-[10px] font-bold text-orange-400 hover:text-orange-300 whitespace-nowrap disabled:opacity-40"
+              disabled={periodActivities.length === 0}
+            >
+              Ver todas
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {visibleActivities.length === 0 ? (
+              <div className="text-xs text-[var(--text-muted)] text-center py-3">Nenhuma atividade no período.</div>
             ) : (
-              periodActivities.map((act, index) => (
-                <div key={act.id + index} className="flex items-start gap-2.5">
+              visibleActivities.map((act, index) => (
+                <div key={act.id + index} className="flex items-start gap-2">
                   <div
-                    className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                    className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
                       act.type === 'sale'
                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
                         : 'bg-purple-500/10 border-purple-500/20 text-purple-500'
                     }`}
                   >
-                    {act.type === 'sale' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                    {act.type === 'sale' ? <CheckCircle2 className="w-3 h-3" /> : <DollarSign className="w-3 h-3" />}
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--text-secondary)] leading-snug truncate">{act.message}</p>
-                    <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5 truncate">
+                    <p className="text-[10px] text-[var(--text-muted)] font-mono truncate">
                       {act.subtext} · {act.date.toLocaleDateString('pt-BR')}
                     </p>
                   </div>
@@ -1664,43 +1665,33 @@ export default function CorretoresPage() {
       </div>
 
       {highlightBroker ? (
-        <section className="mb-6 rounded-xl border border-orange-500/30 bg-[var(--bg-card)] px-4 py-4 md:px-5 shadow-lg min-w-0">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+        <section className="mb-3 rounded-xl border border-orange-500/30 bg-[var(--bg-card)] px-3 py-2 shadow-lg min-w-0">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2 min-w-0">
               {highlightBroker.avatar_url ? (
-                <img src={highlightBroker.avatar_url} alt="" className="w-14 h-14 rounded-full object-cover shrink-0 border border-orange-500/40" />
+                <img src={highlightBroker.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 border border-orange-500/40" />
               ) : (
-                <div className="w-14 h-14 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-xl font-bold shrink-0">
+                <div className="w-9 h-9 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-sm font-bold shrink-0">
                   {highlightBroker.name?.charAt(0)}
                 </div>
               )}
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-bold text-[var(--text-primary)] truncate">{highlightBroker.name}</h3>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 text-orange-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                    <Star className="w-3 h-3" /> Destaque do período
-                  </span>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                    highlightBroker.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-gray-500/10 text-[var(--text-muted)]'
-                  }`}>
-                    {highlightBroker.active ? 'Ativo' : 'Inativo'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">Maior VGV em {periodLabel.toLowerCase()}</p>
-              </div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)] truncate max-w-[180px] sm:max-w-xs">{highlightBroker.name}</h3>
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 text-orange-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                <Star className="w-3 h-3" /> Destaque do período
+              </span>
             </div>
-            <div className="grid grid-cols-3 gap-3 lg:min-w-[380px]">
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Vendas</div>
-                <div className="text-sm font-bold">{highlightBroker.vendas_mes_qtd}</div>
+            <div className="flex items-center gap-4 ml-auto">
+              <div className="text-right">
+                <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Vendas</div>
+                <div className="text-xs font-bold">{highlightBroker.vendas_mes_qtd}</div>
               </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">VGV</div>
-                <div className="text-sm font-bold text-emerald-400">{formatCurrency(highlightBroker.vendas_mes_valor)}</div>
+              <div className="text-right">
+                <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">VGV</div>
+                <div className="text-xs font-bold text-emerald-400">{formatCurrency(highlightBroker.vendas_mes_valor)}</div>
               </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Comissão</div>
-                <div className="text-sm font-bold text-purple-300">{formatCurrency(highlightCommission)}</div>
+              <div className="text-right">
+                <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Comissão</div>
+                <div className="text-xs font-bold text-purple-300">{formatCurrency(highlightCommission)}</div>
               </div>
             </div>
           </div>
@@ -1711,7 +1702,7 @@ export default function CorretoresPage() {
         
         {/* Main Table Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl overflow-hidden relative">
-          <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between gap-3">
+          <div className="px-4 py-3 border-b border-[var(--border-color)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Lista de Corretores</h2>
               <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
@@ -1874,6 +1865,120 @@ export default function CorretoresPage() {
         </div>
 
       </div>
+
+      {rankingModalOpen ? (
+        <div className="sv-modal-overlay animate-in fade-in duration-200" onClick={() => setRankingModalOpen(false)}>
+          <div
+            className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] p-5 w-full max-w-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Ranking completo</h2>
+                <p className="text-[10px] text-[var(--text-muted)]">Por VGV · {periodLabel}</p>
+              </div>
+              <button type="button" onClick={() => setRankingModalOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                ✕
+              </button>
+            </div>
+            <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
+              <table className="w-full text-left min-w-[420px]">
+                <thead>
+                  <tr className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                    <th className="pb-2 pr-2">#</th>
+                    <th className="pb-2 pr-2">Corretor</th>
+                    <th className="pb-2 pr-2 text-center">Vendas</th>
+                    <th className="pb-2 pr-2 text-right">VGV</th>
+                    <th className="pb-2 text-right">Comissão</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)]">
+                  {rankingAll.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-xs text-[var(--text-muted)]">
+                        Nenhuma venda no período.
+                      </td>
+                    </tr>
+                  ) : (
+                    rankingAll.map((c, idx) => {
+                    const generated = sumCommissionsForSaleIds(
+                      statsCatalog?.commissions || [],
+                      (c.brokerStats?.sale_details || []).map((d: BrokerSaleDetailRow) => d.sale_id),
+                    ).generated;
+                    return (
+                      <tr key={c.id || idx}>
+                        <td className="py-2 pr-2">
+                          {idx < 3 ? (
+                            <Medal className="w-4 h-4" style={{ color: medalColors[idx] }} />
+                          ) : (
+                            <span className="text-xs text-[var(--text-muted)]">{idx + 1}</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {c.avatar_url ? (
+                              <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
+                                {c.name?.charAt(0)}
+                              </div>
+                            )}
+                            <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 pr-2 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
+                        <td className="py-2 pr-2 text-right text-xs font-mono text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</td>
+                        <td className="py-2 text-right text-xs font-mono text-purple-300">{formatCurrency(generated)}</td>
+                      </tr>
+                    );
+                  })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activitiesModalOpen ? (
+        <div className="sv-modal-overlay animate-in fade-in duration-200" onClick={() => setActivitiesModalOpen(false)}>
+          <div
+            className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] p-5 w-full max-w-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Atividades Recentes</h2>
+                <p className="text-[10px] text-[var(--text-muted)]">{periodLabel}</p>
+              </div>
+              <button type="button" onClick={() => setActivitiesModalOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                ✕
+              </button>
+            </div>
+            <div className="flex flex-col gap-2.5 max-h-[70vh] overflow-y-auto pr-1">
+              {periodActivities.map((act, index) => (
+                <div key={act.id + index} className="flex items-start gap-2.5">
+                  <div
+                    className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                      act.type === 'sale'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                        : 'bg-purple-500/10 border-purple-500/20 text-purple-500'
+                    }`}
+                  >
+                    {act.type === 'sale' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-[var(--text-secondary)] leading-snug">{act.message}</p>
+                    <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">
+                      {act.subtext} · {act.date.toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Modal Delete */}
       {deleteModal && (
