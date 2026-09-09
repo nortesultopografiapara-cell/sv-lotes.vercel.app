@@ -134,7 +134,29 @@ function testNoBase64AndNoLayoutRework() {
   ok(page.includes('Desempenho da Equipe'), 'D.2 desempenho intacto');
   ok(page.includes('Lista de Corretores'), 'D.2 lista intacta');
   ok(page.includes('xl:col-span-2'), 'D.2 destaque no topo intacto');
+  ok(page.includes('Ver lotes'), 'lotes compactos via atalho');
+  ok(!page.includes("lotesDoMes.join(', ')"), 'não lista todos QD/LT na célula');
+  ok(page.includes('lotesDoMes: lotesAtivos'), 'dados de lotes preservados para PDF/Excel');
   console.log('OK testNoBase64AndNoLayoutRework');
+}
+
+function testOfficialAvatarUrlMigration() {
+  const migPath = path.join(
+    process.cwd(),
+    'supabase/migrations/20260909134500_brokers_avatar_url.sql',
+  );
+  ok(fs.existsSync(migPath), 'migration oficial avatar_url');
+  const sql = fs.readFileSync(migPath, 'utf8');
+  ok(sql.includes('ALTER TABLE public.brokers'), 'alter brokers');
+  ok(sql.includes('ADD COLUMN IF NOT EXISTS avatar_url text'), 'coluna text idempotente');
+  ok(!/\bDROP\b/i.test(sql), 'sem DROP');
+  ok(!sql.includes('commission'), 'não mexe em comissão');
+  const historical = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/20260520_upgrade_brokers_table.sql'),
+    'utf8',
+  );
+  ok(historical.includes('ADD COLUMN IF NOT EXISTS avatar_url text'), 'histórico 20260520 intacto');
+  console.log('OK testOfficialAvatarUrlMigration');
 }
 
 testInitialWithoutPhoto();
@@ -144,4 +166,5 @@ testRejectsInvalidFormat();
 testPathIsolationAndCacheBust();
 testTenantACannotManageTenantB();
 testNoBase64AndNoLayoutRework();
+testOfficialAvatarUrlMigration();
 console.log('mandatory-broker-avatar-tests: all passed');

@@ -376,6 +376,8 @@ function testUiDoesNotAutoApply() {
   assert(page.includes('visibleActivities'), 'atividades compactas na tela');
   assert(page.includes('rankingAll.slice(0, 3)'), 'top 3 no painel');
   assert(page.includes('xl:col-span-2'), 'destaque na linha dos indicadores');
+  assert(page.includes('Ver lotes'), 'lotes fora da célula compacta');
+  assert(!page.includes("lotesDoMes.join(', ')"), 'tabela não explode com todos QD/LT');
   assert(!page.includes('Maior VGV em'), 'sem faixa duplicada de destaque');
   assert(page.includes('Visualizar'), 'ação visualizar');
   assert(page.includes('Desativar corretor'), 'ação desativar');

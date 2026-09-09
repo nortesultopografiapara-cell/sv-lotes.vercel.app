@@ -92,6 +92,7 @@ export default function CorretoresPage() {
   const [statsPeriod, setStatsPeriod] = useState<BrokerDashboardPeriod>('month');
   const [maintenanceQuery, setMaintenanceQuery] = useState<string | null>(null);
   const [openBrokerActionsId, setOpenBrokerActionsId] = useState<string | null>(null);
+  const [openLotsPopoverId, setOpenLotsPopoverId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [brokerLimit, setBrokerLimit] = useState<number | null>(null);
   const [companyPlan, setCompanyPlan] = useState<string>('');
@@ -1783,11 +1784,36 @@ export default function CorretoresPage() {
                       <td className="px-3 py-2">
                         <div className="text-xs text-[var(--text-secondary)] font-mono">{c.creci || '—'}</div>
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-2 text-center relative">
                          <div className="text-sm font-bold text-[var(--text-primary)]">{c.vendas_mes_qtd}</div>
-                         {c.lotesDoMes?.length > 0 && (
-                            <div className="text-[9px] text-amber-500/80 font-mono mt-0.5">{c.lotesDoMes.join(', ')}</div>
-                         )}
+                         {c.lotesDoMes?.length > 0 ? (
+                           <>
+                             <button
+                               type="button"
+                               onClick={() => {
+                                 setOpenBrokerActionsId(null);
+                                 setOpenLotsPopoverId(openLotsPopoverId === c.id ? null : c.id);
+                               }}
+                               className="text-[10px] text-amber-500/80 hover:text-amber-400 font-medium"
+                             >
+                               Ver lotes
+                             </button>
+                             {openLotsPopoverId === c.id ? (
+                               <div className="absolute left-1/2 -translate-x-1/2 top-10 z-30 w-52 max-h-40 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl py-2 px-3 text-left">
+                                 <div className="text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1.5">
+                                   Lotes no período
+                                 </div>
+                                 <div className="space-y-0.5">
+                                   {c.lotesDoMes.map((lot: string) => (
+                                     <div key={lot} className="text-[10px] font-mono text-amber-500/90">
+                                       {lot}
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             ) : null}
+                           </>
+                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right">
                          <div className="text-sm font-bold text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</div>
@@ -1806,7 +1832,10 @@ export default function CorretoresPage() {
                       <td className="px-3 py-2 text-right relative">
                         <button
                           type="button"
-                          onClick={() => setOpenBrokerActionsId(openBrokerActionsId === c.id ? null : c.id)}
+                          onClick={() => {
+                            setOpenLotsPopoverId(null);
+                            setOpenBrokerActionsId(openBrokerActionsId === c.id ? null : c.id);
+                          }}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)]"
                           title="Ações"
                           aria-label="Ações do corretor"
