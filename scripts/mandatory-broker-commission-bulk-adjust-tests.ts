@@ -375,7 +375,8 @@ function testUiDoesNotAutoApply() {
   assert(page.includes('Ver ranking completo'), 'ranking completo fora do painel');
   assert(page.includes('visibleActivities'), 'atividades compactas na tela');
   assert(page.includes('rankingAll.slice(0, 3)'), 'top 3 no painel');
-  assert(page.includes('Ver todas'), 'histórico completo em modal');
+  assert(page.includes('xl:col-span-2'), 'destaque na linha dos indicadores');
+  assert(!page.includes('Maior VGV em'), 'sem faixa duplicada de destaque');
   assert(page.includes('Visualizar'), 'ação visualizar');
   assert(page.includes('Desativar corretor'), 'ação desativar');
   assert(page.includes('Pagar comissão') || page.includes('Pagar Comissão'), 'ação pagar');

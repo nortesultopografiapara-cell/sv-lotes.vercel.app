@@ -1340,16 +1340,16 @@ export default function CorretoresPage() {
       : null;
 
   return (
-    <div className="sv-page sv-page--scroll-y p-4 md:p-5 lg:p-6 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
+    <div className="sv-page sv-page--scroll-y p-3 md:p-4 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
       
-      <header className="mb-4 xl:hidden">
+      <header className="mb-2 xl:hidden">
         <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">Corretores</h1>
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)] mt-0.5">
           Gerenciamento de equipe de vendas
         </p>
       </header>
 
-      <div className="mb-4 flex flex-col xl:flex-row xl:items-center gap-3 min-w-0">
+      <div className="mb-2 flex flex-col xl:flex-row xl:items-center xl:flex-nowrap gap-2 min-w-0">
         <div className="relative flex-1 min-w-0">
           <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -1357,14 +1357,14 @@ export default function CorretoresPage() {
             placeholder="Buscar por nome, telefone ou e-mail..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg pl-9 pr-4 py-2 w-full focus:outline-none focus:border-teal-500/50 transition-colors"
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg pl-9 pr-3 py-1.5 w-full focus:outline-none focus:border-teal-500/50 transition-colors"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 shrink-0">
           <select
             value={filterActive}
             onChange={(e) => setFilterActive(e.target.value as 'all' | 'ativo' | 'inativo')}
-            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-3 py-2 rounded-lg outline-none focus:border-[var(--brand-primary)]"
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg outline-none focus:border-[var(--brand-primary)]"
             aria-label="Filtros"
           >
             <option value="all">Filtros: todos os status</option>
@@ -1374,7 +1374,7 @@ export default function CorretoresPage() {
           <select
             value={statsPeriod}
             onChange={(e) => setStatsPeriod(e.target.value as BrokerDashboardPeriod)}
-            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-3 py-2 rounded-lg outline-none focus:border-[var(--brand-primary)]"
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg outline-none focus:border-[var(--brand-primary)]"
             aria-label="Período"
           >
             {BROKER_DASHBOARD_PERIODS.map((period) => (
@@ -1403,21 +1403,21 @@ export default function CorretoresPage() {
               setModalMode('create');
               setIsModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-[var(--text-primary)] px-4 py-2 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
+            className="flex items-center gap-1.5 bg-gradient-to-r from-orange-500 to-amber-500 text-[var(--text-primary)] px-3 py-1.5 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
           >
             <Plus className="w-4 h-4" /> Novo Corretor
           </button>
           <button
             type="button"
             onClick={() => void handleExportPDF()}
-            className="flex items-center gap-2 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
           >
             <FileText className="w-4 h-4" /> PDF
           </button>
           <button
             type="button"
             onClick={() => void handleExportExcel()}
-            className="flex items-center gap-2 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
           >
             <Download className="w-4 h-4" /> Excel
           </button>
@@ -1425,7 +1425,7 @@ export default function CorretoresPage() {
       </div>
 
       {showCommissionMaintenance ? (
-        <section className="mb-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 md:p-5">
+        <section className="mb-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">
@@ -1461,20 +1461,20 @@ export default function CorretoresPage() {
         </section>
       ) : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-3 min-w-0">
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500 shrink-0">
-              <Users className="w-4 h-4" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2 mb-2 min-w-0">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500 shrink-0">
+              <Users className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-xl font-bold text-[var(--text-primary)] leading-tight">
+              <div className="text-base font-bold text-[var(--text-primary)] leading-tight">
                 {dashboardStats.activeCount} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
               </div>
-              <div className="text-xs font-medium text-[var(--text-secondary)]">Corretores ativos</div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Corretores ativos</div>
             </div>
           </div>
-          <div className="text-[11px] text-emerald-500 font-medium mt-2">
+          <div className="text-[10px] text-emerald-500 font-medium mt-1 truncate">
             {brokerLimit === null
               ? 'Carregando limites do plano…'
               : companyPlan
@@ -1483,58 +1483,96 @@ export default function CorretoresPage() {
           </div>
         </div>
 
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500 shrink-0">
-              <TrendingUp className="w-4 h-4" />
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500 shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-xl font-bold text-[var(--text-primary)] leading-tight">{totalVendasMes}</div>
-              <div className="text-xs font-medium text-[var(--text-secondary)]">Vendas no período</div>
+              <div className="text-base font-bold text-[var(--text-primary)] leading-tight">{totalVendasMes}</div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Vendas no período</div>
             </div>
           </div>
-          <div className="text-[11px] text-blue-500 font-medium mt-2 truncate">
-            VGV {formatCurrency(dashboardStats.totalVendasValor)} · {periodLabel}
+          <div className="text-[10px] text-blue-500 font-medium mt-1 truncate">
+            VGV {formatCurrency(dashboardStats.totalVendasValor)}
           </div>
         </div>
 
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-3xl -mr-8 -mt-8 pointer-events-none"></div>
-          <div className="flex items-center gap-3 relative z-10">
-            <div className="w-9 h-9 rounded-full bg-purple-500/10 flex items-center justify-center border border-purple-500/20 text-purple-500 shrink-0">
-              <Wallet className="w-4 h-4" />
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-purple-500/10 flex items-center justify-center border border-purple-500/20 text-purple-500 shrink-0">
+              <Wallet className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-lg font-bold text-[var(--text-primary)] tracking-tight leading-tight">
+              <div className="text-base font-bold text-[var(--text-primary)] tracking-tight leading-tight truncate">
                 {formatCurrency(periodCommissions.generated)}
               </div>
-              <div className="text-xs font-medium text-[var(--text-secondary)]">Comissões geradas</div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Comissões geradas</div>
             </div>
           </div>
-          <div className="text-[11px] text-amber-400 font-medium mt-2 relative z-10 truncate">
-            Pendentes em aberto {formatCurrency(totalComissoesPendentes)}
+          <div className="text-[10px] text-amber-400 font-medium mt-1 truncate">
+            Pendentes {formatCurrency(totalComissoesPendentes)}
           </div>
         </div>
 
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500 shrink-0">
-              <CalendarClock className="w-4 h-4" />
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500 shrink-0">
+              <CalendarClock className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-xl font-bold text-[var(--text-primary)] leading-tight">{openReservationsCount}</div>
-              <div className="text-xs font-medium text-[var(--text-secondary)]">Reservas abertas</div>
+              <div className="text-base font-bold text-[var(--text-primary)] leading-tight">{openReservationsCount}</div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Reservas abertas</div>
             </div>
           </div>
-          <div className="text-[11px] text-teal-500 font-medium mt-2">
+          <div className="text-[10px] text-teal-500 font-medium mt-1">
             Lotes com status Reservado
           </div>
         </div>
+
+        <div className="sm:col-span-2 xl:col-span-2 bg-[var(--bg-card)] border border-orange-500/30 rounded-lg px-3 py-2 min-w-0">
+          {highlightBroker ? (
+            <div className="flex items-center gap-2 min-w-0 h-full">
+              <span className="text-amber-400 shrink-0" title="1º no período">
+                <Medal className="w-5 h-5" style={{ color: medalColors[0] }} />
+              </span>
+              {highlightBroker.avatar_url ? (
+                <img src={highlightBroker.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 border border-orange-500/40" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">
+                  {highlightBroker.name?.charAt(0)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-bold text-[var(--text-primary)] truncate">{highlightBroker.name}</span>
+                  <span className="hidden 2xl:inline-flex items-center gap-1 rounded-full bg-orange-500/15 text-orange-400 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider whitespace-nowrap">
+                    <Star className="w-2.5 h-2.5" /> Destaque do período
+                  </span>
+                </div>
+                <div className="2xl:hidden text-[9px] font-bold uppercase tracking-wider text-orange-400">Destaque do período</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] mt-0.5">
+                  <span className="font-bold">{highlightBroker.vendas_mes_qtd} vendas</span>
+                  <span className="font-mono text-emerald-400">{formatCurrency(highlightBroker.vendas_mes_valor)} VGV</span>
+                  <span className="font-mono text-purple-300">{formatCurrency(highlightCommission)} comissão</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 h-full min-h-[52px]">
+              <Medal className="w-5 h-5 text-[var(--text-muted)] shrink-0" />
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-wider text-orange-400">Destaque do período</div>
+                <div className="text-xs text-[var(--text-muted)]">Sem vendas no período.</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-3 min-w-0">
-        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg px-3 py-2.5 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-2 mb-2 min-w-0 items-stretch">
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 min-w-0 h-full flex flex-col">
+          <div className="flex items-center justify-between gap-2 mb-1">
             <div className="min-w-0">
               <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Desempenho da Equipe</h3>
               <p className="text-[10px] text-[var(--text-muted)]">Top 3 por VGV · {periodLabel}</p>
@@ -1548,84 +1586,71 @@ export default function CorretoresPage() {
               Ver ranking completo
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[380px]">
-              <thead>
-                <tr className="text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
-                  <th className="pb-1 pr-2">#</th>
-                  <th className="pb-1 pr-2">Corretor</th>
-                  <th className="pb-1 pr-2 text-center">Vendas</th>
-                  <th className="pb-1 pr-2 text-right">VGV</th>
-                  <th className="pb-1 text-right">Comissão</th>
+          <table className="w-full text-left table-fixed">
+            <thead>
+              <tr className="text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                <th className="pb-1 pr-1 w-7">#</th>
+                <th className="pb-1 pr-1">Corretor</th>
+                <th className="pb-1 pr-1 text-center w-14">Vendas</th>
+                <th className="pb-1 text-right w-[7.5rem]">VGV</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-color)]">
+              {topCorretores.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-2 text-center text-xs text-[var(--text-muted)]">
+                    Nenhuma venda no período.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border-color)]">
-                {topCorretores.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-3 text-center text-xs text-[var(--text-muted)]">
-                      Nenhuma venda no período.
+              ) : (
+                topCorretores.map((c, idx) => (
+                  <tr key={c.id || idx}>
+                    <td className="py-1 pr-1">
+                      <Medal className="w-3.5 h-3.5" style={{ color: medalColors[idx] }} />
                     </td>
-                  </tr>
-                ) : (
-                  topCorretores.map((c, idx) => {
-                    const generated = sumCommissionsForSaleIds(
-                      statsCatalog?.commissions || [],
-                      (c.brokerStats?.sale_details || []).map((d: BrokerSaleDetailRow) => d.sale_id),
-                    ).generated;
-                    return (
-                      <tr key={c.id || idx}>
-                        <td className="py-1.5 pr-2">
-                          <Medal className="w-3.5 h-3.5" style={{ color: medalColors[idx] }} />
-                        </td>
-                        <td className="py-1.5 pr-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {c.avatar_url ? (
-                              <img src={c.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
-                            ) : (
-                              <div className="w-6 h-6 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
-                                {c.name?.charAt(0)}
-                              </div>
-                            )}
-                            <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
+                    <td className="py-1 pr-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {c.avatar_url ? (
+                          <img src={c.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[9px] font-bold shrink-0">
+                            {c.name?.charAt(0)}
                           </div>
-                        </td>
-                        <td className="py-1.5 pr-2 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
-                        <td className="py-1.5 pr-2 text-right text-[11px] font-mono text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</td>
-                        <td className="py-1.5 text-right text-[11px] font-mono text-purple-300">{formatCurrency(generated)}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                        )}
+                        <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-1 pr-1 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
+                    <td className="py-1 text-right text-[11px] font-mono text-emerald-400 truncate">{formatCurrency(c.vendas_mes_valor)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </section>
 
-        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg px-3 py-2.5 min-w-0">
-          <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 min-w-0 h-full flex flex-col">
+          <div className="flex items-baseline justify-between gap-2 mb-1">
             <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Resumo Comercial</h3>
             <p className="text-[10px] text-[var(--text-muted)]">{periodLabel}</p>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-1.5">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-1.5 flex-1">
             {commercialRows.map((row, index) => (
               <div
                 key={row.label}
-                className={`rounded-lg bg-[var(--bg-main)]/50 px-2 py-1.5 min-w-0 ${
+                className={`rounded-md bg-[var(--bg-main)]/50 px-2 py-1 min-w-0 ${
                   index < 3 ? 'lg:col-span-2' : 'lg:col-span-3'
                 }`}
               >
                 <div className="text-[10px] text-[var(--text-secondary)] truncate">{row.label}</div>
                 <div className="text-xs font-bold text-[var(--text-primary)] truncate">{row.value}</div>
-                {row.change ? (
-                  <div className={`text-[9px] mt-0.5 truncate ${row.change.className}`}>{row.change.text}</div>
-                ) : null}
               </div>
             ))}
           </div>
         </section>
 
-        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg px-3 py-2.5 min-w-0 flex flex-col">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 min-w-0 h-full flex flex-col">
+          <div className="flex items-center justify-between gap-2 mb-1">
             <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Atividades Recentes</h3>
             <button
               type="button"
@@ -1636,23 +1661,23 @@ export default function CorretoresPage() {
               Ver todas
             </button>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1 flex-1">
             {visibleActivities.length === 0 ? (
-              <div className="text-xs text-[var(--text-muted)] text-center py-3">Nenhuma atividade no período.</div>
+              <div className="text-xs text-[var(--text-muted)] text-center py-2">Nenhuma atividade no período.</div>
             ) : (
               visibleActivities.map((act, index) => (
-                <div key={act.id + index} className="flex items-start gap-2">
+                <div key={act.id + index} className="flex items-start gap-1.5 min-w-0">
                   <div
-                    className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                    className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
                       act.type === 'sale'
                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
                         : 'bg-purple-500/10 border-purple-500/20 text-purple-500'
                     }`}
                   >
-                    {act.type === 'sale' ? <CheckCircle2 className="w-3 h-3" /> : <DollarSign className="w-3 h-3" />}
+                    {act.type === 'sale' ? <CheckCircle2 className="w-2.5 h-2.5" /> : <DollarSign className="w-2.5 h-2.5" />}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs text-[var(--text-secondary)] leading-snug truncate">{act.message}</p>
+                    <p className="text-xs text-[var(--text-secondary)] leading-tight truncate">{act.message}</p>
                     <p className="text-[10px] text-[var(--text-muted)] font-mono truncate">
                       {act.subtext} · {act.date.toLocaleDateString('pt-BR')}
                     </p>
@@ -1664,48 +1689,14 @@ export default function CorretoresPage() {
         </section>
       </div>
 
-      {highlightBroker ? (
-        <section className="mb-3 rounded-xl border border-orange-500/30 bg-[var(--bg-card)] px-3 py-2 shadow-lg min-w-0">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2 min-w-0">
-              {highlightBroker.avatar_url ? (
-                <img src={highlightBroker.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 border border-orange-500/40" />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-sm font-bold shrink-0">
-                  {highlightBroker.name?.charAt(0)}
-                </div>
-              )}
-              <h3 className="text-sm font-bold text-[var(--text-primary)] truncate max-w-[180px] sm:max-w-xs">{highlightBroker.name}</h3>
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 text-orange-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
-                <Star className="w-3 h-3" /> Destaque do período
-              </span>
-            </div>
-            <div className="flex items-center gap-4 ml-auto">
-              <div className="text-right">
-                <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Vendas</div>
-                <div className="text-xs font-bold">{highlightBroker.vendas_mes_qtd}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">VGV</div>
-                <div className="text-xs font-bold text-emerald-400">{formatCurrency(highlightBroker.vendas_mes_valor)}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Comissão</div>
-                <div className="text-xs font-bold text-purple-300">{formatCurrency(highlightCommission)}</div>
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      <div className="flex flex-col gap-6 flex-1 min-h-0 min-w-0">
+      <div className="flex flex-col flex-1 min-h-0 min-w-0">
         
         {/* Main Table Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl overflow-hidden relative">
-          <div className="px-4 py-3 border-b border-[var(--border-color)] flex items-center justify-between gap-3">
+          <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Lista de Corretores</h2>
-              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+              <p className="text-[10px] text-[var(--text-muted)]">
                 {filtered.length} corretor(es) · {periodLabel}
               </p>
             </div>
@@ -1715,75 +1706,77 @@ export default function CorretoresPage() {
             <table className="w-full text-left border-collapse min-w-[760px]">
               <thead>
                 <tr className="bg-[var(--bg-main)]/50 border-b border-[var(--border-color)]">
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Corretor</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Contato</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">CRECI</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">VGV</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão pendente</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Status</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Ações</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Corretor</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Contato</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">CRECI</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">VGV</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão pendente</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Status</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[var(--text-muted)] font-mono text-sm">Carregando dados...</td>
+                    <td colSpan={8} className="p-6 text-center text-[var(--text-muted)] font-mono text-sm">Carregando dados...</td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[var(--text-muted)] font-mono text-sm">Nenhum corretor encontrado.</td>
+                    <td colSpan={8} className="p-6 text-center text-[var(--text-muted)] font-mono text-sm">Nenhum corretor encontrado.</td>
                   </tr>
                 ) : (
                   filtered.map((c) => (
                     <tr key={c.id} className="hover:bg-[var(--bg-card-alt)] transition-colors group">
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
                           {c.avatar_url ? (
-                             <img src={c.avatar_url} alt={c.name} className="w-10 h-10 rounded-full object-cover border border-[var(--border-color)]" />
+                             <img src={c.avatar_url} alt={c.name} className="w-8 h-8 rounded-full object-cover border border-[var(--border-color)] shrink-0" />
                           ) : (
-                             <div className="w-10 h-10 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] font-bold shrink-0">
+                             <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-bold shrink-0">
                                {c.name?.charAt(0).toUpperCase()}
                              </div>
                           )}
-                          <div>
-                            <div className="text-sm font-bold text-[var(--text-primary)] mb-0.5">{c.name}</div>
-                            <div className="text-xs text-[var(--text-muted)]">{c.email}</div>
-                            <span className={`mt-1 inline-flex items-center px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border ${getRoleBadge(c.role)}`}>
-                              {c.role}
-                            </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="text-sm font-bold text-[var(--text-primary)] truncate">{c.name}</div>
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border shrink-0 ${getRoleBadge(c.role)}`}>
+                                {c.role}
+                              </span>
+                            </div>
+                            <div className="text-xs text-[var(--text-muted)] truncate">{c.email}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2">
                           <div className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5">
-                             <Phone className="w-3 h-3 text-emerald-500" /> {c.phone || 'Sem telefone'}
+                             <Phone className="w-3 h-3 text-emerald-500 shrink-0" /> {c.phone || 'Sem telefone'}
                           </div>
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2">
                         <div className="text-xs text-[var(--text-secondary)] font-mono">{c.creci || '—'}</div>
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="px-3 py-2 text-center">
                          <div className="text-sm font-bold text-[var(--text-primary)]">{c.vendas_mes_qtd}</div>
                          {c.lotesDoMes?.length > 0 && (
-                            <div className="text-[9px] text-amber-500/80 font-mono mt-1">{c.lotesDoMes.join(', ')}</div>
+                            <div className="text-[9px] text-amber-500/80 font-mono mt-0.5">{c.lotesDoMes.join(', ')}</div>
                          )}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="px-3 py-2 text-right">
                          <div className="text-sm font-bold text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</div>
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="px-3 py-2 text-right">
                          <div className="text-sm font-bold text-amber-500">{formatCurrency(c.comissao_pendente)}</div>
                       </td>
-                      <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                            c.active ? 'text-emerald-500 bg-emerald-500/10' : 'text-[var(--text-muted)] bg-gray-500/10'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${c.active ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
                           {c.active ? 'ATIVO' : 'INATIVO'}
                         </span>
                       </td>
-                      <td className="p-4 text-right relative">
+                      <td className="px-3 py-2 text-right relative">
                         <button
                           type="button"
                           onClick={() => setOpenBrokerActionsId(openBrokerActionsId === c.id ? null : c.id)}
@@ -1794,7 +1787,7 @@ export default function CorretoresPage() {
                           <MoreHorizontal className="w-4 h-4" />
                         </button>
                         {openBrokerActionsId === c.id ? (
-                          <div className="absolute right-4 top-12 z-30 w-52 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl py-1 text-left">
+                          <div className="absolute right-3 top-10 z-30 w-52 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl py-1 text-left">
                             <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenView(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
                               <Eye className="w-3.5 h-3.5" /> Visualizar
                             </button>
@@ -1859,7 +1852,7 @@ export default function CorretoresPage() {
             </table>
           </div>
           
-          <div className="p-3 border-t border-[var(--border-color)] bg-[var(--bg-main)]/40">
+          <div className="px-3 py-2 border-t border-[var(--border-color)] bg-[var(--bg-main)]/40">
             <span className="text-xs text-[var(--text-muted)]">Mostrando {filtered.length} corretor(es)</span>
           </div>
         </div>
