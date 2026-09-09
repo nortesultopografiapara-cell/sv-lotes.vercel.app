@@ -313,7 +313,8 @@ function testPanelAndRoutes() {
   assert.match(panel, /\/api\/banking\/c6\/config/);
   assert.match(panel, /Configurado ••••••••••/);
   assert.match(panel, /C6_EMIT_NOT_HOMOLOGATED_MESSAGE|ainda não homologada para emissão/);
-  assert.doesNotMatch(panel, /Testar conexão/);
+  assert.match(panel, /Testar conexão/);
+  assert.match(panel, /\/api\/banking\/c6\/test-connection/);
   assert.doesNotMatch(panel, /webhook/i);
   assert.doesNotMatch(panel, /c6bank\.com|oauth\/v2|cobranca\/v3/i);
 
@@ -332,14 +333,22 @@ function testPanelAndRoutes() {
   assert.match(route, /Nunca logar body\/PEM/);
   assert.match(route, /assertC6ConfigResponseSafe/);
 
+  const testRoute = read('app/api/banking/c6/test-connection/route.ts');
+  assert.match(testRoute, /export async function POST/);
+  assert.match(testRoute, /runCompanyC6ConnectionTest/);
+  assert.match(testRoute, /json\.includes\('access_token'\)/);
+
   const link = read('app/api/banking/c6/link-financial-account/route.ts');
   assert.match(link, /createC6FinancialAccount/);
   assert.match(link, /linkFinancialAccountToC6Integration/);
   assert.doesNotMatch(link, /recoverMislinked/);
 
   const libDir = path.join(root, 'lib/banking/c6');
+  const authHttpFiles = new Set(['c6Endpoints.ts', 'c6AuthClient.ts', 'c6ConnectionTest.ts']);
   for (const file of fs.readdirSync(libDir)) {
     const src = fs.readFileSync(path.join(libDir, file), 'utf8');
+    assert.doesNotMatch(src, /cobranca\/v3|bolepix/i, `${file} sem cobrança remota`);
+    if (authHttpFiles.has(file)) continue;
     assert.doesNotMatch(src, /https:\/\//, `${file} sem URL HTTP C6`);
   }
   console.log('OK testPanelAndRoutes');

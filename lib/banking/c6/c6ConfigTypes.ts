@@ -54,3 +54,15 @@ export const EMPTY_C6_BANK_CONFIG = (companyId: string): C6BankConfigPublic => (
   message: 'C6 Bank ainda não configurado.',
   financialAccountId: null,
 });
+
+export function hasMinimumC6AuthConfig(
+  config: C6BankConfigPublic | null | undefined,
+): boolean {
+  if (!config) return false;
+  return (
+    Boolean(config.clientIdConfigured) &&
+    config.hasClientSecret &&
+    config.hasCertificate &&
+    config.hasPrivateKey
+  );
+}

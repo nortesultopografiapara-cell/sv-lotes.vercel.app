@@ -1,8 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { FileKey2, Loader2, ShieldCheck, Upload } from 'lucide-react';
-import type { C6BankConfigPublic } from '@/lib/banking/c6/c6ConfigTypes';
+import { FileKey2, Loader2, PlugZap, ShieldCheck, Upload } from 'lucide-react';
+import {
+  hasMinimumC6AuthConfig,
+  type C6BankConfigPublic,
+} from '@/lib/banking/c6/c6ConfigTypes';
 import type { BankEnvironment } from '@/lib/banking/types';
 import { NEW_C6_FINANCIAL_ACCOUNT_NAME } from '@/lib/finance/companyFinancialAccountTypes';
 
@@ -65,6 +68,12 @@ export function C6BankConfigPanel({
     financialAccountId || '',
   );
   const [selectedLinkAccountId, setSelectedLinkAccountId] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<
+    'UNTESTED' | 'TESTING' | 'VALIDATED' | 'FAILED'
+  >('UNTESTED');
+  const [testScopes, setTestScopes] = useState<string[]>([]);
+  const [testMeta, setTestMeta] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +92,9 @@ export function C6BankConfigPanel({
       setClientSecret('');
       setCertFile(null);
       setKeyFile(null);
+      setTestStatus('UNTESTED');
+      setTestScopes([]);
+      setTestMeta('');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar');
     } finally {
@@ -171,6 +183,9 @@ export function C6BankConfigPanel({
       setClientSecret('');
       setCertFile(null);
       setKeyFile(null);
+      setTestStatus('UNTESTED');
+      setTestScopes([]);
+      setTestMeta('');
       setInfo(
         saved.message ||
           'Configuração salva. Emissão C6 Bank ainda não homologada.',
@@ -179,6 +194,65 @@ export function C6BankConfigPanel({
       setError(e instanceof Error ? e.message : 'Erro ao salvar');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testConnection() {
+    if (readOnlyDemo) return;
+    if (!hasMinimumC6AuthConfig(config)) {
+      setError('Salve Client ID, Secret, certificado e chave privada antes de testar.');
+      return;
+    }
+    setTesting(true);
+    setTestStatus('TESTING');
+    setError('');
+    setInfo('');
+    setTestMeta('');
+    try {
+      const res = await fetch('/api/banking/c6/test-connection', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          financialAccountId: selectedConfigAccountId || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const payloadJson = JSON.stringify(data);
+      if (
+        payloadJson.includes('access_token') ||
+        payloadJson.includes('accessToken') ||
+        /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{8,}/.test(payloadJson)
+      ) {
+        setTestStatus('FAILED');
+        setError('Resposta de teste bloqueada: token não pode aparecer no frontend.');
+        return;
+      }
+      const scopes = Array.isArray(data.scopes)
+        ? (data.scopes as unknown[]).map((s) => String(s)).filter(Boolean)
+        : [];
+      setTestScopes(scopes);
+      if (data.success) {
+        setTestStatus('VALIDATED');
+        setTestMeta(
+          [
+            `Ambiente: ${data.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}`,
+            data.tokenType ? `Tipo: ${String(data.tokenType)}` : '',
+            typeof data.expiresIn === 'number' ? `Expira em: ${data.expiresIn}s` : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        );
+        setInfo(String(data.message || 'Conexão validada.'));
+      } else {
+        setTestStatus('FAILED');
+        setError(String(data.message || data.error || 'Falha na autenticação'));
+      }
+    } catch (e: unknown) {
+      setTestStatus('FAILED');
+      setError(e instanceof Error ? e.message : 'Erro ao testar conexão');
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -298,6 +372,30 @@ export function C6BankConfigPanel({
           <p className="text-amber-300">
             Integração C6 Bank ainda não homologada para emissão.
           </p>
+          <p>
+            <span className="font-semibold text-[var(--text-primary)]">Teste de conexão:</span>{' '}
+            {testStatus === 'TESTING'
+              ? 'Testando…'
+              : testStatus === 'VALIDATED'
+                ? 'Conexão validada'
+                : testStatus === 'FAILED'
+                  ? 'Falha na autenticação'
+                  : 'Não testado'}
+          </p>
+          {testMeta ? <p>{testMeta}</p> : null}
+          {testScopes.length > 0 ? (
+            <p>
+              Scopes:{' '}
+              {testScopes.map((scope) => (
+                <span
+                  key={scope}
+                  className="mr-1 inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200"
+                >
+                  {scope}
+                </span>
+              ))}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -503,6 +601,17 @@ export function C6BankConfigPanel({
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
           Salvar configuração
         </button>
+        {hasMinimumC6AuthConfig(config) ? (
+          <button
+            type="button"
+            disabled={readOnlyDemo || saving || testing}
+            onClick={() => void testConnection()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40"
+          >
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
+            {testing ? 'Testando…' : 'Testar conexão'}
+          </button>
+        ) : null}
       </div>
     </div>
   );

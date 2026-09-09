@@ -43,6 +43,7 @@
     "test:banking-mock": "tsx scripts/mandatory-banking-mock-tests.ts",
     "test:c6-fase1": "tsx scripts/mandatory-c6-fase1-foundation-tests.ts",
     "test:c6-fase2": "tsx scripts/mandatory-c6-fase2-config-tests.ts",
+    "test:c6-fase3": "tsx scripts/mandatory-c6-fase3-auth-tests.ts",
     "test:inter-fase-a": "tsx scripts/mandatory-inter-bank-config-fase-a-tests.ts",
     "test:inter-fase-b": "tsx scripts/mandatory-inter-oauth-fase-b-tests.ts",
     "test:inter-fase-c": "tsx scripts/mandatory-inter-webhook-fase-c-tests.ts",

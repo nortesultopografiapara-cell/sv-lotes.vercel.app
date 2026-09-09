@@ -133,13 +133,26 @@ function testEmitGuard() {
 
 function testNoHttpClient() {
   const dir = path.join(root, 'lib/banking/c6');
+  const authHttpFiles = new Set([
+    'c6Endpoints.ts',
+    'c6AuthClient.ts',
+    'c6ConnectionTest.ts',
+  ]);
   for (const file of fs.readdirSync(dir)) {
-    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    const src = fs.readFileSync(path.join(libDirJoin(dir, file)), 'utf8');
+    assert.doesNotMatch(src, /cobranca\/v3|bolepix/i, `${file} sem cobrança remota`);
+    if (authHttpFiles.has(file)) continue;
     assert.doesNotMatch(src, /https:\/\//, `${file} sem URL HTTP C6`);
-    assert.doesNotMatch(src, /oauth\/v2/i, `${file} sem OAuth`);
-    assert.doesNotMatch(src, /cobranca\/v3/i, `${file} sem cobrança remota`);
+    assert.doesNotMatch(src, /oauth\/v2/i, `${file} sem OAuth Inter`);
   }
+  const endpoints = fs.readFileSync(path.join(dir, 'c6Endpoints.ts'), 'utf8');
+  assert.match(endpoints, /baas-api-sandbox\.c6bank\.info\/v1\/auth\//);
+  assert.match(endpoints, /baas-api\.c6bank\.info\/v1\/auth\//);
   console.log('OK testNoHttpClient');
+}
+
+function libDirJoin(dir: string, file: string): string {
+  return path.join(dir, file);
 }
 
 function testLocalValidationAndSafeResponse() {
