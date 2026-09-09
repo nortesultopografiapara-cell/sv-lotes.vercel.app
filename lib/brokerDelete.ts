@@ -42,6 +42,7 @@ export type BrokerDeleteUserContext = {
 export type BrokerDashboardStats = {
   activeCount: number;
   totalVendasMes: number;
+  totalVendasValor: number;
   totalComissoesPagas: number;
   totalComissoesPendentes: number;
 };
@@ -164,6 +165,7 @@ export function computeBrokerDashboardStats(brokers: BrokerRow[]): BrokerDashboa
   return {
     activeCount: active.length,
     totalVendasMes: active.reduce((acc, b) => acc + (Number(b.vendas_mes_qtd) || 0), 0),
+    totalVendasValor: active.reduce((acc, b) => acc + (Number(b.vendas_mes_valor) || 0), 0),
     totalComissoesPagas: active.reduce((acc, b) => acc + (Number(b.comissao_paga) || 0), 0),
     totalComissoesPendentes: active.reduce((acc, b) => acc + (Number(b.comissao_pendente) || 0), 0),
   };

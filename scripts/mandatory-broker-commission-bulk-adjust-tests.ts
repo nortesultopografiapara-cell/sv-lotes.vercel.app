@@ -19,7 +19,7 @@ import {
   requiredConfirmText,
   type BulkCommissionCandidate,
 } from '../lib/brokerCommissionBulkAdjust';
-import { canManageSaleBrokerCommission } from '../lib/brokerCommissionAccess';
+import { canManageSaleBrokerCommission, canShowBrokerCommissionMaintenanceUi } from '../lib/brokerCommissionAccess';
 import {
   isPendingBrokerCommission,
   resolveSaleValueForCommission,
@@ -303,6 +303,18 @@ function testPermissionAdminOnly() {
   assert(!canManageSaleBrokerCommission('BROKER'), 'broker bloqueado');
   assert(!canManageSaleBrokerCommission('CORRETOR'), 'corretor bloqueado');
   assert(!canManageSaleBrokerCommission('OWNER'), 'owner bloqueado');
+  assert(
+    !canShowBrokerCommissionMaintenanceUi('ADMIN', '1'),
+    'ADMIN não vê ajuste/zerar na tela',
+  );
+  assert(
+    !canShowBrokerCommissionMaintenanceUi('SUPER_ADMIN', null),
+    'SUPER_ADMIN sem query não vê card',
+  );
+  assert(
+    canShowBrokerCommissionMaintenanceUi('SUPER_ADMIN', '1'),
+    'SUPER_ADMIN com ?manutencao=1 vê manutenção',
+  );
   console.log('OK testPermissionAdminOnly');
 }
 
@@ -351,6 +363,11 @@ function testUiDoesNotAutoApply() {
   );
   assert(page.includes('Zerar comissões pendentes'), 'atalho UI');
   assert(page.includes('Ações administrativas'), 'seção admin');
+  assert(page.includes('canShowBrokerCommissionMaintenanceUi'), 'card oculto para ADMIN');
+  assert(page.includes('Reservas abertas'), 'kpi reservas reais');
+  assert(!page.includes('Leads em atendimento'), 'sem card de leads fictício');
+  assert(page.includes('> PDF'), 'botão PDF separado');
+  assert(page.includes('> Excel'), 'botão Excel separado');
   assert(!page.includes("mode: 'apply'"), 'página não aplica sozinha');
   console.log('OK testUiDoesNotAutoApply');
 }

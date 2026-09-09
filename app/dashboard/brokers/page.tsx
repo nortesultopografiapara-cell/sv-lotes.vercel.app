@@ -1,7 +1,7 @@
 'use client';
 
-import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { Users, Search, Plus, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog, FileText, Download, CalendarClock } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
@@ -23,7 +23,11 @@ import {
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { parseCurrencyBRLNumber, serializeCurrencyBRL } from '@/lib/currencyBrl';
 import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
-import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
+import {
+  BROKER_COMMISSION_MAINTENANCE_QUERY,
+  canManageSaleBrokerCommission,
+  canShowBrokerCommissionMaintenanceUi,
+} from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import { BulkAdjustBrokerCommissionsModal } from '@/components/brokers/BulkAdjustBrokerCommissionsModal';
 import { fetchAllPaginated } from '@/lib/supabaseFetchAll';
@@ -52,15 +56,32 @@ import {
   shouldAppearInBrokerList,
 } from '@/lib/brokerAccessLevels';
 import {
+  BROKER_DASHBOARD_PERIOD_LABELS,
+  BROKER_DASHBOARD_PERIODS,
+  brokerRecordMatchesSearch,
   buildBrokerReportDetailRows,
   buildBrokerStatsFromData,
+  countOpenReservedLots,
+  labelBrokerStatsPeriod,
+  sumCommissionsForSaleIds,
+  type BrokerDashboardPeriod,
   type BrokerSaleDetailRow,
 } from '@/lib/brokerDashboardStats';
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
-  const [corretores, setCorretores] = useState<any[]>([]);
+  const [brokerListBase, setBrokerListBase] = useState<any[]>([]);
+  const [statsCatalog, setStatsCatalog] = useState<{
+    sales: Array<Record<string, unknown>>;
+    commissions: any[];
+    blocks: any[];
+    projects: Array<{ id: string; name?: string | null }>;
+    contracts: Array<Record<string, unknown>>;
+    customers: Array<{ id: string; name?: string | null }>;
+  } | null>(null);
+  const [statsPeriod, setStatsPeriod] = useState<BrokerDashboardPeriod>('month');
+  const [maintenanceQuery, setMaintenanceQuery] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [brokerLimit, setBrokerLimit] = useState<number | null>(null);
   const [companyPlan, setCompanyPlan] = useState<string>('');
@@ -116,7 +137,6 @@ export default function CorretoresPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view' | 'reset' | null>(null);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
-  const [unassignedBrokerSales, setUnassignedBrokerSales] = useState<BrokerSaleDetailRow[]>([]);
 
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<{
@@ -276,46 +296,7 @@ export default function CorretoresPage() {
           }
       }
 
-      const { byBrokerId, unassignedSales } = buildBrokerStatsFromData({
-        brokers: safeBrokers,
-        sales: salesData,
-        commissions: commData,
-        blocks: blockData,
-        projects: projectsData,
-        contracts: contractsData,
-        customers: customersData,
-        period: 'all',
-      });
-      setUnassignedBrokerSales(unassignedSales);
-
-      const enhancedData = safeBrokers.map((b) => {
-        const stats = byBrokerId.get(b.id) || {
-          broker_id: b.id,
-          vendas_qtd: 0,
-          vendas_valor: 0,
-          comissao_paga: 0,
-          comissao_pendente: 0,
-          sale_details: [],
-        };
-
-        const exportLots = stats.sale_details.map((d) => ({
-          loteamento: d.empreendimento,
-          quadra: d.quadra,
-          lote: d.lote,
-          loteStr: d.loteStr,
-          contrato: d.contrato,
-          venda_id: d.sale_id,
-          valor_venda: d.valor_venda,
-          data_venda: d.data_venda,
-          comissao_pendente: d.comissao_pendente,
-          cliente: d.cliente,
-          status: d.status,
-        }));
-
-        const lotesAtivos = exportLots
-          .map((lot) => lot.loteStr)
-          .filter(Boolean);
-
+      const enhancedBase = safeBrokers.map((b) => {
         const isActive = isBrokerActiveForList(b);
         const dbActive = b.active !== false;
 
@@ -328,19 +309,21 @@ export default function CorretoresPage() {
           active: isActive,
           dbActive,
           brokerStatus: b.status || (isActive ? 'ativo' : 'inativo'),
-          vendas_mes_qtd: stats.vendas_qtd,
-          vendas_mes_valor: stats.vendas_valor,
-          lotesDoMes: lotesAtivos,
-          exportLots,
-          brokerStats: stats,
-          comissao_pendente: stats.comissao_pendente,
-          comissao_paga: stats.comissao_paga,
           ultimo_acesso: b.created_at || new Date().toISOString(),
         };
       });
 
-      const activeBrokers = filterBrokersForActiveList(enhancedData);
-      setCorretores(enhancedData);
+      setBrokerListBase(enhancedBase);
+      setStatsCatalog({
+        sales: salesData,
+        commissions: commData,
+        blocks: blockData,
+        projects: projectsData,
+        contracts: contractsData,
+        customers: customersData,
+      });
+
+      const activeBrokers = filterBrokersForActiveList(enhancedBase);
       if (companyForPlan) {
         logSaasCompanyContext(resolvedTenantId, companyForPlan, undefined, activeBrokers.length);
       }
@@ -395,6 +378,96 @@ export default function CorretoresPage() {
     }
   }, [user, authLoading, loadBrokers]);
 
+  useEffect(() => {
+    try {
+      const value = new URLSearchParams(window.location.search).get(
+        BROKER_COMMISSION_MAINTENANCE_QUERY,
+      );
+      setMaintenanceQuery(value);
+    } catch {
+      setMaintenanceQuery(null);
+    }
+  }, []);
+
+  const { byBrokerId, unassignedBrokerSales } = useMemo(() => {
+    if (!statsCatalog) {
+      return {
+        byBrokerId: new Map(),
+        unassignedBrokerSales: [] as BrokerSaleDetailRow[],
+      };
+    }
+    const built = buildBrokerStatsFromData({
+      brokers: brokerListBase,
+      sales: statsCatalog.sales,
+      commissions: statsCatalog.commissions,
+      blocks: statsCatalog.blocks,
+      projects: statsCatalog.projects,
+      contracts: statsCatalog.contracts,
+      customers: statsCatalog.customers,
+      period: statsPeriod,
+    });
+    return {
+      byBrokerId: built.byBrokerId,
+      unassignedBrokerSales: built.unassignedSales,
+    };
+  }, [brokerListBase, statsCatalog, statsPeriod]);
+
+  const corretores = useMemo(() => {
+    return brokerListBase.map((b) => {
+      const stats = byBrokerId.get(b.id) || {
+        broker_id: b.id,
+        vendas_qtd: 0,
+        vendas_valor: 0,
+        comissao_paga: 0,
+        comissao_pendente: 0,
+        sale_details: [],
+      };
+      const exportLots = stats.sale_details.map((d) => ({
+        loteamento: d.empreendimento,
+        quadra: d.quadra,
+        lote: d.lote,
+        loteStr: d.loteStr,
+        contrato: d.contrato,
+        venda_id: d.sale_id,
+        valor_venda: d.valor_venda,
+        data_venda: d.data_venda,
+        comissao_pendente: d.comissao_pendente,
+        cliente: d.cliente,
+        status: d.status,
+      }));
+      const lotesAtivos = exportLots.map((lot) => lot.loteStr).filter(Boolean);
+      return {
+        ...b,
+        vendas_mes_qtd: stats.vendas_qtd,
+        vendas_mes_valor: stats.vendas_valor,
+        lotesDoMes: lotesAtivos,
+        exportLots,
+        brokerStats: stats,
+        comissao_pendente: stats.comissao_pendente,
+        comissao_paga: stats.comissao_paga,
+      };
+    });
+  }, [brokerListBase, byBrokerId]);
+
+  const openReservationsCount = useMemo(
+    () => countOpenReservedLots(statsCatalog?.blocks || []),
+    [statsCatalog],
+  );
+
+  const periodSaleIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const stats of byBrokerId.values()) {
+      for (const detail of stats.sale_details) ids.add(detail.sale_id);
+    }
+    for (const detail of unassignedBrokerSales) ids.add(detail.sale_id);
+    return ids;
+  }, [byBrokerId, unassignedBrokerSales]);
+
+  const periodCommissions = useMemo(
+    () => sumCommissionsForSaleIds(statsCatalog?.commissions || [], periodSaleIds),
+    [statsCatalog, periodSaleIds],
+  );
+
   const getExportSummaryRows = () =>
     filtered.map((c) => ({
       Nome: c.name || '',
@@ -445,6 +518,17 @@ export default function CorretoresPage() {
       try {
           const ExcelJS = (await import('exceljs')).default;
           const workbook = new ExcelJS.Workbook();
+          const wsMeta = workbook.addWorksheet('Parametros');
+          wsMeta.columns = [
+              { header: 'Campo', key: 'Campo', width: 22 },
+              { header: 'Valor', key: 'Valor', width: 40 },
+          ];
+          wsMeta.addRows([
+              { Campo: 'Periodo', Valor: labelBrokerStatsPeriod(statsPeriod) },
+              { Campo: 'Filtro_Status', Valor: filterActive },
+              { Campo: 'Busca', Valor: search.trim() || '—' },
+              { Campo: 'Corretores_Exportados', Valor: summaryRows.length },
+          ]);
           const wsSummary = workbook.addWorksheet('Resumo Corretores');
           const wsDetail = workbook.addWorksheet('Detalhamento Vendas');
 
@@ -478,7 +562,7 @@ export default function CorretoresPage() {
           const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
           const link = document.createElement("a");
           link.href = URL.createObjectURL(blob);
-          link.download = `corretores_${new Date().getTime()}.xlsx`;
+          link.download = `corretores_${statsPeriod}_${Date.now()}.xlsx`;
           link.click();
           console.log("BROKER_EXCEL_GENERATED");
       } catch (err) {
@@ -558,9 +642,17 @@ export default function CorretoresPage() {
           doc.setFontSize(10);
           doc.setTextColor(0);
           doc.setFont('helvetica', 'bold');
+          doc.text(`Período: ${labelBrokerStatsPeriod(statsPeriod)}`, 14, startY);
+          startY += 6;
+          doc.text(
+            `Filtros: ${filterActive === 'all' ? 'Todos os status' : filterActive === 'ativo' ? 'Somente ativos' : 'Somente inativos'}${search.trim() ? ` | Busca: ${search.trim()}` : ''}`,
+            14,
+            startY,
+          );
+          startY += 6;
           doc.text(`Total de Corretores Ativos: ${dashboardStats.activeCount}`, 14, startY);
           startY += 6;
-          doc.text(`Total de Vendas Ativas: ${totalVendasMes}`, 14, startY);
+          doc.text(`Total de Vendas no período: ${totalVendasMes}`, 14, startY);
           startY += 6;
           doc.text(
             `Total Vendido: R$ ${filtered.reduce((acc, c) => acc + (Number(c.vendas_mes_valor) || 0), 0).toLocaleString('pt-BR')}`,
@@ -636,7 +728,7 @@ export default function CorretoresPage() {
           const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
           await addProfessionalFooterAndSignature(doc, companyName, 'Relatório de Corretores');
           
-          doc.save(`relatorio_corretores_${new Date().getTime()}.pdf`);
+          doc.save(`relatorio_corretores_${statsPeriod}_${Date.now()}.pdf`);
           console.log("BROKER_PDF_GENERATED");
       } catch (err) {
           console.error("Erro pdf", err);
@@ -906,7 +998,7 @@ export default function CorretoresPage() {
         effectiveTenantId: body.effectiveTenantId || resolvedTenantId || '',
       };
 
-      setCorretores((prev) => removeBrokerFromList(prev, id));
+      setBrokerListBase((prev) => removeBrokerFromList(prev, id));
       setDeleteModal(null);
 
       await logBrokerDeleteAudit(supabase, {
@@ -991,10 +1083,8 @@ export default function CorretoresPage() {
 
   const [filterActive, setFilterActive] = useState<'all' | 'ativo' | 'inativo'>('ativo');
 
-  const filtered = corretores.filter(c => {
-     const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
-                           c.email?.toLowerCase().includes(search.toLowerCase());
-     if (!matchesSearch) return false;
+  const filtered = corretores.filter((c) => {
+     if (!brokerRecordMatchesSearch(c, search)) return false;
      if (filterActive === 'ativo' && !c.active) return false;
      if (filterActive === 'inativo' && c.active) return false;
      return true;
@@ -1157,57 +1247,103 @@ export default function CorretoresPage() {
   const topCorretores = rankBrokersByMonthlySales(corretores, 3);
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309'];
   const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
+  const showCommissionMaintenance = canShowBrokerCommissionMaintenanceUi(
+    user?.role,
+    maintenanceQuery,
+  );
+  const periodLabel = labelBrokerStatsPeriod(statsPeriod);
+  const planUsagePercent =
+    brokerLimit && brokerLimit > 0
+      ? Math.round((dashboardStats.activeCount / brokerLimit) * 100)
+      : null;
 
   return (
     <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
       
-      {/* Header */}
-      <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-1 tracking-tight">Corretores</h1>
-          <p className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">
-            GERENCIAMENTO DE EQUIPE DE VENDAS
-          </p>
+      <header className="mb-4 xl:hidden">
+        <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">Corretores</h1>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)] mt-0.5">
+          Gerenciamento de equipe de vendas
+        </p>
+      </header>
+
+      <div className="mb-4 flex flex-col xl:flex-row xl:items-center gap-3 min-w-0">
+        <div className="relative flex-1 min-w-0">
+          <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Buscar por nome, telefone ou e-mail..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg pl-9 pr-4 py-2 w-full focus:outline-none focus:border-teal-500/50 transition-colors"
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input 
-              type="text" 
-              placeholder="Buscar corretor..." 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg pl-9 pr-4 py-2 w-full md:w-64 focus:outline-none focus:border-teal-500/50 transition-colors"
-            />
-          </div>
-          <button 
-            onClick={() => { 
-                setFormData({
-                   fullName: '',
-                   email: '',
-                   phone: '',
-                   cpf: '',
-                   creci: '',
-                   role: 'BROKER',
-                   commission_mode: 'PERCENT',
-                   commission_percent: 5,
-                   commission_fixed_amount: '',
-                   password: '',
-                   confirmPassword: ''
-                });
-                setSuccessData(null);
-                setModalMode('create');
-                setIsModalOpen(true); 
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <select
+            value={filterActive}
+            onChange={(e) => setFilterActive(e.target.value as 'all' | 'ativo' | 'inativo')}
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-3 py-2 rounded-lg outline-none focus:border-[var(--brand-primary)]"
+            aria-label="Filtros"
+          >
+            <option value="all">Filtros: todos os status</option>
+            <option value="ativo">Filtros: somente ativos</option>
+            <option value="inativo">Filtros: somente inativos</option>
+          </select>
+          <select
+            value={statsPeriod}
+            onChange={(e) => setStatsPeriod(e.target.value as BrokerDashboardPeriod)}
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-3 py-2 rounded-lg outline-none focus:border-[var(--brand-primary)]"
+            aria-label="Período"
+          >
+            {BROKER_DASHBOARD_PERIODS.map((period) => (
+              <option key={period} value={period}>
+                {BROKER_DASHBOARD_PERIOD_LABELS[period]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setFormData({
+                fullName: '',
+                email: '',
+                phone: '',
+                cpf: '',
+                creci: '',
+                role: 'BROKER',
+                commission_mode: 'PERCENT',
+                commission_percent: 5,
+                commission_fixed_amount: '',
+                password: '',
+                confirmPassword: '',
+              });
+              setSuccessData(null);
+              setModalMode('create');
+              setIsModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-[var(--text-primary)] px-5 py-2.5 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
+            className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-[var(--text-primary)] px-4 py-2 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
           >
             <Plus className="w-4 h-4" /> Novo Corretor
           </button>
+          <button
+            type="button"
+            onClick={() => void handleExportPDF()}
+            className="flex items-center gap-2 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            <FileText className="w-4 h-4" /> PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportExcel()}
+            className="flex items-center gap-2 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" /> Excel
+          </button>
         </div>
-      </header>
+      </div>
 
-      {canManageBrokerCommission ? (
-        <section className="mb-6 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 md:p-5">
+      {showCommissionMaintenance ? (
+        <section className="mb-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 md:p-5">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">
@@ -1243,93 +1379,75 @@ export default function CorretoresPage() {
         </section>
       ) : null}
 
-      {/* Top Cards Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 min-w-0">
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative overflow-hidden">
-             <div className="flex items-center gap-4 mb-4">
-               <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500">
-                 <Users className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-3xl font-bold text-[var(--text-primary)]">
-                    {dashboardStats.activeCount} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
-                  </div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Corretores ativos</div>
-               </div>
-             </div>
-             <div className="text-xs text-emerald-500 font-medium">
-               {brokerLimit === null
-                 ? 'Carregando limites do plano…'
-                 : companyPlan
-                   ? `Plano ${companyPlan} — até ${brokerLimit} corretores`
-                   : `${Math.round((dashboardStats.activeCount / brokerLimit) * 100)}% da licença utilizada`}
-             </div>
-         </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6 min-w-0">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500 shrink-0">
+              <Users className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-[var(--text-primary)] leading-tight">
+                {dashboardStats.activeCount} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
+              </div>
+              <div className="text-xs font-medium text-[var(--text-secondary)]">Corretores ativos</div>
+            </div>
+          </div>
+          <div className="text-[11px] text-emerald-500 font-medium mt-2">
+            {brokerLimit === null
+              ? 'Carregando limites do plano…'
+              : companyPlan
+                ? `Plano ${companyPlan} — ${planUsagePercent ?? 0}% da licença`
+                : `${planUsagePercent ?? 0}% da licença utilizada`}
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg">
-             <div className="flex items-center gap-4 mb-4">
-               <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500">
-                 <TrendingUp className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-3xl font-bold text-[var(--text-primary)]">{totalVendasMes}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Vendas ativas</div>
-               </div>
-             </div>
-             <div className="text-xs text-blue-500 font-medium">
-               Total de vendas ativas vinculadas aos corretores
-             </div>
-         </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500 shrink-0">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-[var(--text-primary)] leading-tight">{totalVendasMes}</div>
+              <div className="text-xs font-medium text-[var(--text-secondary)]">Vendas no período</div>
+            </div>
+          </div>
+          <div className="text-[11px] text-blue-500 font-medium mt-2 truncate">
+            VGV {formatCurrency(dashboardStats.totalVendasValor)} · {periodLabel}
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
-             {/* Glow decorativo */}
-             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-             
-             <div className="flex items-center gap-4 mb-4 relative z-10">
-               <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center border border-purple-500/20 text-purple-500">
-                 <Wallet className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">{formatCurrency(totalComissoesPagas)}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Comissões pagas</div>
-               </div>
-             </div>
-             <div className="text-xs text-purple-400 font-medium relative z-10 opacity-0">
-               .
-             </div>
-         </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-3xl -mr-8 -mt-8 pointer-events-none"></div>
+          <div className="flex items-center gap-3 relative z-10">
+            <div className="w-9 h-9 rounded-full bg-purple-500/10 flex items-center justify-center border border-purple-500/20 text-purple-500 shrink-0">
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-lg font-bold text-[var(--text-primary)] tracking-tight leading-tight">
+                {formatCurrency(periodCommissions.generated)}
+              </div>
+              <div className="text-xs font-medium text-[var(--text-secondary)]">Comissões geradas</div>
+            </div>
+          </div>
+          <div className="text-[11px] text-amber-400 font-medium mt-2 relative z-10 truncate">
+            Pendentes em aberto {formatCurrency(totalComissoesPendentes)}
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-             
-             <div className="flex items-center gap-4 mb-4 relative z-10">
-               <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-500">
-                 <DollarSign className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">{formatCurrency(totalComissoesPendentes)}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Comissões pendentes</div>
-               </div>
-             </div>
-             <div className="text-xs text-amber-400 font-medium relative z-10 opacity-0">
-               .
-             </div>
-         </div>
-
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg">
-             <div className="flex items-center gap-4 mb-4">
-               <div className="w-12 h-12 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500">
-                 <Users2 className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">0</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Leads em atendimento</div>
-               </div>
-             </div>
-             <div className="text-xs text-teal-500 font-medium opacity-0">
-               .
-             </div>
-         </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 flex flex-col justify-between shadow-lg min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500 shrink-0">
+              <CalendarClock className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-bold text-[var(--text-primary)] leading-tight">{openReservationsCount}</div>
+              <div className="text-xs font-medium text-[var(--text-secondary)]">Reservas abertas</div>
+            </div>
+          </div>
+          <div className="text-[11px] text-teal-500 font-medium mt-2">
+            Lotes com status Reservado
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0 min-w-0">
@@ -1338,28 +1456,9 @@ export default function CorretoresPage() {
         <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl overflow-hidden relative">
           <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between">
             <h2 className="text-sm font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Lista de Corretores</h2>
-            <div className="flex gap-2">
-               <select 
-                  value={filterActive} 
-                  onChange={(e) => setFilterActive(e.target.value as any)}
-                  className="bg-transparent border border-[var(--border-color)] text-xs text-[var(--text-muted)] px-3 py-1.5 rounded-lg outline-none focus:border-[var(--brand-primary)]"
-               >
-                 <option value="all">Filtro: Todos os status</option>
-                 <option value="ativo">Somente Ativos</option>
-                 <option value="inativo">Somente Inativos</option>
-               </select>
-               <div className="relative group">
-                   <button 
-                      className="text-xs text-[var(--text-muted)] px-3 py-1.5 border border-[var(--border-color)] rounded-lg cursor-pointer hover:bg-[var(--bg-card-alt)] transition-colors"
-                   >
-                      Exportar ↓
-                   </button>
-                   <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-lg overflow-hidden z-20 whitespace-nowrap">
-                       <button onClick={handleExportExcel} className="block w-full text-left px-4 py-2 hover:bg-[var(--bg-card-alt)] text-xs text-[var(--text-secondary)]">Planilha (Excel)</button>
-                       <button onClick={handleExportPDF} className="block w-full text-left px-4 py-2 hover:bg-[var(--bg-card-alt)] text-xs text-[var(--text-secondary)]">Relatório (PDF)</button>
-                   </div>
-               </div>
-            </div>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              {periodLabel}
+            </span>
           </div>
           
           <div className="sv-table-scroll flex-1">
@@ -1545,8 +1644,17 @@ export default function CorretoresPage() {
            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl p-5 flex flex-col">
               <div className="flex items-center justify-between mb-4">
                  <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">COMISSÕES (RESUMO)</h3>
-                 <select className="bg-transparent border-none text-xs text-[var(--text-muted)] outline-none">
-                    <option>Este mês</option>
+                 <select
+                    value={statsPeriod}
+                    onChange={(e) => setStatsPeriod(e.target.value as BrokerDashboardPeriod)}
+                    className="bg-transparent border-none text-xs text-[var(--text-muted)] outline-none"
+                    aria-label="Período do resumo"
+                 >
+                    {BROKER_DASHBOARD_PERIODS.map((period) => (
+                      <option key={period} value={period}>
+                        {BROKER_DASHBOARD_PERIOD_LABELS[period]}
+                      </option>
+                    ))}
                  </select>
               </div>
               <div className="h-[180px] w-full relative flex items-center justify-center">

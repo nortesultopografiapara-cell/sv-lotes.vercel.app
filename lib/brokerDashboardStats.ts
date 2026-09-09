@@ -8,10 +8,12 @@ import {
   getSalePendingCommissionTotal,
   isCanceledBrokerCommission,
   isPaidBrokerCommission,
+  isPendingBrokerCommission,
   resolveBrokerCommissionAmount,
   resolveSaleValueForCommission,
   type BrokerCommissionRow,
 } from '@/lib/brokerCommission';
+import { isLotReservedStatus } from '@/lib/lotReservationDisplay';
 import {
   formatSaleLotsLabel,
   resolveBlocksForSale,
@@ -63,13 +65,129 @@ export type BrokerStatsSummary = {
   sale_details: BrokerSaleDetailRow[];
 };
 
-export type BrokerStatsPeriod = 'all' | 'month';
+export const BROKER_DASHBOARD_PERIODS = ['month', 'last_30', 'year'] as const;
+export type BrokerDashboardPeriod = (typeof BROKER_DASHBOARD_PERIODS)[number];
+export type BrokerStatsPeriod = 'all' | BrokerDashboardPeriod;
+
+export const BROKER_DASHBOARD_PERIOD_LABELS: Record<
+  BrokerDashboardPeriod,
+  string
+> = {
+  month: 'Este mês',
+  last_30: 'Últimos 30 dias',
+  year: 'Este ano',
+};
+
+export function labelBrokerStatsPeriod(period: BrokerStatsPeriod): string {
+  if (period === 'all') return 'Todo o período';
+  return BROKER_DASHBOARD_PERIOD_LABELS[period];
+}
 
 export function normalizeBrokerMatchKey(value?: string | null): string {
   return String(value || '')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');
+}
+
+export function digitsOnlyPhone(value?: string | null): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+export function brokerRecordMatchesSearch(
+  broker: {
+    name?: string | null;
+    full_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    creci?: string | null;
+  },
+  query: string,
+): boolean {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  const name = String(broker.name || broker.full_name || '').toLowerCase();
+  const email = String(broker.email || '').toLowerCase();
+  const creci = String(broker.creci || '').toLowerCase();
+  if (name.includes(q) || email.includes(q) || creci.includes(q)) return true;
+  const phoneRaw = String(broker.phone || '').toLowerCase();
+  if (phoneRaw.includes(q)) return true;
+  const qDigits = digitsOnlyPhone(q);
+  const phoneDigits = digitsOnlyPhone(broker.phone);
+  return Boolean(qDigits) && phoneDigits.includes(qDigits);
+}
+
+/** Data da venda no calendário civil (YYYY-MM-DD), sem deslocar o dia por UTC. */
+export function parseBrokerSaleDate(
+  sale: Record<string, unknown>,
+): Date | null {
+  const raw = String(sale.sale_date || sale.created_at || '').trim();
+  if (!raw) return null;
+  const day = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (day) {
+    return new Date(
+      Number(day[1]),
+      Number(day[2]) - 1,
+      Number(day[3]),
+      12,
+      0,
+      0,
+      0,
+    );
+  }
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+export function getBrokerStatsPeriodBounds(
+  period: BrokerStatsPeriod,
+  referenceDate: Date = new Date(),
+): { start: Date; endExclusive: Date } | null {
+  if (period === 'all') return null;
+  const y = referenceDate.getFullYear();
+  const m = referenceDate.getMonth();
+  if (period === 'month') {
+    return {
+      start: new Date(y, m, 1, 0, 0, 0, 0),
+      endExclusive: new Date(y, m + 1, 1, 0, 0, 0, 0),
+    };
+  }
+  if (period === 'year') {
+    return {
+      start: new Date(y, 0, 1, 0, 0, 0, 0),
+      endExclusive: new Date(y + 1, 0, 1, 0, 0, 0, 0),
+    };
+  }
+  const start = new Date(referenceDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { start, endExclusive: new Date(referenceDate.getTime() + 1) };
+}
+
+export function countOpenReservedLots(
+  blocks: Array<{ status?: string | null }>,
+): number {
+  return blocks.filter((block) => isLotReservedStatus(block.status)).length;
+}
+
+export function sumCommissionsForSaleIds(
+  commissions: BrokerCommissionRow[],
+  saleIds: Iterable<string>,
+): { generated: number; paid: number; pending: number } {
+  const allowed = new Set(
+    [...saleIds].map((id) => String(id || '')).filter(Boolean),
+  );
+  let generated = 0;
+  let paid = 0;
+  let pending = 0;
+  for (const row of commissions) {
+    const saleId = String(row.sale_id || '');
+    if (!saleId || !allowed.has(saleId)) continue;
+    if (isCanceledBrokerCommission(row.status)) continue;
+    const amount = resolveBrokerCommissionAmount(row);
+    generated += amount;
+    if (isPaidBrokerCommission(row.status)) paid += amount;
+    else if (isPendingBrokerCommission(row.status)) pending += amount;
+  }
+  return { generated, paid, pending };
 }
 
 export function isCanceledSale(sale: Record<string, unknown>): boolean {
@@ -87,13 +205,11 @@ export function isSaleInStatsPeriod(
   referenceDate: Date = new Date(),
 ): boolean {
   if (period === 'all') return true;
-  const startOfMonth = new Date(
-    referenceDate.getFullYear(),
-    referenceDate.getMonth(),
-    1,
-  );
-  const saleDate = new Date(String(sale.sale_date || sale.created_at || 0));
-  return saleDate >= startOfMonth;
+  const bounds = getBrokerStatsPeriodBounds(period, referenceDate);
+  if (!bounds) return true;
+  const saleDate = parseBrokerSaleDate(sale);
+  if (!saleDate) return false;
+  return saleDate >= bounds.start && saleDate < bounds.endExclusive;
 }
 
 export function sumPaidBrokerCommissions(

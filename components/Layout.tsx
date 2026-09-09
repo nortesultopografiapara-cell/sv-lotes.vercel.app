@@ -795,7 +795,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               </p>
             </div>
 
-            {pathname === '/finance' || pathname === '/charges' ? (
+            {pathname === '/finance' || pathname === '/charges' || pathname === '/dashboard/brokers' ? (
               <div className="sv-layout-finance-title hidden min-w-0 flex-1 text-right xl:block">
                 {pathname === '/charges' ? (
                   <>
@@ -805,6 +805,16 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                     </p>
                     <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                       Central operacional de parcelas e cobranças da empresa.
+                    </p>
+                  </>
+                ) : pathname === '/dashboard/brokers' ? (
+                  <>
+                    <p className="flex items-center justify-end gap-1.5 truncate text-lg font-bold leading-tight tracking-tight text-[var(--text-primary)]">
+                      <Users className="h-4 w-4 shrink-0 text-orange-400" />
+                      Corretores
+                    </p>
+                    <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                      Gerenciamento de equipe de vendas
                     </p>
                   </>
                 ) : (

@@ -4,12 +4,16 @@
  */
 
 import {
+  brokerRecordMatchesSearch,
   buildBrokerReportDetailRows,
   buildBrokerReportSummaryRows,
   buildBrokerStatsFromData,
+  countOpenReservedLots,
   isCanceledSale,
+  isSaleInStatsPeriod,
   rankBrokersBySalesValue,
   resolveSaleBrokerIdForStats,
+  sumCommissionsForSaleIds,
 } from '../lib/brokerDashboardStats';
 import { rankBrokersByMonthlySales } from '../lib/brokerDelete';
 
@@ -226,6 +230,76 @@ function testUnassignedSale() {
   console.log('OK testUnassignedSale');
 }
 
+function testPeriodCalendarMonthAndYear() {
+  const ref = new Date(2026, 8, 9, 12, 0, 0);
+  assert(isSaleInStatsPeriod({ sale_date: '2026-09-01' }, 'month', ref), '1 set no mês');
+  assert(isSaleInStatsPeriod({ sale_date: '2026-09-30' }, 'month', ref), '30 set no mês calendário');
+  assert(!isSaleInStatsPeriod({ sale_date: '2026-08-31' }, 'month', ref), 'agosto fora do mês');
+  assert(isSaleInStatsPeriod({ sale_date: '2026-01-02' }, 'year', ref), 'janeiro no ano');
+  assert(!isSaleInStatsPeriod({ sale_date: '2025-12-31' }, 'year', ref), 'ano anterior fora');
+  const { byBrokerId } = buildBrokerStatsFromData({
+    brokers,
+    sales: [
+      { id: 's1', broker_id: 'cassio', status: 'ativo', total_value: 100000, sale_date: '2026-09-01' },
+      { id: 's2', broker_id: 'cassio', status: 'ativo', total_value: 50000, sale_date: '2026-08-01' },
+    ],
+    commissions: [],
+    blocks: [],
+    projects: [],
+    contracts: [],
+    customers: [],
+    period: 'month',
+    referenceDate: ref,
+  });
+  assert(byBrokerId.get('cassio')!.vendas_qtd === 1, 'só venda do mês');
+  assert(byBrokerId.get('cassio')!.vendas_valor === 100000, 'vgv do mês');
+  console.log('OK testPeriodCalendarMonthAndYear');
+}
+
+function testPeriodLast30Rolling() {
+  const ref = new Date(2026, 8, 9, 12, 0, 0);
+  assert(isSaleInStatsPeriod({ sale_date: '2026-09-09' }, 'last_30', ref), 'hoje na janela');
+  assert(isSaleInStatsPeriod({ sale_date: '2026-08-11' }, 'last_30', ref), 'dentro de 30 dias');
+  assert(!isSaleInStatsPeriod({ sale_date: '2026-08-01' }, 'last_30', ref), 'fora da janela móvel');
+  console.log('OK testPeriodLast30Rolling');
+}
+
+function testPhoneSearchIgnoresMask() {
+  const broker = { name: 'Cassio VS10', email: 'cassio@test.com', phone: '(94) 99123-4567' };
+  assert(brokerRecordMatchesSearch(broker, '94991234567'), 'só dígitos');
+  assert(brokerRecordMatchesSearch(broker, '94 99123-4567'), 'máscara diferente');
+  assert(brokerRecordMatchesSearch(broker, '99123'), 'parcial');
+  assert(brokerRecordMatchesSearch(broker, 'Cassio'), 'nome');
+  assert(brokerRecordMatchesSearch(broker, 'cassio@test.com'), 'email');
+  assert(!brokerRecordMatchesSearch(broker, '88888'), 'telefone inexistente');
+  console.log('OK testPhoneSearchIgnoresMask');
+}
+
+function testOpenReservationsAndPeriodCommissions() {
+  assert(
+    countOpenReservedLots([
+      { status: 'Reservado' },
+      { status: 'Vendido' },
+      { status: 'reserved' },
+      { status: 'Disponível' },
+    ]) === 2,
+    'duas reservas abertas',
+  );
+  const sums = sumCommissionsForSaleIds(
+    [
+      { sale_id: 's1', amount: 1000, status: 'pendente' },
+      { sale_id: 's1', amount: 500, status: 'pago' },
+      { sale_id: 's2', amount: 999, status: 'pendente' },
+      { sale_id: 's3', amount: 100, status: 'cancelado' },
+    ],
+    ['s1'],
+  );
+  assert(sums.generated === 1500, 'geradas do período');
+  assert(sums.paid === 500, 'pagas do período');
+  assert(sums.pending === 1000, 'pendentes das vendas do período');
+  console.log('OK testOpenReservationsAndPeriodCommissions');
+}
+
 function main() {
   testCassioMultipleSales();
   testKlesioMultipleSales();
@@ -234,6 +308,10 @@ function main() {
   testRankingMatchesReport();
   testPdfDetailDoesNotRepeatSummaryTotals();
   testUnassignedSale();
+  testPeriodCalendarMonthAndYear();
+  testPeriodLast30Rolling();
+  testPhoneSearchIgnoresMask();
+  testOpenReservationsAndPeriodCommissions();
   console.log('mandatory-broker-dashboard-stats-tests: all passed');
 }
 
