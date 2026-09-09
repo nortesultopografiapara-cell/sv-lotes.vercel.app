@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Search, Plus, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog, FileText, Download, CalendarClock, MoreHorizontal, Star } from 'lucide-react';
+import { Users, Search, Plus, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog, FileText, Download, CalendarClock, MoreHorizontal, Star, Camera } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -30,6 +30,8 @@ import {
 } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import { BulkAdjustBrokerCommissionsModal } from '@/components/brokers/BulkAdjustBrokerCommissionsModal';
+import { BrokerAvatarModal } from '@/components/brokers/BrokerAvatarModal';
+import { isPlatformAdmin } from '@/lib/rls';
 import { fetchAllPaginated } from '@/lib/supabaseFetchAll';
 import {
   fetchCompanySaasByTenantId,
@@ -41,11 +43,13 @@ import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 import {
   BrokerDeleteError,
   BrokerDeleteResult,
+  canManageBrokerInTenant,
   computeBrokerDashboardStats,
   filterBrokersForActiveList,
   isBrokerActiveForList,
   logBrokerDeleteAudit,
   rankBrokersByMonthlySales,
+  readBrokerTenantId,
   removeBrokerFromList,
 } from '@/lib/brokerDelete';
 import {
@@ -155,6 +159,7 @@ export default function CorretoresPage() {
   const [togglingBrokerId, setTogglingBrokerId] = useState<string | null>(null);
   const [rankingModalOpen, setRankingModalOpen] = useState(false);
   const [activitiesModalOpen, setActivitiesModalOpen] = useState(false);
+  const [avatarModalBroker, setAvatarModalBroker] = useState<any>(null);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -1338,6 +1343,13 @@ export default function CorretoresPage() {
     brokerLimit && brokerLimit > 0
       ? Math.round((dashboardStats.activeCount / brokerLimit) * 100)
       : null;
+  const canEditBrokerAvatar = (broker: { tenant_id?: string | null; company_id?: string | null }) =>
+    canManageBrokerInTenant({
+      userRole: String(user?.role || ''),
+      userTenantId: activeTenantId,
+      brokerTenantId: readBrokerTenantId(broker) || '',
+      isSuperAdmin: isPlatformAdmin(user?.role),
+    });
 
   return (
     <div className="sv-page sv-page--scroll-y p-3 md:p-4 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
@@ -1537,7 +1549,7 @@ export default function CorretoresPage() {
                 <Medal className="w-5 h-5" style={{ color: medalColors[0] }} />
               </span>
               {highlightBroker.avatar_url ? (
-                <img src={highlightBroker.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 border border-orange-500/40" />
+                <img src={highlightBroker.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover object-center shrink-0 border border-orange-500/40" />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">
                   {highlightBroker.name?.charAt(0)}
@@ -1611,7 +1623,7 @@ export default function CorretoresPage() {
                     <td className="py-1 pr-1">
                       <div className="flex items-center gap-1.5 min-w-0">
                         {c.avatar_url ? (
-                          <img src={c.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                          <img src={c.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover object-center shrink-0" />
                         ) : (
                           <div className="w-5 h-5 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[9px] font-bold shrink-0">
                             {c.name?.charAt(0)}
@@ -1730,8 +1742,23 @@ export default function CorretoresPage() {
                     <tr key={c.id} className="hover:bg-[var(--bg-card-alt)] transition-colors group">
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2.5">
-                          {c.avatar_url ? (
-                             <img src={c.avatar_url} alt={c.name} className="w-8 h-8 rounded-full object-cover border border-[var(--border-color)] shrink-0" />
+                          {canEditBrokerAvatar(c) ? (
+                            <button
+                              type="button"
+                              onClick={() => setAvatarModalBroker(c)}
+                              className="relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-400"
+                              title={c.avatar_url ? 'Alterar foto' : 'Adicionar foto'}
+                            >
+                              {c.avatar_url ? (
+                                <img src={c.avatar_url} alt={c.name} className="w-8 h-8 rounded-full object-cover object-center border border-[var(--border-color)]" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-bold">
+                                  {c.name?.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </button>
+                          ) : c.avatar_url ? (
+                             <img src={c.avatar_url} alt={c.name} className="w-8 h-8 rounded-full object-cover object-center border border-[var(--border-color)] shrink-0" />
                           ) : (
                              <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-bold shrink-0">
                                {c.name?.charAt(0).toUpperCase()}
@@ -1859,6 +1886,22 @@ export default function CorretoresPage() {
 
       </div>
 
+      <BrokerAvatarModal
+        open={Boolean(avatarModalBroker)}
+        broker={avatarModalBroker}
+        actor={{ role: user?.role, tenantId: activeTenantId }}
+        onClose={() => setAvatarModalBroker(null)}
+        onSaved={(nextUrl) => {
+          void loadBrokers();
+          setAvatarModalBroker((prev: any) => (prev ? { ...prev, avatar_url: nextUrl } : prev));
+          setSelectedBroker((prev: any) =>
+            prev && avatarModalBroker && prev.id === avatarModalBroker.id
+              ? { ...prev, avatar_url: nextUrl }
+              : prev,
+          );
+        }}
+      />
+
       {rankingModalOpen ? (
         <div className="sv-modal-overlay animate-in fade-in duration-200" onClick={() => setRankingModalOpen(false)}>
           <div
@@ -1910,7 +1953,7 @@ export default function CorretoresPage() {
                         <td className="py-2 pr-2">
                           <div className="flex items-center gap-2 min-w-0">
                             {c.avatar_url ? (
-                              <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                              <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover object-center shrink-0" />
                             ) : (
                               <div className="w-7 h-7 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
                                 {c.name?.charAt(0)}
@@ -2050,6 +2093,45 @@ export default function CorretoresPage() {
                    )}
                    
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5" style={{ display: modalMode === 'reset' ? 'none' : 'grid' }}>
+                       {modalMode !== 'create' && selectedBroker ? (
+                         <div className="md:col-span-2 flex items-center gap-3">
+                           {canEditBrokerAvatar(selectedBroker) && modalMode === 'edit' ? (
+                             <button
+                               type="button"
+                               onClick={() => setAvatarModalBroker(selectedBroker)}
+                               className="relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-400"
+                               title={selectedBroker.avatar_url ? 'Alterar foto' : 'Adicionar foto'}
+                             >
+                               {selectedBroker.avatar_url ? (
+                                 <img src={selectedBroker.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover object-center border border-[var(--border-color)]" />
+                               ) : (
+                                 <div className="w-12 h-12 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
+                                   {formData.fullName?.charAt(0).toUpperCase() || 'C'}
+                                 </div>
+                               )}
+                             </button>
+                           ) : selectedBroker.avatar_url ? (
+                             <img src={selectedBroker.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover object-center border border-[var(--border-color)] shrink-0" />
+                           ) : (
+                             <div className="w-12 h-12 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] font-bold shrink-0">
+                               {formData.fullName?.charAt(0).toUpperCase() || 'C'}
+                             </div>
+                           )}
+                           <div className="min-w-0">
+                             <div className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Foto</div>
+                             {canEditBrokerAvatar(selectedBroker) && modalMode === 'edit' ? (
+                               <button type="button" onClick={() => setAvatarModalBroker(selectedBroker)} className="text-xs text-orange-400 hover:text-orange-300 inline-flex items-center gap-1 mt-0.5">
+                                 <Camera className="w-3 h-3" />
+                                 {selectedBroker.avatar_url ? 'Alterar foto' : 'Adicionar foto'}
+                               </button>
+                             ) : (
+                               <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                                 {selectedBroker.avatar_url ? 'Fotografia cadastrada' : 'Sem foto — inicial do nome'}
+                               </p>
+                             )}
+                           </div>
+                         </div>
+                       ) : null}
                        <div className="space-y-1.5 md:col-span-2">
                           <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Nome Completo</label>
                           <div className="relative">
