@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Search, Plus, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog, FileText, Download, CalendarClock } from 'lucide-react';
+import { Users, Search, Plus, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog, FileText, Download, CalendarClock, MoreHorizontal, Star } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -37,7 +37,6 @@ import {
   logSaasCompanyContext,
 } from '@/lib/saasPlans';
 import { formatBrokersLimitMessage } from '@/lib/saasPlanEnforcementMessages';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 import {
   BrokerDeleteError,
@@ -58,11 +57,17 @@ import {
 import {
   BROKER_DASHBOARD_PERIOD_LABELS,
   BROKER_DASHBOARD_PERIODS,
+  averageTicket,
   brokerRecordMatchesSearch,
   buildBrokerReportDetailRows,
   buildBrokerStatsFromData,
+  collectSaleIdsFromStats,
+  computeChangePercent,
   countOpenReservedLots,
+  getPreviousBrokerStatsPeriodBounds,
+  isSaleInStatsPeriod,
   labelBrokerStatsPeriod,
+  pickBrokerHighlight,
   sumCommissionsForSaleIds,
   type BrokerDashboardPeriod,
   type BrokerSaleDetailRow,
@@ -82,6 +87,7 @@ export default function CorretoresPage() {
   } | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<BrokerDashboardPeriod>('month');
   const [maintenanceQuery, setMaintenanceQuery] = useState<string | null>(null);
+  const [openBrokerActionsId, setOpenBrokerActionsId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [brokerLimit, setBrokerLimit] = useState<number | null>(null);
   const [companyPlan, setCompanyPlan] = useState<string>('');
@@ -454,19 +460,42 @@ export default function CorretoresPage() {
     [statsCatalog],
   );
 
-  const periodSaleIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const stats of byBrokerId.values()) {
-      for (const detail of stats.sale_details) ids.add(detail.sale_id);
-    }
-    for (const detail of unassignedBrokerSales) ids.add(detail.sale_id);
-    return ids;
-  }, [byBrokerId, unassignedBrokerSales]);
+  const periodSaleIds = useMemo(
+    () => collectSaleIdsFromStats(byBrokerId, unassignedBrokerSales),
+    [byBrokerId, unassignedBrokerSales],
+  );
 
   const periodCommissions = useMemo(
     () => sumCommissionsForSaleIds(statsCatalog?.commissions || [], periodSaleIds),
     [statsCatalog, periodSaleIds],
   );
+
+  const previousPeriodBuilt = useMemo(() => {
+    if (!statsCatalog) return null;
+    return buildBrokerStatsFromData({
+      brokers: brokerListBase,
+      sales: statsCatalog.sales,
+      commissions: statsCatalog.commissions,
+      blocks: statsCatalog.blocks,
+      projects: statsCatalog.projects,
+      contracts: statsCatalog.contracts,
+      customers: statsCatalog.customers,
+      dateRange: getPreviousBrokerStatsPeriodBounds(statsPeriod),
+    });
+  }, [brokerListBase, statsCatalog, statsPeriod]);
+
+  const previousPeriodCommissions = useMemo(() => {
+    if (!previousPeriodBuilt || !statsCatalog) {
+      return { generated: 0, paid: 0, pending: 0 };
+    }
+    return sumCommissionsForSaleIds(
+      statsCatalog.commissions,
+      collectSaleIdsFromStats(
+        previousPeriodBuilt.byBrokerId,
+        previousPeriodBuilt.unassignedSales,
+      ),
+    );
+  }, [previousPeriodBuilt, statsCatalog]);
 
   const getExportSummaryRows = () =>
     filtered.map((c) => ({
@@ -1239,13 +1268,64 @@ export default function CorretoresPage() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  const chartData = [
-    { name: 'Pagas', value: totalComissoesPagas, color: '#8b5cf6' },
-    { name: 'Pendentes', value: totalComissoesPendentes, color: '#f59e0b' },
-  ];
+  const formatChange = (change: number | null) => {
+    if (change === null) return null;
+    if (change > 0) return { text: `↑ +${change}% vs período anterior`, className: 'text-emerald-400' };
+    if (change < 0) return { text: `↓ ${change}% vs período anterior`, className: 'text-rose-400' };
+    return { text: 'Estável vs período anterior', className: 'text-[var(--text-muted)]' };
+  };
 
-  const topCorretores = rankBrokersByMonthlySales(corretores, 3);
+  const topCorretores = rankBrokersByMonthlySales(corretores, 5);
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309'];
+  const highlightBroker = pickBrokerHighlight(corretores);
+  const highlightCommission = highlightBroker
+    ? sumCommissionsForSaleIds(
+        statsCatalog?.commissions || [],
+        (highlightBroker.brokerStats?.sale_details || []).map((d: BrokerSaleDetailRow) => d.sale_id),
+      ).generated
+    : 0;
+  const previousVgv = previousPeriodBuilt
+    ? [...previousPeriodBuilt.byBrokerId.values()].reduce((acc, row) => acc + row.vendas_valor, 0)
+    : 0;
+  const previousSalesCount = previousPeriodBuilt
+    ? [...previousPeriodBuilt.byBrokerId.values()].reduce((acc, row) => acc + row.vendas_qtd, 0)
+    : 0;
+  const ticketAtual = averageTicket(dashboardStats.totalVendasValor, totalVendasMes);
+  const ticketAnterior = averageTicket(previousVgv, previousSalesCount);
+  const commercialRows = [
+    {
+      label: 'VGV do período',
+      value: formatCurrency(dashboardStats.totalVendasValor),
+      change: formatChange(computeChangePercent(dashboardStats.totalVendasValor, previousVgv)),
+    },
+    {
+      label: 'Vendas realizadas',
+      value: String(totalVendasMes),
+      change: formatChange(computeChangePercent(totalVendasMes, previousSalesCount)),
+    },
+    {
+      label: 'Reservas abertas',
+      value: String(openReservationsCount),
+      change: { text: 'Posição atual no mapa', className: 'text-[var(--text-muted)]' },
+    },
+    {
+      label: 'Comissões do período',
+      value: formatCurrency(periodCommissions.generated),
+      change: formatChange(
+        computeChangePercent(periodCommissions.generated, previousPeriodCommissions.generated),
+      ),
+    },
+    {
+      label: 'Ticket médio',
+      value: formatCurrency(ticketAtual),
+      change: formatChange(computeChangePercent(ticketAtual, ticketAnterior)),
+    },
+  ];
+  const periodActivities = recentActivities
+    .filter((act) =>
+      isSaleInStatsPeriod({ sale_date: act.date.toISOString() }, statsPeriod),
+    )
+    .slice(0, 6);
   const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
   const showCommissionMaintenance = canShowBrokerCommissionMaintenanceUi(
     user?.role,
@@ -1450,15 +1530,194 @@ export default function CorretoresPage() {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0 min-w-0">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6 min-w-0">
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg p-4 min-w-0">
+          <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Desempenho da Equipe</h3>
+              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Ranking por VGV no período selecionado</p>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {BROKER_DASHBOARD_PERIODS.map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={() => setStatsPeriod(period)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                    statsPeriod === period
+                      ? 'bg-orange-500 text-[var(--text-primary)]'
+                      : 'bg-[var(--bg-card-alt)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {BROKER_DASHBOARD_PERIOD_LABELS[period]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[420px]">
+              <thead>
+                <tr className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                  <th className="pb-2 pr-2">#</th>
+                  <th className="pb-2 pr-2">Corretor</th>
+                  <th className="pb-2 pr-2 text-center">Vendas</th>
+                  <th className="pb-2 pr-2 text-right">VGV</th>
+                  <th className="pb-2 text-right">Comissão</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-color)]">
+                {topCorretores.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-xs text-[var(--text-muted)]">
+                      Nenhuma venda no período.
+                    </td>
+                  </tr>
+                ) : (
+                  topCorretores.map((c, idx) => {
+                    const generated = sumCommissionsForSaleIds(
+                      statsCatalog?.commissions || [],
+                      (c.brokerStats?.sale_details || []).map((d: BrokerSaleDetailRow) => d.sale_id),
+                    ).generated;
+                    return (
+                      <tr key={c.id || idx}>
+                        <td className="py-2.5 pr-2">
+                          {idx < 3 ? (
+                            <Medal className="w-4 h-4" style={{ color: medalColors[idx] }} />
+                          ) : (
+                            <span className="text-xs text-[var(--text-muted)]">{idx + 1}</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 pr-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {c.avatar_url ? (
+                              <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
+                                {c.name?.charAt(0)}
+                              </div>
+                            )}
+                            <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-2 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
+                        <td className="py-2.5 pr-2 text-right text-xs font-mono text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</td>
+                        <td className="py-2.5 text-right text-xs font-mono text-purple-300">{formatCurrency(generated)}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg p-4 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Resumo Comercial</h3>
+              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{periodLabel}</p>
+            </div>
+          </div>
+          <div className="flex flex-col divide-y divide-[var(--border-color)]">
+            {commercialRows.map((row) => (
+              <div key={row.label} className="py-2.5 first:pt-0 last:pb-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-xs text-[var(--text-secondary)]">{row.label}</span>
+                  <span className="text-sm font-bold text-[var(--text-primary)] text-right">{row.value}</span>
+                </div>
+                {row.change ? (
+                  <div className={`text-[10px] mt-0.5 ${row.change.className}`}>{row.change.text}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-lg p-4 min-w-0 flex flex-col max-h-[340px]">
+          <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight mb-3">Atividades Recentes</h3>
+          <div className="flex flex-col gap-2.5 overflow-y-auto pr-1 min-h-0">
+            {periodActivities.length === 0 ? (
+              <div className="text-xs text-[var(--text-muted)] text-center py-6">Nenhuma atividade no período.</div>
+            ) : (
+              periodActivities.map((act, index) => (
+                <div key={act.id + index} className="flex items-start gap-2.5">
+                  <div
+                    className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                      act.type === 'sale'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                        : 'bg-purple-500/10 border-purple-500/20 text-purple-500'
+                    }`}
+                  >
+                    {act.type === 'sale' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-[var(--text-secondary)] leading-snug truncate">{act.message}</p>
+                    <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5 truncate">
+                      {act.subtext} · {act.date.toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      {highlightBroker ? (
+        <section className="mb-6 rounded-xl border border-orange-500/30 bg-[var(--bg-card)] px-4 py-4 md:px-5 shadow-lg min-w-0">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {highlightBroker.avatar_url ? (
+                <img src={highlightBroker.avatar_url} alt="" className="w-14 h-14 rounded-full object-cover shrink-0 border border-orange-500/40" />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-xl font-bold shrink-0">
+                  {highlightBroker.name?.charAt(0)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-bold text-[var(--text-primary)] truncate">{highlightBroker.name}</h3>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 text-orange-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                    <Star className="w-3 h-3" /> Destaque do período
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                    highlightBroker.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-gray-500/10 text-[var(--text-muted)]'
+                  }`}>
+                    {highlightBroker.active ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)] mt-1">Maior VGV em {periodLabel.toLowerCase()}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 lg:min-w-[380px]">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Vendas</div>
+                <div className="text-sm font-bold">{highlightBroker.vendas_mes_qtd}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">VGV</div>
+                <div className="text-sm font-bold text-emerald-400">{formatCurrency(highlightBroker.vendas_mes_valor)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Comissão</div>
+                <div className="text-sm font-bold text-purple-300">{formatCurrency(highlightCommission)}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="flex flex-col gap-6 flex-1 min-h-0 min-w-0">
         
         {/* Main Table Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl overflow-hidden relative">
-          <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between">
-            <h2 className="text-sm font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Lista de Corretores</h2>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              {periodLabel}
-            </span>
+          <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Lista de Corretores</h2>
+              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                {filtered.length} corretor(es) · {periodLabel}
+              </p>
+            </div>
           </div>
           
           <div className="sv-table-scroll flex-1">
@@ -1468,9 +1727,9 @@ export default function CorretoresPage() {
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Corretor</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Contato</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">CRECI</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Nível</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas ativas</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão Pendente</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">VGV</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão pendente</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Status</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Ações</th>
                 </tr>
@@ -1499,6 +1758,9 @@ export default function CorretoresPage() {
                           <div>
                             <div className="text-sm font-bold text-[var(--text-primary)] mb-0.5">{c.name}</div>
                             <div className="text-xs text-[var(--text-muted)]">{c.email}</div>
+                            <span className={`mt-1 inline-flex items-center px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border ${getRoleBadge(c.role)}`}>
+                              {c.role}
+                            </span>
                           </div>
                         </div>
                       </td>
@@ -1510,17 +1772,14 @@ export default function CorretoresPage() {
                       <td className="p-4">
                         <div className="text-xs text-[var(--text-secondary)] font-mono">{c.creci || '—'}</div>
                       </td>
-                      <td className="p-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border ${getRoleBadge(c.role)}`}>
-                          {c.role}
-                        </span>
-                      </td>
                       <td className="p-4 text-center">
                          <div className="text-sm font-bold text-[var(--text-primary)]">{c.vendas_mes_qtd}</div>
-                         <div className="text-[10px] text-[var(--text-muted)]">{formatCurrency(c.vendas_mes_valor)}</div>
                          {c.lotesDoMes?.length > 0 && (
                             <div className="text-[9px] text-amber-500/80 font-mono mt-1">{c.lotesDoMes.join(', ')}</div>
                          )}
+                      </td>
+                      <td className="p-4 text-right">
+                         <div className="text-sm font-bold text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</div>
                       </td>
                       <td className="p-4 text-right">
                          <div className="text-sm font-bold text-amber-500">{formatCurrency(c.comissao_pendente)}</div>
@@ -1533,64 +1792,74 @@ export default function CorretoresPage() {
                           {c.active ? 'ATIVO' : 'INATIVO'}
                         </span>
                       </td>
-                      <td className="p-4 text-right border-l border-transparent group-hover:border-[var(--border-color)] transition-colors">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button onClick={() => handleOpenView(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Visualizar">
-                             <Eye className="w-4 h-4" />
-                           </button>
-                           <button onClick={() => handleOpenEdit(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Editar">
-                             <Edit className="w-4 h-4" />
-                           </button>
-                           <button onClick={() => handleOpenResetPassword(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Redefinir Senha">
-                             <Key className="w-4 h-4" />
-                           </button>
-                           {c.dbActive ? (
-                             <button
-                               onClick={() => handleToggleBrokerActive(c)}
-                               disabled={togglingBrokerId === c.id}
-                               className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-500 hover:text-[var(--text-primary)] hover:bg-amber-500/20 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
-                               title="Desativar corretor"
-                             >
-                               {togglingBrokerId === c.id ? (
-                                 <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
-                               ) : (
-                                 'Desativar corretor'
-                               )}
-                             </button>
-                           ) : (
-                             <button
-                               onClick={() => handleToggleBrokerActive(c)}
-                               disabled={togglingBrokerId === c.id}
-                               className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-500 hover:text-[var(--text-primary)] hover:bg-emerald-500/20 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
-                               title="Reativar corretor"
-                             >
-                               {togglingBrokerId === c.id ? (
-                                 <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
-                               ) : (
-                                 'Reativar corretor'
-                               )}
-                             </button>
-                           )}
-                           <button 
-                             onClick={() => setDeleteModal({
-                               id: c.id,
-                               name: c.name || 'Corretor',
-                               tenant_id: c.tenant_id,
-                               company_id: c.company_id,
-                             })}
-                             className="p-1.5 text-red-500 hover:text-[var(--text-primary)] hover:bg-red-500/80 rounded transition-colors" title="Excluir"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                           </button>
-                           {c.comissao_pendente > 0 && (
-                               <button 
-                                 onClick={() => handlePayCommission(c)}
-                                 className="p-1.5 text-emerald-500 hover:text-[var(--text-primary)] hover:bg-emerald-500/80 rounded transition-colors" title="Pagar Comissão"
-                               >
-                                 <DollarSign className="w-4 h-4" />
-                               </button>
-                           )}
-                        </div>
+                      <td className="p-4 text-right relative">
+                        <button
+                          type="button"
+                          onClick={() => setOpenBrokerActionsId(openBrokerActionsId === c.id ? null : c.id)}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)]"
+                          title="Ações"
+                          aria-label="Ações do corretor"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                        {openBrokerActionsId === c.id ? (
+                          <div className="absolute right-4 top-12 z-30 w-52 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl py-1 text-left">
+                            <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenView(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
+                              <Eye className="w-3.5 h-3.5" /> Visualizar
+                            </button>
+                            <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenEdit(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
+                              <Edit className="w-3.5 h-3.5" /> Editar
+                            </button>
+                            <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenResetPassword(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
+                              <Key className="w-3.5 h-3.5" /> Redefinir senha
+                            </button>
+                            {c.dbActive ? (
+                              <button
+                                type="button"
+                                disabled={togglingBrokerId === c.id}
+                                onClick={() => { setOpenBrokerActionsId(null); handleToggleBrokerActive(c); }}
+                                className="w-full px-3 py-2 text-xs text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 disabled:opacity-50"
+                              >
+                                {togglingBrokerId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                Desativar corretor
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={togglingBrokerId === c.id}
+                                onClick={() => { setOpenBrokerActionsId(null); handleToggleBrokerActive(c); }}
+                                className="w-full px-3 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2 disabled:opacity-50"
+                              >
+                                {togglingBrokerId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                Reativar corretor
+                              </button>
+                            )}
+                            {c.comissao_pendente > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => { setOpenBrokerActionsId(null); handlePayCommission(c); }}
+                                className="w-full px-3 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2"
+                              >
+                                <DollarSign className="w-3.5 h-3.5" /> Pagar comissão
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenBrokerActionsId(null);
+                                setDeleteModal({
+                                  id: c.id,
+                                  name: c.name || 'Corretor',
+                                  tenant_id: c.tenant_id,
+                                  company_id: c.company_id,
+                                });
+                              }}
+                              className="w-full px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Excluir
+                            </button>
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   ))
@@ -1599,134 +1868,9 @@ export default function CorretoresPage() {
             </table>
           </div>
           
-          <div className="p-3 border-t border-[var(--border-color)] bg-[var(--bg-main)]/40 flex items-center justify-between">
+          <div className="p-3 border-t border-[var(--border-color)] bg-[var(--bg-main)]/40">
             <span className="text-xs text-[var(--text-muted)]">Mostrando {filtered.length} corretor(es)</span>
-            <div className="flex gap-1">
-               <button className="px-2.5 py-1 text-xs bg-[var(--bg-card-alt)] text-[var(--text-secondary)] rounded">Anterior</button>
-               <button className="px-2.5 py-1 text-xs bg-orange-500 text-[var(--text-primary)] font-bold rounded">1</button>
-               <button className="px-2.5 py-1 text-xs bg-[var(--bg-card-alt)] text-[var(--text-secondary)] rounded">Próximo</button>
-            </div>
           </div>
-        </div>
-
-        {/* Side Panels - Ranking & Activities */}
-        <div className="w-full lg:w-[350px] lg:max-w-[350px] shrink-0 min-w-0 flex flex-col gap-6">
-           
-           {/* Ranking Card */}
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl flex flex-col p-5">
-              <div className="flex items-center justify-between mb-5">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">TOP CORRETORES</h3>
-                 <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver ranking</span>
-              </div>
-              <div className="flex flex-col gap-4">
-                 {topCorretores.map((c, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                       <div className="w-6 flex justify-center shrink-0">
-                          <Medal className="w-5 h-5" style={{color: medalColors[idx]}} />
-                       </div>
-                       <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center shrink-0 overflow-hidden">
-                          {c.avatar_url ? <img src={c.avatar_url} /> : <span className="text-[10px] font-bold text-[var(--text-secondary)]">{c.name?.charAt(0)}</span>}
-                       </div>
-                       <div className="flex-1 min-w-0">
-                          <div className="text-sm font-bold text-[var(--text-primary)] truncate">{c.name}</div>
-                          <div className="text-xs text-[var(--text-muted)]">{c.vendas_mes_qtd} vendas</div>
-                       </div>
-                       <div className="text-xs font-bold text-emerald-500 font-mono shrink-0">
-                          {formatCurrency(c.vendas_mes_valor)}
-                       </div>
-                    </div>
-                 ))}
-                 {topCorretores.length === 0 && <div className="text-xs text-[var(--text-muted)] text-center py-4">Nenhuma venda registrada.</div>}
-              </div>
-           </div>
-
-           {/* Gráfico Dispersão Comissões */}
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl p-5 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">COMISSÕES (RESUMO)</h3>
-                 <select
-                    value={statsPeriod}
-                    onChange={(e) => setStatsPeriod(e.target.value as BrokerDashboardPeriod)}
-                    className="bg-transparent border-none text-xs text-[var(--text-muted)] outline-none"
-                    aria-label="Período do resumo"
-                 >
-                    {BROKER_DASHBOARD_PERIODS.map((period) => (
-                      <option key={period} value={period}>
-                        {BROKER_DASHBOARD_PERIOD_LABELS[period]}
-                      </option>
-                    ))}
-                 </select>
-              </div>
-              <div className="h-[180px] w-full relative flex items-center justify-center">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                       <Pie
-                         data={chartData}
-                         innerRadius={55}
-                         outerRadius={80}
-                         paddingAngle={5}
-                         dataKey="value"
-                         stroke="none"
-                       >
-                         {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                         ))}
-                       </Pie>
-                       <RechartsTooltip 
-                         contentStyle={{ backgroundColor: '#111217', borderColor: '#1f2937', borderRadius: '8px', color: '#fff' }}
-                         itemStyle={{ color: '#fff' }}
-                       />
-                    </PieChart>
-                 </ResponsiveContainer>
-                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xs font-mono text-[var(--text-muted)] uppercase tracking-widest">Total</span>
-                    <span className="text-sm font-bold text-[var(--text-primary)]">{formatCurrency(totalComissoesPagas + totalComissoesPendentes)}</span>
-                 </div>
-              </div>
-              
-              <div className="flex justify-around mt-4 border-t border-[var(--border-color)] pt-4">
-                 {chartData.map(d => (
-                    <div key={d.name} className="flex flex-col items-center">
-                       <div className="flex items-center gap-1.5 mb-1">
-                          <div className="w-2 h-2 rounded-full" style={{backgroundColor: d.color}}></div>
-                          <span className="text-xs text-[var(--text-secondary)]">{d.name}</span>
-                       </div>
-                       <span className="text-sm font-bold text-[var(--text-primary)]">{formatCurrency(d.value)}</span>
-                    </div>
-                 ))}
-              </div>
-           </div>
-
-           {/* Atividades Recentes */}
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl flex flex-col p-5 flex-1 min-h-[250px]">
-              <div className="flex items-center justify-between mb-5">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">ATIVIDADES RECENTES</h3>
-                 <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver todas</span>
-              </div>
-              
-              <div className="flex flex-col gap-5 relative">
-                 <div className="absolute left-[15px] top-4 bottom-4 w-px bg-[var(--bg-card-alt)]"></div>
-
-                 {recentActivities.length === 0 && (
-                    <div className="text-xs text-[var(--text-muted)] text-center py-4 relative z-10 w-full">Nenhuma atividade recente.</div>
-                 )}
-                 {recentActivities.map((act, index) => (
-                   <div key={act.id + index} className="flex items-start gap-4 relative z-10">
-                      <div className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
-                         act.type === 'sale' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                         act.type === 'commission_paid' ? 'bg-purple-500/10 border-purple-500/20 text-purple-500' :
-                         'bg-teal-500/10 border-teal-500/20 text-teal-500'
-                      }`}>
-                         {act.type === 'sale' ? <CheckCircle2 className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
-                      </div>
-                      <div>
-                         <p className="text-xs text-[var(--text-secondary)] leading-relaxed" dangerouslySetInnerHTML={{__html: act.message.replace(act.message.split(' ')[0], `<strong class="text-[var(--text-primary)]">${act.message.split(' ')[0]} ${act.message.split(' ')[1] || ''}</strong>`)}}></p>
-                         <p className="text-[10px] text-[var(--text-muted)] font-mono mt-1">{act.subtext} • {act.date.toLocaleDateString('pt-BR')} {act.date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p>
-                      </div>
-                   </div>
-                 ))}
-              </div>
-           </div>
         </div>
 
       </div>

@@ -366,6 +366,15 @@ function testUiDoesNotAutoApply() {
   assert(page.includes('canShowBrokerCommissionMaintenanceUi'), 'card oculto para ADMIN');
   assert(page.includes('Reservas abertas'), 'kpi reservas reais');
   assert(!page.includes('Leads em atendimento'), 'sem card de leads fictício');
+  assert(!page.includes('Conversão'), 'sem conversão sem fonte');
+  assert(!page.includes('Disciplina hoje'), 'sem citação inventada');
+  assert(page.includes('Desempenho da Equipe'), 'painel desempenho');
+  assert(page.includes('Resumo Comercial'), 'painel resumo comercial');
+  assert(page.includes('Destaque do período'), 'destaque do corretor');
+  assert(page.includes('Lista de Corretores'), 'lista em largura total');
+  assert(page.includes('Visualizar'), 'ação visualizar');
+  assert(page.includes('Desativar corretor'), 'ação desativar');
+  assert(page.includes('Pagar comissão') || page.includes('Pagar Comissão'), 'ação pagar');
   assert(page.includes('> PDF'), 'botão PDF separado');
   assert(page.includes('> Excel'), 'botão Excel separado');
   assert(!page.includes("mode: 'apply'"), 'página não aplica sozinha');

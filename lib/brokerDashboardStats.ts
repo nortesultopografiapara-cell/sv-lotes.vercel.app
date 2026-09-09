@@ -165,7 +165,83 @@ export function getBrokerStatsPeriodBounds(
 export function countOpenReservedLots(
   blocks: Array<{ status?: string | null }>,
 ): number {
+  // Fonte operacional do GIS: lotes cujo status atual é Reservado/reserved.
+  // Vendido, Disponível e Quitado não entram. Não é histórico: após venda ou
+  // liberação o status muda. Reserva vencida no relógio (reservation_expires_at)
+  // continua Reservado até ser liberada — o lote segue comercialmente reservado.
   return blocks.filter((block) => isLotReservedStatus(block.status)).length;
+}
+
+export function isSaleInDateRange(
+  sale: Record<string, unknown>,
+  start: Date,
+  endExclusive: Date,
+): boolean {
+  const saleDate = parseBrokerSaleDate(sale);
+  if (!saleDate) return false;
+  return saleDate >= start && saleDate < endExclusive;
+}
+
+export function getPreviousBrokerStatsPeriodBounds(
+  period: BrokerDashboardPeriod,
+  referenceDate: Date = new Date(),
+): { start: Date; endExclusive: Date } {
+  if (period === 'month') {
+    const y = referenceDate.getFullYear();
+    const m = referenceDate.getMonth();
+    return {
+      start: new Date(y, m - 1, 1, 0, 0, 0, 0),
+      endExclusive: new Date(y, m, 1, 0, 0, 0, 0),
+    };
+  }
+  if (period === 'year') {
+    const y = referenceDate.getFullYear();
+    return {
+      start: new Date(y - 1, 0, 1, 0, 0, 0, 0),
+      endExclusive: new Date(y, 0, 1, 0, 0, 0, 0),
+    };
+  }
+  const current = getBrokerStatsPeriodBounds('last_30', referenceDate)!;
+  const duration = current.endExclusive.getTime() - current.start.getTime();
+  return {
+    start: new Date(current.start.getTime() - duration),
+    endExclusive: new Date(current.start.getTime()),
+  };
+}
+
+/** Variação percentual real. Sem base anterior (0) não inventa infinito. */
+export function computeChangePercent(
+  current: number,
+  previous: number,
+): number | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / Math.abs(previous)) * 100);
+}
+
+export function averageTicket(vgv: number, salesCount: number): number {
+  if (!Number.isFinite(vgv) || !Number.isFinite(salesCount) || salesCount <= 0) {
+    return 0;
+  }
+  return vgv / salesCount;
+}
+
+export function collectSaleIdsFromStats(
+  byBrokerId: Map<string, BrokerStatsSummary>,
+  unassignedSales: BrokerSaleDetailRow[] = [],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const stats of byBrokerId.values()) {
+    for (const detail of stats.sale_details) ids.add(detail.sale_id);
+  }
+  for (const detail of unassignedSales) ids.add(detail.sale_id);
+  return ids;
+}
+
+export function pickBrokerHighlight<
+  T extends { vendas_mes_valor?: number; vendas_mes_qtd?: number },
+>(brokers: T[]): T | null {
+  return rankBrokersBySalesValue(brokers, 1)[0] || null;
 }
 
 export function sumCommissionsForSaleIds(
@@ -365,6 +441,7 @@ export function buildBrokerStatsFromData(input: {
   customers: Array<{ id: string; name?: string | null }>;
   period?: BrokerStatsPeriod;
   referenceDate?: Date;
+  dateRange?: { start: Date; endExclusive: Date } | null;
 }): {
   byBrokerId: Map<string, BrokerStatsSummary>;
   unassignedSales: BrokerSaleDetailRow[];
@@ -392,7 +469,10 @@ export function buildBrokerStatsFromData(input: {
 
   for (const sale of input.sales) {
     if (!sale.id || isCanceledSale(sale)) continue;
-    if (!isSaleInStatsPeriod(sale, period, referenceDate)) continue;
+    const inPeriod = input.dateRange
+      ? isSaleInDateRange(sale, input.dateRange.start, input.dateRange.endExclusive)
+      : isSaleInStatsPeriod(sale, period, referenceDate);
+    if (!inPeriod) continue;
 
     const saleId = String(sale.id);
     if (countedSaleIds.has(saleId)) continue;

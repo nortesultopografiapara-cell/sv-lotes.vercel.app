@@ -4,13 +4,17 @@
  */
 
 import {
+  averageTicket,
   brokerRecordMatchesSearch,
   buildBrokerReportDetailRows,
   buildBrokerReportSummaryRows,
   buildBrokerStatsFromData,
+  computeChangePercent,
   countOpenReservedLots,
+  getPreviousBrokerStatsPeriodBounds,
   isCanceledSale,
   isSaleInStatsPeriod,
+  pickBrokerHighlight,
   rankBrokersBySalesValue,
   resolveSaleBrokerIdForStats,
   sumCommissionsForSaleIds,
@@ -300,6 +304,38 @@ function testOpenReservationsAndPeriodCommissions() {
   console.log('OK testOpenReservationsAndPeriodCommissions');
 }
 
+function testReservedStatusIsCurrentCommercialLot() {
+  assert(
+    countOpenReservedLots([
+      { status: 'Reservado' },
+      { status: 'reserved' },
+      { status: 'Vendido' },
+      { status: 'Disponível' },
+      { status: 'Quitado' },
+      { status: 'cancelado' },
+    ]) === 2,
+    'só lotes com status atual Reservado',
+  );
+  console.log('OK testReservedStatusIsCurrentCommercialLot');
+}
+
+function testPreviousPeriodHighlightAndTicket() {
+  const ref = new Date(2026, 8, 9, 12, 0, 0);
+  const prevMonth = getPreviousBrokerStatsPeriodBounds('month', ref);
+  assert(prevMonth.start.getFullYear() === 2026 && prevMonth.start.getMonth() === 7, 'mês anterior agosto');
+  assert(prevMonth.endExclusive.getMonth() === 8, 'fim exclusivo setembro');
+  assert(computeChangePercent(110, 100) === 10, '+10%');
+  assert(computeChangePercent(50, 0) === null, 'sem base anterior');
+  assert(averageTicket(200000, 2) === 100000, 'ticket médio');
+  const highlight = pickBrokerHighlight([
+    { id: 'a', vendas_mes_valor: 10, vendas_mes_qtd: 1 },
+    { id: 'b', vendas_mes_valor: 90, vendas_mes_qtd: 2 },
+    { id: 'c', vendas_mes_valor: 0, vendas_mes_qtd: 0 },
+  ]);
+  assert(highlight?.id === 'b', 'destaque é o maior VGV');
+  console.log('OK testPreviousPeriodHighlightAndTicket');
+}
+
 function main() {
   testCassioMultipleSales();
   testKlesioMultipleSales();
@@ -312,6 +348,8 @@ function main() {
   testPeriodLast30Rolling();
   testPhoneSearchIgnoresMask();
   testOpenReservationsAndPeriodCommissions();
+  testReservedStatusIsCurrentCommercialLot();
+  testPreviousPeriodHighlightAndTicket();
   console.log('mandatory-broker-dashboard-stats-tests: all passed');
 }
 
