@@ -19,7 +19,7 @@ import {
   requiredConfirmText,
   type BulkCommissionCandidate,
 } from '../lib/brokerCommissionBulkAdjust';
-import { canManageSaleBrokerCommission } from '../lib/brokerCommissionAccess';
+import { canManageSaleBrokerCommission, canShowBrokerCommissionMaintenanceUi } from '../lib/brokerCommissionAccess';
 import {
   isPendingBrokerCommission,
   resolveSaleValueForCommission,
@@ -303,6 +303,18 @@ function testPermissionAdminOnly() {
   assert(!canManageSaleBrokerCommission('BROKER'), 'broker bloqueado');
   assert(!canManageSaleBrokerCommission('CORRETOR'), 'corretor bloqueado');
   assert(!canManageSaleBrokerCommission('OWNER'), 'owner bloqueado');
+  assert(
+    !canShowBrokerCommissionMaintenanceUi('ADMIN', '1'),
+    'ADMIN não vê ajuste/zerar na tela',
+  );
+  assert(
+    !canShowBrokerCommissionMaintenanceUi('SUPER_ADMIN', null),
+    'SUPER_ADMIN sem query não vê card',
+  );
+  assert(
+    canShowBrokerCommissionMaintenanceUi('SUPER_ADMIN', '1'),
+    'SUPER_ADMIN com ?manutencao=1 vê manutenção',
+  );
   console.log('OK testPermissionAdminOnly');
 }
 
@@ -351,6 +363,27 @@ function testUiDoesNotAutoApply() {
   );
   assert(page.includes('Zerar comissões pendentes'), 'atalho UI');
   assert(page.includes('Ações administrativas'), 'seção admin');
+  assert(page.includes('canShowBrokerCommissionMaintenanceUi'), 'card oculto para ADMIN');
+  assert(page.includes('Reservas abertas'), 'kpi reservas reais');
+  assert(!page.includes('Leads em atendimento'), 'sem card de leads fictício');
+  assert(!page.includes('Conversão'), 'sem conversão sem fonte');
+  assert(!page.includes('Disciplina hoje'), 'sem citação inventada');
+  assert(page.includes('Desempenho da Equipe'), 'painel desempenho');
+  assert(page.includes('Resumo Comercial'), 'painel resumo comercial');
+  assert(page.includes('Destaque do período'), 'destaque do corretor');
+  assert(page.includes('Lista de Corretores'), 'lista em largura total');
+  assert(page.includes('Ver ranking completo'), 'ranking completo fora do painel');
+  assert(page.includes('visibleActivities'), 'atividades compactas na tela');
+  assert(page.includes('rankingAll.slice(0, 3)'), 'top 3 no painel');
+  assert(page.includes('xl:col-span-2'), 'destaque na linha dos indicadores');
+  assert(page.includes('Ver lotes'), 'lotes fora da célula compacta');
+  assert(!page.includes("lotesDoMes.join(', ')"), 'tabela não explode com todos QD/LT');
+  assert(!page.includes('Maior VGV em'), 'sem faixa duplicada de destaque');
+  assert(page.includes('Visualizar'), 'ação visualizar');
+  assert(page.includes('Desativar corretor'), 'ação desativar');
+  assert(page.includes('Pagar comissão') || page.includes('Pagar Comissão'), 'ação pagar');
+  assert(page.includes('> PDF'), 'botão PDF separado');
+  assert(page.includes('> Excel'), 'botão Excel separado');
   assert(!page.includes("mode: 'apply'"), 'página não aplica sozinha');
   console.log('OK testUiDoesNotAutoApply');
 }

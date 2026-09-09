@@ -1,7 +1,7 @@
 'use client';
 
-import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { Users, Search, Plus, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog, FileText, Download, CalendarClock, MoreHorizontal, Star, Camera } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
@@ -23,9 +23,15 @@ import {
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { parseCurrencyBRLNumber, serializeCurrencyBRL } from '@/lib/currencyBrl';
 import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
-import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
+import {
+  BROKER_COMMISSION_MAINTENANCE_QUERY,
+  canManageSaleBrokerCommission,
+  canShowBrokerCommissionMaintenanceUi,
+} from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import { BulkAdjustBrokerCommissionsModal } from '@/components/brokers/BulkAdjustBrokerCommissionsModal';
+import { BrokerAvatarModal } from '@/components/brokers/BrokerAvatarModal';
+import { isPlatformAdmin } from '@/lib/rls';
 import { fetchAllPaginated } from '@/lib/supabaseFetchAll';
 import {
   fetchCompanySaasByTenantId,
@@ -33,16 +39,17 @@ import {
   logSaasCompanyContext,
 } from '@/lib/saasPlans';
 import { formatBrokersLimitMessage } from '@/lib/saasPlanEnforcementMessages';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 import {
   BrokerDeleteError,
   BrokerDeleteResult,
+  canManageBrokerInTenant,
   computeBrokerDashboardStats,
   filterBrokersForActiveList,
   isBrokerActiveForList,
   logBrokerDeleteAudit,
   rankBrokersByMonthlySales,
+  readBrokerTenantId,
   removeBrokerFromList,
 } from '@/lib/brokerDelete';
 import {
@@ -52,15 +59,40 @@ import {
   shouldAppearInBrokerList,
 } from '@/lib/brokerAccessLevels';
 import {
+  BROKER_DASHBOARD_PERIOD_LABELS,
+  BROKER_DASHBOARD_PERIODS,
+  averageTicket,
+  brokerRecordMatchesSearch,
   buildBrokerReportDetailRows,
   buildBrokerStatsFromData,
+  collectSaleIdsFromStats,
+  computeChangePercent,
+  countOpenReservedLots,
+  getPreviousBrokerStatsPeriodBounds,
+  isSaleInStatsPeriod,
+  labelBrokerStatsPeriod,
+  pickBrokerHighlight,
+  sumCommissionsForSaleIds,
+  type BrokerDashboardPeriod,
   type BrokerSaleDetailRow,
 } from '@/lib/brokerDashboardStats';
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
-  const [corretores, setCorretores] = useState<any[]>([]);
+  const [brokerListBase, setBrokerListBase] = useState<any[]>([]);
+  const [statsCatalog, setStatsCatalog] = useState<{
+    sales: Array<Record<string, unknown>>;
+    commissions: any[];
+    blocks: any[];
+    projects: Array<{ id: string; name?: string | null }>;
+    contracts: Array<Record<string, unknown>>;
+    customers: Array<{ id: string; name?: string | null }>;
+  } | null>(null);
+  const [statsPeriod, setStatsPeriod] = useState<BrokerDashboardPeriod>('month');
+  const [maintenanceQuery, setMaintenanceQuery] = useState<string | null>(null);
+  const [openBrokerActionsId, setOpenBrokerActionsId] = useState<string | null>(null);
+  const [openLotsPopoverId, setOpenLotsPopoverId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [brokerLimit, setBrokerLimit] = useState<number | null>(null);
   const [companyPlan, setCompanyPlan] = useState<string>('');
@@ -116,7 +148,6 @@ export default function CorretoresPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view' | 'reset' | null>(null);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
-  const [unassignedBrokerSales, setUnassignedBrokerSales] = useState<BrokerSaleDetailRow[]>([]);
 
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<{
@@ -127,6 +158,9 @@ export default function CorretoresPage() {
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [togglingBrokerId, setTogglingBrokerId] = useState<string | null>(null);
+  const [rankingModalOpen, setRankingModalOpen] = useState(false);
+  const [activitiesModalOpen, setActivitiesModalOpen] = useState(false);
+  const [avatarModalBroker, setAvatarModalBroker] = useState<any>(null);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -276,46 +310,7 @@ export default function CorretoresPage() {
           }
       }
 
-      const { byBrokerId, unassignedSales } = buildBrokerStatsFromData({
-        brokers: safeBrokers,
-        sales: salesData,
-        commissions: commData,
-        blocks: blockData,
-        projects: projectsData,
-        contracts: contractsData,
-        customers: customersData,
-        period: 'all',
-      });
-      setUnassignedBrokerSales(unassignedSales);
-
-      const enhancedData = safeBrokers.map((b) => {
-        const stats = byBrokerId.get(b.id) || {
-          broker_id: b.id,
-          vendas_qtd: 0,
-          vendas_valor: 0,
-          comissao_paga: 0,
-          comissao_pendente: 0,
-          sale_details: [],
-        };
-
-        const exportLots = stats.sale_details.map((d) => ({
-          loteamento: d.empreendimento,
-          quadra: d.quadra,
-          lote: d.lote,
-          loteStr: d.loteStr,
-          contrato: d.contrato,
-          venda_id: d.sale_id,
-          valor_venda: d.valor_venda,
-          data_venda: d.data_venda,
-          comissao_pendente: d.comissao_pendente,
-          cliente: d.cliente,
-          status: d.status,
-        }));
-
-        const lotesAtivos = exportLots
-          .map((lot) => lot.loteStr)
-          .filter(Boolean);
-
+      const enhancedBase = safeBrokers.map((b) => {
         const isActive = isBrokerActiveForList(b);
         const dbActive = b.active !== false;
 
@@ -328,19 +323,21 @@ export default function CorretoresPage() {
           active: isActive,
           dbActive,
           brokerStatus: b.status || (isActive ? 'ativo' : 'inativo'),
-          vendas_mes_qtd: stats.vendas_qtd,
-          vendas_mes_valor: stats.vendas_valor,
-          lotesDoMes: lotesAtivos,
-          exportLots,
-          brokerStats: stats,
-          comissao_pendente: stats.comissao_pendente,
-          comissao_paga: stats.comissao_paga,
           ultimo_acesso: b.created_at || new Date().toISOString(),
         };
       });
 
-      const activeBrokers = filterBrokersForActiveList(enhancedData);
-      setCorretores(enhancedData);
+      setBrokerListBase(enhancedBase);
+      setStatsCatalog({
+        sales: salesData,
+        commissions: commData,
+        blocks: blockData,
+        projects: projectsData,
+        contracts: contractsData,
+        customers: customersData,
+      });
+
+      const activeBrokers = filterBrokersForActiveList(enhancedBase);
       if (companyForPlan) {
         logSaasCompanyContext(resolvedTenantId, companyForPlan, undefined, activeBrokers.length);
       }
@@ -395,6 +392,119 @@ export default function CorretoresPage() {
     }
   }, [user, authLoading, loadBrokers]);
 
+  useEffect(() => {
+    try {
+      const value = new URLSearchParams(window.location.search).get(
+        BROKER_COMMISSION_MAINTENANCE_QUERY,
+      );
+      setMaintenanceQuery(value);
+    } catch {
+      setMaintenanceQuery(null);
+    }
+  }, []);
+
+  const { byBrokerId, unassignedBrokerSales } = useMemo(() => {
+    if (!statsCatalog) {
+      return {
+        byBrokerId: new Map(),
+        unassignedBrokerSales: [] as BrokerSaleDetailRow[],
+      };
+    }
+    const built = buildBrokerStatsFromData({
+      brokers: brokerListBase,
+      sales: statsCatalog.sales,
+      commissions: statsCatalog.commissions,
+      blocks: statsCatalog.blocks,
+      projects: statsCatalog.projects,
+      contracts: statsCatalog.contracts,
+      customers: statsCatalog.customers,
+      period: statsPeriod,
+    });
+    return {
+      byBrokerId: built.byBrokerId,
+      unassignedBrokerSales: built.unassignedSales,
+    };
+  }, [brokerListBase, statsCatalog, statsPeriod]);
+
+  const corretores = useMemo(() => {
+    return brokerListBase.map((b) => {
+      const stats = byBrokerId.get(b.id) || {
+        broker_id: b.id,
+        vendas_qtd: 0,
+        vendas_valor: 0,
+        comissao_paga: 0,
+        comissao_pendente: 0,
+        sale_details: [],
+      };
+      const exportLots = stats.sale_details.map((d) => ({
+        loteamento: d.empreendimento,
+        quadra: d.quadra,
+        lote: d.lote,
+        loteStr: d.loteStr,
+        contrato: d.contrato,
+        venda_id: d.sale_id,
+        valor_venda: d.valor_venda,
+        data_venda: d.data_venda,
+        comissao_pendente: d.comissao_pendente,
+        cliente: d.cliente,
+        status: d.status,
+      }));
+      const lotesAtivos = exportLots.map((lot) => lot.loteStr).filter(Boolean);
+      return {
+        ...b,
+        vendas_mes_qtd: stats.vendas_qtd,
+        vendas_mes_valor: stats.vendas_valor,
+        lotesDoMes: lotesAtivos,
+        exportLots,
+        brokerStats: stats,
+        comissao_pendente: stats.comissao_pendente,
+        comissao_paga: stats.comissao_paga,
+      };
+    });
+  }, [brokerListBase, byBrokerId]);
+
+  const openReservationsCount = useMemo(
+    () => countOpenReservedLots(statsCatalog?.blocks || []),
+    [statsCatalog],
+  );
+
+  const periodSaleIds = useMemo(
+    () => collectSaleIdsFromStats(byBrokerId, unassignedBrokerSales),
+    [byBrokerId, unassignedBrokerSales],
+  );
+
+  const periodCommissions = useMemo(
+    () => sumCommissionsForSaleIds(statsCatalog?.commissions || [], periodSaleIds),
+    [statsCatalog, periodSaleIds],
+  );
+
+  const previousPeriodBuilt = useMemo(() => {
+    if (!statsCatalog) return null;
+    return buildBrokerStatsFromData({
+      brokers: brokerListBase,
+      sales: statsCatalog.sales,
+      commissions: statsCatalog.commissions,
+      blocks: statsCatalog.blocks,
+      projects: statsCatalog.projects,
+      contracts: statsCatalog.contracts,
+      customers: statsCatalog.customers,
+      dateRange: getPreviousBrokerStatsPeriodBounds(statsPeriod),
+    });
+  }, [brokerListBase, statsCatalog, statsPeriod]);
+
+  const previousPeriodCommissions = useMemo(() => {
+    if (!previousPeriodBuilt || !statsCatalog) {
+      return { generated: 0, paid: 0, pending: 0 };
+    }
+    return sumCommissionsForSaleIds(
+      statsCatalog.commissions,
+      collectSaleIdsFromStats(
+        previousPeriodBuilt.byBrokerId,
+        previousPeriodBuilt.unassignedSales,
+      ),
+    );
+  }, [previousPeriodBuilt, statsCatalog]);
+
   const getExportSummaryRows = () =>
     filtered.map((c) => ({
       Nome: c.name || '',
@@ -445,6 +555,17 @@ export default function CorretoresPage() {
       try {
           const ExcelJS = (await import('exceljs')).default;
           const workbook = new ExcelJS.Workbook();
+          const wsMeta = workbook.addWorksheet('Parametros');
+          wsMeta.columns = [
+              { header: 'Campo', key: 'Campo', width: 22 },
+              { header: 'Valor', key: 'Valor', width: 40 },
+          ];
+          wsMeta.addRows([
+              { Campo: 'Periodo', Valor: labelBrokerStatsPeriod(statsPeriod) },
+              { Campo: 'Filtro_Status', Valor: filterActive },
+              { Campo: 'Busca', Valor: search.trim() || '—' },
+              { Campo: 'Corretores_Exportados', Valor: summaryRows.length },
+          ]);
           const wsSummary = workbook.addWorksheet('Resumo Corretores');
           const wsDetail = workbook.addWorksheet('Detalhamento Vendas');
 
@@ -478,7 +599,7 @@ export default function CorretoresPage() {
           const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
           const link = document.createElement("a");
           link.href = URL.createObjectURL(blob);
-          link.download = `corretores_${new Date().getTime()}.xlsx`;
+          link.download = `corretores_${statsPeriod}_${Date.now()}.xlsx`;
           link.click();
           console.log("BROKER_EXCEL_GENERATED");
       } catch (err) {
@@ -558,9 +679,17 @@ export default function CorretoresPage() {
           doc.setFontSize(10);
           doc.setTextColor(0);
           doc.setFont('helvetica', 'bold');
+          doc.text(`Período: ${labelBrokerStatsPeriod(statsPeriod)}`, 14, startY);
+          startY += 6;
+          doc.text(
+            `Filtros: ${filterActive === 'all' ? 'Todos os status' : filterActive === 'ativo' ? 'Somente ativos' : 'Somente inativos'}${search.trim() ? ` | Busca: ${search.trim()}` : ''}`,
+            14,
+            startY,
+          );
+          startY += 6;
           doc.text(`Total de Corretores Ativos: ${dashboardStats.activeCount}`, 14, startY);
           startY += 6;
-          doc.text(`Total de Vendas Ativas: ${totalVendasMes}`, 14, startY);
+          doc.text(`Total de Vendas no período: ${totalVendasMes}`, 14, startY);
           startY += 6;
           doc.text(
             `Total Vendido: R$ ${filtered.reduce((acc, c) => acc + (Number(c.vendas_mes_valor) || 0), 0).toLocaleString('pt-BR')}`,
@@ -636,7 +765,7 @@ export default function CorretoresPage() {
           const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
           await addProfessionalFooterAndSignature(doc, companyName, 'Relatório de Corretores');
           
-          doc.save(`relatorio_corretores_${new Date().getTime()}.pdf`);
+          doc.save(`relatorio_corretores_${statsPeriod}_${Date.now()}.pdf`);
           console.log("BROKER_PDF_GENERATED");
       } catch (err) {
           console.error("Erro pdf", err);
@@ -906,7 +1035,7 @@ export default function CorretoresPage() {
         effectiveTenantId: body.effectiveTenantId || resolvedTenantId || '',
       };
 
-      setCorretores((prev) => removeBrokerFromList(prev, id));
+      setBrokerListBase((prev) => removeBrokerFromList(prev, id));
       setDeleteModal(null);
 
       await logBrokerDeleteAudit(supabase, {
@@ -991,10 +1120,8 @@ export default function CorretoresPage() {
 
   const [filterActive, setFilterActive] = useState<'all' | 'ativo' | 'inativo'>('ativo');
 
-  const filtered = corretores.filter(c => {
-     const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
-                           c.email?.toLowerCase().includes(search.toLowerCase());
-     if (!matchesSearch) return false;
+  const filtered = corretores.filter((c) => {
+     if (!brokerRecordMatchesSearch(c, search)) return false;
      if (filterActive === 'ativo' && !c.active) return false;
      if (filterActive === 'inativo' && c.active) return false;
      return true;
@@ -1149,65 +1276,169 @@ export default function CorretoresPage() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  const chartData = [
-    { name: 'Pagas', value: totalComissoesPagas, color: '#8b5cf6' },
-    { name: 'Pendentes', value: totalComissoesPendentes, color: '#f59e0b' },
-  ];
+  const formatChange = (change: number | null) => {
+    if (change === null) return null;
+    if (change > 0) return { text: `↑ +${change}% vs período anterior`, className: 'text-emerald-400' };
+    if (change < 0) return { text: `↓ ${change}% vs período anterior`, className: 'text-rose-400' };
+    return { text: 'Estável vs período anterior', className: 'text-[var(--text-muted)]' };
+  };
 
-  const topCorretores = rankBrokersByMonthlySales(corretores, 3);
+  const rankingAll = rankBrokersByMonthlySales(corretores, 100);
+  const topCorretores = rankingAll.slice(0, 3);
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309'];
+  const highlightBroker = pickBrokerHighlight(corretores);
+  const highlightCommission = highlightBroker
+    ? sumCommissionsForSaleIds(
+        statsCatalog?.commissions || [],
+        (highlightBroker.brokerStats?.sale_details || []).map((d: BrokerSaleDetailRow) => d.sale_id),
+      ).generated
+    : 0;
+  const previousVgv = previousPeriodBuilt
+    ? [...previousPeriodBuilt.byBrokerId.values()].reduce((acc, row) => acc + row.vendas_valor, 0)
+    : 0;
+  const previousSalesCount = previousPeriodBuilt
+    ? [...previousPeriodBuilt.byBrokerId.values()].reduce((acc, row) => acc + row.vendas_qtd, 0)
+    : 0;
+  const ticketAtual = averageTicket(dashboardStats.totalVendasValor, totalVendasMes);
+  const ticketAnterior = averageTicket(previousVgv, previousSalesCount);
+  const commercialRows = [
+    {
+      label: 'VGV do período',
+      value: formatCurrency(dashboardStats.totalVendasValor),
+      change: formatChange(computeChangePercent(dashboardStats.totalVendasValor, previousVgv)),
+    },
+    {
+      label: 'Vendas realizadas',
+      value: String(totalVendasMes),
+      change: formatChange(computeChangePercent(totalVendasMes, previousSalesCount)),
+    },
+    {
+      label: 'Reservas abertas',
+      value: String(openReservationsCount),
+      change: { text: 'Posição atual no mapa', className: 'text-[var(--text-muted)]' },
+    },
+    {
+      label: 'Comissões do período',
+      value: formatCurrency(periodCommissions.generated),
+      change: formatChange(
+        computeChangePercent(periodCommissions.generated, previousPeriodCommissions.generated),
+      ),
+    },
+    {
+      label: 'Ticket médio',
+      value: formatCurrency(ticketAtual),
+      change: formatChange(computeChangePercent(ticketAtual, ticketAnterior)),
+    },
+  ];
+  const periodActivities = recentActivities.filter((act) =>
+    isSaleInStatsPeriod({ sale_date: act.date.toISOString() }, statsPeriod),
+  );
+  const visibleActivities = periodActivities.slice(0, 3);
   const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
+  const showCommissionMaintenance = canShowBrokerCommissionMaintenanceUi(
+    user?.role,
+    maintenanceQuery,
+  );
+  const periodLabel = labelBrokerStatsPeriod(statsPeriod);
+  const planUsagePercent =
+    brokerLimit && brokerLimit > 0
+      ? Math.round((dashboardStats.activeCount / brokerLimit) * 100)
+      : null;
+  const canEditBrokerAvatar = (broker: { tenant_id?: string | null; company_id?: string | null }) =>
+    canManageBrokerInTenant({
+      userRole: String(user?.role || ''),
+      userTenantId: activeTenantId,
+      brokerTenantId: readBrokerTenantId(broker) || '',
+      isSuperAdmin: isPlatformAdmin(user?.role),
+    });
 
   return (
-    <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
+    <div className="sv-page sv-page--scroll-y p-3 md:p-4 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
       
-      {/* Header */}
-      <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-1 tracking-tight">Corretores</h1>
-          <p className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">
-            GERENCIAMENTO DE EQUIPE DE VENDAS
-          </p>
+      <header className="mb-2 xl:hidden">
+        <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">Corretores</h1>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)] mt-0.5">
+          Gerenciamento de equipe de vendas
+        </p>
+      </header>
+
+      <div className="mb-2 flex flex-col xl:flex-row xl:items-center xl:flex-nowrap gap-2 min-w-0">
+        <div className="relative flex-1 min-w-0">
+          <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Buscar por nome, telefone ou e-mail..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg pl-9 pr-3 py-1.5 w-full focus:outline-none focus:border-teal-500/50 transition-colors"
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input 
-              type="text" 
-              placeholder="Buscar corretor..." 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg pl-9 pr-4 py-2 w-full md:w-64 focus:outline-none focus:border-teal-500/50 transition-colors"
-            />
-          </div>
-          <button 
-            onClick={() => { 
-                setFormData({
-                   fullName: '',
-                   email: '',
-                   phone: '',
-                   cpf: '',
-                   creci: '',
-                   role: 'BROKER',
-                   commission_mode: 'PERCENT',
-                   commission_percent: 5,
-                   commission_fixed_amount: '',
-                   password: '',
-                   confirmPassword: ''
-                });
-                setSuccessData(null);
-                setModalMode('create');
-                setIsModalOpen(true); 
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 shrink-0">
+          <select
+            value={filterActive}
+            onChange={(e) => setFilterActive(e.target.value as 'all' | 'ativo' | 'inativo')}
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg outline-none focus:border-[var(--brand-primary)]"
+            aria-label="Filtros"
+          >
+            <option value="all">Filtros: todos os status</option>
+            <option value="ativo">Filtros: somente ativos</option>
+            <option value="inativo">Filtros: somente inativos</option>
+          </select>
+          <select
+            value={statsPeriod}
+            onChange={(e) => setStatsPeriod(e.target.value as BrokerDashboardPeriod)}
+            className="bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg outline-none focus:border-[var(--brand-primary)]"
+            aria-label="Período"
+          >
+            {BROKER_DASHBOARD_PERIODS.map((period) => (
+              <option key={period} value={period}>
+                {BROKER_DASHBOARD_PERIOD_LABELS[period]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setFormData({
+                fullName: '',
+                email: '',
+                phone: '',
+                cpf: '',
+                creci: '',
+                role: 'BROKER',
+                commission_mode: 'PERCENT',
+                commission_percent: 5,
+                commission_fixed_amount: '',
+                password: '',
+                confirmPassword: '',
+              });
+              setSuccessData(null);
+              setModalMode('create');
+              setIsModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-[var(--text-primary)] px-5 py-2.5 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
+            className="flex items-center gap-1.5 bg-gradient-to-r from-orange-500 to-amber-500 text-[var(--text-primary)] px-3 py-1.5 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
           >
             <Plus className="w-4 h-4" /> Novo Corretor
           </button>
+          <button
+            type="button"
+            onClick={() => void handleExportPDF()}
+            className="flex items-center gap-1.5 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            <FileText className="w-4 h-4" /> PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportExcel()}
+            className="flex items-center gap-1.5 bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" /> Excel
+          </button>
         </div>
-      </header>
+      </div>
 
-      {canManageBrokerCommission ? (
-        <section className="mb-6 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 md:p-5">
+      {showCommissionMaintenance ? (
+        <section className="mb-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">
@@ -1243,122 +1474,244 @@ export default function CorretoresPage() {
         </section>
       ) : null}
 
-      {/* Top Cards Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 min-w-0">
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative overflow-hidden">
-             <div className="flex items-center gap-4 mb-4">
-               <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500">
-                 <Users className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-3xl font-bold text-[var(--text-primary)]">
-                    {dashboardStats.activeCount} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
-                  </div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Corretores ativos</div>
-               </div>
-             </div>
-             <div className="text-xs text-emerald-500 font-medium">
-               {brokerLimit === null
-                 ? 'Carregando limites do plano…'
-                 : companyPlan
-                   ? `Plano ${companyPlan} — até ${brokerLimit} corretores`
-                   : `${Math.round((dashboardStats.activeCount / brokerLimit) * 100)}% da licença utilizada`}
-             </div>
-         </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2 mb-2 min-w-0">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500 shrink-0">
+              <Users className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-bold text-[var(--text-primary)] leading-tight">
+                {dashboardStats.activeCount} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
+              </div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Corretores ativos</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-emerald-500 font-medium mt-1 truncate">
+            {brokerLimit === null
+              ? 'Carregando limites do plano…'
+              : companyPlan
+                ? `Plano ${companyPlan} — ${planUsagePercent ?? 0}% da licença`
+                : `${planUsagePercent ?? 0}% da licença utilizada`}
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg">
-             <div className="flex items-center gap-4 mb-4">
-               <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500">
-                 <TrendingUp className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-3xl font-bold text-[var(--text-primary)]">{totalVendasMes}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Vendas ativas</div>
-               </div>
-             </div>
-             <div className="text-xs text-blue-500 font-medium">
-               Total de vendas ativas vinculadas aos corretores
-             </div>
-         </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500 shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-bold text-[var(--text-primary)] leading-tight">{totalVendasMes}</div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Vendas no período</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-blue-500 font-medium mt-1 truncate">
+            VGV {formatCurrency(dashboardStats.totalVendasValor)}
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
-             {/* Glow decorativo */}
-             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-             
-             <div className="flex items-center gap-4 mb-4 relative z-10">
-               <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center border border-purple-500/20 text-purple-500">
-                 <Wallet className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">{formatCurrency(totalComissoesPagas)}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Comissões pagas</div>
-               </div>
-             </div>
-             <div className="text-xs text-purple-400 font-medium relative z-10 opacity-0">
-               .
-             </div>
-         </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-purple-500/10 flex items-center justify-center border border-purple-500/20 text-purple-500 shrink-0">
+              <Wallet className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-bold text-[var(--text-primary)] tracking-tight leading-tight truncate">
+                {formatCurrency(periodCommissions.generated)}
+              </div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Comissões geradas</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-amber-400 font-medium mt-1 truncate">
+            Pendentes {formatCurrency(totalComissoesPendentes)}
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-             
-             <div className="flex items-center gap-4 mb-4 relative z-10">
-               <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-500">
-                 <DollarSign className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">{formatCurrency(totalComissoesPendentes)}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Comissões pendentes</div>
-               </div>
-             </div>
-             <div className="text-xs text-amber-400 font-medium relative z-10 opacity-0">
-               .
-             </div>
-         </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 flex flex-col justify-between min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500 shrink-0">
+              <CalendarClock className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-bold text-[var(--text-primary)] leading-tight">{openReservationsCount}</div>
+              <div className="text-[10px] font-medium text-[var(--text-secondary)]">Reservas abertas</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-teal-500 font-medium mt-1">
+            Lotes com status Reservado
+          </div>
+        </div>
 
-         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 flex flex-col justify-between shadow-lg">
-             <div className="flex items-center gap-4 mb-4">
-               <div className="w-12 h-12 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500">
-                 <Users2 className="w-6 h-6" />
-               </div>
-               <div>
-                  <div className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">0</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Leads em atendimento</div>
-               </div>
-             </div>
-             <div className="text-xs text-teal-500 font-medium opacity-0">
-               .
-             </div>
-         </div>
+        <div className="sm:col-span-2 xl:col-span-2 bg-[var(--bg-card)] border border-orange-500/30 rounded-lg px-3 py-2 min-w-0">
+          {highlightBroker ? (
+            <div className="flex items-center gap-2 min-w-0 h-full">
+              <span className="text-amber-400 shrink-0" title="1º no período">
+                <Medal className="w-5 h-5" style={{ color: medalColors[0] }} />
+              </span>
+              {highlightBroker.avatar_url ? (
+                <img src={highlightBroker.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover object-center shrink-0 border border-orange-500/40" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-orange-500/15 text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">
+                  {highlightBroker.name?.charAt(0)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-bold text-[var(--text-primary)] truncate">{highlightBroker.name}</span>
+                  <span className="hidden 2xl:inline-flex items-center gap-1 rounded-full bg-orange-500/15 text-orange-400 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider whitespace-nowrap">
+                    <Star className="w-2.5 h-2.5" /> Destaque do período
+                  </span>
+                </div>
+                <div className="2xl:hidden text-[9px] font-bold uppercase tracking-wider text-orange-400">Destaque do período</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] mt-0.5">
+                  <span className="font-bold">{highlightBroker.vendas_mes_qtd} vendas</span>
+                  <span className="font-mono text-emerald-400">{formatCurrency(highlightBroker.vendas_mes_valor)} VGV</span>
+                  <span className="font-mono text-purple-300">{formatCurrency(highlightCommission)} comissão</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 h-full min-h-[52px]">
+              <Medal className="w-5 h-5 text-[var(--text-muted)] shrink-0" />
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-wider text-orange-400">Destaque do período</div>
+                <div className="text-xs text-[var(--text-muted)]">Sem vendas no período.</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0 min-w-0">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-2 mb-2 min-w-0 items-stretch">
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 min-w-0 h-full flex flex-col">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Desempenho da Equipe</h3>
+              <p className="text-[10px] text-[var(--text-muted)]">Top 3 por VGV · {periodLabel}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRankingModalOpen(true)}
+              className="text-[10px] font-bold text-orange-400 hover:text-orange-300 whitespace-nowrap disabled:opacity-40"
+              disabled={rankingAll.length === 0}
+            >
+              Ver ranking completo
+            </button>
+          </div>
+          <table className="w-full text-left table-fixed">
+            <thead>
+              <tr className="text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                <th className="pb-1 pr-1 w-7">#</th>
+                <th className="pb-1 pr-1">Corretor</th>
+                <th className="pb-1 pr-1 text-center w-14">Vendas</th>
+                <th className="pb-1 text-right w-[7.5rem]">VGV</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-color)]">
+              {topCorretores.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-2 text-center text-xs text-[var(--text-muted)]">
+                    Nenhuma venda no período.
+                  </td>
+                </tr>
+              ) : (
+                topCorretores.map((c, idx) => (
+                  <tr key={c.id || idx}>
+                    <td className="py-1 pr-1">
+                      <Medal className="w-3.5 h-3.5" style={{ color: medalColors[idx] }} />
+                    </td>
+                    <td className="py-1 pr-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {c.avatar_url ? (
+                          <img src={c.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover object-center shrink-0" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[9px] font-bold shrink-0">
+                            {c.name?.charAt(0)}
+                          </div>
+                        )}
+                        <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-1 pr-1 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
+                    <td className="py-1 text-right text-[11px] font-mono text-emerald-400 truncate">{formatCurrency(c.vendas_mes_valor)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 min-w-0 h-full flex flex-col">
+          <div className="flex items-baseline justify-between gap-2 mb-1">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Resumo Comercial</h3>
+            <p className="text-[10px] text-[var(--text-muted)]">{periodLabel}</p>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-1.5 flex-1">
+            {commercialRows.map((row, index) => (
+              <div
+                key={row.label}
+                className={`rounded-md bg-[var(--bg-main)]/50 px-2 py-1 min-w-0 ${
+                  index < 3 ? 'lg:col-span-2' : 'lg:col-span-3'
+                }`}
+              >
+                <div className="text-[10px] text-[var(--text-secondary)] truncate">{row.label}</div>
+                <div className="text-xs font-bold text-[var(--text-primary)] truncate">{row.value}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 min-w-0 h-full flex flex-col">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Atividades Recentes</h3>
+            <button
+              type="button"
+              onClick={() => setActivitiesModalOpen(true)}
+              className="text-[10px] font-bold text-orange-400 hover:text-orange-300 whitespace-nowrap disabled:opacity-40"
+              disabled={periodActivities.length === 0}
+            >
+              Ver todas
+            </button>
+          </div>
+          <div className="flex flex-col gap-1 flex-1">
+            {visibleActivities.length === 0 ? (
+              <div className="text-xs text-[var(--text-muted)] text-center py-2">Nenhuma atividade no período.</div>
+            ) : (
+              visibleActivities.map((act, index) => (
+                <div key={act.id + index} className="flex items-start gap-1.5 min-w-0">
+                  <div
+                    className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                      act.type === 'sale'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                        : 'bg-purple-500/10 border-purple-500/20 text-purple-500'
+                    }`}
+                  >
+                    {act.type === 'sale' ? <CheckCircle2 className="w-2.5 h-2.5" /> : <DollarSign className="w-2.5 h-2.5" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-[var(--text-secondary)] leading-tight truncate">{act.message}</p>
+                    <p className="text-[10px] text-[var(--text-muted)] font-mono truncate">
+                      {act.subtext} · {act.date.toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="flex flex-col flex-1 min-h-0 min-w-0">
         
         {/* Main Table Area */}
         <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl overflow-hidden relative">
-          <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between">
-            <h2 className="text-sm font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Lista de Corretores</h2>
-            <div className="flex gap-2">
-               <select 
-                  value={filterActive} 
-                  onChange={(e) => setFilterActive(e.target.value as any)}
-                  className="bg-transparent border border-[var(--border-color)] text-xs text-[var(--text-muted)] px-3 py-1.5 rounded-lg outline-none focus:border-[var(--brand-primary)]"
-               >
-                 <option value="all">Filtro: Todos os status</option>
-                 <option value="ativo">Somente Ativos</option>
-                 <option value="inativo">Somente Inativos</option>
-               </select>
-               <div className="relative group">
-                   <button 
-                      className="text-xs text-[var(--text-muted)] px-3 py-1.5 border border-[var(--border-color)] rounded-lg cursor-pointer hover:bg-[var(--bg-card-alt)] transition-colors"
-                   >
-                      Exportar ↓
-                   </button>
-                   <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-lg overflow-hidden z-20 whitespace-nowrap">
-                       <button onClick={handleExportExcel} className="block w-full text-left px-4 py-2 hover:bg-[var(--bg-card-alt)] text-xs text-[var(--text-secondary)]">Planilha (Excel)</button>
-                       <button onClick={handleExportPDF} className="block w-full text-left px-4 py-2 hover:bg-[var(--bg-card-alt)] text-xs text-[var(--text-secondary)]">Relatório (PDF)</button>
-                   </div>
-               </div>
+          <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">Lista de Corretores</h2>
+              <p className="text-[10px] text-[var(--text-muted)]">
+                {filtered.length} corretor(es) · {periodLabel}
+              </p>
             </div>
           </div>
           
@@ -1366,132 +1719,187 @@ export default function CorretoresPage() {
             <table className="w-full text-left border-collapse min-w-[760px]">
               <thead>
                 <tr className="bg-[var(--bg-main)]/50 border-b border-[var(--border-color)]">
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Corretor</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Contato</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">CRECI</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Nível</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas ativas</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão Pendente</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Status</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Ações</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Corretor</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Contato</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">CRECI</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">VGV</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão pendente</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Status</th>
+                  <th className="px-3 py-2 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[var(--text-muted)] font-mono text-sm">Carregando dados...</td>
+                    <td colSpan={8} className="p-6 text-center text-[var(--text-muted)] font-mono text-sm">Carregando dados...</td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[var(--text-muted)] font-mono text-sm">Nenhum corretor encontrado.</td>
+                    <td colSpan={8} className="p-6 text-center text-[var(--text-muted)] font-mono text-sm">Nenhum corretor encontrado.</td>
                   </tr>
                 ) : (
                   filtered.map((c) => (
                     <tr key={c.id} className="hover:bg-[var(--bg-card-alt)] transition-colors group">
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          {c.avatar_url ? (
-                             <img src={c.avatar_url} alt={c.name} className="w-10 h-10 rounded-full object-cover border border-[var(--border-color)]" />
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          {canEditBrokerAvatar(c) ? (
+                            <button
+                              type="button"
+                              onClick={() => setAvatarModalBroker(c)}
+                              className="relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-400"
+                              title={c.avatar_url ? 'Alterar foto' : 'Adicionar foto'}
+                            >
+                              {c.avatar_url ? (
+                                <img src={c.avatar_url} alt={c.name} className="w-8 h-8 rounded-full object-cover object-center border border-[var(--border-color)]" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-bold">
+                                  {c.name?.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </button>
+                          ) : c.avatar_url ? (
+                             <img src={c.avatar_url} alt={c.name} className="w-8 h-8 rounded-full object-cover object-center border border-[var(--border-color)] shrink-0" />
                           ) : (
-                             <div className="w-10 h-10 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] font-bold shrink-0">
+                             <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-bold shrink-0">
                                {c.name?.charAt(0).toUpperCase()}
                              </div>
                           )}
-                          <div>
-                            <div className="text-sm font-bold text-[var(--text-primary)] mb-0.5">{c.name}</div>
-                            <div className="text-xs text-[var(--text-muted)]">{c.email}</div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="text-sm font-bold text-[var(--text-primary)] truncate">{c.name}</div>
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border shrink-0 ${getRoleBadge(c.role)}`}>
+                                {c.role}
+                              </span>
+                            </div>
+                            <div className="text-xs text-[var(--text-muted)] truncate">{c.email}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2">
                           <div className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5">
-                             <Phone className="w-3 h-3 text-emerald-500" /> {c.phone || 'Sem telefone'}
+                             <Phone className="w-3 h-3 text-emerald-500 shrink-0" /> {c.phone || 'Sem telefone'}
                           </div>
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2">
                         <div className="text-xs text-[var(--text-secondary)] font-mono">{c.creci || '—'}</div>
                       </td>
-                      <td className="p-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border ${getRoleBadge(c.role)}`}>
-                          {c.role}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
+                      <td className="px-3 py-2 text-center relative">
                          <div className="text-sm font-bold text-[var(--text-primary)]">{c.vendas_mes_qtd}</div>
-                         <div className="text-[10px] text-[var(--text-muted)]">{formatCurrency(c.vendas_mes_valor)}</div>
-                         {c.lotesDoMes?.length > 0 && (
-                            <div className="text-[9px] text-amber-500/80 font-mono mt-1">{c.lotesDoMes.join(', ')}</div>
-                         )}
+                         {c.lotesDoMes?.length > 0 ? (
+                           <>
+                             <button
+                               type="button"
+                               onClick={() => {
+                                 setOpenBrokerActionsId(null);
+                                 setOpenLotsPopoverId(openLotsPopoverId === c.id ? null : c.id);
+                               }}
+                               className="text-[10px] text-amber-500/80 hover:text-amber-400 font-medium"
+                             >
+                               Ver lotes
+                             </button>
+                             {openLotsPopoverId === c.id ? (
+                               <div className="absolute left-1/2 -translate-x-1/2 top-10 z-30 w-52 max-h-40 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl py-2 px-3 text-left">
+                                 <div className="text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1.5">
+                                   Lotes no período
+                                 </div>
+                                 <div className="space-y-0.5">
+                                   {c.lotesDoMes.map((lot: string) => (
+                                     <div key={lot} className="text-[10px] font-mono text-amber-500/90">
+                                       {lot}
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             ) : null}
+                           </>
+                         ) : null}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="px-3 py-2 text-right">
+                         <div className="text-sm font-bold text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</div>
+                      </td>
+                      <td className="px-3 py-2 text-right">
                          <div className="text-sm font-bold text-amber-500">{formatCurrency(c.comissao_pendente)}</div>
                       </td>
-                      <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                            c.active ? 'text-emerald-500 bg-emerald-500/10' : 'text-[var(--text-muted)] bg-gray-500/10'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${c.active ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
                           {c.active ? 'ATIVO' : 'INATIVO'}
                         </span>
                       </td>
-                      <td className="p-4 text-right border-l border-transparent group-hover:border-[var(--border-color)] transition-colors">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button onClick={() => handleOpenView(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Visualizar">
-                             <Eye className="w-4 h-4" />
-                           </button>
-                           <button onClick={() => handleOpenEdit(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Editar">
-                             <Edit className="w-4 h-4" />
-                           </button>
-                           <button onClick={() => handleOpenResetPassword(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Redefinir Senha">
-                             <Key className="w-4 h-4" />
-                           </button>
-                           {c.dbActive ? (
-                             <button
-                               onClick={() => handleToggleBrokerActive(c)}
-                               disabled={togglingBrokerId === c.id}
-                               className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-500 hover:text-[var(--text-primary)] hover:bg-amber-500/20 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
-                               title="Desativar corretor"
-                             >
-                               {togglingBrokerId === c.id ? (
-                                 <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
-                               ) : (
-                                 'Desativar corretor'
-                               )}
-                             </button>
-                           ) : (
-                             <button
-                               onClick={() => handleToggleBrokerActive(c)}
-                               disabled={togglingBrokerId === c.id}
-                               className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-500 hover:text-[var(--text-primary)] hover:bg-emerald-500/20 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
-                               title="Reativar corretor"
-                             >
-                               {togglingBrokerId === c.id ? (
-                                 <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
-                               ) : (
-                                 'Reativar corretor'
-                               )}
-                             </button>
-                           )}
-                           <button 
-                             onClick={() => setDeleteModal({
-                               id: c.id,
-                               name: c.name || 'Corretor',
-                               tenant_id: c.tenant_id,
-                               company_id: c.company_id,
-                             })}
-                             className="p-1.5 text-red-500 hover:text-[var(--text-primary)] hover:bg-red-500/80 rounded transition-colors" title="Excluir"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                           </button>
-                           {c.comissao_pendente > 0 && (
-                               <button 
-                                 onClick={() => handlePayCommission(c)}
-                                 className="p-1.5 text-emerald-500 hover:text-[var(--text-primary)] hover:bg-emerald-500/80 rounded transition-colors" title="Pagar Comissão"
-                               >
-                                 <DollarSign className="w-4 h-4" />
-                               </button>
-                           )}
-                        </div>
+                      <td className="px-3 py-2 text-right relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenLotsPopoverId(null);
+                            setOpenBrokerActionsId(openBrokerActionsId === c.id ? null : c.id);
+                          }}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)]"
+                          title="Ações"
+                          aria-label="Ações do corretor"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                        {openBrokerActionsId === c.id ? (
+                          <div className="absolute right-3 top-10 z-30 w-52 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl py-1 text-left">
+                            <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenView(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
+                              <Eye className="w-3.5 h-3.5" /> Visualizar
+                            </button>
+                            <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenEdit(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
+                              <Edit className="w-3.5 h-3.5" /> Editar
+                            </button>
+                            <button type="button" onClick={() => { setOpenBrokerActionsId(null); handleOpenResetPassword(c); }} className="w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] flex items-center gap-2">
+                              <Key className="w-3.5 h-3.5" /> Redefinir senha
+                            </button>
+                            {c.dbActive ? (
+                              <button
+                                type="button"
+                                disabled={togglingBrokerId === c.id}
+                                onClick={() => { setOpenBrokerActionsId(null); handleToggleBrokerActive(c); }}
+                                className="w-full px-3 py-2 text-xs text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 disabled:opacity-50"
+                              >
+                                {togglingBrokerId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                Desativar corretor
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={togglingBrokerId === c.id}
+                                onClick={() => { setOpenBrokerActionsId(null); handleToggleBrokerActive(c); }}
+                                className="w-full px-3 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2 disabled:opacity-50"
+                              >
+                                {togglingBrokerId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                Reativar corretor
+                              </button>
+                            )}
+                            {c.comissao_pendente > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => { setOpenBrokerActionsId(null); handlePayCommission(c); }}
+                                className="w-full px-3 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2"
+                              >
+                                <DollarSign className="w-3.5 h-3.5" /> Pagar comissão
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenBrokerActionsId(null);
+                                setDeleteModal({
+                                  id: c.id,
+                                  name: c.name || 'Corretor',
+                                  tenant_id: c.tenant_id,
+                                  company_id: c.company_id,
+                                });
+                              }}
+                              className="w-full px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Excluir
+                            </button>
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   ))
@@ -1500,128 +1908,142 @@ export default function CorretoresPage() {
             </table>
           </div>
           
-          <div className="p-3 border-t border-[var(--border-color)] bg-[var(--bg-main)]/40 flex items-center justify-between">
+          <div className="px-3 py-2 border-t border-[var(--border-color)] bg-[var(--bg-main)]/40">
             <span className="text-xs text-[var(--text-muted)]">Mostrando {filtered.length} corretor(es)</span>
-            <div className="flex gap-1">
-               <button className="px-2.5 py-1 text-xs bg-[var(--bg-card-alt)] text-[var(--text-secondary)] rounded">Anterior</button>
-               <button className="px-2.5 py-1 text-xs bg-orange-500 text-[var(--text-primary)] font-bold rounded">1</button>
-               <button className="px-2.5 py-1 text-xs bg-[var(--bg-card-alt)] text-[var(--text-secondary)] rounded">Próximo</button>
-            </div>
           </div>
         </div>
 
-        {/* Side Panels - Ranking & Activities */}
-        <div className="w-full lg:w-[350px] lg:max-w-[350px] shrink-0 min-w-0 flex flex-col gap-6">
-           
-           {/* Ranking Card */}
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl flex flex-col p-5">
-              <div className="flex items-center justify-between mb-5">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">TOP CORRETORES</h3>
-                 <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver ranking</span>
-              </div>
-              <div className="flex flex-col gap-4">
-                 {topCorretores.map((c, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                       <div className="w-6 flex justify-center shrink-0">
-                          <Medal className="w-5 h-5" style={{color: medalColors[idx]}} />
-                       </div>
-                       <div className="w-8 h-8 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center shrink-0 overflow-hidden">
-                          {c.avatar_url ? <img src={c.avatar_url} /> : <span className="text-[10px] font-bold text-[var(--text-secondary)]">{c.name?.charAt(0)}</span>}
-                       </div>
-                       <div className="flex-1 min-w-0">
-                          <div className="text-sm font-bold text-[var(--text-primary)] truncate">{c.name}</div>
-                          <div className="text-xs text-[var(--text-muted)]">{c.vendas_mes_qtd} vendas</div>
-                       </div>
-                       <div className="text-xs font-bold text-emerald-500 font-mono shrink-0">
-                          {formatCurrency(c.vendas_mes_valor)}
-                       </div>
-                    </div>
-                 ))}
-                 {topCorretores.length === 0 && <div className="text-xs text-[var(--text-muted)] text-center py-4">Nenhuma venda registrada.</div>}
-              </div>
-           </div>
-
-           {/* Gráfico Dispersão Comissões */}
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl p-5 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">COMISSÕES (RESUMO)</h3>
-                 <select className="bg-transparent border-none text-xs text-[var(--text-muted)] outline-none">
-                    <option>Este mês</option>
-                 </select>
-              </div>
-              <div className="h-[180px] w-full relative flex items-center justify-center">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                       <Pie
-                         data={chartData}
-                         innerRadius={55}
-                         outerRadius={80}
-                         paddingAngle={5}
-                         dataKey="value"
-                         stroke="none"
-                       >
-                         {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                         ))}
-                       </Pie>
-                       <RechartsTooltip 
-                         contentStyle={{ backgroundColor: '#111217', borderColor: '#1f2937', borderRadius: '8px', color: '#fff' }}
-                         itemStyle={{ color: '#fff' }}
-                       />
-                    </PieChart>
-                 </ResponsiveContainer>
-                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xs font-mono text-[var(--text-muted)] uppercase tracking-widest">Total</span>
-                    <span className="text-sm font-bold text-[var(--text-primary)]">{formatCurrency(totalComissoesPagas + totalComissoesPendentes)}</span>
-                 </div>
-              </div>
-              
-              <div className="flex justify-around mt-4 border-t border-[var(--border-color)] pt-4">
-                 {chartData.map(d => (
-                    <div key={d.name} className="flex flex-col items-center">
-                       <div className="flex items-center gap-1.5 mb-1">
-                          <div className="w-2 h-2 rounded-full" style={{backgroundColor: d.color}}></div>
-                          <span className="text-xs text-[var(--text-secondary)]">{d.name}</span>
-                       </div>
-                       <span className="text-sm font-bold text-[var(--text-primary)]">{formatCurrency(d.value)}</span>
-                    </div>
-                 ))}
-              </div>
-           </div>
-
-           {/* Atividades Recentes */}
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl flex flex-col p-5 flex-1 min-h-[250px]">
-              <div className="flex items-center justify-between mb-5">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">ATIVIDADES RECENTES</h3>
-                 <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver todas</span>
-              </div>
-              
-              <div className="flex flex-col gap-5 relative">
-                 <div className="absolute left-[15px] top-4 bottom-4 w-px bg-[var(--bg-card-alt)]"></div>
-
-                 {recentActivities.length === 0 && (
-                    <div className="text-xs text-[var(--text-muted)] text-center py-4 relative z-10 w-full">Nenhuma atividade recente.</div>
-                 )}
-                 {recentActivities.map((act, index) => (
-                   <div key={act.id + index} className="flex items-start gap-4 relative z-10">
-                      <div className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
-                         act.type === 'sale' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                         act.type === 'commission_paid' ? 'bg-purple-500/10 border-purple-500/20 text-purple-500' :
-                         'bg-teal-500/10 border-teal-500/20 text-teal-500'
-                      }`}>
-                         {act.type === 'sale' ? <CheckCircle2 className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
-                      </div>
-                      <div>
-                         <p className="text-xs text-[var(--text-secondary)] leading-relaxed" dangerouslySetInnerHTML={{__html: act.message.replace(act.message.split(' ')[0], `<strong class="text-[var(--text-primary)]">${act.message.split(' ')[0]} ${act.message.split(' ')[1] || ''}</strong>`)}}></p>
-                         <p className="text-[10px] text-[var(--text-muted)] font-mono mt-1">{act.subtext} • {act.date.toLocaleDateString('pt-BR')} {act.date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p>
-                      </div>
-                   </div>
-                 ))}
-              </div>
-           </div>
-        </div>
-
       </div>
+
+      <BrokerAvatarModal
+        open={Boolean(avatarModalBroker)}
+        broker={avatarModalBroker}
+        actor={{ role: user?.role, tenantId: activeTenantId }}
+        onClose={() => setAvatarModalBroker(null)}
+        onSaved={(nextUrl) => {
+          void loadBrokers();
+          setAvatarModalBroker((prev: any) => (prev ? { ...prev, avatar_url: nextUrl } : prev));
+          setSelectedBroker((prev: any) =>
+            prev && avatarModalBroker && prev.id === avatarModalBroker.id
+              ? { ...prev, avatar_url: nextUrl }
+              : prev,
+          );
+        }}
+      />
+
+      {rankingModalOpen ? (
+        <div className="sv-modal-overlay animate-in fade-in duration-200" onClick={() => setRankingModalOpen(false)}>
+          <div
+            className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] p-5 w-full max-w-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Ranking completo</h2>
+                <p className="text-[10px] text-[var(--text-muted)]">Por VGV · {periodLabel}</p>
+              </div>
+              <button type="button" onClick={() => setRankingModalOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                ✕
+              </button>
+            </div>
+            <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
+              <table className="w-full text-left min-w-[420px]">
+                <thead>
+                  <tr className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">
+                    <th className="pb-2 pr-2">#</th>
+                    <th className="pb-2 pr-2">Corretor</th>
+                    <th className="pb-2 pr-2 text-center">Vendas</th>
+                    <th className="pb-2 pr-2 text-right">VGV</th>
+                    <th className="pb-2 text-right">Comissão</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)]">
+                  {rankingAll.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-xs text-[var(--text-muted)]">
+                        Nenhuma venda no período.
+                      </td>
+                    </tr>
+                  ) : (
+                    rankingAll.map((c, idx) => {
+                    const generated = sumCommissionsForSaleIds(
+                      statsCatalog?.commissions || [],
+                      (c.brokerStats?.sale_details || []).map((d: BrokerSaleDetailRow) => d.sale_id),
+                    ).generated;
+                    return (
+                      <tr key={c.id || idx}>
+                        <td className="py-2 pr-2">
+                          {idx < 3 ? (
+                            <Medal className="w-4 h-4" style={{ color: medalColors[idx] }} />
+                          ) : (
+                            <span className="text-xs text-[var(--text-muted)]">{idx + 1}</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {c.avatar_url ? (
+                              <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover object-center shrink-0" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center text-[10px] font-bold shrink-0">
+                                {c.name?.charAt(0)}
+                              </div>
+                            )}
+                            <span className="text-xs font-bold text-[var(--text-primary)] truncate">{c.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 pr-2 text-center text-xs font-bold">{c.vendas_mes_qtd}</td>
+                        <td className="py-2 pr-2 text-right text-xs font-mono text-emerald-400">{formatCurrency(c.vendas_mes_valor)}</td>
+                        <td className="py-2 text-right text-xs font-mono text-purple-300">{formatCurrency(generated)}</td>
+                      </tr>
+                    );
+                  })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activitiesModalOpen ? (
+        <div className="sv-modal-overlay animate-in fade-in duration-200" onClick={() => setActivitiesModalOpen(false)}>
+          <div
+            className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] p-5 w-full max-w-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Atividades Recentes</h2>
+                <p className="text-[10px] text-[var(--text-muted)]">{periodLabel}</p>
+              </div>
+              <button type="button" onClick={() => setActivitiesModalOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                ✕
+              </button>
+            </div>
+            <div className="flex flex-col gap-2.5 max-h-[70vh] overflow-y-auto pr-1">
+              {periodActivities.map((act, index) => (
+                <div key={act.id + index} className="flex items-start gap-2.5">
+                  <div
+                    className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                      act.type === 'sale'
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                        : 'bg-purple-500/10 border-purple-500/20 text-purple-500'
+                    }`}
+                  >
+                    {act.type === 'sale' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-[var(--text-secondary)] leading-snug">{act.message}</p>
+                    <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">
+                      {act.subtext} · {act.date.toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Modal Delete */}
       {deleteModal && (
@@ -1700,6 +2122,45 @@ export default function CorretoresPage() {
                    )}
                    
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5" style={{ display: modalMode === 'reset' ? 'none' : 'grid' }}>
+                       {modalMode !== 'create' && selectedBroker ? (
+                         <div className="md:col-span-2 flex items-center gap-3">
+                           {canEditBrokerAvatar(selectedBroker) && modalMode === 'edit' ? (
+                             <button
+                               type="button"
+                               onClick={() => setAvatarModalBroker(selectedBroker)}
+                               className="relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-400"
+                               title={selectedBroker.avatar_url ? 'Alterar foto' : 'Adicionar foto'}
+                             >
+                               {selectedBroker.avatar_url ? (
+                                 <img src={selectedBroker.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover object-center border border-[var(--border-color)]" />
+                               ) : (
+                                 <div className="w-12 h-12 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
+                                   {formData.fullName?.charAt(0).toUpperCase() || 'C'}
+                                 </div>
+                               )}
+                             </button>
+                           ) : selectedBroker.avatar_url ? (
+                             <img src={selectedBroker.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover object-center border border-[var(--border-color)] shrink-0" />
+                           ) : (
+                             <div className="w-12 h-12 rounded-full bg-[var(--bg-card-alt)] flex items-center justify-center border border-[var(--border-color)] text-[var(--text-secondary)] font-bold shrink-0">
+                               {formData.fullName?.charAt(0).toUpperCase() || 'C'}
+                             </div>
+                           )}
+                           <div className="min-w-0">
+                             <div className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Foto</div>
+                             {canEditBrokerAvatar(selectedBroker) && modalMode === 'edit' ? (
+                               <button type="button" onClick={() => setAvatarModalBroker(selectedBroker)} className="text-xs text-orange-400 hover:text-orange-300 inline-flex items-center gap-1 mt-0.5">
+                                 <Camera className="w-3 h-3" />
+                                 {selectedBroker.avatar_url ? 'Alterar foto' : 'Adicionar foto'}
+                               </button>
+                             ) : (
+                               <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                                 {selectedBroker.avatar_url ? 'Fotografia cadastrada' : 'Sem foto — inicial do nome'}
+                               </p>
+                             )}
+                           </div>
+                         </div>
+                       ) : null}
                        <div className="space-y-1.5 md:col-span-2">
                           <label className="text-xs font-bold font-mono text-[var(--text-secondary)] uppercase tracking-widest">Nome Completo</label>
                           <div className="relative">
