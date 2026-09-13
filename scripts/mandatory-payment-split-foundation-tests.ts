@@ -102,8 +102,26 @@ async function expectCode(fn: () => Promise<unknown>, code: string, label: strin
   }
 }
 
+function collectPublicSqlIdents(sql: string, kind: 'fn' | 'table'): string[] {
+  const re =
+    kind === 'fn'
+      ? /\bpublic\.(is_super_admin|is_tenant_admin|current_tenant_id|is_owner_readonly_user|reject_revenue_split_snapshot_mutation)\s*\(/g
+      : /REFERENCES\s+public\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gi;
+  const found = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(sql))) {
+    found.add(match[1]);
+  }
+  return [...found].sort();
+}
+
 function testMigrationAndRls() {
   const sql = read(MIGRATION);
+  const helperSql = [
+    read('supabase/migrations/20260527180000_fix_master_companies_rls.sql'),
+    read('supabase/migrations/20260622130000_fix_company_admin_users_rls.sql'),
+  ].join('\n');
+
   for (const table of [
     'project_revenue_split_configs',
     'project_revenue_split_participants',
@@ -114,21 +132,60 @@ function testMigrationAndRls() {
   ]) {
     assert(sql.includes(`CREATE TABLE IF NOT EXISTS public.${table}`), `tabela ${table}`);
     assert(sql.includes(`ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY`), `RLS ${table}`);
-    assert(sql.includes(`company_id = public.current_tenant_id()`), 'isolamento tenant');
+    assert(sql.includes(`${table}_select`), `policy select ${table}`);
   }
   assert(sql.includes("status IN ('DRAFT', 'ACTIVE', 'INACTIVE')"), 'status config');
   assert(sql.includes("party_kind IN ('ISSUER', 'OWNER', 'PARTNER', 'SPE')"), 'party_kind');
   assert(sql.includes("status IN ('PENDING', 'PROCESSING', 'SETTLED', 'FAILED', 'REFUNDED', 'CANCELLED')"), 'status legs');
   assert(sql.includes('numeric(7, 4)'), 'precisão percentual');
   assert(sql.includes('sale_revenue_split_snapshots is immutable'), 'imutabilidade');
-  assert(sql.includes('owner_readonly_no_insert'), 'OWNER sem insert');
-  assert(sql.includes('owner_readonly_no_update'), 'OWNER sem update');
-  assert(sql.includes('owner_readonly_no_delete'), 'OWNER sem delete');
+  assert(sql.includes('public.is_tenant_admin()'), 'escrita positiva via is_tenant_admin');
+  assert(sql.includes('public.is_super_admin()'), 'super admin');
+  assert(sql.includes('public.current_tenant_id()'), 'tenant atual');
+  assert(!/\bis_owner_readonly_user\s*\(/.test(sql), 'não chama helper inexistente');
+  assert(!sql.includes('owner_readonly_no_insert'), 'sem policy negativa OWNER');
+  assert(sql.includes('FOR INSERT'), 'policy insert');
+  assert(sql.includes('FOR UPDATE'), 'policy update');
+  assert(sql.includes('FOR DELETE'), 'policy delete');
+  assert(
+    /FOR INSERT[\s\S]*is_tenant_admin\(\)/.test(sql),
+    'INSERT exige admin do tenant',
+  );
   assert(sql.includes('Nunca armazena API key'), 'sem segredo no destino');
   assert(!/api_key|sandbox_api_key|production_api_key|webhook_secret/i.test(sql), 'migration sem credenciais');
   assert(sql.includes('Percentual NÃO fica em owner_project_access'), 'não usa ACL para %');
   assert(sql.includes('uq_project_revenue_split_one_issuer_remainder'), 'um emissor ativo');
   assert(sql.includes('CONSTRAINT sale_revenue_split_snapshots_sale_unique UNIQUE (sale_id)'), 'um snapshot por venda');
+
+  const publicFns = collectPublicSqlIdents(sql, 'fn');
+  const createdHere = new Set(['reject_revenue_split_snapshot_mutation']);
+  const requiredExisting = publicFns.filter((name) => !createdHere.has(name));
+  for (const name of ['is_super_admin', 'is_tenant_admin', 'current_tenant_id']) {
+    assert(requiredExisting.includes(name), `helper ${name} referenciado`);
+    assert(
+      helperSql.includes(`CREATE OR REPLACE FUNCTION public.${name}()`),
+      `${name}: CREATE existe nas migrations de origin/develop (não prova runtime sozinho)`,
+    );
+  }
+  assert(!requiredExisting.includes('is_owner_readonly_user'), 'helper inexistente não referenciada');
+  assert(
+    requiredExisting.every((name) =>
+      ['is_super_admin', 'is_tenant_admin', 'current_tenant_id'].includes(name),
+    ),
+    `só helpers reais: ${requiredExisting.join(', ')}`,
+  );
+
+  const fkTables = collectPublicSqlIdents(sql, 'table');
+  for (const table of [
+    'companies',
+    'company_financial_accounts',
+    'projects',
+    'users',
+    'sales',
+    'finance_receipts',
+  ]) {
+    assert(fkTables.includes(table), `FK ${table}`);
+  }
   console.log('OK testMigrationAndRls');
 }
 

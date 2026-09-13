@@ -200,7 +200,14 @@ CREATE TRIGGER trg_sale_revenue_split_snapshot_participants_immutable
   EXECUTE PROCEDURE public.reject_revenue_split_snapshot_mutation();
 
 -- ---------------------------------------------------------------------------
--- RLS tenant
+-- RLS
+-- Leitura: SUPER_ADMIN ou mesmo tenant (OWNER pode ver; filtro por projeto
+--          permanece na aplicação, como no Financeiro).
+-- Escrita: SUPER_ADMIN ou is_tenant_admin() no próprio tenant.
+--          OWNER e BROKER não passam em is_tenant_admin()
+--          (ADMIN / ADMIN_EMPRESA / COMPANY_ADMIN).
+-- Helpers reais do Develop: is_super_admin, is_tenant_admin, current_tenant_id.
+-- Não usar is_owner_readonly_user — essa função não existe no schema real.
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.financial_account_provider_destinations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_revenue_split_configs ENABLE ROW LEVEL SECURITY;
@@ -211,27 +218,135 @@ ALTER TABLE public.charge_revenue_split_legs ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS financial_account_provider_destinations_tenant
   ON public.financial_account_provider_destinations;
-CREATE POLICY financial_account_provider_destinations_tenant
-  ON public.financial_account_provider_destinations
-  FOR ALL
-  USING (public.is_super_admin() OR company_id = public.current_tenant_id())
-  WITH CHECK (public.is_super_admin() OR company_id = public.current_tenant_id());
-
 DROP POLICY IF EXISTS project_revenue_split_configs_tenant
   ON public.project_revenue_split_configs;
-CREATE POLICY project_revenue_split_configs_tenant
-  ON public.project_revenue_split_configs
-  FOR ALL
-  USING (public.is_super_admin() OR company_id = public.current_tenant_id())
-  WITH CHECK (public.is_super_admin() OR company_id = public.current_tenant_id());
-
 DROP POLICY IF EXISTS project_revenue_split_participants_tenant
   ON public.project_revenue_split_participants;
-CREATE POLICY project_revenue_split_participants_tenant
+DROP POLICY IF EXISTS charge_revenue_split_legs_tenant
+  ON public.charge_revenue_split_legs;
+
+DROP POLICY IF EXISTS financial_account_provider_destinations_select
+  ON public.financial_account_provider_destinations;
+CREATE POLICY financial_account_provider_destinations_select
+  ON public.financial_account_provider_destinations
+  FOR SELECT
+  USING (public.is_super_admin() OR company_id = public.current_tenant_id());
+
+DROP POLICY IF EXISTS financial_account_provider_destinations_insert
+  ON public.financial_account_provider_destinations;
+CREATE POLICY financial_account_provider_destinations_insert
+  ON public.financial_account_provider_destinations
+  FOR INSERT
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS financial_account_provider_destinations_update
+  ON public.financial_account_provider_destinations;
+CREATE POLICY financial_account_provider_destinations_update
+  ON public.financial_account_provider_destinations
+  FOR UPDATE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  )
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS financial_account_provider_destinations_delete
+  ON public.financial_account_provider_destinations;
+CREATE POLICY financial_account_provider_destinations_delete
+  ON public.financial_account_provider_destinations
+  FOR DELETE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS project_revenue_split_configs_select
+  ON public.project_revenue_split_configs;
+CREATE POLICY project_revenue_split_configs_select
+  ON public.project_revenue_split_configs
+  FOR SELECT
+  USING (public.is_super_admin() OR company_id = public.current_tenant_id());
+
+DROP POLICY IF EXISTS project_revenue_split_configs_insert
+  ON public.project_revenue_split_configs;
+CREATE POLICY project_revenue_split_configs_insert
+  ON public.project_revenue_split_configs
+  FOR INSERT
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS project_revenue_split_configs_update
+  ON public.project_revenue_split_configs;
+CREATE POLICY project_revenue_split_configs_update
+  ON public.project_revenue_split_configs
+  FOR UPDATE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  )
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS project_revenue_split_configs_delete
+  ON public.project_revenue_split_configs;
+CREATE POLICY project_revenue_split_configs_delete
+  ON public.project_revenue_split_configs
+  FOR DELETE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS project_revenue_split_participants_select
+  ON public.project_revenue_split_participants;
+CREATE POLICY project_revenue_split_participants_select
   ON public.project_revenue_split_participants
-  FOR ALL
-  USING (public.is_super_admin() OR company_id = public.current_tenant_id())
-  WITH CHECK (public.is_super_admin() OR company_id = public.current_tenant_id());
+  FOR SELECT
+  USING (public.is_super_admin() OR company_id = public.current_tenant_id());
+
+DROP POLICY IF EXISTS project_revenue_split_participants_insert
+  ON public.project_revenue_split_participants;
+CREATE POLICY project_revenue_split_participants_insert
+  ON public.project_revenue_split_participants
+  FOR INSERT
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS project_revenue_split_participants_update
+  ON public.project_revenue_split_participants;
+CREATE POLICY project_revenue_split_participants_update
+  ON public.project_revenue_split_participants
+  FOR UPDATE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  )
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
+
+DROP POLICY IF EXISTS project_revenue_split_participants_delete
+  ON public.project_revenue_split_participants;
+CREATE POLICY project_revenue_split_participants_delete
+  ON public.project_revenue_split_participants
+  FOR DELETE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
 
 DROP POLICY IF EXISTS sale_revenue_split_snapshots_select
   ON public.sale_revenue_split_snapshots;
@@ -245,7 +360,10 @@ DROP POLICY IF EXISTS sale_revenue_split_snapshots_insert
 CREATE POLICY sale_revenue_split_snapshots_insert
   ON public.sale_revenue_split_snapshots
   FOR INSERT
-  WITH CHECK (public.is_super_admin() OR company_id = public.current_tenant_id());
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
 
 DROP POLICY IF EXISTS sale_revenue_split_snapshot_participants_select
   ON public.sale_revenue_split_snapshot_participants;
@@ -259,58 +377,51 @@ DROP POLICY IF EXISTS sale_revenue_split_snapshot_participants_insert
 CREATE POLICY sale_revenue_split_snapshot_participants_insert
   ON public.sale_revenue_split_snapshot_participants
   FOR INSERT
-  WITH CHECK (public.is_super_admin() OR company_id = public.current_tenant_id());
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
 
-DROP POLICY IF EXISTS charge_revenue_split_legs_tenant
+DROP POLICY IF EXISTS charge_revenue_split_legs_select
   ON public.charge_revenue_split_legs;
-CREATE POLICY charge_revenue_split_legs_tenant
+CREATE POLICY charge_revenue_split_legs_select
   ON public.charge_revenue_split_legs
-  FOR ALL
-  USING (public.is_super_admin() OR company_id = public.current_tenant_id())
-  WITH CHECK (public.is_super_admin() OR company_id = public.current_tenant_id());
+  FOR SELECT
+  USING (public.is_super_admin() OR company_id = public.current_tenant_id());
 
--- OWNER: somente leitura (não administra Split)
-DO $$
-DECLARE
-  tbl text;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'financial_account_provider_destinations',
-    'project_revenue_split_configs',
-    'project_revenue_split_participants',
-    'sale_revenue_split_snapshots',
-    'sale_revenue_split_snapshot_participants',
-    'charge_revenue_split_legs'
-  ]
-  LOOP
-    EXECUTE format(
-      'DROP POLICY IF EXISTS owner_readonly_no_insert ON public.%I',
-      tbl
-    );
-    EXECUTE format(
-      'CREATE POLICY owner_readonly_no_insert ON public.%I AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (NOT public.is_owner_readonly_user())',
-      tbl
-    );
+DROP POLICY IF EXISTS charge_revenue_split_legs_insert
+  ON public.charge_revenue_split_legs;
+CREATE POLICY charge_revenue_split_legs_insert
+  ON public.charge_revenue_split_legs
+  FOR INSERT
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
 
-    EXECUTE format(
-      'DROP POLICY IF EXISTS owner_readonly_no_update ON public.%I',
-      tbl
-    );
-    EXECUTE format(
-      'CREATE POLICY owner_readonly_no_update ON public.%I AS RESTRICTIVE FOR UPDATE TO authenticated USING (NOT public.is_owner_readonly_user()) WITH CHECK (NOT public.is_owner_readonly_user())',
-      tbl
-    );
+DROP POLICY IF EXISTS charge_revenue_split_legs_update
+  ON public.charge_revenue_split_legs;
+CREATE POLICY charge_revenue_split_legs_update
+  ON public.charge_revenue_split_legs
+  FOR UPDATE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  )
+  WITH CHECK (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
 
-    EXECUTE format(
-      'DROP POLICY IF EXISTS owner_readonly_no_delete ON public.%I',
-      tbl
-    );
-    EXECUTE format(
-      'CREATE POLICY owner_readonly_no_delete ON public.%I AS RESTRICTIVE FOR DELETE TO authenticated USING (NOT public.is_owner_readonly_user())',
-      tbl
-    );
-  END LOOP;
-END $$;
+DROP POLICY IF EXISTS charge_revenue_split_legs_delete
+  ON public.charge_revenue_split_legs;
+CREATE POLICY charge_revenue_split_legs_delete
+  ON public.charge_revenue_split_legs
+  FOR DELETE
+  USING (
+    public.is_super_admin()
+    OR (public.is_tenant_admin() AND company_id = public.current_tenant_id())
+  );
 
 COMMENT ON TABLE public.financial_account_provider_destinations IS
   'Destino de split por provider (ex.: Asaas walletId). Nunca armazena API key nem segredo.';
