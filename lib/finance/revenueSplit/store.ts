@@ -1,0 +1,54 @@
+import type {
+  FinancialAccountProviderDestination,
+  ProjectRevenueSplitConfig,
+  ProjectRevenueSplitParticipant,
+  RevenueSplitFinancialAccountRecord,
+  RevenueSplitProjectRecord,
+  RevenueSplitSaleRecord,
+  RevenueSplitUserRecord,
+  SaleRevenueSplitSnapshot,
+  SaleRevenueSplitSnapshotParticipant,
+} from './types';
+
+export type SaveProjectRevenueSplitInput = {
+  companyId: string;
+  projectId: string;
+  enabled: boolean;
+  status: ProjectRevenueSplitConfig['status'];
+  currency?: string;
+  participants: Array<Omit<ProjectRevenueSplitParticipant, 'id' | 'configId' | 'createdAt' | 'updatedAt'> & {
+    id?: string;
+  }>;
+};
+
+export interface RevenueSplitStore {
+  getProject(projectId: string): Promise<RevenueSplitProjectRecord | null>;
+  getSale(saleId: string): Promise<RevenueSplitSaleRecord | null>;
+  getUser(userId: string): Promise<RevenueSplitUserRecord | null>;
+  getFinancialAccount(accountId: string): Promise<RevenueSplitFinancialAccountRecord | null>;
+
+  getConfigByProject(projectId: string): Promise<ProjectRevenueSplitConfig | null>;
+  getParticipants(configId: string): Promise<ProjectRevenueSplitParticipant[]>;
+  listDestinations(companyId: string, financialAccountIds: string[]): Promise<FinancialAccountProviderDestination[]>;
+
+  saveConfig(input: SaveProjectRevenueSplitInput): Promise<{
+    config: ProjectRevenueSplitConfig;
+    participants: ProjectRevenueSplitParticipant[];
+  }>;
+
+  getSnapshotBySale(saleId: string): Promise<SaleRevenueSplitSnapshot | null>;
+  getSnapshotParticipants(snapshotId: string): Promise<SaleRevenueSplitSnapshotParticipant[]>;
+  insertSnapshot(input: {
+    snapshot: Omit<SaleRevenueSplitSnapshot, 'id' | 'createdAt' | 'frozenAt'> & {
+      id?: string;
+      frozenAt?: string;
+      createdAt?: string;
+    };
+    participants: Array<Omit<SaleRevenueSplitSnapshotParticipant, 'id' | 'snapshotId' | 'createdAt'> & {
+      id?: string;
+    }>;
+  }): Promise<{
+    snapshot: SaleRevenueSplitSnapshot;
+    participants: SaleRevenueSplitSnapshotParticipant[];
+  }>;
+}

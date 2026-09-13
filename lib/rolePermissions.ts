@@ -114,6 +114,11 @@ export function canManageOwners(role?: string | null): boolean {
   return isTenantEnterpriseAdminRole(normalized);
 }
 
+/** Mesmo grupo de /owners — OWNER e BROKER não administram Split. */
+export function canManageRevenueSplit(role?: string | null): boolean {
+  return canManageOwners(role);
+}
+
 export const OWNERS_ADMIN_ROUTE = '/owners' as const;
 
 export const BROKER_BLOCKED_ROUTE_PREFIXES = [
