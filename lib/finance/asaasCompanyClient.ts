@@ -8,6 +8,17 @@ import {
   extractCompanyAsaasBankSlipIdentification,
 } from '@/lib/finance/asaasCompanyLateFees';
 
+export type AsaasCompanyPaymentSplit = {
+  id?: string;
+  walletId?: string;
+  percentualValue?: number;
+  fixedValue?: number;
+  totalValue?: number;
+  status?: string;
+  externalReference?: string;
+  description?: string;
+};
+
 export type AsaasCompanyPayment = {
   id?: string;
   status?: string;
@@ -25,6 +36,7 @@ export type AsaasCompanyPayment = {
   creditDate?: string;
   estimatedCreditDate?: string;
   transactionReceiptUrl?: string;
+  split?: AsaasCompanyPaymentSplit[];
 };
 
 export type AsaasCompanyPixQrCode = {
@@ -249,6 +261,13 @@ export async function asaasCompanyFindOrCreateCustomer(
   return created.id;
 }
 
+export type AsaasCompanyCreatePaymentSplit = {
+  walletId: string;
+  percentualValue: number;
+  externalReference: string;
+  description?: string;
+};
+
 export type AsaasCompanyCreatePaymentInput = {
   customerId: string;
   billingType: AsaasCompanyCreateBillingType;
@@ -256,7 +275,38 @@ export type AsaasCompanyCreatePaymentInput = {
   dueDate: string;
   description: string;
   externalReference: string;
+  /** Somente participantes não-emissores. Ausente/vazio = payload idêntico ao atual. */
+  split?: AsaasCompanyCreatePaymentSplit[];
 };
+
+/**
+ * Monta o JSON de POST /payments.
+ * `split` só entra se houver itens — venda sem split permanece idêntica.
+ */
+export function buildAsaasCompanyCreatePaymentBody(
+  input: AsaasCompanyCreatePaymentInput,
+): Record<string, unknown> {
+  const lateFees = buildCompanyAsaasLateFeePayload();
+  const body: Record<string, unknown> = {
+    customer: input.customerId,
+    billingType: input.billingType,
+    value: Number(input.value.toFixed(2)),
+    dueDate: input.dueDate,
+    description: input.description.slice(0, 500),
+    externalReference: input.externalReference,
+    fine: lateFees.fine,
+    interest: lateFees.interest,
+  };
+  if (input.split && input.split.length > 0) {
+    body.split = input.split.map((item) => ({
+      walletId: item.walletId,
+      percentualValue: item.percentualValue,
+      externalReference: item.externalReference,
+      ...(item.description ? { description: item.description } : {}),
+    }));
+  }
+  return body;
+}
 
 export async function asaasCompanyCreatePayment(
   apiKey: string,
@@ -268,20 +318,9 @@ export async function asaasCompanyCreatePayment(
   pixCopyPaste: string;
   bankSlipIdentification: string | null;
 }> {
-  const lateFees = buildCompanyAsaasLateFeePayload();
-
   const payment = await asaasCompanyFetch<AsaasCompanyPayment>(apiKey, environment, '/payments', {
     method: 'POST',
-    body: JSON.stringify({
-      customer: input.customerId,
-      billingType: input.billingType,
-      value: Number(input.value.toFixed(2)),
-      dueDate: input.dueDate,
-      description: input.description.slice(0, 500),
-      externalReference: input.externalReference,
-      fine: lateFees.fine,
-      interest: lateFees.interest,
-    }),
+    body: JSON.stringify(buildAsaasCompanyCreatePaymentBody(input)),
   });
 
   if (!payment.id) throw new Error('Asaas Company não retornou payment id.');

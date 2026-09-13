@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { REVENUE_SPLIT_DEFAULT_CURRENCY } from './types';
 import type {
+  ChargeRevenueSplitLeg,
+  ChargeRevenueSplitLegDraft,
+  ChargeRevenueSplitLegPatch,
   FinancialAccountProviderDestination,
   ProjectRevenueSplitConfig,
   ProjectRevenueSplitParticipant,
@@ -8,6 +11,7 @@ import type {
   RevenueSplitDestinationStatus,
   RevenueSplitDestinationType,
   RevenueSplitFinancialAccountRecord,
+  RevenueSplitLegStatus,
   RevenueSplitPartyKind,
   RevenueSplitProjectRecord,
   RevenueSplitSaleRecord,
@@ -71,8 +75,109 @@ function mapDestination(row: Record<string, unknown>): FinancialAccountProviderD
   };
 }
 
+function mapSnapshotParticipant(row: Record<string, unknown>): SaleRevenueSplitSnapshotParticipant {
+  return {
+    id: asText(row.id),
+    snapshotId: asText(row.snapshot_id),
+    companyId: asText(row.company_id),
+    sourceParticipantId: asText(row.source_participant_id) || null,
+    displayName: asText(row.display_name),
+    partyKind: asText(row.party_kind) as RevenueSplitPartyKind,
+    userId: asText(row.user_id) || null,
+    financialAccountId: asText(row.financial_account_id) || null,
+    destinationProvider: asText(row.destination_provider) || null,
+    destinationType: asText(row.destination_type) || null,
+    destinationIdentifier: asText(row.destination_identifier) || null,
+    sharePercent: asNumber(row.share_percent),
+    isIssuerRemainder: Boolean(row.is_issuer_remainder),
+    sortOrder: Number(row.sort_order || 0),
+    createdAt: asText(row.created_at),
+  };
+}
+
+function mapLeg(
+  row: Record<string, unknown>,
+  participant?: SaleRevenueSplitSnapshotParticipant | null,
+): ChargeRevenueSplitLeg {
+  return {
+    id: asText(row.id),
+    companyId: asText(row.company_id),
+    saleId: asText(row.sale_id),
+    installmentId: asText(row.installment_id),
+    chargeId: asText(row.charge_id) || null,
+    snapshotId: asText(row.snapshot_id),
+    snapshotParticipantId: asText(row.snapshot_participant_id),
+    provider: asText(row.provider),
+    providerSplitId: asText(row.provider_split_id) || null,
+    destinationType: asText(row.destination_type) || null,
+    destinationIdentifier: asText(row.destination_identifier) || null,
+    sharePercent: asNumber(row.share_percent),
+    isIssuerRemainder: participant?.isIssuerRemainder ?? false,
+    displayName: participant?.displayName || '',
+    grossAmountEstimate:
+      row.gross_amount_estimate == null || row.gross_amount_estimate === ''
+        ? null
+        : asNumber(row.gross_amount_estimate),
+    netAmount:
+      row.net_amount == null || row.net_amount === '' ? null : asNumber(row.net_amount),
+    status: asText(row.status) as RevenueSplitLegStatus,
+    failureReason: asText(row.failure_reason) || null,
+    createdAt: asText(row.created_at),
+    updatedAt: asText(row.updated_at),
+  };
+}
+
+function legPatchPayload(patch: ChargeRevenueSplitLegPatch): Record<string, unknown> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.chargeId !== undefined) payload.charge_id = patch.chargeId;
+  if (patch.providerSplitId !== undefined) payload.provider_split_id = patch.providerSplitId;
+  if (patch.destinationType !== undefined) payload.destination_type = patch.destinationType;
+  if (patch.destinationIdentifier !== undefined) {
+    payload.destination_identifier = patch.destinationIdentifier;
+  }
+  if (patch.sharePercent !== undefined) payload.share_percent = patch.sharePercent;
+  if (patch.grossAmountEstimate !== undefined) {
+    payload.gross_amount_estimate = patch.grossAmountEstimate;
+  }
+  if (patch.netAmount !== undefined) payload.net_amount = patch.netAmount;
+  if (patch.status !== undefined) payload.status = patch.status;
+  if (patch.failureReason !== undefined) payload.failure_reason = patch.failureReason;
+  return payload;
+}
+
 function throwIfError(error: { message: string } | null, fallback: string): void {
   if (error) throw new Error(error.message || fallback);
+}
+
+async function listLegs(
+  admin: SupabaseClient,
+  filter: { column: string; value: string },
+): Promise<ChargeRevenueSplitLeg[]> {
+  const { data, error } = await admin
+    .from('charge_revenue_split_legs')
+    .select('*')
+    .eq(filter.column, filter.value)
+    .order('created_at', { ascending: true });
+  throwIfError(error, 'Falha ao carregar pernas de split.');
+  const rows = (data || []) as Record<string, unknown>[];
+  if (!rows.length) return [];
+  const snapshotIds = [...new Set(rows.map((row) => asText(row.snapshot_id)).filter(Boolean))];
+  const participantIds = [
+    ...new Set(rows.map((row) => asText(row.snapshot_participant_id)).filter(Boolean)),
+  ];
+  const { data: participantsData, error: participantsError } = await admin
+    .from('sale_revenue_split_snapshot_participants')
+    .select('*')
+    .in('id', participantIds.length ? participantIds : ['00000000-0000-0000-0000-000000000000']);
+  throwIfError(participantsError, 'Falha ao carregar participantes das pernas.');
+  const byId = new Map(
+    (participantsData || []).map((item) => {
+      const mapped = mapSnapshotParticipant(item as Record<string, unknown>);
+      return [mapped.id, mapped] as const;
+    }),
+  );
+  void snapshotIds;
+  return rows.map((row) => mapLeg(row, byId.get(asText(row.snapshot_participant_id)) || null));
 }
 
 export function createSupabaseRevenueSplitStore(admin: SupabaseClient): RevenueSplitStore {
@@ -320,26 +425,93 @@ export function createSupabaseRevenueSplitStore(admin: SupabaseClient): RevenueS
         .eq('snapshot_id', snapshotId)
         .order('sort_order', { ascending: true });
       throwIfError(error, 'Falha ao carregar participantes do snapshot.');
-      return (data || []).map((item) => {
-        const row = item as Record<string, unknown>;
-        return {
-          id: asText(row.id),
-          snapshotId: asText(row.snapshot_id),
-          companyId: asText(row.company_id),
-          sourceParticipantId: asText(row.source_participant_id) || null,
-          displayName: asText(row.display_name),
-          partyKind: asText(row.party_kind) as RevenueSplitPartyKind,
-          userId: asText(row.user_id) || null,
-          financialAccountId: asText(row.financial_account_id) || null,
-          destinationProvider: asText(row.destination_provider) || null,
-          destinationType: asText(row.destination_type) || null,
-          destinationIdentifier: asText(row.destination_identifier) || null,
-          sharePercent: asNumber(row.share_percent),
-          isIssuerRemainder: Boolean(row.is_issuer_remainder),
-          sortOrder: Number(row.sort_order || 0),
-          createdAt: asText(row.created_at),
+      return (data || []).map((item) => mapSnapshotParticipant(item as Record<string, unknown>));
+    },
+
+    async listLegsBySale(saleId: string): Promise<ChargeRevenueSplitLeg[]> {
+      return listLegs(admin, { column: 'sale_id', value: saleId });
+    },
+
+    async listLegsByInstallment(installmentId: string): Promise<ChargeRevenueSplitLeg[]> {
+      return listLegs(admin, { column: 'installment_id', value: installmentId });
+    },
+
+    async listLegsByCharge(chargeId: string): Promise<ChargeRevenueSplitLeg[]> {
+      return listLegs(admin, { column: 'charge_id', value: chargeId });
+    },
+
+    async getLegById(legId: string): Promise<ChargeRevenueSplitLeg | null> {
+      const rows = await listLegs(admin, { column: 'id', value: legId });
+      return rows[0] || null;
+    },
+
+    async upsertLegs(drafts: ChargeRevenueSplitLegDraft[]): Promise<ChargeRevenueSplitLeg[]> {
+      const out: ChargeRevenueSplitLeg[] = [];
+      for (const draft of drafts) {
+        const { data: existing, error: existingError } = await admin
+          .from('charge_revenue_split_legs')
+          .select('*')
+          .eq('installment_id', draft.installmentId)
+          .eq('snapshot_participant_id', draft.snapshotParticipantId)
+          .maybeSingle();
+        throwIfError(existingError, 'Falha ao consultar perna de split.');
+
+        const payload = {
+          company_id: draft.companyId,
+          sale_id: draft.saleId,
+          installment_id: draft.installmentId,
+          charge_id: draft.chargeId,
+          snapshot_id: draft.snapshotId,
+          snapshot_participant_id: draft.snapshotParticipantId,
+          provider: draft.provider,
+          provider_split_id: draft.providerSplitId,
+          destination_type: draft.destinationType,
+          destination_identifier: draft.destinationIdentifier,
+          share_percent: draft.sharePercent,
+          gross_amount_estimate: draft.grossAmountEstimate,
+          net_amount: draft.netAmount,
+          status: draft.status,
+          failure_reason: draft.failureReason,
+          updated_at: new Date().toISOString(),
         };
-      });
+
+        if (existing) {
+          const { error } = await admin
+            .from('charge_revenue_split_legs')
+            .update(payload)
+            .eq('id', existing.id)
+            .eq('company_id', draft.companyId);
+          throwIfError(error, 'Falha ao atualizar perna de split.');
+          const refreshed = await listLegs(admin, { column: 'id', value: String(existing.id) });
+          if (refreshed[0]) out.push(refreshed[0]);
+        } else {
+          const { data, error } = await admin
+            .from('charge_revenue_split_legs')
+            .insert(payload)
+            .select('*')
+            .single();
+          throwIfError(error, 'Falha ao criar perna de split.');
+          const refreshed = await listLegs(admin, { column: 'id', value: asText((data as { id: string }).id) });
+          if (refreshed[0]) out.push(refreshed[0]);
+        }
+      }
+      return out;
+    },
+
+    async updateLeg(
+      legId: string,
+      companyId: string,
+      patch: ChargeRevenueSplitLegPatch,
+    ): Promise<ChargeRevenueSplitLeg> {
+      const { error } = await admin
+        .from('charge_revenue_split_legs')
+        .update(legPatchPayload(patch))
+        .eq('id', legId)
+        .eq('company_id', companyId);
+      throwIfError(error, 'Falha ao atualizar perna de split.');
+      const refreshed = await listLegs(admin, { column: 'id', value: legId });
+      if (!refreshed[0]) throw new Error('Perna de split não encontrada.');
+      return refreshed[0];
     },
 
     async insertSnapshot(input) {

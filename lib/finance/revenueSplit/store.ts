@@ -1,4 +1,7 @@
 import type {
+  ChargeRevenueSplitLeg,
+  ChargeRevenueSplitLegDraft,
+  ChargeRevenueSplitLegPatch,
   FinancialAccountProviderDestination,
   ProjectRevenueSplitConfig,
   ProjectRevenueSplitParticipant,
@@ -74,4 +77,15 @@ export interface RevenueSplitStore {
     snapshot: SaleRevenueSplitSnapshot;
     participants: SaleRevenueSplitSnapshotParticipant[];
   }>;
+
+  listLegsBySale(saleId: string): Promise<ChargeRevenueSplitLeg[]>;
+  listLegsByInstallment(installmentId: string): Promise<ChargeRevenueSplitLeg[]>;
+  listLegsByCharge(chargeId: string): Promise<ChargeRevenueSplitLeg[]>;
+  getLegById(legId: string): Promise<ChargeRevenueSplitLeg | null>;
+  upsertLegs(drafts: ChargeRevenueSplitLegDraft[]): Promise<ChargeRevenueSplitLeg[]>;
+  updateLeg(
+    legId: string,
+    companyId: string,
+    patch: ChargeRevenueSplitLegPatch,
+  ): Promise<ChargeRevenueSplitLeg>;
 }

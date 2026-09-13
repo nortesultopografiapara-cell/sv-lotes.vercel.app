@@ -24,6 +24,7 @@ import {
   type SaleChargesSummary,
 } from '@/lib/finance/saleChargesShared';
 import { normalizeWhatsAppPhone, openWhatsApp } from '@/lib/whatsapp/clickToChat';
+import { ChargeRevenueSplitDistribution, invalidateSaleRevenueSplitView } from '@/components/finance/ChargeRevenueSplitDistribution';
 
 type SaleChargesPanelProps = {
   saleId: string | null | undefined;
@@ -76,6 +77,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
   const [pdfBusy, setPdfBusy] = useState(false);
   const [info, setInfo] = useState('');
   const [chargeProvider, setChargeProvider] = useState<'ASAAS_COMPANY' | 'INTER'>('ASAAS_COMPANY');
+  const [splitTick, setSplitTick] = useState(0);
 
   const loadSummary = useCallback(async () => {
     if (!saleId) return;
@@ -291,6 +293,8 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
       if (data.summary) setSummary(data.summary as SaleChargesSummary);
       else await loadSummary();
       setInfo('Situação das cobranças atualizada.');
+      invalidateSaleRevenueSplitView(saleId);
+      setSplitTick((value) => value + 1);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao sincronizar');
     } finally {
@@ -575,6 +579,8 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
             <Kpi label="Pendente" value={formatCurrencyBRL(kpi.totalPending)} />
             <Kpi label="Elegíveis" value={String(kpi.eligibleInstallments)} />
           </div>
+
+          <ChargeRevenueSplitDistribution key={splitTick} saleId={saleId} compact />
 
           {generating && progress ? (
             <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">

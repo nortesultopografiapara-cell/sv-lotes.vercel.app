@@ -52,6 +52,10 @@ import {
   type SaleChargesSummary,
 } from '@/lib/finance/saleChargesShared';
 import { loadSaleContext, loadSaleScopedInstallments } from '@/lib/finance/saleChargesService';
+import {
+  assertInterEmissionAllowedForRevenueSplit,
+  createSupabaseRevenueSplitStore,
+} from '@/lib/finance/revenueSplit';
 
 const ACTIVE_BANK_CHARGE_STATUSES = new Set([
   'PENDING',
@@ -616,6 +620,12 @@ export async function createInterInstallmentCharge(
   if (resolved.provider !== 'INTER' || !resolved.bankIntegrationId) {
     throw new Error('Conta financeira não vinculada ao Banco Inter.');
   }
+
+  await assertInterEmissionAllowedForRevenueSplit({
+    store: createSupabaseRevenueSplitStore(admin),
+    companyId: input.companyId,
+    saleId,
+  });
 
   const secrets = await loadInterSecretsForServer(admin, input.companyId, {
     integrationId: resolved.bankIntegrationId,

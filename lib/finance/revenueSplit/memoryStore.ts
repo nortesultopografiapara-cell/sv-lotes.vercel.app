@@ -1,5 +1,8 @@
 import { REVENUE_SPLIT_DEFAULT_CURRENCY } from './types';
 import type {
+  ChargeRevenueSplitLeg,
+  ChargeRevenueSplitLegDraft,
+  ChargeRevenueSplitLegPatch,
   FinancialAccountProviderDestination,
   ProjectRevenueSplitConfig,
   ProjectRevenueSplitParticipant,
@@ -30,6 +33,7 @@ export class MemoryRevenueSplitStore implements RevenueSplitStore {
   participants = new Map<string, ProjectRevenueSplitParticipant[]>();
   snapshotsBySale = new Map<string, SaleRevenueSplitSnapshot>();
   snapshotParticipants = new Map<string, SaleRevenueSplitSnapshotParticipant[]>();
+  legs: ChargeRevenueSplitLeg[] = [];
 
   seedProject(row: RevenueSplitProjectRecord): void {
     this.projects.set(row.id, row);
@@ -229,5 +233,107 @@ export class MemoryRevenueSplitStore implements RevenueSplitStore {
       }
     }
     return out;
+  }
+
+  private hydrateLeg(leg: ChargeRevenueSplitLeg): ChargeRevenueSplitLeg {
+    const participants = this.snapshotParticipants.get(leg.snapshotId) || [];
+    const participant = participants.find((row) => row.id === leg.snapshotParticipantId);
+    return {
+      ...leg,
+      displayName: participant?.displayName || leg.displayName,
+      isIssuerRemainder: participant?.isIssuerRemainder ?? leg.isIssuerRemainder,
+    };
+  }
+
+  async listLegsBySale(saleId: string): Promise<ChargeRevenueSplitLeg[]> {
+    return this.legs.filter((row) => row.saleId === saleId).map((row) => this.hydrateLeg(row));
+  }
+
+  async listLegsByInstallment(installmentId: string): Promise<ChargeRevenueSplitLeg[]> {
+    return this.legs
+      .filter((row) => row.installmentId === installmentId)
+      .map((row) => this.hydrateLeg(row));
+  }
+
+  async listLegsByCharge(chargeId: string): Promise<ChargeRevenueSplitLeg[]> {
+    return this.legs.filter((row) => row.chargeId === chargeId).map((row) => this.hydrateLeg(row));
+  }
+
+  async getLegById(legId: string): Promise<ChargeRevenueSplitLeg | null> {
+    const found = this.legs.find((row) => row.id === legId);
+    return found ? this.hydrateLeg(found) : null;
+  }
+
+  async upsertLegs(drafts: ChargeRevenueSplitLegDraft[]): Promise<ChargeRevenueSplitLeg[]> {
+    const timestamp = nowIso();
+    const out: ChargeRevenueSplitLeg[] = [];
+    for (const draft of drafts) {
+      const index = this.legs.findIndex(
+        (row) =>
+          row.installmentId === draft.installmentId &&
+          row.snapshotParticipantId === draft.snapshotParticipantId,
+      );
+      const existing = index >= 0 ? this.legs[index] : null;
+      const next: ChargeRevenueSplitLeg = {
+        id: existing?.id || newId(),
+        companyId: draft.companyId,
+        saleId: draft.saleId,
+        installmentId: draft.installmentId,
+        chargeId: draft.chargeId,
+        snapshotId: draft.snapshotId,
+        snapshotParticipantId: draft.snapshotParticipantId,
+        provider: draft.provider,
+        providerSplitId: draft.providerSplitId,
+        destinationType: draft.destinationType,
+        destinationIdentifier: draft.destinationIdentifier,
+        sharePercent: draft.sharePercent,
+        isIssuerRemainder: draft.isIssuerRemainder,
+        displayName: draft.displayName,
+        grossAmountEstimate: draft.grossAmountEstimate,
+        netAmount: draft.netAmount,
+        status: draft.status,
+        failureReason: draft.failureReason,
+        createdAt: existing?.createdAt || timestamp,
+        updatedAt: timestamp,
+      };
+      if (index >= 0) this.legs[index] = next;
+      else this.legs.push(next);
+      out.push(this.hydrateLeg(next));
+    }
+    return out;
+  }
+
+  async updateLeg(
+    legId: string,
+    companyId: string,
+    patch: ChargeRevenueSplitLegPatch,
+  ): Promise<ChargeRevenueSplitLeg> {
+    const index = this.legs.findIndex((row) => row.id === legId && row.companyId === companyId);
+    if (index < 0) throw new Error('Perna de split não encontrada.');
+    const current = this.legs[index];
+    const next: ChargeRevenueSplitLeg = {
+      ...current,
+      chargeId: patch.chargeId === undefined ? current.chargeId : patch.chargeId,
+      providerSplitId:
+        patch.providerSplitId === undefined ? current.providerSplitId : patch.providerSplitId,
+      destinationType:
+        patch.destinationType === undefined ? current.destinationType : patch.destinationType,
+      destinationIdentifier:
+        patch.destinationIdentifier === undefined
+          ? current.destinationIdentifier
+          : patch.destinationIdentifier,
+      sharePercent: patch.sharePercent === undefined ? current.sharePercent : patch.sharePercent,
+      grossAmountEstimate:
+        patch.grossAmountEstimate === undefined
+          ? current.grossAmountEstimate
+          : patch.grossAmountEstimate,
+      netAmount: patch.netAmount === undefined ? current.netAmount : patch.netAmount,
+      status: patch.status === undefined ? current.status : patch.status,
+      failureReason:
+        patch.failureReason === undefined ? current.failureReason : patch.failureReason,
+      updatedAt: nowIso(),
+    };
+    this.legs[index] = next;
+    return this.hydrateLeg(next);
   }
 }

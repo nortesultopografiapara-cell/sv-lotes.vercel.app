@@ -138,6 +138,31 @@ export type ChargeRevenueSplitLegDraft = {
   failureReason: string | null;
 };
 
+/**
+ * Perna persistida. displayName / isIssuerRemainder vêm do snapshot
+ * (não existem na tabela charge_revenue_split_legs).
+ *
+ * Decisão Fase 3: o emissor também tem leg local para a UI mostrar 100%
+ * da divisão. Essa perna não possui provider_split_id remoto.
+ */
+export type ChargeRevenueSplitLeg = ChargeRevenueSplitLegDraft & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChargeRevenueSplitLegPatch = {
+  chargeId?: string | null;
+  providerSplitId?: string | null;
+  destinationType?: string | null;
+  destinationIdentifier?: string | null;
+  sharePercent?: number;
+  grossAmountEstimate?: number | null;
+  netAmount?: number | null;
+  status?: RevenueSplitLegStatus;
+  failureReason?: string | null;
+};
+
 export type RevenueSplitProjectRecord = {
   id: string;
   companyId: string;

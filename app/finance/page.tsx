@@ -12,6 +12,7 @@ import {
   FinanceTableLoading,
   PaymentTableRow,
 } from '@/components/finance/FinancePremiumUI';
+import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -3821,7 +3822,12 @@ export default function FinancePage() {
                 </div>
               </div>
               <div className="pt-4 border-t border-[var(--border-color)]">
-                <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-1">
+                <ChargeRevenueSplitDistribution
+                  saleId={selectedPayment.sale_id}
+                  installmentId={selectedPayment.id}
+                  paymentStatus={selectedPayment.status}
+                />
+                <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-1 mt-4">
                   <div>Sale ID: {selectedPayment.sale_id || '-'}</div>
                   <div>Customer ID: {selectedPayment.customer_id || '-'}</div>
                   <div>Receipt ID: {selectedPayment.id}</div>

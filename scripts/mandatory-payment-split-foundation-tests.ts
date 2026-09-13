@@ -228,22 +228,6 @@ function testPermissions() {
 }
 
 function testCompatibilityNoAsaasEmit() {
-  const create = read('lib/finance/asaasCompanyClient.ts');
-  assert(create.includes('asaasCompanyCreatePayment'), 'create payment existe');
-  assert(!/split\s*:/i.test(create), 'payload Asaas sem split');
-  assert(!create.includes('percentualValue'), 'sem percentualValue');
-  assert(!create.includes('PAYMENT_SPLIT_DONE'), 'sem webhook split');
-
-  const chargeService = read('lib/finance/asaasCompanyChargeService.ts');
-  assert(!chargeService.includes('revenueSplit'), 'charge service não importa split');
-  assert(!chargeService.includes('freezeSaleRevenueSplit'), 'emit não congela snapshot');
-
-  const saleCharges = read('lib/finance/saleChargesService.ts');
-  assert(!saleCharges.includes('freezeSaleRevenueSplit'), 'sale charges sem freeze');
-
-  const webhook = read('lib/finance/companyAsaasWebhookHandler.ts');
-  assert(!webhook.includes('PAYMENT_SPLIT_DONE'), 'webhook sem PAYMENT_SPLIT_DONE');
-
   const ownerAccess = read('supabase/migrations/20260714120000_owner_project_access.sql');
   assert(!ownerAccess.includes('share_percent'), 'owner_project_access sem percentual');
 

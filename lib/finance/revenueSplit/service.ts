@@ -1,5 +1,6 @@
 import { REVENUE_SPLIT_DEFAULT_CURRENCY, RevenueSplitError } from './types';
 import type {
+  ChargeRevenueSplitLeg,
   ChargeRevenueSplitLegDraft,
   FreezeSaleRevenueSplitResult,
   GetProjectRevenueSplitResult,
@@ -145,13 +146,11 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
     });
   }
 
-  async function freezeSaleRevenueSplit(input: {
-    actor: RevenueSplitActor;
+  async function ensureSaleRevenueSplitSnapshot(input: {
     companyId: string;
     saleId: string;
     provider?: string | null;
   }): Promise<FreezeSaleRevenueSplitResult> {
-    assertCanManageRevenueSplit(input.actor, input.companyId);
     const sale = await store.getSale(input.saleId);
     if (!sale) {
       throw new RevenueSplitError('SALE_NOT_FOUND', 'Venda não encontrada.');
@@ -236,6 +235,50 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
       snapshot: inserted.snapshot,
       participants: inserted.participants,
     };
+  }
+
+  async function freezeSaleRevenueSplit(input: {
+    actor: RevenueSplitActor;
+    companyId: string;
+    saleId: string;
+    provider?: string | null;
+  }): Promise<FreezeSaleRevenueSplitResult> {
+    assertCanManageRevenueSplit(input.actor, input.companyId);
+    return ensureSaleRevenueSplitSnapshot(input);
+  }
+
+  async function getSaleRevenueSplitView(saleId: string, companyId: string) {
+    const sale = await store.getSale(saleId);
+    if (!sale) {
+      throw new RevenueSplitError('SALE_NOT_FOUND', 'Venda não encontrada.');
+    }
+    if (sale.companyId !== companyId) {
+      throw new RevenueSplitError('SALE_TENANT_MISMATCH', 'Venda não pertence a esta empresa.');
+    }
+    const snapshot = await store.getSnapshotBySale(saleId);
+    const participants = snapshot ? await store.getSnapshotParticipants(snapshot.id) : [];
+    const legs = await store.listLegsBySale(saleId);
+    const project = await getProjectRevenueSplit(sale.projectId, companyId);
+    return {
+      saleId,
+      projectId: sale.projectId,
+      operational: project.operational,
+      snapshot,
+      participants,
+      legs,
+    };
+  }
+
+  async function materializeChargeRevenueSplitLegs(input: {
+    snapshot: SaleRevenueSplitSnapshot;
+    participants: SaleRevenueSplitSnapshotParticipant[];
+    installmentId: string;
+    chargeId?: string | null;
+    provider: string;
+    grossAmount?: number | null;
+  }): Promise<ChargeRevenueSplitLeg[]> {
+    const drafts = planChargeRevenueSplitLegs(input);
+    return store.upsertLegs(drafts);
   }
 
   async function inspectProjectRevenueSplit(input: {
@@ -347,6 +390,9 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
     inspectProjectRevenueSplit,
     saveProjectRevenueSplit,
     freezeSaleRevenueSplit,
+    ensureSaleRevenueSplitSnapshot,
+    getSaleRevenueSplitView,
+    materializeChargeRevenueSplitLegs,
     upsertAsaasWalletDestination,
     listOwnerParticipations,
   };

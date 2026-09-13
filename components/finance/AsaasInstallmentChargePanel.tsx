@@ -13,6 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
 import {
   formatCompanyAsaasChargeStatusLabel,
   isActiveCompanyAsaasChargeStatus,
@@ -33,6 +34,9 @@ type Props = {
   onRegenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onClearError?: () => void;
   formatCurrency: (value: number) => string;
+  saleId?: string | null;
+  installmentId?: string | null;
+  paymentStatus?: string | null;
 };
 
 async function copyText(value: string): Promise<boolean> {
@@ -75,6 +79,9 @@ export function AsaasInstallmentChargePanel({
   onRegenerate,
   onClearError,
   formatCurrency,
+  saleId,
+  installmentId,
+  paymentStatus,
 }: Props) {
   const [billingType, setBillingType] = useState<'PIX' | 'BOLETO'>('PIX');
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -320,6 +327,12 @@ export function AsaasInstallmentChargePanel({
           </div>
         </div>
       ) : null}
+      <ChargeRevenueSplitDistribution
+        saleId={saleId || charge?.saleId}
+        installmentId={installmentId || charge?.installmentId}
+        paymentStatus={paymentStatus || (charge?.status === 'PAID' ? 'pago' : 'pendente')}
+        compact
+      />
     </div>
   );
 }

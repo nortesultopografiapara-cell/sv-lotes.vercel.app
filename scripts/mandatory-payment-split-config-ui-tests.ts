@@ -209,17 +209,12 @@ function testUiAndApiFiles() {
 }
 
 function testCompatibilityNoAsaasEmit() {
-  const create = read('lib/finance/asaasCompanyClient.ts');
-  assert(!/split\s*:/i.test(create), 'payload Asaas sem split');
-  assert(!create.includes('percentualValue'), 'sem percentualValue');
-  const chargeService = read('lib/finance/asaasCompanyChargeService.ts');
-  assert(!chargeService.includes('freezeSaleRevenueSplit'), 'emit não congela');
-  const saleCharges = read('lib/finance/saleChargesService.ts');
-  assert(!saleCharges.includes('freezeSaleRevenueSplit'), 'sale charges sem freeze');
-  const webhook = read('lib/finance/companyAsaasWebhookHandler.ts');
-  assert(!webhook.includes('PAYMENT_SPLIT_DONE'), 'webhook sem PAYMENT_SPLIT_DONE');
   const ownerAccess = read('supabase/migrations/20260714120000_owner_project_access.sql');
   assert(!ownerAccess.includes('share_percent'), 'owner_project_access sem %');
+  const chargeService = read('lib/finance/asaasCompanyChargeService.ts');
+  assert(!chargeService.includes('freezeSaleRevenueSplit'), 'emit usa ensure, não freeze admin');
+  const saleCharges = read('lib/finance/saleChargesService.ts');
+  assert(!saleCharges.includes('freezeSaleRevenueSplit'), 'sale charges sem freeze');
   console.log('OK testCompatibilityNoAsaasEmit');
 }
 
