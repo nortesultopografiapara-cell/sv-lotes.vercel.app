@@ -27,6 +27,7 @@ import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowL
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
+import { ProjectRevenueSplitPanel } from '@/components/projects/ProjectRevenueSplitPanel';
 import { MemorialGenerateModal } from '@/components/map/MemorialGenerateModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
@@ -3188,7 +3189,7 @@ export default function MapPage() {
 
   const renderProjectFormModal = () => (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-lg overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
+        <div className={`bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col ${projectFormMode === 'edit' ? 'max-w-2xl' : 'max-w-lg'}`}>
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
             <h3 className="font-bold text-[var(--text-primary)] text-lg">
               {projectFormMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
@@ -3201,7 +3202,8 @@ export default function MapPage() {
               <X className="w-5 h-5" />
             </button>
           </div>
-          <form onSubmit={handleProjectFormSubmit} className="p-6 flex flex-col gap-4 overflow-y-auto">
+          <div className="p-6 flex flex-col gap-4 overflow-y-auto">
+          <form onSubmit={handleProjectFormSubmit} className="flex flex-col gap-4">
             {projectFeedback && (
               <div
                 role="alert"
@@ -3393,6 +3395,14 @@ export default function MapPage() {
                      )}
             </button>
           </form>
+            {projectFormMode === 'edit' && editingProject?.id ? (
+              <ProjectRevenueSplitPanel
+                projectId={editingProject.id}
+                projectName={newProjectName}
+                accounts={projectFinancialAccounts}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
   );

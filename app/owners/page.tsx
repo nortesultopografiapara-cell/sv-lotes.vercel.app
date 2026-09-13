@@ -14,6 +14,7 @@ import {
   Mail,
   Phone,
   KeyRound,
+  Percent,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
@@ -29,6 +30,7 @@ import {
   type AccessEntry,
   type ProjectOption,
 } from '@/components/owners/OwnerProjectAccessEditor';
+import { OwnerRevenueSplitModal } from '@/components/owners/OwnerRevenueSplitModal';
 import { canManageOwners } from '@/lib/rolePermissions';
 import { callOwnersApi, OwnersApiError } from '@/lib/ownersApiClient';
 import { supabase } from '@/lib/supabase';
@@ -105,6 +107,7 @@ export default function OwnersPage() {
   const [form, setForm] = useState<FormState>(emptyForm());
   const [entries, setEntries] = useState<AccessEntry[]>([]);
   const [tempPasswordInfo, setTempPasswordInfo] = useState<string | null>(null);
+  const [splitOwner, setSplitOwner] = useState<OwnerRecord | null>(null);
 
   const canAccess = canManageOwners(user?.role);
 
@@ -495,6 +498,15 @@ export default function OwnersPage() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setSplitOwner(owner)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-bg)]"
+                        title="Participação financeira"
+                      >
+                        <Percent className="h-4 w-4" />
+                        <span className="hidden lg:inline">Participação financeira</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void toggleOwnerStatus(owner)}
                         className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-bg)]"
                         title={(owner.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'Ativar' : 'Inativar'}
@@ -683,6 +695,14 @@ export default function OwnersPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {splitOwner ? (
+        <OwnerRevenueSplitModal
+          ownerId={splitOwner.id}
+          ownerName={splitOwner.full_name || splitOwner.name || splitOwner.email}
+          onClose={() => setSplitOwner(null)}
+        />
       ) : null}
     </div>
   );

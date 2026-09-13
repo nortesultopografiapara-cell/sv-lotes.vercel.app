@@ -16,9 +16,20 @@ export type SaveProjectRevenueSplitInput = {
   enabled: boolean;
   status: ProjectRevenueSplitConfig['status'];
   currency?: string;
-  participants: Array<Omit<ProjectRevenueSplitParticipant, 'id' | 'configId' | 'createdAt' | 'updatedAt'> & {
-    id?: string;
-  }>;
+  participants: Array<
+    Omit<ProjectRevenueSplitParticipant, 'id' | 'configId' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+    }
+  >;
+};
+
+export type UpsertRevenueSplitDestinationInput = {
+  companyId: string;
+  financialAccountId: string;
+  provider: string;
+  destinationType: FinancialAccountProviderDestination['destinationType'];
+  destinationIdentifier: string;
+  status?: FinancialAccountProviderDestination['status'];
 };
 
 export interface RevenueSplitStore {
@@ -29,7 +40,17 @@ export interface RevenueSplitStore {
 
   getConfigByProject(projectId: string): Promise<ProjectRevenueSplitConfig | null>;
   getParticipants(configId: string): Promise<ProjectRevenueSplitParticipant[]>;
-  listDestinations(companyId: string, financialAccountIds: string[]): Promise<FinancialAccountProviderDestination[]>;
+  listDestinations(
+    companyId: string,
+    financialAccountIds: string[],
+  ): Promise<FinancialAccountProviderDestination[]>;
+  upsertDestination(
+    input: UpsertRevenueSplitDestinationInput,
+  ): Promise<FinancialAccountProviderDestination>;
+  listParticipationsByUser(
+    companyId: string,
+    userId: string,
+  ): Promise<ProjectRevenueSplitParticipant[]>;
 
   saveConfig(input: SaveProjectRevenueSplitInput): Promise<{
     config: ProjectRevenueSplitConfig;
@@ -44,9 +65,11 @@ export interface RevenueSplitStore {
       frozenAt?: string;
       createdAt?: string;
     };
-    participants: Array<Omit<SaleRevenueSplitSnapshotParticipant, 'id' | 'snapshotId' | 'createdAt'> & {
-      id?: string;
-    }>;
+    participants: Array<
+      Omit<SaleRevenueSplitSnapshotParticipant, 'id' | 'snapshotId' | 'createdAt'> & {
+        id?: string;
+      }
+    >;
   }): Promise<{
     snapshot: SaleRevenueSplitSnapshot;
     participants: SaleRevenueSplitSnapshotParticipant[];

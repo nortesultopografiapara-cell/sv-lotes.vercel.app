@@ -238,10 +238,117 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
     };
   }
 
+  async function inspectProjectRevenueSplit(input: {
+    companyId: string;
+    projectId: string;
+    enabled: boolean;
+    status: 'DRAFT' | 'ACTIVE' | 'INACTIVE';
+    participants: ProjectRevenueSplitParticipantInput[];
+  }) {
+    const mode: RevenueSplitValidationMode =
+      input.enabled && input.status === 'ACTIVE' ? 'activate' : 'draft';
+    const context = await buildValidationContext(
+      store,
+      input.companyId,
+      input.projectId,
+      input.participants,
+    );
+    return validateProjectRevenueSplit(
+      {
+        companyId: input.companyId,
+        projectId: input.projectId,
+        enabled: input.enabled,
+        status: input.status,
+      },
+      input.participants,
+      context,
+      mode,
+    );
+  }
+
+  async function getProjectRevenueSplitView(projectId: string, companyId: string) {
+    const result = await getProjectRevenueSplit(projectId, companyId);
+    const accountIds = [
+      ...new Set(
+        result.participants
+          .map((row) => String(row.financialAccountId || '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    const destinations = await store.listDestinations(companyId, accountIds);
+    const activation = await inspectProjectRevenueSplit({
+      companyId,
+      projectId,
+      enabled: true,
+      status: 'ACTIVE',
+      participants: result.participants,
+    });
+    return { ...result, destinations, activation };
+  }
+
+  async function upsertAsaasWalletDestination(input: {
+    actor: RevenueSplitActor;
+    companyId: string;
+    financialAccountId: string;
+    walletId: string;
+  }) {
+    assertCanManageRevenueSplit(input.actor, input.companyId);
+    const identifier = String(input.walletId || '').trim();
+    if (!identifier) {
+      throw new RevenueSplitError('WALLET_REQUIRED', 'Informe o Wallet ID da conta Asaas.');
+    }
+    if (/api[_-]?key|secret|token|password|aact_/i.test(identifier)) {
+      throw new RevenueSplitError(
+        'WALLET_REJECTED',
+        'Informe apenas o Wallet ID. Não envie API key, token ou senha.',
+      );
+    }
+    const account = await store.getFinancialAccount(input.financialAccountId);
+    if (!account) {
+      throw new RevenueSplitError('FINANCIAL_ACCOUNT_NOT_FOUND', 'Conta financeira não encontrada.');
+    }
+    if (account.companyId !== input.companyId) {
+      throw new RevenueSplitError(
+        'FINANCIAL_ACCOUNT_TENANT_MISMATCH',
+        'Não é permitido usar conta financeira de outra empresa.',
+      );
+    }
+    return store.upsertDestination({
+      companyId: input.companyId,
+      financialAccountId: input.financialAccountId,
+      provider: 'ASAAS_COMPANY',
+      destinationType: 'WALLET_ID',
+      destinationIdentifier: identifier,
+      status: 'ACTIVE',
+    });
+  }
+
+  async function listOwnerParticipations(input: {
+    actor: RevenueSplitActor;
+    companyId: string;
+    userId: string;
+  }) {
+    assertCanManageRevenueSplit(input.actor, input.companyId);
+    const user = await store.getUser(input.userId);
+    if (!user || user.companyId !== input.companyId) {
+      throw new RevenueSplitError('USER_TENANT_MISMATCH', 'Usuário não pertence a esta empresa.');
+    }
+    const participants = await store.listParticipationsByUser(input.companyId, input.userId);
+    const destinations = await store.listDestinations(
+      input.companyId,
+      participants.map((row) => String(row.financialAccountId || '').trim()).filter(Boolean),
+    );
+    return { participants, destinations };
+  }
+
   return {
     getProjectRevenueSplit,
+    getProjectRevenueSplitView,
+    inspectProjectRevenueSplit,
     saveProjectRevenueSplit,
     freezeSaleRevenueSplit,
+    upsertAsaasWalletDestination,
+    listOwnerParticipations,
   };
 }
 

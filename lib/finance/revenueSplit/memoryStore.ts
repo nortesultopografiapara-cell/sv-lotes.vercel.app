@@ -186,4 +186,48 @@ export class MemoryRevenueSplitStore implements RevenueSplitStore {
     this.snapshotParticipants.set(snapshot.id, participants);
     return { snapshot, participants };
   }
+
+  async upsertDestination(input: {
+    companyId: string;
+    financialAccountId: string;
+    provider: string;
+    destinationType: FinancialAccountProviderDestination['destinationType'];
+    destinationIdentifier: string;
+    status?: FinancialAccountProviderDestination['status'];
+  }): Promise<FinancialAccountProviderDestination> {
+    const timestamp = nowIso();
+    const existingIndex = this.destinations.findIndex(
+      (row) =>
+        row.financialAccountId === input.financialAccountId &&
+        row.provider === input.provider &&
+        row.destinationType === input.destinationType,
+    );
+    const next: FinancialAccountProviderDestination = {
+      id: existingIndex >= 0 ? this.destinations[existingIndex].id : newId(),
+      companyId: input.companyId,
+      financialAccountId: input.financialAccountId,
+      provider: input.provider,
+      destinationType: input.destinationType,
+      destinationIdentifier: String(input.destinationIdentifier || '').trim(),
+      status: input.status || 'ACTIVE',
+      createdAt: existingIndex >= 0 ? this.destinations[existingIndex].createdAt : timestamp,
+      updatedAt: timestamp,
+    };
+    if (existingIndex >= 0) this.destinations[existingIndex] = next;
+    else this.destinations.push(next);
+    return next;
+  }
+
+  async listParticipationsByUser(
+    companyId: string,
+    userId: string,
+  ): Promise<ProjectRevenueSplitParticipant[]> {
+    const out: ProjectRevenueSplitParticipant[] = [];
+    for (const rows of this.participants.values()) {
+      for (const row of rows) {
+        if (row.companyId === companyId && row.userId === userId && row.active) out.push(row);
+      }
+    }
+    return out;
+  }
 }
