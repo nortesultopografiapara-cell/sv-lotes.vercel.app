@@ -1,17 +1,22 @@
 /**
- * Fase 3 — emissão Asaas Company com Split (Sandbox).
+ * Emissão Asaas Company com Split (Sandbox e Production).
  * npx tsx scripts/mandatory-payment-split-asaas-emit-tests.ts
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildAsaasCompanyCreatePaymentBody } from '../lib/finance/asaasCompanyClient';
 import {
+  ASAAS_WALLET_PRODUCTION_KEY_ON_SANDBOX_MESSAGE,
+  ASAAS_WALLET_SANDBOX_KEY_ON_PRODUCTION_MESSAGE,
+  assertAsaasApiKeyMatchesEnvironment,
+} from '../lib/finance/asaasWalletId';
+import {
   INTER_REVENUE_SPLIT_UNSUPPORTED_MESSAGE,
   MemoryRevenueSplitStore,
   RevenueSplitError,
   applyAsaasSplitWebhookToLegs,
   assertAsaasCompanySplitWalletsPresent,
-  assertAsaasSandboxForSplit,
+  assertAsaasSplitEnvironmentAllowed,
   buildAsaasCompanyRemoteSplits,
   classifyCompanyAsaasWebhookEvent,
   createRevenueSplitService,
@@ -169,7 +174,7 @@ function testRemoteCounts() {
   console.log('OK testRemoteCounts');
 }
 
-function testWalletMissingAndSandboxGuard() {
+function testWalletMissingAndEnvironmentGuard() {
   const legs: ChargeRevenueSplitLeg[] = [
     {
       id: 'i',
@@ -222,14 +227,33 @@ function testWalletMissingAndSandboxGuard() {
   } catch (err) {
     assert(err instanceof RevenueSplitError && err.code === 'WALLET_MISSING', 'wallet ausente');
   }
+  assertAsaasSplitEnvironmentAllowed('SANDBOX');
+  assertAsaasSplitEnvironmentAllowed('PRODUCTION');
+  console.log('OK testWalletMissingAndEnvironmentGuard');
+}
+
+function testKeyEnvironmentMismatchBlocked() {
   try {
-    assertAsaasSandboxForSplit('PRODUCTION');
-    throw new Error('deveria bloquear production');
+    assertAsaasApiKeyMatchesEnvironment('$aact_hmlg_xxx', 'PRODUCTION');
+    throw new Error('devia bloquear chave Sandbox em Production');
   } catch (err) {
-    assert(err instanceof RevenueSplitError && err.code === 'SANDBOX_ONLY', 'sandbox only');
+    assert(
+      err instanceof Error && err.message === ASAAS_WALLET_SANDBOX_KEY_ON_PRODUCTION_MESSAGE,
+      'Production + aact_hmlg_ bloqueado',
+    );
   }
-  assertAsaasSandboxForSplit('SANDBOX');
-  console.log('OK testWalletMissingAndSandboxGuard');
+  try {
+    assertAsaasApiKeyMatchesEnvironment('$aact_prod_xxx', 'SANDBOX');
+    throw new Error('devia bloquear chave Production em Sandbox');
+  } catch (err) {
+    assert(
+      err instanceof Error && err.message === ASAAS_WALLET_PRODUCTION_KEY_ON_SANDBOX_MESSAGE,
+      'Sandbox + aact_prod_ bloqueado',
+    );
+  }
+  assertAsaasApiKeyMatchesEnvironment('$aact_hmlg_xxx', 'SANDBOX');
+  assertAsaasApiKeyMatchesEnvironment('$aact_prod_xxx', 'PRODUCTION');
+  console.log('OK testKeyEnvironmentMismatchBlocked');
 }
 
 async function testSnapshotOnceAndReissueUsesSame() {
@@ -329,6 +353,40 @@ async function testPreparePayloadCounts() {
   console.log('OK testPreparePayloadCounts');
 }
 
+async function testPrepareSandboxAndProduction4060() {
+  for (const environment of ['SANDBOX', 'PRODUCTION'] as const) {
+    const store = seedBase();
+    await activate(store, [40, 60]);
+    const prepared = await prepareAsaasCompanyChargeSplit({
+      store,
+      companyId: COMPANY,
+      saleId: SALE_A,
+      installmentId: `inst-${environment.toLowerCase()}`,
+      grossAmount: 10,
+      environment,
+    });
+    assert(prepared.enabled, `${environment} 40/60 enabled`);
+    assert(prepared.legs.length === 2, `${environment} 2 legs locais`);
+    assert(prepared.remoteSplits.length === 1, `${environment} 1 split remoto`);
+    assert(prepared.remoteSplits[0].percentualValue === 60, `${environment} destinatário 60`);
+    assert(
+      prepared.legs.some((leg) => leg.isIssuerRemainder && leg.sharePercent === 40),
+      `${environment} emissor 40 local`,
+    );
+    const body = buildAsaasCompanyCreatePaymentBody({
+      customerId: 'cus',
+      billingType: 'PIX',
+      value: 10,
+      dueDate: '2026-10-01',
+      description: 'teste 40/60',
+      externalReference: `inst-${environment.toLowerCase()}`,
+      split: prepared.remoteSplits,
+    });
+    assert(Array.isArray(body.split) && (body.split as unknown[]).length === 1, `${environment} payload split`);
+  }
+  console.log('OK testPrepareSandboxAndProduction4060');
+}
+
 async function testPrepareMissingWalletBlocks() {
   const store = seedBase();
   await store.insertSnapshot({
@@ -385,21 +443,92 @@ async function testPrepareMissingWalletBlocks() {
     assert(err instanceof RevenueSplitError && err.code === 'WALLET_MISSING', 'wallet bloqueia emissão');
   }
   try {
-    const storeProd = seedBase();
-    await activate(storeProd, [40, 60]);
     await prepareAsaasCompanyChargeSplit({
-      store: storeProd,
+      store,
       companyId: COMPANY,
       saleId: SALE_A,
-      installmentId: 'inst-prod',
+      installmentId: 'inst-w-prod',
       grossAmount: 100,
       environment: 'PRODUCTION',
     });
-    throw new Error('deveria bloquear production');
+    throw new Error('deveria bloquear wallet Production');
   } catch (err) {
-    assert(err instanceof RevenueSplitError && err.code === 'SANDBOX_ONLY', 'production bloqueada');
+    assert(
+      err instanceof RevenueSplitError && err.code === 'WALLET_MISSING',
+      'destinatário sem Wallet Production bloqueia',
+    );
   }
   console.log('OK testPrepareMissingWalletBlocks');
+}
+
+async function testSandboxWalletRejectedOnProductionEmit() {
+  const store = seedBase();
+  await store.insertSnapshot({
+    snapshot: {
+      companyId: COMPANY,
+      projectId: PROJECT,
+      saleId: SALE_A,
+      sourceConfigId: null,
+      provider: 'ASAAS_COMPANY',
+      currency: 'BRL',
+    },
+    participants: [
+      {
+        companyId: COMPANY,
+        sourceParticipantId: null,
+        displayName: 'Beleza Imobiliária',
+        partyKind: 'ISSUER',
+        userId: null,
+        financialAccountId: FA_ISSUER,
+        destinationProvider: null,
+        destinationType: null,
+        destinationIdentifier: null,
+        sharePercent: 40,
+        isIssuerRemainder: true,
+        sortOrder: 0,
+      },
+      {
+        companyId: COMPANY,
+        sourceParticipantId: null,
+        displayName: 'Ana Vitória',
+        partyKind: 'OWNER',
+        userId: null,
+        financialAccountId: FA_A,
+        destinationProvider: 'ASAAS_COMPANY',
+        destinationType: 'WALLET_ID',
+        destinationIdentifier: 'wal_sandbox_ana1234',
+        sharePercent: 60,
+        isIssuerRemainder: false,
+        sortOrder: 1,
+      },
+    ],
+  });
+  try {
+    await prepareAsaasCompanyChargeSplit({
+      store,
+      companyId: COMPANY,
+      saleId: SALE_A,
+      installmentId: 'inst-sandbox-wallet',
+      grossAmount: 10,
+      environment: 'PRODUCTION',
+    });
+    throw new Error('deveria recusar wallet Sandbox em Production');
+  } catch (err) {
+    assert(
+      err instanceof RevenueSplitError && err.code === 'WALLET_ENVIRONMENT_MISMATCH',
+      'wallet Sandbox não reutiliza em Production',
+    );
+  }
+  const preparedSandbox = await prepareAsaasCompanyChargeSplit({
+    store,
+    companyId: COMPANY,
+    saleId: SALE_A,
+    installmentId: 'inst-sandbox-ok',
+    grossAmount: 10,
+    environment: 'SANDBOX',
+  });
+  assert(preparedSandbox.enabled, 'mesma wallet Sandbox emite no Sandbox');
+  console.log('OK testSandboxWalletRejectedOnProductionEmit');
 }
 
 async function testWebhookSplitDoesNotPayInstallment() {
@@ -514,6 +643,11 @@ function testSourceWiring() {
   const adapter = read('lib/finance/revenueSplit/asaasCompanySplitAdapter.ts');
   assert(adapter.includes('supportsSplit: true'), 'adapter supportsSplit');
   assert(adapter.includes('NÃO entra no array') || adapter.includes('Nao entra') || adapter.includes('não inclui'), 'emissor fora');
+  assert(!adapter.includes('SANDBOX_ONLY'), 'gate SANDBOX_ONLY removido');
+  assert(adapter.includes('assertAsaasSplitEnvironmentAllowed'), 'ambiente SANDBOX e PRODUCTION');
+  assert(!charge.includes('SANDBOX_ONLY'), 'emissão company sem SANDBOX_ONLY');
+  const repo = read('lib/finance/companyFinancialAccountRepository.ts');
+  assert(repo.includes('assertAsaasApiKeyMatchesEnvironment'), 'chave casa com ambiente na carga');
   console.log('OK testSourceWiring');
 }
 
@@ -548,10 +682,13 @@ async function testInterGuard() {
 async function main() {
   testPayloadWithoutSplitUnchanged();
   testRemoteCounts();
-  testWalletMissingAndSandboxGuard();
+  testWalletMissingAndEnvironmentGuard();
+  testKeyEnvironmentMismatchBlocked();
   await testSnapshotOnceAndReissueUsesSame();
   await testPreparePayloadCounts();
+  await testPrepareSandboxAndProduction4060();
   await testPrepareMissingWalletBlocks();
+  await testSandboxWalletRejectedOnProductionEmit();
   await testWebhookSplitDoesNotPayInstallment();
   testSourceWiring();
   await testInterGuard();

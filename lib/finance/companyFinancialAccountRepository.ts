@@ -462,6 +462,9 @@ export async function loadAsaasApiKeyForFinancialAccount(
   const apiKey = decryptBankingSecret((data as { encrypted_payload: string }).encrypted_payload);
   if (!apiKey) throw new Error('API Key Asaas inválida para esta conta financeira.');
 
+  const { assertAsaasApiKeyMatchesEnvironment } = await import('@/lib/finance/asaasWalletId');
+  assertAsaasApiKeyMatchesEnvironment(apiKey, env);
+
   return {
     apiKey,
     environment: env,
