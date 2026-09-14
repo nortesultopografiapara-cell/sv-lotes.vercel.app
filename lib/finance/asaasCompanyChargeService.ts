@@ -6,6 +6,10 @@ import {
 import { loadAsaasApiKeyForFinancialAccount } from './companyFinancialAccountRepository';
 import { resolveFinancialAccountForInstallment } from './companyFinancialAccountResolver';
 import {
+  parseFinancialAccountId,
+  resolveUniqueProviderAccount,
+} from './financialAccountRequired';
+import {
   asaasCompanyCancelPayment,
   asaasCompanyCreatePayment,
   asaasCompanyEnrichPaymentArtifacts,
@@ -110,6 +114,22 @@ export class CompanyAsaasCustomerDocumentMissingError extends Error {
     super(message);
     this.name = 'CompanyAsaasCustomerDocumentMissingError';
   }
+}
+
+async function resolveExistingChargeFinancialAccountId(
+  admin: SupabaseClient,
+  companyId: string,
+  chargeFinancialAccountId: string | null | undefined,
+): Promise<string> {
+  const explicit = parseFinancialAccountId(chargeFinancialAccountId);
+  if (explicit) return explicit;
+
+  const unique = await resolveUniqueProviderAccount(admin, companyId, 'ASAAS_COMPANY');
+  if (unique.financialAccountId) return unique.financialAccountId;
+
+  throw new CompanyAsaasIntegrationInactiveError(
+    'Cobrança sem conta financeira vinculada. Informe financial_account_id ou mantenha apenas uma conta Asaas ativa.',
+  );
 }
 
 async function resolveCompanyAsaasCredentialsFromAccountId(
@@ -371,12 +391,11 @@ export async function getCompanyChargeStatus(
   if (!data) throw new Error('Cobrança não encontrada.');
 
   const existingRow = data as CompanyAsaasChargeRow;
-  const financialAccountId = existingRow.financial_account_id;
-  if (!financialAccountId) {
-    throw new CompanyAsaasIntegrationInactiveError(
-      'Cobrança sem conta financeira vinculada. Regenerar a cobrança para corrigir.',
-    );
-  }
+  const financialAccountId = await resolveExistingChargeFinancialAccountId(
+    admin,
+    companyId,
+    existingRow.financial_account_id,
+  );
 
   const { apiKey, environment } = await resolveCompanyAsaasCredentialsFromAccountId(
     admin,
@@ -566,12 +585,11 @@ export async function cancelCompanyCharge(
     throw new Error('Cobrança já paga — cancelamento não permitido.');
   }
 
-  const financialAccountId = (data as { financial_account_id?: string | null }).financial_account_id;
-  if (!financialAccountId) {
-    throw new CompanyAsaasIntegrationInactiveError(
-      'Cobrança sem conta financeira vinculada. Regenerar a cobrança para corrigir.',
-    );
-  }
+  const financialAccountId = await resolveExistingChargeFinancialAccountId(
+    admin,
+    companyId,
+    (data as { financial_account_id?: string | null }).financial_account_id,
+  );
 
   const { apiKey, environment } = await resolveCompanyAsaasCredentialsFromAccountId(
     admin,

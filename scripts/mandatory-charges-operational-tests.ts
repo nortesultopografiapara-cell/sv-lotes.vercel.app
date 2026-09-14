@@ -685,6 +685,34 @@ function testChargesUsesSameIntegrationReadyRuleAsSettings() {
   assert(resolveChargesIntegrationReady(null, true), 'api ready flag ativa integração');
   assert(!resolveChargesIntegrationReady(null, false), 'sem config e sem flag = inativa');
 
+  const {
+    resolveAsaasSyncInstallmentIds,
+  } = require('../lib/charges/chargeIntegrationHelpers') as typeof import('../lib/charges/chargeIntegrationHelpers');
+  const allAccountIds = resolveAsaasSyncInstallmentIds({
+    rows: [
+      { id: 'inst-1', financial_account_id: 'fa-a' },
+      { id: 'inst-2', financial_account_id: 'fa-b' },
+    ],
+    chargesByInstallment: {
+      'inst-1': { asaasPaymentId: 'pay-a', financialAccountId: 'fa-a' },
+      'inst-2': { asaasPaymentId: 'pay-b', financialAccountId: 'fa-b' },
+    },
+    financialAccountFilter: 'Todas as contas',
+  });
+  assert(allAccountIds.join(',') === 'inst-1,inst-2', 'sync todas as contas inclui cada cobrança');
+  const oneAccountIds = resolveAsaasSyncInstallmentIds({
+    rows: [
+      { id: 'inst-1', financial_account_id: 'fa-a' },
+      { id: 'inst-2', financial_account_id: 'fa-b' },
+    ],
+    chargesByInstallment: {
+      'inst-1': { asaasPaymentId: 'pay-a', financialAccountId: 'fa-a' },
+      'inst-2': { asaasPaymentId: 'pay-b', financialAccountId: 'fa-b' },
+    },
+    financialAccountFilter: 'fa-b',
+  });
+  assert(oneAccountIds.join(',') === 'inst-2', 'sync por conta usa a conta da cobrança');
+
   const generatable = countSelectedGeneratableCharges({
     selectedIds: new Set(['inst-1', 'inst-paid']),
     payments: [pendingRow, paidRow],
@@ -712,6 +740,8 @@ function testChargesUsesSameIntegrationReadyRuleAsSettings() {
     'utf8',
   );
   assert(pageClient.includes('resolveChargesIntegrationReady'), 'ChargesPageClient usa helper unificado');
+  assert(pageClient.includes('integrationApiReady'), 'charges usa ready da API multi-conta');
+  assert(pageClient.includes('resolveAsaasSyncInstallmentIds'), 'ChargesPageClient sincroniza por conta da cobrança');
   assert(
     pageClient.includes('loadIntegrationStatus'),
     'charges recarrega status da integração',

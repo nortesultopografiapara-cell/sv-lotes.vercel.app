@@ -4,8 +4,15 @@ import {
   getCompanyAsaasIntegrationConfig,
   loadAsaasApiKeyForEnvironment,
   patchAsaasIntegrationMetadata,
+  type AsaasIntegrationLookup,
 } from './asaasIntegrationRepository';
+import { bulkUpdateCompanyChargeStatuses } from './companyAsaasBulkStatusUpdate';
+import { listCompanyAsaasChargeInstallmentIds } from './companyAsaasChargeRepository';
 import { reprocessCompanyAsaasPaidCharges } from './companyAsaasPaymentReconciliation';
+import {
+  listActiveFinancialAccountsForProvider,
+  parseFinancialAccountId,
+} from './financialAccountRequired';
 
 export type AsaasTestConnectionResult = {
   ok: boolean;
@@ -42,12 +49,17 @@ function asaasApiBaseUrl(environment: BankEnvironment): string {
     : 'https://api-sandbox.asaas.com/v3';
 }
 
+function asaasLookup(financialAccountId?: string | null): AsaasIntegrationLookup {
+  return { financialAccountId: parseFinancialAccountId(financialAccountId) };
+}
+
 export async function runAsaasTestConnection(
   admin: SupabaseClient,
   companyId: string,
+  lookup?: AsaasIntegrationLookup,
 ): Promise<AsaasTestConnectionResult> {
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
-  const apiKey = await loadAsaasApiKeyForEnvironment(admin, companyId, config.environment);
+  const config = await getCompanyAsaasIntegrationConfig(admin, companyId, lookup);
+  const apiKey = await loadAsaasApiKeyForEnvironment(admin, companyId, config.environment, lookup);
 
   if (!apiKey) {
     const envLabel = config.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox';
@@ -75,12 +87,17 @@ export async function runAsaasTestConnection(
         (json as { message?: string })?.message ||
         `Asaas HTTP ${res.status}`;
 
-      await patchAsaasIntegrationMetadata(admin, companyId, {
-        connectionStatus: 'ERROR',
-        lastConnectionTestAt: new Date().toISOString(),
-        lastConnectionError: msg,
-        status: 'ERROR',
-      });
+      await patchAsaasIntegrationMetadata(
+        admin,
+        companyId,
+        {
+          connectionStatus: 'ERROR',
+          lastConnectionTestAt: new Date().toISOString(),
+          lastConnectionError: msg,
+          status: 'ERROR',
+        },
+        lookup,
+      );
 
       return { ok: false, message: msg, latencyMs };
     }
@@ -91,13 +108,18 @@ export async function runAsaasTestConnection(
       config.companyName;
     const accountEmail = String((json as { email?: string }).email || '').trim() || undefined;
 
-    await patchAsaasIntegrationMetadata(admin, companyId, {
-      connectionStatus: 'CONNECTED',
-      lastConnectionTestAt: new Date().toISOString(),
-      lastConnectionError: null,
-      accountValidated: true,
-      status: 'ACTIVE',
-    });
+    await patchAsaasIntegrationMetadata(
+      admin,
+      companyId,
+      {
+        connectionStatus: 'CONNECTED',
+        lastConnectionTestAt: new Date().toISOString(),
+        lastConnectionError: null,
+        accountValidated: true,
+        status: 'ACTIVE',
+      },
+      lookup,
+    );
 
     return {
       ok: true,
@@ -109,12 +131,17 @@ export async function runAsaasTestConnection(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao testar conexão Asaas.';
-    await patchAsaasIntegrationMetadata(admin, companyId, {
-      connectionStatus: 'ERROR',
-      lastConnectionTestAt: new Date().toISOString(),
-      lastConnectionError: message,
-      status: 'ERROR',
-    });
+    await patchAsaasIntegrationMetadata(
+      admin,
+      companyId,
+      {
+        connectionStatus: 'ERROR',
+        lastConnectionTestAt: new Date().toISOString(),
+        lastConnectionError: message,
+        status: 'ERROR',
+      },
+      lookup,
+    );
     return { ok: false, message, latencyMs: Date.now() - started };
   }
 }
@@ -122,14 +149,20 @@ export async function runAsaasTestConnection(
 export async function runAsaasValidateWebhook(
   admin: SupabaseClient,
   companyId: string,
+  lookup?: AsaasIntegrationLookup,
 ): Promise<AsaasWebhookValidationResult> {
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
+  const config = await getCompanyAsaasIntegrationConfig(admin, companyId, lookup);
 
   if (!config.webhookUrl) {
-    await patchAsaasIntegrationMetadata(admin, companyId, {
-      connectionStatus: 'WEBHOOK_INVALID',
-      webhook: { active: false, validatedAt: null },
-    });
+    await patchAsaasIntegrationMetadata(
+      admin,
+      companyId,
+      {
+        connectionStatus: 'WEBHOOK_INVALID',
+        webhook: { active: false, validatedAt: null },
+      },
+      lookup,
+    );
     return {
       ok: false,
       message: 'Webhook URL não configurada.',
@@ -139,10 +172,15 @@ export async function runAsaasValidateWebhook(
   }
 
   if (!config.hasWebhookToken) {
-    await patchAsaasIntegrationMetadata(admin, companyId, {
-      connectionStatus: 'WEBHOOK_INVALID',
-      webhook: { active: false, validatedAt: null },
-    });
+    await patchAsaasIntegrationMetadata(
+      admin,
+      companyId,
+      {
+        connectionStatus: 'WEBHOOK_INVALID',
+        webhook: { active: false, validatedAt: null },
+      },
+      lookup,
+    );
     return {
       ok: false,
       message: 'Webhook Token não configurado.',
@@ -152,11 +190,16 @@ export async function runAsaasValidateWebhook(
   }
 
   const validatedAt = new Date().toISOString();
-  await patchAsaasIntegrationMetadata(admin, companyId, {
-    webhook: { active: true, validatedAt },
-    connectionStatus: 'CONNECTED',
-    status: 'ACTIVE',
-  });
+  await patchAsaasIntegrationMetadata(
+    admin,
+    companyId,
+    {
+      webhook: { active: true, validatedAt },
+      connectionStatus: 'CONNECTED',
+      status: 'ACTIVE',
+    },
+    lookup,
+  );
 
   return {
     ok: true,
@@ -166,30 +209,83 @@ export async function runAsaasValidateWebhook(
   };
 }
 
+async function resolveAsaasSyncAccountIds(
+  admin: SupabaseClient,
+  companyId: string,
+  lookup?: AsaasIntegrationLookup,
+): Promise<string[]> {
+  const explicit = parseFinancialAccountId(lookup?.financialAccountId);
+  if (explicit) return [explicit];
+  const accounts = await listActiveFinancialAccountsForProvider(admin, companyId, 'ASAAS_COMPANY');
+  return accounts.map((account) => account.id);
+}
+
 export async function runAsaasSyncCharges(
   admin: SupabaseClient,
   companyId: string,
+  lookup?: AsaasIntegrationLookup,
 ): Promise<AsaasSyncResult> {
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
   const lastSyncAt = new Date().toISOString();
+  const accountIds = await resolveAsaasSyncAccountIds(admin, companyId, lookup);
 
-  const { count, error } = await admin
-    .from('bank_charges')
-    .select('id', { count: 'exact', head: true })
-    .eq('company_id', companyId)
-    .in('provider', ['ASAAS_COMPANY', 'ASAAS']);
+  let syncedCount = 0;
+  let paidCount = 0;
+  let receiptUpdatedCount = 0;
+  let failedCount = 0;
 
-  if (error) throw new Error(error.message);
+  if (accountIds.length === 0) {
+    const config = await getCompanyAsaasIntegrationConfig(admin, companyId, lookup);
+    const { count, error } = await admin
+      .from('bank_charges')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .in('provider', ['ASAAS_COMPANY', 'ASAAS']);
+    if (error) throw new Error(error.message);
+    syncedCount = count ?? config.sync.chargesCount;
+    await patchAsaasIntegrationMetadata(
+      admin,
+      companyId,
+      { sync: { lastAt: lastSyncAt, chargesCount: syncedCount } },
+      lookup,
+    );
+  } else {
+    for (const financialAccountId of accountIds) {
+      const installmentIds = await listCompanyAsaasChargeInstallmentIds(admin, companyId, {
+        financialAccountId,
+      });
+      const accountLookup = asaasLookup(financialAccountId);
+      if (installmentIds.length === 0) {
+        await patchAsaasIntegrationMetadata(
+          admin,
+          companyId,
+          { sync: { lastAt: lastSyncAt, chargesCount: 0 } },
+          accountLookup,
+        );
+        continue;
+      }
 
-  const syncedCount = count ?? config.sync.chargesCount;
+      const result = await bulkUpdateCompanyChargeStatuses(admin, companyId, installmentIds);
+      syncedCount += result.updated;
+      paidCount += result.paid;
+      receiptUpdatedCount += result.receiptUpdatedCount;
+      failedCount += result.failed;
+      await patchAsaasIntegrationMetadata(
+        admin,
+        companyId,
+        { sync: { lastAt: lastSyncAt, chargesCount: installmentIds.length } },
+        accountLookup,
+      );
+    }
+  }
 
-  await patchAsaasIntegrationMetadata(admin, companyId, {
-    sync: { lastAt: lastSyncAt, chargesCount: syncedCount },
-  });
+  const parts = [`Sincronização concluída — ${syncedCount} cobrança(s) atualizada(s).`];
+  if (paidCount > 0) parts.push(`${paidCount} paga(s).`);
+  if (receiptUpdatedCount > 0) parts.push(`${receiptUpdatedCount} parcela(s) baixada(s).`);
+  if (failedCount > 0) parts.push(`${failedCount} falha(s).`);
 
   return {
-    ok: true,
-    message: `Sincronização concluída — ${syncedCount} cobrança(s) registrada(s).`,
+    ok: failedCount === 0,
+    message: parts.join(' '),
     syncedCount,
     lastSyncAt,
   };
@@ -198,10 +294,13 @@ export async function runAsaasSyncCharges(
 export async function runAsaasReprocessPayments(
   admin: SupabaseClient,
   companyId: string,
-  options?: { userId?: string | null },
+  options?: { userId?: string | null; financialAccountId?: string | null },
 ): Promise<AsaasReprocessResult> {
   try {
-    const result = await reprocessCompanyAsaasPaidCharges(admin, companyId, options);
+    const result = await reprocessCompanyAsaasPaidCharges(admin, companyId, {
+      userId: options?.userId,
+      financialAccountId: parseFinancialAccountId(options?.financialAccountId),
+    });
     if (result.reprocessedCount === 0) {
       return {
         ok: true,

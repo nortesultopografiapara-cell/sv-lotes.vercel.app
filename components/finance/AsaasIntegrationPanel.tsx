@@ -14,7 +14,10 @@ import {
   ShieldCheck,
   Webhook,
 } from 'lucide-react';
-import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
+import type {
+  AsaasIntegrationAccountSummary,
+  AsaasIntegrationConfigResponse,
+} from '@/lib/finance/asaasIntegrationConfig';
 import {
   buildDefaultAsaasWebhookUrl,
   EMPTY_ASAAS_INTEGRATION_CONFIG,
@@ -71,6 +74,8 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<ActionKind>(null);
   const [config, setConfig] = useState<AsaasIntegrationConfigResponse | null>(null);
+  const [accounts, setAccounts] = useState<AsaasIntegrationAccountSummary[]>([]);
+  const [selectedFinancialAccountId, setSelectedFinancialAccountId] = useState<string | null>(null);
   const [form, setForm] = useState<AsaasWizardFormState>(
     configToForm({ ...EMPTY_ASAAS_INTEGRATION_CONFIG, companyId: tenantId, companyName: '' }),
   );
@@ -84,21 +89,36 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
     return buildDefaultAsaasWebhookUrl(window.location.origin, tenantId);
   }, [tenantId]);
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (financialAccountId?: string | null) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/finance/asaas/integration', { credentials: 'include' });
+      const requestedId = String(financialAccountId || '').trim();
+      const query = requestedId
+        ? `?financialAccountId=${encodeURIComponent(requestedId)}&_=${Date.now()}`
+        : `?_=${Date.now()}`;
+      const res = await fetch(`/api/finance/asaas/integration${query}`, { credentials: 'include' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-      const integration = json.integration as AsaasIntegrationConfigResponse;
+      const integration = (json.integration ?? null) as AsaasIntegrationConfigResponse | null;
+      const accountList = (json.accounts as AsaasIntegrationAccountSummary[] | undefined) || [];
+      const selectedId =
+        String(json.selectedFinancialAccountId || requestedId || accountList[0]?.financialAccountId || '').trim() ||
+        null;
+      setAccounts(accountList);
+      setSelectedFinancialAccountId(selectedId);
+      if (!integration) {
+        setConfig(null);
+        setShowWizard(accountList.length === 0);
+        return;
+      }
       setConfig(integration);
       setForm((prev) => ({
         ...configToForm(integration),
         webhookUrl: integration.webhookUrl || prev.webhookUrl || suggestedWebhookUrl,
       }));
       const verified = isAsaasIntegrationVerified(integration);
-      const started = hasAsaasIntegrationStarted(integration);
+      const started = hasAsaasIntegrationStarted(integration) || accountList.length > 0;
       setShowWizard(!started || !verified);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar integração Asaas.');
@@ -122,7 +142,10 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        financialAccountId: selectedFinancialAccountId,
+      }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
@@ -140,13 +163,15 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          financialAccountId: selectedFinancialAccountId,
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
       const payload = json[key] as { message?: string } | undefined;
       setActionMessage(payload?.message ?? 'Operação concluída.');
-      await loadConfig();
+      await loadConfig(selectedFinancialAccountId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha na operação.');
     } finally {
@@ -168,7 +193,7 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
     companyName: '',
   };
   const verified = isAsaasIntegrationVerified(integration);
-  const started = hasAsaasIntegrationStarted(integration);
+  const started = hasAsaasIntegrationStarted(integration) || accounts.length > 0;
   const hasError = integration.connectionStatus === 'ERROR' || integration.connectionStatus === 'WEBHOOK_INVALID';
   const statusCards = buildAsaasSetupStatusCards(integration);
   const panelUrl = resolveAsaasPanelUrl(integration.environment);
@@ -219,6 +244,41 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
       {actionMessage ? (
         <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
           {actionMessage}
+        </div>
+      ) : null}
+
+      {accounts.length > 0 ? (
+        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 space-y-2">
+          <label className="block text-sm font-semibold text-[var(--text-primary)]" htmlFor="asaas-account-select">
+            Conta Asaas
+          </label>
+          {accounts.length > 1 ? (
+            <select
+              id="asaas-account-select"
+              value={selectedFinancialAccountId || ''}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                setSelectedFinancialAccountId(nextId);
+                void loadConfig(nextId);
+              }}
+              className="w-full min-h-[44px] rounded-xl border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            >
+              {accounts.map((account) => (
+                <option key={account.financialAccountId} value={account.financialAccountId}>
+                  {account.name}
+                  {account.isDefault ? ' (padrão)' : ''}
+                  {account.ready ? ' — pronta' : ''}
+                  {` · ${account.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}`}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p id="asaas-account-select" className="text-sm text-[var(--text-secondary)]">
+              {accounts[0].name}
+              {accounts[0].isDefault ? ' (padrão)' : ''}
+              {` · ${accounts[0].environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}`}
+            </p>
+          )}
         </div>
       ) : null}
 
@@ -282,7 +342,7 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
             disabled={readOnlyDemo || action !== null}
             onClick={() => {
               if (kind === 'refresh') {
-                void loadConfig();
+                void loadConfig(selectedFinancialAccountId);
                 return;
               }
               void runAction(kind, path, key);
@@ -339,11 +399,11 @@ export function AsaasIntegrationPanel({ tenantId, readOnlyDemo = false }: Props)
           form={form}
           onChange={updateField}
           onSave={handleSave}
-          onReload={loadConfig}
+          onReload={() => loadConfig(selectedFinancialAccountId)}
           onFinish={() => {
             setShowWizard(false);
             setSuccess('Integração verificada e ativada com sucesso.');
-            void loadConfig();
+            void loadConfig(selectedFinancialAccountId);
           }}
         />
       ) : verified ? (

@@ -845,17 +845,22 @@ export async function executeCompanyAsaasPaymentReconciliation(
 export async function reprocessCompanyAsaasPaidCharges(
   admin: SupabaseClient,
   companyId: string,
-  options?: { userId?: string | null },
+  options?: { userId?: string | null; financialAccountId?: string | null },
 ): Promise<{
   reprocessedCount: number;
   receiptUpdatedCount: number;
   cashMovementCreatedCount: number;
 }> {
-  const { data: paidCharges, error } = await admin
+  let paidQuery = admin
     .from('company_asaas_charges')
-    .select('id, asaas_payment_id, installment_id, paid_at, status, cash_movement_id')
+    .select('id, asaas_payment_id, installment_id, paid_at, status, cash_movement_id, financial_account_id')
     .eq('company_id', companyId)
     .eq('status', 'PAID');
+  const financialAccountId = String(options?.financialAccountId || '').trim();
+  if (financialAccountId) {
+    paidQuery = paidQuery.eq('financial_account_id', financialAccountId);
+  }
+  const { data: paidCharges, error } = await paidQuery;
 
   if (error) throw new Error(error.message);
 

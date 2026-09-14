@@ -83,6 +83,26 @@ export type AsaasIntegrationConfigResponse = {
   updatedAt: string | null;
   lastConnectionTestAt: string | null;
   lastConnectionError: string | null;
+  financialAccountId?: string | null;
+};
+
+export type AsaasIntegrationAccountSummary = {
+  financialAccountId: string;
+  name: string;
+  environment: BankEnvironment;
+  isDefault: boolean;
+  ready: boolean;
+  connectionStatus: AsaasConnectionStatus;
+  status: string;
+};
+
+export type AsaasIntegrationOverview = {
+  accounts: AsaasIntegrationAccountSummary[];
+  selectedFinancialAccountId: string | null;
+  integration: AsaasIntegrationConfigResponse | null;
+  multiAccount: boolean;
+  ready: boolean;
+  canOperate: boolean;
 };
 
 export const DEFAULT_ASAAS_FEATURES: AsaasIntegrationFeatures = {

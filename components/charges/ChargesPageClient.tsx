@@ -51,6 +51,7 @@ import {
 import {
   countSelectedGeneratableCharges,
   countSelectedWithAsaasCharge,
+  resolveAsaasSyncInstallmentIds,
   resolveChargesIntegrationReady,
 } from '@/lib/charges/chargeIntegrationHelpers';
 import {
@@ -145,6 +146,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [asaasChargeHistoryIds, setAsaasChargeHistoryIds] = useState<Set<string>>(new Set());
   const [integrationConfig, setIntegrationConfig] =
     useState<AsaasIntegrationConfigResponse | null>(null);
+  const [integrationApiReady, setIntegrationApiReady] = useState(false);
   const [integrationLoading, setIntegrationLoading] = useState(false);
   const [asaasActionInstallmentId, setAsaasActionInstallmentId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -161,8 +163,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const ownerReadOnly = isOwnerRole(user?.role);
   const [asaasAccessAvailable, setAsaasAccessAvailable] = useState(true);
   const integrationActive = useMemo(
-    () => resolveChargesIntegrationReady(integrationConfig),
-    [integrationConfig],
+    () => resolveChargesIntegrationReady(integrationConfig, integrationApiReady),
+    [integrationConfig, integrationApiReady],
   );
   const integrationReady = asaasAccessAvailable && integrationActive;
   const installmentsDataReady = !loading && !loadError;
@@ -247,20 +249,25 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       if (res.status === 403 || res.status === 404) {
         setAsaasAccessAvailable(false);
         setIntegrationConfig(null);
+        setIntegrationApiReady(false);
         return false;
       }
       setAsaasAccessAvailable(true);
       if (!res.ok) {
         setIntegrationConfig(null);
+        setIntegrationApiReady(false);
         return false;
       }
       const json = await res.json().catch(() => ({}));
       const integration = (json.integration ?? null) as AsaasIntegrationConfigResponse | null;
+      const apiReady = Boolean(json.ready ?? json.canOperate);
       setIntegrationConfig(integration);
-      return resolveChargesIntegrationReady(integration, json.ready ?? json.canOperate);
+      setIntegrationApiReady(apiReady);
+      return resolveChargesIntegrationReady(integration, apiReady);
     } catch (err) {
       console.error('CHARGES_INTEGRATION_LOAD', err);
       setIntegrationConfig(null);
+      setIntegrationApiReady(false);
       return false;
     } finally {
       setIntegrationLoading(false);
@@ -437,7 +444,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     [loadIntegrationStatus, loadChargeMap, refreshInstallmentRows],
   );
 
-  const loadInstallments = useCallback(async (options?: { syncAsaasStatuses?: boolean }) => {
+  const loadInstallments = useCallback(async (options?: {
+    syncAsaasStatuses?: boolean;
+    financialAccountFilter?: string;
+  }) => {
     if (!user) {
       setLoading(false);
       return;
@@ -538,23 +548,29 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
         if (integrationOk) {
           try {
-            const syncIds =
-              Object.keys(chargeMap).length > 0 ? Object.keys(chargeMap) : installmentIds;
-            const result = await requestChargeBulkStatusSync(syncIds);
-            setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
+            const syncIds = resolveAsaasSyncInstallmentIds({
+              rows: scoped,
+              chargesByInstallment: chargeMap,
+              financialAccountFilter: options?.financialAccountFilter || 'Todas as contas',
+              resolveProvider: (row) => resolveRowProvider(row as FinanceReceiptRow),
+            });
+            if (syncIds.length > 0) {
+              const result = await requestChargeBulkStatusSync(syncIds);
+              setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
 
-            if (result.receiptUpdatedCount > 0 || result.paid > 0) {
-              const syncedRows = await refreshInstallmentRows(installmentIds, rlsCtx, ownerCtx);
-              if (syncedRows.length > 0) {
-                setPayments(syncedRows);
+              if (result.receiptUpdatedCount > 0 || result.paid > 0) {
+                const syncedRows = await refreshInstallmentRows(installmentIds, rlsCtx, ownerCtx);
+                if (syncedRows.length > 0) {
+                  setPayments(syncedRows);
+                }
               }
-            }
 
-            if (result.updated > 0 || result.failed > 0) {
-              showToast(
-                formatChargeBulkStatusSummary(result),
-                result.updated === 0 && result.failed > 0,
-              );
+              if (result.updated > 0 || result.failed > 0) {
+                showToast(
+                  formatChargeBulkStatusSummary(result),
+                  result.updated === 0 && result.failed > 0,
+                );
+              }
             }
           } catch (syncErr) {
             console.error('[charges/financial-agent] bulk sync failed', syncErr);
@@ -597,6 +613,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     loadAsaasChargesContext,
     loadInterChargeMap,
     refreshInstallmentRows,
+    resolveRowProvider,
     showToast,
   ]);
 
@@ -606,12 +623,6 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       options?: { reloadInstallments?: boolean; silent?: boolean },
     ): Promise<boolean> => {
       if (blockOwnerWriteOnClient(user?.role)) return false;
-      if (!integrationReady) {
-        if (!options?.silent) {
-          showToast('Integração Asaas não está ativa.', true);
-        }
-        return false;
-      }
 
       const ids = Array.from(
         new Set(installmentIds.map((id) => String(id || '').trim()).filter(Boolean)),
@@ -650,7 +661,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         setBulkBusy(false);
       }
     },
-    [integrationReady, loadInstallments, showToast, user?.role],
+    [loadInstallments, showToast, user?.role],
   );
 
   useEffect(() => {
@@ -1358,10 +1369,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const runRefreshAllCharges = async () => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    const asaasIds = filteredRows
-      .filter((row) => resolveRowProvider(row) === 'ASAAS_COMPANY')
-      .map((row) => String(row.id))
-      .filter((id) => asaasChargesByInstallment[id]);
+    const asaasIds = resolveAsaasSyncInstallmentIds({
+      rows: filteredRows,
+      chargesByInstallment: asaasChargesByInstallment,
+      financialAccountFilter,
+      resolveProvider: (row) => resolveRowProvider(row as FinanceReceiptRow),
+    });
     const interIds = filteredRows
       .filter((row) => resolveRowProvider(row) === 'INTER')
       .map((row) => String(row.id))
@@ -1389,7 +1402,10 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   };
 
   const handleRefreshList = async () => {
-    await loadInstallments({ syncAsaasStatuses: integrationReady && !ownerReadOnly });
+    await loadInstallments({
+      syncAsaasStatuses: !ownerReadOnly,
+      financialAccountFilter,
+    });
   };
 
   const chargeExportMeta = {

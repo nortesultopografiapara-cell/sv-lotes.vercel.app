@@ -175,6 +175,36 @@ export async function listPendingCompanyAsaasCharges(
   return ((data as CompanyAsaasChargeRow[]) ?? []).map(mapCompanyAsaasChargeRow);
 }
 
+export async function listCompanyAsaasChargeInstallmentIds(
+  admin: SupabaseClient,
+  companyId: string,
+  options?: { financialAccountId?: string | null },
+): Promise<string[]> {
+  let query = admin
+    .from('company_asaas_charges')
+    .select('installment_id, status')
+    .eq('company_id', companyId)
+    .neq('status', 'CANCELLED');
+
+  const financialAccountId = String(options?.financialAccountId || '').trim();
+  if (financialAccountId) {
+    query = query.eq('financial_account_id', financialAccountId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const row of data || []) {
+    const installmentId = String((row as { installment_id?: string }).installment_id || '').trim();
+    if (!installmentId || seen.has(installmentId)) continue;
+    seen.add(installmentId);
+    ids.push(installmentId);
+  }
+  return ids;
+}
+
 export async function registerCompanyAsaasWebhookEvent(
   admin: SupabaseClient,
   input: {

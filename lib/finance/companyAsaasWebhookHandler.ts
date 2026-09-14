@@ -4,7 +4,10 @@ import { isBankingModuleEnabled } from '@/lib/banking/config';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { decryptBankingSecret } from '@/lib/banking/credentialsCrypto';
 import { getCompanyAsaasIntegrationConfig } from '@/lib/finance/asaasIntegrationRepository';
-import { isFinancialAccountRequiredError } from '@/lib/finance/financialAccountRequired';
+import {
+  isFinancialAccountRequiredError,
+  listActiveFinancialAccountsForProvider,
+} from '@/lib/finance/financialAccountRequired';
 import {
   executeCompanyAsaasPaymentReconciliation,
   isCompanyAsaasPaidWebhookEvent,
@@ -77,18 +80,8 @@ async function loadAllCompanyAsaasWebhookTokens(
   admin: SupabaseClient,
   companyId: string,
 ): Promise<string[]> {
-  const { data: accounts } = await admin
-    .from('company_financial_accounts')
-    .select('bank_integration_id')
-    .eq('company_id', companyId)
-    .eq('active', true);
-  const ids = Array.from(
-    new Set(
-      (accounts || [])
-        .map((row) => String(row.bank_integration_id || '').trim())
-        .filter(Boolean),
-    ),
-  );
+  const accounts = await listActiveFinancialAccountsForProvider(admin, companyId, 'ASAAS_COMPANY');
+  const ids = Array.from(new Set(accounts.map((row) => row.bankIntegrationId).filter(Boolean)));
   if (ids.length === 0) return [];
   const { data: creds } = await admin
     .from('bank_credentials')

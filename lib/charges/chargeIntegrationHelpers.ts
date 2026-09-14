@@ -22,6 +22,44 @@ export function resolveChargesIntegrationReady(
   return isAsaasIntegrationVerified(integration);
 }
 
+export function resolveAsaasSyncInstallmentIds(params: {
+  rows: Array<{ id: unknown; financial_account_id?: string | null }>;
+  chargesByInstallment: Record<
+    string,
+    { asaasPaymentId?: string | null; financialAccountId?: string | null } | null | undefined
+  >;
+  financialAccountFilter: string;
+  resolveProvider?: (row: { id: unknown; financial_account_id?: string | null }) => ChargesEmitProvider;
+}): string[] {
+  const filter = String(params.financialAccountFilter || 'Todas as contas').trim();
+  const ids: string[] = [];
+  const seen = new Set<string>();
+
+  for (const row of params.rows) {
+    const installmentId = String(row.id || '').trim();
+    if (!installmentId || seen.has(installmentId)) continue;
+    const provider = params.resolveProvider?.(row) ?? 'ASAAS_COMPANY';
+    if (provider !== 'ASAAS_COMPANY') continue;
+    const charge = params.chargesByInstallment[installmentId];
+    if (!charge?.asaasPaymentId) continue;
+
+    if (filter && filter !== 'Todas as contas') {
+      const chargeAccountId = String(charge.financialAccountId || '').trim();
+      const rowAccountId = String(row.financial_account_id || '').trim();
+      if (chargeAccountId) {
+        if (chargeAccountId !== filter) continue;
+      } else if (rowAccountId !== filter) {
+        continue;
+      }
+    }
+
+    seen.add(installmentId);
+    ids.push(installmentId);
+  }
+
+  return ids;
+}
+
 export function countSelectedGeneratableCharges(params: {
   selectedIds: Iterable<string>;
   payments: FinanceReceiptRow[];

@@ -3,13 +3,18 @@ import { authorizeCompanyAsaasRoute } from '@/lib/banking/bankingRouteGuard';
 import { getBankingEncryptionKeyDiagnostics } from '@/lib/banking/credentialsCrypto';
 import {
   assertAsaasIntegrationResponseSafe,
-  getCompanyAsaasIntegrationConfig,
+  getCompanyAsaasIntegrationOverview,
   patchAsaasIntegrationMetadata,
   saveCompanyAsaasIntegrationConfig,
 } from '@/lib/finance/asaasIntegrationRepository';
 import type { AsaasIntegrationConfigInput } from '@/lib/finance/asaasIntegrationConfig';
 import { normalizeAsaasEnvironment } from '@/lib/finance/asaasIntegrationConfig';
 import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
+import {
+  isFinancialAccountRequiredError,
+  parseFinancialAccountIdFromRecord,
+  parseFinancialAccountIdFromRequestUrl,
+} from '@/lib/finance/financialAccountRequired';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,26 +24,54 @@ export async function GET(request: Request) {
   if ('error' in auth) return auth.error;
 
   try {
-    let integration = await getCompanyAsaasIntegrationConfig(auth.admin, auth.tenantId);
+    const financialAccountId = parseFinancialAccountIdFromRequestUrl(request);
+    const overview = await getCompanyAsaasIntegrationOverview(auth.admin, auth.tenantId, {
+      financialAccountId,
+    });
+
+    let integration = overview.integration;
     if (
-      integration.id &&
+      integration?.id &&
+      overview.selectedFinancialAccountId &&
       integration.status !== 'ACTIVE' &&
       isCompanyAsaasIntegrationReady(integration)
     ) {
-      await patchAsaasIntegrationMetadata(auth.admin, auth.tenantId, {
-        status: 'ACTIVE',
-        connectionStatus: 'CONNECTED',
+      await patchAsaasIntegrationMetadata(
+        auth.admin,
+        auth.tenantId,
+        {
+          status: 'ACTIVE',
+          connectionStatus: 'CONNECTED',
+        },
+        { financialAccountId: overview.selectedFinancialAccountId },
+      );
+      const refreshed = await getCompanyAsaasIntegrationOverview(auth.admin, auth.tenantId, {
+        financialAccountId: overview.selectedFinancialAccountId,
       });
-      integration = await getCompanyAsaasIntegrationConfig(auth.admin, auth.tenantId);
+      integration = refreshed.integration;
+      overview.integration = refreshed.integration;
+      overview.ready = refreshed.ready;
+      overview.canOperate = refreshed.canOperate;
     }
-    assertAsaasIntegrationResponseSafe(integration);
-    const ready = isCompanyAsaasIntegrationReady(integration);
-    return NextResponse.json({ integration, ready, canOperate: ready });
+
+    if (integration) {
+      assertAsaasIntegrationResponseSafe(integration);
+    }
+
+    return NextResponse.json({
+      integration,
+      ready: overview.ready,
+      canOperate: overview.canOperate,
+      accounts: overview.accounts,
+      selectedFinancialAccountId: overview.selectedFinancialAccountId,
+      multiAccount: overview.multiAccount,
+    });
   } catch (err) {
     console.error('[finance/asaas/integration GET]', err);
+    const message = err instanceof Error ? err.message : 'Erro ao carregar integração Asaas.';
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao carregar integração Asaas.' },
-      { status: 500 },
+      { error: message },
+      { status: isFinancialAccountRequiredError(err) ? 400 : 500 },
     );
   }
 }
@@ -66,20 +99,25 @@ export async function PUT(request: Request) {
       features: Object.keys(features).length > 0 ? features : undefined,
     };
 
+    const financialAccountId = parseFinancialAccountIdFromRecord(body);
     const integration = await saveCompanyAsaasIntegrationConfig(
       auth.admin,
       auth.tenantId,
       auth.userId,
       input,
+      { financialAccountId },
     );
     assertAsaasIntegrationResponseSafe(integration);
-    return NextResponse.json({ integration });
+    return NextResponse.json({ integration, financialAccountId: integration.financialAccountId ?? financialAccountId });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao salvar integração Asaas.';
     if (message.includes('BANKING_CREDENTIALS_ENCRYPTION_KEY')) {
       console.warn('[finance/asaas/integration PUT] encryption diagnostics', getBankingEncryptionKeyDiagnostics());
     }
     console.error('[finance/asaas/integration PUT]', err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: isFinancialAccountRequiredError(err) ? 400 : 500 },
+    );
   }
 }

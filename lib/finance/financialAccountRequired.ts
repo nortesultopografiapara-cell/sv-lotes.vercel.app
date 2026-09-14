@@ -24,16 +24,36 @@ export function isFinancialAccountRequiredError(err: unknown): boolean {
   return message.includes(FINANCIAL_ACCOUNT_REQUIRED);
 }
 
+export function parseFinancialAccountId(value: unknown): string | null {
+  const id = String(value ?? '').trim();
+  return id || null;
+}
+
+export function parseFinancialAccountIdFromRecord(
+  body: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!body) return null;
+  return parseFinancialAccountId(body.financialAccountId ?? body.financial_account_id);
+}
+
+export function parseFinancialAccountIdFromRequestUrl(request: Request): string | null {
+  const url = new URL(request.url);
+  return parseFinancialAccountId(
+    url.searchParams.get('financialAccountId') || url.searchParams.get('financial_account_id'),
+  );
+}
+
 export async function listActiveFinancialAccountsForProvider(
   admin: SupabaseClient,
   companyId: string,
   provider: FinancialProviderLookup,
 ): Promise<ProviderFinancialAccountRef[]> {
+  const providers = provider === 'ASAAS_COMPANY' ? ['ASAAS_COMPANY', 'ASAAS'] : [provider];
   const { data: integrations, error: intErr } = await admin
     .from('bank_integrations')
     .select('id, provider')
     .eq('company_id', companyId)
-    .eq('provider', provider);
+    .in('provider', providers);
   if (intErr) throw new Error(intErr.message);
 
   const integrationIds = new Set(
@@ -64,11 +84,12 @@ export async function listProviderIntegrations(
   companyId: string,
   provider: FinancialProviderLookup,
 ): Promise<string[]> {
+  const providers = provider === 'ASAAS_COMPANY' ? ['ASAAS_COMPANY', 'ASAAS'] : [provider];
   const { data, error } = await admin
     .from('bank_integrations')
     .select('id')
     .eq('company_id', companyId)
-    .eq('provider', provider);
+    .in('provider', providers);
   if (error) throw new Error(error.message);
   return (data || []).map((row) => String(row.id)).filter(Boolean);
 }

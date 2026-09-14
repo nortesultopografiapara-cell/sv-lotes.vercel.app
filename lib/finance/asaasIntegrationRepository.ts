@@ -10,18 +10,25 @@ import {
   DEFAULT_ASAAS_FEATURES,
   EMPTY_ASAAS_INTEGRATION_CONFIG,
   type AsaasConnectionStatus,
+  type AsaasIntegrationAccountSummary,
   type AsaasIntegrationConfigInput,
   type AsaasIntegrationConfigResponse,
   type AsaasIntegrationMetadata,
+  type AsaasIntegrationOverview,
   normalizeAsaasEnvironment,
 } from './asaasIntegrationConfig';
+import { isCompanyAsaasIntegrationReady } from './companyAsaasChargeTypes';
 import {
   createCompanyFinancialAccount,
   getCompanyFinancialAccountById,
   getDefaultFinancialAccountForCompany,
   updateCompanyFinancialAccount,
 } from './companyFinancialAccountRepository';
-import { resolveUniqueProviderAccount } from './financialAccountRequired';
+import {
+  listActiveFinancialAccountsForProvider,
+  parseFinancialAccountId,
+  resolveUniqueProviderAccount,
+} from './financialAccountRequired';
 
 const ASAAS_PROVIDER = 'ASAAS_COMPANY';
 
@@ -176,10 +183,14 @@ async function loadCompanyName(admin: SupabaseClient, companyId: string): Promis
   return String((data as { name?: string } | null)?.name ?? 'Empresa');
 }
 
+export type AsaasIntegrationLookup = {
+  financialAccountId?: string | null;
+};
+
 export async function getCompanyAsaasIntegrationConfig(
   admin: SupabaseClient,
   companyId: string,
-  lookup?: { financialAccountId?: string | null },
+  lookup?: AsaasIntegrationLookup,
 ): Promise<AsaasIntegrationConfigResponse> {
   const companyName = await loadCompanyName(admin, companyId);
   const syncedChargesCount = await countSyncedCharges(admin, companyId);
@@ -205,7 +216,10 @@ export async function getCompanyAsaasIntegrationConfig(
       throw new Error('A conta financeira selecionada não está vinculada ao Asaas.');
     }
     const credentialTypes = row ? await loadCredentialTypes(admin, row.id) : new Set<string>();
-    return mapRowToResponse(row as IntegrationRow | null, companyId, companyName, credentialTypes, syncedChargesCount);
+    return {
+      ...mapRowToResponse(row as IntegrationRow | null, companyId, companyName, credentialTypes, syncedChargesCount),
+      financialAccountId: explicitFa,
+    };
   }
 
   const unique = await resolveUniqueProviderAccount(admin, companyId, 'ASAAS_COMPANY');
@@ -227,7 +241,85 @@ export async function getCompanyAsaasIntegrationConfig(
 
   const row = data;
   const credentialTypes = row ? await loadCredentialTypes(admin, row.id) : new Set<string>();
-  return mapRowToResponse(row, companyId, companyName, credentialTypes, syncedChargesCount);
+  return {
+    ...mapRowToResponse(row, companyId, companyName, credentialTypes, syncedChargesCount),
+    financialAccountId: unique.financialAccountId,
+  };
+}
+
+function pickAsaasOverviewAccountId(
+  accounts: AsaasIntegrationAccountSummary[],
+  requestedId: string | null,
+): string | null {
+  if (requestedId && accounts.some((account) => account.financialAccountId === requestedId)) {
+    return requestedId;
+  }
+  return (
+    accounts.find((account) => account.ready)?.financialAccountId ||
+    accounts.find((account) => account.isDefault)?.financialAccountId ||
+    accounts[0]?.financialAccountId ||
+    null
+  );
+}
+
+/**
+ * Status da integração Asaas sem exigir conta única.
+ * 2+ contas ativas → lista as contas e marca ready se qualquer uma estiver operacional.
+ */
+export async function getCompanyAsaasIntegrationOverview(
+  admin: SupabaseClient,
+  companyId: string,
+  lookup?: AsaasIntegrationLookup,
+): Promise<AsaasIntegrationOverview> {
+  const requestedId = parseFinancialAccountId(lookup?.financialAccountId);
+  const refs = await listActiveFinancialAccountsForProvider(admin, companyId, 'ASAAS_COMPANY');
+
+  if (refs.length === 0) {
+    const integration = await getCompanyAsaasIntegrationConfig(admin, companyId);
+    const ready = isCompanyAsaasIntegrationReady(integration);
+    return {
+      accounts: [],
+      selectedFinancialAccountId: integration.financialAccountId ?? null,
+      integration,
+      multiAccount: false,
+      ready,
+      canOperate: ready,
+    };
+  }
+
+  const accounts: AsaasIntegrationAccountSummary[] = [];
+  for (const ref of refs) {
+    const account = await getCompanyFinancialAccountById(admin, companyId, ref.id);
+    const integration = await getCompanyAsaasIntegrationConfig(admin, companyId, {
+      financialAccountId: ref.id,
+    });
+    accounts.push({
+      financialAccountId: ref.id,
+      name: account?.name || 'Conta Asaas',
+      environment: account?.environment || integration.environment,
+      isDefault: Boolean(account?.isDefault),
+      ready: isCompanyAsaasIntegrationReady(integration),
+      connectionStatus: integration.connectionStatus,
+      status: integration.status,
+    });
+  }
+
+  const selectedFinancialAccountId = pickAsaasOverviewAccountId(accounts, requestedId);
+  const integration = selectedFinancialAccountId
+    ? await getCompanyAsaasIntegrationConfig(admin, companyId, {
+        financialAccountId: selectedFinancialAccountId,
+      })
+    : null;
+  const ready = accounts.some((account) => account.ready);
+
+  return {
+    accounts,
+    selectedFinancialAccountId,
+    integration,
+    multiAccount: accounts.length > 1,
+    ready,
+    canOperate: ready,
+  };
 }
 
 async function upsertCredential(
@@ -270,9 +362,11 @@ export async function saveCompanyAsaasIntegrationConfig(
   companyId: string,
   userId: string,
   input: AsaasIntegrationConfigInput,
+  lookup?: AsaasIntegrationLookup,
 ): Promise<AsaasIntegrationConfigResponse> {
   const environment = normalizeAsaasEnvironment(input.environment);
   const now = new Date().toISOString();
+  const explicitFa = parseFinancialAccountId(lookup?.financialAccountId);
 
   const secretsToSave: { type: (typeof SECRET_TYPES)[number]; value: string }[] = [];
   if (cleanText(input.sandboxApiKey)) {
@@ -290,7 +384,9 @@ export async function saveCompanyAsaasIntegrationConfig(
     throw new Error(formatBankingEncryptionKeyError());
   }
 
-  const existing = await getCompanyAsaasIntegrationConfig(admin, companyId);
+  const existing = await getCompanyAsaasIntegrationConfig(admin, companyId, {
+    financialAccountId: explicitFa,
+  });
   const existingMeta = existing.id
     ? parseMetadata(
         (
@@ -355,7 +451,9 @@ export async function saveCompanyAsaasIntegrationConfig(
     await upsertCredential(admin, integrationId!, companyId, secret.type, secret.value);
   }
 
-  const defaultAccount = await getDefaultFinancialAccountForCompany(admin, companyId);
+  const defaultAccount = explicitFa
+    ? await getCompanyFinancialAccountById(admin, companyId, explicitFa)
+    : await getDefaultFinancialAccountForCompany(admin, companyId);
   if (defaultAccount) {
     await updateCompanyFinancialAccount(admin, companyId, defaultAccount.id, userId, {
       environment,
@@ -363,10 +461,10 @@ export async function saveCompanyAsaasIntegrationConfig(
       sandboxApiKey: cleanText(input.sandboxApiKey) || undefined,
       productionApiKey: cleanText(input.productionApiKey) || undefined,
       webhookToken: cleanText(input.webhookToken) || undefined,
-      isDefault: true,
+      isDefault: explicitFa ? defaultAccount.isDefault : true,
       active: true,
     });
-  } else {
+  } else if (!explicitFa) {
     await createCompanyFinancialAccount(admin, companyId, userId, {
       name: 'Conta Padrão',
       accountType: 'IMOBILIARIA',
@@ -382,15 +480,18 @@ export async function saveCompanyAsaasIntegrationConfig(
     });
   }
 
-  return getCompanyAsaasIntegrationConfig(admin, companyId);
+  return getCompanyAsaasIntegrationConfig(admin, companyId, {
+    financialAccountId: explicitFa || defaultAccount?.id || null,
+  });
 }
 
 export async function loadAsaasApiKeyForEnvironment(
   admin: SupabaseClient,
   companyId: string,
   environment: BankEnvironment,
+  lookup?: AsaasIntegrationLookup,
 ): Promise<string | null> {
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
+  const config = await getCompanyAsaasIntegrationConfig(admin, companyId, lookup);
   if (!config.id) return null;
 
   const credentialType = environment === 'PRODUCTION' ? 'api_key' : 'oauth';
@@ -415,8 +516,9 @@ export async function patchAsaasIntegrationMetadata(
   admin: SupabaseClient,
   companyId: string,
   patch: Partial<AsaasIntegrationMetadata> & { status?: BankIntegrationStatus },
+  lookup?: AsaasIntegrationLookup,
 ): Promise<void> {
-  const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
+  const config = await getCompanyAsaasIntegrationConfig(admin, companyId, lookup);
   if (!config.id) throw new Error('Integração Asaas não configurada.');
 
   const { data } = await admin
