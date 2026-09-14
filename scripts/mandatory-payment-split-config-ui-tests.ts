@@ -190,8 +190,25 @@ function testUiAndApiFiles() {
   assert(panel.includes('type="radio"'), 'um emissor via radio');
   assert(panel.includes('Total distribuído'), 'rodapé total');
   assert(panel.includes('REVENUE_SPLIT_MISSING_WALLET_MESSAGE'), 'mensagem wallet');
+  assert(panel.includes('REVENUE_SPLIT_WALLET_LINKED_LABEL'), 'status vinculada');
+  assert(panel.includes('REVENUE_SPLIT_CONFIGURE_ACCOUNT_LABEL'), 'atalho conta financeira');
+  assert(!panel.includes('walletId da conta Asaas de destino'), 'sem digitação manual no fluxo normal');
+  assert(panel.includes('Modo avançado (SUPER_ADMIN)'), 'fallback só SUPER_ADMIN');
   assert(panel.includes('Preview informativo'), 'preview');
   assert(!panel.includes('apiKey') && !panel.includes('Client Secret'), 'UI sem segredo');
+
+  const accountsPanel = read('components/finance/FinancialAccountsPanel.tsx');
+  assert(accountsPanel.includes('Carteira para Split'), 'bloco carteira nas configurações');
+  assert(accountsPanel.includes('Validar conexão e buscar Wallet ID'), 'botão validar wallet');
+  assert(accountsPanel.includes('Não vinculada'), 'status inicial');
+  assert(accountsPanel.includes('/api/finance/asaas/accounts/'), 'chama resolve-wallet');
+  assert(accountsPanel.includes('não precisam de URL nem token de webhook'), 'destinatário sem webhook');
+
+  const resolveRoute = read('app/api/finance/asaas/accounts/[id]/resolve-wallet/route.ts');
+  assert(resolveRoute.includes('authorizeCompanyAsaasRoute'), 'resolve-wallet autenticada');
+  assert(resolveRoute.includes('canResolveAsaasWallet'), 'admin only');
+  assert(resolveRoute.includes('rejectAsaasSecretInRequestBody'), 'recusa apiKey no body');
+  assert(!resolveRoute.includes('webhook'), 'não cria webhook no destinatário');
 
   assert(ownersUi.includes('Participação financeira'), 'atalho sócios');
   assert(ownersUi.includes('OwnerRevenueSplitModal'), 'modal sócios');

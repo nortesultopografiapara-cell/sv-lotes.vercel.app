@@ -7,6 +7,13 @@ import {
   buildCompanyAsaasLateFeePayload,
   extractCompanyAsaasBankSlipIdentification,
 } from '@/lib/finance/asaasCompanyLateFees';
+import {
+  ASAAS_OWN_WALLETS_PATH,
+  ASAAS_WALLET_EMPTY_RESPONSE_MESSAGE,
+  assertAsaasCompanyRequestHost,
+  extractAsaasOwnWalletId,
+  type AsaasWalletListResponse,
+} from '@/lib/finance/asaasWalletId';
 
 export type AsaasCompanyPaymentSplit = {
   id?: string;
@@ -71,6 +78,13 @@ export function asaasCompanyBaseUrl(environment: BankEnvironment): string {
     : 'https://api-sandbox.asaas.com/v3';
 }
 
+export function buildAsaasCompanyRequestUrl(environment: BankEnvironment, path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${asaasCompanyBaseUrl(environment)}${normalizedPath}`;
+  assertAsaasCompanyRequestHost(environment, url);
+  return url;
+}
+
 export function asaasCompanyHeaders(apiKey: string): HeadersInit {
   return {
     'Content-Type': 'application/json',
@@ -85,7 +99,7 @@ export async function asaasCompanyFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${asaasCompanyBaseUrl(environment)}${path}`, {
+  const res = await fetch(buildAsaasCompanyRequestUrl(environment, path), {
     ...init,
     headers: { ...asaasCompanyHeaders(apiKey), ...(init?.headers || {}) },
   });
@@ -165,6 +179,24 @@ export async function asaasCompanyFetchIdentificationField(
   }
   if (String(last.identificationField || '').replace(/\D/g, '').length === 47) return last;
   throw lastError || new Error('Linha digitável Asaas indisponível.');
+}
+
+/**
+ * GET /wallets/ — Wallet ID da própria conta autenticada (Retrieve WalletId).
+ * Não envia body (GET com body é 403 no Asaas).
+ */
+export async function asaasCompanyFetchOwnWalletId(
+  apiKey: string,
+  environment: BankEnvironment,
+): Promise<string> {
+  const payload = await asaasCompanyFetch<AsaasWalletListResponse>(
+    apiKey,
+    environment,
+    ASAAS_OWN_WALLETS_PATH,
+  );
+  const walletId = extractAsaasOwnWalletId(payload);
+  if (!walletId) throw new Error(ASAAS_WALLET_EMPTY_RESPONSE_MESSAGE);
+  return walletId;
 }
 
 /**

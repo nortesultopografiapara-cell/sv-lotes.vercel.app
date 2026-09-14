@@ -48,6 +48,8 @@ export type CompanyFinancialAccountResponse = {
   hasProductionApiKey: boolean;
   hasWebhookToken: boolean;
   connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'WEBHOOK_INVALID';
+  asaasWalletLinked: boolean;
+  asaasWalletMasked: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -83,6 +85,8 @@ export function mapCompanyFinancialAccountRow(
       | 'hasWebhookToken'
       | 'connectionStatus'
       | 'provider'
+      | 'asaasWalletLinked'
+      | 'asaasWalletMasked'
     >
   >,
 ): CompanyFinancialAccountResponse {
@@ -105,6 +109,8 @@ export function mapCompanyFinancialAccountRow(
     hasProductionApiKey: extras?.hasProductionApiKey ?? false,
     hasWebhookToken: extras?.hasWebhookToken ?? false,
     connectionStatus: extras?.connectionStatus ?? 'DISCONNECTED',
+    asaasWalletLinked: extras?.asaasWalletLinked ?? false,
+    asaasWalletMasked: extras?.asaasWalletMasked ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -152,6 +158,8 @@ export function assertCompanyFinancialAccountResponseSafe(
     'encrypted_payload',
     'apiKey',
     'access_token',
+    'destinationIdentifier',
+    'destination_identifier',
   ];
   const json = JSON.stringify(response);
   for (const key of forbidden) {

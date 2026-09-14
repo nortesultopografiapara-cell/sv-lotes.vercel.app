@@ -5,9 +5,13 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { canManageRevenueSplit } from '@/lib/rolePermissions';
+import { isPlatformAdmin } from '@/lib/rls';
 import {
+  REVENUE_SPLIT_CONFIGURE_ACCOUNT_LABEL,
+  REVENUE_SPLIT_FINANCIAL_SETTINGS_HREF,
   REVENUE_SPLIT_GATEWAY_ESTIMATE_WARNING,
   REVENUE_SPLIT_MISSING_WALLET_MESSAGE,
+  REVENUE_SPLIT_WALLET_LINKED_LABEL,
   REVENUE_SPLIT_PARTY_KIND_LABELS,
   REVENUE_SPLIT_PARTY_KINDS,
   REVENUE_SPLIT_STATUS_LABELS,
@@ -28,6 +32,8 @@ type AccountOption = {
   beneficiaryName?: string | null;
   provider?: string | null;
   isDefault?: boolean;
+  asaasWalletLinked?: boolean;
+  asaasWalletMasked?: string | null;
 };
 
 type OwnerOption = {
@@ -111,6 +117,7 @@ function destinationForAccount(
 export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: Props) {
   const { user } = useAuth();
   const canEdit = canManageRevenueSplit(user?.role);
+  const showManualWalletFallback = isPlatformAdmin(user?.role);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [configured, setConfigured] = useState(false);
@@ -147,7 +154,6 @@ export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: P
         setParticipants(
           splitJson.participants.map((row: Record<string, unknown>, index: number) => {
             const accountId = String(row.financialAccountId || '') || null;
-            const dest = destinationForAccount(splitJson.destinations || [], accountId);
             return {
               key: String(row.id || newKey()),
               displayName: String(row.displayName || ''),
@@ -159,7 +165,7 @@ export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: P
               isIssuerRemainder: Boolean(row.isIssuerRemainder),
               sortOrder: Number(row.sortOrder ?? index),
               active: row.active !== false,
-              walletId: dest?.destinationIdentifier || '',
+              walletId: '',
             };
           }),
         );
@@ -222,6 +228,7 @@ export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: P
     try {
       const headers = await authHeaders();
       for (const row of participants) {
+        if (!showManualWalletFallback) continue;
         if (row.isIssuerRemainder || !row.financialAccountId || !row.walletId.trim()) continue;
         const destRes = await fetch('/api/finance/revenue-split/destinations', {
           method: 'PUT',
@@ -317,7 +324,6 @@ export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: P
 
       {participants.map((row) => {
         const dest = destinationForAccount(destinations, row.financialAccountId);
-        const walletConfigured = Boolean(dest || row.walletId.trim());
         return (
           <div key={row.key} className="rounded-lg border border-[var(--color-border)]/80 p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
@@ -415,7 +421,12 @@ export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: P
               className={fieldClass}
               value={row.financialAccountId || ''}
               disabled={!canEdit}
-              onChange={(event) => updateRow(row.key, { financialAccountId: event.target.value || null })}
+              onChange={(event) =>
+                updateRow(row.key, {
+                  financialAccountId: event.target.value || null,
+                  walletId: '',
+                })
+              }
             >
               <option value="">Conta financeira</option>
               {accounts.map((account) => (
@@ -429,20 +440,45 @@ export function ProjectRevenueSplitPanel({ projectId, projectName, accounts }: P
               <p className="text-xs text-emerald-300">Conta emissora ✓ — não precisa de Wallet ID no Split.</p>
             ) : (
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-[var(--color-text-muted)]">Provider: Asaas · Wallet ID</label>
-                <input
-                  className={fieldClass}
-                  value={row.walletId}
-                  placeholder="walletId da conta Asaas de destino"
-                  disabled={!canEdit}
-                  onChange={(event) => updateRow(row.key, { walletId: event.target.value })}
-                />
-                <p className={`text-xs ${walletConfigured ? 'text-emerald-300' : 'text-amber-200'}`}>
-                  Status: {walletConfigured ? 'Configurado' : 'Não configurado'}
-                </p>
-                <p className={`text-xs ${walletConfigured ? 'text-emerald-300' : 'text-amber-200'}`}>
-                  {walletConfigured ? 'Carteira Asaas configurada ✓' : REVENUE_SPLIT_MISSING_WALLET_MESSAGE}
-                </p>
+                {(() => {
+                  const account = accounts.find((item) => item.id === row.financialAccountId);
+                  const walletConfigured = Boolean(dest || account?.asaasWalletLinked);
+                  return (
+                    <>
+                      <p className={`text-xs ${walletConfigured ? 'text-emerald-300' : 'text-amber-200'}`}>
+                        {walletConfigured
+                          ? `${REVENUE_SPLIT_WALLET_LINKED_LABEL}${
+                              account?.asaasWalletMasked ? ` · ${account.asaasWalletMasked}` : ''
+                            }`
+                          : row.financialAccountId
+                            ? REVENUE_SPLIT_MISSING_WALLET_MESSAGE
+                            : 'Selecione a conta financeira do participante.'}
+                      </p>
+                      {!walletConfigured ? (
+                        <a
+                          href={REVENUE_SPLIT_FINANCIAL_SETTINGS_HREF}
+                          className="text-xs font-semibold text-[var(--color-primary)] underline underline-offset-2"
+                        >
+                          {REVENUE_SPLIT_CONFIGURE_ACCOUNT_LABEL}
+                        </a>
+                      ) : null}
+                    </>
+                  );
+                })()}
+                {showManualWalletFallback ? (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-[var(--color-text-muted)]">
+                      Modo avançado (SUPER_ADMIN): Wallet ID manual
+                    </label>
+                    <input
+                      className={fieldClass}
+                      value={row.walletId}
+                      placeholder="Fallback técnico — somente SUPER_ADMIN"
+                      disabled={!canEdit}
+                      onChange={(event) => updateRow(row.key, { walletId: event.target.value })}
+                    />
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

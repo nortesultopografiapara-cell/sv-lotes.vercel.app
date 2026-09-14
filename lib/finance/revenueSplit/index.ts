@@ -11,3 +11,4 @@ export * from './asaasCompanySplitAdapter';
 export * from './asaasChargeSplit';
 export * from './interSplitGuard';
 export * from './webhookEvents';
+export * from './resolveAsaasWallet';

@@ -476,6 +476,8 @@ function testSourceWiring() {
   assert(client.includes('buildAsaasCompanyCreatePaymentBody'), 'body builder');
   assert(client.includes('percentualValue'), 'percentualValue');
   assert(client.includes('if (input.split && input.split.length > 0)'), 'split opcional');
+  assert(client.includes("ASAAS_OWN_WALLETS_PATH") || client.includes("/wallets/"), 'consulta wallet oficial');
+  assert(client.includes('asaasCompanyFetchOwnWalletId'), 'fetch wallet da própria conta');
 
   const charge = read('lib/finance/asaasCompanyChargeService.ts');
   assert(charge.includes('prepareAsaasCompanyChargeSplit'), 'freeze/prepare na emissão');

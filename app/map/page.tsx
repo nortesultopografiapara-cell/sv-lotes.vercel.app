@@ -569,6 +569,8 @@ export default function MapPage() {
       beneficiaryName: string | null;
       isDefault: boolean;
       provider?: string | null;
+      asaasWalletLinked?: boolean;
+      asaasWalletMasked?: string | null;
     }>
   >([]);
   const [projectFormSubmitting, setProjectFormSubmitting] = useState(false);

@@ -21,7 +21,11 @@ export const REVENUE_SPLIT_GATEWAY_ESTIMATE_WARNING =
   'Valor estimado. O valor efetivo depende das tarifas do gateway.';
 
 export const REVENUE_SPLIT_MISSING_WALLET_MESSAGE =
-  'Este participante ainda não possui uma carteira Asaas configurada.';
+  'Esta conta ainda não possui carteira Asaas vinculada.';
+
+export const REVENUE_SPLIT_WALLET_LINKED_LABEL = 'Carteira Asaas vinculada ✓';
+export const REVENUE_SPLIT_CONFIGURE_ACCOUNT_LABEL = 'Configurar conta financeira';
+export const REVENUE_SPLIT_FINANCIAL_SETTINGS_HREF = '/settings#financeiro';
 
 export const REVENUE_SPLIT_LEG_STATUS_LABELS: Record<RevenueSplitLegStatus, string> = {
   PENDING: 'Pendente',
