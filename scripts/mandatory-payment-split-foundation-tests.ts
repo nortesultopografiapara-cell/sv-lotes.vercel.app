@@ -15,7 +15,7 @@ import {
   validateProjectRevenueSplit,
   type ProjectRevenueSplitParticipantInput,
   type RevenueSplitActor,
-} from '../lib/finance/revenueSplit';
+} from '../lib/finance/revenueSplit/server';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);

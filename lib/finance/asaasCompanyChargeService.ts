@@ -60,7 +60,7 @@ import {
   prepareAsaasCompanyChargeSplit,
   setChargeRevenueSplitLegsStatus,
   syncChargeRevenueSplitLegsFromAsaasPayment,
-} from '@/lib/finance/revenueSplit';
+} from '@/lib/finance/revenueSplit/server';
 
 type InstallmentRow = {
   id: string;

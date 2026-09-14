@@ -1,14 +1,4 @@
-export * from './types';
-export * from './validation';
-export * from './permissions';
-export * from './store';
-export * from './memoryStore';
-export * from './shareFormat';
-export * from './display';
-export * from './service';
-export * from './supabaseStore';
-export * from './asaasCompanySplitAdapter';
-export * from './asaasChargeSplit';
-export * from './interSplitGuard';
-export * from './webhookEvents';
-export * from './resolveAsaasWallet';
+/**
+ * Barrel client-safe. Código server-only fica em `./server`.
+ */
+export * from './client';

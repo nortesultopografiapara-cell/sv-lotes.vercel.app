@@ -32,7 +32,7 @@ import {
   splitStatusForWebhookEvent,
   syncChargeRevenueSplitLegsFromAsaasPayment,
   resolveSplitWebhookTargetLegIds,
-} from '@/lib/finance/revenueSplit';
+} from '@/lib/finance/revenueSplit/server';
 
 export type CompanyAsaasWebhookPayload = {
   event?: string;

@@ -28,7 +28,7 @@ import {
   createRevenueSplitService,
   resolveAsaasWalletForFinancialAccount,
   type RevenueSplitActor,
-} from '../lib/finance/revenueSplit';
+} from '../lib/finance/revenueSplit/server';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -152,9 +152,14 @@ function testRoles() {
 function testUiSource() {
   const panel = read('components/projects/ProjectRevenueSplitPanel.tsx');
   const accountsPanel = read('components/finance/FinancialAccountsPanel.tsx');
+  const mapPage = read('app/map/page.tsx');
+  const ownersModal = read('components/owners/OwnerRevenueSplitModal.tsx');
   const route = read('app/api/finance/asaas/accounts/[id]/resolve-wallet/route.ts');
   const client = read('lib/finance/asaasCompanyClient.ts');
   const resolve = read('lib/finance/revenueSplit/resolveAsaasWallet.ts');
+  const barrel = read('lib/finance/revenueSplit/index.ts');
+  const clientBarrel = read('lib/finance/revenueSplit/client.ts');
+  const serverBarrel = read('lib/finance/revenueSplit/server.ts');
 
   assert(accountsPanel.includes('Carteira para Split'), 'UI configurações');
   assert(accountsPanel.includes('Não vinculada'), 'UI sem wallet');
@@ -169,6 +174,23 @@ function testUiSource() {
   assert(client.includes(ASAAS_OWN_WALLETS_PATH) || client.includes('/wallets/'), 'GET /wallets/');
   assert(!resolve.includes('console.log') || !resolve.includes('apiKey'), 'resolve sem log de key');
   assert(!route.includes('webhookUrl') && !route.includes('createWebhook'), 'rota não cria webhook');
+  assert(barrel.includes("./client"), 'barrel aponta para client');
+  assert(!barrel.includes('resolveAsaasWallet'), 'barrel client não exporta resolve');
+  assert(!clientBarrel.includes('companyFinancialAccountRepository'), 'client barrel sem repo');
+  assert(!clientBarrel.includes('credentialsCrypto'), 'client barrel sem crypto');
+  assert(serverBarrel.includes("./resolveAsaasWallet"), 'server exporta resolve');
+  for (const [name, src] of [
+    ['ProjectRevenueSplitPanel', panel],
+    ['FinancialAccountsPanel', accountsPanel],
+    ['map/page', mapPage],
+    ['OwnerRevenueSplitModal', ownersModal],
+  ] as const) {
+    assert(!src.includes('credentialsCrypto'), `${name} não importa credentialsCrypto`);
+    assert(!src.includes('companyFinancialAccountRepository'), `${name} não importa repository`);
+    assert(!src.includes('node:crypto'), `${name} não importa node:crypto`);
+    assert(!src.includes('revenueSplit/server'), `${name} não importa barrel server`);
+    assert(!src.includes('resolveAsaasWallet'), `${name} não importa resolve direto`);
+  }
   console.log('OK testUiSource');
 }
 

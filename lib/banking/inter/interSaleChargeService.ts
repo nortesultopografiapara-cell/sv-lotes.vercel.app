@@ -55,7 +55,7 @@ import { loadSaleContext, loadSaleScopedInstallments } from '@/lib/finance/saleC
 import {
   assertInterEmissionAllowedForRevenueSplit,
   createSupabaseRevenueSplitStore,
-} from '@/lib/finance/revenueSplit';
+} from '@/lib/finance/revenueSplit/server';
 
 const ACTIVE_BANK_CHARGE_STATUSES = new Set([
   'PENDING',
