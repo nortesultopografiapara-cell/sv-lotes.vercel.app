@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Loader2, Plus, Save, ShieldCheck, Star } from 'lucide-react';
+import { Building2, Loader2, Plus, Save, ShieldCheck, Star, Wallet } from 'lucide-react';
 import {
   COMPANY_FINANCIAL_ACCOUNT_TYPE_LABELS,
   COMPANY_FINANCIAL_ACCOUNT_TYPES,
@@ -81,6 +81,7 @@ function maskConfigured(hasKey: boolean): string {
 export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resolvingWallet, setResolvingWallet] = useState(false);
   const [accounts, setAccounts] = useState<CompanyFinancialAccountResponse[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -146,7 +147,7 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
       ...emptyForm(),
       name: NEW_ASAAS_FINANCIAL_ACCOUNT_NAME,
       isDefault: false,
-      webhookUrl: suggestedWebhookUrl,
+      webhookUrl: '',
     });
     setSuccess(null);
     setError(null);
@@ -223,7 +224,8 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
             ...form,
             name,
             isDefault: isNewAsaas ? false : form.isDefault,
-            webhookUrl: form.webhookUrl || suggestedWebhookUrl,
+            webhookUrl: form.webhookUrl.trim(),
+            webhookToken: form.webhookToken.trim(),
           };
 
       const res = await fetch(
@@ -246,6 +248,43 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
       setError(err instanceof Error ? err.message : 'Falha ao salvar conta financeira.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleResolveWallet() {
+    if (readOnlyDemo || !selectedId || creating) return;
+    const hasKeyForEnv =
+      form.environment === 'PRODUCTION'
+        ? Boolean(selectedAccount?.hasProductionApiKey || form.productionApiKey.trim())
+        : Boolean(selectedAccount?.hasSandboxApiKey || form.sandboxApiKey.trim());
+    if (!selectedAccount?.hasSandboxApiKey && !selectedAccount?.hasProductionApiKey && !hasKeyForEnv) {
+      setError('Salve a API Key desta conta antes de buscar a Wallet ID.');
+      return;
+    }
+    if (form.sandboxApiKey.trim() || form.productionApiKey.trim()) {
+      setError('Salve a API Key antes de validar. A busca usa somente a credencial já gravada no servidor.');
+      return;
+    }
+    setResolvingWallet(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/finance/asaas/accounts/${selectedId}/resolve-wallet`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      setSuccess(
+        `Carteira Asaas vinculada ✓ · ${json.environment === 'PRODUCTION' ? 'Production' : 'Sandbox'} · ${json.walletMasked || ''}`.trim(),
+      );
+      await loadAccounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao buscar Wallet ID.');
+    } finally {
+      setResolvingWallet(false);
     }
   }
 
@@ -530,17 +569,20 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">Webhook URL</label>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">
+                      Webhook URL (opcional — só conta emissora)
+                    </label>
                     <input
-                      value={form.webhookUrl || suggestedWebhookUrl}
+                      value={form.webhookUrl}
                       disabled={readOnlyDemo}
+                      placeholder={suggestedWebhookUrl}
                       onChange={(e) => setForm((prev) => ({ ...prev, webhookUrl: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
                     />
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-[var(--text-secondary)]">
-                      Token do Webhook {creating ? '' : '(deixe em branco para manter)'}
+                      Token do Webhook {creating ? '(opcional)' : '(deixe em branco para manter)'}
                     </label>
                     <input
                       type="password"
@@ -548,10 +590,14 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                       disabled={readOnlyDemo}
                       onChange={(e) => setForm((prev) => ({ ...prev, webhookToken: e.target.value }))}
                       className="w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm"
-                      autoComplete="new-password"
-                    />
+                    autoComplete="new-password"
+                  />
                   </div>
                 </div>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Webhook é necessário apenas na conta emissora. Contas destinatárias do Split
+                  não precisam de URL nem token de webhook.
+                </p>
               </div>
               ) : showInterCredentials && selectedAccount?.id ? (
                 <InterBankConfigPanel
@@ -563,6 +609,36 @@ export function FinancialAccountsPanel({ tenantId, readOnlyDemo = false }: Props
                 <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-sm text-orange-100">
                   Salve a conta para configurar Client ID, Secret e certificado. Uma conta nova
                   começa incompleta (NOT_REGISTERED). Não cadastre webhook sem credenciais reais.
+                </div>
+              ) : null}
+
+              {showAsaasCredentials && selectedAccount && !creating ? (
+                <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                    <Wallet className="h-4 w-4 text-[var(--brand-primary)]" />
+                    Carteira para Split
+                  </div>
+                  {selectedAccount.asaasWalletLinked ? (
+                    <p className="text-sm text-emerald-300">
+                      Carteira Asaas vinculada ✓
+                      {selectedAccount.asaasWalletMasked ? ` · ${selectedAccount.asaasWalletMasked}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-amber-200">Não vinculada</p>
+                  )}
+                  {!readOnlyDemo ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleResolveWallet()}
+                      disabled={resolvingWallet || saving}
+                      className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] disabled:opacity-60"
+                    >
+                      {resolvingWallet ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+                      {selectedAccount.asaasWalletLinked
+                        ? 'Atualizar Wallet ID'
+                        : 'Validar conexão e buscar Wallet ID'}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 

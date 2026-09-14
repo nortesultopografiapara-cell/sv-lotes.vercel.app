@@ -22,11 +22,31 @@ import {
   COMPANY_ASAAS_ACCESS_DENIED_MESSAGE,
   isCompanyAsaasEnabled,
 } from './companyAsaasAccess';
+import {
+  applyAsaasSplitWebhookToLegs,
+  chargeCancelLegStatus,
+  classifyCompanyAsaasWebhookEvent,
+  createSupabaseRevenueSplitStore,
+  extractAsaasPaymentSplits,
+  setChargeRevenueSplitLegsStatus,
+  splitStatusForWebhookEvent,
+  syncChargeRevenueSplitLegsFromAsaasPayment,
+  resolveSplitWebhookTargetLegIds,
+} from '@/lib/finance/revenueSplit/server';
 
 export type CompanyAsaasWebhookPayload = {
   event?: string;
   id?: string;
-  payment?: CompanyAsaasPaymentWebhookPayment;
+  payment?: CompanyAsaasPaymentWebhookPayment & {
+    split?: unknown;
+    walletId?: string;
+    externalReference?: string;
+  };
+  additionalInfo?: {
+    splitId?: string;
+    walletId?: string;
+    externalReference?: string;
+  };
 };
 
 const CANCELLED_EVENTS = new Set(['PAYMENT_DELETED', 'PAYMENT_REFUNDED']);
@@ -235,10 +255,58 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
       .eq('company_id', companyId);
   }
 
-  if (CANCELLED_EVENTS.has(eventType)) {
+  const webhookKind = classifyCompanyAsaasWebhookEvent(eventType);
+  const splitStore = createSupabaseRevenueSplitStore(admin);
+
+  if (webhookKind === 'split') {
+    const splitStatus = splitStatusForWebhookEvent(eventType);
+    if (splitStatus) {
+      const remotes = extractAsaasPaymentSplits(payload.payment);
+      const additional = payload.additionalInfo || {};
+      const legs = await splitStore.listLegsByCharge(charge.id);
+      const targetLegIds = resolveSplitWebhookTargetLegIds({
+        legs,
+        eventType,
+        splitId: additional.splitId,
+        externalReference: additional.externalReference || payload.payment?.externalReference,
+        walletId: additional.walletId || payload.payment?.walletId,
+      });
+      const matchedRemote =
+        remotes.find((item) => String(item.id || '') === String(additional.splitId || '')) ||
+        remotes.find((item) => targetLegIds.includes(String(item.externalReference || ''))) ||
+        null;
+      await applyAsaasSplitWebhookToLegs({
+        store: splitStore,
+        companyId,
+        chargeId: charge.id,
+        eventType,
+        targetLegIds,
+        status: splitStatus,
+        providerSplitId: matchedRemote?.id || additional.splitId || null,
+        netAmount: matchedRemote?.totalValue == null ? null : Number(matchedRemote.totalValue),
+      });
+    }
+    if (registration.id) {
+      await markCompanyAsaasWebhookEventProcessed(admin, registration.id, companyId, 'PROCESSED');
+    }
+    return NextResponse.json({
+      ok: true,
+      split: true,
+      event: eventType,
+      installmentPaid: false,
+    });
+  }
+
+  if (CANCELLED_EVENTS.has(eventType) || webhookKind === 'cancelled') {
     await updateCompanyAsaasCharge(admin, charge.id, companyId, {
       status: 'CANCELLED',
       rawPayload: mergeCancelledPayload(payload.payment),
+    });
+    await setChargeRevenueSplitLegsStatus({
+      store: splitStore,
+      companyId,
+      chargeId: charge.id,
+      status: chargeCancelLegStatus(eventType),
     });
     if (registration.id) {
       await markCompanyAsaasWebhookEventProcessed(admin, registration.id, companyId, 'PROCESSED');
@@ -280,6 +348,14 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
       }
       return NextResponse.json({ ok: true, ignored: true, reason: 'charge_not_found' });
     }
+
+    await syncChargeRevenueSplitLegsFromAsaasPayment({
+      store: splitStore,
+      companyId,
+      chargeId: charge.id,
+      payment: payload.payment,
+      chargePaid: true,
+    });
 
     if (registration.id) {
       await markCompanyAsaasWebhookEventProcessed(

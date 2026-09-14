@@ -7,6 +7,24 @@ import {
   buildCompanyAsaasLateFeePayload,
   extractCompanyAsaasBankSlipIdentification,
 } from '@/lib/finance/asaasCompanyLateFees';
+import {
+  ASAAS_OWN_WALLETS_PATH,
+  ASAAS_WALLET_EMPTY_RESPONSE_MESSAGE,
+  assertAsaasCompanyRequestHost,
+  extractAsaasOwnWalletId,
+  type AsaasWalletListResponse,
+} from '@/lib/finance/asaasWalletId';
+
+export type AsaasCompanyPaymentSplit = {
+  id?: string;
+  walletId?: string;
+  percentualValue?: number;
+  fixedValue?: number;
+  totalValue?: number;
+  status?: string;
+  externalReference?: string;
+  description?: string;
+};
 
 export type AsaasCompanyPayment = {
   id?: string;
@@ -25,6 +43,7 @@ export type AsaasCompanyPayment = {
   creditDate?: string;
   estimatedCreditDate?: string;
   transactionReceiptUrl?: string;
+  split?: AsaasCompanyPaymentSplit[];
 };
 
 export type AsaasCompanyPixQrCode = {
@@ -59,6 +78,13 @@ export function asaasCompanyBaseUrl(environment: BankEnvironment): string {
     : 'https://api-sandbox.asaas.com/v3';
 }
 
+export function buildAsaasCompanyRequestUrl(environment: BankEnvironment, path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${asaasCompanyBaseUrl(environment)}${normalizedPath}`;
+  assertAsaasCompanyRequestHost(environment, url);
+  return url;
+}
+
 export function asaasCompanyHeaders(apiKey: string): HeadersInit {
   return {
     'Content-Type': 'application/json',
@@ -73,7 +99,7 @@ export async function asaasCompanyFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${asaasCompanyBaseUrl(environment)}${path}`, {
+  const res = await fetch(buildAsaasCompanyRequestUrl(environment, path), {
     ...init,
     headers: { ...asaasCompanyHeaders(apiKey), ...(init?.headers || {}) },
   });
@@ -153,6 +179,24 @@ export async function asaasCompanyFetchIdentificationField(
   }
   if (String(last.identificationField || '').replace(/\D/g, '').length === 47) return last;
   throw lastError || new Error('Linha digitável Asaas indisponível.');
+}
+
+/**
+ * GET /wallets/ — Wallet ID da própria conta autenticada (Retrieve WalletId).
+ * Não envia body (GET com body é 403 no Asaas).
+ */
+export async function asaasCompanyFetchOwnWalletId(
+  apiKey: string,
+  environment: BankEnvironment,
+): Promise<string> {
+  const payload = await asaasCompanyFetch<AsaasWalletListResponse>(
+    apiKey,
+    environment,
+    ASAAS_OWN_WALLETS_PATH,
+  );
+  const walletId = extractAsaasOwnWalletId(payload);
+  if (!walletId) throw new Error(ASAAS_WALLET_EMPTY_RESPONSE_MESSAGE);
+  return walletId;
 }
 
 /**
@@ -249,6 +293,13 @@ export async function asaasCompanyFindOrCreateCustomer(
   return created.id;
 }
 
+export type AsaasCompanyCreatePaymentSplit = {
+  walletId: string;
+  percentualValue: number;
+  externalReference: string;
+  description?: string;
+};
+
 export type AsaasCompanyCreatePaymentInput = {
   customerId: string;
   billingType: AsaasCompanyCreateBillingType;
@@ -256,7 +307,38 @@ export type AsaasCompanyCreatePaymentInput = {
   dueDate: string;
   description: string;
   externalReference: string;
+  /** Somente participantes não-emissores. Ausente/vazio = payload idêntico ao atual. */
+  split?: AsaasCompanyCreatePaymentSplit[];
 };
+
+/**
+ * Monta o JSON de POST /payments.
+ * `split` só entra se houver itens — venda sem split permanece idêntica.
+ */
+export function buildAsaasCompanyCreatePaymentBody(
+  input: AsaasCompanyCreatePaymentInput,
+): Record<string, unknown> {
+  const lateFees = buildCompanyAsaasLateFeePayload();
+  const body: Record<string, unknown> = {
+    customer: input.customerId,
+    billingType: input.billingType,
+    value: Number(input.value.toFixed(2)),
+    dueDate: input.dueDate,
+    description: input.description.slice(0, 500),
+    externalReference: input.externalReference,
+    fine: lateFees.fine,
+    interest: lateFees.interest,
+  };
+  if (input.split && input.split.length > 0) {
+    body.split = input.split.map((item) => ({
+      walletId: item.walletId,
+      percentualValue: item.percentualValue,
+      externalReference: item.externalReference,
+      ...(item.description ? { description: item.description } : {}),
+    }));
+  }
+  return body;
+}
 
 export async function asaasCompanyCreatePayment(
   apiKey: string,
@@ -268,20 +350,9 @@ export async function asaasCompanyCreatePayment(
   pixCopyPaste: string;
   bankSlipIdentification: string | null;
 }> {
-  const lateFees = buildCompanyAsaasLateFeePayload();
-
   const payment = await asaasCompanyFetch<AsaasCompanyPayment>(apiKey, environment, '/payments', {
     method: 'POST',
-    body: JSON.stringify({
-      customer: input.customerId,
-      billingType: input.billingType,
-      value: Number(input.value.toFixed(2)),
-      dueDate: input.dueDate,
-      description: input.description.slice(0, 500),
-      externalReference: input.externalReference,
-      fine: lateFees.fine,
-      interest: lateFees.interest,
-    }),
+    body: JSON.stringify(buildAsaasCompanyCreatePaymentBody(input)),
   });
 
   if (!payment.id) throw new Error('Asaas Company não retornou payment id.');

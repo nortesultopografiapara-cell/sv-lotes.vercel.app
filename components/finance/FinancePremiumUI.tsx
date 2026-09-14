@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import { AsaasInstallmentChargePanel } from '@/components/finance/AsaasInstallmentChargePanel';
+import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
 
 export type FinanceStatCardProps = {
   title: string;
@@ -325,11 +326,26 @@ export const PaymentTableRow = memo(
               loading={asaasLoading}
               error={asaasError}
               formatCurrency={formatCurrency}
+              saleId={typeof sales?.id === 'string' ? sales.id : String(p.sale_id || '')}
+              installmentId={String(p.id)}
+              paymentStatus={String(p.status || '')}
               onGenerate={(billingType) => onGenerateAsaasCharge?.(billingType)}
               onRefreshStatus={() => onRefreshAsaasCharge?.()}
               onCancel={() => onCancelAsaasCharge?.()}
               onRegenerate={(billingType) => onRegenerateAsaasCharge?.(billingType)}
               onClearError={() => onClearAsaasError?.()}
+            />
+          </td>
+        </tr>
+      ) : null}
+      {isPaid && (p.sale_id || sales?.id) ? (
+        <tr className="finance-table-row">
+          <td colSpan={3} className="!px-3 !pb-4 !pt-0 sm:!px-4">
+            <ChargeRevenueSplitDistribution
+              saleId={typeof sales?.id === 'string' ? sales.id : String(p.sale_id || '')}
+              installmentId={String(p.id)}
+              paymentStatus={String(p.status || '')}
+              compact
             />
           </td>
         </tr>

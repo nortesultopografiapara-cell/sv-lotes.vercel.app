@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BankEnvironment } from '@/lib/banking/types';
+import { maskAsaasWalletId } from '@/lib/finance/asaasWalletId';
 import {
   isInterFinancialProvider,
   type CompanyFinancialAccountResponse,
@@ -57,9 +58,40 @@ async function loadIntegrationProvider(
   return data?.provider ? String(data.provider).toUpperCase() : null;
 }
 
+async function loadAsaasWalletMasks(
+  admin: SupabaseClient,
+  accountIds: string[],
+): Promise<Map<string, { linked: boolean; masked: string | null }>> {
+  const out = new Map<string, { linked: boolean; masked: string | null }>();
+  const ids = accountIds.filter(Boolean);
+  if (ids.length === 0) return out;
+  const { data } = await admin
+    .from('financial_account_provider_destinations')
+    .select('financial_account_id, destination_identifier, status')
+    .in('financial_account_id', ids)
+    .eq('provider', 'ASAAS_COMPANY')
+    .eq('destination_type', 'WALLET_ID');
+  for (const row of (data as Array<{
+    financial_account_id?: string;
+    destination_identifier?: string;
+    status?: string;
+  }> | null) || []) {
+    const accountId = String(row.financial_account_id || '').trim();
+    const identifier = String(row.destination_identifier || '').trim();
+    const linked = String(row.status || '') === 'ACTIVE' && identifier.length > 0;
+    if (!accountId) continue;
+    out.set(accountId, {
+      linked,
+      masked: linked ? maskAsaasWalletId(identifier) : null,
+    });
+  }
+  return out;
+}
+
 async function mapRowWithIntegration(
   admin: SupabaseClient,
   row: CompanyFinancialAccountRow,
+  wallet?: { linked: boolean; masked: string | null },
 ): Promise<CompanyFinancialAccountResponse> {
   const credentialTypes = await loadCredentialTypes(admin, row.bank_integration_id);
   const connectionStatus = await loadIntegrationConnectionStatus(admin, row.bank_integration_id);
@@ -70,6 +102,8 @@ async function mapRowWithIntegration(
     hasWebhookToken: credentialTypes.has('webhook_secret'),
     connectionStatus,
     provider,
+    asaasWalletLinked: wallet?.linked ?? false,
+    asaasWalletMasked: wallet?.masked ?? null,
   });
 }
 
@@ -93,7 +127,13 @@ export async function listCompanyFinancialAccounts(
   if (error) throw new Error(error.message);
 
   const rows = (data as CompanyFinancialAccountRow[]) ?? [];
-  return Promise.all(rows.map((row) => mapRowWithIntegration(admin, row)));
+  const wallets = await loadAsaasWalletMasks(
+    admin,
+    rows.map((row) => row.id),
+  );
+  return Promise.all(
+    rows.map((row) => mapRowWithIntegration(admin, row, wallets.get(row.id))),
+  );
 }
 
 export async function getCompanyFinancialAccountById(
@@ -110,7 +150,9 @@ export async function getCompanyFinancialAccountById(
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return mapRowWithIntegration(admin, data as CompanyFinancialAccountRow);
+  const row = data as CompanyFinancialAccountRow;
+  const wallets = await loadAsaasWalletMasks(admin, [row.id]);
+  return mapRowWithIntegration(admin, row, wallets.get(row.id));
 }
 
 export async function getDefaultFinancialAccountForCompany(
@@ -129,7 +171,9 @@ export async function getDefaultFinancialAccountForCompany(
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return mapRowWithIntegration(admin, data as CompanyFinancialAccountRow);
+  const row = data as CompanyFinancialAccountRow;
+  const wallets = await loadAsaasWalletMasks(admin, [row.id]);
+  return mapRowWithIntegration(admin, row, wallets.get(row.id));
 }
 
 async function clearOtherDefaults(

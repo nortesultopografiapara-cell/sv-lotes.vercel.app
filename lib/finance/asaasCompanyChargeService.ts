@@ -54,6 +54,13 @@ import {
   type CustomerRecord,
 } from '@/lib/customerIdentity';
 import { INTER_PROVIDER_BLOCKED_ON_ASAAS_MESSAGE } from '@/lib/charges/chargeProviderRouting';
+import {
+  attachAsaasChargeToSplitLegs,
+  createSupabaseRevenueSplitStore,
+  prepareAsaasCompanyChargeSplit,
+  setChargeRevenueSplitLegsStatus,
+  syncChargeRevenueSplitLegsFromAsaasPayment,
+} from '@/lib/finance/revenueSplit/server';
 
 type InstallmentRow = {
   id: string;
@@ -281,6 +288,16 @@ async function createCompanyChargeWithBillingType(
     );
   }
 
+  const splitStore = createSupabaseRevenueSplitStore(admin);
+  const preparedSplit = await prepareAsaasCompanyChargeSplit({
+    store: splitStore,
+    companyId: input.companyId,
+    saleId: installment.sale_id,
+    installmentId: input.installmentId,
+    grossAmount: amount,
+    environment,
+  });
+
   const dueDate = String(installment.due_date || '').split('T')[0];
   const customerName = installment.customers?.name || 'Cliente';
   const payerDocument = assertPayerDocumentPresent(installment.customers);
@@ -299,13 +316,14 @@ async function createCompanyChargeWithBillingType(
       dueDate,
       description: buildChargeDescription(installment),
       externalReference: input.installmentId,
+      split: preparedSplit.remoteSplits.length ? preparedSplit.remoteSplits : undefined,
     });
 
   if (!payment.id) throw new Error('Asaas Company não retornou cobrança.');
 
   const storedBillingType = resolveStoredCompanyBillingType(billingType, payment.billingType);
 
-  return insertCompanyAsaasCharge(admin, {
+  const inserted = await insertCompanyAsaasCharge(admin, {
     companyId: input.companyId,
     customerId: installment.customer_id,
     saleId: installment.sale_id,
@@ -323,6 +341,18 @@ async function createCompanyChargeWithBillingType(
     financialAccountId,
     rawPayload: payment as Record<string, unknown>,
   });
+
+  if (preparedSplit.enabled) {
+    await attachAsaasChargeToSplitLegs({
+      store: splitStore,
+      companyId: input.companyId,
+      installmentId: input.installmentId,
+      chargeId: inserted.id,
+      payment,
+    });
+  }
+
+  return inserted;
 }
 
 export async function getCompanyChargeStatus(
@@ -405,6 +435,14 @@ export async function getCompanyChargeStatus(
     pixCopyPaste: enriched.pixCopyPaste || existingRow.pix_copy_paste || null,
     rawPayload: payment as Record<string, unknown>,
     paidAt: paidAtSafe,
+  });
+
+  await syncChargeRevenueSplitLegsFromAsaasPayment({
+    store: createSupabaseRevenueSplitStore(admin),
+    companyId,
+    chargeId,
+    payment,
+    chargePaid: mappedStatus === 'PAID',
   });
 
   if (mappedStatus === 'PAID') {
@@ -553,9 +591,16 @@ export async function cancelCompanyCharge(
     }
   }
 
-  return updateCompanyAsaasCharge(admin, chargeId, companyId, {
+  const updated = await updateCompanyAsaasCharge(admin, chargeId, companyId, {
     status: 'CANCELLED',
   });
+  await setChargeRevenueSplitLegsStatus({
+    store: createSupabaseRevenueSplitStore(admin),
+    companyId,
+    chargeId,
+    status: 'CANCELLED',
+  });
+  return updated;
 }
 
 export async function syncCompanyCharges(
