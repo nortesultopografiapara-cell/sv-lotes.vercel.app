@@ -11,7 +11,7 @@
  * - percentualValue apenas — sem fixedValue.
  * - externalReference = id da charge_revenue_split_leg.
  * - Leg local do emissor existe para o financeiro mostrar 100%; sem provider_split_id.
- * - Emissão com split somente SANDBOX nesta fase.
+ * - Emissão com split em SANDBOX e PRODUCTION, cada um no host Asaas do ambiente.
  */
 import type { BankEnvironment } from '@/lib/banking/types';
 import { RevenueSplitError, type ChargeRevenueSplitLeg, type RevenueSplitLegStatus } from './types';
@@ -23,11 +23,14 @@ export const ASAAS_COMPANY_SPLIT_ADAPTER = {
   provider: ASAAS_COMPANY_SPLIT_PROVIDER,
 };
 
-export const ASAAS_PRODUCTION_SPLIT_BLOCKED_MESSAGE =
-  'Split de Recebimentos nesta fase só emite no Asaas Sandbox. A conta selecionada está em Production.';
-
 export const ASAAS_SPLIT_MISSING_WALLET_MESSAGE =
   'Não é possível emitir a cobrança: há participante do Split sem Wallet ID Asaas.';
+
+export const ASAAS_SPLIT_ENVIRONMENT_INVALID_MESSAGE =
+  'Ambiente Asaas inválido para Split de Recebimentos.';
+
+export const ASAAS_SANDBOX_WALLET_ON_PRODUCTION_MESSAGE =
+  'Não é possível emitir Split em Production com Wallet ID de Sandbox. Valide a carteira pela API Production da conta destinatária.';
 
 export type AsaasCompanyRemoteSplitInput = {
   walletId: string;
@@ -60,9 +63,22 @@ export function isAsaasCompanySplitProvider(provider: string | null | undefined)
   return String(provider || '').trim().toUpperCase() === ASAAS_COMPANY_SPLIT_PROVIDER;
 }
 
-export function assertAsaasSandboxForSplit(environment: BankEnvironment): void {
-  if (environment === 'PRODUCTION') {
-    throw new RevenueSplitError('SANDBOX_ONLY', ASAAS_PRODUCTION_SPLIT_BLOCKED_MESSAGE);
+export function assertAsaasSplitEnvironmentAllowed(environment: BankEnvironment): void {
+  if (environment !== 'SANDBOX' && environment !== 'PRODUCTION') {
+    throw new RevenueSplitError('ENVIRONMENT_INVALID', ASAAS_SPLIT_ENVIRONMENT_INVALID_MESSAGE);
+  }
+}
+
+export function looksLikeAsaasSandboxHomologWallet(walletId: string): boolean {
+  return /wal_(sandbox|homolog|hmlg)_/i.test(String(walletId || '').trim());
+}
+
+export function assertAsaasWalletFitsSplitEnvironment(
+  walletId: string,
+  environment: BankEnvironment,
+): void {
+  if (environment === 'PRODUCTION' && looksLikeAsaasSandboxHomologWallet(walletId)) {
+    throw new RevenueSplitError('WALLET_ENVIRONMENT_MISMATCH', ASAAS_SANDBOX_WALLET_ON_PRODUCTION_MESSAGE);
   }
 }
 
@@ -75,14 +91,26 @@ export function remoteLegsForAsaasCompany(legs: ChargeRevenueSplitLeg[]): Charge
   return legs.filter((leg) => !leg.isIssuerRemainder);
 }
 
-export function assertAsaasCompanySplitWalletsPresent(legs: ChargeRevenueSplitLeg[]): void {
-  const missing = remoteLegsForAsaasCompany(legs).find(
-    (leg) => !String(leg.destinationIdentifier || '').trim(),
+export function assertAsaasCompanySplitWalletsPresent(
+  legs: ChargeRevenueSplitLeg[],
+  environment?: BankEnvironment,
+): void {
+  const remotes = remoteLegsForAsaasCompany(legs);
+  const missing = remotes.find((leg) => !String(leg.destinationIdentifier || '').trim());
+  if (missing) {
+    throw new RevenueSplitError(
+      'WALLET_MISSING',
+      `${ASAAS_SPLIT_MISSING_WALLET_MESSAGE} Participante: ${missing.displayName || 'sem nome'}.`,
+    );
+  }
+  if (environment !== 'PRODUCTION') return;
+  const sandboxWallet = remotes.find((leg) =>
+    looksLikeAsaasSandboxHomologWallet(String(leg.destinationIdentifier || '')),
   );
-  if (!missing) return;
+  if (!sandboxWallet) return;
   throw new RevenueSplitError(
-    'WALLET_MISSING',
-    `${ASAAS_SPLIT_MISSING_WALLET_MESSAGE} Participante: ${missing.displayName || 'sem nome'}.`,
+    'WALLET_ENVIRONMENT_MISMATCH',
+    `${ASAAS_SANDBOX_WALLET_ON_PRODUCTION_MESSAGE} Participante: ${sandboxWallet.displayName || 'sem nome'}.`,
   );
 }
 

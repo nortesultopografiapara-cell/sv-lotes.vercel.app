@@ -6,7 +6,7 @@ import type { BankEnvironment } from '@/lib/banking/types';
 import {
   ASAAS_COMPANY_SPLIT_PROVIDER,
   assertAsaasCompanySplitWalletsPresent,
-  assertAsaasSandboxForSplit,
+  assertAsaasSplitEnvironmentAllowed,
   buildAsaasCompanyRemoteSplits,
   extractAsaasPaymentSplits,
   matchLegToRemoteSplit,
@@ -57,10 +57,10 @@ export async function prepareAsaasCompanyChargeSplit(input: {
     provider: ASAAS_COMPANY_SPLIT_PROVIDER,
     grossAmount: input.grossAmount,
   });
-  assertAsaasCompanySplitWalletsPresent(legs);
+  assertAsaasCompanySplitWalletsPresent(legs, input.environment);
   const remoteSplits = buildAsaasCompanyRemoteSplits(legs);
   if (remoteSplits.length > 0) {
-    assertAsaasSandboxForSplit(input.environment);
+    assertAsaasSplitEnvironmentAllowed(input.environment);
   }
   return { enabled: true, remoteSplits, legs };
 }

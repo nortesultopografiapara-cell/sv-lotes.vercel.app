@@ -283,6 +283,52 @@ async function testProductionUsesProductionHost() {
   console.log('OK testProductionUsesProductionHost');
 }
 
+async function testKeyEnvironmentMismatchBlocked() {
+  const store = seedStore();
+  await expectCode(
+    () =>
+      resolveWith({
+        actor: adminA,
+        companyId: COMPANY_A,
+        financialAccountId: FA_A,
+        store,
+        environment: 'PRODUCTION',
+        apiKey: '$aact_hmlg_sandbox',
+      }),
+    'ASAAS_ENVIRONMENT_MISMATCH',
+    'Production + chave Sandbox',
+  );
+  const store2 = seedStore();
+  await expectCode(
+    () =>
+      resolveWith({
+        actor: adminA,
+        companyId: COMPANY_A,
+        financialAccountId: FA_A,
+        store: store2,
+        environment: 'SANDBOX',
+        apiKey: '$aact_prod_live',
+      }),
+    'ASAAS_ENVIRONMENT_MISMATCH',
+    'Sandbox + chave Production',
+  );
+  const store3 = seedStore();
+  const seen: { environment?: BankEnvironment; hosts?: string[] } = {};
+  const result = await resolveWith({
+    actor: adminA,
+    companyId: COMPANY_A,
+    financialAccountId: FA_A,
+    store: store3,
+    environment: 'PRODUCTION',
+    apiKey: '$aact_prod_live',
+    walletId: '0000c712-0a0b-a0b0-0000-031e7ac51a2',
+    seen,
+  });
+  assert(result.environment === 'PRODUCTION', 'Production com chave Production resolve');
+  assert(seen.hosts?.[0]?.includes(ASAAS_PRODUCTION_API_HOST), 'wallet Production no host Production');
+  console.log('OK testKeyEnvironmentMismatchBlocked');
+}
+
 async function testMissingAndInvalidKey() {
   const store = seedStore();
   await expectCode(
@@ -393,6 +439,7 @@ async function main() {
   testUiSource();
   await testSandboxSavesWallet();
   await testProductionUsesProductionHost();
+  await testKeyEnvironmentMismatchBlocked();
   await testMissingAndInvalidKey();
   await testUpsertDoesNotDuplicate();
   await testPermissionsAndTenant();
