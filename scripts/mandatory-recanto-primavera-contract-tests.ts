@@ -361,6 +361,10 @@ function testRecantoPrintCssAllowsClauseFlow() {
     printCss.includes('sv-pagination-force-break'),
     'quebra forçada só via classe de medição',
   );
+  assert(
+    printCss.includes('margin: 0 0 18px 0') && printCss.includes('row-gap: 22px'),
+    'layout físico Recanto alinhado ao Araguaia',
+  );
   console.log('OK testRecantoPrintCssAllowsClauseFlow');
 }
 

@@ -6,10 +6,10 @@ import { sanitizeContractField } from '@/lib/recantoPrimaveraCompanyProfile';
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
 
 const SIGNATURE_SLOT_STYLE =
-  `text-align: center; margin-bottom: 0; min-width: 0; width: 100%;`;
-/** Respiro cartório: área acima da linha (margin-top no CSS) + gap até o bloco de texto. */
+  'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;';
+/** Mesma geometria comprovada no Araguaia: linha acima do signatário, sem encostar na data. */
 const SIGNATURE_LINE_STYLE =
-  'border-top: 1px solid #111; margin: 32px auto 0 auto; padding: 0; width: 70%; max-width: 240px; height: 12px; box-sizing: border-box;';
+  'border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;';
 const SIGNATURE_LINE_CLASS = 'signature-line';
 /** +4px acima do título; fontes inalteradas. */
 const SIGNATURE_ROLE_STYLE =
@@ -155,12 +155,12 @@ export function buildRecantoPrimaveraSignaturesHtml(
   return `
     <div class="contract-closing-and-signatures--recanto">
     <div class="contract-clause contract-clause--tight contract-closing">
-      <p style="margin-bottom: 10px;">
+      <p class="recanto-closing-statement" style="margin: 0 0 18px 0; text-align: justify;">
         E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
       </p>
-      <div class="contract-closing-date" style="text-align: right; margin-bottom: 10px;">
-        <p style="margin: 0;">${ctx.dataContratoExtensoFmt || ctx.dataContratoFmt}</p>
-      </div>
+      <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: right; font-weight: bold;">
+        ${ctx.dataContratoExtensoFmt || ctx.dataContratoFmt}
+      </p>
     </div>
 
     <div class="contract-signatures contract-signatures--recanto">

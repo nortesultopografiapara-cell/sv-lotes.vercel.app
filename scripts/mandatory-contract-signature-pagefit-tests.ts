@@ -9,6 +9,7 @@ import {
   CONTRACT_PAGE_CONTENT_HEIGHT_PX,
   CONTRACT_PAGINATION_MEASURE_SCRIPT,
   CONTRACT_RECANTO_CLAUSE_FLOW_CSS,
+  CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS,
   CONTRACT_SIGNATURE_PAGINATION_CSS,
   decideSignatureAndCertificatePlacement,
   decideSignaturePageBreakFromContinuousMeasure,
@@ -68,6 +69,12 @@ assert(
   CONTRACT_RECANTO_CLAUSE_FLOW_CSS.includes('contract-closing-and-signatures--recanto') &&
     CONTRACT_RECANTO_CLAUSE_FLOW_CSS.includes('page-break-inside: avoid'),
   'Recanto: pack fecho+data+assinaturas indivisível',
+);
+assert(
+  CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS.includes('margin: 0 0 18px 0') &&
+    CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS.includes('row-gap: 22px') &&
+    CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS.includes('column-gap: 28px'),
+  'Recanto físico: data e grade com espaçamento Araguaia',
 );
 
 if (process.exitCode) {
