@@ -155,7 +155,9 @@
   gap: 0.5rem;
   padding: 0.375rem 0.75rem;
   flex-wrap: nowrap;
-  overflow-x: auto;
+  overflow: visible;
+  position: relative;
+  z-index: 40;
 }
 
 .contracts-action-cluster {
@@ -165,6 +167,8 @@
   justify-content: flex-start;
   gap: 0.375rem;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .contracts-action-bar-end {
@@ -175,10 +179,14 @@
   gap: 0.375rem;
   margin-left: auto;
   flex-shrink: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 50;
 }
 
 .contracts-version-select {
   position: relative;
+  z-index: 60;
 }
 
 .contracts-version-select > summary {
@@ -217,7 +225,7 @@
   border: 1px solid var(--color-border);
   background: var(--bg-elevated);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-  z-index: 30;
+  z-index: 80;
 }
 
 .contracts-version-row {
@@ -336,9 +344,13 @@
 
 @media (max-width: 767px) {
   .contracts-version-menu {
-    right: auto;
-    left: 0;
-    bottom: calc(100% + 0.375rem);
+    position: fixed;
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    max-width: none;
+    bottom: calc(var(--contracts-app-bottom-nav, 3.5rem) + 0.5rem);
+    z-index: 400;
   }
 
   .contracts-mobile-version-select {

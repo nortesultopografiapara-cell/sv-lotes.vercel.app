@@ -50,6 +50,11 @@ import {
   displayContractNumber,
   isValidStoredContractNumber,
 } from "@/lib/contractNumber";
+import {
+  isCurrentContractVersion,
+  resolveContractVersionHtml,
+  sortContractVersionsNewestFirst,
+} from "@/lib/contractVersionSelect";
 import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
 import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
@@ -558,6 +563,7 @@ export default function ContractsPage() {
   const [receipts, setReceipts] = useState<any[]>([]);
   const [receiptsLoadError, setReceiptsLoadError] = useState<string | null>(null);
   const [contractVersions, setContractVersions] = useState<any[]>([]);
+  const [viewedVersionId, setViewedVersionId] = useState<string | null>(null);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regeneratingContract, setRegeneratingContract] = useState(false);
   const [contractToast, setContractToast] = useState<string | null>(null);
@@ -875,27 +881,17 @@ export default function ContractsPage() {
     return st ? st.charAt(0).toUpperCase() + st.slice(1) : "Ativo";
   };
 
-  const visibleContractVersions = (
+  const visibleContractVersions = sortContractVersionsNewestFirst(
     contractVersions.length > 0
       ? [...contractVersions]
       : selectedContract
         ? [selectedContract]
-        : []
-  ).sort(
-    (a: any, b: any) =>
-      Number(a.version ?? 1) - Number(b.version ?? 1) ||
-      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+        : [],
   );
 
-  const contractVersionNote = (ver: any) => {
-    const isCurrent =
-      ver?.is_current === true || ver?.id === selectedContract?.id;
-    if (isCurrent) return "Atual";
-    if (ver?.regenerated_from) return "Regenerado";
-    const st = normalizeContractStatus(ver?.status);
-    if (st === "superseded") return "Substituído";
-    return getStatusLabel(ver?.status);
-  };
+  const displayedContractVersion =
+    visibleContractVersions.find((ver: any) => ver.id === viewedVersionId) ||
+    selectedContract;
 
   const isSupersededContract = (c: any) =>
     normalizeContractStatus(c?.status) === "superseded";
@@ -919,6 +915,7 @@ export default function ContractsPage() {
     setContractViewNeedsRegenerar(false);
     setContractViewLoading(false);
     setCustomerContractValidation(null);
+    setViewedVersionId(null);
     // Retry key não deve forçar rebuild eterno entre contratos.
     setContractHtmlRetryKey(0);
   }, [selectedContract?.id]);
@@ -1110,9 +1107,60 @@ export default function ContractsPage() {
     }
   };
 
+  const closeContractVersionSelect = (event: { currentTarget: EventTarget }) => {
+    const target = event.currentTarget as HTMLElement | null;
+    const details = target?.closest("details");
+    if (details instanceof HTMLDetailsElement) details.open = false;
+  };
+
+  const handleSelectContractVersion = (
+    ver: any,
+    event?: { currentTarget: EventTarget },
+  ) => {
+    if (event) closeContractVersionSelect(event);
+    if (!ver?.id || !selectedContract) return;
+    setActiveTab("Visualização");
+    setViewedVersionId(String(ver.id));
+    const storedHtml = resolveContractVersionHtml(ver);
+    if (storedHtml) {
+      setContractViewHtml(storedHtml);
+      setContractViewError(null);
+      setContractViewLoading(false);
+      return;
+    }
+    if (ver.id === selectedContract.id) {
+      setContractHtmlRetryKey((k) => k + 1);
+      return;
+    }
+    void (async () => {
+      setContractViewLoading(true);
+      const htmlBody = await fetchContractHtmlFromApi(String(ver.id), user, {
+        refresh: false,
+      });
+      setContractViewLoading(false);
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+        return;
+      }
+      setContractViewError("Esta versão não possui conteúdo para visualizar.");
+    })();
+  };
+
   const handleBaixarPDF = async () => {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
+    const viewingHistorical =
+      Boolean(viewedVersionId) && viewedVersionId !== selectedContract.id;
+    if (viewingHistorical) {
+      const ver = visibleContractVersions.find(
+        (row: any) => row.id === viewedVersionId,
+      );
+      if (ver) {
+        await handleDownloadVersion(ver);
+        return;
+      }
+    }
     try {
       const isElectronicallySigned = isSaleContractFullySigned(selectedContract);
 
@@ -1235,18 +1283,25 @@ export default function ContractsPage() {
   const handleImprimir = async () => {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
-    // Mesma regra do Baixar PDF: versão ativa persistida; rebuild só se needs_regenerar.
-    const mustRefresh = Boolean(
-      (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
-    );
-    let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
-      refresh: mustRefresh,
-    });
-    if (htmlBody) {
-      setContractViewHtml(htmlBody);
-      setContractViewError(null);
-    } else {
+    const viewingHistorical =
+      Boolean(viewedVersionId) && viewedVersionId !== selectedContract.id;
+    let htmlBody: string | null = null;
+    if (viewingHistorical) {
       htmlBody = resolvedContractHtml;
+    } else {
+      // Mesma regra do Baixar PDF: versão ativa persistida; rebuild só se needs_regenerar.
+      const mustRefresh = Boolean(
+        (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
+      );
+      htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
+        refresh: mustRefresh,
+      });
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+      } else {
+        htmlBody = resolvedContractHtml;
+      }
     }
     if (!htmlBody?.trim()) {
       alert("Não foi possível carregar o conteúdo do contrato para impressão.");
@@ -3101,14 +3156,15 @@ export default function ContractsPage() {
                   <details className="contracts-version-select">
                     <summary>
                       <Layers className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                      Versão {selectedContract.version ?? 1}
+                      Versão {displayedContractVersion?.version ?? 1}
                       <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                     </summary>
-                    <div className="contracts-version-menu">
+                    <div className="contracts-version-menu" role="menu">
                       {visibleContractVersions.map((ver: any) => {
-                        const isCurrent =
-                          ver.is_current === true ||
-                          ver.id === selectedContract.id;
+                        const isCurrent = isCurrentContractVersion(
+                          ver,
+                          selectedContract.id,
+                        );
                         const dateLabel = new Date(
                           ver.regenerated_at || ver.created_at,
                         ).toLocaleDateString("pt-BR");
@@ -3116,8 +3172,11 @@ export default function ContractsPage() {
                           <button
                             key={ver.id}
                             type="button"
+                            role="menuitem"
                             className="contracts-version-row"
-                            onClick={() => void handleDownloadVersion(ver)}
+                            onClick={(event) =>
+                              handleSelectContractVersion(ver, event)
+                            }
                           >
                             <span
                               className={`contracts-version-dot ${isCurrent ? "is-current" : ""}`}
@@ -3125,9 +3184,10 @@ export default function ContractsPage() {
                             <span>
                               <span className="contracts-version-name">
                                 Versão {ver.version ?? 1}
+                                {isCurrent ? " — Atual" : ""}
                               </span>
                               <span className="contracts-version-sub">
-                                {dateLabel} — {contractVersionNote(ver)}
+                                {dateLabel}
                               </span>
                             </span>
                           </button>
@@ -3304,12 +3364,14 @@ export default function ContractsPage() {
               <details className="contracts-version-select contracts-mobile-version-select">
                 <summary className="contracts-mobile-action-btn">
                   <Layers />
-                  Versão {selectedContract.version ?? 1}
+                  Versão {displayedContractVersion?.version ?? 1}
                 </summary>
-                <div className="contracts-version-menu">
+                <div className="contracts-version-menu" role="menu">
                   {visibleContractVersions.map((ver: any) => {
-                    const isCurrent =
-                      ver.is_current === true || ver.id === selectedContract.id;
+                    const isCurrent = isCurrentContractVersion(
+                      ver,
+                      selectedContract.id,
+                    );
                     const dateLabel = new Date(
                       ver.regenerated_at || ver.created_at,
                     ).toLocaleDateString("pt-BR");
@@ -3317,8 +3379,11 @@ export default function ContractsPage() {
                       <button
                         key={ver.id}
                         type="button"
+                        role="menuitem"
                         className="contracts-version-row"
-                        onClick={() => void handleDownloadVersion(ver)}
+                        onClick={(event) =>
+                          handleSelectContractVersion(ver, event)
+                        }
                       >
                         <span
                           className={`contracts-version-dot ${isCurrent ? "is-current" : ""}`}
@@ -3326,9 +3391,10 @@ export default function ContractsPage() {
                         <span>
                           <span className="contracts-version-name">
                             Versão {ver.version ?? 1}
+                            {isCurrent ? " — Atual" : ""}
                           </span>
                           <span className="contracts-version-sub">
-                            {dateLabel} — {contractVersionNote(ver)}
+                            {dateLabel}
                           </span>
                         </span>
                       </button>
