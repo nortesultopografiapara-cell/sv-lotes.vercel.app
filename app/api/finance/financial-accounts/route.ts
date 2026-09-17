@@ -9,6 +9,7 @@ import {
   createCompanyFinancialAccount,
   listCompanyFinancialAccounts,
 } from '@/lib/finance/companyFinancialAccountRepository';
+import { sanitizeBankIdentity } from '@/lib/finance/companyFinancialAccountBankIdentity';
 import { normalizeAsaasEnvironment } from '@/lib/finance/asaasIntegrationConfig';
 
 export const runtime = 'nodejs';
@@ -47,6 +48,15 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const accountType = String(body.accountType ?? body.account_type ?? 'IMOBILIARIA').toUpperCase();
 
+    const bankIdentity = sanitizeBankIdentity({
+      bankName: body.bankName ?? body.bank_name,
+      bankCode: body.bankCode ?? body.bank_code,
+      agency: body.agency,
+      accountNumber: body.accountNumber ?? body.account_number,
+      accountDigit: body.accountDigit ?? body.account_digit,
+      bankAccountKind: body.bankAccountKind ?? body.bank_account_kind,
+    });
+
     const account = await createCompanyFinancialAccount(auth.admin, auth.tenantId, auth.userId, {
       name: String(body.name ?? '').trim(),
       accountType: accountType as CompanyFinancialAccountType,
@@ -62,6 +72,7 @@ export async function POST(request: Request) {
       sandboxApiKey: String(body.sandboxApiKey ?? body.sandbox_api_key ?? '').trim() || null,
       productionApiKey: String(body.productionApiKey ?? body.production_api_key ?? '').trim() || null,
       webhookToken: String(body.webhookToken ?? body.webhook_token ?? '').trim() || null,
+      ...bankIdentity,
     });
 
     assertCompanyFinancialAccountResponseSafe(account);

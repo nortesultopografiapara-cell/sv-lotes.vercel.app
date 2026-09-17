@@ -8,6 +8,11 @@ import {
   type CompanyFinancialAccountType,
   mapCompanyFinancialAccountRow,
 } from './companyFinancialAccountTypes';
+import {
+  bankIdentityToDbPatch,
+  sanitizeBankIdentity,
+  type CompanyFinancialAccountBankIdentity,
+} from './companyFinancialAccountBankIdentity';
 
 const ASAAS_PROVIDER = 'ASAAS_COMPANY';
 
@@ -307,6 +312,12 @@ export type SaveCompanyFinancialAccountInput = {
   sandboxApiKey?: string | null;
   productionApiKey?: string | null;
   webhookToken?: string | null;
+  bankName?: string | null;
+  bankCode?: string | null;
+  agency?: string | null;
+  accountNumber?: string | null;
+  accountDigit?: string | null;
+  bankAccountKind?: CompanyFinancialAccountBankIdentity['bankAccountKind'];
 };
 
 export async function createCompanyFinancialAccount(
@@ -336,6 +347,16 @@ export async function createCompanyFinancialAccount(
       is_default: isDefault,
       active: input.active !== false,
       notes: cleanText(input.notes) || null,
+      ...bankIdentityToDbPatch(
+        sanitizeBankIdentity({
+          bankName: input.bankName,
+          bankCode: input.bankCode,
+          agency: input.agency,
+          accountNumber: input.accountNumber,
+          accountDigit: input.accountDigit,
+          bankAccountKind: input.bankAccountKind,
+        }),
+      ),
       updated_at: now,
     })
     .select('*')
@@ -393,6 +414,30 @@ export async function updateCompanyFinancialAccount(
   if (input.isDefault !== undefined) patch.is_default = Boolean(input.isDefault);
   if (input.active !== undefined) patch.active = Boolean(input.active);
   if (input.notes !== undefined) patch.notes = cleanText(input.notes) || null;
+  if (
+    input.bankName !== undefined ||
+    input.bankCode !== undefined ||
+    input.agency !== undefined ||
+    input.accountNumber !== undefined ||
+    input.accountDigit !== undefined ||
+    input.bankAccountKind !== undefined
+  ) {
+    const identity = sanitizeBankIdentity({
+      bankName: input.bankName !== undefined ? input.bankName : existing.bankName,
+      bankCode: input.bankCode !== undefined ? input.bankCode : existing.bankCode,
+      agency: input.agency !== undefined ? input.agency : existing.agency,
+      accountNumber: input.accountNumber !== undefined ? input.accountNumber : existing.accountNumber,
+      accountDigit: input.accountDigit !== undefined ? input.accountDigit : existing.accountDigit,
+      bankAccountKind:
+        input.bankAccountKind !== undefined ? input.bankAccountKind : existing.bankAccountKind,
+    });
+    if (input.bankName !== undefined) patch.bank_name = identity.bankName;
+    if (input.bankCode !== undefined) patch.bank_code = identity.bankCode;
+    if (input.agency !== undefined) patch.agency = identity.agency;
+    if (input.accountNumber !== undefined) patch.account_number = identity.accountNumber;
+    if (input.accountDigit !== undefined) patch.account_digit = identity.accountDigit;
+    if (input.bankAccountKind !== undefined) patch.bank_account_kind = identity.bankAccountKind;
+  }
 
   const { data, error } = await admin
     .from('company_financial_accounts')

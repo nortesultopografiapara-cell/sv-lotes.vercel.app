@@ -61,6 +61,7 @@
     "test:charges-operational": "tsx scripts/mandatory-charges-operational-tests.ts",
     "test:charges-provider-routing": "tsx scripts/mandatory-charges-provider-routing-tests.ts",
     "test:company-financial-accounts": "tsx scripts/mandatory-company-financial-accounts-tests.ts",
+    "test:financial-account-bank-identity": "tsx scripts/mandatory-financial-account-bank-identity-tests.ts",
     "test:payment-split-foundation": "tsx scripts/mandatory-payment-split-foundation-tests.ts",
     "test:payment-split-config-ui": "tsx scripts/mandatory-payment-split-config-ui-tests.ts",
     "test:payment-split-asaas-emit": "tsx scripts/mandatory-payment-split-asaas-emit-tests.ts",

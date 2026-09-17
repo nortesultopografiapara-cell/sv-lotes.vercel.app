@@ -6,6 +6,7 @@ import {
   type CompanyFinancialAccountType,
 } from '@/lib/finance/companyFinancialAccountTypes';
 import { updateCompanyFinancialAccount } from '@/lib/finance/companyFinancialAccountRepository';
+import { pickBankIdentityFromBody } from '@/lib/finance/companyFinancialAccountBankIdentity';
 import { normalizeAsaasEnvironment } from '@/lib/finance/asaasIntegrationConfig';
 
 export const runtime = 'nodejs';
@@ -57,6 +58,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     if (body.webhookToken !== undefined || body.webhook_token !== undefined) {
       patch.webhookToken = String(body.webhookToken ?? body.webhook_token ?? '');
+    }
+    const bankIdentity = pickBankIdentityFromBody(body);
+    if (bankIdentity) {
+      Object.assign(patch, bankIdentity);
     }
 
     const account = await updateCompanyFinancialAccount(

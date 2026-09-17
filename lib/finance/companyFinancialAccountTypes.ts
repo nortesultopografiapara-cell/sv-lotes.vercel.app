@@ -1,4 +1,5 @@
 import type { BankEnvironment } from '@/lib/banking/types';
+import type { CompanyBankAccountKind } from './companyFinancialAccountBankIdentity';
 
 export const COMPANY_FINANCIAL_ACCOUNT_TYPES = [
   'IMOBILIARIA',
@@ -24,6 +25,12 @@ export type CompanyFinancialAccountRow = {
   is_default: boolean;
   active: boolean;
   notes: string | null;
+  bank_name?: string | null;
+  bank_code?: string | null;
+  agency?: string | null;
+  account_number?: string | null;
+  account_digit?: string | null;
+  bank_account_kind?: CompanyBankAccountKind | null;
   created_at: string;
   updated_at: string;
 };
@@ -44,6 +51,12 @@ export type CompanyFinancialAccountResponse = {
   isDefault: boolean;
   active: boolean;
   notes: string | null;
+  bankName?: string | null;
+  bankCode?: string | null;
+  agency?: string | null;
+  accountNumber?: string | null;
+  accountDigit?: string | null;
+  bankAccountKind?: CompanyBankAccountKind | null;
   hasSandboxApiKey: boolean;
   hasProductionApiKey: boolean;
   hasWebhookToken: boolean;
@@ -105,6 +118,12 @@ export function mapCompanyFinancialAccountRow(
     isDefault: row.is_default,
     active: row.active,
     notes: row.notes,
+    bankName: row.bank_name ?? null,
+    bankCode: row.bank_code ?? null,
+    agency: row.agency ?? null,
+    accountNumber: row.account_number ?? null,
+    accountDigit: row.account_digit ?? null,
+    bankAccountKind: row.bank_account_kind ?? null,
     hasSandboxApiKey: extras?.hasSandboxApiKey ?? false,
     hasProductionApiKey: extras?.hasProductionApiKey ?? false,
     hasWebhookToken: extras?.hasWebhookToken ?? false,
