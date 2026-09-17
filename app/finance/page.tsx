@@ -114,7 +114,17 @@ export { buildCashFlowItems, calculateFinancialTotals };
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
+import { getReportHeaderLogoUrl, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
+import { buildCanonicalFinanceReport } from '@/lib/finance/reports/canonicalFinanceDataset';
+import { loadSaleSplitViewsForReport } from '@/lib/finance/reports/loadSaleSplitViews';
+import {
+  downloadFinanceCompletoPdf,
+  downloadFinanceResumidoPdf,
+} from '@/lib/finance/reports/renderFinanceReportPdf';
+import {
+  downloadFinanceCompletoExcel,
+  downloadFinanceResumidoExcel,
+} from '@/lib/finance/reports/renderFinanceReportExcel';
 
 const INITIAL_SAIDA_FORM = {
   category: 'Despesa administrativa',
@@ -1248,116 +1258,50 @@ export default function FinancePage() {
     }
   };
 
-  const prepareExportData = () => {
-    return filteredPayments.map(p => {
-       const contractNo = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
-       const client = p.customers?.name || 'Desconhecido';
-       const doc = p.customers?.document || '-';
-       const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
-       const quadra = p.blocks?.block_name || p.blocks?.name || '?';
-       const lote = String(p.blocks?.number || '?');
-       const parcela = String(p.installment_number || 1);
-       const vencimento = p.due_date ? new Date((p.due_date?.split('T')[0]) + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-';
-       const valor = Number(p.amount) || 0;
-       
-       const pStatusRaw = p.status?.toLowerCase() || 'pendente';
-       const todayStr = new Date().toISOString().split('T')[0];
-       let status = pStatusRaw;
-       if ((status === 'pendente' || status === 'pending') && p.due_date && p.due_date.split('T')[0] < todayStr) status = 'atrasado';
-       
-       const isPaid = status === 'pago' || status === 'paid';
-       const valorPago = isPaid ? (Number(p.paid_amount) || valor) : 0;
-       const dataPgto = isPaid && p.paid_at ? new Date(p.paid_at).toLocaleDateString('pt-BR') : '-';
-       
-       return {
-          'Contrato': contractNo,
-          'Cliente': client,
-          'CPF/CNPJ': doc,
-          'Projeto': projName,
-          'Quadra': quadra,
-          'Lote': lote,
-          'Parcela': parcela,
-          'Vencimento': vencimento,
-          'Valor Parcela': formatCurrency(valor),
-          'Valor Pago': formatCurrency(valorPago),
-          'Status': status.toUpperCase(),
-          'Data Pagamento': dataPgto
-       };
+  const buildCurrentCanonicalReport = async () => {
+    const uniqueSaleIds = [
+      ...new Set(
+        (payments || [])
+          .map((p: any) => String(p.sale_id || p.sales?.id || '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    const splitViews = await loadSaleSplitViewsForReport(uniqueSaleIds);
+    const accountLabels: Record<string, string> = {};
+    for (const account of financialAccounts) {
+      accountLabels[account.id] = formatFinancialAccountLabel(account);
+    }
+    let selectedAccountLabel = financialAccountFilter;
+    if (financialAccountFilter !== 'Todas as contas') {
+      const acc = financialAccounts.find((a) => a.id === financialAccountFilter);
+      selectedAccountLabel = acc ? formatFinancialAccountLabel(acc) : financialAccountFilter;
+    }
+    const logoBase64 = await loadReportHeaderLogoBase64(tenantData?.logo_url);
+    const report = buildCanonicalFinanceReport({
+      receipts: payments,
+      cashMovements,
+      commissions: brokerCommissions,
+      splitViews,
+      accountLabels,
+      filters: {
+        startDate,
+        endDate,
+        projectFilter,
+        financialAccountId: financialAccountFilter,
+        financialAccountLabel: selectedAccountLabel,
+        statusFilter,
+        search,
+      },
+      company: {
+        name: tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada',
+        document: tenantData?.cnpj || 'CNPJ não informado',
+        email: tenantData?.email || null,
+        phone: tenantData?.phone || null,
+      },
+      todayIso: new Date().toISOString().split('T')[0],
+      generatedAt: new Date(),
     });
-  };
-
-  const getSummaryData = () => {
-     let qtyPaid = 0;
-     let qtyPending = 0;
-     let qtyLate = 0;
-     let totalVendido = 0;
-     let totalRecebido = 0;
-     let totalAReceber = 0;
-     let totalVencido = 0;
-
-     filteredPayments.forEach(p => {
-         const valor = Number(p.amount) || 0;
-         const pStatusRaw = p.status?.toLowerCase() || 'pendente';
-         const todayStr = new Date().toISOString().split('T')[0];
-         let status = pStatusRaw;
-         if ((status === 'pendente' || status === 'pending') && p.due_date && p.due_date.split('T')[0] < todayStr) status = 'atrasado';
-         
-         const isPaid = status === 'pago' || status === 'paid';
-         const isLate = status === 'atrasado';
-         const valorPago = isPaid ? (Number(p.paid_amount) || valor) : 0;
-
-         totalVendido += valor;
-         
-         if (isPaid) {
-            qtyPaid++;
-            totalRecebido += valorPago;
-         }
-         else if (isLate) {
-            qtyLate++;
-            totalVencido += valor;
-            totalAReceber += valor;
-         }
-         else {
-            qtyPending++;
-            totalAReceber += valor;
-         }
-     });
-
-     const filteredCash = cashMovements.filter(c => {
-         const mDateStr = (c.movement_date || c.created_at || '').split('T')[0];
-         const cProjName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name || 'Projeto Desconhecido';
-         
-         const matchProject = projectFilter !== 'Todos os projetos' ? (cProjName === projectFilter) : true;
-         const matchStartDate = startDate ? (mDateStr >= startDate) : true;
-         const matchEndDate = endDate ? (mDateStr <= endDate) : true;
-         
-         return matchProject && matchStartDate && matchEndDate;
-     });
-
-     const filteredComms = brokerCommissions.filter(c => {
-         const cmProjName = c.sales?.projects?.name || c.contracts?.projects?.name || 'Projeto Desconhecido';
-         const cDateStr = (c.paid_at || c.created_at || '').split('T')[0];
-         
-         const matchProject = projectFilter !== 'Todos os projetos' ? (cmProjName === projectFilter) : true;
-         const matchStartDate = startDate ? (cDateStr >= startDate) : true;
-         const matchEndDate = endDate ? (cDateStr <= endDate) : true;
-         
-         return matchProject && matchStartDate && matchEndDate;
-     });
-
-     const totals = calculateFinancialTotals(filteredPayments, filteredCash, filteredComms);
-
-     return [
-       { Descricao: 'Total Lançado (Previsto)', Valor: formatCurrency(totalVendido) },
-       { Descricao: 'Total Entradas', Valor: formatCurrency(totals.totalEntradas) },
-       { Descricao: 'Total Saídas', Valor: formatCurrency(totals.totalSaidas) },
-       { Descricao: 'Saldo Final', Valor: formatCurrency(totals.saldoFinal) },
-       { Descricao: 'Total a Receber', Valor: formatCurrency(totalAReceber) },
-       { Descricao: 'Total Vencido', Valor: formatCurrency(totalVencido) },
-       { Descricao: 'Qtd Parcelas Pagas', Valor: qtyPaid.toString() },
-       { Descricao: 'Qtd Parcelas Pendentes', Valor: qtyPending.toString() },
-       { Descricao: 'Qtd Parcelas Vencidas', Valor: qtyLate.toString() },
-     ];
+    return { report, logoBase64 };
   };
 
   const applyContractToSaidaForm = (contractId: string) => {
@@ -2184,774 +2128,43 @@ export default function FinancePage() {
   };
 
   const handleExportExcel = async () => {
-     const data = prepareExportData();
-     const summary = getSummaryData();
-
-     const ExcelJS = (await import('exceljs')).default;
-     const workbook = new ExcelJS.Workbook();
-     workbook.creator = user?.name || 'Sistema SV_LOTES';
-     workbook.created = new Date();
-
-     // === ABA 1: Relatório Completo ===
-     const ws = workbook.addWorksheet('Relatório', { views: [{ state: 'frozen', ySplit: 6 }] });
-     
-     // Fetch Logo if exists
-     if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-         try {
-             const base64Image = await new Promise<string>((resolve, reject) => {
-                 const img = new Image();
-                 img.crossOrigin = 'Anonymous';
-                 img.onload = () => {
-                     const canvas = document.createElement('canvas');
-                     canvas.width = img.width;
-                     canvas.height = img.height;
-                     const ctx = canvas.getContext('2d');
-                     if (ctx) {
-                         ctx.drawImage(img, 0, 0);
-                         resolve(canvas.toDataURL('image/png'));
-                     } else reject();
-                 };
-                 img.onerror = reject;
-                 img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
-             });
-             const imageId = workbook.addImage({
-                 base64: base64Image,
-                 extension: 'png',
-             });
-             ws.addImage(imageId, {
-                 tl: { col: 0, row: 0 },
-                 ext: { width: 120, height: 60 }
-             });
-         } catch (e) {
-             console.error("Error loading image for excel", e);
-         }
-     }
-
-     const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
-     const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
-     const infoLine = [
-         tenantData?.email ? `Email: ${tenantData.email}` : null,
-         tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
-         tenantData?.address ? `Endereço: ${tenantData.address}` : null
-     ].filter(Boolean).join(' | ');
-
-     // Cabeçalho
-     ws.mergeCells('A1:L1');
-     ws.getCell('A1').value = `RELATÓRIO FINANCEIRO - ${companyName.toUpperCase()}`;
-     ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2980B9' } };
-     ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
-     ws.getRow(1).height = 40; // increase height to fit logo
-
-     ws.mergeCells('A2:L2');
-     ws.getCell('A2').value = `CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`;
-     ws.getCell('A2').font = { size: 10, bold: true };
-     ws.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
-
-     ws.mergeCells('A3:L3');
-     ws.getCell('A3').value = `Data de emissão: ${new Date().toLocaleString('pt-BR')} | Filtros: Status = ${statusFilter} | Projeto = ${projectFilter}`;
-     ws.getCell('A3').font = { size: 9 };
-     ws.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };
-
-     ws.addRow([]);
-
-     // Títulos das colunas
-     const headers = ['Contrato', 'Cliente', 'Documento', 'Projeto', 'Quadra', 'Lote', 'Parcela', 'Vencimento', 'Valor Parcela', 'Valor Pago', 'Status', 'Data Pagamento'];
-     const headerRow = ws.addRow(headers);
-     
-     headerRow.eachCell((cell) => {
-         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
-         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
-         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-     });
-
-     // Dados
-     data.forEach(d => {
-         const row = ws.addRow([d.Contrato, d.Cliente, d['CPF/CNPJ'], d.Projeto, d.Quadra, d.Lote, d.Parcela, d.Vencimento, d['Valor Parcela'], d['Valor Pago'], d.Status, d['Data Pagamento']]);
-         
-         const statusCell = row.getCell(11); // Status column K
-         const statusStr = (d.Status || '').toUpperCase();
-         if (statusStr === 'PAGO' || statusStr === 'PAID') {
-             statusCell.font = { color: { argb: 'FF27AE60' }, bold: true }; // Green
-         } else if (statusStr === 'ATRASADO' || statusStr === 'OVERDUE') {
-             statusCell.font = { color: { argb: 'FFE74C3C' }, bold: true }; // Red
-         } else {
-             statusCell.font = { color: { argb: 'FFF39C12' }, bold: true }; // Orange
-         }
-
-         row.eachCell((cell) => {
-             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-         });
-     });
-
-     ws.columns = [
-        { width: 15 }, { width: 35 }, { width: 20 }, { width: 25 }, { width: 10 }, { width: 10 },
-        { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 },
-     ];
-
-     // Ativar auto filter
-     ws.autoFilter = 'A6:L6';
-
-     // === ABA 2: Resumo Financeiro ===
-     const wsSummary = workbook.addWorksheet('Resumo Financeiro');
-     
-     wsSummary.mergeCells('A1:B1');
-     wsSummary.getCell('A1').value = 'RESUMO FINANCEIRO';
-     wsSummary.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
-     wsSummary.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
-     
-     wsSummary.addRow([]);
-
-     const sumHeader = wsSummary.addRow(['Descrição', 'Valor']);
-     sumHeader.eachCell(cell => {
-         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDC3C7' } };
-         cell.font = { bold: true };
-     });
-
-     summary.forEach(s => {
-         const row = wsSummary.addRow([s.Descricao, s.Valor]);
-         row.eachCell(cell => {
-             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-         });
-     });
-
-     wsSummary.columns = [{ width: 30 }, { width: 20 }];
-
-     // === ABA 3: Indicadores ===
-     const wsInd = workbook.addWorksheet('Indicadores');
-     
-     wsInd.mergeCells('A1:B1');
-     wsInd.getCell('A1').value = 'INDICADORES CHAVE';
-     wsInd.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
-     wsInd.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
-     
-     wsInd.addRow([]);
-
-     const indHeader = wsInd.addRow(['Indicador', 'Valor']);
-     indHeader.eachCell(cell => {
-         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDC3C7' } };
-         cell.font = { bold: true };
-     });
-
-     const indData = [
-         ['Total Vendido (Contratos Ativos)', formatCurrency(stats.totalContratosValor)],
-         ['Inadimplência (%)', `${stats.inadimplencia.toFixed(2)}%`],
-         ['Contratos Ativos', stats.qtyContracts.toString()],
-     ];
-
-     indData.forEach(d => {
-         const row = wsInd.addRow(d);
-         row.eachCell(cell => {
-             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-         });
-     });
-
-     wsInd.columns = [{ width: 40 }, { width: 20 }];
-
-     // === ABA 4: Fluxo de Caixa ===
-     const wsCash = workbook.addWorksheet('Fluxo de Caixa');
-     wsCash.mergeCells('A1:G1');
-     wsCash.getCell('A1').value = 'HISTÓRICO FLUXO DE CAIXA';
-     wsCash.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
-     wsCash.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
-     
-     wsCash.addRow([]);
-     const cashHeaders = ['Data', 'Tipo', 'Categoria', 'Loteamento', 'Descrição', 'Valor', 'Status'];
-     const cashHeaderRow = wsCash.addRow(cashHeaders);
-     cashHeaderRow.eachCell(cell => {
-         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
-         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
-     });
-     
-     cashMovements.forEach(c => {
-        const row = wsCash.addRow([
-           c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-',
-           (c.type || '').toUpperCase(),
-           c.category || '-',
-           c.projects?.name || '-',
-           c.description || '-',
-           formatCurrency(c.amount),
-           c.status || 'ativo'
-        ]);
-        
-        const typeCell = row.getCell(2);
-        if (c.type === 'entrada') typeCell.font = { color: { argb: 'FF27AE60' }, bold: true };
-        if (c.type === 'saida') typeCell.font = { color: { argb: 'FFE74C3C' }, bold: true };
-     });
-     
-     wsCash.columns = [{ width: 15 }, { width: 12 }, { width: 25 }, { width: 25 }, { width: 40 }, { width: 15 }, { width: 10 }];
-
-     // Exportar
-     const buffer = await workbook.xlsx.writeBuffer();
-     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-     const link = document.createElement('a');
-     link.href = URL.createObjectURL(blob);
-     link.download = `relatorio_financeiro_${new Date().getTime()}.xlsx`;
-     document.body.appendChild(link);
-     link.click();
-     document.body.removeChild(link);
-  };
-
-  const prepareResumidoData = async () => {
-    // Busca compacta agrupando lotes e somando faturamentos reais via map local.
-    if (!user) return [];
-    const rlsCtx = await resolveRlsContext(user);
-    const project =
-      projectFilter !== 'Todos os projetos'
-        ? financeProjects.find((p) => p.name === projectFilter)
-        : null;
-
-    let lotFetch;
     try {
-      lotFetch = await fetchAllEnterpriseLotRows(supabase, rlsCtx, {
-        projectId: project?.id ?? null,
-        select:
-          'id, project_id, block_name, number, status, price, projects(name), sales(installments_count, down_payment, payment_type)',
-      });
-    } catch (error) {
-      console.error('Erro buscar resumido', error);
-      return [];
+      const { report } = await buildCurrentCanonicalReport();
+      await downloadFinanceCompletoExcel(report);
+    } catch (err) {
+      console.error(err);
+      alert('Não foi possível gerar o Excel completo.');
     }
-
-    const blocks = lotFetch.rows as Array<{
-      id: string;
-      block_name?: string | null;
-      number?: string | number | null;
-      status?: string | null;
-      price?: number | string | null;
-      projects?: { name?: string | null } | null;
-      sales?: Array<{
-        installments_count?: number | null;
-        down_payment?: number | null;
-        payment_type?: string | null;
-      }> | null;
-    }>;
-
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    const filteredBlocks = blocks.filter((b) => {
-        if (projectFilter !== 'Todos os projetos') {
-             const projName = b.projects?.name || 'Projeto Desconhecido';
-             if (projName !== projectFilter) return false;
-        }
-        return true;
-    });
-
-    const processed = filteredBlocks.map(b => {
-         const projName = b.projects?.name || 'Projeto Desconhecido';
-         const quadra = b.block_name || '?';
-         const lote = String(b.number || '?');
-         const statusLote = (b.status || 'DISPONÍVEL').toUpperCase(); 
-         
-         const salesArr = (b.sales || []) as any[];
-         const latestSale = salesArr.length > 0 ? salesArr[salesArr.length - 1] : null;
-         
-         const vlVenda = Number(b.price) || 0;
-         const numParc = Number(latestSale?.installments_count) || 0;
-         const vendaTipo = (numParc <= 1 && latestSale?.payment_type !== 'INSTALLMENT') ? 'À Vista' : 'Parcelado';
-         const entrada = Number(latestSale?.down_payment) || 0;
-         
-         const receipts = payments.filter(p => p.block_id === b.id || p.blocks?.id === b.id);
-         
-         let recebido = 0;
-         let receber = 0;
-         let atraso = 0;
-         
-         receipts.forEach(r => {
-             const rStatus = r.status?.toLowerCase() || 'pendente';
-             const isPaid = rStatus === 'pago' || rStatus === 'paid';
-             let isLate = false;
-             if (!isPaid && r.due_date) {
-                 if (r.due_date.split('T')[0] < todayStr) isLate = true;
-             }
-             const amt = Number(r.amount) || 0;
-             const pAmt = Number(r.paid_amount) || amt;
-
-             if (isPaid) recebido += pAmt;
-             else receber += amt;
-             
-             if (isLate) atraso += amt;
-         });
-
-         return {
-            Projeto: projName,
-            Quadra: quadra,
-            Lote: lote,
-            Status: statusLote,
-            Venda: statusLote === 'VENDIDO' ? vendaTipo : '-',
-            Entrada: statusLote === 'VENDIDO' ? (entrada > 0 ? formatCurrency(entrada) : '-') : '-',
-            Parc: statusLote === 'VENDIDO' ? numParc.toString() : '-',
-            Vl_Parc: statusLote === 'VENDIDO' && numParc > 0 ? formatCurrency(vlVenda/numParc) : '-',
-            Recebido: statusLote === 'VENDIDO' ? formatCurrency(recebido) : '-',
-            Receber: statusLote === 'VENDIDO' ? formatCurrency(receber) : '-',
-            Atraso: statusLote === 'VENDIDO' ? formatCurrency(atraso) : '-',
-            _raw: {
-                vlVenda: statusLote === 'VENDIDO' ? vlVenda : 0,
-                recebido: statusLote === 'VENDIDO' ? recebido : 0,
-                receber: statusLote === 'VENDIDO' ? receber : 0,
-                atraso: statusLote === 'VENDIDO' ? atraso : 0,
-                status: statusLote
-            }
-         };
-    });
-
-    processed.sort((a, b) => {
-        if (a.Projeto !== b.Projeto) return a.Projeto.localeCompare(b.Projeto);
-        const aq = parseInt(a.Quadra) || 0;
-        const bq = parseInt(b.Quadra) || 0;
-        if (aq !== bq) return aq - bq;
-        if (a.Quadra !== b.Quadra) return a.Quadra.localeCompare(b.Quadra);
-        const aNum = parseInt(a.Lote) || 0;
-        const bNum = parseInt(b.Lote) || 0;
-        if (aNum !== bNum) return aNum - bNum;
-        return a.Lote.localeCompare(b.Lote);
-    });
-
-    return processed;
   };
 
   const handleExportResumidoPDF = async () => {
-       const data = await prepareResumidoData();
-       if (!data || data.length === 0) {
-           alert("Nenhum dado encontrado para exportar.");
-           return;
-       }
-       
-       const doc = new jsPDF('landscape');
-       const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
-       const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
-       const infoLine = [
-          tenantData?.email ? `Email: ${tenantData.email}` : null,
-          tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
-          tenantData?.address ? `Endereço: ${tenantData.address}` : null
-       ].filter(Boolean).join(' | ');
-
-       const title = `RELATÓRIO RESUMIDO`;
-       let startY = 35;
-       
-       if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-          try {
-              const imgBase64 = await new Promise<string>((resolve, reject) => {
-                  const img = new Image();
-                  img.crossOrigin = 'Anonymous';
-                  img.onload = () => {
-                      const canvas = document.createElement('canvas');
-                      canvas.width = img.width;
-                      canvas.height = img.height;
-                      const ctx = canvas.getContext('2d');
-                      if (ctx) {
-                          ctx.drawImage(img, 0, 0);
-                          resolve(canvas.toDataURL('image/png'));
-                      } else reject();
-                  };
-                  img.onerror = reject;
-                  img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
-              });
-              doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
-              doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 50, 15);
-              doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60); doc.text(companyName.toUpperCase(), 50, 20);
-              doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
-              doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 50, 24);
-              doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 50, 28);
-          } catch(e) {
-              doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 14, 15);
-              doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60); doc.text(companyName.toUpperCase(), 14, 20);
-              doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
-              doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
-              doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 14, 28);
-          }
-       } else {
-          doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 14, 15);
-          doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60); doc.text(companyName.toUpperCase(), 14, 20);
-          doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
-          doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
-          doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 14, 28);
-       }
-       
-       console.log("PDF_HEADER_RENDERED");
-
-       const groupedData: any = {};
-       data.forEach(d => {
-           const key = `${d.Projeto} - Quadra ${d.Quadra}`;
-           if (!groupedData[key]) groupedData[key] = { items: [], stats: { total: 0, vendidos: 0, reservados: 0, disponiveis: 0, recebido: 0, receber: 0, atraso: 0 }};
-           groupedData[key].items.push(d);
-           groupedData[key].stats.total++;
-           if (d.Status === 'VENDIDO') groupedData[key].stats.vendidos++;
-           else if (d.Status === 'RESERVADO') groupedData[key].stats.reservados++;
-           else groupedData[key].stats.disponiveis++;
-           groupedData[key].stats.recebido += d._raw.recebido;
-           groupedData[key].stats.receber += d._raw.receber;
-           groupedData[key].stats.atraso += d._raw.atraso;
-       });
-
-       let currentY = startY;
-       
-       Object.keys(groupedData).forEach((groupName, i) => {
-           const group = groupedData[groupName];
-           
-           if (currentY > 170) {
-              doc.addPage();
-              currentY = 20;
-           }
-           
-           doc.setFontSize(10);
-           doc.setFont('helvetica', 'bold');
-           doc.setTextColor(52, 73, 94);
-           doc.text(groupName, 14, currentY);
-           currentY += 5;
-
-           autoTable(doc, {
-               startY: currentY,
-               head: [['LT', 'STATUS', 'VENDA', 'ENTRADA', 'PARC', 'VL PARC', 'RECEBIDO', 'RECEBER', 'ATRASO']],
-               body: group.items.map((d: any) => [d.Lote, d.Status, d.Venda, d.Entrada, d.Parc, d.Vl_Parc, d.Recebido, d.Receber, d.Atraso]),
-               styles: { fontSize: 7, cellPadding: 1.5 },
-               headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-               alternateRowStyles: { fillColor: [245, 247, 250] },
-               didParseCell: function(dataObj) {
-                   if (dataObj.section === 'body' && dataObj.column.index === 1) {
-                      const status = dataObj.cell.raw as string;
-                      if (status === 'VENDIDO') dataObj.cell.styles.textColor = [231, 76, 60]; 
-                      else if (status === 'RESERVADO') dataObj.cell.styles.textColor = [243, 156, 18]; 
-                      else if (status === 'DISPONÍVEL') dataObj.cell.styles.textColor = [39, 174, 96]; 
-                      dataObj.cell.styles.fontStyle = 'bold';
-                   }
-               },
-               didDrawPage: (dataObj) => {
-                   doc.setFontSize(8); doc.setTextColor(150);
-                   let pageSize = doc.internal.pageSize;
-                   let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
-                   const footerText = `Gerado automaticamente por SV LOTES GIS | Usuário: ${user?.name || 'Admin'} | Emitido em: ${new Date().toLocaleString('pt-BR')}`;
-                   doc.text(footerText, 14, pageHeight - 10);
-                   let str = 'Página ' + (doc.internal as any).getNumberOfPages();
-                   doc.text(str, pageSize.width - 30, pageHeight - 10);
-               }
-           });
-           
-           currentY = (doc as any).lastAutoTable.finalY + 3;
-           
-           doc.setFontSize(8);
-           doc.setFont('helvetica', 'normal');
-           doc.setTextColor(80);
-           const sumText = `Lotes: ${group.stats.total} | Vendidos: ${group.stats.vendidos} | Reservados: ${group.stats.reservados} | Disponíveis: ${group.stats.disponiveis}  ***  Recebido: ${formatCurrency(group.stats.recebido)} | Receber: ${formatCurrency(group.stats.receber)} | Atraso: ${formatCurrency(group.stats.atraso)}`;
-           doc.text(sumText, 14, currentY);
-           
-           currentY += 10;
-       });
-
-       const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
-       await addProfessionalFooterAndSignature(doc, companyName, 'Relatório Resumido');
-
-       doc.save(`relatorio_resumido_${new Date().getTime()}.pdf`);
+    try {
+      const { report, logoBase64 } = await buildCurrentCanonicalReport();
+      await downloadFinanceResumidoPdf(report, { logoBase64 });
+    } catch (err) {
+      console.error(err);
+      alert('Não foi possível gerar o PDF resumido.');
+    }
   };
 
   const handleExportResumidoExcel = async () => {
-     const data = await prepareResumidoData();
-     if (!data || data.length === 0) {
-         alert("Nenhum dado encontrado para exportar.");
-         return;
-     }
-
-     const ExcelJS = (await import('exceljs')).default;
-     const workbook = new ExcelJS.Workbook();
-     workbook.creator = user?.name || 'Sistema SV_LOTES';
-     workbook.created = new Date();
-
-     // === ABA 1: Resumo (Lista) ===
-     const ws = workbook.addWorksheet('Resumo', { views: [{ state: 'frozen', ySplit: 6 }] });
-     
-     if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-         try {
-             const base64Image = await new Promise<string>((resolve, reject) => {
-                 const img = new Image();
-                 img.crossOrigin = 'Anonymous';
-                 img.onload = () => {
-                     const canvas = document.createElement('canvas');
-                     canvas.width = img.width; canvas.height = img.height;
-                     const ctx = canvas.getContext('2d');
-                     if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
-                 };
-                 img.onerror = reject; img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
-             });
-             const imageId = workbook.addImage({ base64: base64Image, extension: 'png' });
-             ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 60 } });
-         } catch (e) {}
-     }
-
-     const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
-     const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
-     const infoLine = [
-         tenantData?.email ? `Email: ${tenantData.email}` : null,
-         tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
-         tenantData?.address ? `Endereço: ${tenantData.address}` : null
-     ].filter(Boolean).join(' | ');
-
-     ws.mergeCells('A1:K1');
-     ws.getCell('A1').value = `RELATÓRIO RESUMIDO - ${companyName.toUpperCase()}`;
-     ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2980B9' } };
-     ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
-     ws.getRow(1).height = 40; 
-
-     ws.mergeCells('A2:K2'); ws.getCell('A2').value = `CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`; ws.getCell('A2').font = { size: 10, bold: true }; ws.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
-     ws.mergeCells('A3:K3'); ws.getCell('A3').value = `Data de emissão: ${new Date().toLocaleString('pt-BR')} | Filtros: ${projectFilter}`; ws.getCell('A3').font = { size: 9 }; ws.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };
-     ws.addRow([]);
-
-     const headers = ['Projeto', 'QD', 'LT', 'STATUS', 'VENDA', 'ENTRADA', 'PARC', 'VL PARC', 'RECEBIDO', 'RECEBER', 'ATRASO'];
-     const headerRow = ws.addRow(headers);
-     
-     headerRow.eachCell((cell) => {
-         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
-         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
-         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-     });
-
-     data.forEach(d => {
-         const row = ws.addRow([d.Projeto, d.Quadra, d.Lote, d.Status, d.Venda, d.Entrada, d.Parc, d.Vl_Parc, d.Recebido, d.Receber, d.Atraso]);
-         
-         const statusCell = row.getCell(4); 
-         if (d.Status === 'VENDIDO') statusCell.font = { color: { argb: 'FFE74C3C' }, bold: true }; 
-         else if (d.Status === 'RESERVADO') statusCell.font = { color: { argb: 'FFF39C12' }, bold: true }; 
-         else if (d.Status === 'DISPONÍVEL') statusCell.font = { color: { argb: 'FF27AE60' }, bold: true }; 
-
-         row.eachCell((cell) => {
-             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-         });
-     });
-
-     ws.columns = [
-        { width: 25 }, { width: 10 }, { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }
-     ];
-     ws.autoFilter = 'A6:K6';
-
-     // === ABA 2: Totais ===
-     const wsTot = workbook.addWorksheet('Totais');
-     wsTot.mergeCells('A1:G1');
-     wsTot.getCell('A1').value = 'TOTAIS POR QUADRA';
-     wsTot.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
-     wsTot.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
-     
-     const totHead = wsTot.addRow(['Projeto', 'Quadra', 'Lotes', 'Vendidos', 'Recebido', 'Receber', 'Atraso']);
-     totHead.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDC3C7' } }; c.font = { bold: true }; });
-
-     const groupedData: any = {};
-     data.forEach(d => {
-         const key = `${d.Projeto} - ${d.Quadra}`;
-         if (!groupedData[key]) groupedData[key] = { proj: d.Projeto, quad: d.Quadra, loc: 0, v: 0, r1: 0, r2: 0, a: 0 };
-         groupedData[key].loc++;
-         if (d.Status === 'VENDIDO') groupedData[key].v++;
-         groupedData[key].r1 += d._raw.recebido;
-         groupedData[key].r2 += d._raw.receber;
-         groupedData[key].a += d._raw.atraso;
-     });
-
-     Object.values(groupedData).forEach((g: any) => {
-         const row = wsTot.addRow([g.proj, g.quad, g.loc, g.v, formatCurrency(g.r1), formatCurrency(g.r2), formatCurrency(g.a)]);
-         row.eachCell(c => { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
-     });
-     wsTot.columns = [{ width: 25 }, { width: 15 }, { width: 10 }, { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }];
-
-     const buffer = await workbook.xlsx.writeBuffer();
-     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-     const link = document.createElement('a');
-     link.href = URL.createObjectURL(blob);
-     link.download = `relatorio_resumido_${new Date().getTime()}.xlsx`;
-     document.body.appendChild(link);
-     link.click();
-     document.body.removeChild(link);
+    try {
+      const { report } = await buildCurrentCanonicalReport();
+      await downloadFinanceResumidoExcel(report);
+    } catch (err) {
+      console.error(err);
+      alert('Não foi possível gerar o Excel resumido.');
+    }
   };
 
   const handleExportPDF = async () => {
-      const data = prepareExportData();
-      const summary = getSummaryData();
-      const doc = new jsPDF('landscape');
-      
-      const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
-      const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
-      const infoLine = [
-         tenantData?.email ? `Email: ${tenantData.email}` : null,
-         tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
-         tenantData?.address ? `Endereço: ${tenantData.address}` : null
-      ].filter(Boolean).join(' | ');
-
-      const title = `RELATÓRIO FINANCEIRO`;
-      
-      let startY = 35;
-      
-      // Try to load logo
-      if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-         try {
-             const imgBase64 = await new Promise<string>((resolve, reject) => {
-                 const img = new Image();
-                 img.crossOrigin = 'Anonymous';
-                 img.onload = () => {
-                     const canvas = document.createElement('canvas');
-                     canvas.width = img.width;
-                     canvas.height = img.height;
-                     const ctx = canvas.getContext('2d');
-                     if (ctx) {
-                         ctx.drawImage(img, 0, 0);
-                         resolve(canvas.toDataURL('image/png'));
-                     } else reject();
-                 };
-                 img.onerror = reject;
-                 img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
-             });
-             doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
-             
-             doc.setFontSize(14);
-             doc.setTextColor(40);
-             doc.text(title, 50, 15);
-             
-             doc.setFontSize(9);
-             doc.setFont('helvetica', 'bold');
-             doc.setTextColor(60);
-             doc.text(companyName.toUpperCase(), 50, 20);
-             
-             doc.setFontSize(8);
-             doc.setFont('helvetica', 'normal');
-             doc.setTextColor(100);
-             doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 50, 24);
-             doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 50, 28);
-             
-         } catch(e) {
-             // Fallback if logo fails
-             doc.setFontSize(14);
-             doc.setTextColor(40);
-             doc.text(title, 14, 15);
-             doc.setFontSize(9);
-             doc.setFont('helvetica', 'bold');
-             doc.setTextColor(60);
-             doc.text(companyName.toUpperCase(), 14, 20);
-             doc.setFontSize(8);
-             doc.setFont('helvetica', 'normal');
-             doc.setTextColor(100);
-             doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
-             doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 28);
-         }
-      } else {
-         doc.setFontSize(14);
-         doc.setTextColor(40);
-         doc.text(title, 14, 15);
-         doc.setFontSize(9);
-         doc.setFont('helvetica', 'bold');
-         doc.setTextColor(60);
-         doc.text(companyName.toUpperCase(), 14, 20);
-         doc.setFontSize(8);
-         doc.setFont('helvetica', 'normal');
-         doc.setTextColor(100);
-         doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
-         doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 28);
-      }
-      
-      console.log("PDF_HEADER_RENDERED");
-
-      autoTable(doc, {
-          startY: startY,
-          head: [['Contrato', 'Cliente', 'Documento', 'Projeto', 'Quadra', 'Lote', 'Parcela', 'Vencimento', 'Valor Parcela', 'Valor Pago', 'Status', 'Data Pagamento']],
-          body: data.map(d => [d.Contrato, d.Cliente, d['CPF/CNPJ'], d.Projeto, d.Quadra, d.Lote, d.Parcela, d.Vencimento, d['Valor Parcela'], d['Valor Pago'], d.Status, d['Data Pagamento']]),
-          styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', cellWidth: 'wrap' },
-          columnStyles: {
-              1: { cellWidth: 35 }, // Cliente
-              3: { cellWidth: 25 }, // Projeto
-              0: { cellWidth: 30 }  // Contrato
-          },
-          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [245, 247, 250] },
-          didParseCell: function(dataObj) {
-              if (dataObj.section === 'body' && dataObj.column.index === 10) {
-                 const status = dataObj.cell.raw as string;
-                 if (status === 'PAGO' || status === 'PAID') {
-                     dataObj.cell.styles.textColor = [39, 174, 96]; // Green
-                     dataObj.cell.styles.fontStyle = 'bold';
-                 } else if (status === 'ATRASADO' || status === 'OVERDUE') {
-                     dataObj.cell.styles.textColor = [231, 76, 60]; // Red
-                     dataObj.cell.styles.fontStyle = 'bold';
-                 } else {
-                     dataObj.cell.styles.textColor = [243, 156, 18]; // Orange/Yellow
-                     dataObj.cell.styles.fontStyle = 'bold';
-                 }
-              }
-          },
-          didDrawPage: (dataObj) => {
-              // Footer
-              doc.setFontSize(8);
-              doc.setTextColor(150);
-              let pageSize = doc.internal.pageSize;
-              let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
-              
-              const footerText = `Gerado automaticamente por SV LOTES GIS | Usuário: ${user?.name || 'Admin'} | Emitido em: ${new Date().toLocaleString('pt-BR')}`;
-              doc.text(footerText, 14, pageHeight - 10);
-              
-              let str = 'Página ' + (doc.internal as any).getNumberOfPages();
-              doc.text(str, pageSize.width - 30, pageHeight - 10);
-          }
-      });
-      
-      // Calculate summary StartY
-      let finalY = (doc as any).lastAutoTable.finalY + 10;
-      
-      // Prevent summary splitting at extreme end
-      let pageSize = doc.internal.pageSize;
-      let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
-      if (finalY > pageHeight - 40) {
-          doc.addPage();
-          finalY = 20;
-      }
-
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(40);
-      doc.text('RESUMO FINANCEIRO', 14, finalY);
-
-      autoTable(doc, {
-          startY: finalY + 5,
-          head: [['Descrição', 'Valor']],
-          body: summary.map(s => [s.Descricao, s.Valor]),
-          styles: { fontSize: 9, cellPadding: 2 },
-          headStyles: { fillColor: [52, 73, 94], textColor: 255 },
-          alternateRowStyles: { fillColor: [245, 247, 250] },
-          margin: { right: 150 } // prevent taking full width
-      });
-      
-      // AutoTable 3: Fluxo de Caixa
-      if (cashMovements && cashMovements.length > 0) {
-          doc.addPage();
-          doc.setFontSize(14);
-          doc.setTextColor(40);
-          doc.text("HISTÓRICO DE CAIXA", 14, 20);
-          
-          autoTable(doc, {
-              startY: 30,
-              head: [['Data', 'Tipo', 'Categoria', 'Loteamento', 'Descrição', 'Valor', 'Status']],
-              body: cashMovements.map(c => [
-                  c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-',
-                  (c.type || '').toUpperCase(),
-                  c.category || '-',
-                  c.projects?.name || '-',
-                  c.description || '-',
-                  formatCurrency(c.amount),
-                  c.status || 'Ativo'
-              ]),
-              styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', cellWidth: 'wrap' },
-              columnStyles: {
-                  4: { cellWidth: 80 } // Descrição
-              },
-              headStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
-              didParseCell: function(dataObj) {
-                  if (dataObj.section === 'body' && dataObj.column.index === 1) {
-                     const type = dataObj.cell.raw as string;
-                     if (type === 'ENTRADA') dataObj.cell.styles.textColor = [39, 174, 96];
-                     if (type === 'SAÍDA' || type === 'SAIDA') dataObj.cell.styles.textColor = [231, 76, 60];
-                     dataObj.cell.styles.fontStyle = 'bold';
-                  }
-              }
-          });
-      }
-
-      const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
-      await addProfessionalFooterAndSignature(doc, companyName, 'Relatório Financeiro Completo');
-
-      doc.save(`relatorio_financeiro_${new Date().getTime()}.pdf`);
+    try {
+      const { report, logoBase64 } = await buildCurrentCanonicalReport();
+      await downloadFinanceCompletoPdf(report, { logoBase64 });
+    } catch (err) {
+      console.error(err);
+      alert('Não foi possível gerar o PDF completo.');
+    }
   };
 
   const handleGenerateProjectReport = async (format: 'pdf'|'excel') => {
