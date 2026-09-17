@@ -184,7 +184,7 @@ export async function buildFinanceCompletoWorkbook(
     ['CARTEIRA', 'A receber', totals.walletToReceive, 'due_date'],
     ['CARTEIRA', 'Vencido', totals.walletOverdue, 'due_date'],
     ['DISTRIBUIÇÃO', 'Bruto previsto (não somar à receita)', totals.destinationsGrossPredicted, 'Pernas do split / conta'],
-    ['DISTRIBUIÇÃO', 'Líquido confirmado disponível', totals.destinationsNetConfirmed, 'Somente net_amount persistido'],
+    ['DISTRIBUIÇÃO', 'Líquido confirmado disponível', totals.destinationsNetConfirmed, 'Somente pernas SETTLED'],
   ];
   for (const row of resumoRows) {
     const excelRow = wsResumo.addRow(row);

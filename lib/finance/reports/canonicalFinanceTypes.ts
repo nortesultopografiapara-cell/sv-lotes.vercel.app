@@ -55,7 +55,10 @@ export type CanonicalSplitLeg = {
   /** Bruto contratado/previsto da perna. Nunca substituir pelo líquido. */
   amount: number;
   grossAmount: number;
-  /** Líquido persistido (net_amount). Null = ainda não liquidado. */
+  /**
+   * Valor informado pelo Asaas (net_amount). Pode existir em PENDING como
+   * previsto/estimado. Liquidado confirmado exige status SETTLED.
+   */
   netAmount: number | null;
   amountKind: DestinationAmountKind;
   amountKindLabel: string;
@@ -154,6 +157,7 @@ export type CanonicalDestinationsUniverse = {
   /** Sempre a soma dos brutos previstos — nunca mistura com líquido. */
   total: number;
   grossPredictedTotal: number;
+  /** Soma de net_amount somente das pernas SETTLED. PENDING+net não entra. */
   netConfirmedTotal: number;
   persistedFeeTotal: number | null;
   disclaimer: string;

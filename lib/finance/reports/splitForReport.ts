@@ -86,9 +86,30 @@ function accountOrWallet(
   return parts.length ? parts.join(' · ') : null;
 }
 
+function resolveLegStatus(
+  row: CanonicalSplitLegInput,
+  fallbackStatus: RevenueSplitLegStatus,
+): RevenueSplitLegStatus {
+  const rawStatus = str(row.status || fallbackStatus).toUpperCase();
+  return isLegStatus(rawStatus) ? rawStatus : fallbackStatus;
+}
+
+/**
+ * Liquidado confirmado exige status SETTLED.
+ * net_amount sozinho (ex.: totalValue do Asaas na emissão, ainda PENDING)
+ * permanece como valor previsto/estimado — nunca promove Situação.
+ */
+export function destinationAmountKindForLeg(
+  status: RevenueSplitLegStatus,
+  netAmount: number | null,
+): DestinationAmountKind {
+  return status === 'SETTLED' && netAmount != null ? 'settled' : 'estimated';
+}
+
 function resolveLegGrossAndNet(
   row: CanonicalSplitLegInput,
   grossPaid: number,
+  status: RevenueSplitLegStatus,
 ): { grossAmount: number; netAmount: number | null; amountKind: DestinationAmountKind } {
   const estimate = num(row.grossAmountEstimate ?? row.gross_amount_estimate);
   const grossAmount = Math.round(
@@ -100,7 +121,7 @@ function resolveLegGrossAndNet(
   return {
     grossAmount,
     netAmount,
-    amountKind: netAmount != null ? 'settled' : 'estimated',
+    amountKind: destinationAmountKindForLeg(status, netAmount),
   };
 }
 
@@ -110,9 +131,8 @@ function toCanonicalLeg(
   accountLabels: Record<string, string>,
   fallbackStatus: RevenueSplitLegStatus,
 ): CanonicalSplitLeg {
-  const { grossAmount, netAmount, amountKind } = resolveLegGrossAndNet(row, grossPaid);
-  const rawStatus = str(row.status || fallbackStatus).toUpperCase();
-  const status: RevenueSplitLegStatus = isLegStatus(rawStatus) ? rawStatus : fallbackStatus;
+  const status = resolveLegStatus(row, fallbackStatus);
+  const { grossAmount, netAmount, amountKind } = resolveLegGrossAndNet(row, grossPaid, status);
   const isIssuerRemainder = participantIsIssuerRemainder(row);
   return {
     beneficiaryName: participantDisplayName(row),
@@ -199,14 +219,14 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
     const key = leg.beneficiaryName;
     const prev = map.get(key);
     const net = leg.netAmount;
+    const settled = leg.amountKind === 'settled';
     if (prev) {
       prev.grossAmount = Math.round((prev.grossAmount + leg.grossAmount) * 100) / 100;
       if (net != null) {
         prev.netSum = Math.round((prev.netSum + net) * 100) / 100;
         prev.hasNet = true;
-      } else {
-        prev.allSettled = false;
       }
+      if (!settled) prev.allSettled = false;
       if (prev.sharePercent != null && prev.sharePercent !== leg.sharePercent) {
         prev.shareMismatch = true;
       }
@@ -218,7 +238,7 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
         grossAmount: leg.grossAmount,
         netSum: net == null ? 0 : net,
         hasNet: net != null,
-        allSettled: net != null,
+        allSettled: settled,
       });
     }
   }
