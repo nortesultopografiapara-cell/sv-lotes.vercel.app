@@ -3036,7 +3036,7 @@ export default function FinancePage() {
               </div>
               <div className="pt-4 border-t border-[var(--border-color)]">
                 <ChargeRevenueSplitDistribution
-                  saleId={selectedPayment.sale_id}
+                  saleId={selectedPayment.sale_id || selectedPayment.sales?.id}
                   installmentId={selectedPayment.id}
                   paymentStatus={selectedPayment.status}
                 />

@@ -115,15 +115,30 @@ export async function buildFinanceResumidoWorkbook(
   r = ws.lastRow!.number + 2;
   ws.getCell(`A${r}`).value = 'DESTINO DOS RECEBIMENTOS — não somar como receita';
   ws.getCell(`A${r}`).font = { bold: true, color: { argb: TEAL_FILL } };
-  const destHead = ws.addRow(['Beneficiário / Conta', 'Valor', 'Natureza']);
+  const destHead = ws.addRow(['Beneficiário / Conta', '%', 'Bruto previsto', 'Líquido', 'Situação']);
   styleHeaderRow(destHead);
   for (const row of report.destinations.rows) {
-    const excelRow = ws.addRow([row.beneficiaryName, row.amount, row.amountKindLabel]);
-    moneyCell(excelRow, 2, row.amount);
+    const excelRow = ws.addRow([
+      row.beneficiaryName,
+      row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
+      row.grossAmount,
+      row.netAmount,
+      row.amountKindLabel,
+    ]);
+    moneyCell(excelRow, 3, row.grossAmount);
+    if (row.netAmount != null) moneyCell(excelRow, 4, row.netAmount);
+    else excelRow.getCell(4).value = '—';
   }
-  const destTotal = ws.addRow(['TOTAL', report.destinations.total, '']);
-  destTotal.font = { bold: true };
-  moneyCell(destTotal, 2, report.destinations.total);
+  const destGross = ws.addRow(['Distribuição bruta prevista', '', report.destinations.grossPredictedTotal, '', '']);
+  destGross.font = { bold: true };
+  moneyCell(destGross, 3, report.destinations.grossPredictedTotal);
+  const destNet = ws.addRow(['Líquido confirmado disponível', '', '', report.destinations.netConfirmedTotal, '']);
+  destNet.font = { bold: true };
+  moneyCell(destNet, 4, report.destinations.netConfirmedTotal);
+  if (report.destinations.persistedFeeTotal != null) {
+    const feeRow = ws.addRow(['(−) Tarifa/ajuste persistido', '', '', report.destinations.persistedFeeTotal, '']);
+    moneyCell(feeRow, 4, report.destinations.persistedFeeTotal);
+  }
 
   r = ws.lastRow!.number + 2;
   ws.getCell(`A${r}`).value = 'SAÍDAS POR CATEGORIA';
@@ -167,7 +182,8 @@ export async function buildFinanceCompletoWorkbook(
     ['CARTEIRA', 'Recebido no período', totals.walletReceived, 'paid_at'],
     ['CARTEIRA', 'A receber', totals.walletToReceive, 'due_date'],
     ['CARTEIRA', 'Vencido', totals.walletOverdue, 'due_date'],
-    ['DISTRIBUIÇÃO', 'Total destinado (não somar à receita)', totals.destinationsTotal, 'Pernas do split / conta'],
+    ['DISTRIBUIÇÃO', 'Bruto previsto (não somar à receita)', totals.destinationsGrossPredicted, 'Pernas do split / conta'],
+    ['DISTRIBUIÇÃO', 'Líquido confirmado disponível', totals.destinationsNetConfirmed, 'Somente net_amount persistido'],
   ];
   for (const row of resumoRows) {
     const excelRow = wsResumo.addRow(row);
@@ -233,9 +249,9 @@ export async function buildFinanceCompletoWorkbook(
     'Valor pago (receita)',
     'Beneficiário',
     'Percentual',
-    'Valor destinado',
-    'Natureza',
-    'Status',
+    'Bruto previsto',
+    'Líquido',
+    'Natureza/Status',
     'Conta/Wallet',
   ]);
   styleHeaderRow(distHead);
@@ -249,18 +265,23 @@ export async function buildFinanceCompletoWorkbook(
         m.paidAmount,
         leg.beneficiaryName,
         formatReportSharePercent(leg.sharePercent),
-        leg.amount,
-        leg.amountKindLabel,
-        leg.statusLabel,
+        leg.grossAmount,
+        leg.netAmount,
+        `${leg.amountKindLabel} / ${leg.statusLabel}`,
         leg.accountOrWallet || '',
       ]);
       moneyCell(row, 4, m.paidAmount);
-      moneyCell(row, 7, leg.amount);
+      moneyCell(row, 7, leg.grossAmount);
+      if (leg.netAmount != null) moneyCell(row, 8, leg.netAmount);
+      else row.getCell(8).value = '—';
     }
   }
-  const distTotal = wsDist.addRow(['', '', '', '', 'TOTAL DESTINADO (não somar à receita)', '', report.destinations.total, '', '', '']);
-  distTotal.font = { bold: true };
-  moneyCell(distTotal, 7, report.destinations.total);
+  const distGross = wsDist.addRow(['', '', '', '', 'Distribuição bruta prevista', '', report.destinations.grossPredictedTotal, '', '', '']);
+  distGross.font = { bold: true };
+  moneyCell(distGross, 7, report.destinations.grossPredictedTotal);
+  const distNet = wsDist.addRow(['', '', '', '', 'Líquido confirmado disponível', '', '', report.destinations.netConfirmedTotal, '', '']);
+  distNet.font = { bold: true };
+  moneyCell(distNet, 8, report.destinations.netConfirmedTotal);
   [18, 32, 14, 18, 24, 12, 16, 16, 14, 28].forEach((w, i) => {
     wsDist.getColumn(i + 1).width = w;
   });
@@ -286,8 +307,29 @@ export async function buildFinanceCompletoWorkbook(
   const saidaTotal = wsSaidas.addRow(['', '', 'TOTAL SAÍDAS', '', '', '', report.cash.outflows, '']);
   saidaTotal.font = { bold: true };
   moneyCell(saidaTotal, 7, report.cash.outflows);
-  [14, 12, 28, 24, 40, 24, 16, 12].forEach((w, i) => {
+  [14, 22, 28, 24, 40, 24, 16, 12].forEach((w, i) => {
     wsSaidas.getColumn(i + 1).width = w;
+  });
+
+  const wsCaixa = wb.addWorksheet('Caixa');
+  addMeta(wsCaixa, report, 'MOVIMENTAÇÕES DE CAIXA', 8);
+  const caixaHead = wsCaixa.addRow(['Data', 'Tipo', 'Categoria', 'Empreendimento', 'Descrição', 'Conta', 'Valor', 'Status']);
+  styleHeaderRow(caixaHead);
+  for (const m of report.cash.movements) {
+    const row = wsCaixa.addRow([
+      m.dateLabel,
+      m.tipoLabel,
+      m.category,
+      m.projectName,
+      m.description,
+      m.accountLabel || '—',
+      m.amount,
+      m.status,
+    ]);
+    moneyCell(row, 7, m.amount);
+  }
+  [14, 22, 28, 24, 40, 28, 16, 12].forEach((w, i) => {
+    wsCaixa.getColumn(i + 1).width = w;
   });
 
   return wb;

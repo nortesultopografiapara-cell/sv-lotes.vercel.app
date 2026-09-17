@@ -90,6 +90,9 @@ export type CashMovementMetadata = {
   receipt_url?: string | null;
   receipt_generated_at?: string | null;
   receipt_type?: string | null;
+  installment_id?: string | null;
+  receipt_id?: string | null;
+  financial_account_id?: string | null;
 };
 
 function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
@@ -119,6 +122,9 @@ function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
     receipt_url: pick("receipt_url"),
     receipt_generated_at: pick("receipt_generated_at"),
     receipt_type: pick("receipt_type"),
+    installment_id: pick("installment_id"),
+    receipt_id: pick("receipt_id"),
+    financial_account_id: pick("financial_account_id"),
   };
 }
 

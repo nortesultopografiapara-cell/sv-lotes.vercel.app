@@ -13,7 +13,7 @@ export const FINANCE_REPORT_ALL_ACCOUNTS = 'Todas as contas';
 export const FINANCE_REPORT_ALL_STATUSES = 'Todas as Situações';
 
 export const DESTINATION_DISCLAIMER =
-  'Valores desta aba representam distribuição de recebimentos e não devem ser somados novamente à receita.';
+  'Valores desta aba representam distribuição de recebimentos e não devem ser somados novamente à receita. Bruto previsto e líquido liquidado são grandezas distintas e não devem ser somados entre si.';
 
 export type DestinationAmountKind = 'settled' | 'estimated' | 'account';
 
@@ -52,7 +52,11 @@ export type CanonicalFinanceMeta = {
 export type CanonicalSplitLeg = {
   beneficiaryName: string;
   sharePercent: number;
+  /** Bruto contratado/previsto da perna. Nunca substituir pelo líquido. */
   amount: number;
+  grossAmount: number;
+  /** Líquido persistido (net_amount). Null = ainda não liquidado. */
+  netAmount: number | null;
   amountKind: DestinationAmountKind;
   amountKindLabel: string;
   statusLabel: string;
@@ -98,6 +102,7 @@ export type CanonicalCashMovement = {
   projectName: string;
   description: string;
   accountLabel: string | null;
+  originLabel: string | null;
   amount: number;
   status: string;
 };
@@ -111,7 +116,10 @@ export type CanonicalProjectBreakdown = {
 
 export type CanonicalDestinationTotal = {
   beneficiaryName: string;
+  sharePercent: number | null;
   amount: number;
+  grossAmount: number;
+  netAmount: number | null;
   amountKind: DestinationAmountKind;
   amountKindLabel: string;
 };
@@ -143,7 +151,11 @@ export type CanonicalCashUniverse = {
 
 export type CanonicalDestinationsUniverse = {
   rows: CanonicalDestinationTotal[];
+  /** Sempre a soma dos brutos previstos — nunca mistura com líquido. */
   total: number;
+  grossPredictedTotal: number;
+  netConfirmedTotal: number;
+  persistedFeeTotal: number | null;
   disclaimer: string;
 };
 
@@ -166,6 +178,8 @@ export type CanonicalFinanceTotals = {
   cashOutflows: number;
   cashClosing: number;
   destinationsTotal: number;
+  destinationsGrossPredicted: number;
+  destinationsNetConfirmed: number;
   walletMovementCount: number;
   cashMovementCount: number;
   destinationRowCount: number;

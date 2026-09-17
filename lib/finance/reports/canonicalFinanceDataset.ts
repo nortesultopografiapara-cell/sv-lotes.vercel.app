@@ -110,22 +110,96 @@ function matchesWalletStatus(computedStatus: string, statusFilter: string): bool
   return true;
 }
 
-function cashAccountId(item: any, receiptAccountById: Record<string, string>): string {
-  const meta = item?.metadata;
-  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-    const fromMeta = String(
-      (meta as Record<string, unknown>).financial_account_id || '',
-    ).trim();
-    if (fromMeta) return fromMeta;
+function rawObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function metaString(meta: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const v = String(meta[key] ?? '').trim();
+    if (v) return v;
   }
+  return '';
+}
+
+function isUnusableProjectName(name: string | null | undefined): boolean {
+  const v = String(name || '').trim().toLowerCase();
+  return (
+    !v ||
+    v === '—' ||
+    v === '-' ||
+    v === 'lançamento manual' ||
+    v === 'lancamento manual' ||
+    v === 'geral/outros' ||
+    v === 'projeto desconhecido'
+  );
+}
+
+function cashAccountId(
+  item: any,
+  rawCash: any | null,
+  receiptAccountById: Record<string, string>,
+  receiptAccountBySaleId: Record<string, string>,
+): string {
+  const itemMeta = rawObject(item?.metadata);
+  const rawMeta = rawObject(rawCash?.metadata);
+  const fromMeta = metaString(itemMeta, 'financial_account_id') ||
+    metaString(rawMeta, 'financial_account_id');
+  if (fromMeta) return fromMeta;
+
   const receiptId = String(
     item?.receiptId ||
       item?.finance_receipt_id ||
       resolveCashMovementInstallmentId(item) ||
+      resolveCashMovementInstallmentId(rawCash || {}) ||
+      metaString(rawMeta, 'installment_id', 'receipt_id') ||
       '',
   ).trim();
   if (receiptId && receiptAccountById[receiptId]) return receiptAccountById[receiptId];
+
+  const saleId = String(item?.saleId || rawCash?.sale_id || '').trim();
+  if (saleId && receiptAccountBySaleId[saleId]) return receiptAccountBySaleId[saleId];
   return '';
+}
+
+function cashProjectName(
+  item: any,
+  rawCash: any | null,
+  receiptById: Record<string, any>,
+  receiptBySaleId: Record<string, any>,
+  receiptByProjectId: Record<string, any>,
+): string {
+  const current = String(item?.projectName || '').trim();
+  if (!isUnusableProjectName(current)) return current;
+
+  const rawMeta = rawObject(rawCash?.metadata);
+  const itemMeta = rawObject(item?.metadata);
+  const receiptId = String(
+    item?.receiptId ||
+      resolveCashMovementInstallmentId(item) ||
+      resolveCashMovementInstallmentId(rawCash || {}) ||
+      metaString(itemMeta, 'installment_id', 'receipt_id') ||
+      metaString(rawMeta, 'installment_id', 'receipt_id') ||
+      '',
+  ).trim();
+  const fromReceipt =
+    (receiptId && receiptById[receiptId]) ||
+    receiptBySaleId[String(item?.saleId || rawCash?.sale_id || '').trim()] ||
+    receiptByProjectId[String(item?.projectId || rawCash?.project_id || '').trim()] ||
+    null;
+  if (fromReceipt) {
+    const name = projectNameOfReceipt(fromReceipt);
+    if (!isUnusableProjectName(name)) return name;
+  }
+
+  const joined =
+    rawCash?.projects?.name ||
+    rawCash?.contracts?.projects?.name ||
+    rawCash?.sales?.projects?.name ||
+    '';
+  if (!isUnusableProjectName(joined)) return String(joined).trim();
+  return '—';
 }
 
 function buildFilterLines(filters: CanonicalFinanceFilters, hasPeriod: boolean): string[] {
@@ -168,9 +242,29 @@ export function buildCanonicalFinanceReport(
   const hasPeriod = Boolean(start || end);
 
   const receiptAccountById: Record<string, string> = {};
+  const receiptAccountBySaleId: Record<string, string> = {};
+  const receiptById: Record<string, any> = {};
+  const receiptBySaleId: Record<string, any> = {};
+  const receiptByProjectId: Record<string, any> = {};
+  const rawCashById: Record<string, any> = {};
   for (const p of input.receipts || []) {
     const id = String(p?.id || '').trim();
-    if (id) receiptAccountById[id] = receiptAccountId(p);
+    const saleId = String(p?.sale_id || p?.sales?.id || '').trim();
+    const projectId = String(p?.project_id || p?.projects?.id || p?.sales?.project_id || '').trim();
+    if (id) {
+      receiptById[id] = p;
+      receiptAccountById[id] = receiptAccountId(p);
+    }
+    if (saleId) {
+      receiptBySaleId[saleId] = p;
+      const acc = receiptAccountId(p);
+      if (acc) receiptAccountBySaleId[saleId] = acc;
+    }
+    if (projectId) receiptByProjectId[projectId] = p;
+  }
+  for (const row of input.cashMovements || []) {
+    const id = String(row?.id || '').trim();
+    if (id) rawCashById[id] = row;
   }
 
   const identityReceipts = (input.receipts || []).filter((p) => {
@@ -337,7 +431,10 @@ export function buildCanonicalFinanceReport(
     } else {
       destinationRows.push({
         beneficiaryName: movement.destinationFallbackLabel,
+        sharePercent: null,
         amount: movement.paidAmount,
+        grossAmount: movement.paidAmount,
+        netAmount: null,
         amountKind: 'account',
         amountKindLabel: AMOUNT_KIND_LABELS.account,
       });
@@ -347,15 +444,41 @@ export function buildCanonicalFinanceReport(
   const mergedDestinations = [...splitTotals, ...destinationRows];
   const destMap = new Map<string, CanonicalDestinationTotal>();
   for (const row of mergedDestinations) {
-    const key = `${row.beneficiaryName}::${row.amountKind}`;
+    const key = row.beneficiaryName;
     const prev = destMap.get(key);
-    if (prev) prev.amount = roundMoney(prev.amount + row.amount);
-    else destMap.set(key, { ...row });
+    if (prev) {
+      prev.amount = roundMoney(prev.amount + row.grossAmount);
+      prev.grossAmount = roundMoney(prev.grossAmount + row.grossAmount);
+      if (row.netAmount != null) {
+        prev.netAmount = roundMoney((prev.netAmount || 0) + row.netAmount);
+      }
+      if (row.amountKind === 'estimated' && prev.amountKind === 'settled') {
+        prev.amountKind = 'estimated';
+        prev.amountKindLabel = AMOUNT_KIND_LABELS.estimated;
+      }
+      if (prev.sharePercent != null && prev.sharePercent !== row.sharePercent) {
+        prev.sharePercent = null;
+      }
+    } else {
+      destMap.set(key, { ...row });
+    }
   }
   const destinations = [...destMap.values()].sort((a, b) =>
     a.beneficiaryName.localeCompare(b.beneficiaryName, 'pt-BR'),
   );
-  const destinationsTotal = roundMoney(destinations.reduce((s, r) => s + r.amount, 0));
+  const destinationsGrossPredicted = roundMoney(
+    destinations.reduce((s, r) => s + r.grossAmount, 0),
+  );
+  const destinationsNetConfirmed = roundMoney(
+    destinations.reduce((s, r) => s + (r.netAmount || 0), 0),
+  );
+  const destinationsTotal = destinationsGrossPredicted;
+  const feeValues = paidForDestinations
+    .map((p) => toMovement(p).gatewayFeeAmount)
+    .filter((v): v is number => v != null && Number.isFinite(v));
+  const persistedFeeTotal = feeValues.length
+    ? roundMoney(feeValues.reduce((s, v) => s + v, 0))
+    : null;
 
   const allCashItems = buildCashFlowItems(
     input.receipts || [],
@@ -363,20 +486,41 @@ export function buildCanonicalFinanceReport(
     input.commissions || [],
   );
 
+  const resolveCashContext = (item: (typeof allCashItems)[number]) => {
+    const rawCash =
+      item.source === 'cash_movements' && item.source_id
+        ? rawCashById[String(item.source_id)] || null
+        : null;
+    const projectName = cashProjectName(
+      item,
+      rawCash,
+      receiptById,
+      receiptBySaleId,
+      receiptByProjectId,
+    );
+    const accountId = cashAccountId(
+      item,
+      rawCash,
+      receiptAccountById,
+      receiptAccountBySaleId,
+    );
+    return { rawCash, projectName, accountId };
+  };
+
   const matchesCashIdentity = (item: (typeof allCashItems)[number]): boolean => {
+    const ctx = resolveCashContext(item);
     if (
       filters.projectFilter &&
       filters.projectFilter !== FINANCE_REPORT_ALL_PROJECTS &&
-      item.projectName !== filters.projectFilter
+      ctx.projectName !== filters.projectFilter
     ) {
       return false;
     }
-    const accountId = cashAccountId(item, receiptAccountById);
     if (
       filters.financialAccountId &&
       filters.financialAccountId !== FINANCE_REPORT_ALL_ACCOUNTS
     ) {
-      if (!accountId || accountId !== filters.financialAccountId) return false;
+      if (!ctx.accountId || ctx.accountId !== filters.financialAccountId) return false;
     }
     const q = (filters.search || '').trim().toLowerCase();
     if (q) {
@@ -385,7 +529,7 @@ export function buildCanonicalFinanceReport(
         item.contractNumber,
         item.description,
         item.locationLabel,
-        item.projectName,
+        ctx.projectName,
       ]
         .join(' ')
         .toLowerCase();
@@ -420,19 +564,21 @@ export function buildCanonicalFinanceReport(
       const cat = item.category || 'Outras saídas';
       outflowMap.set(cat, roundMoney((outflowMap.get(cat) || 0) + item.amount));
     }
-    const accountId = cashAccountId(item, receiptAccountById);
-    const accountLabel = accountId ? accountLabels[accountId] || accountId : null;
+    const ctx = resolveCashContext(item);
+    const accountLabel = ctx.accountId ? accountLabels[ctx.accountId] || ctx.accountId : null;
     const date = isoDatePart(item.movement_date);
+    const baseTipo = item.tipo === 'entrada' ? 'Entrada' : 'Saída';
     return {
       id: item.id,
       date,
       dateLabel: formatFlowDate(item.movement_date),
       tipo: item.tipo,
-      tipoLabel: item.tipo === 'entrada' ? 'Entrada' : 'Saída',
+      tipoLabel: item.isManual ? `${baseTipo} · Lançamento manual` : baseTipo,
       category: item.category || '—',
-      projectName: item.projectName || '—',
+      projectName: ctx.projectName,
       description: item.description || '—',
       accountLabel,
+      originLabel: item.isManual ? 'Lançamento manual' : null,
       amount: roundMoney(item.amount),
       status: item.status === 'estornado' ? 'Estornado' : 'Ativo',
     };
@@ -492,6 +638,9 @@ export function buildCanonicalFinanceReport(
     destinations: {
       rows: destinations,
       total: destinationsTotal,
+      grossPredictedTotal: destinationsGrossPredicted,
+      netConfirmedTotal: destinationsNetConfirmed,
+      persistedFeeTotal,
       disclaimer: DESTINATION_DISCLAIMER,
     },
   };

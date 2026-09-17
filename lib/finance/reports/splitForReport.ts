@@ -26,7 +26,7 @@ import type {
 
 export const AMOUNT_KIND_LABELS: Record<DestinationAmountKind, string> = {
   settled: 'Liquidado',
-  estimated: 'Valor estimado',
+  estimated: 'Previsto/Estimado',
   account: 'Conta financeira',
 };
 
@@ -86,21 +86,21 @@ function accountOrWallet(
   return parts.length ? parts.join(' · ') : null;
 }
 
-function resolveLegAmount(
+function resolveLegGrossAndNet(
   row: CanonicalSplitLegInput,
   grossPaid: number,
-): { amount: number; amountKind: DestinationAmountKind } {
-  const net = num(row.netAmount ?? row.net_amount);
-  if (net != null) {
-    return { amount: Math.round(net * 100) / 100, amountKind: 'settled' };
-  }
+): { grossAmount: number; netAmount: number | null; amountKind: DestinationAmountKind } {
   const estimate = num(row.grossAmountEstimate ?? row.gross_amount_estimate);
-  if (estimate != null) {
-    return { amount: Math.round(estimate * 100) / 100, amountKind: 'estimated' };
-  }
+  const grossAmount = Math.round(
+    (estimate != null ? estimate : estimateShareAmount(grossPaid, participantSharePercent(row))) *
+      100,
+  ) / 100;
+  const netRaw = num(row.netAmount ?? row.net_amount);
+  const netAmount = netRaw == null ? null : Math.round(netRaw * 100) / 100;
   return {
-    amount: estimateShareAmount(grossPaid, participantSharePercent(row)),
-    amountKind: 'estimated',
+    grossAmount,
+    netAmount,
+    amountKind: netAmount != null ? 'settled' : 'estimated',
   };
 }
 
@@ -110,14 +110,16 @@ function toCanonicalLeg(
   accountLabels: Record<string, string>,
   fallbackStatus: RevenueSplitLegStatus,
 ): CanonicalSplitLeg {
-  const { amount, amountKind } = resolveLegAmount(row, grossPaid);
+  const { grossAmount, netAmount, amountKind } = resolveLegGrossAndNet(row, grossPaid);
   const rawStatus = str(row.status || fallbackStatus).toUpperCase();
   const status: RevenueSplitLegStatus = isLegStatus(rawStatus) ? rawStatus : fallbackStatus;
   const isIssuerRemainder = participantIsIssuerRemainder(row);
   return {
     beneficiaryName: participantDisplayName(row),
     sharePercent: participantSharePercent(row),
-    amount,
+    amount: grossAmount,
+    grossAmount,
+    netAmount,
     amountKind,
     amountKindLabel: AMOUNT_KIND_LABELS[amountKind],
     statusLabel: revenueSplitLegParticipantStatusLabel({
@@ -161,36 +163,77 @@ export function resolveInstallmentSplitDistribution(input: {
     if (issuer) {
       const others = resolved
         .filter((row) => row !== issuer)
-        .reduce((sum, row) => sum + row.amount, 0);
-      issuer.amount = Math.round((gross - others) * 100) / 100;
+        .reduce((sum, row) => sum + row.grossAmount, 0);
+      const remainder = Math.round((gross - others) * 100) / 100;
+      issuer.amount = remainder;
+      issuer.grossAmount = remainder;
     }
   }
   return resolved.sort((a, b) => a.beneficiaryName.localeCompare(b.beneficiaryName, 'pt-BR'));
 }
 
-export function aggregateDestinationTotals(
-  legs: CanonicalSplitLeg[],
-): { beneficiaryName: string; amount: number; amountKind: DestinationAmountKind; amountKindLabel: string }[] {
+export type AggregatedDestinationRow = {
+  beneficiaryName: string;
+  sharePercent: number | null;
+  amount: number;
+  grossAmount: number;
+  netAmount: number | null;
+  amountKind: DestinationAmountKind;
+  amountKindLabel: string;
+};
+
+export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): AggregatedDestinationRow[] {
   const map = new Map<
     string,
-    { beneficiaryName: string; amount: number; amountKind: DestinationAmountKind }
+    {
+      beneficiaryName: string;
+      sharePercent: number | null;
+      shareMismatch: boolean;
+      grossAmount: number;
+      netSum: number;
+      hasNet: boolean;
+      allSettled: boolean;
+    }
   >();
   for (const leg of legs) {
-    const key = `${leg.beneficiaryName}::${leg.amountKind}`;
+    const key = leg.beneficiaryName;
     const prev = map.get(key);
-    if (prev) prev.amount = Math.round((prev.amount + leg.amount) * 100) / 100;
-    else {
+    const net = leg.netAmount;
+    if (prev) {
+      prev.grossAmount = Math.round((prev.grossAmount + leg.grossAmount) * 100) / 100;
+      if (net != null) {
+        prev.netSum = Math.round((prev.netSum + net) * 100) / 100;
+        prev.hasNet = true;
+      } else {
+        prev.allSettled = false;
+      }
+      if (prev.sharePercent != null && prev.sharePercent !== leg.sharePercent) {
+        prev.shareMismatch = true;
+      }
+    } else {
       map.set(key, {
         beneficiaryName: leg.beneficiaryName,
-        amount: leg.amount,
-        amountKind: leg.amountKind,
+        sharePercent: leg.sharePercent,
+        shareMismatch: false,
+        grossAmount: leg.grossAmount,
+        netSum: net == null ? 0 : net,
+        hasNet: net != null,
+        allSettled: net != null,
       });
     }
   }
   return [...map.values()]
-    .map((row) => ({
-      ...row,
-      amountKindLabel: AMOUNT_KIND_LABELS[row.amountKind],
-    }))
+    .map((row) => {
+      const amountKind: DestinationAmountKind = row.allSettled ? 'settled' : 'estimated';
+      return {
+        beneficiaryName: row.beneficiaryName,
+        sharePercent: row.shareMismatch ? null : row.sharePercent,
+        amount: row.grossAmount,
+        grossAmount: row.grossAmount,
+        netAmount: row.hasNet ? row.netSum : null,
+        amountKind,
+        amountKindLabel: AMOUNT_KIND_LABELS[amountKind],
+      };
+    })
     .sort((a, b) => a.beneficiaryName.localeCompare(b.beneficiaryName, 'pt-BR'));
 }

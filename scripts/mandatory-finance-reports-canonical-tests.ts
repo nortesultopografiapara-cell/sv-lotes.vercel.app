@@ -73,6 +73,28 @@ console.log('\n═══ wiring: blocks saiu do Financeiro Resumido ═══');
   assert(!dataset.includes('DISPONÍVEL'), 'dataset não lista disponibilidade');
   assert(page.includes('ChargeRevenueSplitDistribution'), 'tela Parcelas intacta');
   assert(page.includes('PaymentTableRow'), 'tabela Parcelas intacta');
+  const premiumUi = readFileSync(
+    join(process.cwd(), 'components/finance/FinancePremiumUI.tsx'),
+    'utf8',
+  );
+  const splitUi = readFileSync(
+    join(process.cwd(), 'components/finance/ChargeRevenueSplitDistribution.tsx'),
+    'utf8',
+  );
+  assert(
+    premiumUi.includes('ChargeRevenueSplitDistribution'),
+    'PaymentTableRow renderiza Distribuição do Recebimento',
+  );
+  assert(
+    premiumUi.includes('isPaid && resolvePaymentSaleId(p)'),
+    'quadro de split permanece na parcela paga',
+  );
+  assert(splitUi.includes('Distribuição do Recebimento'), 'título operacional de split');
+  assert(splitUi.includes('Beneficiário'), 'coluna Beneficiário');
+  assert(splitUi.includes('Percentual'), 'coluna Percentual');
+  assert(splitUi.includes('Situação'), 'coluna Situação');
+  assert(splitUi.includes('>Valor<') || splitUi.includes('>Valor</th>'), 'coluna Valor');
+  assert(splitUi.includes('Status do Split'), 'status do split visível');
 }
 
 console.log('\n═══ cenário Severino — receita 33,34 não vira 66,68 ═══');
@@ -97,7 +119,7 @@ console.log('\n═══ cenário Severino — receita 33,34 não vira 66,68 ═
   );
   assert(
     (parcela?.split || []).every((l) => l.amountKind === 'estimated'),
-    'sem net_amount → Valor estimado',
+    'sem net_amount → Previsto/Estimado',
   );
   assert(entrada?.installmentLabel === 'Entrada', 'installment_number 0 = Entrada');
   assert(report.wallet.receivedInPeriod === 66.67, 'recebido = 33,33 + 33,34');
@@ -328,6 +350,14 @@ console.log('\n═══ net_amount persistido = Liquidado ═══');
     parcela.split.every((l) => l.amountKind === 'settled' && l.amountKindLabel === 'Liquidado'),
     'net_amount → Liquidado',
   );
+  assert(
+    parcela.split.every((l) => l.grossAmount === 16.67),
+    'líquido não substitui o bruto previsto',
+  );
+  assert(
+    parcela.split.every((l) => l.netAmount === 16.67),
+    'net_amount persistido permanece na coluna líquido',
+  );
 }
 
 console.log('\n═══ J) filtro de período — paid_at vs due_date vs movement_date ═══');
@@ -498,6 +528,167 @@ console.log('\n═══ lote disponível não aparece ═══');
   assert(
     report.wallet.movements.every((m) => m.id.startsWith('receipt-')),
     'somente finance_receipts',
+  );
+}
+
+console.log('\n═══ ROSIVAN 000000030/2026 — 20+40+40 split 50/50 sem total híbrido ═══');
+{
+  const saleId = 'sale-rosivan-030';
+  const ids = {
+    entrada: 'receipt-rosivan-entrada',
+    p1: 'receipt-rosivan-p1',
+    p2: 'receipt-rosivan-p2',
+  };
+  const customer = { name: 'ROSIVAN DE OLIVEIRA', document: '000.000.000-00' };
+  const blocks = { block_name: '01', name: '01', number: '74' };
+  const sales = {
+    id: saleId,
+    installments_count: 2,
+    financial_account_id: 'fa-asaas-sandbox',
+    projects: { name: SEVERINO_PROJECT },
+    contracts: [{ contract_number: '000000030/2026' }],
+  };
+  const receipt = (
+    id: string,
+    installment: number,
+    amount: number,
+  ) => ({
+    id,
+    sale_id: saleId,
+    project_id: 'proj-araguaia',
+    installment_number: installment,
+    amount,
+    paid_amount: amount,
+    status: 'pago',
+    due_date: '2026-09-17',
+    paid_at: '2026-09-17T12:00:00.000Z',
+    financial_account_id: 'fa-asaas-sandbox',
+    customers: customer,
+    projects: { name: SEVERINO_PROJECT },
+    blocks,
+    sales,
+  });
+  const cashRow = (id: string, receiptId: string, amount: number, desc: string) => ({
+    id,
+    type: 'entrada',
+    status: 'ativo',
+    amount,
+    category: 'Venda de Lote',
+    description: desc,
+    movement_date: '2026-09-17',
+    sale_id: saleId,
+    project_id: 'proj-araguaia',
+    metadata: {
+      provider: 'MANUAL_FINANCE',
+      installment_id: receiptId,
+      receipt_id: receiptId,
+      financial_account_id: 'fa-asaas-sandbox',
+    },
+  });
+  const leg = (
+    installmentId: string,
+    name: string,
+    gross: number,
+    net: number | null,
+    issuer: boolean,
+  ) => ({
+    installmentId,
+    displayName: name,
+    sharePercent: 50,
+    isIssuerRemainder: issuer,
+    financialAccountId: issuer ? 'fa-asaas-sandbox' : 'fa-ana',
+    grossAmountEstimate: gross,
+    netAmount: net,
+    status: 'SETTLED',
+  });
+  const splitView = {
+    saleId,
+    snapshot: { id: 'snap-rosivan' },
+    participants: [
+      {
+        id: 'part-admin',
+        displayName: 'Administradora',
+        sharePercent: 50,
+        isIssuerRemainder: true,
+        financialAccountId: 'fa-asaas-sandbox',
+      },
+      {
+        id: 'part-ana',
+        displayName: 'ANA VITORIA',
+        sharePercent: 50,
+        isIssuerRemainder: false,
+        financialAccountId: 'fa-ana',
+      },
+    ],
+    legs: [
+      leg(ids.entrada, 'Administradora', 10, null, true),
+      leg(ids.entrada, 'ANA VITORIA', 10, 9.5, false),
+      leg(ids.p1, 'Administradora', 20, null, true),
+      leg(ids.p1, 'ANA VITORIA', 20, 19.36, false),
+      leg(ids.p2, 'Administradora', 20, null, true),
+      leg(ids.p2, 'ANA VITORIA', 20, 19.36, false),
+    ],
+  };
+  const report = buildCanonicalFinanceReport(
+    baseInput({
+      receipts: [
+        receipt(ids.entrada, 0, 20),
+        receipt(ids.p1, 1, 40),
+        receipt(ids.p2, 2, 40),
+      ],
+      cashMovements: [
+        cashRow('cash-rosivan-entrada', ids.entrada, 20, 'Pagamento de Parcela 0 - CT 000000030/2026'),
+        cashRow('cash-rosivan-p1', ids.p1, 40, 'Pagamento de Parcela 1 - CT 000000030/2026'),
+        cashRow('cash-rosivan-p2', ids.p2, 40, 'Pagamento de Parcela 2 - CT 000000030/2026'),
+      ],
+      splitViews: { [saleId]: splitView },
+      accountLabels: {
+        'fa-asaas-sandbox': 'ASAAS SANDBOX — Asaas',
+        'fa-ana': 'ANA VITORIA — Asaas',
+      },
+      chargeHints: {
+        [ids.entrada]: { provider: 'ASAAS', feeAmount: null },
+        [ids.p1]: { provider: 'ASAAS', feeAmount: null },
+        [ids.p2]: { provider: 'ASAAS', feeAmount: null },
+      },
+    }),
+  );
+
+  assert(report.wallet.receivedInPeriod === 100, 'receita = 100');
+  assert(report.cash.inflows === 100, 'caixa entradas = 100');
+  assert(report.wallet.qtyPaid === 3, '3 parcelas pagas');
+  assert(report.wallet.toReceive === 0, 'a receber = 0');
+  assert(report.destinations.grossPredictedTotal === 100, 'distribuição bruta prevista = 100');
+  assert(report.destinations.total === 100, 'total canônico = bruto previsto, não híbrido');
+  assert(report.destinations.netConfirmedTotal === 48.22, 'líquido confirmado = 48,22');
+  const hybrid = round(50 + 48.22);
+  assert(report.destinations.total !== hybrid, `não gera total híbrido ${hybrid}`);
+  assert(report.destinations.persistedFeeTotal == null, 'sem tarifa persistida — não inventar');
+
+  const admin = report.destinations.rows.find((r) => r.beneficiaryName === 'Administradora');
+  const ana = report.destinations.rows.find((r) => r.beneficiaryName === 'ANA VITORIA');
+  assert(admin?.grossAmount === 50, 'Administradora bruto previsto 50');
+  assert(admin?.netAmount == null, 'Administradora sem net_amount');
+  assert(admin?.amountKindLabel === 'Previsto/Estimado', 'Administradora estimado');
+  assert(ana?.grossAmount === 50, 'ANA bruto previsto 50');
+  assert(ana?.netAmount === 48.22, 'ANA líquido 48,22');
+  assert(ana?.amountKindLabel === 'Liquidado', 'ANA liquidado');
+
+  assert(
+    report.cash.movements.every((m) => m.projectName === SEVERINO_PROJECT),
+    'caixa usa empreendimento Chacreamento Araguaia',
+  );
+  assert(
+    report.cash.movements.every((m) => m.projectName !== 'Lançamento manual'),
+    'Lançamento manual não vai para a coluna Empreendimento',
+  );
+  assert(
+    report.cash.movements.every((m) => m.accountLabel === 'ASAAS SANDBOX — Asaas'),
+    'conta Asaas sandbox resolvida pela metadata/parcela',
+  );
+  assert(
+    report.cash.movements.every((m) => !String(m.tipoLabel).includes('Lançamento manual')),
+    'entrada de venda não é originada como lançamento manual',
   );
 }
 

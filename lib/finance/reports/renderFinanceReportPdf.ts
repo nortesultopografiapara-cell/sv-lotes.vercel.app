@@ -21,6 +21,60 @@ function lastTableY(doc: JsPdfDoc, fallback: number): number {
   return ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || fallback) + 8;
 }
 
+function formatOptionalMoney(value: number | null | undefined): string {
+  return value == null ? '—' : formatMoneyBr(value);
+}
+
+function destinationBodyRows(report: CanonicalFinanceReport): any[] {
+  if (!report.destinations.rows.length) {
+    return [['Sem destinos no período', '—', '—', '—', '—']];
+  }
+  return report.destinations.rows.map((row) => [
+    row.beneficiaryName,
+    row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
+    formatMoneyBr(row.grossAmount),
+    formatOptionalMoney(row.netAmount),
+    row.amountKindLabel,
+  ]);
+}
+
+function destinationSummaryRows(report: CanonicalFinanceReport): any[] {
+  const rows: unknown[] = [
+    [
+      {
+        content: 'Distribuição bruta prevista',
+        colSpan: 2,
+        styles: { fontStyle: 'bold' },
+      },
+      formatMoneyBr(report.destinations.grossPredictedTotal),
+      '',
+      '',
+    ],
+    [
+      {
+        content: 'Líquido confirmado disponível',
+        colSpan: 2,
+        styles: { fontStyle: 'bold' },
+      },
+      '',
+      formatMoneyBr(report.destinations.netConfirmedTotal),
+      '',
+    ],
+  ];
+  if (report.destinations.persistedFeeTotal != null) {
+    rows.splice(1, 0, [
+      {
+        content: '(−) Tarifa/ajuste persistido',
+        colSpan: 2,
+      },
+      '',
+      formatMoneyBr(report.destinations.persistedFeeTotal),
+      '',
+    ]);
+  }
+  return rows;
+}
+
 function drawHeader(
   doc: JsPdfDoc,
   report: CanonicalFinanceReport,
@@ -170,20 +224,11 @@ export async function buildFinanceResumidoPdf(
   doc.text('DESTINO DOS RECEBIMENTOS (não é receita adicional)', 14, y);
   autoTable(doc, {
     startY: y + 3,
-    head: [['Beneficiário / Conta', 'Valor', 'Natureza']],
-    body: [
-      ...(report.destinations.rows.length
-        ? report.destinations.rows.map((row) => [
-            row.beneficiaryName,
-            formatMoneyBr(row.amount),
-            row.amountKindLabel,
-          ])
-        : [['Sem destinos no período', '—', '—']]),
-      ['TOTAL', formatMoneyBr(report.destinations.total), ''],
-    ],
+    head: [['Beneficiário / Conta', '%', 'Bruto previsto', 'Líquido', 'Situação']],
+    body: [...destinationBodyRows(report), ...destinationSummaryRows(report)],
     styles: { fontSize: 8.5, cellPadding: 2 },
     headStyles: { fillColor: TEAL, textColor: 255, fontStyle: 'bold' },
-    columnStyles: { 1: { halign: 'right' } },
+    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
     margin: { left: 14, right: 14 },
   });
   y = lastTableY(doc, y);
@@ -211,8 +256,8 @@ export async function buildFinanceResumidoPdf(
   return doc;
 }
 
-function movementBodyRows(movements: CanonicalWalletMovement[]): unknown[] {
-  const body: unknown[] = [];
+function movementBodyRows(movements: CanonicalWalletMovement[]): any[] {
+  const body: any[] = [];
   for (const m of movements) {
     body.push([
       m.contractNumber,
@@ -232,7 +277,7 @@ function movementBodyRows(movements: CanonicalWalletMovement[]): unknown[] {
     if (m.hasSplit) {
       const lines = m.split.map(
         (leg) =>
-          `${leg.beneficiaryName} | ${formatReportSharePercent(leg.sharePercent)} | ${formatMoneyBr(leg.amount)} | ${leg.amountKindLabel} | ${leg.statusLabel}${leg.accountOrWallet ? ` | ${leg.accountOrWallet}` : ''}`,
+          `${leg.beneficiaryName} | ${formatReportSharePercent(leg.sharePercent)} | bruto ${formatMoneyBr(leg.grossAmount)} | líquido ${leg.netAmount == null ? '—' : formatMoneyBr(leg.netAmount)} | ${leg.amountKindLabel} | ${leg.statusLabel}${leg.accountOrWallet ? ` | ${leg.accountOrWallet}` : ''}`,
       );
       body.push([
         {
@@ -284,7 +329,8 @@ export async function buildFinanceCompletoPdf(
       ['CARTEIRA', 'A receber', formatMoneyBr(report.wallet.toReceive), 'due_date'],
       ['CARTEIRA', 'Vencido', formatMoneyBr(report.wallet.overdue), 'due_date'],
       ['CARTEIRA', 'Parcelas pagas / pendentes / vencidas', `${report.wallet.qtyPaid} / ${report.wallet.qtyPending} / ${report.wallet.qtyOverdue}`, 'paid_at / due_date'],
-      ['DISTRIBUIÇÃO', 'Total destinado', formatMoneyBr(report.destinations.total), 'Não somar à receita'],
+      ['DISTRIBUIÇÃO', 'Bruto previsto', formatMoneyBr(report.destinations.grossPredictedTotal), 'Não somar à receita'],
+      ['DISTRIBUIÇÃO', 'Líquido confirmado', formatMoneyBr(report.destinations.netConfirmedTotal), 'Somente net_amount persistido'],
     ],
     styles: { fontSize: 8, cellPadding: 1.8 },
     headStyles: HEAD,
@@ -361,7 +407,7 @@ export async function buildFinanceCompletoPdf(
   return doc;
 }
 
-function movementsLengthSafe(report: CanonicalFinanceReport): unknown[] {
+function movementsLengthSafe(report: CanonicalFinanceReport): any[] {
   if (!report.wallet.movements.length) {
     return [['—', 'Sem parcelas no filtro', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—']];
   }

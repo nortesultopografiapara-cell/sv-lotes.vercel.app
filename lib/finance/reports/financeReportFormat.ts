@@ -96,7 +96,11 @@ export function getCanonicalFinanceTotals(
     cashInflows: roundMoney(report.cash.inflows),
     cashOutflows: roundMoney(report.cash.outflows),
     cashClosing: roundMoney(report.cash.closingBalance),
-    destinationsTotal: roundMoney(report.destinations.total),
+    destinationsTotal: roundMoney(report.destinations.grossPredictedTotal ?? report.destinations.total),
+    destinationsGrossPredicted: roundMoney(
+      report.destinations.grossPredictedTotal ?? report.destinations.total,
+    ),
+    destinationsNetConfirmed: roundMoney(report.destinations.netConfirmedTotal || 0),
     walletMovementCount: report.wallet.movements.length,
     cashMovementCount: report.cash.movements.length,
     destinationRowCount: report.destinations.rows.length,
