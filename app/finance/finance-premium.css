@@ -719,3 +719,166 @@
     white-space: nowrap;
   }
 }
+
+/* Quadro operacional de split — contraste AA no tema escuro, sem fundo branco */
+.finance-split-distribution {
+  margin-top: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, #2dd4bf 34%, var(--border-color));
+  background: color-mix(in srgb, var(--bg-card) 78%, #0f3f3c);
+  color: var(--text-primary);
+  padding: 0.75rem 0.85rem;
+}
+
+.finance-split-distribution.is-compact {
+  margin-top: 0.7rem;
+  padding: 0.7rem 0.75rem;
+}
+
+.finance-split-distribution-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.finance-split-distribution h4 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.finance-split-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #ccfbf1;
+  background: color-mix(in srgb, #0f766e 55%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, #5eead4 40%, transparent);
+}
+
+.finance-split-payment {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.finance-split-payment strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.finance-split-loading {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.finance-split-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.finance-split-table {
+  width: 100%;
+  min-width: 18.5rem;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.finance-split-table thead th {
+  padding: 0 0.5rem 0.4rem 0;
+  text-align: left;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+.finance-split-table thead th.is-amount,
+.finance-split-table td.finance-split-amount {
+  text-align: right;
+  padding-right: 0;
+}
+
+.finance-split-table tbody td {
+  padding: 0.45rem 0.5rem 0.45rem 0;
+  vertical-align: middle;
+  border-top: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.finance-split-beneficiary {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.finance-split-percent {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.finance-split-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+[data-theme='light'] .finance-split-amount {
+  color: var(--text-primary);
+}
+
+.finance-split-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.finance-split-status.is-settled {
+  background: #14532d;
+  color: #dcfce7;
+}
+
+.finance-split-status.is-pending {
+  background: #78350f;
+  color: #fef3c7;
+}
+
+.finance-split-status.is-other {
+  background: color-mix(in srgb, var(--bg-elevated) 80%, #334155);
+  color: var(--text-primary);
+}
+
+.finance-split-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.6875rem;
+  color: #fde68a;
+}
+
+[data-theme='light'] .finance-split-hint {
+  color: #92400e;
+}
+
+@media (max-width: 640px) {
+  .finance-split-table {
+    font-size: 0.6875rem;
+  }
+
+  .finance-split-table thead th {
+    font-size: 0.5625rem;
+  }
+}

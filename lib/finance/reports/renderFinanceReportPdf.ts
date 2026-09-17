@@ -5,6 +5,10 @@ import {
   formatMoneyBr,
 } from './financeReportFormat';
 import { formatReportSharePercent } from './splitForReport';
+import {
+  formatFinancePdfSplitLegLine,
+  formatSplitBeneficiaryLabel,
+} from './splitPresentation';
 
 const NAVY: [number, number, number] = [30, 64, 107];
 const TEAL: [number, number, number] = [13, 115, 119];
@@ -30,7 +34,7 @@ function destinationBodyRows(report: CanonicalFinanceReport): any[] {
     return [['Sem destinos no período', '—', '—', '—', '—']];
   }
   return report.destinations.rows.map((row) => [
-    row.beneficiaryName,
+    formatSplitBeneficiaryLabel(row.beneficiaryName),
     row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
     formatMoneyBr(row.grossAmount),
     formatOptionalMoney(row.netAmount),
@@ -275,10 +279,7 @@ function movementBodyRows(movements: CanonicalWalletMovement[]): any[] {
       m.financialAccountLabel,
     ]);
     if (m.hasSplit) {
-      const lines = m.split.map(
-        (leg) =>
-          `${leg.beneficiaryName} | ${formatReportSharePercent(leg.sharePercent)} | bruto ${formatMoneyBr(leg.grossAmount)} | líquido ${leg.netAmount == null ? '—' : formatMoneyBr(leg.netAmount)} | ${leg.amountKindLabel} | ${leg.statusLabel}${leg.accountOrWallet ? ` | ${leg.accountOrWallet}` : ''}`,
-      );
+      const lines = m.split.map((leg) => formatFinancePdfSplitLegLine(leg));
       body.push([
         {
           content: `DISTRIBUIÇÃO DO RECEBIMENTO (não somar como receita): ${lines.join(' · ')}`,

@@ -19,6 +19,12 @@ import {
 import type { CanonicalFinanceReportInput } from '../lib/finance/reports/canonicalFinanceTypes';
 import { excelPresentationTotals } from '../lib/finance/reports/renderFinanceReportExcel';
 import { estimateShareAmount } from '../lib/finance/revenueSplit/shareFormat';
+import { formatReportSharePercent } from '../lib/finance/reports/splitForReport';
+import {
+  formatFinancePdfSplitLegLine,
+  formatSplitBeneficiaryLabel,
+  formatSplitSharePercentLabel,
+} from '../lib/finance/reports/splitPresentation';
 
 let passed = 0;
 let failed = 0;
@@ -690,6 +696,57 @@ console.log('\n═══ ROSIVAN 000000030/2026 — 20+40+40 split 50/50 sem tot
     report.cash.movements.every((m) => !String(m.tipoLabel).includes('Lançamento manual')),
     'entrada de venda não é originada como lançamento manual',
   );
+}
+
+console.log('\n═══ apresentação visual — nome, %, UUID fora do PDF ═══');
+{
+  assert(formatSplitSharePercentLabel(50) === '50%', '50.0000 → 50%');
+  assert(formatSplitSharePercentLabel(50.0000) === '50%', '50.0000 literal → 50%');
+  assert(formatReportSharePercent(50) === '50%', 'formatador de relatório 50%');
+  assert(formatSplitBeneficiaryLabel('ana vitoria') === 'ANA VITORIA', 'ana vitoria → ANA VITORIA');
+  assert(formatSplitBeneficiaryLabel('Administradora') === 'Administradora', 'Administradora permanece');
+  assert(
+    formatSplitBeneficiaryLabel('ANA VITORIA') === 'ANA VITORIA',
+    'ANA VITORIA já formatado permanece',
+  );
+
+  const walletUuid = '1ef06e2a-a15f-4f2e-b26b-302a06056e6c';
+  const view = buildSeverinoSplitView();
+  view.legs = view.legs.map((leg) => ({
+    ...leg,
+    destinationIdentifier: walletUuid,
+  }));
+  const report = buildCanonicalFinanceReport(
+    baseInput({ splitViews: { [SEVERINO_IDS.SALE_ID]: view } }),
+  );
+  const parcela = report.wallet.movements.find((m) => m.id === SEVERINO_IDS.PARCELA_ID)!;
+  assert(report.wallet.receivedInPeriod === 66.67, 'lock receita Severino');
+  assert(
+    parcela.split.some((leg) => String(leg.accountOrWallet || '').includes(walletUuid)),
+    'UUID permanece no dataset',
+  );
+  const pdfLine = formatFinancePdfSplitLegLine(parcela.split[0]);
+  assert(!pdfLine.includes(walletUuid), 'UUID da wallet NÃO aparece no PDF');
+  assert(pdfLine.includes('50%') || pdfLine.includes(formatSplitSharePercentLabel(parcela.split[0].sharePercent)), 'PDF mostra percentual amigável');
+  assert(
+    pdfLine.includes(formatSplitBeneficiaryLabel(parcela.split[0].beneficiaryName)),
+    'PDF mostra beneficiário formatado',
+  );
+  assert(pdfLine.includes('bruto'), 'PDF mostra bruto previsto');
+  assert(pdfLine.includes('líquido'), 'PDF mostra líquido');
+
+  const pdfSrc = readFileSync(
+    join(process.cwd(), 'lib/finance/reports/renderFinanceReportPdf.ts'),
+    'utf8',
+  );
+  const excelSrc = readFileSync(
+    join(process.cwd(), 'lib/finance/reports/renderFinanceReportExcel.ts'),
+    'utf8',
+  );
+  assert(pdfSrc.includes('formatFinancePdfSplitLegLine'), 'PDF completo usa linha sem wallet');
+  assert(!pdfSrc.includes('leg.accountOrWallet'), 'renderer PDF não interpola accountOrWallet');
+  assert(excelSrc.includes('Conta/Wallet'), 'Excel completo mantém coluna Conta/Wallet');
+  assert(excelSrc.includes('leg.accountOrWallet'), 'Excel preserva wallet no dataset analítico');
 }
 
 if (failed > 0) {

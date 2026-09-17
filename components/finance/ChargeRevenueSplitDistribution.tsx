@@ -12,8 +12,12 @@ import type {
   RevenueSplitLegStatus,
   SaleRevenueSplitSnapshotParticipant,
 } from '@/lib/finance/revenueSplit/types';
-import { formatSharePercent } from '@/lib/finance/revenueSplit/shareFormat';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import {
+  formatSplitBeneficiaryLabel,
+  formatSplitSharePercentLabel,
+  splitStatusPresentationTone,
+} from '@/lib/finance/reports/splitPresentation';
 
 type SaleSplitView = {
   saleId: string;
@@ -124,66 +128,64 @@ export function ChargeRevenueSplitDistribution({
 
   return (
     <section
-      className={
-        compact
-          ? 'mt-3 rounded-lg border border-teal-500/20 bg-teal-500/[0.04] p-3'
-          : 'rounded-xl border border-teal-500/25 bg-teal-500/[0.05] p-3 sm:p-4'
-      }
+      className={`finance-split-distribution${compact ? ' is-compact' : ''}`}
       data-testid="charge-revenue-split-distribution"
     >
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-[var(--text-primary,theme(colors.gray.900))]">
-          Distribuição do Recebimento
-        </h4>
+      <div className="finance-split-distribution-head">
+        <h4>Distribuição do Recebimento</h4>
         {splitStatus ? (
-          <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-semibold text-teal-800">
+          <span className="finance-split-chip">
             Status do Split: {REVENUE_SPLIT_LEG_STATUS_LABELS[splitStatus]}
           </span>
         ) : null}
       </div>
-      <p className="mb-2 text-xs text-[var(--text-secondary,theme(colors.gray.600))]">
+      <p className="finance-split-payment">
         Pagamento: <strong>{paymentLabel(paymentStatus)}</strong>
       </p>
       {loading && !view?.snapshot ? (
-        <p className="text-xs text-[var(--text-muted,theme(colors.gray.500))]">
-          Carregando distribuição...
-        </p>
+        <p className="finance-split-loading">Carregando distribuição...</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[280px] border-collapse text-xs">
+        <div className="finance-split-table-wrap">
+          <table className="finance-split-table">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-gray-600">
-                <th className="pb-1 pr-2 font-semibold">Beneficiário</th>
-                <th className="pb-1 pr-2 font-semibold">Percentual</th>
-                <th className="pb-1 pr-2 font-semibold">Situação</th>
-                <th className="pb-1 font-semibold text-right">Valor</th>
+              <tr>
+                <th>Beneficiário</th>
+                <th>Percentual</th>
+                <th>Situação</th>
+                <th className="is-amount">Valor</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-t border-black/5">
-                  <td className="py-1.5 pr-2 font-medium text-gray-900">{row.displayName}</td>
-                  <td className="py-1.5 pr-2 tabular-nums text-gray-700">
-                    {formatSharePercent(row.sharePercent)}%
-                  </td>
-                  <td className="py-1.5 pr-2 text-gray-800">
-                    {revenueSplitLegParticipantStatusLabel({
-                      status: row.status,
-                      isIssuerRemainder: row.isIssuerRemainder,
-                    })}
-                  </td>
-                  <td className="py-1.5 text-right tabular-nums text-gray-500">
-                    {row.grossAmountEstimate != null
-                      ? formatCurrencyBRL(row.grossAmountEstimate)
-                      : '—'}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const situation = revenueSplitLegParticipantStatusLabel({
+                  status: row.status,
+                  isIssuerRemainder: row.isIssuerRemainder,
+                });
+                const tone = splitStatusPresentationTone(situation);
+                return (
+                  <tr key={row.id}>
+                    <td className="finance-split-beneficiary">
+                      {formatSplitBeneficiaryLabel(row.displayName)}
+                    </td>
+                    <td className="finance-split-percent">
+                      {formatSplitSharePercentLabel(row.sharePercent)}
+                    </td>
+                    <td>
+                      <span className={`finance-split-status is-${tone}`}>{situation}</span>
+                    </td>
+                    <td className="finance-split-amount">
+                      {row.grossAmountEstimate != null
+                        ? formatCurrencyBRL(row.grossAmountEstimate)
+                        : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
-      <p className="mt-2 text-[11px] text-amber-800">{REVENUE_SPLIT_GATEWAY_ESTIMATE_WARNING}</p>
+      <p className="finance-split-hint">{REVENUE_SPLIT_GATEWAY_ESTIMATE_WARNING}</p>
     </section>
   );
 }

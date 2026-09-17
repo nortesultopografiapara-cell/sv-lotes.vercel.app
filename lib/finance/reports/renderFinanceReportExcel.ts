@@ -2,6 +2,7 @@ import type { CanonicalFinanceReport } from './canonicalFinanceTypes';
 import { DESTINATION_DISCLAIMER } from './canonicalFinanceTypes';
 import { financeReportFilename, getCanonicalFinanceTotals } from './financeReportFormat';
 import { formatReportSharePercent } from './splitForReport';
+import { formatSplitBeneficiaryLabel } from './splitPresentation';
 
 const HEADER_FILL = 'FF1E406B';
 const TEAL_FILL = 'FF0D7377';
@@ -119,7 +120,7 @@ export async function buildFinanceResumidoWorkbook(
   styleHeaderRow(destHead);
   for (const row of report.destinations.rows) {
     const excelRow = ws.addRow([
-      row.beneficiaryName,
+      formatSplitBeneficiaryLabel(row.beneficiaryName),
       row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
       row.grossAmount,
       row.netAmount,
@@ -263,7 +264,7 @@ export async function buildFinanceCompletoWorkbook(
         m.clientName,
         m.installmentLabel,
         m.paidAmount,
-        leg.beneficiaryName,
+        formatSplitBeneficiaryLabel(leg.beneficiaryName),
         formatReportSharePercent(leg.sharePercent),
         leg.grossAmount,
         leg.netAmount,
