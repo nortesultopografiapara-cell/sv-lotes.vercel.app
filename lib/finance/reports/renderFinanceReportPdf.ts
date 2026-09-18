@@ -331,7 +331,7 @@ export async function buildFinanceCompletoPdf(
       ['CARTEIRA', 'Vencido', formatMoneyBr(report.wallet.overdue), 'due_date'],
       ['CARTEIRA', 'Parcelas pagas / pendentes / vencidas', `${report.wallet.qtyPaid} / ${report.wallet.qtyPending} / ${report.wallet.qtyOverdue}`, 'paid_at / due_date'],
       ['DISTRIBUIÇÃO', 'Bruto previsto', formatMoneyBr(report.destinations.grossPredictedTotal), 'Não somar à receita'],
-      ['DISTRIBUIÇÃO', 'Líquido confirmado', formatMoneyBr(report.destinations.netConfirmedTotal), 'Somente net_amount persistido'],
+      ['DISTRIBUIÇÃO', 'Líquido confirmado', formatMoneyBr(report.destinations.netConfirmedTotal), 'Somente pernas SETTLED'],
     ],
     styles: { fontSize: 8, cellPadding: 1.8 },
     headStyles: HEAD,

@@ -19,7 +19,10 @@ import {
 import type { CanonicalFinanceReportInput } from '../lib/finance/reports/canonicalFinanceTypes';
 import { excelPresentationTotals } from '../lib/finance/reports/renderFinanceReportExcel';
 import { estimateShareAmount } from '../lib/finance/revenueSplit/shareFormat';
-import { formatReportSharePercent } from '../lib/finance/reports/splitForReport';
+import {
+  destinationAmountKindForLeg,
+  formatReportSharePercent,
+} from '../lib/finance/reports/splitForReport';
 import {
   formatFinancePdfSplitLegLine,
   formatSplitBeneficiaryLabel,
@@ -101,6 +104,30 @@ console.log('\n═══ wiring: blocks saiu do Financeiro Resumido ═══');
   assert(splitUi.includes('Situação'), 'coluna Situação');
   assert(splitUi.includes('>Valor<') || splitUi.includes('>Valor</th>'), 'coluna Valor');
   assert(splitUi.includes('Status do Split'), 'status do split visível');
+  const displaySrc = readFileSync(
+    join(process.cwd(), 'lib/finance/revenueSplit/display.ts'),
+    'utf8',
+  );
+  const splitForReportSrc = readFileSync(
+    join(process.cwd(), 'lib/finance/reports/splitForReport.ts'),
+    'utf8',
+  );
+  assert(
+    displaySrc.includes("statuses.every((status) => status === 'SETTLED')"),
+    'Status do Split Concluído somente quando todas as pernas estão SETTLED',
+  );
+  assert(
+    splitUi.includes('summarizeRevenueSplitLegsStatus'),
+    'UI Parcelas agrega status pelas pernas, não por net_amount',
+  );
+  assert(
+    splitForReportSrc.includes('destinationAmountKindForLeg'),
+    'relatório classifica Liquidado via status SETTLED',
+  );
+  assert(
+    !splitForReportSrc.includes("amountKind: netAmount != null ? 'settled'"),
+    'net_amount sozinho não promove Liquidado',
+  );
 }
 
 console.log('\n═══ cenário Severino — receita 33,34 não vira 66,68 ═══');
@@ -344,17 +371,22 @@ console.log('\n═══ I) pagamento Inter — fee não vira receita ═══'
   assert(report.wallet.receivedInPeriod === 66.67, 'recebido ignora fee');
 }
 
-console.log('\n═══ net_amount persistido = Liquidado ═══');
+console.log('\n═══ SETTLED + net_amount = Liquidado ═══');
 {
   const view = buildSeverinoSplitView();
-  view.legs = view.legs.map((leg) => ({ ...leg, netAmount: 16.67, grossAmountEstimate: 16.67 }));
+  view.legs = view.legs.map((leg) => ({
+    ...leg,
+    netAmount: 16.67,
+    grossAmountEstimate: 16.67,
+    status: 'SETTLED',
+  }));
   const report = buildCanonicalFinanceReport(
     baseInput({ splitViews: { [SEVERINO_IDS.SALE_ID]: view } }),
   );
   const parcela = report.wallet.movements.find((m) => m.id === SEVERINO_IDS.PARCELA_ID)!;
   assert(
     parcela.split.every((l) => l.amountKind === 'settled' && l.amountKindLabel === 'Liquidado'),
-    'net_amount → Liquidado',
+    'SETTLED + net_amount → Liquidado',
   );
   assert(
     parcela.split.every((l) => l.grossAmount === 16.67),
@@ -364,6 +396,64 @@ console.log('\n═══ net_amount persistido = Liquidado ═══');
     parcela.split.every((l) => l.netAmount === 16.67),
     'net_amount persistido permanece na coluna líquido',
   );
+  const admin = parcela.split.find((l) => l.isIssuerRemainder);
+  const ana = parcela.split.find((l) => !l.isIssuerRemainder);
+  assert(admin?.statusLabel === 'Recebido', 'Administradora SETTLED → Recebido');
+  assert(ana?.statusLabel === 'Repassado', 'ANA SETTLED → Repassado');
+}
+
+console.log('\n═══ PENDING + net_amount != null => Pendente/Estimado, nunca Liquidado ═══');
+{
+  assert(
+    destinationAmountKindForLeg('PENDING', 48.22) === 'estimated',
+    'helper PENDING+net → estimated',
+  );
+  assert(
+    destinationAmountKindForLeg('SETTLED', 48.22) === 'settled',
+    'helper SETTLED+net → settled',
+  );
+  assert(
+    destinationAmountKindForLeg('SETTLED', null) === 'estimated',
+    'helper SETTLED sem net → estimated',
+  );
+  const view = buildSeverinoSplitView();
+  view.legs = view.legs.map((leg) => ({
+    ...leg,
+    netAmount: 16.67,
+    grossAmountEstimate: 16.67,
+    status: 'PENDING',
+  }));
+  const report = buildCanonicalFinanceReport(
+    baseInput({ splitViews: { [SEVERINO_IDS.SALE_ID]: view } }),
+  );
+  const parcela = report.wallet.movements.find((m) => m.id === SEVERINO_IDS.PARCELA_ID)!;
+  assert(
+    parcela.status === 'pago' || String(parcela.statusLabel).toLowerCase().includes('pago'),
+    'parcela permanece paga',
+  );
+  assert(
+    parcela.split.every((l) => l.netAmount === 16.67),
+    'PENDING preserva net_amount informado pelo Asaas',
+  );
+  assert(
+    parcela.split.every((l) => l.amountKind === 'estimated' && l.amountKindLabel === 'Previsto/Estimado'),
+    'PENDING + net_amount → Previsto/Estimado',
+  );
+  assert(
+    parcela.split.every((l) => l.amountKind !== 'settled' && l.amountKindLabel !== 'Liquidado'),
+    'PENDING + net_amount nunca Liquidado',
+  );
+  assert(
+    parcela.split.every((l) => l.statusLabel === 'Pendente'),
+    'Situação vem do status PENDING, não do net_amount',
+  );
+  assert(
+    !parcela.split.some((l) =>
+      l.statusLabel === 'Recebido' || l.statusLabel === 'Repassado' || l.statusLabel === 'Liquidado',
+    ),
+    'parcela paga não promove split para Recebido/Repassado/Liquidado',
+  );
+  assert(report.destinations.netConfirmedTotal === 0, 'PENDING+net não entra no líquido confirmado');
 }
 
 console.log('\n═══ J) filtro de período — paid_at vs due_date vs movement_date ═══');
@@ -605,7 +695,7 @@ console.log('\n═══ ROSIVAN 000000030/2026 — 20+40+40 split 50/50 sem tot
     financialAccountId: issuer ? 'fa-asaas-sandbox' : 'fa-ana',
     grossAmountEstimate: gross,
     netAmount: net,
-    status: 'SETTLED',
+    status: 'PENDING',
   });
   const splitView = {
     saleId,
@@ -666,7 +756,7 @@ console.log('\n═══ ROSIVAN 000000030/2026 — 20+40+40 split 50/50 sem tot
   assert(report.wallet.toReceive === 0, 'a receber = 0');
   assert(report.destinations.grossPredictedTotal === 100, 'distribuição bruta prevista = 100');
   assert(report.destinations.total === 100, 'total canônico = bruto previsto, não híbrido');
-  assert(report.destinations.netConfirmedTotal === 48.22, 'líquido confirmado = 48,22');
+  assert(report.destinations.netConfirmedTotal === 0, 'PENDING+net não vira líquido confirmado');
   const hybrid = round(50 + 48.22);
   assert(report.destinations.total !== hybrid, `não gera total híbrido ${hybrid}`);
   assert(report.destinations.persistedFeeTotal == null, 'sem tarifa persistida — não inventar');
@@ -677,8 +767,39 @@ console.log('\n═══ ROSIVAN 000000030/2026 — 20+40+40 split 50/50 sem tot
   assert(admin?.netAmount == null, 'Administradora sem net_amount');
   assert(admin?.amountKindLabel === 'Previsto/Estimado', 'Administradora estimado');
   assert(ana?.grossAmount === 50, 'ANA bruto previsto 50');
-  assert(ana?.netAmount === 48.22, 'ANA líquido 48,22');
-  assert(ana?.amountKindLabel === 'Liquidado', 'ANA liquidado');
+  assert(ana?.netAmount === 48.22, 'ANA net_amount previsto 48,22');
+  assert(ana?.amountKind === 'estimated', 'ANA PENDING+net = estimated');
+  assert(ana?.amountKindLabel === 'Previsto/Estimado', 'ANA estimado, nunca Liquidado');
+  assert(ana?.amountKindLabel !== 'Liquidado', 'ANA não é Liquidado só por ter net_amount');
+
+  const rosivanSplits = report.wallet.movements.flatMap((m) => m.split);
+  assert(rosivanSplits.length === 6, '6 pernas ROSIVAN');
+  assert(
+    report.wallet.movements.every((m) => m.status === 'pago' || String(m.statusLabel).toLowerCase().includes('pago')),
+    'parcelas finance_receipts permanecem pagas',
+  );
+  assert(
+    rosivanSplits.every((l) => l.statusLabel === 'Pendente'),
+    'Situação PENDING → Pendente (não promove por parcela paga)',
+  );
+  const adminLegs = rosivanSplits.filter((l) => l.isIssuerRemainder);
+  const anaLegs = rosivanSplits.filter((l) => !l.isIssuerRemainder);
+  assert(
+    adminLegs.every((l) => l.statusLabel === 'Pendente' && l.statusLabel !== 'Recebido'),
+    'Administradora PENDING não aparece como Recebido',
+  );
+  assert(
+    anaLegs.every((l) => l.statusLabel === 'Pendente' && l.statusLabel !== 'Repassado'),
+    'ANA PENDING não aparece como Repassado/Liquidado',
+  );
+  assert(
+    round(anaLegs.reduce((s, l) => s + (l.netAmount || 0), 0)) === 48.22,
+    'ANA net_amount total 48,22 preservado como previsto',
+  );
+  assert(
+    anaLegs.every((l) => l.amountKindLabel === 'Previsto/Estimado'),
+    'ANA PENDING+net = previsto/estimado',
+  );
 
   assert(
     report.cash.movements.every((m) => m.projectName === SEVERINO_PROJECT),

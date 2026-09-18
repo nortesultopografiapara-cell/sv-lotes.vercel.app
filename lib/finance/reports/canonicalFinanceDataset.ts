@@ -470,7 +470,10 @@ export function buildCanonicalFinanceReport(
     destinations.reduce((s, r) => s + r.grossAmount, 0),
   );
   const destinationsNetConfirmed = roundMoney(
-    destinations.reduce((s, r) => s + (r.netAmount || 0), 0),
+    destinationLegs.reduce(
+      (s, r) => (r.amountKind === 'settled' && r.netAmount != null ? s + r.netAmount : s),
+      0,
+    ),
   );
   const destinationsTotal = destinationsGrossPredicted;
   const feeValues = paidForDestinations
