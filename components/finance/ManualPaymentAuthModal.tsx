@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import {
   MANUAL_PAYMENT_ALREADY_PAID_MESSAGE,
   MANUAL_PAYMENT_LOAD_FAILED_MESSAGE,
+  MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE,
   MANUAL_PAYMENT_SUCCESS_MESSAGE,
   PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE,
 } from '@/lib/finance/manualReceiptPayment';
@@ -111,6 +112,11 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
       }
       if (json?.error === MANUAL_PAYMENT_ALREADY_PAID_MESSAGE) {
         setError(MANUAL_PAYMENT_ALREADY_PAID_MESSAGE);
+        setView('ready');
+        return;
+      }
+      if (json?.error === MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE) {
+        setError(MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE);
         setView('ready');
         return;
       }

@@ -109,7 +109,8 @@ export async function POST(
 
   if (!result.ok) {
     const pub = toPublicManualPaymentError(result);
-    const status = result.code === 'already_paid' ? 409 : 401;
+    const status =
+      result.code === 'already_paid' ? 409 : result.code === 'persistence_failed' ? 500 : 401;
     return NextResponse.json(pub, { status });
   }
 

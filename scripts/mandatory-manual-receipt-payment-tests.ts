@@ -15,6 +15,8 @@ import {
   MANUAL_PAYMENT_AUTHORIZED_ACTION,
   MANUAL_PAYMENT_FAILED_ACTION,
   MANUAL_PAYMENT_LOAD_FAILED_MESSAGE,
+  MANUAL_PAYMENT_PERSISTENCE_FAILED_ACTION,
+  MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE,
   authorizeAndExecuteManualReceiptPayment,
   buildManualPaymentAuditDescription,
   expectedManualCashMovementPayload,
@@ -505,6 +507,8 @@ function testHotfixModalLocksAJ() {
 
   assert(!server.includes('customers(name, full_name)'), 'loader sem embed ambíguo de customers');
   assert(server.includes("from('customers')"), 'loader busca cliente separado');
+  assert(server.includes(".select('name')"), 'cliente usa customers.name');
+  assert(!server.includes('full_name'), 'sem customers.full_name');
   assert(server.includes("from('sales')"), 'loader busca venda separado');
   assert(server.includes("from('contracts')"), 'loader busca contrato separado');
   assert(server.includes('MANUAL_RECEIPT_BASE_SELECT'), 'select plano da parcela');
@@ -534,6 +538,90 @@ async function testGetFailureIsNotPasswordDenied() {
   console.log('OK GET falho não aparece como senha recusada');
 }
 
+function testRpcAmbiguityHotfixAL() {
+  const oldSql = read('supabase/migrations/20261021120000_manual_receipt_payment_authorization.sql');
+  const sql = read('supabase/migrations/20261021130000_fix_manual_receipt_payment_rpc_ambiguity.sql');
+  const modal = read('components/finance/ManualPaymentAuthModal.tsx');
+  const route = read('app/api/finance/receipts/[receiptId]/manual-payment/route.ts');
+  const server = read('lib/finance/manualReceiptPaymentServer.ts');
+  const lib = read('lib/finance/manualReceiptPayment.ts');
+
+  assert(oldSql.includes('paid_amount numeric'), 'A migration antiga permanece intacta');
+  assert(!sql.includes('DROP TRIGGER'), 'hotfix não remove trigger');
+  assert(sql.includes('v_paid_amount'), 'A variável v_paid_amount');
+  assert(sql.includes('paid_amount = v_paid_amount'), 'A SET usa v_paid_amount');
+  assert(!/paid_amount\s*=\s*paid_amount/.test(sql), 'A sem SET ambíguo');
+  assert(sql.includes('SECURITY DEFINER'), 'A SECURITY DEFINER');
+  assert(sql.includes('SET search_path = public'), 'A search_path');
+  assert(sql.includes('GRANT EXECUTE') && sql.includes('service_role'), 'A só service_role');
+  assert(sql.includes('REVOKE ALL'), 'A REVOKE browser');
+  assert(!sql.includes('CREATE TRIGGER'), 'A não recria trigger');
+  assert(!sql.includes('DROP TRIGGER'), 'A não dropa trigger');
+
+  const nine = pendingReceipt({ amount: 9, installment_number: 0, contract_number: '000000026/2026' });
+  const payload = expectedManualCashMovementPayload({
+    tenantId: SV,
+    receipt: nine,
+    operatorId: MARCOS,
+    paidAt: '2026-09-18T15:00:00.000Z',
+    amount: 9,
+  });
+  assert(payload.amount === 9, 'B cash amount = 9');
+  assert(payload.created_by === MARCOS, 'I created_by Marcos');
+  assert(sql.includes('v_paid_amount := COALESCE(p_amount, r.amount, 0)'), 'B RPC usa p_amount/r.amount');
+  assert(sql.includes("'amount', v_paid_amount"), 'B retorno amount = v_paid_amount');
+
+  assert(oldSql.includes('finance_receipts_block_client_paid_update'), 'L trigger original permanece');
+  assert(modal.includes('MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE'), 'G modal distingue persistência');
+  assert(modal.includes("setView('authorization_failed')"), 'F senha errada continua authorization_failed');
+  assert(!route.includes('ambiguous'), 'H route sem SQL');
+  assert(!lib.includes('column reference'), 'H lib sem detalhe Postgres');
+  assert(lib.includes('MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE'), 'G mensagem operacional');
+  assert(server.includes("code: 'rpc_failure'"), 'G persistência vira rpc_failure');
+  assert(!modal.includes('signOut'), 'K sessão permanece');
+  console.log('OK HOTFIX RPC A/B/G/H/I/K/L locks');
+}
+
+async function testPersistenceFailedIsNotPasswordDenied() {
+  let persistHits = 0;
+  const { deps } = makeDeps({
+    persist: async () => {
+      persistHits += 1;
+      return { ok: false, code: 'rpc_failure' };
+    },
+  });
+  const { result, verify } = await authorizeAndExecuteManualReceiptPayment(deps, {
+    operatorUserId: MARCOS,
+    receiptId: RECEIPT,
+    password: PRINCIPAL_PASSWORD,
+  });
+  assert(!result.ok, 'persistência falhou');
+  assert(result.code === 'persistence_failed', 'código persistence_failed');
+  assert(verify?.ok === true, 'senha do Principal já tinha passado');
+  assert(persistHits === 1, 'RPC/persist foi chamada após senha OK');
+  const pub = toPublicManualPaymentError(result);
+  assert(pub.error === MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE, 'G mensagem operacional');
+  assert(pub.error !== PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE, 'G não parece senha incorreta');
+  assert(!JSON.stringify(pub).toLowerCase().includes('ambiguous'), 'H sem SQL no browser');
+  assert(!JSON.stringify(pub).includes('paid_amount'), 'H sem nome de coluna');
+  const desc = buildManualPaymentAuditDescription({
+    result: 'failed',
+    stage: 'PERSISTENCE',
+    reason: 'RPC_FAILURE',
+    receiptId: RECEIPT,
+    requestedBy: MARCOS,
+    authorizedBy: PRINCIPAL,
+    amount: 9,
+  });
+  const parsed = JSON.parse(desc) as Record<string, unknown>;
+  assert(parsed.stage === 'PERSISTENCE', 'audit stage PERSISTENCE');
+  assert(parsed.reason === 'RPC_FAILURE', 'audit reason RPC_FAILURE');
+  assert(parsed.requested_by_user_id === MARCOS, 'J requested_by Marcos');
+  assert(parsed.authorized_by_user_id === PRINCIPAL, 'J authorized_by Principal');
+  assert(MANUAL_PAYMENT_PERSISTENCE_FAILED_ACTION === 'MANUAL_PAYMENT_PERSISTENCE_FAILED', 'action persistência');
+  console.log('OK G/H/J persistência ≠ senha recusada');
+}
+
 async function main() {
   await testAMarcosCorrectPassword();
   await testBWrongPasswordNoPersist();
@@ -554,6 +642,8 @@ async function main() {
   await testPreviewDoesNotHardcodeEmail();
   testHotfixModalLocksAJ();
   await testGetFailureIsNotPasswordDenied();
+  testRpcAmbiguityHotfixAL();
+  await testPersistenceFailedIsNotPasswordDenied();
   console.log('\nOK — mandatory-manual-receipt-payment-tests passed');
 }
 

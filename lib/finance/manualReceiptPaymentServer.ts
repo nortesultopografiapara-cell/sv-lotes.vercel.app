@@ -13,6 +13,7 @@ import {
   MANUAL_PAYMENT_AUDIT_MODULE,
   MANUAL_PAYMENT_AUTHORIZED_ACTION,
   MANUAL_PAYMENT_FAILED_ACTION,
+  MANUAL_PAYMENT_PERSISTENCE_FAILED_ACTION,
   buildManualPaymentAuditDescription,
   receiptTenantId,
   type ManualPaymentDeps,
@@ -57,15 +58,13 @@ export async function loadManualReceiptRow(
   if (customerId) {
     const { data: customer, error: customerError } = await admin
       .from('customers')
-      .select('name, full_name')
+      .select('name')
       .eq('id', customerId)
       .maybeSingle();
     if (customerError) {
       console.warn('[manual-receipt-payment] load customer falhou', customerError.message);
     } else {
-      customerName =
-        textOrNull((customer as { name?: string | null; full_name?: string | null } | null)?.name) ||
-        textOrNull((customer as { name?: string | null; full_name?: string | null } | null)?.full_name);
+      customerName = textOrNull((customer as { name?: string | null } | null)?.name);
     }
   }
 
@@ -158,7 +157,7 @@ export function createManualPaymentDeps(
       });
       if (error) {
         console.warn('[manual-receipt-payment] RPC falhou', error.message);
-        return { ok: false };
+        return { ok: false, code: 'rpc_failure' };
       }
       const payload = (data || {}) as Record<string, unknown>;
       if (payload.code === 'already_paid' || payload.alreadyPaid === true) {
@@ -170,7 +169,10 @@ export function createManualPaymentDeps(
         };
       }
       if (payload.ok !== true) {
-        return { ok: false, code: payload.code === 'not_found' ? 'not_found' : undefined };
+        return {
+          ok: false,
+          code: payload.code === 'not_found' ? 'not_found' : 'rpc_failure',
+        };
       }
       return {
         ok: true,
@@ -199,23 +201,40 @@ export async function persistManualPaymentAudit(
     : input.result.requestedBy || input.verify?.requestedBy;
   if (!tenantId || !requestedBy) return;
 
-  const authorizedBy = input.result.ok ? input.result.authorizedBy : undefined;
+  const authorizedBy = input.result.ok
+    ? input.result.authorizedBy
+    : input.verify?.ok
+      ? input.verify.authorizedByUserId
+      : undefined;
   const cashMovementId = input.result.ok ? input.result.cashMovementId : null;
   const receiptId = input.result.ok
     ? input.result.receiptId
     : input.result.receiptId || input.receipt?.id || '';
   if (!receiptId) return;
 
+  const persistenceFailed = !input.result.ok && input.result.code === 'persistence_failed';
+  const action = input.result.ok
+    ? MANUAL_PAYMENT_AUTHORIZED_ACTION
+    : persistenceFailed
+      ? MANUAL_PAYMENT_PERSISTENCE_FAILED_ACTION
+      : MANUAL_PAYMENT_FAILED_ACTION;
+
   try {
     await admin.from('audit_logs').insert({
       tenant_id: tenantId,
       company_id: tenantId,
       user_id: requestedBy,
-      action: input.result.ok ? MANUAL_PAYMENT_AUTHORIZED_ACTION : MANUAL_PAYMENT_FAILED_ACTION,
+      action,
       module: MANUAL_PAYMENT_AUDIT_MODULE,
       reference_id: receiptId,
       description: buildManualPaymentAuditDescription({
         result: input.result.ok ? 'authorized' : 'failed',
+        stage: input.result.ok
+          ? 'AUTHORIZED'
+          : persistenceFailed
+            ? 'PERSISTENCE'
+            : 'AUTHORIZATION',
+        reason: persistenceFailed ? 'RPC_FAILURE' : null,
         receiptId,
         saleId: input.receipt?.sale_id,
         contractId: input.receipt?.contract_id,

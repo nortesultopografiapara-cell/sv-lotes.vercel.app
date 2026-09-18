@@ -21,8 +21,11 @@ export const MANUAL_PAYMENT_ALREADY_PAID_MESSAGE =
 export const MANUAL_PAYMENT_SUCCESS_MESSAGE = 'Pagamento registrado com sucesso!';
 export const MANUAL_PAYMENT_LOAD_FAILED_MESSAGE =
   'Não foi possível carregar a autorização do Administrador Principal.';
+export const MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE =
+  'Não foi possível registrar o pagamento. Tente novamente.';
 export const MANUAL_PAYMENT_AUTHORIZED_ACTION = 'MANUAL_PAYMENT_AUTHORIZED';
 export const MANUAL_PAYMENT_FAILED_ACTION = 'MANUAL_PAYMENT_AUTHORIZATION_FAILED';
+export const MANUAL_PAYMENT_PERSISTENCE_FAILED_ACTION = 'MANUAL_PAYMENT_PERSISTENCE_FAILED';
 export const MANUAL_PAYMENT_AUDIT_MODULE = 'FINANCE';
 
 export type ManualReceiptRow = {
@@ -79,7 +82,8 @@ export type ManualPaymentExecuteResult =
         | 'already_paid'
         | 'not_found'
         | 'wrong_tenant'
-        | 'cancelled';
+        | 'cancelled'
+        | 'persistence_failed';
       requestedBy?: string;
       tenantId?: string;
       receiptId?: string;
@@ -88,7 +92,7 @@ export type ManualPaymentExecuteResult =
 
 export type ManualPaymentPersistResult = {
   ok: boolean;
-  code?: 'already_paid' | 'not_found';
+  code?: 'already_paid' | 'not_found' | 'rpc_failure';
   cashMovementId?: string | null;
   receiptId?: string;
 };
@@ -160,6 +164,9 @@ export function toPublicManualPaymentError(result: ManualPaymentExecuteResult): 
   if (!result.ok && result.code === 'unauthenticated') {
     return { ok: false, error: 'Não autenticado.' };
   }
+  if (!result.ok && result.code === 'persistence_failed') {
+    return { ok: false, error: MANUAL_PAYMENT_PERSISTENCE_FAILED_MESSAGE };
+  }
   return { ok: false, error: PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE };
 }
 
@@ -184,6 +191,8 @@ export function toPublicManualPaymentPreviewError(code: ManualPaymentPreviewFail
 
 export function buildManualPaymentAuditDescription(input: {
   result: 'authorized' | 'failed';
+  stage?: 'AUTHORIZED' | 'AUTHORIZATION' | 'PERSISTENCE';
+  reason?: string | null;
   receiptId: string;
   saleId?: string | null;
   contractId?: string | null;
@@ -194,6 +203,9 @@ export function buildManualPaymentAuditDescription(input: {
   authorizedBy?: string;
   cashMovementId?: string | null;
 }): string {
+  const stage =
+    input.stage ||
+    (input.result === 'authorized' ? 'AUTHORIZED' : 'AUTHORIZATION');
   return JSON.stringify({
     receipt_id: input.receiptId,
     sale_id: input.saleId || null,
@@ -205,6 +217,8 @@ export function buildManualPaymentAuditDescription(input: {
     authorized_by_user_id: input.authorizedBy || null,
     cash_movement_id: input.cashMovementId || null,
     result: input.result,
+    stage,
+    reason: input.reason || null,
   });
 }
 
@@ -371,10 +385,11 @@ export async function authorizeAndExecuteManualReceiptPayment(
       verify,
       result: {
         ok: false,
-        code: 'denied',
+        code: 'persistence_failed',
         requestedBy: input.operatorUserId,
         tenantId,
         receiptId: receipt.id,
+        reason: 'RPC_FAILURE',
       },
     };
   }
