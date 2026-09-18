@@ -35,7 +35,9 @@ import {
 } from '@/lib/saasContractCompanyProfile';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
+import { PrimaryAdminVerifyPanel } from '@/components/settings/PrimaryAdminVerifyPanel';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import {
@@ -374,6 +376,9 @@ export function CompanySettingsV2Shell({
 
             {activeTab === 'administradores' && adminPanelProps ? (
               <div className="space-y-6">
+                {isDevelopHomologRuntime() && !adminPanelProps.readOnlyDemo ? (
+                  <PrimaryAdminVerifyPanel />
+                ) : null}
                 <div className="sv-theme-card p-6 rounded-xl shadow-lg border space-y-6">
                   <div>
                     <h2 className="sv-theme-heading flex items-center gap-2">
