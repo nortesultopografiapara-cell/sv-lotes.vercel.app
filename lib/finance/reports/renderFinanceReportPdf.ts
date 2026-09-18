@@ -1,13 +1,17 @@
 import { addProfessionalFooterAndSignature } from '@/lib/pdfUtils';
-import type { CanonicalFinanceReport, CanonicalWalletMovement } from './canonicalFinanceTypes';
+import type {
+  CanonicalFinanceReport,
+  CanonicalSplitLeg,
+  CanonicalWalletMovement,
+} from './canonicalFinanceTypes';
 import {
   financeReportFilename,
   formatMoneyBr,
 } from './financeReportFormat';
 import { formatReportSharePercent } from './splitForReport';
 import {
-  formatFinancePdfSplitLegBlock,
   formatSplitBeneficiaryLabel,
+  formatSplitSharePercentLabel,
 } from './splitPresentation';
 import {
   FROZEN_BANK_IDENTITY_MISSING_LABEL,
@@ -15,6 +19,10 @@ import {
   formatPaidAtDisplay,
   hasFrozenBankIdentity,
 } from './frozenBankIdentity';
+import {
+  COMPANY_BANK_ACCOUNT_KIND_LABELS,
+  isCompanyBankAccountKind,
+} from '@/lib/finance/companyFinancialAccountBankIdentity';
 
 const NAVY: [number, number, number] = [30, 64, 107];
 const TEAL: [number, number, number] = [13, 115, 119];
@@ -267,45 +275,256 @@ export async function buildFinanceResumidoPdf(
   return doc;
 }
 
-function movementBodyRows(movements: CanonicalWalletMovement[]): any[] {
-  const body: any[] = [];
-  for (const m of movements) {
-    body.push([
-      m.contractNumber,
-      m.clientName,
-      m.clientDocument,
-      m.projectName,
-      m.blockName,
-      m.lotNumber,
-      m.installmentLabel,
-      m.dueDateLabel,
-      m.paidAtLabel,
-      formatMoneyBr(m.amount),
-      formatMoneyBr(m.paidAmount),
-      m.statusLabel,
-      m.financialAccountLabel,
-    ]);
-    if (m.hasSplit) {
-      const paidLabel = formatPaidAtDisplay(m.paidAt);
-      const blocks = m.split.map((leg) => formatFinancePdfSplitLegBlock(leg, paidLabel));
-      body.push([
-        {
-          content: `DISTRIBUIÇÃO DO RECEBIMENTO (não somar como receita)\n${blocks.join('\n\n')}`,
-          colSpan: 13,
-          styles: { fillColor: [232, 245, 244], textColor: TEAL, fontSize: 7, fontStyle: 'normal' },
+export const COMPLETO_PDF_BOTTOM_MARGIN_MM = 18;
+export const COMPLETO_PDF_TOP_MARGIN_MM = 14;
+export const COMPLETO_SPLIT_UNREGISTERED_LABEL = 'Não registrado no congelamento';
+
+export const COMPLETO_WALLET_TABLE_HEAD = [
+  'Contrato',
+  'Cliente/Pagador',
+  'CPF/CNPJ',
+  'Empreendimento',
+  'QD',
+  'LT',
+  'Parcela',
+  'Vencimento',
+  'Pagamento',
+  'Valor parcela',
+  'Valor pago',
+  'Status',
+  'Conta',
+];
+
+export const COMPLETO_SPLIT_SUBTABLE_HEAD = [
+  'Beneficiário',
+  '%',
+  'Bruto',
+  'Valor informado',
+  'Situação',
+  'Data pgto.',
+  'Banco',
+  'Agência',
+  'Conta',
+];
+
+const WALLET_PARCEL_ROW_MM = 10;
+const SPLIT_TITLE_MM = 5;
+const SPLIT_HEAD_MM = 7;
+const SPLIT_PARTICIPANT_ROW_MM = 11;
+const SPLIT_PAD_MM = 3;
+const NO_SPLIT_DEST_MM = 6;
+
+export function formatCompletoSplitBeneficiaryCell(leg: CanonicalSplitLeg): string {
+  const name = formatSplitBeneficiaryLabel(leg.beneficiaryName);
+  const titular = String(leg.frozenBankIdentity?.destBeneficiaryName || '').trim() || name;
+  return `${name}\n${titular}`;
+}
+
+export function formatCompletoSplitBankCell(leg: CanonicalSplitLeg): string {
+  if (!hasFrozenBankIdentity(leg.frozenBankIdentity)) {
+    return COMPLETO_SPLIT_UNREGISTERED_LABEL;
+  }
+  const institution = String(leg.frozenBankIdentity.destInstitution || '').trim();
+  const bank = String(leg.frozenBankIdentity.destBankName || '').trim();
+  if (institution && bank && institution !== bank) return `${institution}\n${bank}`;
+  return bank || institution || COMPLETO_SPLIT_UNREGISTERED_LABEL;
+}
+
+export function formatCompletoSplitAgencyCell(leg: CanonicalSplitLeg): string {
+  if (!hasFrozenBankIdentity(leg.frozenBankIdentity)) return '—';
+  return String(leg.frozenBankIdentity.destAgency || '').trim() || '—';
+}
+
+export function formatCompletoSplitAccountCell(leg: CanonicalSplitLeg): string {
+  if (!hasFrozenBankIdentity(leg.frozenBankIdentity)) return '—';
+  const account = String(leg.frozenBankIdentity.destAccountMasked || '').trim();
+  const kindRaw = String(leg.frozenBankIdentity.destBankAccountKind || '').trim();
+  const kind = isCompanyBankAccountKind(kindRaw)
+    ? COMPANY_BANK_ACCOUNT_KIND_LABELS[kindRaw]
+    : kindRaw;
+  if (account && kind) return `${account}\n${kind}`;
+  return account || kind || '—';
+}
+
+export function buildCompletoSplitSubtableBody(movement: CanonicalWalletMovement): unknown[][] {
+  const paidLabel = formatPaidAtDisplay(movement.paidAt);
+  return movement.split.map((leg) => [
+    formatCompletoSplitBeneficiaryCell(leg),
+    formatSplitSharePercentLabel(leg.sharePercent),
+    formatMoneyBr(leg.grossAmount),
+    leg.netAmount == null ? '—' : formatMoneyBr(leg.netAmount),
+    leg.statusLabel,
+    paidLabel,
+    formatCompletoSplitBankCell(leg),
+    formatCompletoSplitAgencyCell(leg),
+    formatCompletoSplitAccountCell(leg),
+  ]);
+}
+
+export function estimateCompletoWalletGroupHeightMm(movement: CanonicalWalletMovement): number {
+  if (movement.hasSplit && movement.split.length) {
+    return (
+      WALLET_PARCEL_ROW_MM +
+      SPLIT_TITLE_MM +
+      SPLIT_HEAD_MM +
+      movement.split.length * SPLIT_PARTICIPANT_ROW_MM +
+      SPLIT_PAD_MM +
+      8
+    );
+  }
+  if (movement.paidAmount > 0) return WALLET_PARCEL_ROW_MM + NO_SPLIT_DEST_MM;
+  return WALLET_PARCEL_ROW_MM;
+}
+
+export function shouldMoveCompletoWalletGroupToNextPage(
+  remainingMm: number,
+  groupHeightMm: number,
+): boolean {
+  return remainingMm < groupHeightMm;
+}
+
+export function isCompletoWalletGroupIndivisible(movement: CanonicalWalletMovement): boolean {
+  if (!movement.hasSplit) return true;
+  return movement.split.length <= 4;
+}
+
+function buildWalletParcelRow(movement: CanonicalWalletMovement): unknown[] {
+  return [
+    movement.contractNumber,
+    movement.clientName,
+    movement.clientDocument,
+    movement.projectName,
+    movement.blockName,
+    movement.lotNumber,
+    movement.installmentLabel,
+    movement.dueDateLabel,
+    movement.paidAtLabel,
+    formatMoneyBr(movement.amount),
+    formatMoneyBr(movement.paidAmount),
+    movement.statusLabel,
+    movement.financialAccountLabel,
+  ];
+}
+
+function drawCompletoWalletMovements(
+  doc: JsPdfDoc,
+  autoTable: AutoTableFn,
+  report: CanonicalFinanceReport,
+  startY: number,
+): number {
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageInnerBottom = pageHeight - COMPLETO_PDF_BOTTOM_MARGIN_MM;
+  let y = startY;
+  let showHead = true;
+
+  const startNewWalletPage = () => {
+    doc.addPage();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+    doc.text('RELATÓRIO FINANCEIRO COMPLETO — Movimentações da carteira', 14, 10);
+    y = COMPLETO_PDF_TOP_MARGIN_MM + 2;
+    showHead = true;
+  };
+
+  const movements = report.wallet.movements;
+  if (!movements.length) {
+    autoTable(doc, {
+      startY: y,
+      head: [COMPLETO_WALLET_TABLE_HEAD],
+      body: [['—', 'Sem parcelas no filtro', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—']],
+      styles: { fontSize: 8, cellPadding: 1.4, overflow: 'linebreak', valign: 'middle' },
+      headStyles: HEAD,
+      margin: { left: 14, right: 14 },
+    });
+    return lastTableY(doc, y);
+  }
+
+  for (const movement of movements) {
+    const groupHeight = estimateCompletoWalletGroupHeightMm(movement);
+    const remaining = pageInnerBottom - y;
+    const indivisible = isCompletoWalletGroupIndivisible(movement);
+    const minChunk =
+      WALLET_PARCEL_ROW_MM +
+      (movement.hasSplit ? SPLIT_TITLE_MM + SPLIT_HEAD_MM + 2 * SPLIT_PARTICIPANT_ROW_MM : 0);
+    const mustMove = indivisible
+      ? shouldMoveCompletoWalletGroupToNextPage(remaining, groupHeight)
+      : remaining < minChunk;
+    if (mustMove && y > COMPLETO_PDF_TOP_MARGIN_MM + 8) {
+      startNewWalletPage();
+    }
+
+    autoTable(doc, {
+      startY: y,
+      head: [COMPLETO_WALLET_TABLE_HEAD],
+      body: [buildWalletParcelRow(movement)],
+      showHead: showHead ? 'everyPage' : 'never',
+      rowPageBreak: 'avoid',
+      styles: { fontSize: 8, cellPadding: 1.4, overflow: 'linebreak', valign: 'middle' },
+      headStyles: HEAD,
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 32 },
+        4: { cellWidth: 12 },
+        5: { cellWidth: 12 },
+        6: { cellWidth: 18 },
+        7: { cellWidth: 18 },
+        8: { cellWidth: 22 },
+        9: { cellWidth: 22, halign: 'right' },
+        10: { cellWidth: 22, halign: 'right' },
+        11: { cellWidth: 16 },
+        12: { cellWidth: 13 },
+      },
+      margin: { left: 14, right: 14 },
+    });
+    y =
+      ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || y) + 4;
+    showHead = false;
+
+    if (movement.hasSplit && movement.split.length) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(TEAL[0], TEAL[1], TEAL[2]);
+      doc.text('DISTRIBUIÇÃO DO RECEBIMENTO (não somar como receita)', 16, y);
+      autoTable(doc, {
+        startY: y + 2,
+        head: [COMPLETO_SPLIT_SUBTABLE_HEAD],
+        body: buildCompletoSplitSubtableBody(movement),
+        showHead: 'everyPage',
+        rowPageBreak: indivisible ? 'avoid' : 'auto',
+        styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'middle' },
+        headStyles: { fillColor: TEAL, textColor: 255, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 48, halign: 'left' },
+          1: { cellWidth: 14, halign: 'center' },
+          2: { cellWidth: 26, halign: 'right' },
+          3: { cellWidth: 30, halign: 'right' },
+          4: { cellWidth: 26, halign: 'center' },
+          5: { cellWidth: 24, halign: 'center' },
+          6: { cellWidth: 40, halign: 'left' },
+          7: { cellWidth: 18, halign: 'center' },
+          8: { cellWidth: 41, halign: 'left' },
         },
-      ]);
-    } else if (m.paidAmount > 0) {
-      body.push([
-        {
-          content: `Destino: ${m.destinationFallbackLabel}`,
-          colSpan: 13,
-          styles: { fillColor: [248, 250, 252], textColor: [70, 70, 70], fontSize: 7.5 },
-        },
-      ]);
+        margin: { left: 16, right: 14 },
+      });
+      y =
+        ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || y) + 4;
+    } else if (movement.paidAmount > 0) {
+      autoTable(doc, {
+        startY: y,
+        body: [[`Destino: ${movement.destinationFallbackLabel}`]],
+        theme: 'plain',
+        styles: { fontSize: 8, textColor: [70, 70, 70], cellPadding: 1.2 },
+        margin: { left: 16, right: 14 },
+      });
+      y =
+        ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || y) + 4;
     }
   }
-  return body;
+
+  return y;
 }
 
 export async function buildFinanceCompletoPdf(
@@ -351,40 +570,7 @@ export async function buildFinanceCompletoPdf(
   doc.setFontSize(10);
   doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
   doc.text('MOVIMENTAÇÕES DA CARTEIRA — 1 linha = 1 parcela', 14, y);
-  autoTable(doc, {
-    startY: y + 3,
-    head: [[
-      'Contrato',
-      'Cliente/Pagador',
-      'CPF/CNPJ',
-      'Empreendimento',
-      'QD',
-      'LT',
-      'Parcela',
-      'Vencimento',
-      'Pagamento',
-      'Valor parcela',
-      'Valor pago',
-      'Status',
-      'Conta',
-    ]],
-    body: movementsLengthSafe(report),
-    styles: { fontSize: 7, cellPadding: 1.3, overflow: 'linebreak' },
-    headStyles: HEAD,
-    columnStyles: {
-      9: { halign: 'right' },
-      10: { halign: 'right' },
-    },
-    margin: { left: 14, right: 14 },
-    didDrawPage: (data: { pageNumber: number }) => {
-      if (data.pageNumber > 1) {
-        doc.setFontSize(8);
-        doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-        doc.text('RELATÓRIO FINANCEIRO COMPLETO — Movimentações da carteira', 14, 10);
-      }
-    },
-  });
-  y = lastTableY(doc, y);
+  y = drawCompletoWalletMovements(doc, autoTable, report, y + 3);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -414,13 +600,6 @@ export async function buildFinanceCompletoPdf(
 
   await withFooter(doc, report.meta.companyName, 'Relatório Financeiro Completo');
   return doc;
-}
-
-function movementsLengthSafe(report: CanonicalFinanceReport): any[] {
-  if (!report.wallet.movements.length) {
-    return [['—', 'Sem parcelas no filtro', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—']];
-  }
-  return movementBodyRows(report.wallet.movements);
 }
 
 export async function downloadFinanceResumidoPdf(

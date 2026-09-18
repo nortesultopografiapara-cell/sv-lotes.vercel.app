@@ -864,7 +864,9 @@ console.log('\n═══ apresentação visual — nome, %, UUID fora do PDF ═
     join(process.cwd(), 'lib/finance/reports/renderFinanceReportExcel.ts'),
     'utf8',
   );
-  assert(pdfSrc.includes('formatFinancePdfSplitLegBlock'), 'PDF completo usa bloco de destino congelado');
+  assert(pdfSrc.includes('drawCompletoWalletMovements'), 'PDF completo agrupa parcela+distribuição');
+  assert(pdfSrc.includes('buildCompletoSplitSubtableBody'), 'PDF completo usa subtabela horizontal');
+  assert(!pdfSrc.includes('formatFinancePdfSplitLegBlock'), 'PDF completo não usa bloco vertical');
   assert(!pdfSrc.includes('leg.accountOrWallet'), 'renderer PDF não interpola accountOrWallet');
   assert(!pdfSrc.includes('destinationIdentifier'), 'PDF não interpola wallet UUID');
   assert(excelSrc.includes('Titular congelado'), 'Excel completo tem titular congelado');
