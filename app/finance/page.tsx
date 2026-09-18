@@ -3039,6 +3039,7 @@ export default function FinancePage() {
                   saleId={selectedPayment.sale_id || selectedPayment.sales?.id}
                   installmentId={selectedPayment.id}
                   paymentStatus={selectedPayment.status}
+                  paidAt={selectedPayment.paid_at}
                 />
                 <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-1 mt-4">
                   <div>Sale ID: {selectedPayment.sale_id || '-'}</div>

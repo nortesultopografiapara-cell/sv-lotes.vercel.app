@@ -23,6 +23,12 @@ import type {
   CanonicalSplitParticipantInput,
   DestinationAmountKind,
 } from './canonicalFinanceTypes';
+import {
+  EMPTY_FROZEN_BANK_IDENTITY,
+  hasFrozenBankIdentity,
+  readFrozenBankIdentityFromSnapshotRow,
+  type FrozenBankIdentityFields,
+} from './frozenBankIdentity';
 
 export const AMOUNT_KIND_LABELS: Record<DestinationAmountKind, string> = {
   settled: 'Liquidado',
@@ -59,6 +65,38 @@ function participantAccountId(row: CanonicalSplitParticipantInput): string {
 
 function participantWallet(row: CanonicalSplitParticipantInput): string {
   return str(row.destinationIdentifier || row.destination_identifier);
+}
+
+function participantDestinationType(row: CanonicalSplitParticipantInput): string | null {
+  return str(row.destinationType || row.destination_type) || null;
+}
+
+function participantProviderSplitId(row: CanonicalSplitParticipantInput): string | null {
+  return str(row.providerSplitId || row.provider_split_id) || null;
+}
+
+function snapshotParticipantKey(row: CanonicalSplitParticipantInput): string {
+  return str(row.snapshotParticipantId || row.snapshot_participant_id || row.id);
+}
+
+/**
+ * dest_* só do snapshot (própria linha ou participante ligado).
+ * Nunca usa accountLabels / cadastro vivo.
+ */
+export function resolveFrozenBankIdentityForSplitRow(
+  row: CanonicalSplitParticipantInput,
+  participants: CanonicalSplitParticipantInput[] = [],
+): FrozenBankIdentityFields {
+  const own = readFrozenBankIdentityFromSnapshotRow(row as Record<string, unknown>);
+  if (hasFrozenBankIdentity(own)) return own;
+  const key = snapshotParticipantKey(row);
+  if (key) {
+    const matched = participants.find((item) => str(item.id) === key);
+    if (matched) {
+      return readFrozenBankIdentityFromSnapshotRow(matched as Record<string, unknown>);
+    }
+  }
+  return own;
 }
 
 function legInstallmentId(row: CanonicalSplitLegInput): string {
@@ -130,10 +168,14 @@ function toCanonicalLeg(
   grossPaid: number,
   accountLabels: Record<string, string>,
   fallbackStatus: RevenueSplitLegStatus,
+  participants: CanonicalSplitParticipantInput[],
 ): CanonicalSplitLeg {
   const status = resolveLegStatus(row, fallbackStatus);
   const { grossAmount, netAmount, amountKind } = resolveLegGrossAndNet(row, grossPaid, status);
   const isIssuerRemainder = participantIsIssuerRemainder(row);
+  const frozenBankIdentity = resolveFrozenBankIdentityForSplitRow(row, participants);
+  const matched = participants.find((item) => str(item.id) === snapshotParticipantKey(row));
+  const source = matched || row;
   return {
     beneficiaryName: participantDisplayName(row),
     sharePercent: participantSharePercent(row),
@@ -148,6 +190,12 @@ function toCanonicalLeg(
     }),
     accountOrWallet: accountOrWallet(row, accountLabels),
     isIssuerRemainder,
+    frozenBankIdentity,
+    bankIdentityFrozen: hasFrozenBankIdentity(frozenBankIdentity),
+    financialAccountId: participantAccountId(row) || participantAccountId(source) || null,
+    destinationType: participantDestinationType(row) || participantDestinationType(source),
+    destinationIdentifier: participantWallet(row) || participantWallet(source) || null,
+    providerSplitId: participantProviderSplitId(row) || participantProviderSplitId(source),
   };
 }
 
@@ -175,8 +223,9 @@ export function resolveInstallmentSplitDistribution(input: {
   if (!source.length) return [];
   const fallbackStatus: RevenueSplitLegStatus = 'PENDING';
   const gross = Number(input.paidAmount) || 0;
+  const participants = view.participants || [];
   const resolved = source.map((row) =>
-    toCanonicalLeg(row, gross, accountLabels, fallbackStatus),
+    toCanonicalLeg(row, gross, accountLabels, fallbackStatus, participants),
   );
   if (!usingPersistedLegs) {
     const issuer = resolved.find((row) => row.isIssuerRemainder);
@@ -200,6 +249,8 @@ export type AggregatedDestinationRow = {
   netAmount: number | null;
   amountKind: DestinationAmountKind;
   amountKindLabel: string;
+  frozenBankIdentity: FrozenBankIdentityFields;
+  bankIdentityFrozen: boolean;
 };
 
 export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): AggregatedDestinationRow[] {
@@ -213,6 +264,7 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
       netSum: number;
       hasNet: boolean;
       allSettled: boolean;
+      frozenBankIdentity: FrozenBankIdentityFields;
     }
   >();
   for (const leg of legs) {
@@ -220,6 +272,7 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
     const prev = map.get(key);
     const net = leg.netAmount;
     const settled = leg.amountKind === 'settled';
+    const frozen = leg.frozenBankIdentity || EMPTY_FROZEN_BANK_IDENTITY;
     if (prev) {
       prev.grossAmount = Math.round((prev.grossAmount + leg.grossAmount) * 100) / 100;
       if (net != null) {
@@ -230,6 +283,9 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
       if (prev.sharePercent != null && prev.sharePercent !== leg.sharePercent) {
         prev.shareMismatch = true;
       }
+      if (!hasFrozenBankIdentity(prev.frozenBankIdentity) && hasFrozenBankIdentity(frozen)) {
+        prev.frozenBankIdentity = frozen;
+      }
     } else {
       map.set(key, {
         beneficiaryName: leg.beneficiaryName,
@@ -239,6 +295,7 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
         netSum: net == null ? 0 : net,
         hasNet: net != null,
         allSettled: settled,
+        frozenBankIdentity: frozen,
       });
     }
   }
@@ -253,6 +310,8 @@ export function aggregateDestinationTotals(legs: CanonicalSplitLeg[]): Aggregate
         netAmount: row.hasNet ? row.netSum : null,
         amountKind,
         amountKindLabel: AMOUNT_KIND_LABELS[amountKind],
+        frozenBankIdentity: row.frozenBankIdentity,
+        bankIdentityFrozen: hasFrozenBankIdentity(row.frozenBankIdentity),
       };
     })
     .sort((a, b) => a.beneficiaryName.localeCompare(b.beneficiaryName, 'pt-BR'));

@@ -6,9 +6,15 @@ import {
 } from './financeReportFormat';
 import { formatReportSharePercent } from './splitForReport';
 import {
-  formatFinancePdfSplitLegLine,
+  formatFinancePdfSplitLegBlock,
   formatSplitBeneficiaryLabel,
 } from './splitPresentation';
+import {
+  FROZEN_BANK_IDENTITY_MISSING_LABEL,
+  formatFrozenBankIdentityCompact,
+  formatPaidAtDisplay,
+  hasFrozenBankIdentity,
+} from './frozenBankIdentity';
 
 const NAVY: [number, number, number] = [30, 64, 107];
 const TEAL: [number, number, number] = [13, 115, 119];
@@ -25,21 +31,28 @@ function lastTableY(doc: JsPdfDoc, fallback: number): number {
   return ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || fallback) + 8;
 }
 
-function formatOptionalMoney(value: number | null | undefined): string {
-  return value == null ? '—' : formatMoneyBr(value);
-}
-
 function destinationBodyRows(report: CanonicalFinanceReport): any[] {
   if (!report.destinations.rows.length) {
-    return [['Sem destinos no período', '—', '—', '—', '—']];
+    return [['Sem destinos no período', '—', '—', '—', '—', '—']];
   }
-  return report.destinations.rows.map((row) => [
-    formatSplitBeneficiaryLabel(row.beneficiaryName),
-    row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
-    formatMoneyBr(row.grossAmount),
-    formatOptionalMoney(row.netAmount),
-    row.amountKindLabel,
-  ]);
+  return report.destinations.rows.map((row) => {
+    const frozen = row.frozenBankIdentity;
+    const frozenOk = hasFrozenBankIdentity(frozen);
+    const inst = frozenOk ? frozen?.destInstitution || '—' : '—';
+    const compact = frozenOk
+      ? formatFrozenBankIdentityCompact(frozen)
+      : row.bankIdentityFrozen === false
+        ? FROZEN_BANK_IDENTITY_MISSING_LABEL
+        : '—';
+    return [
+      formatSplitBeneficiaryLabel(row.beneficiaryName),
+      inst,
+      compact,
+      row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
+      formatMoneyBr(row.grossAmount),
+      row.amountKindLabel,
+    ];
+  });
 }
 
 function destinationSummaryRows(report: CanonicalFinanceReport): any[] {
@@ -47,33 +60,27 @@ function destinationSummaryRows(report: CanonicalFinanceReport): any[] {
     [
       {
         content: 'Distribuição bruta prevista',
-        colSpan: 2,
+        colSpan: 5,
         styles: { fontStyle: 'bold' },
       },
       formatMoneyBr(report.destinations.grossPredictedTotal),
-      '',
-      '',
     ],
     [
       {
         content: 'Líquido confirmado disponível',
-        colSpan: 2,
+        colSpan: 5,
         styles: { fontStyle: 'bold' },
       },
-      '',
       formatMoneyBr(report.destinations.netConfirmedTotal),
-      '',
     ],
   ];
   if (report.destinations.persistedFeeTotal != null) {
     rows.splice(1, 0, [
       {
         content: '(−) Tarifa/ajuste persistido',
-        colSpan: 2,
+        colSpan: 5,
       },
-      '',
       formatMoneyBr(report.destinations.persistedFeeTotal),
-      '',
     ]);
   }
   return rows;
@@ -228,11 +235,11 @@ export async function buildFinanceResumidoPdf(
   doc.text('DESTINO DOS RECEBIMENTOS (não é receita adicional)', 14, y);
   autoTable(doc, {
     startY: y + 3,
-    head: [['Beneficiário / Conta', '%', 'Bruto previsto', 'Líquido', 'Situação']],
+    head: [['Beneficiário / Destino', 'Instituição', 'Banco/Agência/Conta', '%', 'Bruto previsto', 'Situação']],
     body: [...destinationBodyRows(report), ...destinationSummaryRows(report)],
-    styles: { fontSize: 8.5, cellPadding: 2 },
+    styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: TEAL, textColor: 255, fontStyle: 'bold' },
-    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
+    columnStyles: { 4: { halign: 'right' } },
     margin: { left: 14, right: 14 },
   });
   y = lastTableY(doc, y);
@@ -279,12 +286,13 @@ function movementBodyRows(movements: CanonicalWalletMovement[]): any[] {
       m.financialAccountLabel,
     ]);
     if (m.hasSplit) {
-      const lines = m.split.map((leg) => formatFinancePdfSplitLegLine(leg));
+      const paidLabel = formatPaidAtDisplay(m.paidAt);
+      const blocks = m.split.map((leg) => formatFinancePdfSplitLegBlock(leg, paidLabel));
       body.push([
         {
-          content: `DISTRIBUIÇÃO DO RECEBIMENTO (não somar como receita): ${lines.join(' · ')}`,
+          content: `DISTRIBUIÇÃO DO RECEBIMENTO (não somar como receita)\n${blocks.join('\n\n')}`,
           colSpan: 13,
-          styles: { fillColor: [232, 245, 244], textColor: TEAL, fontSize: 7.5, fontStyle: 'italic' },
+          styles: { fillColor: [232, 245, 244], textColor: TEAL, fontSize: 7, fontStyle: 'normal' },
         },
       ]);
     } else if (m.paidAmount > 0) {

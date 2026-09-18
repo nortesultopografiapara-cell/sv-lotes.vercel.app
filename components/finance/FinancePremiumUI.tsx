@@ -357,6 +357,7 @@ export const PaymentTableRow = memo(
               saleId={resolvePaymentSaleId(p)}
               installmentId={String(p.id)}
               paymentStatus={String(p.status || '')}
+              paidAt={p.paid_at ? String(p.paid_at) : null}
               compact
             />
           </td>

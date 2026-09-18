@@ -811,7 +811,7 @@
 
 .finance-split-table tbody td {
   padding: 0.45rem 0.5rem 0.45rem 0;
-  vertical-align: middle;
+  vertical-align: top;
   border-top: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
 }
@@ -819,6 +819,22 @@
 .finance-split-beneficiary {
   font-weight: 700;
   color: var(--text-primary);
+  vertical-align: top;
+}
+
+.finance-split-beneficiary-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  margin-top: 0.22rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.finance-split-beneficiary-meta-line {
+  display: block;
 }
 
 .finance-split-percent {

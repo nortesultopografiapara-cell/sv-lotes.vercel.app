@@ -459,6 +459,10 @@ export function buildCanonicalFinanceReport(
       if (prev.sharePercent != null && prev.sharePercent !== row.sharePercent) {
         prev.sharePercent = null;
       }
+      if (!prev.frozenBankIdentity && row.frozenBankIdentity) {
+        prev.frozenBankIdentity = row.frozenBankIdentity;
+        prev.bankIdentityFrozen = row.bankIdentityFrozen;
+      }
     } else {
       destMap.set(key, { ...row });
     }

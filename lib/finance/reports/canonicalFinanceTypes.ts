@@ -8,12 +8,17 @@
  * - destinations: distribuição/split — NÃO é receita
  */
 
+import type { FrozenBankIdentityFields } from './frozenBankIdentity';
+import { FROZEN_BANK_IDENTITY_EXCEL_NOTE } from './frozenBankIdentity';
+
 export const FINANCE_REPORT_ALL_PROJECTS = 'Todos os projetos';
 export const FINANCE_REPORT_ALL_ACCOUNTS = 'Todas as contas';
 export const FINANCE_REPORT_ALL_STATUSES = 'Todas as Situações';
 
 export const DESTINATION_DISCLAIMER =
   'Valores desta aba representam distribuição de recebimentos e não devem ser somados novamente à receita. Bruto previsto e líquido liquidado são grandezas distintas e não devem ser somados entre si.';
+
+export const DESTINATION_BANK_IDENTITY_NOTE = FROZEN_BANK_IDENTITY_EXCEL_NOTE;
 
 export type DestinationAmountKind = 'settled' | 'estimated' | 'account';
 
@@ -65,6 +70,13 @@ export type CanonicalSplitLeg = {
   statusLabel: string;
   accountOrWallet: string | null;
   isIssuerRemainder: boolean;
+  /** dest_* do snapshot. Nunca preenchido pelo cadastro vivo. */
+  frozenBankIdentity: FrozenBankIdentityFields;
+  bankIdentityFrozen: boolean;
+  financialAccountId: string | null;
+  destinationType: string | null;
+  destinationIdentifier: string | null;
+  providerSplitId: string | null;
 };
 
 export type CanonicalWalletMovement = {
@@ -125,6 +137,8 @@ export type CanonicalDestinationTotal = {
   netAmount: number | null;
   amountKind: DestinationAmountKind;
   amountKindLabel: string;
+  frozenBankIdentity?: FrozenBankIdentityFields;
+  bankIdentityFrozen?: boolean;
 };
 
 export type CanonicalOutflowByCategory = {
@@ -201,6 +215,26 @@ export type CanonicalSplitParticipantInput = {
   financial_account_id?: string | null;
   destinationIdentifier?: string | null;
   destination_identifier?: string | null;
+  destinationType?: string | null;
+  destination_type?: string | null;
+  providerSplitId?: string | null;
+  provider_split_id?: string | null;
+  snapshotParticipantId?: string | null;
+  snapshot_participant_id?: string | null;
+  destBeneficiaryName?: string | null;
+  dest_beneficiary_name?: string | null;
+  destInstitution?: string | null;
+  dest_institution?: string | null;
+  destBankName?: string | null;
+  dest_bank_name?: string | null;
+  destBankCode?: string | null;
+  dest_bank_code?: string | null;
+  destAgency?: string | null;
+  dest_agency?: string | null;
+  destAccountMasked?: string | null;
+  dest_account_masked?: string | null;
+  destBankAccountKind?: string | null;
+  dest_bank_account_kind?: string | null;
 };
 
 export type CanonicalSplitLegInput = CanonicalSplitParticipantInput & {

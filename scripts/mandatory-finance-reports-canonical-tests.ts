@@ -864,10 +864,14 @@ console.log('\n═══ apresentação visual — nome, %, UUID fora do PDF ═
     join(process.cwd(), 'lib/finance/reports/renderFinanceReportExcel.ts'),
     'utf8',
   );
-  assert(pdfSrc.includes('formatFinancePdfSplitLegLine'), 'PDF completo usa linha sem wallet');
+  assert(pdfSrc.includes('formatFinancePdfSplitLegBlock'), 'PDF completo usa bloco de destino congelado');
   assert(!pdfSrc.includes('leg.accountOrWallet'), 'renderer PDF não interpola accountOrWallet');
-  assert(excelSrc.includes('Conta/Wallet'), 'Excel completo mantém coluna Conta/Wallet');
-  assert(excelSrc.includes('leg.accountOrWallet'), 'Excel preserva wallet no dataset analítico');
+  assert(!pdfSrc.includes('destinationIdentifier'), 'PDF não interpola wallet UUID');
+  assert(excelSrc.includes('Titular congelado'), 'Excel completo tem titular congelado');
+  assert(excelSrc.includes('bank_identity_frozen'), 'Excel indica freeze');
+  assert(excelSrc.includes('wallet / provider_split_id'), 'Excel técnico separa wallet do destino bancário');
+  assert(excelSrc.includes('leg.destinationIdentifier'), 'Excel preserva wallet no dataset analítico');
+  assert(!excelSrc.includes('Conta/Wallet'), 'Excel não mistura conta bancária com wallet');
 }
 
 if (failed > 0) {

@@ -12,12 +12,18 @@ import type {
   RevenueSplitLegStatus,
   SaleRevenueSplitSnapshotParticipant,
 } from '@/lib/finance/revenueSplit/types';
+import type { CanonicalSplitParticipantInput } from '@/lib/finance/reports/canonicalFinanceTypes';
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import {
   formatSplitBeneficiaryLabel,
   formatSplitSharePercentLabel,
   splitStatusPresentationTone,
 } from '@/lib/finance/reports/splitPresentation';
+import { resolveFrozenBankIdentityForSplitRow } from '@/lib/finance/reports/splitForReport';
+import {
+  formatFrozenBankIdentityUiLines,
+  formatPaidAtDisplay,
+} from '@/lib/finance/reports/frozenBankIdentity';
 
 type SaleSplitView = {
   saleId: string;
@@ -70,6 +76,7 @@ type Props = {
   saleId?: string | null;
   installmentId?: string | null;
   paymentStatus?: string | null;
+  paidAt?: string | null;
   compact?: boolean;
 };
 
@@ -77,6 +84,7 @@ export function ChargeRevenueSplitDistribution({
   saleId,
   installmentId,
   paymentStatus,
+  paidAt = null,
   compact = false,
 }: Props) {
   const [view, setView] = useState<SaleSplitView | null>(null);
@@ -116,6 +124,14 @@ export function ChargeRevenueSplitDistribution({
           isIssuerRemainder: row.isIssuerRemainder,
           status: 'PENDING' as RevenueSplitLegStatus,
           grossAmountEstimate: null as number | null,
+          snapshotParticipantId: row.id,
+          destBeneficiaryName: row.destBeneficiaryName,
+          destInstitution: row.destInstitution,
+          destBankName: row.destBankName,
+          destBankCode: row.destBankCode,
+          destAgency: row.destAgency,
+          destAccountMasked: row.destAccountMasked,
+          destBankAccountKind: row.destBankAccountKind,
         }));
 
   if (!saleId) return null;
@@ -141,6 +157,12 @@ export function ChargeRevenueSplitDistribution({
       </div>
       <p className="finance-split-payment">
         Pagamento: <strong>{paymentLabel(paymentStatus)}</strong>
+        {paidAt ? (
+          <>
+            {' '}
+            · Data de pagamento: <strong>{formatPaidAtDisplay(paidAt)}</strong>
+          </>
+        ) : null}
       </p>
       {loading && !view?.snapshot ? (
         <p className="finance-split-loading">Carregando distribuição...</p>
@@ -162,10 +184,22 @@ export function ChargeRevenueSplitDistribution({
                   isIssuerRemainder: row.isIssuerRemainder,
                 });
                 const tone = splitStatusPresentationTone(situation);
+                const frozen = resolveFrozenBankIdentityForSplitRow(
+                  row as CanonicalSplitParticipantInput,
+                  participants,
+                );
+                const destLines = formatFrozenBankIdentityUiLines(frozen);
                 return (
                   <tr key={row.id}>
                     <td className="finance-split-beneficiary">
-                      {formatSplitBeneficiaryLabel(row.displayName)}
+                      <div>{formatSplitBeneficiaryLabel(row.displayName)}</div>
+                      <div className="finance-split-beneficiary-meta">
+                        {destLines.map((line) => (
+                          <span key={line} className="finance-split-beneficiary-meta-line">
+                            {line}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="finance-split-percent">
                       {formatSplitSharePercentLabel(row.sharePercent)}

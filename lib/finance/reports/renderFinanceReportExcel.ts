@@ -1,8 +1,14 @@
 import type { CanonicalFinanceReport } from './canonicalFinanceTypes';
-import { DESTINATION_DISCLAIMER } from './canonicalFinanceTypes';
+import { DESTINATION_BANK_IDENTITY_NOTE, DESTINATION_DISCLAIMER } from './canonicalFinanceTypes';
 import { financeReportFilename, getCanonicalFinanceTotals } from './financeReportFormat';
 import { formatReportSharePercent } from './splitForReport';
 import { formatSplitBeneficiaryLabel } from './splitPresentation';
+import {
+  FROZEN_BANK_IDENTITY_MISSING_LABEL,
+  formatFrozenBankIdentityCompact,
+  formatPaidAtDisplay,
+  hasFrozenBankIdentity,
+} from './frozenBankIdentity';
 
 const HEADER_FILL = 'FF1E406B';
 const TEAL_FILL = 'FF0D7377';
@@ -116,29 +122,43 @@ export async function buildFinanceResumidoWorkbook(
   r = ws.lastRow!.number + 2;
   ws.getCell(`A${r}`).value = 'DESTINO DOS RECEBIMENTOS — não somar como receita';
   ws.getCell(`A${r}`).font = { bold: true, color: { argb: TEAL_FILL } };
-  const destHead = ws.addRow(['Beneficiário / Conta', '%', 'Bruto previsto', 'Líquido', 'Situação']);
+  const destHead = ws.addRow([
+    'Beneficiário / Destino',
+    'Instituição',
+    'Banco/Agência/Conta mascarada',
+    '%',
+    'Bruto previsto',
+    'Situação',
+  ]);
   styleHeaderRow(destHead);
   for (const row of report.destinations.rows) {
+    const frozen = row.frozenBankIdentity;
+    const frozenOk = hasFrozenBankIdentity(frozen);
+    const inst = frozenOk ? frozen?.destInstitution || '—' : '—';
+    const compact = frozenOk
+      ? formatFrozenBankIdentityCompact(frozen)
+      : row.bankIdentityFrozen === false
+        ? FROZEN_BANK_IDENTITY_MISSING_LABEL
+        : '—';
     const excelRow = ws.addRow([
       formatSplitBeneficiaryLabel(row.beneficiaryName),
+      inst,
+      compact,
       row.sharePercent == null ? '—' : formatReportSharePercent(row.sharePercent),
       row.grossAmount,
-      row.netAmount,
       row.amountKindLabel,
     ]);
-    moneyCell(excelRow, 3, row.grossAmount);
-    if (row.netAmount != null) moneyCell(excelRow, 4, row.netAmount);
-    else excelRow.getCell(4).value = '—';
+    moneyCell(excelRow, 5, row.grossAmount);
   }
-  const destGross = ws.addRow(['Distribuição bruta prevista', '', report.destinations.grossPredictedTotal, '', '']);
+  const destGross = ws.addRow(['Distribuição bruta prevista', '', '', '', report.destinations.grossPredictedTotal, '']);
   destGross.font = { bold: true };
-  moneyCell(destGross, 3, report.destinations.grossPredictedTotal);
-  const destNet = ws.addRow(['Líquido confirmado disponível', '', '', report.destinations.netConfirmedTotal, '']);
+  moneyCell(destGross, 5, report.destinations.grossPredictedTotal);
+  const destNet = ws.addRow(['Líquido confirmado disponível', '', '', '', report.destinations.netConfirmedTotal, '']);
   destNet.font = { bold: true };
-  moneyCell(destNet, 4, report.destinations.netConfirmedTotal);
+  moneyCell(destNet, 5, report.destinations.netConfirmedTotal);
   if (report.destinations.persistedFeeTotal != null) {
-    const feeRow = ws.addRow(['(−) Tarifa/ajuste persistido', '', '', report.destinations.persistedFeeTotal, '']);
-    moneyCell(feeRow, 4, report.destinations.persistedFeeTotal);
+    const feeRow = ws.addRow(['(−) Tarifa/ajuste persistido', '', '', '', report.destinations.persistedFeeTotal, '']);
+    moneyCell(feeRow, 5, report.destinations.persistedFeeTotal);
   }
 
   r = ws.lastRow!.number + 2;
@@ -239,51 +259,86 @@ export async function buildFinanceCompletoWorkbook(
   });
 
   const wsDist = wb.addWorksheet('Distribuição');
-  addMeta(wsDist, report, 'DISTRIBUIÇÃO / SPLIT — não é receita', 8);
-  wsDist.mergeCells('A6:H6');
-  wsDist.getCell('A6').value = DESTINATION_DISCLAIMER;
+  addMeta(wsDist, report, 'DISTRIBUIÇÃO / SPLIT — não é receita', 23);
+  wsDist.mergeCells('A6:W6');
+  wsDist.getCell('A6').value = `${DESTINATION_DISCLAIMER} ${DESTINATION_BANK_IDENTITY_NOTE}`;
   wsDist.getCell('A6').font = { italic: true, color: { argb: 'FF8A5A00' }, bold: true };
+  wsDist.getRow(6).height = 36;
   const distHead = wsDist.addRow([
     'Contrato',
     'Cliente',
+    'Empreendimento',
+    'Quadra',
+    'Lote',
     'Parcela',
-    'Valor pago (receita)',
+    'Data pagamento',
     'Beneficiário',
     'Percentual',
     'Bruto previsto',
-    'Líquido',
-    'Natureza/Status',
-    'Conta/Wallet',
+    'Valor informado/net_amount',
+    'Situação',
+    'Titular congelado',
+    'Instituição',
+    'Banco',
+    'Código banco',
+    'Agência',
+    'Conta mascarada',
+    'Tipo conta',
+    'bank_identity_frozen',
+    'financial_account_id',
+    'destination_type',
+    'wallet / provider_split_id',
   ]);
   styleHeaderRow(distHead);
   for (const m of report.wallet.movements) {
     if (!m.hasSplit) continue;
     for (const leg of m.split) {
+      const frozen = leg.frozenBankIdentity;
+      const frozenOk = hasFrozenBankIdentity(frozen);
+      const walletTech = [leg.destinationIdentifier, leg.providerSplitId].filter(Boolean).join(' / ');
       const row = wsDist.addRow([
         m.contractNumber,
         m.clientName,
+        m.projectName,
+        m.blockName,
+        m.lotNumber,
         m.installmentLabel,
-        m.paidAmount,
+        formatPaidAtDisplay(m.paidAt),
         formatSplitBeneficiaryLabel(leg.beneficiaryName),
         formatReportSharePercent(leg.sharePercent),
         leg.grossAmount,
         leg.netAmount,
         `${leg.amountKindLabel} / ${leg.statusLabel}`,
-        leg.accountOrWallet || '',
+        frozenOk ? frozen.destBeneficiaryName || '' : '',
+        frozenOk ? frozen.destInstitution || '' : '',
+        frozenOk ? frozen.destBankName || '' : '',
+        frozenOk ? frozen.destBankCode || '' : '',
+        frozenOk ? frozen.destAgency || '' : '',
+        frozenOk ? frozen.destAccountMasked || '' : '',
+        frozenOk ? frozen.destBankAccountKind || '' : '',
+        frozenOk ? true : false,
+        leg.financialAccountId || '',
+        leg.destinationType || '',
+        walletTech,
       ]);
-      moneyCell(row, 4, m.paidAmount);
-      moneyCell(row, 7, leg.grossAmount);
-      if (leg.netAmount != null) moneyCell(row, 8, leg.netAmount);
-      else row.getCell(8).value = '—';
+      moneyCell(row, 10, leg.grossAmount);
+      if (leg.netAmount != null) moneyCell(row, 11, leg.netAmount);
+      else row.getCell(11).value = '—';
     }
   }
-  const distGross = wsDist.addRow(['', '', '', '', 'Distribuição bruta prevista', '', report.destinations.grossPredictedTotal, '', '', '']);
+  const distGross = wsDist.addRow([
+    '', '', '', '', '', '', '', 'Distribuição bruta prevista', '', report.destinations.grossPredictedTotal,
+  ]);
   distGross.font = { bold: true };
-  moneyCell(distGross, 7, report.destinations.grossPredictedTotal);
-  const distNet = wsDist.addRow(['', '', '', '', 'Líquido confirmado disponível', '', '', report.destinations.netConfirmedTotal, '', '']);
+  moneyCell(distGross, 10, report.destinations.grossPredictedTotal);
+  const distNet = wsDist.addRow([
+    '', '', '', '', '', '', '', 'Líquido confirmado disponível', '', '', report.destinations.netConfirmedTotal,
+  ]);
   distNet.font = { bold: true };
-  moneyCell(distNet, 8, report.destinations.netConfirmedTotal);
-  [18, 32, 14, 18, 24, 12, 16, 16, 14, 28].forEach((w, i) => {
+  moneyCell(distNet, 11, report.destinations.netConfirmedTotal);
+  [
+    18, 28, 24, 10, 10, 14, 16, 24, 12, 16, 18, 22, 28, 14, 18, 12, 12, 16, 12, 18, 36, 16, 36,
+  ].forEach((w, i) => {
     wsDist.getColumn(i + 1).width = w;
   });
 

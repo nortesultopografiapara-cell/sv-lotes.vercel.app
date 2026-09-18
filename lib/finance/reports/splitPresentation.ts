@@ -4,6 +4,7 @@
 import { formatMoneyBr } from './financeReportFormat';
 import { formatReportSharePercent } from './splitForReport';
 import type { CanonicalSplitLeg } from './canonicalFinanceTypes';
+import { formatFrozenBankIdentityPdfLines } from './frozenBankIdentity';
 
 const ISSUER_DISPLAY_LABEL = 'Administradora';
 
@@ -47,7 +48,7 @@ export function splitStatusPresentationTone(label: string): SplitStatusTone {
 /** Linha da distribuição no PDF Completo — sem UUID/wallet técnica. */
 export function formatFinancePdfSplitLegLine(leg: CanonicalSplitLeg): string {
   const liquido = leg.netAmount == null ? '—' : formatMoneyBr(leg.netAmount);
-  return [
+  const header = [
     formatSplitBeneficiaryLabel(leg.beneficiaryName),
     formatSplitSharePercentLabel(leg.sharePercent),
     `bruto ${formatMoneyBr(leg.grossAmount)}`,
@@ -55,4 +56,25 @@ export function formatFinancePdfSplitLegLine(leg: CanonicalSplitLeg): string {
     leg.amountKindLabel,
     leg.statusLabel,
   ].join(' | ');
+  const destLines = formatFrozenBankIdentityPdfLines(leg.frozenBankIdentity);
+  return `${header} · Destino congelado: ${destLines.join(' · ')}`;
+}
+
+export function formatFinancePdfSplitLegBlock(
+  leg: CanonicalSplitLeg,
+  paidAtLabel?: string | null,
+): string {
+  const liquido = leg.netAmount == null ? '—' : formatMoneyBr(leg.netAmount);
+  const lines = [
+    `${formatSplitBeneficiaryLabel(leg.beneficiaryName)} — ${formatSplitSharePercentLabel(leg.sharePercent)}`,
+    `Bruto: ${formatMoneyBr(leg.grossAmount)}`,
+    `Valor informado: ${liquido}`,
+    `Situação: ${leg.statusLabel} / ${leg.amountKindLabel}`,
+  ];
+  if (paidAtLabel && paidAtLabel !== '—') {
+    lines.push(`Data de pagamento: ${paidAtLabel}`);
+  }
+  lines.push('Destino congelado:');
+  lines.push(...formatFrozenBankIdentityPdfLines(leg.frozenBankIdentity));
+  return lines.join('\n');
 }
