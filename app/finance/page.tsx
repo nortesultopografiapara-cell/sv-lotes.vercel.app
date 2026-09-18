@@ -13,6 +13,7 @@ import {
   PaymentTableRow,
 } from '@/components/finance/FinancePremiumUI';
 import { ChargeRevenueSplitDistribution } from '@/components/finance/ChargeRevenueSplitDistribution';
+import { ManualPaymentAuthModal } from '@/components/finance/ManualPaymentAuthModal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -60,7 +61,6 @@ import {
   type FinanceReceiptsUiPageSize,
 } from '@/lib/finance/fetchFinanceReceiptsPaged';
 import {
-  buildManualFinanceReceiptCashMovement,
   resolveCashMovementInstallmentId,
 } from '@/lib/finance/cashMovementsSchema';
 import {
@@ -214,6 +214,7 @@ export default function FinancePage() {
     null,
   );
   const [loading, setLoading] = useState(true);
+  const [manualPaymentReceiptId, setManualPaymentReceiptId] = useState<string | null>(null);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [financeProjects, setFinanceProjects] = useState<any[]>([]);
   const [enterpriseBlocks, setEnterpriseBlocks] = useState<
@@ -1091,73 +1092,10 @@ export default function FinancePage() {
     }
   };
 
-  const handleMarkPaid = async (p: any) => {
+  const handleMarkPaid = (p: any) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    console.log('FINANCE MARK PAID', p);
-    if (!window.confirm("Confirmar pagamento desta parcela?")) return;
-    try {
-      const paidAt = new Date().toISOString();
-      const { error } = await supabase
-        .from('finance_receipts')
-        .update({
-          status: 'pago',
-          paid_amount: p.amount,
-          paid_at: paidAt,
-        })
-        .eq('id', p.id);
-      if (error) throw error;
-
-      const rlsCtx = await resolveRlsContext(user);
-      const movementPayload = buildManualFinanceReceiptCashMovement({
-        tenantId: rlsCtx.tenantId || '',
-        receiptId: p.id,
-        amount: p.amount,
-        installmentNumber: p.installment_number,
-        contractNumber: p.sales?.contracts?.[0]?.contract_number,
-        customerId: p.customer_id,
-        saleId: p.sale_id,
-        projectId: p.project_id ?? p.sales?.project_id ?? null,
-        userId: user.id,
-        paidAt,
-      });
-      const { error: cashError } = await supabase
-        .from('cash_movements')
-        .insert(movementPayload);
-      if (cashError) {
-        console.error(
-          '[finance/mark-paid] cash_movements insert failed (parcela mantida paga)',
-          cashError,
-        );
-      }
-
-      if (p.block_id) {
-        void logLotAuditEvent(supabase, {
-          companyId: rlsCtx.tenantId,
-          projectId: p.project_id ?? p.sales?.project_id ?? null,
-          blockId: p.block_id,
-          lotId: p.block_id,
-          saleId: p.sale_id ?? null,
-          contractId: p.sales?.contracts?.[0]?.id ?? null,
-          userId: user?.id ?? null,
-          action: 'payment_received',
-          title: 'Pagamento registrado',
-          description: `Parcela ${p.installment_number || '1'} — ${formatCurrencyBRL(Number(p.amount) || 0)}`,
-          newData: {
-            receipt_id: p.id,
-            installment_number: p.installment_number,
-            amount: p.amount,
-          },
-          source: 'finance_flow',
-        });
-      }
-      
-      await loadFinance();
-      window.dispatchEvent(new Event('finance_updated'));
-      alert("Pagamento registrado com sucesso!");
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao registrar pagamento.");
-    }
+    if (!p?.id) return;
+    setManualPaymentReceiptId(String(p.id));
   };
 
   const handleDeleteReceipt = async (p: any) => {
@@ -3429,6 +3367,15 @@ export default function FinancePage() {
           </div>
         </div>
       )}
+
+      <ManualPaymentAuthModal
+        receiptId={manualPaymentReceiptId}
+        onClose={() => setManualPaymentReceiptId(null)}
+        onSuccess={() => {
+          void loadFinance();
+          window.dispatchEvent(new Event('finance_updated'));
+        }}
+      />
 
     </div>
   );
