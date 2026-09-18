@@ -10,3 +10,4 @@ export * from './asaasChargeSplit';
 export * from './interSplitGuard';
 export * from './webhookEvents';
 export * from './resolveAsaasWallet';
+export * from './snapshotBankIdentity';

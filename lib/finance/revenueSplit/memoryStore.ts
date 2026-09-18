@@ -14,6 +14,11 @@ import type {
   SaleRevenueSplitSnapshotParticipant,
 } from './types';
 import type { RevenueSplitStore, SaveProjectRevenueSplitInput } from './store';
+import {
+  EMPTY_SNAPSHOT_BANK_IDENTITY,
+  mapSnapshotBankIdentity,
+  type RevenueSplitFinancialAccountFreezeSource,
+} from './snapshotBankIdentity';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -69,6 +74,29 @@ export class MemoryRevenueSplitStore implements RevenueSplitStore {
 
   async getFinancialAccount(accountId: string): Promise<RevenueSplitFinancialAccountRecord | null> {
     return this.accounts.get(accountId) || null;
+  }
+
+  async listFinancialAccountsForSnapshotFreeze(
+    companyId: string,
+    financialAccountIds: string[],
+  ): Promise<RevenueSplitFinancialAccountFreezeSource[]> {
+    const ids = [...new Set(financialAccountIds.map((id) => String(id || '').trim()).filter(Boolean))];
+    return ids
+      .map((id) => this.accounts.get(id))
+      .filter((row): row is RevenueSplitFinancialAccountRecord => Boolean(row))
+      .filter((row) => row.companyId === companyId)
+      .map((row) => ({
+        id: row.id,
+        companyId: row.companyId,
+        beneficiaryName: row.beneficiaryName ?? null,
+        provider: row.provider ?? null,
+        bankName: row.bankName ?? null,
+        bankCode: row.bankCode ?? null,
+        agency: row.agency ?? null,
+        accountNumber: row.accountNumber ?? null,
+        accountDigit: row.accountDigit ?? null,
+        bankAccountKind: row.bankAccountKind ?? null,
+      }));
   }
 
   async getConfigByProject(projectId: string): Promise<ProjectRevenueSplitConfig | null> {
@@ -185,6 +213,8 @@ export class MemoryRevenueSplitStore implements RevenueSplitStore {
       isIssuerRemainder: row.isIssuerRemainder,
       sortOrder: row.sortOrder ?? index,
       createdAt: timestamp,
+      ...EMPTY_SNAPSHOT_BANK_IDENTITY,
+      ...mapSnapshotBankIdentity(row as unknown as Record<string, unknown>),
     }));
     this.snapshotsBySale.set(snapshot.saleId, snapshot);
     this.snapshotParticipants.set(snapshot.id, participants);

@@ -17,6 +17,7 @@ import {
   type RevenueSplitValidationContext,
   type RevenueSplitValidationMode,
 } from './validation';
+import { freezeSnapshotBankIdentityFromAccount } from './snapshotBankIdentity';
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
@@ -195,6 +196,14 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
     );
 
     const active = current.participants.filter((row) => row.active);
+    const freezeAccountIds = [
+      ...new Set(active.map((row) => String(row.financialAccountId || '').trim()).filter(Boolean)),
+    ];
+    const freezeAccounts = await store.listFinancialAccountsForSnapshotFreeze(
+      input.companyId,
+      freezeAccountIds,
+    );
+    const freezeByAccountId = new Map(freezeAccounts.map((row) => [row.id, row]));
     const inserted = await store.insertSnapshot({
       snapshot: {
         companyId: input.companyId,
@@ -211,6 +220,9 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
             item.companyId === input.companyId &&
             item.status === 'ACTIVE',
         );
+        const bankIdentity = freezeSnapshotBankIdentityFromAccount(
+          row.financialAccountId ? freezeByAccountId.get(row.financialAccountId) : null,
+        );
         return {
           companyId: input.companyId,
           sourceParticipantId: row.id,
@@ -224,6 +236,7 @@ export function createRevenueSplitService(store: RevenueSplitStore) {
           sharePercent: row.sharePercent,
           isIssuerRemainder: row.isIssuerRemainder,
           sortOrder: row.sortOrder,
+          ...bankIdentity,
         };
       }),
     });
