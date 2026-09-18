@@ -136,6 +136,7 @@ export function buildCompanyUpdatePayload(body: Record<string, unknown>): Compan
   };
 
   if (body.slug) updatePayload.slug = body.slug;
+  delete updatePayload.primary_admin_user_id;
   if (
     limits.planKey === 'personalizado' &&
     limits.admin_users_limit == null &&

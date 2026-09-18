@@ -7,6 +7,7 @@ import {
   CompanyAdminsApiError,
 } from '@/lib/companyAdminsApiClient';
 import type { CompanyAdminListMeta, CompanyAdminUserRow } from '@/lib/companyAdminUsers';
+import { companyAdminAuthorityLabel, PRIMARY_ADMIN_LOCKED_MESSAGE } from '@/lib/companyPrimaryAdmin';
 
 type Props = {
   companyId: string;
@@ -77,6 +78,10 @@ export function MasterCompanyAdminsPanel({ companyId, superAdminUserId }: Props)
   };
 
   const toggleStatus = async (admin: CompanyAdminUserRow) => {
+    if (admin.id === meta?.primaryAdminUserId) {
+      setError(PRIMARY_ADMIN_LOCKED_MESSAGE);
+      return;
+    }
     const next = (admin.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
     setSaving(true);
     try {
@@ -160,7 +165,7 @@ export function MasterCompanyAdminsPanel({ companyId, superAdminUserId }: Props)
             <tr className="text-left text-slate-400 border-b border-white/10">
               <th className="p-3">Nome</th>
               <th className="p-3">E-mail</th>
-              <th className="p-3">Perfil</th>
+              <th className="p-3">Autoridade</th>
               <th className="p-3">Status</th>
               <th className="p-3">Criado em</th>
               <th className="p-3">Último acesso</th>
@@ -170,11 +175,20 @@ export function MasterCompanyAdminsPanel({ companyId, superAdminUserId }: Props)
           <tbody>
             {admins.map((admin) => {
               const inactive = (admin.status || 'ACTIVE').toUpperCase() === 'INACTIVE';
+              const isPrimary = admin.id === meta?.primaryAdminUserId;
               return (
                 <tr key={admin.id} className="border-b border-white/5 text-slate-200">
                   <td className="p-3">{admin.full_name || '—'}</td>
                   <td className="p-3">{admin.email}</td>
-                  <td className="p-3">{admin.role}</td>
+                  <td className="p-3">
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-full text-xs ${
+                        isPrimary ? 'bg-teal-500/20 text-teal-200' : 'bg-white/10 text-slate-300'
+                      }`}
+                    >
+                      {companyAdminAuthorityLabel(admin.id, meta?.primaryAdminUserId || null)}
+                    </span>
+                  </td>
                   <td className="p-3">{inactive ? 'Inativo' : 'Ativo'}</td>
                   <td className="p-3">{formatDate(admin.created_at)}</td>
                   <td className="p-3">{formatDate(admin.last_login_at)}</td>
@@ -190,9 +204,16 @@ export function MasterCompanyAdminsPanel({ companyId, superAdminUserId }: Props)
                       </button>
                       <button
                         type="button"
-                        title={inactive ? 'Ativar' : 'Desativar'}
+                        title={
+                          isPrimary
+                            ? PRIMARY_ADMIN_LOCKED_MESSAGE
+                            : inactive
+                              ? 'Ativar'
+                              : 'Desativar'
+                        }
+                        disabled={isPrimary}
                         onClick={() => void toggleStatus(admin)}
-                        className="p-2 rounded hover:bg-white/10"
+                        className="p-2 rounded hover:bg-white/10 disabled:opacity-40"
                       >
                         {inactive ? <UserPlus className="w-4 h-4" /> : <UserMinus className="w-4 h-4" />}
                       </button>

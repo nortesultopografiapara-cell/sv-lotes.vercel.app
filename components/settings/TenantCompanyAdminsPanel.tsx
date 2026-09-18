@@ -17,6 +17,7 @@ import {
 } from '@/lib/companyAdminsApiClient';
 import { supabase } from '@/lib/supabase';
 import type { CompanyAdminListMeta, CompanyAdminUserRow } from '@/lib/companyAdminUsers';
+import { companyAdminAuthorityLabel, PRIMARY_ADMIN_LOCKED_MESSAGE } from '@/lib/companyPrimaryAdmin';
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 
@@ -47,13 +48,6 @@ function formatDate(value?: string | null) {
   if (!value) return '—';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('pt-BR');
-}
-
-function roleLabel(role: string) {
-  const r = role.toUpperCase();
-  if (r === 'ADMIN') return 'Administrador principal';
-  if (r === 'ADMIN_EMPRESA' || r === 'COMPANY_ADMIN') return 'Administrador';
-  return role;
 }
 
 export function TenantCompanyAdminsPanel({
@@ -173,6 +167,10 @@ export function TenantCompanyAdminsPanel({
   };
 
   const toggleStatus = async (admin: CompanyAdminUserRow) => {
+    if (admin.id === meta?.primaryAdminUserId) {
+      setError(PRIMARY_ADMIN_LOCKED_MESSAGE);
+      return;
+    }
     const next = (admin.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
     const label = next === 'INACTIVE' ? 'desativar' : 'ativar';
     if (!window.confirm(`Deseja ${label} ${admin.full_name || admin.email}?`)) return;
@@ -305,13 +303,25 @@ export function TenantCompanyAdminsPanel({
             <tbody>
               {admins.map((admin) => {
                 const inactive = (admin.status || 'ACTIVE').toUpperCase() === 'INACTIVE';
+                const isPrimary = admin.id === meta?.primaryAdminUserId;
+                const authority = companyAdminAuthorityLabel(admin.id, meta?.primaryAdminUserId || null);
                 return (
                   <tr key={admin.id} className="border-b border-[var(--border-color)]/60">
                     <td className="py-3 pr-3">
                       <div className="font-medium text-[var(--text-primary)]">
                         {admin.full_name || '—'}
                       </div>
-                      <div className="text-xs text-[var(--text-secondary)]">{roleLabel(admin.role)}</div>
+                      <div className="mt-1">
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                            isPrimary
+                              ? 'bg-[var(--color-primary)]/15 text-[var(--color-primary)]'
+                              : 'bg-[var(--border-color)]/60 text-[var(--text-secondary)]'
+                          }`}
+                        >
+                          {authority}
+                        </span>
+                      </div>
                     </td>
                     <td className="py-3 pr-3">{admin.email}</td>
                     <td className="py-3 pr-3">{admin.job_title || '—'}</td>
@@ -347,9 +357,16 @@ export function TenantCompanyAdminsPanel({
                         </button>
                         <button
                           type="button"
-                          title={inactive ? 'Ativar' : 'Desativar'}
+                          title={
+                            isPrimary
+                              ? PRIMARY_ADMIN_LOCKED_MESSAGE
+                              : inactive
+                                ? 'Ativar'
+                                : 'Desativar'
+                          }
+                          disabled={isPrimary}
                           onClick={() => void toggleStatus(admin)}
-                          className="p-2 rounded-md hover:bg-red-500/10 text-red-500"
+                          className="p-2 rounded-md hover:bg-red-500/10 text-red-500 disabled:opacity-40 disabled:hover:bg-transparent"
                         >
                           {inactive ? (
                             <UserPlus className="w-4 h-4" />
