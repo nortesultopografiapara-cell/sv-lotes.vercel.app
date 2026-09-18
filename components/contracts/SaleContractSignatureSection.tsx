@@ -307,6 +307,7 @@ export const SaleContractSignatureSection = forwardRef<
       vendorEmail: string;
       vendorRole: string;
       partyId?: string | null;
+      password?: string;
     }) => {
       if (!contract?.id || blockOwnerWriteOnClient(userRole)) {
         throw new Error('Sem permissão para assinar como vendedor.');
@@ -334,6 +335,7 @@ export const SaleContractSignatureSection = forwardRef<
               vendorEmail: input.vendorEmail,
               vendorRole: input.vendorRole,
               partyId: input.partyId || null,
+              password: input.password || '',
             }),
           },
           CONTRACTS_FETCH_TIMEOUT_MS,
@@ -915,11 +917,14 @@ export const SaleContractSignatureSection = forwardRef<
         onClose={() => setVendorSignOpen(false)}
         companyName={vendorDefaults.companyName || projectName}
         contractNumber={String(contract.contract_number || '')}
+        contractId={contract.id}
+        signatureId={latest?.id || null}
         busy={signingVendor}
         defaultName={vendorDefaults.name}
         defaultDocument={vendorDefaults.document}
         defaultEmail={vendorDefaults.email}
         vendorTargets={multiVendorPending ? pendingVendorTargets : []}
+        requiresPrimaryAdminAuthorization
         onSign={handleVendorSign}
       />
 
@@ -929,11 +934,14 @@ export const SaleContractSignatureSection = forwardRef<
           onClose={() => setIntervenientSignOpen(false)}
           companyName={pendingIntervenientTarget.name}
           contractNumber={String(contract.contract_number || '')}
+          contractId={contract.id}
+          signatureId={latest?.id || null}
           busy={signingVendor}
           defaultName={pendingIntervenientTarget.name}
           defaultDocument={pendingIntervenientTarget.document}
           defaultEmail={pendingIntervenientTarget.email}
           documentLabel="CNPJ"
+          requiresPrimaryAdminAuthorization={false}
           vendorTargets={[
             {
               partyId: pendingIntervenientTarget.partyId,
@@ -948,6 +956,7 @@ export const SaleContractSignatureSection = forwardRef<
               ...input,
               vendorRole: 'Interveniente',
               partyId: pendingIntervenientTarget.partyId,
+              password: undefined,
             });
             setVendorSignSuccess(
               `Contrato assinado pela INTERVENIENTE (${pendingIntervenientTarget.name}) com sucesso.`,

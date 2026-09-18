@@ -545,7 +545,7 @@ function testMigrationAndWiring() {
   assert(storage.includes('getSaleContractBucket'), 'getSaleContractBucket');
   assert(storage.includes('assertSaleContractBucketReady'), 'assert bucket');
 
-  const signVendor = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
+  const signVendor = read('lib/saleContractVendorSignAuthServer.ts');
   assert(signVendor.includes('signSaleContractByVendor'), 'sign-vendor wiring');
 
   const mw = read('middleware.ts');

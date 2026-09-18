@@ -8,6 +8,7 @@ import {
   evaluatePrimaryAdminCandidate,
   type PrimaryAdminCandidateInput,
 } from '@/lib/companyPrimaryAdmin';
+import { isPlatformAdmin } from '@/lib/rls';
 import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 import {
   peekMemoryRateLimit,
@@ -241,9 +242,15 @@ export function recordPrimaryAdminVerifyFailureHit(
   }, now);
 }
 
+export type ResolvePrimaryAdminOptions = {
+  /** Empresa do recurso (contrato/parcela). Nunca vem do client como identidade. */
+  companyId?: string | null;
+};
+
 export async function resolvePrimaryAdminForOperator(
   deps: Pick<PrimaryAdminReauthDeps, 'loadOperator' | 'loadCompanyPrimaryAdminUserId' | 'loadUser'>,
   operatorUserId: string | null | undefined,
+  options?: ResolvePrimaryAdminOptions,
 ): Promise<
   | {
       ok: true;
@@ -258,29 +265,54 @@ export async function resolvePrimaryAdminForOperator(
   }
 
   const operator = await deps.loadOperator(operatorUserId);
-  const operatorGate = evaluateOperatorForPrimaryAdminVerify(operator);
-  if (!operatorGate.ok || !operator) {
+  const scopedCompanyId = String(options?.companyId || '').trim();
+  let tenantId = '';
+
+  if (
+    scopedCompanyId &&
+    operator?.id &&
+    isPlatformAdmin(operator.role) &&
+    isActiveStatus(operator.status)
+  ) {
+    tenantId = scopedCompanyId;
+  } else {
+    const operatorGate = evaluateOperatorForPrimaryAdminVerify(operator);
+    if (!operatorGate.ok || !operator) {
+      return { ok: false, reason: 'operator_invalid', requestedBy: operatorUserId };
+    }
+    if (scopedCompanyId && operatorGate.tenantId !== scopedCompanyId) {
+      return {
+        ok: false,
+        reason: 'operator_invalid',
+        tenantId: scopedCompanyId,
+        requestedBy: operator.id,
+      };
+    }
+    tenantId = scopedCompanyId || operatorGate.tenantId;
+  }
+
+  if (!operator) {
     return { ok: false, reason: 'operator_invalid', requestedBy: operatorUserId };
   }
 
-  const primaryAdminUserId = await deps.loadCompanyPrimaryAdminUserId(operatorGate.tenantId);
+  const primaryAdminUserId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
   if (!primaryAdminUserId) {
     return {
       ok: false,
       reason: 'missing_primary',
-      tenantId: operatorGate.tenantId,
+      tenantId,
       requestedBy: operator.id,
     };
   }
 
   const primary = await deps.loadUser(primaryAdminUserId);
-  const candidate = evaluatePrimaryAdminCandidate(primary, operatorGate.tenantId);
+  const candidate = evaluatePrimaryAdminCandidate(primary, tenantId);
   const email = String(primary?.email || '').trim();
   if (!candidate.ok || !primary?.id || !email) {
     return {
       ok: false,
       reason: 'primary_invalid',
-      tenantId: operatorGate.tenantId,
+      tenantId,
       requestedBy: operator.id,
     };
   }
@@ -288,7 +320,7 @@ export async function resolvePrimaryAdminForOperator(
   return {
     ok: true,
     operator,
-    tenantId: operatorGate.tenantId,
+    tenantId,
     primary: {
       ...primary,
       id: primary.id,
@@ -300,8 +332,9 @@ export async function resolvePrimaryAdminForOperator(
 export async function previewPrimaryAdminIdentity(
   deps: Pick<PrimaryAdminReauthDeps, 'loadOperator' | 'loadCompanyPrimaryAdminUserId' | 'loadUser'>,
   operatorUserId: string | null | undefined,
+  options?: ResolvePrimaryAdminOptions,
 ): Promise<PrimaryAdminIdentityPreview | PrimaryAdminVerifyPublicFailure> {
-  const resolved = await resolvePrimaryAdminForOperator(deps, operatorUserId);
+  const resolved = await resolvePrimaryAdminForOperator(deps, operatorUserId, options);
   if (!resolved.ok) return { ok: false };
   return {
     ok: true,
@@ -317,9 +350,12 @@ export async function verifyPrimaryAdminPassword(
   input: {
     operatorUserId: string | null | undefined;
     password: string;
+    companyId?: string | null;
   },
 ): Promise<PrimaryAdminVerifyResult> {
-  const resolved = await resolvePrimaryAdminForOperator(deps, input.operatorUserId);
+  const resolved = await resolvePrimaryAdminForOperator(deps, input.operatorUserId, {
+    companyId: input.companyId,
+  });
   if (!resolved.ok) {
     return denyPrimaryAdminVerify(resolved.reason, {
       tenantId: resolved.tenantId,

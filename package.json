@@ -64,6 +64,7 @@
     "test:primary-admin-foundation": "tsx scripts/mandatory-primary-admin-foundation-tests.ts",
     "test:primary-admin-reauth": "tsx scripts/mandatory-primary-admin-reauth-tests.ts",
     "test:manual-receipt-payment": "tsx scripts/mandatory-manual-receipt-payment-tests.ts",
+    "test:seller-signature-auth": "tsx scripts/mandatory-seller-signature-auth-tests.ts",
     "test:financial-account-bank-identity": "tsx scripts/mandatory-financial-account-bank-identity-tests.ts",
     "test:revenue-split-snapshot-bank-identity": "tsx scripts/mandatory-revenue-split-snapshot-bank-identity-tests.ts",
     "test:payment-split-foundation": "tsx scripts/mandatory-payment-split-foundation-tests.ts",

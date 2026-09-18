@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, ShieldCheck, X } from 'lucide-react';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
+import { PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE } from '@/lib/primaryAdminReauth';
+
+const SELLER_SIGNATURE_LOAD_FAILED_MESSAGE =
+  'Não foi possível carregar a autorização do Administrador Principal.';
+const SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE =
+  'Este vendedor já assinou este contrato.';
 
 export type VendorSignTargetOption = {
   partyId: string;
@@ -18,6 +24,8 @@ export type SaleContractVendorSignModalProps = {
   onClose: () => void;
   companyName: string;
   contractNumber: string;
+  contractId?: string;
+  signatureId?: string | null;
   busy?: boolean;
   defaultName?: string;
   defaultDocument?: string;
@@ -26,13 +34,23 @@ export type SaleContractVendorSignModalProps = {
   documentLabel?: 'CPF' | 'CNPJ';
   /** Quando há N VENDORs (ARAGUAIA), lista as parties pendentes. */
   vendorTargets?: VendorSignTargetOption[];
+  /** Painel interno VENDOR exige senha do Principal. INTERVENIENT = false. */
+  requiresPrimaryAdminAuthorization?: boolean;
   onSign: (input: {
     vendorName: string;
     vendorDocument: string;
     vendorEmail: string;
     vendorRole: string;
     partyId?: string | null;
+    password?: string;
   }) => Promise<void>;
+};
+
+type ModalStep = 'form' | 'authorize' | 'load_failed';
+
+type PrincipalPreview = {
+  displayName: string;
+  maskedEmail: string;
 };
 
 function isVendorFormReady(
@@ -51,12 +69,15 @@ export function SaleContractVendorSignModal({
   onClose,
   companyName,
   contractNumber,
+  contractId,
+  signatureId,
   busy = false,
   defaultName = '',
   defaultDocument = '',
   defaultEmail = '',
   documentLabel = 'CPF',
   vendorTargets = [],
+  requiresPrimaryAdminAuthorization = true,
   onSign,
 }: SaleContractVendorSignModalProps) {
   const multi = vendorTargets.length > 0;
@@ -76,6 +97,10 @@ export function SaleContractVendorSignModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [step, setStep] = useState<ModalStep>('form');
+  const [password, setPassword] = useState('');
+  const [principal, setPrincipal] = useState<PrincipalPreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const errorRef = useRef<HTMLParagraphElement | null>(null);
 
   const emailRequired = multi
@@ -101,6 +126,9 @@ export function SaleContractVendorSignModal({
     setAccepted(false);
     setFormError(null);
     setSubmitting(false);
+    setStep('form');
+    setPassword('');
+    setPrincipal(null);
   }, [isOpen, defaultName, defaultDocument, defaultEmail, multi, vendorTargets]);
 
   useEffect(() => {
@@ -123,7 +151,80 @@ export function SaleContractVendorSignModal({
     vendorEmail,
     emailRequired,
   );
-  const disabled = busy || submitting;
+  const disabled = busy || submitting || loadingPreview;
+
+  const loadAuthorizationPreview = async (): Promise<boolean> => {
+    if (!contractId || !signatureId) {
+      setFormError(SELLER_SIGNATURE_LOAD_FAILED_MESSAGE);
+      setStep('load_failed');
+      return false;
+    }
+    setLoadingPreview(true);
+    setFormError(null);
+    try {
+      const params = new URLSearchParams({
+        signatureId,
+        vendorName: vendorName.trim(),
+        vendorDocument: documentDigits,
+      });
+      if (multi && selectedPartyId) params.set('partyId', selectedPartyId);
+      const res = await fetch(
+        `/api/contracts/${contractId}/signature/sign-vendor?${params.toString()}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok || !json?.principal) {
+        setPrincipal(null);
+        setFormError(
+          json?.error === SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE
+            ? SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE
+            : SELLER_SIGNATURE_LOAD_FAILED_MESSAGE,
+        );
+        setStep('load_failed');
+        return false;
+      }
+      setPrincipal({
+        displayName: String(json.principal.displayName || 'Administrador Principal'),
+        maskedEmail: String(json.principal.maskedEmail || '—'),
+      });
+      setStep('authorize');
+      return true;
+    } catch {
+      setPrincipal(null);
+      setFormError(SELLER_SIGNATURE_LOAD_FAILED_MESSAGE);
+      setStep('load_failed');
+      return false;
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const submitSignature = async (presentedPassword?: string) => {
+    setSubmitting(true);
+    try {
+      await onSign({
+        vendorName: vendorName.trim(),
+        vendorDocument: documentDigits,
+        vendorEmail: vendorEmail.trim(),
+        vendorRole: vendorRole.trim(),
+        partyId: multi ? selectedPartyId : null,
+        password: presentedPassword,
+      });
+      setAccepted(false);
+      setPassword('');
+      onClose();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Falha ao registrar assinatura.';
+      setFormError(message);
+      if (requiresPrimaryAdminAuthorization && message === PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE) {
+        setStep('authorize');
+      }
+    } finally {
+      setPassword('');
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setFormError(null);
@@ -145,32 +246,36 @@ export function SaleContractVendorSignModal({
       return;
     }
 
-    setSubmitting(true);
-    try {
-      await onSign({
-        vendorName: vendorName.trim(),
-        vendorDocument: documentDigits,
-        vendorEmail: vendorEmail.trim(),
-        vendorRole: vendorRole.trim(),
-        partyId: multi ? selectedPartyId : null,
-      });
-      setAccepted(false);
-      onClose();
-    } catch (err) {
-      setFormError(
-        err instanceof Error ? err.message : 'Falha ao registrar assinatura.',
-      );
-    } finally {
-      setSubmitting(false);
+    if (requiresPrimaryAdminAuthorization && step === 'form') {
+      await loadAuthorizationPreview();
+      return;
     }
+
+    if (requiresPrimaryAdminAuthorization) {
+      const presented = password.trim();
+      if (!presented) {
+        setFormError('Informe a senha do Administrador Principal.');
+        return;
+      }
+      await submitSignature(presented);
+      return;
+    }
+
+    await submitSignature();
   };
 
   if (!isOpen || !mounted) return null;
 
   const title =
-    multi && selectedTarget
-      ? `Assinar como ${selectedTarget.name}`
-      : 'Assinar como vendedor';
+    step === 'authorize'
+      ? 'AUTORIZAÇÃO DO ADMINISTRADOR PRINCIPAL'
+      : multi && selectedTarget
+        ? `Assinar como ${selectedTarget.name}`
+        : 'Assinar como vendedor';
+
+  const showPasswordStep = Boolean(
+    requiresPrimaryAdminAuthorization && step === 'authorize' && principal,
+  );
 
   return createPortal(
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/65 p-4">
@@ -198,112 +303,196 @@ export function SaleContractVendorSignModal({
 
         <form
           className="p-5 space-y-4"
+          autoComplete="off"
           onSubmit={(e) => {
             e.preventDefault();
             void handleSubmit();
           }}
         >
-          {multi && (
-            <div>
-              <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
-                Promitente vendedor
+          {step === 'form' && (
+            <>
+              {multi && (
+                <div>
+                  <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
+                    Promitente vendedor
+                  </label>
+                  <select
+                    value={selectedPartyId}
+                    onChange={(e) => setSelectedPartyId(e.target.value)}
+                    disabled={disabled}
+                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                  >
+                    {vendorTargets.map((t) => (
+                      <option key={t.partyId} value={t.partyId}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
+                  Nome completo
+                </label>
+                <input
+                  value={vendorName}
+                  onChange={(e) => setVendorName(e.target.value)}
+                  disabled={disabled || multi}
+                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
+                  {documentLabel}
+                </label>
+                <input
+                  value={formatCpfCnpj(vendorDocument) || vendorDocument}
+                  onChange={(e) => setVendorDocument(e.target.value)}
+                  disabled={disabled || multi}
+                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
+                  E-mail{emailRequired ? '' : ' (opcional)'}
+                </label>
+                <input
+                  type="email"
+                  value={vendorEmail}
+                  onChange={(e) => setVendorEmail(e.target.value)}
+                  disabled={disabled}
+                  placeholder={
+                    emailRequired
+                      ? 'email@exemplo.com'
+                      : 'Sem e-mail confirmado — WhatsApp basta'
+                  }
+                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                />
+              </div>
+
+              <label className="flex items-start gap-2 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={(e) => setAccepted(e.target.checked)}
+                  disabled={disabled}
+                  className="mt-1"
+                />
+                <span>
+                  Confirmo a assinatura eletrônica deste contrato na condição de
+                  promitente vendedor.
+                </span>
               </label>
-              <select
-                value={selectedPartyId}
-                onChange={(e) => setSelectedPartyId(e.target.value)}
-                disabled={disabled}
-                className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
-              >
-                {vendorTargets.map((t) => (
-                  <option key={t.partyId} value={t.partyId}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            </>
           )}
 
-          <div>
-            <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
-              Nome completo
-            </label>
-            <input
-              value={vendorName}
-              onChange={(e) => setVendorName(e.target.value)}
-              disabled={disabled || multi}
-              className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
-            />
-          </div>
+          {showPasswordStep && (
+            <>
+              <p className="text-sm text-gray-300">
+                Esta operação registra a assinatura do vendedor e requer autorização.
+              </p>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm rounded-lg border border-white/10 px-3 py-3">
+                <dt className="text-gray-500">Contrato</dt>
+                <dd className="font-medium text-white">{contractNumber}</dd>
+                <dt className="text-gray-500">Vendedor</dt>
+                <dd className="font-medium text-white">{vendorName}</dd>
+                <dt className="text-gray-500">CPF/CNPJ</dt>
+                <dd className="font-medium text-white">
+                  {formatCpfCnpj(vendorDocument) || vendorDocument}
+                </dd>
+                <dt className="text-gray-500">Papel</dt>
+                <dd className="font-medium text-white">Promitente Vendedor / Vendedor</dd>
+              </dl>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
+                  Administrador Principal
+                </p>
+                <p className="text-sm font-medium text-white">{principal?.displayName}</p>
+                <p className="text-sm text-gray-400">{principal?.maskedEmail}</p>
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
+                  Senha do Administrador Principal
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={disabled}
+                  autoComplete="off"
+                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                />
+              </div>
+            </>
+          )}
 
-          <div>
-            <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
-              {documentLabel}
-            </label>
-            <input
-              value={formatCpfCnpj(vendorDocument) || vendorDocument}
-              onChange={(e) => setVendorDocument(e.target.value)}
-              disabled={disabled || multi}
-              className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
-            />
-          </div>
+          {step === 'load_failed' && (
+            <p className="text-sm text-rose-300">
+              {formError || SELLER_SIGNATURE_LOAD_FAILED_MESSAGE}
+            </p>
+          )}
 
-          <div>
-            <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
-              E-mail{emailRequired ? '' : ' (opcional)'}
-            </label>
-            <input
-              type="email"
-              value={vendorEmail}
-              onChange={(e) => setVendorEmail(e.target.value)}
-              disabled={disabled}
-              placeholder={
-                emailRequired
-                  ? 'email@exemplo.com'
-                  : 'Sem e-mail confirmado — WhatsApp basta'
-              }
-              className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
-            />
-          </div>
-
-          <label className="flex items-start gap-2 text-sm text-gray-300">
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
-              disabled={disabled}
-              className="mt-1"
-            />
-            <span>
-              Confirmo a assinatura eletrônica deste contrato na condição de
-              promitente vendedor.
-            </span>
-          </label>
-
-          {formError && (
+          {formError && step !== 'load_failed' && (
             <p ref={errorRef} role="alert" className="text-sm text-rose-300">
               {formError}
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={disabled || !canSubmit || !accepted}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-semibold py-2.5"
-          >
-            {disabled ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Registrando assinatura…
-              </>
-            ) : multi && selectedTarget ? (
-              `Assinar como ${selectedTarget.name.split(' ')[0]}`
+          <div className="flex gap-2">
+            {showPasswordStep || step === 'load_failed' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('form');
+                  setPassword('');
+                  setFormError(null);
+                }}
+                disabled={disabled}
+                className="flex-1 rounded-lg border border-white/15 text-gray-200 text-sm font-medium py-2.5"
+              >
+                Cancelar
+              </button>
+            ) : null}
+            {step === 'load_failed' ? (
+              <button
+                type="button"
+                onClick={() => void loadAuthorizationPreview()}
+                disabled={disabled}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-semibold py-2.5"
+              >
+                Tentar novamente
+              </button>
             ) : (
-              'Assinar como vendedor'
+              <button
+                type="submit"
+                disabled={
+                  disabled ||
+                  (step === 'form' && (!canSubmit || !accepted)) ||
+                  (showPasswordStep && !password.trim())
+                }
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-semibold py-2.5"
+              >
+                {disabled ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {showPasswordStep ? 'Autorizando…' : 'Registrando assinatura…'}
+                  </>
+                ) : showPasswordStep ? (
+                  'Autorizar e assinar como vendedor'
+                ) : multi && selectedTarget ? (
+                  `Assinar como ${selectedTarget.name.split(' ')[0]}`
+                ) : (
+                  'Assinar como vendedor'
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </form>
       </div>
     </div>,
-    document.body,
+  document.body,
   );
 }
