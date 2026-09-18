@@ -51,6 +51,8 @@ export type SaleContractVendorSignModalProps = {
 type ModalStep = 'form' | 'authorize' | 'load_failed';
 type PreviewPlan = 'authorize' | 'sign' | 'failed';
 
+const EMPTY_VENDOR_TARGETS: VendorSignTargetOption[] = [];
+
 type PrincipalPreview = {
   displayName: string;
   maskedEmail: string;
@@ -79,11 +81,12 @@ export function SaleContractVendorSignModal({
   defaultDocument = '',
   defaultEmail = '',
   documentLabel = 'CPF',
-  vendorTargets = [],
+  vendorTargets: vendorTargetsProp,
   partyId = null,
   signKind = 'vendor',
   onSign,
 }: SaleContractVendorSignModalProps) {
+  const vendorTargets = vendorTargetsProp ?? EMPTY_VENDOR_TARGETS;
   const isIntervenient = signKind === 'intervenient';
   const showVendorSelect = signKind === 'vendor' && vendorTargets.length > 1;
   const [selectedPartyId, setSelectedPartyId] = useState(
@@ -139,7 +142,9 @@ export function SaleContractVendorSignModal({
     setStep('form');
     setPassword('');
     setPrincipal(null);
-  }, [isOpen, defaultName, defaultDocument, defaultEmail, partyId, vendorTargets]);
+    // Só resetar ao abrir. vendorTargets default [] não pode reentrar o efeito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on open only
+  }, [isOpen]);
 
   useEffect(() => {
     if (!showVendorSelect || !selectedTarget) return;

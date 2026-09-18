@@ -779,13 +779,15 @@ export const SaleContractSignatureSection = forwardRef<
                         });
                       }}
                     />
-                    <ActionChip
-                      icon={ExternalLink}
-                      label="Abrir página"
-                      onClick={() =>
-                        window.open(url, '_blank', 'noopener,noreferrer')
-                      }
-                    />
+                    {party.role !== 'VENDOR' && (
+                      <ActionChip
+                        icon={ExternalLink}
+                        label="Abrir página"
+                        onClick={() =>
+                          window.open(url, '_blank', 'noopener,noreferrer')
+                        }
+                      />
+                    )}
                     {party.canResend && (
                       <ActionChip
                         icon={Send}

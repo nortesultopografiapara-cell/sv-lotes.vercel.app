@@ -23,6 +23,10 @@ import {
   type VendorSignPartySnapshot,
   type VendorSignSignatureSnapshot,
 } from '@/lib/saleContractVendorSignAuth';
+import {
+  SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION,
+  buildPublicVendorAdminBlockedAuditDescription,
+} from '@/lib/saleContractPublicVendorSignGuard';
 
 export function mapContractSnapshot(
   row: Record<string, unknown> | null | undefined,
@@ -208,6 +212,43 @@ export async function persistSellerSignatureAudit(
   } catch (err) {
     console.warn(
       '[seller-signature-auth] audit_logs falhou',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+export async function persistPublicVendorAdminBlockedAudit(
+  admin: SupabaseClient,
+  input: {
+    tenantId?: string | null;
+    contractId?: string | null;
+    partyId?: string | null;
+    requestedBy?: string | null;
+  },
+): Promise<void> {
+  const tenantId = String(input.tenantId || '').trim();
+  const contractId = String(input.contractId || '').trim();
+  const partyId = String(input.partyId || '').trim();
+  const requestedBy = String(input.requestedBy || '').trim();
+  if (!tenantId || !contractId || !partyId || !requestedBy) return;
+  try {
+    await admin.from('audit_logs').insert({
+      tenant_id: tenantId,
+      company_id: tenantId,
+      user_id: requestedBy,
+      action: SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION,
+      module: SELLER_SIGNATURE_AUDIT_MODULE,
+      reference_id: contractId,
+      description: buildPublicVendorAdminBlockedAuditDescription({
+        tenantId,
+        contractId,
+        partyId,
+        requestedBy,
+      }),
+    });
+  } catch (err) {
+    console.warn(
+      '[seller-public-token-admin-block] audit_logs falhou',
       err instanceof Error ? err.message : err,
     );
   }

@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { getRequestAuthUser, resolveCallerProfile } from '@/lib/supabase/server';
+import {
+  SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE,
+  decidePublicVendorSignForSession,
+} from '@/lib/saleContractPublicVendorSignGuard';
+import { persistPublicVendorAdminBlockedAudit } from '@/lib/saleContractVendorSignAuthServer';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import {
   createSaleContractHtmlPreviewResponse,
@@ -391,6 +397,42 @@ export async function POST(
   }
 
   const { token } = await params;
+  const party = await getPartyByPublicToken(supabaseAdmin, token);
+  if (party && String(party.role).toUpperCase() === 'VENDOR') {
+    try {
+      const auth = await getRequestAuthUser(request);
+      if (auth.user?.id) {
+        const profile = await resolveCallerProfile(supabaseAdmin, auth.user.id);
+        const signature = await getSaleSignatureByToken(supabaseAdmin, token);
+        const tenantId = String(
+          signature?.tenant_id || party.company_id || '',
+        ).trim();
+        const decision = decidePublicVendorSignForSession({
+          partyRole: party.role,
+          operator: profile,
+          contractTenantId: tenantId,
+        });
+        if (decision.block) {
+          await persistPublicVendorAdminBlockedAudit(supabaseAdmin, {
+            tenantId,
+            contractId: String(party.contract_id || signature?.contract_id || ''),
+            partyId: party.id,
+            requestedBy: decision.requestedBy,
+          });
+          return NextResponse.json(
+            { ok: false, error: SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE },
+            { status: 403 },
+          );
+        }
+      }
+    } catch (sessionErr) {
+      console.warn(
+        '[public-vendor-sign] sessão admin não avaliada',
+        sessionErr instanceof Error ? sessionErr.message : sessionErr,
+      );
+    }
+  }
+
   const body = await request.json().catch(() => ({}));
 
   try {

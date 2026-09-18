@@ -29,6 +29,11 @@ import {
   type VendorSignPartySnapshot,
   type VendorSignSignatureSnapshot,
 } from '../lib/saleContractVendorSignAuth';
+import {
+  SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION,
+  SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE,
+  decidePublicVendorSignForSession,
+} from '../lib/saleContractPublicVendorSignGuard';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -719,6 +724,10 @@ function testSourceWiring() {
     section.includes('partyId={pendingIntervenientTarget.partyId}'),
     'INTERVENIENT envia party persistida',
   );
+  assert(
+    section.includes("party.role !== 'VENDOR'"),
+    'E painel não abre página pública do VENDOR',
+  );
 
   const route = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
   assert(route.includes('authorizeAndExecuteInternalVendorSign'), 'POST usa auth+sign');
@@ -730,6 +739,21 @@ function testSourceWiring() {
   assert(!publicRoute.includes('verifyPrimaryAdminPassword'), 'N público sem senha Principal');
   assert(!publicRoute.includes('authorizeAndExecuteInternalVendorSign'), 'N público não é painel');
   assert(publicRoute.includes('signSaleContractElectronically'), 'N público intacto');
+  assert(publicRoute.includes('decidePublicVendorSignForSession'), 'F trava sessão admin');
+  assert(publicRoute.includes('getRequestAuthUser'), 'F lê sessão autenticada');
+  assert(
+    publicRoute.includes('SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE'),
+    'F mensagem segura no 403',
+  );
+
+  const shareModal = read('components/contracts/SaleContractMultiPartyShareModal.tsx');
+  assert(shareModal.includes('!isVendor'), 'E share modal sem abrir página VENDOR');
+  assert(shareModal.includes('Copiar link'), 'E copiar link permanece');
+  assert(shareModal.includes('Enviar por WhatsApp'), 'E WhatsApp permanece');
+
+  const vendorModal = read('components/contracts/SaleContractVendorSignModal.tsx');
+  assert(vendorModal.includes('EMPTY_VENDOR_TARGETS'), 'L default estável INTERVENIENT');
+  assert(vendorModal.includes('na condição de interveniente'), 'L checkbox interveniente');
 
   const partyFlow = read('lib/saleContractSignaturePartyFlow.ts');
   assert(partyFlow.includes('withPublicToken: true'), 'N token público VENDOR mantido');
@@ -761,7 +785,135 @@ function testSourceWiring() {
   assert(auditLib.includes(SELLER_SIGNATURE_FAILED_ACTION), 'audit falha');
   assert(auditLib.includes('internalSignRequiresPrimaryAdminPassword'), 'decisão server-side');
   assert(!auditLib.includes('refresh_token'), 'sem refresh token');
-  console.log('OK source wiring A/J/N/S/T/U/W');
+
+  const publicGuard = read('lib/saleContractPublicVendorSignGuard.ts');
+  assert(publicGuard.includes(SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION), 'audit bloqueio público');
+  assert(!publicGuard.includes('refresh_token'), 'guard sem token');
+  console.log('OK source wiring A/J/N/S/T/U/W/E/F/L');
+}
+
+function testPublicVendorTokenAdminBlock() {
+  const marcos = {
+    id: MARCOS,
+    role: 'ADMIN_EMPRESA',
+    tenant_id: SV,
+    status: 'ACTIVE',
+  };
+  const admin = {
+    id: PRINCIPAL,
+    role: 'ADMIN',
+    tenant_id: SV,
+    status: 'ACTIVE',
+  };
+  const superAdmin = {
+    id: SUPER,
+    role: 'SUPER_ADMIN',
+    tenant_id: null,
+    status: 'ACTIVE',
+  };
+  const broker = {
+    id: BROKER,
+    role: 'BROKER',
+    tenant_id: SV,
+    status: 'ACTIVE',
+  };
+  const otherAdmin = {
+    id: 'other-admin',
+    role: 'ADMIN_EMPRESA',
+    tenant_id: OTHER,
+    status: 'ACTIVE',
+  };
+
+  const blockedMarcos = decidePublicVendorSignForSession({
+    partyRole: 'VENDOR',
+    operator: marcos,
+    contractTenantId: SV,
+  });
+  assert(blockedMarcos.block === true, 'F ADMIN_EMPRESA + token VENDOR bloqueia');
+  if (!blockedMarcos.block) throw new Error('expected block');
+  assert(blockedMarcos.requestedBy === MARCOS, 'F requested_by operador');
+
+  const blockedAdmin = decidePublicVendorSignForSession({
+    partyRole: 'VENDOR',
+    operator: admin,
+    contractTenantId: SV,
+  });
+  assert(blockedAdmin.block === true, 'G ADMIN + token VENDOR bloqueia');
+
+  const blockedSuper = decidePublicVendorSignForSession({
+    partyRole: 'VENDOR',
+    operator: superAdmin,
+    contractTenantId: SV,
+  });
+  assert(blockedSuper.block === true, 'SUPER_ADMIN bloqueia token VENDOR');
+
+  const external = decidePublicVendorSignForSession({
+    partyRole: 'VENDOR',
+    operator: null,
+    contractTenantId: SV,
+  });
+  assert(external.block === false, 'H VENDOR externo sem sessão assina');
+
+  const noUser = decidePublicVendorSignForSession({
+    partyRole: 'VENDOR',
+    operator: { id: null, role: null, tenant_id: null },
+    contractTenantId: SV,
+  });
+  assert(noUser.block === false, 'H cookie irrelevante não bloqueia');
+
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'BUYER',
+      operator: marcos,
+      contractTenantId: SV,
+    }).block === false,
+    'I BUYER público intacto',
+  );
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'SPOUSE',
+      operator: marcos,
+      contractTenantId: SV,
+    }).block === false,
+    'J SPOUSE público intacto',
+  );
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'WITNESS_1',
+      operator: marcos,
+      contractTenantId: SV,
+    }).block === false,
+    'K WITNESS público intacto',
+  );
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'INTERVENIENT',
+      operator: marcos,
+      contractTenantId: SV,
+    }).block === false,
+    'INTERVENIENT token não usa esta trava',
+  );
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'VENDOR',
+      operator: broker,
+      contractTenantId: SV,
+    }).block === false,
+    'BROKER não é sessão administrativa da trava',
+  );
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'VENDOR',
+      operator: otherAdmin,
+      contractTenantId: SV,
+    }).block === false,
+    'admin de outro tenant não bloqueia',
+  );
+  assert(
+    SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE.includes('Administrador Principal'),
+    'mensagem orienta o fluxo interno',
+  );
+  console.log('OK F/G/H/I/J/K token público VENDOR');
 }
 
 async function main() {
@@ -785,6 +937,7 @@ async function main() {
   await testPreviewDoesNotNeedPassword();
   await testClientIdentityStripped();
   testSourceWiring();
+  testPublicVendorTokenAdminBlock();
   console.log('OK mandatory-seller-signature-auth-tests');
 }
 

@@ -321,12 +321,14 @@ function PartyShareCard({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <ActionButton icon={Copy} label="Copiar link" onClick={() => void handleCopy()} />
-            <ActionButton
-              icon={ExternalLink}
-              label="Abrir página de assinatura"
-              onClick={handleOpen}
-              disabled={!signatureUrl}
-            />
+            {!isVendor && (
+              <ActionButton
+                icon={ExternalLink}
+                label="Abrir página de assinatura"
+                onClick={handleOpen}
+                disabled={!signatureUrl}
+              />
+            )}
             <ActionButton
               icon={MessageCircle}
               label="Enviar por WhatsApp"
