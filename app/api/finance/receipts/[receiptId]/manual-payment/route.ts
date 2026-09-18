@@ -9,9 +9,11 @@ import {
   authorizeAndExecuteManualReceiptPayment,
   previewManualReceiptPayment,
   toPublicManualPaymentError,
+  toPublicManualPaymentPreviewError,
 } from '@/lib/finance/manualReceiptPayment';
 import {
   createManualPaymentDeps,
+  createManualPaymentPreviewDeps,
   loadManualReceiptRow,
   persistManualPaymentAudit,
   persistManualPaymentLotAudit,
@@ -42,23 +44,36 @@ export async function GET(
 ) {
   const auth = await getRequestAuthUser(request);
   if (!auth.user?.id) {
-    return NextResponse.json({ ok: false, error: 'Não autenticado.' }, { status: 401 });
+    return NextResponse.json(toPublicManualPaymentPreviewError('unauthenticated'), { status: 401 });
   }
   const { receiptId } = await context.params;
-  const wired = await buildDeps();
-  if (!wired) return denied();
-
-  const preview = await previewManualReceiptPayment(wired.deps, {
-    operatorUserId: auth.user.id,
-    receiptId,
-  });
-  if (!preview.ok) {
-    return denied(
-      preview.code === 'unauthenticated' ? 'Não autenticado.' : PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE,
-      preview.code === 'unauthenticated' ? 401 : 401,
-    );
+  const { client: admin } = createAdminSupabase();
+  if (!admin) {
+    console.warn('[manual-payment-preview] admin client unavailable');
+    return NextResponse.json(toPublicManualPaymentPreviewError('load_failed'), { status: 422 });
   }
-  return NextResponse.json(preview);
+
+  try {
+    const preview = await previewManualReceiptPayment(createManualPaymentPreviewDeps(admin), {
+      operatorUserId: auth.user.id,
+      receiptId,
+    });
+    if (!preview.ok) {
+      console.warn('[manual-payment-preview]', preview.code, {
+        receiptId,
+        operatorUserId: auth.user.id,
+      });
+      const pub = toPublicManualPaymentPreviewError(preview.code);
+      return NextResponse.json(pub, { status: pub.code === 'unauthenticated' ? 401 : 422 });
+    }
+    return NextResponse.json(preview);
+  } catch (err) {
+    console.warn(
+      '[manual-payment-preview] exception',
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json(toPublicManualPaymentPreviewError('load_failed'), { status: 422 });
+  }
 }
 
 export async function POST(

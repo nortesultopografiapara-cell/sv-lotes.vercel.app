@@ -5,6 +5,7 @@ import { Loader2, ShieldCheck, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import {
   MANUAL_PAYMENT_ALREADY_PAID_MESSAGE,
+  MANUAL_PAYMENT_LOAD_FAILED_MESSAGE,
   MANUAL_PAYMENT_SUCCESS_MESSAGE,
   PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE,
 } from '@/lib/finance/manualReceiptPayment';
@@ -23,6 +24,8 @@ type Preview = {
   };
 };
 
+type ModalView = 'loading' | 'ready' | 'load_failed' | 'authorization_failed';
+
 type Props = {
   receiptId: string | null;
   onClose: () => void;
@@ -40,7 +43,7 @@ async function sessionHeaders(): Promise<HeadersInit> {
 }
 
 export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props) {
-  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<ModalView>('loading');
   const [submitting, setSubmitting] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [password, setPassword] = useState('');
@@ -48,7 +51,9 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
 
   const loadPreview = useCallback(async () => {
     if (!receiptId) return;
-    setLoading(true);
+    setView('loading');
+    setPreview(null);
+    setPassword('');
     setError(null);
     try {
       const headers = await sessionHeaders();
@@ -58,20 +63,21 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
         headers,
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) {
+      if (!res.ok || !json?.ok || !json?.receipt || !json?.principal) {
         setPreview(null);
-        setError(json?.error || PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE);
+        setError(MANUAL_PAYMENT_LOAD_FAILED_MESSAGE);
+        setView('load_failed');
         return;
       }
       setPreview({
         receipt: json.receipt,
         principal: json.principal,
       });
+      setView('ready');
     } catch {
       setPreview(null);
-      setError(PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE);
-    } finally {
-      setLoading(false);
+      setError(MANUAL_PAYMENT_LOAD_FAILED_MESSAGE);
+      setView('load_failed');
     }
   }, [receiptId]);
 
@@ -83,7 +89,8 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    const presented = password;
+    const presented = password.trim();
+    if (!presented) return;
     setPassword('');
     setSubmitting(true);
     setError(null);
@@ -102,18 +109,23 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
         alert(MANUAL_PAYMENT_SUCCESS_MESSAGE);
         return;
       }
-      setError(
-        json?.error === MANUAL_PAYMENT_ALREADY_PAID_MESSAGE
-          ? MANUAL_PAYMENT_ALREADY_PAID_MESSAGE
-          : PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE,
-      );
+      if (json?.error === MANUAL_PAYMENT_ALREADY_PAID_MESSAGE) {
+        setError(MANUAL_PAYMENT_ALREADY_PAID_MESSAGE);
+        setView('ready');
+        return;
+      }
+      setError(PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE);
+      setView('authorization_failed');
     } catch {
       setError(PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE);
+      setView('authorization_failed');
     } finally {
       setPassword('');
       setSubmitting(false);
     }
   };
+
+  const showForm = (view === 'ready' || view === 'authorization_failed') && preview;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 px-4">
@@ -142,13 +154,37 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
           </button>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-8">
+        {view === 'loading' ? (
+          <div className="flex justify-center py-8" data-testid="manual-payment-loading">
             <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
           </div>
-        ) : !preview ? (
-          <p className="text-sm text-red-600">{error || PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE}</p>
-        ) : (
+        ) : null}
+
+        {view === 'load_failed' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-red-600 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              {error || MANUAL_PAYMENT_LOAD_FAILED_MESSAGE}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg border border-[var(--border-color)] text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadPreview()}
+                className="px-4 py-2 rounded-lg sv-brand-btn-primary text-sm font-medium"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {showForm ? (
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm rounded-lg border border-[var(--border-color)] px-3 py-3">
               <dt className="text-[var(--text-secondary)]">Contrato</dt>
@@ -201,15 +237,15 @@ export function ManualPaymentAuthModal({ receiptId, onClose, onSuccess }: Props)
               </button>
               <button
                 type="submit"
-                disabled={submitting || !password}
+                disabled={submitting || !password.trim()}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg sv-brand-btn-primary text-sm font-medium disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                Autorizar e registrar pagamento
+                {submitting ? 'Autorizando...' : 'Autorizar e registrar pagamento'}
               </button>
             </div>
           </form>
-        )}
+        ) : null}
       </div>
     </div>
   );

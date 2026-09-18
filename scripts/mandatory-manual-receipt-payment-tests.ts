@@ -14,6 +14,7 @@ import {
   MANUAL_PAYMENT_ALREADY_PAID_MESSAGE,
   MANUAL_PAYMENT_AUTHORIZED_ACTION,
   MANUAL_PAYMENT_FAILED_ACTION,
+  MANUAL_PAYMENT_LOAD_FAILED_MESSAGE,
   authorizeAndExecuteManualReceiptPayment,
   buildManualPaymentAuditDescription,
   expectedManualCashMovementPayload,
@@ -21,6 +22,7 @@ import {
   previewManualReceiptPayment,
   readPrimaryAdminVerifyRequest,
   toPublicManualPaymentError,
+  toPublicManualPaymentPreviewError,
   type ManualPaymentDeps,
   type ManualReceiptRow,
 } from '../lib/finance/manualReceiptPayment';
@@ -436,6 +438,102 @@ async function testPreviewDoesNotHardcodeEmail() {
   console.log('OK preview server-side sem hardcode');
 }
 
+function testHotfixModalLocksAJ() {
+  const modal = read('components/finance/ManualPaymentAuthModal.tsx');
+  const route = read('app/api/finance/receipts/[receiptId]/manual-payment/route.ts');
+  const server = read('lib/finance/manualReceiptPaymentServer.ts');
+  const page = read('app/finance/page.tsx');
+  const getBlock = route.slice(
+    route.indexOf('export async function GET'),
+    route.indexOf('export async function POST'),
+  );
+  const postBlock = route.slice(route.indexOf('export async function POST'));
+
+  assert(modal.includes("useState<ModalView>('loading')"), 'A modal abre em loading');
+  assert(modal.includes("view === 'loading'"), 'A render loading');
+
+  assert(modal.includes("setView('ready')"), 'B GET sucesso → ready');
+  assert(modal.includes('preview.principal.displayName'), 'B identidade do Principal');
+  assert(modal.includes('preview.principal.maskedEmail'), 'B e-mail mascarado');
+  assert(modal.includes('type="password"'), 'B campo de senha');
+  assert(modal.includes('Autorizar e registrar pagamento'), 'B botão autorizar');
+  assert(modal.includes('preview.receipt.contractNumber'), 'B contrato');
+  assert(modal.includes('preview.receipt.customerName'), 'B cliente');
+  assert(modal.includes('preview.receipt.installmentLabel'), 'B parcela');
+  assert(modal.includes('preview.receipt.dueDateLabel'), 'B vencimento');
+  assert(modal.includes('preview.receipt.amountLabel'), 'B valor');
+
+  assert(modal.includes("setView('load_failed')"), 'C GET erro → load_failed');
+  assert(modal.includes('MANUAL_PAYMENT_LOAD_FAILED_MESSAGE'), 'C mensagem de carga');
+  assert(modal.includes('Tentar novamente'), 'C botão retry');
+  assert(modal.includes("view === 'load_failed'"), 'C UI de falha de carga');
+
+  assert(!getBlock.includes('PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE'), 'D GET não devolve senha recusada');
+  assert(getBlock.includes('toPublicManualPaymentPreviewError'), 'D GET usa erro de carga');
+  assert(
+    !modal.includes('setError(json?.error || PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE)'),
+    'D GET não cai em senha recusada',
+  );
+
+  assert(modal.includes('if (!presented) return'), 'E senha vazia não submete');
+  assert(modal.includes('disabled={submitting || !password.trim()}'), 'E botão exige senha');
+
+  assert(modal.includes("setView('authorization_failed')"), 'F senha errada');
+  assert(
+    modal.includes("view === 'ready' || view === 'authorization_failed'"),
+    'F formulário permanece',
+  );
+  assert(modal.includes('PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE'), 'F Autorização não concedida só no POST');
+
+  assert(modal.includes("setPassword('')"), 'G limpa senha após falha');
+
+  assert(modal.includes('MANUAL_PAYMENT_SUCCESS_MESSAGE'), 'H sucesso fecha e avisa');
+  assert(modal.includes('onSuccess()'), 'H atualiza parcela');
+  assert(modal.includes('JSON.stringify({ password: presented })'), 'H POST só password');
+  assert(modal.includes('Autorizando...'), 'H desabilita e mostra Autorizando');
+
+  assert(!modal.includes('signOut'), 'I sessão permanece Marcos');
+  assert(!modal.includes('signInWithPassword'), 'I modal não troca sessão');
+
+  const markStart = page.indexOf('const handleMarkPaid');
+  const markEnd = page.indexOf('const handleDeleteReceipt');
+  const markPaid = page.slice(markStart, markEnd);
+  assert(!markPaid.includes("from('finance_receipts')"), 'J sem UPDATE client');
+  assert(!markPaid.includes('window.confirm'), 'J sem confirm na baixa');
+  assert(!modal.includes('.update('), 'J modal não persiste');
+  assert(postBlock.includes('authorizeAndExecuteManualReceiptPayment'), 'J baixa só no endpoint');
+
+  assert(!server.includes('customers(name, full_name)'), 'loader sem embed ambíguo de customers');
+  assert(server.includes("from('customers')"), 'loader busca cliente separado');
+  assert(server.includes("from('sales')"), 'loader busca venda separado');
+  assert(server.includes("from('contracts')"), 'loader busca contrato separado');
+  assert(server.includes('MANUAL_RECEIPT_BASE_SELECT'), 'select plano da parcela');
+  console.log('OK HOTFIX A–J estados do modal e GET');
+}
+
+async function testGetFailureIsNotPasswordDenied() {
+  const missing = await previewManualReceiptPayment(makeDeps({ receipts: {} }).deps, {
+    operatorUserId: MARCOS,
+    receiptId: RECEIPT,
+  });
+  assert(!missing.ok, 'parcela ausente falha o GET');
+  if (missing.ok) throw new Error('unreachable');
+  const pubMissing = toPublicManualPaymentPreviewError(missing.code);
+  assert(pubMissing.error === MANUAL_PAYMENT_LOAD_FAILED_MESSAGE, 'GET not_found → carga falhou');
+  assert(pubMissing.error !== PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE, 'GET not_found ≠ senha recusada');
+
+  const noPrimary = await previewManualReceiptPayment(makeDeps({ primaryId: null }).deps, {
+    operatorUserId: MARCOS,
+    receiptId: RECEIPT,
+  });
+  assert(!noPrimary.ok, 'sem Principal falha o GET');
+  if (noPrimary.ok) throw new Error('unreachable');
+  const pubDenied = toPublicManualPaymentPreviewError(noPrimary.code);
+  assert(pubDenied.error === MANUAL_PAYMENT_LOAD_FAILED_MESSAGE, 'GET denied → carga falhou');
+  assert(pubDenied.error !== PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE, 'GET denied ≠ senha recusada');
+  console.log('OK GET falho não aparece como senha recusada');
+}
+
 async function main() {
   await testAMarcosCorrectPassword();
   await testBWrongPasswordNoPersist();
@@ -454,6 +552,8 @@ async function main() {
   await testOPrincipalAlsoReauths();
   testCashMovementSemanticsAndPreview();
   await testPreviewDoesNotHardcodeEmail();
+  testHotfixModalLocksAJ();
+  await testGetFailureIsNotPasswordDenied();
   console.log('\nOK — mandatory-manual-receipt-payment-tests passed');
 }
 

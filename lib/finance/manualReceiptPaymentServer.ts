@@ -21,44 +21,122 @@ import {
 } from '@/lib/finance/manualReceiptPayment';
 import type { PrimaryAdminReauthDeps, PrimaryAdminVerifyResult } from '@/lib/primaryAdminReauth';
 
+/** Select plano — sem embed PostgREST (customers/sales/contracts são ambíguos neste schema). */
+export const MANUAL_RECEIPT_BASE_SELECT =
+  'id, tenant_id, company_id, status, amount, paid_amount, paid_at, due_date, installment_number, sale_id, customer_id, project_id, block_id';
+
+function textOrNull(value: unknown): string | null {
+  const text = String(value || '').trim();
+  return text || null;
+}
+
 export async function loadManualReceiptRow(
   admin: SupabaseClient,
   receiptId: string,
 ): Promise<ManualReceiptRow | null> {
   const { data, error } = await admin
     .from('finance_receipts')
-    .select(
-      'id, tenant_id, company_id, status, amount, paid_amount, paid_at, due_date, installment_number, sale_id, customer_id, project_id, block_id, customers(name, full_name), sales(id, installments_count, project_id, contracts(id, contract_number))',
-    )
+    .select(MANUAL_RECEIPT_BASE_SELECT)
     .eq('id', receiptId)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) {
+    console.warn('[manual-receipt-payment] load receipt falhou', error.code, error.message);
+    return null;
+  }
+  if (!data) return null;
+
   const row = data as Record<string, unknown>;
-  const customers = row.customers as { name?: string | null; full_name?: string | null } | null;
-  const sales = row.sales as {
-    installments_count?: number | null;
-    project_id?: string | null;
-    contracts?: Array<{ id?: string | null; contract_number?: string | null }> | null;
-  } | null;
-  const contract = Array.isArray(sales?.contracts) ? sales?.contracts[0] : null;
+  const customerId = textOrNull(row.customer_id);
+  const saleId = textOrNull(row.sale_id);
+  let customerName: string | null = null;
+  let installmentsCount: number | string | null = null;
+  let saleProjectId: string | null = null;
+  let contractId: string | null = null;
+  let contractNumber: string | null = null;
+
+  if (customerId) {
+    const { data: customer, error: customerError } = await admin
+      .from('customers')
+      .select('name, full_name')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (customerError) {
+      console.warn('[manual-receipt-payment] load customer falhou', customerError.message);
+    } else {
+      customerName =
+        textOrNull((customer as { name?: string | null; full_name?: string | null } | null)?.name) ||
+        textOrNull((customer as { name?: string | null; full_name?: string | null } | null)?.full_name);
+    }
+  }
+
+  if (saleId) {
+    const { data: sale, error: saleError } = await admin
+      .from('sales')
+      .select('id, installments_count, project_id')
+      .eq('id', saleId)
+      .maybeSingle();
+    if (saleError) {
+      console.warn('[manual-receipt-payment] load sale falhou', saleError.message);
+    } else if (sale) {
+      const saleRow = sale as {
+        installments_count?: number | string | null;
+        project_id?: string | null;
+      };
+      installmentsCount = saleRow.installments_count ?? null;
+      saleProjectId = textOrNull(saleRow.project_id);
+    }
+
+    const { data: contracts, error: contractError } = await admin
+      .from('contracts')
+      .select('id, contract_number')
+      .eq('sale_id', saleId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (contractError) {
+      console.warn('[manual-receipt-payment] load contract falhou', contractError.message);
+    } else {
+      const contract = Array.isArray(contracts) ? contracts[0] : contracts;
+      contractId = textOrNull((contract as { id?: string | null } | null)?.id);
+      contractNumber = textOrNull(
+        (contract as { contract_number?: string | null } | null)?.contract_number,
+      );
+    }
+  }
+
   return {
     id: String(row.id),
-    tenant_id: (row.tenant_id as string | null) || null,
-    company_id: (row.company_id as string | null) || null,
-    status: (row.status as string | null) || null,
+    tenant_id: textOrNull(row.tenant_id),
+    company_id: textOrNull(row.company_id),
+    status: textOrNull(row.status),
     amount: row.amount as number | null,
     paid_amount: row.paid_amount as number | null,
-    paid_at: (row.paid_at as string | null) || null,
-    due_date: (row.due_date as string | null) || null,
+    paid_at: textOrNull(row.paid_at),
+    due_date: textOrNull(row.due_date),
     installment_number: row.installment_number as number | string | null,
-    sale_id: (row.sale_id as string | null) || null,
-    customer_id: (row.customer_id as string | null) || null,
-    project_id: (row.project_id as string | null) || (sales?.project_id as string | null) || null,
-    block_id: (row.block_id as string | null) || null,
-    customer_name: String(customers?.name || customers?.full_name || '').trim() || null,
-    contract_id: (contract?.id as string | null) || null,
-    contract_number: (contract?.contract_number as string | null) || null,
-    installments_count: sales?.installments_count ?? null,
+    sale_id: saleId,
+    customer_id: customerId,
+    project_id: textOrNull(row.project_id) || saleProjectId,
+    block_id: textOrNull(row.block_id),
+    customer_name: customerName,
+    contract_id: contractId,
+    contract_number: contractNumber,
+    installments_count: installmentsCount,
+  };
+}
+
+/** Preview do GET: só admin client. Não exige env de senha efêmera. */
+export function createManualPaymentPreviewDeps(
+  admin: SupabaseClient,
+): Pick<
+  ManualPaymentDeps,
+  'loadOperator' | 'loadCompanyPrimaryAdminUserId' | 'loadUser' | 'loadReceipt'
+> {
+  const reauth = createPrimaryAdminReauthDeps(admin, { url: 'http://127.0.0.1', anonKey: 'preview-only' });
+  return {
+    loadOperator: reauth.loadOperator,
+    loadCompanyPrimaryAdminUserId: reauth.loadCompanyPrimaryAdminUserId,
+    loadUser: reauth.loadUser,
+    loadReceipt: (id) => loadManualReceiptRow(admin, id),
   };
 }
 

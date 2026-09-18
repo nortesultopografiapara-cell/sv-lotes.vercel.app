@@ -19,6 +19,8 @@ import { buildManualFinanceReceiptCashMovement } from '@/lib/finance/cashMovemen
 export const MANUAL_PAYMENT_ALREADY_PAID_MESSAGE =
   'Esta parcela já está registrada como paga.';
 export const MANUAL_PAYMENT_SUCCESS_MESSAGE = 'Pagamento registrado com sucesso!';
+export const MANUAL_PAYMENT_LOAD_FAILED_MESSAGE =
+  'Não foi possível carregar a autorização do Administrador Principal.';
 export const MANUAL_PAYMENT_AUTHORIZED_ACTION = 'MANUAL_PAYMENT_AUTHORIZED';
 export const MANUAL_PAYMENT_FAILED_ACTION = 'MANUAL_PAYMENT_AUTHORIZATION_FAILED';
 export const MANUAL_PAYMENT_AUDIT_MODULE = 'FINANCE';
@@ -161,6 +163,25 @@ export function toPublicManualPaymentError(result: ManualPaymentExecuteResult): 
   return { ok: false, error: PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE };
 }
 
+export type ManualPaymentPreviewFailureCode =
+  | 'denied'
+  | 'unauthenticated'
+  | 'not_found'
+  | 'wrong_tenant'
+  | 'load_failed';
+
+/** GET do modal: nunca devolve "Autorização não concedida." — isso é só recusa de senha no POST. */
+export function toPublicManualPaymentPreviewError(code: ManualPaymentPreviewFailureCode): {
+  ok: false;
+  error: string;
+  code: 'unauthenticated' | 'load_failed';
+} {
+  if (code === 'unauthenticated') {
+    return { ok: false, error: 'Não autenticado.', code: 'unauthenticated' };
+  }
+  return { ok: false, error: MANUAL_PAYMENT_LOAD_FAILED_MESSAGE, code: 'load_failed' };
+}
+
 export function buildManualPaymentAuditDescription(input: {
   result: 'authorized' | 'failed';
   receiptId: string;
@@ -203,11 +224,29 @@ export async function previewManualReceiptPayment(
   const tenantId = String(operator?.tenant_id || '').trim();
   if (!tenantId) return { ok: false, code: 'denied' };
 
-  const receipt = await deps.loadReceipt(input.receiptId);
+  let receipt: ManualReceiptRow | null = null;
+  try {
+    receipt = await deps.loadReceipt(input.receiptId);
+  } catch (err) {
+    console.warn(
+      '[manual-payment-preview] loadReceipt',
+      err instanceof Error ? err.message : err,
+    );
+    return { ok: false, code: 'not_found' };
+  }
   if (!receipt?.id) return { ok: false, code: 'not_found' };
   if (receiptTenantId(receipt) !== tenantId) return { ok: false, code: 'wrong_tenant' };
 
-  const primaryId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
+  let primaryId: string | null = null;
+  try {
+    primaryId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
+  } catch (err) {
+    console.warn(
+      '[manual-payment-preview] primary_admin_user_id',
+      err instanceof Error ? err.message : err,
+    );
+    return { ok: false, code: 'denied' };
+  }
   const primary = primaryId ? await deps.loadUser(primaryId) : null;
   if (!primary?.id || !primary.email) return { ok: false, code: 'denied' };
 
