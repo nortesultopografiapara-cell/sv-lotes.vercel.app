@@ -156,6 +156,9 @@ export async function persistSellerSignatureAudit(
   },
 ): Promise<void> {
   if (input.result.ok && input.result.skippedAuth) return;
+  if (!input.result.ok && !input.verify && input.result.code === 'persistence_failed') {
+    return;
+  }
 
   const tenantId =
     (input.result.ok ? input.result.tenantId : input.result.tenantId) ||

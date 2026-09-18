@@ -34,8 +34,10 @@ export type SaleContractVendorSignModalProps = {
   documentLabel?: 'CPF' | 'CNPJ';
   /** Quando há N VENDORs (ARAGUAIA), lista as parties pendentes. */
   vendorTargets?: VendorSignTargetOption[];
-  /** Painel interno VENDOR exige senha do Principal. INTERVENIENT = false. */
-  requiresPrimaryAdminAuthorization?: boolean;
+  /** Party persistida (INTERVENIENT ou VENDOR único). Não decide senha — o GET decide. */
+  partyId?: string | null;
+  /** Só muda copy. A senha é decidida pelo preview server-side. */
+  signKind?: 'vendor' | 'intervenient';
   onSign: (input: {
     vendorName: string;
     vendorDocument: string;
@@ -47,6 +49,7 @@ export type SaleContractVendorSignModalProps = {
 };
 
 type ModalStep = 'form' | 'authorize' | 'load_failed';
+type PreviewPlan = 'authorize' | 'sign' | 'failed';
 
 type PrincipalPreview = {
   displayName: string;
@@ -77,12 +80,14 @@ export function SaleContractVendorSignModal({
   defaultEmail = '',
   documentLabel = 'CPF',
   vendorTargets = [],
-  requiresPrimaryAdminAuthorization = true,
+  partyId = null,
+  signKind = 'vendor',
   onSign,
 }: SaleContractVendorSignModalProps) {
-  const multi = vendorTargets.length > 0;
+  const isIntervenient = signKind === 'intervenient';
+  const showVendorSelect = signKind === 'vendor' && vendorTargets.length > 1;
   const [selectedPartyId, setSelectedPartyId] = useState(
-    vendorTargets[0]?.partyId || '',
+    vendorTargets[0]?.partyId || partyId || '',
   );
   const selectedTarget =
     vendorTargets.find((t) => t.partyId === selectedPartyId) ||
@@ -92,7 +97,7 @@ export function SaleContractVendorSignModal({
   const [vendorName, setVendorName] = useState(defaultName);
   const [vendorDocument, setVendorDocument] = useState(defaultDocument);
   const [vendorEmail, setVendorEmail] = useState(defaultEmail);
-  const [vendorRole] = useState('Promitente vendedor');
+  const vendorRole = isIntervenient ? 'Interveniente' : 'Promitente vendedor';
   const [accepted, setAccepted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -103,9 +108,13 @@ export function SaleContractVendorSignModal({
   const [loadingPreview, setLoadingPreview] = useState(false);
   const errorRef = useRef<HTMLParagraphElement | null>(null);
 
-  const emailRequired = multi
+  const resolvedPartyId =
+    selectedPartyId || partyId || vendorTargets[0]?.partyId || '';
+  const emailRequired = showVendorSelect
     ? Boolean(String(selectedTarget?.email || '').trim())
-    : true;
+    : isIntervenient
+      ? false
+      : true;
 
   useEffect(() => {
     setMounted(true);
@@ -113,12 +122,13 @@ export function SaleContractVendorSignModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (multi && vendorTargets[0]) {
+    if (vendorTargets[0]) {
       setSelectedPartyId(vendorTargets[0].partyId);
       setVendorName(vendorTargets[0].name);
       setVendorDocument(vendorTargets[0].document);
       setVendorEmail(vendorTargets[0].email || '');
     } else {
+      setSelectedPartyId(partyId || '');
       setVendorName(defaultName);
       setVendorDocument(defaultDocument);
       setVendorEmail(defaultEmail);
@@ -129,14 +139,14 @@ export function SaleContractVendorSignModal({
     setStep('form');
     setPassword('');
     setPrincipal(null);
-  }, [isOpen, defaultName, defaultDocument, defaultEmail, multi, vendorTargets]);
+  }, [isOpen, defaultName, defaultDocument, defaultEmail, partyId, vendorTargets]);
 
   useEffect(() => {
-    if (!multi || !selectedTarget) return;
+    if (!showVendorSelect || !selectedTarget) return;
     setVendorName(selectedTarget.name);
     setVendorDocument(selectedTarget.document);
     setVendorEmail(selectedTarget.email || '');
-  }, [multi, selectedTarget]);
+  }, [showVendorSelect, selectedTarget]);
 
   useEffect(() => {
     if (formError && errorRef.current) {
@@ -153,11 +163,11 @@ export function SaleContractVendorSignModal({
   );
   const disabled = busy || submitting || loadingPreview;
 
-  const loadAuthorizationPreview = async (): Promise<boolean> => {
+  const loadAuthorizationPreview = async (): Promise<PreviewPlan> => {
     if (!contractId || !signatureId) {
       setFormError(SELLER_SIGNATURE_LOAD_FAILED_MESSAGE);
       setStep('load_failed');
-      return false;
+      return 'failed';
     }
     setLoadingPreview(true);
     setFormError(null);
@@ -167,33 +177,49 @@ export function SaleContractVendorSignModal({
         vendorName: vendorName.trim(),
         vendorDocument: documentDigits,
       });
-      if (multi && selectedPartyId) params.set('partyId', selectedPartyId);
+      if (resolvedPartyId) params.set('partyId', resolvedPartyId);
       const res = await fetch(
         `/api/contracts/${contractId}/signature/sign-vendor?${params.toString()}`,
         { method: 'GET', credentials: 'include' },
       );
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok || !json?.principal) {
+      if (!res.ok || !json?.ok) {
         setPrincipal(null);
         setFormError(
-          json?.error === SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE
+          json?.error === SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE ||
+            json?.code === 'already_signed'
             ? SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE
             : SELLER_SIGNATURE_LOAD_FAILED_MESSAGE,
         );
         setStep('load_failed');
-        return false;
+        return 'failed';
       }
-      setPrincipal({
-        displayName: String(json.principal.displayName || 'Administrador Principal'),
-        maskedEmail: String(json.principal.maskedEmail || '—'),
-      });
-      setStep('authorize');
-      return true;
+      if (json.alreadySigned) {
+        setPrincipal(null);
+        setFormError(SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE);
+        setStep('load_failed');
+        return 'failed';
+      }
+      if (json.requiresAuthorization) {
+        if (!json?.principal) {
+          setPrincipal(null);
+          setFormError(SELLER_SIGNATURE_LOAD_FAILED_MESSAGE);
+          setStep('load_failed');
+          return 'failed';
+        }
+        setPrincipal({
+          displayName: String(json.principal.displayName || 'Administrador Principal'),
+          maskedEmail: String(json.principal.maskedEmail || '—'),
+        });
+        setStep('authorize');
+        return 'authorize';
+      }
+      return 'sign';
     } catch {
       setPrincipal(null);
       setFormError(SELLER_SIGNATURE_LOAD_FAILED_MESSAGE);
       setStep('load_failed');
-      return false;
+      return 'failed';
     } finally {
       setLoadingPreview(false);
     }
@@ -207,7 +233,7 @@ export function SaleContractVendorSignModal({
         vendorDocument: documentDigits,
         vendorEmail: vendorEmail.trim(),
         vendorRole: vendorRole.trim(),
-        partyId: multi ? selectedPartyId : null,
+        partyId: resolvedPartyId || null,
         password: presentedPassword,
       });
       setAccepted(false);
@@ -217,7 +243,7 @@ export function SaleContractVendorSignModal({
       const message =
         err instanceof Error ? err.message : 'Falha ao registrar assinatura.';
       setFormError(message);
-      if (requiresPrimaryAdminAuthorization && message === PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE) {
+      if (message === PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE && principal) {
         setStep('authorize');
       }
     } finally {
@@ -237,31 +263,32 @@ export function SaleContractVendorSignModal({
       setFormError('Informe um e-mail válido para registrar a assinatura.');
       return;
     }
-    if (multi && !selectedPartyId) {
+    if (showVendorSelect && !selectedPartyId) {
       setFormError('Selecione o promitente vendedor que irá assinar.');
       return;
     }
     if (!accepted) {
-      setFormError('Marque a confirmação de assinatura eletrônica como vendedor.');
+      setFormError(
+        isIntervenient
+          ? 'Marque a confirmação de assinatura eletrônica como interveniente.'
+          : 'Marque a confirmação de assinatura eletrônica como vendedor.',
+      );
       return;
     }
 
-    if (requiresPrimaryAdminAuthorization && step === 'form') {
-      await loadAuthorizationPreview();
+    if (step === 'form') {
+      const plan = await loadAuthorizationPreview();
+      if (plan === 'authorize' || plan === 'failed') return;
+      await submitSignature();
       return;
     }
 
-    if (requiresPrimaryAdminAuthorization) {
-      const presented = password.trim();
-      if (!presented) {
-        setFormError('Informe a senha do Administrador Principal.');
-        return;
-      }
-      await submitSignature(presented);
+    const presented = password.trim();
+    if (!presented) {
+      setFormError('Informe a senha do Administrador Principal.');
       return;
     }
-
-    await submitSignature();
+    await submitSignature(presented);
   };
 
   if (!isOpen || !mounted) return null;
@@ -269,13 +296,13 @@ export function SaleContractVendorSignModal({
   const title =
     step === 'authorize'
       ? 'AUTORIZAÇÃO DO ADMINISTRADOR PRINCIPAL'
-      : multi && selectedTarget
-        ? `Assinar como ${selectedTarget.name}`
-        : 'Assinar como vendedor';
+      : isIntervenient
+        ? `Assinar como ${companyName || 'INTERVENIENTE'}`
+        : showVendorSelect && selectedTarget
+          ? `Assinar como ${selectedTarget.name}`
+          : 'Assinar como vendedor';
 
-  const showPasswordStep = Boolean(
-    requiresPrimaryAdminAuthorization && step === 'authorize' && principal,
-  );
+  const showPasswordStep = Boolean(step === 'authorize' && principal);
 
   return createPortal(
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/65 p-4">
@@ -311,7 +338,7 @@ export function SaleContractVendorSignModal({
         >
           {step === 'form' && (
             <>
-              {multi && (
+              {showVendorSelect && (
                 <div>
                   <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
                     Promitente vendedor
@@ -338,7 +365,7 @@ export function SaleContractVendorSignModal({
                 <input
                   value={vendorName}
                   onChange={(e) => setVendorName(e.target.value)}
-                  disabled={disabled || multi}
+                  disabled={disabled || showVendorSelect || isIntervenient}
                   className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
                 />
               </div>
@@ -350,7 +377,7 @@ export function SaleContractVendorSignModal({
                 <input
                   value={formatCpfCnpj(vendorDocument) || vendorDocument}
                   onChange={(e) => setVendorDocument(e.target.value)}
-                  disabled={disabled || multi}
+                  disabled={disabled || showVendorSelect || isIntervenient}
                   className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
                 />
               </div>
@@ -382,8 +409,9 @@ export function SaleContractVendorSignModal({
                   className="mt-1"
                 />
                 <span>
-                  Confirmo a assinatura eletrônica deste contrato na condição de
-                  promitente vendedor.
+                  {isIntervenient
+                    ? 'Confirmo a assinatura eletrônica deste contrato na condição de interveniente.'
+                    : 'Confirmo a assinatura eletrônica deste contrato na condição de promitente vendedor.'}
                 </span>
               </label>
             </>
@@ -482,7 +510,9 @@ export function SaleContractVendorSignModal({
                   </>
                 ) : showPasswordStep ? (
                   'Autorizar e assinar como vendedor'
-                ) : multi && selectedTarget ? (
+                ) : isIntervenient ? (
+                  `Assinar como ${companyName.split(' ')[0] || 'INTERVENIENTE'}`
+                ) : showVendorSelect && selectedTarget ? (
                   `Assinar como ${selectedTarget.name.split(' ')[0]}`
                 ) : (
                   'Assinar como vendedor'

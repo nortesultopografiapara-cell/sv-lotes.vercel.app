@@ -150,20 +150,49 @@ export type VendorSignPreviewFailureCode =
   | 'wrong_tenant'
   | 'not_found'
   | 'unsupported_party'
-  | 'intervenient';
+  | 'already_signed';
 
 export type VendorSignPreviewResult =
   | {
       ok: true;
       alreadySigned: boolean;
       requiresAuthorization: true;
+      kind: 'vendor';
       contract: VendorSignAuthorizationPreview;
       principal: VendorSignPrincipalPreview;
+    }
+  | {
+      ok: true;
+      alreadySigned: boolean;
+      requiresAuthorization: false;
+      kind: 'intervenient';
+      contract: VendorSignAuthorizationPreview;
+      principal: null;
     }
   | {
       ok: false;
       code: VendorSignPreviewFailureCode;
     };
+
+export type InternalVendorSignAfterPreview =
+  | { action: 'authorize' }
+  | { action: 'sign_without_password' }
+  | { action: 'block'; code: string };
+
+export function internalSignRequiresPrimaryAdminPassword(
+  target: InternalVendorSignTarget,
+): boolean {
+  return target.kind === 'vendor';
+}
+
+export function decideInternalVendorSignAfterPreview(
+  preview: VendorSignPreviewResult,
+): InternalVendorSignAfterPreview {
+  if (!preview.ok) return { action: 'block', code: preview.code };
+  if (preview.alreadySigned) return { action: 'block', code: 'already_signed' };
+  if (preview.requiresAuthorization) return { action: 'authorize' };
+  return { action: 'sign_without_password' };
+}
 
 export type VendorSignAuthDeps = PrimaryAdminReauthDeps & {
   loadContract: (contractId: string) => Promise<VendorSignContractSnapshot | null>;
@@ -333,9 +362,12 @@ export function toPublicVendorSignError(result: VendorSignExecuteResult): {
 
 export function toPublicVendorSignPreviewError(
   code: VendorSignPreviewFailureCode,
-): { ok: false; error: string; code: 'unauthenticated' | 'load_failed' } {
+): { ok: false; error: string; code: 'unauthenticated' | 'load_failed' | 'already_signed' } {
   if (code === 'unauthenticated') {
     return { ok: false, error: 'Não autenticado.', code: 'unauthenticated' };
+  }
+  if (code === 'already_signed') {
+    return { ok: false, error: SELLER_SIGNATURE_ALREADY_SIGNED_MESSAGE, code: 'already_signed' };
   }
   return { ok: false, error: SELLER_SIGNATURE_LOAD_FAILED_MESSAGE, code: 'load_failed' };
 }
@@ -487,8 +519,33 @@ export async function previewInternalVendorSignAuthorization(
     vendorSignerName: input.vendorName || signature.vendor_signer_name,
     vendorSignerDocument: input.vendorDocument || signature.vendor_signer_document,
   });
-  if (target.kind === 'intervenient') return { ok: false, code: 'intervenient' };
-  if (target.kind !== 'vendor') return { ok: false, code: 'unsupported_party' };
+  if (target.kind === 'unsupported') return { ok: false, code: 'unsupported_party' };
+
+  const contractPreview: VendorSignAuthorizationPreview = {
+    contractNumber: String(contract.contract_number || '').trim() || 'S/N',
+    sellerName: String(input.vendorName || target.sellerName || 'Vendedor'),
+    sellerDocument: String(input.vendorDocument || target.sellerDocument || ''),
+    roleLabel:
+      target.kind === 'intervenient'
+        ? saleSignaturePartyRoleLabel('INTERVENIENT')
+        : INTERNAL_VENDOR_ROLE_LABEL,
+    partyId: target.partyId,
+  };
+
+  if (target.alreadySigned) {
+    return { ok: false, code: 'already_signed' };
+  }
+
+  if (!internalSignRequiresPrimaryAdminPassword(target)) {
+    return {
+      ok: true,
+      alreadySigned: false,
+      requiresAuthorization: false,
+      kind: 'intervenient',
+      contract: contractPreview,
+      principal: null,
+    };
+  }
 
   const primaryId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
   const primary = primaryId ? await deps.loadUser(primaryId) : null;
@@ -496,15 +553,10 @@ export async function previewInternalVendorSignAuthorization(
 
   return {
     ok: true,
-    alreadySigned: target.alreadySigned,
+    alreadySigned: false,
     requiresAuthorization: true,
-    contract: {
-      contractNumber: String(contract.contract_number || '').trim() || 'S/N',
-      sellerName: String(input.vendorName || target.sellerName || 'Vendedor'),
-      sellerDocument: String(input.vendorDocument || target.sellerDocument || ''),
-      roleLabel: INTERNAL_VENDOR_ROLE_LABEL,
-      partyId: target.partyId,
-    },
+    kind: 'vendor',
+    contract: contractPreview,
     principal: {
       displayName: primaryAdminDisplayName(primary),
       maskedEmail: maskPrimaryAdminEmail(primary.email),

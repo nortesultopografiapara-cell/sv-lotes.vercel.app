@@ -923,8 +923,8 @@ export const SaleContractSignatureSection = forwardRef<
         defaultName={vendorDefaults.name}
         defaultDocument={vendorDefaults.document}
         defaultEmail={vendorDefaults.email}
-        vendorTargets={multiVendorPending ? pendingVendorTargets : []}
-        requiresPrimaryAdminAuthorization
+        vendorTargets={pendingVendorTargets}
+        signKind="vendor"
         onSign={handleVendorSign}
       />
 
@@ -941,22 +941,13 @@ export const SaleContractSignatureSection = forwardRef<
           defaultDocument={pendingIntervenientTarget.document}
           defaultEmail={pendingIntervenientTarget.email}
           documentLabel="CNPJ"
-          requiresPrimaryAdminAuthorization={false}
-          vendorTargets={[
-            {
-              partyId: pendingIntervenientTarget.partyId,
-              name: pendingIntervenientTarget.name,
-              document: pendingIntervenientTarget.document,
-              email: pendingIntervenientTarget.email,
-              emailRequired: false,
-            },
-          ]}
+          signKind="intervenient"
+          partyId={pendingIntervenientTarget.partyId}
           onSign={async (input) => {
             await handleVendorSign({
               ...input,
               vendorRole: 'Interveniente',
               partyId: pendingIntervenientTarget.partyId,
-              password: undefined,
             });
             setVendorSignSuccess(
               `Contrato assinado pela INTERVENIENTE (${pendingIntervenientTarget.name}) com sucesso.`,

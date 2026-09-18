@@ -1446,7 +1446,11 @@ export async function signSaleContractByVendor(
     });
   }
 
-  if (partiesForVendor.length > 0 && !vendorAlreadyOnParties) {
+  if (
+    partiesForVendor.length > 0 &&
+    !vendorAlreadyOnParties &&
+    !intervenientJustCompletedProcess
+  ) {
     await markVendorPartySigned(supabaseAdmin, partiesForVendor, {
       vendorName,
       vendorDocument,
