@@ -381,8 +381,8 @@ console.log('\n=== UI admin testemunhas ===');
     section.includes('Identidade será preenchida pela testemunha'),
     'mensagem identidade blank',
   );
-  ok(section.includes('Abrir página'), 'ação Abrir página');
   ok(section.includes('WITNESS_1'), 'reconhece WITNESS_1');
+  ok(!section.includes('label="Abrir página"'), 'painel sem atalho Abrir página');
 
   const page = readFileSync(
     join(root, 'app/sign/sale/[token]/page.tsx'),

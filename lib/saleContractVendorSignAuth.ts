@@ -1,6 +1,6 @@
 /**
  * Assinatura interna "como vendedor" no painel da empresa.
- * Senha do Principal só no ramo VENDOR. INTERVENIENT permanece sem reauth.
+ * Senha do Principal no ramo VENDOR e INTERVENIENT internos.
  */
 
 import {
@@ -28,6 +28,10 @@ import { saleSignaturePartyRoleLabel } from '@/lib/saleContractSignaturePartyTyp
 
 export const SELLER_SIGNATURE_AUTHORIZED_ACTION = 'SELLER_SIGNATURE_AUTHORIZED';
 export const SELLER_SIGNATURE_FAILED_ACTION = 'SELLER_SIGNATURE_AUTHORIZATION_FAILED';
+export const INTERVENIENT_SIGNATURE_AUTHORIZED_ACTION =
+  'INTERVENIENT_SIGNATURE_AUTHORIZED';
+export const INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED_ACTION =
+  'INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED';
 export const SELLER_SIGNATURE_AUDIT_MODULE = 'CONTRACTS';
 
 export const SELLER_SIGNATURE_LOAD_FAILED_MESSAGE =
@@ -102,6 +106,7 @@ export type VendorSignExecuteResult =
   | {
       ok: true;
       skippedAuth: boolean;
+      kind: 'vendor' | 'intervenient';
       contractId: string;
       signatureId: string;
       saleId: string | null;
@@ -130,6 +135,7 @@ export type VendorSignExecuteResult =
         | 'precondition'
         | 'unsupported_party'
         | 'persistence_failed';
+      kind?: 'vendor' | 'intervenient';
       requestedBy?: string;
       tenantId?: string;
       contractId?: string;
@@ -157,17 +163,9 @@ export type VendorSignPreviewResult =
       ok: true;
       alreadySigned: boolean;
       requiresAuthorization: true;
-      kind: 'vendor';
+      kind: 'vendor' | 'intervenient';
       contract: VendorSignAuthorizationPreview;
       principal: VendorSignPrincipalPreview;
-    }
-  | {
-      ok: true;
-      alreadySigned: boolean;
-      requiresAuthorization: false;
-      kind: 'intervenient';
-      contract: VendorSignAuthorizationPreview;
-      principal: null;
     }
   | {
       ok: false;
@@ -182,7 +180,19 @@ export type InternalVendorSignAfterPreview =
 export function internalSignRequiresPrimaryAdminPassword(
   target: InternalVendorSignTarget,
 ): boolean {
-  return target.kind === 'vendor';
+  return target.kind === 'vendor' || target.kind === 'intervenient';
+}
+
+export function sellerSignatureAuditAction(
+  ok: boolean,
+  kind?: 'vendor' | 'intervenient' | null,
+): string {
+  if (kind === 'intervenient') {
+    return ok
+      ? INTERVENIENT_SIGNATURE_AUTHORIZED_ACTION
+      : INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED_ACTION;
+  }
+  return ok ? SELLER_SIGNATURE_AUTHORIZED_ACTION : SELLER_SIGNATURE_FAILED_ACTION;
 }
 
 export function decideInternalVendorSignAfterPreview(
@@ -190,8 +200,7 @@ export function decideInternalVendorSignAfterPreview(
 ): InternalVendorSignAfterPreview {
   if (!preview.ok) return { action: 'block', code: preview.code };
   if (preview.alreadySigned) return { action: 'block', code: 'already_signed' };
-  if (preview.requiresAuthorization) return { action: 'authorize' };
-  return { action: 'sign_without_password' };
+  return { action: 'authorize' };
 }
 
 export type VendorSignAuthDeps = PrimaryAdminReauthDeps & {
@@ -374,6 +383,7 @@ export function toPublicVendorSignPreviewError(
 
 export function buildSellerSignatureAuditDescription(input: {
   result: 'authorized' | 'failed';
+  kind?: 'vendor' | 'intervenient';
   contractId: string;
   saleId?: string | null;
   signatureId?: string | null;
@@ -385,7 +395,10 @@ export function buildSellerSignatureAuditDescription(input: {
   reason?: string | null;
 }): string {
   return JSON.stringify({
-    company_action: 'INTERNAL_VENDOR_SIGN',
+    company_action:
+      input.kind === 'intervenient'
+        ? 'INTERNAL_INTERVENIENT_SIGN'
+        : 'INTERNAL_VENDOR_SIGN',
     contract_id: input.contractId,
     sale_id: input.saleId || null,
     signature_id: input.signatureId || null,
@@ -536,17 +549,6 @@ export async function previewInternalVendorSignAuthorization(
     return { ok: false, code: 'already_signed' };
   }
 
-  if (!internalSignRequiresPrimaryAdminPassword(target)) {
-    return {
-      ok: true,
-      alreadySigned: false,
-      requiresAuthorization: false,
-      kind: 'intervenient',
-      contract: contractPreview,
-      principal: null,
-    };
-  }
-
   const primaryId = await deps.loadCompanyPrimaryAdminUserId(tenantId);
   const primary = primaryId ? await deps.loadUser(primaryId) : null;
   if (!primary?.id || !primary.email) return { ok: false, code: 'denied' };
@@ -555,7 +557,7 @@ export async function previewInternalVendorSignAuthorization(
     ok: true,
     alreadySigned: false,
     requiresAuthorization: true,
-    kind: 'vendor',
+    kind: target.kind,
     contract: contractPreview,
     principal: {
       displayName: primaryAdminDisplayName(primary),
@@ -645,58 +647,12 @@ export async function authorizeAndExecuteInternalVendorSign(
     };
   }
 
-  if (target.kind === 'intervenient') {
-    try {
-      const signed = await deps.signAsVendor({
-        contractId: contract.id,
-        signatureId: signature.id,
-        vendorName: input.vendorName,
-        vendorDocument: input.vendorDocument,
-        vendorEmail: input.vendorEmail,
-        vendorRole: input.vendorRole || saleSignaturePartyRoleLabel('INTERVENIENT'),
-        partyId: target.partyId,
-        ipAddress: input.ipAddress || null,
-        userAgent: input.userAgent || null,
-      });
-      return {
-        result: {
-          ok: true,
-          skippedAuth: true,
-          contractId: contract.id,
-          signatureId: signature.id,
-          saleId: contract.sale_id || null,
-          sellerPartyId: target.partyId,
-          sellerName: target.sellerName,
-          requestedBy: op.operatorId,
-          authorizedBy: null,
-          tenantId,
-          signedAt: new Date().toISOString(),
-          pdfSignedUrl: signed.pdfSignedUrl,
-          signature: signed.signature,
-        },
-      };
-    } catch (err) {
-      return {
-        result: {
-          ok: false,
-          code: 'persistence_failed',
-          requestedBy: op.operatorId,
-          tenantId,
-          contractId: contract.id,
-          signatureId: signature.id,
-          sellerPartyId: target.partyId,
-          sellerName: target.sellerName,
-          message: err instanceof Error ? err.message : 'Falha ao assinar interveniente.',
-        },
-      };
-    }
-  }
-
   if (target.alreadySigned) {
     return {
       result: {
         ok: false,
         code: 'already_signed',
+        kind: target.kind,
         requestedBy: op.operatorId,
         tenantId,
         contractId: contract.id,
@@ -708,24 +664,27 @@ export async function authorizeAndExecuteInternalVendorSign(
     };
   }
 
-  const precondition = vendorSignPreconditionMessage({
-    parties,
-    signatureStatus: signature.signature_status,
-  });
-  if (precondition) {
-    return {
-      result: {
-        ok: false,
-        code: 'precondition',
-        requestedBy: op.operatorId,
-        tenantId,
-        contractId: contract.id,
-        signatureId: signature.id,
-        sellerPartyId: target.partyId,
-        sellerName: target.sellerName,
-        message: precondition,
-      },
-    };
+  if (target.kind === 'vendor') {
+    const precondition = vendorSignPreconditionMessage({
+      parties,
+      signatureStatus: signature.signature_status,
+    });
+    if (precondition) {
+      return {
+        result: {
+          ok: false,
+          code: 'precondition',
+          kind: target.kind,
+          requestedBy: op.operatorId,
+          tenantId,
+          contractId: contract.id,
+          signatureId: signature.id,
+          sellerPartyId: target.partyId,
+          sellerName: target.sellerName,
+          message: precondition,
+        },
+      };
+    }
   }
 
   const verify = await verifyPrimaryAdminPassword(deps, {
@@ -739,6 +698,7 @@ export async function authorizeAndExecuteInternalVendorSign(
       result: {
         ok: false,
         code: 'denied',
+        kind: target.kind,
         requestedBy: op.operatorId,
         tenantId,
         contractId: contract.id,
@@ -759,7 +719,11 @@ export async function authorizeAndExecuteInternalVendorSign(
       vendorName: input.vendorName,
       vendorDocument: input.vendorDocument,
       vendorEmail: input.vendorEmail,
-      vendorRole: input.vendorRole || INTERNAL_VENDOR_ROLE_LABEL,
+      vendorRole:
+        input.vendorRole ||
+        (target.kind === 'intervenient'
+          ? saleSignaturePartyRoleLabel('INTERVENIENT')
+          : INTERNAL_VENDOR_ROLE_LABEL),
       partyId: target.partyId,
       ipAddress: input.ipAddress || null,
       userAgent: input.userAgent || null,
@@ -769,6 +733,7 @@ export async function authorizeAndExecuteInternalVendorSign(
       result: {
         ok: true,
         skippedAuth: false,
+        kind: target.kind,
         contractId: contract.id,
         signatureId: signature.id,
         saleId: contract.sale_id || null,
@@ -790,6 +755,7 @@ export async function authorizeAndExecuteInternalVendorSign(
       result: {
         ok: false,
         code: 'persistence_failed',
+        kind: target.kind,
         requestedBy: op.operatorId,
         tenantId,
         contractId: contract.id,
@@ -797,7 +763,12 @@ export async function authorizeAndExecuteInternalVendorSign(
         saleId: contract.sale_id || null,
         sellerPartyId: target.partyId,
         sellerName: target.sellerName,
-        message: err instanceof Error ? err.message : 'Falha ao assinar como vendedor.',
+        message:
+          err instanceof Error
+            ? err.message
+            : target.kind === 'intervenient'
+              ? 'Falha ao assinar interveniente.'
+              : 'Falha ao assinar como vendedor.',
       },
     };
   }

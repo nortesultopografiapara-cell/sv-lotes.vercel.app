@@ -5,7 +5,6 @@ import QRCode from 'qrcode';
 import {
   AlertTriangle,
   Copy,
-  ExternalLink,
   Mail,
   MessageCircle,
   Send,
@@ -109,7 +108,7 @@ function PartyShareCard({
   contractNumber,
   buyerFallbackPhone = null,
   onLinkCopied,
-  onLinkOpened,
+  onLinkOpened: _onLinkOpened,
   instrument = 'sale-contract',
 }: PartyCardProps) {
   const linkInputRef = useRef<HTMLInputElement>(null);
@@ -220,12 +219,6 @@ function PartyShareCard({
     }
   }, [onLinkCopied, signatureUrl]);
 
-  const handleOpen = useCallback(() => {
-    if (!signatureUrl) return;
-    window.open(signatureUrl, '_blank', 'noopener,noreferrer');
-    onLinkOpened?.();
-  }, [onLinkOpened, signatureUrl]);
-
   const emailMasked = email ? maskEmailPublic(email) : '';
 
   return (
@@ -321,14 +314,6 @@ function PartyShareCard({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <ActionButton icon={Copy} label="Copiar link" onClick={() => void handleCopy()} />
-            {!isVendor && (
-              <ActionButton
-                icon={ExternalLink}
-                label="Abrir página de assinatura"
-                onClick={handleOpen}
-                disabled={!signatureUrl}
-              />
-            )}
             <ActionButton
               icon={MessageCircle}
               label="Enviar por WhatsApp"

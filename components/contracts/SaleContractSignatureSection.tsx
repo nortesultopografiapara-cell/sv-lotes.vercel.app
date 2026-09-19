@@ -251,6 +251,29 @@ export const SaleContractSignatureSection = forwardRef<
     void loadSignature();
   }, [loadSignature, contract?.signature_status]);
 
+  useEffect(() => {
+    if (!contract?.id) return;
+    let lastAt = 0;
+    const refetchIfActive = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastAt < 800) return;
+      lastAt = now;
+      void loadSignature();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refetchIfActive();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refetchIfActive);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refetchIfActive);
+    };
+  }, [contract?.id, loadSignature]);
+
   const canSend = useMemo(
     () =>
       contract &&
@@ -779,15 +802,6 @@ export const SaleContractSignatureSection = forwardRef<
                         });
                       }}
                     />
-                    {party.role !== 'VENDOR' && (
-                      <ActionChip
-                        icon={ExternalLink}
-                        label="Abrir página"
-                        onClick={() =>
-                          window.open(url, '_blank', 'noopener,noreferrer')
-                        }
-                      />
-                    )}
                     {party.canResend && (
                       <ActionChip
                         icon={Send}
@@ -823,11 +837,6 @@ export const SaleContractSignatureSection = forwardRef<
         {canShare && signUrl && (
           <>
             <ActionChip icon={Copy} label="Copiar link" onClick={() => void handleCopyLink()} />
-            <ActionChip
-              icon={ExternalLink}
-              label="Abrir página"
-              onClick={() => window.open(signUrl, '_blank', 'noopener,noreferrer')}
-            />
             <ActionChip
               icon={MessageCircle}
               label="WhatsApp"

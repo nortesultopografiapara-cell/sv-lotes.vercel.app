@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
-import { getRequestAuthUser, resolveCallerProfile } from '@/lib/supabase/server';
+import { CALLER_PROFILE_SELECT, getRequestAuthUser } from '@/lib/supabase/server';
 import {
-  SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE,
-  decidePublicVendorSignForSession,
+  PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE,
+  decidePublicSignAccess,
+  resolvePublicSignSessionLookup,
 } from '@/lib/saleContractPublicVendorSignGuard';
 import { persistPublicVendorAdminBlockedAudit } from '@/lib/saleContractVendorSignAuthServer';
 import { formatCpfCnpj } from '@/lib/inputMasks';
@@ -398,39 +399,43 @@ export async function POST(
 
   const { token } = await params;
   const party = await getPartyByPublicToken(supabaseAdmin, token);
-  if (party && String(party.role).toUpperCase() === 'VENDOR') {
-    try {
-      const auth = await getRequestAuthUser(request);
-      if (auth.user?.id) {
-        const profile = await resolveCallerProfile(supabaseAdmin, auth.user.id);
-        const signature = await getSaleSignatureByToken(supabaseAdmin, token);
-        const tenantId = String(
-          signature?.tenant_id || party.company_id || '',
-        ).trim();
-        const decision = decidePublicVendorSignForSession({
-          partyRole: party.role,
-          operator: profile,
-          contractTenantId: tenantId,
-        });
-        if (decision.block) {
-          await persistPublicVendorAdminBlockedAudit(supabaseAdmin, {
-            tenantId,
-            contractId: String(party.contract_id || signature?.contract_id || ''),
-            partyId: party.id,
-            requestedBy: decision.requestedBy,
-          });
-          return NextResponse.json(
-            { ok: false, error: SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE },
-            { status: 403 },
-          );
-        }
+  const signatureForGuard = await getSaleSignatureByToken(supabaseAdmin, token);
+  const tenantId = String(
+    signatureForGuard?.tenant_id || party?.company_id || '',
+  ).trim();
+  const session = await resolvePublicSignSessionLookup({
+    getAuthUser: () => getRequestAuthUser(request),
+    resolveProfile: async (userId) => {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select(CALLER_PROFILE_SELECT)
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) {
+        throw new Error(error.message);
       }
-    } catch (sessionErr) {
-      console.warn(
-        '[public-vendor-sign] sessão admin não avaliada',
-        sessionErr instanceof Error ? sessionErr.message : sessionErr,
-      );
+      return data;
+    },
+  });
+  const decision = decidePublicSignAccess({
+    partyRole: party?.role || null,
+    contractTenantId: tenantId,
+    session,
+  });
+  if (decision.block) {
+    if (decision.reason === 'evaluation_error') {
+      console.warn('[public-sign] sessão administrativa não avaliada');
     }
+    await persistPublicVendorAdminBlockedAudit(supabaseAdmin, {
+      tenantId,
+      contractId: String(party?.contract_id || signatureForGuard?.contract_id || ''),
+      partyId: String(party?.id || signatureForGuard?.id || ''),
+      requestedBy: decision.requestedBy,
+    });
+    return NextResponse.json(
+      { ok: false, error: PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE },
+      { status: 403 },
+    );
   }
 
   const body = await request.json().catch(() => ({}));

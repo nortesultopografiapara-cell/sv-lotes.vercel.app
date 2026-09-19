@@ -15,6 +15,8 @@ import {
   SELLER_SIGNATURE_AUTHORIZED_ACTION,
   SELLER_SIGNATURE_BROKER_DENIED_MESSAGE,
   SELLER_SIGNATURE_FAILED_ACTION,
+  INTERVENIENT_SIGNATURE_AUTHORIZED_ACTION,
+  INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED_ACTION,
   authorizeAndExecuteInternalVendorSign,
   canRequestInternalVendorSign,
   classifyInternalSignTarget,
@@ -22,6 +24,7 @@ import {
   decideInternalVendorSignAfterPreview,
   internalSignRequiresPrimaryAdminPassword,
   previewInternalVendorSignAuthorization,
+  sellerSignatureAuditAction,
   stripClientVendorSignIdentity,
   toPublicVendorSignError,
   type VendorSignAuthDeps,
@@ -30,9 +33,12 @@ import {
   type VendorSignSignatureSnapshot,
 } from '../lib/saleContractVendorSignAuth';
 import {
+  PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE,
   SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION,
   SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE,
+  decidePublicSignAccess,
   decidePublicVendorSignForSession,
+  resolvePublicSignSessionLookup,
 } from '../lib/saleContractPublicVendorSignGuard';
 
 function assert(cond: boolean, msg: string) {
@@ -296,7 +302,7 @@ function testClassifyVendorVsIntervenient() {
   });
   assert(classic.kind === 'vendor' && classic.partyId === null, 'clássico é VENDOR');
   assert(internalSignRequiresPrimaryAdminPassword(vendor), 'VENDOR exige senha');
-  assert(!internalSignRequiresPrimaryAdminPassword(intervenient), 'INTERVENIENT não exige senha');
+  assert(internalSignRequiresPrimaryAdminPassword(intervenient), 'INTERVENIENT exige senha');
   assert(internalSignRequiresPrimaryAdminPassword(classic), 'clássico exige senha');
   const missingPartyIdWithVendors = classifyInternalSignTarget({
     parties,
@@ -405,7 +411,7 @@ async function testEachVendorNeedsNewAuth() {
   console.log('OK H múltiplos VENDORs');
 }
 
-async function testIntervenientSkipsPassword() {
+async function testIntervenientRequiresPrimaryAdmin() {
   const parties: VendorSignPartySnapshot[] = [
     ...pendingVendorParties(),
     {
@@ -416,18 +422,54 @@ async function testIntervenientSkipsPassword() {
       signer_cpf: '57590706000178',
     },
   ];
-  const { result, passwordCalls, signCalls } = await runAuthorize(MARCOS, {
+
+  const withoutPassword = await runAuthorize(MARCOS, {
     password: '',
     partyId: INTERVENIENT_PARTY,
     vendorName: 'R R NEGÓCIOS',
     parties,
   });
-  assert(result.ok === true, 'J INTERVENIENT sem senha');
-  if (!result.ok) throw new Error('expected ok');
-  assert(result.skippedAuth === true, 'pula Primary Admin');
-  assert(passwordCalls.length === 0, 'não verificou senha');
-  assert(signCalls.length === 1, 'assinou interveniente');
-  console.log('OK J INTERVENIENT sem senha');
+  assert(!withoutPassword.result.ok, 'C INTERVENIENT sem senha nega');
+  assert(withoutPassword.signCalls.length === 0, 'C não assinou INTERVENIENT');
+  assert(withoutPassword.result.kind === 'intervenient', 'C kind INTERVENIENT');
+
+  const marcosPassword = await runAuthorize(MARCOS, {
+    password: MARCOS_PASSWORD,
+    partyId: INTERVENIENT_PARTY,
+    vendorName: 'R R NEGÓCIOS',
+    parties,
+  });
+  assert(!marcosPassword.result.ok, 'D INTERVENIENT senha do Marcos nega');
+  assert(marcosPassword.signCalls.length === 0, 'D não assinou');
+  assert(
+    toPublicVendorSignError(marcosPassword.result).error === PRIMARY_ADMIN_VERIFY_DENIED_MESSAGE,
+    'D msg pública',
+  );
+
+  const principal = await runAuthorize(MARCOS, {
+    password: PRINCIPAL_PASSWORD,
+    partyId: INTERVENIENT_PARTY,
+    vendorName: 'R R NEGÓCIOS',
+    parties,
+  });
+  assert(principal.result.ok === true, 'E INTERVENIENT senha do Principal assina');
+  if (!principal.result.ok) throw new Error('expected intervenient ok');
+  assert(principal.result.skippedAuth === false, 'E não pula auth');
+  assert(principal.result.kind === 'intervenient', 'E kind INTERVENIENT');
+  assert(principal.result.requestedBy === MARCOS, 'E requested_by operador');
+  assert(principal.result.authorizedBy === PRINCIPAL, 'E authorized_by Principal');
+  assert(principal.signCalls.length === 1, 'E assinou uma party');
+  assert(principal.signCalls[0].partyId === INTERVENIENT_PARTY, 'O INTERVENIENT não marca VENDOR');
+  assert(
+    sellerSignatureAuditAction(true, 'intervenient') === INTERVENIENT_SIGNATURE_AUTHORIZED_ACTION,
+    'audit INTERVENIENT_SIGNATURE_AUTHORIZED',
+  );
+  assert(
+    sellerSignatureAuditAction(false, 'intervenient') ===
+      INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED_ACTION,
+    'audit INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED',
+  );
+  console.log('OK C/D/E INTERVENIENT reauth');
 }
 
 async function testBrokerDenied() {
@@ -555,14 +597,14 @@ async function testHomologation031ModalCannotSignVendorWithoutPassword() {
     vendorName: 'S.V TOPOGRAFIA E PROJETO LTDA',
   });
   assert(previewIntervenient.ok === true, '031 GET INTERVENIENT ok');
-  if (!previewIntervenient.ok || previewIntervenient.requiresAuthorization) {
-    throw new Error('expected intervenient preview');
+  if (!previewIntervenient.ok || !previewIntervenient.requiresAuthorization) {
+    throw new Error('expected intervenient preview to require authorization');
   }
-  assert(previewIntervenient.requiresAuthorization === false, '031 INTERVENIENT sem senha no GET');
+  assert(previewIntervenient.requiresAuthorization === true, '031 INTERVENIENT exige senha no GET');
   assert(previewIntervenient.kind === 'intervenient', '031 GET kind persistido');
   assert(
-    decideInternalVendorSignAfterPreview(previewIntervenient).action === 'sign_without_password',
-    '031 modal INTERVENIENT confirma sem etapa senha',
+    decideInternalVendorSignAfterPreview(previewIntervenient).action === 'authorize',
+    '031 modal INTERVENIENT abre etapa senha',
   );
 
   const previewVendor = await previewInternalVendorSignAuthorization(deps, {
@@ -603,12 +645,33 @@ async function testHomologation031ModalCannotSignVendorWithoutPassword() {
     vendorName: 'S.V TOPOGRAFIA E PROJETO LTDA',
     parties,
   });
-  assert(homologLookalike.result.ok === true, '031 INTERVENIENT confirma sem senha');
-  assert(homologLookalike.passwordCalls.length === 0, '031 INTERVENIENT não reautentica');
-  assert(homologLookalike.signCalls.length === 1, '031 INTERVENIENT assina uma party');
+  assert(!homologLookalike.result.ok, '031 INTERVENIENT sem senha nega');
+  assert(homologLookalike.signCalls.length === 0, '031 INTERVENIENT não assina sem senha');
+
+  const homologMarcosPassword = await runAuthorize(MARCOS, {
+    password: MARCOS_PASSWORD,
+    partyId: INTERVENIENT_PARTY,
+    vendorName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+    parties,
+  });
+  assert(!homologMarcosPassword.result.ok, '031 INTERVENIENT senha do Marcos nega');
+  assert(homologMarcosPassword.signCalls.length === 0, '031 senha Marcos não assina INTERVENIENT');
+
+  const homologPrincipal = await runAuthorize(MARCOS, {
+    password: PRINCIPAL_PASSWORD,
+    partyId: INTERVENIENT_PARTY,
+    vendorName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+    parties,
+  });
+  assert(homologPrincipal.result.ok === true, '031 INTERVENIENT senha do Principal assina');
+  if (!homologPrincipal.result.ok) throw new Error('expected intervenient authorized');
+  assert(homologPrincipal.result.kind === 'intervenient', '031 kind INTERVENIENT');
+  assert(homologPrincipal.result.requestedBy === MARCOS, '031 requested_by operador');
+  assert(homologPrincipal.result.authorizedBy === PRINCIPAL, '031 authorized_by Principal');
+  assert(homologPrincipal.signCalls.length === 1, '031 INTERVENIENT assina uma party');
   assert(
-    homologLookalike.signCalls[0].partyId === INTERVENIENT_PARTY,
-    '031 POST INTERVENIENT não marca VENDOR',
+    homologPrincipal.signCalls[0].partyId === INTERVENIENT_PARTY,
+    'O INTERVENIENT autorizado não marca VENDOR',
   );
 
   const selectedPromitente = await runAuthorize(MARCOS, {
@@ -725,8 +788,12 @@ function testSourceWiring() {
     'INTERVENIENT envia party persistida',
   );
   assert(
-    section.includes("party.role !== 'VENDOR'"),
-    'E painel não abre página pública do VENDOR',
+    section.includes('visibilitychange'),
+    '6 refetch ao voltar para a aba',
+  );
+  assert(
+    !section.includes('label="Abrir página"'),
+    '4 painel não abre página pública de participante',
   );
 
   const route = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
@@ -739,17 +806,22 @@ function testSourceWiring() {
   assert(!publicRoute.includes('verifyPrimaryAdminPassword'), 'N público sem senha Principal');
   assert(!publicRoute.includes('authorizeAndExecuteInternalVendorSign'), 'N público não é painel');
   assert(publicRoute.includes('signSaleContractElectronically'), 'N público intacto');
-  assert(publicRoute.includes('decidePublicVendorSignForSession'), 'F trava sessão admin');
-  assert(publicRoute.includes('getRequestAuthUser'), 'F lê sessão autenticada');
+  assert(publicRoute.includes('decidePublicSignAccess'), '2 trava sessão admin');
+  assert(publicRoute.includes('resolvePublicSignSessionLookup'), '3 lookup fail-closed');
+  assert(publicRoute.includes('getRequestAuthUser'), '2 lê sessão autenticada');
   assert(
-    publicRoute.includes('SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE'),
-    'F mensagem segura no 403',
+    publicRoute.includes('PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE'),
+    '2 mensagem segura no 403',
   );
+  assert(!publicRoute.includes("String(party.role).toUpperCase() === 'VENDOR'"), '2 trava não é só VENDOR');
 
   const shareModal = read('components/contracts/SaleContractMultiPartyShareModal.tsx');
-  assert(shareModal.includes('!isVendor'), 'E share modal sem abrir página VENDOR');
-  assert(shareModal.includes('Copiar link'), 'E copiar link permanece');
-  assert(shareModal.includes('Enviar por WhatsApp'), 'E WhatsApp permanece');
+  assert(
+    !shareModal.includes('Abrir página de assinatura'),
+    '4 share modal sem abrir página',
+  );
+  assert(shareModal.includes('Copiar link'), '5 copiar link permanece');
+  assert(shareModal.includes('Enviar por WhatsApp'), '5 WhatsApp permanece');
 
   const vendorModal = read('components/contracts/SaleContractVendorSignModal.tsx');
   assert(vendorModal.includes('EMPTY_VENDOR_TARGETS'), 'L default estável INTERVENIENT');
@@ -783,11 +855,22 @@ function testSourceWiring() {
   const auditLib = read('lib/saleContractVendorSignAuth.ts');
   assert(auditLib.includes(SELLER_SIGNATURE_AUTHORIZED_ACTION), 'audit sucesso');
   assert(auditLib.includes(SELLER_SIGNATURE_FAILED_ACTION), 'audit falha');
+  assert(auditLib.includes(INTERVENIENT_SIGNATURE_AUTHORIZED_ACTION), 'audit INTERVENIENT sucesso');
+  assert(
+    auditLib.includes(INTERVENIENT_SIGNATURE_AUTHORIZATION_FAILED_ACTION),
+    'audit INTERVENIENT falha',
+  );
   assert(auditLib.includes('internalSignRequiresPrimaryAdminPassword'), 'decisão server-side');
   assert(!auditLib.includes('refresh_token'), 'sem refresh token');
 
+  const asaasWebhook = read('lib/finance/companyAsaasWebhookHandler.ts');
+  assert(asaasWebhook.includes('executeCompanyAsaasPaymentReconciliation'), 'U Asaas webhook intacto');
+  const interWebhook = read('lib/banking/inter/interWebhookProcessor.ts');
+  assert(interWebhook.includes('processInterWebhookCallbackItem'), 'U Inter webhook intacto');
+
   const publicGuard = read('lib/saleContractPublicVendorSignGuard.ts');
   assert(publicGuard.includes(SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION), 'audit bloqueio público');
+  assert(publicGuard.includes('evaluation_error'), '3 fail-closed');
   assert(!publicGuard.includes('refresh_token'), 'guard sem token');
   console.log('OK source wiring A/J/N/S/T/U/W/E/F/L');
 }
@@ -817,6 +900,12 @@ function testPublicVendorTokenAdminBlock() {
     tenant_id: SV,
     status: 'ACTIVE',
   };
+  const owner = {
+    id: OWNER,
+    role: 'OWNER',
+    tenant_id: SV,
+    status: 'ACTIVE',
+  };
   const otherAdmin = {
     id: 'other-admin',
     role: 'ADMIN_EMPRESA',
@@ -824,74 +913,61 @@ function testPublicVendorTokenAdminBlock() {
     status: 'ACTIVE',
   };
 
-  const blockedMarcos = decidePublicVendorSignForSession({
-    partyRole: 'VENDOR',
-    operator: marcos,
-    contractTenantId: SV,
-  });
-  assert(blockedMarcos.block === true, 'F ADMIN_EMPRESA + token VENDOR bloqueia');
-  if (!blockedMarcos.block) throw new Error('expected block');
-  assert(blockedMarcos.requestedBy === MARCOS, 'F requested_by operador');
-
-  const blockedAdmin = decidePublicVendorSignForSession({
-    partyRole: 'VENDOR',
-    operator: admin,
-    contractTenantId: SV,
-  });
-  assert(blockedAdmin.block === true, 'G ADMIN + token VENDOR bloqueia');
-
-  const blockedSuper = decidePublicVendorSignForSession({
-    partyRole: 'VENDOR',
-    operator: superAdmin,
-    contractTenantId: SV,
-  });
-  assert(blockedSuper.block === true, 'SUPER_ADMIN bloqueia token VENDOR');
-
-  const external = decidePublicVendorSignForSession({
-    partyRole: 'VENDOR',
-    operator: null,
-    contractTenantId: SV,
-  });
-  assert(external.block === false, 'H VENDOR externo sem sessão assina');
-
-  const noUser = decidePublicVendorSignForSession({
-    partyRole: 'VENDOR',
-    operator: { id: null, role: null, tenant_id: null },
-    contractTenantId: SV,
-  });
-  assert(noUser.block === false, 'H cookie irrelevante não bloqueia');
+  const blockedRoles = [
+    'VENDOR',
+    'INTERVENIENT',
+    'WITNESS_1',
+    'WITNESS_2',
+    'WITNESS',
+    'BUYER',
+    'SPOUSE',
+  ];
+  for (const partyRole of blockedRoles) {
+    const blocked = decidePublicVendorSignForSession({
+      partyRole,
+      operator: marcos,
+      contractTenantId: SV,
+    });
+    assert(blocked.block === true, `F Marcos + token ${partyRole} bloqueia`);
+    if (!blocked.block) throw new Error(`expected block ${partyRole}`);
+    assert(blocked.requestedBy === MARCOS, `${partyRole} requested_by operador`);
+  }
 
   assert(
     decidePublicVendorSignForSession({
-      partyRole: 'BUYER',
-      operator: marcos,
+      partyRole: 'VENDOR',
+      operator: admin,
       contractTenantId: SV,
-    }).block === false,
-    'I BUYER público intacto',
+    }).block === true,
+    'G ADMIN + token VENDOR bloqueia',
   );
   assert(
     decidePublicVendorSignForSession({
-      partyRole: 'SPOUSE',
-      operator: marcos,
+      partyRole: 'VENDOR',
+      operator: superAdmin,
       contractTenantId: SV,
-    }).block === false,
-    'J SPOUSE público intacto',
+    }).block === true,
+    'SUPER_ADMIN bloqueia token público',
   );
+
+  for (const partyRole of blockedRoles) {
+    assert(
+      decidePublicVendorSignForSession({
+        partyRole,
+        operator: null,
+        contractTenantId: SV,
+      }).block === false,
+      `K/L/M/N anônimo + ${partyRole} permitido`,
+    );
+  }
+
   assert(
     decidePublicVendorSignForSession({
-      partyRole: 'WITNESS_1',
-      operator: marcos,
+      partyRole: 'VENDOR',
+      operator: { id: null, role: null, tenant_id: null },
       contractTenantId: SV,
     }).block === false,
-    'K WITNESS público intacto',
-  );
-  assert(
-    decidePublicVendorSignForSession({
-      partyRole: 'INTERVENIENT',
-      operator: marcos,
-      contractTenantId: SV,
-    }).block === false,
-    'INTERVENIENT token não usa esta trava',
+    'cookie irrelevante não bloqueia',
   );
   assert(
     decidePublicVendorSignForSession({
@@ -899,7 +975,15 @@ function testPublicVendorTokenAdminBlock() {
       operator: broker,
       contractTenantId: SV,
     }).block === false,
-    'BROKER não é sessão administrativa da trava',
+    'S BROKER não ganha fluxo administrativo',
+  );
+  assert(
+    decidePublicVendorSignForSession({
+      partyRole: 'VENDOR',
+      operator: owner,
+      contractTenantId: SV,
+    }).block === false,
+    'S OWNER não ganha fluxo administrativo',
   );
   assert(
     decidePublicVendorSignForSession({
@@ -907,13 +991,88 @@ function testPublicVendorTokenAdminBlock() {
       operator: otherAdmin,
       contractTenantId: SV,
     }).block === false,
-    'admin de outro tenant não bloqueia',
+    'R admin de outro tenant não bloqueia',
   );
   assert(
-    SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE.includes('Administrador Principal'),
-    'mensagem orienta o fluxo interno',
+    PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE.includes('próprio participante'),
+    'mensagem genérica do link público',
   );
-  console.log('OK F/G/H/I/J/K token público VENDOR');
+  assert(
+    SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_MESSAGE === PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_MESSAGE,
+    'alias da mensagem pública',
+  );
+  console.log('OK F–S token público por role');
+}
+
+async function testPublicSignFailClosed() {
+  assert(
+    decidePublicSignAccess({
+      partyRole: 'VENDOR',
+      contractTenantId: SV,
+      session: { status: 'anonymous' },
+    }).block === false,
+    '3 ausência de sessão permite público',
+  );
+  const evalError = decidePublicSignAccess({
+    partyRole: 'BUYER',
+    contractTenantId: SV,
+    session: { status: 'evaluation_error', operatorId: MARCOS },
+  });
+  assert(evalError.block === true, '3 evaluation_error não libera assinatura');
+  if (!evalError.block) throw new Error('expected evaluation_error block');
+  assert(evalError.reason === 'evaluation_error', '3 reason evaluation_error');
+
+  const resolvedAdmin = decidePublicSignAccess({
+    partyRole: 'WITNESS_1',
+    contractTenantId: SV,
+    session: {
+      status: 'resolved',
+      operator: { id: MARCOS, role: 'ADMIN_EMPRESA', tenant_id: SV, status: 'ACTIVE' },
+    },
+  });
+  assert(resolvedAdmin.block === true, '3 sessão admin resolvida bloqueia');
+
+  const resolvedOther = decidePublicSignAccess({
+    partyRole: 'VENDOR',
+    contractTenantId: SV,
+    session: {
+      status: 'resolved',
+      operator: {
+        id: 'other-admin',
+        role: 'ADMIN_EMPRESA',
+        tenant_id: OTHER,
+        status: 'ACTIVE',
+      },
+    },
+  });
+  assert(resolvedOther.block === false, 'R outro tenant permanece público');
+
+  const anonymousLookup = await resolvePublicSignSessionLookup({
+    getAuthUser: async () => ({ user: null }),
+    resolveProfile: async () => {
+      throw new Error('não deveria resolver perfil anônimo');
+    },
+  });
+  assert(anonymousLookup.status === 'anonymous', '3 getUser vazio = anônimo');
+
+  const invalidSession = await resolvePublicSignSessionLookup({
+    getAuthUser: async () => {
+      throw new Error('sessão inválida');
+    },
+    resolveProfile: async () => null,
+  });
+  assert(invalidSession.status === 'anonymous', '3 sessão inválida sem user = público');
+
+  const profileError = await resolvePublicSignSessionLookup({
+    getAuthUser: async () => ({ user: { id: MARCOS } }),
+    resolveProfile: async () => {
+      throw new Error('falha ao ler users');
+    },
+  });
+  assert(profileError.status === 'evaluation_error', '3 perfil admin falhou = fail-closed');
+  if (profileError.status !== 'evaluation_error') throw new Error('expected evaluation_error');
+  assert(profileError.operatorId === MARCOS, '3 operatorId conhecido no erro');
+  console.log('OK 3 fail-closed sessão admin');
 }
 
 async function main() {
@@ -925,7 +1084,7 @@ async function main() {
   await testPrincipalPasswordAllows();
   await testPrincipalLoggedInStillRetypes();
   await testEachVendorNeedsNewAuth();
-  await testIntervenientSkipsPassword();
+  await testIntervenientRequiresPrimaryAdmin();
   await testBrokerDenied();
   await testOwnerDenied();
   await testWrongTenantDenied();
@@ -938,6 +1097,7 @@ async function main() {
   await testClientIdentityStripped();
   testSourceWiring();
   testPublicVendorTokenAdminBlock();
+  await testPublicSignFailClosed();
   console.log('OK mandatory-seller-signature-auth-tests');
 }
 

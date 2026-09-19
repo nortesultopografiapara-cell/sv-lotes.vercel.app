@@ -13,10 +13,9 @@ import { signSaleContractByVendor } from '@/lib/saleContractSignatureService';
 import type { PrimaryAdminReauthDeps, PrimaryAdminVerifyResult } from '@/lib/primaryAdminReauth';
 import {
   SELLER_SIGNATURE_AUDIT_MODULE,
-  SELLER_SIGNATURE_AUTHORIZED_ACTION,
-  SELLER_SIGNATURE_FAILED_ACTION,
   buildSellerSignatureAuditDescription,
   contractTenantId,
+  sellerSignatureAuditAction,
   type VendorSignAuthDeps,
   type VendorSignContractSnapshot,
   type VendorSignExecuteResult,
@@ -24,7 +23,7 @@ import {
   type VendorSignSignatureSnapshot,
 } from '@/lib/saleContractVendorSignAuth';
 import {
-  SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION,
+  PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_ACTION,
   buildPublicVendorAdminBlockedAuditDescription,
 } from '@/lib/saleContractPublicVendorSignGuard';
 
@@ -159,7 +158,6 @@ export async function persistSellerSignatureAudit(
     contract?: VendorSignContractSnapshot | null;
   },
 ): Promise<void> {
-  if (input.result.ok && input.result.skippedAuth) return;
   if (!input.result.ok && !input.verify && input.result.code === 'persistence_failed') {
     return;
   }
@@ -182,9 +180,8 @@ export async function persistSellerSignatureAudit(
     : input.verify?.ok
       ? input.verify.authorizedByUserId
       : undefined;
-  const action = input.result.ok
-    ? SELLER_SIGNATURE_AUTHORIZED_ACTION
-    : SELLER_SIGNATURE_FAILED_ACTION;
+  const kind = input.result.ok ? input.result.kind : input.result.kind;
+  const action = sellerSignatureAuditAction(input.result.ok, kind);
 
   try {
     await admin.from('audit_logs').insert({
@@ -196,6 +193,7 @@ export async function persistSellerSignatureAudit(
       reference_id: contractId,
       description: buildSellerSignatureAuditDescription({
         result: input.result.ok ? 'authorized' : 'failed',
+        kind,
         contractId,
         saleId: input.result.ok ? input.result.saleId : input.result.saleId,
         signatureId: input.result.ok ? input.result.signatureId : input.result.signatureId,
@@ -236,7 +234,7 @@ export async function persistPublicVendorAdminBlockedAudit(
       tenant_id: tenantId,
       company_id: tenantId,
       user_id: requestedBy,
-      action: SELLER_PUBLIC_TOKEN_ADMIN_BLOCKED_ACTION,
+      action: PUBLIC_SIGN_TOKEN_ADMIN_BLOCKED_ACTION,
       module: SELLER_SIGNATURE_AUDIT_MODULE,
       reference_id: contractId,
       description: buildPublicVendorAdminBlockedAuditDescription({
