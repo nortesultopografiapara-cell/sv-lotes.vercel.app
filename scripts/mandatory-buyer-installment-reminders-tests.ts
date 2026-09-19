@@ -24,6 +24,13 @@ import {
   resolveBuyerReminderTargetDueDate,
   type BuyerReminderSettings,
 } from '../lib/charges/buyerReminderTypes';
+import {
+  BUYER_REMINDER_SKIP_REASON_LABELS,
+  describeBuyerReminderPaymentMethod,
+  formatBuyerReminderEventLabel,
+  formatBuyerReminderRunDateLabel,
+  maskBuyerReminderRecipient,
+} from '../lib/charges/buyerReminderPresentation';
 import { CHARGE_WHATSAPP_BATCH_TEMPLATE_KEY } from '../lib/charges/chargeWhatsAppBatch';
 
 function assert(cond: boolean, msg: string) {
@@ -129,6 +136,30 @@ function testNamesAndDates() {
   const off = normalizeBuyerReminderSettings(TENANT, { enabled: false });
   assert(off.enabled === false, 'padrão master desligado quando omitido');
   console.log('OK testNamesAndDates');
+}
+
+function testHomologationLabels() {
+  assert(formatBuyerReminderEventLabel('due_soon') === 'D-3', 'D-3');
+  assert(formatBuyerReminderEventLabel('due_today') === 'D0', 'D0');
+  assert(
+    formatBuyerReminderEventLabel('overdue_friendly', { dueSoonDays: 3, overdueDays: 5 }) === 'D+5',
+    'D+N configurável',
+  );
+  assert(formatBuyerReminderRunDateLabel('2026-09-13') === '13/09/2026', 'data pt-BR');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.already_paid === 'Parcela já paga', 'paga');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.canceled === 'Parcela cancelada', 'cancelada');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.invalid_phone === 'Telefone inválido', 'telefone');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.missing_email === 'E-mail não cadastrado', 'e-mail');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.missing_payment_method === 'Sem meio de pagamento', 'sem meio');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.already_sent === 'Evento já enviado', 'já enviado');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.channel_disabled === 'Canal desativado', 'canal');
+  const pay = describeBuyerReminderPaymentMethod(charge());
+  assert(Boolean(pay && pay.includes('PIX') && pay.includes('Boleto')), 'meio de pagamento da simulação');
+  const maskedPhone = maskBuyerReminderRecipient('whatsapp', '11999887766');
+  assert(Boolean(maskedPhone && maskedPhone.includes('****')), 'telefone mascarado');
+  const maskedEmail = maskBuyerReminderRecipient('email', 'joao@example.com');
+  assert(Boolean(maskedEmail && maskedEmail.includes('***') && !maskedEmail.includes('joao@')), 'e-mail mascarado');
+  console.log('OK testHomologationLabels');
 }
 
 function testEligibilityCore() {
@@ -403,6 +434,33 @@ async function testRunnerIdempotencyAndChannels() {
     const sent: Array<{ phone?: string; to?: string; message?: string; subject?: string }> = [];
     const admin = createMemoryAdmin(db) as never;
     const asaas = [charge({ installmentId: INST })];
+    const dryCalls = { wa: 0, email: 0 };
+    const dry = await runBuyerInstallmentReminders(admin, {
+      dryRun: true,
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => {
+        dryCalls.wa += 1;
+        return { ok: true, messageId: 'should-not' };
+      },
+      sendEmailFn: async () => {
+        dryCalls.email += 1;
+        return { ok: true, providerId: 'should-not' };
+      },
+      listAsaasChargesFn: async () => asaas,
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(dryCalls.wa === 0 && dryCalls.email === 0, 'simular não dispara provider');
+    assert(db.logs.length === 0, 'simular não grava log');
+    const dryEligible = dry.items.filter((item) => item.status === 'sent');
+    assert(dryEligible.length === 2, 'simular marca elegíveis');
+    assert(dryEligible.every((item) => Boolean(item.messagePreview)), 'prévia da mensagem');
+    assert(dryEligible.some((item) => item.eventLabel === 'D-3'), 'evento D-3 na simulação');
+    assert(dryEligible.every((item) => Boolean(item.recipientMasked)), 'destinatário mascarado');
+    assert(
+      dryEligible.some((item) => String(item.paymentMethodLabel || '').includes('PIX')),
+      'meio de pagamento na simulação',
+    );
 
     const first = await runBuyerInstallmentReminders(admin, {
       runDate: '2026-09-19',
@@ -571,6 +629,10 @@ function testProductionBlockAndIsolation() {
   assert(migration.includes('company_buyer_reminder_logs_sent_unique'), 'idempotência sent');
   assert(!migration.includes('REFERENCES public.saas_charges'), 'sem FK saas_charges');
   assert(settingsUi.includes('Ativar lembretes automáticos'), 'configuração por empresa');
+  assert(settingsUi.includes('elegíveis'), 'simulação usa elegíveis');
+  assert(settingsUi.includes('Ver mensagem'), 'prévia da mensagem na simulação');
+  assert(settingsUi.includes('Simulação'), 'rótulo Simulação');
+  assert(settingsUi.includes('skipReasonLabel'), 'motivo amigável nos ignorados');
   assert(historyUi.includes('Lembretes automáticos'), 'histórico simples');
   assert(finance.includes('BuyerReminderSettingsPanel'), 'painel em Configurações Financeiro');
   assert(charges.includes('BuyerReminderHistoryPanel'), 'histórico em /charges');
@@ -581,6 +643,7 @@ function testProductionBlockAndIsolation() {
 
 async function main() {
   testNamesAndDates();
+  testHomologationLabels();
   testEligibilityCore();
   testTemplates();
   await testRunnerIdempotencyAndChannels();

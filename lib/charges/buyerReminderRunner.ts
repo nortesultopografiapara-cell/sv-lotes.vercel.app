@@ -33,6 +33,12 @@ import {
   type BuyerReminderSkipReason,
 } from '@/lib/charges/buyerReminderTypes';
 import {
+  buyerReminderSkipReasonLabel,
+  describeBuyerReminderPaymentMethod,
+  formatBuyerReminderEventLabel,
+  maskBuyerReminderRecipient,
+} from '@/lib/charges/buyerReminderPresentation';
+import {
   mapReceiptRowToBatchParcel,
   pickExistingChargeForWhatsApp,
   resolveChargeWhatsAppBatchPortalUrl,
@@ -64,12 +70,22 @@ export type BuyerReminderRunItem = {
   installmentId: string;
   customerId: string | null;
   customerName: string;
+  projectName: string | null;
+  lotLabel: string | null;
+  parcelLabel: string | null;
+  dueDateIso: string | null;
+  dueDateLabel: string | null;
   eventType: BuyerReminderEventType;
+  eventLabel: string;
   channel: BuyerReminderChannel;
+  recipientMasked: string | null;
+  paymentMethodLabel: string | null;
   status: 'sent' | 'skipped' | 'failed';
   skipReason: BuyerReminderSkipReason | null;
+  skipReasonLabel: string | null;
   error: string | null;
   providerMessageId: string | null;
+  messagePreview: string | null;
 };
 
 export type BuyerReminderRunResult = {
@@ -338,20 +354,49 @@ export async function runBuyerInstallmentReminders(
             parcelLabel: parcel.parcelLabel,
           };
 
+          const previewForChannel =
+            evaluation.sendable && message
+              ? channel === 'email'
+                ? `${buyerReminderEmailSubject(event, parcel.projectName)}\n\n${buildBuyerReminderEmailText(message)}`
+                : message
+              : null;
+
+          const toItem = (
+            status: 'sent' | 'skipped' | 'failed',
+            extra?: {
+              skipReason?: BuyerReminderSkipReason | null;
+              error?: string | null;
+              providerMessageId?: string | null;
+              includePreview?: boolean;
+            },
+          ): BuyerReminderRunItem => ({
+            companyId: settings.companyId,
+            installmentId,
+            customerId: candidate.customerId,
+            customerName: candidate.customerName,
+            projectName: parcel.projectName || null,
+            lotLabel: parcel.lotLabel || null,
+            parcelLabel: parcel.parcelLabel || null,
+            dueDateIso: parcel.dueDateIso || null,
+            dueDateLabel: parcel.dueDateLabel || null,
+            eventType: event,
+            eventLabel: formatBuyerReminderEventLabel(event, settings),
+            channel,
+            recipientMasked: maskBuyerReminderRecipient(channel, recipient),
+            paymentMethodLabel: describeBuyerReminderPaymentMethod(parcel.charge),
+            status,
+            skipReason: extra?.skipReason ?? null,
+            skipReasonLabel: buyerReminderSkipReasonLabel(extra?.skipReason ?? null),
+            error: extra?.error ?? null,
+            providerMessageId: extra?.providerMessageId ?? null,
+            messagePreview: extra?.includePreview ? previewForChannel : null,
+          });
+
           if (!evaluation.sendable) {
             result.skipped += 1;
-            result.items.push({
-              companyId: settings.companyId,
-              installmentId,
-              customerId: candidate.customerId,
-              customerName: candidate.customerName,
-              eventType: event,
-              channel,
-              status: 'skipped',
-              skipReason: evaluation.skipReason,
-              error: null,
-              providerMessageId: null,
-            });
+            result.items.push(
+              toItem('skipped', { skipReason: evaluation.skipReason }),
+            );
             if (!options?.dryRun && evaluation.skipReason !== 'already_sent') {
               await insertLog(admin, {
                 companyId: settings.companyId,
@@ -375,18 +420,7 @@ export async function runBuyerInstallmentReminders(
           if (options?.dryRun) {
             result.sent += 1;
             if (channel === 'whatsapp') result.whatsappSent += 1;
-            result.items.push({
-              companyId: settings.companyId,
-              installmentId,
-              customerId: candidate.customerId,
-              customerName: candidate.customerName,
-              eventType: event,
-              channel,
-              status: 'sent',
-              skipReason: null,
-              error: null,
-              providerMessageId: null,
-            });
+            result.items.push(toItem('sent', { includePreview: true }));
             continue;
           }
 
@@ -412,18 +446,9 @@ export async function runBuyerInstallmentReminders(
                 errorMessage: 'Z-API não configurada.',
                 ...logMeta,
               });
-              result.items.push({
-                companyId: settings.companyId,
-                installmentId,
-                customerId: candidate.customerId,
-                customerName: candidate.customerName,
-                eventType: event,
-                channel,
-                status: 'failed',
-                skipReason: null,
-                error: 'Z-API não configurada.',
-                providerMessageId: null,
-              });
+              result.items.push(
+                toItem('failed', { error: 'Z-API não configurada.' }),
+              );
               continue;
             }
             const sent = await sendTextFn({
@@ -448,18 +473,9 @@ export async function runBuyerInstallmentReminders(
                 errorMessage: null,
                 ...logMeta,
               });
-              result.items.push({
-                companyId: settings.companyId,
-                installmentId,
-                customerId: candidate.customerId,
-                customerName: candidate.customerName,
-                eventType: event,
-                channel,
-                status: 'sent',
-                skipReason: null,
-                error: null,
-                providerMessageId: sent.messageId ?? null,
-              });
+              result.items.push(
+                toItem('sent', { providerMessageId: sent.messageId ?? null }),
+              );
               await sleep(BUYER_REMINDER_SEND_GAP_MS);
             } else {
               result.failed += 1;
@@ -478,18 +494,9 @@ export async function runBuyerInstallmentReminders(
                 errorMessage: sent.error || 'Falha no WhatsApp.',
                 ...logMeta,
               });
-              result.items.push({
-                companyId: settings.companyId,
-                installmentId,
-                customerId: candidate.customerId,
-                customerName: candidate.customerName,
-                eventType: event,
-                channel,
-                status: 'failed',
-                skipReason: null,
-                error: sent.error || 'Falha no WhatsApp.',
-                providerMessageId: null,
-              });
+              result.items.push(
+                toItem('failed', { error: sent.error || 'Falha no WhatsApp.' }),
+              );
             }
             continue;
           }
@@ -511,18 +518,9 @@ export async function runBuyerInstallmentReminders(
               errorMessage: 'E-mail transacional (Resend) não configurado.',
               ...logMeta,
             });
-            result.items.push({
-              companyId: settings.companyId,
-              installmentId,
-              customerId: candidate.customerId,
-              customerName: candidate.customerName,
-              eventType: event,
-              channel,
-              status: 'failed',
-              skipReason: null,
-              error: 'E-mail transacional (Resend) não configurado.',
-              providerMessageId: null,
-            });
+            result.items.push(
+              toItem('failed', { error: 'E-mail transacional (Resend) não configurado.' }),
+            );
             continue;
           }
 
@@ -549,18 +547,9 @@ export async function runBuyerInstallmentReminders(
               errorMessage: null,
               ...logMeta,
             });
-            result.items.push({
-              companyId: settings.companyId,
-              installmentId,
-              customerId: candidate.customerId,
-              customerName: candidate.customerName,
-              eventType: event,
-              channel,
-              status: 'sent',
-              skipReason: null,
-              error: null,
-              providerMessageId: email.providerId ?? null,
-            });
+            result.items.push(
+              toItem('sent', { providerMessageId: email.providerId ?? null }),
+            );
           } else {
             result.failed += 1;
             await insertLog(admin, {
@@ -578,18 +567,9 @@ export async function runBuyerInstallmentReminders(
               errorMessage: email.error || 'Falha no e-mail.',
               ...logMeta,
             });
-            result.items.push({
-              companyId: settings.companyId,
-              installmentId,
-              customerId: candidate.customerId,
-              customerName: candidate.customerName,
-              eventType: event,
-              channel,
-              status: 'failed',
-              skipReason: null,
-              error: email.error || 'Falha no e-mail.',
-              providerMessageId: null,
-            });
+            result.items.push(
+              toItem('failed', { error: email.error || 'Falha no e-mail.' }),
+            );
           }
         }
       }

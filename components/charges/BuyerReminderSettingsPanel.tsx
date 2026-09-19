@@ -1,7 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bell, Loader2 } from 'lucide-react';
+import type { BuyerReminderRunItem } from '@/lib/charges/buyerReminderRunner';
+import {
+  formatBuyerReminderRunDateLabel,
+} from '@/lib/charges/buyerReminderPresentation';
 import {
   DEFAULT_BUYER_REMINDER_SETTINGS,
   type BuyerReminderSettings,
@@ -12,11 +16,14 @@ type Props = {
 };
 
 type SimulateResult = {
+  action?: string;
+  dryRun?: boolean;
   runDate?: string;
   sent?: number;
   skipped?: number;
   failed?: number;
   truncated?: boolean;
+  items?: BuyerReminderRunItem[];
   error?: string;
 };
 
@@ -276,13 +283,129 @@ export function BuyerReminderSettingsPanel({ readOnlyDemo = false }: Props) {
           </button>
         </div>
         {simulateResult ? (
-          <p className="text-xs text-[var(--text-secondary)]">
-            Data {simulateResult.runDate || runDate || 'hoje'}: enviados {simulateResult.sent ?? 0},
-            ignorados {simulateResult.skipped ?? 0}, falhas {simulateResult.failed ?? 0}
-            {simulateResult.truncated ? ' (teto de WhatsApp atingido)' : ''}.
-          </p>
+          <HomologationResult result={simulateResult} fallbackDate={runDate} />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function HomologationResult({
+  result,
+  fallbackDate,
+}: {
+  result: SimulateResult;
+  fallbackDate: string;
+}) {
+  const isSimulate = result.action === 'simulate' || result.dryRun === true;
+  const dateLabel = formatBuyerReminderRunDateLabel(result.runDate || fallbackDate);
+  const eligible = useMemo(
+    () => (result.items || []).filter((item) => item.status === 'sent'),
+    [result.items],
+  );
+  const skipped = useMemo(
+    () => (result.items || []).filter((item) => item.status === 'skipped'),
+    [result.items],
+  );
+  const failed = useMemo(
+    () => (result.items || []).filter((item) => item.status === 'failed'),
+    [result.items],
+  );
+  const sentOrEligible = result.sent ?? eligible.length;
+  const [openPreview, setOpenPreview] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-3 pt-2">
+      <p className="text-sm font-medium text-[var(--text-primary)]">
+        {isSimulate ? 'Simulação' : 'Execução'} {dateLabel} —{' '}
+        {isSimulate ? `elegíveis ${sentOrEligible}` : `enviados ${sentOrEligible}`}, ignorados{' '}
+        {result.skipped ?? skipped.length}, falhas {result.failed ?? failed.length}
+        {result.truncated ? ' (teto de WhatsApp atingido)' : ''}
+      </p>
+
+      {eligible.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+            {isSimulate ? 'Elegíveis' : 'Enviados'}
+          </p>
+          {eligible.map((item, index) => {
+            const key = `${item.installmentId}-${item.channel}-${item.eventType}-${index}`;
+            return (
+              <div
+                key={key}
+                className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-primary)]"
+              >
+                <p className="font-semibold">{item.customerName || '—'}</p>
+                <p className="text-[var(--text-secondary)]">
+                  {item.projectName || '—'} · {item.lotLabel || '—'} · {item.parcelLabel || '—'}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  Vencimento {item.dueDateLabel || item.dueDateIso || '—'} · evento {item.eventLabel} ·{' '}
+                  {item.channel === 'email' ? 'E-mail' : 'WhatsApp'} · {item.recipientMasked || '—'}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  Meio de pagamento: {item.paymentMethodLabel || 'não encontrado'}
+                </p>
+                {isSimulate && item.messagePreview ? (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      className="text-[var(--brand-primary)] underline"
+                      onClick={() => setOpenPreview((current) => (current === key ? null : key))}
+                    >
+                      {openPreview === key ? 'Ocultar mensagem' : 'Ver mensagem'}
+                    </button>
+                    {openPreview === key ? (
+                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-[var(--border-color)] bg-[var(--bg-card)] p-2 text-[11px] leading-5">
+                        {item.messagePreview}
+                      </pre>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {skipped.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+            Ignorados
+          </p>
+          {skipped.map((item, index) => (
+            <div
+              key={`${item.installmentId}-${item.channel}-skip-${index}`}
+              className="rounded-lg border border-[var(--border-color)] px-3 py-2 text-xs text-[var(--text-secondary)]"
+            >
+              <p className="text-[var(--text-primary)]">
+                {item.customerName || '—'} · {item.parcelLabel || '—'}
+              </p>
+              <p>
+                {item.channel === 'email' ? 'E-mail' : 'WhatsApp'} —{' '}
+                {item.skipReasonLabel || item.skipReason || 'ignorado'}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {failed.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+            Falhas
+          </p>
+          {failed.map((item, index) => (
+            <div
+              key={`${item.installmentId}-${item.channel}-fail-${index}`}
+              className="rounded-lg border border-red-500/30 px-3 py-2 text-xs text-red-300"
+            >
+              {item.customerName || '—'} · {item.channel === 'email' ? 'E-mail' : 'WhatsApp'} —{' '}
+              {item.error || 'falhou'}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
