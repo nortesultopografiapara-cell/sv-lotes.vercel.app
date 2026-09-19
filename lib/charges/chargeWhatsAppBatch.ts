@@ -3,7 +3,7 @@
  * Uma mensagem por customer_id. Não gera cobrança Asaas/Inter.
  */
 
-import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { buildBuyerMassCollectionMessage } from '@/lib/charges/buyerCollectionMessages';
 import {
   buildChargeInstallmentView,
   computeInstallmentStatus,
@@ -13,8 +13,6 @@ import {
   chargeHasInterWhatsAppPayload,
   resolveChargeContractNumber,
   resolveChargeCustomerPhone,
-  resolveChargeWhatsAppBoletoOrInvoiceUrl,
-  resolveChargeWhatsAppPrimaryPaymentUrl,
   resolveChargeWhatsAppShareableUrl,
 } from '@/lib/charges/chargeWhatsAppMessage';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
@@ -35,7 +33,7 @@ import { resolvePublicBaseUrl } from '@/lib/signatureVerifyUrls';
 export const CHARGE_WHATSAPP_BATCH_MAX_CUSTOMERS = 20;
 export const CHARGE_WHATSAPP_BATCH_MAX_INSTALLMENTS = 250;
 export const CHARGE_WHATSAPP_BATCH_SEND_GAP_MS = 250;
-export const CHARGE_WHATSAPP_BATCH_TEMPLATE_KEY = 'platform_collection_v1';
+export const CHARGE_WHATSAPP_BATCH_TEMPLATE_KEY = 'platform_collection_v2';
 export const CHARGE_WHATSAPP_BATCH_CHANNEL = 'zapi_platform';
 
 export const CHARGE_WHATSAPP_BATCH_OWNER_DENIED = OWNER_READ_ONLY_DENIED_MESSAGE;
@@ -78,6 +76,8 @@ export type ChargeWhatsAppBatchParcelInput = {
   phone: string | null;
   projectName: string;
   lotLabel: string;
+  blockName: string;
+  lotNumber: string;
   parcelLabel: string;
   contractNumber: string;
   dueDateIso: string;
@@ -204,6 +204,9 @@ export function mapReceiptRowToBatchParcel(
   const customers = embedRecord(row.customers);
   const customerId =
     String(row.customer_id || customers?.id || '').trim() || null;
+  const blocks = embedRecord(row.blocks);
+  const blockName = String(blocks?.block_name || blocks?.name || '').trim() || '?';
+  const lotNumber = String(blocks?.number || '').trim() || '?';
   return {
     installmentId: String(row.id || '').trim(),
     companyId: String(row.company_id || '').trim() || null,
@@ -213,6 +216,8 @@ export function mapReceiptRowToBatchParcel(
     phone: resolveChargeCustomerPhone(row),
     projectName: view.projectName,
     lotLabel: view.lotLabel,
+    blockName,
+    lotNumber,
     parcelLabel: view.parcelLabel,
     contractNumber: resolveChargeContractNumber(row),
     dueDateIso: view.dueDateIso,
@@ -273,93 +278,27 @@ function sortParcels(a: ChargeWhatsAppEvaluatedParcel, b: ChargeWhatsAppEvaluate
   return a.parcelLabel.localeCompare(b.parcelLabel, 'pt-BR');
 }
 
-function uniqueProjectNames(parcels: ChargeWhatsAppEvaluatedParcel[]): string[] {
-  const names: string[] = [];
-  for (const parcel of parcels) {
-    const name = String(parcel.projectName || '').trim();
-    if (name && name !== '—' && !names.includes(name)) names.push(name);
-  }
-  return names;
-}
-
-function formatParcelPaymentLines(parcel: ChargeWhatsAppEvaluatedParcel): string[] {
-  const charge = parcel.charge;
-  if (!charge) return [];
-  const lines: string[] = [];
-  const boleto = resolveChargeWhatsAppBoletoOrInvoiceUrl(charge);
-  const primary = resolveChargeWhatsAppPrimaryPaymentUrl(charge);
-  const pix = String(charge.pixCopyPaste || '').trim();
-  const linha = String(charge.bankSlipIdentification || '').trim();
-
-  if (primary) {
-    lines.push(boleto ? `  Boleto/fatura: ${primary}` : `  Link para pagamento: ${primary}`);
-  }
-  if (pix) {
-    lines.push(`  PIX copia e cola: ${pix}`);
-  }
-  if (linha) {
-    lines.push(`  Linha digitável: ${linha}`);
-  }
-  return lines;
-}
-
 export function buildConsolidatedChargeWhatsAppMessage(input: {
   customerName: string;
   loteadoraName: string;
   parcels: ChargeWhatsAppEvaluatedParcel[];
   portalUrl?: string | null;
 }): string {
-  const clientName = String(input.customerName || 'Cliente').trim() || 'Cliente';
-  const loteadora =
-    String(input.loteadoraName || '').trim() || 'a empresa responsável pelo empreendimento';
-  const parcels = [...input.parcels].sort(sortParcels);
-  const projects = uniqueProjectNames(parcels);
-  const projectLabel = projects.length ? projects.join(', ') : 'seu empreendimento';
-  const contracts = [
-    ...new Set(parcels.map((p) => p.contractNumber).filter((n) => n && n !== 'S/N')),
-  ];
-  const total = parcels.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const totalLabel = formatCurrencyBRL(total) || 'R$ 0,00';
-
-  const lines: string[] = [
-    `Olá, ${clientName}.`,
-    '',
-    `Esta é uma mensagem automática de cobrança enviada pelo SV Lotes, referente ao empreendimento ${projectLabel}, administrado por ${loteadora}.`,
-    '',
-    contracts.length
-      ? `Identificamos parcelas pendentes/vencidas vinculadas ao contrato ${contracts.join(', ')}.`
-      : 'Identificamos parcelas pendentes/vencidas vinculadas ao seu contrato.',
-    '',
-  ];
-
-  for (const parcel of parcels) {
-    const valor = formatCurrencyBRL(parcel.amount) || 'R$ 0,00';
-    lines.push(
-      `• ${parcel.parcelLabel} — venc. ${parcel.dueDateLabel} — ${valor}`,
-      `  ${parcel.lotLabel}`,
-    );
-    const payment = formatParcelPaymentLines(parcel);
-    if (payment.length) lines.push(...payment);
-    lines.push('');
-  }
-
-  lines.push(`Total selecionado: ${totalLabel}`, '');
-  lines.push(
-    'Os valores acima são os originais das parcelas. Multa e juros, quando aplicáveis, constam no boleto ou PIX do banco.',
-    '',
-  );
-
-  const portalUrl = String(input.portalUrl || '').trim();
-  if (portalUrl) {
-    lines.push('Portal do Cliente:', portalUrl, '');
-  }
-
-  lines.push(
-    `Em caso de dúvida, entre em contato com ${loteadora}, responsável pelo empreendimento.`,
-    '',
-    'SV Lotes',
-  );
-  return lines.join('\n');
+  return buildBuyerMassCollectionMessage({
+    customerName: input.customerName,
+    loteadoraName: input.loteadoraName,
+    portalUrl: input.portalUrl,
+    parcels: [...input.parcels].sort(sortParcels).map((parcel) => ({
+      parcelLabel: parcel.parcelLabel,
+      dueDateLabel: parcel.dueDateLabel,
+      amount: parcel.amount,
+      projectName: parcel.projectName,
+      blockName: parcel.blockName,
+      lotNumber: parcel.lotNumber,
+      lotLabel: parcel.lotLabel,
+      charge: parcel.charge,
+    })),
+  });
 }
 
 function primarySkipReason(
@@ -469,6 +408,8 @@ export function buildChargeWhatsAppBatchPreview(input: {
           phone: null,
           projectName: '—',
           lotLabel: '—',
+          blockName: '—',
+          lotNumber: '—',
           parcelLabel: '—',
           contractNumber: 'S/N',
           dueDateIso: '',

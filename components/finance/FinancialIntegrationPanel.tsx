@@ -5,8 +5,9 @@ import { Banknote, Building2 } from 'lucide-react';
 import { AsaasIntegrationPanel } from '@/components/finance/AsaasIntegrationPanel';
 import { FinancialAccountsPanel } from '@/components/finance/FinancialAccountsPanel';
 import { BanksDevelopmentPanel } from '@/components/finance/BanksDevelopmentPanel';
+import { BuyerReminderSettingsPanel } from '@/components/charges/BuyerReminderSettingsPanel';
 
-type Tab = 'accounts' | 'asaas' | 'banks';
+type Tab = 'accounts' | 'asaas' | 'banks' | 'cobrancas';
 
 type Props = {
   tenantId: string;
@@ -62,12 +63,25 @@ export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Pr
         >
           Bancos (Em desenvolvimento)
         </button>
+        <button
+          type="button"
+          onClick={() => setTab('cobrancas')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            tab === 'cobrancas'
+              ? 'sv-brand-muted-bg text-[var(--text-primary)] ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_25%,transparent)]'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+          }`}
+        >
+          Cobranças
+        </button>
       </div>
 
       {tab === 'accounts' ? (
         <FinancialAccountsPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
       ) : tab === 'asaas' ? (
         <AsaasIntegrationPanel tenantId={tenantId} readOnlyDemo={readOnlyDemo} />
+      ) : tab === 'cobrancas' ? (
+        <BuyerReminderSettingsPanel readOnlyDemo={readOnlyDemo} />
       ) : (
         <BanksDevelopmentPanel readOnlyDemo={readOnlyDemo} />
       )}

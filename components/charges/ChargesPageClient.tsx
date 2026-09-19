@@ -22,6 +22,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { ChargeWhatsAppBatchModal } from '@/components/charges/ChargeWhatsAppBatchModal';
+import { BuyerReminderHistoryPanel } from '@/components/charges/BuyerReminderHistoryPanel';
 import type { ChargeWhatsAppBatchSendResult } from '@/components/charges/ChargeWhatsAppBatchModal';
 import type { ChargeWhatsAppBatchPreview } from '@/lib/charges/chargeWhatsAppBatch';
 import {
@@ -2103,6 +2104,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </div>
         </div>
       )}
+      <BuyerReminderHistoryPanel />
       <ChargeWhatsAppBatchModal
         open={whatsAppBatchOpen}
         loading={whatsAppBatchLoading}

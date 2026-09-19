@@ -60,6 +60,7 @@
     "test:finance-reports-canonical": "tsx scripts/mandatory-finance-reports-canonical-tests.ts",
     "test:charges-operational": "tsx scripts/mandatory-charges-operational-tests.ts",
     "test:charges-whatsapp-batch": "tsx scripts/mandatory-charges-whatsapp-batch-tests.ts",
+    "test:charges-buyer-reminders": "tsx scripts/mandatory-buyer-installment-reminders-tests.ts",
     "test:charges-provider-routing": "tsx scripts/mandatory-charges-provider-routing-tests.ts",
     "test:company-financial-accounts": "tsx scripts/mandatory-company-financial-accounts-tests.ts",
     "test:primary-admin-foundation": "tsx scripts/mandatory-primary-admin-foundation-tests.ts",

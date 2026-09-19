@@ -133,6 +133,8 @@ function testGroupingSameCustomerOneMessage() {
   assert(groups[0].message!.includes('Loteadora Alfa'), 'identifica a loteadora');
   assert(groups[0].message!.includes('Mundo Novo'), 'identifica o empreendimento');
   assert(groups[0].message!.includes('R$'), 'inclui valores');
+  assert(groups[0].message!.includes('*Total:*'), 'mensagem única com total');
+  assert(groups[0].message!.includes('Central de Cobranças'), 'rodapé da central');
   console.log('OK testGroupingSameCustomerOneMessage');
 }
 
@@ -350,8 +352,10 @@ function testTemplateDoesNotLookLikeSaasInvoice() {
       ),
     ],
   });
-  assert(message.includes('mensagem automática de cobrança enviada pelo SV Lotes'), 'origem plataforma');
-  assert(message.includes('administrado por Loteadora Alfa'), 'loteadora obrigatória');
+  assert(message.includes('aviso automático do *SV Lotes*'), 'origem plataforma');
+  assert(message.includes('Loteadora Alfa'), 'loteadora obrigatória');
+  assert(message.includes('SV Lotes — Central de Cobranças'), 'rodapé da central');
+  assert(message.includes('Já realizou o pagamento?'), 'tom natural de baixa');
   assert(!message.toLowerCase().includes('assinatura sv lotes'), 'não parece mensalidade SaaS');
   assert(message.includes(CHARGE_WHATSAPP_BATCH_TEMPLATE_KEY) === false, 'template key não vai na mensagem');
   console.log('OK testTemplateDoesNotLookLikeSaasInvoice');
