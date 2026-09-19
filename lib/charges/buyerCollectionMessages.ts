@@ -4,6 +4,7 @@
  */
 
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { toContractTitleCase } from '@/lib/contractTitleCase';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import {
   resolveChargeWhatsAppBoletoOrInvoiceUrl,
@@ -11,6 +12,35 @@ import {
 } from '@/lib/charges/chargeWhatsAppMessage';
 
 export const BUYER_COLLECTION_FOOTER = 'SV Lotes — Central de Cobranças';
+
+const NAME_PARTICLES = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'di']);
+
+/** Formatação só para mensagem. Não altera cadastro. Só age em texto majoritariamente maiúsculo. */
+export function formatBuyerDisplayName(value?: string | null): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  const letters = trimmed.replace(/[^A-Za-zÀ-ÿ]/g, '');
+  if (!letters) return trimmed;
+  const upperCount = [...letters].filter((ch) => ch === ch.toUpperCase() && ch !== ch.toLowerCase()).length;
+  if (upperCount / letters.length < 0.75) return trimmed;
+  const titled = toContractTitleCase(trimmed);
+  return titled
+    .split(/\s+/)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && NAME_PARTICLES.has(lower)) return lower;
+      return word;
+    })
+    .join(' ');
+}
+
+/** "Parcela 1 / 1" → "1/1". Entrada permanece Entrada. */
+export function formatBuyerParcelNumberLabel(parcelLabel?: string | null): string {
+  const raw = String(parcelLabel || '').trim();
+  if (!raw) return '—';
+  if (/^entrada$/i.test(raw)) return 'Entrada';
+  return raw.replace(/^parcela\s+/i, '').replace(/\s+/g, '') || raw;
+}
 
 export type BuyerMessageParcel = {
   parcelLabel: string;
@@ -26,7 +56,7 @@ export type BuyerMessageParcel = {
 export function firstNameFromFullName(name?: string | null): string {
   const trimmed = String(name || '').trim();
   if (!trimmed || trimmed === '—' || trimmed === '-') return 'Cliente';
-  return trimmed.split(/\s+/)[0] || 'Cliente';
+  return formatBuyerDisplayName(trimmed.split(/\s+/)[0] || '') || 'Cliente';
 }
 
 export function parseQuadraLote(lotLabel?: string | null): { quadra: string; lote: string } {
@@ -77,7 +107,7 @@ function formatParcelIdentity(parcel: BuyerMessageParcel): string[] {
   return [
     `*Quadra:* ${quadra}`,
     `*Lote:* ${lote}`,
-    `*Parcela:* ${parcel.parcelLabel}`,
+    `*Parcela:* ${formatBuyerParcelNumberLabel(parcel.parcelLabel)}`,
     `*Vencimento:* ${parcel.dueDateLabel}`,
     `*Valor original:* ${valor}`,
   ];
@@ -102,12 +132,15 @@ export function buildBuyerMassCollectionMessage(input: {
   portalUrl?: string | null;
 }): string {
   const firstName = firstNameFromFullName(input.customerName);
-  const empresa = String(input.loteadoraName || '').trim() || 'a empresa responsável pelo empreendimento';
+  const empresa =
+    formatBuyerDisplayName(input.loteadoraName) ||
+    String(input.loteadoraName || '').trim() ||
+    'a empresa responsável pelo empreendimento';
   const parcels = [...input.parcels];
   const projects = [
     ...new Set(
       parcels
-        .map((p) => String(p.projectName || '').trim())
+        .map((p) => formatBuyerDisplayName(p.projectName) || String(p.projectName || '').trim())
         .filter((name) => name && name !== '—'),
     ),
   ];
@@ -158,10 +191,17 @@ export function buildBuyerReminderWhatsAppMessage(input: {
   portalUrl?: string | null;
 }): string {
   const firstName = firstNameFromFullName(input.customerName);
-  const empresa = String(input.loteadoraName || '').trim() || 'a empresa responsável pelo empreendimento';
-  const emp = String(input.projectName || '').trim() || 'seu empreendimento';
+  const empresa =
+    formatBuyerDisplayName(input.loteadoraName) ||
+    String(input.loteadoraName || '').trim() ||
+    'a empresa responsável pelo empreendimento';
+  const emp =
+    formatBuyerDisplayName(input.projectName) ||
+    String(input.projectName || '').trim() ||
+    'seu empreendimento';
   const valor = formatCurrencyBRL(input.parcel.amount) || 'R$ 0,00';
   const { quadra, lote } = resolveQuadraLote(input.parcel);
+  const parcela = formatBuyerParcelNumberLabel(input.parcel.parcelLabel);
   const payment = formatBuyerPaymentBlock(input.parcel.charge);
   const lines: string[] = [];
 
@@ -174,7 +214,7 @@ export function buildBuyerReminderWhatsAppMessage(input: {
       '',
       `*Quadra:* ${quadra}`,
       `*Lote:* ${lote}`,
-      `*Parcela:* ${input.parcel.parcelLabel}`,
+      `*Parcela:* ${parcela}`,
       `*Valor:* ${valor}`,
       '',
     );
@@ -187,7 +227,7 @@ export function buildBuyerReminderWhatsAppMessage(input: {
       '',
       `*Quadra:* ${quadra}`,
       `*Lote:* ${lote}`,
-      `*Parcela:* ${input.parcel.parcelLabel}`,
+      `*Parcela:* ${parcela}`,
       `*Vencimento:* ${input.parcel.dueDateLabel}`,
       `*Valor:* ${valor}`,
       '',
@@ -201,7 +241,7 @@ export function buildBuyerReminderWhatsAppMessage(input: {
       '',
       `*Quadra:* ${quadra}`,
       `*Lote:* ${lote}`,
-      `*Parcela:* ${input.parcel.parcelLabel}`,
+      `*Parcela:* ${parcela}`,
       `*Vencimento:* ${input.parcel.dueDateLabel}`,
       `*Valor original:* ${valor}`,
       '',
@@ -264,7 +304,8 @@ export function buyerReminderEmailSubject(
   kind: BuyerReminderMessageKind,
   projectName: string,
 ): string {
-  const emp = String(projectName || '').trim() || 'seu empreendimento';
+  const emp =
+    formatBuyerDisplayName(projectName) || String(projectName || '').trim() || 'seu empreendimento';
   if (kind === 'due_soon') return `Lembrete de vencimento — ${emp}`;
   if (kind === 'due_today') return `Sua parcela vence hoje — ${emp}`;
   return `Aviso de parcela em aberto — ${emp}`;
@@ -289,10 +330,38 @@ function htmlParagraphsFromWhatsApp(text: string): string {
     .join('\n');
 }
 
-export function buildBuyerReminderEmailHtml(whatsappBody: string): string {
-  return `<div>${htmlParagraphsFromWhatsApp(whatsappBody)}</div>`;
+export function buildBuyerReminderEmailHtml(
+  whatsappBody: string,
+  extras?: { companyName?: string | null; includeReplyHint?: boolean },
+): string {
+  const company = escapeHtml(
+    formatBuyerDisplayName(extras?.companyName) || String(extras?.companyName || '').trim(),
+  );
+  const footer = company
+    ? `<p style="margin:16px 0 8px 0;font-family:Arial,sans-serif;font-size:13px;line-height:1.45;color:#4b5563;">Esta mensagem foi enviada automaticamente pelo SV Lotes em nome de <strong>${company}</strong>.</p>${
+        extras?.includeReplyHint
+          ? '<p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:13px;line-height:1.45;color:#4b5563;">Para falar com a empresa responsável, responda este e-mail.</p>'
+          : ''
+      }`
+    : '';
+  return `<div>${htmlParagraphsFromWhatsApp(whatsappBody)}${footer}</div>`;
 }
 
-export function buildBuyerReminderEmailText(whatsappBody: string): string {
-  return whatsappBody.replace(/\*/g, '');
+export function buildBuyerReminderEmailText(
+  whatsappBody: string,
+  extras?: { companyName?: string | null; includeReplyHint?: boolean },
+): string {
+  const body = whatsappBody.replace(/\*/g, '');
+  const company =
+    formatBuyerDisplayName(extras?.companyName) || String(extras?.companyName || '').trim();
+  if (!company) return body;
+  const lines = [
+    body,
+    '',
+    `Esta mensagem foi enviada automaticamente pelo SV Lotes em nome de ${company}.`,
+  ];
+  if (extras?.includeReplyHint) {
+    lines.push('Para falar com a empresa responsável, responda este e-mail.');
+  }
+  return lines.join('\n');
 }

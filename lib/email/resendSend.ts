@@ -18,6 +18,12 @@ export type ResendSendInput = {
   html: string;
   text?: string;
   attachments?: ResendAttachment[];
+  /** Nome visível. O endereço técnico continua sendo o de RESEND_FROM (domínio verificado). */
+  fromDisplayName?: string | null;
+  /** Cabeçalho From completo. O mailbox precisa ser do mesmo domínio de RESEND_FROM. */
+  fromHeader?: string | null;
+  /** Reply-To explícito (ex.: e-mail da loteadora). */
+  replyTo?: string | null;
 };
 
 export type ResendErrorCode =
@@ -98,6 +104,43 @@ export function resolveResendReplyToAddress(fromHeader?: string | null): string 
   return extractEmailAddressFromFromHeader(from);
 }
 
+function sameEmailDomain(left: string, right: string): boolean {
+  const a = extractEmailAddressFromFromHeader(left)?.split('@')[1]?.toLowerCase();
+  const b = extractEmailAddressFromFromHeader(right)?.split('@')[1]?.toLowerCase();
+  return Boolean(a && b && a === b);
+}
+
+function sanitizeFromDisplayName(name?: string | null): string {
+  return String(name || '')
+    .replace(/[\r\n\0]/g, ' ')
+    .replace(/[<>":@]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 78);
+}
+
+/**
+ * Monta From visível sem permitir que o chamador troque o domínio técnico configurado.
+ */
+export function composeResendFromHeader(
+  configuredFrom: string,
+  options?: { fromHeader?: string | null; fromDisplayName?: string | null },
+): string {
+  const configuredEmail = extractEmailAddressFromFromHeader(configuredFrom);
+  if (!configuredEmail) return configuredFrom;
+
+  const requested = String(options?.fromHeader || '').trim();
+  if (requested && sameEmailDomain(requested, configuredFrom)) {
+    const requestedEmail = extractEmailAddressFromFromHeader(requested) || configuredEmail;
+    const displayMatch = requested.match(/^(.*)<[^>]+>\s*$/);
+    const display = sanitizeFromDisplayName(displayMatch ? displayMatch[1] : '');
+    return display ? `${display} <${requestedEmail}>` : `${requestedEmail}`;
+  }
+
+  const display = sanitizeFromDisplayName(options?.fromDisplayName);
+  return display ? `${display} <${configuredEmail}>` : configuredFrom;
+}
+
 export function classifyResendProviderError(raw: string): {
   code: ResendErrorCode;
   userMessage: string;
@@ -166,8 +209,8 @@ export async function sendResendEmail(input: ResendSendInput): Promise<ResendSen
     };
   }
 
-  const from = resolveResendFromAddress();
-  if (!from) {
+  const configuredFrom = resolveResendFromAddress();
+  if (!configuredFrom) {
     return {
       ok: false,
       errorCode: 'SENDER_NOT_CONFIGURED',
@@ -176,7 +219,14 @@ export async function sendResendEmail(input: ResendSendInput): Promise<ResendSen
     };
   }
 
-  const replyTo = resolveResendReplyToAddress(from);
+  const from = composeResendFromHeader(configuredFrom, {
+    fromHeader: input.fromHeader,
+    fromDisplayName: input.fromDisplayName,
+  });
+  const explicitReplyTo = String(input.replyTo || '').trim();
+  const replyTo = EMAIL_RE.test(explicitReplyTo)
+    ? explicitReplyTo
+    : resolveResendReplyToAddress(from);
 
   const to = (Array.isArray(input.to) ? input.to : [input.to])
     .map((t) => String(t || '').trim())

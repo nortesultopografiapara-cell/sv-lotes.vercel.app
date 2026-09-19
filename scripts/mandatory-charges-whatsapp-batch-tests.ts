@@ -126,9 +126,10 @@ function testGroupingSameCustomerOneMessage() {
   assert(groups.length === 1, '3 parcelas do mesmo cliente → 1 grupo');
   assert(groups[0].sendableParcels.length === 3, 'grupo contém as 3 parcelas');
   assert(groups[0].message != null, 'mensagem consolidada gerada');
-  assert(groups[0].message!.includes('Parcela 5'), 'mensagem cita parcela 5');
-  assert(groups[0].message!.includes('Parcela 6'), 'mensagem cita parcela 6');
-  assert(groups[0].message!.includes('Parcela 7'), 'mensagem cita parcela 7');
+  assert(groups[0].message!.includes('*Parcela:* 5'), 'mensagem cita parcela 5');
+  assert(groups[0].message!.includes('*Parcela:* 6'), 'mensagem cita parcela 6');
+  assert(groups[0].message!.includes('*Parcela:* 7'), 'mensagem cita parcela 7');
+  assert(!groups[0].message!.includes('Parcela: Parcela'), 'sem Parcela duplicada');
   assert(groups[0].message!.includes('SV Lotes'), 'identifica SV Lotes');
   assert(groups[0].message!.includes('Loteadora Alfa'), 'identifica a loteadora');
   assert(groups[0].message!.includes('Mundo Novo'), 'identifica o empreendimento');

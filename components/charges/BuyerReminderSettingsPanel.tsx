@@ -346,6 +346,13 @@ function HomologationResult({
                 <p className="text-[var(--text-secondary)]">
                   Meio de pagamento: {item.paymentMethodLabel || 'não encontrado'}
                 </p>
+                {item.channel === 'email' ? (
+                  <p className="text-[var(--text-secondary)]">
+                    From: {item.emailFrom || '—'}
+                    <br />
+                    Reply-To: {item.emailReplyTo || '—'}
+                  </p>
+                ) : null}
                 {isSimulate && item.messagePreview ? (
                   <div className="mt-2">
                     <button

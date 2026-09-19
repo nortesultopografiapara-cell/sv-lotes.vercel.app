@@ -62,7 +62,9 @@ export const DEFAULT_BUYER_REMINDER_SETTINGS: Omit<BuyerReminderSettings, 'compa
   overdueDays: 3,
 };
 
+/** Teto de WhatsApp por execução completa do runner (todas as empresas). E-mail não usa este limite. */
 export const BUYER_REMINDER_MAX_WHATSAPP_PER_RUN = 20;
+/** Intervalo entre WhatsApp para não monopolizar a instância Z-API compartilhada com OTP/SaaS. */
 export const BUYER_REMINDER_SEND_GAP_MS = 300;
 export const BUYER_REMINDER_TEMPLATE_KEY = 'buyer_reminder_v1';
 

@@ -9,16 +9,28 @@ import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChar
 import {
   buildBuyerMassCollectionMessage,
   buildBuyerReminderEmailHtml,
+  buildBuyerReminderEmailText,
   buildBuyerReminderWhatsAppMessage,
   buyerReminderEmailSubject,
   firstNameFromFullName,
+  formatBuyerDisplayName,
+  formatBuyerParcelNumberLabel,
 } from '../lib/charges/buyerCollectionMessages';
+import {
+  buildBuyerCollectionFromHeader,
+  resolveBuyerCollectionReplyTo,
+  resolveBuyerCollectionTechnicalMailbox,
+  sanitizeEmailFromDisplayName,
+  SV_LOTES_TECHNICAL_FROM_EMAIL,
+} from '../lib/charges/buyerCollectionEmail';
+import { composeResendFromHeader } from '../lib/email/resendSend';
 import { evaluateBuyerReminderEligibility } from '../lib/charges/buyerReminderEligibility';
 import {
   buyerRemindersProductionBlockedReason,
   runBuyerInstallmentReminders,
 } from '../lib/charges/buyerReminderRunner';
 import {
+  BUYER_REMINDER_MAX_WHATSAPP_PER_RUN,
   DEFAULT_BUYER_REMINDER_SETTINGS,
   normalizeBuyerReminderSettings,
   resolveBuyerReminderTargetDueDate,
@@ -162,6 +174,46 @@ function testHomologationLabels() {
   console.log('OK testHomologationLabels');
 }
 
+function testEmailFromAndReplyTo() {
+  const prevFrom = process.env.RESEND_FROM;
+  const prevFromEmail = process.env.RESEND_FROM_EMAIL;
+  process.env.RESEND_FROM = 'SV LOTES <noreply@svlotes.com.br>';
+  delete process.env.RESEND_FROM_EMAIL;
+  try {
+    assert(resolveBuyerCollectionTechnicalMailbox() === SV_LOTES_TECHNICAL_FROM_EMAIL, 'mailbox técnico suporte@');
+    const from = buildBuyerCollectionFromHeader('Menezes Imobiliária');
+    assert(Boolean(from && from.startsWith('Menezes Imobiliária via SV Lotes <')), 'nome da empresa no From');
+    assert(Boolean(from && from.endsWith('<suporte@svlotes.com.br>')), 'From usa domínio SV Lotes');
+    assert(!from?.includes('financeiro@'), 'From não usa e-mail da imobiliária');
+
+    const injected = buildBuyerCollectionFromHeader('Acme\r\nBcc: evil@x.com');
+    assert(Boolean(injected && !injected.includes('\r') && !injected.includes('\n')), 'header injection bloqueado');
+    assert(Boolean(injected && !injected.toLowerCase().includes('bcc:')), 'sem Bcc injetado');
+    assert(sanitizeEmailFromDisplayName('A\r\nB') === 'A B', 'CR/LF removidos');
+
+    assert(resolveBuyerCollectionReplyTo('financeiro@empresa.com.br') === 'financeiro@empresa.com.br', 'reply-to tenant');
+    assert(resolveBuyerCollectionReplyTo('') === SV_LOTES_TECHNICAL_FROM_EMAIL, 'fallback sem e-mail');
+    assert(resolveBuyerCollectionReplyTo('nao-e-email') === SV_LOTES_TECHNICAL_FROM_EMAIL, 'fallback inválido');
+    assert(
+      resolveBuyerCollectionReplyTo('financeiro@empresa-a.com.br') !== 'contato@empresa-b.com.br',
+      'tenant A não usa reply-to B',
+    );
+
+    const locked = composeResendFromHeader('SV LOTES <noreply@svlotes.com.br>', {
+      fromHeader: 'Evil <financeiro@imobiliaria.com.br>',
+      fromDisplayName: 'Should Not Appear If Domain Mismatch Alone',
+    });
+    assert(locked.includes('noreply@svlotes.com.br') || locked.includes('suporte@svlotes.com.br'), 'domínio travado');
+    assert(!locked.includes('financeiro@imobiliaria.com.br'), 'tenant não altera mailbox');
+  } finally {
+    if (prevFrom === undefined) delete process.env.RESEND_FROM;
+    else process.env.RESEND_FROM = prevFrom;
+    if (prevFromEmail === undefined) delete process.env.RESEND_FROM_EMAIL;
+    else process.env.RESEND_FROM_EMAIL = prevFromEmail;
+  }
+  console.log('OK testEmailFromAndReplyTo');
+}
+
 function testEligibilityCore() {
   const dueSoon = evalEvent('due_soon', candidate({ dueDateIso: '2026-09-22' }));
   assert(dueSoon.sendable, 'D-3 pendente envia');
@@ -244,6 +296,18 @@ function testTemplates() {
     parcel,
   });
   assert(soon.includes('Olá, João! Tudo bem?'), 'D-3 cordial');
+  assert(soon.includes('*Parcela:* 5'), 'parcela D-3 sem prefixo duplicado');
+  assert(!soon.includes('Parcela: Parcela'), 'não existe Parcela: Parcela no D-3');
+  assert(!soon.includes('responda este e-mail'), 'WhatsApp não leva rodapé de reply');
+  assert(formatBuyerParcelNumberLabel('Parcela 1 / 1') === '1/1', '1/1');
+  assert(formatBuyerDisplayName('SEVERINO JOSE DE FRANÇA').includes('Severino'), 'nome apresentado');
+  assert(formatBuyerDisplayName('SEVERINO JOSE DE FRANÇA').includes(' de '), 'partícula de');
+  assert(
+    formatBuyerDisplayName('S.V Topografia e Projeto Ltda.') === 'S.V Topografia e Projeto Ltda.',
+    'nome misto não é reescrito',
+  );
+  assert(formatBuyerDisplayName('NOVA CARAJAS 5º ETAPA').startsWith('Nova'), 'empreendimento em caixa alta só na apresentação');
+  assert(formatBuyerDisplayName('Menezes Imobiliária') === 'Menezes Imobiliária', 'nome já misto permanece');
   assert(soon.includes('lembrete automático do *SV Lotes*'), 'D-3 origem');
   assert(!soon.toLowerCase().includes('atraso'), 'D-3 sem linguagem de atraso');
   assert(!soon.includes('portal.svlotes'), 'sem portal se desligado');
@@ -268,6 +332,8 @@ function testTemplates() {
     parcel,
   });
   assert(today.includes('vence *hoje*'), 'D0 hoje');
+  assert(today.includes('*Parcela:* 5'), 'parcela D0');
+  assert(!today.includes('Parcela: Parcela'), 'não existe Parcela: Parcela no D0');
 
   const overdue = buildBuyerReminderWhatsAppMessage({
     kind: 'overdue_friendly',
@@ -277,6 +343,8 @@ function testTemplates() {
     parcel,
   });
   assert(overdue.includes('permanece em aberto'), 'pós-vencimento amigável');
+  assert(overdue.includes('*Parcela:* 5'), 'parcela pós');
+  assert(!overdue.includes('Parcela: Parcela'), 'não existe Parcela: Parcela no pós');
   assert(!overdue.toLowerCase().includes('protesto'), 'sem tom agressivo');
 
   assert(buyerReminderEmailSubject('due_soon', 'Mundo Novo') === 'Lembrete de vencimento — Mundo Novo', 'assunto D-3');
@@ -286,13 +354,26 @@ function testTemplates() {
     'assunto pós',
   );
   assert(buildBuyerReminderEmailHtml(soon).includes('<strong>SV Lotes</strong>'), 'e-mail reusa texto');
+  const emailHtml = buildBuyerReminderEmailHtml(soon, {
+    companyName: 'Loteadora Alfa',
+    includeReplyHint: true,
+  });
+  assert(emailHtml.includes('em nome de'), 'rodapé automático');
+  assert(emailHtml.includes('responda este e-mail'), 'dica de reply-to');
+  assert(
+    !buildBuyerReminderEmailText(soon, { companyName: 'Alfa', includeReplyHint: false }).includes(
+      'responda este e-mail',
+    ),
+    'sem dica se reply-to ausente',
+  );
 
   const mass = buildBuyerMassCollectionMessage({
     customerName: 'João da Silva',
     loteadoraName: 'Loteadora Alfa',
     parcels: [parcel, { ...parcel, parcelLabel: 'Parcela 6', amount: 1600 }],
   });
-  assert(mass.includes('Parcela 5') && mass.includes('Parcela 6'), 'várias parcelas na mesma mensagem');
+  assert(mass.includes('*Parcela:* 5') && mass.includes('*Parcela:* 6'), 'várias parcelas na mesma mensagem');
+  assert(!mass.includes('Parcela: Parcela'), 'massa sem Parcela duplicada');
   assert(mass.includes('*Total:*'), 'total consolidado');
   assert(mass.includes('SV Lotes — Central de Cobranças'), 'rodapé');
   assert(mass.includes(CHARGE_WHATSAPP_BATCH_TEMPLATE_KEY) === false, 'template key fora da mensagem');
@@ -409,8 +490,10 @@ function receiptRow(partial?: Record<string, unknown>) {
 async function testRunnerIdempotencyAndChannels() {
   const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const prevVercel = process.env.VERCEL_ENV;
+  const prevFrom = process.env.RESEND_FROM;
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://hoynysmynxncdlptuzub.supabase.co';
   process.env.VERCEL_ENV = 'preview';
+  process.env.RESEND_FROM = 'SV LOTES <noreply@svlotes.com.br>';
 
   try {
     const db: MemoryDb = {
@@ -429,9 +512,20 @@ async function testRunnerIdempotencyAndChannels() {
       ],
       receipts: [receiptRow()],
       logs: [],
-      companies: [{ id: TENANT, name: 'Loteadora Alfa', fantasy_name: 'Alfa' }],
+      companies: [
+        { id: TENANT, name: 'Loteadora Alfa', fantasy_name: 'Alfa', email: 'financeiro@alfa.com.br' },
+        { id: OTHER, name: 'Outra', fantasy_name: 'Beta', email: 'contato@beta.com.br' },
+      ],
     };
-    const sent: Array<{ phone?: string; to?: string; message?: string; subject?: string }> = [];
+    const sent: Array<{
+      phone?: string;
+      to?: string;
+      message?: string;
+      subject?: string;
+      fromHeader?: string | null;
+      replyTo?: string | null;
+      text?: string;
+    }> = [];
     const admin = createMemoryAdmin(db) as never;
     const asaas = [charge({ installmentId: INST })];
     const dryCalls = { wa: 0, email: 0 };
@@ -469,8 +563,8 @@ async function testRunnerIdempotencyAndChannels() {
         sent.push({ phone, message });
         return { ok: true, messageId: 'wa-1' };
       },
-      sendEmailFn: async ({ to, subject }) => {
-        sent.push({ to: String(to), subject });
+      sendEmailFn: async ({ to, subject, fromHeader, replyTo, text }) => {
+        sent.push({ to: String(to), subject, fromHeader, replyTo, text });
         return { ok: true, providerId: 'em-1' };
       },
       listAsaasChargesFn: async () => asaas,
@@ -479,6 +573,15 @@ async function testRunnerIdempotencyAndChannels() {
     assert(first.sent === 2, 'D-3 envia WhatsApp e e-mail uma vez');
     assert(first.whatsappSent === 1, 'um WhatsApp no D-3');
     assert(db.logs.filter((row) => row.status === 'sent').length === 2, 'dois logs sent');
+    const emailSent = sent.find((row) => row.to);
+    assert(Boolean(emailSent?.fromHeader && emailSent.fromHeader.includes('suporte@svlotes.com.br')), 'From técnico');
+    assert(Boolean(emailSent?.fromHeader && emailSent.fromHeader.includes('via SV Lotes')), 'nome no From');
+    assert(emailSent?.replyTo === 'financeiro@alfa.com.br', 'Reply-To do tenant A');
+    assert(!String(emailSent?.replyTo || '').includes('contato@beta.com.br'), 'não usa Reply-To do tenant B');
+    assert(Boolean(emailSent?.text?.includes('responda este e-mail')), 'dica de resposta com Reply-To da empresa');
+    const emailItem = first.items.find((item) => item.channel === 'email' && item.status === 'sent');
+    assert(emailItem?.emailFrom?.includes('suporte@svlotes.com.br') === true, 'item registra From');
+    assert(emailItem?.emailReplyTo === 'financeiro@alfa.com.br', 'item registra Reply-To');
 
     const second = await runBuyerInstallmentReminders(admin, {
       runDate: '2026-09-19',
@@ -574,9 +677,113 @@ async function testRunnerIdempotencyAndChannels() {
       noPay.items.every((item) => item.skipReason === 'missing_payment_method'),
       'cobrança inexistente não inventa link',
     );
+
+    const mailDb: MemoryDb = {
+      settings: [{ ...db.settings[0], whatsapp_enabled: false, email_enabled: true }],
+      receipts: [receiptRow({ id: 'inst-mail' })],
+      logs: [],
+      companies: [{ id: TENANT, name: 'Loteadora Alfa', fantasy_name: 'Alfa', email: null }],
+    };
+    const mailAsaas = [charge({ installmentId: 'inst-mail' })];
+    let fallbackEmailText = '';
+    const mailFailed = await runBuyerInstallmentReminders(createMemoryAdmin(mailDb) as never, {
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => ({ ok: true, messageId: 'wa' }),
+      sendEmailFn: async ({ text }) => {
+        fallbackEmailText = String(text || '');
+        return { ok: false, error: 'Resend down' };
+      },
+      listAsaasChargesFn: async () => mailAsaas,
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(
+      mailFailed.items.some((item) => item.channel === 'email' && item.status === 'failed'),
+      'falha Resend registra failed',
+    );
+    assert(
+      mailFailed.items.some((item) => item.emailReplyTo === SV_LOTES_TECHNICAL_FROM_EMAIL),
+      'empresa sem e-mail usa fallback SV Lotes',
+    );
+    assert(!fallbackEmailText.includes('responda este e-mail'), 'sem dica de resposta no fallback');
+
+    const mailRetried = await runBuyerInstallmentReminders(createMemoryAdmin(mailDb) as never, {
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => ({ ok: true, messageId: 'wa' }),
+      sendEmailFn: async () => ({ ok: true, providerId: 'retry-ok' }),
+      listAsaasChargesFn: async () => mailAsaas,
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(
+      mailRetried.items.some((item) => item.channel === 'email' && item.status === 'sent'),
+      'retry de failed funciona',
+    );
+
+    const mailThird = await runBuyerInstallmentReminders(createMemoryAdmin(mailDb) as never, {
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => ({ ok: true, messageId: 'wa' }),
+      sendEmailFn: async () => ({ ok: true, providerId: 'should-not' }),
+      listAsaasChargesFn: async () => mailAsaas,
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(
+      mailThird.items.every((item) => item.skipReason === 'already_sent'),
+      'e-mail sent não é reenviado',
+    );
+
+    const capIds = Array.from({ length: BUYER_REMINDER_MAX_WHATSAPP_PER_RUN + 1 }, (_, i) => `inst-cap-${i}`);
+    const capDb: MemoryDb = {
+      settings: db.settings,
+      receipts: capIds.map((id) => receiptRow({ id, due_date: '2026-09-22' })),
+      logs: [],
+      companies: db.companies,
+    };
+    const capAsaas = capIds.map((id) => charge({ installmentId: id }));
+    let capWa = 0;
+    let capEmail = 0;
+    const capped = await runBuyerInstallmentReminders(createMemoryAdmin(capDb) as never, {
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => {
+        capWa += 1;
+        return { ok: true, messageId: `wa-cap-${capWa}` };
+      },
+      sendEmailFn: async () => {
+        capEmail += 1;
+        return { ok: true, providerId: `em-cap-${capEmail}` };
+      },
+      listAsaasChargesFn: async () => capAsaas,
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(capped.truncated, 'teto de WhatsApp marca truncated');
+    assert(capped.whatsappSent === BUYER_REMINDER_MAX_WHATSAPP_PER_RUN, 'teto 20 WhatsApp por execução');
+    assert(capEmail === capIds.length, 'e-mail continua após o teto de WhatsApp');
+    const remaining = await runBuyerInstallmentReminders(createMemoryAdmin(capDb) as never, {
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => {
+        capWa += 1;
+        return { ok: true, messageId: `wa-cap-${capWa}` };
+      },
+      sendEmailFn: async () => {
+        capEmail += 1;
+        return { ok: true, providerId: `em-cap-${capEmail}` };
+      },
+      listAsaasChargesFn: async () => capAsaas,
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(remaining.whatsappSent === 1, 'segunda execução no mesmo dia pega o WhatsApp restante');
+    assert(
+      remaining.items.filter((item) => item.channel === 'email').every((item) => item.skipReason === 'already_sent'),
+      'e-mails já sent não reenviam na continuação',
+    );
   } finally {
     process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
     process.env.VERCEL_ENV = prevVercel;
+    if (prevFrom === undefined) delete process.env.RESEND_FROM;
+    else process.env.RESEND_FROM = prevFrom;
   }
   console.log('OK testRunnerIdempotencyAndChannels');
 }
@@ -611,6 +818,7 @@ function testProductionBlockAndIsolation() {
   assert(!saasWa.includes('buyerReminder'), 'SaaS WhatsApp não usa lembrete comprador');
   assert(saasReminders.includes('processSaasBillingReminderWhatsAppForCharge'), 'runner SaaS intacto');
   assert(!saasReminders.includes('buyerReminder'), 'SaaS não acopla lembrete comprador');
+  assert(!read('lib/saasBillingReminderEmail.ts').includes('buyerCollection'), 'e-mail SaaS isolado');
   assert(portalWa.includes('sendClientPortalOtpWhatsApp'), 'OTP intacto');
   assert(!portalWa.includes('buyerReminder'), 'OTP não usa lembrete comprador');
   assert(runner.includes("from '@/lib/whatsapp/zapiProvider'"), 'lembrete reutiliza Z-API');
@@ -618,6 +826,8 @@ function testProductionBlockAndIsolation() {
   assert(!runner.includes('createCompanyInstallmentCharge'), 'não gera cobrança Asaas');
   assert(!runner.includes('generateMissing'), 'não emite cobrança faltante');
   assert(runner.includes('BUYER_REMINDER_MAX_WHATSAPP_PER_RUN'), 'teto WhatsApp');
+  assert(runner.includes('result.truncated = true'), 'teto marca truncated');
+  assert(!/if \(result\.truncated\) break/.test(runner), 'teto de WhatsApp não aborta e-mail');
   assert(runner.includes('America/Sao_Paulo') || read('lib/charges/buyerReminderTypes.ts').includes('America/Sao_Paulo'), 'timezone BR');
   assert(cron.includes('isCronSecretValid'), 'cron autenticado');
   assert(cron.includes('production_blocked') || cron.includes('productionBlocked'), 'cron recusa Production');
@@ -644,6 +854,7 @@ function testProductionBlockAndIsolation() {
 async function main() {
   testNamesAndDates();
   testHomologationLabels();
+  testEmailFromAndReplyTo();
   testEligibilityCore();
   testTemplates();
   await testRunnerIdempotencyAndChannels();

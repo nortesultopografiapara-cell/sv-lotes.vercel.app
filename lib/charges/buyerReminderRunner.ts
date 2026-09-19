@@ -12,9 +12,14 @@ import {
   buyerReminderEmailSubject,
 } from '@/lib/charges/buyerCollectionMessages';
 import {
+  buildBuyerCollectionFromHeader,
+  resolveBuyerCollectionReplyTo,
+} from '@/lib/charges/buyerCollectionEmail';
+import {
   enabledBuyerReminderChannels,
   enabledBuyerReminderEvents,
   evaluateBuyerReminderEligibility,
+  isValidReminderEmail,
   receiptRowSaleStatus,
   type BuyerReminderCandidateInput,
 } from '@/lib/charges/buyerReminderEligibility';
@@ -86,6 +91,8 @@ export type BuyerReminderRunItem = {
   error: string | null;
   providerMessageId: string | null;
   messagePreview: string | null;
+  emailFrom?: string | null;
+  emailReplyTo?: string | null;
 };
 
 export type BuyerReminderRunResult = {
@@ -117,10 +124,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function loadLoteadoraName(admin: SupabaseClient, companyId: string): Promise<string> {
-  const { data } = await admin.from('companies').select('name, fantasy_name').eq('id', companyId).maybeSingle();
+async function loadLoteadoraProfile(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<{ name: string; email: string | null }> {
+  const { data } = await admin
+    .from('companies')
+    .select('name, fantasy_name, email')
+    .eq('id', companyId)
+    .maybeSingle();
   const name = getCompanyDisplayName((data as Record<string, unknown> | null) || {});
-  return name && name !== 'Não Informado' ? name : 'a empresa responsável pelo empreendimento';
+  const email = String((data as { email?: string | null } | null)?.email || '').trim() || null;
+  return {
+    name: name && name !== 'Não Informado' ? name : 'a empresa responsável pelo empreendimento',
+    email,
+  };
 }
 
 async function loadDueReceipts(
@@ -281,12 +299,15 @@ export async function runBuyerInstallmentReminders(
   for (const settings of settingsList) {
     if (!settings.enabled) continue;
     result.companies += 1;
-    const loteadoraName = await loadLoteadoraName(admin, settings.companyId);
+    const loteadora = await loadLoteadoraProfile(admin, settings.companyId);
+    const loteadoraName = loteadora.name;
+    const emailFromHeader = buildBuyerCollectionFromHeader(loteadoraName);
+    const emailReplyTo = resolveBuyerCollectionReplyTo(loteadora.email);
+    const includeReplyHint = isValidReminderEmail(loteadora.email);
     const events = enabledBuyerReminderEvents(settings);
     const channels = enabledBuyerReminderChannels(settings);
 
     for (const event of events) {
-      if (result.truncated) break;
       const dueDate = resolveBuyerReminderTargetDueDate(event, runDate, settings);
       const receipts = await loadDueReceipts(admin, settings.companyId, dueDate);
       const ids = receipts.map((row) => String(row.id));
@@ -300,7 +321,6 @@ export async function runBuyerInstallmentReminders(
       }
 
       for (const row of receipts) {
-        if (result.truncated) break;
         const installmentId = String(row.id);
         const charge = pickExistingChargeForWhatsApp(installmentId, asaas, inter);
         const candidate = toCandidate(row, charge);
@@ -357,7 +377,16 @@ export async function runBuyerInstallmentReminders(
           const previewForChannel =
             evaluation.sendable && message
               ? channel === 'email'
-                ? `${buyerReminderEmailSubject(event, parcel.projectName)}\n\n${buildBuyerReminderEmailText(message)}`
+                ? [
+                    `From: ${emailFromHeader || '—'}`,
+                    `Reply-To: ${emailReplyTo}`,
+                    `Assunto: ${buyerReminderEmailSubject(event, parcel.projectName)}`,
+                    '',
+                    buildBuyerReminderEmailText(message, {
+                      companyName: loteadoraName,
+                      includeReplyHint,
+                    }),
+                  ].join('\n')
                 : message
               : null;
 
@@ -390,6 +419,8 @@ export async function runBuyerInstallmentReminders(
             error: extra?.error ?? null,
             providerMessageId: extra?.providerMessageId ?? null,
             messagePreview: extra?.includePreview ? previewForChannel : null,
+            emailFrom: channel === 'email' ? emailFromHeader : null,
+            emailReplyTo: channel === 'email' ? emailReplyTo : null,
           });
 
           if (!evaluation.sendable) {
@@ -427,7 +458,7 @@ export async function runBuyerInstallmentReminders(
           if (channel === 'whatsapp') {
             if (result.whatsappSent >= BUYER_REMINDER_MAX_WHATSAPP_PER_RUN) {
               result.truncated = true;
-              break;
+              continue;
             }
             if (!zapiReady) {
               result.failed += 1;
@@ -527,8 +558,16 @@ export async function runBuyerInstallmentReminders(
           const email = await sendEmailFn({
             to: recipient || '',
             subject: buyerReminderEmailSubject(event, parcel.projectName),
-            html: buildBuyerReminderEmailHtml(message || ''),
-            text: buildBuyerReminderEmailText(message || ''),
+            html: buildBuyerReminderEmailHtml(message || '', {
+              companyName: loteadoraName,
+              includeReplyHint,
+            }),
+            text: buildBuyerReminderEmailText(message || '', {
+              companyName: loteadoraName,
+              includeReplyHint,
+            }),
+            fromHeader: emailFromHeader,
+            replyTo: emailReplyTo,
           });
           if (email.ok) {
             result.sent += 1;
