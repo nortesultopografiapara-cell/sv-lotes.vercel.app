@@ -75,11 +75,6 @@ export async function POST(request: Request) {
   if ('error' in auth) return auth.error;
   if (isOwnerRole(auth.role)) return ownerWriteForbiddenResponse();
 
-  const blocked = buyerRemindersProductionBlockedReason();
-  if (blocked) {
-    return NextResponse.json({ error: blocked, productionBlocked: true }, { status: 403 });
-  }
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const action = String(body.action || 'simulate').trim().toLowerCase();
   const dryRun = action !== 'run';

@@ -1041,7 +1041,7 @@ function testProductionBlockAndIsolation() {
   const prev = process.env.VERCEL_ENV;
   process.env.VERCEL_ENV = 'production';
   try {
-    assert(Boolean(buyerRemindersProductionBlockedReason()), 'Production bloqueada');
+    assert(!buyerRemindersProductionBlockedReason(), 'Production não bloqueia mais o runner');
   } finally {
     process.env.VERCEL_ENV = prev;
   }
@@ -1083,7 +1083,10 @@ function testProductionBlockAndIsolation() {
   assert(!/if \(result\.truncated\) break/.test(runner), 'teto de WhatsApp não aborta e-mail');
   assert(runner.includes('America/Sao_Paulo') || read('lib/charges/buyerReminderTypes.ts').includes('America/Sao_Paulo'), 'timezone BR');
   assert(cron.includes('isCronSecretValid'), 'cron autenticado');
-  assert(cron.includes('production_blocked') || cron.includes('productionBlocked'), 'cron recusa Production');
+  assert(!cron.includes('production_blocked'), 'cron não recusa Production');
+  assert(!api.includes('productionBlocked: true'), 'API POST não recusa Production');
+  assert(read('lib/charges/buyerReminderTypes.ts').includes('enabled: false'), 'default desligado');
+  assert(read('supabase/migrations/20261024120000_company_buyer_reminders.sql').includes('enabled boolean NOT NULL DEFAULT false'), 'SQL default false');
   assert(api.includes("action !== 'run'"), 'API simula por padrão');
   assert(api.includes('authorizeTenantBilling'), 'API isolada por tenant');
   assert(migration.includes('company_buyer_reminder_settings'), 'tabela settings');

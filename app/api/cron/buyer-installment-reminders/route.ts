@@ -1,18 +1,13 @@
 /**
  * Cron de lembretes automáticos ao comprador.
- * Agenda preparada em vercel.json (`10,40 11-22 * * *` UTC = 8:10–19:40 BRT).
- * Production permanece no-op até autorização explícita.
+ * Agenda em vercel.json (`10,40 11-22 * * *` UTC = 8:10–19:40 BRT).
+ * Só envia para empresas com company_buyer_reminder_settings.enabled = true.
  */
 
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { describeCronAuthFailure, isCronSecretValid } from '@/lib/saasCronAuth';
-import {
-  buyerRemindersProductionBlockedReason,
-  runBuyerInstallmentReminders,
-} from '@/lib/charges/buyerReminderRunner';
-import { BUYER_REMINDER_TIMEZONE } from '@/lib/charges/buyerReminderTypes';
-import { todayBrazilIsoDate } from '@/lib/companySubscriptionDates';
+import { runBuyerInstallmentReminders } from '@/lib/charges/buyerReminderRunner';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,17 +19,6 @@ async function handle(request: Request) {
       { error: 'Unauthorized', detail: describeCronAuthFailure() },
       { status: 401 },
     );
-  }
-
-  const blocked = buyerRemindersProductionBlockedReason();
-  if (blocked) {
-    return NextResponse.json({
-      skipped: true,
-      reason: 'production_blocked',
-      message: blocked,
-      timezone: BUYER_REMINDER_TIMEZONE,
-      runDateBrazil: todayBrazilIsoDate(),
-    });
   }
 
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();

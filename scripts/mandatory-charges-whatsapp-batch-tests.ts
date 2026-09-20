@@ -78,6 +78,8 @@ function parcel(
     phone: '11999887766',
     projectName: 'Mundo Novo',
     lotLabel: 'QD 01 • LT 12',
+    blockName: '01',
+    lotNumber: '12',
     parcelLabel: 'Parcela 5',
     contractNumber: '000000001/2026',
     dueDateIso: '2026-09-01',

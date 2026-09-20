@@ -70,8 +70,8 @@ export const BUYER_REMINDER_SEND_GAP_MS = 300;
 /** Falhas permanentes do mesmo evento param de ser reprocessadas após este número de tentativas. */
 export const BUYER_REMINDER_MAX_FAILED_ATTEMPTS = 5;
 /**
- * Cron UTC preparado: 8:10–19:40 America/Sao_Paulo, 2×/hora, fora do SaaS 11:00 UTC.
- * Production continua no-op no handler até autorização.
+ * Cron UTC: 8:10–19:40 America/Sao_Paulo, 2×/hora, fora do SaaS 11:00 UTC.
+ * Só processa empresas com enabled = true (default false).
  */
 export const BUYER_REMINDER_CRON_UTC = '10,40 11-22 * * *';
 export const BUYER_REMINDER_TEMPLATE_KEY = 'buyer_reminder_v1';

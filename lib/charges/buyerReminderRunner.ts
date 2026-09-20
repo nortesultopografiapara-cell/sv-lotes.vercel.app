@@ -1,7 +1,7 @@
 /**
  * Job de lembretes automáticos ao comprador.
  * Sequencial, teto conservador de WhatsApp, sem gerar cobrança.
- * Production bloqueada nesta fase.
+ * Empresas só entram se company_buyer_reminder_settings.enabled = true.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -59,7 +59,6 @@ import {
   listInterChargesForInstallments,
 } from '@/lib/banking/inter/interSaleChargeService';
 import { FINANCE_RECEIPTS_CUSTOMER_FKEY } from '@/lib/finance/financeReceiptsEmbed';
-import { isProductionSupabaseRuntime } from '@/lib/homolog/env';
 import { todayBrazilIsoDate } from '@/lib/companySubscriptionDates';
 import { isZapiConfigured, sendText } from '@/lib/whatsapp/zapiProvider';
 import { isResendEmailConfigured, sendResendEmail } from '@/lib/email/resendSend';
@@ -113,12 +112,6 @@ export type BuyerReminderRunResult = {
 };
 
 export function buyerRemindersProductionBlockedReason(): string | null {
-  if (isProductionSupabaseRuntime()) {
-    return 'Lembretes automáticos ao comprador estão bloqueados em Production nesta fase.';
-  }
-  if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() === 'production') {
-    return 'Lembretes automáticos ao comprador estão bloqueados em Production nesta fase.';
-  }
   return null;
 }
 
@@ -317,13 +310,12 @@ export async function runBuyerInstallmentReminders(
     listInterChargesFn?: typeof listInterChargesForInstallments;
   },
 ): Promise<BuyerReminderRunResult> {
-  const blocked = buyerRemindersProductionBlockedReason();
   const runDate = options?.runDate || todayBrazilIsoDate();
   const result: BuyerReminderRunResult = {
     dryRun: Boolean(options?.dryRun),
     runDate,
     timezone: BUYER_REMINDER_TIMEZONE,
-    productionBlocked: Boolean(blocked),
+    productionBlocked: false,
     companies: 0,
     processed: 0,
     sent: 0,
@@ -333,10 +325,6 @@ export async function runBuyerInstallmentReminders(
     truncated: false,
     items: [],
   };
-
-  if (blocked) {
-    return result;
-  }
 
   const settingsList = options?.companyId
     ? [
@@ -553,7 +541,7 @@ export async function runBuyerInstallmentReminders(
               customerId: candidate.customerId,
               dueDate,
               eventType: event,
-              recipient,
+              recipient: String(recipient || ''),
               message,
               phone: evaluation.normalizedPhone || '',
               logMeta,
@@ -769,14 +757,37 @@ export async function listBuyerReminderLogs(
   const selectWithoutLot =
     'id, created_at, event_type, channel, status, skip_reason, recipient, customer_id, customer_name, finance_receipt_id, due_date, project_name, parcel_label, error_message, provider_message_id';
 
-  const run = async (select: string) => {
+  type LogDbRow = {
+    id?: unknown;
+    created_at?: unknown;
+    event_type?: unknown;
+    channel?: unknown;
+    status?: unknown;
+    skip_reason?: unknown;
+    recipient?: unknown;
+    customer_id?: unknown;
+    customer_name?: unknown;
+    finance_receipt_id?: unknown;
+    due_date?: unknown;
+    project_name?: unknown;
+    lot_label?: unknown;
+    parcel_label?: unknown;
+    error_message?: unknown;
+    provider_message_id?: unknown;
+  };
+
+  const run = async (select: typeof selectWithLot | typeof selectWithoutLot) => {
     let query = admin.from('company_buyer_reminder_logs').select(select).eq('company_id', companyId);
     if (eventType) query = query.eq('event_type', eventType);
     if (channel) query = query.eq('channel', channel);
     if (status) query = query.eq('status', status);
     if (from) query = query.gte('created_at', `${from}T00:00:00.000-03:00`);
     if (to) query = query.lte('created_at', `${to}T23:59:59.999-03:00`);
-    return query.order('created_at', { ascending: false }).limit(limit);
+    const result = await query.order('created_at', { ascending: false }).limit(limit);
+    return {
+      data: (result.data || []) as LogDbRow[],
+      error: result.error,
+    };
   };
 
   let { data, error } = await run(selectWithLot);
@@ -784,18 +795,18 @@ export async function listBuyerReminderLogs(
     ({ data, error } = await run(selectWithoutLot));
   }
   if (error) throw new Error(error.message);
-  return (data || []).map((row) => ({
-    id: String(row.id),
-    createdAt: String(row.created_at),
-    eventType: String(row.event_type),
-    channel: String(row.channel),
-    status: String(row.status),
+  return data.map((row) => ({
+    id: String(row.id ?? ''),
+    createdAt: String(row.created_at ?? ''),
+    eventType: String(row.event_type ?? ''),
+    channel: String(row.channel ?? ''),
+    status: String(row.status ?? ''),
     skipReason: row.skip_reason ? String(row.skip_reason) : null,
     recipient: row.recipient ? String(row.recipient) : null,
     customerId: row.customer_id ? String(row.customer_id) : null,
     customerName: row.customer_name ? String(row.customer_name) : null,
-    installmentId: String(row.finance_receipt_id),
-    dueDate: String(row.due_date),
+    installmentId: String(row.finance_receipt_id ?? ''),
+    dueDate: String(row.due_date ?? ''),
     projectName: row.project_name ? String(row.project_name) : null,
     lotLabel: row.lot_label ? String(row.lot_label) : null,
     parcelLabel: row.parcel_label ? String(row.parcel_label) : null,
