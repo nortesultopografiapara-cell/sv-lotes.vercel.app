@@ -5,7 +5,7 @@ import {
   getRequestAuthUser,
   logSupabaseConfigDebug,
 } from '@/lib/supabase/server';
-import { getServerConfigErrorMessage } from '@/lib/supabase-config';
+import { getServerConfigErrorMessage } from '@/lib/supabase-config.server';
 import {
   canCreateProject,
 } from '@/lib/saasPlanEnforcement';

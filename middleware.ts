@@ -3,6 +3,11 @@ import { createServerClient } from '@supabase/ssr';
 import { resolveLoginRedirectPath } from '@/lib/loginRoleResolution';
 import { isDemoBlockedApi, isDemoBlockedRoute } from '@/lib/demoConfig';
 import {
+  PASSWORD_RECOVERY_COOKIE,
+  PASSWORD_RECOVERY_RESET_PATH,
+  workspaceBlockedDuringRecovery,
+} from '@/lib/auth/passwordRecovery';
+import {
   bulkRegenerateUnauthorizedJson,
   isBulkRegeneratePath,
 } from '@/lib/bulkContractRegenerateAuth';
@@ -68,6 +73,8 @@ export async function middleware(request: NextRequest) {
 
   const url = request.nextUrl.clone();
 
+  const isRecoveryLock = request.cookies.get(PASSWORD_RECOVERY_COOKIE)?.value === '1';
+
   // 1. PUBLIC ROUTES (landing + auth + validação + assinatura pública + demo)
   // Assinatura eletrônica: /sign e /api/sign são públicos (protegidos só pelo token).
   // Deployment Protection da Vercel (SSO) NÃO deve bloquear estas rotas no Preview.
@@ -75,6 +82,8 @@ export async function middleware(request: NextRequest) {
   const isDemoPage = url.pathname === '/demo';
   const publicRoutes = [
     '/login',
+    '/esqueci-senha',
+    '/redefinir-senha',
     '/auth/callback',
     '/verify-email',
     '/api/setup',
@@ -105,6 +114,11 @@ export async function middleware(request: NextRequest) {
     isCompanyExportApi ||
     publicRoutes.some((route) => url.pathname === route || url.pathname.startsWith(`${route}/`));
 
+  if (isRecoveryLock && workspaceBlockedDuringRecovery(url.pathname, true)) {
+    url.pathname = PASSWORD_RECOVERY_RESET_PATH;
+    return NextResponse.redirect(url);
+  }
+
   // Regeneração em massa e APIs admin de empresas: nunca públicas. Anônimo recebe 401 JSON.
   if (isBulkRegeneratePath(url.pathname)) {
     if (!user) {
@@ -121,6 +135,9 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url);
       }
       if (url.pathname === '/login') {
+        if (isRecoveryLock) {
+          return response;
+        }
         url.pathname = resolveLoginRedirectPath(userData?.role);
         return NextResponse.redirect(url);
       }

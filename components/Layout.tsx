@@ -531,7 +531,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     pathname === '/demo' ||
     pathname.startsWith('/sign/') ||
     pathname.startsWith('/portal-cliente') ||
-    ['/login', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
+    ['/login', '/esqueci-senha', '/redefinir-senha', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
       pathname.startsWith(route)
     );
   if (isPublicStandalone) return <>{children}</>;
