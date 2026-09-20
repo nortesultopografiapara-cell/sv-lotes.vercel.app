@@ -7,12 +7,15 @@ import { join } from 'node:path';
 import {
   PASSWORD_RECOVERY_COOKIE,
   PASSWORD_RECOVERY_COOLDOWN_MS,
+  PASSWORD_RECOVERY_DIFFERENT_PASSWORD_MESSAGE,
   PASSWORD_RECOVERY_INVALID_LINK_MESSAGE,
   PASSWORD_RECOVERY_LOGIN_PATH,
   PASSWORD_RECOVERY_MIN_LENGTH,
   PASSWORD_RECOVERY_NEUTRAL_MESSAGE,
+  PASSWORD_RECOVERY_RATE_LIMIT_MESSAGE,
   PASSWORD_RECOVERY_REQUEST_PATH,
   PASSWORD_RECOVERY_RESET_PATH,
+  PASSWORD_RECOVERY_UPDATE_FAILED_MESSAGE,
   buildPasswordRecoveryUpdatePayload,
   canOpenPasswordRecoveryForm,
   isRecoveryLinkError,
@@ -23,9 +26,17 @@ import {
   recoveryRequestUserMessage,
   remainingCooldownMs,
   resolvePasswordRecoveryRedirectTo,
+  translatePasswordRecoveryError,
   validateNewRecoveryPassword,
   workspaceBlockedDuringRecovery,
 } from '../lib/auth/passwordRecovery';
+import {
+  PASSWORD_RECOVERY_EMAIL_CONFIRMATION_VAR,
+  PASSWORD_RECOVERY_EMAIL_HTML,
+  PASSWORD_RECOVERY_EMAIL_SUBJECT,
+  PASSWORD_RECOVERY_EMAIL_TEXT,
+  passwordRecoveryEmailUsesOfficialConfirmationUrl,
+} from '../lib/auth/passwordRecoveryEmailTemplate';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -58,6 +69,7 @@ const onboarding = read('app/onboarding/page.tsx');
 const companyAdmins = read('lib/companyAdminUsers.ts');
 const clientFiles = [
   'lib/auth/passwordRecovery.ts',
+  'lib/auth/passwordRecoveryEmailTemplate.ts',
   'lib/supabase-config.ts',
   'app/esqueci-senha/page.tsx',
   'app/redefinir-senha/page.tsx',
@@ -124,6 +136,55 @@ check(
   'resposta indistinguivel para erro interno',
   recoveryRequestUserMessage({ message: 'For security purposes, you can only request this after 60 seconds.' }) ===
     PASSWORD_RECOVERY_NEUTRAL_MESSAGE,
+);
+
+check(
+  'traduz same_password pelo codigo',
+  translatePasswordRecoveryError({ code: 'same_password', message: 'New password should be different from the old password.' }, 'update') ===
+    PASSWORD_RECOVERY_DIFFERENT_PASSWORD_MESSAGE,
+);
+check(
+  'traduz senha igual pela mensagem inglesa',
+  translatePasswordRecoveryError('New password should be different from the old password.', 'update') ===
+    PASSWORD_RECOVERY_DIFFERENT_PASSWORD_MESSAGE,
+);
+check(
+  'traduz rate limit pelo status 429',
+  translatePasswordRecoveryError({ status: 429, message: 'Too Many Requests' }, 'update') ===
+    PASSWORD_RECOVERY_RATE_LIMIT_MESSAGE,
+);
+check(
+  'traduz rate limit pelo codigo GoTrue',
+  translatePasswordRecoveryError({ code: 'over_request_rate_limit' }, 'update') ===
+    PASSWORD_RECOVERY_RATE_LIMIT_MESSAGE,
+);
+check(
+  'traduz link expirado pelo codigo',
+  translatePasswordRecoveryError({ code: 'otp_expired', status: 403 }, 'update') ===
+    PASSWORD_RECOVERY_INVALID_LINK_MESSAGE,
+);
+check(
+  'contexto link sempre seguro',
+  translatePasswordRecoveryError({ message: 'unexpected blob' }, 'link') ===
+    PASSWORD_RECOVERY_INVALID_LINK_MESSAGE,
+);
+check(
+  'falha inesperada nao vaza ingles',
+  translatePasswordRecoveryError({ code: 'unexpected_failure', message: 'Database error saving new user' }, 'update') ===
+    PASSWORD_RECOVERY_UPDATE_FAILED_MESSAGE,
+);
+check(
+  'solicitacao nunca revela user_not_found',
+  translatePasswordRecoveryError({ code: 'user_not_found', message: 'User not found' }, 'request') ===
+    PASSWORD_RECOVERY_NEUTRAL_MESSAGE,
+);
+check(
+  'UI de reset usa tradutor centralizado',
+  reset.includes("translatePasswordRecoveryError(updateError, 'update')"),
+);
+check(
+  'UI de reset nao imprime message bruta do GoTrue',
+  !reset.includes('updateError.message ||'),
 );
 
 const validSearch = new URLSearchParams('code=pkce-recovery');
@@ -327,9 +388,48 @@ check(
 );
 
 const portal = read('app/portal-cliente/page.tsx');
+const portalOtp = read('lib/portal-cliente/otp.ts');
+const portalConfirm = read('app/portal-cliente/confirmar/page.tsx');
+const createCompany = read('app/api/companies/create/route.ts');
 check(
   'portal do cliente nao foi alterado nesta feature',
   !portal.includes('passwordRecovery') && !portal.includes('resetPasswordForEmail'),
+);
+check(
+  'OTP do portal do cliente permanece independente do Auth recovery',
+  portalOtp.includes('verifyClientPortalOtpCode') &&
+    !portalOtp.includes('resetPasswordForEmail') &&
+    !portalConfirm.includes('passwordRecovery'),
+);
+check('login normal continua com signInWithPassword', login.includes('signInWithPassword'));
+check(
+  'criacao de administrador permanece no fluxo de empresas',
+  createCompany.includes('force_password_change: true') &&
+    !createCompany.includes('passwordRecovery'),
+);
+check(
+  'assunto do e-mail de recovery',
+  PASSWORD_RECOVERY_EMAIL_SUBJECT === 'Recuperação de senha — SV Lotes',
+);
+check(
+  'template HTML usa ConfirmationURL oficial',
+  passwordRecoveryEmailUsesOfficialConfirmationUrl(PASSWORD_RECOVERY_EMAIL_HTML),
+);
+check(
+  'template texto usa ConfirmationURL oficial',
+  passwordRecoveryEmailUsesOfficialConfirmationUrl(PASSWORD_RECOVERY_EMAIL_TEXT),
+);
+check(
+  'template nao monta token manualmente',
+  !PASSWORD_RECOVERY_EMAIL_HTML.includes('{{ .Token }}') &&
+    !PASSWORD_RECOVERY_EMAIL_HTML.includes('generateLink') &&
+    PASSWORD_RECOVERY_EMAIL_HTML.includes('Redefinir minha senha'),
+);
+check(
+  'template nao depende de imagem externa',
+  !/<img\s/i.test(PASSWORD_RECOVERY_EMAIL_HTML) &&
+    !PASSWORD_RECOVERY_EMAIL_HTML.includes('http://') &&
+    PASSWORD_RECOVERY_EMAIL_HTML.includes('href="' + PASSWORD_RECOVERY_EMAIL_CONFIRMATION_VAR + '"'),
 );
 
 for (const rel of clientFiles) {

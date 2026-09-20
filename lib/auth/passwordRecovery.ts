@@ -16,6 +16,128 @@ export const PASSWORD_RECOVERY_NEUTRAL_MESSAGE =
 export const PASSWORD_RECOVERY_INVALID_LINK_MESSAGE =
   'Este link de recuperação é inválido ou já expirou. Solicite um novo link para continuar.';
 
+export const PASSWORD_RECOVERY_DIFFERENT_PASSWORD_MESSAGE =
+  'A nova senha deve ser diferente da senha atual.';
+
+export const PASSWORD_RECOVERY_RATE_LIMIT_MESSAGE =
+  'Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.';
+
+export const PASSWORD_RECOVERY_UPDATE_FAILED_MESSAGE =
+  'Não foi possível alterar sua senha. Tente novamente ou solicite um novo link.';
+
+export type PasswordRecoveryErrorContext = 'update' | 'link' | 'request';
+
+export type PasswordRecoveryAuthErrorLike = {
+  message?: string;
+  code?: string;
+  status?: number;
+  name?: string;
+  error_code?: string;
+  error_description?: string;
+} | null;
+
+function decodeAuthText(value: string): string {
+  const raw = String(value || '').replace(/\+/g, ' ');
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export function normalizePasswordRecoveryAuthError(
+  error?: PasswordRecoveryAuthErrorLike | string | null,
+): { code: string; status: number; message: string } {
+  if (typeof error === 'string') {
+    return { code: '', status: 0, message: decodeAuthText(error).toLowerCase() };
+  }
+  const code = String(error?.code || error?.error_code || '')
+    .trim()
+    .toLowerCase();
+  const status = Number(error?.status || 0);
+  const message = decodeAuthText(
+    [error?.message, error?.error_description].filter(Boolean).join(' '),
+  ).toLowerCase();
+  return { code, status, message };
+}
+
+function isSamePasswordError(parsed: { code: string; message: string }): boolean {
+  if (parsed.code === 'same_password') return true;
+  return (
+    /different from the old password|same[_ ]password|igual à senha atual|igual a senha atual/.test(
+      parsed.message,
+    )
+  );
+}
+
+function isRateLimitError(parsed: { code: string; status: number; message: string }): boolean {
+  if (parsed.status === 429) return true;
+  if (
+    parsed.code === 'over_request_rate_limit' ||
+    parsed.code === 'over_email_send_rate_limit'
+  ) {
+    return true;
+  }
+  return /rate limit|too many requests|only request this after|for security purposes/.test(
+    parsed.message,
+  );
+}
+
+function isWeakPasswordError(parsed: { code: string; message: string }): boolean {
+  if (parsed.code === 'weak_password') return true;
+  return /at least 6 character|minimum 6 character|password should be at least/.test(
+    parsed.message,
+  );
+}
+
+function isInvalidRecoveryLinkError(parsed: {
+  code: string;
+  status: number;
+  message: string;
+}): boolean {
+  if (
+    [
+      'otp_expired',
+      'flow_state_expired',
+      'flow_state_not_found',
+      'session_not_found',
+      'session_expired',
+      'bad_code_verifier',
+      'access_denied',
+      'bad_jwt',
+    ].includes(parsed.code)
+  ) {
+    return true;
+  }
+  return /expired|otp_expired|access_denied|invalid.*(link|token|otp)|flow_state|already been used|token has expired/.test(
+    parsed.message,
+  );
+}
+
+export function translatePasswordRecoveryError(
+  error?: PasswordRecoveryAuthErrorLike | string | null,
+  context: PasswordRecoveryErrorContext = 'update',
+): string {
+  if (context === 'request') {
+    return PASSWORD_RECOVERY_NEUTRAL_MESSAGE;
+  }
+
+  const parsed = normalizePasswordRecoveryAuthError(error);
+  if (context === 'link' || isInvalidRecoveryLinkError(parsed)) {
+    return PASSWORD_RECOVERY_INVALID_LINK_MESSAGE;
+  }
+  if (isSamePasswordError(parsed)) {
+    return PASSWORD_RECOVERY_DIFFERENT_PASSWORD_MESSAGE;
+  }
+  if (isRateLimitError(parsed)) {
+    return PASSWORD_RECOVERY_RATE_LIMIT_MESSAGE;
+  }
+  if (isWeakPasswordError(parsed)) {
+    return 'A senha deve ter no mínimo 6 caracteres.';
+  }
+  return PASSWORD_RECOVERY_UPDATE_FAILED_MESSAGE;
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function normalizeRecoveryEmail(value: string): string {
@@ -109,9 +231,9 @@ export function canOpenPasswordRecoveryForm(input: {
 }
 
 export function recoveryRequestUserMessage(
-  _authError?: { message?: string } | null,
+  _authError?: PasswordRecoveryAuthErrorLike | string | null,
 ): string {
-  return PASSWORD_RECOVERY_NEUTRAL_MESSAGE;
+  return translatePasswordRecoveryError(_authError, 'request');
 }
 
 export function buildPasswordRecoveryUpdatePayload(password: string): { password: string } {

@@ -18,6 +18,7 @@ import {
   isRecoveryLinkError,
   looksLikeRecoveryCallback,
   markPasswordRecoveryLock,
+  translatePasswordRecoveryError,
   validateNewRecoveryPassword,
 } from '@/lib/auth/passwordRecovery';
 
@@ -116,7 +117,7 @@ export default function RedefinirSenhaPage() {
         buildPasswordRecoveryUpdatePayload(password),
       );
       if (updateError) {
-        setError(updateError.message || 'Não foi possível alterar a senha.');
+        setError(translatePasswordRecoveryError(updateError, 'update'));
         return;
       }
       await supabase.auth.signOut();
@@ -126,7 +127,7 @@ export default function RedefinirSenhaPage() {
         router.replace(PASSWORD_RECOVERY_LOGIN_PATH);
       }, 1800);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Não foi possível alterar a senha.');
+      setError(translatePasswordRecoveryError(err instanceof Error ? err.message : null, 'update'));
     } finally {
       setLoading(false);
     }
