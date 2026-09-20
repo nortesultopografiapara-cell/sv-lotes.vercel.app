@@ -25,11 +25,14 @@ import {
 } from '../lib/charges/buyerCollectionEmail';
 import { composeResendFromHeader } from '../lib/email/resendSend';
 import { evaluateBuyerReminderEligibility } from '../lib/charges/buyerReminderEligibility';
+import { allocateWhatsAppSlots, countAllocatedByCompany } from '../lib/charges/buyerReminderFairShare';
 import {
   buyerRemindersProductionBlockedReason,
   runBuyerInstallmentReminders,
 } from '../lib/charges/buyerReminderRunner';
 import {
+  BUYER_REMINDER_CRON_UTC,
+  BUYER_REMINDER_MAX_FAILED_ATTEMPTS,
   BUYER_REMINDER_MAX_WHATSAPP_PER_RUN,
   DEFAULT_BUYER_REMINDER_SETTINGS,
   normalizeBuyerReminderSettings,
@@ -165,6 +168,7 @@ function testHomologationLabels() {
   assert(BUYER_REMINDER_SKIP_REASON_LABELS.missing_payment_method === 'Sem meio de pagamento', 'sem meio');
   assert(BUYER_REMINDER_SKIP_REASON_LABELS.already_sent === 'Evento já enviado', 'já enviado');
   assert(BUYER_REMINDER_SKIP_REASON_LABELS.channel_disabled === 'Canal desativado', 'canal');
+  assert(BUYER_REMINDER_SKIP_REASON_LABELS.retry_exhausted === 'Limite de tentativas', 'retry esgotado');
   const pay = describeBuyerReminderPaymentMethod(charge());
   assert(Boolean(pay && pay.includes('PIX') && pay.includes('Boleto')), 'meio de pagamento da simulação');
   const maskedPhone = maskBuyerReminderRecipient('whatsapp', '11999887766');
@@ -788,6 +792,251 @@ async function testRunnerIdempotencyAndChannels() {
   console.log('OK testRunnerIdempotencyAndChannels');
 }
 
+function reminderSettingsRow(companyId: string, extra?: Record<string, unknown>) {
+  return {
+    company_id: companyId,
+    enabled: true,
+    whatsapp_enabled: true,
+    email_enabled: false,
+    due_soon_enabled: true,
+    due_soon_days: 3,
+    due_today_enabled: true,
+    overdue_enabled: true,
+    overdue_days: 3,
+    ...extra,
+  };
+}
+
+function sentWhatsApp(logs: Record<string, unknown>[], companyId?: string) {
+  return logs.filter(
+    (row) =>
+      row.status === 'sent' &&
+      row.channel === 'whatsapp' &&
+      (!companyId || row.company_id === companyId),
+  ).length;
+}
+
+function testFairShareUnit() {
+  const companyIds = [...Array.from({ length: 80 }, () => 'A'), ...Array.from({ length: 10 }, () => 'B')];
+  const selected = allocateWhatsAppSlots(companyIds, BUYER_REMINDER_MAX_WHATSAPP_PER_RUN);
+  const counts = countAllocatedByCompany(companyIds, selected);
+  assert(selected.filter(Boolean).length === 20, 'teto 20 no round-robin');
+  assert(counts.A === 10 && counts.B === 10, 'A e B recebem 10 na primeira execução');
+  const nextIds = companyIds.filter((_, index) => !selected[index]);
+  const next = allocateWhatsAppSlots(nextIds, BUYER_REMINDER_MAX_WHATSAPP_PER_RUN);
+  const nextCounts = countAllocatedByCompany(nextIds, next);
+  assert(nextCounts.A === 20 && !nextCounts.B, 'segunda execução drena A sem reenviar B');
+  console.log('OK testFairShareUnit');
+}
+
+async function testContinuationScenarios() {
+  const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const prevVercel = process.env.VERCEL_ENV;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://hoynysmynxncdlptuzub.supabase.co';
+  process.env.VERCEL_ENV = 'preview';
+  try {
+    const companies = [
+      { id: TENANT, name: 'Loteadora Alfa', fantasy_name: 'Alfa', email: 'financeiro@alfa.com.br' },
+      { id: OTHER, name: 'Outra', fantasy_name: 'Beta', email: 'contato@beta.com.br' },
+    ];
+
+    const aIds = Array.from({ length: 80 }, (_, i) => `inst-a-${i}`);
+    const aDb: MemoryDb = {
+      settings: [reminderSettingsRow(TENANT)],
+      receipts: aIds.map((id) => receiptRow({ id, due_date: '2026-09-22' })),
+      logs: [],
+      companies,
+    };
+    const aAsaas = aIds.map((id) => charge({ installmentId: id }));
+    let aWa = 0;
+    const runA = () =>
+      runBuyerInstallmentReminders(createMemoryAdmin(aDb) as never, {
+        runDate: '2026-09-19',
+        companyId: TENANT,
+        sendTextFn: async () => {
+          aWa += 1;
+          return { ok: true, messageId: `wa-a-${aWa}` };
+        },
+        sendEmailFn: async () => ({ ok: true, providerId: 'should-not-email' }),
+        listAsaasChargesFn: async () => aAsaas,
+        listInterChargesFn: async () => new Map(),
+      });
+    const a1 = await runA();
+    const a2 = await runA();
+    const a3 = await runA();
+    const a4 = await runA();
+    const a5 = await runA();
+    assert(a1.whatsappSent === 20 && a1.truncated, 'A: 20 na 1ª');
+    assert(a2.whatsappSent === 20 && a2.truncated, 'A: 20 na 2ª');
+    assert(a3.whatsappSent === 20 && a3.truncated, 'A: 20 na 3ª');
+    assert(a4.whatsappSent === 20 && !a4.truncated, 'A: 20 na 4ª e encerra');
+    assert(a5.whatsappSent === 0 && !a5.truncated, 'A: nada pendente na 5ª');
+    assert(sentWhatsApp(aDb.logs, TENANT) === 80, 'A: 80 enviados sem duplicar');
+    assert(new Set(aDb.logs.filter((row) => row.status === 'sent').map((row) => row.finance_receipt_id)).size === 80, 'A: 80 parcelas distintas');
+
+    const bIds = Array.from({ length: 10 }, (_, i) => `inst-b-${i}`);
+    const abDb: MemoryDb = {
+      settings: [reminderSettingsRow(TENANT), reminderSettingsRow(OTHER)],
+      receipts: [
+        ...aIds.map((id) => receiptRow({ id, company_id: TENANT, tenant_id: TENANT, due_date: '2026-09-22' })),
+        ...bIds.map((id) =>
+          receiptRow({
+            id,
+            company_id: OTHER,
+            tenant_id: OTHER,
+            due_date: '2026-09-22',
+            customer_id: CUSTOMER,
+          }),
+        ),
+      ],
+      logs: [],
+      companies,
+    };
+    const abAsaas = [...aIds, ...bIds].map((id) => charge({ installmentId: id }));
+    let abWa = 0;
+    const runAb = () =>
+      runBuyerInstallmentReminders(createMemoryAdmin(abDb) as never, {
+        runDate: '2026-09-19',
+        sendTextFn: async () => {
+          abWa += 1;
+          return { ok: true, messageId: `wa-ab-${abWa}` };
+        },
+        sendEmailFn: async () => ({ ok: true, providerId: 'should-not-email' }),
+        listAsaasChargesFn: async () => abAsaas,
+        listInterChargesFn: async () => new Map(),
+      });
+    const ab1 = await runAb();
+    assert(ab1.whatsappSent === 20, 'B: teto 20 na 1ª execução compartilhada');
+    assert(sentWhatsApp(abDb.logs, TENANT) === 10, 'B: empresa A não monopoliza a 1ª execução');
+    assert(sentWhatsApp(abDb.logs, OTHER) === 10, 'B: empresa B envia na 1ª execução');
+    const ab2 = await runAb();
+    assert(sentWhatsApp(abDb.logs, OTHER) === 10, 'B: empresa B não reenvia');
+    assert(ab2.whatsappSent === 20, 'B: 2ª execução continua A');
+    assert(sentWhatsApp(abDb.logs, TENANT) === 30, 'B: A avança depois da partilha');
+
+    const cIds = Array.from({ length: 25 }, (_, i) => `inst-c-${i}`);
+    const cDb: MemoryDb = {
+      settings: [reminderSettingsRow(TENANT)],
+      receipts: cIds.map((id) => receiptRow({ id, due_date: '2026-09-22' })),
+      logs: [],
+      companies,
+    };
+    const cAsaas = cIds.map((id) => charge({ installmentId: id }));
+    let cWa = 0;
+    const runC = () =>
+      runBuyerInstallmentReminders(createMemoryAdmin(cDb) as never, {
+        runDate: '2026-09-19',
+        companyId: TENANT,
+        sendTextFn: async () => {
+          cWa += 1;
+          return { ok: true, messageId: `wa-c-${cWa}` };
+        },
+        sendEmailFn: async () => ({ ok: true, providerId: 'should-not-email' }),
+        listAsaasChargesFn: async () => cAsaas,
+        listInterChargesFn: async () => new Map(),
+      });
+    const c1 = await runC();
+    assert(c1.whatsappSent === 20, 'C: 20 enviados na 1ª');
+    const leftover = cIds.filter(
+      (id) => !cDb.logs.some((row) => row.finance_receipt_id === id && row.status === 'sent'),
+    );
+    assert(leftover.length === 5, 'C: 5 ficaram fora do teto');
+    for (const id of leftover) {
+      cDb.logs.push({
+        id: `failed-${id}`,
+        company_id: TENANT,
+        finance_receipt_id: id,
+        channel: 'whatsapp',
+        event_type: 'due_soon',
+        due_date: '2026-09-22',
+        status: 'failed',
+        error_message: 'falha temporária',
+      });
+    }
+    const beforeRetry = cWa;
+    const c2 = await runC();
+    assert(c2.whatsappSent === 5, 'C: retry dos 5 failed e não reenvia os 20');
+    assert(cWa - beforeRetry === 5, 'C: provider chamado só para os 5');
+    assert(sentWhatsApp(cDb.logs, TENANT) === 25, 'C: 25 sent ao final');
+    const c3 = await runC();
+    assert(c3.items.every((item) => item.skipReason === 'already_sent'), 'C: sent não reenvia');
+
+    const dIds = Array.from({ length: 25 }, (_, i) => `inst-d-${i}`);
+    const dDb: MemoryDb = {
+      settings: [reminderSettingsRow(TENANT)],
+      receipts: dIds.map((id) => receiptRow({ id, due_date: '2026-09-22' })),
+      logs: [],
+      companies,
+    };
+    const dAsaas = dIds.map((id) => charge({ installmentId: id }));
+    let dWa = 0;
+    const runD = () =>
+      runBuyerInstallmentReminders(createMemoryAdmin(dDb) as never, {
+        runDate: '2026-09-19',
+        companyId: TENANT,
+        sendTextFn: async () => {
+          dWa += 1;
+          return { ok: true, messageId: `wa-d-${dWa}` };
+        },
+        sendEmailFn: async () => ({ ok: true, providerId: 'should-not-email' }),
+        listAsaasChargesFn: async () => dAsaas,
+        listInterChargesFn: async () => new Map(),
+      });
+    const d1 = await runD();
+    assert(d1.whatsappSent === 20, 'D: 20 na 1ª');
+    const unpaid = dIds.filter(
+      (id) => !dDb.logs.some((row) => row.finance_receipt_id === id && row.status === 'sent'),
+    );
+    for (const row of dDb.receipts) {
+      if (unpaid.includes(String(row.id))) row.status = 'pago';
+    }
+    const d2 = await runD();
+    assert(d2.whatsappSent === 0, 'D: não envia parcela paga entre execuções');
+    assert(sentWhatsApp(dDb.logs, TENANT) === 20, 'D: sent permanece nos 20 da 1ª execução');
+    assert(
+      !d2.items.some((item) => unpaid.includes(item.installmentId) && item.status === 'sent'),
+      'D: parcelas pagas saem da elegibilidade na leitura do banco',
+    );
+
+    const eDb: MemoryDb = {
+      settings: [reminderSettingsRow(TENANT)],
+      receipts: [receiptRow({ id: 'inst-retry', due_date: '2026-09-22' })],
+      logs: Array.from({ length: BUYER_REMINDER_MAX_FAILED_ATTEMPTS }, (_, i) => ({
+        id: `fail-${i}`,
+        company_id: TENANT,
+        finance_receipt_id: 'inst-retry',
+        channel: 'whatsapp',
+        event_type: 'due_soon',
+        due_date: '2026-09-22',
+        status: 'failed',
+        error_message: 'permanente',
+      })),
+      companies,
+    };
+    let eWa = 0;
+    const exhausted = await runBuyerInstallmentReminders(createMemoryAdmin(eDb) as never, {
+      runDate: '2026-09-19',
+      companyId: TENANT,
+      sendTextFn: async () => {
+        eWa += 1;
+        return { ok: true, messageId: 'should-not' };
+      },
+      sendEmailFn: async () => ({ ok: true, providerId: 'should-not-email' }),
+      listAsaasChargesFn: async () => [charge({ installmentId: 'inst-retry' })],
+      listInterChargesFn: async () => new Map(),
+    });
+    assert(eWa === 0, 'retry esgotado não chama Z-API');
+    assert(
+      exhausted.items.some((item) => item.skipReason === 'retry_exhausted'),
+      'retry_exhausted após 5 falhas',
+    );
+  } finally {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
+    process.env.VERCEL_ENV = prevVercel;
+  }
+  console.log('OK testContinuationScenarios');
+}
+
 function testProductionBlockAndIsolation() {
   const prev = process.env.VERCEL_ENV;
   process.env.VERCEL_ENV = 'production';
@@ -798,7 +1047,8 @@ function testProductionBlockAndIsolation() {
   }
 
   const vercel = read('vercel.json');
-  assert(!vercel.includes('buyer-installment-reminders'), 'cron NÃO entra no vercel.json');
+  assert(vercel.includes('/api/cron/buyer-installment-reminders'), 'cron preparado no vercel.json');
+  assert(vercel.includes(BUYER_REMINDER_CRON_UTC), 'frequência comercial BR no cron');
   assert(vercel.includes('/api/cron/saas-billing-reminders'), 'cron SaaS intacto');
 
   const saasWa = read('lib/saasBillingReminderWhatsApp.ts');
@@ -826,6 +1076,9 @@ function testProductionBlockAndIsolation() {
   assert(!runner.includes('createCompanyInstallmentCharge'), 'não gera cobrança Asaas');
   assert(!runner.includes('generateMissing'), 'não emite cobrança faltante');
   assert(runner.includes('BUYER_REMINDER_MAX_WHATSAPP_PER_RUN'), 'teto WhatsApp');
+  assert(runner.includes('allocateWhatsAppSlots'), 'partilha justa entre empresas');
+  assert(runner.includes('BUYER_REMINDER_MAX_FAILED_ATTEMPTS'), 'teto de retry');
+  assert(runner.includes('BUYER_REMINDER_SEND_GAP_MS'), 'intervalo Z-API');
   assert(runner.includes('result.truncated = true'), 'teto marca truncated');
   assert(!/if \(result\.truncated\) break/.test(runner), 'teto de WhatsApp não aborta e-mail');
   assert(runner.includes('America/Sao_Paulo') || read('lib/charges/buyerReminderTypes.ts').includes('America/Sao_Paulo'), 'timezone BR');
@@ -844,8 +1097,16 @@ function testProductionBlockAndIsolation() {
   assert(settingsUi.includes('Simulação'), 'rótulo Simulação');
   assert(settingsUi.includes('skipReasonLabel'), 'motivo amigável nos ignorados');
   assert(historyUi.includes('Lembretes automáticos'), 'histórico simples');
+  assert(historyUi.includes('Central de Lembretes'), 'central operacional');
+  assert(historyUi.includes('Configurar'), 'atalho para configuração');
+  assert(historyUi.includes('BUYER_REMINDER_SETTINGS_HREF'), 'Configurar aponta para settings');
+  assert(!historyUi.includes('Executar agora'), 'charges sem disparo manual');
   assert(finance.includes('BuyerReminderSettingsPanel'), 'painel em Configurações Financeiro');
+  assert(finance.includes('financeiro-cobrancas') || finance.includes('cobrancas'), 'hash abre aba Cobranças');
   assert(charges.includes('BuyerReminderHistoryPanel'), 'histórico em /charges');
+  assert(charges.includes('Lembretes'), 'botão Lembretes em /charges');
+  assert(!charges.includes('Executar agora'), 'sem Executar agora em /charges');
+  assert(settingsUi.includes('Executar agora'), 'execução manual permanece protegida nas configurações');
   assert(batchService.includes('chargeWhatsAppBatch'), 'cobrança em massa permanece');
   assert(!batchService.includes('runBuyerInstallmentReminders'), 'massa não mistura com automático');
   console.log('OK testProductionBlockAndIsolation');
@@ -858,6 +1119,8 @@ async function main() {
   testEligibilityCore();
   testTemplates();
   await testRunnerIdempotencyAndChannels();
+  testFairShareUnit();
+  await testContinuationScenarios();
   testProductionBlockAndIsolation();
   console.log('OK buyer-installment-reminders');
 }

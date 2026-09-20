@@ -14,8 +14,15 @@ type Props = {
   readOnlyDemo?: boolean;
 };
 
+function initialFinanceTab(): Tab {
+  if (typeof window === 'undefined') return 'accounts';
+  const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+  if (hash.includes('cobrancas') || hash.includes('lembretes')) return 'cobrancas';
+  return 'accounts';
+}
+
 export function FinancialIntegrationPanel({ tenantId, readOnlyDemo = false }: Props) {
-  const [tab, setTab] = useState<Tab>('accounts');
+  const [tab, setTab] = useState<Tab>(initialFinanceTab);
 
   return (
     <div className="space-y-6">

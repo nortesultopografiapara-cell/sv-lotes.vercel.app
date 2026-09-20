@@ -29,6 +29,7 @@ export const BUYER_REMINDER_SKIP_REASON_LABELS: Record<BuyerReminderSkipReason, 
   event_disabled: 'Evento desativado',
   missing_customer: 'Cliente não vinculado',
   other_tenant: 'Parcela de outra empresa',
+  retry_exhausted: 'Limite de tentativas',
 };
 
 export function formatBuyerReminderEventLabel(

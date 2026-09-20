@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Banknote,
+  Bell,
   Calendar,
   Download,
   FileText,
@@ -166,6 +167,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [whatsAppBatchOpen, setWhatsAppBatchOpen] = useState(false);
   const [whatsAppBatchLoading, setWhatsAppBatchLoading] = useState(false);
   const [whatsAppBatchSending, setWhatsAppBatchSending] = useState(false);
+  const [reminderOpsOpen, setReminderOpsOpen] = useState(false);
   const [whatsAppBatchError, setWhatsAppBatchError] = useState<string | null>(null);
   const [whatsAppBatchPreview, setWhatsAppBatchPreview] = useState<ChargeWhatsAppBatchPreview | null>(
     null,
@@ -1764,6 +1766,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
               {formatRefreshAllChargesBlockReason('integration_unavailable')}
             </span>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setReminderOpsOpen(true)}
+            className="charges-ops-btn border border-amber-500/40 bg-amber-600/90 text-white hover:bg-amber-500"
+            title="Consultar lembretes automáticos e histórico operacional"
+          >
+            <Bell className="h-4 w-4" />
+            Lembretes
+          </button>
         </div>
       </div>
 
@@ -2104,7 +2115,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </div>
         </div>
       )}
-      <BuyerReminderHistoryPanel />
+      <BuyerReminderHistoryPanel open={reminderOpsOpen} onClose={() => setReminderOpsOpen(false)} />
       <ChargeWhatsAppBatchModal
         open={whatsAppBatchOpen}
         loading={whatsAppBatchLoading}

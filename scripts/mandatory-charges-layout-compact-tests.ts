@@ -89,6 +89,11 @@ function testChargesLayoutWiring() {
     ops.indexOf('Atualizar todas as cobranças') > ops.indexOf('Atualizar lista'),
     'Atualizar todas depois de Atualizar lista',
   );
+  assert(
+    ops.indexOf('Lembretes') > ops.indexOf('Atualizar todas as cobranças'),
+    'Lembretes ao lado de Atualizar todas as cobranças',
+  );
+  assert(!ops.includes('Executar agora'), 'linha operacional sem disparo manual de lembretes');
 
   assert(count(page, 'const handleRefreshList') === 1, 'um único handler Atualizar lista');
   assert(count(page, 'const runRefreshAllCharges') === 1, 'um único handler Atualizar todas');

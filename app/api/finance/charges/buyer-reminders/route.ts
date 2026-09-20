@@ -26,7 +26,16 @@ export async function GET(request: Request) {
   const wantLogs = url.searchParams.get('logs') === '1' || url.searchParams.get('include') === 'logs';
   try {
     const settings = await loadBuyerReminderSettings(auth.admin, auth.tenantId);
-    const logs = wantLogs ? await listBuyerReminderLogs(auth.admin, auth.tenantId, 40) : [];
+    const logs = wantLogs
+      ? await listBuyerReminderLogs(auth.admin, auth.tenantId, {
+          limit: 100,
+          eventType: url.searchParams.get('event'),
+          channel: url.searchParams.get('channel'),
+          status: url.searchParams.get('status'),
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+        })
+      : [];
     return NextResponse.json({
       ok: true,
       settings,

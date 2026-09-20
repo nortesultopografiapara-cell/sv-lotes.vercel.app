@@ -34,6 +34,7 @@ export const BUYER_REMINDER_SKIP_REASONS = [
   'event_disabled',
   'missing_customer',
   'other_tenant',
+  'retry_exhausted',
 ] as const;
 export type BuyerReminderSkipReason = (typeof BUYER_REMINDER_SKIP_REASONS)[number];
 
@@ -66,7 +67,15 @@ export const DEFAULT_BUYER_REMINDER_SETTINGS: Omit<BuyerReminderSettings, 'compa
 export const BUYER_REMINDER_MAX_WHATSAPP_PER_RUN = 20;
 /** Intervalo entre WhatsApp para não monopolizar a instância Z-API compartilhada com OTP/SaaS. */
 export const BUYER_REMINDER_SEND_GAP_MS = 300;
+/** Falhas permanentes do mesmo evento param de ser reprocessadas após este número de tentativas. */
+export const BUYER_REMINDER_MAX_FAILED_ATTEMPTS = 5;
+/**
+ * Cron UTC preparado: 8:10–19:40 America/Sao_Paulo, 2×/hora, fora do SaaS 11:00 UTC.
+ * Production continua no-op no handler até autorização.
+ */
+export const BUYER_REMINDER_CRON_UTC = '10,40 11-22 * * *';
 export const BUYER_REMINDER_TEMPLATE_KEY = 'buyer_reminder_v1';
+export const BUYER_REMINDER_SETTINGS_HREF = '/settings#financeiro-cobrancas';
 
 export function clampReminderDays(value: unknown, fallback: number): number {
   const n = Number(value);

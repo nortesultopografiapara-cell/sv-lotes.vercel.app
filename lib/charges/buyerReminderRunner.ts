@@ -27,7 +27,9 @@ import {
   listEnabledBuyerReminderSettings,
   loadBuyerReminderSettings,
 } from '@/lib/charges/buyerReminderSettings';
+import { allocateWhatsAppSlots } from '@/lib/charges/buyerReminderFairShare';
 import {
+  BUYER_REMINDER_MAX_FAILED_ATTEMPTS,
   BUYER_REMINDER_MAX_WHATSAPP_PER_RUN,
   BUYER_REMINDER_SEND_GAP_MS,
   BUYER_REMINDER_TEMPLATE_KEY,
@@ -180,6 +182,55 @@ async function alreadySent(
   return Boolean(data?.id);
 }
 
+async function countFailedAttempts(
+  admin: SupabaseClient,
+  input: {
+    companyId: string;
+    installmentId: string;
+    channel: BuyerReminderChannel;
+    eventType: BuyerReminderEventType;
+    dueDate: string;
+  },
+): Promise<number> {
+  const { data, error } = await admin
+    .from('company_buyer_reminder_logs')
+    .select('id')
+    .eq('company_id', input.companyId)
+    .eq('finance_receipt_id', input.installmentId)
+    .eq('channel', input.channel)
+    .eq('event_type', input.eventType)
+    .eq('due_date', input.dueDate)
+    .eq('status', 'failed');
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data.length : 0;
+}
+
+type PendingWhatsAppJob = {
+  companyId: string;
+  installmentId: string;
+  customerId: string | null;
+  dueDate: string;
+  eventType: BuyerReminderEventType;
+  recipient: string;
+  message: string | null;
+  phone: string;
+  logMeta: {
+    customerName?: string | null;
+    projectName?: string | null;
+    parcelLabel?: string | null;
+    lotLabel?: string | null;
+  };
+  toItem: (
+    status: 'sent' | 'skipped' | 'failed',
+    extra?: {
+      skipReason?: BuyerReminderSkipReason | null;
+      error?: string | null;
+      providerMessageId?: string | null;
+      includePreview?: boolean;
+    },
+  ) => BuyerReminderRunItem;
+};
+
 async function insertLog(
   admin: SupabaseClient,
   row: {
@@ -198,9 +249,10 @@ async function insertLog(
     customerName?: string | null;
     projectName?: string | null;
     parcelLabel?: string | null;
+    lotLabel?: string | null;
   },
 ): Promise<void> {
-  const { error } = await admin.from('company_buyer_reminder_logs').insert({
+  const payload: Record<string, unknown> = {
     company_id: row.companyId,
     customer_id: row.customerId,
     finance_receipt_id: row.installmentId,
@@ -217,8 +269,15 @@ async function insertLog(
     customer_name: row.customerName || null,
     project_name: row.projectName || null,
     parcel_label: row.parcelLabel || null,
+    lot_label: row.lotLabel || null,
     sent_at: row.status === 'sent' ? new Date().toISOString() : null,
-  });
+  };
+  let { error } = await admin.from('company_buyer_reminder_logs').insert(payload);
+  if (error && /lot_label/i.test(error.message || '')) {
+    const fallback = { ...payload };
+    delete fallback.lot_label;
+    ({ error } = await admin.from('company_buyer_reminder_logs').insert(fallback));
+  }
   if (error) {
     if (row.status === 'sent' && /duplicate key|23505/i.test(error.message || '')) return;
     throw new Error(error.message);
@@ -295,6 +354,7 @@ export async function runBuyerInstallmentReminders(
   const zapiReady = Boolean(options?.sendTextFn) || isZapiConfigured();
   const emailReady = Boolean(options?.sendEmailFn) || isResendEmailConfigured();
   const portalUrl = resolveChargeWhatsAppBatchPortalUrl();
+  const pendingWhatsApp: PendingWhatsAppJob[] = [];
 
   for (const settings of settingsList) {
     if (!settings.enabled) continue;
@@ -372,6 +432,7 @@ export async function runBuyerInstallmentReminders(
             customerName: candidate.customerName,
             projectName: parcel.projectName,
             parcelLabel: parcel.parcelLabel,
+            lotLabel: parcel.lotLabel,
           };
 
           const previewForChannel =
@@ -448,6 +509,36 @@ export async function runBuyerInstallmentReminders(
             continue;
           }
 
+          const failedAttempts = await countFailedAttempts(admin, {
+            companyId: settings.companyId,
+            installmentId,
+            channel,
+            eventType: event,
+            dueDate,
+          });
+          if (failedAttempts >= BUYER_REMINDER_MAX_FAILED_ATTEMPTS) {
+            result.skipped += 1;
+            result.items.push(toItem('skipped', { skipReason: 'retry_exhausted' }));
+            if (!options?.dryRun) {
+              await insertLog(admin, {
+                companyId: settings.companyId,
+                customerId: candidate.customerId,
+                installmentId,
+                dueDate,
+                eventType: event,
+                channel,
+                recipient,
+                status: 'skipped',
+                skipReason: 'retry_exhausted',
+                messageBody: message,
+                providerMessageId: null,
+                errorMessage: null,
+                ...logMeta,
+              });
+            }
+            continue;
+          }
+
           if (options?.dryRun) {
             result.sent += 1;
             if (channel === 'whatsapp') result.whatsappSent += 1;
@@ -456,79 +547,18 @@ export async function runBuyerInstallmentReminders(
           }
 
           if (channel === 'whatsapp') {
-            if (result.whatsappSent >= BUYER_REMINDER_MAX_WHATSAPP_PER_RUN) {
-              result.truncated = true;
-              continue;
-            }
-            if (!zapiReady) {
-              result.failed += 1;
-              await insertLog(admin, {
-                companyId: settings.companyId,
-                customerId: candidate.customerId,
-                installmentId,
-                dueDate,
-                eventType: event,
-                channel,
-                recipient,
-                status: 'failed',
-                skipReason: null,
-                messageBody: message,
-                providerMessageId: null,
-                errorMessage: 'Z-API não configurada.',
-                ...logMeta,
-              });
-              result.items.push(
-                toItem('failed', { error: 'Z-API não configurada.' }),
-              );
-              continue;
-            }
-            const sent = await sendTextFn({
+            pendingWhatsApp.push({
+              companyId: settings.companyId,
+              installmentId,
+              customerId: candidate.customerId,
+              dueDate,
+              eventType: event,
+              recipient,
+              message,
               phone: evaluation.normalizedPhone || '',
-              message: message || '',
+              logMeta,
+              toItem,
             });
-            if (sent.ok) {
-              result.sent += 1;
-              result.whatsappSent += 1;
-              await insertLog(admin, {
-                companyId: settings.companyId,
-                customerId: candidate.customerId,
-                installmentId,
-                dueDate,
-                eventType: event,
-                channel,
-                recipient,
-                status: 'sent',
-                skipReason: null,
-                messageBody: message,
-                providerMessageId: sent.messageId ?? null,
-                errorMessage: null,
-                ...logMeta,
-              });
-              result.items.push(
-                toItem('sent', { providerMessageId: sent.messageId ?? null }),
-              );
-              await sleep(BUYER_REMINDER_SEND_GAP_MS);
-            } else {
-              result.failed += 1;
-              await insertLog(admin, {
-                companyId: settings.companyId,
-                customerId: candidate.customerId,
-                installmentId,
-                dueDate,
-                eventType: event,
-                channel,
-                recipient,
-                status: 'failed',
-                skipReason: null,
-                messageBody: message,
-                providerMessageId: null,
-                errorMessage: sent.error || 'Falha no WhatsApp.',
-                ...logMeta,
-              });
-              result.items.push(
-                toItem('failed', { error: sent.error || 'Falha no WhatsApp.' }),
-              );
-            }
             continue;
           }
 
@@ -615,6 +645,82 @@ export async function runBuyerInstallmentReminders(
     }
   }
 
+  const selectedWhatsApp = allocateWhatsAppSlots(
+    pendingWhatsApp.map((job) => job.companyId),
+    BUYER_REMINDER_MAX_WHATSAPP_PER_RUN,
+  );
+  if (pendingWhatsApp.some((_, index) => !selectedWhatsApp[index])) {
+    result.truncated = true;
+  }
+
+  for (let index = 0; index < pendingWhatsApp.length; index += 1) {
+    if (!selectedWhatsApp[index]) continue;
+    const job = pendingWhatsApp[index];
+    if (!zapiReady) {
+      result.failed += 1;
+      await insertLog(admin, {
+        companyId: job.companyId,
+        customerId: job.customerId,
+        installmentId: job.installmentId,
+        dueDate: job.dueDate,
+        eventType: job.eventType,
+        channel: 'whatsapp',
+        recipient: job.recipient,
+        status: 'failed',
+        skipReason: null,
+        messageBody: job.message,
+        providerMessageId: null,
+        errorMessage: 'Z-API não configurada.',
+        ...job.logMeta,
+      });
+      result.items.push(job.toItem('failed', { error: 'Z-API não configurada.' }));
+      continue;
+    }
+    const sent = await sendTextFn({
+      phone: job.phone,
+      message: job.message || '',
+    });
+    if (sent.ok) {
+      result.sent += 1;
+      result.whatsappSent += 1;
+      await insertLog(admin, {
+        companyId: job.companyId,
+        customerId: job.customerId,
+        installmentId: job.installmentId,
+        dueDate: job.dueDate,
+        eventType: job.eventType,
+        channel: 'whatsapp',
+        recipient: job.recipient,
+        status: 'sent',
+        skipReason: null,
+        messageBody: job.message,
+        providerMessageId: sent.messageId ?? null,
+        errorMessage: null,
+        ...job.logMeta,
+      });
+      result.items.push(job.toItem('sent', { providerMessageId: sent.messageId ?? null }));
+      if (!options?.sendTextFn) await sleep(BUYER_REMINDER_SEND_GAP_MS);
+    } else {
+      result.failed += 1;
+      await insertLog(admin, {
+        companyId: job.companyId,
+        customerId: job.customerId,
+        installmentId: job.installmentId,
+        dueDate: job.dueDate,
+        eventType: job.eventType,
+        channel: 'whatsapp',
+        recipient: job.recipient,
+        status: 'failed',
+        skipReason: null,
+        messageBody: job.message,
+        providerMessageId: null,
+        errorMessage: sent.error || 'Falha no WhatsApp.',
+        ...job.logMeta,
+      });
+      result.items.push(job.toItem('failed', { error: sent.error || 'Falha no WhatsApp.' }));
+    }
+  }
+
   return result;
 }
 
@@ -631,24 +737,52 @@ export type BuyerReminderLogRow = {
   installmentId: string;
   dueDate: string;
   projectName: string | null;
+  lotLabel: string | null;
   parcelLabel: string | null;
   errorMessage: string | null;
   providerMessageId: string | null;
 };
 
+export type BuyerReminderLogFilters = {
+  limit?: number;
+  eventType?: string | null;
+  channel?: string | null;
+  status?: string | null;
+  from?: string | null;
+  to?: string | null;
+};
+
 export async function listBuyerReminderLogs(
   admin: SupabaseClient,
   companyId: string,
-  limit = 50,
+  filters: number | BuyerReminderLogFilters = 50,
 ): Promise<BuyerReminderLogRow[]> {
-  const { data, error } = await admin
-    .from('company_buyer_reminder_logs')
-    .select(
-      'id, created_at, event_type, channel, status, skip_reason, recipient, customer_id, customer_name, finance_receipt_id, due_date, project_name, parcel_label, error_message, provider_message_id',
-    )
-    .eq('company_id', companyId)
-    .order('created_at', { ascending: false })
-    .limit(Math.min(100, Math.max(1, limit)));
+  const opts: BuyerReminderLogFilters = typeof filters === 'number' ? { limit: filters } : filters || {};
+  const limit = Math.min(100, Math.max(1, Number(opts.limit || 50)));
+  const eventType = String(opts.eventType || '').trim();
+  const channel = String(opts.channel || '').trim();
+  const status = String(opts.status || '').trim();
+  const from = String(opts.from || '').trim();
+  const to = String(opts.to || '').trim();
+  const selectWithLot =
+    'id, created_at, event_type, channel, status, skip_reason, recipient, customer_id, customer_name, finance_receipt_id, due_date, project_name, lot_label, parcel_label, error_message, provider_message_id';
+  const selectWithoutLot =
+    'id, created_at, event_type, channel, status, skip_reason, recipient, customer_id, customer_name, finance_receipt_id, due_date, project_name, parcel_label, error_message, provider_message_id';
+
+  const run = async (select: string) => {
+    let query = admin.from('company_buyer_reminder_logs').select(select).eq('company_id', companyId);
+    if (eventType) query = query.eq('event_type', eventType);
+    if (channel) query = query.eq('channel', channel);
+    if (status) query = query.eq('status', status);
+    if (from) query = query.gte('created_at', `${from}T00:00:00.000-03:00`);
+    if (to) query = query.lte('created_at', `${to}T23:59:59.999-03:00`);
+    return query.order('created_at', { ascending: false }).limit(limit);
+  };
+
+  let { data, error } = await run(selectWithLot);
+  if (error && /lot_label/i.test(error.message || '')) {
+    ({ data, error } = await run(selectWithoutLot));
+  }
   if (error) throw new Error(error.message);
   return (data || []).map((row) => ({
     id: String(row.id),
@@ -663,6 +797,7 @@ export async function listBuyerReminderLogs(
     installmentId: String(row.finance_receipt_id),
     dueDate: String(row.due_date),
     projectName: row.project_name ? String(row.project_name) : null,
+    lotLabel: row.lot_label ? String(row.lot_label) : null,
     parcelLabel: row.parcel_label ? String(row.parcel_label) : null,
     errorMessage: row.error_message ? String(row.error_message) : null,
     providerMessageId: row.provider_message_id ? String(row.provider_message_id) : null,

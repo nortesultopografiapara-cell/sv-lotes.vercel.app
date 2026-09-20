@@ -1,3 +1,9 @@
+/**
+ * Cron de lembretes automáticos ao comprador.
+ * Agenda preparada em vercel.json (`10,40 11-22 * * *` UTC = 8:10–19:40 BRT).
+ * Production permanece no-op até autorização explícita.
+ */
+
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { describeCronAuthFailure, isCronSecretValid } from '@/lib/saasCronAuth';

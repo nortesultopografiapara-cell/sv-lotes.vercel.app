@@ -31,7 +31,8 @@ export async function listEnabledBuyerReminderSettings(
   const { data, error } = await admin
     .from('company_buyer_reminder_settings')
     .select('*')
-    .eq('enabled', true);
+    .eq('enabled', true)
+    .order('company_id', { ascending: true });
   if (error) throw new Error(error.message);
   return (data || []).map((row) =>
     normalizeBuyerReminderSettings(String(row.company_id), row as Record<string, unknown>),
