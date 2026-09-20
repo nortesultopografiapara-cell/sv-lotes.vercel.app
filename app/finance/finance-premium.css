@@ -664,7 +664,7 @@
   }
 
   .finance-premium .charges-ops-actions {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: flex-start;
   }
 }

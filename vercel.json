@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/expire-company-exports",
       "schedule": "15 4 * * *"
+    },
+    {
+      "path": "/api/cron/buyer-installment-reminders",
+      "schedule": "10,40 11-22 * * *"
     }
   ],
   "functions": {
@@ -34,6 +38,9 @@
       "memory": 1024
     },
     "app/api/cron/expire-company-exports/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/buyer-installment-reminders/route.ts": {
       "maxDuration": 60
     },
     "app/api/companies/update/route.ts": {

@@ -161,7 +161,7 @@ function hashToTab(hash: string): CompanySettingsV2Tab | null {
   if (h === 'contratos') return 'contratos';
   if (h === 'tecnico') return 'tecnico';
   if (h === 'avancado') return 'avancado';
-  if (h === 'financeiro' || h === 'integracao-financeira' || h === 'bancario' || h === 'integracao-bancaria') {
+  if (h === 'financeiro' || h.startsWith('financeiro-') || h === 'integracao-financeira' || h === 'bancario' || h === 'integracao-bancaria') {
     return 'financeiro';
   }
   return null;
