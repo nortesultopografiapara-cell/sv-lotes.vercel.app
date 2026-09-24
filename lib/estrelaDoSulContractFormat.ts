@@ -123,3 +123,62 @@ export function formatEstrelaUpperDate(longDate: string): string {
     .toUpperCase()
     .replace(/\bDE\b/g, 'DE');
 }
+
+const EMPTY_LOCATION_TOKENS = new Set([
+  '',
+  'undefined',
+  'null',
+  'nan',
+  'n/a',
+  'na',
+  '-',
+  '—',
+]);
+
+function cleanEstrelaLocationPart(value: unknown): string {
+  if (value == null) return '';
+  const text = String(value).trim().replace(/\s+/g, ' ');
+  if (!text || EMPTY_LOCATION_TOKENS.has(text.toLowerCase())) return '';
+  return text;
+}
+
+function pickEstrelaLocationPart(...values: unknown[]): string {
+  for (const value of values) {
+    const clean = cleanEstrelaLocationPart(value);
+    if (clean) return clean;
+  }
+  return '';
+}
+
+/**
+ * Localização física do empreendimento a partir do cadastro do projeto.
+ * Não usa foro nem endereço da empresa. Sem hardcode de empreendimento.
+ * Formato: [Endereço/Referência], [Bairro/Localidade], [Cidade]/[UF]
+ */
+export function formatEstrelaEnterpriseLocation(
+  project: Record<string, unknown> | null | undefined,
+): string {
+  const rec = project && typeof project === 'object' ? project : {};
+  const address = pickEstrelaLocationPart(
+    rec.address,
+    rec.address_reference,
+    rec.reference,
+    rec.endereco,
+  );
+  const neighborhood = pickEstrelaLocationPart(
+    rec.neighborhood,
+    rec.locality,
+    rec.bairro,
+  );
+  const city = pickEstrelaLocationPart(rec.city, rec.cidade);
+  const uf = pickEstrelaLocationPart(rec.uf, rec.state).toUpperCase();
+  const cityUf = [city, uf].filter(Boolean).join('/');
+  return [address, neighborhood, cityUf]
+    .filter(Boolean)
+    .join(', ')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,+/g, ',')
+    .replace(/^,\s*|\s*,$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}

@@ -28,6 +28,7 @@ import { isMundoNovoSaleContractModel } from '../lib/mundoNovoContractEsign';
 import {
   formatEstrelaMetersExtenso,
   formatEstrelaMetersPhrase,
+  formatEstrelaEnterpriseLocation,
 } from '../lib/estrelaDoSulContractFormat';
 import { collapseEstrelaDuplicateEditorialNumbers } from '../lib/estrelaDoSulContractClauses';
 import { resolveEstrelaDoSulSaleCommissionAmount } from '../lib/estrelaDoSulContractContext';
@@ -137,12 +138,13 @@ function html(overrides: {
   tenant?: Record<string, unknown>;
   sale?: Record<string, unknown>;
   customer?: Record<string, unknown>;
+  project?: Record<string, unknown>;
   block?: Record<string, unknown>;
 } = {}) {
   return generateContractHTML({
     tenant: { ...COMPANY, ...(overrides.tenant || {}) },
     customer: { ...CUSTOMER, ...(overrides.customer || {}) },
-    project: PROJECT,
+    project: { ...PROJECT, ...(overrides.project || {}) },
     block: { ...BLOCK, ...(overrides.block || {}) },
     sale: { ...SALE, ...(overrides.sale || {}) },
     financeReceipts: RECEIPTS,
@@ -187,6 +189,87 @@ assert(onlyCompany.includes('47.052.349/0001-30'), 'CNPJ dinâmico');
 assert(onlyCompany.includes('Joao Comprador'), 'comprador');
 assert(onlyCompany.includes('Chacreamento Estrela'), 'empreendimento dinâmico');
 assert(onlyCompany.includes('Palmares'), 'localidade GIS/projeto');
+assert(onlyCompany.includes('Palmares 2, Parauapebas/PA'), 'localização fallback sem endereço: bairro + cidade/UF');
+assert(
+  (onlyCompany.match(/Palmares 2, Parauapebas\/PA/g) || []).length >= 2,
+  'mesma localização na Capa e na cláusula 1.3',
+);
+
+const LOCATION_FULL = {
+  address: 'ESTRADA VS 81 KM 5,5',
+  neighborhood: 'PALMARES II',
+  city: 'PARAUAPEBAS',
+  uf: 'PA',
+  forum_city: 'CIDADE DO FORO',
+};
+assert(
+  formatEstrelaEnterpriseLocation(LOCATION_FULL) ===
+    'ESTRADA VS 81 KM 5,5, PALMARES II, PARAUAPEBAS/PA',
+  'localização: endereço + bairro + cidade/UF',
+);
+assert(
+  formatEstrelaEnterpriseLocation({
+    neighborhood: 'PALMARES II',
+    city: 'PARAUAPEBAS',
+    uf: 'PA',
+    forum_city: 'CIDADE DO FORO',
+  }) === 'PALMARES II, PARAUAPEBAS/PA',
+  'localização sem endereço/referência',
+);
+assert(
+  formatEstrelaEnterpriseLocation({
+    address: 'ESTRADA VS 81 KM 5,5',
+    city: 'PARAUAPEBAS',
+    uf: 'PA',
+    forum_city: 'CIDADE DO FORO',
+  }) === 'ESTRADA VS 81 KM 5,5, PARAUAPEBAS/PA',
+  'localização sem bairro/localidade',
+);
+assert(
+  !formatEstrelaEnterpriseLocation({
+    ...LOCATION_FULL,
+    address: null,
+    neighborhood: '  ',
+    city: 'undefined',
+  }).includes('undefined'),
+  'localização sem undefined',
+);
+assert(
+  !formatEstrelaEnterpriseLocation(LOCATION_FULL).includes('CIDADE DO FORO'),
+  'foro não entra na localização física',
+);
+
+const locatedHtml = html({
+  project: {
+    ...PROJECT,
+    ...LOCATION_FULL,
+  },
+});
+const expectedLocation = 'ESTRADA VS 81 KM 5,5, PALMARES II, PARAUAPEBAS/PA';
+assert(locatedHtml.includes(expectedLocation), 'HTML usa localização completa do projeto');
+assert(
+  (locatedHtml.match(/ESTRADA VS 81 KM 5,5, PALMARES II, PARAUAPEBAS\/PA/g) || []).length >= 2,
+  'Capa e 1.3 imprimem a mesma localização',
+);
+{
+  const locSlices: string[] = [];
+  let from = 0;
+  while (from < locatedHtml.length) {
+    const i = locatedHtml.indexOf('Localização do Imóvel', from);
+    if (i < 0) break;
+    locSlices.push(locatedHtml.slice(i, i + 320));
+    from = i + 1;
+  }
+  assert(locSlices.length >= 2, 'duas linhas Localização do Imóvel');
+  assert(
+    locSlices.every((slice) => slice.includes(expectedLocation)),
+    'Capa e 1.3 com o mesmo endereço do projeto',
+  );
+  assert(
+    locSlices.every((slice) => !slice.includes('CIDADE DO FORO')),
+    'Localização do Imóvel não usa Município/Foro',
+  );
+}
 assert(onlyCompany.includes('Quadra 02') || onlyCompany.includes('quadra 02') || onlyCompany.includes('02'), 'quadra');
 assert(onlyCompany.includes('15'), 'lote');
 assert(onlyCompany.includes('1.100,00m²') || onlyCompany.includes('1100'), 'área GIS');

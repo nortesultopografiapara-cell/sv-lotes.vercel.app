@@ -40,6 +40,7 @@ import {
 import {
   formatEstrelaAreaPhrase,
   formatEstrelaBRL,
+  formatEstrelaEnterpriseLocation,
   formatEstrelaExtensoCurrency,
   formatEstrelaMetersPhrase,
   formatEstrelaMoneyPhrase,
@@ -338,15 +339,7 @@ export function buildEstrelaDoSulContractContext(
   const forumCity = toContractTitleCase(
     pickString(projectRecord.forum_city, projectRecord.city, municipality),
   );
-  const neighborhood = pickString(
-    projectRecord.neighborhood,
-    projectRecord.locality,
-    projectRecord.bairro,
-    projectRecord.location,
-  );
-  const enterpriseLocation = [neighborhood, municipality, uf]
-    .filter(Boolean)
-    .join(', ');
+  const enterpriseLocation = formatEstrelaEnterpriseLocation(projectRecord);
 
   const quadra = pickString(
     block?.block,
