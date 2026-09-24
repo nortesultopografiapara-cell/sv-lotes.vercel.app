@@ -27,6 +27,10 @@ function cell(text: string): string {
   return `<td style="border:1px solid #111; padding:4px 6px;">${escEstrelaHtml(text) || '—'}</td>`;
 }
 
+function cellHtml(html: string): string {
+  return `<td style="border:1px solid #111; padding:4px 6px;">${html || '—'}</td>`;
+}
+
 function th(text: string): string {
   return `<th style="border:1px solid #111; padding:4px 6px; text-align:left;">${escEstrelaHtml(text)}</th>`;
 }
@@ -37,6 +41,8 @@ function buildSignatureSlot(params: {
   name?: string;
   docLines?: string[];
   extraClass?: string;
+  /** Só o bloco do instrumento leva data-party-role (uma party e-sign por signatário). */
+  electronic?: boolean;
 }): string {
   const name = escEstrelaHtml(params.name || '');
   const docs = (params.docLines || [])
@@ -44,9 +50,12 @@ function buildSignatureSlot(params: {
     .filter(Boolean)
     .map((line) => `<p style="${META_STYLE}">${line}</p>`)
     .join('\n');
-  const className = ['signature-slot', params.extraClass || ''].filter(Boolean).join(' ');
+  const className = params.electronic
+    ? 'signature-slot'
+    : ['estrela-sign-slot', params.extraClass || ''].filter(Boolean).join(' ');
+  const roleAttr = params.electronic ? ` data-party-role="${params.partyRole}"` : '';
   return `
-      <div class="${className}" data-party-role="${params.partyRole}" style="${SLOT_STYLE}">
+      <div class="${className}"${roleAttr} style="${SLOT_STYLE}">
         <div class="signature-line" style="${LINE_STYLE}"></div>
         <p style="${ROLE_STYLE}">${escEstrelaHtml(params.role)}</p>
         ${name ? `<p style="${NAME_STYLE}">${name}</p>` : ''}
@@ -149,8 +158,8 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
         <tr>${th('ITEM')}${th('VALOR / DETALHAMENTO')}</tr>
         <tr>${cell('VALOR TOTAL DO IMÓVEL')}${cell(ctx.valorTotalExtenso ? `${ctx.valorTotalFmt} (${ctx.valorTotalExtenso})` : ctx.valorTotalFmt)}</tr>
         <tr>${cell('VALOR DE CORRETAGEM')}${cell(ctx.valorCorretagemExtenso ? `${ctx.valorCorretagemFmt} (${ctx.valorCorretagemExtenso})` : ctx.valorCorretagemFmt)}</tr>
-        <tr>${cell('VALOR DO SINAL/ENTRADA (ARRAS)<sup>2</sup>')}${cell(ctx.valorSinalExtenso ? `${ctx.valorSinalFmt} (${ctx.valorSinalExtenso})` : ctx.valorSinalFmt)}</tr>
-        <tr>${cell('PARCELAS E VALORES<sup>3</sup>')}${cell(ctx.parcelasResumo)}</tr>
+        <tr>${cellHtml('VALOR DO SINAL/ENTRADA (ARRAS)<sup>2</sup>')}${cell(ctx.valorSinalExtenso ? `${ctx.valorSinalFmt} (${ctx.valorSinalExtenso})` : ctx.valorSinalFmt)}</tr>
+        <tr>${cellHtml('PARCELAS E VALORES<sup>3</sup>')}${cell(ctx.parcelasResumo)}</tr>
         <tr>${cell('VENCIMENTO DA 1ª PARCELA')}${cell(ctx.dataPrimeiraParcelaFmt)}</tr>
         <tr>${cell('ÍNDICE DE CORREÇÃO ANUAL')}${cell(ctx.indiceCorrecaoCapa)}</tr>
         <tr>${cell('MULTA MORATÓRIA POR ATRASO')}${cell('2% (dois por cento) sobre a parcela vencida')}</tr>
@@ -160,7 +169,11 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
       <p style="font-size:9pt; margin: 0 0 4px 0;"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${escEstrelaHtml(ctx.valorCorretagemFmt)}.</p>
       <p style="font-size:9pt; margin: 0 0 16px 0;"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
 
-      <p style="font-weight:bold; margin: 0 0 6px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
+      <div class="estrela-capa-section-4">
+        <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 6px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
+        ${buildEstrelaDoSulAnnexHtml(ctx)}
+      </div>
+      ${buildEstrelaDoSulSignaturesHtml(ctx, 'capa')}
     </div>`;
 }
 
@@ -212,13 +225,12 @@ export function buildEstrelaDoSulPreambleHtml(ctx: EstrelaDoSulContractContext):
     </p>`;
 }
 
-export function buildEstrelaDoSulAnnexHtml(ctx: EstrelaDoSulContractContext): string {
+export function buildEstrelaDoSulAnnexHtml(_ctx: EstrelaDoSulContractContext): string {
   const rows = ESTRELA_ANNEX_ROWS.map(
     (row) => `<tr>${cell(row.item)}${cell(row.detail)}</tr>`,
   ).join('');
   return `
-    <div class="estrela-annex" style="page-break-before: auto;">
-      ${buildEstrelaDoSulLogoHtml(ctx)}
+    <div class="estrela-capa-annex-table">
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:11pt; margin: 8px 0 16px 0;">
         <tr>${th('ITEM')}${th('Detalhamento')}</tr>
         ${rows}
@@ -226,8 +238,11 @@ export function buildEstrelaDoSulAnnexHtml(ctx: EstrelaDoSulContractContext): st
     </div>`;
 }
 
-export function buildEstrelaDoSulSignaturesHtml(
+export type EstrelaSignatureBlockKind = 'capa' | 'instrumento';
+
+function buildEstrelaSignatureGrid(
   ctx: EstrelaDoSulContractContext,
+  electronic: boolean,
 ): string {
   const buyerSlot = buildSignatureSlot({
     role: 'COMPRADOR(A)',
@@ -235,6 +250,7 @@ export function buildEstrelaDoSulSignaturesHtml(
     name: ctx.clienteNome,
     docLines: [ctx.clienteCpf ? `CPF nº ${ctx.clienteCpf}` : ''].filter(Boolean),
     extraClass: 'signature-slot-buyer',
+    electronic,
   });
   const companySlot = buildSignatureSlot({
     role: 'VENDEDOR(A)',
@@ -242,6 +258,7 @@ export function buildEstrelaDoSulSignaturesHtml(
     name: ctx.companyName,
     docLines: [ctx.companyCnpj ? `CNPJ ${ctx.companyCnpj}` : ''].filter(Boolean),
     extraClass: 'signature-slot-vendor-1',
+    electronic,
   });
   const spouseSlot = ctx.hasConjuge
     ? buildSignatureSlot({
@@ -250,6 +267,7 @@ export function buildEstrelaDoSulSignaturesHtml(
         name: ctx.conjugeNome,
         docLines: [ctx.conjugeCpf ? `CPF nº ${ctx.conjugeCpf}` : ''].filter(Boolean),
         extraClass: 'signature-slot-spouse',
+        electronic,
       })
     : '';
   const secondSlot = ctx.hasSecondVendor
@@ -263,6 +281,7 @@ export function buildEstrelaDoSulSignaturesHtml(
             : '',
         ].filter(Boolean),
         extraClass: 'signature-slot-vendor-2',
+        electronic,
       })
     : '';
   const witness1 = buildSignatureSlot({
@@ -270,23 +289,16 @@ export function buildEstrelaDoSulSignaturesHtml(
     partyRole: 'WITNESS',
     extraClass: 'signature-slot-witness-1',
     docLines: ['CPF nº:'],
+    electronic,
   });
   const witness2 = buildSignatureSlot({
     role: 'TESTEMUNHA 2',
     partyRole: 'WITNESS',
     extraClass: 'signature-slot-witness-2',
     docLines: ['CPF nº:'],
+    electronic,
   });
-
   return `
-    <div class="contract-closing-and-signatures--estrela">
-      <p class="estrela-closing-statement" style="margin: 0 0 14px 0; text-align: justify;">
-        E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma, na presença de 02 (duas) testemunhas instrumentárias abaixo identificadas.
-      </p>
-      <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: center; font-weight: bold;">
-        ${escEstrelaHtml(ctx.closingCityDate)}
-      </p>
-      <div class="contract-signatures contract-signatures--estrela">
         <div class="signature-grid signature-grid--estrela">
           ${buyerSlot}
           ${companySlot}
@@ -294,7 +306,37 @@ export function buildEstrelaDoSulSignaturesHtml(
           ${secondSlot}
           ${witness1}
           ${witness2}
-        </div>
+        </div>`;
+}
+
+export function buildEstrelaDoSulSignaturesHtml(
+  ctx: EstrelaDoSulContractContext,
+  kind: EstrelaSignatureBlockKind = 'instrumento',
+): string {
+  const dateHtml = `
+      <p class="contract-closing-date" style="margin: 0 0 18px 0; text-align: center; font-weight: bold;">
+        ${escEstrelaHtml(ctx.closingCityDate)}
+      </p>`;
+  const grid = buildEstrelaSignatureGrid(ctx, kind === 'instrumento');
+
+  if (kind === 'capa') {
+    return `
+    <div class="estrela-capa-signatures" data-estrela-sign-block="capa">
+      ${dateHtml}
+      <div class="contract-signatures contract-signatures--estrela-capa">
+        ${grid}
+      </div>
+    </div>`;
+  }
+
+  return `
+    <div class="contract-closing-and-signatures--estrela" data-estrela-sign-block="instrumento">
+      <p class="estrela-closing-statement" style="margin: 0 0 14px 0; text-align: justify;">
+        E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma, na presença de 02 (duas) testemunhas instrumentárias abaixo identificadas.
+      </p>
+      ${dateHtml}
+      <div class="contract-signatures contract-signatures--estrela">
+        ${grid}
       </div>
     </div>`;
 }

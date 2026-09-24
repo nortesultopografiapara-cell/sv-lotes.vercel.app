@@ -133,7 +133,7 @@ export function buildEstrelaDoSulClausesHtml(
     </table>`;
 
   return `
-    <div class="contract-clause estrela-clause-keep">
+    <div class="contract-clause">
       ${title('CLÁUSULA PRIMEIRA')}
       ${title('DO OBJETO, DA CAPA RESUMO E DOS ANEXOS')}
       ${p(`<strong>1.1.</strong> O objeto deste contrato consubstancia-se na compra e venda a prazo da fração de terras individualizada e designada como ${estrelaStrong(lotLabel || 'CHÁCARA RURAL')}, componente do ${estrelaStrong(ctx.enterpriseName)}, situado no perímetro rural do Município de ${escEstrelaHtml(ctx.municipality || foro)}, Estado do ${escEstrelaHtml(ctx.uf || 'Pará')}. O COMPRADOR declara ter ciência de que o imóvel objeto deste contrato integra empreendimento rural de natureza privada, comprometendo-se a observar as limitações legais e ambientais inerentes à área rural.`)}

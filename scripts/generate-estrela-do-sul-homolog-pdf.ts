@@ -8,6 +8,7 @@ import path from 'node:path';
 const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul');
 
 const files = [
+  'capa-e-assinaturas-completas',
   'empresa-somente',
   'empresa-segundo-vendedor',
   'comprador-com-conjuge',

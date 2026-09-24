@@ -9,7 +9,6 @@ import {
 } from '@/lib/estrelaDoSulContractContext';
 import { buildEstrelaDoSulClausesHtml } from '@/lib/estrelaDoSulContractClauses';
 import {
-  buildEstrelaDoSulAnnexHtml,
   buildEstrelaDoSulCapaHtml,
   buildEstrelaDoSulPreambleHtml,
   buildEstrelaDoSulSignaturesHtml,
@@ -22,8 +21,11 @@ import {
 export type GenerateEstrelaDoSulContractParams = EstrelaDoSulContractParams;
 
 export const ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID = [
+  '.estrela-capa-annex-table',
+  '.estrela-capa-signatures',
   '.contract-closing-and-signatures--estrela',
   '.signature-slot',
+  '.estrela-sign-slot',
   '.estrela-clause-keep',
 ];
 
@@ -55,6 +57,24 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   page-break-inside: avoid;
   break-inside: avoid-page;
 }
+.sv-contract-estrela-do-sul .estrela-capa-section-4-title {
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-annex-table {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-before: avoid;
+  margin-top: 8px;
+}
+.sv-contract-estrela-do-sul .estrela-instrument {
+  page-break-before: always !important;
+  break-before: page !important;
+}
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
@@ -69,7 +89,8 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   justify-items: center;
   width: 100%;
 }
-.sv-contract-estrela-do-sul .signature-slot {
+.sv-contract-estrela-do-sul .signature-slot,
+.sv-contract-estrela-do-sul .estrela-sign-slot {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
 }
@@ -86,10 +107,11 @@ export function generateEstrelaDoSulContract(
     ${buildEstrelaDoSulContractPaginationCss()}
     <div class="sv-contract-document sv-contract-estrela-do-sul" data-contract-model="ESTRELA_DO_SUL" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: ${CONTRACT_PDF_CONTENT_WIDTH_PX}px; box-sizing: border-box; text-align: justify;">
       ${buildEstrelaDoSulCapaHtml(ctx)}
-      ${buildEstrelaDoSulPreambleHtml(ctx)}
-      ${buildEstrelaDoSulClausesHtml(ctx)}
-      ${buildEstrelaDoSulAnnexHtml(ctx)}
-      ${buildEstrelaDoSulSignaturesHtml(ctx)}
+      <div class="estrela-instrument">
+        ${buildEstrelaDoSulPreambleHtml(ctx)}
+        ${buildEstrelaDoSulClausesHtml(ctx)}
+        ${buildEstrelaDoSulSignaturesHtml(ctx, 'instrumento')}
+      </div>
     </div>
   `;
 }

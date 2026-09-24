@@ -213,8 +213,16 @@ assert(withSecond.includes('Antonio Ferreira Silva'), 'segundo vendedor');
 assert(withSecond.includes('718.773.122-15'), 'CPF segundo vendedor');
 assert(withSecond.includes('40%'), 'narrativa parceria (não split financeiro)');
 assert(
-  (withSecond.match(/data-party-role="VENDOR"/g) || []).length >= 2,
-  'dois slots VENDOR',
+  (withSecond.match(/data-party-role="VENDOR"/g) || []).length === 2,
+  'e-sign: dois VENDOR no instrumento (capa visual não duplica party)',
+);
+assert(
+  (withSecond.match(/data-estrela-sign-block="capa"/g) || []).length === 1,
+  'bloco de assinatura da capa',
+);
+assert(
+  (withSecond.match(/data-estrela-sign-block="instrumento"/g) || []).length === 1,
+  'bloco de assinatura do instrumento',
 );
 
 const vendors = buildEstrelaDoSulEsignVendorPartyInputs({
@@ -238,7 +246,11 @@ const withSpouse = html({
   },
 });
 assert(withSpouse.includes('Maria Souza Anuente'), 'cônjuge no contrato');
-assert(withSpouse.includes('data-party-role="SPOUSE"'), 'slot SPOUSE');
+assert(
+  (withSpouse.match(/data-party-role="SPOUSE"/g) || []).length === 1,
+  'e-sign: um SPOUSE (capa visual não duplica party)',
+);
+assert(withSpouse.includes('CÔNJUGE ANUENTE'), 'cônjuge visual na capa e no instrumento');
 assert(
   shouldCreateSpouseSignatureParty({
     contractModel: 'ESTRELA_DO_SUL',
@@ -256,6 +268,83 @@ assert(ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.length >= 5, 'divergências documenta
 assert(
   ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'INFRA_DEADLINE'),
   'prazo de infraestrutura listado',
+);
+
+function assertBefore(htmlSrc: string, first: string, second: string, msg: string) {
+  const a = htmlSrc.indexOf(first);
+  const b = htmlSrc.indexOf(second);
+  assert(a >= 0 && b >= 0 && a < b, msg);
+}
+
+assertBefore(
+  onlyCompany,
+  '4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS',
+  'DOCUMENTO DE REFERÊNCIA DA OBRA',
+  'tabela do item 4 logo após o título',
+);
+assertBefore(
+  onlyCompany,
+  'DOCUMENTO DE REFERÊNCIA DA OBRA',
+  'data-estrela-sign-block="capa"',
+  'primeiro bloco de assinaturas fecha a Capa Resumo',
+);
+assertBefore(
+  onlyCompany,
+  'data-estrela-sign-block="capa"',
+  'class="estrela-instrument"',
+  'instrumento só depois da Capa Resumo completa',
+);
+assertBefore(
+  onlyCompany,
+  'class="estrela-instrument"',
+  'Instrumento particular de compra e venda de imóvel',
+  'título do contrato dentro do instrumento',
+);
+assertBefore(
+  onlyCompany,
+  'class="estrela-instrument"',
+  'data-estrela-sign-block="instrumento"',
+  'segundo bloco de assinaturas no encerramento',
+);
+assert(!onlyCompany.includes('estrela-annex'), 'anexo antigo não permanece após as cláusulas');
+assert(
+  (onlyCompany.match(/estrela-closing-statement/g) || []).length === 1,
+  'fecho "justas e contratadas" só no instrumento',
+);
+assert(
+  (onlyCompany.match(/data-party-role="BUYER"/g) || []).length === 1,
+  'e-sign: um BUYER',
+);
+assert(
+  (onlyCompany.match(/TESTEMUNHA 1/g) || []).length === 2,
+  'testemunha 1 na capa e no instrumento',
+);
+
+const fullHomolog = html({
+  tenant: { contract_second_vendor_json: SECOND_VENDOR },
+  sale: {
+    has_spouse: true,
+    sale_spouse_name: 'Maria Souza Anuente',
+    sale_spouse_cpf: '39053344705',
+    sale_spouse_phone: '64999998888',
+    sale_spouse_email: 'maria@test.com',
+  },
+});
+assert(fullHomolog.includes('Antonio Ferreira Silva'), 'homologação: segundo vendedor');
+assert(fullHomolog.includes('Maria Souza Anuente'), 'homologação: cônjuge');
+assert(
+  (fullHomolog.match(/data-party-role="VENDOR"/g) || []).length === 2,
+  'homologação: e-sign 2 VENDOR',
+);
+assert(
+  (fullHomolog.match(/data-party-role="SPOUSE"/g) || []).length === 1,
+  'homologação: e-sign 1 SPOUSE',
+);
+assertBefore(
+  fullHomolog,
+  'DOCUMENTO DE REFERÊNCIA DA OBRA',
+  'class="estrela-instrument"',
+  'homologação: tabela da capa antes do contrato',
 );
 
 const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul');
@@ -278,6 +367,14 @@ fs.writeFileSync(
 fs.writeFileSync(
   path.join(outDir, 'comprador-com-conjuge.html'),
   wrapPrintable(withSpouse, 'Estrela do Sul — comprador com cônjuge'),
+  'utf8',
+);
+fs.writeFileSync(
+  path.join(outDir, 'capa-e-assinaturas-completas.html'),
+  wrapPrintable(
+    fullHomolog,
+    'Estrela do Sul — capa completa + segundo vendedor + cônjuge',
+  ),
   'utf8',
 );
 console.log(`HTML de homologação em ${outDir}`);
