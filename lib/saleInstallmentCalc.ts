@@ -1,7 +1,8 @@
 /**
  * Cálculo de parcelas por modelo de contrato.
  * Recanto Primavera: sinal (down_payment) NÃO abate o valor parcelado.
- * PADRAO/Meneses: entrada abate o saldo das parcelas.
+ * Estrela do Sul: arras integram o preço (cláusula 2.6) — abatem o saldo.
+ * PADRAO/Meneses/SV2/ARAGUAIA/MUNDO_NOVO: entrada abate o saldo das parcelas.
  */
 
 import {
@@ -13,7 +14,10 @@ import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 export function downPaymentReducesInstallmentBase(
   contractModel: SaleContractModel | unknown,
 ): boolean {
-  return normalizeSaleContractModel(contractModel) !== 'RECANTO_PRIMAVERA';
+  const model = normalizeSaleContractModel(contractModel);
+  if (model === 'RECANTO_PRIMAVERA') return false;
+  if (model === 'ESTRELA_DO_SUL') return true;
+  return true;
 }
 
 export function resolveInstallmentPrincipal(params: {

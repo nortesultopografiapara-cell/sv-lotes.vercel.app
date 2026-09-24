@@ -40,8 +40,14 @@ import {
   buildBalloonAwarePaymentClauseText,
   resolveSaleContractBalloonFinance,
 } from "@/lib/saleContractBalloonFinance";
+import { generateAraguaiaContract } from "@/lib/araguaiaContractTemplate";
+import { generateMundoNovoContract } from "@/lib/mundoNovoContractTemplate";
+import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
+import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
+import { generateEstrelaDoSulContract } from "@/lib/estrelaDoSulContractTemplate";
 import {
   isAraguaiaContractModel,
+  isEstrelaDoSulContractModel,
   isMundoNovoContractModel,
   isRecantoPrimaveraContractModel,
   isSvLotes2ContractModel,
@@ -49,10 +55,6 @@ import {
 } from "@/lib/contractModel";
 import { buildMenesesClausesHtml } from "@/lib/menesesContractClauses";
 import { toContractTitleCase } from "@/lib/contractTitleCase";
-import { generateAraguaiaContract } from "@/lib/araguaiaContractTemplate";
-import { generateMundoNovoContract } from "@/lib/mundoNovoContractTemplate";
-import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
-import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
   formatContractDueDateBr,
   formatContractDueDateLongBr,
@@ -143,6 +145,19 @@ export function generateContractHTML({
       financeReceipts,
       projectBlocks,
       streetGuides,
+    });
+  }
+
+  if (isEstrelaDoSulContractModel(tenant)) {
+    return generateEstrelaDoSulContract({
+      tenant,
+      customer,
+      project,
+      block,
+      sale,
+      contractSnapshot,
+      contractDate,
+      financeReceipts,
     });
   }
 

@@ -62,6 +62,7 @@ function testModelGating() {
   assert(supportsSpouseElectronicSignature('MENESES'), 'meneses ok');
   assert(supportsSpouseElectronicSignature('SV_LOTES_2'), 'sv2 ok');
   assert(supportsSpouseElectronicSignature('PADRAO'), 'padrao ok');
+  assert(supportsSpouseElectronicSignature('ESTRELA_DO_SUL'), 'estrela ok');
   assert(!supportsSpouseElectronicSignature('ARAGUAIA'), 'araguaia sem party SPOUSE');
 
   assert(

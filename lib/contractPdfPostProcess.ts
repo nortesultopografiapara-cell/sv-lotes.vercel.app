@@ -7,7 +7,7 @@ import {
   formatCompanyAddressForHeader,
   getCompanyDisplayName,
 } from "@/lib/contractCompanyDisplay";
-import { isAraguaiaContractModel, isMundoNovoContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
+import { isAraguaiaContractModel, isEstrelaDoSulContractModel, isMundoNovoContractModel, isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import {
   buildClassicContractPaginationCss,
   buildRecantoContractPaginationCss,
@@ -18,12 +18,14 @@ import {
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
+import { ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID } from "@/lib/estrelaDoSulHtml2PdfPagination";
 import { resolveMundoNovoHtml2pdfAvoid } from "@/lib/mundoNovoHtml2PdfPagination";
 import { mundoNovoPdfChromeLogoSizeMm } from "@/lib/mundoNovoContractPdf";
 import { formatMundoNovoSeatAddressParts } from "@/lib/mundoNovoContractQualification";
 import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualification";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
+import { buildEstrelaDoSulPdfChrome } from "@/lib/estrelaDoSulContractPdf";
 
 export type ContractPdfChromeInput = {
   tenantName: string;
@@ -153,6 +155,15 @@ export function resolveContractHtml2pdfOptions(
       pagebreak: {
         mode: ['css', 'legacy'],
         avoid: [...resolveMundoNovoHtml2pdfAvoid(html)],
+      },
+    };
+  }
+  if (isEstrelaDoSulContractModel(tenant)) {
+    return {
+      ...getContractHtml2pdfOptions(filename),
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: [...ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID],
       },
     };
   }
@@ -357,6 +368,10 @@ export function buildContractPdfChromeFromTenant(
 
   if (isSvLotes2ContractModel(row)) {
     return buildSvLotes2PdfChrome(row, contractNumber, logoBase64);
+  }
+
+  if (isEstrelaDoSulContractModel(row)) {
+    return buildEstrelaDoSulPdfChrome(row, contractNumber, logoBase64);
   }
 
   if (isAraguaiaContractModel(row)) {

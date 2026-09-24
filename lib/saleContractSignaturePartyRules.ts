@@ -82,10 +82,12 @@ export function contractHtmlLooksLikeRecanto(
     lower.includes('sv-contract-meneses') ||
     lower.includes('sv-contract-sv-lotes-2') ||
     lower.includes('sv-contract-mundo-novo') ||
+    lower.includes('sv-contract-estrela-do-sul') ||
     /data-contract-model=["']?araguaia/i.test(raw) ||
     /data-contract-model=["']?meneses/i.test(raw) ||
     /data-contract-model=["']?sv_lotes_2/i.test(raw) ||
-    /data-contract-model=["']?mundo_novo/i.test(raw)
+    /data-contract-model=["']?mundo_novo/i.test(raw) ||
+    /data-contract-model=["']?estrela_do_sul/i.test(raw)
   ) {
     return false;
   }

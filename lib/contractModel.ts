@@ -12,6 +12,7 @@ export const SALE_CONTRACT_MODELS = [
   'MENESES',
   'ARAGUAIA',
   'MUNDO_NOVO',
+  'ESTRELA_DO_SUL',
   'CUSTOM',
 ] as const;
 
@@ -24,6 +25,7 @@ export const SALE_CONTRACT_MODEL_LABELS: Record<SaleContractModel, string> = {
   MENESES: 'Meneses',
   ARAGUAIA: 'Chacreamento Araguaia',
   MUNDO_NOVO: 'Chacreamento Mundo Novo',
+  ESTRELA_DO_SUL: 'Chacreamento Estrela do Sul',
   CUSTOM: 'Personalizado (futuro)',
 };
 
@@ -35,6 +37,7 @@ export const SALE_CONTRACT_MODEL_OPTIONS: SaleContractModel[] = [
   'MENESES',
   'ARAGUAIA',
   'MUNDO_NOVO',
+  'ESTRELA_DO_SUL',
 ];
 
 export const PROJECT_CONTRACT_MODEL_INHERIT = '';
@@ -90,6 +93,13 @@ export function normalizeSaleContractModel(
     value.includes('ARAGUAIA')
   ) {
     return 'ARAGUAIA';
+  }
+  if (
+    value === 'ESTRELA_DO_SUL' ||
+    value === 'CHACREAMENTO_ESTRELA_DO_SUL' ||
+    value.includes('ESTRELA_DO_SUL')
+  ) {
+    return 'ESTRELA_DO_SUL';
   }
   if (value === 'CUSTOM' || value === 'PERSONALIZADO') {
     return 'CUSTOM';
@@ -285,6 +295,12 @@ export function isMundoNovoContractModel(
   company: Record<string, unknown> | null | undefined,
 ): boolean {
   return resolveSaleContractModel(company) === 'MUNDO_NOVO';
+}
+
+export function isEstrelaDoSulContractModel(
+  company: Record<string, unknown> | null | undefined,
+): boolean {
+  return resolveSaleContractModel(company) === 'ESTRELA_DO_SUL';
 }
 
 /** Modelos que usam o template clássico (Meneses / Padrão SV LOTES). */

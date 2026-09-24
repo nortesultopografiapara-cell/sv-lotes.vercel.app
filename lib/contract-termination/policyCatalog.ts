@@ -73,6 +73,11 @@ export const POLICY_CATALOG: Record<string, TerminationPolicy> = {
     'recanto_primavera.incomplete.v0',
   ),
   SV_LOTES_2: incompleteEntry('SV_LOTES_2', 'SV LOTES 2.0', 'sv_lotes_2.incomplete.v0'),
+  ESTRELA_DO_SUL: incompleteEntry(
+    'ESTRELA_DO_SUL',
+    'Chacreamento Estrela do Sul',
+    'estrela_do_sul.incomplete.v0',
+  ),
   CUSTOM: incompleteEntry('CUSTOM', 'Personalizado', 'custom.incomplete.v0'),
 };
 
@@ -95,6 +100,9 @@ export function canonicalizeCatalogKey(raw: unknown): string | null {
     return 'SV_LOTES_2';
   }
   if (value.includes('RECANTO')) return 'RECANTO_PRIMAVERA';
+  if (value.includes('ESTRELA_DO_SUL') || value === 'ESTRELA_DO_SUL') {
+    return 'ESTRELA_DO_SUL';
+  }
   if (value === 'MENESES') return 'MENESES';
   if (value === 'CUSTOM' || value === 'PERSONALIZADO') return 'CUSTOM';
   if (value === 'PADRAO' || value === 'PADRÃO' || value === 'PADRAO_SV_LOTES') {

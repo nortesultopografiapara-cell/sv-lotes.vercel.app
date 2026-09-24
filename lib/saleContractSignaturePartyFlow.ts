@@ -39,6 +39,10 @@ import {
   shouldPersistMundoNovoWitnessParties,
 } from '@/lib/mundoNovoContractEsign';
 import { shouldEnableMundoNovoEsign } from '@/lib/mundoNovoEsignGate';
+import {
+  buildEstrelaDoSulEsignVendorPartyInputs,
+  isEstrelaDoSulSaleContractModel,
+} from '@/lib/estrelaDoSulContractEsign';
 import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
 import { assertOriginalContractAllowsElectronicSignature } from '@/lib/termination-documents/signatureGate';
 import {
@@ -472,6 +476,7 @@ export async function createSignaturePartiesAfterSend(
     companyId: mundoNovoCompanyId,
     contractModel,
   });
+  const estrelaEsign = isEstrelaDoSulSaleContractModel(contractModel);
 
   const seller = company
     ? normalizeSellerFromCompany(company)
@@ -520,6 +525,10 @@ export async function createSignaturePartiesAfterSend(
     }
   }
 
+  const estrelaVendors = estrelaEsign
+    ? buildEstrelaDoSulEsignVendorPartyInputs({ company })
+    : null;
+
   if (araguaiaEsign) {
     partiesRequested.length = 1; // BUYER
     if (spouseRequired) partiesRequested.push('SPOUSE');
@@ -534,6 +543,14 @@ export async function createSignaturePartiesAfterSend(
       partiesRequested.push('VENDOR');
     }
     partiesRequested.push('INTERVENIENT', 'WITNESS_1', 'WITNESS_2');
+  }
+
+  if (estrelaEsign) {
+    partiesRequested.length = 1;
+    if (spouseRequired) partiesRequested.push('SPOUSE');
+    for (let i = 0; i < (estrelaVendors?.length || 0); i++) {
+      partiesRequested.push('VENDOR');
+    }
   }
 
   console.log('[signature-parties] araguaia_esign_gate', {
@@ -620,7 +637,7 @@ export async function createSignaturePartiesAfterSend(
             email: spouseData.email || null,
           }
         : null,
-      vendor: araguaiaVendors || mundoNovoVendors
+      vendor: araguaiaVendors || mundoNovoVendors || estrelaVendors
         ? null
         : {
             name:
@@ -640,6 +657,14 @@ export async function createSignaturePartiesAfterSend(
           }))
         : mundoNovoVendors
         ? mundoNovoVendors.map((v) => ({
+            name: v.name,
+            cpf: v.cpf,
+            phone: v.phone,
+            email: v.email,
+            withPublicToken: true,
+          }))
+        : estrelaVendors
+        ? estrelaVendors.map((v) => ({
             name: v.name,
             cpf: v.cpf,
             phone: v.phone,
