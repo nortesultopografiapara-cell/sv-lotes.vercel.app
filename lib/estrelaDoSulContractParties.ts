@@ -219,6 +219,29 @@ export function buildEstrelaDoSulPreambleHtml(ctx: EstrelaDoSulContractContext):
     .filter(Boolean)
     .join(', ');
 
+  let spouseQualHtml = '';
+  if (ctx.hasConjuge && ctx.conjugeNome) {
+    const conjugeRgLine = ctx.conjugeRg
+      ? `portador(a) do RG sob nº ${escEstrelaHtml(ctx.conjugeRg)}${
+          ctx.conjugeRgIssuer ? ` ${escEstrelaHtml(ctx.conjugeRgIssuer)}` : ''
+        }`
+      : '';
+    const spouseBits = [
+      estrelaStrong(ctx.conjugeNome),
+      ctx.conjugeNacionalidade ? escEstrelaHtml(ctx.conjugeNacionalidade) : '',
+      ctx.conjugeEstadoCivil ? escEstrelaHtml(ctx.conjugeEstadoCivil) : '',
+      ctx.conjugeProfissao ? escEstrelaHtml(ctx.conjugeProfissao) : '',
+      conjugeRgLine,
+      ctx.conjugeCpf ? `CPF sob nº ${escEstrelaHtml(ctx.conjugeCpf)}` : '',
+      ctx.conjugeEndereco
+        ? `residente e domiciliado(a) na ${escEstrelaHtml(ctx.conjugeEndereco)}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    spouseQualHtml = `, neste ato com a anuência de seu cônjuge ${spouseBits}, na qualidade de <strong>CÔNJUGE ANUENTE</strong>`;
+  }
+
   const sede = [
     ctx.companyAddress,
     ctx.companyCity && ctx.companyUf ? `${ctx.companyCity}/${ctx.companyUf}` : ctx.companyCity,
@@ -232,7 +255,7 @@ export function buildEstrelaDoSulPreambleHtml(ctx: EstrelaDoSulContractContext):
     <h2 style="text-align:center; font-size:16pt; margin: 0 0 4px 0; text-transform:uppercase;">${escEstrelaHtml(ESTRELA_DO_SUL_CONTRACT_TITLE)}</h2>
     <p style="text-align:right; font-style:italic; margin: 0 0 10px 0;">Instrumento particular de compra e venda de imóvel<br/>do tipo ${escEstrelaHtml(ESTRELA_DO_SUL_PROPERTY_TYPE.toLowerCase())} que se regerá pelas cláusulas e condições a seguir.</p>
     <p class="estrela-parties-lead" style="margin: 0 0 8px 0; text-align: justify;">
-      Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE ${escEstrelaHtml(ESTRELA_DO_SUL_PROPERTY_TYPE)}, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${buyerBits}, doravante denominada <strong>COMPRADOR/CONTRATANTE</strong> e do outro temos a contratada ${estrelaStrong(ctx.companyName)}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${escEstrelaHtml(ctx.companyCnpj)}${creci}${
+      Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE ${escEstrelaHtml(ESTRELA_DO_SUL_PROPERTY_TYPE)}, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${buyerBits}${spouseQualHtml}, doravante denominada <strong>COMPRADOR/CONTRATANTE</strong> e do outro temos a contratada ${estrelaStrong(ctx.companyName)}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${escEstrelaHtml(ctx.companyCnpj)}${creci}${
         sede ? `, com sede na ${escEstrelaHtml(sede)}` : ''
       }${
         ctx.companyEmail

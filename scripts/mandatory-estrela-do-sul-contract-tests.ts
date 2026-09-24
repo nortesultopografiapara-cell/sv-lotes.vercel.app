@@ -265,6 +265,22 @@ assert(
 );
 assert(withSpouse.includes('CÔNJUGE ANUENTE'), 'cônjuge visual na capa e no instrumento');
 assert(
+  withSpouse.includes('neste ato com a anuência de seu cônjuge'),
+  'qualificação do cônjuge no preâmbulo',
+);
+{
+  const partesIdx = withSpouse.indexOf('DAS PARTES CONTRATANTES');
+  const capaSignIdx = withSpouse.indexOf('data-estrela-sign-block="capa"');
+  const capaPartes =
+    partesIdx >= 0 && capaSignIdx > partesIdx
+      ? withSpouse.slice(partesIdx, capaSignIdx)
+      : '';
+  assert(
+    capaPartes.includes('Maria Souza Anuente'),
+    'cônjuge na Capa Resumo (DAS PARTES)',
+  );
+}
+assert(
   shouldCreateSpouseSignatureParty({
     contractModel: 'ESTRELA_DO_SUL',
     sale: {
@@ -566,6 +582,55 @@ const zeroSlice = noSnapshot.slice(
 );
 assert(/R\$\s*0,00/.test(zeroSlice.replace(/\u00a0/g, ' ')), 'sem snapshot da venda → R$ 0,00');
 assert(!zeroSlice.includes('999'), 'sem snapshot não herda config atual do corretor');
+
+assert(
+  (onlyCompany.match(/data-party-role="SPOUSE"/g) || []).length === 0,
+  'Casado sem sale_spouse_* não inventa SPOUSE',
+);
+assert(
+  !onlyCompany.includes('neste ato com a anuência de seu cônjuge'),
+  'sem snapshot de cônjuge o preâmbulo não inventa anuente',
+);
+
+function assertNoTechnicalLeak(src: string, label: string) {
+  const body = src
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ');
+  assert(!body.includes('${'), `${label}: sem placeholder \${`);
+  assert(
+    !body.replace(/ESTRELA_DO_SUL/g, '').includes('ESTRELA_'),
+    `${label}: sem token ESTRELA_ residual (além do modelo)`,
+  );
+  assert(!/\bundefined\b/.test(body), `${label}: sem undefined`);
+  assert(!/\bnull\b/.test(body), `${label}: sem null`);
+  assert(!body.includes('[object Object]'), `${label}: sem [object Object]`);
+}
+
+assertNoTechnicalLeak(fullHomolog, 'homolog');
+assertNoTechnicalLeak(gisMeasures, 'gis');
+assertNoTechnicalLeak(withSpouse, 'cônjuge');
+assert(gisMeasures.includes('inserção no loteamento'), '3.3 inserção');
+assert(!gisMeasures.includes('inscrição no loteamento'), '3.3 sem inscrição');
+assert(gisMeasures.includes('a planta do empreendimento'), '3.3 planta');
+assert(!gisMeasures.includes('plantilha'), 'sem plantilha');
+assert(gisMeasures.includes('faseamento'), '6.4 faseamento');
+assert(!gisMeasures.includes('fescamento'), 'sem fescamento');
+assert(gisMeasures.includes('Lei nº 13.709/2018 (LGPD)'), 'LGPD 13.709/2018');
+assert(!gisMeasures.includes('13.700/2018'), 'sem 13.700/2018');
+assert(!/\bCPE\b/.test(gisMeasures), 'testemunhas usam CPF, não CPE');
+assert(gisMeasures.includes('5% (cinco por cento)'), '8.1.V taxa de cessão interpolada');
+assert(
+  gisMeasures.includes('25% (vinte e cinco por cento)'),
+  '9.3 retenção interpolada',
+);
+assert(gisMeasures.includes('<sup>5</sup>'), 'nota 5 (ARRAS) preservada');
+assert(gisMeasures.includes('<sup>6</sup>'), 'nota 6 (corretagem) preservada');
+assert(gisMeasures.includes('<sup>7</sup>'), 'nota 7 (distrato) preservada');
+assert(
+  gisMeasures.includes('<sup>6</sup>') &&
+    gisMeasures.slice(gisMeasures.indexOf('<sup>6</sup>'), gisMeasures.indexOf('<sup>6</sup>') + 280).includes('3,50'),
+  'nota 6 usa comissão snapshotada da venda',
+);
 
 const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul');
 fs.mkdirSync(outDir, { recursive: true });

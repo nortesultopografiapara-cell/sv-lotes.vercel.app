@@ -114,10 +114,10 @@ export const ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES = [
   },
   {
     id: 'LGPD_CITATION',
-    excerpt: 'Lei nº 13.700/2018 (LGPD) na cláusula 12.6 do fonte',
+    excerpt: 'Lei nº 13.709/2018 (LGPD) na cláusula 12.6',
     issue:
-      'A LGPD vigente é a Lei 13.709/2018. O número do fonte foi transcrito sem correção jurídica.',
-    status: 'transcrito-como-no-fonte',
+      'O documento-fonte citava 13.700/2018. Homologação textual corrigiu para a Lei 13.709/2018.',
+    status: 'corrigido-na-homologacao',
   },
   {
     id: 'CLAUSE_8_4_CROSSREF',
