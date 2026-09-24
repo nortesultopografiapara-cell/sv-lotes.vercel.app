@@ -18,7 +18,10 @@ import {
 } from "@/lib/contractPaginationEngine";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { ARAGUAIA_HTML2PDF_PAGINATION_AVOID } from "@/lib/araguaiaHtml2PdfPagination";
-import { ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID } from "@/lib/estrelaDoSulHtml2PdfPagination";
+import {
+  ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID,
+  ESTRELA_DO_SUL_PDF_MARGIN_MM,
+} from "@/lib/estrelaDoSulHtml2PdfPagination";
 import { resolveMundoNovoHtml2pdfAvoid } from "@/lib/mundoNovoHtml2PdfPagination";
 import { mundoNovoPdfChromeLogoSizeMm } from "@/lib/mundoNovoContractPdf";
 import { formatMundoNovoSeatAddressParts } from "@/lib/mundoNovoContractQualification";
@@ -161,6 +164,12 @@ export function resolveContractHtml2pdfOptions(
   if (isEstrelaDoSulContractModel(tenant)) {
     return {
       ...getContractHtml2pdfOptions(filename),
+      margin: [
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.top,
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.right,
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.bottom,
+        ESTRELA_DO_SUL_PDF_MARGIN_MM.left,
+      ],
       pagebreak: {
         mode: ['css', 'legacy'],
         avoid: [...ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID],

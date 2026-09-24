@@ -15,24 +15,24 @@ import { escEstrelaHtml, estrelaStrong } from '@/lib/estrelaDoSulContractFormat'
 const SLOT_STYLE =
   'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;';
 const LINE_STYLE =
-  'border-top: 1px solid #111; margin: 28px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 12px; box-sizing: border-box;';
+  'border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 10px; box-sizing: border-box;';
 const ROLE_STYLE =
-  'margin: 4px 0 6px 0; font-weight: bold; text-transform: uppercase; font-size: 11pt; text-align: center;';
+  'margin: 3px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;';
 const NAME_STYLE =
   'margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;';
 const META_STYLE =
   'margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: break-word; text-align: center;';
 
 function cell(text: string): string {
-  return `<td style="border:1px solid #111; padding:4px 6px;">${escEstrelaHtml(text) || '—'}</td>`;
+  return `<td style="border:1px solid #111; padding:3px 5px;"><div class="estrela-td-keep">${escEstrelaHtml(text) || '—'}</div></td>`;
 }
 
 function cellHtml(html: string): string {
-  return `<td style="border:1px solid #111; padding:4px 6px;">${html || '—'}</td>`;
+  return `<td style="border:1px solid #111; padding:3px 5px;"><div class="estrela-td-keep">${html || '—'}</div></td>`;
 }
 
 function th(text: string): string {
-  return `<th style="border:1px solid #111; padding:4px 6px; text-align:left;">${escEstrelaHtml(text)}</th>`;
+  return `<th style="border:1px solid #111; padding:3px 5px; text-align:left;"><div class="estrela-td-keep">${escEstrelaHtml(text)}</div></th>`;
 }
 
 function buildSignatureSlot(params: {
@@ -63,9 +63,13 @@ function buildSignatureSlot(params: {
       </div>`;
 }
 
-export function buildEstrelaDoSulLogoHtml(ctx: EstrelaDoSulContractContext): string {
-  if (!ctx.logoUrl) return '';
-  return `<div class="estrela-logo" style="text-align:center; margin: 0 0 12px 0;"><img src="${escEstrelaHtml(ctx.logoUrl)}" alt="Logo" style="max-height:72px; max-width:220px;"/></div>`;
+/**
+ * O Word original traz um único logotipo por página, no cabeçalho.
+ * O chrome do PDF (`applyContractPdfChrome`) já aplica a identidade da empresa
+ * em todas as páginas — repetir a marca no corpo da capa/instrumento duplica o logo.
+ */
+export function buildEstrelaDoSulLogoHtml(_ctx: EstrelaDoSulContractContext): string {
+  return '';
 }
 
 export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): string {
@@ -125,23 +129,31 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
     <div class="estrela-capa">
       ${buildEstrelaDoSulLogoHtml(ctx)}
       <h2 style="text-align:center; font-size:13pt; margin: 0 0 4px 0; text-transform:uppercase;">${escEstrelaHtml(ESTRELA_DO_SUL_COVER_TITLE)}</h2>
-      <h3 style="text-align:center; font-size:12pt; margin: 0 0 16px 0; text-transform:uppercase;">CHACREAMENTO: ${escEstrelaHtml(ctx.enterpriseName)}</h3>
+      <h3 style="text-align:center; font-size:12pt; margin: 0 0 8px 0; text-transform:uppercase;">CHACREAMENTO: ${escEstrelaHtml(ctx.enterpriseName)}</h3>
 
-      <p style="font-weight:bold; margin: 0 0 6px 0;">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)<sup>1</sup></p>
+      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 6px 0;">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)<sup>1</sup></p>
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:11pt; margin:0 0 14px 0;">
+        <thead>
         <tr>
           ${th('Parte')}
           ${th('Nome/Razão Social')}
           ${th('Qualidade no Contrato')}
           ${th('Documento – CNPJ/CPF')}
         </tr>
+        </thead>
+        <tbody>
         ${vendorRows}
+        </tbody>
       </table>
-      <p style="font-size:9pt; margin: 0 0 14px 0;"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
+      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 14px 0;"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
 
-      <p style="font-weight:bold; margin: 0 0 6px 0;">2. DO OBJETO E GEORREFERENCIAMENTO (INFORMAÇÕES MACRO)</p>
+      <div class="estrela-lead-table estrela-capa-object">
+      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 6px 0;">2. DO OBJETO E GEORREFERENCIAMENTO (INFORMAÇÕES MACRO)</p>
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:11pt; margin:0 0 14px 0;">
+        <thead>
         <tr>${th('Informação')}${th('Detalhamento')}</tr>
+        </thead>
+        <tbody>
         <tr>${cell('Nome do Projeto')}${cell(ctx.enterpriseName)}</tr>
         <tr>${cell('Localização do Imóvel')}${cell(ctx.enterpriseLocation)}</tr>
         <tr>${cell('Área Vendida')}${cell(areaCell || '—')}</tr>
@@ -151,11 +163,16 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
             ? `<tr>${cell('Outras informações')}${cell(ctx.partnershipNote)}</tr>`
             : ''
         }
+        </tbody>
       </table>
+      </div>
 
-      <p style="font-weight:bold; margin: 0 0 6px 0;">3. DAS CONDIÇÕES FINANCEIRAS E PERCENTUAIS APLICÁVEIS</p>
+      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 6px 0;">3. DAS CONDIÇÕES FINANCEIRAS E PERCENTUAIS APLICÁVEIS</p>
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:11pt; margin:0 0 14px 0;">
+        <thead>
         <tr>${th('ITEM')}${th('VALOR / DETALHAMENTO')}</tr>
+        </thead>
+        <tbody>
         <tr>${cell('VALOR TOTAL DO IMÓVEL')}${cell(ctx.valorTotalExtenso ? `${ctx.valorTotalFmt} (${ctx.valorTotalExtenso})` : ctx.valorTotalFmt)}</tr>
         <tr>${cell('VALOR DE CORRETAGEM')}${cell(ctx.valorCorretagemExtenso ? `${ctx.valorCorretagemFmt} (${ctx.valorCorretagemExtenso})` : ctx.valorCorretagemFmt)}</tr>
         <tr>${cellHtml('VALOR DO SINAL/ENTRADA (ARRAS)<sup>2</sup>')}${cell(ctx.valorSinalExtenso ? `${ctx.valorSinalFmt} (${ctx.valorSinalExtenso})` : ctx.valorSinalFmt)}</tr>
@@ -164,10 +181,11 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
         <tr>${cell('ÍNDICE DE CORREÇÃO ANUAL')}${cell(ctx.indiceCorrecaoCapa)}</tr>
         <tr>${cell('MULTA MORATÓRIA POR ATRASO')}${cell('2% (dois por cento) sobre a parcela vencida')}</tr>
         <tr>${cell('JUROS DE MORA POR ATRASO')}${cell('1% (um por cento) ao mês')}</tr>
+        </tbody>
       </table>
-      <p style="font-size:9pt; margin: 0 0 4px 0;"><sup>2</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelas partes compradoras ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
-      <p style="font-size:9pt; margin: 0 0 4px 0;"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${escEstrelaHtml(ctx.valorCorretagemFmt)}.</p>
-      <p style="font-size:9pt; margin: 0 0 16px 0;"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
+      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 4px 0;"><sup>2</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelas partes compradoras ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
+      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 4px 0;"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${escEstrelaHtml(ctx.valorCorretagemFmt)}.</p>
+      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 16px 0;"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
 
       <div class="estrela-capa-section-4">
         <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 6px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
@@ -210,8 +228,8 @@ export function buildEstrelaDoSulPreambleHtml(ctx: EstrelaDoSulContractContext):
   return `
     ${buildEstrelaDoSulLogoHtml(ctx)}
     <h2 style="text-align:center; font-size:16pt; margin: 0 0 4px 0; text-transform:uppercase;">${escEstrelaHtml(ESTRELA_DO_SUL_CONTRACT_TITLE)}</h2>
-    <p style="text-align:right; font-style:italic; margin: 0 0 16px 0;">Instrumento particular de compra e venda de imóvel<br/>do tipo ${escEstrelaHtml(ESTRELA_DO_SUL_PROPERTY_TYPE.toLowerCase())} que se regerá pelas cláusulas e condições a seguir.</p>
-    <p class="estrela-parties-lead" style="margin: 0 0 12px 0; text-align: justify;">
+    <p style="text-align:right; font-style:italic; margin: 0 0 10px 0;">Instrumento particular de compra e venda de imóvel<br/>do tipo ${escEstrelaHtml(ESTRELA_DO_SUL_PROPERTY_TYPE.toLowerCase())} que se regerá pelas cláusulas e condições a seguir.</p>
+    <p class="estrela-parties-lead" style="margin: 0 0 8px 0; text-align: justify;">
       Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE ${escEstrelaHtml(ESTRELA_DO_SUL_PROPERTY_TYPE)}, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${buyerBits}, doravante denominada <strong>COMPRADOR/CONTRATANTE</strong> e do outro temos a contratada ${estrelaStrong(ctx.companyName)}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${escEstrelaHtml(ctx.companyCnpj)}${creci}${
         sede ? `, com sede na ${escEstrelaHtml(sede)}` : ''
       }${
@@ -232,8 +250,12 @@ export function buildEstrelaDoSulAnnexHtml(_ctx: EstrelaDoSulContractContext): s
   return `
     <div class="estrela-capa-annex-table">
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:11pt; margin: 8px 0 16px 0;">
+        <thead>
         <tr>${th('ITEM')}${th('Detalhamento')}</tr>
+        </thead>
+        <tbody>
         ${rows}
+        </tbody>
       </table>
     </div>`;
 }
