@@ -13,7 +13,7 @@ import { formatCpfCnpj } from '@/lib/inputMasks';
 import { escEstrelaHtml, estrelaStrong } from '@/lib/estrelaDoSulContractFormat';
 
 const SLOT_STYLE =
-  'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;';
+  'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;';
 const LINE_STYLE =
   'border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;';
 const ROLE_STYLE =
@@ -21,7 +21,7 @@ const ROLE_STYLE =
 const NAME_STYLE =
   'margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;';
 const META_STYLE =
-  'margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: break-word; text-align: center;';
+  'margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;';
 
 function cell(text: string): string {
   return `<td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">${escEstrelaHtml(text) || '—'}</div></td>`;
@@ -48,7 +48,7 @@ function buildSignatureSlot(params: {
   const docs = (params.docLines || [])
     .map((line) => escEstrelaHtml(line))
     .filter(Boolean)
-    .map((line) => `<p style="${META_STYLE}">${line}</p>`)
+    .map((line) => `<p class="estrela-sign-doc" style="${META_STYLE}">${line}</p>`)
     .join('\n');
   const className = params.electronic
     ? 'signature-slot'
@@ -185,8 +185,6 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
         <tr>${cell('JUROS DE MORA POR ATRASO')}${cell('1% (um por cento) ao mês')}</tr>
         </tbody>
       </table>
-      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 3px 0;">Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelas partes compradoras ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
-      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 3px 0;">A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${escEstrelaHtml(ctx.valorCorretagemFmt)}.</p>
       <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 6px 0;">Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
 
       <div class="estrela-capa-section-4">

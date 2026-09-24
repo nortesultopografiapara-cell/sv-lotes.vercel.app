@@ -13,7 +13,6 @@ import {
   ESTRELA_CONSTRUCTION_MIN_INSTALLMENT,
   ESTRELA_CORRECTION_INDEX_LABEL,
   ESTRELA_CORRECTION_PERIOD_MONTHS,
-  ESTRELA_DISTRACT_ADMIN_FEE_PERCENT,
   ESTRELA_IRREGULAR_ASSIGNMENT_PENALTY_PERCENT,
   ESTRELA_IRREGULAR_BUILDING_PENALTY_PERCENT,
   ESTRELA_LATE_FINE_PERCENT,
@@ -69,10 +68,6 @@ function leadTable(lead: string, tableHtml: string): string {
 
 function clauseHead(inner: string): string {
   return `<div class="estrela-clause-head">${inner}</div>`;
-}
-
-function footnote(html: string): string {
-  return `<p class="estrela-footnote" style="font-size:9pt; margin: 4px 0 2px 0;">${html}</p>`;
 }
 
 function title(text: string): string {
@@ -188,8 +183,6 @@ export function buildEstrelaDoSulClausesHtml(
       ${p('<strong>2.9.</strong> Da Rescisão por Inadimplência: Sem prejuízo dos encargos moratórios previstos na cláusula anterior, o atraso no pagamento de qualquer parcela por período superior a 90 (noventa) dias conferirá à VENDEDORA (e/ou Corretora/Imobiliária, se houver poderes de representação) o direito de rescindir o presente contrato de pleno direito.')}
       ${p('<strong>2.9.1.</strong> A rescisão de que trata este artigo fica condicionada à prévia notificação do COMPRADOR, via cartório de títulos e documentos ou carta com aviso de recebimento (AR), concedendo-lhe o prazo de 15 (quinze) dias para purgação da mora (pagamento do débito atualizado).')}
       ${p('<strong>2.9.2.</strong> Transcorrido o prazo da notificação sem a devida quitação, a rescisão se consolidará, sujeitando o COMPRADOR às penalidades de retenção de valores previstas nas Cláusulas Penais deste instrumento e na legislação vigente.')}
-      ${footnote('<sup>5</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelas partes compradoras ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.')}
-      ${footnote(`<sup>6</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${escEstrelaHtml(ctx.valorCorretagemFmt)}.`)}
     </div>
 
     <div class="contract-clause">
@@ -286,7 +279,6 @@ export function buildEstrelaDoSulClausesHtml(
       `)}
       ${p('<strong>9.5.</strong> Da Forma e Prazo de Restituição: O saldo remanescente a ser restituído ao COMPRADOR – apurado após sofrer o desconto cumulativo das arras, da retenção de até 25% do valor pago, da comissão de corretagem, da taxa de fruição, dos tributos (IPTU/ITR), das despesas operacionais, dos custos de revenda e de eventuais multas contratuais – será pago somente após a efetiva e incontroversa desocupação e devolução da posse do imóvel à VENDEDORA.')}
       ${p('<strong>Parágrafo Único:</strong> A restituição ocorrerá em prazo não superior a 12 (doze) meses, contados da data da formalização da rescisão e devolução da posse, ou de forma imediata após a efetiva revenda da unidade a um novo adquirente e o recebimento dos respectivos valores pela VENDEDORA, prevalecendo o evento que ocorrer primeiro.')}
-      ${footnote(`<sup>7</sup> A composição referente à Dedutação de Taxa Administrativa de Distrato se encontra fixada em ${ESTRELA_DISTRACT_ADMIN_FEE_PERCENT}% (cinco por cento) sobre o valor total do contrato, destinada à cobertura de despesas operacionais e jurídicas indispensáveis ao cancelamento do negócio e reintegração do imóvel ao estoque da VENDEDORA.`)}
     </div>
 
     <div class="contract-clause">

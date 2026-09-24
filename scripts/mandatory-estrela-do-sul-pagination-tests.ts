@@ -132,6 +132,9 @@ assert(
 );
 assert(cssRuleFor('.contract-clause').includes('page-break-inside: auto'), 'CSS: cláusula enorme não é avoid global');
 assert(cssRuleFor('.estrela-capa-section-4-title').includes('page-break-after: avoid'), 'CSS: título segurança + tabela');
+assert(css.includes('padding-top: 5px !important'), 'CSS: padding-top das células');
+assert(css.includes('padding-bottom: 5px !important'), 'CSS: padding-bottom das células');
+assert(css.includes('vertical-align: middle !important'), 'CSS: vertical-align das células');
 assert(css.includes('orphans: 3'), 'CSS: orphans para quebra entre linhas');
 assert(css.includes('widows: 3'), 'CSS: widows para quebra entre linhas');
 

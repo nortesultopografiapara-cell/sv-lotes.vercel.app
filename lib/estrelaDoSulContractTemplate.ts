@@ -121,6 +121,21 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   -webkit-column-break-inside: avoid !important;
   overflow: visible !important;
 }
+.sv-contract-estrela-do-sul .estrela-table th,
+.sv-contract-estrela-do-sul .estrela-table td {
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+  padding-left: 5px !important;
+  padding-right: 5px !important;
+  vertical-align: middle !important;
+  line-height: 1.3 !important;
+}
+.sv-contract-estrela-do-sul .estrela-td-keep {
+  line-height: 1.3 !important;
+  margin: 0;
+  padding: 0;
+  overflow: visible !important;
+}
 .sv-contract-estrela-do-sul .estrela-footnote,
 .sv-contract-estrela-do-sul .estrela-capa p[style*="font-size:9pt"] {
   page-break-inside: avoid !important;
@@ -169,9 +184,21 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 .sv-contract-estrela-do-sul .estrela-sign-slot {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
+  overflow: visible !important;
 }
 .sv-contract-estrela-do-sul .signature-slot-buyer { grid-column: 1; }
 .sv-contract-estrela-do-sul .signature-slot-vendor-1 { grid-column: 2; }
+.sv-contract-estrela-do-sul .signature-slot-witness-1 { grid-column: 1; }
+.sv-contract-estrela-do-sul .signature-slot-witness-2 { grid-column: 2; }
+.sv-contract-estrela-do-sul .signature-grid--estrela .estrela-sign-doc {
+  white-space: nowrap !important;
+  overflow: visible !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+  line-height: 1.35 !important;
+  padding-top: 1px;
+  padding-bottom: 2px;
+}
 </style>`;
 }
 

@@ -511,7 +511,7 @@ const oneSourceHtml = html({
   },
 });
 const oneSourceNorm = oneSourceHtml.replace(/\u00a0/g, ' ');
-assert(countToken(oneSourceNorm, '3,50') >= 6, 'um snapshot alimenta todas as corretagens (R$ 3,50)');
+assert(countToken(oneSourceNorm, '3,50') >= 4, 'um snapshot alimenta todas as corretagens (R$ 3,50)');
 assert(
   countToken(oneSourceNorm, 'três reais e cinquenta centavos') >= 4,
   'um snapshot alimenta todos os extensos de corretagem',
@@ -618,18 +618,33 @@ assert(!gisMeasures.includes('fescamento'), 'sem fescamento');
 assert(gisMeasures.includes('Lei nº 13.709/2018 (LGPD)'), 'LGPD 13.709/2018');
 assert(!gisMeasures.includes('13.700/2018'), 'sem 13.700/2018');
 assert(!/\bCPE\b/.test(gisMeasures), 'testemunhas usam CPF, não CPE');
+assert(
+  (gisMeasures.match(/CPF nº:/g) || []).length === 4,
+  'CPF nº: completo nas testemunhas dos dois blocos',
+);
+assert(gisMeasures.includes('white-space: nowrap'), 'documento da testemunha sem quebra/corte');
+assert(gisMeasures.includes('padding-top: 5px !important'), 'células com padding-top');
+assert(gisMeasures.includes('padding-bottom: 5px !important'), 'células com padding-bottom');
+assert(gisMeasures.includes('vertical-align: middle !important'), 'células alinhadas ao meio');
 assert(gisMeasures.includes('5% (cinco por cento)'), '8.1.V taxa de cessão interpolada');
 assert(
   gisMeasures.includes('25% (vinte e cinco por cento)'),
   '9.3 retenção interpolada',
 );
-assert(gisMeasures.includes('<sup>5</sup>'), 'nota 5 (ARRAS) preservada');
-assert(gisMeasures.includes('<sup>6</sup>'), 'nota 6 (corretagem) preservada');
-assert(gisMeasures.includes('<sup>7</sup>'), 'nota 7 (distrato) preservada');
+assert(!gisMeasures.includes('<sup>5</sup>'), 'sem nota 5 órfã');
+assert(!gisMeasures.includes('<sup>6</sup>'), 'sem nota 6 órfã');
+assert(!gisMeasures.includes('<sup>7</sup>'), 'sem nota 7 órfã');
 assert(
-  gisMeasures.includes('<sup>6</sup>') &&
-    gisMeasures.slice(gisMeasures.indexOf('<sup>6</sup>'), gisMeasures.indexOf('<sup>6</sup>') + 280).includes('3,50'),
-  'nota 6 usa comissão snapshotada da venda',
+  !gisMeasures.includes('Natureza jurídica: as ARRAS'),
+  'sem bloco explicativo de ARRAS',
+);
+assert(
+  !gisMeasures.includes('A comissão de corretagem possui natureza de remuneração'),
+  'sem bloco explicativo de corretagem',
+);
+assert(
+  !gisMeasures.includes('A composição referente à Dedutação de Taxa'),
+  'sem bloco de taxa administrativa de distrato',
 );
 
 const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul');
