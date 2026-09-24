@@ -37,10 +37,22 @@ function plainLen(html: string): number {
 /** Itens acima disto podem quebrar entre linhas; os curtos ficam íntegros. */
 const SHORT_ITEM_MAX = 920;
 
+/**
+ * Remove só duplicação editorial consecutiva inequívoca herdada do Word
+ * (`1.1. 1.1.`, `<strong>2.1.</strong> 2.1.`). Não altera remissões cruzadas
+ * (`8.4` citando `8.2`) nem o texto jurídico.
+ */
+export function collapseEstrelaDuplicateEditorialNumbers(html: string): string {
+  return html
+    .replace(/(\d+(?:\.\d+)+\.)\s+\1/g, '$1')
+    .replace(/(<strong>)(\d+(?:\.\d+)+\.)(<\/strong>)\s*\2/g, '$1$2$3');
+}
+
 function p(html: string): string {
-  const long = plainLen(html) > SHORT_ITEM_MAX;
+  const cleaned = collapseEstrelaDuplicateEditorialNumbers(html);
+  const long = plainLen(cleaned) > SHORT_ITEM_MAX;
   const wrapClass = long ? 'estrela-item estrela-item--long' : 'estrela-item';
-  return `<div class="${wrapClass}"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;">${html}</p></div>`;
+  return `<div class="${wrapClass}"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;">${cleaned}</p></div>`;
 }
 
 function item(html: string): string {

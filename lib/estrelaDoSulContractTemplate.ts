@@ -153,7 +153,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 24px;
-  row-gap: 8px;
+  row-gap: 16px;
   align-items: start;
   justify-items: center;
   width: 100%;
@@ -163,6 +163,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 .sv-contract-estrela-do-sul .contract-closing-date {
   page-break-after: avoid !important;
   break-after: avoid-page !important;
+  margin-bottom: 14px;
 }
 .sv-contract-estrela-do-sul .signature-slot,
 .sv-contract-estrela-do-sul .estrela-sign-slot {

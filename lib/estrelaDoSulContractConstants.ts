@@ -126,6 +126,13 @@ export const ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES = [
     status: 'transcrito-como-no-fonte',
   },
   {
+    id: 'CLAUSE_2_14_15',
+    excerpt: 'Itens 2.14 e 2.15 soltos no documento-fonte',
+    issue:
+      'A cláusula 2 transcrita encerra em 2.9.2 + notas 5 e 6. Não há parágrafos 2.10–2.15 no instrumento. Números soltos, se visíveis no Word, não têm texto jurídico correspondente — não inventar itens.',
+    status: 'aguardando-decisao',
+  },
+  {
     id: 'COMPANY_CRECI',
     excerpt: 'CRECI(PA) nº 1233 no preâmbulo do exemplo',
     issue:

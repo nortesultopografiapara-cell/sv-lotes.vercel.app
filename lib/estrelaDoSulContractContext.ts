@@ -29,6 +29,7 @@ import {
   splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
 import { resolveBrokerCommissionAmount } from '@/lib/brokerCommission';
+import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import { formatInstallmentCorrectionLabel } from '@/lib/installmentCorrectionType';
 import { resolveRecantoContractProjectRecord } from '@/lib/recantoPrimaveraProjectContext';
 import { sanitizeContractField } from '@/lib/recantoPrimaveraCompanyProfile';
@@ -148,39 +149,57 @@ function formatDoc(raw: string): string {
   return formatCpfCnpj(digits) || raw;
 }
 
+function parsePositiveCommissionMoney(raw: unknown): number {
+  if (raw == null || raw === '') return 0;
+  const parsed = parseCurrencyBRLNumber(
+    typeof raw === 'number' || typeof raw === 'string' ? raw : String(raw),
+  );
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function readSaleCommissionSnapshotAmount(source: unknown): number {
-  if (!source || typeof source !== 'object') return 0;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return 0;
   const row = source as Record<string, unknown>;
   const fromCanonical = resolveBrokerCommissionAmount(row as never);
   if (fromCanonical > 0) return fromCanonical;
-  const fixed = Number(row.commission_fixed_amount);
-  return Number.isFinite(fixed) && fixed > 0 ? fixed : 0;
+  const fromAmount = parsePositiveCommissionMoney(
+    row.amount ?? row.amount_sale ?? row.commission_value,
+  );
+  if (fromAmount > 0) return fromAmount;
+  return parsePositiveCommissionMoney(row.commission_fixed_amount);
+}
+
+function commissionSnapshotRows(source: unknown): unknown[] {
+  if (Array.isArray(source)) return source;
+  if (source && typeof source === 'object') return [source];
+  return [];
 }
 
 /**
- * Comissão da venda: snapshot oficial (`broker_commissions` / campos da venda).
- * Não recalcula a partir da configuração atual do corretor.
+ * Comissão desta venda: snapshot persistido em `broker_commissions.amount`
+ * (e `commission_fixed_amount` no modo FIXED). Não usa o valor fixo do
+ * documento-fonte e não recalcula pela configuração atual do corretor
+ * (`sale.brokers` / `sale.broker`).
  */
-function resolveCommission(sale: Record<string, unknown>): number {
-  const nested = sale.broker_commissions;
-  if (Array.isArray(nested) && nested.length > 0) {
-    for (const row of nested) {
-      const amount = readSaleCommissionSnapshotAmount(row);
-      if (amount > 0) return amount;
-    }
-    return 0;
+export function resolveEstrelaDoSulSaleCommissionAmount(
+  sale: Record<string, unknown> | null | undefined,
+): number {
+  if (!sale || typeof sale !== 'object') return 0;
+
+  for (const row of commissionSnapshotRows(sale.broker_commissions)) {
+    const amount = readSaleCommissionSnapshotAmount(row);
+    if (amount > 0) return amount;
   }
-  if (nested && typeof nested === 'object') {
-    return readSaleCommissionSnapshotAmount(nested);
-  }
-  const direct = Number(
+
+  return parsePositiveCommissionMoney(
     sale.commission_amount ??
       sale.broker_commission_amount ??
-      sale.sale_commission_fixed_amount ??
-      0,
+      sale.sale_commission_fixed_amount,
   );
-  if (Number.isFinite(direct) && direct > 0) return direct;
-  return readSaleCommissionSnapshotAmount(sale);
+}
+
+function resolveCommission(sale: Record<string, unknown>): number {
+  return resolveEstrelaDoSulSaleCommissionAmount(sale);
 }
 
 function installmentRows(

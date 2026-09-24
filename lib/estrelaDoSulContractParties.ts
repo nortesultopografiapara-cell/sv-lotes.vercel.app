@@ -15,9 +15,9 @@ import { escEstrelaHtml, estrelaStrong } from '@/lib/estrelaDoSulContractFormat'
 const SLOT_STYLE =
   'text-align: center; margin-bottom: 0; min-width: 0; width: 100%; page-break-inside: avoid; break-inside: avoid-page;';
 const LINE_STYLE =
-  'border-top: 1px solid #111; margin: 10px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;';
+  'border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;';
 const ROLE_STYLE =
-  'margin: 3px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;';
+  'margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;';
 const NAME_STYLE =
   'margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;';
 const META_STYLE =
@@ -338,7 +338,7 @@ export function buildEstrelaDoSulSignaturesHtml(
   kind: EstrelaSignatureBlockKind = 'instrumento',
 ): string {
   const dateHtml = `
-      <p class="contract-closing-date" style="margin: 0 0 8px 0; text-align: center; font-weight: bold;">
+      <p class="contract-closing-date" style="margin: 0 0 14px 0; text-align: center; font-weight: bold;">
         ${escEstrelaHtml(ctx.closingCityDate)}
       </p>`;
   const grid = buildEstrelaSignatureGrid(ctx, kind === 'instrumento');

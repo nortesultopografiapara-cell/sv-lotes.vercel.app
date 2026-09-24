@@ -29,6 +29,8 @@ import {
   formatEstrelaMetersExtenso,
   formatEstrelaMetersPhrase,
 } from '../lib/estrelaDoSulContractFormat';
+import { collapseEstrelaDuplicateEditorialNumbers } from '../lib/estrelaDoSulContractClauses';
+import { resolveEstrelaDoSulSaleCommissionAmount } from '../lib/estrelaDoSulContractContext';
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FALHOU — ${msg}`);
@@ -280,6 +282,14 @@ assert(
   ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'INFRA_DEADLINE'),
   'prazo de infraestrutura listado',
 );
+assert(
+  ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'CLAUSE_8_4_CROSSREF'),
+  '8.4→8.2 listada para decisão humana',
+);
+assert(
+  ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'CLAUSE_2_14_15'),
+  '2.14/2.15 listados para decisão humana',
+);
 
 function assertBefore(htmlSrc: string, first: string, second: string, msg: string) {
   const a = htmlSrc.indexOf(first);
@@ -437,10 +447,108 @@ assert(
 );
 assert(!corretagemSlice.includes('999'), 'não recalcula pela config atual do corretor');
 assert(gisMeasures.includes('2.8.1.'), 'cláusula 2.8.1 presente');
+assert(gisMeasures.includes('9.2.'), 'cláusula 9.2 presente');
 assert(
   gisMeasures.includes('três reais e cinquenta centavos'),
   '2.8.1 usa o mesmo snapshot de corretagem',
 );
+
+function countToken(src: string, token: string): number {
+  return src.split(token).length - 1;
+}
+
+const SALE_COMMISSION = 3.5;
+assert(
+  resolveEstrelaDoSulSaleCommissionAmount({
+    broker_commissions: [{ amount: SALE_COMMISSION }],
+    brokers: { commission_fixed_amount: 999 },
+  }) === SALE_COMMISSION,
+  'resolver lê broker_commissions.amount',
+);
+assert(
+  resolveEstrelaDoSulSaleCommissionAmount({
+    broker_commissions: [{ amount: 0, commission_fixed_amount: SALE_COMMISSION }],
+    brokers: { commission_fixed_amount: 999 },
+  }) === SALE_COMMISSION,
+  'resolver lê commission_fixed_amount do snapshot FIXED',
+);
+assert(
+  resolveEstrelaDoSulSaleCommissionAmount({
+    broker_commissions: [],
+    sale_commission_fixed_amount: SALE_COMMISSION,
+    brokers: { commission_fixed_amount: 999 },
+  }) === SALE_COMMISSION,
+  'array vazio não descarta sale_commission_fixed_amount',
+);
+assert(
+  resolveEstrelaDoSulSaleCommissionAmount({
+    broker_commissions: [],
+    brokers: { commission_percent: 10, commission_fixed_amount: 999 },
+  }) === 0,
+  'sem snapshot não herda config futura do corretor',
+);
+
+const oneSourceHtml = html({
+  sale: {
+    broker_commissions: [{ amount: SALE_COMMISSION }],
+    brokers: { commission_percent: 10, commission_fixed_amount: 999 },
+  },
+});
+const oneSourceNorm = oneSourceHtml.replace(/\u00a0/g, ' ');
+assert(countToken(oneSourceNorm, '3,50') >= 6, 'um snapshot alimenta todas as corretagens (R$ 3,50)');
+assert(
+  countToken(oneSourceNorm, 'três reais e cinquenta centavos') >= 4,
+  'um snapshot alimenta todos os extensos de corretagem',
+);
+assert(!oneSourceNorm.includes('999'), 'não vaza config futura do corretor');
+const clause281 = oneSourceNorm.slice(
+  oneSourceNorm.indexOf('2.8.1.'),
+  oneSourceNorm.indexOf('2.8.1.') + 280,
+);
+const clause92 = oneSourceNorm.slice(
+  oneSourceNorm.indexOf('Da Comissão de Corretagem: As Partes'),
+  oneSourceNorm.indexOf('Da Comissão de Corretagem: As Partes') + 280,
+);
+assert(clause281.includes('3,50'), '2.8.1 = R$ 3,50');
+assert(clause92.includes('3,50'), '9.2 = R$ 3,50');
+assert(clause281.includes('três reais e cinquenta centavos'), '2.8.1 extenso');
+assert(clause92.includes('três reais e cinquenta centavos'), '9.2 extenso');
+
+const fromSaleField = html({
+  sale: {
+    broker_commissions: [],
+    sale_commission_fixed_amount: SALE_COMMISSION,
+    brokers: { commission_fixed_amount: 999 },
+  },
+});
+assert(
+  fromSaleField.includes('3,50') && fromSaleField.includes('três reais e cinquenta centavos'),
+  'campo da venda também alimenta capa/cláusulas',
+);
+
+assert(
+  collapseEstrelaDuplicateEditorialNumbers('1.1. 1.1. O objeto') === '1.1. O objeto',
+  'colapsa 1.1. 1.1. editorial',
+);
+assert(
+  collapseEstrelaDuplicateEditorialNumbers('<strong>2.1.</strong> 2.1. O preço') ===
+    '<strong>2.1.</strong> O preço',
+  'colapsa 2.1. duplicado após strong',
+);
+assert(
+  collapseEstrelaDuplicateEditorialNumbers(
+    'a obrigatoriedade de intermediação exclusiva prevista no item 8.2 somente existirá',
+  ).includes('item 8.2'),
+  'não altera remissão cruzada 8.2',
+);
+
+const editorialPlain = gisMeasures.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+assert(
+  !/(\d+\.\d+\.)\s+\1/.test(editorialPlain),
+  'HTML gerado sem numeração editorial duplicada consecutiva',
+);
+assert(!editorialPlain.includes(' 2.14 '), '2.14 não inventado');
+assert(!editorialPlain.includes(' 2.15 '), '2.15 não inventado');
 
 const noSnapshot = html({
   sale: {

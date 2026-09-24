@@ -723,17 +723,28 @@ export async function executeGisSaleCreate(
         });
 
         if (shouldCreatePendingCommissionFromPlan(plan)) {
-          await supabase.from('broker_commissions').insert([
-            {
-              company_id: tenantId,
-              tenant_id: tenantId,
-              broker_id: brokerId,
-              sale_id: saleId,
-              customer_id: customerId || clientId,
-              ...buildCommissionSnapshotFields(plan),
-              status: 'pendente',
-            },
-          ]);
+          const { data: insertedCommission, error: commissionInsertError } =
+            await insertRowWithColumnFallback(
+              supabase,
+              'broker_commissions',
+              {
+                company_id: tenantId,
+                tenant_id: tenantId,
+                broker_id: brokerId,
+                sale_id: saleId,
+                customer_id: customerId || clientId,
+                ...buildCommissionSnapshotFields(plan),
+                status: 'pendente',
+              },
+              'id, amount, commission_fixed_amount',
+            );
+          if (commissionInsertError || !insertedCommission) {
+            console.warn(
+              '[sales/create] broker_commission_failed',
+              commissionInsertError,
+            );
+            warnings.push('Comissão do corretor não registrada automaticamente.');
+          }
         }
       } catch (commErr) {
         console.warn('[sales/create] broker_commission_failed', commErr);
