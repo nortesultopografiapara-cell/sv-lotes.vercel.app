@@ -9,6 +9,7 @@ const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul'
 
 const files = [
   'capa-e-assinaturas-completas',
+  'dados-tecnicos-corretagem',
   'empresa-somente',
   'empresa-segundo-vendedor',
   'comprador-com-conjuge',
@@ -54,7 +55,10 @@ async function tryWritePdf(htmlPath: string, pdfPath: string): Promise<string> {
   } finally {
     await browser.close();
   }
-  return `PDF gerado: ${pdfPath}`;
+  const { PDFDocument } = await import('pdf-lib');
+  const pdf = await PDFDocument.load(fs.readFileSync(pdfPath));
+  const pages = pdf.getPageCount();
+  return `PDF gerado: ${pdfPath} (${pages} páginas)`;
 }
 
 async function main() {

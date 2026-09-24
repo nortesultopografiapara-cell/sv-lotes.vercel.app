@@ -688,6 +688,59 @@ export async function executeGisSaleCreate(
 
     await replaceSaleBalloonInstallments(supabase, saleId, balloonPlan);
 
+    // Snapshot de comissão ANTES do HTML do contrato, para o modelo consumir
+    // broker_commissions.amount da venda (não a config atual do corretor).
+    if (brokerId && saleId) {
+      try {
+        const { data: brokerData } = await supabase
+          .from('brokers')
+          .select('commission_percent, commission_mode, commission_fixed_amount')
+          .eq('id', brokerId)
+          .maybeSingle();
+
+        const saleVal = Number(customerData.final_value || finalPrice) || 0;
+        const useDefault =
+          customerData.use_broker_default_commission === undefined ||
+          customerData.use_broker_default_commission === null ||
+          customerData.use_broker_default_commission === true ||
+          customerData.use_broker_default_commission === 'true';
+
+        const plan = resolveSaleCommissionPlan({
+          broker: brokerData,
+          useBrokerDefault: Boolean(useDefault),
+          saleCommissionMode: customerData.sale_commission_mode as string | null | undefined,
+          saleCommissionPercent: customerData.sale_commission_percent as
+            | number
+            | string
+            | null
+            | undefined,
+          saleCommissionFixedAmount: customerData.sale_commission_fixed_amount as
+            | number
+            | string
+            | null
+            | undefined,
+          saleValue: saleVal,
+        });
+
+        if (shouldCreatePendingCommissionFromPlan(plan)) {
+          await supabase.from('broker_commissions').insert([
+            {
+              company_id: tenantId,
+              tenant_id: tenantId,
+              broker_id: brokerId,
+              sale_id: saleId,
+              customer_id: customerId || clientId,
+              ...buildCommissionSnapshotFields(plan),
+              status: 'pendente',
+            },
+          ]);
+        }
+      } catch (commErr) {
+        console.warn('[sales/create] broker_commission_failed', commErr);
+        warnings.push('Comissão do corretor não registrada automaticamente.');
+      }
+    }
+
     logSaleStep('generate_contract', startedAt);
     try {
       await withTimeout('generate_contract', CONTRACT_GENERATION_TIMEOUT_MS, async () => {
@@ -848,58 +901,18 @@ export async function executeGisSaleCreate(
       throw new Error(blockUpdErr.message || 'Falha ao marcar lote como vendido');
     }
 
-    // Comissão: snapshot na época da venda (não depende só do role BROKER).
-    if (brokerId && saleId) {
+    if (saleId && contractId) {
       try {
-        const { data: brokerData } = await supabase
-          .from('brokers')
-          .select('commission_percent, commission_mode, commission_fixed_amount')
-          .eq('id', brokerId)
-          .maybeSingle();
-
-        const saleVal = Number(customerData.final_value || finalPrice) || 0;
-        const useDefault =
-          customerData.use_broker_default_commission === undefined ||
-          customerData.use_broker_default_commission === null ||
-          customerData.use_broker_default_commission === true ||
-          customerData.use_broker_default_commission === 'true';
-
-        const plan = resolveSaleCommissionPlan({
-          broker: brokerData,
-          useBrokerDefault: Boolean(useDefault),
-          saleCommissionMode: customerData.sale_commission_mode as string | null | undefined,
-          saleCommissionPercent: customerData.sale_commission_percent as
-            | number
-            | string
-            | null
-            | undefined,
-          saleCommissionFixedAmount: customerData.sale_commission_fixed_amount as
-            | number
-            | string
-            | null
-            | undefined,
-          saleValue: saleVal,
-        });
-
-        if (shouldCreatePendingCommissionFromPlan(plan)) {
-          await supabase.from('broker_commissions').insert([
-            {
-              company_id: tenantId,
-              tenant_id: tenantId,
-              broker_id: brokerId,
-              sale_id: saleId,
-              contract_id: contractId,
-              customer_id: customerId || clientId,
-              ...buildCommissionSnapshotFields(plan),
-              status: 'pendente',
-            },
-          ]);
-        }
-      } catch (commErr) {
-        console.warn('[sales/create] broker_commission_failed', commErr);
-        warnings.push('Comissão do corretor não registrada automaticamente.');
+        await supabase
+          .from('broker_commissions')
+          .update({ contract_id: contractId })
+          .eq('sale_id', saleId)
+          .is('contract_id', null);
+      } catch (linkErr) {
+        console.warn('[sales/create] broker_commission_contract_link_failed', linkErr);
       }
     }
+
 
     if (!contractId) {
       throw new Error(SALE_REQUIRES_PERSISTED_CONTRACT_MESSAGE);

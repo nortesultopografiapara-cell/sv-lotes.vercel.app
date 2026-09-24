@@ -50,6 +50,11 @@ function testGisSaleCreateServiceFlow() {
   assert(service.includes('terminationPersist'), 'grava snapshot na sales');
   assert(service.includes('copyTerminationPolicyPersistFromSale') === false, 'GIS cria, não copia de legado');
   assert(service.includes('resolveSaleCommissionPlan'), 'plano PERCENT/FIXED/NONE');
+  assert(
+    service.indexOf('buildCommissionSnapshotFields') <
+      service.indexOf("logSaleStep('generate_contract'"),
+    'snapshot de comissão antes de gerar o contrato',
+  );
   console.log('OK testGisSaleCreateServiceFlow');
 }
 

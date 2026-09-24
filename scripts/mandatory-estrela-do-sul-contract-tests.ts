@@ -25,6 +25,10 @@ import {
 } from '../lib/saleContractSignaturePartyRules';
 import { isAraguaiaSaleContractModel } from '../lib/araguaiaContractEsign';
 import { isMundoNovoSaleContractModel } from '../lib/mundoNovoContractEsign';
+import {
+  formatEstrelaMetersExtenso,
+  formatEstrelaMetersPhrase,
+} from '../lib/estrelaDoSulContractFormat';
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FALHOU — ${msg}`);
@@ -131,12 +135,13 @@ function html(overrides: {
   tenant?: Record<string, unknown>;
   sale?: Record<string, unknown>;
   customer?: Record<string, unknown>;
+  block?: Record<string, unknown>;
 } = {}) {
   return generateContractHTML({
     tenant: { ...COMPANY, ...(overrides.tenant || {}) },
     customer: { ...CUSTOMER, ...(overrides.customer || {}) },
     project: PROJECT,
-    block: BLOCK,
+    block: { ...BLOCK, ...(overrides.block || {}) },
     sale: { ...SALE, ...(overrides.sale || {}) },
     financeReceipts: RECEIPTS,
   });
@@ -188,6 +193,12 @@ assert(onlyCompany.includes('55,00m'), 'laterais GIS');
 assert(onlyCompany.includes('50.000,00'), 'preço da venda');
 assert(onlyCompany.includes('5.000,00'), 'sinal da venda');
 assert(onlyCompany.includes('1.500,00'), 'corretagem da venda');
+assert(onlyCompany.includes('MEDIDAS E CONFRONTAÇÕES'), 'rótulo medidas e confrontações');
+assert(!onlyCompany.includes('ARRAS<sup>2</sup>'), 'sem sobrescrito ARRAS²');
+assert(!onlyCompany.includes('PARCELAS E VALORES<sup>3</sup>'), 'sem sobrescrito PARCELAS³');
+assert(!onlyCompany.includes('CONFLITOS<sup>4</sup>'), 'sem sobrescrito CONFLITOS⁴');
+assert(onlyCompany.includes('width:33%'), 'coluna Informação ~33%');
+assert(onlyCompany.includes('width:67%'), 'coluna Detalhamento ~67%');
 assert(onlyCompany.includes('10 (dez) parcela') || onlyCompany.includes('10 (dez)'), 'parcelas dinâmicas');
 assert(onlyCompany.includes('TESTEMUNHA 1'), 'testemunha 1 visual');
 assert(onlyCompany.includes('TESTEMUNHA 2'), 'testemunha 2 visual');
@@ -322,12 +333,22 @@ assert(
 
 const fullHomolog = html({
   tenant: { contract_second_vendor_json: SECOND_VENDOR },
+  block: {
+    quadra: '02',
+    lot: '15',
+    area: 1100,
+    frente: 10.05,
+    fundo: 10.0,
+    'Lado Dir.': 66.8,
+    'Lado Esq.': 65.82,
+  },
   sale: {
     has_spouse: true,
     sale_spouse_name: 'Maria Souza Anuente',
     sale_spouse_cpf: '39053344705',
     sale_spouse_phone: '64999998888',
     sale_spouse_email: 'maria@test.com',
+    broker_commissions: [{ amount: 3.5 }],
   },
 });
 assert(fullHomolog.includes('Antonio Ferreira Silva'), 'homologação: segundo vendedor');
@@ -346,6 +367,97 @@ assertBefore(
   'class="estrela-instrument"',
   'homologação: tabela da capa antes do contrato',
 );
+
+const METER_CASES: Array<[number, string]> = [
+  [10.05, 'dez metros e cinco centímetros'],
+  [10.0, 'dez metros'],
+  [66.8, 'sessenta e seis metros e oitenta centímetros'],
+  [65.82, 'sessenta e cinco metros e oitenta e dois centímetros'],
+  [10.01, 'dez metros e um centímetro'],
+  [10.99, 'dez metros e noventa e nove centímetros'],
+];
+for (const [meters, words] of METER_CASES) {
+  assert(
+    formatEstrelaMetersExtenso(meters) === words,
+    `extenso exato ${meters} → ${words}`,
+  );
+  assert(
+    formatEstrelaMetersPhrase(meters).includes(`(${words})`),
+    `frase ${meters} preserva centímetros`,
+  );
+  assert(
+    !formatEstrelaMetersExtenso(meters).includes('onze metros'),
+    `${meters} não arredonda o metro inteiro`,
+  );
+}
+
+const gisMeasures = html({
+  block: {
+    quadra: '02',
+    lot: '15',
+    area: 1100,
+    frente: 10.05,
+    fundo: 10.0,
+    'Lado Dir.': 66.8,
+    'Lado Esq.': 65.82,
+  },
+  sale: {
+    broker_commissions: [{ amount: 3.5 }],
+    brokers: {
+      name: 'Corretor Estrela',
+      cpf: '39053344705',
+      creci: '12345-PA',
+      commission_percent: 10,
+      commission_fixed_amount: 999,
+    },
+  },
+});
+assert(gisMeasures.includes('10,05m (dez metros e cinco centímetros)'), 'GIS 10,05');
+assert(gisMeasures.includes('10,00m (dez metros)'), 'GIS 10,00 sem centímetros');
+assert(
+  gisMeasures.includes('66,80m (sessenta e seis metros e oitenta centímetros)'),
+  'GIS 66,80',
+);
+assert(
+  gisMeasures.includes('65,82m (sessenta e cinco metros e oitenta e dois centímetros)'),
+  'GIS 65,82',
+);
+const corretagemSlice = gisMeasures.slice(
+  gisMeasures.indexOf('VALOR DE CORRETAGEM'),
+  gisMeasures.indexOf('VALOR DE CORRETAGEM') + 420,
+);
+assert(corretagemSlice.includes('3,50'), 'capa corretagem R$ 3,50');
+assert(
+  corretagemSlice.includes('três reais e cinquenta centavos'),
+  'capa corretagem por extenso',
+);
+assert(
+  !/R\$\s*0,00/.test(corretagemSlice.replace(/\u00a0/g, ' ')),
+  'capa não zera comissão da venda',
+);
+assert(!corretagemSlice.includes('999'), 'não recalcula pela config atual do corretor');
+assert(gisMeasures.includes('2.8.1.'), 'cláusula 2.8.1 presente');
+assert(
+  gisMeasures.includes('três reais e cinquenta centavos'),
+  '2.8.1 usa o mesmo snapshot de corretagem',
+);
+
+const noSnapshot = html({
+  sale: {
+    broker_commissions: [],
+    brokers: {
+      name: 'Corretor Estrela',
+      commission_percent: 10,
+      commission_fixed_amount: 999,
+    },
+  },
+});
+const zeroSlice = noSnapshot.slice(
+  noSnapshot.indexOf('VALOR DE CORRETAGEM'),
+  noSnapshot.indexOf('VALOR DE CORRETAGEM') + 280,
+);
+assert(/R\$\s*0,00/.test(zeroSlice.replace(/\u00a0/g, ' ')), 'sem snapshot da venda → R$ 0,00');
+assert(!zeroSlice.includes('999'), 'sem snapshot não herda config atual do corretor');
 
 const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul');
 fs.mkdirSync(outDir, { recursive: true });
@@ -374,6 +486,14 @@ fs.writeFileSync(
   wrapPrintable(
     fullHomolog,
     'Estrela do Sul — capa completa + segundo vendedor + cônjuge',
+  ),
+  'utf8',
+);
+fs.writeFileSync(
+  path.join(outDir, 'dados-tecnicos-corretagem.html'),
+  wrapPrintable(
+    gisMeasures,
+    'Estrela do Sul — medidas GIS exatas + corretagem R$ 3,50',
   ),
   'utf8',
 );

@@ -73,11 +73,15 @@ function money(ctxAmountFmt: string, extenso: string): string {
 }
 
 function td(html: string): string {
-  return `<td style="border:1px solid #111; padding:3px 5px;"><div class="estrela-td-keep">${html}</div></td>`;
+  return `<td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">${html}</div></td>`;
 }
 
 function thCell(html: string, extra = ''): string {
-  return `<th style="border:1px solid #111; padding:3px 5px; text-align:left;${extra}"><div class="estrela-td-keep">${html}</div></th>`;
+  return `<th style="border:1px solid #111; padding:2px 4px; text-align:left;${extra}"><div class="estrela-td-keep">${html}</div></th>`;
+}
+
+function objectTableCols(): string {
+  return `<colgroup><col class="estrela-col-info" style="width:33%;"/><col class="estrela-col-detail" style="width:67%;"/></colgroup>`;
 }
 
 export function buildEstrelaDoSulClausesHtml(
@@ -98,15 +102,16 @@ export function buildEstrelaDoSulClausesHtml(
     .join(' — ');
 
   const objectTable = `
-    <table class="estrela-table">
+    <table class="estrela-table estrela-object-table">
+      ${objectTableCols()}
       <thead>
-        <tr>${thCell('Informação', ' width:32%;')}${thCell('Detalhamento')}</tr>
+        <tr>${thCell('Informação')}${thCell('Detalhamento')}</tr>
       </thead>
       <tbody>
         <tr>${td('Nome do Projeto')}${td(escEstrelaHtml(ctx.enterpriseName))}</tr>
         <tr>${td('Localização do Imóvel')}${td(escEstrelaHtml(ctx.enterpriseLocation))}</tr>
         <tr>${td('Área Vendida')}${td(areaCell || '—')}</tr>
-        <tr>${td('Confrontações')}${td(escEstrelaHtml(ctx.confrontacoesText) || '—')}</tr>
+        <tr>${td('MEDIDAS E CONFRONTAÇÕES')}${td(escEstrelaHtml(ctx.confrontacoesText) || '—')}</tr>
         ${
           ctx.partnershipNote
             ? `<tr>${td('Outras informações')}${td(escEstrelaHtml(ctx.partnershipNote))}</tr>`
@@ -116,9 +121,10 @@ export function buildEstrelaDoSulClausesHtml(
     </table>`;
 
   const financeTable = `
-    <table class="estrela-table estrela-finance-table">
+    <table class="estrela-table estrela-finance-table estrela-object-table">
+      ${objectTableCols()}
       <thead>
-        <tr>${thCell('ITEM', ' width:42%;')}${thCell('VALOR / DETALHAMENTO')}</tr>
+        <tr>${thCell('ITEM')}${thCell('VALOR / DETALHAMENTO')}</tr>
       </thead>
       <tbody>
         <tr>${td('VALOR TOTAL DO IMÓVEL')}${td(money(ctx.valorTotalFmt, ctx.valorTotalExtenso))}</tr>

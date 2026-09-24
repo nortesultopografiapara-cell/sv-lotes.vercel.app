@@ -57,12 +57,51 @@ function extensoInteger(val: number): string {
   }
 }
 
+function extensoCardinal(val: number): string {
+  if (!Number.isFinite(val) || val < 0) return '';
+  try {
+    return String(extenso(String(val), { mode: 'number' }));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Medida linear por extenso a partir do decimal GIS exato (2 casas).
+ * Não arredonda metros: 10,05 → "dez metros e cinco centímetros".
+ */
+export function formatEstrelaMetersExtenso(
+  meters: number | string | null | undefined,
+): string {
+  const num = Number(meters);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  const [metersRaw, cmRaw] = num.toFixed(2).split('.');
+  const whole = Number(metersRaw);
+  const cm = Number(cmRaw);
+  if (!Number.isFinite(whole) || !Number.isFinite(cm)) return '';
+
+  const metersWords = extensoCardinal(whole);
+  const cmWords = extensoCardinal(cm);
+  if (!metersWords) return '';
+
+  if (cm === 0) {
+    return whole === 1 ? `${metersWords} metro` : `${metersWords} metros`;
+  }
+  if (!cmWords) return whole === 1 ? `${metersWords} metro` : `${metersWords} metros`;
+  const mUnit = whole === 1 ? 'metro' : 'metros';
+  const cUnit = cm === 1 ? 'centímetro' : 'centímetros';
+  if (whole === 0) {
+    return `${cmWords} ${cUnit}`;
+  }
+  return `${metersWords} ${mUnit} e ${cmWords} ${cUnit}`;
+}
+
 export function formatEstrelaMetersPhrase(meters: number | string | null | undefined): string {
   const num = Number(meters);
   if (!Number.isFinite(num) || num <= 0) return '';
   const fmt = `${formatEstrelaNumber(num)}m`;
-  const words = extensoInteger(num);
-  if (words) return `${fmt} (${words} metros)`;
+  const words = formatEstrelaMetersExtenso(num);
+  if (words) return `${fmt} (${words})`;
   return fmt;
 }
 

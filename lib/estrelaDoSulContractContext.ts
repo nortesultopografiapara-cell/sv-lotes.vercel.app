@@ -148,13 +148,30 @@ function formatDoc(raw: string): string {
   return formatCpfCnpj(digits) || raw;
 }
 
+function readSaleCommissionSnapshotAmount(source: unknown): number {
+  if (!source || typeof source !== 'object') return 0;
+  const row = source as Record<string, unknown>;
+  const fromCanonical = resolveBrokerCommissionAmount(row as never);
+  if (fromCanonical > 0) return fromCanonical;
+  const fixed = Number(row.commission_fixed_amount);
+  return Number.isFinite(fixed) && fixed > 0 ? fixed : 0;
+}
+
+/**
+ * Comissão da venda: snapshot oficial (`broker_commissions` / campos da venda).
+ * Não recalcula a partir da configuração atual do corretor.
+ */
 function resolveCommission(sale: Record<string, unknown>): number {
   const nested = sale.broker_commissions;
   if (Array.isArray(nested) && nested.length > 0) {
-    return resolveBrokerCommissionAmount(nested[0] as never);
+    for (const row of nested) {
+      const amount = readSaleCommissionSnapshotAmount(row);
+      if (amount > 0) return amount;
+    }
+    return 0;
   }
   if (nested && typeof nested === 'object') {
-    return resolveBrokerCommissionAmount(nested as never);
+    return readSaleCommissionSnapshotAmount(nested);
   }
   const direct = Number(
     sale.commission_amount ??
@@ -162,7 +179,8 @@ function resolveCommission(sale: Record<string, unknown>): number {
       sale.sale_commission_fixed_amount ??
       0,
   );
-  return Number.isFinite(direct) && direct > 0 ? direct : 0;
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  return readSaleCommissionSnapshotAmount(sale);
 }
 
 function installmentRows(

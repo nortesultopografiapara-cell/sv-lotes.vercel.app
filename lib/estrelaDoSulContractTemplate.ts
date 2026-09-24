@@ -94,6 +94,18 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   page-break-inside: auto;
   break-inside: auto;
 }
+.sv-contract-estrela-do-sul .estrela-object-table col.estrela-col-info {
+  width: 33%;
+}
+.sv-contract-estrela-do-sul .estrela-object-table col.estrela-col-detail {
+  width: 67%;
+}
+.sv-contract-estrela-do-sul .estrela-capa .estrela-table {
+  margin: 2px 0 6px 0;
+}
+.sv-contract-estrela-do-sul .estrela-capa .estrela-section-title {
+  margin: 0 0 4px 0;
+}
 .sv-contract-estrela-do-sul .estrela-table thead {
   display: table-header-group;
 }
@@ -126,7 +138,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
   page-break-before: avoid;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .sv-contract-estrela-do-sul .estrela-instrument {
   page-break-before: always !important;
@@ -141,7 +153,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 24px;
-  row-gap: 12px;
+  row-gap: 8px;
   align-items: start;
   justify-items: center;
   width: 100%;
