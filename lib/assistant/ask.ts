@@ -1,12 +1,7 @@
 /**
  * Orquestrador local do Assistente SV (Fase 1A).
- *
- * Fase 1B: `POST /api/assistant/ask` deve:
- * 1. autenticar a sessão e derivar o papel no servidor;
- * 2. montar AssistantSafeContext (sem PII/secrets);
- * 3. chamar `askAssistant` (este arquivo);
- * 4. opcionalmente reescrever `result.text` com LLM usando SOMENTE os procedimentos recuperados;
- * 5. nunca integrar provedor nesta fase e nunca enviar API key ao cliente.
+ * Mantido para atalhos, testes da 1A e fallback de compose.
+ * A conversa da Fase 1B passa por `POST /api/assistant/ask` + `runAssistantPipeline`.
  */
 import { ASSISTANT_UNKNOWN_ANSWER } from './constants';
 import { composeAssistantAnswer } from './compose';

@@ -7,18 +7,20 @@ import { usePathname } from 'next/navigation';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 import {
-  askAssistant,
   ASSISTANT_GREETING,
   ASSISTANT_INPUT_PLACEHOLDER,
+  ASSISTANT_LOCAL_FALLBACK_NOTICE,
   ASSISTANT_MANUAL_FALLBACK_LABEL,
   ASSISTANT_MANUAL_HREF,
   ASSISTANT_PANEL_SUBTITLE,
   ASSISTANT_PANEL_TITLE,
+  ASSISTANT_THINKING_LABEL,
   buildSafeAssistantContext,
   listVisibleAssistantShortcuts,
   type AssistantMessage,
   type AssistantShortcut,
 } from '@/lib/assistant';
+import { historyFromMessages, requestAssistantAsk } from '@/lib/assistant/clientAsk';
 import { isClientPortalEnabledForUi } from '@/lib/portal-cliente/config';
 
 function nextMessageId(): string {
@@ -45,12 +47,13 @@ export function AssistantPanel() {
         role,
         tenantName,
         projectName: project?.name ?? null,
+        contractModel: project?.contractModel ?? null,
         impersonatingTenant,
         flags: {
           clientPortal: isClientPortalEnabledForUi(),
         },
       }),
-    [pathname, role, tenantName, project?.name, impersonatingTenant],
+    [pathname, role, tenantName, project?.name, project?.contractModel, impersonatingTenant],
   );
 
   const shortcuts = useMemo(() => listVisibleAssistantShortcuts(context), [context]);
@@ -78,20 +81,40 @@ export function AssistantPanel() {
     const trimmed = question.trim();
     if (!trimmed || loading) return;
     setInput('');
+    const history = historyFromMessages(messages);
     setMessages((prev) => [...prev, { id: nextMessageId(), role: 'user', text: trimmed }]);
     setLoading(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 180));
-    const result = askAssistant({ question: trimmed, context, procedureId });
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: nextMessageId(),
-        role: 'assistant',
-        text: result.text,
-        kind: result.kind,
-      },
-    ]);
-    setLoading(false);
+    try {
+      const result = await requestAssistantAsk({
+        question: trimmed,
+        context,
+        procedureId,
+        history,
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMessageId(),
+          role: 'assistant',
+          text: result.text,
+          kind: result.kind,
+          notice: result.notice || (result.source === 'local-fallback' ? ASSISTANT_LOCAL_FALLBACK_NOTICE : null),
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMessageId(),
+          role: 'assistant',
+          text: 'Não consegui responder agora. Tente de novo em instantes.',
+          kind: 'unknown',
+          notice: ASSISTANT_LOCAL_FALLBACK_NOTICE,
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleShortcut(shortcut: AssistantShortcut) {
@@ -141,6 +164,11 @@ export function AssistantPanel() {
                 <p className="sv-assistant-bubble-kicker">Assistente SV</p>
               ) : null}
               <pre className="sv-assistant-bubble-text">{message.text}</pre>
+              {message.role === 'assistant' && message.notice ? (
+                <p className="sv-assistant-notice" data-testid="assistant-sv-notice">
+                  {message.notice}
+                </p>
+              ) : null}
             </div>
           ))}
           {loading ? (
@@ -148,7 +176,7 @@ export function AssistantPanel() {
               <p className="sv-assistant-bubble-kicker">Assistente SV</p>
               <p className="sv-assistant-loading">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Consultando a documentação oficial…
+                {ASSISTANT_THINKING_LABEL}
               </p>
             </div>
           ) : null}

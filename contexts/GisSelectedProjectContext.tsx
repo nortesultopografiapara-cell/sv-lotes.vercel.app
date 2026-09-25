@@ -12,6 +12,7 @@ import {
 export type GisSelectedProject = {
   id: string;
   name: string;
+  contractModel?: string | null;
 };
 
 type GisSelectedProjectContextValue = {

@@ -69,19 +69,29 @@ export type AssistantShortcut = {
   allowedModulesWhenRestricted?: AssistantModuleId[];
 };
 
+export type AssistantChatTurn = {
+  role: 'assistant' | 'user';
+  text: string;
+};
+
 export type AssistantAskInput = {
   question: string;
   context: AssistantSafeContext;
   procedureId?: string;
+  history?: AssistantChatTurn[];
 };
 
 export type AssistantAskKind = 'answer' | 'unknown' | 'forbidden';
+
+export type AssistantAnswerSource = 'model' | 'local' | 'local-fallback';
 
 export type AssistantAskResult = {
   kind: AssistantAskKind;
   text: string;
   procedureIds: string[];
   retrievedTitles: string[];
+  source?: AssistantAnswerSource;
+  notice?: string | null;
 };
 
 export type AssistantMessage = {
@@ -89,4 +99,5 @@ export type AssistantMessage = {
   role: 'assistant' | 'user';
   text: string;
   kind?: AssistantAskKind;
+  notice?: string | null;
 };

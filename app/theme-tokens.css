@@ -695,6 +695,13 @@ html[data-brand='purple'] {
   color: var(--text-secondary);
 }
 
+.sv-assistant-notice {
+  margin: 0.4rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
 .sv-assistant-shortcuts {
   display: flex;
   flex-direction: column;

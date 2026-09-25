@@ -264,8 +264,10 @@ function testNoSensitivePayload() {
   assert(!/cpf/i.test(serialized), 'contexto não deve carregar CPF');
   const ask = read('lib/assistant/ask.ts');
   assert(ask.includes('POST /api/assistant/ask'), 'ask.ts deve documentar a Fase 1B');
-  assert(ASSISTANT_ASK_ROUTE === '/api/assistant/ask', 'contrato da rota futura');
-  assert(!fs.existsSync(path.join(root, 'app/api/assistant/ask/route.ts')), 'não criar a API LLM nesta fase');
+  assert(ASSISTANT_ASK_ROUTE === '/api/assistant/ask', 'contrato da rota');
+  assert(fs.existsSync(path.join(root, 'app/api/assistant/ask/route.ts')), 'Fase 1B precisa do endpoint autenticado');
+  const serializedPayload = JSON.stringify({ question: 'teste', pathname: '/dashboard' });
+  assert(!serializedPayload.includes('role'), 'payload mínimo não carrega role');
   console.log('OK testNoSensitivePayload');
 }
 

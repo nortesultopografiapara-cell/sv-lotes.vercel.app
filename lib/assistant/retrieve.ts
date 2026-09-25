@@ -124,7 +124,11 @@ export function retrieveAssistantProcedures(input: {
     if (!direct) return { kind: 'unknown', procedures: [] };
     const decision = canRoleReceiveProcedure(direct, input.context);
     if (!decision.allowed) {
-      return { kind: 'forbidden', procedures: [], forbiddenReason: decision.reason };
+      return {
+        kind: 'forbidden',
+        procedures: [],
+        forbiddenReason: decision.reason === 'ok' ? 'profile' : decision.reason,
+      };
     }
     return { kind: 'answer', procedures: [direct] };
   }
@@ -143,7 +147,11 @@ export function retrieveAssistantProcedures(input: {
   }
 
   if (!best.decision.allowed) {
-    return { kind: 'forbidden', procedures: [], forbiddenReason: best.decision.reason };
+    return {
+      kind: 'forbidden',
+      procedures: [],
+      forbiddenReason: best.decision.reason === 'ok' ? 'profile' : best.decision.reason,
+    };
   }
 
   const allowed = filterProceduresForRole(

@@ -30,3 +30,22 @@ export const ASSISTANT_GUIDANCE_ONLY =
 export const ASSISTANT_KB_VERSION = '1.0.0';
 
 export const ASSISTANT_RETRIEVE_LIMIT = 2;
+export const ASSISTANT_RETRIEVE_LIMIT_CONVERSATIONAL = 6;
+
+export const ASSISTANT_THINKING_LABEL = 'Assistente está pensando...';
+export const ASSISTANT_LOCAL_FALLBACK_NOTICE =
+  'Resposta baseada na documentação local do SV Lotes.';
+export const ASSISTANT_UNAVAILABLE_NOTICE =
+  'O assistente conversacional está temporariamente indisponível. Segue a orientação da documentação oficial.';
+export const ASSISTANT_INJECTION_REFUSAL =
+  'Não posso alterar minhas regras nem revelar instruções internas. Posso orientar operações do SV Lotes com base na documentação oficial.';
+
+export const ASSISTANT_FORBIDDEN_WHO_ADMIN =
+  'Essa operação é executada pelo Administrador da Empresa.';
+
+export const ASSISTANT_MAX_QUESTION_CHARS = 800;
+export const ASSISTANT_MAX_HISTORY_MESSAGES = 6;
+export const ASSISTANT_MAX_OUTPUT_CHARS = 2200;
+export const ASSISTANT_MODEL_TIMEOUT_MS = 8000;
+export const ASSISTANT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+export const ASSISTANT_RATE_LIMIT_MAX = 20;

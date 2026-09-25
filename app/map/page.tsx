@@ -385,6 +385,7 @@ export default function MapPage() {
       setGisSelectedProject({
         id: selectedProject.id,
         name: selectedProject.name,
+        contractModel: selectedProject.contract_model || selectedProject.contractModel || null,
       });
     } else {
       clearGisSelectedProject();
