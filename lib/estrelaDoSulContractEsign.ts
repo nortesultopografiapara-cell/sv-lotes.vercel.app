@@ -29,6 +29,7 @@ function pickString(...values: unknown[]): string {
 export function buildEstrelaDoSulEsignVendorPartyInputs(input?: {
   company?: Record<string, unknown> | null;
   project?: Record<string, unknown> | null;
+  sale?: Record<string, unknown> | null;
 }): Array<{
   name: string;
   cpf: string;
@@ -85,6 +86,7 @@ export function buildEstrelaDoSulEsignVendorPartyInputs(input?: {
   });
 
   const secondResolved = resolveLfSecondVendor({
+    sale: input?.sale,
     project: input?.project,
     company,
   });

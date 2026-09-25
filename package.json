@@ -148,6 +148,7 @@
     "test:estrela-do-sul-pagination": "tsx scripts/mandatory-estrela-do-sul-pagination-tests.ts",
     "test:gis-project-form-layout": "tsx scripts/mandatory-gis-project-form-layout-tests.ts",
     "test:lf-imoveis-project-config": "tsx scripts/mandatory-lf-imoveis-project-config-tests.ts",
+    "test:lf-imoveis-sale-snapshot": "tsx scripts/mandatory-lf-imoveis-sale-snapshot-tests.ts",
     "test:mundo-novo-esign": "tsx scripts/mandatory-mundo-novo-esign-tests.ts",
     "test:araguaia-esign": "tsx scripts/mandatory-araguaia-esign-tests.ts",
     "test:araguaia-esign-v2": "tsx scripts/mandatory-araguaia-esign-v2-foundation-tests.ts",

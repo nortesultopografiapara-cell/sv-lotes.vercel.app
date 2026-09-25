@@ -39,7 +39,9 @@ import { buildSaleEditFinancePayloads } from '@/lib/saleEditFinanceRecalc';
 import {
   assertSaleContractModelConfigured,
   detectPreviewAraguaiaNameCoerce,
+  normalizeSaleContractModel,
 } from '@/lib/contractModel';
+import { captureLfContractSnapshotForSale } from '@/lib/lfImoveisContractConfig';
 import { buildTerminationPolicySnapshot } from '@/lib/contract-termination/snapshot';
 import { buildRecantoInstallmentSalesSnapshot } from '@/lib/recantoFixedInstallmentPlan';
 import {
@@ -112,8 +114,10 @@ async function withTimeout<T>(
 
 function parseMissingColumn(message: string | undefined): string | null {
   if (!message) return null;
-  const match = message.match(/Could not find the '(\w+)' column/i);
-  return match?.[1] ?? null;
+  const schema = message.match(/Could not find the '(\w+)' column/i);
+  if (schema?.[1]) return schema[1];
+  const postgres = message.match(/column (?:[\w]+\.)?["']?(\w+)["']? does not exist/i);
+  return postgres?.[1] ?? null;
 }
 
 async function insertRowWithColumnFallback(
@@ -238,46 +242,68 @@ export function estimateFinanceReceiptsPayloadBytes(
   }
 }
 
+async function selectSingleWithColumnFallback(
+  supabase: SupabaseClient,
+  table: string,
+  columns: string[],
+  eqColumn: string,
+  eqValue: string,
+): Promise<Record<string, unknown> | null> {
+  let current = [...columns];
+  for (let attempt = 0; attempt < 16 && current.length > 0; attempt++) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(current.join(', '))
+      .eq(eqColumn, eqValue)
+      .maybeSingle();
+    if (!error) {
+      return (data as Record<string, unknown> | null) ?? null;
+    }
+    const missing = parseMissingColumn(error.message);
+    if (missing && current.includes(missing)) {
+      current = current.filter((col) => col !== missing);
+      continue;
+    }
+    throw new Error(error.message);
+  }
+  return null;
+}
+
 async function loadProjectSnapshotForSale(
   supabase: SupabaseClient,
   projectId: string,
 ): Promise<Record<string, unknown> | null> {
-  const withContractModel = await supabase
-    .from('projects')
-    .select('id, name, city, uf, forum_city, financial_account_id, contract_model')
-    .eq('id', projectId)
-    .maybeSingle();
+  return selectSingleWithColumnFallback(
+    supabase,
+    'projects',
+    [
+      'id',
+      'name',
+      'city',
+      'uf',
+      'forum_city',
+      'neighborhood',
+      'address',
+      'financial_account_id',
+      'contract_model',
+      'lf_contract_config_json',
+    ],
+    'id',
+    projectId,
+  );
+}
 
-  if (!withContractModel.error) {
-    return (withContractModel.data as Record<string, unknown> | null) ?? null;
-  }
-
-  const missing = parseMissingColumn(withContractModel.error.message);
-  if (missing === 'contract_model' || missing === 'financial_account_id') {
-    const withAccount = await supabase
-      .from('projects')
-      .select('id, name, city, uf, forum_city, financial_account_id')
-      .eq('id', projectId)
-      .maybeSingle();
-
-    if (!withAccount.error) {
-      return (withAccount.data as Record<string, unknown> | null) ?? null;
-    }
-
-    if (parseMissingColumn(withAccount.error.message) === 'financial_account_id') {
-      const fallback = await supabase
-        .from('projects')
-        .select('id, name, city, uf, forum_city')
-        .eq('id', projectId)
-        .maybeSingle();
-      if (fallback.error) throw new Error(fallback.error.message);
-      return (fallback.data as Record<string, unknown> | null) ?? null;
-    }
-
-    throw new Error(withAccount.error.message);
-  }
-
-  throw new Error(withContractModel.error.message);
+async function loadCompanyForLfSnapshot(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<Record<string, unknown> | null> {
+  return selectSingleWithColumnFallback(
+    supabase,
+    'companies',
+    ['id', 'contract_model', 'contract_second_vendor_json', 'name', 'razao_social', 'fantasy_name'],
+    'id',
+    tenantId,
+  );
 }
 
 async function persistSaleContractLink(
@@ -414,13 +440,10 @@ export async function executeGisSaleCreate(
 
   const projDataSnapshot = await loadProjectSnapshotForSale(supabase, projectId);
 
-  const { data: tenantContractRow, error: tenantContractErr } = await supabase
-    .from('companies')
-    .select('contract_model')
-    .eq('id', tenantId)
-    .maybeSingle();
-  if (tenantContractErr) {
-    throw new Error(tenantContractErr.message || 'Falha ao carregar modelo de contrato da empresa');
+  const tenantCompanyRow = await loadCompanyForLfSnapshot(supabase, tenantId);
+  const tenantContractRow = tenantCompanyRow;
+  if (!tenantContractRow) {
+    throw new Error('Falha ao carregar modelo de contrato da empresa');
   }
 
   const saleContractModel = assertSaleContractModelConfigured({
@@ -607,6 +630,14 @@ export async function executeGisSaleCreate(
     contract_model: saleContractModel,
     ...terminationPersist,
     ...buildSaleSpouseDbPatch(customerData),
+    ...(normalizeSaleContractModel(saleContractModel) === 'ESTRELA_DO_SUL'
+      ? {
+          lf_contract_snapshot_json: captureLfContractSnapshotForSale({
+            project: projDataSnapshot,
+            company: tenantContractRow,
+          }),
+        }
+      : {}),
   };
 
   logSaleStep('create_sale', startedAt);

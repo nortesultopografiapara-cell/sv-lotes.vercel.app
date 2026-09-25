@@ -19,6 +19,11 @@ import {
   ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT,
   ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT,
 } from '@/lib/estrelaDoSulContractConstants';
+import {
+  buildLfContractSnapshotPayload,
+  parseLfContractSnapshotJson,
+  readSaleLfSnapshotRaw,
+} from '@/lib/lfImoveisContractSnapshot';
 
 export const LF_CONTRACT_CONFIG_COLUMN = 'lf_contract_config_json';
 
@@ -37,8 +42,8 @@ export type LfContractConfigParsed = {
   participation: LfContractParticipation | null;
 };
 
-export type LfSecondVendorSource = 'project' | 'company' | 'none';
-export type LfParticipationSource = 'project' | 'fallback';
+export type LfSecondVendorSource = 'sale' | 'project' | 'company' | 'none';
+export type LfParticipationSource = 'sale' | 'project' | 'fallback';
 
 export type LfResolvedContractConfig = {
   secondVendor: ContractSecondVendorFields;
@@ -314,6 +319,7 @@ export function normalizeLfContractConfigForSave(
 }
 
 export function resolveLfSecondVendor(input: {
+  sale?: Record<string, unknown> | null;
   project?: Record<string, unknown> | null;
   company?: Record<string, unknown> | null;
 }): {
@@ -321,6 +327,15 @@ export function resolveLfSecondVendor(input: {
   complete: boolean;
   source: LfSecondVendorSource;
 } {
+  const saleSnap = parseLfContractSnapshotJson(readSaleLfSnapshotRaw(input.sale));
+  if (saleSnap?.hasSecondVendor) {
+    return {
+      vendor: saleSnap.secondVendor,
+      complete: true,
+      source: 'sale',
+    };
+  }
+
   const projectParsed = parseLfContractConfigJson(
     input.project?.[LF_CONTRACT_CONFIG_COLUMN] ??
       input.project?.lf_contract_config,
@@ -348,12 +363,28 @@ export function resolveLfSecondVendor(input: {
 }
 
 export function resolveLfParticipation(input: {
+  sale?: Record<string, unknown> | null;
   project?: Record<string, unknown> | null;
 }): {
   firstVendorPercent: number;
   secondVendorPercent: number;
   source: LfParticipationSource;
 } {
+  const saleSnap = parseLfContractSnapshotJson(readSaleLfSnapshotRaw(input.sale));
+  if (
+    saleSnap?.participation &&
+    isLfParticipationValid(
+      saleSnap.participation.firstVendorPercent,
+      saleSnap.participation.secondVendorPercent,
+    )
+  ) {
+    return {
+      firstVendorPercent: saleSnap.participation.firstVendorPercent,
+      secondVendorPercent: saleSnap.participation.secondVendorPercent,
+      source: 'sale',
+    };
+  }
+
   const parsed = parseLfContractConfigJson(
     input.project?.[LF_CONTRACT_CONFIG_COLUMN] ??
       input.project?.lf_contract_config,
@@ -379,6 +410,7 @@ export function resolveLfParticipation(input: {
 }
 
 export function resolveLfContractConfig(input: {
+  sale?: Record<string, unknown> | null;
   project?: Record<string, unknown> | null;
   company?: Record<string, unknown> | null;
 }): LfResolvedContractConfig {
@@ -413,4 +445,24 @@ export function isLfContractConfigFieldsEmpty(
     !clean(fields.firstVendorPercent) &&
     !clean(fields.secondVendorPercent)
   );
+}
+
+export function captureLfContractSnapshotForSale(input: {
+  project?: Record<string, unknown> | null;
+  company?: Record<string, unknown> | null;
+  capturedAt?: string;
+}): Record<string, unknown> {
+  const resolved = resolveLfContractConfig({
+    project: input.project,
+    company: input.company,
+  });
+  return buildLfContractSnapshotPayload({
+    secondVendor: resolved.secondVendor,
+    firstVendorPercent: resolved.firstVendorPercent,
+    secondVendorPercent: resolved.secondVendorPercent,
+    secondVendorSource: resolved.secondVendorSource,
+    participationSource: resolved.participationSource,
+    project: input.project,
+    capturedAt: input.capturedAt,
+  });
 }

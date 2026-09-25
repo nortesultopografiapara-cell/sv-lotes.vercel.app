@@ -161,7 +161,7 @@ export async function loadSaleAndCompanyForSignature(
   if (saleId) {
     // Colunas de cônjuge explícitas + project_id para resolver modelo ARAGUAIA.
     const spouseCols =
-      'id, company_id, tenant_id, customer_id, project_id, contract_model, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
+      'id, company_id, tenant_id, customer_id, project_id, contract_model, lf_contract_snapshot_json, has_spouse, sale_spouse_name, sale_spouse_cpf, sale_spouse_phone, sale_spouse_email, sale_spouse_nationality, sale_spouse_marital_status, sale_spouse_profession, sale_spouse_rg, sale_spouse_rg_issuer, sale_spouse_address, status';
     let { data, error } = await supabaseAdmin
       .from('sales')
       .select(spouseCols)
@@ -535,7 +535,7 @@ export async function createSignaturePartiesAfterSend(
   }
 
   const estrelaVendors = estrelaEsign
-    ? buildEstrelaDoSulEsignVendorPartyInputs({ company, project })
+    ? buildEstrelaDoSulEsignVendorPartyInputs({ company, project, sale })
     : null;
 
   if (araguaiaEsign) {

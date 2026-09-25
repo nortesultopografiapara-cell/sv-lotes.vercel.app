@@ -56,6 +56,8 @@ const SALE_CONTRACT_VIEW_SELECT = [
   "spouse_address",
   "sale_date",
   "created_at",
+  "contract_model",
+  "lf_contract_snapshot_json",
 ].join(", ");
 
 const BLOCK_CONTRACT_VIEW_SELECT = [
@@ -93,6 +95,9 @@ const PROJECT_CONTRACT_VIEW_SELECT = [
   "registry_number",
   "matricula",
   "address",
+  "neighborhood",
+  "uf",
+  "forum_city",
   "lf_contract_config_json",
 ].join(", ");
 

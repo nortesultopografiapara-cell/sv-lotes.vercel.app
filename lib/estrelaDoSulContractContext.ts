@@ -1,6 +1,7 @@
 /**
  * Contexto isolado — Chacreamento Estrela do Sul.
- * Fontes: companies, contract_second_vendor_json, projects.lf_contract_config_json,
+ * Fontes: snapshot da venda (lf_contract_snapshot_json) →
+ * projects.lf_contract_config_json → companies.contract_second_vendor_json,
  * customers, sale_spouse_*, projects, blocks, sales, finance_receipts. Sem Split.
  */
 
@@ -16,6 +17,7 @@ import {
   formatLfPartnershipNote,
   resolveLfContractConfig,
 } from '@/lib/lfImoveisContractConfig';
+import { applyLfSnapshotProjectToRecord } from '@/lib/lfImoveisContractSnapshot';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 import {
@@ -225,6 +227,7 @@ export function buildEstrelaDoSulContractContext(
     params;
   const seller = normalizeSellerFromCompany(tenant);
   const lfConfig = resolveLfContractConfig({
+    sale,
     project,
     company: tenant,
   });
@@ -327,11 +330,14 @@ export function buildEstrelaDoSulContractContext(
   const brokerNome = toContractTitleCase(broker.nome);
   const hasBroker = Boolean(brokerNome);
 
-  const projectRecord = resolveRecantoContractProjectRecord(
-    project,
+  const projectRecord = applyLfSnapshotProjectToRecord(
+    resolveRecantoContractProjectRecord(
+      project,
+      sale,
+      block,
+      contractSnapshot,
+    ),
     sale,
-    block,
-    contractSnapshot,
   );
   const enterpriseName = toContractTitleCase(
     pickString(projectRecord.name, 'Chacreamento Estrela do Sul'),
