@@ -1,0 +1,103 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-09-25",
+  "unknownAnswer": "Não encontrei uma orientação confirmada na documentação oficial do SV Lotes para essa dúvida.",
+  "procedures": [
+    {
+      "id": "gis-venda-avista",
+      "file": "gis-venda-avista.json",
+      "module": "gis",
+      "tags": ["venda", "a vista", "lote", "gis", "comercial"]
+    },
+    {
+      "id": "gis-venda-parcelada",
+      "file": "gis-venda-parcelada.json",
+      "module": "gis",
+      "tags": ["venda", "parcelado", "parcelas", "lote", "gis"]
+    },
+    {
+      "id": "gis-reserva",
+      "file": "gis-reserva.json",
+      "module": "gis",
+      "tags": ["reserva", "reservar", "lote", "sinal"]
+    },
+    {
+      "id": "customers-cadastro",
+      "file": "customers-cadastro.json",
+      "module": "customers",
+      "tags": ["cliente", "cadastro", "comprador"]
+    },
+    {
+      "id": "brokers-corretores",
+      "file": "brokers-corretores.json",
+      "module": "brokers",
+      "tags": ["corretor", "equipe", "comissao", "creci"]
+    },
+    {
+      "id": "contracts-gerar",
+      "file": "contracts-gerar.json",
+      "module": "contracts",
+      "tags": ["contrato", "gerar", "pdf", "venda"]
+    },
+    {
+      "id": "contracts-regenerar",
+      "file": "contracts-regenerar.json",
+      "module": "contracts",
+      "tags": ["regenerar", "contrato", "needs_regenerar"]
+    },
+    {
+      "id": "contracts-enviar-assinatura",
+      "file": "contracts-enviar-assinatura.json",
+      "module": "contracts",
+      "tags": ["assinatura", "enviar", "whatsapp", "link"]
+    },
+    {
+      "id": "contracts-assinatura-lf-imoveis",
+      "file": "contracts-assinatura-lf-imoveis.json",
+      "module": "contracts",
+      "tags": ["lf", "estrela", "assinatura", "vendedor"]
+    },
+    {
+      "id": "contracts-assinatura-mundo-novo",
+      "file": "contracts-assinatura-mundo-novo.json",
+      "module": "contracts",
+      "tags": ["mundo novo", "promitente", "assinatura"]
+    },
+    {
+      "id": "finance-visao-geral",
+      "file": "finance-visao-geral.json",
+      "module": "finance",
+      "tags": ["financeiro", "parcelas", "inadimplencia"]
+    },
+    {
+      "id": "finance-recibos",
+      "file": "finance-recibos.json",
+      "module": "finance",
+      "tags": ["recibo", "pagamento", "carne", "baixa"]
+    },
+    {
+      "id": "charges-cobrancas",
+      "file": "charges-cobrancas.json",
+      "module": "charges",
+      "tags": ["cobranca", "boleto", "pix", "asaas", "inter"]
+    },
+    {
+      "id": "charges-whatsapp",
+      "file": "charges-whatsapp.json",
+      "module": "charges",
+      "tags": ["whatsapp", "cobranca", "lote", "lembrete"]
+    },
+    {
+      "id": "gis-split-recebimentos",
+      "file": "gis-split-recebimentos.json",
+      "module": "split",
+      "tags": ["split", "recebimentos", "asaas", "rateio"]
+    },
+    {
+      "id": "gis-config-empreendimento",
+      "file": "gis-config-empreendimento.json",
+      "module": "gis",
+      "tags": ["empreendimento", "projeto", "confrontacao", "memorial", "prancha"]
+    }
+  ]
+}

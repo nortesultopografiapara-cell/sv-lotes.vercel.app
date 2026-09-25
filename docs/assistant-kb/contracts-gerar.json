@@ -1,0 +1,57 @@
+{
+  "id": "contracts-gerar",
+  "title": "Gerar contrato da venda",
+  "module": "contracts",
+  "routes": ["/contracts", "/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["contrato", "gerar", "pdf", "visualizar", "baixar pdf"],
+  "objective": "Entender como o contrato de lote nasce e onde visualizá-lo ou baixar o PDF.",
+  "prerequisites": [
+    "Venda concluída no Mapa GIS (Confirmar Venda).",
+    "Perfil ADMIN para abrir Contratos. OWNER pode consultar. BROKER não tem o módulo Contratos."
+  ],
+  "navigationPath": [
+    "Mapa GIS → Comercial → Vender → Confirmar Venda",
+    "Contratos",
+    "Baixar PDF"
+  ],
+  "steps": [
+    "Não procure um botão Gerar contrato na venda de lote: o contrato é criado automaticamente ao clicar em Confirmar Venda no Mapa GIS.",
+    "Abra Contratos no menu lateral.",
+    "Localize o contrato pelo cliente, lote ou número.",
+    "Abra o contrato para ver a visualização.",
+    "Use Baixar PDF (ou Baixar PDF Assinado, se já houver assinatura concluída).",
+    "Se aparecer Este contrato precisa ser regenerado para atualizar a visualização, use Regenerar contrato."
+  ],
+  "expectedResult": "Contrato visível em Contratos, com PDF para arquivo ou impressão.",
+  "commonErrors": [
+    "Procurar Gerar contrato como botão da venda de lote — esse rótulo não existe nesse fluxo (existe Gerar contrato SaaS em outro contexto da plataforma).",
+    "BROKER tentar abrir Contratos."
+  ],
+  "limitations": [
+    "O assistente não gera nem baixa o PDF.",
+    "Modelo do contrato vem do empreendimento (Modelo de contrato padrão do empreendimento) ou da empresa."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["ESTRELA_DO_SUL"],
+      "note": "Na UI o modelo é LF Imóveis. Layout, vendedores e e-sign seguem o fluxo LF."
+    },
+    {
+      "models": ["MUNDO_NOVO"],
+      "note": "Promitentes vendedores vêm somente de seller_parties_json do empreendimento. Sem os dois PF completos (nome + CPF) a geração falha."
+    }
+  ],
+  "sourceOfTruth": [
+    "app/contracts/page.tsx",
+    "components/map/CustomerLotFormModal.tsx",
+    "lib/contractModel.ts"
+  ],
+  "uiLabels": [
+    "Confirmar Venda",
+    "Baixar PDF",
+    "Regenerar contrato",
+    "Contratos"
+  ]
+}

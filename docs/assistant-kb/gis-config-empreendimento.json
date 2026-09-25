@@ -1,0 +1,70 @@
+{
+  "id": "gis-config-empreendimento",
+  "title": "Configuração de empreendimento no Mapa GIS",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["empreendimento", "projeto", "novo projeto", "modelo de contrato", "confrontacao", "memorial", "prancha", "kml"],
+  "objective": "Criar ou editar o loteamento, definir modelo de contrato e usar as ferramentas GIS (confrontação, memorial e prancha).",
+  "prerequisites": [
+    "Perfil ADMIN (canManageGisProject). Corretor e OWNER não criam/editam projeto."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Novo Projeto ou Editar",
+    "Empreendimento",
+    "Contrato / Proprietário",
+    "Financeiro / Recebimentos",
+    "Abrir Mapa",
+    "Confrontação Automática",
+    "Memorial Descritivo",
+    "Prancha Geral / Gerar Prancha do Lote"
+  ],
+  "steps": [
+    "Abra Mapa GIS & Projetos.",
+    "Para loteamento novo, clique em Novo Projeto. Para alterar, clique em Editar na linha (lápis).",
+    "Na coluna Empreendimento, preencha Nome do Projeto *, Cidade * e demais campos.",
+    "Na coluna Contrato / Proprietário, escolha Modelo de contrato padrão do empreendimento (Padrão SV LOTES, SV LOTES 2.0 (RECOMENDADO), Recanto Primavera, Meneses, Chacreamento Araguaia, Chacreamento Mundo Novo, LF Imóveis).",
+    "Se LF Imóveis, preencha Configuração contratual — LF Imóveis. Se Mundo Novo, só os contatos e-sign dos promitentes já definidos.",
+    "Na coluna Financeiro / Recebimentos, escolha Conta financeira padrão do empreendimento e, se couber, Configurar Split.",
+    "Salve. Depois use Abrir Mapa.",
+    "No mapa: Confrontação Automática, Memorial Descritivo, Prancha Geral e Gerar Prancha do Lote estão na barra de ferramentas (não no popup Comercial)."
+  ],
+  "expectedResult": "Empreendimento gravado com modelo de contrato e conta financeira. Mapa disponível para venda, memorial e prancha.",
+  "commonErrors": [
+    "Corretor procurar Novo Projeto — o botão só aparece para quem gerencia GIS.",
+    "Esquecer de Abrir Mapa depois de criar o projeto."
+  ],
+  "limitations": [
+    "O assistente não cria empreendimento nem gera memorial.",
+    "Mundo Novo: não reimplementar cadastro completo de vendedores nesta tela."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["ESTRELA_DO_SUL"],
+      "note": "Aparece Configuração contratual — LF Imóveis no Editar Projeto."
+    },
+    {
+      "models": ["MUNDO_NOVO"],
+      "note": "Aparece Contato dos PROMITENTES VENDEDORES (e-sign) somente para e-mail e WhatsApp."
+    }
+  ],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/projects/GisProjectFormModal.tsx",
+    "lib/contractModel.ts"
+  ],
+  "uiLabels": [
+    "Novo Projeto",
+    "Editar Projeto",
+    "Nome do Projeto *",
+    "Modelo de contrato padrão do empreendimento",
+    "Confrontação Automática",
+    "Memorial Descritivo",
+    "Prancha Geral",
+    "Gerar Prancha do Lote",
+    "LF Imóveis",
+    "Chacreamento Mundo Novo"
+  ]
+}

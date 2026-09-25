@@ -1,0 +1,48 @@
+{
+  "id": "customers-cadastro",
+  "title": "Cadastro de cliente",
+  "module": "customers",
+  "routes": ["/customers"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["cliente", "cadastro", "comprador", "novo cliente", "cpf", "cnpj"],
+  "objective": "Cadastrar comprador (pessoa física ou jurídica) para usar na venda e no contrato.",
+  "prerequisites": [
+    "Perfil ADMIN da empresa (Corretor não tem o menu Clientes).",
+    "Documento do cliente (CPF / CNPJ) quando disponível."
+  ],
+  "navigationPath": [
+    "Clientes",
+    "Novo Cliente"
+  ],
+  "steps": [
+    "Abra Clientes no menu lateral.",
+    "Clique em Novo Cliente.",
+    "Preencha Nome Completo *.",
+    "Informe CPF / CNPJ, RG e Telefone.",
+    "Complete e-mail, endereço e demais campos exibidos.",
+    "Salve o cadastro.",
+    "O cliente também pode ser informado na própria venda (Mapa GIS → Comercial → Vender), sem passar por esta tela."
+  ],
+  "expectedResult": "O cliente aparece na lista de Clientes e fica disponível para seleção na venda.",
+  "commonErrors": [
+    "Corretor tentar abrir /customers — rota bloqueada para BROKER.",
+    "Duplicar CPF / CNPJ já cadastrado."
+  ],
+  "limitations": [
+    "O assistente não grava cliente.",
+    "Não envie CPF completo no chat do assistente."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/customers/page.tsx",
+    "components/Layout.tsx",
+    "lib/rolePermissions.ts"
+  ],
+  "uiLabels": [
+    "Novo Cliente",
+    "Nome Completo *",
+    "CPF / CNPJ",
+    "Clientes"
+  ]
+}

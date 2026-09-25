@@ -1,0 +1,43 @@
+{
+  "id": "contracts-regenerar",
+  "title": "Regenerar contrato",
+  "module": "contracts",
+  "routes": ["/contracts"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["regenerar", "contrato", "needs_regenerar", "atualizar visualizacao"],
+  "objective": "Gerar nova versão do contrato após alterar venda, cliente ou dados do lote.",
+  "prerequisites": [
+    "Contrato existente da venda.",
+    "Perfil ADMIN. OWNER é somente leitura e não regenera."
+  ],
+  "navigationPath": [
+    "Contratos",
+    "Regenerar contrato"
+  ],
+  "steps": [
+    "Abra Contratos e selecione o contrato.",
+    "Se a venda ou o cliente foi editado, a tela pode exibir: Este contrato precisa ser regenerado para atualizar a visualização.",
+    "Clique em Regenerar contrato (em alguns pontos da mesma tela o rótulo curto é Regenerar ou Regenerar Contrato).",
+    "Confira a nova visualização e, se necessário, Baixar PDF.",
+    "A versão anterior permanece no histórico como substituída (superseded)."
+  ],
+  "expectedResult": "Nova versão atual do contrato, alinhada aos dados da venda e das parcelas.",
+  "commonErrors": [
+    "Baixar PDF antigo depois de editar a venda sem regenerar.",
+    "OWNER tentar regenerar — perfil somente leitura."
+  ],
+  "limitations": [
+    "O assistente não regenera o contrato.",
+    "Assinaturas em andamento podem precisar ser reenviadas após regenerar — use Enviar para assinatura de novo se a UI indicar."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/contracts/page.tsx"
+  ],
+  "uiLabels": [
+    "Regenerar contrato",
+    "Este contrato precisa ser regenerado para atualizar a visualização.",
+    "Baixar PDF"
+  ]
+}

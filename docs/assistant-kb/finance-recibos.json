@@ -1,0 +1,46 @@
+{
+  "id": "finance-recibos",
+  "title": "Recibos e baixa de parcela",
+  "module": "finance",
+  "routes": ["/finance"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["recibo", "registrar pagamento", "baixa", "carne", "gerar recibo"],
+  "objective": "Registrar o recebimento de uma parcela e emitir recibo ou carnê em PDF.",
+  "prerequisites": [
+    "Parcela existente no Financeiro.",
+    "Perfil ADMIN. Baixa manual pode exigir autorização do Administrador Principal.",
+    "OWNER é somente leitura."
+  ],
+  "navigationPath": [
+    "Financeiro",
+    "Registrar pagamento",
+    "Gerar recibo / carnê"
+  ],
+  "steps": [
+    "Abra Financeiro e localize a parcela.",
+    "Use a ação Registrar pagamento (ícone de confirmação na linha da parcela).",
+    "Informe data, valor e forma quando a tela pedir, e confirme. Algumas baixas manuais pedem senha do Administrador Principal.",
+    "Para o PDF, use Gerar recibo / carnê na mesma linha.",
+    "A linha também tem Observação / Cobrança WhatsApp para aviso; emissão de boleto/Pix continua em Cobranças."
+  ],
+  "expectedResult": "Parcela marcada como paga (quando a baixa for concluída) e recibo/carnê disponível em PDF.",
+  "commonErrors": [
+    "Dar baixa em parcela que já tem cobrança Asaas/Inter em aberto sem conciliar o status.",
+    "OWNER tentar Registrar pagamento."
+  ],
+  "limitations": [
+    "O assistente não dá baixa nem emite recibo.",
+    "Não envie dados bancários no chat."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/finance/FinancePremiumUI.tsx",
+    "lib/finance/manualReceiptPayment.ts"
+  ],
+  "uiLabels": [
+    "Registrar pagamento",
+    "Gerar recibo / carnê",
+    "Observação / Cobrança WhatsApp"
+  ]
+}

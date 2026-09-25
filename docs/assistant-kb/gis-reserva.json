@@ -1,0 +1,50 @@
+{
+  "id": "gis-reserva",
+  "title": "Reservar um lote",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "write",
+  "tags": ["reserva", "reservar", "lote", "sinal da reserva", "bloquear"],
+  "objective": "Bloquear temporariamente um lote disponível para um cliente, com ou sem sinal de reserva.",
+  "prerequisites": [
+    "ADMIN ou Corretor logado.",
+    "Lote disponível no mapa do empreendimento."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Abrir Mapa",
+    "lote disponível",
+    "Comercial",
+    "Reservar",
+    "Confirmar Reserva"
+  ],
+  "steps": [
+    "Abra Mapa GIS, selecione o empreendimento e clique em Abrir Mapa.",
+    "Clique no lote disponível.",
+    "Na aba Comercial, clique em Reservar.",
+    "Informe o cliente.",
+    "Preencha o sinal da reserva se houver (Valor do sinal (R$)).",
+    "Clique em Confirmar Reserva."
+  ],
+  "expectedResult": "O lote fica reservado (status visual de reserva no mapa). A reserva impede outra venda do mesmo lote até ser convertida ou liberada.",
+  "commonErrors": [
+    "Procurar Reservar fora da aba Comercial.",
+    "Tentar reservar lote já vendido — Reservar lote fica indisponível."
+  ],
+  "limitations": [
+    "O assistente não reserva o lote.",
+    "Converter reserva em venda: abra de novo o lote na aba Comercial e use Vender. O Sinal da reserva, se pago, é descontado da entrada na venda."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/map/GISMap.tsx",
+    "components/map/CustomerLotFormModal.tsx"
+  ],
+  "uiLabels": [
+    "Comercial",
+    "Reservar",
+    "Confirmar Reserva",
+    "Valor do sinal (R$)"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "brokers-corretores",
+  "title": "Cadastro de corretores",
+  "module": "brokers",
+  "routes": ["/dashboard/brokers"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["corretor", "corretores", "equipe", "creci", "comissao", "novo corretor"],
+  "objective": "Cadastrar corretor da equipe para vincular nas vendas e calcular comissão.",
+  "prerequisites": [
+    "Perfil ADMIN da empresa.",
+    "E-mail do corretor para acesso em Mapa GIS e Minhas Vendas."
+  ],
+  "navigationPath": [
+    "Corretores",
+    "Novo Corretor",
+    "Cadastrar Novo Corretor"
+  ],
+  "steps": [
+    "Abra Corretores no menu lateral (rota /dashboard/brokers).",
+    "Clique em Novo Corretor.",
+    "No modal Cadastrar Novo Corretor, informe nome, e-mail, telefone, CRECI e senha de acesso.",
+    "Defina Tipo de Comissão Padrão e Comissão padrão (%), se aplicável.",
+    "Salve. O corretor passa a aparecer no campo Corretor da venda no Mapa GIS."
+  ],
+  "expectedResult": "Corretor ativo na equipe, com login próprio (Mapa GIS e Minhas Vendas) e disponível na venda.",
+  "commonErrors": [
+    "E-mail já usado por outro usuário da empresa.",
+    "Corretor procurar o menu Corretores — esse cadastro é só do ADMIN."
+  ],
+  "limitations": [
+    "O assistente não cria corretor nem redefine senha.",
+    "Não cole senha no chat."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/dashboard/brokers/page.tsx",
+    "components/Layout.tsx"
+  ],
+  "uiLabels": [
+    "Novo Corretor",
+    "Cadastrar Novo Corretor",
+    "CRECI",
+    "Tipo de Comissão Padrão",
+    "Corretores"
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "id": "contracts-enviar-assinatura",
+  "title": "Enviar contrato para assinatura eletrônica",
+  "module": "contracts",
+  "routes": ["/contracts"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["assinatura", "eletrônica", "enviar para assinatura", "link individual", "whatsapp", "copiar link"],
+  "objective": "Disparar a assinatura eletrônica do contrato de compra e venda e acompanhar as partes.",
+  "prerequisites": [
+    "Contrato gerado a partir da venda.",
+    "Perfil ADMIN. OWNER consulta; não envia. BROKER não acessa Contratos.",
+    "Contatos (e-mail / WhatsApp) das partes quando o modelo exigir envio."
+  ],
+  "navigationPath": [
+    "Contratos",
+    "Enviar para assinatura",
+    "Link individual",
+    "Copiar link",
+    "Enviar por WhatsApp",
+    "Assinar como vendedor"
+  ],
+  "steps": [
+    "Abra Contratos e localize o contrato.",
+    "Clique em Enviar para assinatura.",
+    "No compartilhamento, cada parte tem Link individual.",
+    "Use Copiar link ou Enviar por WhatsApp para o comprador (e cônjuge, se houver).",
+    "Acompanhe o status das partes na própria seção de assinatura do contrato.",
+    "Quando a UI mostrar Liberada para assinar / o comprador já assinou, use Assinar como vendedor ou Assinatura administrativa pela empresa, conforme o modelo."
+  ],
+  "expectedResult": "Solicitação de assinatura criada, links das partes disponíveis e status acompanhável em Contratos.",
+  "commonErrors": [
+    "Enviar o mesmo link para todas as partes — cada uma tem Link individual.",
+    "Tentar Assinar como vendedor antes do comprador, quando a UI ainda mostra Aguardando os compradores."
+  ],
+  "limitations": [
+    "O assistente não envia o link nem assina.",
+    "O fluxo exato do vendedor muda no modelo LF Imóveis e no Mundo Novo — veja os procedimentos específicos."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["PADRAO", "SV_LOTES_2", "ARAGUAIA", "MENESES", "RECANTO_PRIMAVERA"],
+      "note": "Comprador (e cônjuge) assinam pelo link público. O vendedor/representante conclui no sistema com Assinar como vendedor / Assinatura administrativa pela empresa."
+    },
+    {
+      "models": ["ESTRELA_DO_SUL"],
+      "note": "LF Imóveis: vendedor 1 (LF) assina internamente; vendedor 2 pode ter link público. Não envie link público do vendedor 1."
+    },
+    {
+      "models": ["MUNDO_NOVO"],
+      "note": "Promitentes vendedores já definidos no JSON do empreendimento. Na ficha do projeto só se atualizam E-mail e Telefone / WhatsApp desses vendedores."
+    }
+  ],
+  "sourceOfTruth": [
+    "components/contracts/SaleContractSignatureSection.tsx",
+    "components/contracts/SaleContractMultiPartyShareModal.tsx",
+    "app/contracts/page.tsx"
+  ],
+  "uiLabels": [
+    "Enviar para assinatura",
+    "Link individual",
+    "Copiar link",
+    "Enviar por WhatsApp",
+    "Assinar como vendedor",
+    "Assinatura administrativa pela empresa"
+  ]
+}

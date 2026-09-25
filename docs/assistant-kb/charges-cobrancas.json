@@ -1,0 +1,52 @@
+{
+  "id": "charges-cobrancas",
+  "title": "Emitir e sincronizar cobranças",
+  "module": "charges",
+  "routes": ["/charges"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["cobrancas", "cobranças", "emitir", "gerar cobranca", "sincronizar", "asaas", "inter", "pix", "boleto"],
+  "objective": "Gerar cobrança (boleto/Pix) das parcelas e atualizar o status junto ao provedor (Asaas ou Banco Inter).",
+  "prerequisites": [
+    "Parcela em aberto.",
+    "Integração Financeira da empresa configurada (Configurações → Integração Financeira) e conta do empreendimento com provedor.",
+    "ADMIN. OWNER consulta a tela mas não emite. BROKER não acessa Cobranças."
+  ],
+  "navigationPath": [
+    "Cobranças",
+    "Gerar cobrança",
+    "Gerar cobranças selecionadas",
+    "Atualizar todas as cobranças"
+  ],
+  "steps": [
+    "Abra Cobranças (cabeçalho: Central operacional de parcelas e cobranças da empresa).",
+    "Filtre e selecione as parcelas.",
+    "Na linha, clique em Gerar cobrança (Asaas ou Banco Inter, conforme a conta financeira).",
+    "Para várias parcelas: Gerar cobranças selecionadas.",
+    "Depois de emitida, use Status (Atualizar status Asaas) na linha, Atualizar status selecionadas ou Atualizar todas as cobranças para sincronizar.",
+    "Baixar boleto aparece quando o provedor Inter disponibiliza o PDF oficial."
+  ],
+  "expectedResult": "Cobrança gerada no provedor, com Pix/boleto e status sincronizado na lista.",
+  "commonErrors": [
+    "Empreendimento com Split de Recebimentos em conta Inter — o Inter ainda não suporta Split nesta versão.",
+    "Tentar gerar sem Integração Financeira pronta."
+  ],
+  "limitations": [
+    "O assistente não emite cobrança.",
+    "Provedor segue a conta financeira do empreendimento, não um botão genérico de banco."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/charges/ChargesPageClient.tsx",
+    "components/charges/ChargeInstallmentActions.tsx",
+    "components/Layout.tsx"
+  ],
+  "uiLabels": [
+    "Cobranças",
+    "Gerar cobrança",
+    "Gerar cobranças selecionadas",
+    "Atualizar todas as cobranças",
+    "Atualizar status selecionadas",
+    "Baixar boleto"
+  ]
+}

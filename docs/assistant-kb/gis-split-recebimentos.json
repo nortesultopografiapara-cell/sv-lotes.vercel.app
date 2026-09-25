@@ -1,0 +1,59 @@
+{
+  "id": "gis-split-recebimentos",
+  "title": "Split de Recebimentos",
+  "module": "split",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["split", "recebimentos", "configurar split", "rateio", "asaas", "wallet"],
+  "objective": "Configurar o rateio automático dos recebimentos do empreendimento entre contas/wallets Asaas.",
+  "prerequisites": [
+    "Perfil que gerencia sócios/empreendimento (ADMIN da empresa). OWNER e BROKER não configuram Split.",
+    "Projeto já salvo (Editar Projeto).",
+    "Contas financeiras com destino Asaas (Wallet) quando o Split for operacional.",
+    "Integração Asaas da empresa."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Editar",
+    "Editar Projeto",
+    "Financeiro / Recebimentos",
+    "Configurar Split"
+  ],
+  "steps": [
+    "Abra Mapa GIS & Projetos.",
+    "Na linha do loteamento, clique em Editar (não é necessário Abrir Mapa).",
+    "No modal Editar Projeto, vá à coluna Financeiro / Recebimentos.",
+    "Use Configurar Split (ou Salvar rascunho se já existir configuração).",
+    "Informe os participantes e percentuais até fechar 100%.",
+    "Salve. O Split vale para cobranças Asaas daquele empreendimento.",
+    "Se a conta do empreendimento for Inter, a emissão informa que o Inter ainda não suporta Split nesta versão."
+  ],
+  "expectedResult": "Split configurado no empreendimento. Cobranças Asaas subsequentes respeitam o rateio.",
+  "commonErrors": [
+    "Confundir Split de Recebimentos com os percentuais contratuais 40/60 do LF Imóveis — a tela LF avisa: Não altera o Split de Recebimentos.",
+    "OWNER tentar configurar."
+  ],
+  "limitations": [
+    "O assistente não grava Split.",
+    "Não usar o Split como texto de participação do contrato LF."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["ESTRELA_DO_SUL"],
+      "note": "Participação LF Imóveis (%) no contrato é independente do Split de Recebimentos."
+    }
+  ],
+  "sourceOfTruth": [
+    "components/projects/GisProjectFormModal.tsx",
+    "components/projects/ProjectRevenueSplitPanel.tsx",
+    "components/projects/ProjectLfContractConfigFields.tsx",
+    "lib/rolePermissions.ts"
+  ],
+  "uiLabels": [
+    "Configurar Split",
+    "Financeiro / Recebimentos",
+    "Editar Projeto",
+    "Split de Recebimentos não configurado."
+  ]
+}

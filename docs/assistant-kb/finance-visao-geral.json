@@ -1,0 +1,46 @@
+{
+  "id": "finance-visao-geral",
+  "title": "Financeiro — parcelas e títulos",
+  "module": "finance",
+  "routes": ["/finance"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "OWNER"],
+  "access": "read",
+  "tags": ["financeiro", "parcelas", "titulos", "inadimplencia", "modulo financeiro"],
+  "objective": "Localizar parcelas geradas pela venda e acompanhar vencimento, status e inadimplência.",
+  "prerequisites": [
+    "Venda já confirmada (as parcelas nascem com a venda).",
+    "ADMIN opera; OWNER consulta. BROKER não tem Financeiro."
+  ],
+  "navigationPath": [
+    "Financeiro",
+    "Módulo Financeiro"
+  ],
+  "steps": [
+    "Abra Financeiro no menu lateral.",
+    "O cabeçalho identifica Módulo Financeiro · Contratos · Títulos · Inadimplência.",
+    "Filtre por empreendimento, cliente ou situação da parcela.",
+    "Abra a parcela para Visualizar.",
+    "Operações de recebimento e recibo estão no procedimento Recibos e baixa de parcela.",
+    "Cobrança com boleto/Pix fica em Cobranças, não neste menu."
+  ],
+  "expectedResult": "Lista de parcelas da empresa (ou dos empreendimentos liberados ao OWNER) com vencimento e status.",
+  "commonErrors": [
+    "Procurar emitir boleto no Financeiro — a central operacional é Cobranças.",
+    "BROKER abrir /finance — rota bloqueada."
+  ],
+  "limitations": [
+    "OWNER não registra pagamento nem exclui parcela.",
+    "O assistente não altera títulos."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/finance/page.tsx",
+    "components/Layout.tsx",
+    "components/finance/FinancePremiumUI.tsx"
+  ],
+  "uiLabels": [
+    "Módulo Financeiro",
+    "Contratos · Títulos · Inadimplência",
+    "Financeiro"
+  ]
+}

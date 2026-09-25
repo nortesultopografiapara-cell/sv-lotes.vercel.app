@@ -1,0 +1,80 @@
+{
+  "id": "gis-venda-parcelada",
+  "title": "Venda parcelada de lote",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "write",
+  "tags": ["venda", "parcelada", "parcelado", "parcelas", "sinal", "entrada", "lote", "gis", "comercial", "qtd de parcelas"],
+  "objective": "Registrar a venda parcelada de um lote disponível, com sinal, quantidade de parcelas, vencimento e corretor.",
+  "prerequisites": [
+    "Estar logado como ADMIN da empresa ou Corretor.",
+    "Empreendimento aberto no Mapa GIS.",
+    "Lote disponível.",
+    "Cliente e, se houver, corretor cadastrados ou informados na venda."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "empreendimento",
+    "Abrir Mapa",
+    "lote disponível",
+    "Comercial",
+    "Vender",
+    "Forma de Pagamento * → Parcelado",
+    "Valor do sinal (R$)",
+    "Qtd de Parcelas",
+    "Vencimento 1ª Parcela *",
+    "Corretor",
+    "Confirmar Venda"
+  ],
+  "steps": [
+    "Abra Mapa GIS → escolha o empreendimento → Abrir Mapa.",
+    "Clique no lote disponível.",
+    "Abra a aba Comercial e clique em Vender.",
+    "Selecione o cliente (ou cadastre o comprador na própria venda).",
+    "Em Dados da venda, confira Valor do Lote * e informe Valor do Desconto (R$) se houver.",
+    "Em Forma de Pagamento *, escolha Parcelado.",
+    "Informe Valor do sinal (R$) quando o campo aparecer (modelos em que o sinal/arras entra na operação).",
+    "Informe Qtd de Parcelas. O Valor da Parcela é calculado (exceto Recanto no modo Fixar valor da parcela).",
+    "Preencha Vencimento 1ª Parcela *.",
+    "Selecione o Corretor.",
+    "Confira o resumo financeiro (sinal + parcelas = valor final) e clique em Confirmar Venda."
+  ],
+  "expectedResult": "Venda criada, parcelas geradas no Financeiro e contrato disponível em Contratos.",
+  "commonErrors": [
+    "Procurar o botão Vender sem abrir a aba Comercial.",
+    "Deixar Qtd de Parcelas vazia no modo Parcelado.",
+    "Editar a venda depois e esquecer de usar Regenerar contrato em Contratos."
+  ],
+  "limitations": [
+    "O assistente não cria a venda nem grava parcelas.",
+    "Corretor não acessa Contratos nem Financeiro pelo menu; após Confirmar Venda ele acompanha em Minhas Vendas."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["PADRAO", "SV_LOTES_2", "ESTRELA_DO_SUL"],
+      "note": "Sinal/entrada reduz a base das parcelas. Em LF Imóveis (interno ESTRELA_DO_SUL) o arras abate o saldo."
+    },
+    {
+      "models": ["RECANTO_PRIMAVERA"],
+      "note": "O sinal do Recanto não abate a base das parcelas da mesma forma. Aparecem Forma de definir o parcelamento (Calcular valor pela quantidade / Fixar valor da parcela) e opções de acréscimo do restante do sinal (Acrescentar nas primeiras parcelas / Diluir em todas as parcelas)."
+    }
+  ],
+  "sourceOfTruth": [
+    "components/map/GISMap.tsx",
+    "components/map/CustomerLotFormModal.tsx",
+    "components/map/InstallmentsCountCombobox.tsx",
+    "lib/salePaymentMode.ts",
+    "lib/saleInstallmentCalc.ts"
+  ],
+  "uiLabels": [
+    "Comercial",
+    "Vender",
+    "Parcelado",
+    "Qtd de Parcelas",
+    "Vencimento 1ª Parcela *",
+    "Corretor",
+    "Confirmar Venda",
+    "Valor do sinal (R$)"
+  ]
+}

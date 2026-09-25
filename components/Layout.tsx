@@ -46,6 +46,7 @@ import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { HelpCenterHeaderButton } from '@/components/ui/HelpCenterHeaderButton';
 import { HelpCenterProfileMenuLink } from '@/components/ui/HelpCenterProfileMenuLink';
+import { AssistantChrome } from '@/components/assistant/AssistantChrome';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
@@ -571,9 +572,15 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   ) {
     return (
       <GisSelectedProjectProvider>
-        <MasterExecutiveLayout user={user} onLogout={handleLogout}>
-          {children}
-        </MasterExecutiveLayout>
+        <AssistantChrome
+          role={user?.role}
+          tenantName={impersonatingCompanyName || company?.name || null}
+          impersonatingTenant={Boolean(impersonatingTenantId)}
+        >
+          <MasterExecutiveLayout user={user} onLogout={handleLogout}>
+            {children}
+          </MasterExecutiveLayout>
+        </AssistantChrome>
       </GisSelectedProjectProvider>
     );
   }
@@ -591,6 +598,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   return (
     <GisSelectedProjectProvider>
+    <AssistantChrome
+      role={user?.role}
+      tenantName={impersonatingCompanyName || company?.name || null}
+      impersonatingTenant={Boolean(impersonatingTenantId)}
+    >
     <div className="flex h-dvh w-full overflow-hidden bg-[var(--color-background)]">
       {/* Mobile Header */}
       {isMobile && (
@@ -938,6 +950,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         setActiveModal={setActiveProfileModal} 
       />
     </div>
+    </AssistantChrome>
     </GisSelectedProjectProvider>
   );
 }

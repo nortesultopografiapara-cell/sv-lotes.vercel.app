@@ -1,7 +1,14 @@
-/** Exibir selo promocional no botão Central de Ajuda (desligar após divulgação). */
-export const HELP_CENTER_SHOW_PROMO_BADGE = true;
+import {
+  ASSISTANT_BUTTON_LABEL,
+  ASSISTANT_TOOLTIP_DESCRIPTION,
+  ASSISTANT_TOOLTIP_TITLE,
+} from '@/lib/assistant/constants';
 
-export const HELP_CENTER_TOOLTIP_TITLE = 'Central de Ajuda';
+/** @deprecated Use ASSISTANT_* — mantido para testes que ainda leem este arquivo. */
+export const HELP_CENTER_SHOW_PROMO_BADGE = false;
 
-export const HELP_CENTER_TOOLTIP_DESCRIPTION =
-  'Guia completo, treinamento, FAQ e documentação do sistema.';
+export const HELP_CENTER_TOOLTIP_TITLE = ASSISTANT_TOOLTIP_TITLE;
+
+export const HELP_CENTER_TOOLTIP_DESCRIPTION = ASSISTANT_TOOLTIP_DESCRIPTION;
+
+export const HELP_CENTER_BUTTON_LABEL = ASSISTANT_BUTTON_LABEL;

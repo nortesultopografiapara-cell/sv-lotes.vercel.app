@@ -1,0 +1,48 @@
+{
+  "id": "charges-whatsapp",
+  "title": "Enviar cobrança por WhatsApp",
+  "module": "charges",
+  "routes": ["/charges"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["whatsapp", "cobranca", "lote", "lembrete", "enviar"],
+  "objective": "Enviar a cobrança ou o lembrete da parcela ao comprador por WhatsApp.",
+  "prerequisites": [
+    "Cliente com telefone no cadastro.",
+    "Parcela visível em Cobranças (idealmente já com cobrança gerada para Pix/linha digitável).",
+    "ADMIN. OWNER não envia."
+  ],
+  "navigationPath": [
+    "Cobranças",
+    "WhatsApp",
+    "WhatsApp em lote"
+  ],
+  "steps": [
+    "Abra Cobranças.",
+    "Na linha da parcela, clique em WhatsApp para abrir a mensagem com os dados da cobrança.",
+    "Para várias parcelas do mesmo contexto, use WhatsApp em lote (Cobrança em massa via WhatsApp).",
+    "Lembretes automáticos ficam em Lembretes, com canal WhatsApp.",
+    "No Financeiro também existe Observação / Cobrança WhatsApp, mas a central operacional é Cobranças."
+  ],
+  "expectedResult": "Conversa do WhatsApp aberta com a mensagem da cobrança, ou lote enviado pela Central SV Lotes.",
+  "commonErrors": [
+    "Cliente sem telefone.",
+    "Bloqueador de pop-ups impedindo abrir o WhatsApp."
+  ],
+  "limitations": [
+    "O assistente não dispara WhatsApp.",
+    "Não cole o telefone completo de clientes no chat se não for necessário."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/charges/ChargesPageClient.tsx",
+    "components/charges/ChargeInstallmentActions.tsx",
+    "components/charges/ChargeWhatsAppBatchModal.tsx"
+  ],
+  "uiLabels": [
+    "WhatsApp",
+    "WhatsApp em lote",
+    "Cobrança em massa via WhatsApp",
+    "Lembretes"
+  ]
+}

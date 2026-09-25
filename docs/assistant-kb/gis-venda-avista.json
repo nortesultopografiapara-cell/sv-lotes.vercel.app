@@ -1,0 +1,77 @@
+{
+  "id": "gis-venda-avista",
+  "title": "Venda à vista de lote",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "write",
+  "tags": ["venda", "à vista", "a vista", "pagamento imediato", "lote", "gis", "comercial", "confirmar venda"],
+  "objective": "Registrar a venda de um lote disponível com pagamento à vista, gerando venda, contrato e título financeiro.",
+  "prerequisites": [
+    "Estar logado como ADMIN da empresa ou Corretor.",
+    "Existir pelo menos um empreendimento com lotes no Mapa GIS.",
+    "O lote precisa estar disponível (não vendido).",
+    "Cliente pode já existir em Clientes ou ser informado na própria venda."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Buscar loteamentos…",
+    "Abrir Mapa",
+    "lote disponível",
+    "Comercial",
+    "Vender",
+    "Forma de Pagamento *",
+    "À vista — pagamento imediato",
+    "Confirmar Venda"
+  ],
+  "steps": [
+    "Abra Mapa GIS no menu lateral.",
+    "Na tela Mapa GIS & Projetos, use Buscar loteamentos… e clique em Abrir Mapa no empreendimento.",
+    "Clique no lote disponível.",
+    "No popup, abra a aba Comercial e clique em Vender.",
+    "Selecione o cliente ou cadastre o comprador nos dados da venda.",
+    "Em Dados da venda, confira Valor do Lote *.",
+    "Em Forma de Pagamento *, escolha À vista — pagamento imediato (há também Pagamento único com vencimento futuro, que não quita na assinatura).",
+    "Informe Valor do Desconto (R$) se houver e confira Valor Final *.",
+    "Preencha Data de Vencimento *.",
+    "Selecione o Corretor, se aplicável.",
+    "Confira os valores e clique em Confirmar Venda."
+  ],
+  "expectedResult": "O lote fica vendido. O sistema cria a venda, o contrato e o título no Financeiro. O contrato aparece em Contratos.",
+  "commonErrors": [
+    "Clicar no lote e procurar Vender fora da aba Comercial.",
+    "Confundir À vista — pagamento imediato com Pagamento único com vencimento futuro.",
+    "Tentar vender lote já vendido — o botão Vender fica indisponível (Este lote já está vendido)."
+  ],
+  "limitations": [
+    "O assistente não executa a venda.",
+    "Não existe botão separado Gerar contrato na venda de lote: o contrato nasce ao confirmar a venda."
+  ],
+  "modelDifferences": [
+    {
+      "models": ["RECANTO_PRIMAVERA"],
+      "note": "O formulário de sinal/parcelas do Recanto Primavera é diferente do padrão. Confira os campos exibidos na própria venda."
+    },
+    {
+      "models": ["ESTRELA_DO_SUL"],
+      "note": "Na UI o modelo aparece como LF Imóveis. O sinal/arras abate o saldo das parcelas quando a venda é parcelada; à vista segue Valor Final * e Data de Vencimento *."
+    }
+  ],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/GISMap.tsx",
+    "components/map/CustomerLotFormModal.tsx",
+    "lib/salePaymentMode.ts"
+  ],
+  "uiLabels": [
+    "Mapa GIS & Projetos",
+    "Buscar loteamentos...",
+    "Abrir Mapa",
+    "Comercial",
+    "Vender",
+    "Forma de Pagamento *",
+    "À vista — pagamento imediato",
+    "Pagamento único com vencimento futuro",
+    "Confirmar Venda"
+  ]
+}

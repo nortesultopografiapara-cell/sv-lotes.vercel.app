@@ -1,26 +1,26 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { BookOpenText } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import {
-  HELP_CENTER_SHOW_PROMO_BADGE,
-  HELP_CENTER_TOOLTIP_DESCRIPTION,
-  HELP_CENTER_TOOLTIP_TITLE,
-} from '@/lib/helpCenterUi';
+  ASSISTANT_BUTTON_LABEL,
+  ASSISTANT_BUTTON_MOBILE_LABEL,
+  ASSISTANT_TOOLTIP_DESCRIPTION,
+  ASSISTANT_TOOLTIP_TITLE,
+} from '@/lib/assistant';
+import { useAssistantPanelOptional } from '@/contexts/AssistantPanelContext';
 
 type HelpCenterHeaderButtonProps = {
   variant: 'desktop' | 'mobile';
 };
 
 export function HelpCenterHeaderButton({ variant }: HelpCenterHeaderButtonProps) {
-  const pathname = usePathname();
-  const isActive = pathname === '/manual';
+  const assistant = useAssistantPanelOptional();
+  const isActive = Boolean(assistant?.open);
 
   return (
     <div className="relative group shrink-0">
-      <Link
-        href="/manual"
+      <button
+        type="button"
         className={[
           'sv-help-center-btn',
           variant === 'mobile' ? 'sv-help-center-btn--mobile' : '',
@@ -28,28 +28,24 @@ export function HelpCenterHeaderButton({ variant }: HelpCenterHeaderButtonProps)
         ]
           .filter(Boolean)
           .join(' ')}
-        aria-label="Central de Ajuda"
+        aria-label={ASSISTANT_BUTTON_LABEL}
+        title={ASSISTANT_TOOLTIP_TITLE}
+        data-testid="assistant-sv-header-button"
+        onClick={() => assistant?.toggle()}
       >
-        <BookOpenText className="w-4 h-4 shrink-0 text-white" aria-hidden />
+        <Sparkles className="w-4 h-4 shrink-0 text-white" aria-hidden />
         {variant === 'desktop' ? (
-          <span className="whitespace-nowrap">Central de Ajuda</span>
+          <span className="whitespace-nowrap">{ASSISTANT_BUTTON_LABEL}</span>
         ) : (
-          <span className="whitespace-nowrap text-[11px] leading-none">📚 Ajuda</span>
+          <span className="whitespace-nowrap text-[11px] leading-none">{ASSISTANT_BUTTON_MOBILE_LABEL}</span>
         )}
-        {HELP_CENTER_SHOW_PROMO_BADGE ? (
-          <span className="sv-help-center-btn__badge" aria-hidden>
-            ✨
-          </span>
-        ) : null}
-      </Link>
+      </button>
 
       {variant === 'desktop' ? (
         <div className="sv-help-center-tooltip" role="tooltip">
-          <p className="text-xs font-semibold text-[var(--text-primary)]">
-            {HELP_CENTER_TOOLTIP_TITLE}
-          </p>
+          <p className="text-xs font-semibold text-[var(--text-primary)]">{ASSISTANT_TOOLTIP_TITLE}</p>
           <p className="text-[11px] text-[var(--text-secondary)] mt-1 leading-snug">
-            {HELP_CENTER_TOOLTIP_DESCRIPTION}
+            {ASSISTANT_TOOLTIP_DESCRIPTION}
           </p>
         </div>
       ) : null}
