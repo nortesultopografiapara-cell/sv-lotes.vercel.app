@@ -182,6 +182,17 @@ const instSignIdx = html.indexOf('data-estrela-sign-block="instrumento"');
 assert(capaIdx < annexIdx && annexIdx < capaSignIdx && capaSignIdx < instrumentIdx && instrumentIdx < instSignIdx,
   'Capa Resumo → tabela segurança → 1º bloco → page break → instrumento → 2º bloco');
 assert(cssRuleFor('.estrela-instrument').includes('page-break-before: always'), 'instrumento começa em página nova');
+assert(cssRuleFor('.estrela-capa').includes('font-size: 9pt'), 'CSS: Capa Resumo em 9pt');
+assert(
+  css.includes('.estrela-capa .estrela-table td') && css.includes('padding-top: 2px !important'),
+  'CSS: células da Capa com padding compacto',
+);
+assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
+assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
+assert(
+  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 8px'),
+  'CSS: 1º bloco com gap compacto',
+);
 
 const avoid = ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID as readonly string[];
 assert(avoid.includes('.estrela-item:not(.estrela-item--long)'), 'html2pdf avoid: item curto');
