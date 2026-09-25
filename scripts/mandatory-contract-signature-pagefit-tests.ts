@@ -54,7 +54,7 @@ function assert(cond: boolean, msg: string) {
 }
 
 assert(
-  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decideContinuousTight'),
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('continuousLooksTight'),
   'script usa resto contínuo só para compactar (não para force-break)',
 );
 assert(

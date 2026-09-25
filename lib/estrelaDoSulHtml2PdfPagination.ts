@@ -33,6 +33,7 @@ export const ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID = [
   '.estrela-footnote',
   '.estrela-capa-annex-table',
   '.estrela-capa-signatures',
+  '.estrela-closing-statement',
   '.estrela-clause-keep',
   '.sv-contract-estrela-do-sul .signature-slot',
   '.sv-contract-estrela-do-sul .estrela-sign-slot',

@@ -193,12 +193,29 @@ assert(
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
 assert(
-  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 14px'),
-  'CSS: 1º bloco compacto para fechar a Capa na página 2',
+  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 48px'),
+  'CSS: 1º bloco físico usa o espaço livre da página 2',
 );
 assert(
-  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 8px'),
-  'CSS: data da Capa sem empurrar assinaturas',
+  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 42px'),
+  'CSS: data da Capa afastada da primeira fileira',
+);
+assert(
+  cssRuleFor('.estrela-capa-signatures .signature-line').includes('margin: 0 auto 22px auto'),
+  'CSS: linha física afastada do nome/CPF',
+);
+assert(
+  cssRuleFor('.estrela-closing-statement').includes('page-break-after: avoid'),
+  'CSS: parágrafo de fecho não se separa da data',
+);
+assert(
+  css.includes(
+    '.contract-closing-and-signatures--estrela:has(.sv-esign-stamp) {',
+  ) &&
+    cssRuleFor(
+      '.contract-closing-and-signatures--estrela:has(.sv-esign-stamp)',
+    ).includes('page-break-inside: avoid'),
+  'CSS: fecho eletrônico viaja com data e selos',
 );
 assert(
   cssRuleFor('.estrela-capa .estrela-section-title').includes('padding: 0 0 6px 0'),
@@ -225,6 +242,7 @@ assert(avoid.includes('.estrela-item:not(.estrela-item--long)'), 'html2pdf avoid
 assert(avoid.includes('.estrela-clause-head'), 'html2pdf avoid: título de cláusula');
 assert(avoid.includes('.estrela-td-keep'), 'html2pdf avoid: célula/linha');
 assert(avoid.includes('.estrela-capa-signatures'), 'html2pdf avoid: assinaturas capa');
+assert(avoid.includes('.estrela-closing-statement'), 'html2pdf avoid: parágrafo de fecho');
 assert(!avoid.includes('.contract-closing-and-signatures--estrela'), 'html2pdf não prende o pack inteiro do instrumento');
 assert(avoid.includes('.sv-contract-estrela-do-sul .signature-slot'), 'html2pdf avoid: slot individual');
 assert(!avoid.includes('.estrela-item'), 'html2pdf não aplica avoid indiscriminado a todo p/item');

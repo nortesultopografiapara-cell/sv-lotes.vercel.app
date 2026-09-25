@@ -602,7 +602,7 @@ assertBefore(
 );
 assert(!onlyCompany.includes('estrela-annex'), 'anexo antigo não permanece após as cláusulas');
 assert(
-  (onlyCompany.match(/estrela-closing-statement/g) || []).length === 1,
+  (onlyCompany.match(/class="estrela-closing-statement"/g) || []).length === 1,
   'fecho "justas e contratadas" só no instrumento',
 );
 assert(

@@ -204,7 +204,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   break-inside: avoid-page !important;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-signatures {
   page-break-inside: auto !important;
@@ -214,22 +214,22 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   margin-top: 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-closing-date {
-  margin-top: 4px !important;
+  margin-top: 8px !important;
   margin-bottom: 0 !important;
-  padding-bottom: 8px !important;
+  padding-bottom: 42px !important;
   font-size: 9pt !important;
   line-height: 1.35 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 14px !important;
+  row-gap: 48px !important;
   column-gap: 24px !important;
-  padding-top: 2px !important;
+  padding-top: 10px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 6px auto !important;
+  margin: 0 auto 22px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;
@@ -240,24 +240,33 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-slot,
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-slot {
   margin-bottom: 0 !important;
+  padding-bottom: 8px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p {
   font-size: 9pt !important;
   line-height: 1.3 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="text-transform: uppercase"] {
-  margin: 4px 0 2px 0 !important;
+  margin: 8px 0 4px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="font-weight: bold"]:not([style*="text-transform: uppercase"]) {
-  margin: 1px 0 1px 0 !important;
+  margin: 2px 0 3px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-doc {
   margin: 0 !important;
-  padding-bottom: 2px !important;
+  padding-bottom: 4px !important;
 }
 .sv-contract-estrela-do-sul .estrela-instrument {
   page-break-before: always !important;
   break-before: page !important;
+}
+.sv-contract-estrela-do-sul .estrela-closing-statement {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
+  orphans: 4;
+  widows: 4;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela {
   page-break-inside: auto !important;
@@ -310,24 +319,33 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   color: #166534 !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) {
-  page-break-inside: auto !important;
-  break-inside: auto !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
   min-height: 0 !important;
   page-break-before: auto !important;
   break-before: auto !important;
+}
+.sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .estrela-closing-statement {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
+  margin-bottom: 10px !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .contract-signatures,
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .signature-grid--estrela {
   page-break-inside: auto !important;
   break-inside: auto !important;
-  page-break-before: auto !important;
-  break-before: auto !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
   min-height: 0 !important;
   row-gap: 10px !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .contract-closing-date {
   margin-bottom: 8px !important;
   padding-bottom: 0 !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .signature-line {
   margin: 0 auto 8px auto !important;
