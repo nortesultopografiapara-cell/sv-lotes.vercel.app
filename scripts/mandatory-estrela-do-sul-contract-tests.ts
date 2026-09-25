@@ -34,6 +34,11 @@ import {
 import { collapseEstrelaDuplicateEditorialNumbers } from '../lib/estrelaDoSulContractClauses';
 import { resolveEstrelaDoSulSaleCommissionAmount } from '../lib/estrelaDoSulContractContext';
 import { shouldLoadProjectBlocksForContract } from '../lib/contractHtmlGlobal';
+import { formatCompanyAddressForHeader } from '../lib/contractCompanyDisplay';
+import {
+  buildEstrelaDoSulPdfChrome,
+  normalizeLfCompanyAddressLine,
+} from '../lib/estrelaDoSulContractPdf';
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FALHOU — ${msg}`);
@@ -171,6 +176,30 @@ assert(
 assert(downPaymentReducesInstallmentBase('ESTRELA_DO_SUL') === true, 'arras abatem o saldo');
 assert(downPaymentReducesInstallmentBase('RECANTO_PRIMAVERA') === false, 'Recanto inalterado');
 assert(downPaymentReducesInstallmentBase('PADRAO') === true, 'PADRAO inalterado');
+
+{
+  const cadastro = 'RUA 24 DE MARCO, N 99';
+  const lfLine = normalizeLfCompanyAddressLine(cadastro);
+  assert(!/S\s*\/\s*N/i.test(lfLine), 'LF com N 99 não acrescenta S/N');
+  assert(/N\s*99/i.test(lfLine), 'LF preserva N 99 do cadastro');
+  assert(
+    normalizeLfCompanyAddressLine('RUA 24 DE MARCO') === 'RUA 24 DE MARCO, S/N',
+    'LF sem número usa S/N da regra existente',
+  );
+  const chrome = buildEstrelaDoSulPdfChrome(
+    { ...COMPANY, address: cadastro },
+    '000000005/2026',
+  );
+  assert(!/N\s*99\s*,\s*S\s*\/\s*N/i.test(chrome.addressLine), 'chrome LF sem N 99, S/N');
+  assert(/N\s*99/i.test(chrome.addressLine), 'chrome LF mostra N 99');
+  assert(/\bde\b/.test(chrome.addressLine), 'chrome LF title-case com de minúsculo');
+  const padrao = formatCompanyAddressForHeader({
+    address: 'Avenida Dos Ipes, Quadra 31, Lote 13',
+    city: 'Parauapebas',
+    state: 'PA',
+  });
+  assert(/S\/N/i.test(padrao.addressLine), 'PADRAO permanece com S/N automático');
+}
 
 const policy = getCatalogPolicy(canonicalizeCatalogKey('ESTRELA_DO_SUL'));
 assert(policy?.catalogKey === 'ESTRELA_DO_SUL', 'catálogo próprio');
