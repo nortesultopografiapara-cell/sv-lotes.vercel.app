@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { insertProjectWithFallback } from '@/lib/projects-insert';
+import { normalizeLfContractConfigForSave } from '@/lib/lfImoveisContractConfig';
 import {
   createAdminSupabase,
   getRequestAuthUser,
@@ -24,6 +25,8 @@ type CreateProjectBody = {
   forum_city?: string | null;
   impersonatingTenantId?: string | null;
   contract_model?: string | null;
+  lf_contract_config?: unknown;
+  lf_contract_config_json?: unknown;
 };
 
 async function resolveTenantForUser(
@@ -150,6 +153,20 @@ export async function POST(request: Request) {
 
   const location = [city, uf].filter(Boolean).join(' - ');
 
+  let lfContractConfigJson: unknown = undefined;
+  if (body.lf_contract_config !== undefined || body.lf_contract_config_json !== undefined) {
+    const normalized = normalizeLfContractConfigForSave(
+      body.lf_contract_config ?? body.lf_contract_config_json,
+    );
+    if (!normalized.ok) {
+      return NextResponse.json(
+        { error: normalized.error, code: 'VALIDATION' },
+        { status: 400 },
+      );
+    }
+    lfContractConfigJson = normalized.value ?? undefined;
+  }
+
   if (callerRole !== 'SUPER_ADMIN') {
     const enforcement = await canCreateProject(admin, tenantId, {
       isPlatformAdmin: false,
@@ -179,6 +196,9 @@ export async function POST(request: Request) {
       location,
       tenant_id: tenantId,
       contract_model: body.contract_model?.trim() || null,
+      ...(lfContractConfigJson !== undefined
+        ? { lf_contract_config_json: lfContractConfigJson }
+        : {}),
     });
 
     if (error) {

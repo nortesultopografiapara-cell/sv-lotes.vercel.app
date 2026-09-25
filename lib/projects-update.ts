@@ -12,6 +12,7 @@ export const PROJECT_UPDATE_KNOWN_COLUMNS = [
   'financial_account_id',
   'contract_model',
   'seller_parties_json',
+  'lf_contract_config_json',
 ] as const;
 
 export type ProjectUpdateInput = {
@@ -36,6 +37,11 @@ export type ProjectUpdateInput = {
    * undefined = não alterar. Usado pelo e-sign Mundo Novo (email/telefone).
    */
   seller_parties_json?: unknown;
+  /**
+   * Configuração contratual LF Imóveis (JSON).
+   * undefined = não alterar. null = limpar (voltar ao fallback da empresa).
+   */
+  lf_contract_config_json?: unknown;
 };
 
 function cleanPayload(
@@ -84,6 +90,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
   if (input.seller_parties_json !== undefined) {
     full.seller_parties_json = input.seller_parties_json;
   }
+  if (input.lf_contract_config_json !== undefined) {
+    full.lf_contract_config_json = input.lf_contract_config_json;
+  }
 
   return [
     full,
@@ -98,6 +107,9 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       ...(input.seller_parties_json !== undefined
         ? { seller_parties_json: full.seller_parties_json }
         : {}),
+      ...(input.lf_contract_config_json !== undefined
+        ? { lf_contract_config_json: full.lf_contract_config_json }
+        : {}),
     },
     {
       name: full.name,
@@ -109,7 +121,11 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       location: full.location,
     },
   ].map((payload) =>
-    cleanPayload(payload, ['contract_model', 'seller_parties_json']),
+    cleanPayload(payload, [
+      'contract_model',
+      'seller_parties_json',
+      'lf_contract_config_json',
+    ]),
   );
 }
 

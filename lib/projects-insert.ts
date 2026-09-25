@@ -12,6 +12,7 @@ export type ProjectInsertInput = {
   /** null/omit = herdar modelo padrão da empresa. */
   contract_model?: string | null;
   financial_account_id?: string | null;
+  lf_contract_config_json?: unknown;
 };
 
 export async function insertProjectWithFallback(

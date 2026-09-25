@@ -8,10 +8,7 @@ import { onlyDigits } from '@/lib/inputMasks';
 import { normalizeWhatsAppPhone } from '@/lib/whatsapp/clickToChat';
 import { isValidSignerEmail, normalizeSignerEmail } from '@/lib/saleContractEmailValidation';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
-import {
-  isContractSecondVendorComplete,
-  parseContractSecondVendorJson,
-} from '@/lib/contractSecondVendor';
+import { resolveLfSecondVendor } from '@/lib/lfImoveisContractConfig';
 
 export function isEstrelaDoSulSaleContractModel(model?: string | null): boolean {
   const key = String(model || '')
@@ -31,6 +28,7 @@ function pickString(...values: unknown[]): string {
 
 export function buildEstrelaDoSulEsignVendorPartyInputs(input?: {
   company?: Record<string, unknown> | null;
+  project?: Record<string, unknown> | null;
 }): Array<{
   name: string;
   cpf: string;
@@ -86,8 +84,12 @@ export function buildEstrelaDoSulEsignVendorPartyInputs(input?: {
     order: 1,
   });
 
-  const second = parseContractSecondVendorJson(company.contract_second_vendor_json);
-  if (isContractSecondVendorComplete(second)) {
+  const secondResolved = resolveLfSecondVendor({
+    project: input?.project,
+    company,
+  });
+  if (secondResolved.complete) {
+    const second = secondResolved.vendor;
     const secondEmail = second.email && isValidSignerEmail(second.email)
       ? normalizeSignerEmail(second.email)
       : null;

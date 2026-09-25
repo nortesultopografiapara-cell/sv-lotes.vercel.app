@@ -50,7 +50,7 @@ export const ESTRELA_OCCUPANCY_FEE_FLOOR = 500;
 
 /**
  * Narrativa de rateio entre vendedores do instrumento (capa / cláusula 1.3).
- * NÃO lê Split de Recebimentos. Percentuais do documento-fonte — ver divergências.
+ * NÃO lê Split de Recebimentos. Fallback quando o projeto LF não tem percentuais próprios.
  */
 export const ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT = 40;
 export const ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT = 60;
@@ -109,7 +109,7 @@ export const ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES = [
     excerpt:
       'Outras informações: 40% ao primeiro vendedor e 60% ao segundo, via boleto',
     issue:
-      'Texto do instrumento, não do Split de Recebimentos. Incluído só se houver segundo vendedor cadastrado; percentuais permanecem os do documento até decisão humana.',
+      'Texto do instrumento, não do Split de Recebimentos. Incluído só se houver segundo vendedor; percentuais vêm da config LF do projeto, com fallback 40/60.',
     status: 'aguardando-decisao',
   },
   {

@@ -146,6 +146,7 @@
     "test:estrela-do-sul-contract": "tsx scripts/mandatory-estrela-do-sul-contract-tests.ts",
     "test:estrela-do-sul-second-vendor": "tsx scripts/mandatory-estrela-do-sul-second-vendor-tests.ts",
     "test:estrela-do-sul-pagination": "tsx scripts/mandatory-estrela-do-sul-pagination-tests.ts",
+    "test:lf-imoveis-project-config": "tsx scripts/mandatory-lf-imoveis-project-config-tests.ts",
     "test:mundo-novo-esign": "tsx scripts/mandatory-mundo-novo-esign-tests.ts",
     "test:araguaia-esign": "tsx scripts/mandatory-araguaia-esign-tests.ts",
     "test:araguaia-esign-v2": "tsx scripts/mandatory-araguaia-esign-v2-foundation-tests.ts",

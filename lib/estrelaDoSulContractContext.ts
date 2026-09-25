@@ -1,7 +1,7 @@
 /**
  * Contexto isolado — Chacreamento Estrela do Sul.
- * Fontes: companies, contract_second_vendor_json, customers, sale_spouse_*,
- * projects, blocks, sales, finance_receipts. Sem Split de Recebimentos.
+ * Fontes: companies, contract_second_vendor_json, projects.lf_contract_config_json,
+ * customers, sale_spouse_*, projects, blocks, sales, finance_receipts. Sem Split.
  */
 
 import { resolveContractLotSides } from '@/lib/contractLotBoundaries';
@@ -10,10 +10,12 @@ import { extractRecantoSpouseSource, resolveSaleSpouseContext } from '@/lib/sale
 import { resolveBrokerFromSaleRecord } from '@/lib/saleBrokerSnapshot';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import {
-  isContractSecondVendorComplete,
-  parseContractSecondVendorJson,
   type ContractSecondVendorFields,
 } from '@/lib/contractSecondVendor';
+import {
+  formatLfPartnershipNote,
+  resolveLfContractConfig,
+} from '@/lib/lfImoveisContractConfig';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
 import { toContractTitleCase } from '@/lib/contractTitleCase';
 import {
@@ -33,10 +35,6 @@ import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 import { formatInstallmentCorrectionLabel } from '@/lib/installmentCorrectionType';
 import { resolveRecantoContractProjectRecord } from '@/lib/recantoPrimaveraProjectContext';
 import { sanitizeContractField } from '@/lib/recantoPrimaveraCompanyProfile';
-import {
-  ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT,
-  ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT,
-} from '@/lib/estrelaDoSulContractConstants';
 import {
   formatEstrelaAreaPhrase,
   formatEstrelaBRL,
@@ -77,6 +75,8 @@ export type EstrelaDoSulContractContext = {
   legalRepCpf: string;
   hasSecondVendor: boolean;
   secondVendor: ContractSecondVendorFields;
+  firstVendorPercent: number;
+  secondVendorPercent: number;
   clienteNome: string;
   clienteCpf: string;
   clienteRg: string;
@@ -224,10 +224,12 @@ export function buildEstrelaDoSulContractContext(
   const { tenant, customer, project, block, sale, contractSnapshot, financeReceipts, projectBlocks, streetGuides } =
     params;
   const seller = normalizeSellerFromCompany(tenant);
-  const secondVendor = parseContractSecondVendorJson(
-    tenant?.contract_second_vendor_json,
-  );
-  const hasSecondVendor = isContractSecondVendorComplete(secondVendor);
+  const lfConfig = resolveLfContractConfig({
+    project,
+    company: tenant,
+  });
+  const secondVendor = lfConfig.secondVendor;
+  const hasSecondVendor = lfConfig.hasSecondVendor;
 
   const companyName = pickString(
     tenant?.razao_social,
@@ -380,7 +382,12 @@ export function buildEstrelaDoSulContractContext(
   const areaPhrase = formatEstrelaAreaPhrase(areaNum);
 
   const partnershipNote = hasSecondVendor
-    ? `Será repassado ao primeiro vendedor, ${companyName || 'o VENDEDOR'}, ${ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT}% do valor e ${ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT}% ao segundo vendedor, ${secondVendor.name}, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.`
+    ? formatLfPartnershipNote({
+        companyName,
+        secondVendorName: secondVendor.name,
+        firstVendorPercent: lfConfig.firstVendorPercent,
+        secondVendorPercent: lfConfig.secondVendorPercent,
+      })
     : '';
 
   let valorTotal =
@@ -455,6 +462,8 @@ export function buildEstrelaDoSulContractContext(
     legalRepCpf,
     hasSecondVendor,
     secondVendor,
+    firstVendorPercent: lfConfig.firstVendorPercent,
+    secondVendorPercent: lfConfig.secondVendorPercent,
     clienteNome,
     clienteCpf,
     clienteRg,

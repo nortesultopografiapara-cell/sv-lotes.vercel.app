@@ -93,6 +93,7 @@ const PROJECT_CONTRACT_VIEW_SELECT = [
   "registry_number",
   "matricula",
   "address",
+  "lf_contract_config_json",
 ].join(", ");
 
 const BLOCKS_PROJECT_LIST_SELECT = [

@@ -87,7 +87,9 @@ export async function createProjectThroughApi(payload: {
   address?: string | null;
   forum_city?: string | null;
   impersonatingTenantId?: string | null;
-  contract_model?: string | null;
+    contract_model?: string | null;
+    lf_contract_config?: unknown;
+    lf_contract_config_json?: unknown;
 }): Promise<{ project: Record<string, unknown> }> {
   return callProjectsApi('', 'POST', payload, 'Criar Projeto');
 }
@@ -110,6 +112,8 @@ export async function updateProjectThroughApi(
       email?: string | null;
       phone?: string | null;
     }> | null;
+    lf_contract_config?: unknown;
+    lf_contract_config_json?: unknown;
   },
 ): Promise<{ project: Record<string, unknown> }> {
   return callProjectsApi(`/${projectId}`, 'PATCH', payload, 'Editar Projeto');

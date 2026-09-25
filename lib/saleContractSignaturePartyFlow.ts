@@ -191,12 +191,21 @@ export async function loadSaleAndCompanyForSignature(
     contractRow.project_id || sale?.project_id || '',
   ).trim();
   if (projectId) {
-    const { data: projectData } = await supabaseAdmin
+    const withLf = await supabaseAdmin
       .from('projects')
-      .select('id, name, contract_model, company_id, seller_parties_json')
+      .select('id, name, contract_model, company_id, seller_parties_json, lf_contract_config_json')
       .eq('id', projectId)
       .maybeSingle();
-    project = (projectData as Record<string, unknown>) || null;
+    if (withLf.error && /lf_contract_config_json/i.test(withLf.error.message || '')) {
+      const fallback = await supabaseAdmin
+        .from('projects')
+        .select('id, name, contract_model, company_id, seller_parties_json')
+        .eq('id', projectId)
+        .maybeSingle();
+      project = (fallback.data as Record<string, unknown>) || null;
+    } else {
+      project = (withLf.data as Record<string, unknown>) || null;
+    }
   }
 
   let customer: Record<string, unknown> | null = null;
@@ -526,7 +535,7 @@ export async function createSignaturePartiesAfterSend(
   }
 
   const estrelaVendors = estrelaEsign
-    ? buildEstrelaDoSulEsignVendorPartyInputs({ company })
+    ? buildEstrelaDoSulEsignVendorPartyInputs({ company, project })
     : null;
 
   if (araguaiaEsign) {

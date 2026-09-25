@@ -28,6 +28,7 @@ import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
 import { ProjectRevenueSplitPanel } from '@/components/projects/ProjectRevenueSplitPanel';
+import { ProjectLfContractConfigFields } from '@/components/projects/ProjectLfContractConfigFields';
 import { MemorialGenerateModal } from '@/components/map/MemorialGenerateModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
@@ -52,6 +53,10 @@ import {
   type ProjectFormInitialData,
   projectToFormInitialData,
 } from '@/lib/project-form';
+import {
+  emptyLfContractConfigForm,
+  type LfContractConfigFormState,
+} from '@/lib/lfImoveisContractConfig';
 import {
   SALE_CONTRACT_MODEL_LABELS,
   SALE_CONTRACT_MODEL_OPTIONS,
@@ -559,8 +564,12 @@ export default function MapPage() {
   const [mundoNovoSellerContacts, setMundoNovoSellerContacts] = useState<
     Array<{ order: number; name: string; email: string; phone: string }>
   >([]);
+  const [lfContractConfig, setLfContractConfig] = useState<LfContractConfigFormState>(
+    emptyLfContractConfigForm(),
+  );
   const [companyDefaultContractModel, setCompanyDefaultContractModel] =
     useState<SaleContractModel>('PADRAO');
+  const [companySecondVendorJson, setCompanySecondVendorJson] = useState<unknown>(null);
   const [projectFinancialAccounts, setProjectFinancialAccounts] = useState<
     Array<{
       id: string;
@@ -590,7 +599,7 @@ export default function MapPage() {
       });
     void supabase
       .from('companies')
-      .select('contract_model')
+      .select('contract_model, contract_second_vendor_json')
       .eq('id', saasTenantId)
       .maybeSingle()
       .then(({ data }) => {
@@ -598,9 +607,13 @@ export default function MapPage() {
         setCompanyDefaultContractModel(
           normalizeSaleContractModel(data?.contract_model),
         );
+        setCompanySecondVendorJson(data?.contract_second_vendor_json ?? null);
       })
       .catch(() => {
-        if (!cancelled) setCompanyDefaultContractModel('PADRAO');
+        if (!cancelled) {
+          setCompanyDefaultContractModel('PADRAO');
+          setCompanySecondVendorJson(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -1886,6 +1899,7 @@ export default function MapPage() {
     setNewProjectFinancialAccountId(initialData.financial_account_id);
     setNewProjectContractModel(initialData.contract_model);
     setMundoNovoSellerContacts(initialData.seller_party_contacts || []);
+    setLfContractConfig(initialData.lf_contract_config || emptyLfContractConfigForm());
   };
 
   const resetProjectForm = () => {
@@ -1995,6 +2009,12 @@ export default function MapPage() {
           ) === 'MUNDO_NOVO'
             ? mundoNovoSellerContacts
             : undefined,
+        lf_contract_config:
+          normalizeSaleContractModel(
+            newProjectContractModel || companyDefaultContractModel,
+          ) === 'ESTRELA_DO_SUL'
+            ? lfContractConfig
+            : undefined,
       });
 
       const updatedFields = {
@@ -2015,6 +2035,8 @@ export default function MapPage() {
           (newProjectContractModel || null),
         seller_parties_json:
           saved.seller_parties_json ?? editingProject.seller_parties_json,
+        lf_contract_config_json:
+          saved.lf_contract_config_json ?? editingProject.lf_contract_config_json,
       };
 
       setProjects((prev) =>
@@ -2097,6 +2119,12 @@ export default function MapPage() {
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
         contract_model: newProjectContractModel || null,
+        lf_contract_config:
+          normalizeSaleContractModel(
+            newProjectContractModel || companyDefaultContractModel,
+          ) === 'ESTRELA_DO_SUL'
+            ? lfContractConfig
+            : undefined,
       });
 
       await reloadSaas();
@@ -3381,6 +3409,15 @@ export default function MapPage() {
                   </div>
                 ))}
               </div>
+            )}
+            {normalizeSaleContractModel(
+              newProjectContractModel || companyDefaultContractModel,
+            ) === 'ESTRELA_DO_SUL' && (
+              <ProjectLfContractConfigFields
+                value={lfContractConfig}
+                onChange={setLfContractConfig}
+                companySecondVendorJson={companySecondVendorJson}
+              />
             )}
 
             <button
