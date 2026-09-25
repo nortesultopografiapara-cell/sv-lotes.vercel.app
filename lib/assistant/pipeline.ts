@@ -15,6 +15,7 @@ import {
   sanitizeAssistantHistory,
   sanitizeAssistantQuestion,
 } from './sanitize';
+import { composeFromValidatedUi } from './composeFromUi';
 import { localGroundedProvider } from './model/localGroundedProvider';
 import type { AssistantModelProvider } from './model/types';
 import type { AssistantAskInput, AssistantAskResult } from './types';
@@ -71,6 +72,22 @@ export async function runAssistantPipeline(
     context: input.context,
     forbiddenReason: retrieved.forbiddenReason,
   });
+
+  const uiGrounded = composeFromValidatedUi({ question, context: input.context });
+  if (
+    uiGrounded &&
+    composed.kind !== 'forbidden' &&
+    (input.context.ui.contractId || input.context.ui.saleFormOpen)
+  ) {
+    return {
+      kind: 'answer',
+      text: uiGrounded.slice(0, ASSISTANT_MAX_OUTPUT_CHARS),
+      procedureIds: composed.procedureIds,
+      retrievedTitles: composed.retrievedTitles,
+      source: 'local',
+      notice: null,
+    };
+  }
 
   if (composed.kind !== 'answer') {
     return { ...withWhoCanExecute(composed), source: 'local' };

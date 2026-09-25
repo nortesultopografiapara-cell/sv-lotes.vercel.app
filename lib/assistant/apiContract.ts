@@ -31,6 +31,10 @@ export type AssistantAskApiRequest = {
     blockNumber?: string | null;
     lotNumber?: string | null;
     lotStatus?: string | null;
+    installmentsFilled?: boolean;
+    firstDueFilled?: boolean;
+    brokerSelected?: boolean;
+    downPaymentFilled?: boolean;
   };
 };
 

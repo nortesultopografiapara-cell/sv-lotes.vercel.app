@@ -24,6 +24,10 @@ type SalePatch = {
   saleFormOpen?: boolean;
   paymentMode?: AssistantPaymentModeHint | null;
   customerSelected?: boolean;
+  installmentsFilled?: boolean;
+  firstDueFilled?: boolean;
+  brokerSelected?: boolean;
+  downPaymentFilled?: boolean;
 };
 
 type AssistantUiStateContextValue = {
@@ -76,6 +80,10 @@ export function AssistantUiStateProvider({ children }: { children: ReactNode }) 
       saleFormOpen: false,
       paymentMode: null,
       customerSelected: false,
+      installmentsFilled: false,
+      firstDueFilled: false,
+      brokerSelected: false,
+      downPaymentFilled: false,
     }));
   }, []);
 

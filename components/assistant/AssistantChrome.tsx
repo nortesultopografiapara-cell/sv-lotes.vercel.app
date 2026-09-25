@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { AssistantPanelProvider } from '@/contexts/AssistantPanelContext';
 import { AssistantUiStateProvider } from '@/contexts/AssistantUiStateContext';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
+import { AssistantOverlayFab } from '@/components/assistant/AssistantOverlayFab';
 
 type Props = {
   children: ReactNode;
@@ -21,6 +22,7 @@ export function AssistantChrome({ children, role, tenantName, impersonatingTenan
         impersonatingTenant={Boolean(impersonatingTenant)}
       >
         {children}
+        <AssistantOverlayFab />
         <AssistantPanel />
       </AssistantPanelProvider>
     </AssistantUiStateProvider>

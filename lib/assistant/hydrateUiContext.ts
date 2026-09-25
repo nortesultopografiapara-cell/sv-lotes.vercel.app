@@ -33,6 +33,10 @@ export type AssistantContractRecord = {
   contractModel: string | null;
   partyTotal: number | null;
   partySigned: number | null;
+  pendingExternal: number | null;
+  pendingInternalVendor: boolean;
+  pendingPartyRoles: string[];
+  eSignStarted: boolean;
 };
 
 export type AssistantEntityLoaders = {
@@ -69,6 +73,10 @@ export async function hydrateAssistantUiContext(input: {
     saleFormOpen: Boolean(hints.saleFormOpen),
     paymentMode: hints.paymentMode,
     customerSelected: Boolean(hints.customerSelected),
+    installmentsFilled: Boolean(hints.installmentsFilled),
+    firstDueFilled: Boolean(hints.firstDueFilled),
+    brokerSelected: Boolean(hints.brokerSelected),
+    downPaymentFilled: Boolean(hints.downPaymentFilled),
   };
 
   let rejectedForeignTenant = false;
@@ -109,6 +117,10 @@ export async function hydrateAssistantUiContext(input: {
       ui.saleFormOpen = false;
       ui.customerSelected = false;
       ui.paymentMode = null;
+      ui.installmentsFilled = false;
+      ui.firstDueFilled = false;
+      ui.brokerSelected = false;
+      ui.downPaymentFilled = false;
     }
   }
 
@@ -120,13 +132,22 @@ export async function hydrateAssistantUiContext(input: {
       ui.contractStatus = sliceName(contract.status);
       ui.signatureStatus = sliceName(contract.signatureStatus);
       ui.needsRegenerar = Boolean(contract.needsRegenerar);
-      ui.eSignStarted = Boolean(contract.signatureStatus);
+      ui.eSignStarted = Boolean(contract.eSignStarted || contract.signatureStatus || (contract.partyTotal ?? 0) > 0);
       ui.partyTotal = contract.partyTotal;
       ui.partySigned = contract.partySigned;
+      ui.pendingExternal = contract.pendingExternal;
+      ui.pendingInternalVendor = Boolean(contract.pendingInternalVendor);
+      ui.pendingPartyRoles = Array.isArray(contract.pendingPartyRoles)
+        ? contract.pendingPartyRoles.map((item) => String(item).slice(0, 24)).slice(0, 8)
+        : [];
       ui.nextAction = resolveContractNextAction({
         contractStatus: contract.status,
         signatureStatus: contract.signatureStatus,
         needsRegenerar: contract.needsRegenerar,
+        eSignStarted: ui.eSignStarted,
+        pendingExternal: ui.pendingExternal,
+        pendingInternalVendor: ui.pendingInternalVendor,
+        contractModel: contract.contractModel || ui.contractModel,
       });
       if (!ui.projectName && contract.projectName) ui.projectName = sliceName(contract.projectName);
       if (!ui.contractModel && contract.contractModel) {

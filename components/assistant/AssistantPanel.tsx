@@ -70,6 +70,10 @@ export function AssistantPanel() {
           saleFormOpen: Boolean(uiState?.hints.saleFormOpen),
           paymentMode: uiState?.hints.paymentMode || null,
           customerSelected: Boolean(uiState?.hints.customerSelected),
+          installmentsFilled: Boolean(uiState?.hints.installmentsFilled),
+          firstDueFilled: Boolean(uiState?.hints.firstDueFilled),
+          brokerSelected: Boolean(uiState?.hints.brokerSelected),
+          downPaymentFilled: Boolean(uiState?.hints.downPaymentFilled),
           contractId: uiState?.hints.contractId || null,
         },
       }),
@@ -142,9 +146,13 @@ export function AssistantPanel() {
   }
 
   if (!open) return null;
+  const overModal = Boolean(uiState?.hints.saleFormOpen);
 
   return (
-    <div className="sv-assistant-root" data-testid="assistant-sv-panel">
+    <div
+      className={overModal ? 'sv-assistant-root sv-assistant-root--over-modal' : 'sv-assistant-root'}
+      data-testid="assistant-sv-panel"
+    >
       <button
         type="button"
         className="sv-assistant-backdrop"

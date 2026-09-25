@@ -569,6 +569,41 @@ html[data-brand='purple'] {
   pointer-events: none;
 }
 
+.sv-assistant-root--over-modal {
+  z-index: 1200;
+}
+
+.sv-assistant-overlay-fab {
+  pointer-events: auto;
+  position: fixed;
+  right: 1rem;
+  bottom: 5.25rem;
+  z-index: 1100;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.sv-assistant-overlay-fab:hover {
+  filter: brightness(1.08);
+}
+
+@media (min-width: 640px) {
+  .sv-assistant-overlay-fab {
+    bottom: 1.5rem;
+  }
+}
+
 .sv-assistant-backdrop {
   pointer-events: auto;
   position: absolute;

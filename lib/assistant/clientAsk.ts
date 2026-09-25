@@ -36,6 +36,10 @@ export async function requestAssistantAsk(input: AssistantAskInput): Promise<Ass
       blockNumber: input.context.ui?.blockNumber,
       lotNumber: input.context.ui?.lotNumber,
       lotStatus: input.context.ui?.lotStatus,
+      installmentsFilled: input.context.ui?.installmentsFilled,
+      firstDueFilled: input.context.ui?.firstDueFilled,
+      brokerSelected: input.context.ui?.brokerSelected,
+      downPaymentFilled: input.context.ui?.downPaymentFilled,
     },
   });
 

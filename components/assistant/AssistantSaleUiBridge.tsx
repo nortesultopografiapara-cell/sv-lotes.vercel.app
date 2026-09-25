@@ -12,6 +12,10 @@ type Props = {
   blockNumber?: string | null;
   lotNumber?: string | null;
   lotStatus?: string | null;
+  installmentsFilled?: boolean;
+  firstDueFilled?: boolean;
+  brokerSelected?: boolean;
+  downPaymentFilled?: boolean;
 };
 
 export function AssistantSaleUiBridge({
@@ -22,6 +26,10 @@ export function AssistantSaleUiBridge({
   blockNumber,
   lotNumber,
   lotStatus,
+  installmentsFilled,
+  firstDueFilled,
+  brokerSelected,
+  downPaymentFilled,
 }: Props) {
   const ui = useAssistantUiStateOptional();
   const patchSale = ui?.patchSale;
@@ -34,6 +42,10 @@ export function AssistantSaleUiBridge({
       saleFormOpen: true,
       paymentMode: sanitizePaymentModeHint(paymentMode),
       customerSelected: Boolean(customerSelected),
+      installmentsFilled: Boolean(installmentsFilled),
+      firstDueFilled: Boolean(firstDueFilled),
+      brokerSelected: Boolean(brokerSelected),
+      downPaymentFilled: Boolean(downPaymentFilled),
     });
     patchLot?.({
       lotId: lotId || null,
@@ -51,6 +63,10 @@ export function AssistantSaleUiBridge({
     blockNumber,
     lotNumber,
     lotStatus,
+    installmentsFilled,
+    firstDueFilled,
+    brokerSelected,
+    downPaymentFilled,
     patchSale,
     patchLot,
     clearSale,

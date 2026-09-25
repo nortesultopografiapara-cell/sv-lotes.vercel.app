@@ -1,4 +1,5 @@
 import { ASSISTANT_CONTINUE_OFFER, ASSISTANT_MASTER_DISCLAIMER, ASSISTANT_MAX_OUTPUT_CHARS } from '../constants';
+import { composeFromValidatedUi } from '../composeFromUi';
 import type { AssistantModelDifference, AssistantProcedure, AssistantSafeContext } from '../types';
 import type { AssistantModelGenerateInput, AssistantModelGenerateResult, AssistantModelProvider } from './types';
 
@@ -160,6 +161,20 @@ export const localGroundedProvider: AssistantModelProvider = {
   id: 'local-grounded',
   available: () => true,
   async generate(input: AssistantModelGenerateInput): Promise<AssistantModelGenerateResult> {
+    const uiAnswer = composeFromValidatedUi({
+      question: input.messages[input.messages.length - 1]?.content || '',
+      context: input.context,
+    });
+    if (uiAnswer) {
+      const master =
+        input.context.viewer === 'master' && !input.context.impersonatingTenant
+          ? `${ASSISTANT_MASTER_DISCLAIMER} `
+          : '';
+      return {
+        text: `${master}${uiAnswer}`.replace(/\s+/g, ' ').trim().slice(0, ASSISTANT_MAX_OUTPUT_CHARS),
+        providerId: 'local-grounded',
+      };
+    }
     const procedure = pickProcedure(input);
     if (!procedure) {
       return { text: '', providerId: 'local-grounded' };

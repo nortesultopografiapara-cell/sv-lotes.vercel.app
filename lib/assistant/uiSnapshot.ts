@@ -17,6 +17,10 @@ export type AssistantUiClientHints = {
   blockNumber?: string | null;
   lotNumber?: string | null;
   lotStatus?: string | null;
+  installmentsFilled?: boolean;
+  firstDueFilled?: boolean;
+  brokerSelected?: boolean;
+  downPaymentFilled?: boolean;
 };
 
 export type AssistantUiSafeState = {
@@ -32,6 +36,10 @@ export type AssistantUiSafeState = {
   saleFormOpen: boolean;
   paymentMode: AssistantPaymentModeHint | null;
   customerSelected: boolean;
+  installmentsFilled: boolean;
+  firstDueFilled: boolean;
+  brokerSelected: boolean;
+  downPaymentFilled: boolean;
   contractId: string | null;
   contractNumber: string | null;
   contractStatus: string | null;
@@ -39,6 +47,9 @@ export type AssistantUiSafeState = {
   eSignStarted: boolean;
   partyTotal: number | null;
   partySigned: number | null;
+  pendingExternal: number | null;
+  pendingInternalVendor: boolean;
+  pendingPartyRoles: string[];
   nextAction: string | null;
   needsRegenerar: boolean;
 };
@@ -56,6 +67,10 @@ export const EMPTY_ASSISTANT_UI_STATE: AssistantUiSafeState = {
   saleFormOpen: false,
   paymentMode: null,
   customerSelected: false,
+  installmentsFilled: false,
+  firstDueFilled: false,
+  brokerSelected: false,
+  downPaymentFilled: false,
   contractId: null,
   contractNumber: null,
   contractStatus: null,
@@ -63,6 +78,9 @@ export const EMPTY_ASSISTANT_UI_STATE: AssistantUiSafeState = {
   eSignStarted: false,
   partyTotal: null,
   partySigned: null,
+  pendingExternal: null,
+  pendingInternalVendor: false,
+  pendingPartyRoles: [],
   nextAction: null,
   needsRegenerar: false,
 };
@@ -121,6 +139,10 @@ export function sanitizeUiClientHints(raw: unknown): AssistantUiClientHints {
     blockNumber: sanitizeDisplayHint(input.blockNumber, 20),
     lotNumber: sanitizeDisplayHint(input.lotNumber, 20),
     lotStatus: sanitizeDisplayHint(input.lotStatus, 24),
+    installmentsFilled: Boolean(input.installmentsFilled),
+    firstDueFilled: Boolean(input.firstDueFilled),
+    brokerSelected: Boolean(input.brokerSelected),
+    downPaymentFilled: Boolean(input.downPaymentFilled),
   };
 }
 
@@ -128,6 +150,10 @@ export function resolveContractNextAction(input: {
   contractStatus?: string | null;
   signatureStatus?: string | null;
   needsRegenerar?: boolean;
+  eSignStarted?: boolean;
+  pendingExternal?: number | null;
+  pendingInternalVendor?: boolean;
+  contractModel?: string | null;
 }): string | null {
   if (input.needsRegenerar) return 'Regenerar contrato';
   const contractStatus = String(input.contractStatus || '').toLowerCase();
@@ -137,6 +163,13 @@ export function resolveContractNextAction(input: {
   const sig = String(input.signatureStatus || '').toUpperCase();
   if (sig === 'SIGNED' || contractStatus === 'assinado' || contractStatus === 'signed') {
     return 'Contrato já assinado';
+  }
+  if (!input.eSignStarted) return 'Enviar para assinatura';
+  if ((input.pendingExternal ?? 0) > 0) return 'Acompanhar assinaturas';
+  if (input.pendingInternalVendor) {
+    return String(input.contractModel || '').toUpperCase() === 'ESTRELA_DO_SUL'
+      ? 'Assinar promitente vendedor'
+      : 'Assinar como vendedor';
   }
   if (sig === 'CLIENT_SIGNED') return 'Assinar como vendedor';
   if (sig === 'PENDING' || sig === 'VIEWED' || sig === 'PARTIALLY_SIGNED') {

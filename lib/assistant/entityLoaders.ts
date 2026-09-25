@@ -67,13 +67,45 @@ export function createAssistantEntityLoaders(admin: SupabaseClient): AssistantEn
       }
       let partyTotal: number | null = null;
       let partySigned: number | null = null;
+      let pendingExternal = 0;
+      let pendingInternalVendor = false;
+      const pendingPartyRoles: string[] = [];
       const { data: parties } = await admin
         .from('contract_signature_parties')
-        .select('id, signature_status')
+        .select('id, role, status, signature_url, signature_token_hash, signature_data')
         .eq('contract_id', id);
       if (Array.isArray(parties)) {
         partyTotal = parties.length;
-        partySigned = parties.filter((item) => String(item.signature_status || '').toUpperCase() === 'SIGNED').length;
+        partySigned = parties.filter((item) => {
+          const st = String(item.status || '').toUpperCase();
+          return st === 'SIGNED';
+        }).length;
+        for (const item of parties) {
+          const st = String(item.status || '').toUpperCase();
+          if (st === 'SIGNED' || st === 'CANCELLED' || st === 'EXPIRED') continue;
+          const role = String(item.role || '').toUpperCase();
+          const data =
+            item.signature_data && typeof item.signature_data === 'object'
+              ? (item.signature_data as Record<string, unknown>)
+              : {};
+          const flaggedInternal = data.internalAdminSign === true || data.estrelaCompanyVendor === true;
+          const hasPublicLink = Boolean(item.signature_url || item.signature_token_hash);
+          if (role === 'VENDOR' && (flaggedInternal || !hasPublicLink)) {
+            pendingInternalVendor = true;
+            pendingPartyRoles.push('VENDOR_INTERNAL');
+          } else if (role === 'INTERVENIENT') {
+            pendingPartyRoles.push('INTERVENIENT');
+          } else if (role === 'VENDOR') {
+            pendingExternal += 1;
+            pendingPartyRoles.push('VENDOR_EXTERNAL');
+          } else if (role === 'WITNESS_1' || role === 'WITNESS_2' || role === 'WITNESS') {
+            pendingExternal += 1;
+            pendingPartyRoles.push('WITNESS');
+          } else {
+            pendingExternal += 1;
+            pendingPartyRoles.push(role || 'PARTY');
+          }
+        }
       }
       const nested = data.projects as { name?: string; contract_model?: string } | { name?: string; contract_model?: string }[] | null;
       const project = Array.isArray(nested) ? nested[0] : nested;
@@ -92,6 +124,10 @@ export function createAssistantEntityLoaders(admin: SupabaseClient): AssistantEn
             : null,
         partyTotal,
         partySigned,
+        pendingExternal,
+        pendingInternalVendor,
+        pendingPartyRoles: Array.from(new Set(pendingPartyRoles)),
+        eSignStarted: Boolean(data.signature_status) || (partyTotal ?? 0) > 0,
       };
     },
   };
