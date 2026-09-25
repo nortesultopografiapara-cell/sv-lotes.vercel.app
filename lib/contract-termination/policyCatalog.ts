@@ -75,7 +75,7 @@ export const POLICY_CATALOG: Record<string, TerminationPolicy> = {
   SV_LOTES_2: incompleteEntry('SV_LOTES_2', 'SV LOTES 2.0', 'sv_lotes_2.incomplete.v0'),
   ESTRELA_DO_SUL: incompleteEntry(
     'ESTRELA_DO_SUL',
-    'Chacreamento Estrela do Sul',
+    'LF Imóveis',
     'estrela_do_sul.incomplete.v0',
   ),
   CUSTOM: incompleteEntry('CUSTOM', 'Personalizado', 'custom.incomplete.v0'),
