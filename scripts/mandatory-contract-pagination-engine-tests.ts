@@ -251,6 +251,11 @@ assert(
     CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('sv-esign-stamp'),
 );
 assert(
+  'script LF assinado só força certificado se fecho+certificado não cabem numa página',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('pairFitsFreshPage') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('estrelaElectronic'),
+);
+assert(
   'CSS de compactação leve existe',
   CONTRACT_SIGNATURE_PAGINATION_CSS.includes('sv-pagination-compact'),
 );

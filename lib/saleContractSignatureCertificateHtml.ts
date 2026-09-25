@@ -988,3 +988,41 @@ export function buildSaleContractSignatureCertificateHtml(
     </div>
     </div>`;
 }
+
+/**
+ * LF assinado: coloca o certificado imediatamente após o fecho do instrumento,
+ * para o Chromium poder manter fecho + rastreabilidade na mesma página.
+ * Sem efeito no PDF físico (não há certificado).
+ */
+export function insertCertificateAfterEstrelaInstrumentPack(
+  html: string,
+  certHtml: string,
+): string {
+  if (!html.includes('sv-contract-estrela-do-sul') || !certHtml.trim()) {
+    return html + certHtml;
+  }
+  const start = html.lastIndexOf(
+    '<div class="contract-closing-and-signatures--estrela"',
+  );
+  if (start < 0) return html + certHtml;
+
+  let depth = 0;
+  let i = start;
+  while (i < html.length) {
+    const nextOpen = html.indexOf('<div', i);
+    const nextClose = html.indexOf('</div>', i);
+    if (nextClose < 0) break;
+    if (nextOpen >= 0 && nextOpen < nextClose) {
+      depth += 1;
+      i = nextOpen + 4;
+      continue;
+    }
+    depth -= 1;
+    const end = nextClose + 6;
+    if (depth === 0) {
+      return `${html.slice(0, end)}\n${certHtml}${html.slice(end)}`;
+    }
+    i = end;
+  }
+  return html + certHtml;
+}

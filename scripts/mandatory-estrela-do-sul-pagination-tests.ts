@@ -9,6 +9,7 @@ import { generateContractHTML } from '../lib/contractTemplate';
 import { buildEstrelaDoSulContractPaginationCss } from '../lib/estrelaDoSulContractTemplate';
 import { ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID, ESTRELA_DO_SUL_PDF_MARGIN_MM } from '../lib/estrelaDoSulHtml2PdfPagination';
 import { resolveContractHtml2pdfOptions } from '../lib/contractPdfPostProcess';
+import { insertCertificateAfterEstrelaInstrumentPack } from '../lib/saleContractSignatureCertificateHtml';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -236,6 +237,28 @@ assert(
   css.includes('.contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .signature-slot'),
   'CSS: cada selo permanece unidade lógica',
 );
+assert(
+  css.includes(
+    'body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official-block',
+  ) &&
+    css.includes('.sv-cert-official .sv-cert-cards'),
+  'CSS: certificado LF assinado compacto, sem página forçada',
+);
+assert(
+  css.includes('body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-qr img'),
+  'CSS: QR do certificado LF permanece visível',
+);
+{
+  const placed = insertCertificateAfterEstrelaInstrumentPack(
+    '<div class="sv-contract-estrela-do-sul"><div class="contract-closing-and-signatures--estrela"><div>pack</div></div></div>',
+    '<div class="sv-cert-official-block">cert</div>',
+  );
+  assert(
+    placed.indexOf('pack') < placed.indexOf('sv-cert-official-block') &&
+      placed.indexOf('sv-cert-official-block') < placed.lastIndexOf('</div>'),
+    'certificado LF entra depois do fecho, ainda dentro do documento',
+  );
+}
 
 const avoid = ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID as readonly string[];
 assert(avoid.includes('.estrela-item:not(.estrela-item--long)'), 'html2pdf avoid: item curto');

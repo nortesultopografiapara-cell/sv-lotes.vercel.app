@@ -976,7 +976,15 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
       remainingForCert = remainingAt(top);
     }
     certificate = decideBlock(remainingForCert, certH);
-    if (certificate === 'new-page' && !mundoNovoEsign) {
+    if (estrelaElectronic) {
+      const pairFitsFreshPage = sigH + certH <= Math.max(0, PAGE_H - FOOTER);
+      if (pairFitsFreshPage) {
+        certificate = 'same-page';
+      } else if (certH > 0) {
+        certificate = 'new-page';
+        cert.classList.add('sv-pagination-force-break');
+      }
+    } else if (certificate === 'new-page' && !mundoNovoEsign) {
       cert.classList.add('sv-pagination-force-break');
     }
     if (mundoNovoEsign) {
@@ -1126,13 +1134,22 @@ export function applyContractPaginationBreaksToElement(
     // Araguaia: não força break por resto contínuo (evita página vazia antes do pack).
     sig.classList.add('sv-pagination-compact');
   }
-  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
+  let certificate = decisionsCert.certificate;
+  if (cert && estrelaElectronic) {
+    const pairFitsFreshPage = sigH + certH <= Math.max(0, pageH - footer);
+    if (pairFitsFreshPage) {
+      certificate = 'same-page';
+    } else if (certH > 0) {
+      certificate = 'new-page';
+      cert.classList.add('sv-pagination-force-break');
+    }
+  } else if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
     cert.classList.add('sv-pagination-force-break');
   }
 
   return {
     signature,
-    certificate: mundoNovoEsign ? 'same-page' : decisionsCert.certificate,
+    certificate: mundoNovoEsign ? 'same-page' : certificate,
     sigH,
     certH,
   };

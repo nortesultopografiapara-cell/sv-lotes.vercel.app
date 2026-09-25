@@ -324,6 +324,8 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   min-height: 0 !important;
   page-break-before: auto !important;
   break-before: auto !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .estrela-closing-statement {
   page-break-inside: avoid !important;
@@ -372,6 +374,87 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 .sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .signature-line {
   margin: 0 auto 4px auto !important;
   height: 1px !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official-block:not(.sv-pagination-force-break) {
+  margin-top: 2px !important;
+  margin-bottom: 0 !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  font-size: 7pt !important;
+  line-height: 1.15 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-cards {
+  gap: 3px !important;
+  margin: 0 0 3px 0 !important;
+  width: 100% !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-card-head {
+  padding: 1px 4px 0 4px !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-card-role {
+  margin: 0 !important;
+  font-size: 6pt !important;
+  line-height: 1.15 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-card-badge {
+  font-size: 4.5pt !important;
+  padding: 0 4px !important;
+  line-height: 1.15 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-card-body {
+  padding: 1px 4px 0 4px !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-field {
+  gap: 2px !important;
+  margin-bottom: 0 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-field-icon {
+  width: 9px !important;
+  font-size: 6.5pt !important;
+  line-height: 1.12 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-field-label {
+  font-size: 4.5pt !important;
+  line-height: 1.12 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-field-value {
+  font-size: 6.5pt !important;
+  line-height: 1.12 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-card-foot {
+  padding: 0 3px !important;
+  font-size: 4pt !important;
+  line-height: 1.1 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-validation {
+  padding: 2px 4px !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-qr {
+  width: 44px !important;
+  padding-right: 4px !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-qr img,
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official img.sv-cert-qr {
+  width: 42px !important;
+  height: 42px !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-validation-title {
+  margin: 0 0 1px 0 !important;
+  font-size: 6.5pt !important;
+  line-height: 1.15 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-validation-row {
+  margin: 0 !important;
+  font-size: 5.5pt !important;
+  line-height: 1.12 !important;
+}
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert-legal {
+  margin: 1px 0 0 0 !important;
+  line-height: 1.15 !important;
 }
 </style>`;
 }

@@ -1752,6 +1752,7 @@ export async function loadSaleContractPdfForSign(
       buildSaleContractSignatureCertificateHtmlWithQr,
       stripManualContractSignaturesForSignedPdf,
       extractContractInstitutionalFooter,
+      insertCertificateAfterEstrelaInstrumentPack,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
     const { resolveSaleContractCertificatePublicUrl } = await import(
@@ -2108,7 +2109,7 @@ export async function loadSaleContractPdfForSign(
 
     const companyVendorParty = useEstrelaPersonVendors ? estrelaVendorOrdered[0] || null : null;
 
-    html += await buildSaleContractSignatureCertificateHtmlWithQr({
+    const certificateHtml = await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
       projectName: String(
         project?.name || contractCtx?.project_name_snapshot || '',
@@ -2198,6 +2199,9 @@ export async function loadSaleContractPdfForSign(
       witnessCards,
       omitPartyEvidenceCards: isMundoNovoSaleContractModel(contractModelForCert),
     });
+    html = isEstrelaDoSulSaleContractModel(contractModelForCert)
+      ? insertCertificateAfterEstrelaInstrumentPack(html, certificateHtml)
+      : html + certificateHtml;
 
     if (
       isMundoNovoSaleContractModel(contractModelForCert) &&
