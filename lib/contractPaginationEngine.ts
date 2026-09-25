@@ -10,6 +10,7 @@
  * 3. Compactação leve de espaçamentos — sem alterar tipografia jurídica.
  * 4. Nova página só quando o bloco não cabe no espaço restante.
  */
+import { ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX } from './estrelaDoSulHtml2PdfPagination';
 
 /**
  * Margens Chromium/html2pdf alinhadas à altura real do header/footer template.
@@ -860,11 +861,18 @@ ${CONTRACT_RECANTO_PHYSICAL_SIGNATURE_LAYOUT_CSS}
  */
 export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
 (() => {
-  const PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
+  const CLASSIC_PAGE_H = ${CONTRACT_PAGE_CONTENT_HEIGHT_PX};
+  const ESTRELA_PAGE_H = ${ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX};
   const FOOTER = ${CONTRACT_FOOTER_RESERVE_PX};
   const root = document;
-  const pack = root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
-  const sig = root.querySelector('.contract-signatures, .sv2-signatures');
+  const estrelaRoot = root.querySelector('.sv-contract-estrela-do-sul');
+  const estrelaInstrument = root.querySelector('.contract-closing-and-signatures--estrela');
+  const estrelaElectronic = !!(estrelaRoot && root.querySelector('.sv-contract-estrela-do-sul .sv-esign-stamp'));
+  const PAGE_H = estrelaRoot ? ESTRELA_PAGE_H : CLASSIC_PAGE_H;
+  const pack = estrelaInstrument || root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
+  const sig = estrelaInstrument
+    ? estrelaInstrument.querySelector('.contract-signatures, .sv2-signatures')
+    : root.querySelector('.contract-signatures, .sv2-signatures');
   const cert = root.querySelector('.sv-cert-official-block');
   const mundoNovoEsign = !!root.querySelector(
     '.sv-contract-mundo-novo [data-signature-mode="ELECTRONIC_SIGNED"]',
@@ -949,7 +957,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
      * Encaixe: CSS break-inside:avoid no pack; force-break só se altura >
      * página útil (decideForceSignatureBreak acima).
      */
-    if (signature === 'new-page' && breakTarget) {
+    if (signature === 'new-page' && breakTarget && !mundoNovoEsign && !estrelaElectronic) {
       breakTarget.classList.add('sv-pagination-force-break');
     }
   }
@@ -968,7 +976,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
       remainingForCert = remainingAt(top);
     }
     certificate = decideBlock(remainingForCert, certH);
-    if (certificate === 'new-page' && !mundoNovoEsign) {
+    if (certificate === 'new-page' && !mundoNovoEsign && !estrelaElectronic) {
       cert.classList.add('sv-pagination-force-break');
     }
     if (mundoNovoEsign) {
@@ -1008,17 +1016,30 @@ export function applyContractPaginationBreaksToElement(
   sigH: number;
   certH: number;
 } {
-  const pageH = opts?.pageH ?? CONTRACT_PAGE_CONTENT_HEIGHT_PX;
   const footer = opts?.footerReservePx ?? CONTRACT_FOOTER_RESERVE_PX;
   const doc = (element as Element).ownerDocument || document;
   const win = doc.defaultView || window;
   const scrollY = win.scrollY || win.pageYOffset || 0;
 
-  const pack = element.querySelector(
-    '.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia',
+  const estrelaInstrument = element.querySelector(
+    '.contract-closing-and-signatures--estrela',
   ) as HTMLElement | null;
-  const sig = element.querySelector(
-    '.contract-signatures, .sv2-signatures',
+  const pageH =
+    opts?.pageH ??
+    (element.querySelector('.sv-contract-estrela-do-sul')
+      ? ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX
+      : CONTRACT_PAGE_CONTENT_HEIGHT_PX);
+  const estrelaElectronic = Boolean(
+    element.querySelector('.sv-contract-estrela-do-sul .sv-esign-stamp'),
+  );
+  const pack = (estrelaInstrument ||
+    element.querySelector(
+    '.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia',
+  )) as HTMLElement | null;
+  const sig = (
+    estrelaInstrument
+      ? estrelaInstrument.querySelector('.contract-signatures, .sv2-signatures')
+      : element.querySelector('.contract-signatures, .sv2-signatures')
   ) as HTMLElement | null;
   const cert = element.querySelector(
     '.sv-cert-official-block',
@@ -1098,14 +1119,14 @@ export function applyContractPaginationBreaksToElement(
   const signature = decisions.signature;
   const decisionsCert = decisions;
 
-  if (breakTarget && signature === 'new-page') {
+  if (breakTarget && signature === 'new-page' && !mundoNovoEsign && !estrelaElectronic) {
     breakTarget.classList.add('sv-pagination-force-break');
   } else if (sig && continuousWouldForce) {
     // Compactação já aplicada acima quando continuousLooksTight; reforça classe.
     // Araguaia: não força break por resto contínuo (evita página vazia antes do pack).
     sig.classList.add('sv-pagination-compact');
   }
-  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
+  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign && !estrelaElectronic) {
     cert.classList.add('sv-pagination-force-break');
   }
 

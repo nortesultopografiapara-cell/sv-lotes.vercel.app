@@ -37,8 +37,10 @@ import { shouldLoadProjectBlocksForContract } from '../lib/contractHtmlGlobal';
 import { formatCompanyAddressForHeader } from '../lib/contractCompanyDisplay';
 import {
   buildEstrelaDoSulPdfChrome,
+  buildEstrelaDoSulSaleContractPrintTemplates,
   normalizeLfCompanyAddressLine,
 } from '../lib/estrelaDoSulContractPdf';
+import { applyElectronicSignatureStampsToContractHtml } from '../lib/saleContractSignaturePartySlots';
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FALHOU — ${msg}`);
@@ -193,6 +195,15 @@ assert(downPaymentReducesInstallmentBase('PADRAO') === true, 'PADRAO inalterado'
   assert(!/N\s*99\s*,\s*S\s*\/\s*N/i.test(chrome.addressLine), 'chrome LF sem N 99, S/N');
   assert(/N\s*99/i.test(chrome.addressLine), 'chrome LF mostra N 99');
   assert(/\bde\b/.test(chrome.addressLine), 'chrome LF title-case com de minúsculo');
+  assert(chrome.headerVariant === 'estrela-do-sul', 'chrome LF usa header 3 colunas');
+  assert(chrome.logoWidthMm === 28 && chrome.logoHeightMm === 16, 'chrome LF logo 28x16mm');
+  const headerTpl = buildEstrelaDoSulSaleContractPrintTemplates({
+    ...chrome,
+    logoBase64: 'data:image/png;base64,AAA',
+  }).headerTemplate;
+  assert(headerTpl.includes('object-fit:contain'), 'header Chromium object-fit contain');
+  assert(headerTpl.includes('LF IMOVEIS') || headerTpl.includes(String(chrome.tenantName || '').toUpperCase()), 'header usa razão social');
+  assert(!headerTpl.includes('height:11px'), 'header Estrela não usa logo 11px');
   const padrao = formatCompanyAddressForHeader({
     address: 'Avenida Dos Ipes, Quadra 31, Lote 13',
     city: 'Parauapebas',
@@ -631,6 +642,44 @@ assert(
   (fullHomolog.match(/data-party-role="SPOUSE"/g) || []).length === 1,
   'homologação: e-sign 1 SPOUSE',
 );
+
+{
+  const stamped = applyElectronicSignatureStampsToContractHtml(fullHomolog, [
+    {
+      role: 'SELLER',
+      roleMarker: 'VENDEDOR(A)',
+      signerName: 'LUZIA FELIPE',
+      signedAt: '2026-04-01T12:00:00.000Z',
+      signed: true,
+    },
+    {
+      role: 'SELLER',
+      roleMarker: 'VENDEDOR(A)',
+      signerName: 'ANA VITORIA OLIVEIRA FRANCA',
+      signedAt: null,
+      signed: false,
+    },
+    {
+      role: 'BUYER',
+      roleMarker: 'COMPRADOR(A)',
+      signerName: 'JOAO COMPRADOR DA SILVA',
+      signedAt: '2026-04-01T12:00:00.000Z',
+      signed: true,
+    },
+  ]);
+  const instrument = stamped.slice(stamped.indexOf('data-estrela-sign-block="instrumento"'));
+  const capaSign = stamped.slice(
+    stamped.indexOf('data-estrela-sign-block="capa"'),
+    stamped.indexOf('class="estrela-instrument"'),
+  );
+  assert(instrument.includes('LUZIA FELIPE'), 'selo VENDOR 1 no instrumento: representante da empresa');
+  assert(!instrument.includes('ANA VITORIA OLIVEIRA FRANCA'), 'segundo VENDOR sem signed_at não recebe selo');
+  assert(!capaSign.includes('sv-esign-stamp'), 'capa física não recebe selos eletrônicos');
+  const firstVendorIdx = instrument.indexOf('data-party-role="VENDOR"');
+  const firstVendorChunk = instrument.slice(Math.max(0, firstVendorIdx - 200), firstVendorIdx + 700);
+  assert(firstVendorChunk.includes('sv-esign-stamp'), 'primeiro slot VENDOR assinado');
+  assert(firstVendorChunk.includes('LUZIA FELIPE'), 'primeiro slot VENDOR recebe a party da empresa');
+}
 assertBefore(
   fullHomolog,
   'DOCUMENTO DE REFERÊNCIA DA OBRA',

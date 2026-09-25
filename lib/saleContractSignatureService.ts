@@ -1735,6 +1735,9 @@ export async function loadSaleContractPdfForSign(
   const { isMundoNovoSaleContractModel } = await import(
     '@/lib/mundoNovoContractEsign'
   );
+  const { isEstrelaDoSulSaleContractModel } = await import(
+    '@/lib/estrelaDoSulContractEsign'
+  );
 
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
@@ -1831,6 +1834,9 @@ export async function loadSaleContractPdfForSign(
     const useMundoNovoPersonVendors =
       isMundoNovoSaleContractModel(contractModelForCert) &&
       vendorParties.length > 0;
+    const useEstrelaPersonVendors =
+      isEstrelaDoSulSaleContractModel(contractModelForCert) &&
+      vendorParties.length > 0;
 
     const readPartyLocation = (p: (typeof parties)[number]) => {
       const data =
@@ -1890,6 +1896,21 @@ export async function loadSaleContractPdfForSign(
             device: readPartyUaField(p, 'device'),
             approxLocation: readPartyLocation(p),
           }))
+        : useEstrelaPersonVendors
+          ? vendorParties.map((p) => ({
+              name: String(p.signer_name || ''),
+              cpf: p.signer_cpf,
+              email: p.signer_email || null,
+              phone: p.signer_phone,
+              signedAt: p.signed_at,
+              ipAddress: p.ip_address,
+              signatureHash: p.signature_hash,
+              signatureEventId: readPartySignatureEventId(p),
+              browser: readPartyUaField(p, 'browser'),
+              os: readPartyUaField(p, 'os'),
+              device: readPartyUaField(p, 'device'),
+              approxLocation: readPartyLocation(p),
+            }))
         : null;
 
     const intervenientParty = parties.find(
@@ -2016,9 +2037,7 @@ export async function loadSaleContractPdfForSign(
         html = applyMundoNovoElectronicSignaturesToContractHtml(html, parties);
       } else {
         // Modelos clássicos / multi-party: selos sobre slots (sem alterar ARAGUAIA V2).
-        html = applyElectronicSignatureStampsToContractHtml(
-          html,
-          buildElectronicStampsFromSignatureParties({
+        let stamps = buildElectronicStampsFromSignatureParties({
             parties,
             buyerNameFallback: buyerParty?.signer_name || buyerName,
             vendorNameFallback:
@@ -2031,8 +2050,20 @@ export async function loadSaleContractPdfForSign(
             legacyBuyerSigned:
               String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
               Boolean(signature.signed_at),
-          }),
-        );
+          });
+        if (isEstrelaDoSulSaleContractModel(contractModelForCert) && vendorParties.length > 0) {
+          const vendorStamps = vendorParties.map((p) => ({
+            role: 'SELLER' as const,
+            roleMarker: 'VENDEDOR(A)',
+            signerName: String(p.signer_name || '').trim(),
+            signedAt: p.signed_at,
+            signed:
+              String(p.status || '').toUpperCase() === 'SIGNED' &&
+              Boolean(p.signed_at),
+          }));
+          stamps = stamps.filter((s) => s.role !== 'SELLER').concat(vendorStamps);
+        }
+        html = applyElectronicSignatureStampsToContractHtml(html, stamps);
       }
     } else {
       html = stripManualContractSignaturesForSignedPdf(html);
@@ -2146,8 +2177,11 @@ export async function loadSaleContractPdfForSign(
     const { buildContractPdfChromeFromTenant } = await import(
       '@/lib/contractPdfPostProcess'
     );
+    const chromeTenant = isEstrelaDoSulSaleContractModel(contractModelForCert)
+      ? { ...(tenant || {}), contract_model: 'ESTRELA_DO_SUL' }
+      : tenant;
     const chrome = buildContractPdfChromeFromTenant(
-      tenant,
+      chromeTenant,
       contractNumber,
       logoBase64,
     );

@@ -245,6 +245,12 @@ assert(
     !CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('decidePackFits'),
 );
 assert(
+  'script Estrela mede o bloco do instrumento, não a Capa',
+  CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('contract-closing-and-signatures--estrela') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('estrelaElectronic') &&
+    CONTRACT_PAGINATION_MEASURE_SCRIPT.includes('sv-esign-stamp'),
+);
+assert(
   'CSS de compactação leve existe',
   CONTRACT_SIGNATURE_PAGINATION_CSS.includes('sv-pagination-compact'),
 );

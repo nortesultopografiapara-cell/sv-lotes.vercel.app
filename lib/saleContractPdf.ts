@@ -12,6 +12,10 @@ import {
   MUNDO_NOVO_LOGO_PUBLIC_FILE,
   buildMundoNovoElectronicSaleContractPrintTemplates,
 } from '@/lib/mundoNovoContractPdf';
+import { buildEstrelaDoSulSaleContractPrintTemplates } from '@/lib/estrelaDoSulContractPdf';
+import {
+  ESTRELA_DO_SUL_PDF_MARGIN_MM,
+} from '@/lib/estrelaDoSulHtml2PdfPagination';
 import { displayContractNumber } from '@/lib/contractNumber';
 import {
   CONTRACT_PDF_PRINT_CSS,
@@ -236,9 +240,16 @@ export async function buildSaleContractPdfFromHtml(
   const { headerTemplate, footerTemplate } =
     chrome.headerVariant === 'mundo-novo-electronic'
       ? buildMundoNovoElectronicSaleContractPrintTemplates(chrome)
+      : chrome.headerVariant === 'estrela-do-sul'
+        ? buildEstrelaDoSulSaleContractPrintTemplates(chrome)
       : chrome.printStyle === 'sv-lotes-2'
         ? buildSvLotes2SaleContractPrintTemplates(chrome)
         : buildSaleContractPrintTemplates(chrome);
+
+  const pdfMargin =
+    chrome.headerVariant === 'estrela-do-sul'
+      ? ESTRELA_DO_SUL_PDF_MARGIN_MM
+      : CONTRACT_PDF_MARGIN_MM;
 
   let browser: Browser | null = null;
   let page: Awaited<ReturnType<Browser['newPage']>> | null = null;
@@ -268,10 +279,10 @@ export async function buildSaleContractPdfFromHtml(
       format: 'A4',
       printBackground: true,
       margin: {
-        top: `${CONTRACT_PDF_MARGIN_MM.top}mm`,
-        right: `${CONTRACT_PDF_MARGIN_MM.right}mm`,
-        bottom: `${CONTRACT_PDF_MARGIN_MM.bottom}mm`,
-        left: `${CONTRACT_PDF_MARGIN_MM.left}mm`,
+        top: `${pdfMargin.top}mm`,
+        right: `${pdfMargin.right}mm`,
+        bottom: `${pdfMargin.bottom}mm`,
+        left: `${pdfMargin.left}mm`,
       },
       displayHeaderFooter: true,
       headerTemplate,

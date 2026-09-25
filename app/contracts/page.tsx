@@ -114,6 +114,23 @@ import {
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
 async function loadPdfChromeLogoBase64(src: string): Promise<string | null> {
+  const url = String(src || "").trim();
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { mode: "cors", cache: "no-store" });
+    if (res.ok) {
+      const blob = await res.blob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("file-reader"));
+        reader.readAsDataURL(blob);
+      });
+      if (dataUrl.startsWith("data:")) return dataUrl;
+    }
+  } catch {
+    /* canvas fallback */
+  }
   try {
     return await new Promise<string>((resolve, reject) => {
       const img = new Image();
@@ -131,11 +148,22 @@ async function loadPdfChromeLogoBase64(src: string): Promise<string | null> {
         }
       };
       img.onerror = reject;
-      img.src = src;
+      img.src = url;
     });
   } catch {
     return null;
   }
+}
+
+async function loadCompanyPdfChromeLogo(
+  tenantLogoUrl?: string | null,
+): Promise<string | null> {
+  const tenantUrl = String(tenantLogoUrl || "").trim();
+  if (tenantUrl) {
+    const loaded = await loadPdfChromeLogoBase64(tenantUrl);
+    if (loaded) return loaded;
+  }
+  return loadPdfChromeLogoBase64(getReportHeaderLogoUrl(null));
 }
 
 type PromissoryNoteDocumentView = {
@@ -1049,12 +1077,17 @@ export default function ContractsPage() {
       const htmlLooksMundoNovo = String(ver.generated_html || '').includes(
         'sv-contract-mundo-novo',
       );
+      const htmlLooksEstrela = String(ver.generated_html || '').includes(
+        'sv-contract-estrela-do-sul',
+      );
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
           ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : htmlLooksEstrela
+            ? { ...(tenantData || {}), contract_model: 'ESTRELA_DO_SUL' }
           : tenantData || {};
-      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo
+      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo || htmlLooksEstrela
         ? resolveContractHtml2pdfOptions(
             pdfChromeTenant,
             pdfFilename,
@@ -1066,7 +1099,7 @@ export default function ContractsPage() {
 
       const versionLogoBase64 = htmlLooksMundoNovo
         ? await loadPdfChromeLogoBase64(MUNDO_NOVO_LOGO_PATH)
-        : null;
+        : await loadCompanyPdfChromeLogo(tenantData?.logo_url);
 
       try {
         await html2pdf()
@@ -1230,19 +1263,22 @@ export default function ContractsPage() {
       const htmlLooksMundoNovo = String(htmlBody || '').includes(
         'sv-contract-mundo-novo',
       );
+      const htmlLooksEstrela = String(htmlBody || '').includes(
+        'sv-contract-estrela-do-sul',
+      );
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
           ? { ...(tenantData || {}), contract_model: 'ARAGUAIA' }
+          : htmlLooksEstrela
+            ? { ...(tenantData || {}), contract_model: 'ESTRELA_DO_SUL' }
           : tenantData || {};
 
       let logoBase64: string | null = null;
       if (htmlLooksMundoNovo) {
         logoBase64 = await loadPdfChromeLogoBase64(MUNDO_NOVO_LOGO_PATH);
-      } else if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-        logoBase64 = await loadPdfChromeLogoBase64(
-          getReportHeaderLogoUrl(tenantData?.logo_url),
-        );
+      } else {
+        logoBase64 = await loadCompanyPdfChromeLogo(tenantData?.logo_url);
       }
 
       const pdfFilename = `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;

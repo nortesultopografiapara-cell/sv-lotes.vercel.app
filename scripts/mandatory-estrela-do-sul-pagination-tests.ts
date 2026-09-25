@@ -200,6 +200,25 @@ assert(
   cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 36px'),
   'CSS: data afastada das linhas de assinatura',
 );
+assert(
+  cssRuleFor('.estrela-capa .estrela-section-title').includes('padding: 0 0 8px 0'),
+  'CSS: heading da Capa com padding abaixo do texto',
+);
+assert(
+  cssRuleFor('.estrela-capa .estrela-table').includes('margin: 0 0 10px 0'),
+  'CSS: tabela da Capa não sobe sobre o heading',
+);
+assert(css.includes(':has(.sv-esign-stamp)'), 'CSS: pack eletrônico detecta selos');
+assert(
+  css.includes(
+    '.contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .contract-signatures',
+  ),
+  'CSS: assinaturas eletrônicas não empurram o fecho sozinho',
+);
+assert(
+  css.includes('.contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .signature-slot'),
+  'CSS: cada selo permanece unidade lógica',
+);
 
 const avoid = ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID as readonly string[];
 assert(avoid.includes('.estrela-item:not(.estrela-item--long)'), 'html2pdf avoid: item curto');
