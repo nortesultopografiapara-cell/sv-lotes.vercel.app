@@ -187,11 +187,21 @@ assert(
   css.includes('.estrela-capa .estrela-table td') && css.includes('padding-top: 2px !important'),
   'CSS: células da Capa com padding compacto',
 );
+assert(
+  css.includes('.estrela-capa-annex-table .estrela-table td') &&
+    css.includes('padding-top: 6px !important') &&
+    css.includes('line-height: 1.4 !important'),
+  'CSS: tabela de segurança da página 2 com padding e line-height respiráveis',
+);
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
 assert(
-  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 8px'),
-  'CSS: 1º bloco com gap compacto',
+  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 24px'),
+  'CSS: 1º bloco com fileiras documentais',
+);
+assert(
+  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 18px'),
+  'CSS: data afastada das linhas de assinatura',
 );
 
 const avoid = ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID as readonly string[];
