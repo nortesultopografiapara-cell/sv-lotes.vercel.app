@@ -138,3 +138,63 @@ export function sortEstrelaDoSulVendorParties<
   if (idx <= 0) return parties;
   return [parties[idx], ...parties.filter((_, i) => i !== idx)];
 }
+
+/** Party VENDOR 1 (LF / representante Luzia): assinatura só no fluxo admin. */
+export function isEstrelaCompanyVendorInternalSignFlag(
+  signatureData?: unknown,
+): boolean {
+  if (!signatureData || typeof signatureData !== 'object') return false;
+  const data = signatureData as Record<string, unknown>;
+  return data.internalAdminSign === true || data.estrelaCompanyVendor === true;
+}
+
+export function isEstrelaInternalCompanyVendorParty<
+  T extends {
+    id?: string | null;
+    role?: string | null;
+    signer_cpf?: string | null;
+    signer_name?: string | null;
+    signature_data?: unknown;
+  },
+>(
+  party: T | null | undefined,
+  allParties: T[] | null | undefined,
+  options?: {
+    contractModel?: string | null;
+    company?: Record<string, unknown> | null;
+  },
+): boolean {
+  if (!party) return false;
+  if (String(party.role || '').toUpperCase() !== 'VENDOR') return false;
+  if (isEstrelaCompanyVendorInternalSignFlag(party.signature_data)) return true;
+  if (!isEstrelaDoSulSaleContractModel(options?.contractModel)) return false;
+  const vendors = (allParties || []).filter(
+    (p) => String(p.role || '').toUpperCase() === 'VENDOR',
+  );
+  if (vendors.length === 0) return false;
+  const sorted = sortEstrelaDoSulVendorParties(vendors, options?.company);
+  return Boolean(party.id) && String(sorted[0]?.id || '') === String(party.id);
+}
+
+export function toEstrelaDoSulVendorPartyCreateInputs(
+  vendors: ReturnType<typeof buildEstrelaDoSulEsignVendorPartyInputs>,
+): Array<{
+  name: string;
+  cpf: string;
+  phone: string | null;
+  email: string | null;
+  withPublicToken: boolean;
+  signatureData?: Record<string, unknown>;
+}> {
+  return vendors.map((v) => ({
+    name: v.name,
+    cpf: v.cpf,
+    phone: v.phone,
+    email: v.email,
+    withPublicToken: v.order !== 1,
+    signatureData:
+      v.order === 1
+        ? { internalAdminSign: true, estrelaCompanyVendor: true }
+        : undefined,
+  }));
+}

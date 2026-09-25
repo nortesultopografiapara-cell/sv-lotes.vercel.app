@@ -23,6 +23,7 @@ import {
   saleSignaturePartyRoleLabel,
   saleSignaturePartyStatusLabel,
 } from '@/lib/saleContractSignaturePartyTypes';
+import { isEstrelaInternalCompanyVendorParty } from '@/lib/estrelaDoSulContractEsign';
 
 export { readPartySignatureEventId };
 
@@ -237,13 +238,14 @@ export async function createPartiesForSignatureProcess(
       phone?: string | null;
       email?: string | null;
     } | null;
-    /** N VENDORs (ARAGUAIA). Cada um com token público próprio. */
+    /** N VENDORs (ARAGUAIA / ESTRELA). `withPublicToken: false` = interno. */
     vendors?: Array<{
       name?: string | null;
       cpf?: string | null;
       phone?: string | null;
       email?: string | null;
       withPublicToken?: boolean;
+      signatureData?: Record<string, unknown> | null;
     }> | null;
     /**
      * INTERVENIENT (ARAGUAIA V2 — PJ). Só persistir quando o schema aceitar o role
@@ -327,6 +329,7 @@ export async function createPartiesForSignatureProcess(
     phone?: string | null;
     email?: string | null;
     withPublicToken?: boolean;
+    signatureData?: Record<string, unknown> | null;
   };
 
   const vendorInputs: VendorPartyInput[] =
@@ -355,12 +358,13 @@ export async function createPartiesForSignatureProcess(
       signerPhone: vendor.phone,
       signerEmail: vendor.email,
       withPublicToken:
-        vendor.withPublicToken === true
-          ? true
-          : multiPublic
+        vendor.withPublicToken === false
+          ? false
+          : vendor.withPublicToken === true
             ? true
-            : false,
+            : multiPublic,
       expiresAt: params.expiresAt,
+      signatureData: vendor.signatureData || null,
     });
     parties.push(vendorCreated.party);
     vendorTokens.push({
@@ -571,7 +575,11 @@ export async function reissuePartyPublicLink(
 
 export function toPublicPartyViews(
   parties: ContractSignaturePartyRow[],
-  options?: { includeUrls?: boolean },
+  options?: {
+    includeUrls?: boolean;
+    contractModel?: string | null;
+    company?: Record<string, unknown> | null;
+  },
 ): SaleSignaturePartyPublicView[] {
   const includeUrls = options?.includeUrls !== false;
   const order: Record<string, number> = {
@@ -587,20 +595,35 @@ export function toPublicPartyViews(
     const status = String(party.status).toUpperCase() as SaleSignaturePartyStatus;
     const role = party.role;
     const roleKey = String(role).toUpperCase();
-    const resolvedUrl = resolvePartySignatureUrl(party.signature_url);
-    const hasPublicLink = Boolean(resolvedUrl || party.signature_url);
+    const internalCompanyVendor = isEstrelaInternalCompanyVendorParty(
+      party,
+      parties,
+      {
+        contractModel: options?.contractModel,
+        company: options?.company,
+      },
+    );
+    const resolvedUrl = internalCompanyVendor
+      ? null
+      : resolvePartySignatureUrl(party.signature_url);
+    const hasPublicLink =
+      !internalCompanyVendor && Boolean(resolvedUrl || party.signature_url);
     // BUYER/SPOUSE sempre públicos; VENDOR/WITNESS compartilháveis com token/URL.
-    // INTERVENIENT: assinatura administrativa — sem compartilhamento público.
+    // INTERVENIENT e VENDOR 1 LF: assinatura administrativa — sem compartilhamento público.
     const shareableRole =
-      isPublicPartyRole(role) ||
-      (roleKey === 'VENDOR' && hasPublicLink) ||
-      ((roleKey === 'WITNESS_1' || roleKey === 'WITNESS_2') && hasPublicLink);
+      !internalCompanyVendor &&
+      (isPublicPartyRole(role) ||
+        (roleKey === 'VENDOR' && hasPublicLink) ||
+        ((roleKey === 'WITNESS_1' || roleKey === 'WITNESS_2') && hasPublicLink));
     const canShare =
       shareableRole &&
       ['PENDING', 'VIEWED'].includes(status) &&
       hasPublicLink;
     const canResend = canShare;
-    const publicUrl = includeUrls && shareableRole ? resolvedUrl || party.signature_url || null : null;
+    const publicUrl =
+      includeUrls && shareableRole && !internalCompanyVendor
+        ? resolvedUrl || party.signature_url || null
+        : null;
 
     const sigData =
       party.signature_data && typeof party.signature_data === 'object'

@@ -42,6 +42,8 @@ import { shouldEnableMundoNovoEsign } from '@/lib/mundoNovoEsignGate';
 import {
   buildEstrelaDoSulEsignVendorPartyInputs,
   isEstrelaDoSulSaleContractModel,
+  isEstrelaInternalCompanyVendorParty,
+  toEstrelaDoSulVendorPartyCreateInputs,
 } from '@/lib/estrelaDoSulContractEsign';
 import { isTerminationSaleSignature } from '@/lib/saleContractSignatureDocumentType';
 import { assertOriginalContractAllowsElectronicSignature } from '@/lib/termination-documents/signatureGate';
@@ -286,6 +288,9 @@ export function resolveEffectiveSaleContractModel(
     return 'MUNDO_NOVO';
   }
   if (key === 'MENESES') return 'MENESES';
+  if (key === 'ESTRELA_DO_SUL' || key.includes('ESTRELA_DO_SUL')) {
+    return 'ESTRELA_DO_SUL';
+  }
   if (key === 'SV_LOTES_2' || key.includes('SV_LOTES_2')) return 'SV_LOTES_2';
   if (key === 'CUSTOM') return 'CUSTOM';
 
@@ -673,13 +678,7 @@ export async function createSignaturePartiesAfterSend(
             withPublicToken: true,
           }))
         : estrelaVendors
-        ? estrelaVendors.map((v) => ({
-            name: v.name,
-            cpf: v.cpf,
-            phone: v.phone,
-            email: v.email,
-            withPublicToken: true,
-          }))
+        ? toEstrelaDoSulVendorPartyCreateInputs(estrelaVendors)
         : null,
       // Persistência remota: schema V2 + env + ARAGUAIA + allowlist company_id.
       intervenient:
@@ -1163,6 +1162,49 @@ export async function signPartyElectronically(
     );
   }
 
+  if (partyRoleKey === 'VENDOR') {
+    const partiesForGuard = await listSignatureParties(
+      supabaseAdmin,
+      signature.id,
+    );
+    const { data: contractRow } = await supabaseAdmin
+      .from('contracts')
+      .select('contract_model, sale_contract_model, company_id, tenant_id')
+      .eq('id', signature.contract_id)
+      .maybeSingle();
+    const tenantId = String(
+      (contractRow as Record<string, unknown> | null)?.company_id ||
+        (contractRow as Record<string, unknown> | null)?.tenant_id ||
+        signature.tenant_id ||
+        '',
+    );
+    let company: Record<string, unknown> | null = null;
+    if (tenantId) {
+      const { data: companyRow } = await supabaseAdmin
+        .from('companies')
+        .select('*')
+        .eq('id', tenantId)
+        .maybeSingle();
+      company = (companyRow as Record<string, unknown>) || null;
+    }
+    const contractModel = String(
+      (contractRow as Record<string, unknown> | null)?.sale_contract_model ||
+        (contractRow as Record<string, unknown> | null)?.contract_model ||
+        company?.contract_model ||
+        '',
+    );
+    if (
+      isEstrelaInternalCompanyVendorParty(party, partiesForGuard, {
+        contractModel,
+        company,
+      })
+    ) {
+      throw new SaleContractSignatureError(
+        'Este link não é válido para assinatura pública.',
+      );
+    }
+  }
+
   const partyStatus = String(party.status).toUpperCase();
   if (partyStatus === 'SIGNED') {
     throw new SaleContractSignatureError(
@@ -1530,6 +1572,42 @@ export async function reissueExternalPartyLink(
   const party = parties.find((p) => p.id === params.partyId);
   if (!party || party.contract_id !== params.contractId) {
     throw new SaleContractSignatureError('Participante não encontrado.');
+  }
+
+  const { data: reissueContract } = await supabaseAdmin
+    .from('contracts')
+    .select('contract_model, sale_contract_model, company_id, tenant_id')
+    .eq('id', params.contractId)
+    .maybeSingle();
+  const reissueTenantId = String(
+    (reissueContract as Record<string, unknown> | null)?.company_id ||
+      (reissueContract as Record<string, unknown> | null)?.tenant_id ||
+      '',
+  );
+  let reissueCompany: Record<string, unknown> | null = null;
+  if (reissueTenantId) {
+    const { data: companyRow } = await supabaseAdmin
+      .from('companies')
+      .select('*')
+      .eq('id', reissueTenantId)
+      .maybeSingle();
+    reissueCompany = (companyRow as Record<string, unknown>) || null;
+  }
+  const reissueModel = String(
+    (reissueContract as Record<string, unknown> | null)?.sale_contract_model ||
+      (reissueContract as Record<string, unknown> | null)?.contract_model ||
+      reissueCompany?.contract_model ||
+      '',
+  );
+  if (
+    isEstrelaInternalCompanyVendorParty(party, parties, {
+      contractModel: reissueModel,
+      company: reissueCompany,
+    })
+  ) {
+    throw new SaleContractSignatureError(
+      'A assinatura da vendedora é interna. Não é possível gerar link público.',
+    );
   }
 
   const result = await reissuePartyPublicLink(supabaseAdmin, party);

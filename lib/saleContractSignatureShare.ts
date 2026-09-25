@@ -1,8 +1,8 @@
 /**
  * Compartilhamento do link de assinatura — contratos de compra e venda.
  *
- * WhatsApp/e-mail ao cliente: sempre domínio oficial www.svlotes.com.br
- * (nunca Preview/Vercel), preservando o token da URL informada.
+ * WhatsApp/e-mail/QR/Copiar usam a MESMA URL vigente da party (host do ambiente
+ * + token individual). Não reescrever domínio nem regenerar token ao montar a mensagem.
  */
 
 import type { SignatureHistoryEvent } from '@/lib/saleContractSignatureService';
@@ -13,16 +13,17 @@ import {
   canShareViaWhatsApp,
   formatSignatureExpiresAtBr,
   formatSignatureTimelineDateTime,
+  qrCodePayloadForSignatureUrl,
   type LocalSignatureTimelineEvent,
 } from '@/lib/saasContractSignatureShare';
 import { extractSaleSignTokenFromUrl } from '@/lib/saleContractUrls';
 
-/** Domínio oficial para links enviados ao comprador/cônjuge (WhatsApp/e-mail). */
+/** Domínio oficial de Production — NÃO usar para reescrever mensagem WhatsApp. */
 export const OFFICIAL_SALE_SIGN_PUBLIC_BASE = 'https://www.svlotes.com.br';
 
 /**
- * Reescreve URL de assinatura para o domínio oficial, sem alterar o token.
- * Se não houver token extraível, devolve a URL original.
+ * Reescreve URL para o domínio oficial. Mantida só para compatibilidade;
+ * o envio WhatsApp/e-mail deve usar a URL do painel sem esta conversão.
  */
 export function toOfficialSaleSignShareUrl(signatureUrl: string): string {
   const raw = String(signatureUrl || '').trim();
@@ -30,6 +31,53 @@ export function toOfficialSaleSignShareUrl(signatureUrl: string): string {
   const token = extractSaleSignTokenFromUrl(raw);
   if (!token) return raw;
   return `${OFFICIAL_SALE_SIGN_PUBLIC_BASE}/sign/sale/${encodeURIComponent(token)}`;
+}
+
+/** Extrai a URL `/sign/sale/{token}` da mensagem (última ocorrência). */
+export function extractSaleSignUrlFromShareMessage(
+  message: string,
+): string | null {
+  const lines = String(message || '').split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim().replace(/[.,;]+$/, '');
+    if (/^https?:\/\/\S+\/sign\/sale\/\S+/i.test(line)) {
+      return line;
+    }
+  }
+  const match = String(message || '').match(
+    /https?:\/\/[^\s]+\/sign\/sale\/[^\s]+/i,
+  );
+  return match ? match[0].replace(/[.,;]+$/, '') : null;
+}
+
+/**
+ * Canais do mesmo token vigente: painel, copiar, QR e mensagem WhatsApp
+ * devem ser idênticos (sem troca de host/token).
+ */
+export function collectPartySignatureShareChannelUrls(signatureUrl: string): {
+  panelLink: string;
+  copiedLink: string;
+  qrLink: string;
+  whatsappMessageLink: string;
+} {
+  const panelLink = String(signatureUrl || '').trim();
+  const copiedLink = panelLink;
+  const qrLink = qrCodePayloadForSignatureUrl(panelLink);
+  const message = buildSalePartySignatureShareMessage({
+    signerName: 'signatário',
+    role: 'BUYER',
+    projectName: 'empreendimento',
+    quadra: '—',
+    lote: '—',
+    contractNumber: '—',
+    signatureUrl: panelLink,
+  });
+  return {
+    panelLink,
+    copiedLink,
+    qrLink,
+    whatsappMessageLink: extractSaleSignUrlFromShareMessage(message) || '',
+  };
 }
 
 function shareField(value: string | null | undefined, fallback: string): string {
@@ -90,7 +138,7 @@ export function buildSalePartySignatureShareMessage(
   const quadra = shareField(input.quadra, '—');
   const lote = shareField(input.lote, '—');
   const contractNumber = shareField(input.contractNumber, '—');
-  const signatureUrl = toOfficialSaleSignShareUrl(input.signatureUrl);
+  const signatureUrl = String(input.signatureUrl || '').trim();
 
   const instrument = input.instrument || 'sale-contract';
   const term =

@@ -142,7 +142,7 @@ function testUiAndShare() {
   });
   assert(msg.includes('Termo de Desistência, Rescisão Contratual e Acerto Financeiro'), 'whatsapp termo');
   assert(msg.includes('comprador/desistente'), 'papel comprador');
-  assert(msg.includes('www.svlotes.com.br/sign/sale/'), 'domínio oficial');
+  assert(msg.includes('https://preview.vercel.app/sign/sale/token-abc'), 'preserva URL da party');
   const contractMsg = buildSalePartySignatureShareMessage({
     signerName: 'Cliente',
     role: 'BUYER',

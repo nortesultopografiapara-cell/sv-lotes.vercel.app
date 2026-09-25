@@ -40,6 +40,7 @@ import {
 } from '@/lib/saleContractSignatureParties';
 import { markPartyOrLegacyViewed } from '@/lib/saleContractSignaturePartyFlow';
 import { saleSignaturePartyRoleLabel } from '@/lib/saleContractSignaturePartyTypes';
+import { isEstrelaInternalCompanyVendorParty } from '@/lib/estrelaDoSulContractEsign';
 import {
   computeAggregateSaleSignatureStatus,
   toPartyStatusSnapshots,
@@ -103,6 +104,32 @@ export async function GET(
 
   const ctx = await loadSaleSignPageContext(supabaseAdmin, signature);
   const { contract, customer, block, project, company } = ctx;
+
+  const publicParty = await getPartyByPublicToken(supabaseAdmin, token);
+  if (publicParty && publicParty.contract_signature_id === signature.id) {
+    const partiesForGuard = await listSignatureParties(
+      supabaseAdmin,
+      signature.id,
+    );
+    const contractModel = String(
+      contract.sale_contract_model ||
+        contract.contract_model ||
+        project?.contract_model ||
+        (company as Record<string, unknown> | null)?.contract_model ||
+        '',
+    );
+    if (
+      isEstrelaInternalCompanyVendorParty(publicParty, partiesForGuard, {
+        contractModel,
+        company: (company as Record<string, unknown>) || null,
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'Link inválido ou expirado.' },
+        { status: 404 },
+      );
+    }
+  }
 
   if (pdf) {
     const contractNumber = String(contract.contract_number || '');
