@@ -213,7 +213,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     if (
-      lfContractConfigJson !== undefined &&
+      lfContractConfigJson != null &&
       data &&
       !Object.prototype.hasOwnProperty.call(data, 'lf_contract_config_json')
     ) {
