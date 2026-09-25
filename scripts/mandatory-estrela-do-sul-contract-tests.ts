@@ -17,7 +17,7 @@ import { getCatalogPolicy, canonicalizeCatalogKey } from '../lib/contract-termin
 import {
   ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES,
 } from '../lib/estrelaDoSulContractConstants';
-import { buildEstrelaDoSulEsignVendorPartyInputs } from '../lib/estrelaDoSulContractEsign';
+import { buildEstrelaDoSulEsignVendorPartyInputs, sortEstrelaDoSulVendorParties } from '../lib/estrelaDoSulContractEsign';
 import {
   shouldCreateSpouseSignatureParty,
   supportsSpouseElectronicSignature,
@@ -195,15 +195,17 @@ assert(downPaymentReducesInstallmentBase('PADRAO') === true, 'PADRAO inalterado'
   assert(!/N\s*99\s*,\s*S\s*\/\s*N/i.test(chrome.addressLine), 'chrome LF sem N 99, S/N');
   assert(/N\s*99/i.test(chrome.addressLine), 'chrome LF mostra N 99');
   assert(/\bde\b/.test(chrome.addressLine), 'chrome LF title-case com de minúsculo');
-  assert(chrome.headerVariant === 'estrela-do-sul', 'chrome LF usa header 3 colunas');
-  assert(chrome.logoWidthMm === 28 && chrome.logoHeightMm === 16, 'chrome LF logo 28x16mm');
+  assert(chrome.headerVariant === 'estrela-do-sul', 'chrome LF usa header homologado');
+  assert(chrome.logoWidthMm === 26 && chrome.logoHeightMm === 18, 'chrome LF logo 26x18mm');
   const headerTpl = buildEstrelaDoSulSaleContractPrintTemplates({
     ...chrome,
     logoBase64: 'data:image/png;base64,AAA',
   }).headerTemplate;
   assert(headerTpl.includes('object-fit:contain'), 'header Chromium object-fit contain');
+  assert(headerTpl.includes('display:flex'), 'header flex logo + textos (jsPDF)');
   assert(headerTpl.includes('LF IMOVEIS') || headerTpl.includes(String(chrome.tenantName || '').toUpperCase()), 'header usa razão social');
   assert(!headerTpl.includes('height:11px'), 'header Estrela não usa logo 11px');
+  assert(!headerTpl.includes('width:18%'), 'header não usa coluna 18% do hotfix anterior');
   const padrao = formatCompanyAddressForHeader({
     address: 'Avenida Dos Ipes, Quadra 31, Lote 13',
     city: 'Parauapebas',
@@ -481,7 +483,7 @@ assert(withSecond.includes('Antonio Ferreira Silva'), 'segundo vendedor');
 assert(withSecond.includes('718.773.122-15'), 'CPF segundo vendedor');
 assert(withSecond.includes('40%'), 'narrativa parceria (não split financeiro)');
 assert(
-  (withSecond.match(/data-party-role="VENDOR"/g) || []).length === 2,
+  (withSecond.match(/data-party-role="VENDOR"/g) || []).length === 4,
   'e-sign: dois VENDOR no instrumento (capa visual não duplica party)',
 );
 assert(
@@ -515,8 +517,8 @@ const withSpouse = html({
 });
 assert(withSpouse.includes('Maria Souza Anuente'), 'cônjuge no contrato');
 assert(
-  (withSpouse.match(/data-party-role="SPOUSE"/g) || []).length === 1,
-  'e-sign: um SPOUSE (capa visual não duplica party)',
+  (withSpouse.match(/data-party-role="SPOUSE"/g) || []).length === 2,
+  'e-sign: SPOUSE na Capa e no instrumento',
 );
 assert(withSpouse.includes('CÔNJUGE ANUENTE'), 'cônjuge visual na capa e no instrumento');
 assert(
@@ -604,7 +606,7 @@ assert(
   'fecho "justas e contratadas" só no instrumento',
 );
 assert(
-  (onlyCompany.match(/data-party-role="BUYER"/g) || []).length === 1,
+  (onlyCompany.match(/data-party-role="BUYER"/g) || []).length === 2,
   'e-sign: um BUYER',
 );
 assert(
@@ -635,50 +637,68 @@ const fullHomolog = html({
 assert(fullHomolog.includes('Antonio Ferreira Silva'), 'homologação: segundo vendedor');
 assert(fullHomolog.includes('Maria Souza Anuente'), 'homologação: cônjuge');
 assert(
-  (fullHomolog.match(/data-party-role="VENDOR"/g) || []).length === 2,
-  'homologação: e-sign 2 VENDOR',
+  (fullHomolog.match(/data-party-role="VENDOR"/g) || []).length === 4,
+  'homologação: e-sign 2 VENDOR x 2 blocos',
 );
 assert(
-  (fullHomolog.match(/data-party-role="SPOUSE"/g) || []).length === 1,
-  'homologação: e-sign 1 SPOUSE',
+  (fullHomolog.match(/data-party-role="SPOUSE"/g) || []).length === 2,
+  'homologação: e-sign SPOUSE x 2 blocos',
 );
 
 {
-  const stamped = applyElectronicSignatureStampsToContractHtml(fullHomolog, [
+  const stamps = [
     {
-      role: 'SELLER',
+      role: 'SELLER' as const,
       roleMarker: 'VENDEDOR(A)',
+      slotClass: 'signature-slot-vendor-1',
       signerName: 'LUZIA FELIPE',
       signedAt: '2026-04-01T12:00:00.000Z',
       signed: true,
     },
     {
-      role: 'SELLER',
+      role: 'SELLER' as const,
       roleMarker: 'VENDEDOR(A)',
+      slotClass: 'signature-slot-vendor-2',
       signerName: 'ANA VITORIA OLIVEIRA FRANCA',
       signedAt: null,
       signed: false,
     },
     {
-      role: 'BUYER',
+      role: 'BUYER' as const,
       roleMarker: 'COMPRADOR(A)',
       signerName: 'JOAO COMPRADOR DA SILVA',
       signedAt: '2026-04-01T12:00:00.000Z',
       signed: true,
     },
-  ]);
+  ];
+  let stamped = applyElectronicSignatureStampsToContractHtml(fullHomolog, stamps);
+  stamped = applyElectronicSignatureStampsToContractHtml(stamped, stamps);
   const instrument = stamped.slice(stamped.indexOf('data-estrela-sign-block="instrumento"'));
   const capaSign = stamped.slice(
     stamped.indexOf('data-estrela-sign-block="capa"'),
-    stamped.indexOf('class="estrela-instrument"'),
+    stamped.indexOf('data-estrela-sign-block="instrumento"'),
   );
+  assert(capaSign.includes('class="sv-esign-stamp"'), 'capa assinado recebe selos compactos Menezes');
+  assert(capaSign.includes('LUZIA FELIPE'), 'selo VENDOR 1 na capa: representante da empresa');
+  assert(capaSign.includes('JOAO COMPRADOR DA SILVA'), 'selo BUYER na capa');
+  assert(!capaSign.includes('ANA VITORIA OLIVEIRA FRANCA'), 'segundo VENDOR sem signed_at não recebe selo na capa');
+  assert(!/Assinatura ID|Hash SHA|Token de validação|QR Code/i.test(capaSign), 'capa sem certificado técnico');
   assert(instrument.includes('LUZIA FELIPE'), 'selo VENDOR 1 no instrumento: representante da empresa');
+  assert(instrument.includes('JOAO COMPRADOR DA SILVA'), 'selo BUYER no instrumento');
   assert(!instrument.includes('ANA VITORIA OLIVEIRA FRANCA'), 'segundo VENDOR sem signed_at não recebe selo');
-  assert(!capaSign.includes('sv-esign-stamp'), 'capa física não recebe selos eletrônicos');
   const firstVendorIdx = instrument.indexOf('data-party-role="VENDOR"');
   const firstVendorChunk = instrument.slice(Math.max(0, firstVendorIdx - 200), firstVendorIdx + 700);
   assert(firstVendorChunk.includes('sv-esign-stamp'), 'primeiro slot VENDOR assinado');
   assert(firstVendorChunk.includes('LUZIA FELIPE'), 'primeiro slot VENDOR recebe a party da empresa');
+  const anaFirst = sortEstrelaDoSulVendorParties(
+    [
+      { signer_name: 'ANA VITORIA OLIVEIRA FRANCA', signer_cpf: '11111111111' },
+      { signer_name: 'LUZIA FELIPE', signer_cpf: '22222222222' },
+    ],
+    { legal_representative: 'LUZIA FELIPE', representative_cpf: '22222222222' },
+  );
+  assert(anaFirst[0].signer_name === 'LUZIA FELIPE', 'VENDOR[0] permanece o representante da empresa');
+  assert(anaFirst[1].signer_name === 'ANA VITORIA OLIVEIRA FRANCA', 'VENDOR[1] permanece o segundo vendedor');
 }
 assertBefore(
   fullHomolog,

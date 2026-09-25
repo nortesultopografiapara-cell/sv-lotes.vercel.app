@@ -1735,7 +1735,7 @@ export async function loadSaleContractPdfForSign(
   const { isMundoNovoSaleContractModel } = await import(
     '@/lib/mundoNovoContractEsign'
   );
-  const { isEstrelaDoSulSaleContractModel } = await import(
+  const { isEstrelaDoSulSaleContractModel, sortEstrelaDoSulVendorParties } = await import(
     '@/lib/estrelaDoSulContractEsign'
   );
 
@@ -1837,6 +1837,9 @@ export async function loadSaleContractPdfForSign(
     const useEstrelaPersonVendors =
       isEstrelaDoSulSaleContractModel(contractModelForCert) &&
       vendorParties.length > 0;
+    const estrelaVendorOrdered = useEstrelaPersonVendors
+      ? sortEstrelaDoSulVendorParties(vendorParties, company || tenant)
+      : vendorParties;
 
     const readPartyLocation = (p: (typeof parties)[number]) => {
       const data =
@@ -1897,7 +1900,7 @@ export async function loadSaleContractPdfForSign(
             approxLocation: readPartyLocation(p),
           }))
         : useEstrelaPersonVendors
-          ? vendorParties.map((p) => ({
+          ? estrelaVendorOrdered.slice(1).map((p) => ({
               name: String(p.signer_name || ''),
               cpf: p.signer_cpf,
               email: p.signer_email || null,
@@ -2051,19 +2054,42 @@ export async function loadSaleContractPdfForSign(
               String(buyerParty?.status || '').toUpperCase() === 'SIGNED' ||
               Boolean(signature.signed_at),
           });
-        if (isEstrelaDoSulSaleContractModel(contractModelForCert) && vendorParties.length > 0) {
-          const vendorStamps = vendorParties.map((p) => ({
+        if (isEstrelaDoSulSaleContractModel(contractModelForCert) && estrelaVendorOrdered.length > 0) {
+          const vendorStamps = estrelaVendorOrdered.map((p, index) => ({
             role: 'SELLER' as const,
             roleMarker: 'VENDEDOR(A)',
+            slotClass: `signature-slot-vendor-${index + 1}`,
             signerName: String(p.signer_name || '').trim(),
             signedAt: p.signed_at,
             signed:
               String(p.status || '').toUpperCase() === 'SIGNED' &&
               Boolean(p.signed_at),
           }));
-          stamps = stamps.filter((s) => s.role !== 'SELLER').concat(vendorStamps);
+          const witnessStamps = witnessParties.map((p) => {
+            const roleKey = String(p.role).toUpperCase();
+            const isSecond = roleKey.includes('2');
+            return {
+              role: 'WITNESS' as const,
+              roleMarker: isSecond ? 'TESTEMUNHA 2' : 'TESTEMUNHA 1',
+              slotClass: isSecond
+                ? 'signature-slot-witness-2'
+                : 'signature-slot-witness-1',
+              signerName: String(p.signer_name || '').trim(),
+              signedAt: p.signed_at,
+              signed:
+                String(p.status || '').toUpperCase() === 'SIGNED' &&
+                Boolean(p.signed_at),
+            };
+          });
+          stamps = stamps
+            .filter((s) => s.role !== 'SELLER')
+            .concat(vendorStamps, witnessStamps);
         }
         html = applyElectronicSignatureStampsToContractHtml(html, stamps);
+        if (isEstrelaDoSulSaleContractModel(contractModelForCert)) {
+          // Capa + instrumento: o stamper preenche o primeiro slot livre de cada papel.
+          html = applyElectronicSignatureStampsToContractHtml(html, stamps);
+        }
       }
     } else {
       html = stripManualContractSignaturesForSignedPdf(html);
@@ -2080,6 +2106,8 @@ export async function loadSaleContractPdfForSign(
       signature.vendor_signed_at,
     );
 
+    const companyVendorParty = useEstrelaPersonVendors ? estrelaVendorOrdered[0] || null : null;
+
     html += await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
       projectName: String(
@@ -2093,13 +2121,17 @@ export async function loadSaleContractPdfForSign(
       signerPhone: clientEvidence.phone !== 'Não informado' ? clientEvidence.phone : null,
       companyName,
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
-      representativeName: legacyAutoVendor
-        ? seller.representative
-        : signature.vendor_signer_name || seller.representative,
-      representativeCpf: legacyAutoVendor
-        ? seller.representativeCpf
-        : signature.vendor_signer_document || seller.representativeCpf,
-      vendorDocumentLabel: seller.representativeCpf ? 'CPF' : 'CNPJ',
+      representativeName: companyVendorParty
+        ? String(companyVendorParty.signer_name || seller.representative || '')
+        : legacyAutoVendor
+          ? seller.representative
+          : signature.vendor_signer_name || seller.representative,
+      representativeCpf: companyVendorParty
+        ? companyVendorParty.signer_cpf || seller.representativeCpf
+        : legacyAutoVendor
+          ? seller.representativeCpf
+          : signature.vendor_signer_document || seller.representativeCpf,
+      vendorDocumentLabel: companyVendorParty?.signer_cpf || seller.representativeCpf ? 'CPF' : 'CNPJ',
       signatureStatus: 'ASSINADO ELETRONICAMENTE',
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,
@@ -2109,13 +2141,21 @@ export async function loadSaleContractPdfForSign(
       device: clientEvidence.device,
       approxLocation: clientEvidence.location,
       signatureEventId: clientEvidence.signatureEventId,
-      vendorIpAddress: legacyAutoVendor
-        ? signature.ip_address
-        : signature.vendor_ip_address,
-      vendorSignedAt: legacyAutoVendor
-        ? signature.signed_at
-        : signature.vendor_signed_at,
-      vendorEmail: legacyAutoVendor ? null : signature.vendor_signer_email,
+      vendorIpAddress: companyVendorParty
+        ? companyVendorParty.ip_address
+        : legacyAutoVendor
+          ? signature.ip_address
+          : signature.vendor_ip_address,
+      vendorSignedAt: companyVendorParty
+        ? companyVendorParty.signed_at
+        : legacyAutoVendor
+          ? signature.signed_at
+          : signature.vendor_signed_at,
+      vendorEmail: companyVendorParty
+        ? companyVendorParty.signer_email
+        : legacyAutoVendor
+          ? null
+          : signature.vendor_signer_email,
       vendorPhone: legacyAutoVendor ? null : vendorEvidence.phone,
       vendorBrowser: legacyAutoVendor ? null : vendorEvidence.browser,
       vendorOs: legacyAutoVendor ? null : vendorEvidence.os,
@@ -2153,6 +2193,7 @@ export async function loadSaleContractPdfForSign(
         ? readPartySignatureEventId(buyerParty)
         : null,
       personVendorCards,
+      keepCompanyVendorCard: useEstrelaPersonVendors,
       intervenientCard,
       witnessCards,
       omitPartyEvidenceCards: isMundoNovoSaleContractModel(contractModelForCert),

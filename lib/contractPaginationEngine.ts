@@ -957,7 +957,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
      * Encaixe: CSS break-inside:avoid no pack; force-break só se altura >
      * página útil (decideForceSignatureBreak acima).
      */
-    if (signature === 'new-page' && breakTarget && !mundoNovoEsign && !estrelaElectronic) {
+    if (signature === 'new-page' && breakTarget && !mundoNovoEsign && !estrelaInstrument) {
       breakTarget.classList.add('sv-pagination-force-break');
     }
   }
@@ -976,7 +976,7 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
       remainingForCert = remainingAt(top);
     }
     certificate = decideBlock(remainingForCert, certH);
-    if (certificate === 'new-page' && !mundoNovoEsign && !estrelaElectronic) {
+    if (certificate === 'new-page' && !mundoNovoEsign) {
       cert.classList.add('sv-pagination-force-break');
     }
     if (mundoNovoEsign) {
@@ -1119,14 +1119,14 @@ export function applyContractPaginationBreaksToElement(
   const signature = decisions.signature;
   const decisionsCert = decisions;
 
-  if (breakTarget && signature === 'new-page' && !mundoNovoEsign && !estrelaElectronic) {
+  if (breakTarget && signature === 'new-page' && !mundoNovoEsign && !estrelaInstrument) {
     breakTarget.classList.add('sv-pagination-force-break');
   } else if (sig && continuousWouldForce) {
     // Compactação já aplicada acima quando continuousLooksTight; reforça classe.
     // Araguaia: não força break por resto contínuo (evita página vazia antes do pack).
     sig.classList.add('sv-pagination-compact');
   }
-  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign && !estrelaElectronic) {
+  if (cert && decisionsCert.certificate === 'new-page' && !mundoNovoEsign) {
     cert.classList.add('sv-pagination-force-break');
   }
 

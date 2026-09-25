@@ -72,7 +72,8 @@ function escapeEstrelaHeaderHtml(value: string): string {
 }
 
 /**
- * Cabeçalho Chromium 3 colunas — PDF assinado LF/Estrela.
+ * Cabeçalho Chromium — mesmo desenho do jsPDF `applyContractPdfChrome`
+ * (logo à esquerda, textos ao lado, número à direita, linha inferior).
  * Logo = companies.logo_url (dinâmica). Não hardcodar marca LF.
  */
 export function buildEstrelaDoSulSaleContractPrintTemplates(
@@ -85,9 +86,7 @@ export function buildEstrelaDoSulSaleContractPrintTemplates(
   const logoW = mmToHeaderPx(chrome.logoWidthMm ?? ESTRELA_DO_SUL_PDF_LOGO_MM.width);
   const logoH = mmToHeaderPx(chrome.logoHeightMm ?? ESTRELA_DO_SUL_PDF_LOGO_MM.height);
   const logoImg = chrome.logoBase64
-    ? `<div style="width:${logoW}px;height:${logoH}px;max-width:100%;">
-            <img src="${chrome.logoBase64}" alt="" width="${logoW}" height="${logoH}" style="width:100%;height:100%;object-fit:contain;object-position:left center;display:block;" />
-          </div>`
+    ? `<img src="${chrome.logoBase64}" alt="" width="${logoW}" height="${logoH}" style="width:${logoW}px;height:${logoH}px;object-fit:contain;object-position:left center;display:block;flex-shrink:0;" />`
     : '';
   const docLabel = chrome.tenantDocumentLabel || 'CNPJ';
   const infoLine = [
@@ -98,22 +97,18 @@ export function buildEstrelaDoSulSaleContractPrintTemplates(
     .join(' | ');
 
   const headerTemplate = `
-    <div style="font-size:8px;line-height:1.25;width:100%;padding:2px 14mm 2px 14mm;font-family:'Times New Roman',Times,serif;color:#222;box-sizing:border-box;">
-      <table style="width:100%;border-collapse:collapse;border-bottom:0.8px solid #444;">
-        <tr>
-          <td style="width:18%;vertical-align:middle;padding:2px 8px 3px 0;">
-            ${logoImg}
-          </td>
-          <td style="width:57%;vertical-align:middle;padding:2px 10px 3px 10px;text-align:left;">
-            <div style="font-weight:bold;font-size:9.5px;line-height:1.2;color:#111;">${escapeEstrelaHeaderHtml(String(chrome.tenantName || '').toUpperCase())}</div>
-            ${infoLine ? `<div style="font-size:7.5px;line-height:1.25;margin-top:1px;">${infoLine}</div>` : ''}
-            ${chrome.addressLine ? `<div style="font-size:7.5px;line-height:1.25;">${escapeEstrelaHeaderHtml(chrome.addressLine)}</div>` : ''}
-          </td>
-          <td style="width:25%;vertical-align:middle;padding:2px 0 3px 8px;text-align:right;white-space:nowrap;font-size:8.5px;">
-            ${escapeEstrelaHeaderHtml(contractLabel)}
-          </td>
-        </tr>
-      </table>
+    <div style="font-size:9px;line-height:1.25;width:100%;padding:4px 14mm 2px 14mm;font-family:'Times New Roman',Times,serif;color:#222;box-sizing:border-box;">
+      <div style="display:flex;align-items:flex-start;gap:8px;border-bottom:0.8px solid #666;padding-bottom:3px;box-sizing:border-box;">
+        ${logoImg}
+        <div style="flex:1;min-width:0;padding-top:1px;">
+          <div style="font-weight:bold;font-size:11px;line-height:1.2;color:#111;">${escapeEstrelaHeaderHtml(String(chrome.tenantName || '').toUpperCase())}</div>
+          ${infoLine ? `<div style="font-size:8.5px;line-height:1.25;margin-top:1px;color:#333;">${infoLine}</div>` : ''}
+          ${chrome.addressLine ? `<div style="font-size:8.5px;line-height:1.25;color:#333;">${escapeEstrelaHeaderHtml(chrome.addressLine)}</div>` : ''}
+        </div>
+        <div style="flex-shrink:0;text-align:right;white-space:nowrap;font-size:8.5px;color:#444;padding-top:2px;">
+          ${escapeEstrelaHeaderHtml(contractLabel)}
+        </div>
+      </div>
     </div>`;
 
   const footerTemplate = `

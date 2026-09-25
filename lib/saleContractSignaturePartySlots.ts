@@ -21,6 +21,12 @@ export type ElectronicSlotStamp = {
   signedAt?: string | null;
   signed: boolean;
   role?: ContractPartySignatureDisplayRole;
+  /**
+   * Classe única do slot (ex.: signature-slot-vendor-1).
+   * Evita o 2º VENDOR assinado preencher o 1º slot quando o 1º ainda está pendente.
+   * Menezes/Recanto não passam este campo — comportamento inalterado.
+   */
+  slotClass?: string;
 };
 
 function formatStampDate(iso?: string | null): string {
@@ -79,14 +85,18 @@ type SignatureSlotRange = {
 /** Extrai todos os blocos `.signature-slot` do HTML. */
 export function findContractSignatureSlots(html: string): SignatureSlotRange[] {
   const slots: SignatureSlotRange[] = [];
-  const needle = 'class="signature-slot"';
+  const needles = ['class="signature-slot"', 'class="signature-slot '] as const;
   let from = 0;
   while (from < html.length) {
-    const classIdx = html.indexOf(needle, from);
+    let classIdx = -1;
+    for (const needle of needles) {
+      const idx = html.indexOf(needle, from);
+      if (idx >= 0 && (classIdx < 0 || idx < classIdx)) classIdx = idx;
+    }
     if (classIdx < 0) break;
     const divStart = html.lastIndexOf('<div', classIdx);
     if (divStart < 0) {
-      from = classIdx + needle.length;
+      from = classIdx + 16;
       continue;
     }
     const divEnd = findDivEnd(html, divStart);
@@ -114,10 +124,11 @@ function markersForStamp(stamp: ElectronicSlotStamp): string[] {
 
 function displayRoleToDataPartyRole(
   role?: ContractPartySignatureDisplayRole,
-): 'VENDOR' | 'BUYER' | 'SPOUSE' | null {
+): 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS' | null {
   if (role === 'SELLER' || role === 'COMPANY_REPRESENTATIVE') return 'VENDOR';
   if (role === 'BUYER') return 'BUYER';
   if (role === 'SPOUSE') return 'SPOUSE';
+  if (role === 'WITNESS') return 'WITNESS';
   return null;
 }
 
@@ -130,6 +141,11 @@ function slotMatchesDataPartyRole(
     'i',
   );
   return re.test(slotHtml);
+}
+
+function slotMatchesSlotClass(slotHtml: string, slotClass: string): boolean {
+  const escaped = slotClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[\\s"'])${escaped}(?:[\\s"']|$)`).test(slotHtml);
 }
 
 function slotMatchesRoleMarker(slotHtml: string, marker: string): boolean {
@@ -179,14 +195,23 @@ export function stampContractSignatureSlotByRole(
   const slots = findContractSignatureSlots(html);
   const dataRole = displayRoleToDataPartyRole(stamp.role);
   const markers = markersForStamp(stamp);
+  const slotClass = String(stamp.slotClass || '').trim();
 
-  let target = dataRole
+  let target = slotClass
     ? slots.find(
         (slot) =>
           !slot.html.includes('sv-esign-stamp') &&
-          slotMatchesDataPartyRole(slot.html, dataRole),
+          slotMatchesSlotClass(slot.html, slotClass),
       )
     : undefined;
+
+  if (!target && dataRole) {
+    target = slots.find(
+      (slot) =>
+        !slot.html.includes('sv-esign-stamp') &&
+        slotMatchesDataPartyRole(slot.html, dataRole),
+    );
+  }
 
   if (!target) {
     target = slots.find((slot) => {

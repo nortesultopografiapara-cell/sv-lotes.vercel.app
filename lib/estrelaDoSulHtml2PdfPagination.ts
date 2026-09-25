@@ -18,10 +18,10 @@ export const ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX = Math.round(
     96,
 );
 
-/** Logo no chrome jsPDF — ocupa a faixa do cabeçalho sem invadir o texto. */
+/** Logo no chrome jsPDF — mesma caixa do cabeçalho homologado (ao lado do texto). */
 export const ESTRELA_DO_SUL_PDF_LOGO_MM = {
-  width: 28,
-  height: 16,
+  width: 26,
+  height: 18,
 } as const;
 
 /** Seletores html2pdf isolados — ESTRELA_DO_SUL. */
@@ -34,10 +34,8 @@ export const ESTRELA_DO_SUL_HTML2PDF_PAGINATION_AVOID = [
   '.estrela-capa-annex-table',
   '.estrela-capa-signatures',
   '.estrela-clause-keep',
-  '.contract-closing-and-signatures--estrela',
   '.sv-contract-estrela-do-sul .signature-slot',
   '.sv-contract-estrela-do-sul .estrela-sign-slot',
-  '.sv-contract-estrela-do-sul .signature-grid--estrela',
   '.sv-cert-official-block',
   '.sv-cert-official-inner',
   '.sv-cert-official',

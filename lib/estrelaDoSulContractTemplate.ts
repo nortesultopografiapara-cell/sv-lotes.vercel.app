@@ -116,7 +116,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table {
   font-size: 9pt !important;
-  margin: 0 0 10px 0 !important;
+  margin: 6px 0 10px 0 !important;
   position: relative;
   z-index: 0;
 }
@@ -124,7 +124,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   display: block !important;
   font-size: 9pt !important;
   margin: 10px 0 0 0 !important;
-  padding: 0 0 8px 0 !important;
+  padding: 0 0 6px 0 !important;
   line-height: 1.25 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
@@ -204,23 +204,32 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   break-inside: avoid-page !important;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  margin-top: 16px;
+  margin-top: 8px;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures .contract-signatures {
+  page-break-inside: auto !important;
+  break-inside: auto !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  margin-top: 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-closing-date {
-  margin-top: 8px !important;
+  margin-top: 4px !important;
   margin-bottom: 0 !important;
-  padding-bottom: 36px !important;
+  padding-bottom: 8px !important;
   font-size: 9pt !important;
   line-height: 1.35 !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 44px !important;
+  row-gap: 14px !important;
   column-gap: 24px !important;
-  padding-top: 8px !important;
+  padding-top: 2px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 22px auto !important;
+  margin: 0 auto 6px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;
@@ -237,10 +246,10 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   line-height: 1.3 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="text-transform: uppercase"] {
-  margin: 10px 0 3px 0 !important;
+  margin: 4px 0 2px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="font-weight: bold"]:not([style*="text-transform: uppercase"]) {
-  margin: 2px 0 3px 0 !important;
+  margin: 1px 0 1px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-doc {
   margin: 0 !important;
@@ -251,8 +260,11 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   break-before: page !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela {
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
+  page-break-before: auto !important;
+  break-before: auto !important;
+  min-height: 0 !important;
   margin-top: 8px;
 }
 .sv-contract-estrela-do-sul .signature-grid--estrela {
@@ -263,8 +275,8 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   align-items: start;
   justify-items: center;
   width: 100%;
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-date {
   page-break-after: avoid !important;
@@ -325,6 +337,23 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
   min-height: 0 !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .signature-grid--estrela {
+  row-gap: 10px !important;
+  padding-top: 0 !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .contract-closing-date {
+  padding-bottom: 4px !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .signature-line {
+  margin: 0 auto 4px auto !important;
+  height: 1px !important;
 }
 </style>`;
 }

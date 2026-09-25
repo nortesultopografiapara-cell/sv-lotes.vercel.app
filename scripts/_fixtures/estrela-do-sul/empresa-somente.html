@@ -136,7 +136,7 @@
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table {
   font-size: 9pt !important;
-  margin: 0 0 10px 0 !important;
+  margin: 6px 0 10px 0 !important;
   position: relative;
   z-index: 0;
 }
@@ -144,7 +144,7 @@
   display: block !important;
   font-size: 9pt !important;
   margin: 10px 0 0 0 !important;
-  padding: 0 0 8px 0 !important;
+  padding: 0 0 6px 0 !important;
   line-height: 1.25 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
@@ -224,23 +224,32 @@
   break-inside: avoid-page !important;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  margin-top: 16px;
+  margin-top: 8px;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures .contract-signatures {
+  page-break-inside: auto !important;
+  break-inside: auto !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  margin-top: 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-closing-date {
-  margin-top: 8px !important;
+  margin-top: 4px !important;
   margin-bottom: 0 !important;
-  padding-bottom: 36px !important;
+  padding-bottom: 8px !important;
   font-size: 9pt !important;
   line-height: 1.35 !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 44px !important;
+  row-gap: 14px !important;
   column-gap: 24px !important;
-  padding-top: 8px !important;
+  padding-top: 2px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 22px auto !important;
+  margin: 0 auto 6px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;
@@ -257,10 +266,10 @@
   line-height: 1.3 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="text-transform: uppercase"] {
-  margin: 10px 0 3px 0 !important;
+  margin: 4px 0 2px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="font-weight: bold"]:not([style*="text-transform: uppercase"]) {
-  margin: 2px 0 3px 0 !important;
+  margin: 1px 0 1px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-doc {
   margin: 0 !important;
@@ -271,8 +280,11 @@
   break-before: page !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela {
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
+  page-break-before: auto !important;
+  break-before: auto !important;
+  min-height: 0 !important;
   margin-top: 8px;
 }
 .sv-contract-estrela-do-sul .signature-grid--estrela {
@@ -283,8 +295,8 @@
   align-items: start;
   justify-items: center;
   width: 100%;
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-date {
   page-break-after: avoid !important;
@@ -345,6 +357,23 @@
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
   min-height: 0 !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) {
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .signature-grid--estrela {
+  row-gap: 10px !important;
+  padding-top: 0 !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .contract-closing-date {
+  padding-bottom: 4px !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures:has(.sv-esign-stamp) .signature-line {
+  margin: 0 auto 4px auto !important;
+  height: 1px !important;
 }
 </style>
     <div class="sv-contract-document sv-contract-estrela-do-sul" data-contract-model="ESTRELA_DO_SUL" style="font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.35; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: 680px; box-sizing: border-box; text-align: justify;">
@@ -449,14 +478,14 @@
         
         <div class="signature-grid signature-grid--estrela">
           
-      <div class="estrela-sign-slot signature-slot-buyer" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-buyer" data-party-role="BUYER" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR(A)</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">Joao Comprador Da Silva</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº 529.982.247-25</p>
       </div>
           
-      <div class="estrela-sign-slot signature-slot-vendor-1" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-vendor-1" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">VENDEDOR(A)</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">L.F. IMOVEIS LTDA</p>
@@ -465,14 +494,14 @@
           
           
           
-      <div class="estrela-sign-slot signature-slot-witness-1" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-witness-1" data-party-role="WITNESS" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">TESTEMUNHA 1</p>
         
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº:</p>
       </div>
           
-      <div class="estrela-sign-slot signature-slot-witness-2" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-witness-2" data-party-role="WITNESS" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">TESTEMUNHA 2</p>
         
@@ -710,14 +739,14 @@
         
         <div class="signature-grid signature-grid--estrela">
           
-      <div class="signature-slot" data-party-role="BUYER" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-buyer" data-party-role="BUYER" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR(A)</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">Joao Comprador Da Silva</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº 529.982.247-25</p>
       </div>
           
-      <div class="signature-slot" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-vendor-1" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">VENDEDOR(A)</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">L.F. IMOVEIS LTDA</p>
@@ -726,14 +755,14 @@
           
           
           
-      <div class="signature-slot" data-party-role="WITNESS" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-witness-1" data-party-role="WITNESS" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">TESTEMUNHA 1</p>
         
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº:</p>
       </div>
           
-      <div class="signature-slot" data-party-role="WITNESS" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+      <div class="signature-slot estrela-sign-slot signature-slot-witness-2" data-party-role="WITNESS" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
         <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">TESTEMUNHA 2</p>
         

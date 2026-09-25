@@ -41,8 +41,6 @@ function buildSignatureSlot(params: {
   name?: string;
   docLines?: string[];
   extraClass?: string;
-  /** Só o bloco do instrumento leva data-party-role (uma party e-sign por signatário). */
-  electronic?: boolean;
 }): string {
   const name = escEstrelaHtml(params.name || '');
   const docs = (params.docLines || [])
@@ -50,12 +48,11 @@ function buildSignatureSlot(params: {
     .filter(Boolean)
     .map((line) => `<p class="estrela-sign-doc" style="${META_STYLE}">${line}</p>`)
     .join('\n');
-  const className = params.electronic
-    ? 'signature-slot'
-    : ['estrela-sign-slot', params.extraClass || ''].filter(Boolean).join(' ');
-  const roleAttr = params.electronic ? ` data-party-role="${params.partyRole}"` : '';
+  const className = ['signature-slot', 'estrela-sign-slot', params.extraClass || '']
+    .filter(Boolean)
+    .join(' ');
   return `
-      <div class="${className}"${roleAttr} style="${SLOT_STYLE}">
+      <div class="${className}" data-party-role="${params.partyRole}" style="${SLOT_STYLE}">
         <div class="signature-line" style="${LINE_STYLE}"></div>
         <p style="${ROLE_STYLE}">${escEstrelaHtml(params.role)}</p>
         ${name ? `<p style="${NAME_STYLE}">${name}</p>` : ''}
@@ -285,17 +282,13 @@ export function buildEstrelaDoSulAnnexHtml(_ctx: EstrelaDoSulContractContext): s
 
 export type EstrelaSignatureBlockKind = 'capa' | 'instrumento';
 
-function buildEstrelaSignatureGrid(
-  ctx: EstrelaDoSulContractContext,
-  electronic: boolean,
-): string {
+function buildEstrelaSignatureGrid(ctx: EstrelaDoSulContractContext): string {
   const buyerSlot = buildSignatureSlot({
     role: 'COMPRADOR(A)',
     partyRole: 'BUYER',
     name: ctx.clienteNome,
     docLines: [ctx.clienteCpf ? `CPF nº ${ctx.clienteCpf}` : ''].filter(Boolean),
     extraClass: 'signature-slot-buyer',
-    electronic,
   });
   const companySlot = buildSignatureSlot({
     role: 'VENDEDOR(A)',
@@ -303,7 +296,6 @@ function buildEstrelaSignatureGrid(
     name: ctx.companyName,
     docLines: [ctx.companyCnpj ? `CNPJ ${ctx.companyCnpj}` : ''].filter(Boolean),
     extraClass: 'signature-slot-vendor-1',
-    electronic,
   });
   const spouseSlot = ctx.hasConjuge
     ? buildSignatureSlot({
@@ -312,7 +304,6 @@ function buildEstrelaSignatureGrid(
         name: ctx.conjugeNome,
         docLines: [ctx.conjugeCpf ? `CPF nº ${ctx.conjugeCpf}` : ''].filter(Boolean),
         extraClass: 'signature-slot-spouse',
-        electronic,
       })
     : '';
   const secondSlot = ctx.hasSecondVendor
@@ -326,7 +317,6 @@ function buildEstrelaSignatureGrid(
             : '',
         ].filter(Boolean),
         extraClass: 'signature-slot-vendor-2',
-        electronic,
       })
     : '';
   const witness1 = buildSignatureSlot({
@@ -334,14 +324,12 @@ function buildEstrelaSignatureGrid(
     partyRole: 'WITNESS',
     extraClass: 'signature-slot-witness-1',
     docLines: ['CPF nº:'],
-    electronic,
   });
   const witness2 = buildSignatureSlot({
     role: 'TESTEMUNHA 2',
     partyRole: 'WITNESS',
     extraClass: 'signature-slot-witness-2',
     docLines: ['CPF nº:'],
-    electronic,
   });
   return `
         <div class="signature-grid signature-grid--estrela">
@@ -362,7 +350,7 @@ export function buildEstrelaDoSulSignaturesHtml(
       <p class="contract-closing-date" style="margin: 0 0 14px 0; text-align: center; font-weight: bold;">
         ${escEstrelaHtml(ctx.closingCityDate)}
       </p>`;
-  const grid = buildEstrelaSignatureGrid(ctx, kind === 'instrumento');
+  const grid = buildEstrelaSignatureGrid(ctx);
 
   if (kind === 'capa') {
     return `

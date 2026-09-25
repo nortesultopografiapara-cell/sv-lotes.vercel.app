@@ -106,3 +106,35 @@ export function buildEstrelaDoSulEsignVendorPartyInputs(input?: {
 
   return vendors;
 }
+
+/** VENDOR[0] = representante da empresa; demais = 2º vendedor. */
+export function sortEstrelaDoSulVendorParties<
+  T extends { signer_cpf?: string | null; signer_name?: string | null },
+>(
+  parties: T[],
+  company?: Record<string, unknown> | null,
+): T[] {
+  if (parties.length <= 1) return parties;
+  const seller = normalizeSellerFromCompany(company);
+  const legalCpf = onlyDigits(
+    pickString(
+      company?.representative_cpf,
+      company?.legal_representative_cpf,
+      company?.responsible_cpf,
+      seller.representativeCpf,
+    ),
+  );
+  const legalName = pickString(
+    company?.legal_representative,
+    company?.responsible_name,
+    seller.representative,
+  ).toLowerCase();
+  const idx = parties.findIndex((p) => {
+    const cpf = onlyDigits(p.signer_cpf || '');
+    if (legalCpf && cpf === legalCpf) return true;
+    const name = String(p.signer_name || '').trim().toLowerCase();
+    return Boolean(legalName && name && name === legalName);
+  });
+  if (idx <= 0) return parties;
+  return [parties[idx], ...parties.filter((_, i) => i !== idx)];
+}

@@ -127,8 +127,8 @@ assert(cssRuleFor('.estrela-td-keep').includes('page-break-inside: avoid'), 'CSS
 assert(cssRuleFor('.estrela-table thead').includes('table-header-group'), 'CSS: thead repete entre páginas');
 assert(cssRuleFor('.estrela-capa-signatures').includes('page-break-inside: avoid'), 'CSS: 1º bloco de assinaturas indivisível');
 assert(
-  cssRuleFor('.contract-closing-and-signatures--estrela').includes('page-break-inside: avoid'),
-  'CSS: 2º bloco de assinaturas indivisível',
+  cssRuleFor('.contract-closing-and-signatures--estrela').includes('page-break-inside: auto'),
+  'CSS: 2º bloco usa espaço restante (não é indivisível como pack)',
 );
 assert(cssRuleFor('.contract-clause').includes('page-break-inside: auto'), 'CSS: cláusula enorme não é avoid global');
 assert(cssRuleFor('.estrela-capa-section-4-title').includes('page-break-after: avoid'), 'CSS: título segurança + tabela');
@@ -193,19 +193,19 @@ assert(
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
 assert(
-  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 44px'),
-  'CSS: 1º bloco com fileiras documentais',
+  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 14px'),
+  'CSS: 1º bloco compacto para fechar a Capa na página 2',
 );
 assert(
-  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 36px'),
-  'CSS: data afastada das linhas de assinatura',
+  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 8px'),
+  'CSS: data da Capa sem empurrar assinaturas',
 );
 assert(
-  cssRuleFor('.estrela-capa .estrela-section-title').includes('padding: 0 0 8px 0'),
+  cssRuleFor('.estrela-capa .estrela-section-title').includes('padding: 0 0 6px 0'),
   'CSS: heading da Capa com padding abaixo do texto',
 );
 assert(
-  cssRuleFor('.estrela-capa .estrela-table').includes('margin: 0 0 10px 0'),
+  cssRuleFor('.estrela-capa .estrela-table').includes('margin: 6px 0 10px 0'),
   'CSS: tabela da Capa não sobe sobre o heading',
 );
 assert(css.includes(':has(.sv-esign-stamp)'), 'CSS: pack eletrônico detecta selos');
@@ -225,7 +225,8 @@ assert(avoid.includes('.estrela-item:not(.estrela-item--long)'), 'html2pdf avoid
 assert(avoid.includes('.estrela-clause-head'), 'html2pdf avoid: título de cláusula');
 assert(avoid.includes('.estrela-td-keep'), 'html2pdf avoid: célula/linha');
 assert(avoid.includes('.estrela-capa-signatures'), 'html2pdf avoid: assinaturas capa');
-assert(avoid.includes('.contract-closing-and-signatures--estrela'), 'html2pdf avoid: assinaturas instrumento');
+assert(!avoid.includes('.contract-closing-and-signatures--estrela'), 'html2pdf não prende o pack inteiro do instrumento');
+assert(avoid.includes('.sv-contract-estrela-do-sul .signature-slot'), 'html2pdf avoid: slot individual');
 assert(!avoid.includes('.estrela-item'), 'html2pdf não aplica avoid indiscriminado a todo p/item');
 
 const pdfOpts = resolveContractHtml2pdfOptions(

@@ -76,7 +76,8 @@ export type SaleContractSignatureCertificateInput = {
   omitPartyEvidenceCards?: boolean;
   /**
    * Cards PF de múltiplos VENDOR (ARAGUAIA).
-   * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE.
+   * Quando presente e não vazio, substitui o card EMPRESA/REPRESENTANTE
+   * — salvo keepCompanyVendorCard (LF: empresa + 2º vendedor).
    */
   personVendorCards?: Array<{
     name: string;
@@ -111,6 +112,11 @@ export type SaleContractSignatureCertificateInput = {
     approxLocation?: string | null;
     signatureEventId?: string | null;
   } | null;
+  /**
+   * LF Imóveis: mantém o card EMPRESA/REPRESENTANTE e acrescenta os
+   * personVendorCards (2º vendedor). Araguaia/Mundo Novo não usam.
+   */
+  keepCompanyVendorCard?: boolean;
   /** Cards TESTEMUNHA 1 / 2 (ARAGUAIA V2). */
   witnessCards?: Array<{
     role: 'WITNESS_1' | 'WITNESS_2' | string;
@@ -596,10 +602,12 @@ function buildVendorCardsHtml(input: SaleContractSignatureCertificateInput): str
   const personCards = Array.isArray(input.personVendorCards)
     ? input.personVendorCards.filter((c) => String(c?.name || '').trim())
     : [];
-  if (personCards.length > 0) {
-    return personCards.map((c) => buildPersonVendorCard(c)).join('\n');
+  const personsHtml = personCards.map((c) => buildPersonVendorCard(c)).join('\n');
+  if (personCards.length > 0 && !input.keepCompanyVendorCard) {
+    return personsHtml;
   }
-  return buildVendorCard(input);
+  const companyHtml = buildVendorCard(input);
+  return personsHtml ? `${companyHtml}\n${personsHtml}` : companyHtml;
 }
 
 function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
