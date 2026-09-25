@@ -11,7 +11,12 @@ import { hydrateAssistantUiContext, type AssistantEntityLoaders } from '../lib/a
 import { localGroundedProvider } from '../lib/assistant/model/localGroundedProvider';
 import { assertPackedContextHasNoPii, packAssistantContext } from '../lib/assistant/model/packKnowledge';
 import { runAssistantPipeline } from '../lib/assistant/pipeline';
-import { EMPTY_ASSISTANT_UI_STATE, type AssistantUiSafeState } from '../lib/assistant/uiSnapshot';
+import {
+  EMPTY_ASSISTANT_UI_STATE,
+  sanitizeUuidHint,
+  scopeAssistantHintsToRoute,
+  type AssistantUiSafeState,
+} from '../lib/assistant/uiSnapshot';
 import type { AssistantAskInput, AssistantSafeContext } from '../lib/assistant/types';
 
 function assert(cond: boolean, msg: string) {
@@ -30,6 +35,7 @@ const PROJECT_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const LOT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CONTRACT_A = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const CONTRACT_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const CONTRACT_COMPANY = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 const localDeps = { primary: localGroundedProvider, fallback: localGroundedProvider };
 
@@ -81,6 +87,7 @@ function mockLoaders(): AssistantEntityLoaders {
         return {
           id: CONTRACT_A,
           tenantId: TENANT_A,
+          companyId: TENANT_A,
           contractNumber: 'MN-0042',
           status: 'ativo',
           signatureStatus: null,
@@ -99,6 +106,7 @@ function mockLoaders(): AssistantEntityLoaders {
         return {
           id: CONTRACT_B,
           tenantId: TENANT_B,
+          companyId: TENANT_B,
           contractNumber: 'XX-9999',
           status: 'ativo',
           signatureStatus: 'PENDING',
@@ -111,6 +119,25 @@ function mockLoaders(): AssistantEntityLoaders {
           pendingInternalVendor: false,
           pendingPartyRoles: ['BUYER'],
           eSignStarted: true,
+        };
+      }
+      if (id === CONTRACT_COMPANY) {
+        return {
+          id: CONTRACT_COMPANY,
+          tenantId: TENANT_B,
+          companyId: TENANT_A,
+          contractNumber: '000000019/2026',
+          status: 'ativo',
+          signatureStatus: null,
+          needsRegenerar: false,
+          projectName: 'Chacreamento Mundo Novo',
+          contractModel: 'MUNDO_NOVO',
+          partyTotal: 0,
+          partySigned: 0,
+          pendingExternal: 0,
+          pendingInternalVendor: false,
+          pendingPartyRoles: [],
+          eSignStarted: false,
         };
       }
       return null;
@@ -446,6 +473,136 @@ async function testHydrateContractsDropsSaleHints() {
   console.log('OK testHydrateContractsDropsSaleHints');
 }
 
+async function testSelectedContractQuestionUsesHydratedState() {
+  const context = withUi(
+    '/contracts',
+    {
+      contractId: CONTRACT_A,
+      contractStatus: 'ativo',
+      eSignStarted: false,
+      nextAction: 'Enviar para assinatura',
+    },
+    { projectName: 'Chacreamento Mundo Novo', contractModel: 'MUNDO_NOVO' },
+  );
+  const result = await ask({
+    question: 'O que está faltando para finalizar esse contrato?',
+    context,
+  });
+  assert(/já está gerado/i.test(result.text) || /não foi enviado para assinatura/i.test(result.text), result.text);
+  assert(/Enviar para assinatura/.test(result.text), result.text);
+  assert(!/nenhum contrato/i.test(result.text), result.text);
+  assert(!/Selecione o contrato/i.test(result.text), result.text);
+  assert(!/cliente/i.test(result.text), result.text);
+  console.log('OK testSelectedContractQuestionUsesHydratedState');
+}
+
+async function testContractSelectionSwitchesImmediately() {
+  const first = withUi('/contracts', {
+    contractId: CONTRACT_A,
+    contractStatus: 'ativo',
+    eSignStarted: false,
+    nextAction: 'Enviar para assinatura',
+  });
+  const second = withUi('/contracts', {
+    contractId: CONTRACT_COMPANY,
+    contractStatus: 'ativo',
+    eSignStarted: true,
+    pendingExternal: 2,
+    partyTotal: 4,
+    partySigned: 2,
+    nextAction: 'Acompanhar assinaturas',
+  });
+  assert(first.ui.contractId === CONTRACT_A, 'contrato A na primeira seleção');
+  assert(second.ui.contractId === CONTRACT_COMPANY, 'contrato B substitui A');
+  const later = await ask({ question: 'O que falta neste contrato?', context: second });
+  assert(/2 assinatura/.test(later.text), later.text);
+  assert(!/Enviar para assinatura/.test(later.text), later.text);
+  console.log('OK testContractSelectionSwitchesImmediately');
+}
+
+async function testDeselectContractClearsContext() {
+  const selected = withUi('/contracts', {
+    contractId: CONTRACT_A,
+    eSignStarted: false,
+    contractStatus: 'ativo',
+  });
+  assert(selected.ui.contractId === CONTRACT_A, 'selecionado');
+  const cleared = withUi('/contracts', {
+    contractId: null,
+    eSignStarted: false,
+  });
+  assert(cleared.ui.contractId === null, 'deselecionar remove o contrato atual');
+  const result = await ask({
+    question: 'O que está faltando para finalizar esse contrato?',
+    context: cleared,
+  });
+  assert(/Selecione o contrato/i.test(result.text), result.text);
+  console.log('OK testDeselectContractClearsContext');
+}
+
+async function testCompanyIdMatchKeepsContract() {
+  const { ui, rejectedForeignTenant } = await hydrateAssistantUiContext({
+    tenantId: TENANT_A,
+    pathname: '/contracts',
+    hints: { contractId: CONTRACT_COMPANY },
+    loaders: mockLoaders(),
+  });
+  assert(!rejectedForeignTenant, 'company_id da sessão deve autenticar o contrato');
+  assert(ui.contractId === CONTRACT_COMPANY, 'contrato visível na lista não pode ser descartado');
+  assert(ui.eSignStarted === false, 'e-sign não iniciada');
+  console.log('OK testCompanyIdMatchKeepsContract');
+}
+
+function testBridgeFollowsSelectedContract() {
+  const bridge = read('components/assistant/AssistantContractUiBridge.tsx');
+  const page = read('app/contracts/page.tsx');
+  const loaders = read('lib/assistant/entityLoaders.ts');
+  const hydrate = read('lib/assistant/hydrateUiContext.ts');
+  const client = read('lib/assistant/clientAsk.ts');
+  assert(page.includes('AssistantContractUiBridge contractId={selectedContract?.id'), 'bridge usa o mesmo selectedContract da tela');
+  assert(bridge.includes('useLayoutEffect'), 'publicar seleção no mesmo ciclo da UI');
+  assert(!/return \(\) => clearContract/.test(bridge), 'cleanup não pode apagar a seleção atual');
+  assert(!/projects\(/.test(loaders), 'loadContract não usa embed PostgREST de projects');
+  assert(hydrate.includes('recordBelongsToTenant'), 'hydrate autentica tenant_id ou company_id');
+  assert(client.includes('contractId: input.context.ui?.contractId'), 'cliente envia só o UUID');
+  assert(!client.includes('contractNumber'), 'número do contrato não vai no request');
+  const uuid = read('lib/assistant/uiSnapshot.ts');
+  assert(uuid.includes('[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}'), 'não rejeitar UUID interno válido');
+  assert(sanitizeUuidHint('aaaaaaaa-aaaa-0aaa-0aaa-aaaaaaaaaaaa') === 'aaaaaaaa-aaaa-0aaa-0aaa-aaaaaaaaaaaa', 'UUID interno sem nibble RFC');
+  console.log('OK testBridgeFollowsSelectedContract');
+}
+
+function testMapNavigationDropsContractHint() {
+  const afterMap = scopeAssistantHintsToRoute('/map', { contractId: CONTRACT_A });
+  assert(!afterMap.contractId, 'sair de Contratos descarta o id');
+  const back = scopeAssistantHintsToRoute('/contracts', afterMap);
+  assert(!back.contractId, '/contracts não restaura seleção obsoleta');
+  console.log('OK testMapNavigationDropsContractHint');
+}
+
+async function testHomologationQuestionAfterCompanyIdHydrate() {
+  const { ui, rejectedForeignTenant } = await hydrateAssistantUiContext({
+    tenantId: TENANT_A,
+    pathname: '/contracts',
+    hints: { contractId: CONTRACT_COMPANY },
+    loaders: mockLoaders(),
+  });
+  assert(!rejectedForeignTenant, 'visível na lista via company_id');
+  assert(ui.contractId === CONTRACT_COMPANY, 'id hidratado');
+  const result = await ask({
+    question: 'O que está faltando para finalizar esse contrato?',
+    context: withUi('/contracts', ui),
+  });
+  assert(/já está gerado/i.test(result.text), result.text);
+  assert(/Enviar para assinatura/.test(result.text), result.text);
+  assert(!/nenhum contrato/i.test(result.text), result.text);
+  assert(!/000000019/.test(result.text), 'não precisa citar o número');
+  const packed = packAssistantContext(withUi('/contracts', { ...ui, contractId: CONTRACT_COMPANY }));
+  assert(assertPackedContextHasNoPii(packed), packed);
+  assert(!packed.includes(CONTRACT_COMPANY), 'UUID não vai ao provider');
+  console.log('OK testHomologationQuestionAfterCompanyIdHydrate');
+}
+
 function testPriorityAndContinue() {
   const instruction = read('lib/assistant/model/systemInstruction.ts');
   assert(instruction.includes('estado real validado da interface'), 'policy de prioridade');
@@ -484,6 +641,13 @@ async function main() {
   await testClosedLotModalDropsOperationalFlags();
   await testStaleLotFromOtherProjectDiscarded();
   await testHydrateContractsDropsSaleHints();
+  await testSelectedContractQuestionUsesHydratedState();
+  await testContractSelectionSwitchesImmediately();
+  await testDeselectContractClearsContext();
+  await testCompanyIdMatchKeepsContract();
+  await testHomologationQuestionAfterCompanyIdHydrate();
+  testBridgeFollowsSelectedContract();
+  testMapNavigationDropsContractHint();
   testPriorityAndContinue();
   console.log('ASSISTANT_SV_FASE_1D_OK');
 }

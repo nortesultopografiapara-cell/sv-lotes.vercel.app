@@ -26,6 +26,7 @@ export type AssistantLotRecord = {
 export type AssistantContractRecord = {
   id: string;
   tenantId: string;
+  companyId?: string | null;
   contractNumber: string | null;
   status: string | null;
   signatureStatus: string | null;
@@ -49,6 +50,14 @@ export type AssistantEntityLoaders = {
 function sameTenant(recordTenant: string | null | undefined, authTenant: string | null): boolean {
   if (!authTenant || !recordTenant) return false;
   return String(recordTenant) === String(authTenant);
+}
+
+function recordBelongsToTenant(
+  record: { tenantId?: string | null; companyId?: string | null },
+  authTenant: string | null,
+): boolean {
+  if (!authTenant) return false;
+  return sameTenant(record.tenantId, authTenant) || sameTenant(record.companyId || null, authTenant);
 }
 
 function sliceName(value: string | null | undefined): string | null {
@@ -139,7 +148,7 @@ export async function hydrateAssistantUiContext(input: {
 
   if (hints.contractId) {
     const contract = await input.loaders.loadContract(hints.contractId);
-    if (contract && sameTenant(contract.tenantId, tenantId)) {
+    if (contract && recordBelongsToTenant(contract, tenantId)) {
       ui.contractId = contract.id;
       ui.contractNumber = sliceName(contract.contractNumber);
       ui.contractStatus = sliceName(contract.status);
@@ -166,7 +175,7 @@ export async function hydrateAssistantUiContext(input: {
       if (!ui.contractModel && contract.contractModel) {
         ui.contractModel = String(contract.contractModel).toUpperCase().slice(0, 40);
       }
-    } else {
+    } else if (contract) {
       rejectedForeignTenant = true;
     }
   }

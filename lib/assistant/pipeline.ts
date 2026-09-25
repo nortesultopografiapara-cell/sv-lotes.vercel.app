@@ -17,6 +17,7 @@ import {
 } from './sanitize';
 import { composeFromValidatedUi } from './composeFromUi';
 import { localGroundedProvider } from './model/localGroundedProvider';
+import { isAssistantContractsPath } from './uiSnapshot';
 import type { AssistantModelProvider } from './model/types';
 import type { AssistantAskInput, AssistantAskResult } from './types';
 
@@ -77,7 +78,9 @@ export async function runAssistantPipeline(
   if (
     uiGrounded &&
     composed.kind !== 'forbidden' &&
-    (input.context.ui.contractId || input.context.ui.saleFormOpen)
+    (input.context.ui.contractId ||
+      input.context.ui.saleFormOpen ||
+      isAssistantContractsPath(input.context.pathname))
   ) {
     return {
       kind: 'answer',

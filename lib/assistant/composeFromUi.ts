@@ -16,9 +16,10 @@ function normalize(text: string): string {
 export function isAssistantNowQuestion(question: string): boolean {
   const n = normalize(question);
   return (
-    /o que (faco|falta)|e agora|proximo passo|proxima acao|vender este lote|falta neste contrato/.test(
-      n,
-    ) || /quem (precisa |deve |tem que )?assin/.test(n)
+    /o que .{0,24}(faco|falt)/.test(n) ||
+    /e agora|proximo passo|proxima acao|vender este lote|finalizar (esse|este|o) contrato/.test(n) ||
+    /quem (precisa |deve |tem que )?assin/.test(n) ||
+    /(este|esse|neste) contrato/.test(n)
   );
 }
 
@@ -151,7 +152,7 @@ export function composeFromValidatedUi(input: {
   if (
     isAssistantContractsPath(context.pathname) &&
     !ui.contractId &&
-    /neste contrato|este contrato/.test(normalize(input.question))
+    /neste contrato|este contrato|esse contrato/.test(normalize(input.question))
   ) {
     return `${lead}Você já está em Contratos. Selecione o contrato nesta tela para eu dizer o que falta. ${ASSISTANT_CONTINUE_OFFER}`
       .replace(/\s+/g, ' ')

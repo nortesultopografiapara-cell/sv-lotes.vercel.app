@@ -1,22 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import { useAssistantUiStateOptional } from '@/contexts/AssistantUiStateContext';
 
 export function AssistantContractUiBridge({ contractId }: { contractId?: string | null }) {
   const ui = useAssistantUiStateOptional();
   const patchContract = ui?.patchContract;
   const clearContract = ui?.clearContract;
+  const nextId = contractId ? String(contractId) : null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!patchContract) return;
-    if (contractId) {
-      patchContract({ contractId });
-    } else {
-      clearContract?.();
+    if (nextId) {
+      patchContract({ contractId: nextId });
+      return;
     }
-    return () => clearContract?.();
-  }, [contractId, patchContract, clearContract]);
+    clearContract?.();
+  }, [nextId, patchContract, clearContract]);
 
   return null;
 }

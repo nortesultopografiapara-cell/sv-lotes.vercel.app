@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -56,7 +57,7 @@ export function AssistantUiStateProvider({ children }: { children: ReactNode }) 
   const gis = useGisSelectedProject();
   const selectedProjectId = gis.project?.id || null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setHints((prev) => scopeAssistantHintsToRoute(pathname, prev));
   }, [pathname]);
 

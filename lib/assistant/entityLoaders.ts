@@ -48,23 +48,33 @@ export function createAssistantEntityLoaders(admin: SupabaseClient): AssistantEn
       };
     },
     async loadContract(id) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from('contracts')
         .select(
-          'id, tenant_id, company_id, contract_number, status, signature_status, needs_regenerar, contract_model, project_id, projects(name, contract_model)',
+          'id, tenant_id, company_id, contract_number, status, signature_status, needs_regenerar, contract_model, project_id',
         )
         .eq('id', id)
         .maybeSingle();
-      if (!data?.id) return null;
+      if (error || !data?.id) return null;
+
+      const companyId = data.company_id ? String(data.company_id) : null;
       let tenantId = pickTenant(data);
-      if (!tenantId && data.project_id) {
+      let projectName: string | null = null;
+      let contractModel = data.contract_model ? String(data.contract_model) : null;
+
+      if (data.project_id) {
         const { data: project } = await admin
           .from('projects')
-          .select('tenant_id, company_id')
+          .select('tenant_id, company_id, name, contract_model')
           .eq('id', data.project_id)
           .maybeSingle();
-        tenantId = pickTenant(project);
+        if (project) {
+          if (!tenantId) tenantId = pickTenant(project);
+          projectName = project.name ? String(project.name) : null;
+          if (!contractModel && project.contract_model) contractModel = String(project.contract_model);
+        }
       }
+
       let partyTotal: number | null = null;
       let partySigned: number | null = null;
       let pendingExternal = 0;
@@ -84,11 +94,12 @@ export function createAssistantEntityLoaders(admin: SupabaseClient): AssistantEn
           const st = String(item.status || '').toUpperCase();
           if (st === 'SIGNED' || st === 'CANCELLED' || st === 'EXPIRED') continue;
           const role = String(item.role || '').toUpperCase();
-          const data =
+          const signatureData =
             item.signature_data && typeof item.signature_data === 'object'
               ? (item.signature_data as Record<string, unknown>)
               : {};
-          const flaggedInternal = data.internalAdminSign === true || data.estrelaCompanyVendor === true;
+          const flaggedInternal =
+            signatureData.internalAdminSign === true || signatureData.estrelaCompanyVendor === true;
           const hasPublicLink = Boolean(item.signature_url || item.signature_token_hash);
           if (role === 'VENDOR' && (flaggedInternal || !hasPublicLink)) {
             pendingInternalVendor = true;
@@ -107,21 +118,16 @@ export function createAssistantEntityLoaders(admin: SupabaseClient): AssistantEn
           }
         }
       }
-      const nested = data.projects as { name?: string; contract_model?: string } | { name?: string; contract_model?: string }[] | null;
-      const project = Array.isArray(nested) ? nested[0] : nested;
       return {
         id: String(data.id),
         tenantId,
+        companyId,
         contractNumber: data.contract_number ? String(data.contract_number) : null,
         status: data.status ? String(data.status) : null,
         signatureStatus: data.signature_status ? String(data.signature_status) : null,
         needsRegenerar: data.needs_regenerar === true,
-        projectName: project?.name ? String(project.name) : null,
-        contractModel: data.contract_model
-          ? String(data.contract_model)
-          : project?.contract_model
-            ? String(project.contract_model)
-            : null,
+        projectName,
+        contractModel,
         partyTotal,
         partySigned,
         pendingExternal,
