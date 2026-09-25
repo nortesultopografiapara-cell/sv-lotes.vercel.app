@@ -165,6 +165,47 @@ export function parseLfContractConfigJson(raw: unknown): LfContractConfigParsed 
   return { secondVendor, participation };
 }
 
+/** Compara o JSON pedido no save com o valor lido de projects.lf_contract_config_json. */
+export function lfContractConfigPersistedEquals(
+  written: unknown,
+  wanted: unknown,
+): boolean {
+  if (wanted == null || wanted === '') {
+    return written == null || written === '';
+  }
+  if (written == null || written === '') return false;
+  const a = parseLfContractConfigJson(written);
+  const b = parseLfContractConfigJson(wanted);
+  const keys: Array<keyof ContractSecondVendorFields> = [
+    'name',
+    'cpf',
+    'rg',
+    'rgIssuer',
+    'rgUf',
+    'nationality',
+    'maritalStatus',
+    'profession',
+    'email',
+    'phone',
+    'address',
+  ];
+  for (const key of keys) {
+    if (clean(a.secondVendor[key]) !== clean(b.secondVendor[key])) return false;
+  }
+  const partA = a.participation;
+  const partB = b.participation;
+  if ((partA == null) !== (partB == null)) return false;
+  if (
+    partA &&
+    partB &&
+    (partA.firstVendorPercent !== partB.firstVendorPercent ||
+      partA.secondVendorPercent !== partB.secondVendorPercent)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function lfConfigToFormState(raw: unknown): LfContractConfigFormState {
   const parsed = parseLfContractConfigJson(raw);
   return {

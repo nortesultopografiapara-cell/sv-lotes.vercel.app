@@ -5,7 +5,10 @@ import {
   updateProjectWithFallback,
 } from '@/lib/projects-update';
 import { mergeMundoNovoSellerPartyContacts } from '@/lib/mundoNovoContractSellers';
-import { normalizeLfContractConfigForSave } from '@/lib/lfImoveisContractConfig';
+import {
+  lfContractConfigPersistedEquals,
+  normalizeLfContractConfigForSave,
+} from '@/lib/lfImoveisContractConfig';
 import {
   createAdminSupabase,
   getRequestAuthUser,
@@ -212,19 +215,32 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
-    if (
-      lfContractConfigJson != null &&
-      data &&
-      !Object.prototype.hasOwnProperty.call(data, 'lf_contract_config_json')
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'A configuração contratual LF Imóveis ainda não está disponível neste banco. Aplique a migration no DEVELOP antes de salvar.',
-          code: 'LF_CONTRACT_CONFIG_COLUMN_MISSING',
-        },
-        { status: 422 },
-      );
+    if (lfContractConfigJson !== undefined && data) {
+      if (!Object.prototype.hasOwnProperty.call(data, 'lf_contract_config_json')) {
+        return NextResponse.json(
+          {
+            error:
+              'A configuração contratual LF Imóveis ainda não está disponível neste banco. Aplique a migration no DEVELOP antes de salvar.',
+            code: 'LF_CONTRACT_CONFIG_COLUMN_MISSING',
+          },
+          { status: 422 },
+        );
+      }
+      if (
+        !lfContractConfigPersistedEquals(
+          (data as { lf_contract_config_json?: unknown }).lf_contract_config_json,
+          lfContractConfigJson,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'A configuração contratual LF Imóveis não foi gravada no projeto. Recarregue e tente salvar novamente.',
+            code: 'LF_CONTRACT_CONFIG_PERSIST',
+          },
+          { status: 422 },
+        );
+      }
     }
 
     console.log('[API PATCH /api/projects] Updated', { projectId, userId: user.id });

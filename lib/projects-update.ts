@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { lfContractConfigPersistedEquals } from './lfImoveisContractConfig';
 
 /** Colunas conhecidas em public.projects (migrations do projeto). */
 export const PROJECT_UPDATE_KNOWN_COLUMNS = [
@@ -14,6 +15,12 @@ export const PROJECT_UPDATE_KNOWN_COLUMNS = [
   'seller_parties_json',
   'lf_contract_config_json',
 ] as const;
+
+/** Não podem ser removidas pelo fallback de coluna — persistir ou falhar. */
+export const PROJECT_UPDATE_PROTECTED_COLUMNS = ['lf_contract_config_json'] as const;
+
+export const LF_CONTRACT_CONFIG_COLUMN_MISSING_CODE = 'LF_CONTRACT_CONFIG_COLUMN_MISSING';
+export const LF_CONTRACT_CONFIG_PERSIST_CODE = 'LF_CONTRACT_CONFIG_PERSIST';
 
 export type ProjectUpdateInput = {
   name: string;
@@ -58,8 +65,18 @@ function cleanPayload(
 
 function parseMissingColumn(message: string | undefined): string | null {
   if (!message) return null;
-  const match = message.match(/Could not find the '(\w+)' column/i);
-  return match?.[1] ?? null;
+  const postgrest = message.match(/Could not find the '(\w+)' column/i);
+  if (postgrest?.[1]) return postgrest[1];
+  const postgres = message.match(
+    /column (?:[\w]+\.)?["']?(\w+)["']? does not exist/i,
+  );
+  return postgres?.[1] ?? null;
+}
+
+function lfSpread(input: ProjectUpdateInput, full: Record<string, unknown>): Record<string, unknown> {
+  return input.lf_contract_config_json !== undefined
+    ? { lf_contract_config_json: full.lf_contract_config_json }
+    : {};
 }
 
 /** Monta payloads do mais completo ao mínimo, só com colunas reais de projects. */
@@ -94,6 +111,8 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
     full.lf_contract_config_json = input.lf_contract_config_json;
   }
 
+  const lf = lfSpread(input, full);
+
   return [
     full,
     {
@@ -107,18 +126,18 @@ export function buildProjectUpdatePayloads(input: ProjectUpdateInput): Record<st
       ...(input.seller_parties_json !== undefined
         ? { seller_parties_json: full.seller_parties_json }
         : {}),
-      ...(input.lf_contract_config_json !== undefined
-        ? { lf_contract_config_json: full.lf_contract_config_json }
-        : {}),
+      ...lf,
     },
     {
       name: full.name,
       city: full.city,
       uf: full.uf,
+      ...lf,
     },
     {
       name: full.name,
       location: full.location,
+      ...lf,
     },
   ].map((payload) =>
     cleanPayload(payload, [
@@ -133,6 +152,9 @@ export function formatProjectUpdateDbError(message: string): string {
   const m = (message || '').trim();
   if (!m) return 'Não foi possível salvar o projeto. Tente novamente.';
 
+  if (/lf_contract_config/i.test(m) || /configuração contratual LF/i.test(m)) {
+    return 'Não foi possível gravar a configuração contratual LF Imóveis. Recarregue a página e tente salvar novamente.';
+  }
   if (m.includes('Could not find the') && m.includes('column')) {
     return 'Não foi possível salvar o projeto no momento. Tente novamente ou contate o suporte.';
   }
@@ -170,6 +192,18 @@ async function tryUpdateWithColumnFallback(
 
     const missingCol = parseMissingColumn(error?.message);
     if (missingCol && missingCol in current) {
+      if (
+        (PROJECT_UPDATE_PROTECTED_COLUMNS as readonly string[]).includes(missingCol)
+      ) {
+        return {
+          data: null,
+          error: {
+            message:
+              'A configuração contratual LF Imóveis ainda não está disponível neste banco. Aplique a migration no DEVELOP antes de salvar.',
+            code: LF_CONTRACT_CONFIG_COLUMN_MISSING_CODE,
+          },
+        };
+      }
       const { [missingCol]: _removed, ...rest } = current;
       current = rest;
       continue;
@@ -181,6 +215,58 @@ async function tryUpdateWithColumnFallback(
   return { data: null, error: { message: 'Nenhum campo válido para atualizar o projeto.' } };
 }
 
+async function persistLfContractConfig(
+  client: SupabaseClient,
+  projectId: string,
+  wanted: unknown,
+): Promise<{ data: Record<string, unknown> | null; error: { message: string; code?: string } | null }> {
+  const { data, error } = await client
+    .from('projects')
+    .update({ lf_contract_config_json: wanted })
+    .eq('id', projectId)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    const missingCol = parseMissingColumn(error?.message);
+    return {
+      data: null,
+      error: {
+        message:
+          missingCol === 'lf_contract_config_json'
+            ? 'A configuração contratual LF Imóveis ainda não está disponível neste banco. Aplique a migration no DEVELOP antes de salvar.'
+            : error?.message || 'Não foi possível gravar a configuração contratual LF Imóveis.',
+        code:
+          missingCol === 'lf_contract_config_json'
+            ? LF_CONTRACT_CONFIG_COLUMN_MISSING_CODE
+            : LF_CONTRACT_CONFIG_PERSIST_CODE,
+      },
+    };
+  }
+
+  const row = data as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(row, 'lf_contract_config_json')) {
+    return {
+      data: null,
+      error: {
+        message:
+          'A configuração contratual LF Imóveis ainda não está disponível neste banco. Aplique a migration no DEVELOP antes de salvar.',
+        code: LF_CONTRACT_CONFIG_COLUMN_MISSING_CODE,
+      },
+    };
+  }
+  if (!lfContractConfigPersistedEquals(row.lf_contract_config_json, wanted)) {
+    return {
+      data: null,
+      error: {
+        message: 'A configuração contratual LF Imóveis não foi gravada no projeto.',
+        code: LF_CONTRACT_CONFIG_PERSIST_CODE,
+      },
+    };
+  }
+  return { data: row, error: null };
+}
+
 export async function updateProjectWithFallback(
   client: SupabaseClient,
   projectId: string,
@@ -188,14 +274,32 @@ export async function updateProjectWithFallback(
 ): Promise<{ data: Record<string, unknown> | null; error: { message: string; code?: string } | null }> {
   const payloads = buildProjectUpdatePayloads(input);
   let lastError: { message: string; code?: string } | null = null;
+  let firstSuccess: Record<string, unknown> | null = null;
 
   for (const payload of payloads) {
     const result = await tryUpdateWithColumnFallback(client, projectId, payload);
     if (result.data) {
-      return result;
+      firstSuccess = result.data;
+      break;
     }
     lastError = result.error;
   }
 
-  return { data: null, error: lastError };
+  if (!firstSuccess) {
+    return { data: null, error: lastError };
+  }
+
+  if (input.lf_contract_config_json !== undefined) {
+    if (
+      lfContractConfigPersistedEquals(
+        firstSuccess.lf_contract_config_json,
+        input.lf_contract_config_json,
+      )
+    ) {
+      return { data: firstSuccess, error: null };
+    }
+    return persistLfContractConfig(client, projectId, input.lf_contract_config_json);
+  }
+
+  return { data: firstSuccess, error: null };
 }

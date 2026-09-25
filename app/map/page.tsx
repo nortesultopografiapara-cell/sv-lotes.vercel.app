@@ -2035,8 +2035,12 @@ export default function MapPage() {
           (newProjectContractModel || null),
         seller_parties_json:
           saved.seller_parties_json ?? editingProject.seller_parties_json,
-        lf_contract_config_json:
-          saved.lf_contract_config_json ?? editingProject.lf_contract_config_json,
+        lf_contract_config_json: Object.prototype.hasOwnProperty.call(
+          saved,
+          'lf_contract_config_json',
+        )
+          ? saved.lf_contract_config_json
+          : editingProject.lf_contract_config_json,
       };
 
       setProjects((prev) =>
