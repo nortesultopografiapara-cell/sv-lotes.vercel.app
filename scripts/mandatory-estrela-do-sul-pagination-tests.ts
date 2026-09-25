@@ -184,14 +184,11 @@ assert(capaIdx < annexIdx && annexIdx < capaSignIdx && capaSignIdx < instrumentI
 assert(cssRuleFor('.estrela-instrument').includes('page-break-before: always'), 'instrumento começa em página nova');
 assert(cssRuleFor('.estrela-capa').includes('font-size: 9pt'), 'CSS: Capa Resumo em 9pt');
 assert(
-  css.includes('.estrela-capa .estrela-table td') && css.includes('padding-top: 2px !important'),
-  'CSS: células da Capa com padding compacto',
-);
-assert(
-  css.includes('.estrela-capa-annex-table .estrela-table td') &&
+  css.includes('.estrela-capa .estrela-table td') &&
     css.includes('padding-top: 6px !important') &&
-    css.includes('line-height: 1.4 !important'),
-  'CSS: tabela de segurança da página 2 com padding e line-height respiráveis',
+    css.includes('line-height: 1.4 !important') &&
+    css.includes('vertical-align: middle !important'),
+  'CSS: células da Capa com padding e line-height respiráveis',
 );
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
