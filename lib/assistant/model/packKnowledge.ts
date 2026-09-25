@@ -79,13 +79,19 @@ export function packAssistantContext(context: AssistantSafeContext): string {
     if (ui.contractId || ui.saleFormOpen || ui.lotModalOpen) {
       lines.push('Não peça para navegar até a tela atual nem localizar o mesmo registro.');
     }
+    lines.push(
+      'O histórico da conversa não substitui este estado. Ignore venda, cliente, lote ou contrato que não estejam neste snapshot.',
+    );
   }
   return lines.filter(Boolean).join('\n');
 }
 
 export function packHistory(history: AssistantChatTurn[]): string {
   if (history.length === 0) return '(sem histórico)';
-  return history.map((item) => `${item.role === 'user' ? 'Usuário' : 'Assistente'}: ${item.text}`).join('\n');
+  return [
+    'HISTÓRICO (memória de conversa; não é o estado atual da interface)',
+    ...history.map((item) => `${item.role === 'user' ? 'Usuário' : 'Assistente'}: ${item.text}`),
+  ].join('\n');
 }
 
 export function assertPackedContextHasNoPii(packed: string): boolean {

@@ -58,7 +58,10 @@ export function AssistantPanel() {
         },
         ui: {
           ...EMPTY_ASSISTANT_UI_STATE,
-          projectId: uiState?.hints.projectId || project?.id || null,
+          projectId:
+            pathname.startsWith('/map') || pathname.startsWith('/my-sales')
+              ? project?.id || uiState?.hints.projectId || null
+              : uiState?.hints.projectId || null,
           projectName: project?.name ?? null,
           contractModel: project?.contractModel ?? null,
           lotId: uiState?.hints.lotId || null,
@@ -79,6 +82,8 @@ export function AssistantPanel() {
       }),
     [pathname, role, tenantName, project?.id, project?.name, project?.contractModel, impersonatingTenant, uiState?.hints],
   );
+  const contextRef = useRef(context);
+  contextRef.current = context;
 
   const shortcuts = useMemo(() => listVisibleAssistantShortcuts(context), [context]);
 
@@ -111,7 +116,7 @@ export function AssistantPanel() {
     try {
       const result = await requestAssistantAsk({
         question: trimmed,
-        context,
+        context: contextRef.current,
         procedureId,
         history,
       });

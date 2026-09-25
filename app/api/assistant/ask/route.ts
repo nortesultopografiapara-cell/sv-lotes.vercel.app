@@ -52,13 +52,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 });
   }
 
+  const pathname = String(body.pathname || '/');
   const { ui, rejectedForeignTenant } = await hydrateAssistantUiContext({
     tenantId: auth.tenantId,
     hints: body.ui,
+    pathname,
     loaders: createAssistantEntityLoaders(auth.admin),
   });
 
-  const pathname = String(body.pathname || '/');
   const context = buildAssistantServerContext({
     role: auth.role,
     tenantName: auth.tenantName,

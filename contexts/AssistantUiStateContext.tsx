@@ -4,11 +4,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
-import type { AssistantLotTab, AssistantPaymentModeHint, AssistantUiClientHints } from '@/lib/assistant/uiSnapshot';
+import { usePathname } from 'next/navigation';
+import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
+import {
+  scopeAssistantHintsToRoute,
+  type AssistantLotTab,
+  type AssistantPaymentModeHint,
+  type AssistantUiClientHints,
+} from '@/lib/assistant/uiSnapshot';
 
 type LotPatch = {
   lotId?: string | null;
@@ -44,30 +52,54 @@ const AssistantUiStateContext = createContext<AssistantUiStateContextValue | nul
 
 export function AssistantUiStateProvider({ children }: { children: ReactNode }) {
   const [hints, setHints] = useState<AssistantUiClientHints>({});
+  const pathname = usePathname() || '/';
+  const gis = useGisSelectedProject();
+  const selectedProjectId = gis.project?.id || null;
 
-  const patchLot = useCallback((patch: LotPatch) => {
-    setHints((prev) => ({ ...prev, ...patch }));
-  }, []);
+  useEffect(() => {
+    setHints((prev) => scopeAssistantHintsToRoute(pathname, prev));
+  }, [pathname]);
 
-  const clearLot = useCallback(() => {
+  useEffect(() => {
+    if (!selectedProjectId) return;
     setHints((prev) => {
-      if (prev.saleFormOpen) {
-        return {
-          ...prev,
-          lotModalOpen: false,
-          activeLotTab: null,
-        };
+      if (!prev.projectId || prev.projectId === selectedProjectId) {
+        return prev.projectId ? prev : { ...prev, projectId: selectedProjectId };
       }
       return {
         ...prev,
+        projectId: selectedProjectId,
         lotId: null,
         lotModalOpen: false,
         activeLotTab: null,
         blockNumber: null,
         lotNumber: null,
         lotStatus: null,
+        saleFormOpen: false,
+        paymentMode: null,
+        customerSelected: false,
+        installmentsFilled: false,
+        firstDueFilled: false,
+        brokerSelected: false,
+        downPaymentFilled: false,
       };
     });
+  }, [selectedProjectId]);
+
+  const patchLot = useCallback((patch: LotPatch) => {
+    setHints((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const clearLot = useCallback(() => {
+    setHints((prev) => ({
+      ...prev,
+      lotId: null,
+      lotModalOpen: false,
+      activeLotTab: null,
+      blockNumber: null,
+      lotNumber: null,
+      lotStatus: null,
+    }));
   }, []);
 
   const patchSale = useCallback((patch: SalePatch) => {

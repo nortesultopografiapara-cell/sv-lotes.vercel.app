@@ -26,6 +26,8 @@ function read(rel: string): string {
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
 const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PROJECT_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const LOT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CONTRACT_A = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const CONTRACT_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
@@ -56,9 +58,22 @@ function mockLoaders(): AssistantEntityLoaders {
       if (id === PROJECT_A) {
         return { id: PROJECT_A, tenantId: TENANT_A, name: 'Chacreamento Mundo Novo', contractModel: 'MUNDO_NOVO' };
       }
+      if (id === PROJECT_C) {
+        return { id: PROJECT_C, tenantId: TENANT_A, name: 'Empreendimento B', contractModel: 'PADRAO' };
+      }
       return null;
     },
-    async loadLot() {
+    async loadLot(id) {
+      if (id === LOT_A) {
+        return {
+          id: LOT_A,
+          tenantId: TENANT_A,
+          projectId: PROJECT_A,
+          blockNumber: '03',
+          lotNumber: '59',
+          status: 'Disponível',
+        };
+      }
       return null;
     },
     async loadContract(id) {
@@ -293,12 +308,154 @@ async function testNoPiiInProvider() {
   console.log('OK testNoPiiInProvider');
 }
 
+async function testStaleSaleContextDoesNotContaminateContracts() {
+  const context = withUi(
+    '/contracts',
+    {
+      saleFormOpen: true,
+      customerSelected: true,
+      paymentMode: 'parcelado',
+      installmentsFilled: true,
+      lotModalOpen: true,
+      blockNumber: '03',
+      lotNumber: '59',
+      lotStatus: 'Disponível',
+      contractId: CONTRACT_A,
+      contractNumber: '000000013/2026',
+      contractStatus: 'ativo',
+      eSignStarted: false,
+      partyTotal: 0,
+      partySigned: 0,
+      pendingExternal: 0,
+      nextAction: 'Enviar para assinatura',
+      projectName: 'Chacreamento Mundo Novo',
+    },
+    { projectName: 'Chacreamento Mundo Novo', contractModel: 'MUNDO_NOVO' },
+  );
+  assert(context.ui.saleFormOpen === false, 'saleFormOpen residual não sobrevive em /contracts');
+  assert(context.ui.customerSelected === false, 'cliente da venda não é estado atual em Contratos');
+  assert(context.ui.lotNumber === null, 'lote da venda não é estado atual em Contratos');
+  assert(context.ui.contractId === CONTRACT_A, 'contrato da rota atual permanece');
+
+  const result = await ask({
+    question: 'O que falta neste contrato?',
+    context,
+    history: [
+      { role: 'user', text: 'O que faço agora?' },
+      {
+        role: 'assistant',
+        text: 'Busque ou cadastre o cliente nesta operação. Depois escolha a forma de pagamento.',
+      },
+      { role: 'user', text: 'O que faço agora?' },
+      {
+        role: 'assistant',
+        text: 'Em Forma de Pagamento, escolha À vista ou Parcelado e confira os valores antes de Confirmar Venda.',
+      },
+    ],
+  });
+  assert(/já está gerado/i.test(result.text) || /não foi enviado para assinatura/i.test(result.text), result.text);
+  assert(/Enviar para assinatura/.test(result.text), result.text);
+  assert(!/fechamento da venda/i.test(result.text), result.text);
+  assert(!/Forma de Pagamento/i.test(result.text), result.text);
+  assert(!/Confirmar Venda/i.test(result.text), result.text);
+  assert(!/busque ou cadastre o cliente/i.test(result.text), result.text);
+  console.log('OK testStaleSaleContextDoesNotContaminateContracts');
+}
+
+async function testStaleContractDoesNotContaminateMap() {
+  const context = withUi('/map', {
+    contractId: CONTRACT_A,
+    contractStatus: 'ativo',
+    eSignStarted: false,
+    nextAction: 'Enviar para assinatura',
+    lotModalOpen: true,
+    activeLotTab: 'comercial',
+    blockNumber: '03',
+    lotNumber: '59',
+    projectName: 'Chacreamento Mundo Novo',
+  });
+  assert(context.ui.contractId === null, 'contrato da tela anterior não permanece no GIS');
+  const result = await ask({
+    question: 'O que faço para vender este lote?',
+    context,
+    history: [
+      { role: 'user', text: 'O que falta neste contrato?' },
+      { role: 'assistant', text: 'O próximo passo é clicar em Enviar para assinatura.' },
+    ],
+  });
+  assert(/Vender/i.test(result.text), result.text);
+  assert(!/Enviar para assinatura/.test(result.text), result.text);
+  console.log('OK testStaleContractDoesNotContaminateMap');
+}
+
+async function testClosedLotModalDropsOperationalFlags() {
+  const context = withUi('/map', {
+    lotModalOpen: false,
+    saleFormOpen: false,
+    customerSelected: true,
+    paymentMode: 'parcelado',
+    blockNumber: '03',
+    lotNumber: '59',
+    activeLotTab: 'comercial',
+  });
+  assert(context.ui.lotNumber === null, 'lote fechado não é estado atual');
+  assert(context.ui.customerSelected === false, 'flags de formulário caem com o modal');
+  assert(context.ui.saleFormOpen === false, 'formulário fechado');
+  console.log('OK testClosedLotModalDropsOperationalFlags');
+}
+
+async function testStaleLotFromOtherProjectDiscarded() {
+  const { ui, rejectedForeignTenant } = await hydrateAssistantUiContext({
+    tenantId: TENANT_A,
+    pathname: '/map',
+    hints: {
+      projectId: PROJECT_C,
+      lotId: LOT_A,
+      lotModalOpen: true,
+      saleFormOpen: true,
+      customerSelected: true,
+      blockNumber: '03',
+      lotNumber: '59',
+    },
+    loaders: mockLoaders(),
+  });
+  assert(!rejectedForeignTenant, 'mesmo tenant, projeto diferente');
+  assert(ui.lotId === null, 'lote do projeto A não permanece no B');
+  assert(ui.saleFormOpen === false, 'formulário do lote A não permanece no B');
+  assert(ui.lotNumber === null, 'número do lote A descartado');
+  console.log('OK testStaleLotFromOtherProjectDiscarded');
+}
+
+async function testHydrateContractsDropsSaleHints() {
+  const { ui } = await hydrateAssistantUiContext({
+    tenantId: TENANT_A,
+    pathname: '/contracts',
+    hints: {
+      saleFormOpen: true,
+      customerSelected: true,
+      lotId: LOT_A,
+      lotNumber: '59',
+      contractId: CONTRACT_A,
+    },
+    loaders: mockLoaders(),
+  });
+  assert(ui.saleFormOpen === false, 'hydrate em /contracts descarta venda');
+  assert(ui.lotNumber === null, 'hydrate em /contracts descarta lote');
+  assert(ui.contractId === CONTRACT_A, 'contrato hidratado');
+  assert(ui.eSignStarted === false, 'e-sign ainda não iniciada');
+  console.log('OK testHydrateContractsDropsSaleHints');
+}
+
 function testPriorityAndContinue() {
   const instruction = read('lib/assistant/model/systemInstruction.ts');
   assert(instruction.includes('estado real validado da interface'), 'policy de prioridade');
+  assert(instruction.includes('entidade selecionada da rota atual'), 'prioridade rota/entidade');
+  assert(instruction.includes('histórico conversacional'), 'histórico abaixo do estado atual');
   assert(instruction.includes('Nunca mande o usuário abrir uma tela'), 'não navegar para a tela atual');
   const pipeline = read('lib/assistant/pipeline.ts');
   assert(pipeline.includes('composeFromValidatedUi'), 'pipeline prioriza UI');
+  const provider = read('contexts/AssistantUiStateContext.tsx');
+  assert(provider.includes('scopeAssistantHintsToRoute'), 'client descarta contexto ao mudar de rota');
   const sample = composeFromValidatedUi({
     question: 'O que falta neste contrato?',
     context: withUi('/contracts', {
@@ -322,6 +479,11 @@ async function main() {
   await testLfWaitingInternalVendor();
   await testForeignContractDiscarded();
   await testNoPiiInProvider();
+  await testStaleSaleContextDoesNotContaminateContracts();
+  await testStaleContractDoesNotContaminateMap();
+  await testClosedLotModalDropsOperationalFlags();
+  await testStaleLotFromOtherProjectDiscarded();
+  await testHydrateContractsDropsSaleHints();
   testPriorityAndContinue();
   console.log('ASSISTANT_SV_FASE_1D_OK');
 }

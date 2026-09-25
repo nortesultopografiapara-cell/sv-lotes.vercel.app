@@ -1,6 +1,10 @@
 import { ASSISTANT_CONTINUE_OFFER } from './constants';
 import type { AssistantSafeContext } from './types';
-import type { AssistantUiSafeState } from './uiSnapshot';
+import {
+  isAssistantContractsPath,
+  scopeAssistantUiToRoute,
+  type AssistantUiSafeState,
+} from './uiSnapshot';
 
 function normalize(text: string): string {
   return String(text || '')
@@ -21,7 +25,9 @@ export function isAssistantNowQuestion(question: string): boolean {
 function uiLead(context: AssistantSafeContext): string {
   const ui = context.ui;
   const parts: string[] = [];
-  if (ui.lotNumber || ui.blockNumber) {
+  if (isAssistantContractsPath(context.pathname) && (ui.contractId || ui.contractNumber)) {
+    parts.push('Você já está em Contratos.');
+  } else if (ui.lotNumber || ui.blockNumber) {
     const lot = ui.lotNumber ? `Lote ${ui.lotNumber}` : 'este lote';
     const block = ui.blockNumber ? ` da Quadra ${ui.blockNumber}` : '';
     const project = context.projectName ? ` do ${context.projectName}` : '';
@@ -121,17 +127,35 @@ export function composeFromValidatedUi(input: {
   context: AssistantSafeContext;
 }): string | null {
   if (!isAssistantNowQuestion(input.question)) return null;
-  const ui = input.context.ui;
-  const lead = uiLead(input.context);
+  const ui = scopeAssistantUiToRoute(input.context.pathname, input.context.ui);
+  const context: AssistantSafeContext = { ...input.context, ui };
+  const lead = uiLead(context);
+  const aboutContract =
+    isAssistantContractsPath(context.pathname) || /contrato/.test(normalize(input.question));
 
-  if (ui.saleFormOpen) {
+  if (ui.contractId && aboutContract) {
+    const next = contractNext(context);
+    if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
+  }
+
+  if (ui.saleFormOpen && !isAssistantContractsPath(context.pathname)) {
     const next = saleNext(ui);
     if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
   }
 
   if (ui.contractId) {
-    const next = contractNext(input.context);
+    const next = contractNext(context);
     if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
+  }
+
+  if (
+    isAssistantContractsPath(context.pathname) &&
+    !ui.contractId &&
+    /neste contrato|este contrato/.test(normalize(input.question))
+  ) {
+    return `${lead}Você já está em Contratos. Selecione o contrato nesta tela para eu dizer o que falta. ${ASSISTANT_CONTINUE_OFFER}`
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   if (ui.lotModalOpen && ui.activeLotTab === 'comercial' && !ui.saleFormOpen) {
@@ -147,9 +171,12 @@ export function composeFromValidatedUi(input: {
 
 export function knowledgeStepStillNeeded(step: string, context: AssistantSafeContext): boolean {
   const n = normalize(step);
-  const ui = context.ui;
-  if (ui.contractId || context.pathname.startsWith('/contracts')) {
+  const ui = scopeAssistantUiToRoute(context.pathname, context.ui);
+  if (ui.contractId || isAssistantContractsPath(context.pathname)) {
     if (/abra contratos|localize o contrato|menu lateral/.test(n)) return false;
+    if (/cliente|forma de pagamento|confirmar venda|cadastre o cliente/.test(n) && ui.contractId) {
+      return false;
+    }
   }
   if (ui.saleFormOpen) {
     if (/mapa gis|aba comercial|clique em vender|abra o lote/.test(n)) return false;

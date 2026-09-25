@@ -11,9 +11,11 @@ function normalize(text: string): string {
 }
 
 function isLotAlreadyOpen(input: AssistantModelGenerateInput): boolean {
-  if (input.context.ui?.lotModalOpen) return true;
-  const blob = `${input.history.map((item) => item.text).join('\n')}\n${input.messages.at(-1)?.content || ''}`;
-  return /lote aberto|ja estou no mapa|ja cliquei no lote|lote selecionado|ja estou com o lote/.test(normalize(blob));
+  if (input.context.ui?.lotModalOpen || input.context.ui?.saleFormOpen) return true;
+  const question = input.messages.at(-1)?.content || '';
+  return /lote aberto|ja estou no mapa|ja cliquei no lote|lote selecionado|ja estou com o lote/.test(
+    normalize(question),
+  );
 }
 
 function isClientAlreadySelected(input: AssistantModelGenerateInput): boolean {

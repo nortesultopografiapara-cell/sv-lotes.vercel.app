@@ -2,6 +2,7 @@ import {
   EMPTY_ASSISTANT_UI_STATE,
   resolveContractNextAction,
   sanitizeUiClientHints,
+  scopeAssistantHintsToRoute,
   type AssistantUiClientHints,
   type AssistantUiSafeState,
 } from './uiSnapshot';
@@ -64,8 +65,12 @@ export async function hydrateAssistantUiContext(input: {
   tenantId: string | null;
   hints: unknown;
   loaders: AssistantEntityLoaders;
+  pathname?: string | null;
 }): Promise<{ ui: AssistantUiSafeState; rejectedForeignTenant: boolean }> {
-  const hints: AssistantUiClientHints = sanitizeUiClientHints(input.hints);
+  const rawHints: AssistantUiClientHints = sanitizeUiClientHints(input.hints);
+  const hints: AssistantUiClientHints = input.pathname
+    ? scopeAssistantHintsToRoute(String(input.pathname), rawHints)
+    : rawHints;
   const ui: AssistantUiSafeState = {
     ...EMPTY_ASSISTANT_UI_STATE,
     lotModalOpen: Boolean(hints.lotModalOpen),
@@ -95,7 +100,9 @@ export async function hydrateAssistantUiContext(input: {
 
   if (hints.lotId) {
     const lot = await input.loaders.loadLot(hints.lotId);
-    if (lot && sameTenant(lot.tenantId, tenantId)) {
+    const lotMatchesSelectedProject =
+      !hints.projectId || !lot?.projectId || lot.projectId === hints.projectId;
+    if (lot && sameTenant(lot.tenantId, tenantId) && lotMatchesSelectedProject) {
       ui.lotId = lot.id;
       ui.blockNumber = sliceName(hints.blockNumber) || sliceName(lot.blockNumber);
       ui.lotNumber = sliceName(hints.lotNumber) || sliceName(lot.lotNumber);
@@ -111,7 +118,13 @@ export async function hydrateAssistantUiContext(input: {
         }
       }
     } else {
-      rejectedForeignTenant = true;
+      if (lot && !sameTenant(lot.tenantId, tenantId)) {
+        rejectedForeignTenant = true;
+      }
+      ui.lotId = null;
+      ui.blockNumber = null;
+      ui.lotNumber = null;
+      ui.lotStatus = null;
       ui.lotModalOpen = false;
       ui.activeLotTab = null;
       ui.saleFormOpen = false;

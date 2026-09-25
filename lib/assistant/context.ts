@@ -1,6 +1,6 @@
 import { resolveRoleDisplayLabel, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
 import type { AssistantModuleId, AssistantSafeContext, AssistantViewer } from './types';
-import { EMPTY_ASSISTANT_UI_STATE, type AssistantUiSafeState } from './uiSnapshot';
+import { EMPTY_ASSISTANT_UI_STATE, scopeAssistantUiToRoute, type AssistantUiSafeState } from './uiSnapshot';
 
 const MODULE_BY_PREFIX: Array<{ prefix: string; moduleId: AssistantModuleId }> = [
   { prefix: '/map', moduleId: 'gis' },
@@ -46,7 +46,7 @@ export function buildSafeAssistantContext(input: BuildContextInput): AssistantSa
   const pathname = String(input.pathname || '/');
   const role = String(input.role || '').trim().toUpperCase() || 'UNKNOWN';
   const impersonatingTenant = Boolean(input.impersonatingTenant);
-  const ui = input.ui || EMPTY_ASSISTANT_UI_STATE;
+  const ui = scopeAssistantUiToRoute(pathname, input.ui || EMPTY_ASSISTANT_UI_STATE);
   return {
     pathname,
     moduleId: resolveAssistantModule(pathname),

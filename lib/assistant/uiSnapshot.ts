@@ -146,6 +146,171 @@ export function sanitizeUiClientHints(raw: unknown): AssistantUiClientHints {
   };
 }
 
+const GIS_OPERATIONAL_RESET: Pick<
+  AssistantUiSafeState,
+  | 'lotId'
+  | 'blockNumber'
+  | 'lotNumber'
+  | 'lotStatus'
+  | 'lotModalOpen'
+  | 'activeLotTab'
+  | 'saleFormOpen'
+  | 'paymentMode'
+  | 'customerSelected'
+  | 'installmentsFilled'
+  | 'firstDueFilled'
+  | 'brokerSelected'
+  | 'downPaymentFilled'
+> = {
+  lotId: null,
+  blockNumber: null,
+  lotNumber: null,
+  lotStatus: null,
+  lotModalOpen: false,
+  activeLotTab: null,
+  saleFormOpen: false,
+  paymentMode: null,
+  customerSelected: false,
+  installmentsFilled: false,
+  firstDueFilled: false,
+  brokerSelected: false,
+  downPaymentFilled: false,
+};
+
+const CONTRACT_OPERATIONAL_RESET: Pick<
+  AssistantUiSafeState,
+  | 'contractId'
+  | 'contractNumber'
+  | 'contractStatus'
+  | 'signatureStatus'
+  | 'eSignStarted'
+  | 'partyTotal'
+  | 'partySigned'
+  | 'pendingExternal'
+  | 'pendingInternalVendor'
+  | 'pendingPartyRoles'
+  | 'nextAction'
+  | 'needsRegenerar'
+> = {
+  contractId: null,
+  contractNumber: null,
+  contractStatus: null,
+  signatureStatus: null,
+  eSignStarted: false,
+  partyTotal: null,
+  partySigned: null,
+  pendingExternal: null,
+  pendingInternalVendor: false,
+  pendingPartyRoles: [],
+  nextAction: null,
+  needsRegenerar: false,
+};
+
+export function isAssistantContractsPath(pathname: string): boolean {
+  const path = String(pathname || '');
+  return path === '/contracts' || path.startsWith('/contracts/');
+}
+
+export function isAssistantGisPath(pathname: string): boolean {
+  const path = String(pathname || '');
+  return path === '/map' || path.startsWith('/map/') || path === '/my-sales' || path.startsWith('/my-sales/');
+}
+
+/**
+ * Estado operacional pertence à rota/entidade atual.
+ * Histórico de conversa não entra aqui.
+ */
+export function scopeAssistantUiToRoute(
+  pathname: string,
+  ui: AssistantUiSafeState,
+  opts?: { selectedProjectId?: string | null },
+): AssistantUiSafeState {
+  let next: AssistantUiSafeState = { ...ui };
+  if (isAssistantContractsPath(pathname)) {
+    next = { ...next, ...GIS_OPERATIONAL_RESET, projectId: null };
+  } else if (isAssistantGisPath(pathname)) {
+    next = { ...next, ...CONTRACT_OPERATIONAL_RESET };
+    if (!next.lotModalOpen && !next.saleFormOpen) {
+      next = { ...next, ...GIS_OPERATIONAL_RESET };
+    }
+  } else {
+    next = { ...next, ...GIS_OPERATIONAL_RESET, ...CONTRACT_OPERATIONAL_RESET, projectId: null };
+  }
+
+  const selected = opts?.selectedProjectId || null;
+  if (selected && next.projectId && next.projectId !== selected) {
+    next = { ...next, ...GIS_OPERATIONAL_RESET, projectId: selected };
+  }
+  return next;
+}
+
+export function scopeAssistantHintsToRoute(
+  pathname: string,
+  hints: AssistantUiClientHints,
+): AssistantUiClientHints {
+  const next: AssistantUiClientHints = { ...hints };
+  if (isAssistantContractsPath(pathname)) {
+    return {
+      ...next,
+      projectId: null,
+      lotId: null,
+      lotModalOpen: false,
+      activeLotTab: null,
+      saleFormOpen: false,
+      paymentMode: null,
+      customerSelected: false,
+      blockNumber: null,
+      lotNumber: null,
+      lotStatus: null,
+      installmentsFilled: false,
+      firstDueFilled: false,
+      brokerSelected: false,
+      downPaymentFilled: false,
+    };
+  }
+  if (isAssistantGisPath(pathname)) {
+    const liveLot = Boolean(next.lotModalOpen || next.saleFormOpen);
+    return {
+      ...next,
+      contractId: null,
+      ...(liveLot
+        ? {}
+        : {
+            lotId: null,
+            lotModalOpen: false,
+            activeLotTab: null,
+            saleFormOpen: false,
+            paymentMode: null,
+            customerSelected: false,
+            blockNumber: null,
+            lotNumber: null,
+            lotStatus: null,
+            installmentsFilled: false,
+            firstDueFilled: false,
+            brokerSelected: false,
+            downPaymentFilled: false,
+          }),
+    };
+  }
+  return {
+    ...next,
+    lotId: null,
+    contractId: null,
+    lotModalOpen: false,
+    activeLotTab: null,
+    saleFormOpen: false,
+    paymentMode: null,
+    customerSelected: false,
+    blockNumber: null,
+    lotNumber: null,
+    lotStatus: null,
+    installmentsFilled: false,
+    firstDueFilled: false,
+    brokerSelected: false,
+    downPaymentFilled: false,
+  };
+}
+
 export function resolveContractNextAction(input: {
   contractStatus?: string | null;
   signatureStatus?: string | null;
