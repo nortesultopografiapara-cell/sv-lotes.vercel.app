@@ -76,6 +76,7 @@ import {
   type SaleContractSignatureSectionHandle,
 } from "@/components/contracts/SaleContractSignatureSection";
 import { LegacyContractDocumentsSection } from "@/components/contracts/LegacyContractDocumentsSection";
+import { AssistantContractUiBridge } from "@/components/assistant/AssistantContractUiBridge";
 import { TerminationOperationDocumentsSection } from "@/components/sales/TerminationOperationDocumentsSection";
 import {
   canResendSaleSignature,
@@ -2096,6 +2097,7 @@ export default function ContractsPage() {
         selectedContract ? "contracts-page--contract-selected" : ""
       }`}
     >
+      <AssistantContractUiBridge contractId={selectedContract?.id || null} />
       {/* Mobile: busca + ações em massa (antes dos indicadores) */}
       <div className="contracts-mobile-top md:hidden">
         <div className="relative">

@@ -14,6 +14,7 @@ export type AssistantAuthOk = {
   tenantId: string | null;
   role: string;
   tenantName: string | null;
+  admin: NonNullable<ReturnType<typeof createAdminSupabase>['client']>;
 };
 
 export type AssistantAuthDenied = {
@@ -69,6 +70,7 @@ export async function authorizeAssistantAsk(request: Request): Promise<Assistant
     tenantId,
     role,
     tenantName,
+    admin,
   };
 }
 
@@ -84,6 +86,7 @@ export function buildAssistantServerContext(input: {
   contractModel?: string | null;
   impersonatingTenant?: boolean;
   flags?: { clientPortal?: boolean; bankingUi?: boolean };
+  ui?: import('./uiSnapshot').AssistantUiSafeState | null;
 }) {
   return buildSafeAssistantContext({
     pathname: input.pathname,
@@ -93,5 +96,6 @@ export function buildAssistantServerContext(input: {
     contractModel: input.contractModel,
     impersonatingTenant: input.impersonatingTenant,
     flags: input.flags,
+    ui: input.ui,
   });
 }

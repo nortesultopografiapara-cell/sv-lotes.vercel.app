@@ -687,6 +687,37 @@ html[data-brand='purple'] {
   color: var(--text-primary);
 }
 
+.sv-assistant-md {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.sv-assistant-md-p {
+  margin: 0 0 0.45rem;
+}
+
+.sv-assistant-md-p:last-child {
+  margin-bottom: 0;
+}
+
+.sv-assistant-md-list {
+  margin: 0 0 0.45rem;
+  padding-left: 1.15rem;
+}
+
+.sv-assistant-md-list:last-child {
+  margin-bottom: 0;
+}
+
+.sv-assistant-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78em;
+  padding: 0.05em 0.3em;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--border-color));
+}
+
 .sv-assistant-loading {
   display: flex;
   align-items: center;

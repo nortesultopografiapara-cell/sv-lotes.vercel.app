@@ -1,6 +1,11 @@
 import { ASSISTANT_MAX_OUTPUT_CHARS, ASSISTANT_MODEL_TIMEOUT_MS } from '../constants';
 import { ASSISTANT_SYSTEM_INSTRUCTION } from './systemInstruction';
-import { packAssistantContext, packAssistantKnowledge, packHistory } from './packKnowledge';
+import {
+  assertPackedContextHasNoPii,
+  packAssistantContext,
+  packAssistantKnowledge,
+  packHistory,
+} from './packKnowledge';
 import type { AssistantModelGenerateInput, AssistantModelGenerateResult, AssistantModelProvider } from './types';
 
 export const ASSISTANT_AI_API_KEY_ENV = 'ASSISTANT_AI_API_KEY';
@@ -22,12 +27,16 @@ function readModelName(): string {
 
 function buildUserPayload(input: AssistantModelGenerateInput): string {
   const last = input.messages[input.messages.length - 1]?.content || '';
+  const packedContext = packAssistantContext(input.context);
+  if (!assertPackedContextHasNoPii(packedContext)) {
+    throw new Error('assistant_context_pii');
+  }
   return [
     'CONTEXTO',
-    packAssistantContext(input.context),
+    packedContext,
     '',
     'CONHECIMENTO',
-    packAssistantKnowledge(input.knowledge),
+    packAssistantKnowledge(input.knowledge, input.context),
     '',
     'HISTÓRICO',
     packHistory(input.history),

@@ -19,6 +19,19 @@ export type AssistantAskApiRequest = {
     role: 'assistant' | 'user';
     text: string;
   }>;
+  ui?: {
+    projectId?: string | null;
+    lotId?: string | null;
+    contractId?: string | null;
+    lotModalOpen?: boolean;
+    activeLotTab?: string | null;
+    saleFormOpen?: boolean;
+    paymentMode?: string | null;
+    customerSelected?: boolean;
+    blockNumber?: string | null;
+    lotNumber?: string | null;
+    lotStatus?: string | null;
+  };
 };
 
 export function buildAssistantAskClientPayload(input: AssistantAskApiRequest): AssistantAskApiRequest {
@@ -31,6 +44,7 @@ export function buildAssistantAskClientPayload(input: AssistantAskApiRequest): A
     impersonatingTenant: Boolean(input.impersonatingTenant),
     flags: input.flags,
     history: input.history || [],
+    ui: input.ui,
   };
 }
 

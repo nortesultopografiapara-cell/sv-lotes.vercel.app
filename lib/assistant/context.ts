@@ -1,5 +1,6 @@
 import { resolveRoleDisplayLabel, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
 import type { AssistantModuleId, AssistantSafeContext, AssistantViewer } from './types';
+import { EMPTY_ASSISTANT_UI_STATE, type AssistantUiSafeState } from './uiSnapshot';
 
 const MODULE_BY_PREFIX: Array<{ prefix: string; moduleId: AssistantModuleId }> = [
   { prefix: '/map', moduleId: 'gis' },
@@ -35,6 +36,7 @@ type BuildContextInput = {
   contractModel?: string | null;
   impersonatingTenant?: boolean;
   flags?: AssistantSafeContext['flags'];
+  ui?: AssistantUiSafeState | null;
 };
 
 /**
@@ -44,20 +46,22 @@ export function buildSafeAssistantContext(input: BuildContextInput): AssistantSa
   const pathname = String(input.pathname || '/');
   const role = String(input.role || '').trim().toUpperCase() || 'UNKNOWN';
   const impersonatingTenant = Boolean(input.impersonatingTenant);
+  const ui = input.ui || EMPTY_ASSISTANT_UI_STATE;
   return {
     pathname,
     moduleId: resolveAssistantModule(pathname),
     role,
     roleLabel: resolveRoleDisplayLabel(role),
     tenantName: sanitizeDisplayName(input.tenantName),
-    projectName: sanitizeDisplayName(input.projectName),
-    contractModel: sanitizeContractModel(input.contractModel),
+    projectName: sanitizeDisplayName(ui.projectName || input.projectName),
+    contractModel: sanitizeContractModel(ui.contractModel || input.contractModel),
     flags: {
       clientPortal: Boolean(input.flags?.clientPortal),
       bankingUi: Boolean(input.flags?.bankingUi),
     },
     viewer: resolveAssistantViewer(role, pathname, impersonatingTenant),
     impersonatingTenant,
+    ui,
   };
 }
 

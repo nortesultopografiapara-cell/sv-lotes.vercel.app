@@ -93,12 +93,18 @@ function scoreProcedure(
       matched += 1;
     }
   }
-  if (matched === 0) return 0;
+  if (matched === 0) {
+    if ((context.ui?.lotModalOpen || context.ui?.saleFormOpen) && procedure.module === 'gis') return 12;
+    if (context.ui?.contractId && procedure.module === 'contracts') return 12;
+    return 0;
+  }
 
   if (procedure.routes.some((route) => context.pathname === route || context.pathname.startsWith(`${route}/`))) {
     score += 6;
   }
   if (procedure.module === context.moduleId) score += 4;
+  if ((context.ui?.lotModalOpen || context.ui?.saleFormOpen) && procedure.module === 'gis') score += 8;
+  if (context.ui?.contractId && procedure.module === 'contracts') score += 8;
 
   const model = String(context.contractModel || '').toUpperCase();
   if (model && procedure.contractModels?.includes(model)) score += 10;

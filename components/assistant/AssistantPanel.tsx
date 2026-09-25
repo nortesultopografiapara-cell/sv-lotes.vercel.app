@@ -6,6 +6,8 @@ import { BookOpenText, Loader2, Send, Sparkles, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
+import { useAssistantUiStateOptional } from '@/contexts/AssistantUiStateContext';
+import { AssistantSafeMarkdown } from '@/components/assistant/AssistantSafeMarkdown';
 import {
   ASSISTANT_GREETING,
   ASSISTANT_INPUT_PLACEHOLDER,
@@ -22,6 +24,7 @@ import {
 } from '@/lib/assistant';
 import { historyFromMessages, requestAssistantAsk } from '@/lib/assistant/clientAsk';
 import { isClientPortalEnabledForUi } from '@/lib/portal-cliente/config';
+import { EMPTY_ASSISTANT_UI_STATE } from '@/lib/assistant/uiSnapshot';
 
 function nextMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -32,6 +35,7 @@ export function AssistantPanel() {
   const { open, setOpen, pendingQuestion, consumePendingQuestion, role, tenantName, impersonatingTenant } =
     useAssistantPanel();
   const { project } = useGisSelectedProject();
+  const uiState = useAssistantUiStateOptional();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>(() => [
@@ -52,8 +56,24 @@ export function AssistantPanel() {
         flags: {
           clientPortal: isClientPortalEnabledForUi(),
         },
+        ui: {
+          ...EMPTY_ASSISTANT_UI_STATE,
+          projectId: uiState?.hints.projectId || project?.id || null,
+          projectName: project?.name ?? null,
+          contractModel: project?.contractModel ?? null,
+          lotId: uiState?.hints.lotId || null,
+          blockNumber: uiState?.hints.blockNumber || null,
+          lotNumber: uiState?.hints.lotNumber || null,
+          lotStatus: uiState?.hints.lotStatus || null,
+          lotModalOpen: Boolean(uiState?.hints.lotModalOpen),
+          activeLotTab: uiState?.hints.activeLotTab || null,
+          saleFormOpen: Boolean(uiState?.hints.saleFormOpen),
+          paymentMode: uiState?.hints.paymentMode || null,
+          customerSelected: Boolean(uiState?.hints.customerSelected),
+          contractId: uiState?.hints.contractId || null,
+        },
       }),
-    [pathname, role, tenantName, project?.name, project?.contractModel, impersonatingTenant],
+    [pathname, role, tenantName, project?.id, project?.name, project?.contractModel, impersonatingTenant, uiState?.hints],
   );
 
   const shortcuts = useMemo(() => listVisibleAssistantShortcuts(context), [context]);
@@ -163,7 +183,11 @@ export function AssistantPanel() {
               {message.role === 'assistant' ? (
                 <p className="sv-assistant-bubble-kicker">Assistente SV</p>
               ) : null}
-              <pre className="sv-assistant-bubble-text">{message.text}</pre>
+              {message.role === 'assistant' ? (
+                <AssistantSafeMarkdown text={message.text} />
+              ) : (
+                <pre className="sv-assistant-bubble-text">{message.text}</pre>
+              )}
               {message.role === 'assistant' && message.notice ? (
                 <p className="sv-assistant-notice" data-testid="assistant-sv-notice">
                   {message.notice}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useIsWideDesktop } from '@/hooks/use-mobile';
 import { setSaleWorkspaceChromeOpen } from '@/lib/saleWorkspaceChrome';
+import { AssistantSaleUiBridge } from '@/components/assistant/AssistantSaleUiBridge';
 import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CustomerSearchPicker } from '@/components/customers/CustomerSearchPicker';
@@ -1035,6 +1036,15 @@ export function CustomerLotFormModal({
 
   return (
     <div className={`sv-modal-overlay z-[1000] pointer-events-auto font-sans${isWorkspaceDesktop ? " sv-modal-overlay--sale-workspace" : ""}`}>
+      <AssistantSaleUiBridge
+        paymentMode={formData.payment_type}
+        customerSelected={Boolean(formData.selected_customer_id)}
+        lotId={lot?.id ? String(lot.id) : null}
+        projectId={lot?.project_id || lot?.projectId || null}
+        blockNumber={lot?.block || lot?.block_name || null}
+        lotNumber={lot?.number != null ? String(lot.number) : null}
+        lotStatus={lot?.status || null}
+      />
       <div className={`sv-modal-shell sv-modal-shell--full-mobile ${workspaceShellClass} bg-white animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200`}>
         <div className={`sv-modal-header sticky top-0 z-20 border-b border-gray-100 flex items-center justify-between gap-4 bg-white shadow-sm ${isWorkspaceDesktop ? "px-5 py-2 sv-sale-workspace-header" : "p-4"}`}>
           <div className="min-w-0 flex-1">

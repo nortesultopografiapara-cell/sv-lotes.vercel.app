@@ -4,6 +4,8 @@ import {
   ASSISTANT_RATE_LIMIT_MAX,
   ASSISTANT_RATE_LIMIT_WINDOW_MS,
 } from '@/lib/assistant/constants';
+import { createAssistantEntityLoaders } from '@/lib/assistant/entityLoaders';
+import { hydrateAssistantUiContext } from '@/lib/assistant/hydrateUiContext';
 import { logAssistantAsk } from '@/lib/assistant/log';
 import { resolveAssistantModelProvider } from '@/lib/assistant/model/resolveProvider';
 import { runAssistantPipeline } from '@/lib/assistant/pipeline';
@@ -50,15 +52,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 });
   }
 
+  const { ui, rejectedForeignTenant } = await hydrateAssistantUiContext({
+    tenantId: auth.tenantId,
+    hints: body.ui,
+    loaders: createAssistantEntityLoaders(auth.admin),
+  });
+
   const pathname = String(body.pathname || '/');
   const context = buildAssistantServerContext({
     role: auth.role,
     tenantName: auth.tenantName,
     pathname,
-    projectName: body.projectName,
-    contractModel: body.contractModel,
+    projectName: ui.projectName || (rejectedForeignTenant ? null : body.projectName),
+    contractModel: ui.contractModel || (rejectedForeignTenant ? null : body.contractModel),
     impersonatingTenant: Boolean(body.impersonatingTenant),
     flags: body.flags,
+    ui,
   });
 
   const providers = resolveAssistantModelProvider();

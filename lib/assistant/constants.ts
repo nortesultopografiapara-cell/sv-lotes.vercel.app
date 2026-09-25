@@ -27,7 +27,7 @@ export const ASSISTANT_MASTER_DISCLAIMER =
 export const ASSISTANT_GUIDANCE_ONLY =
   'Este assistente apenas orienta. Ele não cria venda, não reserva lote, não emite cobrança, não dá baixa, não assina e não altera configuração.';
 
-export const ASSISTANT_KB_VERSION = '1.0.0';
+export const ASSISTANT_CONTINUE_OFFER = 'Se quiser, posso continuar te orientando daqui.';
 
 export const ASSISTANT_RETRIEVE_LIMIT = 2;
 export const ASSISTANT_RETRIEVE_LIMIT_CONVERSATIONAL = 6;

@@ -24,6 +24,19 @@ export async function requestAssistantAsk(input: AssistantAskInput): Promise<Ass
     impersonatingTenant: input.context.impersonatingTenant,
     flags: input.context.flags,
     history: input.history || [],
+    ui: {
+      projectId: input.context.ui?.projectId,
+      lotId: input.context.ui?.lotId,
+      contractId: input.context.ui?.contractId,
+      lotModalOpen: input.context.ui?.lotModalOpen,
+      activeLotTab: input.context.ui?.activeLotTab,
+      saleFormOpen: input.context.ui?.saleFormOpen,
+      paymentMode: input.context.ui?.paymentMode,
+      customerSelected: input.context.ui?.customerSelected,
+      blockNumber: input.context.ui?.blockNumber,
+      lotNumber: input.context.ui?.lotNumber,
+      lotStatus: input.context.ui?.lotStatus,
+    },
   });
 
   try {

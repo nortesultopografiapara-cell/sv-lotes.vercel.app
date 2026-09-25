@@ -1,3 +1,5 @@
+import type { AssistantUiSafeState } from './uiSnapshot';
+
 export type AssistantAccess = 'read' | 'write';
 
 export type AssistantModuleId =
@@ -56,6 +58,7 @@ export type AssistantSafeContext = {
   };
   viewer: AssistantViewer;
   impersonatingTenant: boolean;
+  ui: AssistantUiSafeState;
 };
 
 export type AssistantShortcut = {

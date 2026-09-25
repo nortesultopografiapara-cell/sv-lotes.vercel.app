@@ -51,6 +51,7 @@ import {
 
 const SALES_CREATE_FETCH_TIMEOUT_MS = Math.max(SALES_FETCH_TIMEOUT_MS, 90_000);
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
+import { AssistantLotUiBridge } from "@/components/assistant/AssistantLotUiBridge";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
 import {
@@ -2174,6 +2175,14 @@ function LotPopupContent({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
+      <AssistantLotUiBridge
+        lotId={lot?.id ? String(lot.id) : null}
+        projectId={lot?.project_id || lot?.projectId || null}
+        blockNumber={quadraLabel || null}
+        lotNumber={displayNum || null}
+        lotStatus={getStatusLabel(lot.status) || lot?.status || null}
+        activeLotTab={popupTab}
+      />
       <div className="shrink-0 px-4 pt-4 pb-3 pr-10 lg:pt-2.5 lg:pb-2 border-b border-gray-100">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-bold text-base md:text-lg lg:text-base text-gray-900 leading-tight min-w-0">
