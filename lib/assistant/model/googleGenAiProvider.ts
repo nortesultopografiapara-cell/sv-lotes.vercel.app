@@ -6,7 +6,7 @@ import type { AssistantModelGenerateInput, AssistantModelGenerateResult, Assista
 export const ASSISTANT_AI_API_KEY_ENV = 'ASSISTANT_AI_API_KEY';
 export const ASSISTANT_AI_MODEL_ENV = 'ASSISTANT_AI_MODEL';
 export const ASSISTANT_AI_PROVIDER_ENV = 'ASSISTANT_AI_PROVIDER';
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+export const ASSISTANT_AI_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 function readApiKey(): string {
   return String(process.env[ASSISTANT_AI_API_KEY_ENV] || '').trim();
@@ -17,7 +17,7 @@ function readProviderFlag(): string {
 }
 
 function readModelName(): string {
-  return String(process.env[ASSISTANT_AI_MODEL_ENV] || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+  return String(process.env[ASSISTANT_AI_MODEL_ENV] || ASSISTANT_AI_DEFAULT_MODEL).trim() || ASSISTANT_AI_DEFAULT_MODEL;
 }
 
 function buildUserPayload(input: AssistantModelGenerateInput): string {

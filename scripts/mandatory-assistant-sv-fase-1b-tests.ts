@@ -338,8 +338,13 @@ function testProviderAbstractionAndEnv() {
   assert(types.includes('generate'), 'generate na interface');
   const google = read('lib/assistant/model/googleGenAiProvider.ts');
   assert(google.includes('ASSISTANT_AI_API_KEY'), 'env oficial');
+  assert(google.includes("gemini-3.5-flash-lite"), 'default do Assistente SV');
+  assert(!google.includes('gemini-2.0-flash'), 'não usar gemini-2.0-flash desativado');
   assert(!google.includes('GEMINI_API_KEY'), 'não reutilizar GEMINI_API_KEY residual');
   assert(!google.includes('NEXT_PUBLIC_'), 'chave não pode ser pública');
+  const envExample = read('.env.example');
+  assert(envExample.includes('gemini-3.5-flash-lite'), '.env.example deve citar o default vigente');
+  assert(!envExample.includes('gemini-2.0-flash'), '.env.example não deve citar modelo desativado');
   const panel = read('components/assistant/AssistantPanel.tsx');
   assert(panel.includes('requestAssistantAsk'), 'painel deve chamar a API');
   assert(panel.includes('ASSISTANT_THINKING_LABEL'), 'estado enviando');
