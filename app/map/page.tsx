@@ -21,14 +21,12 @@ import {
   createProjectThroughApi,
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
-import { formatFinancialAccountLabel } from '@/lib/finance/companyFinancialAccountTypes';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, LandPlot, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route, ClipboardList } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
-import { ProjectRevenueSplitPanel } from '@/components/projects/ProjectRevenueSplitPanel';
-import { ProjectLfContractConfigFields } from '@/components/projects/ProjectLfContractConfigFields';
+import { GisProjectFormModal } from '@/components/projects/GisProjectFormModal';
 import { MemorialGenerateModal } from '@/components/map/MemorialGenerateModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
@@ -58,8 +56,6 @@ import {
   type LfContractConfigFormState,
 } from '@/lib/lfImoveisContractConfig';
 import {
-  SALE_CONTRACT_MODEL_LABELS,
-  SALE_CONTRACT_MODEL_OPTIONS,
   normalizeSaleContractModel,
   type SaleContractModel,
 } from '@/lib/contractModel';
@@ -3222,232 +3218,37 @@ export default function MapPage() {
   };
 
   const renderProjectFormModal = () => (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-        <div className={`bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col ${projectFormMode === 'edit' ? 'max-w-2xl' : 'max-w-lg'}`}>
-          <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-            <h3 className="font-bold text-[var(--text-primary)] text-lg">
-              {projectFormMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
-            </h3>
-            <button
-              type="button"
-              onClick={closeProjectForm}
-              className="text-[var(--color-text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="p-6 flex flex-col gap-4 overflow-y-auto">
-          <form onSubmit={handleProjectFormSubmit} className="flex flex-col gap-4">
-            {projectFeedback && (
-              <div
-                role="alert"
-                className={`rounded-lg border px-3 py-2 text-sm ${
-                  projectFeedback.type === 'success'
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-red-500/40 bg-red-500/10 text-red-300'
-                }`}
-              >
-                {projectFeedback.message}
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Nome do Projeto *
-              </label>
-              <input
-                type="text"
-                required
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Ex: Loteamento Bosque das Árvores"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                  Cidade *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newProjectCity}
-                  onChange={(e) => setNewProjectCity(e.target.value)}
-                  placeholder="Ex: Parauapebas"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                  UF *
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={2}
-                  value={newProjectUf}
-                  onChange={(e) => setNewProjectUf(e.target.value.toUpperCase())}
-                  placeholder="Ex: PA"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)] uppercase"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Bairro/Localidade
-              </label>
-              <input
-                type="text"
-                value={newProjectNbhd}
-                onChange={(e) => setNewProjectNbhd(e.target.value)}
-                placeholder="Ex: Centro"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Endereço/Referência
-              </label>
-              <input
-                type="text"
-                value={newProjectAddr}
-                onChange={(e) => setNewProjectAddr(e.target.value)}
-                placeholder="Endereço principal da área"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Município / Foro do Contrato
-              </label>
-              <input
-                type="text"
-                value={newProjectForum}
-                onChange={(e) => setNewProjectForum(e.target.value)}
-                placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Conta financeira padrão do empreendimento
-              </label>
-              <select
-                value={newProjectFinancialAccountId}
-                onChange={(e) => setNewProjectFinancialAccountId(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              >
-                <option value="">Usar conta padrão da empresa</option>
-                {projectFinancialAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {formatFinancialAccountLabel({
-                      name: account.name,
-                      accountType: (account.accountType as 'IMOBILIARIA') || 'IMOBILIARIA',
-                      beneficiaryName: account.beneficiaryName,
-                      provider: account.provider ?? null,
-                    })}
-                    {account.isDefault ? ' (Padrão)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
-                Modelo de contrato padrão do empreendimento
-              </label>
-              <select
-                value={newProjectContractModel}
-                onChange={(e) => setNewProjectContractModel(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-              >
-                <option value="">
-                  Usar modelo padrão da empresa (
-                  {SALE_CONTRACT_MODEL_LABELS[companyDefaultContractModel]})
-                </option>
-                {SALE_CONTRACT_MODEL_OPTIONS.map((model) => (
-                  <option key={model} value={model}>
-                    {SALE_CONTRACT_MODEL_LABELS[model]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {normalizeSaleContractModel(
-              newProjectContractModel || companyDefaultContractModel,
-            ) === 'MUNDO_NOVO' &&
-              mundoNovoSellerContacts.length > 0 && (
-              <div className="rounded-lg border border-[var(--color-border)] p-3 flex flex-col gap-3">
-                <p className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
-                  Contato dos PROMITENTES VENDEDORES (e-sign)
-                </p>
-                {mundoNovoSellerContacts.map((seller, idx) => (
-                  <div key={`${seller.order}-${seller.name}`} className="flex flex-col gap-2">
-                    <p className="text-sm font-semibold text-[var(--text-primary)]">
-                      {seller.name}
-                    </p>
-                    <input
-                      type="email"
-                      value={seller.email}
-                      onChange={(e) =>
-                        setMundoNovoSellerContacts((prev) =>
-                          prev.map((row, rowIdx) =>
-                            rowIdx === idx ? { ...row, email: e.target.value } : row,
-                          ),
-                        )
-                      }
-                      placeholder="E-mail"
-                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-                    />
-                    <input
-                      type="tel"
-                      value={seller.phone}
-                      onChange={(e) =>
-                        setMundoNovoSellerContacts((prev) =>
-                          prev.map((row, rowIdx) =>
-                            rowIdx === idx ? { ...row, phone: e.target.value } : row,
-                          ),
-                        )
-                      }
-                      placeholder="Telefone / WhatsApp"
-                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            {normalizeSaleContractModel(
-              newProjectContractModel || companyDefaultContractModel,
-            ) === 'ESTRELA_DO_SUL' && (
-              <ProjectLfContractConfigFields
-                value={lfContractConfig}
-                onChange={setLfContractConfig}
-                companySecondVendorJson={companySecondVendorJson}
-              />
-            )}
-
-            <button
-              type="submit"
-              disabled={projectFormSubmitting}
-              className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-primary)] font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
-            >
-              {projectFormSubmitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-                     ) : projectFormMode === 'edit' ? (
-                       'Salvar Alterações'
-                     ) : (
-                       'Criar Projeto'
-                     )}
-            </button>
-          </form>
-            {projectFormMode === 'edit' && editingProject?.id ? (
-              <ProjectRevenueSplitPanel
-                projectId={editingProject.id}
-                projectName={newProjectName}
-                accounts={projectFinancialAccounts}
-              />
-            ) : null}
-          </div>
-        </div>
-      </div>
+    <GisProjectFormModal
+      mode={projectFormMode}
+      feedback={projectFeedback}
+      submitting={projectFormSubmitting}
+      name={newProjectName}
+      city={newProjectCity}
+      uf={newProjectUf}
+      neighborhood={newProjectNbhd}
+      address={newProjectAddr}
+      forumCity={newProjectForum}
+      financialAccountId={newProjectFinancialAccountId}
+      contractModel={newProjectContractModel}
+      companyDefaultContractModel={companyDefaultContractModel}
+      financialAccounts={projectFinancialAccounts}
+      mundoNovoSellerContacts={mundoNovoSellerContacts}
+      lfContractConfig={lfContractConfig}
+      companySecondVendorJson={companySecondVendorJson}
+      editingProjectId={editingProject?.id ?? null}
+      onClose={closeProjectForm}
+      onSubmit={handleProjectFormSubmit}
+      onNameChange={setNewProjectName}
+      onCityChange={setNewProjectCity}
+      onUfChange={setNewProjectUf}
+      onNeighborhoodChange={setNewProjectNbhd}
+      onAddressChange={setNewProjectAddr}
+      onForumCityChange={setNewProjectForum}
+      onFinancialAccountIdChange={setNewProjectFinancialAccountId}
+      onContractModelChange={setNewProjectContractModel}
+      onMundoNovoSellerContactsChange={setMundoNovoSellerContacts}
+      onLfContractConfigChange={setLfContractConfig}
+    />
   );
 
   const projectFormPortal =
