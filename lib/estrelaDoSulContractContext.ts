@@ -42,6 +42,7 @@ import {
   formatEstrelaBRL,
   formatEstrelaEnterpriseLocation,
   formatEstrelaExtensoCurrency,
+  formatEstrelaMedidasConfrontacoes,
   formatEstrelaMetersPhrase,
   formatEstrelaMoneyPhrase,
   formatEstrelaNumber,
@@ -57,6 +58,8 @@ export type EstrelaDoSulContractParams = {
   contractSnapshot?: Record<string, unknown>;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
+  projectBlocks?: Record<string, unknown>[] | null;
+  streetGuides?: Record<string, unknown>[] | null;
 };
 
 export type EstrelaDoSulContractContext = {
@@ -218,7 +221,7 @@ function installmentRows(
 export function buildEstrelaDoSulContractContext(
   params: EstrelaDoSulContractParams,
 ): EstrelaDoSulContractContext {
-  const { tenant, customer, project, block, sale, contractSnapshot, financeReceipts } =
+  const { tenant, customer, project, block, sale, contractSnapshot, financeReceipts, projectBlocks, streetGuides } =
     params;
   const seller = normalizeSellerFromCompany(tenant);
   const secondVendor = parseContractSecondVendorJson(
@@ -354,14 +357,21 @@ export function buildEstrelaDoSulContractContext(
   const backPhrase = formatEstrelaMetersPhrase(sides.fundo);
   const rightPhrase = formatEstrelaMetersPhrase(sides.ladoDireito);
   const leftPhrase = formatEstrelaMetersPhrase(sides.ladoEsquerdo);
-  const confrontacoesText = [
-    frontPhrase ? `${frontPhrase} de frente` : '',
-    backPhrase ? `${backPhrase} de fundo` : '',
-    rightPhrase ? `${rightPhrase} do lado direito` : '',
-    leftPhrase ? `${leftPhrase} do lado esquerdo` : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const fromGis = formatEstrelaMedidasConfrontacoes(block, {
+    projectBlocks,
+    streetGuides,
+    project: projectRecord,
+  });
+  const confrontacoesText =
+    fromGis ||
+    [
+      frontPhrase ? `${frontPhrase} de frente` : '',
+      backPhrase ? `${backPhrase} de fundo` : '',
+      rightPhrase ? `${rightPhrase} do lado direito` : '',
+      leftPhrase ? `${leftPhrase} do lado esquerdo` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
 
   const areaNum = Number(block?.area);
   const areaM2 = Number.isFinite(areaNum) && areaNum > 0

@@ -1,3 +1,16 @@
+import {
+  UNCLASSIFIED_CONFRONTATION_ROLE,
+  UNCLASSIFIED_CONFRONTANT_LABEL,
+  type ConfrontationListRole,
+} from '@/lib/assistedConfrontation';
+import { isPendingConfrontantLabel } from '@/lib/confrontantTypes';
+import { loadLotConfrontations } from '@/lib/lotConfrontationsPanel';
+import {
+  normalizeOfficialSideKind,
+  parseOfficialSegmentsFromBlock,
+} from '@/lib/officialLotMeasurements';
+import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
+
 const extenso = require('extenso');
 
 export function escEstrelaHtml(value: unknown): string {
@@ -148,6 +161,209 @@ function pickEstrelaLocationPart(...values: unknown[]): string {
     if (clean) return clean;
   }
   return '';
+}
+
+type EstrelaSideKey = ConfrontationListRole;
+
+type EstrelaConfrontacaoPiece = {
+  index: number;
+  key: EstrelaSideKey;
+  distance: number;
+  curve: boolean;
+  confrontant: string;
+};
+
+function cleanEstrelaConfrontant(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const unclassified = UNCLASSIFIED_CONFRONTANT_LABEL.trim().toUpperCase();
+  if (text.toUpperCase() === unclassified) return '';
+  if (isPendingConfrontantLabel(text)) return '';
+  return text;
+}
+
+function sideKeyFromOfficial(
+  raw: unknown,
+): EstrelaSideKey {
+  const kind = normalizeOfficialSideKind(raw);
+  if (kind === 'front') return 'frente';
+  if (kind === 'back') return 'fundo';
+  if (kind === 'right') return 'ladoDireito';
+  if (kind === 'left') return 'ladoEsquerdo';
+  return UNCLASSIFIED_CONFRONTATION_ROLE;
+}
+
+function joinEstrelaList(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] || '';
+  if (parts.length === 2) return `${parts[0]} e ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+}
+
+function estrelaSideAdverb(key: EstrelaSideKey): string {
+  if (key === 'frente') return 'pela frente';
+  if (key === 'fundo') return 'pelos fundos';
+  if (key === 'ladoDireito') return 'pelo lado direito';
+  if (key === 'ladoEsquerdo') return 'pelo lado esquerdo';
+  return 'sem classificação de lado';
+}
+
+function estrelaSideGroupLabel(key: EstrelaSideKey): { noun: string; composed: string } {
+  if (key === 'frente') return { noun: 'frente', composed: 'composta' };
+  if (key === 'fundo') return { noun: 'fundo', composed: 'composto' };
+  if (key === 'ladoDireito') return { noun: 'lado direito', composed: 'composto' };
+  if (key === 'ladoEsquerdo') return { noun: 'lado esquerdo', composed: 'composto' };
+  return { noun: 'trecho sem classificação de lado', composed: 'composto' };
+}
+
+function collectEstrelaConfrontacaoPieces(
+  block: Record<string, unknown>,
+  options?: {
+    projectBlocks?: Record<string, unknown>[] | null;
+    streetGuides?: Record<string, unknown>[] | null;
+    project?: Record<string, unknown> | null;
+  },
+): EstrelaConfrontacaoPiece[] {
+  const parsed = parseOfficialSegmentsFromBlock(block);
+  if (!parsed.length) return [];
+
+  const byIndex = new Map(parsed.map((seg) => [Number(seg.segment_index), seg]));
+  const allBlocks = [
+    ...(Array.isArray(options?.projectBlocks) ? options.projectBlocks : []),
+    block,
+  ].filter((row, i, arr) => {
+    const id = String(row?.id ?? '');
+    if (!id) return i === arr.length - 1;
+    return arr.findIndex((item) => String(item?.id ?? '') === id) === i;
+  });
+
+  const panel = loadLotConfrontations({
+    lot: block,
+    allBlocks,
+    streetGuides: (options?.streetGuides || []) as Record<string, unknown>[],
+  });
+
+  const pieces: EstrelaConfrontacaoPiece[] = [];
+  const seen = new Set<number>();
+  for (const row of panel.rows) {
+    const index = Number(row.segmentIndex);
+    if (!Number.isFinite(index) || index < 0) continue;
+    const seg = byIndex.get(index);
+    const distance = Number(seg?.distance);
+    if (!seg || !Number.isFinite(distance) || distance <= 0) continue;
+    seen.add(index);
+    pieces.push({
+      index,
+      key: row.key,
+      distance,
+      curve: seg.segment_type === 'CURVE',
+      confrontant: cleanEstrelaConfrontant(row.text),
+    });
+  }
+
+  if (!pieces.length) {
+    for (const seg of parsed) {
+      const index = Number(seg.segment_index);
+      const distance = Number(seg.distance);
+      if (!Number.isFinite(index) || !Number.isFinite(distance) || distance <= 0) {
+        continue;
+      }
+      const rec = getSegmentConfrontantRecord(block, index);
+      pieces.push({
+        index,
+        key: sideKeyFromOfficial(seg.official_side),
+        distance,
+        curve: seg.segment_type === 'CURVE',
+        confrontant: cleanEstrelaConfrontant(rec?.confrontant),
+      });
+    }
+  } else {
+    for (const seg of parsed) {
+      const index = Number(seg.segment_index);
+      if (seen.has(index)) continue;
+      const distance = Number(seg.distance);
+      if (!Number.isFinite(index) || !Number.isFinite(distance) || distance <= 0) {
+        continue;
+      }
+      const rec = getSegmentConfrontantRecord(block, index);
+      pieces.push({
+        index,
+        key: sideKeyFromOfficial(seg.official_side),
+        distance,
+        curve: seg.segment_type === 'CURVE',
+        confrontant: cleanEstrelaConfrontant(rec?.confrontant),
+      });
+    }
+  }
+
+  pieces.sort((a, b) => a.index - b.index);
+  return pieces;
+}
+
+function formatEstrelaConfrontacaoGroup(group: EstrelaConfrontacaoPiece[]): string {
+  if (!group.length) return '';
+  const key = group[0].key;
+  const confrontant = group[0].confrontant;
+  const measures = group.map((piece) => formatEstrelaMetersPhrase(piece.distance));
+  const curveAll = group.every((piece) => piece.curve);
+  const curveSome = group.some((piece) => piece.curve);
+  const curveBit = curveAll || (group.length === 1 && curveSome) ? ', em curva' : '';
+  const confrontBit = confrontant
+    ? group.length > 1
+      ? `, ${group.length === 2 ? 'ambos' : 'todos'} confrontando com ${confrontant}`
+      : `, confrontando com ${confrontant}`
+    : '';
+
+  if (group.length === 1) {
+    return `${measures[0]} ${estrelaSideAdverb(key)}${curveBit}${confrontBit}`;
+  }
+
+  const { noun, composed } = estrelaSideGroupLabel(key);
+  const mixedCurve =
+    curveSome && !curveAll
+      ? `, incluindo trecho em curva`
+      : curveAll
+        ? ', em curva'
+        : '';
+  return `${noun} ${composed} pelos segmentos de ${joinEstrelaList(measures)}${mixedCurve}${confrontBit}`;
+}
+
+/**
+ * MEDIDAS E CONFRONTAÇÕES a partir de blocks.segments_json,
+ * na mesma leitura da aba Confrontações (ordem geométrica, sem somar).
+ */
+export function formatEstrelaMedidasConfrontacoes(
+  block: Record<string, unknown> | null | undefined,
+  options?: {
+    projectBlocks?: Record<string, unknown>[] | null;
+    streetGuides?: Record<string, unknown>[] | null;
+    project?: Record<string, unknown> | null;
+  },
+): string {
+  if (!block || typeof block !== 'object') return '';
+  const pieces = collectEstrelaConfrontacaoPieces(block, options);
+  if (!pieces.length) return '';
+
+  const groups: EstrelaConfrontacaoPiece[][] = [];
+  for (const piece of pieces) {
+    const last = groups[groups.length - 1];
+    const prev = last?.[last.length - 1];
+    if (
+      prev &&
+      prev.key === piece.key &&
+      prev.confrontant === piece.confrontant
+    ) {
+      last.push(piece);
+    } else {
+      groups.push([piece]);
+    }
+  }
+
+  return groups
+    .map((group) => formatEstrelaConfrontacaoGroup(group))
+    .filter(Boolean)
+    .join('; ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**

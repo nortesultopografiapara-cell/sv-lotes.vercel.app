@@ -29,9 +29,11 @@ import {
   formatEstrelaMetersExtenso,
   formatEstrelaMetersPhrase,
   formatEstrelaEnterpriseLocation,
+  formatEstrelaMedidasConfrontacoes,
 } from '../lib/estrelaDoSulContractFormat';
 import { collapseEstrelaDuplicateEditorialNumbers } from '../lib/estrelaDoSulContractClauses';
 import { resolveEstrelaDoSulSaleCommissionAmount } from '../lib/estrelaDoSulContractContext';
+import { shouldLoadProjectBlocksForContract } from '../lib/contractHtmlGlobal';
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FALHOU — ${msg}`);
@@ -270,6 +272,136 @@ assert(
     'Localização do Imóvel não usa Município/Foro',
   );
 }
+
+function utmSeg(opts: {
+  i: number;
+  d: number;
+  side?: string;
+  c?: string;
+  curve?: boolean;
+}): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    segment_index: opts.i,
+    distance: opts.d,
+    north: 9347282 + opts.i,
+    east: 629036 + opts.i * 12,
+    end_north: 9347283 + opts.i,
+    end_east: 629048 + opts.i * 12,
+    vertex_order: opts.i,
+    segment_type: opts.curve ? 'CURVE' : 'LINE',
+  };
+  if (opts.side) row.official_side = opts.side;
+  if (opts.c) {
+    row.confrontant = opts.c;
+    row.confrontante = opts.c;
+    row.manual_confrontant = opts.c;
+    row.confrontant_source = 'manual';
+  }
+  if (opts.curve) {
+    row.radius = 434.93;
+    row.chord = opts.d;
+  }
+  return row;
+}
+
+const LOT13_BLOCK = {
+  id: 'lote-13-estrela-test',
+  number: '13',
+  block_name: '01',
+  area: 667.18,
+  segments_json: [
+    utmSeg({ i: 0, d: 38.2, side: 'right', c: 'Lote 14' }),
+    utmSeg({ i: 1, d: 32.99, side: 'back', c: 'RUA 02', curve: true }),
+    utmSeg({ i: 2, d: 5.47, side: 'left', c: 'RUA 02 E ESTRADA VS 81 PALMARES II' }),
+    utmSeg({ i: 3, d: 23.65, side: 'front', c: 'ESTRADA VS 81 PALMARES II' }),
+    utmSeg({ i: 4, d: 17.5, side: 'front', c: 'ESTRADA VS 81 PALMARES II' }),
+  ],
+};
+
+const p38 = formatEstrelaMetersPhrase(38.2);
+const p32 = formatEstrelaMetersPhrase(32.99);
+const p547 = formatEstrelaMetersPhrase(5.47);
+const p2365 = formatEstrelaMetersPhrase(23.65);
+const p1750 = formatEstrelaMetersPhrase(17.5);
+const LOT13_TEXT = [
+  `${p38} pelo lado direito, confrontando com Lote 14`,
+  `${p32} pelos fundos, em curva, confrontando com RUA 02`,
+  `${p547} pelo lado esquerdo, confrontando com RUA 02 E ESTRADA VS 81 PALMARES II`,
+  `frente composta pelos segmentos de ${p2365} e ${p1750}, ambos confrontando com ESTRADA VS 81 PALMARES II`,
+].join('; ');
+
+assert(
+  shouldLoadProjectBlocksForContract({ contract_model: 'ESTRELA_DO_SUL' }),
+  'Estrela carrega lotes vizinhos para confrontação',
+);
+const LOT13_OUT = formatEstrelaMedidasConfrontacoes(LOT13_BLOCK);
+assert(
+  LOT13_OUT === LOT13_TEXT,
+  'Lote 13: 5 segmentos, frente em dois, curva no fundo',
+);
+assert(
+  !LOT13_OUT.includes('41,15m'),
+  'não soma as duas frentes em 41,15 m',
+);
+assert(
+  LOT13_OUT.includes('Lote 14') &&
+    LOT13_OUT.includes('RUA 02') &&
+    LOT13_OUT.includes('RUA 02 E ESTRADA VS 81 PALMARES II'),
+  'confrontantes diferentes preservados',
+);
+
+const noConfrontantText = formatEstrelaMedidasConfrontacoes({
+  number: '99',
+  segments_json: [
+    utmSeg({ i: 0, d: 38.2, side: 'right' }),
+    utmSeg({ i: 1, d: 20, side: 'front', c: 'Rua A' }),
+  ],
+});
+assert(
+  noConfrontantText.includes(`${p38} pelo lado direito`) &&
+    !noConfrontantText.includes('pelo lado direito, confrontando') &&
+    noConfrontantText.includes('confrontando com Rua A'),
+  'ausência de confrontante: não inventa vizinho',
+);
+
+const unclassifiedText = formatEstrelaMedidasConfrontacoes({
+  number: '98',
+  segments_json: [
+    utmSeg({ i: 0, d: 5.47, c: 'Área verde' }),
+    utmSeg({ i: 1, d: 20, side: 'front', c: 'Rua A' }),
+  ],
+});
+assert(
+  unclassifiedText.includes(`${p547} sem classificação de lado, confrontando com Área verde`),
+  'segmento sem official_side não omite e não inventa lado',
+);
+
+const lot13Html = html({
+  block: { ...BLOCK, ...LOT13_BLOCK },
+});
+assert(lot13Html.includes(LOT13_TEXT), 'HTML usa o texto GIS do Lote 13');
+assert(
+  (lot13Html.match(
+    /pelo lado direito, confrontando com Lote 14/g,
+  ) || []).length >= 2,
+  'Capa e 1.3 com o mesmo texto de medidas e confrontações',
+);
+{
+  const slices: string[] = [];
+  let from = 0;
+  while (from < lot13Html.length) {
+    const i = lot13Html.indexOf('MEDIDAS E CONFRONTAÇÕES', from);
+    if (i < 0) break;
+    slices.push(lot13Html.slice(i, i + 900));
+    from = i + 1;
+  }
+  assert(slices.length >= 2, 'duas linhas MEDIDAS E CONFRONTAÇÕES');
+  assert(
+    slices.every((slice) => slice.includes(LOT13_TEXT)),
+    'Capa Resumo e cláusula 1.3 com a mesma descrição',
+  );
+}
+
 assert(onlyCompany.includes('Quadra 02') || onlyCompany.includes('quadra 02') || onlyCompany.includes('02'), 'quadra');
 assert(onlyCompany.includes('15'), 'lote');
 assert(onlyCompany.includes('1.100,00m²') || onlyCompany.includes('1100'), 'área GIS');

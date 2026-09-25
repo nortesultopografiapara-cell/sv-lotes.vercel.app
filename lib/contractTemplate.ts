@@ -158,6 +158,8 @@ export function generateContractHTML({
       contractSnapshot,
       contractDate,
       financeReceipts,
+      projectBlocks,
+      streetGuides,
     });
   }
 
