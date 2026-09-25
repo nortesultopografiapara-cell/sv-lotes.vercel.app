@@ -196,23 +196,23 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   break-inside: avoid-page !important;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  margin-top: 10px;
+  margin-top: 16px;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-closing-date {
-  margin-top: 6px !important;
+  margin-top: 8px !important;
   margin-bottom: 0 !important;
-  padding-bottom: 18px !important;
+  padding-bottom: 36px !important;
   font-size: 9pt !important;
   line-height: 1.35 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 24px !important;
+  row-gap: 44px !important;
   column-gap: 24px !important;
-  padding-top: 2px !important;
+  padding-top: 8px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 10px auto !important;
+  margin: 0 auto 22px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;

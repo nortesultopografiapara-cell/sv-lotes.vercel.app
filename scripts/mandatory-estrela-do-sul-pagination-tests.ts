@@ -193,11 +193,11 @@ assert(
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
 assert(
-  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 24px'),
+  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 44px'),
   'CSS: 1º bloco com fileiras documentais',
 );
 assert(
-  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 18px'),
+  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 36px'),
   'CSS: data afastada das linhas de assinatura',
 );
 
