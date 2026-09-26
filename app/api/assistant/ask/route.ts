@@ -79,7 +79,15 @@ export async function POST(request: Request) {
       procedureId: body.procedureId,
       history: body.history,
     },
-    providers,
+    {
+      ...providers,
+      readonly: {
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        role: auth.role,
+        client: auth.admin,
+      },
+    },
   );
 
   logAssistantAsk({
@@ -90,6 +98,7 @@ export async function POST(request: Request) {
     kbIds: result.procedureIds,
     capIds: result.capabilityIds || [],
     packedChars: result.packedChars || 0,
+    toolId: result.toolId,
     provider: result.source || 'local',
     latencyMs: Date.now() - started,
     outcome:
@@ -108,6 +117,8 @@ export async function POST(request: Request) {
     packedChars: result.packedChars || 0,
     source: result.source || 'local',
     notice: result.notice || null,
+    toolId: result.toolId || null,
+    toolOk: result.toolOk ?? null,
   });
 }
 

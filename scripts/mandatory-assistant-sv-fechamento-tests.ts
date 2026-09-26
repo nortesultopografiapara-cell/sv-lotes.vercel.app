@@ -118,18 +118,16 @@ async function testMemorialFollowUpAndGoalSwitch() {
   console.log('OK testMemorialFollowUpAndGoalSwitch');
 }
 
-async function testConsultIsOrientationNotLiveQuery() {
+async function testConsultHowToIsOrientation() {
   const result = await ask({
-    question: 'Tem parcela vencida hoje?',
+    question: 'Como vejo parcelas vencidas?',
     context: ctx('/dashboard'),
   });
   assert(result.kind === 'answer', result.text);
-  assert(result.procedureIds.includes('finance-visao-geral'), result.procedureIds.join(','));
+  assert(result.procedureIds.includes('finance-visao-geral') || (result.capabilityIds || []).length > 0, result.procedureIds.join(','));
   assert(/Financeiro/.test(result.text), result.text);
-  assert(/não consulta o banco|nao consulta o banco/i.test(result.text), result.text);
-  assert(!/\bR\$\s*\d/.test(result.text), result.text);
-  assert(!/encontrei \d+ parcela/.test(result.text), result.text);
-  console.log('OK testConsultIsOrientationNotLiveQuery');
+  assert(!/Existem \d+ parcela/.test(result.text), result.text);
+  console.log('OK testConsultHowToIsOrientation');
 }
 
 async function testUnknownStillUnknown() {
@@ -184,7 +182,7 @@ async function main() {
   testKbHas37();
   testSpecificRetrievalWins();
   await testMemorialFollowUpAndGoalSwitch();
-  await testConsultIsOrientationNotLiveQuery();
+  await testConsultHowToIsOrientation();
   await testUnknownStillUnknown();
   await testBrokerRbac();
   testProviderAndSecrets();

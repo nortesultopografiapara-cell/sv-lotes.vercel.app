@@ -194,6 +194,9 @@ export const localGroundedProvider: AssistantModelProvider = {
   id: 'local-grounded',
   available: () => true,
   async generate(input: AssistantModelGenerateInput): Promise<AssistantModelGenerateResult> {
+    if (input.readonlyFacts) {
+      return { text: '', providerId: 'local-grounded' };
+    }
     const uiAnswer = composeFromValidatedUi({
       question: input.messages[input.messages.length - 1]?.content || '',
       context: input.context,

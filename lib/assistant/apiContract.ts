@@ -58,6 +58,8 @@ export type AssistantAskApiResponse = {
   procedureIds: string[];
   capabilityIds?: string[];
   packedChars?: number;
-  source: 'model' | 'local' | 'local-fallback';
+  source: 'model' | 'local' | 'local-fallback' | 'readonly';
   notice?: string | null;
+  toolId?: string | null;
+  toolOk?: boolean;
 };

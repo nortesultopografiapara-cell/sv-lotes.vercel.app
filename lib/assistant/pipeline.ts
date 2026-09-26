@@ -23,12 +23,19 @@ import { resolveAssistantActiveGoal } from './activeGoal';
 import { retrieveAssistantCapabilities } from './capabilities/retrieve';
 import { packedCapabilityChars } from './capabilities/pack';
 import { logAssistantKnowledgeGap } from './capabilities/gap';
+import { executeAssistantReadonlyTool } from './readonly/execute';
+import { formatReadonlyFacts, formatReadonlyFailure, readonlyFactsRespected } from './readonly/format';
+import { resolveAssistantReadonlyIntent } from './readonly/intent';
+import { logAssistantReadonlyTool } from './readonly/log';
+import { packedReadonlyHasNoSecrets, packReadonlyFacts } from './readonly/sanitize';
+import type { AssistantReadonlyRuntime } from './readonly/types';
 import type { AssistantModelProvider } from './model/types';
 import type { AssistantAskInput, AssistantAskResult } from './types';
 
 export type AssistantPipelineDeps = {
   primary: AssistantModelProvider;
   fallback: AssistantModelProvider;
+  readonly?: AssistantReadonlyRuntime;
 };
 
 function withWhoCanExecute(result: AssistantAskResult): AssistantAskResult {
@@ -90,6 +97,109 @@ export async function runAssistantPipeline(
     history,
     context: input.context,
   });
+
+  if (deps.readonly) {
+    const intent = resolveAssistantReadonlyIntent({
+      question,
+      history,
+      context: input.context,
+    });
+    if (intent) {
+      const started = Date.now();
+      const execution = await executeAssistantReadonlyTool({
+        toolId: intent.toolId,
+        args: intent.args,
+        runtime: { ...deps.readonly, role: deps.readonly.role || input.context.role },
+      });
+      logAssistantReadonlyTool({
+        toolId: intent.toolId,
+        tenantId: deps.readonly.tenantId,
+        userId: deps.readonly.userId,
+        durationMs: Date.now() - started,
+        ok: execution.ok,
+        rowCount: execution.ok ? execution.rowCount : 0,
+      });
+      if (!execution.ok) {
+        const forbidden = execution.reason === 'forbidden';
+        return {
+          kind: forbidden ? 'forbidden' : 'answer',
+          text: formatReadonlyFailure(execution),
+          procedureIds: [],
+          retrievedTitles: [],
+          capabilityIds: [],
+          source: 'readonly',
+          toolId: intent.toolId,
+          toolOk: false,
+        };
+      }
+      const formatted = formatReadonlyFacts(execution.facts);
+      const packed = packReadonlyFacts(execution.facts);
+      const packedOk = packedReadonlyHasNoSecrets(packed);
+      const generateInput = {
+        messages: [{ role: 'user' as const, content: question }],
+        knowledge: [],
+        context: input.context,
+        history,
+        activeGoal,
+        readonlyFacts: packedOk ? packed : null,
+        policy: { canAnswer: true as const, reason: 'ok' as const },
+      };
+      if (packedOk) {
+        try {
+          const generated = await deps.primary.generate(generateInput);
+          const text = sanitizeAssistantQuestion(String(generated.text || '').trim(), ASSISTANT_MAX_OUTPUT_CHARS);
+          if (text && readonlyFactsRespected(text, execution.facts)) {
+            const isLocal = generated.providerId === localGroundedProvider.id;
+            return {
+              kind: 'answer',
+              text,
+              procedureIds: [],
+              retrievedTitles: [],
+              capabilityIds: [],
+              packedChars: packed.length,
+              source: isLocal ? 'readonly' : 'model',
+              toolId: intent.toolId,
+              toolOk: true,
+              notice: null,
+            };
+          }
+        } catch {
+          try {
+            const generated = await deps.fallback.generate(generateInput);
+            const text = sanitizeAssistantQuestion(String(generated.text || '').trim(), ASSISTANT_MAX_OUTPUT_CHARS);
+            if (text && readonlyFactsRespected(text, execution.facts)) {
+              return {
+                kind: 'answer',
+                text,
+                procedureIds: [],
+                retrievedTitles: [],
+                capabilityIds: [],
+                packedChars: packed.length,
+                source: 'readonly',
+                toolId: intent.toolId,
+                toolOk: true,
+                notice: ASSISTANT_LOCAL_FALLBACK_NOTICE,
+              };
+            }
+          } catch {
+            /* formatter local */
+          }
+        }
+      }
+      return {
+        kind: 'answer',
+        text: formatted,
+        procedureIds: [],
+        retrievedTitles: [],
+        capabilityIds: [],
+        packedChars: packed.length,
+        source: 'readonly',
+        toolId: intent.toolId,
+        toolOk: true,
+        notice: null,
+      };
+    }
+  }
 
   const query = buildRetrievalQuery(question, history);
   const retrieveBoth = (relax: boolean) => ({

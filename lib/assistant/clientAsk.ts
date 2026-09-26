@@ -77,6 +77,8 @@ export async function requestAssistantAsk(input: AssistantAskInput): Promise<Ass
       packedChars: json.packedChars,
       source: json.source,
       notice: json.notice || null,
+      toolId: json.toolId || undefined,
+      toolOk: json.toolOk,
     };
   } catch {
     try {

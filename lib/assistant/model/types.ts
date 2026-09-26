@@ -12,6 +12,7 @@ export type AssistantModelGenerateInput = {
   context: AssistantSafeContext;
   history: AssistantChatTurn[];
   activeGoal?: import('../activeGoal').AssistantActiveGoal | null;
+  readonlyFacts?: string | null;
   policy: {
     canAnswer: boolean;
     reason: 'ok' | 'unknown' | 'broker' | 'owner-write' | 'profile' | 'injection';

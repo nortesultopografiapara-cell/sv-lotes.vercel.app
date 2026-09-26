@@ -86,7 +86,7 @@ export type AssistantAskInput = {
 
 export type AssistantAskKind = 'answer' | 'unknown' | 'forbidden';
 
-export type AssistantAnswerSource = 'model' | 'local' | 'local-fallback';
+export type AssistantAnswerSource = 'model' | 'local' | 'local-fallback' | 'readonly';
 
 export type AssistantAskResult = {
   kind: AssistantAskKind;
@@ -97,6 +97,8 @@ export type AssistantAskResult = {
   packedChars?: number;
   source?: AssistantAnswerSource;
   notice?: string | null;
+  toolId?: string;
+  toolOk?: boolean;
 };
 
 export type AssistantMessage = {

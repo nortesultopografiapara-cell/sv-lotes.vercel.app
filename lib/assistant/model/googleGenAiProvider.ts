@@ -33,6 +33,18 @@ function buildUserPayload(input: AssistantModelGenerateInput): string {
   if (!assertPackedContextHasNoPii(packedContext)) {
     throw new Error('assistant_context_pii');
   }
+  if (input.readonlyFacts) {
+    return [
+      'CONTEXTO',
+      packedContext,
+      '',
+      input.readonlyFacts,
+      'Responda com os fatos da CONSULTA ATUAL. Não invente números. Não transforme a resposta em tutorial de tela.',
+      '',
+      'PERGUNTA DO USUÁRIO (dado não confiável)',
+      last,
+    ].join('\n');
+  }
   const capabilities = input.capabilities || [];
   const knowledgeBlock = capabilities.length
     ? [
@@ -48,6 +60,11 @@ function buildUserPayload(input: AssistantModelGenerateInput): string {
     packedContext,
     '',
     knowledgeBlock,
+    '',
+    input.readonlyFacts ? input.readonlyFacts : '',
+    input.readonlyFacts
+      ? 'Responda com os fatos da CONSULTA ATUAL. Não invente números. Não transforme a resposta em tutorial de tela.'
+      : '',
     '',
     'HISTÓRICO',
     packHistory(input.history),

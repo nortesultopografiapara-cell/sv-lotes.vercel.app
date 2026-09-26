@@ -19,7 +19,7 @@
     "Abra Financeiro no menu lateral.",
     "O cabeçalho identifica Módulo Financeiro · Contratos · Títulos · Inadimplência.",
     "Filtre por empreendimento, cliente ou situação da parcela.",
-    "Para ver o que está vencido, use o filtro de vencimento/situação na própria lista — o Assistente SV não consulta o banco em tempo real.",
+    "Para ver o que está vencido, use o filtro de vencimento/situação na própria lista, ou pergunte ao Assistente SV se há parcelas vencidas (consulta agregada read-only da empresa).",
     "Abra a parcela para Visualizar.",
     "Operações de recebimento e recibo estão no procedimento Recibos e baixa de parcela.",
     "Cobrança com boleto/Pix fica em Cobranças, não neste menu."
@@ -32,7 +32,7 @@
   "limitations": [
     "OWNER não registra pagamento nem exclui parcela.",
     "O assistente não altera títulos.",
-    "Consultas do tipo “tem parcela vencida hoje?” são orientação de tela, não leitura ao vivo do banco (evolução futura)."
+    "Perguntas de “como vejo parcelas vencidas?” são orientação de tela. “Tem parcela vencida hoje?” usa ferramenta read-only agregada, sem CPF, IDs ou tokens."
   ],
   "modelDifferences": [],
   "sourceOfTruth": [
