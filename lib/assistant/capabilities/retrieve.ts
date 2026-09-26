@@ -87,6 +87,9 @@ function scoreCapability(
     if (t.length >= 6 && qn.includes(t)) score += 14;
   }
   if (activeGoal?.id === capability.id) score += 24;
+  if (context.ui?.saleEditOpen && context.ui.saleEditTab === 'cobrancas' && capability.id === 'sale.charges') score += 22;
+  if (context.ui?.saleEditOpen && context.ui.saleEditTab === 'cobrancas' && capability.id === 'charge.emit') score -= 16;
+  if (context.pathname.startsWith('/charges') && capability.id === 'charge.emit' && !/lembrete|whatsapp/.test(qn)) score += 16;
   if (capability.routes.some((route) => context.pathname === route || context.pathname.startsWith(`${route}/`))) {
     score += 6;
   }

@@ -16,6 +16,7 @@ import {
   scopeAssistantHintsToRoute,
   type AssistantLotTab,
   type AssistantPaymentModeHint,
+  type AssistantSaleEditTab,
   type AssistantUiClientHints,
 } from '@/lib/assistant/uiSnapshot';
 
@@ -37,6 +38,17 @@ type SalePatch = {
   firstDueFilled?: boolean;
   brokerSelected?: boolean;
   downPaymentFilled?: boolean;
+  saleEditOpen?: boolean;
+  saleEditTab?: AssistantSaleEditTab | null;
+  saleChargesMissing?: number | null;
+  saleChargesEligible?: number | null;
+  saleChargesGenerated?: number | null;
+  saleChargesPaid?: number | null;
+  saleChargesCancelled?: number | null;
+  saleChargesPending?: number | null;
+  saleChargesInstallments?: number | null;
+  saleChargesHasAccount?: boolean;
+  saleChargesReady?: boolean;
 };
 
 type AssistantUiStateContextValue = {
@@ -83,6 +95,17 @@ export function AssistantUiStateProvider({ children }: { children: ReactNode }) 
         firstDueFilled: false,
         brokerSelected: false,
         downPaymentFilled: false,
+        saleEditOpen: false,
+        saleEditTab: null,
+        saleChargesReady: false,
+        saleChargesMissing: null,
+        saleChargesEligible: null,
+        saleChargesGenerated: null,
+        saleChargesPaid: null,
+        saleChargesCancelled: null,
+        saleChargesPending: null,
+        saleChargesInstallments: null,
+        saleChargesHasAccount: false,
       };
     });
   }, [selectedProjectId]);
@@ -117,6 +140,17 @@ export function AssistantUiStateProvider({ children }: { children: ReactNode }) 
       firstDueFilled: false,
       brokerSelected: false,
       downPaymentFilled: false,
+      saleEditOpen: false,
+      saleEditTab: null,
+      saleChargesReady: false,
+      saleChargesMissing: null,
+      saleChargesEligible: null,
+      saleChargesGenerated: null,
+      saleChargesPaid: null,
+      saleChargesCancelled: null,
+      saleChargesPending: null,
+      saleChargesInstallments: null,
+      saleChargesHasAccount: false,
     }));
   }, []);
 

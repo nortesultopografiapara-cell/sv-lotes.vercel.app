@@ -25,6 +25,7 @@ import {
 } from '@/lib/finance/saleChargesShared';
 import { normalizeWhatsAppPhone, openWhatsApp } from '@/lib/whatsapp/clickToChat';
 import { ChargeRevenueSplitDistribution, invalidateSaleRevenueSplitView } from '@/components/finance/ChargeRevenueSplitDistribution';
+import { AssistantSaleChargesUiBridge } from '@/components/assistant/AssistantSaleChargesUiBridge';
 
 type SaleChargesPanelProps = {
   saleId: string | null | undefined;
@@ -450,6 +451,7 @@ export function SaleChargesPanel({ saleId, disabled = false }: SaleChargesPanelP
 
   return (
     <div className="space-y-4">
+      <AssistantSaleChargesUiBridge summary={summary} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h4 className="text-sm font-bold text-gray-900">Cobranças da venda</h4>

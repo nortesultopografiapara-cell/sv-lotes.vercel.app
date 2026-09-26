@@ -1,0 +1,59 @@
+{
+  "id": "gis-sale-charges",
+  "title": "Cobranças da venda — Editar venda",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": [
+    "sale.charges",
+    "gerar cobrancas faltantes",
+    "atualizar situacao das cobrancas",
+    "boletos desta venda",
+    "aba cobrancas",
+    "editar venda cobrancas"
+  ],
+  "objective": "Gerar e sincronizar cobranças (boleto/Pix) da venda já aberta em Editar venda → aba Cobranças, sem sair para o módulo global Cobranças.",
+  "prerequisites": [
+    "Venda concluída com lote vendido.",
+    "Modal Editar venda aberto.",
+    "Conta recebedora do empreendimento configurada.",
+    "ADMIN. OWNER consulta. BROKER não emite cobrança."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Editar Venda",
+    "Cobranças",
+    "Gerar cobranças faltantes",
+    "Atualizar situação das cobranças"
+  ],
+  "steps": [
+    "No lote vendido, aba Comercial, clique em Editar Venda.",
+    "Abra a aba Cobranças.",
+    "Confira a conta recebedora e os contadores (parcelas, pagas, geradas, faltantes, canceladas, pendente, elegíveis).",
+    "Se houver cobranças faltantes ou elegíveis, clique em Gerar cobranças faltantes.",
+    "Depois use Atualizar situação das cobranças para sincronizar os status, quando necessário.",
+    "Várias vendas ou operação em massa ficam no menu Cobranças, não nesta aba."
+  ],
+  "expectedResult": "Cobranças daquela venda geradas e/ou status sincronizado na própria aba Cobranças.",
+  "commonErrors": [
+    "Abrir o módulo global Cobranças para emitir os boletos de uma venda que já está em Editar venda.",
+    "Clicar de novo em Gerar cobranças faltantes quando o contador de faltantes já está zero."
+  ],
+  "limitations": [
+    "O assistente não emite cobrança.",
+    "Esta aba trata uma venda. O módulo Cobranças trata seleção em massa na central operacional."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/map/CustomerLotFormModal.tsx",
+    "components/sales/SaleChargesPanel.tsx",
+    "lib/finance/saleChargesShared.ts"
+  ],
+  "uiLabels": [
+    "Editar Venda",
+    "Cobranças",
+    "Gerar cobranças faltantes",
+    "Atualizar situação das cobranças"
+  ]
+}

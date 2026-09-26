@@ -83,14 +83,25 @@ export async function hydrateAssistantUiContext(input: {
   const ui: AssistantUiSafeState = {
     ...EMPTY_ASSISTANT_UI_STATE,
     lotModalOpen: Boolean(hints.lotModalOpen),
-    activeLotTab: hints.activeLotTab,
+    activeLotTab: hints.activeLotTab || null,
     saleFormOpen: Boolean(hints.saleFormOpen),
-    paymentMode: hints.paymentMode,
+    paymentMode: hints.paymentMode || null,
     customerSelected: Boolean(hints.customerSelected),
     installmentsFilled: Boolean(hints.installmentsFilled),
     firstDueFilled: Boolean(hints.firstDueFilled),
     brokerSelected: Boolean(hints.brokerSelected),
     downPaymentFilled: Boolean(hints.downPaymentFilled),
+    saleEditOpen: Boolean(hints.saleEditOpen),
+    saleEditTab: hints.saleEditTab || null,
+    saleChargesMissing: hints.saleChargesMissing ?? null,
+    saleChargesEligible: hints.saleChargesEligible ?? null,
+    saleChargesGenerated: hints.saleChargesGenerated ?? null,
+    saleChargesPaid: hints.saleChargesPaid ?? null,
+    saleChargesCancelled: hints.saleChargesCancelled ?? null,
+    saleChargesPending: hints.saleChargesPending ?? null,
+    saleChargesInstallments: hints.saleChargesInstallments ?? null,
+    saleChargesHasAccount: Boolean(hints.saleChargesHasAccount),
+    saleChargesReady: Boolean(hints.saleChargesReady),
   };
 
   let rejectedForeignTenant = false;
@@ -143,6 +154,17 @@ export async function hydrateAssistantUiContext(input: {
       ui.firstDueFilled = false;
       ui.brokerSelected = false;
       ui.downPaymentFilled = false;
+      ui.saleEditOpen = false;
+      ui.saleEditTab = null;
+      ui.saleChargesReady = false;
+      ui.saleChargesMissing = null;
+      ui.saleChargesEligible = null;
+      ui.saleChargesGenerated = null;
+      ui.saleChargesPaid = null;
+      ui.saleChargesCancelled = null;
+      ui.saleChargesPending = null;
+      ui.saleChargesInstallments = null;
+      ui.saleChargesHasAccount = false;
     }
   }
 

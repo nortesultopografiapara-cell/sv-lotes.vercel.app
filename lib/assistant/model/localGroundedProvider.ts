@@ -12,7 +12,7 @@ function normalize(text: string): string {
 }
 
 function isLotAlreadyOpen(input: AssistantModelGenerateInput): boolean {
-  if (input.context.ui?.lotModalOpen || input.context.ui?.saleFormOpen) return true;
+  if (input.context.ui?.lotModalOpen || input.context.ui?.saleFormOpen || input.context.ui?.saleEditOpen) return true;
   const question = input.messages.at(-1)?.content || '';
   return /lote aberto|ja estou no mapa|ja cliquei no lote|lote selecionado|ja estou com o lote/.test(
     normalize(question),
@@ -58,6 +58,10 @@ function pickProcedure(input: AssistantModelGenerateInput): AssistantProcedure |
   const question = normalize(input.messages[input.messages.length - 1]?.content || '');
   const ui = input.context.ui;
   const model = input.context.contractModel;
+  if (ui?.saleEditOpen && ui.saleEditTab === 'cobrancas') {
+    const saleCharges = input.knowledge.find((item) => item.id === 'gis-sale-charges');
+    if (saleCharges) return saleCharges;
+  }
   if (isLiveConsultQuestion(question)) {
     const finance = input.knowledge.find((item) => item.module === 'finance');
     if (finance) return finance;
@@ -76,7 +80,7 @@ function pickProcedure(input: AssistantModelGenerateInput): AssistantProcedure |
     }
     if (contracts[0]) return contracts[0];
   }
-  const gisUi = Boolean(ui?.lotModalOpen || ui?.saleFormOpen || input.context.moduleId === 'gis');
+  const gisUi = Boolean(ui?.lotModalOpen || ui?.saleFormOpen || ui?.saleEditOpen || input.context.moduleId === 'gis');
   if (gisUi && !/assinatur|o que falta neste contrato/.test(question)) {
     const gis = input.knowledge.find((item) => item.module === 'gis');
     if (gis) return gis;
@@ -245,7 +249,7 @@ export const localGroundedProvider: AssistantModelProvider = {
 
     let text: string;
     const ui = input.context.ui;
-    const hasStructuredUi = Boolean(ui?.lotModalOpen || ui?.saleFormOpen || ui?.contractId);
+    const hasStructuredUi = Boolean(ui?.lotModalOpen || ui?.saleFormOpen || ui?.saleEditOpen || ui?.contractId);
     const followUp = input.history.some((item) => item.role === 'user');
 
     if (isWhoNeedsToSign(question) && ui?.nextAction) {
@@ -260,14 +264,23 @@ export const localGroundedProvider: AssistantModelProvider = {
       text = `${lead}Selecione o cliente na operação. Depois escolha a forma de pagamento.`;
     } else if (isDocumentGoal(input) || /memorial|prancha|confront|frente/.test(procedure.id)) {
       text = `${lead}${steps.slice(0, 4).join(' ')}`;
+    } else if (hasStructuredUi && ui?.saleEditOpen) {
+      text = `${lead}${steps.slice(0, 4).join(' ')}`;
     } else if (
       hasStructuredUi &&
       ui?.lotModalOpen &&
+      !ui?.saleEditOpen &&
       !isCommercialTabOpen(input.context) &&
       procedure.module === 'gis'
     ) {
       text = `${lead}Clique em Comercial e depois em Vender.`;
-    } else if (hasStructuredUi && isCommercialTabOpen(input.context) && procedure.module === 'gis' && !ui?.saleFormOpen) {
+    } else if (
+      hasStructuredUi &&
+      isCommercialTabOpen(input.context) &&
+      procedure.module === 'gis' &&
+      !ui?.saleFormOpen &&
+      !ui?.saleEditOpen
+    ) {
       text = `${lead}Clique em Vender.`;
     } else if (followUp && (isLotAlreadyOpen(input) || isClientAlreadySelected(input))) {
       text = `${lead}Ótimo. ${steps.slice(0, 4).join(' ')}`;

@@ -81,6 +81,16 @@ async function listRows(query: any): Promise<Array<Record<string, unknown>>> {
   return Array.isArray(data) ? data : [];
 }
 
+async function tryRows(query: any): Promise<{ rows: Array<Record<string, unknown>>; error: string | null }> {
+  try {
+    const { data, error } = await query;
+    if (error) return { rows: [], error: error.message || 'query_failed' };
+    return { rows: Array.isArray(data) ? data : [], error: null };
+  } catch (err) {
+    return { rows: [], error: err instanceof Error ? err.message : 'query_failed' };
+  }
+}
+
 async function maybeRow(query: any): Promise<Record<string, unknown> | null> {
   const { data, error } = await query;
   if (error) throw new Error(error.message || 'query_failed');
@@ -384,67 +394,106 @@ async function querySignatureStatus(
   return { facts, rowCount: 1 };
 }
 
+const SALE_LATEST_EMPTY = {
+  toolId: 'sale.latest' as const,
+  found: false,
+  saleDate: null,
+  status: null,
+  projectName: null,
+  lotLabel: null,
+  amount: null,
+};
+
+/**
+ * Sem embed PostgREST e sem colunas órfãs de sales.
+ * Preview real falhava no select único com join de projects/blocks
+ * e/ou campo de valor final ausente no schema oficial.
+ */
 async function queryLatestSale(
   db: AssistantReadonlyDb,
   runtime: AssistantReadonlyRuntime,
   allowedProjectIds?: string[] | null,
 ) {
   const tenantId = String(runtime.tenantId);
-  let query = db
-    .from('sales')
-    .select(
-      'id, status, sale_date, created_at, total_value, final_value, agreed_price, broker_id, project_id, tenant_id, company_id, projects:project_id(name), blocks:block_id(block_name, name, number, lot_number)',
-    )
-    .or(tenantOr(tenantId));
-  if (allowedProjectIds?.length) {
-    query = query.in('project_id', allowedProjectIds);
-  }
+  const empty = {
+    facts: sanitizeReadonlyFacts({ ...SALE_LATEST_EMPTY }),
+    rowCount: 0,
+  };
+
+  let brokerId: string | null = null;
   if (isBrokerRole(runtime.role)) {
-    const brokers = await listRows(
+    const brokers = await tryRows(
       db.from('brokers').select('id').or(tenantOr(tenantId)).eq('user_id', runtime.userId).limit(1),
     );
-    const brokerId = brokers[0]?.id ? String(brokers[0].id) : '';
-    if (!brokerId) {
-      return {
-        facts: sanitizeReadonlyFacts({
-          toolId: 'sale.latest',
-          found: false,
-          saleDate: null,
-          status: null,
-          projectName: null,
-          lotLabel: null,
-          amount: null,
-        }),
-        rowCount: 0,
-      };
+    brokerId = brokers.rows[0]?.id ? String(brokers.rows[0].id) : '';
+    if (!brokerId) return empty;
+  }
+
+  const selects = [
+    'id, status, sale_date, created_at, total_value, agreed_price, broker_id, project_id, block_id, tenant_id, company_id',
+    'id, status, sale_date, created_at, broker_id, project_id, block_id, tenant_id, company_id',
+    'id, status, sale_date, created_at, broker_id, project_id, tenant_id, company_id',
+  ];
+
+  const buildSaleQuery = (columns: string) => {
+    let query = db.from('sales').select(columns).or(tenantOr(tenantId));
+    if (allowedProjectIds?.length) query = query.in('project_id', allowedProjectIds);
+    if (brokerId) query = query.eq('broker_id', brokerId);
+    return query;
+  };
+
+  let sale: Record<string, unknown> | null = null;
+  for (const columns of selects) {
+    const ordered = await tryRows(
+      buildSaleQuery(columns)
+        .order('sale_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1),
+    );
+    if (!ordered.error && ordered.rows[0]) {
+      sale = ordered.rows[0];
+      break;
     }
-    query = query.eq('broker_id', brokerId);
+    const fallback = await tryRows(buildSaleQuery(columns).order('created_at', { ascending: false }).limit(1));
+    if (!fallback.error && fallback.rows[0]) {
+      sale = fallback.rows[0];
+      break;
+    }
   }
-  const rows = await listRows(query.order('created_at', { ascending: false }).limit(1));
-  const sale = rows[0];
-  if (!sale) {
-    return {
-      facts: sanitizeReadonlyFacts({
-        toolId: 'sale.latest',
-        found: false,
-        saleDate: null,
-        status: null,
-        projectName: null,
-        lotLabel: null,
-        amount: null,
-      }),
-      rowCount: 0,
-    };
+  if (!sale) return empty;
+
+  let projectName: string | null = null;
+  const projectId = sale.project_id ? String(sale.project_id) : '';
+  if (projectId) {
+    const project = await tryRows(
+      db.from('projects').select('id, name, tenant_id, company_id').eq('id', projectId).or(tenantOr(tenantId)).limit(1),
+    );
+    if (!project.error) projectName = pickName(project.rows[0] || null);
   }
-  const rawAmount = Number(sale.total_value ?? sale.final_value ?? sale.agreed_price);
+
+  let lot: string | null = null;
+  const blockId = sale.block_id ? String(sale.block_id) : '';
+  if (blockId) {
+    const block = await tryRows(
+      db
+        .from('blocks')
+        .select('id, block_name, name, number, lot_number, tenant_id, company_id')
+        .eq('id', blockId)
+        .or(tenantOr(tenantId))
+        .limit(1),
+    );
+    if (!block.error) lot = lotLabel(block.rows[0] || null);
+  }
+
+  const rawAmount = Number(sale.total_value ?? sale.agreed_price);
   return {
     facts: sanitizeReadonlyFacts({
       toolId: 'sale.latest',
       found: true,
       saleDate: dateOnly(sale.sale_date) || dateOnly(sale.created_at),
       status: sale.status ? String(sale.status) : null,
-      projectName: pickName(sale.projects),
-      lotLabel: lotLabel(sale.blocks),
+      projectName,
+      lotLabel: lot,
       amount: canRevealSaleAmount(runtime.role) && Number.isFinite(rawAmount) ? rawAmount : null,
     }),
     rowCount: 1,

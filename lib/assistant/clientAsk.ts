@@ -40,6 +40,17 @@ export async function requestAssistantAsk(input: AssistantAskInput): Promise<Ass
       firstDueFilled: input.context.ui?.firstDueFilled,
       brokerSelected: input.context.ui?.brokerSelected,
       downPaymentFilled: input.context.ui?.downPaymentFilled,
+      saleEditOpen: input.context.ui?.saleEditOpen,
+      saleEditTab: input.context.ui?.saleEditTab,
+      saleChargesMissing: input.context.ui?.saleChargesMissing,
+      saleChargesEligible: input.context.ui?.saleChargesEligible,
+      saleChargesGenerated: input.context.ui?.saleChargesGenerated,
+      saleChargesPaid: input.context.ui?.saleChargesPaid,
+      saleChargesCancelled: input.context.ui?.saleChargesCancelled,
+      saleChargesPending: input.context.ui?.saleChargesPending,
+      saleChargesInstallments: input.context.ui?.saleChargesInstallments,
+      saleChargesHasAccount: input.context.ui?.saleChargesHasAccount,
+      saleChargesReady: input.context.ui?.saleChargesReady,
     },
   });
 

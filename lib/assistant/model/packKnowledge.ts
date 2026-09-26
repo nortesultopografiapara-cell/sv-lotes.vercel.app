@@ -21,7 +21,7 @@ export function packSpecializedKnowledge(
 export function packAssistantKnowledge(procedures: AssistantProcedure[], context?: AssistantSafeContext): string {
   const model = String(context?.contractModel || '').toUpperCase();
   const priority =
-    context?.ui?.contractId || context?.ui?.saleFormOpen || context?.ui?.lotModalOpen
+    context?.ui?.contractId || context?.ui?.saleFormOpen || context?.ui?.lotModalOpen || context?.ui?.saleEditOpen
       ? 'PRIORIDADE: o ESTADO DA INTERFACE vale mais que a navegação abaixo. Não mande o usuário abrir uma tela em que ele já está.'
       : '';
   return [priority, ...procedures.slice(0, 8).map((procedure) => {
@@ -87,6 +87,22 @@ export function packAssistantContext(
       lines.push(`Corretor selecionado: ${ui.brokerSelected ? 'sim' : 'não'}`);
       lines.push(`Sinal informado: ${ui.downPaymentFilled ? 'sim' : 'não'}`);
     }
+    lines.push(`Editar venda aberto: ${ui.saleEditOpen ? 'sim' : 'não'}`);
+    if (ui.saleEditTab) lines.push(`Aba de Editar venda: ${ui.saleEditTab}`);
+    if (ui.saleEditOpen && ui.saleEditTab === 'cobrancas') {
+      lines.push('Ações visíveis nesta aba: Gerar cobranças faltantes; Atualizar situação das cobranças.');
+      if (ui.saleChargesReady) {
+        lines.push(`Conta recebedora configurada: ${ui.saleChargesHasAccount ? 'sim' : 'não'}`);
+        if (ui.saleChargesInstallments != null) lines.push(`Parcelas da venda: ${ui.saleChargesInstallments}`);
+        if (ui.saleChargesPaid != null) lines.push(`Parcelas pagas: ${ui.saleChargesPaid}`);
+        if (ui.saleChargesGenerated != null) lines.push(`Cobranças geradas: ${ui.saleChargesGenerated}`);
+        if (ui.saleChargesMissing != null) lines.push(`Cobranças faltantes: ${ui.saleChargesMissing}`);
+        if (ui.saleChargesCancelled != null) lines.push(`Cobranças canceladas: ${ui.saleChargesCancelled}`);
+        if (ui.saleChargesPending != null) lines.push(`Parcelas pendentes: ${ui.saleChargesPending}`);
+        if (ui.saleChargesEligible != null) lines.push(`Elegíveis: ${ui.saleChargesEligible}`);
+      }
+      lines.push('Não mande o usuário abrir o módulo global Cobranças se a operação for desta venda.');
+    }
     lines.push(`Contrato selecionado nesta tela: ${ui.contractId ? 'sim' : 'não'}`);
     if (ui.contractNumber) lines.push(`Identificador operacional do contrato: ${ui.contractNumber}`);
     if (ui.contractStatus) lines.push(`Status do contrato: ${ui.contractStatus}`);
@@ -102,7 +118,7 @@ export function packAssistantContext(
     }
     if (ui.nextAction) lines.push(`Próxima ação permitida: ${ui.nextAction}`);
     if (ui.needsRegenerar) lines.push('Contrato marcado para regenerar');
-    if (ui.contractId || ui.saleFormOpen || ui.lotModalOpen) {
+    if (ui.contractId || ui.saleFormOpen || ui.lotModalOpen || ui.saleEditOpen) {
       lines.push('Não peça para navegar até a tela atual nem localizar o mesmo registro.');
     }
     lines.push(

@@ -153,7 +153,7 @@ function testFabAccessibleOverModal() {
   const panel = read('components/assistant/AssistantPanel.tsx');
   assert(chrome.includes('AssistantOverlayFab'), 'chrome sem FAB');
   assert(fab.includes('data-testid="assistant-sv-overlay-fab"'), 'FAB sem testid');
-  assert(fab.includes('saleFormOpen'), 'FAB só com modal operacional');
+  assert(fab.includes('saleFormOpen') && fab.includes('saleEditOpen'), 'FAB só com modal operacional');
   assert(css.includes('z-index: 1100'), 'FAB acima do modal 1000');
   assert(css.includes('sv-assistant-root--over-modal'), 'painel sobre o modal');
   assert(css.includes('z-index: 1200'), 'painel acima do FAB');

@@ -35,6 +35,7 @@
     { "id": "gis-quadras-txt", "file": "gis-quadras-txt.json", "module": "gis", "tags": ["importar txt"] },
     { "id": "gis-vias", "file": "gis-vias.json", "module": "gis", "tags": ["linha de rua"] },
     { "id": "gis-sale-termination", "file": "gis-sale-termination.json", "module": "gis", "tags": ["sale.release", "distrato", "desistencia"] },
+    { "id": "gis-sale-charges", "file": "gis-sale-charges.json", "module": "gis", "tags": ["sale.charges", "gerar cobrancas faltantes"] },
     { "id": "settings-empresa", "file": "settings-empresa.json", "module": "settings", "tags": ["configuracoes"] },
     { "id": "owners-socios", "file": "owners-socios.json", "module": "settings", "tags": ["socios"] },
     { "id": "billing-assinatura", "file": "billing-assinatura.json", "module": "settings", "tags": ["minha assinatura"] },

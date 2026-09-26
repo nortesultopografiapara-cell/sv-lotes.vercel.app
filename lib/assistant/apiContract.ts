@@ -35,6 +35,17 @@ export type AssistantAskApiRequest = {
     firstDueFilled?: boolean;
     brokerSelected?: boolean;
     downPaymentFilled?: boolean;
+    saleEditOpen?: boolean;
+    saleEditTab?: string | null;
+    saleChargesMissing?: number | null;
+    saleChargesEligible?: number | null;
+    saleChargesGenerated?: number | null;
+    saleChargesPaid?: number | null;
+    saleChargesCancelled?: number | null;
+    saleChargesPending?: number | null;
+    saleChargesInstallments?: number | null;
+    saleChargesHasAccount?: boolean;
+    saleChargesReady?: boolean;
   };
 };
 

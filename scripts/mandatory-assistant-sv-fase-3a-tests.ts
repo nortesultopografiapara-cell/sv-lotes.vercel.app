@@ -363,6 +363,10 @@ function testNoWritesInTools() {
   }
   const pipeline = fs.readFileSync(path.join(root, 'lib/assistant/pipeline.ts'), 'utf8');
   assert(!pipeline.includes('.insert('), 'pipeline insert');
+  const execute = fs.readFileSync(path.join(root, 'lib/assistant/readonly/execute.ts'), 'utf8');
+  assert(!/\.select\([\s\S]*?\bfinal_value\b/.test(execute), 'sale.latest não seleciona coluna órfã final_value');
+  assert(!/projects\s*:\s*project_id\s*\(/.test(execute), 'sale.latest sem embed PostgREST de projects');
+  assert(!/blocks\s*:\s*block_id\s*\(/.test(execute), 'sale.latest sem embed PostgREST de blocks');
   console.log('OK testNoWritesInTools');
 }
 

@@ -1,0 +1,63 @@
+{
+  "id": "sale.charges",
+  "title": "Cobranças de uma venda em Editar venda",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "gerar cobranças faltantes",
+    "atualizar situação das cobranças",
+    "boletos desta venda",
+    "cobranças desta venda",
+    "aba Cobranças",
+    "Editar venda Cobranças",
+    "gerar boletos desta venda"
+  ],
+  "summary": "Na venda já aberta, a aba Cobranças gera os boletos/Pix faltantes daquela venda e sincroniza os status. Não é o módulo global Cobranças.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": [
+    "Administrador da empresa.",
+    "Lote vendido com venda vinculada.",
+    "Conta recebedora configurada para gerar."
+  ],
+  "requiredContext": ["saleEditOpen", "saleEditTab"],
+  "controls": [
+    { "label": "Editar Venda", "kind": "button" },
+    { "label": "Cobranças", "kind": "tab" },
+    { "label": "Gerar cobranças faltantes", "kind": "button" },
+    { "label": "Atualizar situação das cobranças", "kind": "button" }
+  ],
+  "sequence": [
+    "No lote vendido, aba Comercial, clique em Editar Venda.",
+    "Abra a aba Cobranças.",
+    "Se existirem cobranças faltantes, clique em Gerar cobranças faltantes.",
+    "Use Atualizar situação das cobranças para sincronizar os status, quando necessário."
+  ],
+  "fields": [
+    "conta recebedora",
+    "parcelas",
+    "pagas",
+    "cobranças geradas",
+    "faltantes",
+    "canceladas",
+    "pendente",
+    "elegíveis"
+  ],
+  "conclusion": "Gerar cobranças faltantes e, se precisar, Atualizar situação das cobranças",
+  "result": "Cobranças daquela venda emitidas ou status sincronizado na aba Cobranças.",
+  "states": ["none", "partial", "complete", "no_account"],
+  "related": ["charge.emit", "sale.edit", "gis.sold.view_finance"],
+  "restrictions": [
+    "O assistente não emite cobrança.",
+    "Não use esta aba para gerar cobranças de várias vendas — isso é o módulo Cobranças.",
+    "Se faltantes = 0, não gerar de novo."
+  ],
+  "knowledgeIds": ["gis-sale-charges"],
+  "sourceOfTruth": [
+    "components/map/CustomerLotFormModal.tsx",
+    "components/sales/SaleChargesPanel.tsx",
+    "lib/finance/saleChargesShared.ts"
+  ]
+}

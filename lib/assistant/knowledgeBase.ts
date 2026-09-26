@@ -32,6 +32,7 @@ import gisMedirCamadas from '../../docs/assistant-kb/gis-medir-camadas.json';
 import gisQuadrasTxt from '../../docs/assistant-kb/gis-quadras-txt.json';
 import gisVias from '../../docs/assistant-kb/gis-vias.json';
 import gisSaleTermination from '../../docs/assistant-kb/gis-sale-termination.json';
+import gisSaleCharges from '../../docs/assistant-kb/gis-sale-charges.json';
 import settingsEmpresa from '../../docs/assistant-kb/settings-empresa.json';
 import ownersSocios from '../../docs/assistant-kb/owners-socios.json';
 import billingAssinatura from '../../docs/assistant-kb/billing-assinatura.json';
@@ -72,6 +73,7 @@ const PROCEDURES: AssistantProcedure[] = [
   gisQuadrasTxt,
   gisVias,
   gisSaleTermination,
+  gisSaleCharges,
   settingsEmpresa,
   ownersSocios,
   billingAssinatura,

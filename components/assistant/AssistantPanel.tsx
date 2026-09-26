@@ -77,6 +77,17 @@ export function AssistantPanel() {
           firstDueFilled: Boolean(uiState?.hints.firstDueFilled),
           brokerSelected: Boolean(uiState?.hints.brokerSelected),
           downPaymentFilled: Boolean(uiState?.hints.downPaymentFilled),
+          saleEditOpen: Boolean(uiState?.hints.saleEditOpen),
+          saleEditTab: uiState?.hints.saleEditTab || null,
+          saleChargesMissing: uiState?.hints.saleChargesMissing ?? null,
+          saleChargesEligible: uiState?.hints.saleChargesEligible ?? null,
+          saleChargesGenerated: uiState?.hints.saleChargesGenerated ?? null,
+          saleChargesPaid: uiState?.hints.saleChargesPaid ?? null,
+          saleChargesCancelled: uiState?.hints.saleChargesCancelled ?? null,
+          saleChargesPending: uiState?.hints.saleChargesPending ?? null,
+          saleChargesInstallments: uiState?.hints.saleChargesInstallments ?? null,
+          saleChargesHasAccount: Boolean(uiState?.hints.saleChargesHasAccount),
+          saleChargesReady: Boolean(uiState?.hints.saleChargesReady),
           contractId: uiState?.hints.contractId || null,
         },
       }),
@@ -151,7 +162,7 @@ export function AssistantPanel() {
   }
 
   if (!open) return null;
-  const overModal = Boolean(uiState?.hints.saleFormOpen);
+  const overModal = Boolean(uiState?.hints.saleFormOpen || uiState?.hints.saleEditOpen);
 
   return (
     <div

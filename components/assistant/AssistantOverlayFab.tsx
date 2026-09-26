@@ -9,7 +9,7 @@ import { ASSISTANT_BUTTON_LABEL, ASSISTANT_TOOLTIP_TITLE } from '@/lib/assistant
 export function AssistantOverlayFab() {
   const { open, setOpen } = useAssistantPanel();
   const ui = useAssistantUiStateOptional();
-  const overlayOpen = Boolean(ui?.hints.saleFormOpen);
+  const overlayOpen = Boolean(ui?.hints.saleFormOpen || ui?.hints.saleEditOpen);
   if (open || !overlayOpen) return null;
 
   return (

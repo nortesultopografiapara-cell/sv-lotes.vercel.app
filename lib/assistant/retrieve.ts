@@ -143,7 +143,7 @@ function scoreProcedure(
 
   if (matched === 0 && activeGoal?.procedureId !== procedure.id) {
     if (
-      (context.ui?.lotModalOpen || context.ui?.saleFormOpen) &&
+      (context.ui?.lotModalOpen || context.ui?.saleFormOpen || context.ui?.saleEditOpen) &&
       procedure.module === 'gis' &&
       (!activeGoal || activeGoal.module !== 'gis' || activeGoal.procedureId === procedure.id)
     ) {
@@ -156,7 +156,10 @@ function scoreProcedure(
     score += 6;
   }
   if (procedure.module === context.moduleId) score += 4;
-  if ((context.ui?.lotModalOpen || context.ui?.saleFormOpen) && procedure.module === 'gis') score += 8;
+  if ((context.ui?.lotModalOpen || context.ui?.saleFormOpen || context.ui?.saleEditOpen) && procedure.module === 'gis') score += 8;
+  if (context.ui?.saleEditOpen && context.ui.saleEditTab === 'cobrancas' && procedure.id === 'gis-sale-charges') score += 22;
+  if (context.ui?.saleEditOpen && context.ui.saleEditTab === 'cobrancas' && procedure.id === 'charges-cobrancas') score -= 16;
+  if (context.pathname.startsWith('/charges') && procedure.id === 'charges-cobrancas' && !/lembrete|whatsapp/.test(qn)) score += 16;
   if (context.ui?.contractId && procedure.module === 'contracts') score += 8;
 
   const model = String(context.contractModel || '').toUpperCase();

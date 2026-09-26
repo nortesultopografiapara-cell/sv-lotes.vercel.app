@@ -42,7 +42,7 @@ function firstCap(ids: string[] | undefined) {
 
 function testExplicitCount() {
   const counts = countAssistantCapabilities();
-  assert(counts.explicit === 20, `explícitas 2B.1: ${counts.explicit}`);
+  assert(counts.explicit === 21, `explícitas 2B.1: ${counts.explicit}`);
   assert(counts.derived >= 30, `derivadas: ${counts.derived}`);
   const ids = listExplicitAssistantCapabilities().map((item) => item.id);
   for (const id of [
@@ -53,6 +53,7 @@ function testExplicitCount() {
     'sale.lot.swap',
     'sale.title.transfer',
     'sale.edit',
+    'sale.charges',
     'gis.sold.view_contract',
     'gis.sold.view_finance',
     'broker.my_sales',

@@ -2,6 +2,8 @@
 
 export type AssistantLotTab = 'resumo' | 'confrontacoes' | 'comercial' | 'historico';
 
+export type AssistantSaleEditTab = 'dados' | 'cobrancas' | 'capa_carne' | 'documentos';
+
 export type AssistantPaymentModeHint = 'avista' | 'parcelado' | 'reserva' | 'outro';
 
 /** Dicas enviadas pelo frontend. IDs são validados no servidor. */
@@ -21,6 +23,17 @@ export type AssistantUiClientHints = {
   firstDueFilled?: boolean;
   brokerSelected?: boolean;
   downPaymentFilled?: boolean;
+  saleEditOpen?: boolean;
+  saleEditTab?: AssistantSaleEditTab | null;
+  saleChargesMissing?: number | null;
+  saleChargesEligible?: number | null;
+  saleChargesGenerated?: number | null;
+  saleChargesPaid?: number | null;
+  saleChargesCancelled?: number | null;
+  saleChargesPending?: number | null;
+  saleChargesInstallments?: number | null;
+  saleChargesHasAccount?: boolean;
+  saleChargesReady?: boolean;
 };
 
 export type AssistantUiSafeState = {
@@ -40,6 +53,17 @@ export type AssistantUiSafeState = {
   firstDueFilled: boolean;
   brokerSelected: boolean;
   downPaymentFilled: boolean;
+  saleEditOpen: boolean;
+  saleEditTab: AssistantSaleEditTab | null;
+  saleChargesMissing: number | null;
+  saleChargesEligible: number | null;
+  saleChargesGenerated: number | null;
+  saleChargesPaid: number | null;
+  saleChargesCancelled: number | null;
+  saleChargesPending: number | null;
+  saleChargesInstallments: number | null;
+  saleChargesHasAccount: boolean;
+  saleChargesReady: boolean;
   contractId: string | null;
   contractNumber: string | null;
   contractStatus: string | null;
@@ -52,6 +76,20 @@ export type AssistantUiSafeState = {
   pendingPartyRoles: string[];
   nextAction: string | null;
   needsRegenerar: boolean;
+};
+
+const SALE_CHARGES_EMPTY = {
+  saleEditOpen: false as boolean,
+  saleEditTab: null as AssistantSaleEditTab | null,
+  saleChargesMissing: null as number | null,
+  saleChargesEligible: null as number | null,
+  saleChargesGenerated: null as number | null,
+  saleChargesPaid: null as number | null,
+  saleChargesCancelled: null as number | null,
+  saleChargesPending: null as number | null,
+  saleChargesInstallments: null as number | null,
+  saleChargesHasAccount: false,
+  saleChargesReady: false,
 };
 
 export const EMPTY_ASSISTANT_UI_STATE: AssistantUiSafeState = {
@@ -71,6 +109,7 @@ export const EMPTY_ASSISTANT_UI_STATE: AssistantUiSafeState = {
   firstDueFilled: false,
   brokerSelected: false,
   downPaymentFilled: false,
+  ...SALE_CHARGES_EMPTY,
   contractId: null,
   contractNumber: null,
   contractStatus: null,
@@ -95,6 +134,24 @@ export function sanitizeUuidHint(value: unknown): string | null {
 }
 
 const LOT_TABS = new Set<AssistantLotTab>(['resumo', 'confrontacoes', 'comercial', 'historico']);
+
+const SALE_EDIT_TABS = new Set<AssistantSaleEditTab>(['dados', 'cobrancas', 'capa_carne', 'documentos']);
+
+export function sanitizeSaleEditTab(value: unknown): AssistantSaleEditTab | null {
+  const text = String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (SALE_EDIT_TABS.has(text as AssistantSaleEditTab)) return text as AssistantSaleEditTab;
+  return null;
+}
+
+export function sanitizeCountHint(value: unknown, max = 99999): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(max, Math.floor(n));
+}
 
 export function sanitizeLotTab(value: unknown): AssistantLotTab | null {
   const text = String(value || '').trim().toLowerCase();
@@ -143,6 +200,17 @@ export function sanitizeUiClientHints(raw: unknown): AssistantUiClientHints {
     firstDueFilled: Boolean(input.firstDueFilled),
     brokerSelected: Boolean(input.brokerSelected),
     downPaymentFilled: Boolean(input.downPaymentFilled),
+    saleEditOpen: Boolean(input.saleEditOpen),
+    saleEditTab: sanitizeSaleEditTab(input.saleEditTab),
+    saleChargesMissing: sanitizeCountHint(input.saleChargesMissing),
+    saleChargesEligible: sanitizeCountHint(input.saleChargesEligible),
+    saleChargesGenerated: sanitizeCountHint(input.saleChargesGenerated),
+    saleChargesPaid: sanitizeCountHint(input.saleChargesPaid),
+    saleChargesCancelled: sanitizeCountHint(input.saleChargesCancelled),
+    saleChargesPending: sanitizeCountHint(input.saleChargesPending),
+    saleChargesInstallments: sanitizeCountHint(input.saleChargesInstallments),
+    saleChargesHasAccount: Boolean(input.saleChargesHasAccount),
+    saleChargesReady: Boolean(input.saleChargesReady),
   };
 }
 
@@ -161,6 +229,17 @@ const GIS_OPERATIONAL_RESET: Pick<
   | 'firstDueFilled'
   | 'brokerSelected'
   | 'downPaymentFilled'
+  | 'saleEditOpen'
+  | 'saleEditTab'
+  | 'saleChargesMissing'
+  | 'saleChargesEligible'
+  | 'saleChargesGenerated'
+  | 'saleChargesPaid'
+  | 'saleChargesCancelled'
+  | 'saleChargesPending'
+  | 'saleChargesInstallments'
+  | 'saleChargesHasAccount'
+  | 'saleChargesReady'
 > = {
   lotId: null,
   blockNumber: null,
@@ -175,6 +254,7 @@ const GIS_OPERATIONAL_RESET: Pick<
   firstDueFilled: false,
   brokerSelected: false,
   downPaymentFilled: false,
+  ...SALE_CHARGES_EMPTY,
 };
 
 const CONTRACT_OPERATIONAL_RESET: Pick<
@@ -216,6 +296,10 @@ export function isAssistantGisPath(pathname: string): boolean {
   return path === '/map' || path.startsWith('/map/') || path === '/my-sales' || path.startsWith('/my-sales/');
 }
 
+export function isAssistantSaleWorkspaceOpen(ui: Pick<AssistantUiSafeState, 'saleFormOpen' | 'saleEditOpen' | 'lotModalOpen'>): boolean {
+  return Boolean(ui.saleFormOpen || ui.saleEditOpen || ui.lotModalOpen);
+}
+
 /**
  * Estado operacional pertence à rota/entidade atual.
  * Histórico de conversa não entra aqui.
@@ -230,7 +314,7 @@ export function scopeAssistantUiToRoute(
     next = { ...next, ...GIS_OPERATIONAL_RESET, projectId: null };
   } else if (isAssistantGisPath(pathname)) {
     next = { ...next, ...CONTRACT_OPERATIONAL_RESET };
-    if (!next.lotModalOpen && !next.saleFormOpen) {
+    if (!next.lotModalOpen && !next.saleFormOpen && !next.saleEditOpen) {
       next = { ...next, ...GIS_OPERATIONAL_RESET };
     }
   } else {
@@ -244,6 +328,33 @@ export function scopeAssistantUiToRoute(
   return next;
 }
 
+const SALE_HINT_RESET: Partial<AssistantUiClientHints> = {
+  lotId: null,
+  lotModalOpen: false,
+  activeLotTab: null,
+  saleFormOpen: false,
+  paymentMode: null,
+  customerSelected: false,
+  blockNumber: null,
+  lotNumber: null,
+  lotStatus: null,
+  installmentsFilled: false,
+  firstDueFilled: false,
+  brokerSelected: false,
+  downPaymentFilled: false,
+  saleEditOpen: false,
+  saleEditTab: null,
+  saleChargesMissing: null,
+  saleChargesEligible: null,
+  saleChargesGenerated: null,
+  saleChargesPaid: null,
+  saleChargesCancelled: null,
+  saleChargesPending: null,
+  saleChargesInstallments: null,
+  saleChargesHasAccount: false,
+  saleChargesReady: false,
+};
+
 export function scopeAssistantHintsToRoute(
   pathname: string,
   hints: AssistantUiClientHints,
@@ -253,61 +364,21 @@ export function scopeAssistantHintsToRoute(
     return {
       ...next,
       projectId: null,
-      lotId: null,
-      lotModalOpen: false,
-      activeLotTab: null,
-      saleFormOpen: false,
-      paymentMode: null,
-      customerSelected: false,
-      blockNumber: null,
-      lotNumber: null,
-      lotStatus: null,
-      installmentsFilled: false,
-      firstDueFilled: false,
-      brokerSelected: false,
-      downPaymentFilled: false,
+      ...SALE_HINT_RESET,
     };
   }
   if (isAssistantGisPath(pathname)) {
-    const liveLot = Boolean(next.lotModalOpen || next.saleFormOpen);
+    const liveLot = Boolean(next.lotModalOpen || next.saleFormOpen || next.saleEditOpen);
     return {
       ...next,
       contractId: null,
-      ...(liveLot
-        ? {}
-        : {
-            lotId: null,
-            lotModalOpen: false,
-            activeLotTab: null,
-            saleFormOpen: false,
-            paymentMode: null,
-            customerSelected: false,
-            blockNumber: null,
-            lotNumber: null,
-            lotStatus: null,
-            installmentsFilled: false,
-            firstDueFilled: false,
-            brokerSelected: false,
-            downPaymentFilled: false,
-          }),
+      ...(liveLot ? {} : SALE_HINT_RESET),
     };
   }
   return {
     ...next,
-    lotId: null,
     contractId: null,
-    lotModalOpen: false,
-    activeLotTab: null,
-    saleFormOpen: false,
-    paymentMode: null,
-    customerSelected: false,
-    blockNumber: null,
-    lotNumber: null,
-    lotStatus: null,
-    installmentsFilled: false,
-    firstDueFilled: false,
-    brokerSelected: false,
-    downPaymentFilled: false,
+    ...SALE_HINT_RESET,
   };
 }
 

@@ -1,8 +1,10 @@
 import { ASSISTANT_CONTINUE_OFFER } from './constants';
 import type { AssistantActiveGoal } from './activeGoal';
 import type { AssistantSafeContext } from './types';
+import { looksLikeChargeFollowUp, looksLikeGlobalChargeQuestion, looksLikeSaleChargeQuestion } from './saleChargesIntent';
 import {
   isAssistantContractsPath,
+  isAssistantSaleWorkspaceOpen,
   scopeAssistantUiToRoute,
   type AssistantUiSafeState,
 } from './uiSnapshot';
@@ -29,6 +31,10 @@ function uiLead(context: AssistantSafeContext): string {
   const parts: string[] = [];
   if (isAssistantContractsPath(context.pathname) && (ui.contractId || ui.contractNumber)) {
     parts.push('Você já está em Contratos.');
+  } else if (ui.saleEditOpen && ui.saleEditTab === 'cobrancas') {
+    parts.push('Você já está na aba Cobranças desta venda.');
+  } else if (ui.saleEditOpen) {
+    parts.push('Você já está em Editar venda.');
   } else if (ui.lotNumber || ui.blockNumber) {
     const lot = ui.lotNumber ? `Lote ${ui.lotNumber}` : 'este lote';
     const block = ui.blockNumber ? ` da Quadra ${ui.blockNumber}` : '';
@@ -45,7 +51,41 @@ function uiLead(context: AssistantSafeContext): string {
   return parts.length ? `${parts.join(' ')} ` : '';
 }
 
+function saleChargesNext(ui: AssistantUiSafeState, question: string): string | null {
+  if (!ui.saleEditOpen) return null;
+  const n = normalize(question);
+  const alreadyGenerated = /ja gerei|ja cliquei em gerar/.test(n);
+
+  if (ui.saleEditTab !== 'cobrancas') {
+    return 'Abra a aba Cobranças para gerar ou sincronizar os boletos desta venda.';
+  }
+
+  if (ui.saleChargesReady && ui.saleChargesHasAccount === false) {
+    return 'A conta recebedora não está configurada nesta tela; configure a conta do empreendimento antes de gerar. O Assistente não emite cobrança.';
+  }
+
+  const missing = ui.saleChargesMissing;
+  if (alreadyGenerated) {
+    if (missing != null && missing > 0) {
+      return `Ainda há ${missing} cobrança${missing === 1 ? '' : 's'} faltante${missing === 1 ? '' : 's'}. Clique em Gerar cobranças faltantes para as que restam. Depois use Atualizar situação das cobranças para sincronizar os status, quando necessário.`;
+    }
+    return 'Use Atualizar situação das cobranças para sincronizar os status. Não é preciso gerar de novo se não houver faltantes.';
+  }
+
+  if (missing != null && missing > 0) {
+    const eligible = ui.saleChargesEligible != null ? ` (${ui.saleChargesEligible} elegíveis)` : '';
+    return `Há ${missing} cobrança${missing === 1 ? '' : 's'} faltante${missing === 1 ? '' : 's'}${eligible}. Clique em Gerar cobranças faltantes. Depois use Atualizar situação das cobranças para sincronizar os status, quando necessário.`;
+  }
+
+  if (ui.saleChargesReady && missing === 0) {
+    return 'Não há cobranças faltantes para gerar. Se precisar sincronizar os status, clique em Atualizar situação das cobranças.';
+  }
+
+  return 'Se houver cobranças faltantes ou elegíveis, clique em Gerar cobranças faltantes. Use Atualizar situação das cobranças para sincronizar os status, quando necessário.';
+}
+
 function saleNext(ui: AssistantUiSafeState): string | null {
+  if (ui.saleEditOpen) return null;
   if (!ui.saleFormOpen) return null;
   if (!ui.customerSelected) {
     return 'Busque ou cadastre o cliente nesta operação. Depois escolha a forma de pagamento.';
@@ -179,6 +219,11 @@ function goalNext(goal: AssistantActiveGoal | null | undefined, ui: ReturnType<t
   if (goal.id === 'sale.edit') {
     return 'No lote vendido, aba Comercial, clique em Editar Venda. Apenas administradores editam venda concluída.';
   }
+  if (goal.id === 'sale.charges') {
+    if (ui.saleEditOpen && ui.saleEditTab === 'cobrancas') return null;
+    if (ui.saleEditOpen) return 'Abra a aba Cobranças nesta mesma tela de Editar venda.';
+    return 'No lote vendido, aba Comercial, clique em Editar Venda e abra a aba Cobranças.';
+  }
   if (goal.id === 'contract.cancel') {
     return 'Em Contratos, o botão Cancelar só marca o contrato como cancelado e a venda como CANCELLED. Isso não devolve o lote. Para liberar o lote, use Disponibilizar no mapa, em Operações da venda.';
   }
@@ -212,25 +257,37 @@ export function composeFromValidatedUi(input: {
   context: AssistantSafeContext;
   activeGoal?: AssistantActiveGoal | null;
 }): string | null {
-  if (!isAssistantNowQuestion(input.question)) return null;
   const ui = scopeAssistantUiToRoute(input.context.pathname, input.context.ui);
   const context: AssistantSafeContext = { ...input.context, ui };
   const lead = uiLead(context);
-  const aboutContract =
-    isAssistantContractsPath(context.pathname) || /contrato/.test(normalize(input.question));
+  const n = normalize(input.question);
+  const chargesIntent =
+    !looksLikeGlobalChargeQuestion(input.question, context.pathname) &&
+    (looksLikeSaleChargeQuestion(input.question) ||
+      looksLikeChargeFollowUp(input.question) ||
+      input.activeGoal?.id === 'sale.charges');
+
+  if (chargesIntent && ui.saleEditOpen) {
+    const next = saleChargesNext(ui, input.question);
+    if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
+  }
+
+  if (!isAssistantNowQuestion(input.question) && input.activeGoal?.id !== 'sale.charges') return null;
+
+  const aboutContract = isAssistantContractsPath(context.pathname) || /contrato/.test(n);
 
   if (ui.contractId && aboutContract) {
     const next = contractNext(context);
     if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
   }
 
-  if (ui.saleFormOpen && !isAssistantContractsPath(context.pathname)) {
+  if (ui.saleFormOpen && !ui.saleEditOpen && !isAssistantContractsPath(context.pathname)) {
     const next = saleNext(ui);
     if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
   }
 
   const fromGoal = goalNext(input.activeGoal, ui);
-  if (fromGoal && !ui.saleFormOpen) {
+  if (fromGoal && !ui.saleFormOpen && !ui.saleEditOpen) {
     return `${lead}${fromGoal} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
   }
 
@@ -242,12 +299,14 @@ export function composeFromValidatedUi(input: {
   if (
     isAssistantContractsPath(context.pathname) &&
     !ui.contractId &&
-    /neste contrato|este contrato|esse contrato/.test(normalize(input.question))
+    /neste contrato|este contrato|esse contrato/.test(n)
   ) {
     return `${lead}Você já está em Contratos. Selecione o contrato nesta tela para eu dizer o que falta. ${ASSISTANT_CONTINUE_OFFER}`
       .replace(/\s+/g, ' ')
       .trim();
   }
+
+  if (ui.saleEditOpen) return null;
 
   if (ui.lotModalOpen && ui.activeLotTab === 'comercial' && !ui.saleFormOpen) {
     return `${lead}Clique em Vender. ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
@@ -269,11 +328,14 @@ export function knowledgeStepStillNeeded(step: string, context: AssistantSafeCon
       return false;
     }
   }
-  if (ui.saleFormOpen) {
+  if (ui.saleFormOpen || ui.saleEditOpen) {
     if (/mapa gis|aba comercial|clique em vender|abra o lote/.test(n)) return false;
     if (ui.customerSelected && /selecione o cliente|busque o cliente|cadastre o cliente/.test(n)) {
       return false;
     }
+  }
+  if (ui.saleEditOpen && ui.saleEditTab === 'cobrancas') {
+    if (/abra cobrancas|menu lateral|central operacional/.test(n)) return false;
   }
   if (ui.lotModalOpen && /mapa gis|escolha o empreendimento|abra o lote/.test(n)) return false;
   if (ui.activeLotTab === 'comercial' && /aba comercial/.test(n)) return false;

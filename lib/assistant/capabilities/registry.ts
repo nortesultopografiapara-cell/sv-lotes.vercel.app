@@ -19,6 +19,7 @@ import saleInadimplencia from '../../../docs/assistant-capabilities/gis/sale-ter
 import saleLotSwap from '../../../docs/assistant-capabilities/gis/sale-lot-swap.json';
 import saleTitleTransfer from '../../../docs/assistant-capabilities/gis/sale-title-transfer.json';
 import saleEdit from '../../../docs/assistant-capabilities/gis/sale-edit.json';
+import saleCharges from '../../../docs/assistant-capabilities/gis/sale-charges.json';
 import soldViewContract from '../../../docs/assistant-capabilities/gis/sold-view-contract.json';
 import soldViewFinance from '../../../docs/assistant-capabilities/gis/sold-view-finance.json';
 import contractCancel from '../../../docs/assistant-capabilities/contracts/contract-cancel.json';
@@ -41,6 +42,7 @@ const EXPLICIT: AssistantCapability[] = [
   saleLotSwap,
   saleTitleTransfer,
   saleEdit,
+  saleCharges,
   soldViewContract,
   soldViewFinance,
   contractCancel,

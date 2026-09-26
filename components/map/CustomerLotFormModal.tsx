@@ -1040,14 +1040,16 @@ export function CustomerLotFormModal({
         paymentMode={formData.payment_type}
         customerSelected={Boolean(formData.selected_customer_id)}
         lotId={lot?.id ? String(lot.id) : null}
-        projectId={lot?.project_id || lot?.projectId || null}
-        blockNumber={lot?.block || lot?.block_name || null}
+        projectId={lot?.project_id || null}
+        blockNumber={lot?.block || null}
         lotNumber={lot?.number != null ? String(lot.number) : null}
         lotStatus={lot?.status || null}
         installmentsFilled={Boolean(String(formData.installments_count || '').trim())}
         firstDueFilled={Boolean(String(formData.first_installment_due_date || formData.down_payment_due_date || '').trim())}
         brokerSelected={Boolean(formData.broker_id)}
         downPaymentFilled={Boolean(String(formData.down_payment || formData.signal_contract_value || '').trim())}
+        isEditMode={isEditMode}
+        saleEditTab={isEditMode ? activeTab : null}
       />
       <div className={`sv-modal-shell sv-modal-shell--full-mobile ${workspaceShellClass} bg-white animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200`}>
         <div className={`sv-modal-header sticky top-0 z-20 border-b border-gray-100 flex items-center justify-between gap-4 bg-white shadow-sm ${isWorkspaceDesktop ? "px-5 py-2 sv-sale-workspace-header" : "p-4"}`}>

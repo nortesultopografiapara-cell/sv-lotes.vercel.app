@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useAssistantUiStateOptional } from '@/contexts/AssistantUiStateContext';
-import { sanitizePaymentModeHint } from '@/lib/assistant/uiSnapshot';
+import { sanitizePaymentModeHint, type AssistantSaleEditTab } from '@/lib/assistant/uiSnapshot';
 
 type Props = {
   paymentMode?: string | null;
@@ -16,6 +16,8 @@ type Props = {
   firstDueFilled?: boolean;
   brokerSelected?: boolean;
   downPaymentFilled?: boolean;
+  isEditMode?: boolean;
+  saleEditTab?: AssistantSaleEditTab | null;
 };
 
 export function AssistantSaleUiBridge({
@@ -30,6 +32,8 @@ export function AssistantSaleUiBridge({
   firstDueFilled,
   brokerSelected,
   downPaymentFilled,
+  isEditMode = false,
+  saleEditTab = null,
 }: Props) {
   const ui = useAssistantUiStateOptional();
   const patchSale = ui?.patchSale;
@@ -39,13 +43,28 @@ export function AssistantSaleUiBridge({
   useEffect(() => {
     if (!patchSale) return;
     patchSale({
-      saleFormOpen: true,
+      saleFormOpen: !isEditMode,
+      saleEditOpen: Boolean(isEditMode),
+      saleEditTab: isEditMode ? saleEditTab : null,
       paymentMode: sanitizePaymentModeHint(paymentMode),
       customerSelected: Boolean(customerSelected),
       installmentsFilled: Boolean(installmentsFilled),
       firstDueFilled: Boolean(firstDueFilled),
       brokerSelected: Boolean(brokerSelected),
       downPaymentFilled: Boolean(downPaymentFilled),
+      ...(isEditMode && saleEditTab !== 'cobrancas'
+        ? {
+            saleChargesReady: false,
+            saleChargesMissing: null,
+            saleChargesEligible: null,
+            saleChargesGenerated: null,
+            saleChargesPaid: null,
+            saleChargesCancelled: null,
+            saleChargesPending: null,
+            saleChargesInstallments: null,
+            saleChargesHasAccount: false,
+          }
+        : {}),
     });
     patchLot?.({
       lotId: lotId || null,
@@ -67,6 +86,8 @@ export function AssistantSaleUiBridge({
     firstDueFilled,
     brokerSelected,
     downPaymentFilled,
+    isEditMode,
+    saleEditTab,
     patchSale,
     patchLot,
     clearSale,

@@ -269,8 +269,10 @@ export async function runAssistantPipeline(
   const uiSovereign =
     Boolean(input.context.ui.contractId) ||
     Boolean(input.context.ui.saleFormOpen) ||
+    Boolean(input.context.ui.saleEditOpen) ||
     isAssistantContractsPath(input.context.pathname) ||
-    (Boolean(activeGoal) && isAssistantNowQuestion(question));
+    (Boolean(activeGoal) && isAssistantNowQuestion(question)) ||
+    (activeGoal?.id === 'sale.charges' && Boolean(uiGrounded));
   if (uiGrounded && composed.kind !== 'forbidden' && uiSovereign) {
     return {
       kind: 'answer',

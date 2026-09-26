@@ -1,4 +1,5 @@
 import type { AssistantChatTurn, AssistantModuleId, AssistantSafeContext } from './types';
+import { looksLikeGlobalChargeQuestion, looksLikeSaleChargeQuestion } from './saleChargesIntent';
 
 export type AssistantActiveGoal = {
   id: string;
@@ -213,6 +214,20 @@ const GOAL_DEFS: GoalDef[] = [
     patterns: [/fluxo de caixa|registrar saida/],
   },
   {
+    id: 'sale.charges',
+    procedureId: 'gis-sale-charges',
+    label: 'cobranças desta venda',
+    module: 'gis',
+    patterns: [
+      /cobrancas? (faltantes|desta venda|dessa venda|desta tela|nesta tela)/,
+      /gerar (as )?cobrancas? (que )?falt/,
+      /boletos? desta venda/,
+      /aba cobrancas/,
+      /atualizar situacao das cobrancas/,
+      /editar venda.{0,24}cobranc/,
+    ],
+  },
+  {
     id: 'charge.emit',
     procedureId: 'charges-cobrancas',
     label: 'emitir cobrança',
@@ -260,7 +275,7 @@ export function isAssistantContinuationQuestion(question: string): boolean {
   const n = normalize(question).trim();
   if (!n) return false;
   if (
-    /e agora|proximo passo|proxima acao|e depois|continua(r)? daqui|ja selecionei|ja cliquei|ja escolhi|ja abri o lote|selecionei o lote/.test(
+    /e agora|proximo passo|proxima acao|e depois|continua(r)? daqui|ja selecionei|ja cliquei|ja escolhi|ja abri o lote|selecionei o lote|ja gerei/.test(
       n,
     )
   ) {
@@ -285,8 +300,29 @@ export function resolveAssistantActiveGoal(input: {
   history?: AssistantChatTurn[];
   context?: AssistantSafeContext;
 }): AssistantActiveGoal | null {
+  const saleChargesGoal: AssistantActiveGoal = {
+    id: 'sale.charges',
+    procedureId: 'gis-sale-charges',
+    label: 'cobranças desta venda',
+    module: 'gis',
+  };
+  const ui = input.context?.ui;
+  const pathname = input.context?.pathname;
+  const chargeish = /cobranc|boleto|pix/.test(normalize(input.question));
+  if (
+    ui?.saleEditOpen &&
+    ui.saleEditTab === 'cobrancas' &&
+    chargeish &&
+    !looksLikeGlobalChargeQuestion(input.question, pathname)
+  ) {
+    return saleChargesGoal;
+  }
+
   const current = matchGoal(input.question);
   const continuation = isAssistantContinuationQuestion(input.question);
+  if (current && current.id === 'charge.emit' && looksLikeSaleChargeQuestion(input.question, pathname)) {
+    return saleChargesGoal;
+  }
   if (current && !continuation) {
     return {
       id: current.id,
