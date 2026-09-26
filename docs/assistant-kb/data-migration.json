@@ -1,0 +1,40 @@
+{
+  "id": "data-migration",
+  "title": "Migração de Dados",
+  "module": "settings",
+  "routes": ["/data-migration"],
+  "profiles": ["ADMIN"],
+  "access": "write",
+  "tags": ["migracao de dados", "assistente migracao", "historico de migracoes"],
+  "objective": "Abrir o assistente de importação de dados legados da empresa.",
+  "prerequisites": [
+    "O menu Migração de Dados só aparece para o perfil ADMIN da empresa (ou Master)."
+  ],
+  "navigationPath": [
+    "Migração de Dados",
+    "Assistente",
+    "Histórico de Migrações"
+  ],
+  "steps": [
+    "Abra Migração de Dados no menu (quando o perfil tiver o item).",
+    "Use a aba Assistente e siga as etapas exibidas na tela para validar e executar a carga.",
+    "A aba Histórico de Migrações consulta cargas anteriores."
+  ],
+  "expectedResult": "Carga validada/executada conforme o assistente da tela, ou histórico consultado.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente SV não executa a migração; ele só indica a tela.",
+    "Detalhes internos de cada etapa do wizard não foram descritos além dos rótulos das abas."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/data-migration/page.tsx",
+    "components/imports/DataMigrationPageClient.tsx",
+    "components/Layout.tsx"
+  ],
+  "uiLabels": [
+    "Migração de Dados",
+    "Assistente",
+    "Histórico de Migrações"
+  ]
+}

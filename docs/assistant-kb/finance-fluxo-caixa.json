@@ -1,0 +1,42 @@
+{
+  "id": "finance-fluxo-caixa",
+  "title": "Fluxo de caixa e saída",
+  "module": "finance",
+  "routes": ["/finance"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "OWNER"],
+  "access": "read",
+  "tags": ["finance.cashflow", "fluxo de caixa", "registrar saida", "sincronizar asaas", "relatorio"],
+  "objective": "Consultar o fluxo de caixa, exportar relatórios e registrar saída (quando o perfil permitir).",
+  "prerequisites": [
+    "ADMIN opera saídas. OWNER consulta."
+  ],
+  "navigationPath": [
+    "Financeiro",
+    "Fluxo de Caixa",
+    "Registrar Saída"
+  ],
+  "steps": [
+    "Abra Financeiro e a aba Fluxo de Caixa.",
+    "Filtre por período, projeto ou conta. Use PDF Compl., Excel Compl., PDF Res. ou Excel Res.",
+    "Fluxo por Empreendimento abre o Relatório de Fluxo de Caixa.",
+    "Registrar Saída (quem não está em modo somente leitura): Categoria, Data, Descrição / Destino, Valor e Forma de pagamento. Se a categoria for Comissão, informe o Corretor. Clique em Confirmar Saída.",
+    "Sincronizar Asaas aparece quando a integração Asaas da empresa está ativa."
+  ],
+  "expectedResult": "Lançamentos visíveis no fluxo; saída gravada quando confirmada; relatório exportado.",
+  "commonErrors": [],
+  "limitations": [
+    "OWNER não registra saída.",
+    "O assistente não lança valor."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/finance/page.tsx"
+  ],
+  "uiLabels": [
+    "Fluxo de Caixa",
+    "Registrar Saída",
+    "Confirmar Saída",
+    "Sincronizar Asaas",
+    "Fluxo por Empreendimento"
+  ]
+}

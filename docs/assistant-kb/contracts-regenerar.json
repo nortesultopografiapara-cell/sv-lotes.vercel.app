@@ -5,7 +5,7 @@
   "routes": ["/contracts"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["regenerar", "contrato", "needs_regenerar", "atualizar visualizacao"],
+  "tags": ["regenerar", "contrato", "needs_regenerar", "atualizar visualizacao", "contract.regenerate"],
   "objective": "Gerar nova versão do contrato após alterar venda, cliente ou dados do lote.",
   "prerequisites": [
     "Contrato existente da venda.",

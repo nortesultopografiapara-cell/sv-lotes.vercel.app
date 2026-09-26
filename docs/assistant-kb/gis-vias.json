@@ -1,0 +1,41 @@
+{
+  "id": "gis-vias",
+  "title": "Linhas de rua e relatório de vias",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["linha de rua", "relatorio de vias", "logradouro", "street guide"],
+  "objective": "Desenhar logradouros e gerar o Relatório de Vias.",
+  "prerequisites": [
+    "ADMIN gerencia GIS, em desktop."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "Linha de Rua",
+    "Relatório de Vias"
+  ],
+  "steps": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Clique em Linha de Rua, desenhe no mapa e, no modal, preencha Tipo, Nome, Código, Largura, Sentido e Ativo. Clique em Salvar logradouro.",
+    "Clique em Relatório de Vias e use Gerar PDF ou Exportar Excel."
+  ],
+  "expectedResult": "Logradouro gravado e relatório de vias exportado.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não desenha a via."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/StreetGuideFormModal.tsx",
+    "components/map/StreetGuidesReportModal.tsx"
+  ],
+  "uiLabels": [
+    "Linha de Rua",
+    "Relatório de Vias",
+    "Salvar logradouro",
+    "Gerar PDF",
+    "Exportar Excel"
+  ]
+}

@@ -5,7 +5,7 @@
   "routes": ["/finance"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["recibo", "registrar pagamento", "baixa", "carne", "gerar recibo"],
+  "tags": ["recibo", "registrar pagamento", "baixa", "carne", "gerar recibo", "finance.receipts"],
   "objective": "Registrar o recebimento de uma parcela e emitir recibo ou carnê em PDF.",
   "prerequisites": [
     "Parcela existente no Financeiro.",

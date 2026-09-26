@@ -5,7 +5,7 @@
   "routes": ["/map"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
   "access": "write",
-  "tags": ["venda", "à vista", "a vista", "pagamento imediato", "lote", "gis", "comercial", "confirmar venda"],
+  "tags": ["venda", "à vista", "a vista", "pagamento imediato", "lote", "gis", "comercial", "confirmar venda", "gis.lot.sell.cash"],
   "objective": "Registrar a venda de um lote disponível com pagamento à vista, gerando venda, contrato e título financeiro.",
   "prerequisites": [
     "Estar logado como ADMIN da empresa ou Corretor.",

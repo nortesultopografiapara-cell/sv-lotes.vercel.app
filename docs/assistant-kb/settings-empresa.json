@@ -1,0 +1,43 @@
+{
+  "id": "settings-empresa",
+  "title": "Configurações da empresa",
+  "module": "settings",
+  "routes": ["/settings"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["configuracoes", "dados da empresa", "representante legal", "integracao financeira", "aparencia"],
+  "objective": "Alterar dados da empresa, representante legal e integração financeira.",
+  "prerequisites": [
+    "Administrador da empresa. Modelo de contrato do loteamento se define no empreendimento (Mapa GIS), não só aqui."
+  ],
+  "navigationPath": [
+    "Configurações",
+    "Geral / Contratos / Integração Financeira",
+    "Salvar Configurações"
+  ],
+  "steps": [
+    "Abra Configurações.",
+    "Em Geral preencha Dados da Empresa e Representante Legal; envie o logo se a tela pedir. Clique em Salvar Configurações.",
+    "Em Contratos ajuste Modelo de contrato padrão da empresa e, se existir, Segundo Promitente Vendedor (opcional).",
+    "Em Integração Financeira use Contas Financeiras, ASAAS (Conta padrão) e Cobranças."
+  ],
+  "expectedResult": "Dados da empresa e integração gravados.",
+  "commonErrors": [],
+  "limitations": [
+    "Split e modelo do loteamento específico ficam em Editar Projeto no Mapa GIS.",
+    "O assistente não grava configuração."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/settings/CompanySettingsV2Shell.tsx",
+    "components/Layout.tsx"
+  ],
+  "uiLabels": [
+    "Configurações",
+    "Dados da Empresa",
+    "Representante Legal",
+    "Salvar Configurações",
+    "Integração Financeira",
+    "Modelo de contrato padrão"
+  ]
+}

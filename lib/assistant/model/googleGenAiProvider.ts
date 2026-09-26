@@ -27,7 +27,7 @@ function readModelName(): string {
 
 function buildUserPayload(input: AssistantModelGenerateInput): string {
   const last = input.messages[input.messages.length - 1]?.content || '';
-  const packedContext = packAssistantContext(input.context);
+  const packedContext = packAssistantContext(input.context, { activeGoal: input.activeGoal });
   if (!assertPackedContextHasNoPii(packedContext)) {
     throw new Error('assistant_context_pii');
   }

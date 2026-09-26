@@ -1,0 +1,42 @@
+{
+  "id": "customers-editar",
+  "title": "Buscar e editar cliente",
+  "module": "customers",
+  "routes": ["/customers"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["editar cliente", "buscar cliente", "historico cliente", "excluir cliente"],
+  "objective": "Localizar, alterar ou consultar o cadastro de cliente.",
+  "prerequisites": [
+    "ADMIN da empresa. Corretor não tem o menu Clientes."
+  ],
+  "navigationPath": [
+    "Clientes",
+    "busca",
+    "Editar / Visualizar / Histórico"
+  ],
+  "steps": [
+    "Abra Clientes.",
+    "Use Buscar por nome, email ou CPF.",
+    "Na linha: Visualizar, Editar, Histórico ou Excluir.",
+    "Em Editar Cliente altere contato, documento, endereço e Status (Ativo/Inativo). Clique em Confirmar."
+  ],
+  "expectedResult": "Cadastro atualizado. A coluna Lotes (Quadra/Lote) mostra os imóveis vinculados.",
+  "commonErrors": [],
+  "limitations": [
+    "O botão Filtros desta tela não aplica filtro extra — a busca do campo é que localiza.",
+    "Não envie documento completo no chat."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/customers/page.tsx"
+  ],
+  "uiLabels": [
+    "Clientes",
+    "Editar",
+    "Visualizar",
+    "Histórico",
+    "Confirmar",
+    "Editar Cliente"
+  ]
+}

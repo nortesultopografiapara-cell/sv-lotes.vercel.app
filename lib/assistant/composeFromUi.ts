@@ -1,4 +1,5 @@
 import { ASSISTANT_CONTINUE_OFFER } from './constants';
+import type { AssistantActiveGoal } from './activeGoal';
 import type { AssistantSafeContext } from './types';
 import {
   isAssistantContractsPath,
@@ -119,6 +120,35 @@ function contractNext(context: AssistantSafeContext): string | null {
   return `Contrato selecionado nesta tela.${parties} Acompanhe a seção de assinatura.`;
 }
 
+function goalNext(goal: AssistantActiveGoal | null | undefined, ui: ReturnType<typeof scopeAssistantUiToRoute>): string | null {
+  if (!goal) return null;
+  if (goal.id === 'gis.lot.memorial') {
+    if (ui.lotModalOpen) {
+      return 'Na ficha do lote, aba Resumo, clique em Gerar memorial. Depois, em Memorial Descritivo (PDF), clique em Gerar PDF / Baixar.';
+    }
+    return 'Clique no lote no mapa. No modal Memorial Descritivo (PDF), clique em Gerar PDF / Baixar.';
+  }
+  if (goal.id === 'gis.lot.sheet') {
+    if (ui.lotModalOpen) {
+      return 'Na ficha do lote, aba Resumo, clique em Gerar prancha. Depois, em Prancha do Lote (PDF), clique em Gerar PDF / Baixar.';
+    }
+    return 'Clique no lote no mapa. No modal Prancha do Lote (PDF), clique em Gerar PDF / Baixar.';
+  }
+  if (goal.id === 'gis.project.general_plan') {
+    return 'Na barra vertical, clique em Prancha Geral. No modal Prancha Geral do Empreendimento, clique em Gerar PDF.';
+  }
+  if (goal.id === 'gis.lot.confrontations') {
+    if (ui.lotModalOpen) {
+      return 'Abra a aba Confrontações, clique em Editar, informe o confrontante e Salvar.';
+    }
+    return 'Na barra, use Confrontação Automática ou clique no lote e abra a aba Confrontações.';
+  }
+  if (goal.id === 'broker.photo.update') {
+    return 'Na lista de Corretores, clique na foto do corretor. No modal Foto do corretor, clique em Adicionar foto ou Alterar foto, escolha a imagem e clique em Salvar foto.';
+  }
+  return null;
+}
+
 /**
  * Resposta a partir do estado real validado.
  * Tem prioridade sobre passos genéricos da KB (ex.: "Abra Contratos").
@@ -126,6 +156,7 @@ function contractNext(context: AssistantSafeContext): string | null {
 export function composeFromValidatedUi(input: {
   question: string;
   context: AssistantSafeContext;
+  activeGoal?: AssistantActiveGoal | null;
 }): string | null {
   if (!isAssistantNowQuestion(input.question)) return null;
   const ui = scopeAssistantUiToRoute(input.context.pathname, input.context.ui);
@@ -142,6 +173,11 @@ export function composeFromValidatedUi(input: {
   if (ui.saleFormOpen && !isAssistantContractsPath(context.pathname)) {
     const next = saleNext(ui);
     if (next) return `${lead}${next} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
+  }
+
+  const fromGoal = goalNext(input.activeGoal, ui);
+  if (fromGoal && !ui.saleFormOpen) {
+    return `${lead}${fromGoal} ${ASSISTANT_CONTINUE_OFFER}`.replace(/\s+/g, ' ').trim();
   }
 
   if (ui.contractId) {

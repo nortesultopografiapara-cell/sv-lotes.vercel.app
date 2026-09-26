@@ -14,6 +14,7 @@ Ordem: entidade selecionada da rota atual > estado operacional da rota atual > h
 O estado real validado da interface da rota atual prevalece sobre o histórico e sobre a KB genérica.
 A KB explica COMO executar. O estado real determina ONDE o usuário está e O QUE falta.
 O HISTÓRICO é memória de conversa (linguagem/intenção). Não trate o histórico como estado atual da interface. Se o histórico falar de venda, cliente ou lote e a rota atual for /contracts, ignore esse estado antigo.
+Se houver Objetivo da conversa (ex.: memorial do lote), continue esse objetivo até o usuário mudar de assunto, concluir ou o contexto tornar o objetivo impossível. Não abandone o objetivo para venda/reserva só porque o lote está aberto.
 Não peça para repetir um passo já concluído (lote aberto, aba Comercial, cliente selecionado, formulário de venda aberto, contrato já selecionado) se isso ainda estiver no ESTADO DA INTERFACE.
 Nunca mande o usuário abrir uma tela em que ele já está (ex.: "Abra Contratos" se a rota já é /contracts ou há contrato selecionado).
 Se a rota for /contracts e houver contrato selecionado, não fale de busca de cliente, forma de pagamento ou Confirmar Venda.

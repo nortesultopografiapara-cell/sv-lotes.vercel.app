@@ -1,0 +1,45 @@
+{
+  "id": "brokers-editar",
+  "title": "Editar, ativar e desativar corretor",
+  "module": "brokers",
+  "routes": ["/dashboard/brokers"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["editar corretor", "desativar corretor", "reativar corretor", "creci", "telefone", "redefinir senha"],
+  "objective": "Alterar dados do corretor, status ativo/inativo e senha de acesso.",
+  "prerequisites": [
+    "Administrador da empresa. Corretor não acessa o menu Corretores."
+  ],
+  "navigationPath": [
+    "Corretores",
+    "Ações",
+    "Editar / Desativar corretor / Redefinir senha"
+  ],
+  "steps": [
+    "Abra Corretores.",
+    "Use a busca ou o filtro de status (todos, somente ativos, somente inativos).",
+    "No menu Ações da linha: Visualizar, Editar, Redefinir senha, Desativar corretor ou Reativar corretor.",
+    "Em Editar Corretor altere Nome Completo, Telefone (WhatsApp), CRECI, Nível de Acesso e comissão. E-mail (Login) não muda. Clique em Salvar Alterações."
+  ],
+  "expectedResult": "Cadastro, status ou senha atualizados. Corretor inativo deixa de aparecer como ativo na equipe.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não redefine senha. Não cole senha no chat.",
+    "Foto do corretor é outro procedimento (Foto do corretor)."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/dashboard/brokers/page.tsx"
+  ],
+  "uiLabels": [
+    "Editar",
+    "Editar Corretor",
+    "Desativar corretor",
+    "Reativar corretor",
+    "Redefinir senha",
+    "Salvar Alterações",
+    "Telefone (WhatsApp)",
+    "CRECI",
+    "Nível de Acesso"
+  ]
+}

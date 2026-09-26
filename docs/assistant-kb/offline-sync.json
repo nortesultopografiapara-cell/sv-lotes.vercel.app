@@ -1,0 +1,38 @@
+{
+  "id": "offline-sync",
+  "title": "Sincronização Offline",
+  "module": "settings",
+  "routes": ["/offline-sync"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["offline", "sincronizar pendentes", "diagnostico offline"],
+  "objective": "Reprocessar a fila de operações feitas sem conexão.",
+  "prerequisites": [
+    "Menu Sincronização Offline (administradores)."
+  ],
+  "navigationPath": [
+    "Sincronização Offline",
+    "Sincronizar pendentes"
+  ],
+  "steps": [
+    "Abra Sincronização Offline.",
+    "Clique em Atualizar ou Diagnóstico Offline para ver a fila.",
+    "Sincronizar pendentes envia o lote. Por item use Reprocessar, Ignorar ou Confirmar manualmente."
+  ],
+  "expectedResult": "Itens pendentes sincronizados ou tratados na fila.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não sincroniza a fila."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/offline-sync/page.tsx"
+  ],
+  "uiLabels": [
+    "Sincronização Offline",
+    "Atualizar",
+    "Diagnóstico Offline",
+    "Sincronizar pendentes",
+    "Reprocessar"
+  ]
+}

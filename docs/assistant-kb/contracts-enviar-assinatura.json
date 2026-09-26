@@ -5,7 +5,7 @@
   "routes": ["/contracts"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["assinatura", "eletrônica", "enviar para assinatura", "link individual", "whatsapp", "copiar link"],
+  "tags": ["assinatura", "eletrônica", "enviar para assinatura", "link individual", "whatsapp", "copiar link", "contract.signature.send"],
   "objective": "Disparar a assinatura eletrônica do contrato de compra e venda e acompanhar as partes.",
   "prerequisites": [
     "Contrato gerado a partir da venda.",

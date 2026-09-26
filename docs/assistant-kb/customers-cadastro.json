@@ -5,7 +5,7 @@
   "routes": ["/customers"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["cliente", "cadastro", "comprador", "novo cliente", "cpf", "cnpj"],
+  "tags": ["cliente", "cadastro", "comprador", "novo cliente", "customer.upsert"],
   "objective": "Cadastrar comprador (pessoa física ou jurídica) para usar na venda e no contrato.",
   "prerequisites": [
     "Perfil ADMIN da empresa (Corretor não tem o menu Clientes).",

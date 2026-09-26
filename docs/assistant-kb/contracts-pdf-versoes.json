@@ -1,0 +1,43 @@
+{
+  "id": "contracts-pdf-versoes",
+  "title": "PDF, versões e cancelamento do contrato",
+  "module": "contracts",
+  "routes": ["/contracts"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "OWNER"],
+  "access": "read",
+  "tags": ["baixar pdf", "pdf assinado", "versoes", "imprimir", "cancelar contrato", "carne"],
+  "objective": "Visualizar, baixar, imprimir, gerar carnê e consultar versões do contrato selecionado.",
+  "prerequisites": [
+    "Contrato aberto em Contratos."
+  ],
+  "navigationPath": [
+    "Contratos",
+    "contrato selecionado",
+    "Baixar PDF / Imprimir / Histórico"
+  ],
+  "steps": [
+    "Abra Contratos e selecione o contrato.",
+    "Use Gerar PDF, Baixar PDF, Imprimir ou, se já assinado, Baixar PDF Assinado.",
+    "Gerar Carnê gera o carnê completo. Gerar Nota Promissória e Baixar ficam na mesma barra quando a tela oferece.",
+    "Na aba Histórico escolha a versão e Baixar. Cancelar encerra o contrato vigente (quem tem permissão de escrita)."
+  ],
+  "expectedResult": "PDF ou carnê baixado; versão antiga consultável; contrato cancelado só após a ação de Cancelar.",
+  "commonErrors": [],
+  "limitations": [
+    "OWNER consulta; cancelar e regenerar seguem o perfil da tela.",
+    "O assistente não baixa arquivo."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/contracts/page.tsx"
+  ],
+  "uiLabels": [
+    "Gerar PDF",
+    "Baixar PDF",
+    "Baixar PDF Assinado",
+    "Imprimir",
+    "Gerar Carnê",
+    "Histórico",
+    "Cancelar"
+  ]
+}

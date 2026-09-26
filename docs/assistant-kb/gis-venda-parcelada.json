@@ -5,7 +5,7 @@
   "routes": ["/map"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
   "access": "write",
-  "tags": ["venda", "parcelada", "parcelado", "parcelas", "sinal", "entrada", "lote", "gis", "comercial", "qtd de parcelas"],
+  "tags": ["venda", "parcelada", "parcelado", "parcelas", "sinal", "entrada", "lote", "gis", "comercial", "qtd de parcelas", "gis.lot.sell.installments"],
   "objective": "Registrar a venda parcelada de um lote disponível, com sinal, quantidade de parcelas, vencimento e corretor.",
   "prerequisites": [
     "Estar logado como ADMIN da empresa ou Corretor.",

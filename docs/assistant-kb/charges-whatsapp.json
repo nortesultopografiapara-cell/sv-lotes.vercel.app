@@ -5,7 +5,7 @@
   "routes": ["/charges"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["whatsapp", "cobranca", "lote", "lembrete", "enviar"],
+  "tags": ["whatsapp", "cobranca", "lote", "lembrete", "enviar", "charge.whatsapp.batch", "whatsapp em lote"],
   "objective": "Enviar a cobrança ou o lembrete da parcela ao comprador por WhatsApp.",
   "prerequisites": [
     "Cliente com telefone no cadastro.",

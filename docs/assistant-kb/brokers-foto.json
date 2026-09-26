@@ -1,0 +1,48 @@
+{
+  "id": "brokers-foto",
+  "title": "Foto do corretor",
+  "module": "brokers",
+  "routes": ["/dashboard/brokers"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["broker.photo.update", "foto", "avatar", "imagem", "fotografia", "corretor", "alterar foto", "adicionar foto"],
+  "objective": "Incluir ou trocar a fotografia do corretor já cadastrado.",
+  "prerequisites": [
+    "O corretor já existe na lista. O cadastro Novo Corretor não tem campo de foto.",
+    "Administrador da empresa do mesmo tenant."
+  ],
+  "navigationPath": [
+    "Corretores",
+    "foto do corretor",
+    "Adicionar foto ou Alterar foto",
+    "Salvar foto"
+  ],
+  "steps": [
+    "Abra Corretores.",
+    "Na lista, clique na foto (ou na inicial) do corretor. Em Editar Corretor, clique na foto ou em Adicionar foto / Alterar foto.",
+    "No modal Foto do corretor, clique em Adicionar foto ou Alterar foto e escolha o arquivo (JPG, PNG ou WebP, até 2 MB).",
+    "Clique em Salvar foto."
+  ],
+  "expectedResult": "A foto aparece na lista de Corretores e no cadastro do corretor.",
+  "commonErrors": [
+    "Procurar a foto no modal Cadastrar Novo Corretor — a foto só existe depois que o corretor já está salvo."
+  ],
+  "limitations": [
+    "O assistente não envia nem recorta a imagem.",
+    "Remover foto existe no mesmo modal quando já há uma foto cadastrada."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/dashboard/brokers/page.tsx",
+    "components/brokers/BrokerAvatarModal.tsx",
+    "lib/brokerAvatar.ts"
+  ],
+  "uiLabels": [
+    "Foto do corretor",
+    "Adicionar foto",
+    "Alterar foto",
+    "Salvar foto",
+    "Remover foto",
+    "JPG, PNG ou WebP · até 2 MB"
+  ]
+}

@@ -33,7 +33,10 @@ export function packAssistantKnowledge(procedures: AssistantProcedure[], context
     .join('\n\n---\n\n');
 }
 
-export function packAssistantContext(context: AssistantSafeContext): string {
+export function packAssistantContext(
+  context: AssistantSafeContext,
+  extras?: { activeGoal?: { id: string; label: string } | null },
+): string {
   const ui = context.ui;
   const lines = [
     'ESTADO DA INTERFACE (prioridade sobre a KB genérica)',
@@ -45,6 +48,12 @@ export function packAssistantContext(context: AssistantSafeContext): string {
     context.contractModel ? `Modelo de contrato: ${context.contractModel}` : null,
     `Visão: ${context.viewer}${context.impersonatingTenant ? ' (impersonando tenant)' : ''}`,
   ];
+  if (extras?.activeGoal) {
+    lines.push(`Objetivo da conversa: ${extras.activeGoal.label}`);
+    lines.push(
+      'O objetivo da conversa não é o estado da tela. Continue esse objetivo até o usuário mudar de assunto. Não volte para venda/reserva só porque o lote está aberto.',
+    );
+  }
   if (ui) {
     if (ui.blockNumber || ui.lotNumber) {
       lines.push(`Lote: Quadra ${ui.blockNumber || '—'} / Lote ${ui.lotNumber || '—'}`);

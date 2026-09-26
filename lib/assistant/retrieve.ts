@@ -1,6 +1,7 @@
 import { ASSISTANT_RETRIEVE_LIMIT } from './constants';
 import { filterProceduresForRole, canRoleReceiveProcedure } from './policy';
 import { listAssistantProcedures } from './knowledgeBase';
+import type { AssistantActiveGoal } from './activeGoal';
 import type { AssistantAskKind, AssistantProcedure, AssistantSafeContext } from './types';
 
 export type AssistantRetrieval = {
@@ -57,10 +58,21 @@ function tokens(text: string): string[] {
     .filter((item) => item.length > 2 && !STOPWORDS.has(item));
 }
 
+const MODULE_HINTS: Record<string, string[]> = {
+  finance: ['financeiro', 'recibo', 'inadimplencia'],
+  charges: ['cobranca'],
+  brokers: ['corretor', 'creci'],
+  customers: ['cliente'],
+  contracts: ['contrato', 'assinatura'],
+  dashboard: ['dashboard'],
+  split: ['split', 'rateio'],
+};
+
 function scoreProcedure(
   procedure: AssistantProcedure,
   question: string,
   context: AssistantSafeContext,
+  activeGoal?: AssistantActiveGoal | null,
 ): number {
   const haystack = normalize(
     [
@@ -75,7 +87,10 @@ function scoreProcedure(
     ].join(' '),
   );
   const words = tokens(question);
-  if (words.length === 0) return 0;
+  if (words.length === 0) {
+    if (activeGoal?.procedureId === procedure.id) return 22;
+    return 0;
+  }
 
   let score = 0;
   let matched = 0;
@@ -93,9 +108,22 @@ function scoreProcedure(
       matched += 1;
     }
   }
-  if (matched === 0) {
-    if ((context.ui?.lotModalOpen || context.ui?.saleFormOpen) && procedure.module === 'gis') return 12;
-    if (context.ui?.contractId && procedure.module === 'contracts') return 12;
+  if (activeGoal?.procedureId === procedure.id) score += 24;
+  if (activeGoal && procedure.tags.includes(activeGoal.id)) score += 16;
+
+  const hints = MODULE_HINTS[procedure.module] || [];
+  if (hints.some((hint) => words.some((word) => word.includes(hint) || hint.includes(word)))) {
+    score += 12;
+  }
+
+  if (matched === 0 && activeGoal?.procedureId !== procedure.id) {
+    if (
+      (context.ui?.lotModalOpen || context.ui?.saleFormOpen) &&
+      procedure.module === 'gis' &&
+      (!activeGoal || activeGoal.module !== 'gis' || activeGoal.procedureId === procedure.id)
+    ) {
+      return 12;
+    }
     return 0;
   }
 
@@ -121,6 +149,7 @@ export function retrieveAssistantProcedures(input: {
   context: AssistantSafeContext;
   procedureId?: string;
   limit?: number;
+  activeGoal?: AssistantActiveGoal | null;
 }): AssistantRetrieval {
   const all = listAssistantProcedures();
   const limit = input.limit ?? ASSISTANT_RETRIEVE_LIMIT;
@@ -142,7 +171,7 @@ export function retrieveAssistantProcedures(input: {
   const ranked = all
     .map((procedure) => ({
       procedure,
-      score: scoreProcedure(procedure, input.question, input.context),
+      score: scoreProcedure(procedure, input.question, input.context, input.activeGoal),
       decision: canRoleReceiveProcedure(procedure, input.context),
     }))
     .sort((a, b) => b.score - a.score);

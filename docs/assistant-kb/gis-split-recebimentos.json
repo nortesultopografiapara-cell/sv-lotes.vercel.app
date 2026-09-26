@@ -5,7 +5,7 @@
   "routes": ["/map"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["split", "recebimentos", "configurar split", "rateio", "asaas", "wallet"],
+  "tags": ["split", "recebimentos", "configurar split", "rateio", "asaas", "wallet", "split.configure"],
   "objective": "Configurar o rateio automático dos recebimentos do empreendimento entre contas/wallets Asaas.",
   "prerequisites": [
     "Perfil que gerencia sócios/empreendimento (ADMIN da empresa). OWNER e BROKER não configuram Split.",

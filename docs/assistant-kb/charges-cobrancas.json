@@ -5,7 +5,7 @@
   "routes": ["/charges"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["cobrancas", "cobranças", "emitir", "gerar cobranca", "sincronizar", "asaas", "inter", "pix", "boleto"],
+  "tags": ["cobrancas", "cobranças", "emitir", "gerar cobranca", "sincronizar", "asaas", "inter", "pix", "boleto", "charge.emit"],
   "objective": "Gerar cobrança (boleto/Pix) das parcelas e atualizar o status junto ao provedor (Asaas ou Banco Inter).",
   "prerequisites": [
     "Parcela em aberto.",

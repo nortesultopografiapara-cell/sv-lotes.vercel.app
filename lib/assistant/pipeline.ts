@@ -18,6 +18,7 @@ import {
 import { composeFromValidatedUi } from './composeFromUi';
 import { localGroundedProvider } from './model/localGroundedProvider';
 import { isAssistantContractsPath } from './uiSnapshot';
+import { resolveAssistantActiveGoal } from './activeGoal';
 import type { AssistantModelProvider } from './model/types';
 import type { AssistantAskInput, AssistantAskResult } from './types';
 
@@ -60,11 +61,18 @@ export async function runAssistantPipeline(
     };
   }
 
+  const activeGoal = resolveAssistantActiveGoal({
+    question,
+    history,
+    context: input.context,
+  });
+
   const retrieved = retrieveAssistantProcedures({
     question: buildRetrievalQuery(question, history),
     context: input.context,
     procedureId: input.procedureId,
     limit: ASSISTANT_RETRIEVE_LIMIT_CONVERSATIONAL,
+    activeGoal,
   });
 
   const composed = composeAssistantAnswer({
@@ -74,13 +82,14 @@ export async function runAssistantPipeline(
     forbiddenReason: retrieved.forbiddenReason,
   });
 
-  const uiGrounded = composeFromValidatedUi({ question, context: input.context });
+  const uiGrounded = composeFromValidatedUi({ question, context: input.context, activeGoal });
   if (
     uiGrounded &&
     composed.kind !== 'forbidden' &&
     (input.context.ui.contractId ||
       input.context.ui.saleFormOpen ||
-      isAssistantContractsPath(input.context.pathname))
+      isAssistantContractsPath(input.context.pathname) ||
+      Boolean(activeGoal))
   ) {
     return {
       kind: 'answer',
@@ -101,6 +110,7 @@ export async function runAssistantPipeline(
     knowledge: retrieved.procedures,
     context: input.context,
     history,
+    activeGoal,
     policy: { canAnswer: true as const, reason: 'ok' as const },
   };
 

@@ -39,7 +39,16 @@ function skipUntil(steps: string[], matcher: (step: string) => boolean): string[
   return steps.slice(index);
 }
 
+function isDocumentGoal(input: AssistantModelGenerateInput): boolean {
+  const id = input.activeGoal?.id || input.activeGoal?.procedureId || '';
+  return /memorial|prancha|confront|frente|general_plan|lot.sheet/.test(id);
+}
+
 function pickProcedure(input: AssistantModelGenerateInput): AssistantProcedure | null {
+  if (input.activeGoal?.procedureId) {
+    const targeted = input.knowledge.find((item) => item.id === input.activeGoal?.procedureId);
+    if (targeted) return targeted;
+  }
   const question = normalize(input.messages[input.messages.length - 1]?.content || '');
   const ui = input.context.ui;
   const model = input.context.contractModel;
@@ -127,7 +136,7 @@ function describeUiLead(context: AssistantSafeContext): string {
 function nextSteps(input: AssistantModelGenerateInput, procedure: AssistantProcedure): string[] {
   let steps = procedure.steps.slice();
   const ui = input.context.ui;
-  if (isClientAlreadySelected(input)) {
+  if (isClientAlreadySelected(input) && !isDocumentGoal(input)) {
     steps = skipUntil(
       steps,
       (step) =>
@@ -139,10 +148,22 @@ function nextSteps(input: AssistantModelGenerateInput, procedure: AssistantProce
     );
     return steps;
   }
-  if (ui?.saleFormOpen) {
+  if (ui?.saleFormOpen && !isDocumentGoal(input)) {
     steps = skipUntil(
       steps,
       (step) => step.includes('cliente') || step.includes('comprador') || step.includes('selecion'),
+    );
+    return steps;
+  }
+  if (isDocumentGoal(input)) {
+    steps = skipUntil(
+      steps,
+      (step) =>
+        step.includes('gerar memorial') ||
+        step.includes('gerar prancha') ||
+        step.includes('gerar pdf') ||
+        step.includes('confront') ||
+        step.includes('prancha geral'),
     );
     return steps;
   }
@@ -166,6 +187,7 @@ export const localGroundedProvider: AssistantModelProvider = {
     const uiAnswer = composeFromValidatedUi({
       question: input.messages[input.messages.length - 1]?.content || '',
       context: input.context,
+      activeGoal: input.activeGoal,
     });
     if (uiAnswer) {
       const master =
@@ -204,6 +226,8 @@ export const localGroundedProvider: AssistantModelProvider = {
       text = `${lead}Em Forma de Pagamento, escolha À vista ou Parcelado e confira os valores antes de Confirmar Venda.`;
     } else if (hasStructuredUi && ui?.saleFormOpen && !ui.customerSelected) {
       text = `${lead}Selecione o cliente na operação. Depois escolha a forma de pagamento.`;
+    } else if (isDocumentGoal(input) || /memorial|prancha|confront|frente/.test(procedure.id)) {
+      text = `${lead}${steps.slice(0, 4).join(' ')}`;
     } else if (
       hasStructuredUi &&
       ui?.lotModalOpen &&

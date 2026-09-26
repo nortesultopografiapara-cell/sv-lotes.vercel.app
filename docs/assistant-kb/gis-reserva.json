@@ -5,7 +5,7 @@
   "routes": ["/map"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
   "access": "write",
-  "tags": ["reserva", "reservar", "lote", "sinal da reserva", "bloquear"],
+  "tags": ["reserva", "reservar", "lote", "sinal da reserva", "bloquear", "gis.lot.reserve"],
   "objective": "Bloquear temporariamente um lote disponível para um cliente, com ou sem sinal de reserva.",
   "prerequisites": [
     "ADMIN ou Corretor logado.",

@@ -1,0 +1,45 @@
+{
+  "id": "charges-lembretes",
+  "title": "Lembretes de cobrança",
+  "module": "charges",
+  "routes": ["/charges"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["lembretes", "regua", "central de lembretes", "automatico"],
+  "objective": "Abrir a Central de Lembretes e configurar a régua automática.",
+  "prerequisites": [
+    "ADMIN. OWNER não opera lembretes."
+  ],
+  "navigationPath": [
+    "Cobranças",
+    "Lembretes",
+    "Central de Lembretes",
+    "Configurar"
+  ],
+  "steps": [
+    "Abra Cobranças e clique em Lembretes.",
+    "Na Central de Lembretes consulte o histórico. Configurar leva a Integração Financeira.",
+    "Em Configurações → Integração Financeira use Ativar lembretes automáticos, canais e eventos. Salvar configuração grava a régua.",
+    "Simular pré-visualiza. Executar agora dispara o envio real após confirmação, quando a fase permitir."
+  ],
+  "expectedResult": "Régua visível e, se ativada, lembretes conforme a configuração salva.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não dispara lembrete.",
+    "Em algumas fases Production a execução real permanece bloqueada na própria tela."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "components/charges/ChargesPageClient.tsx",
+    "components/charges/BuyerReminderHistoryPanel.tsx",
+    "components/charges/BuyerReminderSettingsPanel.tsx"
+  ],
+  "uiLabels": [
+    "Lembretes",
+    "Central de Lembretes",
+    "Ativar lembretes automáticos",
+    "Salvar configuração",
+    "Simular",
+    "Executar agora"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "gis-corrigir-frente",
+  "title": "Corrigir frente e identificar frentes",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "tags": ["gis.lot.front", "corrigir frente", "identificar frentes", "frente"],
+  "objective": "Ajustar a frente de um lote ou recalcular frentes pelas linhas de rua.",
+  "prerequisites": [
+    "ADMIN gerencia GIS. Corretor e OWNER não usam Corrigir frente.",
+    "Corrigir frente na ficha exige segmentos oficiais no lote.",
+    "Identificar Frentes exige pelo menos uma Linha de Rua visível."
+  ],
+  "navigationPath": [
+    "Mapa GIS",
+    "ficha do lote",
+    "Resumo",
+    "Corrigir frente"
+  ],
+  "steps": [
+    "Abra o lote no mapa.",
+    "Na aba Resumo, em Cadastro e geometria, clique em Corrigir frente e siga os segmentos no mapa. Cancele com Cancelar.",
+    "Para o loteamento inteiro (desktop): desenhe Linha de Rua se ainda não houver, deixe Mostrar Linhas ativo e clique em Identificar Frentes."
+  ],
+  "expectedResult": "Frente do lote atualizada, visível na ficha e na prancha.",
+  "commonErrors": [],
+  "limitations": [
+    "O assistente não altera geometria."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/map/page.tsx",
+    "components/map/GISMap.tsx"
+  ],
+  "uiLabels": [
+    "Corrigir frente",
+    "Identificar Frentes",
+    "Linha de Rua",
+    "Mostrar Linhas",
+    "Ocultar Linhas"
+  ]
+}

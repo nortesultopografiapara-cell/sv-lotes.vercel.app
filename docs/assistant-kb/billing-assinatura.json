@@ -1,0 +1,42 @@
+{
+  "id": "billing-assinatura",
+  "title": "Minha Assinatura",
+  "module": "settings",
+  "routes": ["/billing"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "read",
+  "tags": ["minha assinatura", "fatura", "plano", "saas"],
+  "objective": "Consultar a assinatura SaaS da empresa, faturas e boleto/Pix do plano.",
+  "prerequisites": [
+    "Menu Minha Assinatura (administradores da empresa). A rota /minha-assinatura abre /billing."
+  ],
+  "navigationPath": [
+    "Minha Assinatura",
+    "Atualizar / Abrir link / Baixar boleto"
+  ],
+  "steps": [
+    "Abra Minha Assinatura no menu.",
+    "Use Atualizar para sincronizar o status.",
+    "Na fatura: Abrir link, copiar Pix/link ou Baixar boleto, conforme o que a tela mostrar.",
+    "Histórico de pagamentos lista as faturas anteriores."
+  ],
+  "expectedResult": "Situação da assinatura e da fatura visíveis.",
+  "commonErrors": [],
+  "limitations": [
+    "Isto é a assinatura do SV Lotes, não a assinatura eletrônica do contrato de lote (essa fica em Contratos)."
+  ],
+  "modelDifferences": [],
+  "sourceOfTruth": [
+    "app/billing/page.tsx",
+    "app/minha-assinatura/page.tsx",
+    "components/billing/CompanyBillingPortal.tsx",
+    "components/Layout.tsx"
+  ],
+  "uiLabels": [
+    "Minha Assinatura",
+    "Atualizar",
+    "Abrir link",
+    "Baixar boleto",
+    "Histórico de pagamentos"
+  ]
+}
