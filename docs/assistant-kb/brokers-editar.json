@@ -5,7 +5,7 @@
   "routes": ["/dashboard/brokers"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["editar corretor", "desativar corretor", "reativar corretor", "creci", "telefone", "redefinir senha"],
+  "tags": ["editar corretor", "desativar corretor", "desativo", "reativar corretor", "creci", "telefone", "redefinir senha"],
   "objective": "Alterar dados do corretor, status ativo/inativo e senha de acesso.",
   "prerequisites": [
     "Administrador da empresa. Corretor não acessa o menu Corretores."

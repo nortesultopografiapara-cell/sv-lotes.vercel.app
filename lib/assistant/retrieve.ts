@@ -58,12 +58,30 @@ function tokens(text: string): string[] {
     .filter((item) => item.length > 2 && !STOPWORDS.has(item));
 }
 
+function pluralish(a: string, b: string): boolean {
+  return a === `${b}s` || b === `${a}s` || a === `${b}es` || b === `${a}es`;
+}
+
+function verbish(tagToken: string, word: string): boolean {
+  if (tagToken.length < 6 && word.length < 6) return false;
+  if (tagToken.endsWith('ar') && word.endsWith('o') && tagToken.slice(0, -2) === word.slice(0, -1)) return true;
+  if (word.endsWith('ar') && tagToken.endsWith('o') && word.slice(0, -2) === tagToken.slice(0, -1)) return true;
+  return false;
+}
+
+function tagMatchesWord(tag: string, word: string): boolean {
+  const t = normalize(tag);
+  if (!t || !word) return false;
+  if (t === word || pluralish(t, word) || verbish(t, word)) return true;
+  return t.split(/\s+/).some((part) => part === word || pluralish(part, word) || verbish(part, word));
+}
+
 const MODULE_HINTS: Record<string, string[]> = {
   finance: ['financeiro', 'recibo', 'inadimplencia'],
   charges: ['cobranca'],
   brokers: ['corretor', 'creci'],
   customers: ['cliente'],
-  contracts: ['contrato', 'assinatura'],
+  contracts: ['contrato'],
   dashboard: ['dashboard'],
   split: ['split', 'rateio'],
 };
@@ -99,7 +117,7 @@ function scoreProcedure(
       score += 3;
       matched += 1;
     }
-    if (procedure.tags.some((tag) => normalize(tag).includes(word) || word.includes(normalize(tag)))) {
+    if (procedure.tags.some((tag) => tagMatchesWord(tag, word))) {
       score += 4;
       matched += 1;
     }
@@ -111,8 +129,15 @@ function scoreProcedure(
   if (activeGoal?.procedureId === procedure.id) score += 24;
   if (activeGoal && procedure.tags.includes(activeGoal.id)) score += 16;
 
+  const qn = normalize(question);
+  for (const tag of procedure.tags) {
+    const t = normalize(tag);
+    const specific = t.includes(' ') || t.includes('.') || t.length >= 12;
+    if (specific && qn.includes(t)) score += 10;
+  }
+
   const hints = MODULE_HINTS[procedure.module] || [];
-  if (hints.some((hint) => words.some((word) => word.includes(hint) || hint.includes(word)))) {
+  if (hints.some((hint) => words.some((word) => word === hint || pluralish(word, hint)))) {
     score += 12;
   }
 

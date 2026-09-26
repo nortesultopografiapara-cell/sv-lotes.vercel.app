@@ -99,3 +99,13 @@ Follow-up `Já selecionei. E agora?` após memorial permanece em `gis.lot.memori
 - `npx tsx scripts/mandatory-assistant-sv-fase-2a-tests.ts` → ASSISTANT_SV_FASE_2A_OK
 
 Contagem: **16** procedimentos (1A–1D) → **37** procedimentos (2A). Arquivos JSON da KB: 37 + `index.json`. Inventário da tabela acima: **55** funcionalidades reais auditadas; **6** lacunas listadas; **4** inconsistências código/UI (não corrigidas nesta fase).
+
+## Fechamento candidato (1A–1D + 2A)
+
+Consulta em tempo real **não** entra nesta versão (Fase 2B futura).  
+`Tem parcela vencida hoje?` recupera `finance-visao-geral` e orienta a abrir Financeiro → Parcelas; o Assistente declara que **não consulta o banco**.
+
+Correções de retrieval no fechamento (sem novo produto):
+- tags genéricas de WhatsApp (`cobranca`, `lote`, `lembrete`) não roubam emissão nem régua;
+- `gis-config-empreendimento` não lista mais memorial/prancha/confrontação como rótulos próprios;
+- matching de tags deixou de tratar `parcela` como `parcelado`.

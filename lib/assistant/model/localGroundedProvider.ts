@@ -33,6 +33,11 @@ function isWhoNeedsToSign(question: string): boolean {
   return /quem (precisa |deve |tem que )?assin|o que falta neste contrato/.test(normalize(question));
 }
 
+function isLiveConsultQuestion(question: string): boolean {
+  const n = normalize(question);
+  return /tem parcela|parcela vencida|vencid[ao] hoje|inadimplen/.test(n);
+}
+
 function skipUntil(steps: string[], matcher: (step: string) => boolean): string[] {
   const index = steps.findIndex((step) => matcher(normalize(step)));
   if (index < 0) return steps;
@@ -52,6 +57,10 @@ function pickProcedure(input: AssistantModelGenerateInput): AssistantProcedure |
   const question = normalize(input.messages[input.messages.length - 1]?.content || '');
   const ui = input.context.ui;
   const model = input.context.contractModel;
+  if (isLiveConsultQuestion(question)) {
+    const finance = input.knowledge.find((item) => item.module === 'finance');
+    if (finance) return finance;
+  }
   if (input.context.moduleId === 'contracts' || ui?.contractId) {
     const contracts = input.knowledge.filter((item) => item.module === 'contracts');
     if (model) {
@@ -222,6 +231,8 @@ export const localGroundedProvider: AssistantModelProvider = {
       const parties =
         ui.partyTotal != null ? ` Partes assinadas: ${ui.partySigned ?? 0}/${ui.partyTotal}.` : '';
       text = `${lead}Status: ${ui.contractStatus || 'contrato selecionado'}. Próxima ação: ${ui.nextAction}.${parties}`;
+    } else if (isLiveConsultQuestion(question) && procedure.module === 'finance') {
+      text = `${lead}O Assistente SV não consulta o banco em tempo real. Abra Financeiro → Parcelas e filtre por vencimento ou situação (Inadimplência) para ver o que está vencido hoje.`;
     } else if (hasStructuredUi && ui?.saleFormOpen && ui.customerSelected) {
       text = `${lead}Em Forma de Pagamento, escolha À vista ou Parcelado e confira os valores antes de Confirmar Venda.`;
     } else if (hasStructuredUi && ui?.saleFormOpen && !ui.customerSelected) {

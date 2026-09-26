@@ -5,7 +5,7 @@
   "routes": ["/finance"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "OWNER"],
   "access": "read",
-  "tags": ["financeiro", "parcelas", "titulos", "inadimplencia", "modulo financeiro"],
+  "tags": ["financeiro", "parcelas", "titulos", "inadimplencia", "modulo financeiro", "parcela vencida", "vencida hoje"],
   "objective": "Localizar parcelas geradas pela venda e acompanhar vencimento, status e inadimplência.",
   "prerequisites": [
     "Venda já confirmada (as parcelas nascem com a venda).",
@@ -19,6 +19,7 @@
     "Abra Financeiro no menu lateral.",
     "O cabeçalho identifica Módulo Financeiro · Contratos · Títulos · Inadimplência.",
     "Filtre por empreendimento, cliente ou situação da parcela.",
+    "Para ver o que está vencido, use o filtro de vencimento/situação na própria lista — o Assistente SV não consulta o banco em tempo real.",
     "Abra a parcela para Visualizar.",
     "Operações de recebimento e recibo estão no procedimento Recibos e baixa de parcela.",
     "Cobrança com boleto/Pix fica em Cobranças, não neste menu."
@@ -30,7 +31,8 @@
   ],
   "limitations": [
     "OWNER não registra pagamento nem exclui parcela.",
-    "O assistente não altera títulos."
+    "O assistente não altera títulos.",
+    "Consultas do tipo “tem parcela vencida hoje?” são orientação de tela, não leitura ao vivo do banco (evolução futura)."
   ],
   "modelDifferences": [],
   "sourceOfTruth": [

@@ -6,7 +6,7 @@
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
   "tags": ["empreendimento", "projeto", "novo projeto", "modelo de contrato", "settings.project", "editar projeto"],
-  "objective": "Criar ou editar o loteamento, definir modelo de contrato e usar as ferramentas GIS (confrontação, memorial e prancha).",
+  "objective": "Criar ou editar o loteamento e definir modelo de contrato e conta financeira.",
   "prerequisites": [
     "Perfil ADMIN (canManageGisProject). Corretor e OWNER não criam/editam projeto."
   ],
@@ -16,10 +16,7 @@
     "Empreendimento",
     "Contrato / Proprietário",
     "Financeiro / Recebimentos",
-    "Abrir Mapa",
-    "Confrontação Automática",
-    "Memorial Descritivo",
-    "Prancha Geral / Gerar Prancha do Lote"
+    "Abrir Mapa"
   ],
   "steps": [
     "Abra Mapa GIS & Projetos.",
@@ -29,7 +26,7 @@
     "Se LF Imóveis, preencha Configuração contratual — LF Imóveis. Se Mundo Novo, só os contatos e-sign dos promitentes já definidos.",
     "Na coluna Financeiro / Recebimentos, escolha Conta financeira padrão do empreendimento e, se couber, Configurar Split.",
     "Salve. Depois use Abrir Mapa.",
-    "Memorial, prancha e confrontação do mapa são procedimentos separados da barra/ficha — não ficam na aba Comercial."
+    "As demais ferramentas da barra e da ficha do lote não ficam nesta tela de cadastro do projeto."
   ],
   "expectedResult": "Empreendimento gravado com modelo de contrato e conta financeira. Mapa disponível para venda, memorial e prancha.",
   "commonErrors": [
@@ -60,10 +57,6 @@
     "Editar Projeto",
     "Nome do Projeto *",
     "Modelo de contrato padrão do empreendimento",
-    "Confrontação Automática",
-    "Memorial Descritivo",
-    "Prancha Geral",
-    "Gerar Prancha do Lote",
     "LF Imóveis",
     "Chacreamento Mundo Novo"
   ]

@@ -5,7 +5,7 @@
   "routes": ["/billing"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "read",
-  "tags": ["minha assinatura", "fatura", "plano", "saas"],
+  "tags": ["minha assinatura", "fatura", "plano", "saas", "assinatura da empresa"],
   "objective": "Consultar a assinatura SaaS da empresa, faturas e boleto/Pix do plano.",
   "prerequisites": [
     "Menu Minha Assinatura (administradores da empresa). A rota /minha-assinatura abre /billing."

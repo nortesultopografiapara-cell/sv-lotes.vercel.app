@@ -5,7 +5,7 @@
   "routes": ["/customers"],
   "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
   "access": "write",
-  "tags": ["editar cliente", "buscar cliente", "historico cliente", "excluir cliente"],
+  "tags": ["editar cliente", "edito", "buscar cliente", "historico cliente", "excluir cliente"],
   "objective": "Localizar, alterar ou consultar o cadastro de cliente.",
   "prerequisites": [
     "ADMIN da empresa. Corretor não tem o menu Clientes."
