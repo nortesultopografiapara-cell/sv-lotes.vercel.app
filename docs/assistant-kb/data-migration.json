@@ -17,24 +17,27 @@
   ],
   "steps": [
     "Abra Migração de Dados no menu (quando o perfil tiver o item).",
-    "Use a aba Assistente e siga as etapas exibidas na tela para validar e executar a carga.",
+    "Use a aba Assistente e clique em Iniciar Migração.",
+    "Escolha o tipo (Clientes, Corretores, Vendas, Atualizar Parcelas das Vendas Importadas ou Contratos Antigos) e siga Tipo → Modelo → Upload (ou PDFs) → Pré-validação → Pré-visualização → Confirmação.",
     "A aba Histórico de Migrações consulta cargas anteriores."
   ],
   "expectedResult": "Carga validada/executada conforme o assistente da tela, ou histórico consultado.",
   "commonErrors": [],
   "limitations": [
     "O assistente SV não executa a migração; ele só indica a tela.",
-    "Detalhes internos de cada etapa do wizard não foram descritos além dos rótulos das abas."
+    "Anexos permanecem ocultos nesta fase do assistente de migração."
   ],
   "modelDifferences": [],
   "sourceOfTruth": [
     "app/data-migration/page.tsx",
     "components/imports/DataMigrationPageClient.tsx",
+    "components/imports/DataMigrationWizard.tsx",
     "components/Layout.tsx"
   ],
   "uiLabels": [
     "Migração de Dados",
     "Assistente",
-    "Histórico de Migrações"
+    "Histórico de Migrações",
+    "Iniciar Migração"
   ]
 }

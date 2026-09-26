@@ -64,16 +64,20 @@ function scoreCapability(
       capability.conclusion || '',
     ].join(' '),
   );
+  const hayTokens = haystack.split(/\s+/).filter(Boolean);
   const qn = normalize(question);
   const words = tokens(question);
   let score = 0;
   let matched = 0;
   for (const word of words) {
-    if (haystack.includes(word)) {
+    if (hayTokens.includes(word)) {
       score += 3;
       matched += 1;
     }
-    if (capability.aliases.some((alias) => normalize(alias) === word || normalize(alias).includes(word))) {
+    if (capability.aliases.some((alias) => {
+      const t = normalize(alias);
+      return t === word || t.split(/\s+/).includes(word);
+    })) {
       score += 5;
       matched += 1;
     }

@@ -1,0 +1,74 @@
+{
+  "id": "sale.release",
+  "title": "Liberar lote e encerrar venda",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "liberar lote",
+    "libero um lote",
+    "disponibilizar lote vendido",
+    "voltar para disponível",
+    "lote vendido precisa voltar",
+    "cancelar uma venda",
+    "cancelo uma venda e libero",
+    "encerrar venda",
+    "operações da venda",
+    "liberar lote reservado",
+    "desfazer reserva",
+    "cancelar reserva"
+  ],
+  "summary": "Devolver lote vendido ou reservado ao estoque pelo modal Operações da venda, escolhendo o motivo em Encerrar venda.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Lote vendido ou reservado no mapa."],
+  "requiredContext": ["ficha comercial do lote"],
+  "controls": [
+    { "label": "Disponibilizar", "kind": "button" },
+    { "label": "Operações da venda", "kind": "modal" },
+    { "label": "Encerrar venda", "kind": "tab" },
+    { "label": "Desistência do cliente", "kind": "button" },
+    { "label": "Distrato", "kind": "button" },
+    { "label": "Inadimplência", "kind": "button" },
+    { "label": "Confirmar liberação do lote", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o lote no Mapa GIS, aba Comercial.",
+    "Clique em Disponibilizar. Lote vendido ou reservado abre Operações da venda; o status não muda sozinho.",
+    "Em Encerrar venda, escolha o card do motivo real: Desistência do cliente, Distrato ou Inadimplência. Não use Troca de lote nem Transferência de titularidade para devolver o lote.",
+    "Confira o acerto, marque ciência, informe a senha e clique em Confirmar liberação do lote."
+  ],
+  "fields": ["motivo (card)", "justificativa quando o card exigir", "ciência", "senha"],
+  "validations": [
+    "Apenas administrador da empresa confirma.",
+    "Cobranças Asaas/Inter não canceláveis bloqueiam a liberação.",
+    "Distrato e Inadimplência exigem justificativa."
+  ],
+  "conclusion": "Confirmar liberação do lote",
+  "result": "Venda encerrada, contrato cancelado, lote Disponível, termo gerado conforme o motivo.",
+  "states": ["Vendido", "Reservado", "Disponível", "CANCELLED", "cancelado"],
+  "related": [
+    "sale.termination.desistencia",
+    "sale.termination.distrato",
+    "sale.termination.inadimplencia",
+    "sale.lot.swap",
+    "sale.title.transfer",
+    "sale.edit",
+    "contract.cancel"
+  ],
+  "restrictions": [
+    "Não ensine só a mudar o status do lote para Disponível.",
+    "Cancelar em Contratos não devolve o lote ao estoque.",
+    "O assistente não executa a liberação nem consulta valores.",
+    "Erro de cadastro não é card desta tela; use Editar Venda."
+  ],
+  "knowledgeIds": ["gis-sale-termination"],
+  "sourceOfTruth": [
+    "components/map/GISMap.tsx",
+    "components/map/ReleaseLotConfirmModal.tsx",
+    "lib/finance/releaseLotShared.ts",
+    "lib/finance/releaseLotService.ts",
+    "app/api/lots/[lotId]/release/route.ts"
+  ]
+}

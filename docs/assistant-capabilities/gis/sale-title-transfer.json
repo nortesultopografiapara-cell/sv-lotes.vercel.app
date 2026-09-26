@@ -1,0 +1,41 @@
+{
+  "id": "sale.title.transfer",
+  "title": "Transferência de titularidade",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "transferência de titularidade",
+    "cessão",
+    "venda de ágio",
+    "transferir comprador"
+  ],
+  "summary": "Transferir a posição contratual para um novo comprador, preservando saldo e histórico. Não libera o lote.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Venda ativa."],
+  "controls": [
+    { "label": "Disponibilizar", "kind": "button" },
+    { "label": "Alterar venda", "kind": "tab" },
+    { "label": "Transferência de titularidade", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o lote da venda no Mapa GIS, aba Comercial, e clique em Disponibilizar.",
+    "No modal Operações da venda, grupo Alterar venda, clique no card Transferência de titularidade (também descrito como Venda de ágio / cessão).",
+    "Siga o painel de prévia na tela. Esta operação não usa Confirmar liberação do lote."
+  ],
+  "conclusion": "Concluir a transferência no painel da operação",
+  "result": "Titularidade alterada; o lote não volta a Disponível por este fluxo.",
+  "related": ["sale.release", "sale.lot.swap"],
+  "restrictions": [
+    "Não é motivo de POST /release.",
+    "O assistente não executa a cessão nem escolhe o novo comprador."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "components/map/ReleaseLotConfirmModal.tsx",
+    "components/map/TitleTransferPreviewPanel.tsx",
+    "lib/finance/releaseLotShared.ts"
+  ]
+}

@@ -39,7 +39,7 @@ async function ask(input: AssistantAskInput) {
 
 function testKbHas37() {
   const procedures = listAssistantProcedures();
-  assert(procedures.length === 37, `esperado 37 procedimentos, veio ${procedures.length}`);
+  assert(procedures.length === 38, `esperado 38 procedimentos, veio ${procedures.length}`);
   console.log('OK testKbHas37');
 }
 

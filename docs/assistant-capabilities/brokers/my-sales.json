@@ -1,0 +1,42 @@
+{
+  "id": "broker.my_sales",
+  "title": "Minhas Vendas",
+  "module": "brokers",
+  "routes": ["/my-sales"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "read",
+  "aliases": [
+    "minhas vendas",
+    "vendas do corretor",
+    "reservas do corretor",
+    "consultar minhas vendas"
+  ],
+  "summary": "O corretor consulta as próprias vendas e reservas, sem valores financeiros.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Perfil Corretor / Vendedor."],
+  "controls": [
+    { "label": "Minhas Vendas", "kind": "tab" },
+    { "label": "Todas", "kind": "tab" },
+    { "label": "Vendas", "kind": "tab" },
+    { "label": "Reservas", "kind": "tab" }
+  ],
+  "sequence": [
+    "No menu do corretor, abra Minhas Vendas.",
+    "Use as abas Todas, Vendas ou Reservas e a busca da tela.",
+    "Abra um item da lista para ver o detalhe. A tela declara que não mostra valores financeiros."
+  ],
+  "conclusion": "Consultar o item na lista",
+  "result": "Lista e detalhe das vendas/reservas do corretor logado.",
+  "related": ["gis.lot.reserve", "gis.lot.sell.installments"],
+  "restrictions": [
+    "Não é a tela Financeiro da empresa.",
+    "O assistente não lista vendas reais."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "app/my-sales/page.tsx",
+    "components/broker/MySalesPageClient.tsx",
+    "app/api/my-sales/route.ts"
+  ]
+}

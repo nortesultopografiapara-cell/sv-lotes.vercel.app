@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "updatedAt": "2026-09-25",
+  "updatedAt": "2026-09-26",
   "unknownAnswer": "Não encontrei uma orientação confirmada na documentação oficial do SV Lotes para essa dúvida.",
   "procedures": [
     { "id": "gis-venda-avista", "file": "gis-venda-avista.json", "module": "gis", "tags": ["venda", "a vista"] },
@@ -34,6 +34,7 @@
     { "id": "gis-medir-camadas", "file": "gis-medir-camadas.json", "module": "gis", "tags": ["medir"] },
     { "id": "gis-quadras-txt", "file": "gis-quadras-txt.json", "module": "gis", "tags": ["importar txt"] },
     { "id": "gis-vias", "file": "gis-vias.json", "module": "gis", "tags": ["linha de rua"] },
+    { "id": "gis-sale-termination", "file": "gis-sale-termination.json", "module": "gis", "tags": ["sale.release", "distrato", "desistencia"] },
     { "id": "settings-empresa", "file": "settings-empresa.json", "module": "settings", "tags": ["configuracoes"] },
     { "id": "owners-socios", "file": "owners-socios.json", "module": "settings", "tags": ["socios"] },
     { "id": "billing-assinatura", "file": "billing-assinatura.json", "module": "settings", "tags": ["minha assinatura"] },

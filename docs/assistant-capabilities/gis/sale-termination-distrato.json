@@ -1,0 +1,47 @@
+{
+  "id": "sale.termination.distrato",
+  "title": "Distrato da venda",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "distrato",
+    "fazer o distrato",
+    "distrato desse lote",
+    "termo de distrato",
+    "distratar venda"
+  ],
+  "summary": "Encerrar formalmente a venda por acordo, pelo card Distrato, com justificativa obrigatória e termo de distrato.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Venda ativa no lote."],
+  "controls": [
+    { "label": "Disponibilizar", "kind": "button" },
+    { "label": "Distrato", "kind": "button" },
+    { "label": "Confirmar liberação do lote", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o lote vendido no Mapa GIS, aba Comercial, e clique em Disponibilizar.",
+    "No modal Operações da venda, grupo Encerrar venda, clique no card Distrato — não use só Desistência do cliente se o caso for distrato formal.",
+    "Informe o motivo/justificativa do distrato (obrigatório).",
+    "Confira o acerto financeiro do modal, marque ciência, informe a senha e clique em Confirmar liberação do lote."
+  ],
+  "fields": ["motivo/justificativa do distrato"],
+  "validations": ["Justificativa do distrato com pelo menos 3 caracteres."],
+  "conclusion": "Confirmar liberação do lote",
+  "result": "Venda encerrada, lote Disponível, termo de distrato gerado.",
+  "related": ["sale.release", "sale.termination.desistencia", "sale.termination.inadimplencia"],
+  "restrictions": [
+    "Distrato não é sinônimo cego de mudar o lote para Disponível.",
+    "O acerto segue o snapshot de política da venda; o Assistente não inventa percentual.",
+    "O assistente não executa o distrato."
+  ],
+  "knowledgeIds": ["gis-sale-termination"],
+  "sourceOfTruth": [
+    "components/map/ReleaseLotConfirmModal.tsx",
+    "lib/finance/releaseLotShared.ts",
+    "lib/termination-documents/distratoTemplate.ts",
+    "lib/finance/releaseLotService.ts"
+  ]
+}

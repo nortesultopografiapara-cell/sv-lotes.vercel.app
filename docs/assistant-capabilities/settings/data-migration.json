@@ -1,0 +1,48 @@
+{
+  "id": "settings.data_migration",
+  "title": "Assistente de Migração de Dados",
+  "module": "settings",
+  "routes": ["/data-migration"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "migração de dados",
+    "assistente de migração",
+    "importar planilha",
+    "wizard de migração",
+    "histórico de migrações"
+  ],
+  "summary": "Importar dados legados pelo assistente em Migração de Dados: tipo, modelo, upload, pré-validação, pré-visualização e confirmação.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa (menu visível para ADMIN)."],
+  "controls": [
+    { "label": "Assistente", "kind": "tab" },
+    { "label": "Histórico de Migrações", "kind": "tab" },
+    { "label": "Iniciar Migração", "kind": "button" },
+    { "label": "Baixar modelo Excel", "kind": "button" },
+    { "label": "Baixar modelo CSV", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra Migração de Dados e a aba Assistente.",
+    "Clique em Iniciar Migração.",
+    "Escolha o tipo: Clientes, Corretores, Vendas, Atualizar Parcelas das Vendas Importadas ou Contratos Antigos.",
+    "Siga as etapas Tipo → Modelo → Upload (ou PDFs em Contratos Antigos) → Pré-validação → Pré-visualização → Confirmação. A aba Histórico de Migrações consulta cargas anteriores."
+  ],
+  "fields": ["tipo de importação", "arquivo Excel/CSV", "PDFs de contratos antigos"],
+  "conclusion": "Confirmação do assistente",
+  "result": "Carga validada/executada conforme o wizard, ou histórico consultado.",
+  "related": [],
+  "restrictions": [
+    "Anexos permanecem ocultos nesta fase.",
+    "O assistente SV não executa a importação."
+  ],
+  "knowledgeIds": ["data-migration"],
+  "sourceOfTruth": [
+    "app/data-migration/page.tsx",
+    "components/imports/DataMigrationPageClient.tsx",
+    "components/imports/DataMigrationWizard.tsx",
+    "lib/imports/services/migrationWizardSteps.ts",
+    "lib/imports/modules/index.ts"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "id": "sale.lot.swap",
+  "title": "Troca de lote",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN"],
+  "access": "write",
+  "aliases": [
+    "troca de lote",
+    "trocar o lote",
+    "substituir unidade",
+    "alterar venda troca"
+  ],
+  "summary": "Substituir a unidade da venda ativa. O comprador permanece; o lote original não é encerrado pelo POST de liberação.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Administrador da empresa.", "Venda ativa."],
+  "controls": [
+    { "label": "Disponibilizar", "kind": "button" },
+    { "label": "Alterar venda", "kind": "tab" },
+    { "label": "Troca de lote", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o lote da venda no Mapa GIS, aba Comercial, e clique em Disponibilizar.",
+    "No modal Operações da venda, grupo Alterar venda, clique no card Troca de lote.",
+    "Siga o painel de prévia/plano da troca na própria tela. Não clique em Confirmar liberação do lote para esta operação."
+  ],
+  "conclusion": "Concluir a troca no painel da operação",
+  "result": "Unidade substituída; a venda continua com o comprador.",
+  "related": ["sale.release", "sale.title.transfer"],
+  "restrictions": [
+    "Troca de lote não usa POST /release e não é distrato.",
+    "O assistente não executa a troca nem escolhe o lote destino."
+  ],
+  "knowledgeIds": [],
+  "sourceOfTruth": [
+    "components/map/ReleaseLotConfirmModal.tsx",
+    "components/map/LotSwapPreviewPanel.tsx",
+    "lib/finance/saleLotSwap.ts",
+    "app/api/sales/[saleId]/lot-swap/route.ts"
+  ]
+}

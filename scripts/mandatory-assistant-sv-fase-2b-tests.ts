@@ -49,7 +49,7 @@ async function ask(input: AssistantAskInput) {
 
 function testRegistryShape() {
   const counts = countAssistantCapabilities();
-  assert(counts.explicit === 6, `explícitas: ${counts.explicit}`);
+  assert(counts.explicit >= 19, `explícitas: ${counts.explicit}`);
   assert(counts.derived >= 30, `derivadas: ${counts.derived}`);
   assert(counts.total === counts.explicit + counts.derived, 'soma');
   assert(listExplicitAssistantCapabilities().every((item) => item.origin === 'explicit'), 'origin explicit');
@@ -215,7 +215,7 @@ function testDriftAudit() {
   assert(drift.missingSources.length === 0, drift.missingSources.join(','));
   assert(drift.missingRoutes.length === 0, drift.missingRoutes.join(','));
   assert(drift.proceduresWithoutCapability.length === 0, drift.proceduresWithoutCapability.join(','));
-  assert(drift.uncoveredNav.includes('/my-sales'), 'my-sales deve aparecer como aviso de menu');
+  assert(!drift.uncoveredNav.includes('/my-sales'), `my-sales ainda sem capability: ${drift.uncoveredNav.join(',')}`);
   console.log('OK testDriftAudit', drift.summary);
 }
 

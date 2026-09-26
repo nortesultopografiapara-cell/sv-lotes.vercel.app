@@ -149,6 +149,57 @@ function goalNext(goal: AssistantActiveGoal | null | undefined, ui: ReturnType<t
   if (goal.id === 'finance.accounts.upsert') {
     return 'Abra Configurações → Integração Financeira → Contas Financeiras. Clique em Nova conta Asaas ou Nova conta Inter, preencha Nome da conta * e clique em Criar conta (ou Salvar alterações se for edição).';
   }
+  if (goal.id === 'sale.termination.distrato') {
+    if (ui.lotModalOpen) {
+      return 'Na aba Comercial, clique em Disponibilizar. No modal Operações da venda, grupo Encerrar venda, escolha o card Distrato, informe a justificativa e Confirmar liberação do lote.';
+    }
+    return 'Abra o lote vendido. Clique em Disponibilizar → Encerrar venda → Distrato → Confirmar liberação do lote.';
+  }
+  if (goal.id === 'sale.termination.desistencia') {
+    if (ui.lotModalOpen) {
+      return 'Na aba Comercial, clique em Disponibilizar. No modal Operações da venda, escolha Desistência do cliente e Confirmar liberação do lote.';
+    }
+    return 'Abra o lote vendido. Clique em Disponibilizar → Encerrar venda → Desistência do cliente → Confirmar liberação do lote.';
+  }
+  if (goal.id === 'sale.termination.inadimplencia') {
+    return 'Abra o lote vendido, Disponibilizar → Encerrar venda → Inadimplência. Se a política bloquear, siga o aviso da tela.';
+  }
+  if (goal.id === 'sale.release') {
+    if (ui.lotModalOpen) {
+      return 'Clique em Disponibilizar. Em Encerrar venda escolha o motivo (Desistência, Distrato ou Inadimplência). Não mude o status à mão e não use Troca de lote para devolver o lote.';
+    }
+    return 'No lote vendido, aba Comercial, clique em Disponibilizar e escolha o card de Encerrar venda. O Assistente não altera o lote.';
+  }
+  if (goal.id === 'sale.lot.swap') {
+    return 'Abra o lote da venda, Disponibilizar → Alterar venda → Troca de lote. Isso não usa Confirmar liberação do lote.';
+  }
+  if (goal.id === 'sale.title.transfer') {
+    return 'Abra o lote da venda, Disponibilizar → Alterar venda → Transferência de titularidade. Não libera o lote.';
+  }
+  if (goal.id === 'sale.edit') {
+    return 'No lote vendido, aba Comercial, clique em Editar Venda. Apenas administradores editam venda concluída.';
+  }
+  if (goal.id === 'contract.cancel') {
+    return 'Em Contratos, o botão Cancelar só marca o contrato como cancelado e a venda como CANCELLED. Isso não devolve o lote. Para liberar o lote, use Disponibilizar no mapa, em Operações da venda.';
+  }
+  if (goal.id === 'gis.sold.view_contract') {
+    return 'No lote vendido, aba Comercial, clique em Ver Contrato. Abre Contratos em nova aba, com o contrato do lote em destaque quando houver vínculo.';
+  }
+  if (goal.id === 'gis.sold.view_finance') {
+    return 'No lote vendido, aba Comercial, clique em Ver Financeiro. Abre o Financeiro em nova aba, sem filtrar sozinho a venda.';
+  }
+  if (goal.id === 'broker.my_sales') {
+    return 'No menu do corretor, abra Minhas Vendas. Use as abas Todas, Vendas ou Reservas. A tela não mostra valores financeiros.';
+  }
+  if (goal.id === 'settings.data_migration') {
+    return 'Abra Migração de Dados, aba Assistente, clique em Iniciar Migração e siga Tipo → Modelo → Upload → Pré-validação → Pré-visualização → Confirmação.';
+  }
+  if (goal.id === 'finance.asaas.installment') {
+    return 'No Financeiro, use Sincronizar Asaas no topo. Na parcela, no painel Asaas, escolha PIX ou Boleto e clique em Gerar Cobrança.';
+  }
+  if (goal.id === 'client_portal.access') {
+    return 'Não há tela administrativa do Portal do Cliente no app operador. Oriente o comprador a abrir /portal-cliente, informar o documento e Continuar; a confirmação é por código no WhatsApp.';
+  }
   return null;
 }
 
