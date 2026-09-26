@@ -157,8 +157,9 @@ import {
 import {
   buildTxtImportAuditDescription,
   lotNumberKey,
-  parsePricePerM2Input,
   resolveImportedLotPrice,
+  resolveTxtImportPricingInput,
+  type TxtImportPricingMode,
 } from '@/lib/txtImportLotPricing';
 import {
   computeGisMapPageOverlayOpen,
@@ -479,6 +480,9 @@ export default function MapPage() {
   const [importingTxt, setImportingTxt] = useState(false);
   const [importTxtUtmZone, setImportTxtUtmZone] = useState('22S');
   const [importTxtPricePerM2, setImportTxtPricePerM2] = useState('');
+  const [importTxtUnitPrice, setImportTxtUnitPrice] = useState('');
+  const [importTxtPricingMode, setImportTxtPricingMode] =
+    useState<TxtImportPricingMode>('AREA');
   const [importTxtOverwritePrices, setImportTxtOverwritePrices] = useState(false);
   const [importTxtIsReimport, setImportTxtIsReimport] = useState(false);
 
@@ -915,6 +919,8 @@ export default function MapPage() {
     setImportTxtQuadra(normalizeQuadraBlockName(blockName));
     setImportTxtFile(null);
     setImportTxtPricePerM2('');
+    setImportTxtUnitPrice('');
+    setImportTxtPricingMode('AREA');
     setImportTxtOverwritePrices(false);
     setImportTxtIsReimport(true);
     setIsImportTxtModalOpen(true);
@@ -2404,13 +2410,17 @@ export default function MapPage() {
          return;
       }
 
-      const priceParse = parsePricePerM2Input(importTxtPricePerM2);
-      if (!priceParse.ok) {
-        alert(priceParse.error);
+      const pricingParse = resolveTxtImportPricingInput(
+        importTxtPricingMode,
+        importTxtPricePerM2,
+        importTxtUnitPrice,
+      );
+      if (!pricingParse.ok) {
+        alert(pricingParse.error);
         setImportingTxt(false);
         return;
       }
-      const pricePerM2 = priceParse.value;
+      const { pricingMode, pricePerM2, unitPrice } = pricingParse;
 
       const text = await importTxtFile.text();
       const zoneNum = parseInt(importTxtUtmZone.replace(/\D/g, ''));
@@ -2571,12 +2581,15 @@ export default function MapPage() {
         total: blocksParsed.length,
         comGeometria: lotsWithGeometry.length,
         semGeometria: lotsWithoutGeometry,
+        pricingMode,
         pricePerM2,
+        unitPrice,
         overwriteExistingPrices: importTxtOverwritePrices,
         isReimport,
       });
 
       let pricedFromM2Count = 0;
+      let pricedFromUnitCount = 0;
       let preservedPriceCount = 0;
 
       const blocksToInsert = blocksParsed.map((b) => {
@@ -2587,16 +2600,19 @@ export default function MapPage() {
           const finalPrice = resolveImportedLotPrice({
             areaM2: finalArea,
             pricePerM2,
+            unitPrice,
+            pricingMode,
             existingPrice,
             overwriteExistingPrices: importTxtOverwritePrices,
             hadExistingLot,
           });
 
-          if (
-            pricePerM2 != null &&
+          const appliedOfferedPrice =
             finalPrice != null &&
-            (!hadExistingLot || importTxtOverwritePrices || existingPrice == null)
-          ) {
+            (!hadExistingLot || importTxtOverwritePrices || existingPrice == null);
+          if (pricingMode === 'UNIT' && unitPrice != null && appliedOfferedPrice) {
+            pricedFromUnitCount += 1;
+          } else if (pricingMode === 'AREA' && pricePerM2 != null && appliedOfferedPrice) {
             pricedFromM2Count += 1;
           } else if (
             hadExistingLot &&
@@ -2719,14 +2735,18 @@ export default function MapPage() {
                   action: 'lot_created',
                   title: 'Lote importado (TXT Civil 3D)',
                   description:
-                    pricePerM2 != null
+                    pricingMode === 'UNIT' && unitPrice != null
+                      ? `Valor por unidade: ${Number(lotRow.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (independente da área de ${Number(lotRow.area).toLocaleString('pt-BR')} m²)`
+                      : pricePerM2 != null
                       ? `Valor calculado: ${Number(lotRow.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${Number(lotRow.area).toLocaleString('pt-BR')} m² × R$ ${pricePerM2.toFixed(2).replace('.', ',')}/m²)`
                       : 'Importado sem preço por m²',
                   newData: {
                     price: lotRow.price,
                     area: lotRow.area,
                     source_import: 'TXT_CIVIL3D',
+                    pricing_mode: pricingMode,
                     price_per_m2: pricePerM2,
+                    unit_price: unitPrice,
                   },
                   source: 'gis_map',
                 });
@@ -2745,10 +2765,13 @@ export default function MapPage() {
           description: buildTxtImportAuditDescription({
             quadraName,
             lotCount: blocksToInsert.length,
+            pricingMode,
             pricePerM2,
+            unitPrice,
             overwriteExistingPrices: importTxtOverwritePrices,
             isReimport,
             pricedFromM2Count,
+            pricedFromUnitCount,
             preservedPriceCount,
           }),
           reference_id: selectedProject.id,
@@ -2774,6 +2797,8 @@ export default function MapPage() {
       setImportTxtFile(null);
       setImportTxtQuadra('');
       setImportTxtPricePerM2('');
+      setImportTxtUnitPrice('');
+      setImportTxtPricingMode('AREA');
       setImportTxtOverwritePrices(false);
       setImportTxtIsReimport(false);
       setMapRefreshKey(prev => prev + 1);
@@ -3885,6 +3910,45 @@ export default function MapPage() {
 
                     <div>
                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                        Forma de precificação
+                      </label>
+                      <div
+                        role="radiogroup"
+                        aria-label="Forma de precificação"
+                        className="grid grid-cols-2 gap-2"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={importTxtPricingMode === 'AREA'}
+                          onClick={() => setImportTxtPricingMode('AREA')}
+                          className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                            importTxtPricingMode === 'AREA'
+                              ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--text-primary)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--text-secondary)] hover:bg-[var(--color-background)]/80'
+                          }`}
+                        >
+                          Por m²
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={importTxtPricingMode === 'UNIT'}
+                          onClick={() => setImportTxtPricingMode('UNIT')}
+                          className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                            importTxtPricingMode === 'UNIT'
+                              ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--text-primary)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--text-secondary)] hover:bg-[var(--color-background)]/80'
+                          }`}
+                        >
+                          Por unidade
+                        </button>
+                      </div>
+                    </div>
+
+                    {importTxtPricingMode === 'AREA' ? (
+                    <div>
+                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
                         Preço por m² (R$)
                       </label>
                       <input
@@ -3896,9 +3960,27 @@ export default function MapPage() {
                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
                       />
                       <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-relaxed">
-                        Se informado, o sistema calculará automaticamente o valor de cada lote com base na área importada.
+                        O valor de cada lote será calculado com base na área importada.
                       </p>
                     </div>
+                    ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                        Preço por unidade / lote (R$)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={importTxtUnitPrice}
+                        onChange={(e) => setImportTxtUnitPrice(e.target.value)}
+                        placeholder="Ex: 50.000,00"
+                        className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+                      />
+                      <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-relaxed">
+                        Todos os lotes importados receberão este mesmo valor, independentemente da área.
+                      </p>
+                    </div>
+                    )}
 
                     {importTxtIsReimport && (
                       <label className="flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 cursor-pointer">
@@ -3909,7 +3991,9 @@ export default function MapPage() {
                           className="mt-0.5"
                         />
                         <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                          Atualizar valores dos lotes existentes com o preço por m² informado
+                          {importTxtPricingMode === 'UNIT'
+                            ? 'Atualizar valores dos lotes existentes com o preço por unidade informado'
+                            : 'Atualizar valores dos lotes existentes com o preço por m² informado'}
                         </span>
                       </label>
                     )}
