@@ -31,6 +31,7 @@ export const ASSISTANT_CONTINUE_OFFER = 'Se quiser, posso continuar te orientand
 
 export const ASSISTANT_RETRIEVE_LIMIT = 2;
 export const ASSISTANT_RETRIEVE_LIMIT_CONVERSATIONAL = 6;
+export const ASSISTANT_CAPABILITY_LIMIT = 3;
 
 export const ASSISTANT_THINKING_LABEL = 'Assistente está pensando...';
 export const ASSISTANT_LOCAL_FALLBACK_NOTICE =

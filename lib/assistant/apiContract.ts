@@ -56,6 +56,8 @@ export type AssistantAskApiResponse = {
   kind: 'answer' | 'unknown' | 'forbidden';
   text: string;
   procedureIds: string[];
+  capabilityIds?: string[];
+  packedChars?: number;
   source: 'model' | 'local' | 'local-fallback';
   notice?: string | null;
 };

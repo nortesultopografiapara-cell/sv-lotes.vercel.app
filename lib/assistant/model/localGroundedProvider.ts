@@ -1,4 +1,5 @@
 import { ASSISTANT_CONTINUE_OFFER, ASSISTANT_MASTER_DISCLAIMER, ASSISTANT_MAX_OUTPUT_CHARS } from '../constants';
+import { composeFromCapability } from '../capabilities/compose';
 import { composeFromValidatedUi } from '../composeFromUi';
 import type { AssistantModelDifference, AssistantProcedure, AssistantSafeContext } from '../types';
 import type { AssistantModelGenerateInput, AssistantModelGenerateResult, AssistantModelProvider } from './types';
@@ -209,6 +210,23 @@ export const localGroundedProvider: AssistantModelProvider = {
       };
     }
     const procedure = pickProcedure(input);
+    const capability = input.capabilities?.[0];
+    if (!procedure && capability) {
+      const already = capability.routes.some(
+        (route) => input.context.pathname === route || input.context.pathname.startsWith(`${route}/`),
+      );
+      const masterCap =
+        input.context.viewer === 'master' && !input.context.impersonatingTenant
+          ? `${ASSISTANT_MASTER_DISCLAIMER} `
+          : '';
+      return {
+        text: `${masterCap}${composeFromCapability(capability, already)}`
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, ASSISTANT_MAX_OUTPUT_CHARS),
+        providerId: 'local-grounded',
+      };
+    }
     if (!procedure) {
       return { text: '', providerId: 'local-grounded' };
     }

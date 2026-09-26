@@ -1,10 +1,12 @@
 import { ASSISTANT_MAX_OUTPUT_CHARS, ASSISTANT_MODEL_TIMEOUT_MS } from '../constants';
 import { ASSISTANT_SYSTEM_INSTRUCTION } from './systemInstruction';
+import { packAssistantCapabilities } from '../capabilities/pack';
 import {
   assertPackedContextHasNoPii,
   packAssistantContext,
   packAssistantKnowledge,
   packHistory,
+  packSpecializedKnowledge,
 } from './packKnowledge';
 import type { AssistantModelGenerateInput, AssistantModelGenerateResult, AssistantModelProvider } from './types';
 
@@ -31,12 +33,21 @@ function buildUserPayload(input: AssistantModelGenerateInput): string {
   if (!assertPackedContextHasNoPii(packedContext)) {
     throw new Error('assistant_context_pii');
   }
+  const capabilities = input.capabilities || [];
+  const knowledgeBlock = capabilities.length
+    ? [
+        'CAPACIDADES (fatos estruturados; formule a resposta; não invente)',
+        packAssistantCapabilities(capabilities),
+        '',
+        'CONHECIMENTO ESPECIALIZADO',
+        packSpecializedKnowledge(input.knowledge, input.context),
+      ].join('\n')
+    : ['CONHECIMENTO', packAssistantKnowledge(input.knowledge, input.context)].join('\n');
   return [
     'CONTEXTO',
     packedContext,
     '',
-    'CONHECIMENTO',
-    packAssistantKnowledge(input.knowledge, input.context),
+    knowledgeBlock,
     '',
     'HISTÓRICO',
     packHistory(input.history),

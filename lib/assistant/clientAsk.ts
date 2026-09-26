@@ -73,6 +73,8 @@ export async function requestAssistantAsk(input: AssistantAskInput): Promise<Ass
       text: json.text,
       procedureIds: json.procedureIds || [],
       retrievedTitles: [],
+      capabilityIds: json.capabilityIds || [],
+      packedChars: json.packedChars,
       source: json.source,
       notice: json.notice || null,
     };

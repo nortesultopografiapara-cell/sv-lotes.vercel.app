@@ -146,6 +146,9 @@ function goalNext(goal: AssistantActiveGoal | null | undefined, ui: ReturnType<t
   if (goal.id === 'broker.photo.update') {
     return 'Na lista de Corretores, clique na foto do corretor. No modal Foto do corretor, clique em Adicionar foto ou Alterar foto, escolha a imagem e clique em Salvar foto.';
   }
+  if (goal.id === 'finance.accounts.upsert') {
+    return 'Abra Configurações → Integração Financeira → Contas Financeiras. Clique em Nova conta Asaas ou Nova conta Inter, preencha Nome da conta * e clique em Criar conta (ou Salvar alterações se for edição).';
+  }
   return null;
 }
 

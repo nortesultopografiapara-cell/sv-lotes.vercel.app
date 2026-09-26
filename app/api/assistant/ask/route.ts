@@ -88,6 +88,8 @@ export async function POST(request: Request) {
     role: auth.role,
     pathname: context.pathname,
     kbIds: result.procedureIds,
+    capIds: result.capabilityIds || [],
+    packedChars: result.packedChars || 0,
     provider: result.source || 'local',
     latencyMs: Date.now() - started,
     outcome:
@@ -102,6 +104,8 @@ export async function POST(request: Request) {
     kind: result.kind,
     text: result.text,
     procedureIds: result.procedureIds,
+    capabilityIds: result.capabilityIds || [],
+    packedChars: result.packedChars || 0,
     source: result.source || 'local',
     notice: result.notice || null,
   });

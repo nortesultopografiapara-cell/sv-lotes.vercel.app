@@ -1,0 +1,32 @@
+{
+  "id": "gis.lot.memorial",
+  "title": "Memorial descritivo do lote",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "write",
+  "aliases": ["memorial", "memorial descritivo", "gerar memorial", "pdf memorial", "sigef", "incra"],
+  "summary": "Gerar o PDF do Memorial Descritivo de um lote.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Empreendimento aberto no mapa.", "Lote com segmentos oficiais."],
+  "requiredContext": ["lote no mapa ou ficha aberta"],
+  "controls": [
+    { "label": "Memorial Descritivo", "kind": "toolbar" },
+    { "label": "Gerar memorial", "kind": "button" },
+    { "label": "Memorial Descritivo (PDF)", "kind": "modal" },
+    { "label": "Gerar PDF / Baixar", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Pela barra: clique em Memorial Descritivo e depois clique no lote.",
+    "Pela ficha: clique no lote → aba Resumo → Gerar memorial.",
+    "No modal Memorial Descritivo (PDF), clique em Gerar PDF / Baixar."
+  ],
+  "conclusion": "Gerar PDF / Baixar",
+  "result": "Download do PDF memorial do lote selecionado.",
+  "related": ["gis.lot.confrontations", "gis.lot.sheet"],
+  "restrictions": ["OWNER não gera memorial.", "Gerar memorial fica em Resumo, não na aba Comercial."],
+  "knowledgeIds": ["gis-lot-memorial"],
+  "sourceOfTruth": ["app/map/page.tsx", "components/map/GISMap.tsx", "components/map/MemorialGenerateModal.tsx"]
+}

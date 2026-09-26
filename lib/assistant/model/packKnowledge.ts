@@ -1,6 +1,23 @@
 import { knowledgeStepStillNeeded } from '../composeFromUi';
 import type { AssistantChatTurn, AssistantProcedure, AssistantSafeContext } from '../types';
 
+export function packSpecializedKnowledge(
+  procedures: AssistantProcedure[],
+  context?: AssistantSafeContext,
+): string {
+  const model = String(context?.contractModel || '').toUpperCase();
+  const blocks = procedures.slice(0, 4).map((procedure) => {
+    const currentDiff = procedure.modelDifferences.find((item) => model && item.models.includes(model));
+    const policy = [
+      currentDiff ? `Diferença do modelo (${model}): ${currentDiff.note}` : '',
+      procedure.limitations[0] ? `Política: ${procedure.limitations[0]}` : '',
+    ].filter(Boolean);
+    if (policy.length === 0) return '';
+    return [`ESPECIALIZADO ${procedure.id}`, ...policy].join('\n');
+  }).filter(Boolean);
+  return blocks.length > 0 ? blocks.join('\n\n---\n\n') : '(nenhuma exceção jurídica/contratual extra para esta pergunta)';
+}
+
 export function packAssistantKnowledge(procedures: AssistantProcedure[], context?: AssistantSafeContext): string {
   const model = String(context?.contractModel || '').toUpperCase();
   const priority =

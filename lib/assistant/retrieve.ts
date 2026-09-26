@@ -175,9 +175,15 @@ export function retrieveAssistantProcedures(input: {
   procedureId?: string;
   limit?: number;
   activeGoal?: AssistantActiveGoal | null;
+  relax?: boolean;
 }): AssistantRetrieval {
   const all = listAssistantProcedures();
   const limit = input.limit ?? ASSISTANT_RETRIEVE_LIMIT;
+  const minScore = input.relax ? 5 : 8;
+
+  if (input.activeGoal && !String(input.activeGoal.procedureId || '').trim()) {
+    return { kind: 'unknown', procedures: [] };
+  }
 
   if (input.procedureId) {
     const direct = all.find((item) => item.id === input.procedureId);
@@ -202,7 +208,7 @@ export function retrieveAssistantProcedures(input: {
     .sort((a, b) => b.score - a.score);
 
   const best = ranked[0];
-  if (!best || best.score < 8) {
+  if (!best || best.score < minScore) {
     return { kind: 'unknown', procedures: [] };
   }
 
@@ -215,7 +221,7 @@ export function retrieveAssistantProcedures(input: {
   }
 
   const allowed = filterProceduresForRole(
-    ranked.filter((item) => item.score >= 8).map((item) => item.procedure),
+    ranked.filter((item) => item.score >= minScore).map((item) => item.procedure),
     input.context,
   );
 

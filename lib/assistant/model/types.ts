@@ -8,6 +8,7 @@ export type AssistantModelMessage = {
 export type AssistantModelGenerateInput = {
   messages: AssistantModelMessage[];
   knowledge: AssistantProcedure[];
+  capabilities?: import('../capabilities/types').AssistantCapability[];
   context: AssistantSafeContext;
   history: AssistantChatTurn[];
   activeGoal?: import('../activeGoal').AssistantActiveGoal | null;

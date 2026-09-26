@@ -4,6 +4,8 @@ export function logAssistantAsk(event: {
   role: string;
   pathname: string;
   kbIds: string[];
+  capIds?: string[];
+  packedChars?: number;
   provider: string;
   latencyMs: number;
   outcome: 'success' | 'fallback' | 'unknown' | 'forbidden' | 'error' | 'rate_limit';
@@ -14,6 +16,8 @@ export function logAssistantAsk(event: {
     role: event.role,
     pathname: event.pathname,
     kbIds: event.kbIds,
+    capIds: event.capIds || [],
+    packedChars: event.packedChars || 0,
     provider: event.provider,
     latencyMs: event.latencyMs,
     outcome: event.outcome,

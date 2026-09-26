@@ -90,6 +90,15 @@ const GOAL_DEFS: GoalDef[] = [
     patterns: [/cadastr.{0,12}cliente|novo cliente|editar cliente/],
   },
   {
+    id: 'finance.accounts.upsert',
+    procedureId: '',
+    label: 'contas recebedoras',
+    module: 'settings',
+    patterns: [
+      /contas? recebedor|conta financeira|cadastrar (uma )?conta (financeira|recebedor)|nova conta (asaas|inter|financeira)|conta para receber|adicionar outra conta/,
+    ],
+  },
+  {
     id: 'finance.receipts',
     procedureId: 'finance-recibos',
     label: 'recibos e baixa no Financeiro',

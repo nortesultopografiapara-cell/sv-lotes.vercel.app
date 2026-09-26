@@ -93,6 +93,8 @@ export type AssistantAskResult = {
   text: string;
   procedureIds: string[];
   retrievedTitles: string[];
+  capabilityIds?: string[];
+  packedChars?: number;
   source?: AssistantAnswerSource;
   notice?: string | null;
 };

@@ -1,0 +1,32 @@
+{
+  "id": "gis.project.general_plan",
+  "title": "Prancha Geral do empreendimento",
+  "module": "gis",
+  "routes": ["/map"],
+  "profiles": ["ADMIN", "ADMIN_EMPRESA", "COMPANY_ADMIN", "BROKER", "CORRETOR"],
+  "access": "write",
+  "aliases": ["prancha geral", "prancha do empreendimento", "planta geral", "overview do empreendimento"],
+  "summary": "Gerar o PDF da Prancha Geral do loteamento aberto no mapa.",
+  "origin": "explicit",
+  "confidence": "high",
+  "preconditions": ["Empreendimento aberto no Mapa GIS."],
+  "requiredContext": ["mapa aberto"],
+  "controls": [
+    { "label": "Prancha Geral", "kind": "toolbar" },
+    { "label": "Prancha Geral do Empreendimento", "kind": "modal" },
+    { "label": "Gerar PDF", "kind": "button" }
+  ],
+  "sequence": [
+    "Abra o empreendimento no Mapa GIS.",
+    "Na barra vertical, clique em Prancha Geral.",
+    "No modal Prancha Geral do Empreendimento, escolha formato A4 ou A3.",
+    "Clique em Gerar PDF."
+  ],
+  "fields": ["formato A4 ou A3"],
+  "conclusion": "Gerar PDF",
+  "result": "Download do PDF da planta geral do loteamento.",
+  "related": ["gis.lot.sheet", "gis.lot.memorial"],
+  "restrictions": ["Não confundir com Gerar Prancha do Lote, que é de um lote só.", "O assistente não gera o PDF."],
+  "knowledgeIds": ["gis-prancha-geral"],
+  "sourceOfTruth": ["app/map/page.tsx", "components/map/EnterpriseOverviewModal.tsx"]
+}
