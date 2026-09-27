@@ -29,45 +29,50 @@
   min-height: var(--paper-height);
   padding: var(--paper-pad);
   box-sizing: border-box;
-  background-color: #2a2d36;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    #ffffff 0,
-    #ffffff var(--paper-height),
-    #2a2d36 var(--paper-height),
-    #2a2d36 calc(var(--paper-height) + var(--page-gap))
-  );
-  background-origin: padding-box;
-  background-clip: padding-box;
+  background-color: #ffffff;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
 }
 
-.sv-a4-sheet .ProseMirror h1 {
+.sv-a4-sheet .ProseMirror h1,
+.sv-a4-prose h1 {
   font-size: 18pt;
   text-align: center;
   margin: 0 0 18px;
   text-transform: uppercase;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
-.sv-a4-sheet .ProseMirror h2 {
+.sv-a4-sheet .ProseMirror h2,
+.sv-a4-prose h2 {
   font-size: 13pt;
   margin: 22px 0 10px;
   border-bottom: 1px solid #111;
   padding-bottom: 3px;
   text-transform: uppercase;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
-.sv-a4-sheet .ProseMirror h3 {
+.sv-a4-sheet .ProseMirror h3,
+.sv-a4-prose h3 {
   font-size: 12pt;
   margin: 16px 0 8px;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
-.sv-a4-sheet .ProseMirror p {
+.sv-a4-sheet .ProseMirror p,
+.sv-a4-prose p {
   margin: 0 0 10px;
+  orphans: 2;
+  widows: 2;
 }
 
 .sv-a4-sheet .ProseMirror ul,
-.sv-a4-sheet .ProseMirror ol {
+.sv-a4-sheet .ProseMirror ol,
+.sv-a4-prose ul,
+.sv-a4-prose ol {
   margin: 0 0 10px 22px;
 }
 
@@ -96,7 +101,8 @@
   color: #92400e;
 }
 
-.sv-page-break {
+.sv-page-break,
+.sv-a4-flow-gap {
   page-break-after: always;
   break-after: page;
   height: var(--page-gap, 18px);
@@ -104,19 +110,29 @@
   border: 0;
   background: #2a2d36;
   position: relative;
+  pointer-events: none;
 }
 
-.sv-page-break::after {
+.sv-page-break::after,
+.sv-a4-flow-gap::after {
   content: "Página seguinte";
   position: absolute;
   left: 50%;
-  top: -9px;
-  transform: translateX(-50%);
+  top: 50%;
+  transform: translate(-50%, -50%);
   background: #2a2d36;
   color: #cbd5e1;
   font-size: 10px;
   font-family: Inter, system-ui, sans-serif;
   padding: 0 8px;
+}
+
+.sv-a4-flow-gap-row,
+.sv-a4-flow-gap-cell {
+  background: #2a2d36 !important;
+  border: 0 !important;
+  padding: 0 !important;
+  pointer-events: none;
 }
 
 .sv-a4-sheet .ProseMirror table,
@@ -125,6 +141,18 @@
   border-collapse: collapse;
   margin: 0 0 12px;
   table-layout: fixed;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.sv-a4-sheet .ProseMirror tr,
+.sv-a4-sheet .ProseMirror th,
+.sv-a4-sheet .ProseMirror td,
+.sv-editor-preview-doc tr,
+.sv-editor-preview-doc th,
+.sv-editor-preview-doc td {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .sv-a4-sheet .ProseMirror th,
@@ -137,9 +165,34 @@
   word-wrap: break-word;
 }
 
-.sv-a4-sheet .ProseMirror img,
-.sv-editor-preview-doc img,
-.sv-preview-logo {
+.sv-company-logo,
+.sv-a4-keep {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-company-logo-img {
+  width: var(--sv-logo-width, 180px);
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: top;
+}
+
+.sv-company-logo-empty {
+  display: inline-block;
+  padding: 10px 14px;
+  border: 1px dashed #94a3b8;
+  color: #475569;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f8fafc;
+}
+
+.sv-a4-sheet .ProseMirror img:not(.sv-company-logo-img),
+.sv-editor-preview-doc img:not(.sv-company-logo-img) {
   max-width: 180px;
   max-height: 80px;
   object-fit: contain;
@@ -163,4 +216,16 @@
 
 .sv-editor-preview-doc .sv-a4-sheet {
   pointer-events: none;
+}
+
+.sv-logo-layout-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 11px;
+  color: #cbd5e1;
 }

@@ -9,6 +9,8 @@ export const DOCX_IMPORT_LIBRARY = 'mammoth';
 
 export const CUSTOM_DOCX_IMPORT_LIMITATIONS = [
   'Cabeçalhos e rodapés do Word não entram no corpo editável.',
+  'O logotipo do cabeçalho do Word não é importado; insira o campo automático Logo depois da importação.',
+  'Notas de rodapé do Word são preservadas no final do documento (limitação estável do Mammoth).',
   'A paginação visual não é pixel-perfect em relação ao Word.',
   'Caixas de texto, SmartArt e formas complexas podem virar parágrafo ou exigir conferência.',
   'Fontes proprietárias e posicionamento absoluto não são reproduzidos fielmente.',

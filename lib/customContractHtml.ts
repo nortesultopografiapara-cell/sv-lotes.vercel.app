@@ -9,10 +9,19 @@ import {
   findCustomPlaceholder,
   missingPlaceholderMarker,
 } from '@/lib/customContractPlaceholders';
+import {
+  COMPANY_LOGO_KEY,
+  COMPANY_LOGO_PREVIEW_EMPTY,
+  parseCompanyLogoLayoutFromHtml,
+  renderCompanyLogoBlock,
+  renderCompanyLogoDisplay,
+} from '@/lib/customContractLogo';
 
 const PLACEHOLDER_SPAN_RE =
   /<span\b[^>]*\bdata-sv-placeholder=["']([A-Z0-9_]+)["'][^>]*>[\s\S]*?<\/span>/gi;
 const BARE_TOKEN_RE = /\{\{\s*([A-Z0-9_]+)\s*\}\}/g;
+const COMPANY_LOGO_BLOCK_RE =
+  /<(div|span)\b[^>]*\bdata-sv-placeholder=["']COMPANY_LOGO_URL["'][^>]*>[\s\S]*?<\/\1>/gi;
 
 export function renderPlaceholderSpan(key: string): string {
   const token = customPlaceholderToken(key);
@@ -21,26 +30,59 @@ export function renderPlaceholderSpan(key: string): string {
     .toUpperCase()
     .replace(/[^A-Z0-9_]/g, '');
   if (!safe) return '';
+  if (safe === COMPANY_LOGO_KEY) return renderCompanyLogoBlock();
   return `<span data-sv-placeholder="${safe}" class="sv-contract-placeholder" contenteditable="false">${token}</span>`;
 }
 
-export function hydrateCustomPlaceholderHtml(html: string): string {
+function mapHtmlOutsideCompanyLogoBlocks(html: string, map: (chunk: string) => string): string {
   const source = String(html || '');
-  return source.replace(
-    /<span\b[^>]*\bdata-sv-placeholder=["']([A-Z0-9_]+)["'][^>]*>[\s\S]*?<\/span>|\{\{\s*([A-Z0-9_]+)\s*\}\}/gi,
-    (full, fromAttr: string | undefined, fromToken: string | undefined) => {
-      const key = String(fromAttr || fromToken || '')
-        .trim()
-        .toUpperCase();
-      if (!CUSTOM_PLACEHOLDER_KEYS.has(key)) return full;
-      return renderPlaceholderSpan(key);
-    },
+  const re =
+    /<(div|span)\b[^>]*\bdata-sv-placeholder=["']COMPANY_LOGO_URL["'][^>]*>[\s\S]*?<\/\1>/gi;
+  let out = '';
+  let last = 0;
+  for (const match of source.matchAll(re)) {
+    const start = match.index ?? 0;
+    out += map(source.slice(last, start));
+    out += match[0];
+    last = start + match[0].length;
+  }
+  out += map(source.slice(last));
+  return out;
+}
+
+export function hydrateCustomPlaceholderHtml(html: string): string {
+  const withLogoBlocks = String(html || '').replace(COMPANY_LOGO_BLOCK_RE, (full) =>
+    renderCompanyLogoBlock(parseCompanyLogoLayoutFromHtml(full)),
+  );
+  return mapHtmlOutsideCompanyLogoBlocks(withLogoBlocks, (chunk) =>
+    chunk.replace(
+      /<span\b[^>]*\bdata-sv-placeholder=["']([A-Z0-9_]+)["'][^>]*>[\s\S]*?<\/span>|\{\{\s*([A-Z0-9_]+)\s*\}\}/gi,
+      (full, fromAttr: string | undefined, fromToken: string | undefined) => {
+        const key = String(fromAttr || fromToken || '')
+          .trim()
+          .toUpperCase();
+        if (!CUSTOM_PLACEHOLDER_KEYS.has(key)) return full;
+        return renderPlaceholderSpan(key);
+      },
+    ),
+  );
+}
+
+export function decorateCompanyLogosForPreview(
+  html: string,
+  logoUrl: string | null | undefined,
+  emptyLabel = COMPANY_LOGO_PREVIEW_EMPTY,
+): string {
+  const withBlocks = hydrateCustomPlaceholderHtml(html);
+  return withBlocks.replace(COMPANY_LOGO_BLOCK_RE, (full) =>
+    renderCompanyLogoDisplay(parseCompanyLogoLayoutFromHtml(full), logoUrl, emptyLabel),
   );
 }
 
 /** Texto canônico para comparar rascunho × publicada (ignora chips/rótulos/whitespace). */
 export function canonicalizeCustomContractHtml(html: string): string {
   let s = String(html || '');
+  s = s.replace(COMPANY_LOGO_BLOCK_RE, () => customPlaceholderToken(COMPANY_LOGO_KEY));
   s = s.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => customPlaceholderToken(key));
   s = s.replace(BARE_TOKEN_RE, (_full, key: string) => customPlaceholderToken(key));
   s = s.replace(/&nbsp;/gi, ' ');
@@ -52,13 +94,18 @@ export function canonicalizeCustomContractHtml(html: string): string {
   return s.trim();
 }
 
-export function highlightCustomPlaceholdersForPreview(html: string): string {
-  const hydrated = hydrateCustomPlaceholderHtml(html);
-  return hydrated.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => {
-    const label = customPlaceholderLabel(key);
-    const token = customPlaceholderToken(key);
-    return `<span class="sv-contract-placeholder sv-contract-placeholder--preview" data-sv-placeholder="${key}" title="${token}">${escapeHtml(label)}</span>`;
-  });
+export function highlightCustomPlaceholdersForPreview(
+  html: string,
+  logoUrl?: string | null,
+): string {
+  const hydrated = decorateCompanyLogosForPreview(html, logoUrl, COMPANY_LOGO_PREVIEW_EMPTY);
+  return mapHtmlOutsideCompanyLogoBlocks(hydrated, (chunk) =>
+    chunk.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => {
+      const label = customPlaceholderLabel(key);
+      const token = customPlaceholderToken(key);
+      return `<span class="sv-contract-placeholder sv-contract-placeholder--preview" data-sv-placeholder="${key}" title="${token}">${escapeHtml(label)}</span>`;
+    }),
+  );
 }
 
 function escapeHtml(value: string): string {
@@ -104,9 +151,14 @@ export function isRejectedImportMime(mime: string | null | undefined, fileName?:
   return false;
 }
 
-export function countVisualA4Pages(html: string): number {
-  const breaks = (String(html || '').match(/data-sv-page-break/gi) || []).length;
-  return Math.max(1, breaks + 1);
+export function countVisualA4Pages(html: string, livePageCount?: number): number {
+  if (Number.isFinite(livePageCount) && Number(livePageCount) >= 1) {
+    return Math.floor(Number(livePageCount));
+  }
+  const source = String(html || '');
+  const breaks = (source.match(/data-sv-page-break/gi) || []).length;
+  const flowGaps = (source.match(/sv-a4-flow-gap/gi) || []).length;
+  return Math.max(1, breaks + flowGaps + 1);
 }
 
 export function fillCustomPlaceholdersForPreview(
@@ -114,32 +166,58 @@ export function fillCustomPlaceholdersForPreview(
   values: Record<string, string | null>,
 ): string {
   const hydrated = hydrateCustomPlaceholderHtml(html);
-  const replacedSpans = hydrated.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => {
-    const normalized = String(key || '').toUpperCase();
-    const raw = values[normalized];
-    if (raw == null || !String(raw).trim()) {
-      return `<span class="sv-missing-placeholder">${escapeHtml(
-        missingPlaceholderMarker(customPlaceholderLabel(normalized)),
-      )}</span>`;
-    }
-    if (normalized === 'COMPANY_LOGO_URL' && /^(https?:|data:image\/)/i.test(raw)) {
-      return `<img src="${escapeHtml(raw)}" alt="Logo" class="sv-preview-logo" />`;
-    }
-    return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
-  });
-  return replacedSpans.replace(BARE_TOKEN_RE, (full, key: string) => {
-    const normalized = String(key || '').toUpperCase();
-    if (values[normalized] === undefined && !CUSTOM_PLACEHOLDER_KEYS.has(normalized) && !/^SELLER_\d+_/.test(normalized)) {
-      return full;
-    }
-    const raw = values[normalized];
-    if (raw == null || !String(raw).trim()) {
-      return `<span class="sv-missing-placeholder">${escapeHtml(
-        missingPlaceholderMarker(customPlaceholderLabel(normalized)),
-      )}</span>`;
-    }
-    return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
-  });
+  const withLogo = hydrated.replace(COMPANY_LOGO_BLOCK_RE, (full) =>
+    renderCompanyLogoDisplay(
+      parseCompanyLogoLayoutFromHtml(full),
+      values[COMPANY_LOGO_KEY],
+      COMPANY_LOGO_PREVIEW_EMPTY,
+    ),
+  );
+  const replacedSpans = mapHtmlOutsideCompanyLogoBlocks(withLogo, (chunk) =>
+    chunk.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => {
+      const normalized = String(key || '').toUpperCase();
+      if (normalized === COMPANY_LOGO_KEY) {
+        return renderCompanyLogoDisplay(
+          undefined,
+          values[COMPANY_LOGO_KEY],
+          COMPANY_LOGO_PREVIEW_EMPTY,
+        );
+      }
+      const raw = values[normalized];
+      if (raw == null || !String(raw).trim()) {
+        return `<span class="sv-missing-placeholder">${escapeHtml(
+          missingPlaceholderMarker(customPlaceholderLabel(normalized)),
+        )}</span>`;
+      }
+      return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
+    }),
+  );
+  return mapHtmlOutsideCompanyLogoBlocks(replacedSpans, (chunk) =>
+    chunk.replace(BARE_TOKEN_RE, (full, key: string) => {
+      const normalized = String(key || '').toUpperCase();
+      if (normalized === COMPANY_LOGO_KEY) {
+        return renderCompanyLogoDisplay(
+          undefined,
+          values[COMPANY_LOGO_KEY],
+          COMPANY_LOGO_PREVIEW_EMPTY,
+        );
+      }
+      if (
+        values[normalized] === undefined &&
+        !CUSTOM_PLACEHOLDER_KEYS.has(normalized) &&
+        !/^SELLER_\d+_/.test(normalized)
+      ) {
+        return full;
+      }
+      const raw = values[normalized];
+      if (raw == null || !String(raw).trim()) {
+        return `<span class="sv-missing-placeholder">${escapeHtml(
+          missingPlaceholderMarker(customPlaceholderLabel(normalized)),
+        )}</span>`;
+      }
+      return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
+    }),
+  );
 }
 
 export function extractPlaceholderKeys(html: string): string[] {
@@ -147,6 +225,10 @@ export function extractPlaceholderKeys(html: string): string[] {
   const source = String(html || '');
   for (const match of source.matchAll(PLACEHOLDER_SPAN_RE)) {
     if (findCustomPlaceholder(match[1])) keys.add(match[1]);
+  }
+  for (const match of source.matchAll(/data-sv-placeholder=["']([A-Z0-9_]+)["']/gi)) {
+    const key = String(match[1] || '').toUpperCase();
+    if (findCustomPlaceholder(key)) keys.add(key);
   }
   for (const match of source.matchAll(BARE_TOKEN_RE)) {
     const key = String(match[1] || '').toUpperCase();

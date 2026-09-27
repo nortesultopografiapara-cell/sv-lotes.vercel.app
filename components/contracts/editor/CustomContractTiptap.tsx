@@ -12,6 +12,9 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
+import { A4Pagination } from '@/components/contracts/editor/A4PaginationExtension';
+import { CompanyLogo } from '@/components/contracts/editor/CompanyLogoNode';
+import { CompanyLogoContext } from '@/components/contracts/editor/CompanyLogoContext';
 import { ContractPlaceholder } from '@/components/contracts/editor/ContractPlaceholderNode';
 import { FontSize } from '@/components/contracts/editor/FontSizeExtension';
 import { PageBreak } from '@/components/contracts/editor/PageBreakNode';
@@ -21,18 +24,27 @@ export type CustomContractTiptapProps = {
   initialHtml: string;
   contentKey?: string;
   editable?: boolean;
+  companyLogoUrl?: string | null;
   onEditor: (editor: Editor | null) => void;
   onChange: (html: string) => void;
+  onPageCount?: (count: number) => void;
+  onSelection?: () => void;
 };
 
 export default function CustomContractTiptap({
   initialHtml,
   contentKey,
   editable = true,
+  companyLogoUrl = null,
   onEditor,
   onChange,
+  onPageCount,
+  onSelection,
 }: CustomContractTiptapProps) {
   const skipNext = useRef(true);
+  const pageCountRef = useRef(onPageCount);
+  pageCountRef.current = onPageCount;
+
   const editor = useEditor({
     immediatelyRender: false,
     editable,
@@ -55,7 +67,11 @@ export default function CustomContractTiptap({
       TableHeader,
       TableCell,
       ContractPlaceholder,
+      CompanyLogo,
       PageBreak,
+      A4Pagination.configure({
+        onPageCount: (count) => pageCountRef.current?.(count),
+      }),
     ],
     content: hydrateCustomPlaceholderHtml(initialHtml || '<p></p>'),
     editorProps: {
@@ -64,12 +80,16 @@ export default function CustomContractTiptap({
         spellcheck: 'true',
       },
     },
-    onUpdate: ({ editor: current }) => {
+    onUpdate: ({ editor: current, transaction }) => {
+      if (transaction && !transaction.docChanged) return;
       if (skipNext.current) {
         skipNext.current = false;
         return;
       }
       onChange(current.getHTML());
+    },
+    onSelectionUpdate: () => {
+      onSelection?.();
     },
   });
 
@@ -89,5 +109,9 @@ export default function CustomContractTiptap({
     editor.commands.setContent(hydrateCustomPlaceholderHtml(initialHtml), false);
   }, [editor, contentKey]);
 
-  return <EditorContent editor={editor} />;
+  return (
+    <CompanyLogoContext.Provider value={{ url: companyLogoUrl || null }}>
+      <EditorContent editor={editor} />
+    </CompanyLogoContext.Provider>
+  );
 }

@@ -44,6 +44,12 @@ import {
 } from '../lib/customContractPlaceholders';
 import { convertDocxToCustomHtml, DOCX_IMPORT_LIBRARY } from '../lib/customContractDocxImport';
 import { resolveCustomPreviewValues } from '../lib/customContractPreviewResolver';
+import {
+  COMPANY_LOGO_PREVIEW_EMPTY,
+  COMPANY_LOGO_TOKEN,
+  renderCompanyLogoBlock,
+} from '../lib/customContractLogo';
+import { planA4BlockSpacers, type A4LayoutUnit } from '../lib/customContractA4Layout';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx';
 
 const root = path.join(__dirname, '..');
@@ -546,6 +552,89 @@ void (async () => {
   assert(docxLib.includes("from 'mammoth'") || docxLib.includes('from "mammoth"'), 'importação usa mammoth');
   assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'), 'testemunhas marcadas sem fonte');
   assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'), 'nacionalidade comprador sem fonte');
+
+  const css = read('components/contracts/editor/customContractEditor.css');
+  const logoNode = read('components/contracts/editor/CompanyLogoNode.ts');
+  const layoutLib = read('lib/customContractA4Layout.ts');
+  const htmlLib = read('lib/customContractHtml.ts');
+  assert(!css.includes('repeating-linear-gradient'), 'paginação não usa faixa sobreposta no conteúdo');
+  assert(css.includes('page-break-inside: avoid') && css.includes('break-inside: avoid'), 'CSS evita cortar tr/título');
+  assert(layoutLib.includes('planA4BlockSpacers') && layoutLib.includes('keepWithNext'), 'paginação orientada a blocos');
+  assert(tiptap.includes('A4Pagination') && tiptap.includes('CompanyLogo'), 'TipTap usa paginação e node de logo');
+  assert(editorUi.includes("select('logo_url')"), 'editor lê companies.logo_url da Aparência');
+  assert(
+    !editorUi.includes('getReportHeaderLogoUrl') &&
+      !tiptap.includes('getReportHeaderLogoUrl') &&
+      !htmlLib.includes('getReportHeaderLogoUrl'),
+    'CUSTOM não usa fallback do logo da plataforma',
+  );
+  assert(logoNode.includes('COMPANY_LOGO_TOKEN') && !/src:\s*`/.test(logoNode), 'modelo persiste token, não src da imagem');
+  assert(editorUi.includes('insertPageBreak') && editorUi.includes("'Página'"), 'botão Página permanece');
+  assert(docxLib.includes('Notas de rodapé do Word são preservadas no final'), 'notas do Word documentadas no final');
+  assert(docxLib.includes('logotipo do cabeçalho do Word não é importado'), 'logo do cabeçalho DOCX não bloqueia importação');
+
+  {
+    const headingThenPara: A4LayoutUnit[] = [
+      { id: 'h', kind: 'heading', height: 40, keepTogether: true, keepWithNext: true },
+      { id: 'p', kind: 'paragraph', height: 80, keepTogether: false, keepWithNext: false },
+    ];
+    const together = planA4BlockSpacers(headingThenPara, 200, 18);
+    assert(together.length === 0, 'título + primeiro parágrafo cabem na mesma folha');
+    const split = planA4BlockSpacers(headingThenPara, 100, 18);
+    assert(
+      split.some((row) => row.beforeUnitId === 'p') &&
+        !split.some((row) => row.beforeUnitId === 'h'),
+      'título não fica isolado no rodapé quando o parágrafo não cabe',
+    );
+
+    const orphan: A4LayoutUnit[] = [
+      { id: 'a', kind: 'paragraph', height: 460, keepTogether: false, keepWithNext: false },
+      { id: 'h2', kind: 'heading', height: 40, keepTogether: true, keepWithNext: true },
+      { id: 'p2', kind: 'paragraph', height: 80, keepTogether: false, keepWithNext: false },
+    ];
+    const orphanPlan = planA4BlockSpacers(orphan, 500, 18);
+    assert(
+      orphanPlan.some((row) => row.beforeUnitId === 'h2'),
+      'título + primeiro parágrafo sobem juntos em vez de deixar o título no rodapé',
+    );
+
+    const rows: A4LayoutUnit[] = [
+      { id: 'r1', kind: 'tableRow', height: 70, keepTogether: true, keepWithNext: false },
+      { id: 'r2', kind: 'tableRow', height: 70, keepTogether: true, keepWithNext: false },
+      { id: 'r3', kind: 'tableRow', height: 70, keepTogether: true, keepWithNext: false },
+    ];
+    const tablePlan = planA4BlockSpacers(rows, 130, 18);
+    assert(
+      tablePlan.some((row) => row.beforeUnitId === 'r3' || row.beforeUnitId === 'r2'),
+      'tabela grande quebra ENTRE linhas, nunca no meio da tr',
+    );
+
+    const signatures: A4LayoutUnit[] = [
+      { id: 's1', kind: 'signature', height: 50, keepTogether: true, keepWithNext: true },
+      { id: 's2', kind: 'signature', height: 50, keepTogether: true, keepWithNext: true },
+    ];
+    const signPlan = planA4BlockSpacers(signatures, 80, 18);
+    assert(
+      signPlan.some((row) => row.beforeUnitId === 's1' || row.beforeUnitId === 's2'),
+      'bloco de assinatura evita quebra interna quando não cabe no restante',
+    );
+  }
+
+  const logoHtml = renderCompanyLogoBlock({ align: 'center', width: 220, marginBefore: 8, marginAfter: 16 });
+  assert(logoHtml.includes(COMPANY_LOGO_TOKEN), 'bloco de logo persiste {{COMPANY_LOGO_URL}}');
+  assert(!logoHtml.includes('<img'), 'bloco persistido não grava cópia da imagem');
+  assert(
+    canonicalizeCustomContractHtml(logoHtml) === canonicalizeCustomContractHtml('<p>{{COMPANY_LOGO_URL}}</p>'),
+    'canônico trata bloco de logo como token',
+  );
+  const filledLogo = fillCustomPlaceholdersForPreview(logoHtml, {
+    COMPANY_LOGO_URL: 'https://cdn.example/empresa.png',
+  });
+  assert(filledLogo.includes('https://cdn.example/empresa.png'), 'prévia resolve logo dinâmico');
+  assert(filledLogo.includes('object-fit:contain'), 'prévia do logo não distorce');
+  const emptyLogo = fillCustomPlaceholdersForPreview('{{COMPANY_LOGO_URL}}', { COMPANY_LOGO_URL: null });
+  assert(emptyLogo.includes(COMPANY_LOGO_PREVIEW_EMPTY), 'empresa sem logo mostra [SEM LOGO CADASTRADO]');
+  assert(!emptyLogo.includes('<img'), 'empresa sem logo nunca mostra imagem quebrada');
 
   console.log('\nOK — Editor CUSTOM A4');
 })().catch((e) => {

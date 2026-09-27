@@ -2,6 +2,7 @@ import { InputRule, Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import PlaceholderChip from '@/components/contracts/editor/PlaceholderChip';
 import { CUSTOM_PLACEHOLDER_KEYS, customPlaceholderToken } from '@/lib/customContractPlaceholders';
+import { CUSTOM_COMPANY_LOGO_DEFAULTS } from '@/lib/customContractLogo';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -36,7 +37,20 @@ export const ContractPlaceholder = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: 'span[data-sv-placeholder]' }];
+    return [
+      {
+        tag: 'span[data-sv-placeholder]',
+        getAttrs: (element) => {
+          const key = String(
+            (element as HTMLElement).getAttribute('data-sv-placeholder') || '',
+          )
+            .trim()
+            .toUpperCase();
+          if (!key || key === 'COMPANY_LOGO_URL') return false;
+          return { key };
+        },
+      },
+    ];
   },
 
   renderHTML({ node, HTMLAttributes }) {
@@ -65,6 +79,12 @@ export const ContractPlaceholder = Node.create({
             .trim()
             .toUpperCase();
           if (!CUSTOM_PLACEHOLDER_KEYS.has(normalized)) return false;
+          if (normalized === 'COMPANY_LOGO_URL') {
+            return chain()
+              .focus()
+              .insertContent({ type: 'companyLogo', attrs: CUSTOM_COMPANY_LOGO_DEFAULTS })
+              .run();
+          }
           return chain()
             .focus()
             .insertContent({
@@ -83,6 +103,11 @@ export const ContractPlaceholder = Node.create({
           const { from, to } = state.selection;
           const command = chain().focus();
           if (from !== to) command.deleteSelection();
+          if (normalized === 'COMPANY_LOGO_URL') {
+            return command
+              .insertContent({ type: 'companyLogo', attrs: CUSTOM_COMPANY_LOGO_DEFAULTS })
+              .run();
+          }
           return command
             .insertContent({
               type: this.name,
@@ -100,6 +125,13 @@ export const ContractPlaceholder = Node.create({
         handler: ({ range, match, chain }) => {
           const key = String(match[1] || '').toUpperCase();
           if (!CUSTOM_PLACEHOLDER_KEYS.has(key)) return;
+          if (key === 'COMPANY_LOGO_URL') {
+            chain()
+              .deleteRange(range)
+              .insertContent({ type: 'companyLogo', attrs: CUSTOM_COMPANY_LOGO_DEFAULTS })
+              .run();
+            return;
+          }
           chain()
             .deleteRange(range)
             .insertContent({ type: this.name, attrs: { key } })

@@ -62,6 +62,8 @@ import {
 import ManageContractModelProjectsPanel, {
   type ManageProjectLink,
 } from '@/components/contracts/central/ManageContractModelProjectsPanel';
+import CustomA4PaginatedHtml from '@/components/contracts/editor/CustomA4PaginatedHtml';
+import type { CompanyLogoAlign } from '@/lib/customContractLogo';
 import '@/components/contracts/editor/customContractEditor.css';
 
 const CustomContractTiptap = dynamic(
@@ -149,6 +151,8 @@ export default function CustomContractA4Editor() {
   const [toolbarTick, setToolbarTick] = useState(0);
   const [contentKey, setContentKey] = useState('');
   const [replaceKey, setReplaceKey] = useState('');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  const [visualPageCount, setVisualPageCount] = useState(1);
 
   const editorRef = useRef<Editor | null>(null);
   const htmlRef = useRef('');
@@ -321,6 +325,12 @@ export default function CustomContractA4Editor() {
     setLinks(
       ((linkRows ?? []) as LinkRow[]).filter((row) => String(row.company_id) === String(activeTenantId)),
     );
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('logo_url')
+      .eq('id', activeTenantId)
+      .maybeSingle();
+    setCompanyLogoUrl(String(companyRow?.logo_url || '').trim() || null);
     setLoading(false);
   }, [user, modelId, router]);
 
@@ -531,6 +541,18 @@ export default function CustomContractA4Editor() {
     editor.chain().focus().insertContractPlaceholder(key).run();
   }
 
+  function applyAlign(align: CompanyLogoAlign | 'justify') {
+    const current = editorRef.current;
+    if (!current) return;
+    if (current.isActive('companyLogo') && align !== 'justify') {
+      current.chain().focus().updateCompanyLogoLayout({ align }).run();
+      setToolbarTick((n) => n + 1);
+      return;
+    }
+    current.chain().focus().setTextAlign(align).run();
+    setToolbarTick((n) => n + 1);
+  }
+
   async function openPreview() {
     setPreviewHtml(htmlRef.current);
     setPreviewFilled(null);
@@ -728,13 +750,60 @@ export default function CustomContractA4Editor() {
             <option value="18pt">18</option>
             <option value="22pt">22</option>
           </select>
-          {toolbarBtn('Esquerda', () => editor?.chain().focus().setTextAlign('left').run(), editor?.isActive({ textAlign: 'left' }), <AlignLeft className="w-3.5 h-3.5" />)}
-          {toolbarBtn('Centro', () => editor?.chain().focus().setTextAlign('center').run(), editor?.isActive({ textAlign: 'center' }), <AlignCenter className="w-3.5 h-3.5" />)}
-          {toolbarBtn('Direita', () => editor?.chain().focus().setTextAlign('right').run(), editor?.isActive({ textAlign: 'right' }), <AlignRight className="w-3.5 h-3.5" />)}
-          {toolbarBtn('Justificado', () => editor?.chain().focus().setTextAlign('justify').run(), editor?.isActive({ textAlign: 'justify' }), <AlignJustify className="w-3.5 h-3.5" />)}
+          {toolbarBtn('Esquerda', () => applyAlign('left'), editor?.isActive({ textAlign: 'left' }) || (editor?.isActive('companyLogo') && editor?.getAttributes('companyLogo')?.align === 'left'), <AlignLeft className="w-3.5 h-3.5" />)}
+          {toolbarBtn('Centro', () => applyAlign('center'), editor?.isActive({ textAlign: 'center' }) || (editor?.isActive('companyLogo') && editor?.getAttributes('companyLogo')?.align === 'center'), <AlignCenter className="w-3.5 h-3.5" />)}
+          {toolbarBtn('Direita', () => applyAlign('right'), editor?.isActive({ textAlign: 'right' }) || (editor?.isActive('companyLogo') && editor?.getAttributes('companyLogo')?.align === 'right'), <AlignRight className="w-3.5 h-3.5" />)}
+          {toolbarBtn('Justificado', () => applyAlign('justify'), editor?.isActive({ textAlign: 'justify' }), <AlignJustify className="w-3.5 h-3.5" />)}
           {toolbarBtn('Lista', () => editor?.chain().focus().toggleBulletList().run(), editor?.isActive('bulletList'), <List className="w-3.5 h-3.5" />)}
           {toolbarBtn('Numerada', () => editor?.chain().focus().toggleOrderedList().run(), editor?.isActive('orderedList'), <ListOrdered className="w-3.5 h-3.5" />)}
           {toolbarBtn('Quebra de página', () => editor?.chain().focus().insertPageBreak().run(), false, 'Página')}
+          {editor?.isActive('companyLogo') && (
+            <span className="sv-logo-layout-bar">
+              <label className="inline-flex items-center gap-1">
+                Largura
+                <input
+                  type="range"
+                  min={64}
+                  max={360}
+                  value={Number(editor.getAttributes('companyLogo').width || 180)}
+                  onChange={(e) => {
+                    editor.chain().focus().updateCompanyLogoLayout({ width: Number(e.target.value) }).run();
+                    setToolbarTick((n) => n + 1);
+                  }}
+                />
+                <span>{Number(editor.getAttributes('companyLogo').width || 180)}px</span>
+              </label>
+              <label className="inline-flex items-center gap-1">
+                Antes
+                <input
+                  type="number"
+                  min={0}
+                  max={96}
+                  className="w-14 h-7 rounded bg-[#1b1d22] border border-white/15 px-1"
+                  value={Number(editor.getAttributes('companyLogo').marginBefore || 0)}
+                  onChange={(e) => {
+                    editor.chain().focus().updateCompanyLogoLayout({ marginBefore: Number(e.target.value) }).run();
+                    setToolbarTick((n) => n + 1);
+                  }}
+                />
+              </label>
+              <label className="inline-flex items-center gap-1">
+                Depois
+                <input
+                  type="number"
+                  min={0}
+                  max={96}
+                  className="w-14 h-7 rounded bg-[#1b1d22] border border-white/15 px-1"
+                  value={Number(editor.getAttributes('companyLogo').marginAfter || 0)}
+                  onChange={(e) => {
+                    editor.chain().focus().updateCompanyLogoLayout({ marginAfter: Number(e.target.value) }).run();
+                    setToolbarTick((n) => n + 1);
+                  }}
+                />
+              </label>
+              <span>proporção preservada</span>
+            </span>
+          )}
           <select
             className="h-8 max-w-[220px] rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
             value={replaceKey}
@@ -752,7 +821,7 @@ export default function CustomContractA4Editor() {
             ))}
           </select>
           <span className="text-[11px] text-gray-400 px-2">
-            {countVisualA4Pages(html)} página{countVisualA4Pages(html) === 1 ? '' : 's'} A4
+            {countVisualA4Pages(html, visualPageCount)} página{countVisualA4Pages(html, visualPageCount) === 1 ? '' : 's'} A4
           </span>
         </div>
       </header>
@@ -772,10 +841,13 @@ export default function CustomContractA4Editor() {
                 <CustomContractTiptap
                   initialHtml={initialHtml}
                   contentKey={contentKey}
+                  companyLogoUrl={companyLogoUrl}
                   onEditor={(current) => {
                     editorRef.current = current;
                   }}
                   onChange={scheduleAutosave}
+                  onPageCount={setVisualPageCount}
+                  onSelection={() => setToolbarTick((n) => n + 1)}
                 />
               )}
             </div>
@@ -843,15 +915,14 @@ export default function CustomContractA4Editor() {
           </select>
           {previewLoading && <p className="text-xs text-gray-400 mb-2">Carregando dados da venda…</p>}
           <div className="sv-editor-preview-doc max-h-[70vh] overflow-auto bg-[#2a2d36] p-4 rounded-lg">
-            <div
-              className="sv-a4-sheet sv-a4-prose"
-              dangerouslySetInnerHTML={{
-                __html:
-                  previewFilled ||
-                  highlightCustomPlaceholdersForPreview(
-                    sanitizeImportedContractHtml(previewHtml || html),
-                  ),
-              }}
+            <CustomA4PaginatedHtml
+              html={
+                previewFilled ||
+                highlightCustomPlaceholdersForPreview(
+                  sanitizeImportedContractHtml(previewHtml || html),
+                  companyLogoUrl,
+                )
+              }
             />
           </div>
         </EditorModal>
