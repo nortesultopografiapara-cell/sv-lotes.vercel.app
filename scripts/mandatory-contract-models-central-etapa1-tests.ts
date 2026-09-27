@@ -18,6 +18,29 @@ import {
   resolveCompatibleSaleContractModel,
   simulateContractModelCentralSeed,
 } from '../lib/contractModelCentral';
+import {
+  ARCHIVE_DEFAULT_BLOCKED,
+  CUSTOM_NOT_IN_AUTO_EMISSION,
+  LEGAL_TEXT_LOCKED,
+  archiveModel,
+  associateProject,
+  cloneStore,
+  countActiveCompanyDefaults,
+  countProjectDefaults,
+  createNewModel,
+  duplicateModel,
+  historyForModel,
+  importCustomModel,
+  legalContentIsLocked,
+  physicalDeleteAllowed,
+  renameModel,
+  saveAsNewModel,
+  setCompanyDefaultAtomic,
+  setProjectDefaultAtomic,
+  snapshotGisFields,
+  unarchiveModel,
+  type OperationalStore,
+} from '../lib/contractModelCentralOps';
 import { resolveMundoNovoPromitenteVendors } from '../lib/mundoNovoContractSellers';
 import { LF_CONTRACT_SNAPSHOT_COLUMN } from '../lib/lfImoveisContractSnapshot';
 import { buildAraguaiaEsignVendorPartyInputs } from '../lib/araguaiaContractEsign';
@@ -42,6 +65,10 @@ const gisSale = read('lib/gisSaleCreateService.ts');
 const generateHtml = read('lib/contractTemplate.ts');
 const mundoSellers = read('lib/mundoNovoContractSellers.ts');
 const centralPage = read('app/contracts/models/page.tsx');
+const centralUi =
+  centralPage +
+  read('components/contracts/central/ContractModelsOperationalCentral.tsx') +
+  read('lib/contractModelCentralOps.ts');
 
 assert(
   layout.includes('CONTRACT_MODELS_CENTRAL_PATH') &&
@@ -95,21 +122,53 @@ assert(
 );
 
 assert(
-  centralPage.includes('Central de Modelos de Contrato'),
+  centralUi.includes('Central de Modelos de Contrato'),
   'página da Central existe',
 );
 assert(
-  /Nome do modelo/.test(centralPage) &&
-    /Motor \/ código/.test(centralPage) &&
-    /Padrão da empresa/.test(centralPage) &&
-    /Empreendimentos associados/.test(centralPage) &&
-    /Status/.test(centralPage) &&
-    /Versão publicada/.test(centralPage),
-  'Central lista nome, motor, padrão, empreendimentos, status e versão',
+  /Nome do modelo/.test(centralUi) &&
+    /Empreendimento/.test(centralUi) &&
+    />Padrão</.test(centralUi) &&
+    /Status/.test(centralUi) &&
+    /Versão/.test(centralUi) &&
+    /Ações/.test(centralUi),
+  'Central lista nome, empreendimento, padrão, status, versão e ações',
 );
 assert(
-  !centralPage.includes('contenteditable') &&
-    !centralPage.includes('editor jurídico'),
+  centralUi.includes('Motor / código') &&
+    centralUi.includes('Origem') &&
+    centralUi.includes('Modelo padrão da empresa') &&
+    centralUi.includes('Empreendimentos associados'),
+  'ficha do modelo mostra motor, origem, padrão e empreendimentos',
+);
+assert(
+  centralUi.includes('Novo Modelo') && centralUi.includes('Importar Contrato'),
+  'topo tem Novo Modelo e Importar Contrato',
+);
+assert(
+  centralUi.includes('Visualizar') &&
+    centralUi.includes('Configurar/Editar') &&
+    centralUi.includes('Duplicar') &&
+    centralUi.includes('Salvar como novo') &&
+    centralUi.includes('Associar a empreendimento') &&
+    centralUi.includes('Histórico') &&
+    centralUi.includes('Arquivar'),
+  'ações operacionais por modelo',
+);
+{
+  const centralComponent = read(
+    'components/contracts/central/ContractModelsOperationalCentral.tsx',
+  );
+  assert(
+    !/Excluir modelo/i.test(centralComponent) &&
+      !/from\('company_contract_models'\)[\s\S]{0,120}\.delete\(/.test(centralComponent),
+    'sem exclusão física de modelo',
+  );
+}
+assert(
+  !centralUi.includes('contenteditable') &&
+    !centralUi.includes('editor jurídico') &&
+    centralUi.includes(LEGAL_TEXT_LOCKED),
   'Central da Etapa 1 não tem editor jurídico livre',
 );
 
@@ -547,5 +606,229 @@ assert(
 );
 assert(!sql.includes('DROP COLUMN'), 'migration aditiva sem DROP COLUMN');
 assert(!sql.includes('RENAME COLUMN'), 'migration aditiva sem RENAME COLUMN');
+
+function sampleStore(): OperationalStore {
+  return {
+    models: [
+      {
+        id: 'm-padrao',
+        companyId: 'co-a',
+        catalogCode: 'PADRAO',
+        engineKey: 'classic',
+        name: 'Padrão SV LOTES',
+        status: 'active',
+        source: 'system_seed',
+        isCompanyDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'm-mundo',
+        companyId: 'co-a',
+        catalogCode: 'MUNDO_NOVO',
+        engineKey: 'mundo_novo',
+        name: 'Mundo Novo',
+        status: 'active',
+        source: 'system_seed',
+        isCompanyDefault: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'm-b',
+        companyId: 'co-b',
+        catalogCode: 'PADRAO',
+        engineKey: 'classic',
+        name: 'Padrão B',
+        status: 'active',
+        source: 'system_seed',
+        isCompanyDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+    versions: [
+      {
+        id: 'v1',
+        modelId: 'm-padrao',
+        companyId: 'co-a',
+        version: 1,
+        status: 'published',
+        contentHtml: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'v2',
+        modelId: 'm-mundo',
+        companyId: 'co-a',
+        version: 1,
+        status: 'published',
+        contentHtml: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+    links: [],
+    companiesContractModel: { 'co-a': 'MUNDO_NOVO', 'co-b': 'PADRAO' },
+    projectsContractModel: { 'proj-1': 'MUNDO_NOVO', 'proj-2': null },
+    generatedHtmlByContractId: { 'ct-1': '<p>contrato</p>' },
+  };
+}
+
+{
+  const store = sampleStore();
+  const before = snapshotGisFields(store);
+  renameModel(store, 'm-mundo', 'Chacreamento Mundo Novo', 'co-a');
+  assert(
+    store.models.find((m) => m.id === 'm-mundo')?.name === 'Chacreamento Mundo Novo',
+    'renomear modelo',
+  );
+  assertStoreGis(store, before);
+
+  const { copy } = duplicateModel(store, 'm-mundo', 'co-a');
+  assert(copy.source === 'user' && copy.catalogCode === 'MUNDO_NOVO', 'duplicar reutiliza motor');
+  assert(copy.name.startsWith('Cópia de '), 'duplicar gera nome de cópia');
+  assert(copy.isCompanyDefault === false, 'cópia não herda padrão da empresa');
+  assertStoreGis(store, before);
+
+  const saved = saveAsNewModel(store, 'm-padrao', 'Padrão da equipe comercial', 'co-a');
+  assert(
+    saved.copy.name === 'Padrão da equipe comercial' && saved.copy.source === 'user',
+    'salvar como novo',
+  );
+  assert(
+    store.models.find((m) => m.id === 'm-padrao')?.name === 'Padrão SV LOTES',
+    'salvar como novo preserva o original',
+  );
+  assertStoreGis(store, before);
+
+  setCompanyDefaultAtomic(store, 'm-mundo', 'co-a');
+  assert(countActiveCompanyDefaults(store, 'co-a') === 1, 'troca atômica: um padrão');
+  assert(
+    store.models.find((m) => m.id === 'm-mundo')?.isCompanyDefault === true &&
+      store.models.find((m) => m.id === 'm-padrao')?.isCompanyDefault === false,
+    'troca atômica de padrão da empresa',
+  );
+  assert(store.companiesContractModel['co-a'] === 'MUNDO_NOVO', 'cadastro GIS da empresa intacto');
+  assertStoreGis(store, before);
+
+  associateProject(store, {
+    modelId: 'm-padrao',
+    projectId: 'proj-1',
+    projectName: 'Chacreamento Mundo Novo',
+    projectCompanyId: 'co-a',
+    callerCompanyId: 'co-a',
+    asProjectDefault: false,
+  });
+  setProjectDefaultAtomic(store, {
+    modelId: 'm-mundo',
+    projectId: 'proj-1',
+    projectName: 'Chacreamento Mundo Novo',
+    projectCompanyId: 'co-a',
+    callerCompanyId: 'co-a',
+  });
+  assert(countProjectDefaults(store, 'proj-1') === 1, 'um padrão por empreendimento');
+  assert(
+    store.links.find((l) => l.modelId === 'm-mundo' && l.projectId === 'proj-1')?.isProjectDefault ===
+      true,
+    'troca atômica de padrão do empreendimento',
+  );
+  assert(store.projectsContractModel['proj-1'] === 'MUNDO_NOVO', 'cadastro GIS do empreendimento intacto');
+  assertStoreGis(store, before);
+
+  let archiveBlocked = false;
+  try {
+    archiveModel(store, 'm-mundo', 'co-a');
+  } catch (e) {
+    archiveBlocked = e instanceof Error && e.message === ARCHIVE_DEFAULT_BLOCKED;
+  }
+  assert(archiveBlocked, 'não arquiva o padrão ativo sem outro padrão');
+
+  setCompanyDefaultAtomic(store, 'm-padrao', 'co-a');
+  archiveModel(store, 'm-mundo', 'co-a');
+  assert(store.models.find((m) => m.id === 'm-mundo')?.status === 'archived', 'arquivar');
+  unarchiveModel(store, 'm-mundo', 'co-a');
+  assert(store.models.find((m) => m.id === 'm-mundo')?.status === 'active', 'desarquivar');
+  assertStoreGis(store, before);
+
+  const created = createNewModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'Contrato da equipe',
+    basedOnModelId: 'm-padrao',
+  });
+  assert(
+    created.model.source === 'user' && created.model.catalogCode === 'PADRAO',
+    'criar baseado em modelo existente',
+  );
+  const custom = createNewModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'Contrato da imobiliária',
+    personalized: true,
+  });
+  assert(custom.model.catalogCode === 'CUSTOM', 'criar personalizado CUSTOM');
+  const imported = importCustomModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'Contrato recebido',
+    fileName: 'minuta.pdf',
+    mime: 'application/pdf',
+  });
+  assert(
+    imported.model.catalogCode === 'CUSTOM' &&
+      historyForModel(store, imported.model.id, 'co-a')[0]?.engineParamsJson?.import,
+    'importar como CUSTOM sem ligar GIS',
+  );
+  assert(historyForModel(store, 'm-padrao', 'co-a').length >= 1, 'consultar histórico');
+  assertStoreGis(store, before);
+
+  let cross = false;
+  try {
+    duplicateModel(store, 'm-padrao', 'co-b');
+  } catch {
+    cross = true;
+  }
+  assert(cross, 'isolamento entre empresas no clone');
+  assert(physicalDeleteAllowed() === false, 'exclusão física indisponível');
+  assert(
+    store.models.find((m) => m.id === 'm-padrao')?.source === 'system_seed',
+    'proteção: system_seed permanece no catálogo da empresa',
+  );
+  assert(legalContentIsLocked('MUNDO_NOVO') && !legalContentIsLocked('CUSTOM'), 'texto jurídico TS protegido');
+}
+
+function assertStoreGis(
+  store: OperationalStore,
+  before: ReturnType<typeof snapshotGisFields>,
+) {
+  assert(
+    JSON.stringify(snapshotGisFields(store)) === JSON.stringify(before),
+    'operações da Central não alteram GIS nem generated_html',
+  );
+}
+
+assert(
+  !centralUi.includes('generateContractHTML') &&
+    !centralUi.includes('gisSaleCreateService'),
+  'Central operacional não chama motores de geração',
+);
+assert(
+  !centralPage.includes('companies.contract_model') &&
+    !read('components/contracts/central/ContractModelsOperationalCentral.tsx').includes(
+      'companies.contract_model',
+    ) &&
+    !read('components/contracts/central/ContractModelsOperationalCentral.tsx').includes(
+      'projects.contract_model',
+    ),
+  'UI não fala de campos técnicos GIS',
+);
+assert(centralUi.includes(CUSTOM_NOT_IN_AUTO_EMISSION), 'CUSTOM avisa que não entra na emissão');
+assert(
+  centralUi.includes('Venda / lote para prévia') &&
+    centralUi.includes('disabled'),
+  'visualizar tem seletor futuro desabilitado',
+);
+assert(
+  layout.includes('{contractModelsHeaderLink(false)}') &&
+    layout.includes('{contractModelsHeaderLink(true)}'),
+  'botão homologado permanece no cabeçalho',
+);
 
 console.log('\nOK — Central de Modelos Etapa 0+1');
