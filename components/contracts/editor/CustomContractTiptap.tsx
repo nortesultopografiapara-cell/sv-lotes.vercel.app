@@ -8,15 +8,17 @@ import TextAlign from '@tiptap/extension-text-align';
 import TextStyle from '@tiptap/extension-text-style';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
-import { Table } from '@tiptap/extension-table';
-import { TableRow } from '@tiptap/extension-table-row';
-import { TableCell } from '@tiptap/extension-table-cell';
-import { TableHeader } from '@tiptap/extension-table-header';
 import { A4Pagination } from '@/components/contracts/editor/A4PaginationExtension';
 import { CompanyLogo } from '@/components/contracts/editor/CompanyLogoNode';
 import { CompanyLogoContext } from '@/components/contracts/editor/CompanyLogoContext';
+import { CONTRACT_TABLE_EXTENSIONS } from '@/components/contracts/editor/ContractTableExtensions';
 import { ContractPlaceholder } from '@/components/contracts/editor/ContractPlaceholderNode';
 import { FontSize } from '@/components/contracts/editor/FontSizeExtension';
+import {
+  FootnoteDefinition,
+  FootnoteReference,
+  FootnoteStore,
+} from '@/components/contracts/editor/FootnoteNodes';
 import { PageBreak } from '@/components/contracts/editor/PageBreakNode';
 import { hydrateCustomPlaceholderHtml } from '@/lib/customContractHtml';
 
@@ -62,12 +64,12 @@ export default function CustomContractTiptap({
         placeholder: 'Escreva o contrato nesta folha A4…',
       }),
       Image.configure({ inline: false, allowBase64: true }),
-      Table.configure({ resizable: false }),
-      TableRow,
-      TableHeader,
-      TableCell,
+      ...CONTRACT_TABLE_EXTENSIONS,
       ContractPlaceholder,
       CompanyLogo,
+      FootnoteReference,
+      FootnoteDefinition,
+      FootnoteStore,
       PageBreak,
       A4Pagination.configure({
         onPageCount: (count) => pageCountRef.current?.(count),

@@ -4,13 +4,14 @@
  */
 import mammoth from 'mammoth';
 import { sanitizeImportedContractHtml } from '@/lib/customContractHtml';
+import { normalizeCustomFootnotesHtml } from '@/lib/customContractFootnotes';
 
 export const DOCX_IMPORT_LIBRARY = 'mammoth';
 
 export const CUSTOM_DOCX_IMPORT_LIMITATIONS = [
   'Cabeçalhos e rodapés do Word não entram no corpo editável.',
   'O logotipo do cabeçalho do Word não é importado; insira o campo automático Logo depois da importação.',
-  'Notas de rodapé do Word são preservadas no final do documento (limitação estável do Mammoth).',
+  'Notas de rodapé do Word acompanham a página da referência (fonte menor). Não são header/footer.',
   'A paginação visual não é pixel-perfect em relação ao Word.',
   'Caixas de texto, SmartArt e formas complexas podem virar parágrafo ou exigir conferência.',
   'Fontes proprietárias e posicionamento absoluto não são reproduzidos fielmente.',
@@ -103,7 +104,8 @@ export async function convertDocxToCustomHtml(
   }
 
   const normalized = normalizeDocxHtml(converted.value || '');
-  const sanitized = sanitizeImportedContractHtml(normalized);
+  const withNotes = normalizeCustomFootnotesHtml(normalized);
+  const sanitized = sanitizeImportedContractHtml(withNotes);
   const structure = collectDocxStructure(sanitized);
 
   if (structure.tableCount === 0) {

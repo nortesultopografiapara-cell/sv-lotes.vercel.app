@@ -1,7 +1,13 @@
 /**
  * Paginação A4 do Editor CUSTOM — empacota blocos, não pinta faixa sobre o texto.
+ * Notas de rodapé reservam a base da folha da referência.
  * Não altera generateContractHTML nem contratos históricos.
  */
+
+import {
+  collectFootnoteIdsFromElement,
+  uniqueFootnoteIds,
+} from '@/lib/customContractFootnotes';
 
 export const CUSTOM_A4_PAGE_MM = 297;
 export const CUSTOM_A4_PAD_MM = 18;
@@ -26,11 +32,21 @@ export type A4LayoutUnit = {
   height: number;
   keepTogether: boolean;
   keepWithNext: boolean;
+  footnoteIds?: string[];
 };
 
 export type A4SpacerPlan = {
   beforeUnitId: string;
   height: number;
+  pageIndex: number;
+};
+
+export type A4PagePlan = {
+  start: number;
+  end: number;
+  leftover: number;
+  footnoteIds: string[];
+  footnoteHeight: number;
   pageIndex: number;
 };
 
@@ -87,27 +103,41 @@ export function classifyA4Tag(
   return { kind: 'other', keepTogether: true, keepWithNext: false };
 }
 
-/**
- * Empilha unidades em folhas A4. Quebra só ENTRE unidades (nunca no meio de uma tr).
- * Parágrafos maiores que a folha começam no topo; a folha estica em vez de cortar o texto.
- */
-export function planA4BlockSpacers(
+export function planA4Pages(
   units: A4LayoutUnit[],
   pageInner: number,
   gap: number,
-): A4SpacerPlan[] {
+  footnoteHeightFor: (ids: string[]) => number = () => 0,
+): A4PagePlan[] {
   const inner = Math.max(1, Number(pageInner) || 0);
-  const gutter = Math.max(0, Number(gap) || 0);
-  const spacers: A4SpacerPlan[] = [];
+  const pages: A4PagePlan[] = [];
+  let start = 0;
   let remaining = inner;
   let pageIndex = 0;
+  let pageRefs: string[] = [];
   let i = 0;
 
-  const startNewPage = (beforeUnitId: string, extra = gutter) => {
-    const height = Math.max(1, remaining + extra);
-    spacers.push({ beforeUnitId, height, pageIndex });
-    pageIndex += 1;
+  const closePage = (endExclusive: number) => {
+    if (endExclusive <= start && pages.length && endExclusive === start) {
+      remaining = inner;
+      pageRefs = [];
+      pageIndex += 1;
+      return;
+    }
+    const ids = uniqueFootnoteIds(pageRefs);
+    const footnoteHeight = footnoteHeightFor(ids);
+    pages.push({
+      start,
+      end: Math.max(start, endExclusive - 1),
+      leftover: remaining,
+      footnoteIds: ids,
+      footnoteHeight,
+      pageIndex,
+    });
+    start = endExclusive;
     remaining = inner;
+    pageRefs = [];
+    pageIndex += 1;
   };
 
   while (i < units.length) {
@@ -115,48 +145,74 @@ export function planA4BlockSpacers(
     const height = Math.max(0, Number(unit.height) || 0);
 
     if (unit.kind === 'pageBreak') {
-      if (remaining < inner) {
-        startNewPage(unit.id, 0);
-      } else {
-        pageIndex += 1;
+      if (i > start) closePage(i);
+      else {
         remaining = inner;
+        pageRefs = [];
+        pageIndex += 1;
+        start = i + 1;
       }
       i += 1;
+      start = i;
+      remaining = inner;
+      pageRefs = [];
       continue;
     }
 
     const next = i + 1 < units.length ? units[i + 1] : null;
     let packHeight = height;
     let packEnd = i;
+    let packRefs = [...(unit.footnoteIds || [])];
     if (unit.keepWithNext && next && next.kind !== 'pageBreak') {
       const combined = height + Math.max(0, Number(next.height) || 0);
       if (combined <= inner) {
         packHeight = combined;
         packEnd = i + 1;
+        packRefs = [...packRefs, ...(next.footnoteIds || [])];
       } else if (remaining < inner && remaining < combined) {
-        startNewPage(unit.id);
+        closePage(i);
         continue;
       }
     }
 
-    if (packHeight <= remaining) {
-      remaining -= packHeight;
-      i = packEnd + 1;
+    const trialRefs = uniqueFootnoteIds([...pageRefs, ...packRefs]);
+    const trialFn = footnoteHeightFor(trialRefs);
+    if (packHeight + trialFn > remaining && remaining < inner) {
+      closePage(i);
       continue;
     }
 
-    if (remaining < inner) {
-      startNewPage(unit.id);
-      continue;
-    }
-
-    remaining = 0;
-    i += 1;
-    if (i < units.length) {
-      startNewPage(units[i].id);
-    }
+    remaining = Math.max(0, remaining - packHeight);
+    pageRefs = trialRefs;
+    i = packEnd + 1;
   }
 
+  if (start < units.length || pages.length === 0) {
+    closePage(units.length);
+  }
+
+  void gap;
+  return pages;
+}
+
+export function planA4BlockSpacers(
+  units: A4LayoutUnit[],
+  pageInner: number,
+  gap: number,
+): A4SpacerPlan[] {
+  const pages = planA4Pages(units, pageInner, gap, () => 0);
+  const spacers: A4SpacerPlan[] = [];
+  for (let p = 1; p < pages.length; p += 1) {
+    const prev = pages[p - 1];
+    const page = pages[p];
+    const before = units[page.start];
+    if (!before) continue;
+    spacers.push({
+      beforeUnitId: before.id,
+      height: Math.max(1, prev.leftover + gap),
+      pageIndex: prev.pageIndex,
+    });
+  }
   return spacers;
 }
 
@@ -166,6 +222,16 @@ export function countPagesFromA4Plan(units: A4LayoutUnit[], spacers: A4SpacerPla
 }
 
 export type A4DomUnit = A4LayoutUnit & { el: HTMLElement };
+
+function skipLayoutNode(child: HTMLElement): boolean {
+  return (
+    child.classList.contains('sv-a4-flow-gap') ||
+    child.classList.contains('sv-a4-flow-gap-row') ||
+    child.classList.contains('sv-page-footnotes') ||
+    child.classList.contains('sv-footnote-store') ||
+    child.hasAttribute('data-sv-footnote-store')
+  );
+}
 
 export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number): A4DomUnit[] {
   const units: A4DomUnit[] = [];
@@ -181,19 +247,20 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
       id: `u${index++}`,
       el,
       height: Math.max(1, Math.ceil(el.getBoundingClientRect().height)),
+      footnoteIds: collectFootnoteIdsFromElement(el),
       ...classified,
     });
   };
 
   for (const child of Array.from(root.children)) {
     if (!(child instanceof HTMLElement)) continue;
-    if (child.classList.contains('sv-a4-flow-gap') || child.classList.contains('sv-a4-flow-gap-row')) {
-      continue;
-    }
+    if (skipLayoutNode(child)) continue;
     const tag = child.tagName.toLowerCase();
+    const tableEl =
+      tag === 'table' ? child : child.classList.contains('tableWrapper') ? child.querySelector('table') : null;
     const height = child.getBoundingClientRect().height;
-    if (tag === 'table' && height > pageInner) {
-      const rows = child.querySelectorAll('tr');
+    if (tableEl instanceof HTMLElement && height > pageInner) {
+      const rows = tableEl.querySelectorAll('tr');
       rows.forEach((row) => {
         if (row instanceof HTMLElement && !row.classList.contains('sv-a4-flow-gap-row')) {
           pushEl(row, 'tr');
@@ -212,19 +279,69 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
   return units;
 }
 
+export function measureFootnoteClusterHeight(
+  storeRoot: HTMLElement | null,
+  ids: string[],
+): number {
+  const unique = uniqueFootnoteIds(ids);
+  if (!unique.length) return 0;
+  let height = 10;
+  for (const id of unique) {
+    const el = storeRoot?.querySelector(`[data-sv-footnote-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+    height += el ? Math.max(22, Math.ceil(el.scrollHeight || el.getBoundingClientRect().height || 0)) : 28;
+  }
+  return height;
+}
+
+function createFootnoteCluster(storeRoot: HTMLElement | null, ids: string[]): HTMLElement | null {
+  const unique = uniqueFootnoteIds(ids);
+  if (!unique.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'sv-page-footnotes';
+  wrap.setAttribute('contenteditable', 'false');
+  unique.forEach((id) => {
+    const source = storeRoot?.querySelector(`[data-sv-footnote-id="${CSS.escape(id)}"]`);
+    const note = document.createElement('div');
+    note.className = 'sv-page-footnote';
+    const mark = document.createElement('span');
+    mark.className = 'sv-fn-mark';
+    mark.textContent = id;
+    note.appendChild(mark);
+    const body = document.createElement('div');
+    body.className = 'sv-fn-body';
+    body.innerHTML = source ? source.innerHTML : '';
+    note.appendChild(body);
+    wrap.appendChild(note);
+  });
+  return wrap;
+}
+
 export function applyCustomA4Pagination(root: HTMLElement): number {
-  root.querySelectorAll('.sv-a4-flow-gap, .sv-a4-flow-gap-row').forEach((node) => node.remove());
+  root.querySelectorAll('.sv-a4-flow-gap, .sv-a4-flow-gap-row, .sv-page-footnotes').forEach((node) =>
+    node.remove(),
+  );
   const pageInner = customA4PageInnerPx();
   const collected = collectA4UnitsFromElement(root, pageInner);
-  const plan = planA4BlockSpacers(collected, pageInner, CUSTOM_A4_GAP_PX);
-  for (let i = plan.length - 1; i >= 0; i -= 1) {
-    const item = plan[i];
-    const unit = collected.find((row) => row.id === item.beforeUnitId);
-    if (!unit?.el) continue;
-    const gap = createA4GapElement(unit.el, item.height);
-    unit.el.before(gap);
+  const store = root.querySelector('[data-sv-footnote-store], .sv-footnote-store') as HTMLElement | null;
+  const pages = planA4Pages(collected, pageInner, CUSTOM_A4_GAP_PX, (ids) =>
+    measureFootnoteClusterHeight(store, ids),
+  );
+  for (let p = pages.length - 1; p >= 0; p -= 1) {
+    const page = pages[p];
+    const last = collected[page.end];
+    const next = collected[page.end + 1];
+    const cluster = createFootnoteCluster(store, page.footnoteIds);
+    if (cluster && last?.el) {
+      if (next?.el) next.el.before(cluster);
+      else last.el.after(cluster);
+    }
+    if (next?.el) {
+      const spacerHeight = Math.max(1, page.leftover - page.footnoteHeight + CUSTOM_A4_GAP_PX);
+      const gap = createA4GapElement(next.el, spacerHeight);
+      next.el.before(gap);
+    }
   }
-  return countPagesFromA4Plan(collected, plan);
+  return Math.max(1, pages.length);
 }
 
 function createA4GapElement(beforeEl: HTMLElement, height: number): HTMLElement {

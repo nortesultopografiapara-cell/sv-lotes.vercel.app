@@ -16,6 +16,7 @@ import {
   renderCompanyLogoBlock,
   renderCompanyLogoDisplay,
 } from '@/lib/customContractLogo';
+import { normalizeCustomFootnotesHtml } from '@/lib/customContractFootnotes';
 
 const PLACEHOLDER_SPAN_RE =
   /<span\b[^>]*\bdata-sv-placeholder=["']([A-Z0-9_]+)["'][^>]*>[\s\S]*?<\/span>/gi;
@@ -51,7 +52,8 @@ function mapHtmlOutsideCompanyLogoBlocks(html: string, map: (chunk: string) => s
 }
 
 export function hydrateCustomPlaceholderHtml(html: string): string {
-  const withLogoBlocks = String(html || '').replace(COMPANY_LOGO_BLOCK_RE, (full) =>
+  const withNotes = normalizeCustomFootnotesHtml(html);
+  const withLogoBlocks = String(withNotes || '').replace(COMPANY_LOGO_BLOCK_RE, (full) =>
     renderCompanyLogoBlock(parseCompanyLogoLayoutFromHtml(full)),
   );
   return mapHtmlOutsideCompanyLogoBlocks(withLogoBlocks, (chunk) =>

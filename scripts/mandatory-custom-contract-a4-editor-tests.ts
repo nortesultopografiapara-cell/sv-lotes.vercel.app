@@ -49,7 +49,8 @@ import {
   COMPANY_LOGO_TOKEN,
   renderCompanyLogoBlock,
 } from '../lib/customContractLogo';
-import { planA4BlockSpacers, type A4LayoutUnit } from '../lib/customContractA4Layout';
+import { planA4BlockSpacers, planA4Pages, type A4LayoutUnit } from '../lib/customContractA4Layout';
+import { normalizeCustomFootnotesHtml } from '../lib/customContractFootnotes';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx';
 
 const root = path.join(__dirname, '..');
@@ -382,7 +383,7 @@ assert(central.includes('DELETE_COMPANY_CONTRACT_MODEL_RPC'), 'exclusão segura 
 assert(central.includes('CUSTOM_CONTRACT_EDITOR_PATH'), 'Central abre o editor A4');
 assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF');
 assert(central.includes('convertDocxToCustomHtml') && central.includes('isDocxFile'), 'Central converte DOCX');
-assert(tiptap.includes('extension-table') && tiptap.includes('extension-image'), 'editor aceita tabelas e imagens');
+assert(tiptap.includes('CONTRACT_TABLE_EXTENSIONS') && tiptap.includes('extension-image'), 'editor aceita tabelas e imagens');
 assert(editorUi.includes('Substituir seleção por campo'), 'substituir trecho por campo');
 assert(editorUi.includes('listSalesForCustomPreview') && editorUi.includes('applyPreviewSale'), 'prévia escolhe venda real');
 assert(editorUi.includes('fillCustomPlaceholdersForPreview'), 'prévia usa resolver separado');
@@ -570,7 +571,7 @@ void (async () => {
   );
   assert(logoNode.includes('COMPANY_LOGO_TOKEN') && !/src:\s*`/.test(logoNode), 'modelo persiste token, não src da imagem');
   assert(editorUi.includes('insertPageBreak') && editorUi.includes("'Página'"), 'botão Página permanece');
-  assert(docxLib.includes('Notas de rodapé do Word são preservadas no final'), 'notas do Word documentadas no final');
+  assert(docxLib.includes('acompanham a página da referência'), 'notas acompanham a página da referência');
   assert(docxLib.includes('logotipo do cabeçalho do Word não é importado'), 'logo do cabeçalho DOCX não bloqueia importação');
 
   {
@@ -635,6 +636,50 @@ void (async () => {
   const emptyLogo = fillCustomPlaceholdersForPreview('{{COMPANY_LOGO_URL}}', { COMPANY_LOGO_URL: null });
   assert(emptyLogo.includes(COMPANY_LOGO_PREVIEW_EMPTY), 'empresa sem logo mostra [SEM LOGO CADASTRADO]');
   assert(!emptyLogo.includes('<img'), 'empresa sem logo nunca mostra imagem quebrada');
+
+  const tableExt = read('components/contracts/editor/ContractTableExtensions.ts');
+  assert(tableExt.includes('resizable: true'), 'tabelas usam resize oficial do TipTap');
+  assert(editorUi.includes('addRowBefore') && editorUi.includes('addColumnAfter'), 'barra contextual insere linha/coluna');
+  assert(editorUi.includes('deleteRow') && editorUi.includes('deleteTable'), 'barra contextual exclui linha/tabela');
+  assert(editorUi.includes('mergeCells') && editorUi.includes('splitCell'), 'mesclar e dividir células');
+  assert(editorUi.includes("borders: 'none'") && css.includes('sv-table-borderless'), 'tabela sem bordas para assinaturas');
+  assert(editorUi.includes('setCellAttribute') && editorUi.includes('verticalAlign'), 'alinhamento vertical da célula');
+  assert(css.includes('column-resize-handle'), 'divisória de coluna arrastável');
+  assert(css.includes('max-width: 100%'), 'tabela não ultrapassa a folha A4');
+
+  const mammothNotes = [
+    '<p>ARRAS<sup><a href="#doc-42-footnote-5" id="doc-42-footnote-ref-5">[5]</a></sup> e medidas',
+    '<sup><a href="#doc-42-footnote-6" id="doc-42-footnote-ref-6">[6]</a></sup>.</p>',
+    '<p>Bloco de assinaturas</p>',
+    '<ol>',
+    '<li id="doc-42-footnote-5"><p> Natureza jurídica: arras confirmatórias. <a href="#doc-42-footnote-ref-5">↑</a></p></li>',
+    '<li id="doc-42-footnote-6"><p> Área conforme memorial descritivo. <a href="#doc-42-footnote-ref-6">↑</a></p></li>',
+    '<li id="doc-42-footnote-7"><p> Área conforme memorial descritivo. <a href="#doc-42-footnote-ref-7">↑</a></p></li>',
+    '</ol>',
+  ].join('');
+  const normalizedNotes = normalizeCustomFootnotesHtml(mammothNotes);
+  assert(normalizedNotes.includes('data-sv-footnote-ref="5"'), 'referência 5 vira nó de nota');
+  assert(normalizedNotes.includes('data-sv-footnote-ref="6"'), 'referência 6 vira nó de nota');
+  assert(!normalizedNotes.includes('↑'), 'setas técnicas do Mammoth não permanecem');
+  assert(!/id="doc-42-footnote-ref-/.test(normalizedNotes), 'IDs técnicos de navegação não ficam no HTML final');
+  assert(normalizedNotes.includes('Natureza jurídica: arras confirmatórias'), 'conteúdo jurídico da nota 5 preservado');
+  assert(
+    (normalizedNotes.match(/Área conforme memorial descritivo/g) || []).length === 2,
+    'notas semelhantes e distintas não são deduplicadas',
+  );
+  assert(normalizedNotes.includes('data-sv-footnote-store'), 'notas ficam no store lógico, não como lista no final visível');
+  assert(!normalizedNotes.includes('<ol>'), 'lista final do Mammoth é convertida');
+  assert(css.includes('font-size: 9pt') && css.includes('sv-page-footnotes'), 'notas usam fonte menor na base da folha');
+
+  {
+    const withNotes: A4LayoutUnit[] = [
+      { id: 'p', kind: 'paragraph', height: 70, keepTogether: false, keepWithNext: false, footnoteIds: ['5'] },
+      { id: 'q', kind: 'paragraph', height: 20, keepTogether: false, keepWithNext: false },
+    ];
+    const pages = planA4Pages(withNotes, 120, 18, (ids) => ids.length * 40);
+    assert(pages[0].footnoteIds.includes('5'), 'nota 5 fica na página da referência');
+    assert(pages.length === 2, 'reserva da nota empurra o bloco seguinte, sem cortar a linha');
+  }
 
   console.log('\nOK — Editor CUSTOM A4');
 })().catch((e) => {

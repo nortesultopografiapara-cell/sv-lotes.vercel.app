@@ -116,6 +116,19 @@ function fmtDate(value?: string | null): string {
   return d.toLocaleString('pt-BR');
 }
 
+function footnoteBodyText(editor: Editor | null, noteId: string): string {
+  if (!editor || !noteId) return '';
+  let text = '';
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'footnoteDefinition' && String(node.attrs.noteId) === noteId) {
+      text = node.textContent;
+      return false;
+    }
+    return true;
+  });
+  return text;
+}
+
 export default function CustomContractA4Editor() {
   const params = useParams();
   const router = useRouter();
@@ -153,6 +166,7 @@ export default function CustomContractA4Editor() {
   const [replaceKey, setReplaceKey] = useState('');
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
   const [visualPageCount, setVisualPageCount] = useState(1);
+  const [editingNoteId, setEditingNoteId] = useState('');
 
   const editorRef = useRef<Editor | null>(null);
   const htmlRef = useRef('');
@@ -757,6 +771,84 @@ export default function CustomContractA4Editor() {
           {toolbarBtn('Lista', () => editor?.chain().focus().toggleBulletList().run(), editor?.isActive('bulletList'), <List className="w-3.5 h-3.5" />)}
           {toolbarBtn('Numerada', () => editor?.chain().focus().toggleOrderedList().run(), editor?.isActive('orderedList'), <ListOrdered className="w-3.5 h-3.5" />)}
           {toolbarBtn('Quebra de página', () => editor?.chain().focus().insertPageBreak().run(), false, 'Página')}
+          {toolbarBtn(
+            'Inserir tabela',
+            () => editor?.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: false }).run(),
+            false,
+            'Tabela',
+          )}
+          {editor?.isActive('table') && (
+            <span className="sv-table-layout-bar">
+              {toolbarBtn('Inserir linha acima', () => editor.chain().focus().addRowBefore().run())}
+              {toolbarBtn('Inserir linha abaixo', () => editor.chain().focus().addRowAfter().run())}
+              {toolbarBtn('Excluir linha', () => editor.chain().focus().deleteRow().run())}
+              {toolbarBtn('Inserir coluna à esquerda', () => editor.chain().focus().addColumnBefore().run())}
+              {toolbarBtn('Inserir coluna à direita', () => editor.chain().focus().addColumnAfter().run())}
+              {toolbarBtn('Excluir coluna', () => editor.chain().focus().deleteColumn().run())}
+              {toolbarBtn('Mesclar células', () => editor.chain().focus().mergeCells().run())}
+              {toolbarBtn('Dividir célula', () => editor.chain().focus().splitCell().run())}
+              {toolbarBtn(
+                'Alinhar no topo',
+                () => editor.chain().focus().setCellAttribute('verticalAlign', 'top').run(),
+                editor.getAttributes('tableCell').verticalAlign === 'top' ||
+                  editor.getAttributes('tableHeader').verticalAlign === 'top',
+              )}
+              {toolbarBtn(
+                'Alinhar ao meio',
+                () => editor.chain().focus().setCellAttribute('verticalAlign', 'middle').run(),
+                editor.getAttributes('tableCell').verticalAlign === 'middle' ||
+                  editor.getAttributes('tableHeader').verticalAlign === 'middle',
+              )}
+              {toolbarBtn(
+                'Alinhar embaixo',
+                () => editor.chain().focus().setCellAttribute('verticalAlign', 'bottom').run(),
+                editor.getAttributes('tableCell').verticalAlign === 'bottom' ||
+                  editor.getAttributes('tableHeader').verticalAlign === 'bottom',
+              )}
+              {toolbarBtn(
+                'Bordas normais',
+                () => editor.chain().focus().updateAttributes('table', { borders: 'normal' }).run(),
+                editor.getAttributes('table').borders !== 'none',
+              )}
+              {toolbarBtn(
+                'Sem bordas',
+                () => editor.chain().focus().updateAttributes('table', { borders: 'none' }).run(),
+                editor.getAttributes('table').borders === 'none',
+              )}
+              {toolbarBtn('Excluir tabela', () => editor.chain().focus().deleteTable().run())}
+            </span>
+          )}
+          {(editor?.isActive('footnoteReference') || editingNoteId) && (
+            <span className="sv-fn-layout-bar">
+              <span>Nota {editingNoteId || String(editor?.getAttributes('footnoteReference').noteId || '')}</span>
+              <div
+                key={editingNoteId}
+                className="sv-fn-edit"
+                contentEditable
+                suppressContentEditableWarning
+                data-footnote-editor="true"
+                onBlur={(e) => {
+                  const noteId = editingNoteId || String(editor?.getAttributes('footnoteReference').noteId || '');
+                  if (!noteId || !editor) return;
+                  editor.chain().focus().updateFootnoteBody(noteId, e.currentTarget.innerText || '').run();
+                }}
+              >
+                {footnoteBodyText(
+                  editor,
+                  editingNoteId || String(editor?.getAttributes('footnoteReference').noteId || ''),
+                )}
+              </div>
+              {toolbarBtn('Remover referência', () => editor?.chain().focus().removeFootnoteReference().run())}
+              {toolbarBtn(
+                'Remover nota',
+                () => {
+                  const noteId = editingNoteId || String(editor?.getAttributes('footnoteReference').noteId || '');
+                  editor?.chain().focus().removeFootnoteNote(noteId).run();
+                  setEditingNoteId('');
+                },
+              )}
+            </span>
+          )}
           {editor?.isActive('companyLogo') && (
             <span className="sv-logo-layout-bar">
               <label className="inline-flex items-center gap-1">
@@ -847,7 +939,18 @@ export default function CustomContractA4Editor() {
                   }}
                   onChange={scheduleAutosave}
                   onPageCount={setVisualPageCount}
-                  onSelection={() => setToolbarTick((n) => n + 1)}
+                  onSelection={() => {
+                    const current = editorRef.current;
+                    setToolbarTick((n) => n + 1);
+                    if (current?.isActive('footnoteReference')) {
+                      setEditingNoteId(String(current.getAttributes('footnoteReference').noteId || ''));
+                    } else if (
+                      typeof document !== 'undefined' &&
+                      !(document.activeElement as HTMLElement | null)?.closest('[data-footnote-editor]')
+                    ) {
+                      setEditingNoteId('');
+                    }
+                  }}
                 />
               )}
             </div>

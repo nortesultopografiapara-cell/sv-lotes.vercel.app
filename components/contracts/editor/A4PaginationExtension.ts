@@ -5,9 +5,9 @@ import type { EditorView } from '@tiptap/pm/view';
 import {
   CUSTOM_A4_GAP_PX,
   collectA4UnitsFromElement,
-  countPagesFromA4Plan,
   customA4PageInnerPx,
-  planA4BlockSpacers,
+  measureFootnoteClusterHeight,
+  planA4Pages,
 } from '@/lib/customContractA4Layout';
 
 const a4PaginationKey = new PluginKey('svCustomA4Pagination');
@@ -33,46 +33,112 @@ function spacerWidget(height: number, isRow: boolean, colCount: number) {
   };
 }
 
-function planHash(plan: Array<{ beforeUnitId: string; height: number }>): string {
-  return plan.map((row) => `${row.beforeUnitId}:${row.height}`).join('|');
+function footnoteWidget(html: string, isRow: boolean, colCount: number) {
+  return () => {
+    if (isRow) {
+      const tr = document.createElement('tr');
+      tr.className = 'sv-page-footnotes sv-page-footnotes-row';
+      tr.setAttribute('contenteditable', 'false');
+      const td = document.createElement('td');
+      td.colSpan = Math.max(1, colCount);
+      td.className = 'sv-page-footnotes-cell';
+      td.innerHTML = html;
+      tr.appendChild(td);
+      return tr;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'sv-page-footnotes';
+    wrap.setAttribute('contenteditable', 'false');
+    wrap.innerHTML = html;
+    return wrap;
+  };
+}
+
+function clusterHtml(store: HTMLElement | null, ids: string[]): string {
+  return ids
+    .map((id) => {
+      const source = store?.querySelector(`[data-sv-footnote-id="${id}"]`);
+      const body = source ? source.innerHTML : '';
+      return `<div class="sv-page-footnote"><span class="sv-fn-mark">${id}</span><div class="sv-fn-body">${body}</div></div>`;
+    })
+    .join('');
+}
+
+function planHash(
+  pages: Array<{ start: number; leftover: number; footnoteIds: string[]; footnoteHeight: number }>,
+): string {
+  return pages
+    .map(
+      (page) =>
+        `${page.start}:${page.leftover}:${page.footnoteHeight}:${page.footnoteIds.join(',')}`,
+    )
+    .join('|');
+}
+
+function posFor(view: EditorView, el: HTMLElement, atEnd: boolean): number {
+  try {
+    return view.posAtDOM(el, atEnd ? el.childNodes.length : 0);
+  } catch {
+    return -1;
+  }
 }
 
 function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) => void) {
   const pageInner = customA4PageInnerPx();
   const collected = collectA4UnitsFromElement(view.dom as HTMLElement, pageInner);
-  const plan = planA4BlockSpacers(collected, pageInner, CUSTOM_A4_GAP_PX);
-  const hash = planHash(plan);
+  const store = view.dom.querySelector('[data-sv-footnote-store], .sv-footnote-store') as HTMLElement | null;
+  const pages = planA4Pages(collected, pageInner, CUSTOM_A4_GAP_PX, (ids) =>
+    measureFootnoteClusterHeight(store, ids),
+  );
+  const hash = planHash(pages);
   const prevHash = a4PaginationKey.getState(view.state)?.hash;
-  const pageCount = countPagesFromA4Plan(collected, plan);
+  const pageCount = Math.max(1, pages.length);
   if (hash === prevHash) {
     onPageCount?.(pageCount);
     return;
   }
 
   const decorations: Decoration[] = [];
-  for (const item of plan) {
-    const unit = collected.find((row) => row.id === item.beforeUnitId);
-    if (!unit?.el) continue;
-    let pos = -1;
-    try {
-      pos = view.posAtDOM(unit.el, 0);
-    } catch {
-      pos = -1;
+  for (let p = 0; p < pages.length; p += 1) {
+    const page = pages[p];
+    const last = collected[page.end];
+    const next = collected[page.end + 1];
+    if (page.footnoteIds.length && last?.el) {
+      const html = clusterHtml(store, page.footnoteIds);
+      const isRow = last.el.tagName.toLowerCase() === 'tr';
+      const pos = posFor(view, last.el, true);
+      if (pos >= 0) {
+        decorations.push(
+          Decoration.widget(pos, footnoteWidget(html, isRow, last.el.children.length), {
+            side: 1,
+            ignoreSelection: true,
+            key: `fn-${page.pageIndex}-${page.footnoteIds.join(',')}`,
+          }),
+        );
+      }
     }
-    if (pos < 0) continue;
-    const isRow = unit.el.tagName.toLowerCase() === 'tr';
-    decorations.push(
-      Decoration.widget(pos, spacerWidget(item.height, isRow, unit.el.children.length), {
-        side: -1,
-        ignoreSelection: true,
-        key: `a4-${pos}-${item.height}`,
-      }),
-    );
+    if (next?.el) {
+      const spacerHeight = Math.max(1, page.leftover - page.footnoteHeight + CUSTOM_A4_GAP_PX);
+      const pos = posFor(view, next.el, false);
+      if (pos >= 0) {
+        decorations.push(
+          Decoration.widget(
+            pos,
+            spacerWidget(spacerHeight, next.el.tagName.toLowerCase() === 'tr', next.el.children.length),
+            {
+              side: -1,
+              ignoreSelection: true,
+              key: `a4-${pos}-${spacerHeight}`,
+            },
+          ),
+        );
+      }
+    }
   }
 
-  const next = DecorationSet.create(view.state.doc, decorations);
+  const nextSet = DecorationSet.create(view.state.doc, decorations);
   const tr = view.state.tr
-    .setMeta(a4PaginationKey, { set: next, hash, pageCount })
+    .setMeta(a4PaginationKey, { set: nextSet, hash, pageCount })
     .setMeta('addToHistory', false);
   view.dispatch(tr);
   onPageCount?.(pageCount);

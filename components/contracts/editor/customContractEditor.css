@@ -138,11 +138,39 @@
 .sv-a4-sheet .ProseMirror table,
 .sv-editor-preview-doc table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   margin: 0 0 12px;
   table-layout: fixed;
   break-inside: auto;
   page-break-inside: auto;
+}
+
+.sv-a4-sheet .ProseMirror .tableWrapper {
+  position: relative;
+  max-width: 100%;
+  overflow: visible;
+  margin: 0 0 12px;
+}
+
+.sv-a4-sheet .ProseMirror .tableWrapper table {
+  margin: 0;
+}
+
+.sv-a4-sheet .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 20;
+  background-color: #38bdf8;
+  pointer-events: auto;
+  cursor: col-resize;
+}
+
+.sv-a4-sheet .ProseMirror.resize-cursor {
+  cursor: col-resize;
 }
 
 .sv-a4-sheet .ProseMirror tr,
@@ -153,6 +181,7 @@
 .sv-editor-preview-doc td {
   break-inside: avoid;
   page-break-inside: avoid;
+  position: relative;
 }
 
 .sv-a4-sheet .ProseMirror th,
@@ -163,6 +192,70 @@
   padding: 4px 6px;
   vertical-align: top;
   word-wrap: break-word;
+}
+
+.sv-a4-sheet .ProseMirror table.sv-table-borderless th,
+.sv-a4-sheet .ProseMirror table.sv-table-borderless td,
+.sv-a4-sheet .ProseMirror table[data-sv-table-borders="none"] th,
+.sv-a4-sheet .ProseMirror table[data-sv-table-borders="none"] td,
+.sv-editor-preview-doc table.sv-table-borderless th,
+.sv-editor-preview-doc table.sv-table-borderless td,
+.sv-editor-preview-doc table[data-sv-table-borders="none"] th,
+.sv-editor-preview-doc table[data-sv-table-borders="none"] td {
+  border: 0 !important;
+}
+
+.sv-fn-ref {
+  font-size: 0.65em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: super;
+  color: #111;
+}
+
+.sv-footnote-store {
+  position: absolute;
+  left: -12000px;
+  width: calc(var(--paper-width) - (var(--paper-pad) * 2));
+  visibility: hidden;
+  pointer-events: none;
+  height: auto;
+}
+
+.sv-page-footnotes {
+  margin: 16px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid #111;
+  font-size: 9pt;
+  line-height: 1.35;
+  color: #111;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.sv-page-footnote {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.sv-fn-mark {
+  font-size: 9pt;
+  font-weight: 700;
+  min-width: 1.2em;
+}
+
+.sv-fn-body,
+.sv-fn-body p {
+  font-size: 9pt;
+  margin: 0;
+}
+
+.sv-page-footnotes-cell {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 8px 0 0 !important;
+  vertical-align: top;
 }
 
 .sv-company-logo,
@@ -218,8 +311,11 @@
   pointer-events: none;
 }
 
-.sv-logo-layout-bar {
+.sv-logo-layout-bar,
+.sv-table-layout-bar,
+.sv-fn-layout-bar {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-left: 8px;
@@ -228,4 +324,17 @@
   font-family: Inter, system-ui, sans-serif;
   font-size: 11px;
   color: #cbd5e1;
+}
+
+.sv-fn-edit {
+  min-width: 220px;
+  max-width: 360px;
+  min-height: 28px;
+  max-height: 72px;
+  overflow: auto;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #1b1d22;
+  color: #e5e7eb;
 }
