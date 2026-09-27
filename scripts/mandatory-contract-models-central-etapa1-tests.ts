@@ -37,10 +37,40 @@ const MIGRATION =
   'supabase/migrations/20261028120000_contract_model_central_foundation.sql';
 const sql = read(MIGRATION);
 const contractsPage = read('app/contracts/page.tsx');
+const layout = read('components/Layout.tsx');
 const gisSale = read('lib/gisSaleCreateService.ts');
 const generateHtml = read('lib/contractTemplate.ts');
 const mundoSellers = read('lib/mundoNovoContractSellers.ts');
 const centralPage = read('app/contracts/models/page.tsx');
+
+assert(
+  layout.includes('CONTRACT_MODELS_CENTRAL_PATH') &&
+    layout.includes("startsWith('/contracts')") &&
+    layout.includes('isPartnerPanelAdmin'),
+  'botão permanente no cabeçalho global do Layout',
+);
+assert(
+  layout.includes('{contractModelsHeaderLink(false)}') &&
+    layout.includes('{contractModelsHeaderLink(true)}'),
+  'botão no cabeçalho global desktop e mobile',
+);
+{
+  const desktopLink = layout.indexOf('{contractModelsHeaderLink(false)}');
+  const afterDesktop = layout.slice(desktopLink, desktopLink + 180);
+  assert(
+    afterDesktop.includes('<OfflineStatusBar />'),
+    'botão no cabeçalho desktop imediatamente antes de Online',
+  );
+}
+assert(
+  !layout.includes('selectedContract'),
+  'cabeçalho global não depende de selectedContract',
+);
+assert(
+  !contractsPage.includes('canAccessContractModelsCentral') &&
+    !contractsPage.includes('hidden xl:inline">Modelos de Contrato'),
+  'botão antigo da faixa dos indicadores foi removido',
+);
 
 assert(
   CONTRACT_MODELS_CENTRAL_PATH === '/contracts/models',
