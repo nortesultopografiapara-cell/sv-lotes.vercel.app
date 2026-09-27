@@ -21,7 +21,7 @@ export const NO_CHANGE_SINCE_PUBLISHED =
   'Nenhuma alteração desde a última versão publicada.';
 
 export const IMPORT_TEXT_HTML_ONLY =
-  'Nesta etapa, importe apenas texto ou HTML. PDF e DOCX ainda não são convertidos.';
+  'PDF e DOC antigo (.doc) não são convertidos. Use DOCX, HTML ou TXT.';
 
 export const CUSTOM_DRAFT_VERSION = 0;
 

@@ -39,13 +39,22 @@ import {
 } from '@/lib/customContractModelEditor';
 import {
   highlightCustomPlaceholdersForPreview,
+  fillCustomPlaceholdersForPreview,
   sanitizeImportedContractHtml,
+  countVisualA4Pages,
 } from '@/lib/customContractHtml';
 import {
   CUSTOM_PLACEHOLDER_GROUPS,
+  CUSTOM_PLACEHOLDERS,
   placeholdersByGroup,
   type CustomPlaceholderGroupId,
 } from '@/lib/customContractPlaceholders';
+import { resolveCustomPreviewValues } from '@/lib/customContractPreviewResolver';
+import {
+  listSalesForCustomPreview,
+  loadCustomPreviewContext,
+  type PreviewSaleOption,
+} from '@/lib/customContractPreviewLoad';
 import '@/components/contracts/editor/customContractEditor.css';
 
 const CustomContractTiptap = dynamic(
@@ -119,7 +128,13 @@ export default function CustomContractA4Editor() {
     buyer: true,
   });
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewFilled, setPreviewFilled] = useState<string | null>(null);
+  const [previewSales, setPreviewSales] = useState<PreviewSaleOption[]>([]);
+  const [previewSaleId, setPreviewSaleId] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [toolbarTick, setToolbarTick] = useState(0);
+  const [contentKey, setContentKey] = useState('');
+  const [replaceKey, setReplaceKey] = useState('');
 
   const editorRef = useRef<Editor | null>(null);
   const htmlRef = useRef('');
@@ -250,12 +265,24 @@ export default function CustomContractA4Editor() {
     setVersions(scoped);
     const draftRow =
       scoped.find((row) => row.status === 'draft' && row.version === 0) || ensured;
-    const content = defaultCustomDraftHtml(draftRow.content_html);
+    const raw = String(draftRow.content_html ?? ensured.content_html ?? '');
+    const content = raw.trim() ? raw : defaultCustomDraftHtml(null);
     draftIdRef.current = draftRow.id;
+    setContentKey(`${draftRow.id}:${String(draftRow.updated_at || draftRow.created_at || '')}:${content.length}`);
     setInitialHtml(content);
     setHtml(content);
     htmlRef.current = content;
-    lastSavedRef.current = String(draftRow.content_html || '').trim() ? content : '';
+    lastSavedRef.current = content;
+    const importMeta = (draftRow.engine_params_json || ensured.engine_params_json || {}) as {
+      import?: { warnings?: string[]; conversion?: string };
+    };
+    if (importMeta.import?.warnings?.length) {
+      setNotice(
+        `Documento importado (${importMeta.import.conversion || 'arquivo'}). Conferir: ${importMeta.import.warnings
+          .slice(0, 4)
+          .join(' ')}`,
+      );
+    }
 
     const { data: projectRows } = await supabase
       .from('projects')
@@ -427,7 +454,51 @@ export default function CustomContractA4Editor() {
   }
 
   function insertField(key: string) {
-    editorRef.current?.chain().focus().insertContractPlaceholder(key).run();
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (!editor.state.selection.empty) {
+      editor.chain().focus().replaceSelectionWithPlaceholder(key).run();
+      return;
+    }
+    editor.chain().focus().insertContractPlaceholder(key).run();
+  }
+
+  async function openPreview() {
+    setPreviewHtml(htmlRef.current);
+    setPreviewFilled(null);
+    setPreviewSaleId('');
+    setPanel('preview');
+    const tenantId = tenantRef.current;
+    if (!tenantId) return;
+    setPreviewLoading(true);
+    try {
+      const sales = await listSalesForCustomPreview(supabase, tenantId);
+      setPreviewSales(sales);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível listar vendas para prévia.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function applyPreviewSale(saleId: string) {
+    setPreviewSaleId(saleId);
+    const tenantId = tenantRef.current;
+    if (!saleId || !tenantId) {
+      setPreviewFilled(null);
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const ctx = await loadCustomPreviewContext(supabase, tenantId, saleId);
+      const values = resolveCustomPreviewValues(ctx);
+      setPreviewFilled(fillCustomPlaceholdersForPreview(htmlRef.current, values));
+    } catch (e) {
+      setPreviewFilled(null);
+      setError(e instanceof Error ? e.message : 'Não foi possível montar a prévia.');
+    } finally {
+      setPreviewLoading(false);
+    }
   }
 
   function toolbarBtn(label: string, onClick: () => void, active?: boolean, icon?: ReactNode) {
@@ -536,10 +607,7 @@ export default function CustomContractA4Editor() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setPreviewHtml(htmlRef.current);
-              setPanel('preview');
-            }}
+            onClick={() => void openPreview()}
             className="h-8 px-3 rounded-lg border border-white/10 text-xs inline-flex items-center gap-1"
           >
             <Eye className="w-3.5 h-3.5" />
@@ -599,6 +667,25 @@ export default function CustomContractA4Editor() {
           {toolbarBtn('Lista', () => editor?.chain().focus().toggleBulletList().run(), editor?.isActive('bulletList'), <List className="w-3.5 h-3.5" />)}
           {toolbarBtn('Numerada', () => editor?.chain().focus().toggleOrderedList().run(), editor?.isActive('orderedList'), <ListOrdered className="w-3.5 h-3.5" />)}
           {toolbarBtn('Quebra de página', () => editor?.chain().focus().insertPageBreak().run(), false, 'Página')}
+          <select
+            className="h-8 max-w-[220px] rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            value={replaceKey}
+            onChange={(e) => {
+              const key = e.target.value;
+              setReplaceKey('');
+              if (key) insertField(key);
+            }}
+          >
+            <option value="">Substituir seleção por campo</option>
+            {CUSTOM_PLACEHOLDERS.map((field) => (
+              <option key={field.key} value={field.key}>
+                {field.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-[11px] text-gray-400 px-2">
+            {countVisualA4Pages(html)} página{countVisualA4Pages(html) === 1 ? '' : 's'} A4
+          </span>
         </div>
       </header>
 
@@ -611,16 +698,19 @@ export default function CustomContractA4Editor() {
 
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 overflow-auto py-6 px-4 bg-[#2a2d36]">
-          <div className="sv-a4-sheet">
-            {initialHtml !== '' && (
-              <CustomContractTiptap
-                initialHtml={initialHtml}
-                onEditor={(current) => {
-                  editorRef.current = current;
-                }}
-                onChange={scheduleAutosave}
-              />
-            )}
+          <div className="sv-a4-stack">
+            <div className="sv-a4-sheet">
+              {initialHtml !== '' && (
+                <CustomContractTiptap
+                  initialHtml={initialHtml}
+                  contentKey={contentKey}
+                  onEditor={(current) => {
+                    editorRef.current = current;
+                  }}
+                  onChange={scheduleAutosave}
+                />
+              )}
+            </div>
           </div>
         </div>
 
@@ -666,16 +756,33 @@ export default function CustomContractA4Editor() {
       {panel === 'preview' && (
         <EditorModal title="Visualizar documento" onClose={() => setPanel(null)}>
           <p className="text-xs text-gray-400 mb-3">
-            Prévia do modelo com campos automáticos destacados. Sem venda, lote, contrato, financeiro ou
-            assinatura nesta etapa.
+            Escolha uma venda existente só para conferir os campos. Não cria venda, contrato, financeiro
+            nem assinatura. Não grava generated_html.
           </p>
+          <label className="block text-xs text-gray-400 mb-1">Venda / contrato da empresa</label>
+          <select
+            value={previewSaleId}
+            disabled={previewLoading}
+            onChange={(e) => void applyPreviewSale(e.target.value)}
+            className="w-full h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm mb-3"
+          >
+            <option value="">Campos sem dados reais (chips)</option>
+            {previewSales.map((sale) => (
+              <option key={sale.id} value={sale.id}>
+                {sale.label}
+              </option>
+            ))}
+          </select>
+          {previewLoading && <p className="text-xs text-gray-400 mb-2">Carregando dados da venda…</p>}
           <div className="sv-editor-preview-doc max-h-[70vh] overflow-auto bg-[#2a2d36] p-4 rounded-lg">
             <div
-              className="sv-a4-sheet"
+              className="sv-a4-sheet sv-a4-prose"
               dangerouslySetInnerHTML={{
-                __html: highlightCustomPlaceholdersForPreview(
-                  sanitizeImportedContractHtml(previewHtml || html),
-                ),
+                __html:
+                  previewFilled ||
+                  highlightCustomPlaceholdersForPreview(
+                    sanitizeImportedContractHtml(previewHtml || html),
+                  ),
               }}
             />
           </div>

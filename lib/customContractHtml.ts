@@ -7,6 +7,7 @@ import {
   customPlaceholderLabel,
   customPlaceholderToken,
   findCustomPlaceholder,
+  missingPlaceholderMarker,
 } from '@/lib/customContractPlaceholders';
 
 const PLACEHOLDER_SPAN_RE =
@@ -82,6 +83,7 @@ export function sanitizeImportedContractHtml(raw: string): string {
   html = html.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
   html = html.replace(/javascript:/gi, '');
   html = html.replace(/data:text\/html/gi, '');
+  html = html.replace(/\ssrc\s*=\s*(['"])(?!https?:|data:image\/)[^'"]*\1/gi, '');
   if (!looksLikeHtml) {
     const parts = html
       .split(/\r?\n/)
@@ -97,10 +99,47 @@ export function isRejectedImportMime(mime: string | null | undefined, fileName?:
   const name = String(fileName || '').toLowerCase();
   const type = String(mime || '').toLowerCase();
   if (name.endsWith('.pdf') || type.includes('pdf')) return true;
-  if (name.endsWith('.doc') || name.endsWith('.docx') || type.includes('wordprocessingml') || type.includes('msword')) {
-    return true;
-  }
+  if (name.endsWith('.doc') && !name.endsWith('.docx')) return true;
+  if (type.includes('msword') && !type.includes('wordprocessingml')) return true;
   return false;
+}
+
+export function countVisualA4Pages(html: string): number {
+  const breaks = (String(html || '').match(/data-sv-page-break/gi) || []).length;
+  return Math.max(1, breaks + 1);
+}
+
+export function fillCustomPlaceholdersForPreview(
+  html: string,
+  values: Record<string, string | null>,
+): string {
+  const hydrated = hydrateCustomPlaceholderHtml(html);
+  const replacedSpans = hydrated.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => {
+    const normalized = String(key || '').toUpperCase();
+    const raw = values[normalized];
+    if (raw == null || !String(raw).trim()) {
+      return `<span class="sv-missing-placeholder">${escapeHtml(
+        missingPlaceholderMarker(customPlaceholderLabel(normalized)),
+      )}</span>`;
+    }
+    if (normalized === 'COMPANY_LOGO_URL' && /^(https?:|data:image\/)/i.test(raw)) {
+      return `<img src="${escapeHtml(raw)}" alt="Logo" class="sv-preview-logo" />`;
+    }
+    return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
+  });
+  return replacedSpans.replace(BARE_TOKEN_RE, (full, key: string) => {
+    const normalized = String(key || '').toUpperCase();
+    if (values[normalized] === undefined && !CUSTOM_PLACEHOLDER_KEYS.has(normalized) && !/^SELLER_\d+_/.test(normalized)) {
+      return full;
+    }
+    const raw = values[normalized];
+    if (raw == null || !String(raw).trim()) {
+      return `<span class="sv-missing-placeholder">${escapeHtml(
+        missingPlaceholderMarker(customPlaceholderLabel(normalized)),
+      )}</span>`;
+    }
+    return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
+  });
 }
 
 export function extractPlaceholderKeys(html: string): string[] {

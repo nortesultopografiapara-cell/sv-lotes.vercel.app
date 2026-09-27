@@ -19,6 +19,7 @@ import {
 } from '../lib/customContractCreateIdentity';
 import {
   canonicalizeCustomContractHtml,
+  fillCustomPlaceholdersForPreview,
   hydrateCustomPlaceholderHtml,
   isRejectedImportMime,
   sanitizeImportedContractHtml,
@@ -39,7 +40,11 @@ import {
   CUSTOM_PLACEHOLDERS,
   CUSTOM_PLACEHOLDER_GROUPS,
   DEFAULT_CUSTOM_CONTRACT_HTML,
+  PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE,
 } from '../lib/customContractPlaceholders';
+import { convertDocxToCustomHtml, DOCX_IMPORT_LIBRARY } from '../lib/customContractDocxImport';
+import { resolveCustomPreviewValues } from '../lib/customContractPreviewResolver';
+import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx';
 
 const root = path.join(__dirname, '..');
 
@@ -85,14 +90,19 @@ assert(editorUi.includes('insertPageBreak'), 'quebra de página');
 assert(editorUi.includes('Campos automáticos'), 'painel de campos');
 
 assert(editorUi.includes('CUSTOM_PLACEHOLDER_GROUPS'), 'painel usa os grupos aprovados');
-assert(CUSTOM_PLACEHOLDER_GROUPS.length === 8, 'oito grupos de campos automáticos');
+assert(CUSTOM_PLACEHOLDER_GROUPS.length === 10, 'dez grupos de campos automáticos');
 assert(
   CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_CPF') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SPOUSE_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SELLER_1_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SELLER_2_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'PROJECT_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'BLOCK_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_NUMBER') &&
-    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_VALUE'),
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_BOUNDARIES') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_VALUE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'WITNESS_1_NAME'),
   'placeholders compatíveis com o sistema atual',
 );
 
@@ -244,7 +254,7 @@ function sample(): OperationalStore {
 }
 
 assert(isRejectedImportMime('application/pdf', 'minuta.pdf'), 'PDF rejeitado nesta etapa');
-assert(isRejectedImportMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.docx'), 'DOCX rejeitado');
+assert(!isRejectedImportMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.docx'), 'DOCX aceito');
 assert(!isRejectedImportMime('text/html', 'minuta.html'), 'HTML aceito');
 assert(!sanitizeImportedContractHtml('<p onclick="x()">ok</p>').includes('onclick'), 'HTML importado sem handlers');
 
@@ -352,7 +362,12 @@ assert(central.includes("catalog_code: 'CUSTOM'"), 'Personalizado grava catalog_
 assert(central.includes("engine_key: 'custom'"), 'Personalizado grava engine_key custom');
 assert(central.includes('DELETE_COMPANY_CONTRACT_MODEL_RPC'), 'exclusão segura chama RPC');
 assert(central.includes('CUSTOM_CONTRACT_EDITOR_PATH'), 'Central abre o editor A4');
-assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF/DOCX');
+assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF');
+assert(central.includes('convertDocxToCustomHtml') && central.includes('isDocxFile'), 'Central converte DOCX');
+assert(tiptap.includes('extension-table') && tiptap.includes('extension-image'), 'editor aceita tabelas e imagens');
+assert(editorUi.includes('Substituir seleção por campo'), 'substituir trecho por campo');
+assert(editorUi.includes('listSalesForCustomPreview') && editorUi.includes('applyPreviewSale'), 'prévia escolhe venda real');
+assert(editorUi.includes('fillCustomPlaceholdersForPreview'), 'prévia usa resolver separado');
 
 const editorBundle = editorPage + editorUi + tiptap + read('lib/customContractModelEditor.ts');
 assert(
@@ -375,11 +390,111 @@ assert(
 );
 
 assert(
-  editorUi.includes('Sem venda, lote, contrato, financeiro') ||
-    editorUi.includes('sem venda'),
-  'prévia declara que não preenche venda real',
+  editorUi.includes('Não cria venda') && editorUi.includes('generated_html'),
+  'prévia declara que não persiste venda/contrato',
 );
 
 void cloneStore;
 
-console.log('\nOK — Editor CUSTOM A4');
+{
+  const saved = sample();
+  const first = simulateEnsureCustomDraft(saved, 'm-custom', 'co-a');
+  first.contentHtml = '<p>CONTEUDO SALVO DO DRAFT</p><table><tr><td>Q1</td></tr></table>';
+  const reopened = simulateEnsureCustomDraft(saved, 'm-custom', 'co-a');
+  assert(
+    reopened.id === first.id &&
+      String(reopened.contentHtml).includes('CONTEUDO SALVO DO DRAFT') &&
+      String(reopened.contentHtml).includes('<table'),
+    'fechar/reabrir recupera o draft salvo com tabela',
+  );
+}
+
+void (async () => {
+  const doc = new Document({
+    sections: [
+      {
+        children: [
+          new Paragraph({ children: [new TextRun({ text: 'MODELO CHACREAMENTO ESTRELA DO SUL', bold: true })] }),
+          new Paragraph('Qualificação do comprador'),
+          new Table({
+            rows: [
+              new TableRow({
+                children: [
+                  new TableCell({ children: [new Paragraph('Quadra')] }),
+                  new TableCell({ children: [new Paragraph('01')] }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      },
+    ],
+  });
+  const buf = await Packer.toBuffer(doc);
+  const converted = await convertDocxToCustomHtml(buf);
+  assert(DOCX_IMPORT_LIBRARY === 'mammoth', 'biblioteca DOCX = mammoth');
+  assert(converted.html.toLowerCase().includes('estrela'), 'DOCX vira HTML com o texto');
+  assert(converted.tableCount >= 1 || /<table/i.test(converted.html), 'tabelas do DOCX preservadas');
+  assert(!converted.html.includes('<script'), 'HTML importado sem script');
+
+  assert(isRejectedImportMime('application/pdf', 'x.pdf') === true, 'PDF continua recusado');
+  assert(isRejectedImportMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'modelo.docx') === false, 'DOCX passa na importação');
+  const filled = fillCustomPlaceholdersForPreview('<p>{{CLIENT_NAME}} {{SPOUSE_CPF}}</p>', {
+    CLIENT_NAME: 'Maria Silva',
+    SPOUSE_CPF: null,
+  });
+  assert(filled.includes('Maria Silva'), 'prévia preenche dado real');
+  assert(filled.includes('[SEM DADO: CPF DO CÔNJUGE]'), 'prévia não esconde campo vazio');
+
+  const values = resolveCustomPreviewValues({
+    tenantId: 'co-a',
+    company: { name: 'SV Topografia', cnpj: '00.000.000/0001-00', city: 'Marabá' },
+    customer: { name: 'João', cpf_cnpj: '12345678901' },
+    sale: {
+      company_id: 'co-a',
+      total_value: 38500,
+      payment_type: 'parcelado',
+      installments_count: 10,
+      sale_date: '2026-03-01',
+      has_spouse: true,
+      sale_spouse_name: 'Ana',
+      sale_spouse_cpf: '52998224725',
+    },
+    project: { name: 'Estrela do Sul', city: 'Marabá', seller_parties_json: [{ name: 'Vendedor Um', cpf: '111' }] },
+    lot: { quadra: 'QD 01', lote: '12', frente: 20, fundo: 20, 'Lado Dir.': 40, 'Lado Esq.': 40 },
+    receipts: [
+      { installment_number: 0, amount: 5000, due_date: '2026-03-10', status: 'pendente' },
+      { installment_number: 1, amount: 3350, due_date: '2026-04-10', status: 'pendente' },
+    ],
+  });
+  assert(values.CLIENT_NAME === 'João', 'fonte real do comprador');
+  assert(values.PROJECT_NAME === 'Estrela do Sul', 'fonte real do empreendimento');
+  assert(String(values.SALE_VALUE || '').includes('38.500'), 'valor da venda sem recálculo paralelo');
+  assert(values.SELLER_1_NAME === 'Vendedor Um', 'vendedor 1 a partir de seller_parties_json (leitura)');
+  assert(values.WITNESS_1_NAME == null, 'testemunha sem fonte automática');
+  let cross = false;
+  try {
+    resolveCustomPreviewValues({
+      tenantId: 'co-a',
+      sale: { company_id: 'co-b', total_value: 1 },
+    });
+  } catch {
+    cross = true;
+  }
+  assert(cross, 'prévia isola tenant');
+
+  const previewLoad = read('lib/customContractPreviewLoad.ts');
+  const previewResolver = read('lib/customContractPreviewResolver.ts');
+  const docxLib = read('lib/customContractDocxImport.ts');
+  assert(!previewLoad.includes('.insert(') && !previewLoad.includes('.update(') && !previewLoad.includes('.delete('), 'loader de prévia é somente leitura');
+  assert(!previewLoad.includes('generated_html'), 'prévia não lê generated_html');
+  assert(!previewResolver.includes('generateContractHTML'), 'resolver não usa o motor oficial');
+  assert(!previewResolver.includes('gisSaleCreateService'), 'resolver não cria venda GIS');
+  assert(docxLib.includes("from 'mammoth'") || docxLib.includes('from "mammoth"'), 'importação usa mammoth');
+  assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'), 'testemunhas marcadas sem fonte');
+
+  console.log('\nOK — Editor CUSTOM A4');
+})().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});

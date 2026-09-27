@@ -1,7 +1,6 @@
 /**
  * Campos automáticos do Editor CUSTOM A4.
- * Persistência inequívoca: {{TOKEN}} (e data-sv-placeholder no HTML).
- * Sem substituição com venda real nesta etapa.
+ * Persistência: {{TOKEN}}. Prévia usa fontes reais; não inventa valor.
  */
 
 export type CustomPlaceholderGroupId =
@@ -12,13 +11,17 @@ export type CustomPlaceholderGroupId =
   | 'project'
   | 'lot'
   | 'finance'
-  | 'dates';
+  | 'contract'
+  | 'dates'
+  | 'signatures';
 
 export type CustomPlaceholderDef = {
   key: string;
   token: string;
   label: string;
   group: CustomPlaceholderGroupId;
+  /** Origem real no SV Lotes. "none" = sem fonte automática atualmente. */
+  source: string;
 };
 
 export const CUSTOM_PLACEHOLDER_GROUPS: { id: CustomPlaceholderGroupId; label: string }[] = [
@@ -29,71 +32,156 @@ export const CUSTOM_PLACEHOLDER_GROUPS: { id: CustomPlaceholderGroupId; label: s
   { id: 'project', label: 'Empreendimento' },
   { id: 'lot', label: 'Quadra/Lote' },
   { id: 'finance', label: 'Financeiro' },
+  { id: 'contract', label: 'Contrato' },
   { id: 'dates', label: 'Datas' },
+  { id: 'signatures', label: 'Assinaturas/Testemunhas' },
 ];
 
+function field(
+  key: string,
+  label: string,
+  group: CustomPlaceholderGroupId,
+  source: string,
+): CustomPlaceholderDef {
+  return { key, token: `{{${key}}}`, label, group, source };
+}
+
 export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
-  { key: 'COMPANY_NAME', token: '{{COMPANY_NAME}}', label: 'Nome da empresa', group: 'company' },
-  { key: 'COMPANY_FANTASY_NAME', token: '{{COMPANY_FANTASY_NAME}}', label: 'Nome fantasia', group: 'company' },
-  { key: 'COMPANY_CNPJ', token: '{{COMPANY_CNPJ}}', label: 'CNPJ da empresa', group: 'company' },
-  { key: 'COMPANY_ADDRESS', token: '{{COMPANY_ADDRESS}}', label: 'Endereço da empresa', group: 'company' },
-  { key: 'COMPANY_CITY', token: '{{COMPANY_CITY}}', label: 'Cidade da empresa', group: 'company' },
-  { key: 'COMPANY_STATE', token: '{{COMPANY_STATE}}', label: 'UF da empresa', group: 'company' },
-  { key: 'COMPANY_PHONE', token: '{{COMPANY_PHONE}}', label: 'Telefone da empresa', group: 'company' },
-  { key: 'COMPANY_EMAIL', token: '{{COMPANY_EMAIL}}', label: 'E-mail da empresa', group: 'company' },
-  { key: 'COMPANY_LOGO_URL', token: '{{COMPANY_LOGO_URL}}', label: 'Logo da empresa', group: 'company' },
+  field('COMPANY_NAME', 'Nome da empresa', 'company', 'companies.fantasy_name | companies.name'),
+  field('COMPANY_FANTASY_NAME', 'Nome fantasia', 'company', 'companies.fantasy_name'),
+  field('COMPANY_LEGAL_NAME', 'Razão social', 'company', 'companies.razao_social'),
+  field('COMPANY_CNPJ', 'CNPJ', 'company', 'companies.cnpj | companies.document'),
+  field('COMPANY_ADDRESS', 'Endereço da empresa', 'company', 'companies.address'),
+  field('COMPANY_NEIGHBORHOOD', 'Bairro da empresa', 'company', 'companies.neighborhood | companies.bairro'),
+  field('COMPANY_CITY', 'Cidade da empresa', 'company', 'companies.city'),
+  field('COMPANY_STATE', 'UF da empresa', 'company', 'companies.state'),
+  field('COMPANY_ZIP', 'CEP da empresa', 'company', 'companies.zip_code | companies.cep'),
+  field('COMPANY_PHONE', 'Telefone da empresa', 'company', 'companies.phone'),
+  field('COMPANY_EMAIL', 'E-mail da empresa', 'company', 'companies.email'),
+  field('COMPANY_LOGO_URL', 'Logo', 'company', 'companies.logo_url'),
 
-  { key: 'CLIENT_NAME', token: '{{CLIENT_NAME}}', label: 'Nome do comprador', group: 'buyer' },
-  { key: 'CLIENT_CPF', token: '{{CLIENT_CPF}}', label: 'CPF do comprador', group: 'buyer' },
-  { key: 'CLIENT_RG', token: '{{CLIENT_RG}}', label: 'RG do comprador', group: 'buyer' },
-  { key: 'CLIENT_RG_ISSUER', token: '{{CLIENT_RG_ISSUER}}', label: 'Órgão emissor do RG', group: 'buyer' },
-  { key: 'CLIENT_NATIONALITY', token: '{{CLIENT_NATIONALITY}}', label: 'Nacionalidade do comprador', group: 'buyer' },
-  { key: 'CLIENT_PROFESSION', token: '{{CLIENT_PROFESSION}}', label: 'Profissão do comprador', group: 'buyer' },
-  { key: 'CLIENT_CIVIL_STATE', token: '{{CLIENT_CIVIL_STATE}}', label: 'Estado civil do comprador', group: 'buyer' },
-  { key: 'CLIENT_ADDRESS', token: '{{CLIENT_ADDRESS}}', label: 'Endereço do comprador', group: 'buyer' },
-  { key: 'CLIENT_PHONE', token: '{{CLIENT_PHONE}}', label: 'Telefone do comprador', group: 'buyer' },
-  { key: 'CLIENT_EMAIL', token: '{{CLIENT_EMAIL}}', label: 'E-mail do comprador', group: 'buyer' },
+  field('CLIENT_NAME', 'Nome do comprador', 'buyer', 'customers.name'),
+  field('CLIENT_CPF', 'CPF do comprador', 'buyer', 'customers.cpf_cnpj | customers.document'),
+  field('CLIENT_RG', 'RG do comprador', 'buyer', 'customers.rg'),
+  field('CLIENT_RG_ISSUER', 'Órgão emissor do RG', 'buyer', 'customers.rg_issuer + rg_issuer_state'),
+  field('CLIENT_NATIONALITY', 'Nacionalidade do comprador', 'buyer', 'customers.nationality'),
+  field('CLIENT_PROFESSION', 'Profissão do comprador', 'buyer', 'customers.profession'),
+  field('CLIENT_CIVIL_STATE', 'Estado civil do comprador', 'buyer', 'customers.civil_state | marital_status'),
+  field('CLIENT_ADDRESS', 'Endereço do comprador', 'buyer', 'customers.address'),
+  field('CLIENT_NEIGHBORHOOD', 'Bairro do comprador', 'buyer', 'customers.neighborhood'),
+  field('CLIENT_CITY', 'Cidade do comprador', 'buyer', 'customers.city'),
+  field('CLIENT_STATE', 'UF do comprador', 'buyer', 'customers.state_uf | customers.state'),
+  field('CLIENT_ZIP', 'CEP do comprador', 'buyer', 'customers.zip_code | customers.cep'),
+  field('CLIENT_PHONE', 'Telefone do comprador', 'buyer', 'customers.phone'),
+  field('CLIENT_EMAIL', 'E-mail do comprador', 'buyer', 'customers.email'),
 
-  { key: 'SPOUSE_NAME', token: '{{SPOUSE_NAME}}', label: 'Nome do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_CPF', token: '{{SPOUSE_CPF}}', label: 'CPF do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_RG', token: '{{SPOUSE_RG}}', label: 'RG do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_RG_ISSUER', token: '{{SPOUSE_RG_ISSUER}}', label: 'Órgão emissor do RG do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_NATIONALITY', token: '{{SPOUSE_NATIONALITY}}', label: 'Nacionalidade do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_PROFESSION', token: '{{SPOUSE_PROFESSION}}', label: 'Profissão do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_PHONE', token: '{{SPOUSE_PHONE}}', label: 'Telefone do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_EMAIL', token: '{{SPOUSE_EMAIL}}', label: 'E-mail do cônjuge', group: 'spouse' },
-  { key: 'SPOUSE_ADDRESS', token: '{{SPOUSE_ADDRESS}}', label: 'Endereço do cônjuge', group: 'spouse' },
+  field('SPOUSE_NAME', 'Nome do cônjuge', 'spouse', 'sales.sale_spouse_name'),
+  field('SPOUSE_CPF', 'CPF do cônjuge', 'spouse', 'sales.sale_spouse_cpf'),
+  field('SPOUSE_RG', 'RG do cônjuge', 'spouse', 'sales.sale_spouse_rg'),
+  field('SPOUSE_RG_ISSUER', 'Órgão emissor do RG do cônjuge', 'spouse', 'sales.sale_spouse_rg_issuer'),
+  field('SPOUSE_NATIONALITY', 'Nacionalidade do cônjuge', 'spouse', 'sales.sale_spouse_nationality'),
+  field('SPOUSE_PROFESSION', 'Profissão do cônjuge', 'spouse', 'sales.sale_spouse_profession'),
+  field('SPOUSE_CIVIL_STATE', 'Estado civil do cônjuge', 'spouse', 'sales.sale_spouse_marital_status'),
+  field('SPOUSE_ADDRESS', 'Endereço do cônjuge', 'spouse', 'sales.sale_spouse_address'),
+  field('SPOUSE_PHONE', 'Telefone do cônjuge', 'spouse', 'sales.sale_spouse_phone'),
+  field('SPOUSE_EMAIL', 'E-mail do cônjuge', 'spouse', 'sales.sale_spouse_email'),
 
-  { key: 'SELLER_NAME', token: '{{SELLER_NAME}}', label: 'Nome do vendedor', group: 'seller' },
-  { key: 'SELLER_CPF_CNPJ', token: '{{SELLER_CPF_CNPJ}}', label: 'CPF/CNPJ do vendedor', group: 'seller' },
-  { key: 'SELLER_ADDRESS', token: '{{SELLER_ADDRESS}}', label: 'Endereço do vendedor', group: 'seller' },
-  { key: 'SELLER_PHONE', token: '{{SELLER_PHONE}}', label: 'Telefone do vendedor', group: 'seller' },
+  field('SELLER_NAME', 'Nome do vendedor', 'seller', 'alias de SELLER_1_NAME'),
+  field('SELLER_CPF_CNPJ', 'CPF/CNPJ do vendedor', 'seller', 'alias de SELLER_1_CPF_CNPJ'),
+  field('SELLER_ADDRESS', 'Endereço do vendedor', 'seller', 'alias de SELLER_1_ADDRESS'),
+  field('SELLER_PHONE', 'Telefone do vendedor', 'seller', 'alias de SELLER_1_PHONE'),
+  field(
+    'SELLER_1_NAME',
+    'Vendedor 1 — nome',
+    'seller',
+    'projects.seller_parties_json[0] | companies (leitura)',
+  ),
+  field('SELLER_1_CPF_CNPJ', 'Vendedor 1 — CPF/CNPJ', 'seller', 'seller_parties_json[0] | companies.cnpj'),
+  field('SELLER_1_RG', 'Vendedor 1 — RG', 'seller', 'seller_parties_json[0].rg'),
+  field('SELLER_1_ADDRESS', 'Vendedor 1 — endereço', 'seller', 'seller_parties_json[0] | companies.address'),
+  field('SELLER_1_PHONE', 'Vendedor 1 — telefone', 'seller', 'seller_parties_json[0] | companies.phone'),
+  field(
+    'SELLER_2_NAME',
+    'Vendedor 2 — nome',
+    'seller',
+    'seller_parties_json[1] | companies.contract_second_vendor_json (leitura)',
+  ),
+  field('SELLER_2_CPF_CNPJ', 'Vendedor 2 — CPF/CNPJ', 'seller', 'seller_parties_json[1] | second_vendor.cpf'),
+  field('SELLER_2_RG', 'Vendedor 2 — RG', 'seller', 'seller_parties_json[1] | second_vendor.rg'),
+  field('SELLER_2_ADDRESS', 'Vendedor 2 — endereço', 'seller', 'seller_parties_json[1] | second_vendor.address'),
+  field('SELLER_2_PHONE', 'Vendedor 2 — telefone', 'seller', 'seller_parties_json[1] | second_vendor.phone'),
 
-  { key: 'PROJECT_NAME', token: '{{PROJECT_NAME}}', label: 'Empreendimento', group: 'project' },
-  { key: 'PROJECT_CITY', token: '{{PROJECT_CITY}}', label: 'Cidade do empreendimento', group: 'project' },
-  { key: 'PROJECT_STATE', token: '{{PROJECT_STATE}}', label: 'UF do empreendimento', group: 'project' },
-  { key: 'PROJECT_FORUM_CITY', token: '{{PROJECT_FORUM_CITY}}', label: 'Comarca / foro', group: 'project' },
+  field('PROJECT_NAME', 'Empreendimento', 'project', 'projects.name'),
+  field('PROJECT_ADDRESS', 'Localização/endereço do empreendimento', 'project', 'projects.address | projects.location'),
+  field('PROJECT_CITY', 'Cidade do empreendimento', 'project', 'projects.city'),
+  field('PROJECT_STATE', 'UF do empreendimento', 'project', 'projects.state | projects.uf'),
+  field('PROJECT_FORUM_CITY', 'Comarca / foro', 'project', 'projects.forum_city | contracts.forum_city_snapshot'),
 
-  { key: 'BLOCK_NAME', token: '{{BLOCK_NAME}}', label: 'Quadra', group: 'lot' },
-  { key: 'LOT_NUMBER', token: '{{LOT_NUMBER}}', label: 'Lote', group: 'lot' },
-  { key: 'LOT_AREA', token: '{{LOT_AREA}}', label: 'Área do lote', group: 'lot' },
-  { key: 'LOT_BOUNDARIES', token: '{{LOT_BOUNDARIES}}', label: 'Confrontações', group: 'lot' },
+  field('BLOCK_NAME', 'Quadra', 'lot', 'blocks.quadra | blocks.block | blocks.name'),
+  field('LOT_NUMBER', 'Lote', 'lot', 'blocks.lote | blocks.lot_number | blocks.numero'),
+  field('LOT_AREA', 'Área do lote', 'lot', 'blocks.area | blocks.area_m2'),
+  field('LOT_FRONT', 'Frente', 'lot', 'resolveContractLotSides ← segments_json'),
+  field('LOT_BACK', 'Fundo', 'lot', 'resolveContractLotSides ← segments_json'),
+  field('LOT_RIGHT', 'Lateral direita', 'lot', 'resolveContractLotSides ← segments_json'),
+  field('LOT_LEFT', 'Lateral esquerda', 'lot', 'resolveContractLotSides ← segments_json'),
+  field(
+    'LOT_BOUNDARIES',
+    'Confrontações / medidas',
+    'lot',
+    'formatContractLotBoundariesClause (segments_json)',
+  ),
 
-  { key: 'SALE_VALUE', token: '{{SALE_VALUE}}', label: 'Valor da venda', group: 'finance' },
-  { key: 'PAYMENT_TYPE', token: '{{PAYMENT_TYPE}}', label: 'Forma de pagamento', group: 'finance' },
-  { key: 'DOWN_PAYMENT', token: '{{DOWN_PAYMENT}}', label: 'Entrada', group: 'finance' },
-  { key: 'INSTALLMENTS_COUNT', token: '{{INSTALLMENTS_COUNT}}', label: 'Quantidade de parcelas', group: 'finance' },
-  { key: 'INSTALLMENT_VALUE', token: '{{INSTALLMENT_VALUE}}', label: 'Valor da parcela', group: 'finance' },
-  { key: 'FIRST_DUE_DATE', token: '{{FIRST_DUE_DATE}}', label: 'Primeiro vencimento', group: 'finance' },
-  { key: 'LAST_DUE_DATE', token: '{{LAST_DUE_DATE}}', label: 'Último vencimento', group: 'finance' },
+  field('SALE_VALUE', 'Valor da venda', 'finance', 'sales.total_value | sales.sale_value | sales.value'),
+  field('SALE_VALUE_EXTENSO', 'Valor por extenso', 'finance', 'extenso() sobre o valor da venda'),
+  field('PAYMENT_TYPE', 'Forma de pagamento', 'finance', 'sales.payment_type'),
+  field('DOWN_PAYMENT', 'Sinal/entrada', 'finance', 'finance_receipts installment_number 0 ou -1'),
+  field('BROKER_COMMISSION', 'Corretagem', 'finance', 'broker_commissions.amount | sales.commission'),
+  field('INSTALLMENTS_COUNT', 'Quantidade de parcelas', 'finance', 'sales.installments_count + receipts ≥ 1'),
+  field('INSTALLMENT_VALUE', 'Valor da parcela', 'finance', 'finance_receipts installment_number ≥ 1'),
+  field('FIRST_DUE_DATE', 'Primeiro vencimento', 'finance', 'resolveContractPaymentDates'),
+  field('LAST_DUE_DATE', 'Último vencimento', 'finance', 'resolveContractPaymentDates'),
+  field('CORRECTION_INDEX', 'Índice de correção', 'finance', 'sales.installment_correction_type'),
+  field(
+    'LATE_FINE',
+    'Multa',
+    'finance',
+    'sem fonte automática atualmente (texto fixo nos motores TS, não por venda)',
+  ),
+  field(
+    'LATE_INTEREST',
+    'Juros',
+    'finance',
+    'sem fonte automática atualmente (texto fixo nos motores TS, não por venda)',
+  ),
 
-  { key: 'CONTRACT_DATE', token: '{{CONTRACT_DATE}}', label: 'Data do contrato', group: 'dates' },
-  { key: 'SALE_DATE', token: '{{SALE_DATE}}', label: 'Data da venda', group: 'dates' },
-  { key: 'TODAY', token: '{{TODAY}}', label: 'Data de hoje', group: 'dates' },
+  field('CONTRACT_NUMBER', 'Número do contrato', 'contract', 'contracts.contract_number'),
+  field('CONTRACT_DATE', 'Data do contrato', 'contract', 'contracts.contract_date | sale_date'),
+  field(
+    'SIGNATURE_CITY',
+    'Local/cidade da assinatura',
+    'contract',
+    'contracts.forum_city_snapshot | projects.forum_city | projects.city',
+  ),
+
+  field('SALE_DATE', 'Data da venda', 'dates', 'sales.sale_date via formatContractSaleDateBr'),
+  field('TODAY', 'Data atual', 'dates', 'data de hoje (prévia, não persistida)'),
+
+  field('SIGN_BUYER', 'Assinatura comprador', 'signatures', 'customers.name'),
+  field('SIGN_SPOUSE', 'Assinatura cônjuge', 'signatures', 'sales.sale_spouse_name'),
+  field('SIGN_SELLER_1', 'Assinatura vendedor 1', 'signatures', 'mesmo que SELLER_1_NAME'),
+  field('SIGN_SELLER_2', 'Assinatura vendedor 2', 'signatures', 'mesmo que SELLER_2_NAME'),
+  field('WITNESS_1_NAME', 'Testemunha 1', 'signatures', 'sem fonte automática atualmente'),
+  field('WITNESS_1_CPF', 'CPF da testemunha 1', 'signatures', 'sem fonte automática atualmente'),
+  field('WITNESS_2_NAME', 'Testemunha 2', 'signatures', 'sem fonte automática atualmente'),
+  field('WITNESS_2_CPF', 'CPF da testemunha 2', 'signatures', 'sem fonte automática atualmente'),
 ];
 
 const BY_KEY = new Map(CUSTOM_PLACEHOLDERS.map((row) => [row.key, row]));
 export const CUSTOM_PLACEHOLDER_KEYS = new Set(CUSTOM_PLACEHOLDERS.map((row) => row.key));
+
+export const PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE = CUSTOM_PLACEHOLDERS.filter((row) =>
+  row.source.startsWith('sem fonte automática'),
+).map((row) => row.key);
 
 export function customPlaceholderToken(key: string): string {
   return `{{${String(key || '').trim().toUpperCase()}}}`;
@@ -104,11 +192,16 @@ export function findCustomPlaceholder(key: string): CustomPlaceholderDef | null 
 }
 
 export function customPlaceholderLabel(key: string): string {
-  return findCustomPlaceholder(key)?.label || customPlaceholderToken(key);
+  const normalized = String(key || '').trim().toUpperCase();
+  return findCustomPlaceholder(normalized)?.label || customPlaceholderToken(normalized);
 }
 
 export function placeholdersByGroup(group: CustomPlaceholderGroupId): CustomPlaceholderDef[] {
   return CUSTOM_PLACEHOLDERS.filter((row) => row.group === group);
+}
+
+export function missingPlaceholderMarker(label: string): string {
+  return `[SEM DADO: ${String(label || '').trim().toUpperCase()}]`;
 }
 
 export const DEFAULT_CUSTOM_CONTRACT_HTML = `<div style="text-align:center;margin-bottom:24px;">

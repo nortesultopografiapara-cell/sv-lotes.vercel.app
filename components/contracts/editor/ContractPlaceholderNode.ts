@@ -7,6 +7,7 @@ declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     contractPlaceholder: {
       insertContractPlaceholder: (key: string) => ReturnType;
+      replaceSelectionWithPlaceholder: (key: string) => ReturnType;
     };
   }
 }
@@ -66,6 +67,23 @@ export const ContractPlaceholder = Node.create({
           if (!CUSTOM_PLACEHOLDER_KEYS.has(normalized)) return false;
           return chain()
             .focus()
+            .insertContent({
+              type: this.name,
+              attrs: { key: normalized },
+            })
+            .run();
+        },
+      replaceSelectionWithPlaceholder:
+        (key: string) =>
+        ({ chain, state }) => {
+          const normalized = String(key || '')
+            .trim()
+            .toUpperCase();
+          if (!CUSTOM_PLACEHOLDER_KEYS.has(normalized)) return false;
+          const { from, to } = state.selection;
+          const command = chain().focus();
+          if (from !== to) command.deleteSelection();
+          return command
             .insertContent({
               type: this.name,
               attrs: { key: normalized },

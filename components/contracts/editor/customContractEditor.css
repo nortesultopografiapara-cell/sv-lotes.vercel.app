@@ -1,25 +1,45 @@
 .sv-a4-editor {
   --paper-width: 210mm;
-  --paper-min-height: 297mm;
+  --paper-height: 297mm;
   --paper-pad: 18mm;
+  --page-gap: 18px;
+}
+
+.sv-a4-stack {
+  width: var(--paper-width);
+  margin: 0 auto 32px;
 }
 
 .sv-a4-sheet {
   width: var(--paper-width);
-  min-height: var(--paper-min-height);
+  min-height: var(--paper-height);
   margin: 0 auto 32px;
-  background: #fff;
+  background-color: transparent;
   color: #111;
-  padding: var(--paper-pad);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  padding: 0;
+  box-shadow: none;
   font-family: "Times New Roman", Times, serif;
   font-size: 12.5pt;
   line-height: 1.45;
 }
 
-.sv-a4-sheet .ProseMirror {
+.sv-a4-sheet .ProseMirror,
+.sv-a4-prose {
   outline: none;
-  min-height: calc(297mm - 36mm);
+  min-height: var(--paper-height);
+  padding: var(--paper-pad);
+  box-sizing: border-box;
+  background-color: #2a2d36;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    #ffffff 0,
+    #ffffff var(--paper-height),
+    #2a2d36 var(--paper-height),
+    #2a2d36 calc(var(--paper-height) + var(--page-gap))
+  );
+  background-origin: padding-box;
+  background-clip: padding-box;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
 }
 
 .sv-a4-sheet .ProseMirror h1 {
@@ -79,24 +99,66 @@
 .sv-page-break {
   page-break-after: always;
   break-after: page;
-  height: 18px;
-  margin: 22px -8px;
+  height: var(--page-gap, 18px);
+  margin: 12px calc(0px - var(--paper-pad, 18mm));
   border: 0;
-  border-top: 1px dashed #94a3b8;
+  background: #2a2d36;
   position: relative;
 }
 
 .sv-page-break::after {
-  content: "Quebra de página";
+  content: "Página seguinte";
   position: absolute;
   left: 50%;
   top: -9px;
   transform: translateX(-50%);
-  background: #fff;
-  color: #64748b;
+  background: #2a2d36;
+  color: #cbd5e1;
   font-size: 10px;
   font-family: Inter, system-ui, sans-serif;
   padding: 0 8px;
+}
+
+.sv-a4-sheet .ProseMirror table,
+.sv-editor-preview-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 12px;
+  table-layout: fixed;
+}
+
+.sv-a4-sheet .ProseMirror th,
+.sv-a4-sheet .ProseMirror td,
+.sv-editor-preview-doc th,
+.sv-editor-preview-doc td {
+  border: 1px solid #111;
+  padding: 4px 6px;
+  vertical-align: top;
+  word-wrap: break-word;
+}
+
+.sv-a4-sheet .ProseMirror img,
+.sv-editor-preview-doc img,
+.sv-preview-logo {
+  max-width: 180px;
+  max-height: 80px;
+  object-fit: contain;
+}
+
+.sv-missing-placeholder {
+  display: inline;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px dashed #ef4444;
+  padding: 0 5px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sv-filled-placeholder {
+  background: #ecfdf5;
+  padding: 0 2px;
 }
 
 .sv-editor-preview-doc .sv-a4-sheet {

@@ -52,6 +52,7 @@ import {
   isRejectedImportMime,
   sanitizeImportedContractHtml,
 } from '@/lib/customContractHtml';
+import { convertDocxToCustomHtml, isDocxFile } from '@/lib/customContractDocxImport';
 import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
 
 type ModelRow = {
@@ -136,6 +137,7 @@ export default function ContractModelsOperationalCentral() {
   const [importName, setImportName] = useState('');
   const [importHtml, setImportHtml] = useState('');
   const [importFile, setImportFile] = useState<{ name: string; mime: string } | null>(null);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [associateProjectId, setAssociateProjectId] = useState('');
   const [associateAsDefault, setAssociateAsDefault] = useState(true);
   const [deleteGate, setDeleteGate] = useState<ContractModelDeletionGate | null>(null);
@@ -1288,15 +1290,16 @@ export default function ContractModelsOperationalCentral() {
             onChange={(e) => setImportName(e.target.value)}
             className="w-full h-9 px-3 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-white mb-3"
           />
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1">Arquivo HTML ou TXT (opcional)</label>
+          <label className="block text-xs text-[var(--color-text-muted)] mb-1">Arquivo DOCX, HTML ou TXT</label>
           <input
             type="file"
-            accept=".html,.htm,.txt,text/html,text/plain"
+            accept=".docx,.html,.htm,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/html,text/plain"
             className="block w-full text-xs text-[var(--text-secondary)] mb-3"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) {
                 setImportFile(null);
+                setImportWarnings([]);
                 return;
               }
               if (isRejectedImportMime(file.type, file.name)) {
@@ -1306,16 +1309,42 @@ export default function ContractModelsOperationalCentral() {
                 return;
               }
               setImportFile({ name: file.name, mime: file.type || 'text/plain' });
+              setError(null);
+              if (isDocxFile(file.type, file.name)) {
+                void file.arrayBuffer().then(async (buffer) => {
+                  try {
+                    const converted = await convertDocxToCustomHtml(buffer);
+                    setImportHtml(converted.html);
+                    setImportWarnings(converted.warnings);
+                    if (!importName.trim()) {
+                      setImportName(file.name.replace(/\.docx$/i, ''));
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Não foi possível converter o DOCX.');
+                    setImportHtml('');
+                    setImportWarnings([]);
+                  }
+                });
+                return;
+              }
               const reader = new FileReader();
               reader.onload = () => {
                 setImportHtml(String(reader.result || ''));
+                setImportWarnings([]);
               };
               reader.readAsText(file);
             }}
           />
           <p className="text-[11px] text-[var(--color-text-muted)] mb-3">
-            Nesta etapa só texto ou HTML seguro. PDF e DOCX ainda não são convertidos.
+            DOCX é convertido para HTML editável no Editor A4. PDF ainda não entra nesta etapa.
           </p>
+          {importWarnings.length > 0 && (
+            <ul className="text-[11px] text-amber-200 mb-3 list-disc pl-4 space-y-1">
+              {importWarnings.slice(0, 8).map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
           <label className="block text-xs text-[var(--color-text-muted)] mb-1">
             Texto / HTML
           </label>
@@ -1343,7 +1372,12 @@ export default function ContractModelsOperationalCentral() {
                     import: {
                       fileName: importFile?.name || null,
                       mime: importFile?.mime || null,
-                      conversion: html ? 'html' : 'empty',
+                      conversion: isDocxFile(importFile?.mime, importFile?.name)
+                        ? 'docx-mammoth'
+                        : html
+                          ? 'html'
+                          : 'empty',
+                      warnings: importWarnings.slice(0, 12),
                     },
                   },
                 });
