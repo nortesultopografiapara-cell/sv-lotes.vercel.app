@@ -928,6 +928,7 @@ export default function ContractsPage() {
     normalizeContractStatus(c?.status) === "superseded";
 
   const canShowRegenerateContract = isPartnerPanelAdmin(user?.role) && !ownerReadOnly;
+  const canAccessContractModelsCentral = isPartnerPanelAdmin(user?.role);
 
   useEffect(() => {
     if (selectedContract?.id) {
@@ -2136,6 +2137,15 @@ export default function ContractsPage() {
             Excluir{bulkDeleteCount > 0 ? ` (${bulkDeleteCount})` : ""}
           </button>
         </div>
+        {canAccessContractModelsCentral && (
+          <a
+            href={CONTRACT_MODELS_CENTRAL_PATH}
+            className="mt-2 inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 text-sm font-medium rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <FileText className="w-4 h-4 shrink-0" />
+            Modelos de Contrato
+          </a>
+        )}
       </div>
 
       {/* Mobile: indicadores horizontais */}
@@ -2168,11 +2178,23 @@ export default function ContractsPage() {
 
       {/* Desktop / tablet: título + mini KPIs na mesma faixa */}
       <div className="contracts-workspace-header">
-        <div className="contracts-workspace-heading">
-          <h1 className="contracts-workspace-title">Contratos</h1>
-          <p className="contracts-workspace-subtitle">
-            Gestão de contratos de compra e venda.
-          </p>
+        <div className="flex items-center gap-3 min-w-0 shrink-0">
+          <div className="contracts-workspace-heading">
+            <h1 className="contracts-workspace-title">Contratos</h1>
+            <p className="contracts-workspace-subtitle">
+              Gestão de contratos de compra e venda.
+            </p>
+          </div>
+          {canAccessContractModelsCentral && (
+            <a
+              href={CONTRACT_MODELS_CENTRAL_PATH}
+              className="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 text-xs xl:text-sm font-medium rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap"
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline">Modelos de Contrato</span>
+              <span className="xl:hidden">Modelos</span>
+            </a>
+          )}
         </div>
         <div className="contracts-kpi-row" aria-label="Resumo de contratos">
         <div className="contracts-kpi-card">
