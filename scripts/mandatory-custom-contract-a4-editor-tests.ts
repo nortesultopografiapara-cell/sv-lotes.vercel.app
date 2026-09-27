@@ -13,6 +13,11 @@ import {
   type OperationalStore,
 } from '../lib/contractModelCentralOps';
 import {
+  configureOrEditTarget,
+  resolveUserCreatedModelIdentity,
+  visualizeTarget,
+} from '../lib/customContractCreateIdentity';
+import {
   canonicalizeCustomContractHtml,
   hydrateCustomPlaceholderHtml,
   isRejectedImportMime,
@@ -256,6 +261,92 @@ assert(
 assert(migration.includes('uq_company_contract_model_versions_one_draft'), 'índice de um draft');
 assert(migration.includes('protect_published_contract_model_version'), 'trigger de imutabilidade');
 
+{
+  const withAraguaiaSelected = resolveUserCreatedModelIdentity({
+    mode: 'custom',
+    baseCatalogCode: 'ARAGUAIA',
+    baseEngineKey: 'araguaia',
+  });
+  assert(
+    withAraguaiaSelected.catalogCode === 'CUSTOM' &&
+      withAraguaiaSelected.engineKey === 'custom' &&
+      withAraguaiaSelected.source === 'user' &&
+      withAraguaiaSelected.status === 'active' &&
+      withAraguaiaSelected.openA4Editor === true,
+    '1. Novo Modelo → Personalizado sempre cria CUSTOM mesmo com Araguaia pré-selecionado',
+  );
+
+  const fromExisting = resolveUserCreatedModelIdentity({
+    mode: 'existing',
+    baseCatalogCode: 'ARAGUAIA',
+    baseEngineKey: 'araguaia',
+  });
+  assert(
+    fromExisting.catalogCode === 'ARAGUAIA' && fromExisting.openA4Editor === false,
+    'Modelo existente ainda herda o motor TypeScript',
+  );
+
+  const store = sample();
+  store.models.push({
+    id: 'm-araguaia',
+    companyId: 'co-a',
+    catalogCode: 'ARAGUAIA',
+    engineKey: 'araguaia',
+    name: 'Chacreamento Araguaia',
+    status: 'active',
+    source: 'system_seed',
+    isCompanyDefault: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+  const personalizedDespiteBase = createNewModel(store, {
+    callerCompanyId: 'co-a',
+    name: 'TESTE EDITOR CUSTOM',
+    personalized: true,
+    basedOnModelId: 'm-araguaia',
+  });
+  assert(
+    personalizedDespiteBase.model.catalogCode === 'CUSTOM' &&
+      personalizedDespiteBase.model.engineKey === 'custom' &&
+      personalizedDespiteBase.model.source === 'user' &&
+      personalizedDespiteBase.model.status === 'active',
+    '1. createNewModel Personalizado não herda ARAGUAIA',
+  );
+  const draftVersions = historyForModel(store, personalizedDespiteBase.model.id, 'co-a');
+  assert(
+    draftVersions.some((v) => v.version === 0 && v.status === 'draft') &&
+      !draftVersions.some((v) => v.status === 'published'),
+    '2. CUSTOM sempre cria/garante draft v0',
+  );
+
+  assert(configureOrEditTarget('CUSTOM') === 'a4-editor', '3. CUSTOM → Configurar/Editar abre /editor');
+  assert(
+    CUSTOM_CONTRACT_EDITOR_PATH('abc').endsWith('/contracts/models/abc/editor'),
+    '3. rota do editor CUSTOM',
+  );
+  assert(central.includes('configureOrEditTarget') && central.includes('openEditor(model)'), '3. UI roteia CUSTOM para o editor');
+  assert(visualizeTarget('CUSTOM') === 'custom-preview', '4. CUSTOM → Visualizar usa preview CUSTOM');
+  assert(central.includes('visualizeTarget') && central.includes("openEditor(model, true)"), '4. UI não usa o visualizador legado para CUSTOM');
+  assert(central.includes("setNewMode('custom')"), 'modal Novo Modelo inicia em Personalizado');
+  assert(central.includes('name="sv-new-model-mode"'), 'radios de tipo formam um grupo');
+
+  for (const code of [
+    'PADRAO',
+    'SV_LOTES_2',
+    'MENESES',
+    'RECANTO_PRIMAVERA',
+    'ARAGUAIA',
+    'MUNDO_NOVO',
+    'ESTRELA_DO_SUL',
+  ]) {
+    assert(
+      configureOrEditTarget(code) === 'locked-sheet' &&
+        visualizeTarget(code) === 'typescript-preview' &&
+        !canOpenCustomA4Editor(code),
+      `5. ${code} nunca entra no editor CUSTOM`,
+    );
+  }
+}
 assert(central.includes('insertCustomDraftModel'), 'Novo Personalizado cria draft CUSTOM');
 assert(central.includes('CUSTOM_CONTRACT_EDITOR_PATH'), 'Central abre o editor A4');
 assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF/DOCX');

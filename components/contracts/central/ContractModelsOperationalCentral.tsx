@@ -39,7 +39,9 @@ import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import {
   CUSTOM_CONTRACT_EDITOR_PATH,
   IMPORT_TEXT_HTML_ONLY,
-  canOpenCustomA4Editor,
+  configureOrEditTarget,
+  resolveUserCreatedModelIdentity,
+  visualizeTarget,
 } from '@/lib/customContractModelEditor';
 import {
   isRejectedImportMime,
@@ -120,7 +122,7 @@ export default function ContractModelsOperationalCentral() {
   const [renameDraft, setRenameDraft] = useState('');
   const [saveAsName, setSaveAsName] = useState('');
   const [newName, setNewName] = useState('');
-  const [newMode, setNewMode] = useState<'existing' | 'custom'>('existing');
+  const [newMode, setNewMode] = useState<'existing' | 'custom'>('custom');
   const [newBaseId, setNewBaseId] = useState('');
   const [newProjectId, setNewProjectId] = useState('');
   const [newCompanyDefault, setNewCompanyDefault] = useState(false);
@@ -295,13 +297,22 @@ export default function ContractModelsOperationalCentral() {
   }
 
   function openSheet(model: ModelRow) {
-    if (canOpenCustomA4Editor(model.catalog_code)) {
+    if (configureOrEditTarget(model.catalog_code) === 'a4-editor') {
       openEditor(model);
       return;
     }
     setRenameDraft(model.name);
     setDialog({ type: 'sheet', modelId: model.id });
     setMenuId(null);
+  }
+
+  function openVisualize(model: ModelRow) {
+    setMenuId(null);
+    if (visualizeTarget(model.catalog_code) === 'custom-preview') {
+      openEditor(model, true);
+      return;
+    }
+    setDialog({ type: 'view', modelId: model.id });
   }
 
   async function run(action: () => Promise<void>, okMessage?: string) {
@@ -595,7 +606,7 @@ export default function ContractModelsOperationalCentral() {
                 type="button"
                 onClick={() => {
                   setNewName('');
-                  setNewMode('existing');
+                  setNewMode('custom');
                   setNewBaseId(models.find((m) => m.status === 'active')?.id || '');
                   setNewProjectId('');
                   setNewCompanyDefault(false);
@@ -748,14 +759,10 @@ export default function ContractModelsOperationalCentral() {
                             </button>
                             {menuId === model.id && (
                               <div className="absolute right-3 top-10 z-20 w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-xl py-1 text-left">
-                                <ActionItem icon={Eye} label="Visualizar" onClick={() => {
-                                  setMenuId(null);
-                                  if (canOpenCustomA4Editor(model.catalog_code)) openEditor(model, true);
-                                  else setDialog({ type: 'view', modelId: model.id });
-                                }} />
+                                <ActionItem icon={Eye} label="Visualizar" onClick={() => openVisualize(model)} />
                                 <ActionItem
                                   icon={Settings2}
-                                  label={canOpenCustomA4Editor(model.catalog_code) ? 'Abrir editor A4' : 'Configurar/Editar'}
+                                  label={configureOrEditTarget(model.catalog_code) === 'a4-editor' ? 'Abrir editor A4' : 'Configurar/Editar'}
                                   onClick={() => openSheet(model)}
                                 />
                                 <ActionItem icon={Copy} label="Duplicar" onClick={() => { setMenuId(null); void run(() => handleDuplicate(model), 'Modelo duplicado.'); }} />
@@ -1030,23 +1037,27 @@ export default function ContractModelsOperationalCentral() {
             onChange={(e) => setNewName(e.target.value)}
             className="w-full h-9 px-3 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-white mb-3"
           />
-          <p className="text-xs text-[var(--color-text-muted)] mb-2">Baseado em</p>
+          <p className="text-xs text-[var(--color-text-muted)] mb-2">Tipo do modelo</p>
           <div className="flex gap-3 mb-3 text-sm">
             <label className="flex items-center gap-2">
               <input
                 type="radio"
-                checked={newMode === 'existing'}
-                onChange={() => setNewMode('existing')}
-              />
-              Modelo existente
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
+                name="sv-new-model-mode"
+                value="custom"
                 checked={newMode === 'custom'}
                 onChange={() => setNewMode('custom')}
               />
               Personalizado
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="sv-new-model-mode"
+                value="existing"
+                checked={newMode === 'existing'}
+                onChange={() => setNewMode('existing')}
+              />
+              Modelo existente
             </label>
           </div>
           {newMode === 'existing' ? (
@@ -1106,27 +1117,34 @@ export default function ContractModelsOperationalCentral() {
               void run(async () => {
                 const name = newName.trim();
                 if (!name) throw new Error('Informe o nome do modelo.');
-                if (newMode === 'existing' && !newBaseId) throw new Error('Escolha um modelo de origem.');
-                const base = models.find((m) => m.id === newBaseId);
-                const catalogCode = newMode === 'custom' ? 'CUSTOM' : base?.catalog_code || 'CUSTOM';
-                const engineKey =
-                  newMode === 'custom'
-                    ? 'custom'
-                    : base?.engine_key || 'classic';
-                const pub = base
-                  ? versions
-                      .filter((v) => v.model_id === base.id && v.status === 'published')
-                      .sort((a, b) => b.version - a.version)[0]
-                  : null;
+                const identity = resolveUserCreatedModelIdentity({
+                  mode: newMode,
+                  baseCatalogCode: models.find((m) => m.id === newBaseId)?.catalog_code,
+                  baseEngineKey: models.find((m) => m.id === newBaseId)?.engine_key,
+                });
+                if (identity.catalogCode !== 'CUSTOM' && newMode === 'existing' && !newBaseId) {
+                  throw new Error('Escolha um modelo de origem.');
+                }
+                const base = newMode === 'existing' ? models.find((m) => m.id === newBaseId) : null;
+                const catalogCode = identity.catalogCode;
+                const engineKey = identity.engineKey;
+                const pub =
+                  newMode === 'existing' && base
+                    ? versions
+                        .filter((v) => v.model_id === base.id && v.status === 'published')
+                        .sort((a, b) => b.version - a.version)[0]
+                    : null;
                 let id: string;
-                if (catalogCode === 'CUSTOM') {
+                if (identity.openA4Editor) {
                   const draftSource =
-                    versions.find((v) => v.model_id === base?.id && v.status === 'draft')
-                      ?.content_html || pub?.content_html;
+                    newMode === 'existing' && base?.catalog_code === 'CUSTOM'
+                      ? versions.find((v) => v.model_id === base.id && v.status === 'draft')
+                          ?.content_html || pub?.content_html
+                      : null;
                   id = await insertCustomDraftModel({
                     name,
                     contentHtml: draftSource || DEFAULT_CUSTOM_CONTRACT_HTML,
-                    params: pub?.engine_params_json ?? null,
+                    params: newMode === 'existing' ? pub?.engine_params_json ?? null : null,
                   });
                 } else {
                   id = await insertModel({
@@ -1160,7 +1178,7 @@ export default function ContractModelsOperationalCentral() {
                   }
                 }
                 setDialog(null);
-                if (catalogCode === 'CUSTOM') {
+                if (identity.openA4Editor) {
                   router.push(CUSTOM_CONTRACT_EDITOR_PATH(id));
                 }
               }, newMode === 'custom' ? undefined : 'Modelo criado.')

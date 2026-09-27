@@ -13,6 +13,7 @@ import {
 import type { SaleContractModel } from '@/lib/contractModel';
 import { sanitizeImportedContractHtml } from '@/lib/customContractHtml';
 import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
+import { resolveUserCreatedModelIdentity } from '@/lib/customContractCreateIdentity';
 
 export const CUSTOM_NOT_IN_AUTO_EMISSION =
   'Este modelo ainda não está vinculado à emissão automática.';
@@ -467,18 +468,16 @@ export function createNewModel(
 ): { store: OperationalStore; model: OperationalModel } {
   const name = String(input.name || '').trim();
   if (!name) throw new Error('Informe o nome do modelo.');
-  let catalogCode: SaleContractModel = 'CUSTOM';
-  let engineKey = 'custom';
-  if (input.basedOnModelId) {
-    const base = requireModel(store, input.basedOnModelId, input.callerCompanyId);
-    catalogCode = base.catalogCode;
-    engineKey = base.engineKey;
-  } else if (!input.personalized) {
-    throw new Error('Escolha um modelo de origem ou Personalizado.');
-  } else {
-    catalogCode = 'CUSTOM';
-    engineKey = catalogEngineKey('CUSTOM');
-  }
+  const base = input.basedOnModelId
+    ? requireModel(store, input.basedOnModelId, input.callerCompanyId)
+    : null;
+  const identity = resolveUserCreatedModelIdentity({
+    mode: input.personalized ? 'custom' : 'existing',
+    baseCatalogCode: base?.catalogCode,
+    baseEngineKey: base?.engineKey,
+  });
+  const catalogCode = identity.catalogCode as SaleContractModel;
+  const engineKey = identity.engineKey || catalogEngineKey(catalogCode);
 
   const model: OperationalModel = {
     id: uniqueId('mdl', store),
@@ -494,9 +493,10 @@ export function createNewModel(
   };
   store.models.push(model);
   if (isCustomCatalogCode(catalogCode)) {
-    const baseHtml = input.basedOnModelId
-      ? publishedVersion(store, input.basedOnModelId)?.contentHtml ?? null
-      : null;
+    const baseHtml =
+      !input.personalized && input.basedOnModelId && isCustomCatalogCode(base?.catalogCode || '')
+        ? publishedVersion(store, input.basedOnModelId)?.contentHtml ?? null
+        : null;
     store.versions.push({
       id: uniqueId('ver', store),
       modelId: model.id,

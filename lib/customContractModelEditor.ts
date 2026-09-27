@@ -25,6 +25,14 @@ export const IMPORT_TEXT_HTML_ONLY =
 
 export const CUSTOM_DRAFT_VERSION = 0;
 
+export {
+  configureOrEditTarget,
+  resolveUserCreatedModelIdentity,
+  visualizeTarget,
+  type NewModelCreationMode,
+  type UserCreatedModelIdentity,
+} from '@/lib/customContractCreateIdentity';
+
 export function assertCustomEditorAllowed(catalogCode: string): void {
   if (isTypeScriptEngineCode(catalogCode) || !isCustomCatalogCode(catalogCode)) {
     throw new Error(CUSTOM_EDITOR_ONLY);
