@@ -32,7 +32,9 @@ import {
 } from "lucide-react";
 import "./contracts-mobile.css";
 import "./contracts-workspace.css";
-import { ContractGenerator } from "@/components/contracts/ContractGenerator";
+import {
+  CONTRACT_MODELS_CENTRAL_PATH,
+} from '@/lib/contractModelCentral';
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import { canShowMobileVendorSignAction } from "@/lib/saleContractBilateralSignature";
 import { openWhatsApp } from "@/lib/whatsapp/clickToChat";
@@ -2514,7 +2516,7 @@ export default function ContractsPage() {
                           Novo Contrato
                         </a>
                         <a
-                          href="/contracts/templates"
+                          href={CONTRACT_MODELS_CENTRAL_PATH}
                           className="block px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--color-primary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)]/50"
                         >
                           Modelos
@@ -3158,9 +3160,11 @@ export default function ContractsPage() {
                   color="purple"
                 />
                 <ActionBtn
-                  onClick={() => setActiveTab("Templates")}
+                  onClick={() => {
+                    window.location.assign(CONTRACT_MODELS_CENTRAL_PATH);
+                  }}
                   icon={<Edit />}
-                  label="Editar Modelo"
+                  label="Modelos de Contrato"
                   color="warning"
                 />
                 {canShowRegenerateContract && (
@@ -3317,7 +3321,7 @@ export default function ContractsPage() {
                 Carnê
               </button>
               <a
-                href="/contracts/templates"
+                href={CONTRACT_MODELS_CENTRAL_PATH}
                 className="contracts-mobile-action-btn"
               >
                 <Edit />
@@ -3383,14 +3387,13 @@ export default function ContractsPage() {
                   {mobileSignatureLabel}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setActiveTab("Templates")}
+              <a
+                href={CONTRACT_MODELS_CENTRAL_PATH}
                 className="contracts-mobile-action-btn"
               >
                 <Edit />
-                Editar modelo
-              </button>
+                Modelos de Contrato
+              </a>
               <button
                 type="button"
                 onClick={handleCancelar}
