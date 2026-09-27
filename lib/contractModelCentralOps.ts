@@ -11,6 +11,8 @@ import {
   type CompanyContractModelStatus,
 } from '@/lib/contractModelCentral';
 import type { SaleContractModel } from '@/lib/contractModel';
+import { sanitizeImportedContractHtml } from '@/lib/customContractHtml';
+import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
 
 export const CUSTOM_NOT_IN_AUTO_EMISSION =
   'Este modelo ainda não está vinculado à emissão automática.';
@@ -50,6 +52,8 @@ export const CENTRAL_TABLE_COLUMNS = {
     'engine_params_json',
     'created_at',
     'created_by',
+    'updated_at',
+    'published_at',
   ],
   project_contract_model_links: [
     'id',
@@ -109,6 +113,8 @@ export type OperationalVersion = {
   contentHtml: string | null;
   engineParamsJson?: Record<string, unknown> | null;
   createdAt: string;
+  updatedAt?: string | null;
+  publishedAt?: string | null;
 };
 
 export type OperationalLink = {
@@ -487,19 +493,32 @@ export function createNewModel(
     updatedAt: at,
   };
   store.models.push(model);
-  const baseHtml =
-    input.basedOnModelId && isCustomCatalogCode(catalogCode)
+  if (isCustomCatalogCode(catalogCode)) {
+    const baseHtml = input.basedOnModelId
       ? publishedVersion(store, input.basedOnModelId)?.contentHtml ?? null
       : null;
-  store.versions.push({
-    id: uniqueId('ver', store),
-    modelId: model.id,
-    companyId: input.callerCompanyId,
-    version: 1,
-    status: 'published',
-    contentHtml: isCustomCatalogCode(catalogCode) ? baseHtml : null,
-    createdAt: at,
-  });
+    store.versions.push({
+      id: uniqueId('ver', store),
+      modelId: model.id,
+      companyId: input.callerCompanyId,
+      version: 0,
+      status: 'draft',
+      contentHtml: baseHtml || DEFAULT_CUSTOM_CONTRACT_HTML,
+      createdAt: at,
+      updatedAt: at,
+      publishedAt: null,
+    });
+  } else {
+    store.versions.push({
+      id: uniqueId('ver', store),
+      modelId: model.id,
+      companyId: input.callerCompanyId,
+      version: 1,
+      status: 'published',
+      contentHtml: null,
+      createdAt: at,
+    });
+  }
   if (input.makeCompanyDefault) {
     setCompanyDefaultAtomic(store, model.id, input.callerCompanyId, at);
   }
@@ -542,22 +561,24 @@ export function importCustomModel(
     updatedAt: at,
   };
   store.models.push(model);
-  const pasted = String(input.pastedHtml || '').trim();
+  const pasted = sanitizeImportedContractHtml(String(input.pastedHtml || ''));
   store.versions.push({
     id: uniqueId('ver', store),
     modelId: model.id,
     companyId: input.callerCompanyId,
-    version: 1,
-    status: 'published',
-    contentHtml: pasted || null,
+    version: 0,
+    status: 'draft',
+    contentHtml: pasted || DEFAULT_CUSTOM_CONTRACT_HTML,
     engineParamsJson: {
       import: {
         fileName: input.fileName || null,
         mime: input.mime || null,
-        conversion: 'pending',
+        conversion: pasted ? 'html' : 'pending',
       },
     },
     createdAt: at,
+    updatedAt: at,
+    publishedAt: null,
   });
   return { store, model };
 }

@@ -776,6 +776,16 @@ function sampleStore(): OperationalStore {
     personalized: true,
   });
   assert(custom.model.catalogCode === 'CUSTOM', 'criar personalizado CUSTOM');
+  assert(
+    historyForModel(store, custom.model.id, 'co-a').some(
+      (v) => v.version === 0 && v.status === 'draft',
+    ),
+    'personalizado cria rascunho version 0',
+  );
+  assert(
+    !historyForModel(store, custom.model.id, 'co-a').some((v) => v.status === 'published'),
+    'personalizado não publica automaticamente',
+  );
   const imported = importCustomModel(store, {
     callerCompanyId: 'co-a',
     name: 'Contrato recebido',
@@ -893,6 +903,11 @@ function assertStoreGis(
     centralComponent.includes("payloadForCentralTable('company_contract_model_versions'") &&
       centralComponent.includes("payloadForCentralTable('project_contract_model_links'"),
     'inserts de versão e vínculo passam pelo payload do schema real',
+  );
+  assert(
+    centralComponent.includes("catalog_code !== 'CUSTOM'") &&
+      centralComponent.includes('ensure_company_contract_model_draft'),
+    'Central não inventa published v1 para CUSTOM; usa RPC de rascunho',
   );
   assert(
     !centralComponent.includes("from('companies')") &&

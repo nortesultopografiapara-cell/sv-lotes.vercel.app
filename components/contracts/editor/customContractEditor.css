@@ -1,0 +1,104 @@
+.sv-a4-editor {
+  --paper-width: 210mm;
+  --paper-min-height: 297mm;
+  --paper-pad: 18mm;
+}
+
+.sv-a4-sheet {
+  width: var(--paper-width);
+  min-height: var(--paper-min-height);
+  margin: 0 auto 32px;
+  background: #fff;
+  color: #111;
+  padding: var(--paper-pad);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  font-family: "Times New Roman", Times, serif;
+  font-size: 12.5pt;
+  line-height: 1.45;
+}
+
+.sv-a4-sheet .ProseMirror {
+  outline: none;
+  min-height: calc(297mm - 36mm);
+}
+
+.sv-a4-sheet .ProseMirror h1 {
+  font-size: 18pt;
+  text-align: center;
+  margin: 0 0 18px;
+  text-transform: uppercase;
+}
+
+.sv-a4-sheet .ProseMirror h2 {
+  font-size: 13pt;
+  margin: 22px 0 10px;
+  border-bottom: 1px solid #111;
+  padding-bottom: 3px;
+  text-transform: uppercase;
+}
+
+.sv-a4-sheet .ProseMirror h3 {
+  font-size: 12pt;
+  margin: 16px 0 8px;
+}
+
+.sv-a4-sheet .ProseMirror p {
+  margin: 0 0 10px;
+}
+
+.sv-a4-sheet .ProseMirror ul,
+.sv-a4-sheet .ProseMirror ol {
+  margin: 0 0 10px 22px;
+}
+
+.sv-contract-placeholder,
+.sv-ph-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #e8eefc;
+  color: #1e3a8a;
+  border: 1px solid #93c5fd;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.sv-contract-placeholder--preview {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.sv-page-break {
+  page-break-after: always;
+  break-after: page;
+  height: 18px;
+  margin: 22px -8px;
+  border: 0;
+  border-top: 1px dashed #94a3b8;
+  position: relative;
+}
+
+.sv-page-break::after {
+  content: "Quebra de página";
+  position: absolute;
+  left: 50%;
+  top: -9px;
+  transform: translateX(-50%);
+  background: #fff;
+  color: #64748b;
+  font-size: 10px;
+  font-family: Inter, system-ui, sans-serif;
+  padding: 0 8px;
+}
+
+.sv-editor-preview-doc .sv-a4-sheet {
+  pointer-events: none;
+}

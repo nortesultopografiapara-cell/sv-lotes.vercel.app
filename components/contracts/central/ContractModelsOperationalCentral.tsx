@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Archive,
   ArrowLeft,
@@ -35,6 +36,16 @@ import {
   showsAutoEmissionPending,
 } from '@/lib/contractModelCentralOps';
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
+import {
+  CUSTOM_CONTRACT_EDITOR_PATH,
+  IMPORT_TEXT_HTML_ONLY,
+  canOpenCustomA4Editor,
+} from '@/lib/customContractModelEditor';
+import {
+  isRejectedImportMime,
+  sanitizeImportedContractHtml,
+} from '@/lib/customContractHtml';
+import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
 
 type ModelRow = {
   id: string;
@@ -93,6 +104,7 @@ function originLabel(source: string): string {
 }
 
 export default function ContractModelsOperationalCentral() {
+  const router = useRouter();
   const { user, loading: authLoading } = useSessionGuard();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -176,6 +188,7 @@ export default function ContractModelsOperationalCentral() {
 
     const missingVersion = scoped.filter(
       (model) =>
+        model.catalog_code !== 'CUSTOM' &&
         !versionRows.some((row) => row.model_id === model.id && row.status === 'published'),
     );
       if (missingVersion.length > 0) {
@@ -275,7 +288,17 @@ export default function ContractModelsOperationalCentral() {
       }));
   }, [links, projectNameById, modelById]);
 
+  function openEditor(model: ModelRow, preview = false) {
+    router.push(
+      `${CUSTOM_CONTRACT_EDITOR_PATH(model.id)}${preview ? '?preview=1' : ''}`,
+    );
+  }
+
   function openSheet(model: ModelRow) {
+    if (canOpenCustomA4Editor(model.catalog_code)) {
+      openEditor(model);
+      return;
+    }
     setRenameDraft(model.name);
     setDialog({ type: 'sheet', modelId: model.id });
     setMenuId(null);
@@ -379,6 +402,53 @@ export default function ContractModelsOperationalCentral() {
     if (verifyError || !createdVersion) {
       throw new Error('O modelo foi criado, mas a versão inicial não foi gravada. Tente novamente.');
     }
+    return String(data.id);
+  }
+
+  async function insertCustomDraftModel(input: {
+    name: string;
+    contentHtml?: string | null;
+    params?: object | null;
+  }): Promise<string> {
+    if (!tenantId) throw new Error('Empresa não identificada.');
+    const payload = payloadForCentralTable('company_contract_models', {
+      company_id: tenantId,
+      tenant_id: tenantId,
+      catalog_code: 'CUSTOM',
+      engine_key: 'custom',
+      name: input.name,
+      status: 'active',
+      source: 'user',
+      is_company_default: false,
+    });
+    const { data, error: insertError } = await supabase
+      .from('company_contract_models')
+      .insert(payload)
+      .select('id')
+      .single();
+    if (insertError || !data?.id) throw new Error(insertError?.message || 'Não foi possível criar o modelo.');
+    const versionPayload = payloadForCentralTable('company_contract_model_versions', {
+      model_id: data.id,
+      company_id: tenantId,
+      version: 0,
+      status: 'draft',
+      content_html: input.contentHtml || DEFAULT_CUSTOM_CONTRACT_HTML,
+      engine_params_json: input.params ?? null,
+      updated_at: new Date().toISOString(),
+    });
+    if ('tenant_id' in versionPayload) {
+      throw new Error('Versão de modelo não usa tenant_id.');
+    }
+    const { error: versionError } = await supabase
+      .from('company_contract_model_versions')
+      .insert(versionPayload);
+    if (versionError) throw new Error(versionError.message);
+    const { data: ensured, error: rpcError } = await supabase.rpc(
+      'ensure_company_contract_model_draft',
+      { p_model_id: data.id },
+    );
+    if (rpcError) throw new Error(rpcError.message);
+    void ensured;
     return String(data.id);
   }
 
@@ -629,6 +699,9 @@ export default function ContractModelsOperationalCentral() {
                         .filter((n): n is string => Boolean(n));
                       const isProjectDefault = modelLinks.some((l) => l.is_project_default);
                       const version = publishedVersion(model.id);
+                      const hasDraft = versions.some(
+                        (row) => row.model_id === model.id && row.status === 'draft',
+                      );
                       return (
                         <tr
                           key={model.id}
@@ -661,7 +734,9 @@ export default function ContractModelsOperationalCentral() {
                           <td className="px-3 py-3">
                             {model.status === 'archived' ? 'Arquivado' : 'Ativo'}
                           </td>
-                          <td className="px-3 py-3">{version != null ? `v${version}` : '—'}</td>
+                          <td className="px-3 py-3">
+                            {version != null ? `v${version}` : hasDraft ? 'Rascunho' : '—'}
+                          </td>
                           <td className="px-3 py-3 text-right relative">
                             <button
                               type="button"
@@ -673,8 +748,16 @@ export default function ContractModelsOperationalCentral() {
                             </button>
                             {menuId === model.id && (
                               <div className="absolute right-3 top-10 z-20 w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-xl py-1 text-left">
-                                <ActionItem icon={Eye} label="Visualizar" onClick={() => { setDialog({ type: 'view', modelId: model.id }); setMenuId(null); }} />
-                                <ActionItem icon={Settings2} label="Configurar/Editar" onClick={() => openSheet(model)} />
+                                <ActionItem icon={Eye} label="Visualizar" onClick={() => {
+                                  setMenuId(null);
+                                  if (canOpenCustomA4Editor(model.catalog_code)) openEditor(model, true);
+                                  else setDialog({ type: 'view', modelId: model.id });
+                                }} />
+                                <ActionItem
+                                  icon={Settings2}
+                                  label={canOpenCustomA4Editor(model.catalog_code) ? 'Abrir editor A4' : 'Configurar/Editar'}
+                                  onClick={() => openSheet(model)}
+                                />
                                 <ActionItem icon={Copy} label="Duplicar" onClick={() => { setMenuId(null); void run(() => handleDuplicate(model), 'Modelo duplicado.'); }} />
                                 <ActionItem icon={Save} label="Salvar como novo" onClick={() => { setSaveAsName(`Cópia de ${model.name}`); setDialog({ type: 'saveAs', modelId: model.id }); setMenuId(null); }} />
                                 <ActionItem icon={FileText} label="Associar a empreendimento" onClick={() => { setAssociateProjectId(projects[0]?.id || ''); setAssociateAsDefault(true); setDialog({ type: 'associate', modelId: model.id }); setMenuId(null); }} />
@@ -1035,13 +1118,25 @@ export default function ContractModelsOperationalCentral() {
                       .filter((v) => v.model_id === base.id && v.status === 'published')
                       .sort((a, b) => b.version - a.version)[0]
                   : null;
-                const id = await insertModel({
-                  name,
-                  catalogCode,
-                  engineKey,
-                  contentHtml: catalogCode === 'CUSTOM' ? pub?.content_html ?? null : null,
-                  params: catalogCode === 'CUSTOM' ? pub?.engine_params_json ?? null : null,
-                });
+                let id: string;
+                if (catalogCode === 'CUSTOM') {
+                  const draftSource =
+                    versions.find((v) => v.model_id === base?.id && v.status === 'draft')
+                      ?.content_html || pub?.content_html;
+                  id = await insertCustomDraftModel({
+                    name,
+                    contentHtml: draftSource || DEFAULT_CUSTOM_CONTRACT_HTML,
+                    params: pub?.engine_params_json ?? null,
+                  });
+                } else {
+                  id = await insertModel({
+                    name,
+                    catalogCode,
+                    engineKey,
+                    contentHtml: null,
+                    params: null,
+                  });
+                }
                 if (newCompanyDefault) await swapCompanyDefault(id);
                 if (newProjectId) {
                   const project = projects.find((p) => p.id === newProjectId);
@@ -1065,7 +1160,10 @@ export default function ContractModelsOperationalCentral() {
                   }
                 }
                 setDialog(null);
-              }, 'Modelo criado.')
+                if (catalogCode === 'CUSTOM') {
+                  router.push(CUSTOM_CONTRACT_EDITOR_PATH(id));
+                }
+              }, newMode === 'custom' ? undefined : 'Modelo criado.')
             }
             className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
           >
@@ -1083,22 +1181,36 @@ export default function ContractModelsOperationalCentral() {
             onChange={(e) => setImportName(e.target.value)}
             className="w-full h-9 px-3 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-white mb-3"
           />
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1">Arquivo (opcional)</label>
+          <label className="block text-xs text-[var(--color-text-muted)] mb-1">Arquivo HTML ou TXT (opcional)</label>
           <input
             type="file"
-            accept=".html,.htm,.txt,.pdf,.doc,.docx"
+            accept=".html,.htm,.txt,text/html,text/plain"
             className="block w-full text-xs text-[var(--text-secondary)] mb-3"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              setImportFile(file ? { name: file.name, mime: file.type || 'application/octet-stream' } : null);
+              if (!file) {
+                setImportFile(null);
+                return;
+              }
+              if (isRejectedImportMime(file.type, file.name)) {
+                setError(IMPORT_TEXT_HTML_ONLY);
+                e.target.value = '';
+                setImportFile(null);
+                return;
+              }
+              setImportFile({ name: file.name, mime: file.type || 'text/plain' });
+              const reader = new FileReader();
+              reader.onload = () => {
+                setImportHtml(String(reader.result || ''));
+              };
+              reader.readAsText(file);
             }}
           />
           <p className="text-[11px] text-[var(--color-text-muted)] mb-3">
-            O arquivo fica guardado como material deste modelo. A conversão automática para contrato
-            operacional será feita em uma etapa posterior.
+            Nesta etapa só texto ou HTML seguro. PDF e DOCX ainda não são convertidos.
           </p>
           <label className="block text-xs text-[var(--color-text-muted)] mb-1">
-            Texto HTML (opcional)
+            Texto / HTML
           </label>
           <textarea
             value={importHtml}
@@ -1113,21 +1225,24 @@ export default function ContractModelsOperationalCentral() {
               void run(async () => {
                 const name = importName.trim();
                 if (!name) throw new Error('Informe o nome do modelo.');
-                await insertModel({
+                if (isRejectedImportMime(importFile?.mime, importFile?.name)) {
+                  throw new Error(IMPORT_TEXT_HTML_ONLY);
+                }
+                const html = sanitizeImportedContractHtml(importHtml);
+                const id = await insertCustomDraftModel({
                   name,
-                  catalogCode: 'CUSTOM',
-                  engineKey: 'custom',
-                  contentHtml: importHtml.trim() || null,
+                  contentHtml: html || DEFAULT_CUSTOM_CONTRACT_HTML,
                   params: {
                     import: {
                       fileName: importFile?.name || null,
                       mime: importFile?.mime || null,
-                      conversion: 'pending',
+                      conversion: html ? 'html' : 'empty',
                     },
                   },
                 });
                 setDialog(null);
-              }, 'Contrato importado como modelo personalizado.')
+                router.push(CUSTOM_CONTRACT_EDITOR_PATH(id));
+              })
             }
             className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
           >

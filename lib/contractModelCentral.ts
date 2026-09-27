@@ -15,6 +15,10 @@ import {
 
 export const CONTRACT_MODELS_CENTRAL_PATH = '/contracts/models';
 
+export function customContractEditorPath(modelId: string): string {
+  return `/contracts/models/${encodeURIComponent(modelId)}/editor`;
+}
+
 export const CONTRACT_MODEL_CATALOG_SEED = [
   { code: 'PADRAO' as const, label: SALE_CONTRACT_MODEL_LABELS.PADRAO, engineKey: 'classic', isSystemDefault: true, sortOrder: 10 },
   { code: 'MENESES' as const, label: SALE_CONTRACT_MODEL_LABELS.MENESES, engineKey: 'classic_meneses', isSystemDefault: false, sortOrder: 20 },
