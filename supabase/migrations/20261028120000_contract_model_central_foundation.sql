@@ -1,10 +1,14 @@
 -- Central de Modelos de Contrato — Etapa 1 (fundação aditiva)
+-- Idempotente: pode ser reexecutada após falha parcial (CREATE IF NOT EXISTS,
+--     ADD COLUMN IF NOT EXISTS, ON CONFLICT DO NOTHING, DROP POLICY IF EXISTS).
 -- NÃO altera contracts.generated_html, html_content, contract_html, content, html.
 -- NÃO altera projects.seller_parties_json, sales.lf_contract_snapshot_json,
 --     companies.contract_second_vendor_json.
 -- NÃO remove/renomeia companies.contract_model, projects.contract_model,
 --     sales.contract_model, contracts.contract_model.
 -- Sem backfill de HTML. Sem UPDATE em contratos históricos.
+-- public.contract_templates é opcional: se não existir, a importação legado
+--     é ignorada e a Central é criada mesmo assim. NÃO criar essa tabela.
 
 -- ---------------------------------------------------------------------------
 -- Catálogo do sistema (motores TypeScript existentes)
@@ -442,7 +446,35 @@ WHERE nullif(trim(p.contract_model), '') IS NOT NULL
   AND public.project_company_uuid(p.*) IS NOT NULL
 ON CONFLICT (project_id, company_contract_model_id) DO NOTHING;
 
--- Importar contract_templates legado como CUSTOM (NÃO liga à geração GIS)
+-- Importar contract_templates legado como CUSTOM (NÃO liga à geração GIS).
+-- Proteção estrutural: referência estática a uma tabela inexistente falha no
+-- parse. Só executa o SQL dependente se to_regclass achar a relação.
+-- NÃO criar public.contract_templates se ela não existir.
+DO $import_legacy_templates$
+BEGIN
+  IF to_regclass('public.contract_templates') IS NULL THEN
+    RAISE NOTICE 'public.contract_templates ausente — importação legado ignorada';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'contract_templates' AND column_name = 'id'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'contract_templates' AND column_name = 'tenant_id'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'contract_templates' AND column_name = 'name'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'contract_templates' AND column_name = 'content'
+  ) THEN
+    RAISE NOTICE 'public.contract_templates sem colunas esperadas — importação legado ignorada';
+    RETURN;
+  END IF;
+
+  EXECUTE $legacy_models$
 INSERT INTO public.company_contract_models (
   company_id,
   tenant_id,
@@ -467,8 +499,10 @@ SELECT
 FROM public.contract_templates t
 JOIN public.companies c ON c.id = t.tenant_id
 WHERE t.tenant_id IS NOT NULL
-ON CONFLICT (source_template_id) WHERE source_template_id IS NOT NULL DO NOTHING;
+ON CONFLICT (source_template_id) WHERE source_template_id IS NOT NULL DO NOTHING
+$legacy_models$;
 
+  EXECUTE $legacy_versions$
 INSERT INTO public.company_contract_model_versions (
   model_id,
   company_id,
@@ -487,7 +521,10 @@ SELECT
 FROM public.company_contract_models m
 JOIN public.contract_templates t ON t.id = m.source_template_id
 WHERE m.source = 'legacy_template'
-ON CONFLICT (model_id, version) DO NOTHING;
+ON CONFLICT (model_id, version) DO NOTHING
+$legacy_versions$;
+END;
+$import_legacy_templates$;
 
 -- Empresa com contract_model CUSTOM: um legado vira padrão da empresa (não mexe em contratos emitidos)
 UPDATE public.company_contract_models m

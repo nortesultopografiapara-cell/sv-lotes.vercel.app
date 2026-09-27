@@ -451,6 +451,28 @@ assert(
   sql.includes('legacy_template') && sql.includes("NÃO liga à geração GIS"),
   'legado CUSTOM importado sem ligar GIS',
 );
+assert(
+  sql.includes("to_regclass('public.contract_templates')") &&
+    sql.includes('$import_legacy_templates$') &&
+    sql.includes('$legacy_models$') &&
+    sql.includes('$legacy_versions$'),
+  'importação legado só roda se contract_templates existir (bloco dinâmico)',
+);
+assert(
+  !/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+public\.contract_templates/i.test(sql),
+  'migration não cria public.contract_templates',
+);
+{
+  const staticFrom = sql.replace(
+    /EXECUTE \$legacy_(?:models|versions)\$[\s\S]*?\$legacy_(?:models|versions)\$;/g,
+    '',
+  );
+  assert(
+    !/FROM public\.contract_templates/i.test(staticFrom) &&
+      !/JOIN public\.contract_templates/i.test(staticFrom),
+    'sem referência estática a contract_templates fora do EXECUTE',
+  );
+}
 
 assert(
   !gisSale.includes('resolveCompatibleSaleContractModel') &&
