@@ -348,6 +348,9 @@ assert(migration.includes('protect_published_contract_model_version'), 'trigger 
   }
 }
 assert(central.includes('insertCustomDraftModel'), 'Novo Personalizado cria draft CUSTOM');
+assert(central.includes("catalog_code: 'CUSTOM'"), 'Personalizado grava catalog_code CUSTOM');
+assert(central.includes("engine_key: 'custom'"), 'Personalizado grava engine_key custom');
+assert(central.includes('DELETE_COMPANY_CONTRACT_MODEL_RPC'), 'exclusão segura chama RPC');
 assert(central.includes('CUSTOM_CONTRACT_EDITOR_PATH'), 'Central abre o editor A4');
 assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF/DOCX');
 

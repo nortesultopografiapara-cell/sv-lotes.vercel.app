@@ -27,6 +27,20 @@ export const ARCHIVE_DEFAULT_BLOCKED =
 export const SYSTEM_SEED_DELETE_BLOCKED =
   'Modelos de origem do sistema não podem ser excluídos.';
 
+export const DELETE_NOT_USER_BLOCKED =
+  'Somente modelos criados pela empresa podem ser excluídos.';
+
+export const DELETE_COMPANY_DEFAULT_BLOCKED =
+  'Este modelo não pode ser excluído porque é o padrão da empresa.';
+
+export const DELETE_PROJECT_LINK_BLOCKED =
+  'Este modelo está associado a um empreendimento.';
+
+export const DELETE_HISTORY_BLOCKED =
+  'Este modelo já foi utilizado em uma venda ou contrato e deve permanecer no histórico.';
+
+export const DELETE_COMPANY_CONTRACT_MODEL_RPC = 'delete_company_contract_model';
+
 /** Colunas reais da migration — versions/links NÃO têm tenant_id. */
 export const CENTRAL_TABLE_COLUMNS = {
   company_contract_models: [
@@ -153,8 +167,74 @@ export function showsAutoEmissionPending(catalogCode: string, source: string): b
   return isCustomCatalogCode(catalogCode) || source === 'legacy_template';
 }
 
+/** DELETE direto na tabela é proibido. Exclusão descartável só via RPC. */
 export function physicalDeleteAllowed(): boolean {
   return false;
+}
+
+export function physicalDeleteViaTableAllowed(): boolean {
+  return false;
+}
+
+export function deleteRpcUserMessage(error: { message?: string; code?: string } | null | undefined): string {
+  const msg = String(error?.message || '').trim();
+  if (/could not find the function|schema cache|PGRST202/i.test(msg) || error?.code === 'PGRST202') {
+    return 'A exclusão segura ainda não está disponível neste ambiente.';
+  }
+  if (!msg) return 'Não foi possível excluir o modelo.';
+  return msg;
+}
+
+export type ContractModelDeletionGate = {
+  ok: boolean;
+  reason?: string;
+  offerArchive: boolean;
+};
+
+export function evaluateContractModelDeletion(input: {
+  source: string;
+  isCompanyDefault: boolean;
+  projectLinkCount: number;
+  saleRefCount: number;
+  contractRefCount: number;
+}): ContractModelDeletionGate {
+  if (isSystemSeedSource(input.source)) {
+    return { ok: false, reason: SYSTEM_SEED_DELETE_BLOCKED, offerArchive: false };
+  }
+  if (input.source !== 'user') {
+    return { ok: false, reason: DELETE_NOT_USER_BLOCKED, offerArchive: true };
+  }
+  if (input.isCompanyDefault) {
+    return { ok: false, reason: DELETE_COMPANY_DEFAULT_BLOCKED, offerArchive: true };
+  }
+  if (input.projectLinkCount > 0) {
+    return { ok: false, reason: DELETE_PROJECT_LINK_BLOCKED, offerArchive: true };
+  }
+  if (input.saleRefCount > 0 || input.contractRefCount > 0) {
+    return { ok: false, reason: DELETE_HISTORY_BLOCKED, offerArchive: true };
+  }
+  return { ok: true, offerArchive: false };
+}
+
+export function deleteDisposableUserModel(
+  store: OperationalStore,
+  modelId: string,
+  callerCompanyId: string,
+  refs: { saleRefCount: number; contractRefCount: number },
+): OperationalStore {
+  const model = requireModel(store, modelId, callerCompanyId);
+  const gate = evaluateContractModelDeletion({
+    source: model.source,
+    isCompanyDefault: model.isCompanyDefault,
+    projectLinkCount: store.links.filter((l) => l.modelId === modelId).length,
+    saleRefCount: refs.saleRefCount,
+    contractRefCount: refs.contractRefCount,
+  });
+  if (!gate.ok) throw new Error(gate.reason);
+  store.versions = store.versions.filter((v) => v.modelId !== modelId);
+  store.links = store.links.filter((l) => l.modelId !== modelId);
+  store.models = store.models.filter((m) => m.id !== modelId);
+  return store;
 }
 
 export function isSystemSeedSource(source: string): boolean {

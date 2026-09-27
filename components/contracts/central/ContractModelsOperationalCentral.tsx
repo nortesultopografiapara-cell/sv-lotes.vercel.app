@@ -14,6 +14,7 @@ import {
   Plus,
   Save,
   Settings2,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react';
@@ -28,12 +29,16 @@ import { SALE_CONTRACT_MODEL_LABELS, type SaleContractModel } from '@/lib/contra
 import {
   ARCHIVE_DEFAULT_BLOCKED,
   CUSTOM_NOT_IN_AUTO_EMISSION,
+  DELETE_COMPANY_CONTRACT_MODEL_RPC,
   LEGAL_TEXT_LOCKED,
   companyDefaultUpdatePayload,
+  deleteRpcUserMessage,
+  evaluateContractModelDeletion,
   legalContentIsLocked,
   nextCopyName,
   payloadForCentralTable,
   showsAutoEmissionPending,
+  type ContractModelDeletionGate,
 } from '@/lib/contractModelCentralOps';
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import {
@@ -90,7 +95,8 @@ type Dialog =
   | { type: 'associate'; modelId: string }
   | { type: 'saveAs'; modelId: string }
   | { type: 'new' }
-  | { type: 'import' };
+  | { type: 'import' }
+  | { type: 'delete'; modelId: string };
 
 function fmtDate(value?: string | null): string {
   if (!value) return '—';
@@ -132,6 +138,7 @@ export default function ContractModelsOperationalCentral() {
   const [importFile, setImportFile] = useState<{ name: string; mime: string } | null>(null);
   const [associateProjectId, setAssociateProjectId] = useState('');
   const [associateAsDefault, setAssociateAsDefault] = useState(true);
+  const [deleteGate, setDeleteGate] = useState<ContractModelDeletionGate | null>(null);
 
   const canOperate = isPartnerPanelAdmin(user?.role);
 
@@ -313,6 +320,75 @@ export default function ContractModelsOperationalCentral() {
       return;
     }
     setDialog({ type: 'view', modelId: model.id });
+  }
+
+  async function countHistoricalRefs(modelId: string): Promise<{ sales: number; contracts: number }> {
+    const versionIds = versions.filter((row) => row.model_id === modelId).map((row) => row.id);
+    const [{ count: saleModel }, { count: contractModel }] = await Promise.all([
+      supabase
+        .from('sales')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_contract_model_id', modelId),
+      supabase
+        .from('contracts')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_contract_model_id', modelId),
+    ]);
+    let saleVersion = 0;
+    let contractVersion = 0;
+    if (versionIds.length > 0) {
+      const [{ count: sv }, { count: cv }] = await Promise.all([
+        supabase
+          .from('sales')
+          .select('id', { count: 'exact', head: true })
+          .in('company_contract_model_version_id', versionIds),
+        supabase
+          .from('contracts')
+          .select('id', { count: 'exact', head: true })
+          .in('company_contract_model_version_id', versionIds),
+      ]);
+      saleVersion = sv ?? 0;
+      contractVersion = cv ?? 0;
+    }
+    return {
+      sales: (saleModel ?? 0) + saleVersion,
+      contracts: (contractModel ?? 0) + contractVersion,
+    };
+  }
+
+  async function openDelete(model: ModelRow) {
+    setMenuId(null);
+    setDeleteGate(null);
+    setDialog({ type: 'delete', modelId: model.id });
+    let saleRefCount = 0;
+    let contractRefCount = 0;
+    try {
+      const refs = await countHistoricalRefs(model.id);
+      saleRefCount = refs.sales;
+      contractRefCount = refs.contracts;
+    } catch {
+      saleRefCount = 0;
+      contractRefCount = 0;
+    }
+    setDeleteGate(
+      evaluateContractModelDeletion({
+        source: model.source,
+        isCompanyDefault: model.is_company_default,
+        projectLinkCount: linksByModel(model.id).length,
+        saleRefCount,
+        contractRefCount,
+      }),
+    );
+  }
+
+  async function handleDelete(model: ModelRow) {
+    const { data, error: rpcError } = await supabase.rpc(DELETE_COMPANY_CONTRACT_MODEL_RPC, {
+      p_model_id: model.id,
+    });
+    if (rpcError) throw new Error(deleteRpcUserMessage(rpcError));
+    if (data && typeof data === 'object' && 'ok' in data && data.ok === false) {
+      throw new Error('A exclusão do modelo não foi concluída.');
+    }
   }
 
   async function run(action: () => Promise<void>, okMessage?: string) {
@@ -780,6 +856,12 @@ export default function ContractModelsOperationalCentral() {
                                     );
                                   }}
                                 />
+                                <ActionItem
+                                  icon={Trash2}
+                                  label="Excluir modelo"
+                                  danger
+                                  onClick={() => void openDelete(model)}
+                                />
                               </div>
                             )}
                           </td>
@@ -914,6 +996,13 @@ export default function ContractModelsOperationalCentral() {
               }
             >
               {selected.status === 'archived' ? 'Desarquivar' : 'Arquivar'}
+            </button>
+            <button
+              type="button"
+              className="h-9 px-3 rounded-lg border border-red-800 text-xs text-red-200"
+              onClick={() => void openDelete(selected)}
+            >
+              Excluir modelo
             </button>
           </div>
         </Modal>
@@ -1268,6 +1357,71 @@ export default function ContractModelsOperationalCentral() {
           </button>
         </Modal>
       )}
+
+      {dialog?.type === 'delete' && selected && (
+        <Modal title="Excluir modelo permanentemente?" onClose={() => setDialog(null)}>
+          {!deleteGate ? (
+            <p className="text-sm text-[var(--color-text-muted)]">Verificando se o modelo pode ser excluído…</p>
+          ) : deleteGate.ok ? (
+            <>
+              <p className="text-sm text-[var(--text-secondary)]">
+                O modelo &quot;{selected.name}&quot; e seus rascunhos/versões serão apagados. Esta ação não
+                poderá ser desfeita.
+              </p>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs"
+                  onClick={() => setDialog(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  className="h-9 px-3 rounded-lg bg-red-700 text-white text-xs font-semibold"
+                  onClick={() =>
+                    void run(async () => {
+                      await handleDelete(selected);
+                      setDialog(null);
+                    }, 'Modelo excluído.')
+                  }
+                >
+                  Excluir permanentemente
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-amber-200">{deleteGate.reason}</p>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs"
+                  onClick={() => setDialog(null)}
+                >
+                  Cancelar
+                </button>
+                {deleteGate.offerArchive && selected.status === 'active' && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
+                    onClick={() =>
+                      void run(async () => {
+                        await handleArchiveToggle(selected);
+                        setDialog(null);
+                      }, 'Modelo arquivado.')
+                    }
+                  >
+                    Arquivar
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1276,16 +1430,20 @@ function ActionItem({
   icon: Icon,
   label,
   onClick,
+  danger,
 }: {
   icon: typeof Eye;
   label: string;
   onClick: () => void;
+  danger?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--color-surface)] hover:text-white"
+      className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-[var(--color-surface)] ${
+        danger ? 'text-red-300 hover:text-red-100' : 'text-[var(--text-secondary)] hover:text-white'
+      }`}
     >
       <Icon className="w-3.5 h-3.5" />
       {label}

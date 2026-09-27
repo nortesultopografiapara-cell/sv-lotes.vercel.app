@@ -21,19 +21,29 @@ import {
 import {
   ARCHIVE_DEFAULT_BLOCKED,
   CUSTOM_NOT_IN_AUTO_EMISSION,
+  DELETE_COMPANY_CONTRACT_MODEL_RPC,
+  DELETE_COMPANY_DEFAULT_BLOCKED,
+  DELETE_HISTORY_BLOCKED,
+  DELETE_NOT_USER_BLOCKED,
+  DELETE_PROJECT_LINK_BLOCKED,
   LEGAL_TEXT_LOCKED,
+  SYSTEM_SEED_DELETE_BLOCKED,
   archiveModel,
   associateProject,
   companyDefaultUpdatePayload,
   countActiveCompanyDefaults,
   countProjectDefaults,
   createNewModel,
+  deleteDisposableUserModel,
+  deleteRpcUserMessage,
   duplicateModel,
+  evaluateContractModelDeletion,
   historyForModel,
   importCustomModel,
   legalContentIsLocked,
   payloadForCentralTable,
   physicalDeleteAllowed,
+  physicalDeleteViaTableAllowed,
   renameModel,
   saveAsNewModel,
   setCompanyDefaultAtomic,
@@ -161,9 +171,25 @@ assert(
     'components/contracts/central/ContractModelsOperationalCentral.tsx',
   );
   assert(
-    !/Excluir modelo/i.test(centralComponent) &&
-      !/from\('company_contract_models'\)[\s\S]{0,120}\.delete\(/.test(centralComponent),
-    'sem exclusão física de modelo',
+    /Excluir modelo/.test(centralComponent) &&
+      centralComponent.includes('Excluir modelo permanentemente?') &&
+      centralComponent.includes('Excluir permanentemente') &&
+      centralComponent.includes('Esta ação não') &&
+      centralComponent.includes('poderá ser desfeita'),
+    'menu Excluir abre confirmação, não apaga no clique',
+  );
+  assert(
+    centralComponent.includes('openDelete') &&
+      /onClick=\{\(\) => void openDelete\(model\)\}/.test(centralComponent) &&
+      !/onClick=\{\(\) => void handleDelete\(model\)\}/.test(centralComponent),
+    '⋯ Excluir modelo só abre o diálogo',
+  );
+  assert(
+    centralComponent.includes('DELETE_COMPANY_CONTRACT_MODEL_RPC') &&
+      centralComponent.includes('supabase.rpc(DELETE_COMPANY_CONTRACT_MODEL_RPC') &&
+      !/from\('company_contract_models'\)[\s\S]{0,80}\.delete\(/.test(centralComponent) &&
+      !/from\('company_contract_model_versions'\)[\s\S]{0,80}\.delete\(/.test(centralComponent),
+    'exclusão física só via RPC, nunca DELETE de tabela no frontend',
   );
 }
 assert(
@@ -807,11 +833,96 @@ function sampleStore(): OperationalStore {
     cross = true;
   }
   assert(cross, 'isolamento entre empresas no clone');
-  assert(physicalDeleteAllowed() === false, 'exclusão física indisponível');
+  assert(physicalDeleteAllowed() === false, 'DELETE direto na tabela continua bloqueado');
+  assert(physicalDeleteViaTableAllowed() === false, 'frontend não pode apagar modelo via tabela');
   assert(
     store.models.find((m) => m.id === 'm-padrao')?.source === 'system_seed',
     'proteção: system_seed permanece no catálogo da empresa',
   );
+
+  {
+    const seedGate = evaluateContractModelDeletion({
+      source: 'system_seed',
+      isCompanyDefault: false,
+      projectLinkCount: 0,
+      saleRefCount: 0,
+      contractRefCount: 0,
+    });
+    assert(
+      seedGate.ok === false && seedGate.reason === SYSTEM_SEED_DELETE_BLOCKED,
+      'system_seed nunca passa no gate de exclusão',
+    );
+    let seedBlocked = false;
+    try {
+      deleteDisposableUserModel(store, 'm-padrao', 'co-a', { saleRefCount: 0, contractRefCount: 0 });
+    } catch (e) {
+      seedBlocked = e instanceof Error && e.message === SYSTEM_SEED_DELETE_BLOCKED;
+    }
+    assert(seedBlocked, 'PADRAO system_seed não pode ser apagado');
+
+    const { copy } = duplicateModel(store, 'm-mundo', 'co-a');
+    const disposable = deleteDisposableUserModel(store, copy.id, 'co-a', {
+      saleRefCount: 0,
+      contractRefCount: 0,
+    });
+    assert(
+      !disposable.models.some((m) => m.id === copy.id) &&
+        !disposable.versions.some((v) => v.modelId === copy.id),
+      'cópia de usuário sem vínculo pode ser excluída com versões em cascata',
+    );
+
+    const linked = duplicateModel(store, 'm-mundo', 'co-a').copy;
+    associateProject(store, {
+      modelId: linked.id,
+      projectId: 'proj-1',
+      projectName: 'NOVA CARAJAS',
+      projectCompanyId: 'co-a',
+      callerCompanyId: 'co-a',
+      asProjectDefault: false,
+    });
+    let linkBlocked = false;
+    try {
+      deleteDisposableUserModel(store, linked.id, 'co-a', { saleRefCount: 0, contractRefCount: 0 });
+    } catch (e) {
+      linkBlocked = e instanceof Error && e.message === DELETE_PROJECT_LINK_BLOCKED;
+    }
+    assert(linkBlocked, 'modelo associado a empreendimento não pode ser excluído');
+
+    const used = duplicateModel(store, 'm-mundo', 'co-a').copy;
+    let historyBlocked = false;
+    try {
+      deleteDisposableUserModel(store, used.id, 'co-a', { saleRefCount: 1, contractRefCount: 0 });
+    } catch (e) {
+      historyBlocked = e instanceof Error && e.message === DELETE_HISTORY_BLOCKED;
+    }
+    assert(historyBlocked, 'modelo usado em venda permanece no histórico');
+
+    const asDefault = duplicateModel(store, 'm-mundo', 'co-a').copy;
+    asDefault.isCompanyDefault = true;
+    let defaultBlocked = false;
+    try {
+      deleteDisposableUserModel(store, asDefault.id, 'co-a', { saleRefCount: 0, contractRefCount: 0 });
+    } catch (e) {
+      defaultBlocked = e instanceof Error && e.message === DELETE_COMPANY_DEFAULT_BLOCKED;
+    }
+    assert(defaultBlocked, 'padrão da empresa não pode ser excluído');
+
+    assert(
+      evaluateContractModelDeletion({
+        source: 'legacy_template',
+        isCompanyDefault: false,
+        projectLinkCount: 0,
+        saleRefCount: 0,
+        contractRefCount: 0,
+      }).reason === DELETE_NOT_USER_BLOCKED,
+      'legado não é descartável',
+    );
+    assert(
+      deleteRpcUserMessage({ message: '', code: 'PGRST202' }) ===
+        'A exclusão segura ainda não está disponível neste ambiente.',
+      'RPC ausente não falha em silêncio',
+    );
+  }
   assert(legalContentIsLocked('MUNDO_NOVO') && !legalContentIsLocked('CUSTOM'), 'texto jurídico TS protegido');
 
   const orphan = sampleStore();
@@ -910,10 +1021,19 @@ function assertStoreGis(
     'Central não inventa published v1 para CUSTOM; usa RPC de rascunho',
   );
   assert(
-    !centralComponent.includes("from('companies')") &&
-      !centralComponent.includes("from('sales')") &&
-      !centralComponent.includes("from('contracts')"),
-    'Central não escreve companies/sales/contracts',
+    !centralComponent.includes("from('companies')"),
+    'Central não escreve companies',
+  );
+  assert(
+    !/from\('sales'\)[\s\S]{0,220}\.(insert|update|delete)\(/.test(centralComponent) &&
+      !/from\('contracts'\)[\s\S]{0,220}\.(insert|update|delete)\(/.test(centralComponent),
+    'Central não escreve sales/contracts',
+  );
+  assert(
+    centralComponent.includes("from('sales')") &&
+      centralComponent.includes("from('contracts')") &&
+      centralComponent.includes('company_contract_model_id'),
+    'pré-checagem de exclusão só conta referências históricas',
   );
 }
 
@@ -943,5 +1063,45 @@ assert(
     layout.includes('{contractModelsHeaderLink(true)}'),
   'botão homologado permanece no cabeçalho',
 );
+
+{
+  const deleteSql = read('supabase/migrations/20261028122000_delete_company_contract_model.sql');
+  assert(
+    deleteSql.includes('CREATE OR REPLACE FUNCTION public.delete_company_contract_model') &&
+      deleteSql.includes('SECURITY DEFINER') &&
+      deleteSql.includes("v_model.source = 'system_seed'") &&
+      deleteSql.includes("v_model.source IS DISTINCT FROM 'user'") &&
+      deleteSql.includes('v_model.is_company_default') &&
+      deleteSql.includes('project_contract_model_links') &&
+      deleteSql.includes('FROM public.sales') &&
+      deleteSql.includes('FROM public.contracts') &&
+      deleteSql.includes('company_contract_model_id') &&
+      deleteSql.includes('company_contract_model_version_id') &&
+      deleteSql.includes(SYSTEM_SEED_DELETE_BLOCKED) &&
+      deleteSql.includes(DELETE_COMPANY_DEFAULT_BLOCKED) &&
+      deleteSql.includes(DELETE_PROJECT_LINK_BLOCKED) &&
+      deleteSql.includes(DELETE_HISTORY_BLOCKED) &&
+      deleteSql.includes('REVOKE DELETE ON TABLE public.company_contract_models') &&
+      deleteSql.includes('REVOKE DELETE ON TABLE public.company_contract_model_versions'),
+    'RPC de exclusão valida tenant, seed, padrão, vínculos e histórico',
+  );
+  assert(
+    !/DELETE FROM public\.(sales|contracts|companies|projects)\b/i.test(deleteSql) &&
+      !/UPDATE public\.(sales|contracts|companies|projects)\b/i.test(deleteSql) &&
+      !/\bTRUNCATE\b/i.test(deleteSql),
+    'RPC não apaga nem altera vendas, contratos, empresas ou empreendimentos',
+  );
+  assert(
+    deleteSql.includes('current_tenant_id()') && deleteSql.includes('is_super_admin()'),
+    'RPC valida tenant antes de excluir',
+  );
+  const applyDelete = read('scripts/develop/apply-delete-company-contract-model.ts');
+  assert(
+    applyDelete.includes("assertDevelopWriteAllowed") &&
+      applyDelete.includes('PRODUCTION_PROJECT_REF') &&
+      applyDelete.includes('deletesExistingModels: false'),
+    'apply da RPC só no Develop e não apaga modelos na migration',
+  );
+}
 
 console.log('\nOK — Central de Modelos Etapa 0+1');
