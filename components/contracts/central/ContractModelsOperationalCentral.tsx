@@ -19,7 +19,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
-import { applyTenantIdEq, resolveRlsContext, withTenantFields } from '@/lib/rls';
+import { applyTenantIdEq, resolveRlsContext } from '@/lib/rls';
 import {
   pickPublishedVersionNumber,
 } from '@/lib/contractModelCentral';
@@ -28,8 +28,10 @@ import {
   ARCHIVE_DEFAULT_BLOCKED,
   CUSTOM_NOT_IN_AUTO_EMISSION,
   LEGAL_TEXT_LOCKED,
+  companyDefaultUpdatePayload,
   legalContentIsLocked,
   nextCopyName,
+  payloadForCentralTable,
   showsAutoEmissionPending,
 } from '@/lib/contractModelCentralOps';
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
@@ -172,6 +174,39 @@ export default function ContractModelsOperationalCentral() {
       );
     }
 
+    const missingVersion = scoped.filter(
+      (model) =>
+        !versionRows.some((row) => row.model_id === model.id && row.status === 'published'),
+    );
+      if (missingVersion.length > 0) {
+      for (const model of missingVersion) {
+        const repair = payloadForCentralTable('company_contract_model_versions', {
+          model_id: model.id,
+          company_id: activeTenantId,
+          version: 1,
+          status: 'published',
+          content_html: null,
+          engine_params_json: null,
+        });
+        const { error: repairError } = await supabase
+          .from('company_contract_model_versions')
+          .insert(repair);
+        if (repairError && !/duplicate|unique|conflict/i.test(repairError.message)) {
+          setError(repairError.message);
+        }
+      }
+      const { data: repaired } = await supabase
+        .from('company_contract_model_versions')
+        .select(
+          'id, model_id, company_id, version, status, content_html, engine_params_json, created_at',
+        )
+        .eq('company_id', activeTenantId)
+        .in('model_id', ids);
+      versionRows = ((repaired ?? []) as VersionRow[]).filter(
+        (row) => String(row.company_id) === String(activeTenantId),
+      );
+    }
+
     const { data: projectRows } = await supabase
       .from('projects')
       .select('id, name, company_id, tenant_id')
@@ -269,37 +304,40 @@ export default function ContractModelsOperationalCentral() {
     const now = new Date().toISOString();
     const { error: unsetError } = await supabase
       .from('company_contract_models')
-      .update({ is_company_default: false, updated_at: now })
+      .update(companyDefaultUpdatePayload(now, false))
       .eq('company_id', tenantId)
       .eq('is_company_default', true);
     if (unsetError) throw new Error(unsetError.message);
     const { error: setError } = await supabase
       .from('company_contract_models')
-      .update({ is_company_default: true, status: 'active', updated_at: now })
+      .update(companyDefaultUpdatePayload(now, true))
       .eq('id', modelId)
       .eq('company_id', tenantId);
     if (setError) throw new Error(setError.message);
   }
 
-  async function insertVersion(modelId: string, contentHtml: string | null, params?: object | null) {
-    if (!tenantId) return;
-    const payload = withTenantFields(
-      {
-        model_id: modelId,
-        company_id: tenantId,
-        version: 1,
-        status: 'published',
-        content_html: contentHtml,
-        engine_params_json: params ?? null,
-        created_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          String(user?.id || ''),
-        )
-          ? user?.id
-          : null,
-      },
-      tenantId,
-      'company_contract_model_versions',
-    );
+  async function insertVersion(
+    modelId: string,
+    companyId: string,
+    contentHtml: string | null,
+    params?: object | null,
+  ) {
+    const payload = payloadForCentralTable('company_contract_model_versions', {
+      model_id: modelId,
+      company_id: companyId,
+      version: 1,
+      status: 'published',
+      content_html: contentHtml,
+      engine_params_json: params ?? null,
+      created_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(user?.id || ''),
+      )
+        ? user?.id
+        : null,
+    });
+    if ('tenant_id' in payload) {
+      throw new Error('Versão de modelo não usa tenant_id.');
+    }
     const { error: versionError } = await supabase
       .from('company_contract_model_versions')
       .insert(payload);
@@ -314,27 +352,33 @@ export default function ContractModelsOperationalCentral() {
     params?: object | null;
   }): Promise<string> {
     if (!tenantId) throw new Error('Empresa não identificada.');
-    const payload = withTenantFields(
-      {
-        company_id: tenantId,
-        tenant_id: tenantId,
-        catalog_code: input.catalogCode,
-        engine_key: input.engineKey,
-        name: input.name,
-        status: 'active',
-        source: 'user',
-        is_company_default: false,
-      },
-      tenantId,
-      'company_contract_models',
-    );
+    const payload = payloadForCentralTable('company_contract_models', {
+      company_id: tenantId,
+      tenant_id: tenantId,
+      catalog_code: input.catalogCode,
+      engine_key: input.engineKey,
+      name: input.name,
+      status: 'active',
+      source: 'user',
+      is_company_default: false,
+    });
     const { data, error: insertError } = await supabase
       .from('company_contract_models')
       .insert(payload)
       .select('id')
       .single();
     if (insertError || !data?.id) throw new Error(insertError?.message || 'Não foi possível criar o modelo.');
-    await insertVersion(String(data.id), input.contentHtml ?? null, input.params);
+    await insertVersion(String(data.id), tenantId, input.contentHtml ?? null, input.params);
+    const { data: createdVersion, error: verifyError } = await supabase
+      .from('company_contract_model_versions')
+      .select('id, version, status')
+      .eq('model_id', data.id)
+      .eq('company_id', tenantId)
+      .eq('status', 'published')
+      .maybeSingle();
+    if (verifyError || !createdVersion) {
+      throw new Error('O modelo foi criado, mas a versão inicial não foi gravada. Tente novamente.');
+    }
     return String(data.id);
   }
 
@@ -408,16 +452,15 @@ export default function ContractModelsOperationalCentral() {
     );
     let linkId = existing?.id;
     if (!linkId) {
-      const payload = withTenantFields(
-        {
-          project_id: project.id,
-          company_id: tenantId,
-          company_contract_model_id: model.id,
-          is_project_default: false,
-        },
-        tenantId,
-        'project_contract_model_links',
-      );
+      const payload = payloadForCentralTable('project_contract_model_links', {
+        project_id: project.id,
+        company_id: tenantId,
+        company_contract_model_id: model.id,
+        is_project_default: false,
+      });
+      if ('tenant_id' in payload) {
+        throw new Error('Vínculo de empreendimento não usa tenant_id.');
+      }
       const { data, error: insertError } = await supabase
         .from('project_contract_model_links')
         .insert(payload)

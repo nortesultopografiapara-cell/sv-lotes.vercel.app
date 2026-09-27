@@ -24,7 +24,7 @@ import {
   LEGAL_TEXT_LOCKED,
   archiveModel,
   associateProject,
-  cloneStore,
+  companyDefaultUpdatePayload,
   countActiveCompanyDefaults,
   countProjectDefaults,
   createNewModel,
@@ -32,6 +32,7 @@ import {
   historyForModel,
   importCustomModel,
   legalContentIsLocked,
+  payloadForCentralTable,
   physicalDeleteAllowed,
   renameModel,
   saveAsNewModel,
@@ -688,6 +689,10 @@ function sampleStore(): OperationalStore {
   assert(copy.source === 'user' && copy.catalogCode === 'MUNDO_NOVO', 'duplicar reutiliza motor');
   assert(copy.name.startsWith('Cópia de '), 'duplicar gera nome de cópia');
   assert(copy.isCompanyDefault === false, 'cópia não herda padrão da empresa');
+  assert(
+    historyForModel(store, copy.id, 'co-a').some((v) => v.version === 1 && v.status === 'published'),
+    'duplicar cria versão inicial publicada',
+  );
   assertStoreGis(store, before);
 
   const saved = saveAsNewModel(store, 'm-padrao', 'Padrão da equipe comercial', 'co-a');
@@ -698,6 +703,12 @@ function sampleStore(): OperationalStore {
   assert(
     store.models.find((m) => m.id === 'm-padrao')?.name === 'Padrão SV LOTES',
     'salvar como novo preserva o original',
+  );
+  assert(
+    historyForModel(store, saved.copy.id, 'co-a').some(
+      (v) => v.version === 1 && v.status === 'published',
+    ),
+    'salvar como novo cria versão inicial publicada',
   );
   assertStoreGis(store, before);
 
@@ -792,6 +803,16 @@ function sampleStore(): OperationalStore {
     'proteção: system_seed permanece no catálogo da empresa',
   );
   assert(legalContentIsLocked('MUNDO_NOVO') && !legalContentIsLocked('CUSTOM'), 'texto jurídico TS protegido');
+
+  const orphan = sampleStore();
+  orphan.versions = orphan.versions.filter((v) => v.modelId !== 'm-mundo');
+  const orphanCopy = duplicateModel(orphan, 'm-mundo', 'co-a').copy;
+  assert(
+    historyForModel(orphan, orphanCopy.id, 'co-a').some(
+      (v) => v.version === 1 && v.status === 'published',
+    ),
+    'duplicar cria versão mesmo se o original não tiver histórico',
+  );
 }
 
 function assertStoreGis(
@@ -801,6 +822,83 @@ function assertStoreGis(
   assert(
     JSON.stringify(snapshotGisFields(store)) === JSON.stringify(before),
     'operações da Central não alteram GIS nem generated_html',
+  );
+}
+
+{
+  const versionPayload = payloadForCentralTable('company_contract_model_versions', {
+    tenant_id: 'nao-deve-ir',
+    company_id: 'co-a',
+    model_id: 'm1',
+    version: 1,
+    status: 'published',
+    content_html: null,
+  });
+  assert(
+    !('tenant_id' in versionPayload) && versionPayload.company_id === 'co-a',
+    'versões usam company_id e não tenant_id',
+  );
+  const linkPayload = payloadForCentralTable('project_contract_model_links', {
+    tenant_id: 'nao-deve-ir',
+    company_id: 'co-a',
+    project_id: 'p1',
+    company_contract_model_id: 'm1',
+    is_project_default: false,
+  });
+  assert(
+    !('tenant_id' in linkPayload) && linkPayload.company_id === 'co-a',
+    'vínculos usam company_id e não tenant_id',
+  );
+  const modelPayload = payloadForCentralTable('company_contract_models', {
+    tenant_id: 'co-a',
+    company_id: 'co-a',
+    catalog_code: 'PADRAO',
+    engine_key: 'classic',
+    name: 'Padrão',
+    status: 'active',
+    source: 'user',
+    is_company_default: false,
+  });
+  assert(
+    modelPayload.tenant_id === 'co-a' && modelPayload.company_id === 'co-a',
+    'instância do modelo mantém tenant_id = company_id',
+  );
+  const defaultPayload = companyDefaultUpdatePayload('2026-01-01T00:00:00.000Z', true);
+  assert(
+    Object.keys(defaultPayload).sort().join(',') === 'is_company_default,status,updated_at' &&
+      !('contract_model' in defaultPayload),
+    'padrão da empresa só grava is_company_default na Central',
+  );
+}
+
+{
+  const versionsSql = sql.slice(
+    sql.indexOf('CREATE TABLE IF NOT EXISTS public.company_contract_model_versions'),
+    sql.indexOf('CREATE TABLE IF NOT EXISTS public.project_contract_model_links'),
+  );
+  const linksSql = sql.slice(
+    sql.indexOf('CREATE TABLE IF NOT EXISTS public.project_contract_model_links'),
+    sql.indexOf('Snapshot FKs nullable'),
+  );
+  assert(!/\btenant_id\b/.test(versionsSql), 'schema real: versions sem tenant_id');
+  assert(!/\btenant_id\b/.test(linksSql), 'schema real: links sem tenant_id');
+}
+
+{
+  const centralComponent = read(
+    'components/contracts/central/ContractModelsOperationalCentral.tsx',
+  );
+  assert(!centralComponent.includes('withTenantFields'), 'UI não injeta tenant_id genérico');
+  assert(
+    centralComponent.includes("payloadForCentralTable('company_contract_model_versions'") &&
+      centralComponent.includes("payloadForCentralTable('project_contract_model_links'"),
+    'inserts de versão e vínculo passam pelo payload do schema real',
+  );
+  assert(
+    !centralComponent.includes("from('companies')") &&
+      !centralComponent.includes("from('sales')") &&
+      !centralComponent.includes("from('contracts')"),
+    'Central não escreve companies/sales/contracts',
   );
 }
 

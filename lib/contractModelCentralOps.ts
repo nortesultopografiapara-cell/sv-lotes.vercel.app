@@ -24,6 +24,69 @@ export const ARCHIVE_DEFAULT_BLOCKED =
 export const SYSTEM_SEED_DELETE_BLOCKED =
   'Modelos de origem do sistema não podem ser excluídos.';
 
+/** Colunas reais da migration — versions/links NÃO têm tenant_id. */
+export const CENTRAL_TABLE_COLUMNS = {
+  company_contract_models: [
+    'id',
+    'company_id',
+    'tenant_id',
+    'catalog_code',
+    'engine_key',
+    'name',
+    'status',
+    'source',
+    'is_company_default',
+    'source_template_id',
+    'created_at',
+    'updated_at',
+  ],
+  company_contract_model_versions: [
+    'id',
+    'model_id',
+    'company_id',
+    'version',
+    'status',
+    'content_html',
+    'engine_params_json',
+    'created_at',
+    'created_by',
+  ],
+  project_contract_model_links: [
+    'id',
+    'project_id',
+    'company_id',
+    'company_contract_model_id',
+    'is_project_default',
+    'created_at',
+  ],
+} as const;
+
+export type CentralWriteTable = keyof typeof CENTRAL_TABLE_COLUMNS;
+
+export function payloadForCentralTable(
+  table: CentralWriteTable,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = new Set<string>(CENTRAL_TABLE_COLUMNS[table] as readonly string[]);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (!allowed.has(key) || value === undefined) continue;
+    out[key] = value;
+  }
+  if (table !== 'company_contract_models' && 'tenant_id' in out) {
+    delete out.tenant_id;
+  }
+  return out;
+}
+
+export function companyDefaultUpdatePayload(now: string, isDefault: boolean) {
+  return {
+    is_company_default: isDefault,
+    ...(isDefault ? { status: 'active' as const } : {}),
+    updated_at: now,
+  };
+}
+
 export type OperationalModel = {
   id: string;
   companyId: string;
