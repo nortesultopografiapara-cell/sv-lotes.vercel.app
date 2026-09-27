@@ -41,6 +41,33 @@ export const DELETE_HISTORY_BLOCKED =
 
 export const DELETE_COMPANY_CONTRACT_MODEL_RPC = 'delete_company_contract_model';
 
+export const ASSOCIATION_ALREADY_EXISTS =
+  'Este modelo já está associado a este empreendimento.';
+
+export const PROJECT_DEFAULT_DETACH_WARNING =
+  'Este é o modelo padrão deste empreendimento na Central. Deseja remover a associação mesmo assim?';
+
+export function confirmDetachAssociationMessage(
+  projectName: string,
+  isProjectDefault: boolean,
+): string {
+  const base = `Remover a associação deste modelo com "${String(projectName || 'Empreendimento').trim()}"?`;
+  if (!isProjectDefault) return base;
+  return `${base} ${PROJECT_DEFAULT_DETACH_WARNING}`;
+}
+
+export function centralLinkedProjectsLabel(names: string[]): string {
+  const unique = names.map((n) => String(n || '').trim()).filter(Boolean);
+  if (unique.length === 0) return '—';
+  if (unique.length === 1) return unique[0];
+  return `${unique.length} empreendimentos`;
+}
+
+export function associationWriteError(message: string): string {
+  if (/duplicate|unique|conflict/i.test(message)) return ASSOCIATION_ALREADY_EXISTS;
+  return message || 'Não foi possível atualizar a associação.';
+}
+
 /** Colunas reais da migration — versions/links NÃO têm tenant_id. */
 export const CENTRAL_TABLE_COLUMNS = {
   company_contract_models: [
@@ -475,20 +502,21 @@ export function associateProject(
     callerCompanyId: input.callerCompanyId,
     extraCompanyId: input.projectCompanyId,
   });
-  let link = store.links.find(
+  const duplicated = store.links.find(
     (l) => l.modelId === input.modelId && l.projectId === input.projectId,
   );
-  if (!link) {
-    link = {
-      id: uniqueId('lnk', store),
-      projectId: input.projectId,
-      companyId: input.callerCompanyId,
-      modelId: input.modelId,
-      isProjectDefault: false,
-      projectName: input.projectName,
-    };
-    store.links.push(link);
+  if (duplicated) {
+    throw new Error(ASSOCIATION_ALREADY_EXISTS);
   }
+  const link: OperationalLink = {
+    id: uniqueId('lnk', store),
+    projectId: input.projectId,
+    companyId: input.callerCompanyId,
+    modelId: input.modelId,
+    isProjectDefault: false,
+    projectName: input.projectName,
+  };
+  store.links.push(link);
   if (input.asProjectDefault) {
     for (const row of store.links) {
       if (row.projectId === input.projectId && row.isProjectDefault) {
@@ -513,7 +541,36 @@ export function setProjectDefaultAtomic(
     callerCompanyId: string;
   },
 ): OperationalStore {
-  return associateProject(store, { ...input, asProjectDefault: true });
+  const model = requireModel(store, input.modelId, input.callerCompanyId);
+  assertSameTenant({
+    modelCompanyId: model.companyId,
+    callerCompanyId: input.callerCompanyId,
+    extraCompanyId: input.projectCompanyId,
+  });
+  let link = store.links.find(
+    (l) => l.modelId === input.modelId && l.projectId === input.projectId,
+  );
+  if (!link) {
+    link = {
+      id: uniqueId('lnk', store),
+      projectId: input.projectId,
+      companyId: input.callerCompanyId,
+      modelId: input.modelId,
+      isProjectDefault: false,
+      projectName: input.projectName,
+    };
+    store.links.push(link);
+  }
+  for (const row of store.links) {
+    if (row.projectId === input.projectId && row.isProjectDefault) {
+      row.isProjectDefault = false;
+    }
+  }
+  link.isProjectDefault = true;
+  if (countProjectDefaults(store, input.projectId) > 1) {
+    throw new Error('Cada empreendimento pode ter apenas um modelo padrão.');
+  }
+  return store;
 }
 
 export function detachProject(
@@ -521,11 +578,19 @@ export function detachProject(
   modelId: string,
   projectId: string,
   callerCompanyId: string,
+  linkId?: string,
 ): OperationalStore {
   requireModel(store, modelId, callerCompanyId);
-  store.links = store.links.filter(
-    (l) => !(l.modelId === modelId && l.projectId === projectId && l.companyId === callerCompanyId),
-  );
+  const companyDefaultBefore = store.models.find((m) => m.id === modelId)?.isCompanyDefault;
+  store.links = store.links.filter((l) => {
+    if (l.companyId !== callerCompanyId) return true;
+    if (linkId) return l.id !== linkId;
+    return !(l.modelId === modelId && l.projectId === projectId);
+  });
+  const model = store.models.find((m) => m.id === modelId);
+  if (model && companyDefaultBefore != null) {
+    model.isCompanyDefault = companyDefaultBefore;
+  }
   return store;
 }
 

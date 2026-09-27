@@ -14,6 +14,11 @@ import { formatContractLotBoundariesClause, resolveContractLotSides } from '@/li
 import { resolveIdentityDocumentFields } from '@/lib/contractIdentity';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
+import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
+import {
+  formatFinancialAccountLabel,
+  type CompanyFinancialAccountType,
+} from '@/lib/finance/companyFinancialAccountTypes';
 import {
   CUSTOM_PLACEHOLDERS,
   customPlaceholderLabel,
@@ -38,6 +43,8 @@ export type CustomPreviewInput = {
   contract?: Record<string, unknown> | null;
   receipts?: Array<Record<string, unknown>> | null;
   commissions?: Array<Record<string, unknown>> | null;
+  broker?: Record<string, unknown> | null;
+  financialAccount?: Record<string, unknown> | null;
   today?: Date;
 };
 
@@ -153,6 +160,18 @@ function receiptAmount(
   return money(match?.amount);
 }
 
+function publicFinancialAccountLabel(account: Record<string, unknown>): string {
+  const name = pick(account.name);
+  if (!name) return '';
+  const typeRaw = String(account.account_type || account.accountType || '').trim();
+  const accountType = (typeRaw || 'OUTRO') as CompanyFinancialAccountType;
+  return formatFinancialAccountLabel({
+    name,
+    accountType,
+    beneficiaryName: pick(account.beneficiary_name, account.beneficiaryName) || null,
+  });
+}
+
 export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<string, string | null> {
   if (input.sale && input.tenantId) {
     const saleTenant = pick(input.sale.company_id, input.sale.tenant_id);
@@ -168,6 +187,8 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
   const lot = input.lot || {};
   const contract = input.contract || {};
   const receipts = (input.receipts || []) as Array<Record<string, unknown>>;
+  const broker = input.broker || {};
+  const financialAccount = input.financialAccount || {};
   const identity = resolveIdentityDocumentFields(customer);
   const spouse = resolveSaleSpouseContext(sale);
   const sides = resolveContractLotSides(lot);
@@ -175,7 +196,7 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
   const sellers = parsePreviewSellers({ company, project });
   const seller1 = sellers[0] || {};
   const seller2 = sellers[1] || {};
-  const saleValue = pick(sale.total_value, sale.sale_value, sale.value, sale.amount);
+  const saleValue = pick(sale.total_value, sale.agreed_price);
   const commissions = input.commissions || [];
   const commission = pick(
     commissions[0]?.amount,
@@ -192,6 +213,14 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     contract.created_at,
     resolveContractSaleDateRaw(sale),
   );
+  const persistedPaymentType = pick(sale.payment_type, sale.payment_method);
+  const paymentLabel = persistedPaymentType ? resolveSalePaymentMode(sale).label : '';
+  const paymentMode = persistedPaymentType ? resolveSalePaymentMode(sale) : null;
+  const firstDue = pick(dates.firstInstallmentDueFmt, formatContractDueDateBr(dates.firstInstallmentDueRaw));
+  const entryDue = pick(dates.entryDueFmt, formatContractDueDateBr(dates.entryDueRaw));
+  const saleDueDate = paymentMode?.isInstallment
+    ? pick(firstDue, entryDue)
+    : pick(entryDue, firstDue);
 
   const values: Record<string, string | null> = {
     COMPANY_NAME: pick(company.fantasy_name, company.name),
@@ -210,8 +239,9 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     CLIENT_NAME: pick(customer.name),
     CLIENT_CPF: pick(customer.cpf_cnpj, customer.document),
     CLIENT_RG: pick(identity.rg, customer.rg),
-    CLIENT_RG_ISSUER: [identity.issuer, identity.issuerState].filter(Boolean).join('/') || pick(customer.rg_issuer),
-    CLIENT_NATIONALITY: pick(customer.nationality),
+    CLIENT_RG_ISSUER: pick(identity.issuer, customer.rg_issuer),
+    CLIENT_RG_STATE: pick(identity.issuerState, customer.rg_issuer_state),
+    CLIENT_NATIONALITY: '',
     CLIENT_PROFESSION: pick(customer.profession),
     CLIENT_CIVIL_STATE: pick(customer.civil_state, customer.marital_status),
     CLIENT_ADDRESS: pick(customer.address),
@@ -259,9 +289,11 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     LOT_LEFT: measure(sides.ladoEsquerdo),
     LOT_BOUNDARIES: lot && Object.keys(lot).length ? formatContractLotBoundariesClause({ block: lot }) : '',
 
+    LOT_PRICE: money(sale.lot_price),
+    SALE_DISCOUNT: sale.discount == null || sale.discount === '' ? '' : money(sale.discount),
     SALE_VALUE: money(saleValue),
     SALE_VALUE_EXTENSO: moneyExtenso(saleValue),
-    PAYMENT_TYPE: pick(sale.payment_type, sale.payment_method),
+    PAYMENT_TYPE: paymentLabel || persistedPaymentType,
     DOWN_PAYMENT:
       receiptAmount(receipts, (n) => n === 0) ||
       receiptAmount(receipts, (n) => n === -1) ||
@@ -272,13 +304,26 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
       sale.installments_count,
     ),
     INSTALLMENT_VALUE: installmentValue,
-    FIRST_DUE_DATE: pick(dates.firstInstallmentDueFmt, formatContractDueDateBr(dates.firstInstallmentDueRaw)),
+    SALE_DUE_DATE: saleDueDate,
+    FIRST_DUE_DATE: firstDue,
     LAST_DUE_DATE: pick(dates.lastInstallmentDueFmt, formatContractDueDateBr(dates.lastInstallmentDueRaw)),
     CORRECTION_INDEX: sale.installment_correction_type
       ? formatInstallmentCorrectionLabel(sale.installment_correction_type)
       : '',
+    FINANCIAL_ACCOUNT_NAME: pick(financialAccount.name),
+    FINANCIAL_ACCOUNT_LABEL: Object.keys(financialAccount).length
+      ? publicFinancialAccountLabel(financialAccount)
+      : '',
+    FINANCIAL_ACCOUNT_BENEFICIARY: pick(financialAccount.beneficiary_name, financialAccount.beneficiaryName),
+    FINANCIAL_ACCOUNT_DOCUMENT: pick(financialAccount.document),
     LATE_FINE: '',
     LATE_INTEREST: '',
+
+    BROKER_NAME: pick(broker.name),
+    BROKER_CPF: pick(broker.cpf, broker.document),
+    BROKER_CRECI: pick(broker.creci),
+    BROKER_PHONE: pick(broker.phone),
+    BROKER_EMAIL: pick(broker.email),
 
     CONTRACT_NUMBER: pick(contract.contract_number, sale.contract_number),
     CONTRACT_DATE: contractDateRaw

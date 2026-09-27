@@ -28,9 +28,13 @@ import {
 import { SALE_CONTRACT_MODEL_LABELS, type SaleContractModel } from '@/lib/contractModel';
 import {
   ARCHIVE_DEFAULT_BLOCKED,
+  ASSOCIATION_ALREADY_EXISTS,
   CUSTOM_NOT_IN_AUTO_EMISSION,
   DELETE_COMPANY_CONTRACT_MODEL_RPC,
+  DELETE_PROJECT_LINK_BLOCKED,
   LEGAL_TEXT_LOCKED,
+  associationWriteError,
+  centralLinkedProjectsLabel,
   companyDefaultUpdatePayload,
   deleteRpcUserMessage,
   evaluateContractModelDeletion,
@@ -54,6 +58,9 @@ import {
 } from '@/lib/customContractHtml';
 import { convertDocxToCustomHtml, isDocxFile } from '@/lib/customContractDocxImport';
 import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
+import ManageContractModelProjectsPanel, {
+  type ManageProjectLink,
+} from '@/components/contracts/central/ManageContractModelProjectsPanel';
 
 type ModelRow = {
   id: string;
@@ -93,7 +100,7 @@ type Dialog =
   | { type: 'sheet'; modelId: string }
   | { type: 'view'; modelId: string }
   | { type: 'history'; modelId: string }
-  | { type: 'associate'; modelId: string }
+  | { type: 'manage'; modelId: string }
   | { type: 'saveAs'; modelId: string }
   | { type: 'new' }
   | { type: 'import' }
@@ -138,8 +145,6 @@ export default function ContractModelsOperationalCentral() {
   const [importHtml, setImportHtml] = useState('');
   const [importFile, setImportFile] = useState<{ name: string; mime: string } | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
-  const [associateProjectId, setAssociateProjectId] = useState('');
-  const [associateAsDefault, setAssociateAsDefault] = useState(true);
   const [deleteGate, setDeleteGate] = useState<ContractModelDeletionGate | null>(null);
 
   const canOperate = isPartnerPanelAdmin(user?.role);
@@ -393,10 +398,10 @@ export default function ContractModelsOperationalCentral() {
     }
   }
 
-  async function run(action: () => Promise<void>, okMessage?: string) {
+  async function run(action: () => Promise<void>, okMessage?: string): Promise<boolean> {
     if (!canOperate) {
       setError('Você não tem permissão para alterar modelos.');
-      return;
+      return false;
     }
     setSaving(true);
     setError(null);
@@ -404,8 +409,10 @@ export default function ContractModelsOperationalCentral() {
       await action();
       await reload();
       if (okMessage) setNotice(okMessage);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível concluir a operação.');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -609,51 +616,71 @@ export default function ContractModelsOperationalCentral() {
     const existing = links.find(
       (l) => l.company_contract_model_id === model.id && l.project_id === project.id,
     );
-    let linkId = existing?.id;
-    if (!linkId) {
-      const payload = payloadForCentralTable('project_contract_model_links', {
-        project_id: project.id,
-        company_id: tenantId,
-        company_contract_model_id: model.id,
-        is_project_default: false,
-      });
-      if ('tenant_id' in payload) {
-        throw new Error('Vínculo de empreendimento não usa tenant_id.');
-      }
-      const { data, error: insertError } = await supabase
-        .from('project_contract_model_links')
-        .insert(payload)
-        .select('id')
-        .single();
-      if (insertError || !data?.id) throw new Error(insertError?.message || 'Não foi possível associar.');
-      linkId = String(data.id);
+    if (existing) throw new Error(ASSOCIATION_ALREADY_EXISTS);
+    const payload = payloadForCentralTable('project_contract_model_links', {
+      project_id: project.id,
+      company_id: tenantId,
+      company_contract_model_id: model.id,
+      is_project_default: false,
+    });
+    if ('tenant_id' in payload) {
+      throw new Error('Vínculo de empreendimento não usa tenant_id.');
+    }
+    const { data, error: insertError } = await supabase
+      .from('project_contract_model_links')
+      .insert(payload)
+      .select('id')
+      .single();
+    if (insertError || !data?.id) {
+      throw new Error(associationWriteError(insertError?.message || 'Não foi possível associar.'));
     }
     if (asDefault) {
-      const { error: unsetError } = await supabase
-        .from('project_contract_model_links')
-        .update({ is_project_default: false })
-        .eq('project_id', project.id)
-        .eq('company_id', tenantId)
-        .eq('is_project_default', true);
-      if (unsetError) throw new Error(unsetError.message);
-      const { error: setError } = await supabase
-        .from('project_contract_model_links')
-        .update({ is_project_default: true })
-        .eq('id', linkId)
-        .eq('company_id', tenantId);
-      if (setError) throw new Error(setError.message);
+      await handleSetProjectDefault(String(data.id), project.id);
     }
   }
 
-  async function handleDetach(modelId: string, projectId: string) {
+  async function handleSetProjectDefault(linkId: string, projectId: string) {
+    if (!tenantId) return;
+    const { error: unsetError } = await supabase
+      .from('project_contract_model_links')
+      .update({ is_project_default: false })
+      .eq('project_id', projectId)
+      .eq('company_id', tenantId)
+      .eq('is_project_default', true);
+    if (unsetError) throw new Error(unsetError.message);
+    const { error: setError } = await supabase
+      .from('project_contract_model_links')
+      .update({ is_project_default: true })
+      .eq('id', linkId)
+      .eq('company_id', tenantId)
+      .eq('project_id', projectId);
+    if (setError) throw new Error(setError.message);
+  }
+
+  async function handleDetachLink(link: ManageProjectLink, modelId: string) {
     if (!tenantId) return;
     const { error: deleteError } = await supabase
       .from('project_contract_model_links')
       .delete()
+      .eq('id', link.id)
+      .eq('company_id', tenantId)
       .eq('company_contract_model_id', modelId)
-      .eq('project_id', projectId)
-      .eq('company_id', tenantId);
+      .eq('project_id', link.projectId);
     if (deleteError) throw new Error(deleteError.message);
+  }
+
+  function openManage(model: ModelRow) {
+    setMenuId(null);
+    setDialog({ type: 'manage', modelId: model.id });
+  }
+
+  function toManageLinks(modelId: string): ManageProjectLink[] {
+    return linksByModel(modelId).map((link) => ({
+      id: link.id,
+      projectId: link.project_id,
+      projectName: projectNameById.get(link.project_id) || 'Empreendimento',
+      isProjectDefault: link.is_project_default,
+    }));
   }
 
   const selected =
@@ -810,7 +837,15 @@ export default function ContractModelsOperationalCentral() {
                               </div>
                             )}
                           </td>
-                          <td className="px-3 py-3">{names.length ? names.join(', ') : '—'}</td>
+                          <td className="px-3 py-3">
+                            <button
+                              type="button"
+                              onClick={() => openManage(model)}
+                              className="text-left hover:underline text-[var(--text-primary)]"
+                            >
+                              {centralLinkedProjectsLabel(names)}
+                            </button>
+                          </td>
                           <td className="px-3 py-3">
                             {model.is_company_default ? (
                               <span className="text-[var(--color-success)] font-semibold">Empresa</span>
@@ -845,7 +880,7 @@ export default function ContractModelsOperationalCentral() {
                                 />
                                 <ActionItem icon={Copy} label="Duplicar" onClick={() => { setMenuId(null); void run(() => handleDuplicate(model), 'Modelo duplicado.'); }} />
                                 <ActionItem icon={Save} label="Salvar como novo" onClick={() => { setSaveAsName(`Cópia de ${model.name}`); setDialog({ type: 'saveAs', modelId: model.id }); setMenuId(null); }} />
-                                <ActionItem icon={FileText} label="Associar a empreendimento" onClick={() => { setAssociateProjectId(projects[0]?.id || ''); setAssociateAsDefault(true); setDialog({ type: 'associate', modelId: model.id }); setMenuId(null); }} />
+                                <ActionItem icon={FileText} label="Gerenciar empreendimentos" onClick={() => openManage(model)} />
                                 <ActionItem icon={History} label="Histórico" onClick={() => { setDialog({ type: 'history', modelId: model.id }); setMenuId(null); }} />
                                 <ActionItem
                                   icon={Archive}
@@ -932,19 +967,11 @@ export default function ContractModelsOperationalCentral() {
                   <li key={link.id} className="flex items-center justify-between gap-2">
                     <span>
                       {projectNameById.get(link.project_id) || 'Empreendimento'}
-                      {link.is_project_default ? (
-                        <span className="ml-2 text-[10px] text-[var(--color-success)]">padrão</span>
-                      ) : null}
+                      <span className="ml-2 text-[11px] text-[var(--color-text-muted)]">
+                        Associado · Padrão deste empreendimento:{' '}
+                        {link.is_project_default ? 'Sim' : 'Não'}
+                      </span>
                     </span>
-                    <button
-                      type="button"
-                      className="text-[11px] text-amber-300"
-                      onClick={() =>
-                        void run(() => handleDetach(selected.id, link.project_id), 'Associação removida.')
-                      }
-                    >
-                      Remover
-                    </button>
                   </li>
                 ))}
               </ul>
@@ -981,8 +1008,8 @@ export default function ContractModelsOperationalCentral() {
             <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => { setSaveAsName(`Cópia de ${selected.name}`); setDialog({ type: 'saveAs', modelId: selected.id }); }}>
               Salvar como novo
             </button>
-            <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => { setAssociateProjectId(projects[0]?.id || ''); setAssociateAsDefault(true); setDialog({ type: 'associate', modelId: selected.id }); }}>
-              Associar a empreendimento
+            <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => openManage(selected)}>
+              Gerenciar empreendimentos
             </button>
             <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => setDialog({ type: 'history', modelId: selected.id })}>
               Histórico
@@ -1057,42 +1084,22 @@ export default function ContractModelsOperationalCentral() {
         </Modal>
       )}
 
-      {dialog?.type === 'associate' && selected && (
-        <Modal title="Associar a empreendimento" onClose={() => setDialog(null)}>
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1">Empreendimento</label>
-          <select
-            value={associateProjectId}
-            onChange={(e) => setAssociateProjectId(e.target.value)}
-            className="w-full h-9 px-3 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-white mb-3"
-          >
-            <option value="">Selecione</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-            <input
-              type="checkbox"
-              checked={associateAsDefault}
-              onChange={(e) => setAssociateAsDefault(e.target.checked)}
-            />
-            Definir como padrão deste empreendimento
-          </label>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() =>
-              void run(async () => {
-                await handleAssociate(selected, associateProjectId, associateAsDefault);
-                setDialog({ type: 'sheet', modelId: selected.id });
-              }, 'Empreendimento associado.')
+      {dialog?.type === 'manage' && selected && (
+        <Modal title="Gerenciar empreendimentos" onClose={() => setDialog(null)}>
+          <ManageContractModelProjectsPanel
+            links={toManageLinks(selected.id)}
+            projects={projects}
+            saving={saving}
+            onAssociate={(projectId, asDefault) =>
+              run(() => handleAssociate(selected, projectId, asDefault), 'Empreendimento associado.')
             }
-            className="mt-4 h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
-          >
-            Associar
-          </button>
+            onSetDefault={(link) =>
+              run(() => handleSetProjectDefault(link.id, link.projectId), 'Padrão do empreendimento atualizado.')
+            }
+            onDetach={(link) =>
+              run(() => handleDetachLink(link, selected.id), 'Associação removida.')
+            }
+          />
         </Modal>
       )}
 
@@ -1428,6 +1435,11 @@ export default function ContractModelsOperationalCentral() {
           ) : (
             <>
               <p className="text-sm text-amber-200">{deleteGate.reason}</p>
+              {deleteGate.reason === DELETE_PROJECT_LINK_BLOCKED ? (
+                <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                  Use Gerenciar empreendimentos para desassociar e, depois, escolha Excluir modelo.
+                </p>
+              ) : null}
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
@@ -1436,6 +1448,15 @@ export default function ContractModelsOperationalCentral() {
                 >
                   Cancelar
                 </button>
+                {deleteGate.reason === DELETE_PROJECT_LINK_BLOCKED && (
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs"
+                    onClick={() => openManage(selected)}
+                  >
+                    Gerenciar empreendimentos
+                  </button>
+                )}
                 {deleteGate.offerArchive && selected.status === 'active' && (
                   <button
                     type="button"

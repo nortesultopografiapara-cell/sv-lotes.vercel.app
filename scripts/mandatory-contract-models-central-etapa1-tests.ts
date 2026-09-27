@@ -19,6 +19,7 @@ import {
   simulateContractModelCentralSeed,
 } from '../lib/contractModelCentral';
 import {
+  ASSOCIATION_ALREADY_EXISTS,
   ARCHIVE_DEFAULT_BLOCKED,
   CUSTOM_NOT_IN_AUTO_EMISSION,
   DELETE_COMPANY_CONTRACT_MODEL_RPC,
@@ -30,12 +31,15 @@ import {
   SYSTEM_SEED_DELETE_BLOCKED,
   archiveModel,
   associateProject,
+  centralLinkedProjectsLabel,
   companyDefaultUpdatePayload,
+  confirmDetachAssociationMessage,
   countActiveCompanyDefaults,
   countProjectDefaults,
   createNewModel,
   deleteDisposableUserModel,
   deleteRpcUserMessage,
+  detachProject,
   duplicateModel,
   evaluateContractModelDeletion,
   historyForModel,
@@ -76,10 +80,14 @@ const gisSale = read('lib/gisSaleCreateService.ts');
 const generateHtml = read('lib/contractTemplate.ts');
 const mundoSellers = read('lib/mundoNovoContractSellers.ts');
 const centralPage = read('app/contracts/models/page.tsx');
+const manageUi = read(
+  'components/contracts/central/ManageContractModelProjectsPanel.tsx',
+);
 const centralUi =
   centralPage +
   read('components/contracts/central/ContractModelsOperationalCentral.tsx') +
-  read('lib/contractModelCentralOps.ts');
+  read('lib/contractModelCentralOps.ts') +
+  manageUi;
 
 assert(
   layout.includes('CONTRACT_MODELS_CENTRAL_PATH') &&
@@ -161,10 +169,40 @@ assert(
     centralUi.includes('Configurar/Editar') &&
     centralUi.includes('Duplicar') &&
     centralUi.includes('Salvar como novo') &&
-    centralUi.includes('Associar a empreendimento') &&
+    centralUi.includes('Gerenciar empreendimentos') &&
     centralUi.includes('Histórico') &&
     centralUi.includes('Arquivar'),
   'ações operacionais por modelo',
+);
+assert(
+  manageUi.includes('Desassociar') &&
+    manageUi.includes('Definir como padrão') &&
+    manageUi.includes('Padrão deste empreendimento') &&
+    manageUi.includes('+ Associar empreendimento'),
+  'gerenciador lista associados, padrão e desassociar',
+);
+assert(
+  confirmDetachAssociationMessage('Chacreamento Araguaia', false) ===
+    'Remover a associação deste modelo com "Chacreamento Araguaia"?',
+  'confirmação de desassociação pede o nome do empreendimento',
+);
+assert(
+  confirmDetachAssociationMessage('Chacreamento Araguaia', true).includes(
+    'Este é o modelo padrão deste empreendimento na Central',
+  ),
+  'padrão do empreendimento exige confirmação explícita',
+);
+assert(
+  centralLinkedProjectsLabel([]) === '—' &&
+    centralLinkedProjectsLabel(['Chacreamento Araguaia']) === 'Chacreamento Araguaia' &&
+    centralLinkedProjectsLabel(['A', 'B', 'C']) === '3 empreendimentos',
+  'coluna Empreendimento resume vários vínculos',
+);
+assert(
+  !manageUi.includes('Desassociar e excluir') &&
+    !centralUi.includes('Desassociar + Excluir') &&
+    !centralUi.includes('desassociar e excluir automaticamente'),
+  'não há atalho desassociar+excluir',
 );
 {
   const centralComponent = read(
@@ -772,6 +810,88 @@ function sampleStore(): OperationalStore {
   assert(store.projectsContractModel['proj-1'] === 'MUNDO_NOVO', 'cadastro GIS do empreendimento intacto');
   assertStoreGis(store, before);
 
+  {
+    const multi = duplicateModel(store, 'm-padrao', 'co-a').copy;
+    associateProject(store, {
+      modelId: multi.id,
+      projectId: 'p-a',
+      projectName: 'Chacreamento Araguaia',
+      projectCompanyId: 'co-a',
+      callerCompanyId: 'co-a',
+      asProjectDefault: true,
+    });
+    associateProject(store, {
+      modelId: multi.id,
+      projectId: 'p-b',
+      projectName: 'Empreendimento X',
+      projectCompanyId: 'co-a',
+      callerCompanyId: 'co-a',
+      asProjectDefault: false,
+    });
+    associateProject(store, {
+      modelId: multi.id,
+      projectId: 'p-c',
+      projectName: 'Empreendimento Y',
+      projectCompanyId: 'co-a',
+      callerCompanyId: 'co-a',
+      asProjectDefault: false,
+    });
+    let duplicated = false;
+    try {
+      associateProject(store, {
+        modelId: multi.id,
+        projectId: 'p-a',
+        projectName: 'Chacreamento Araguaia',
+        projectCompanyId: 'co-a',
+        callerCompanyId: 'co-a',
+        asProjectDefault: false,
+      });
+    } catch (e) {
+      duplicated = e instanceof Error && e.message === ASSOCIATION_ALREADY_EXISTS;
+    }
+    assert(duplicated, 'impede associação duplicada do mesmo empreendimento');
+    const companyDefaultBefore = store.models.find((m) => m.id === 'm-mundo')?.isCompanyDefault;
+    detachProject(store, multi.id, 'p-b', 'co-a');
+    const remaining = store.links.filter((l) => l.modelId === multi.id);
+    assert(remaining.length === 2, 'desassocia somente o vínculo escolhido');
+    assert(
+      remaining.some((l) => l.projectId === 'p-a' && l.isProjectDefault) &&
+        remaining.some((l) => l.projectId === 'p-c'),
+      'vínculo padrão e o outro associado permanecem',
+    );
+    assert(
+      store.models.find((m) => m.id === 'm-mundo')?.isCompanyDefault === companyDefaultBefore,
+      'desassociar empreendimento não remove o padrão da empresa',
+    );
+    assertStoreGis(store, before);
+    assert(
+      evaluateContractModelDeletion({
+        source: 'user',
+        isCompanyDefault: false,
+        projectLinkCount: remaining.length,
+        saleRefCount: 0,
+        contractRefCount: 0,
+      }).ok === false,
+      'com vínculos restantes a exclusão continua bloqueada',
+    );
+    detachProject(store, multi.id, 'p-a', 'co-a');
+    detachProject(store, multi.id, 'p-c', 'co-a');
+    assert(
+      evaluateContractModelDeletion({
+        source: 'user',
+        isCompanyDefault: false,
+        projectLinkCount: store.links.filter((l) => l.modelId === multi.id).length,
+        saleRefCount: 0,
+        contractRefCount: 0,
+      }).ok === true,
+      'depois do último vínculo a RPC/gate pode liberar a exclusão',
+    );
+    assert(
+      store.models.some((m) => m.id === multi.id),
+      'desassociar o último vínculo não exclui o modelo',
+    );
+  }
+
   let archiveBlocked = false;
   try {
     archiveModel(store, 'm-mundo', 'co-a');
@@ -1028,6 +1148,23 @@ function assertStoreGis(
     !/from\('sales'\)[\s\S]{0,220}\.(insert|update|delete)\(/.test(centralComponent) &&
       !/from\('contracts'\)[\s\S]{0,220}\.(insert|update|delete)\(/.test(centralComponent),
     'Central não escreve sales/contracts',
+  );
+  assert(
+    centralComponent.includes('handleDetachLink') &&
+      centralComponent.includes('.eq(\'id\', link.id)') &&
+      /from\('project_contract_model_links'\)[\s\S]{0,180}\.delete\(/.test(centralComponent),
+    'desassociar apaga só o registro escolhido de project_contract_model_links',
+  );
+  assert(
+    !/from\('projects'\)[\s\S]{0,220}\.(insert|update|delete)\(/.test(centralComponent) &&
+      !centralComponent.includes('projects.contract_model') &&
+      !centralComponent.includes('companies.contract_model'),
+    'desassociar não altera GIS nem padrão legado do empreendimento',
+  );
+  assert(
+    centralComponent.includes('await reload()') &&
+      centralComponent.includes('type: \'manage\''),
+    'associação/desassociação atualiza a Central sem F5',
   );
   assert(
     centralComponent.includes("from('sales')") &&

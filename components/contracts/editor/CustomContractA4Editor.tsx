@@ -27,7 +27,11 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import { CONTRACT_MODELS_CENTRAL_PATH } from '@/lib/contractModelCentral';
-import { payloadForCentralTable } from '@/lib/contractModelCentralOps';
+import {
+  ASSOCIATION_ALREADY_EXISTS,
+  associationWriteError,
+  payloadForCentralTable,
+} from '@/lib/contractModelCentralOps';
 import {
   CUSTOM_CONTRACT_EDITOR_PATH,
   CUSTOM_EDITOR_ONLY,
@@ -55,6 +59,9 @@ import {
   loadCustomPreviewContext,
   type PreviewSaleOption,
 } from '@/lib/customContractPreviewLoad';
+import ManageContractModelProjectsPanel, {
+  type ManageProjectLink,
+} from '@/components/contracts/central/ManageContractModelProjectsPanel';
 import '@/components/contracts/editor/customContractEditor.css';
 
 const CustomContractTiptap = dynamic(
@@ -84,9 +91,16 @@ type VersionRow = {
   published_at?: string | null;
 };
 
+type LinkRow = {
+  id: string;
+  company_contract_model_id: string;
+  project_id: string;
+  company_id: string;
+  is_project_default: boolean;
+};
 type ProjectOpt = { id: string; name: string; companyId: string };
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-type Panel = 'preview' | 'history' | 'associate' | 'saveAs' | null;
+type Panel = 'preview' | 'history' | 'manage' | 'saveAs' | null;
 
 function firstRpcRow<T>(data: T | T[] | null | undefined): T | null {
   if (!data) return null;
@@ -121,8 +135,8 @@ export default function CustomContractA4Editor() {
   const [panel, setPanel] = useState<Panel>(null);
   const [saveAsName, setSaveAsName] = useState('');
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
-  const [associateProjectId, setAssociateProjectId] = useState('');
-  const [associateAsDefault, setAssociateAsDefault] = useState(true);
+  const [links, setLinks] = useState<LinkRow[]>([]);
+  const [linkSaving, setLinkSaving] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     company: true,
     buyer: true,
@@ -299,7 +313,14 @@ export default function CustomContractA4Editor() {
       });
     }
     setProjects(scopedProjects);
-    setAssociateProjectId(scopedProjects[0]?.id || '');
+    const { data: linkRows } = await supabase
+      .from('project_contract_model_links')
+      .select('id, company_contract_model_id, project_id, company_id, is_project_default')
+      .eq('company_id', activeTenantId)
+      .eq('company_contract_model_id', modelId);
+    setLinks(
+      ((linkRows ?? []) as LinkRow[]).filter((row) => String(row.company_id) === String(activeTenantId)),
+    );
     setLoading(false);
   }, [user, modelId, router]);
 
@@ -414,43 +435,90 @@ export default function CustomContractA4Editor() {
     router.push(CUSTOM_CONTRACT_EDITOR_PATH(String(data.id)));
   }
 
-  async function handleAssociate() {
+  async function reloadLinks() {
     const companyId = tenantRef.current;
-    if (!companyId || !model) return;
-    const project = projects.find((p) => p.id === associateProjectId);
+    if (!companyId || !modelId) return;
+    const { data: linkRows } = await supabase
+      .from('project_contract_model_links')
+      .select('id, company_contract_model_id, project_id, company_id, is_project_default')
+      .eq('company_id', companyId)
+      .eq('company_contract_model_id', modelId);
+    setLinks(
+      ((linkRows ?? []) as LinkRow[]).filter((row) => String(row.company_id) === String(companyId)),
+    );
+  }
+
+  async function runLinkAction(action: () => Promise<void>, okMessage: string): Promise<boolean> {
+    setLinkSaving(true);
+    setError(null);
+    try {
+      await action();
+      await reloadLinks();
+      setNotice(okMessage);
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível atualizar a associação.');
+      return false;
+    } finally {
+      setLinkSaving(false);
+    }
+  }
+
+  async function handleAssociateProject(projectId: string, asDefault: boolean) {
+    const companyId = tenantRef.current;
+    if (!companyId || !model) throw new Error('Empresa não identificada.');
+    const project = projects.find((p) => p.id === projectId);
     if (!project) throw new Error('Escolha um empreendimento.');
+    if (links.some((l) => l.project_id === project.id)) {
+      throw new Error(ASSOCIATION_ALREADY_EXISTS);
+    }
     const linkPayload = payloadForCentralTable('project_contract_model_links', {
       project_id: project.id,
       company_id: companyId,
       company_contract_model_id: model.id,
       is_project_default: false,
     });
-    const { error: insertError } = await supabase
+    const { data, error: insertError } = await supabase
       .from('project_contract_model_links')
       .insert(linkPayload)
       .select('id')
-      .maybeSingle();
-    if (insertError && !/duplicate|unique|conflict/i.test(insertError.message)) {
-      throw new Error(insertError.message);
+      .single();
+    if (insertError || !data?.id) {
+      throw new Error(associationWriteError(insertError?.message || 'Não foi possível associar.'));
     }
-    if (associateAsDefault) {
-      const { error: unsetError } = await supabase
-        .from('project_contract_model_links')
-        .update({ is_project_default: false })
-        .eq('project_id', project.id)
-        .eq('company_id', companyId)
-        .eq('is_project_default', true);
-      if (unsetError) throw new Error(unsetError.message);
-      const { error: setError } = await supabase
-        .from('project_contract_model_links')
-        .update({ is_project_default: true })
-        .eq('company_contract_model_id', model.id)
-        .eq('project_id', project.id)
-        .eq('company_id', companyId);
-      if (setError) throw new Error(setError.message);
-    }
-    setNotice('Empreendimento associado.');
-    setPanel(null);
+    if (asDefault) await handleSetProjectDefault(String(data.id), project.id);
+  }
+
+  async function handleSetProjectDefault(linkId: string, projectId: string) {
+    const companyId = tenantRef.current;
+    if (!companyId) throw new Error('Empresa não identificada.');
+    const { error: unsetError } = await supabase
+      .from('project_contract_model_links')
+      .update({ is_project_default: false })
+      .eq('project_id', projectId)
+      .eq('company_id', companyId)
+      .eq('is_project_default', true);
+    if (unsetError) throw new Error(unsetError.message);
+    const { error: setError } = await supabase
+      .from('project_contract_model_links')
+      .update({ is_project_default: true })
+      .eq('id', linkId)
+      .eq('company_id', companyId)
+      .eq('project_id', projectId);
+    if (setError) throw new Error(setError.message);
+  }
+
+  async function handleDetachLink(link: ManageProjectLink) {
+    const companyId = tenantRef.current;
+    if (!companyId || !model) throw new Error('Empresa não identificada.');
+    const { error: deleteError } = await supabase
+      .from('project_contract_model_links')
+      .delete()
+      .eq('id', link.id)
+      .eq('company_id', companyId)
+      .eq('company_contract_model_id', model.id)
+      .eq('project_id', link.projectId);
+    if (deleteError) throw new Error(deleteError.message);
   }
 
   function insertField(key: string) {
@@ -623,10 +691,10 @@ export default function CustomContractA4Editor() {
           </button>
           <button
             type="button"
-            onClick={() => setPanel('associate')}
+            onClick={() => setPanel('manage')}
             className="h-8 px-3 rounded-lg border border-white/10 text-xs"
           >
-            Associar empreendimento
+            Gerenciar empreendimentos
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-1">
@@ -826,39 +894,28 @@ export default function CustomContractA4Editor() {
         </EditorModal>
       )}
 
-      {panel === 'associate' && (
-        <EditorModal title="Associar empreendimento" onClose={() => setPanel(null)}>
-          <select
-            value={associateProjectId}
-            onChange={(e) => setAssociateProjectId(e.target.value)}
-            className="w-full h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm mb-3"
-          >
-            <option value="">Selecione</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm mb-4">
-            <input
-              type="checkbox"
-              checked={associateAsDefault}
-              onChange={(e) => setAssociateAsDefault(e.target.checked)}
-            />
-            Definir como padrão deste empreendimento
-          </label>
-          <button
-            type="button"
-            className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-xs font-semibold"
-            onClick={() =>
-              void handleAssociate().catch((e) =>
-                setError(e instanceof Error ? e.message : 'Falha ao associar.'),
+      {panel === 'manage' && (
+        <EditorModal title="Gerenciar empreendimentos" onClose={() => setPanel(null)}>
+          <ManageContractModelProjectsPanel
+            links={links.map((link) => ({
+              id: link.id,
+              projectId: link.project_id,
+              projectName: projects.find((p) => p.id === link.project_id)?.name || 'Empreendimento',
+              isProjectDefault: link.is_project_default,
+            }))}
+            projects={projects}
+            saving={linkSaving}
+            onAssociate={(projectId, asDefault) =>
+              runLinkAction(() => handleAssociateProject(projectId, asDefault), 'Empreendimento associado.')
+            }
+            onSetDefault={(link) =>
+              runLinkAction(
+                () => handleSetProjectDefault(link.id, link.projectId),
+                'Padrão do empreendimento atualizado.',
               )
             }
-          >
-            Associar
-          </button>
+            onDetach={(link) => runLinkAction(() => handleDetachLink(link), 'Associação removida.')}
+          />
         </EditorModal>
       )}
 

@@ -79,8 +79,19 @@ export async function loadCustomPreviewContext(
   }
 
   const lotId = String(sale.block_id || sale.lot_id || '');
-  const [companyRes, customerRes, projectRes, lotRes, contractRes, receiptsRes, commissionsRes] =
-    await Promise.all([
+  const brokerId = String(sale.broker_id || '');
+  const financialAccountId = String(sale.financial_account_id || '');
+  const [
+    companyRes,
+    customerRes,
+    projectRes,
+    lotRes,
+    contractRes,
+    receiptsRes,
+    commissionsRes,
+    brokerRes,
+    accountRes,
+  ] = await Promise.all([
       supabase.from('companies').select('*').eq('id', tenantId).maybeSingle(),
       sale.customer_id
         ? supabase.from('customers').select('*').eq('id', sale.customer_id).maybeSingle()
@@ -106,6 +117,20 @@ export async function loadCustomPreviewContext(
         .from('broker_commissions')
         .select('id, sale_id, amount')
         .eq('sale_id', saleId),
+      brokerId
+        ? supabase
+            .from('brokers')
+            .select('id, company_id, tenant_id, name, cpf, creci, phone, email')
+            .eq('id', brokerId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      financialAccountId
+        ? supabase
+            .from('company_financial_accounts')
+            .select('id, company_id, name, account_type, beneficiary_name, document')
+            .eq('id', financialAccountId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
   if (customerRes.data && !tenantMatch(customerRes.data as Record<string, unknown>, tenantId)) {
@@ -116,6 +141,12 @@ export async function loadCustomPreviewContext(
   }
 
   const contract = contractRes.data || null;
+  const brokerRow = (brokerRes.data || null) as Record<string, unknown> | null;
+  const accountRow = (accountRes.data || null) as Record<string, unknown> | null;
+  const broker =
+    brokerRow && tenantMatch(brokerRow, tenantId) ? brokerRow : null;
+  const financialAccount =
+    accountRow && String(accountRow.company_id || '') === tenantId ? accountRow : null;
 
   return {
     tenantId,
@@ -127,5 +158,7 @@ export async function loadCustomPreviewContext(
     contract: contract as Record<string, unknown> | null,
     receipts: (receiptsRes.data || []) as Array<Record<string, unknown>>,
     commissions: (commissionsRes.data || []) as Array<Record<string, unknown>>,
+    broker,
+    financialAccount,
   };
 }

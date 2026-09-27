@@ -78,7 +78,7 @@ assert(editorUi.includes('Publicar versão'), 'publicar versão na barra');
 assert(editorUi.includes('Salvar como novo'), 'salvar como novo na barra');
 assert(editorUi.includes('Visualizar'), 'visualizar na barra');
 assert(editorUi.includes('Histórico'), 'histórico na barra');
-assert(editorUi.includes('Associar empreendimento'), 'associar empreendimento na barra');
+assert(editorUi.includes('Gerenciar empreendimentos'), 'gerenciar empreendimentos na barra');
 assert(editorUi.includes('toggleBold') && editorUi.includes('toggleItalic'), 'negrito e itálico');
 assert(editorUi.includes('toggleUnderline'), 'sublinhado');
 assert(editorUi.includes('setTextAlign'), 'alinhamento');
@@ -90,10 +90,11 @@ assert(editorUi.includes('insertPageBreak'), 'quebra de página');
 assert(editorUi.includes('Campos automáticos'), 'painel de campos');
 
 assert(editorUi.includes('CUSTOM_PLACEHOLDER_GROUPS'), 'painel usa os grupos aprovados');
-assert(CUSTOM_PLACEHOLDER_GROUPS.length === 10, 'dez grupos de campos automáticos');
+assert(CUSTOM_PLACEHOLDER_GROUPS.length === 11, 'onze grupos de campos automáticos');
 assert(
   CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_CPF') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'CLIENT_RG_STATE') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SPOUSE_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SELLER_1_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SELLER_2_NAME') &&
@@ -101,9 +102,20 @@ assert(
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'BLOCK_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_NUMBER') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_BOUNDARIES') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LOT_PRICE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_DISCOUNT') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_VALUE') &&
-    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'WITNESS_1_NAME'),
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_DUE_DATE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'BROKER_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'FINANCIAL_ACCOUNT_LABEL') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'WITNESS_1_NAME') &&
+    !CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_NOTES') &&
+    !CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SPOUSE_CITY'),
   'placeholders compatíveis com o sistema atual',
+);
+assert(
+  PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'),
+  'nacionalidade do comprador sem fonte automática',
 );
 
 assert(
@@ -449,16 +461,28 @@ void (async () => {
   const values = resolveCustomPreviewValues({
     tenantId: 'co-a',
     company: { name: 'SV Topografia', cnpj: '00.000.000/0001-00', city: 'Marabá' },
-    customer: { name: 'João', cpf_cnpj: '12345678901' },
+    customer: {
+      name: 'João',
+      cpf_cnpj: '12345678901',
+      rg: '3658956',
+      rg_issuer: 'PC',
+      rg_issuer_state: 'PA',
+      nationality: 'Brasileira',
+    },
     sale: {
       company_id: 'co-a',
+      lot_price: 40000,
+      discount: 1500,
       total_value: 38500,
+      agreed_price: 38500,
       payment_type: 'parcelado',
       installments_count: 10,
       sale_date: '2026-03-01',
       has_spouse: true,
       sale_spouse_name: 'Ana',
       sale_spouse_cpf: '52998224725',
+      sale_spouse_nationality: 'Brasileira',
+      notes: 'não persistir no contrato',
     },
     project: { name: 'Estrela do Sul', city: 'Marabá', seller_parties_json: [{ name: 'Vendedor Um', cpf: '111' }] },
     lot: { quadra: 'QD 01', lote: '12', frente: 20, fundo: 20, 'Lado Dir.': 40, 'Lado Esq.': 40 },
@@ -466,10 +490,30 @@ void (async () => {
       { installment_number: 0, amount: 5000, due_date: '2026-03-10', status: 'pendente' },
       { installment_number: 1, amount: 3350, due_date: '2026-04-10', status: 'pendente' },
     ],
+    broker: { name: 'Carlos Corretor', cpf: '11144477735', creci: '12345-F', phone: '94999990000', email: 'c@ex.com' },
+    financialAccount: {
+      name: 'Conta Imobiliária',
+      account_type: 'IMOBILIARIA',
+      beneficiary_name: 'SV Lotes',
+      document: '00.000.000/0001-00',
+    },
   });
   assert(values.CLIENT_NAME === 'João', 'fonte real do comprador');
+  assert(values.CLIENT_RG_ISSUER === 'PC', 'órgão emissor sem concatenar UF');
+  assert(values.CLIENT_RG_STATE === 'PA', 'UF emissor do RG da Nova Venda');
+  assert(values.CLIENT_NATIONALITY == null, 'nacionalidade do comprador sem fonte automática');
+  assert(values.SPOUSE_NATIONALITY === 'Brasileira', 'nacionalidade do cônjuge da venda');
   assert(values.PROJECT_NAME === 'Estrela do Sul', 'fonte real do empreendimento');
-  assert(String(values.SALE_VALUE || '').includes('38.500'), 'valor da venda sem recálculo paralelo');
+  assert(String(values.LOT_PRICE || '').includes('40.000'), 'LOT_PRICE = valor original do lote');
+  assert(String(values.SALE_DISCOUNT || '').includes('1.500'), 'SALE_DISCOUNT = desconto persistido');
+  assert(String(values.SALE_VALUE || '').includes('38.500'), 'SALE_VALUE = valor final contratado sem recálculo');
+  assert(values.PAYMENT_TYPE === 'Parcelado', 'forma de pagamento da Nova Venda');
+  assert(values.SALE_DUE_DATE === '10/04/2026', 'vencimento parcelado = 1ª parcela dos receipts');
+  assert(values.FIRST_DUE_DATE === '10/04/2026', 'primeiro vencimento das parcelas');
+  assert(values.BROKER_NAME === 'Carlos Corretor', 'nome do corretor');
+  assert(values.BROKER_CRECI === '12345-F', 'CRECI do corretor');
+  assert(String(values.FINANCIAL_ACCOUNT_LABEL || '').includes('Conta Imobiliária'), 'conta recebedora pública');
+  assert(values.FINANCIAL_ACCOUNT_BENEFICIARY === 'SV Lotes', 'beneficiário da conta recebedora');
   assert(values.SELLER_1_NAME === 'Vendedor Um', 'vendedor 1 a partir de seller_parties_json (leitura)');
   assert(values.WITNESS_1_NAME == null, 'testemunha sem fonte automática');
   let cross = false;
@@ -488,10 +532,20 @@ void (async () => {
   const docxLib = read('lib/customContractDocxImport.ts');
   assert(!previewLoad.includes('.insert(') && !previewLoad.includes('.update(') && !previewLoad.includes('.delete('), 'loader de prévia é somente leitura');
   assert(!previewLoad.includes('generated_html'), 'prévia não lê generated_html');
+  assert(previewLoad.includes("from('brokers')"), 'prévia carrega corretor da venda');
+  assert(previewLoad.includes('company_financial_accounts'), 'prévia carrega conta recebedora');
+  assert(
+    previewLoad.includes('name, account_type, beneficiary_name, document') &&
+      !previewLoad.includes('encrypted_payload') &&
+      !previewLoad.includes('account_number') &&
+      !previewLoad.includes('sandboxApiKey'),
+    'conta recebedora só com campos públicos',
+  );
   assert(!previewResolver.includes('generateContractHTML'), 'resolver não usa o motor oficial');
   assert(!previewResolver.includes('gisSaleCreateService'), 'resolver não cria venda GIS');
   assert(docxLib.includes("from 'mammoth'") || docxLib.includes('from "mammoth"'), 'importação usa mammoth');
   assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'), 'testemunhas marcadas sem fonte');
+  assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'), 'nacionalidade comprador sem fonte');
 
   console.log('\nOK — Editor CUSTOM A4');
 })().catch((e) => {

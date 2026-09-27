@@ -11,6 +11,7 @@ export type CustomPlaceholderGroupId =
   | 'project'
   | 'lot'
   | 'finance'
+  | 'broker'
   | 'contract'
   | 'dates'
   | 'signatures';
@@ -32,6 +33,7 @@ export const CUSTOM_PLACEHOLDER_GROUPS: { id: CustomPlaceholderGroupId; label: s
   { id: 'project', label: 'Empreendimento' },
   { id: 'lot', label: 'Quadra/Lote' },
   { id: 'finance', label: 'Financeiro' },
+  { id: 'broker', label: 'Corretor' },
   { id: 'contract', label: 'Contrato' },
   { id: 'dates', label: 'Datas' },
   { id: 'signatures', label: 'Assinaturas/Testemunhas' },
@@ -63,8 +65,14 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
   field('CLIENT_NAME', 'Nome do comprador', 'buyer', 'customers.name'),
   field('CLIENT_CPF', 'CPF do comprador', 'buyer', 'customers.cpf_cnpj | customers.document'),
   field('CLIENT_RG', 'RG do comprador', 'buyer', 'customers.rg'),
-  field('CLIENT_RG_ISSUER', 'Órgão emissor do RG', 'buyer', 'customers.rg_issuer + rg_issuer_state'),
-  field('CLIENT_NATIONALITY', 'Nacionalidade do comprador', 'buyer', 'customers.nationality'),
+  field('CLIENT_RG_ISSUER', 'Órgão emissor do RG', 'buyer', 'customers.rg_issuer'),
+  field('CLIENT_RG_STATE', 'UF emissor do RG', 'buyer', 'customers.rg_issuer_state (Nova Venda: UF emissor)'),
+  field(
+    'CLIENT_NATIONALITY',
+    'Nacionalidade do comprador',
+    'buyer',
+    'sem fonte automática atualmente (não existe na Nova Venda nem em customers)',
+  ),
   field('CLIENT_PROFESSION', 'Profissão do comprador', 'buyer', 'customers.profession'),
   field('CLIENT_CIVIL_STATE', 'Estado civil do comprador', 'buyer', 'customers.civil_state | marital_status'),
   field('CLIENT_ADDRESS', 'Endereço do comprador', 'buyer', 'customers.address'),
@@ -131,16 +139,68 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
     'formatContractLotBoundariesClause (segments_json)',
   ),
 
-  field('SALE_VALUE', 'Valor da venda', 'finance', 'sales.total_value | sales.sale_value | sales.value'),
-  field('SALE_VALUE_EXTENSO', 'Valor por extenso', 'finance', 'extenso() sobre o valor da venda'),
-  field('PAYMENT_TYPE', 'Forma de pagamento', 'finance', 'sales.payment_type'),
+  field(
+    'LOT_PRICE',
+    'Valor original do lote',
+    'finance',
+    'sales.lot_price (Nova Venda: Valor do Lote / GIS finalPrice cadastral)',
+  ),
+  field(
+    'SALE_DISCOUNT',
+    'Valor do desconto',
+    'finance',
+    'sales.discount (Nova Venda: discount_value; não recalcular)',
+  ),
+  field(
+    'SALE_VALUE',
+    'Valor final da venda',
+    'finance',
+    'sales.total_value | sales.agreed_price (Nova Venda: final_value contratado)',
+  ),
+  field('SALE_VALUE_EXTENSO', 'Valor final por extenso', 'finance', 'extenso() sobre SALE_VALUE'),
+  field(
+    'PAYMENT_TYPE',
+    'Forma de pagamento',
+    'finance',
+    'sales.payment_type via resolveSalePaymentMode.label',
+  ),
   field('DOWN_PAYMENT', 'Sinal/entrada', 'finance', 'finance_receipts installment_number 0 ou -1'),
   field('BROKER_COMMISSION', 'Corretagem', 'finance', 'broker_commissions.amount | sales.commission'),
   field('INSTALLMENTS_COUNT', 'Quantidade de parcelas', 'finance', 'sales.installments_count + receipts ≥ 1'),
   field('INSTALLMENT_VALUE', 'Valor da parcela', 'finance', 'finance_receipts installment_number ≥ 1'),
-  field('FIRST_DUE_DATE', 'Primeiro vencimento', 'finance', 'resolveContractPaymentDates'),
-  field('LAST_DUE_DATE', 'Último vencimento', 'finance', 'resolveContractPaymentDates'),
+  field(
+    'SALE_DUE_DATE',
+    'Data de vencimento',
+    'finance',
+    'finance_receipts.due_date via resolveContractPaymentDates (entrada ou 1ª parcela; colunas da tela não persistem em sales)',
+  ),
+  field('FIRST_DUE_DATE', 'Primeiro vencimento', 'finance', 'resolveContractPaymentDates.firstInstallmentDue'),
+  field('LAST_DUE_DATE', 'Último vencimento', 'finance', 'resolveContractPaymentDates.lastInstallmentDue'),
   field('CORRECTION_INDEX', 'Índice de correção', 'finance', 'sales.installment_correction_type'),
+  field(
+    'FINANCIAL_ACCOUNT_NAME',
+    'Conta recebedora — nome',
+    'finance',
+    'company_financial_accounts.name ← sales.financial_account_id',
+  ),
+  field(
+    'FINANCIAL_ACCOUNT_LABEL',
+    'Conta recebedora',
+    'finance',
+    'formatFinancialAccountLabel (nome + tipo; sem dados bancários)',
+  ),
+  field(
+    'FINANCIAL_ACCOUNT_BENEFICIARY',
+    'Conta recebedora — beneficiário',
+    'finance',
+    'company_financial_accounts.beneficiary_name',
+  ),
+  field(
+    'FINANCIAL_ACCOUNT_DOCUMENT',
+    'Conta recebedora — CPF/CNPJ do beneficiário',
+    'finance',
+    'company_financial_accounts.document',
+  ),
   field(
     'LATE_FINE',
     'Multa',
@@ -153,6 +213,12 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
     'finance',
     'sem fonte automática atualmente (texto fixo nos motores TS, não por venda)',
   ),
+
+  field('BROKER_NAME', 'Nome do corretor', 'broker', 'brokers.name ← sales.broker_id'),
+  field('BROKER_CPF', 'CPF do corretor', 'broker', 'brokers.cpf'),
+  field('BROKER_CRECI', 'CRECI do corretor', 'broker', 'brokers.creci'),
+  field('BROKER_PHONE', 'Telefone do corretor', 'broker', 'brokers.phone'),
+  field('BROKER_EMAIL', 'E-mail do corretor', 'broker', 'brokers.email'),
 
   field('CONTRACT_NUMBER', 'Número do contrato', 'contract', 'contracts.contract_number'),
   field('CONTRACT_DATE', 'Data do contrato', 'contract', 'contracts.contract_date | sale_date'),
