@@ -8,12 +8,20 @@ export default function CustomA4PaginatedHtml({ html }: { html: string }) {
 
   useLayoutEffect(() => {
     const root = ref.current;
-    if (!root) return;
-    applyCustomA4Pagination(root);
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(() => applyCustomA4Pagination(root));
-    observer.observe(root);
-    return () => observer.disconnect();
+    if (!root) return undefined;
+    const paginate = () => applyCustomA4Pagination(root);
+    paginate();
+    const onWindowResize = () => paginate();
+    const onImageLoad = (event: Event) => {
+      if (event.target instanceof HTMLImageElement) paginate();
+    };
+    window.addEventListener('resize', onWindowResize);
+    root.addEventListener('load', onImageLoad, true);
+    void document.fonts?.ready?.then(() => paginate());
+    return () => {
+      window.removeEventListener('resize', onWindowResize);
+      root.removeEventListener('load', onImageLoad, true);
+    };
   }, [html]);
 
   return (

@@ -49,7 +49,13 @@ import {
   COMPANY_LOGO_TOKEN,
   renderCompanyLogoBlock,
 } from '../lib/customContractLogo';
-import { planA4BlockSpacers, planA4Pages, type A4LayoutUnit } from '../lib/customContractA4Layout';
+import {
+  a4PageIdentity,
+  planA4BlockSpacers,
+  planA4Pages,
+  shouldExplodeTableByHeight,
+  type A4LayoutUnit,
+} from '../lib/customContractA4Layout';
 import { normalizeCustomFootnotesHtml } from '../lib/customContractFootnotes';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx';
 
@@ -558,6 +564,8 @@ void (async () => {
   const logoNode = read('components/contracts/editor/CompanyLogoNode.ts');
   const layoutLib = read('lib/customContractA4Layout.ts');
   const htmlLib = read('lib/customContractHtml.ts');
+  const a4Ext = read('components/contracts/editor/A4PaginationExtension.ts');
+  const previewHtml = read('components/contracts/editor/CustomA4PaginatedHtml.tsx');
   assert(!css.includes('repeating-linear-gradient'), 'paginação não usa faixa sobreposta no conteúdo');
   assert(css.includes('page-break-inside: avoid') && css.includes('break-inside: avoid'), 'CSS evita cortar tr/título');
   assert(layoutLib.includes('planA4BlockSpacers') && layoutLib.includes('keepWithNext'), 'paginação orientada a blocos');
@@ -678,8 +686,50 @@ void (async () => {
     ];
     const pages = planA4Pages(withNotes, 120, 18, (ids) => ids.length * 40);
     assert(pages[0].footnoteIds.includes('5'), 'nota 5 fica na página da referência');
-    assert(pages.length === 2, 'reserva da nota empurra o bloco seguinte, sem cortar a linha');
+    assert(pages.length === 1, 'notas não empurram o conteúdo — packing independente da reserva');
+    assert(pages[0].end === 1, 'os dois blocos permanecem na mesma folha');
+
+    const reserved = planA4Pages(withNotes, 120, 18, () => 9999);
+    const unreserved = planA4Pages(withNotes, 120, 18, () => 0);
+    assert(
+      a4PageIdentity(reserved) === a4PageIdentity(unreserved),
+      'altura da nota não altera a identidade das páginas',
+    );
+
+    const estrelaLike: A4LayoutUnit[] = Array.from({ length: 50 }, (_, i) => ({
+      id: `p${i}`,
+      kind: 'paragraph' as const,
+      height: 460,
+      keepTogether: false,
+      keepWithNext: false,
+      footnoteIds: i === 10 || i === 31 ? ['5'] : i === 22 ? ['6'] : undefined,
+    }));
+    const firstPack = planA4Pages(estrelaLike, 987, 18, () => 80);
+    let packStable = true;
+    for (let n = 0; n < 100; n += 1) {
+      const again = planA4Pages(estrelaLike, 987, 18, (ids) => (ids.length ? 80 + (n % 5) : 0));
+      if (a4PageIdentity(again) !== a4PageIdentity(firstPack) || again.length !== firstPack.length) {
+        packStable = false;
+        break;
+      }
+    }
+    assert(packStable, 'empacotador idempotente 100x com as mesmas dimensões');
+    assert(firstPack.length >= 20, 'documento longo (Estrela-like) gera dezenas de folhas A4');
+    assert(!shouldExplodeTableByHeight(987, 987), 'tabela que cabe na folha permanece inteira');
+    assert(shouldExplodeTableByHeight(988, 987), 'tabela maior que a folha quebra entre linhas');
   }
+
+  assert(layoutLib.includes('a4PageIdentity'), 'identidade de página não inclui leftover');
+  assert(!layoutLib.includes('trialFn'), 'empacotador não reserva notas no espaço dos blocos');
+  assert(layoutLib.includes('tableContentHeight'), 'explode de tabela usa soma das linhas de conteúdo');
+  assert(layoutLib.includes('data-sv-a4-identity'), 'prévia congela identidade');
+  assert(a4Ext.includes('doc.eq'), 'repagina só quando o documento TipTap muda');
+  assert(!a4Ext.includes('ResizeObserver'), 'Editor não observa o DOM que a paginação muta');
+  assert(!previewHtml.includes('ResizeObserver'), 'Visualizar não reentra em loop de ResizeObserver');
+  assert(editorUi.includes('alreadyOpen'), 'hydrate não recarrega se o editor local já está aberto');
+  assert(editorUi.includes('não recarrega/hidrata'), 'autosave não dispara hydrate');
+  assert(css.includes('scrollbar-gutter: stable'), 'scrollbar estável não muda a largura A4');
+  assert(tiptap.includes('logoValue'), 'contexto de logo é memoizado');
 
   console.log('\nOK — Editor CUSTOM A4');
 })().catch((e) => {

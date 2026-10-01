@@ -193,6 +193,7 @@ export default function CustomContractA4Editor() {
     if (shouldAutosavePublish()) {
       throw new Error('Autosave não pode publicar.');
     }
+    // Salvar o draft não recarrega/hidrata o editor — o conteúdo local já é a versão atual.
     setSaveState('saving');
     const payload = payloadForCentralTable('company_contract_model_versions', {
       content_html: content,
@@ -299,12 +300,18 @@ export default function CustomContractA4Editor() {
       scoped.find((row) => row.status === 'draft' && row.version === 0) || ensured;
     const raw = String(draftRow.content_html ?? ensured.content_html ?? '');
     const content = raw.trim() ? raw : defaultCustomDraftHtml(null);
+    const alreadyOpen =
+      Boolean(editorRef.current) && draftIdRef.current === draftRow.id && Boolean(htmlRef.current);
     draftIdRef.current = draftRow.id;
-    setContentKey(`${draftRow.id}:${String(draftRow.updated_at || draftRow.created_at || '')}:${content.length}`);
-    setInitialHtml(content);
-    setHtml(content);
-    htmlRef.current = content;
-    lastSavedRef.current = content;
+    if (!alreadyOpen) {
+      setContentKey(
+        `${draftRow.id}:${String(draftRow.updated_at || draftRow.created_at || '')}:${content.length}`,
+      );
+      setInitialHtml(content);
+      setHtml(content);
+      htmlRef.current = content;
+      lastSavedRef.current = content;
+    }
     const importMeta = (draftRow.engine_params_json || ensured.engine_params_json || {}) as {
       import?: { warnings?: string[]; conversion?: string };
     };
@@ -347,6 +354,27 @@ export default function CustomContractA4Editor() {
     setCompanyLogoUrl(String(companyRow?.logo_url || '').trim() || null);
     setLoading(false);
   }, [user, modelId, router]);
+
+  const handleEditor = useCallback((current: Editor | null) => {
+    editorRef.current = current;
+  }, []);
+
+  const handlePageCount = useCallback((count: number) => {
+    setVisualPageCount((prev) => (prev === count ? prev : count));
+  }, []);
+
+  const handleSelection = useCallback(() => {
+    const current = editorRef.current;
+    setToolbarTick((n) => n + 1);
+    if (current?.isActive('footnoteReference')) {
+      setEditingNoteId(String(current.getAttributes('footnoteReference').noteId || ''));
+    } else if (
+      typeof document !== 'undefined' &&
+      !(document.activeElement as HTMLElement | null)?.closest('[data-footnote-editor]')
+    ) {
+      setEditingNoteId('');
+    }
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -926,7 +954,7 @@ export default function CustomContractA4Editor() {
       )}
 
       <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 overflow-auto py-6 px-4 bg-[#2a2d36]">
+        <div className="sv-a4-scroll flex-1 overflow-auto py-6 px-4 bg-[#2a2d36]">
           <div className="sv-a4-stack">
             <div className="sv-a4-sheet">
               {initialHtml !== '' && (
@@ -934,23 +962,10 @@ export default function CustomContractA4Editor() {
                   initialHtml={initialHtml}
                   contentKey={contentKey}
                   companyLogoUrl={companyLogoUrl}
-                  onEditor={(current) => {
-                    editorRef.current = current;
-                  }}
+                  onEditor={handleEditor}
                   onChange={scheduleAutosave}
-                  onPageCount={setVisualPageCount}
-                  onSelection={() => {
-                    const current = editorRef.current;
-                    setToolbarTick((n) => n + 1);
-                    if (current?.isActive('footnoteReference')) {
-                      setEditingNoteId(String(current.getAttributes('footnoteReference').noteId || ''));
-                    } else if (
-                      typeof document !== 'undefined' &&
-                      !(document.activeElement as HTMLElement | null)?.closest('[data-footnote-editor]')
-                    ) {
-                      setEditingNoteId('');
-                    }
-                  }}
+                  onPageCount={handlePageCount}
+                  onSelection={handleSelection}
                 />
               )}
             </div>

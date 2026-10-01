@@ -1,6 +1,10 @@
 /**
  * Paginação A4 do Editor CUSTOM — empacota blocos, não pinta faixa sobre o texto.
- * Notas de rodapé reservam a base da folha da referência.
+ *
+ * Determinismo: o mesmo conjunto de blocos + a mesma largura Inner deve produzir
+ * sempre o mesmo recorte de páginas. Notas de rodapé NÃO entram no empacotamento
+ * (evitam o ciclo ref muda de página → nota muda → espaço muda → bloco volta).
+ * A medição ignora faixas/notas visuais inseridas pela própria paginação.
  * Não altera generateContractHTML nem contratos históricos.
  */
 
@@ -13,6 +17,7 @@ export const CUSTOM_A4_PAGE_MM = 297;
 export const CUSTOM_A4_PAD_MM = 18;
 export const CUSTOM_A4_GAP_PX = 18;
 export const CUSTOM_A4_MIN_SPLIT_REMAINING_PX = 64;
+export const A4_PAGE_IDENTITY_ATTR = 'data-sv-a4-identity';
 
 export type A4LayoutKind =
   | 'heading'
@@ -50,12 +55,33 @@ export type A4PagePlan = {
   pageIndex: number;
 };
 
+export function roundA4Measure(px: number): number {
+  const value = Number(px);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(1, Math.round(value));
+}
+
 export function mmToPx(mm: number, dpi = 96): number {
   return Math.round((Number(mm) / 25.4) * dpi);
 }
 
 export function customA4PageInnerPx(): number {
   return mmToPx(CUSTOM_A4_PAGE_MM - CUSTOM_A4_PAD_MM * 2);
+}
+
+export function a4PageIdentity(pages: A4PagePlan[]): string {
+  return pages
+    .map((page) => `${page.start}:${page.end}:${(page.footnoteIds || []).join(',')}`)
+    .join('|');
+}
+
+export function shouldExplodeTableByHeight(contentHeight: number, pageInner: number): boolean {
+  return roundA4Measure(contentHeight) > roundA4Measure(pageInner);
+}
+
+export function a4SpacerHeight(leftover: number, footnoteHeight: number, gap: number): number {
+  const rest = roundA4Measure(leftover) - roundA4Measure(footnoteHeight);
+  return Math.max(gap, rest + gap);
 }
 
 export function looksLikeSignatureBlock(text: string): boolean {
@@ -103,13 +129,18 @@ export function classifyA4Tag(
   return { kind: 'other', keepTogether: true, keepWithNext: false };
 }
 
+/**
+ * Empacota só o conteúdo. `footnoteHeightFor` preenche a altura visual da nota
+ * (para a faixa de leftover), mas NÃO reduz o espaço disponível dos blocos —
+ * isso era a oscilação referência ↔ nota ↔ bloco.
+ */
 export function planA4Pages(
   units: A4LayoutUnit[],
   pageInner: number,
   gap: number,
   footnoteHeightFor: (ids: string[]) => number = () => 0,
 ): A4PagePlan[] {
-  const inner = Math.max(1, Number(pageInner) || 0);
+  const inner = Math.max(1, roundA4Measure(pageInner) || Number(pageInner) || 1);
   const pages: A4PagePlan[] = [];
   let start = 0;
   let remaining = inner;
@@ -125,13 +156,12 @@ export function planA4Pages(
       return;
     }
     const ids = uniqueFootnoteIds(pageRefs);
-    const footnoteHeight = footnoteHeightFor(ids);
     pages.push({
       start,
       end: Math.max(start, endExclusive - 1),
       leftover: remaining,
       footnoteIds: ids,
-      footnoteHeight,
+      footnoteHeight: roundA4Measure(footnoteHeightFor(ids)),
       pageIndex,
     });
     start = endExclusive;
@@ -142,7 +172,7 @@ export function planA4Pages(
 
   while (i < units.length) {
     const unit = units[i];
-    const height = Math.max(0, Number(unit.height) || 0);
+    const height = Math.max(0, roundA4Measure(unit.height) || Number(unit.height) || 0);
 
     if (unit.kind === 'pageBreak') {
       if (i > start) closePage(i);
@@ -164,7 +194,7 @@ export function planA4Pages(
     let packEnd = i;
     let packRefs = [...(unit.footnoteIds || [])];
     if (unit.keepWithNext && next && next.kind !== 'pageBreak') {
-      const combined = height + Math.max(0, Number(next.height) || 0);
+      const combined = height + Math.max(0, roundA4Measure(next.height) || Number(next.height) || 0);
       if (combined <= inner) {
         packHeight = combined;
         packEnd = i + 1;
@@ -175,15 +205,13 @@ export function planA4Pages(
       }
     }
 
-    const trialRefs = uniqueFootnoteIds([...pageRefs, ...packRefs]);
-    const trialFn = footnoteHeightFor(trialRefs);
-    if (packHeight + trialFn > remaining && remaining < inner) {
+    if (packHeight > remaining && remaining < inner) {
       closePage(i);
       continue;
     }
 
     remaining = Math.max(0, remaining - packHeight);
-    pageRefs = trialRefs;
+    pageRefs = uniqueFootnoteIds([...pageRefs, ...packRefs]);
     i = packEnd + 1;
   }
 
@@ -223,14 +251,30 @@ export function countPagesFromA4Plan(units: A4LayoutUnit[], spacers: A4SpacerPla
 
 export type A4DomUnit = A4LayoutUnit & { el: HTMLElement };
 
-function skipLayoutNode(child: HTMLElement): boolean {
+export function isA4PaginationArtifact(el: HTMLElement): boolean {
   return (
-    child.classList.contains('sv-a4-flow-gap') ||
-    child.classList.contains('sv-a4-flow-gap-row') ||
-    child.classList.contains('sv-page-footnotes') ||
-    child.classList.contains('sv-footnote-store') ||
-    child.hasAttribute('data-sv-footnote-store')
+    el.classList.contains('sv-a4-flow-gap') ||
+    el.classList.contains('sv-a4-flow-gap-row') ||
+    el.classList.contains('sv-a4-flow-gap-cell') ||
+    el.classList.contains('sv-page-footnotes') ||
+    el.classList.contains('sv-page-footnotes-row') ||
+    el.classList.contains('sv-footnote-store') ||
+    el.hasAttribute('data-sv-a4-artifact') ||
+    el.hasAttribute('data-sv-footnote-store')
   );
+}
+
+export function tableContentHeight(tableEl: HTMLElement): number {
+  let height = 0;
+  tableEl.querySelectorAll('tr').forEach((row) => {
+    if (!(row instanceof HTMLElement) || isA4PaginationArtifact(row)) return;
+    height += roundA4Measure(row.getBoundingClientRect().height);
+  });
+  return height;
+}
+
+function measureUnitHeight(el: HTMLElement): number {
+  return roundA4Measure(el.getBoundingClientRect().height);
 }
 
 export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number): A4DomUnit[] {
@@ -246,7 +290,7 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
     units.push({
       id: `u${index++}`,
       el,
-      height: Math.max(1, Math.ceil(el.getBoundingClientRect().height)),
+      height: Math.max(1, measureUnitHeight(el)),
       footnoteIds: collectFootnoteIdsFromElement(el),
       ...classified,
     });
@@ -254,23 +298,21 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
 
   for (const child of Array.from(root.children)) {
     if (!(child instanceof HTMLElement)) continue;
-    if (skipLayoutNode(child)) continue;
+    if (isA4PaginationArtifact(child)) continue;
     const tag = child.tagName.toLowerCase();
     const tableEl =
       tag === 'table' ? child : child.classList.contains('tableWrapper') ? child.querySelector('table') : null;
-    const height = child.getBoundingClientRect().height;
-    if (tableEl instanceof HTMLElement && height > pageInner) {
-      const rows = tableEl.querySelectorAll('tr');
-      rows.forEach((row) => {
-        if (row instanceof HTMLElement && !row.classList.contains('sv-a4-flow-gap-row')) {
+    if (tableEl instanceof HTMLElement && shouldExplodeTableByHeight(tableContentHeight(tableEl), pageInner)) {
+      tableEl.querySelectorAll('tr').forEach((row) => {
+        if (row instanceof HTMLElement && !isA4PaginationArtifact(row)) {
           pushEl(row, 'tr');
         }
       });
       continue;
     }
-    if ((tag === 'ul' || tag === 'ol') && height > pageInner) {
+    if ((tag === 'ul' || tag === 'ol') && measureUnitHeight(child) > pageInner) {
       Array.from(child.children).forEach((item) => {
-        if (item instanceof HTMLElement) pushEl(item, item.tagName);
+        if (item instanceof HTMLElement && !isA4PaginationArtifact(item)) pushEl(item, item.tagName);
       });
       continue;
     }
@@ -288,7 +330,7 @@ export function measureFootnoteClusterHeight(
   let height = 10;
   for (const id of unique) {
     const el = storeRoot?.querySelector(`[data-sv-footnote-id="${CSS.escape(id)}"]`) as HTMLElement | null;
-    height += el ? Math.max(22, Math.ceil(el.scrollHeight || el.getBoundingClientRect().height || 0)) : 28;
+    height += el ? Math.max(22, roundA4Measure(el.scrollHeight || el.getBoundingClientRect().height || 0)) : 28;
   }
   return height;
 }
@@ -299,6 +341,7 @@ function createFootnoteCluster(storeRoot: HTMLElement | null, ids: string[]): HT
   const wrap = document.createElement('div');
   wrap.className = 'sv-page-footnotes';
   wrap.setAttribute('contenteditable', 'false');
+  wrap.setAttribute('data-sv-a4-artifact', 'true');
   unique.forEach((id) => {
     const source = storeRoot?.querySelector(`[data-sv-footnote-id="${CSS.escape(id)}"]`);
     const note = document.createElement('div');
@@ -317,14 +360,20 @@ function createFootnoteCluster(storeRoot: HTMLElement | null, ids: string[]): HT
 }
 
 export function applyCustomA4Pagination(root: HTMLElement): number {
-  root.querySelectorAll('.sv-a4-flow-gap, .sv-a4-flow-gap-row, .sv-page-footnotes').forEach((node) =>
-    node.remove(),
-  );
   const pageInner = customA4PageInnerPx();
   const collected = collectA4UnitsFromElement(root, pageInner);
   const store = root.querySelector('[data-sv-footnote-store], .sv-footnote-store') as HTMLElement | null;
   const pages = planA4Pages(collected, pageInner, CUSTOM_A4_GAP_PX, (ids) =>
     measureFootnoteClusterHeight(store, ids),
+  );
+  const identity = a4PageIdentity(pages);
+  const pageCount = Math.max(1, pages.length);
+  if (root.getAttribute(A4_PAGE_IDENTITY_ATTR) === identity) {
+    return pageCount;
+  }
+
+  root.querySelectorAll('.sv-a4-flow-gap, .sv-a4-flow-gap-row, .sv-page-footnotes').forEach((node) =>
+    node.remove(),
   );
   for (let p = pages.length - 1; p >= 0; p -= 1) {
     const page = pages[p];
@@ -336,12 +385,13 @@ export function applyCustomA4Pagination(root: HTMLElement): number {
       else last.el.after(cluster);
     }
     if (next?.el) {
-      const spacerHeight = Math.max(1, page.leftover - page.footnoteHeight + CUSTOM_A4_GAP_PX);
+      const spacerHeight = a4SpacerHeight(page.leftover, page.footnoteHeight, CUSTOM_A4_GAP_PX);
       const gap = createA4GapElement(next.el, spacerHeight);
       next.el.before(gap);
     }
   }
-  return Math.max(1, pages.length);
+  root.setAttribute(A4_PAGE_IDENTITY_ATTR, identity);
+  return pageCount;
 }
 
 function createA4GapElement(beforeEl: HTMLElement, height: number): HTMLElement {
@@ -349,6 +399,7 @@ function createA4GapElement(beforeEl: HTMLElement, height: number): HTMLElement 
     const tr = document.createElement('tr');
     tr.className = 'sv-a4-flow-gap-row';
     tr.setAttribute('contenteditable', 'false');
+    tr.setAttribute('data-sv-a4-artifact', 'true');
     const td = document.createElement('td');
     td.colSpan = Math.max(1, beforeEl.children.length);
     td.className = 'sv-a4-flow-gap-cell';
@@ -359,6 +410,7 @@ function createA4GapElement(beforeEl: HTMLElement, height: number): HTMLElement 
   const gap = document.createElement('div');
   gap.className = 'sv-a4-flow-gap';
   gap.setAttribute('contenteditable', 'false');
+  gap.setAttribute('data-sv-a4-artifact', 'true');
   gap.style.height = `${Math.max(1, height)}px`;
   return gap;
 }

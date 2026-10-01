@@ -23,9 +23,14 @@
   line-height: 1.45;
 }
 
+.sv-a4-scroll {
+  scrollbar-gutter: stable;
+}
+
 .sv-a4-sheet .ProseMirror,
 .sv-a4-prose {
   outline: none;
+  overflow: visible;
   min-height: var(--paper-height);
   padding: var(--paper-pad);
   box-sizing: border-box;

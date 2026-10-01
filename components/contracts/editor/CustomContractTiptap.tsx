@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -46,6 +46,9 @@ export default function CustomContractTiptap({
   const skipNext = useRef(true);
   const pageCountRef = useRef(onPageCount);
   pageCountRef.current = onPageCount;
+  const onEditorRef = useRef(onEditor);
+  onEditorRef.current = onEditor;
+  const logoValue = useMemo(() => ({ url: companyLogoUrl || null }), [companyLogoUrl]);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -96,9 +99,9 @@ export default function CustomContractTiptap({
   });
 
   useEffect(() => {
-    onEditor(editor);
-    return () => onEditor(null);
-  }, [editor, onEditor]);
+    onEditorRef.current(editor);
+    return () => onEditorRef.current(null);
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -112,7 +115,7 @@ export default function CustomContractTiptap({
   }, [editor, contentKey]);
 
   return (
-    <CompanyLogoContext.Provider value={{ url: companyLogoUrl || null }}>
+    <CompanyLogoContext.Provider value={logoValue}>
       <EditorContent editor={editor} />
     </CompanyLogoContext.Provider>
   );

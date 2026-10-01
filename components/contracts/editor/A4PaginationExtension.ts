@@ -4,6 +4,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import {
   CUSTOM_A4_GAP_PX,
+  a4PageIdentity,
+  a4SpacerHeight,
   collectA4UnitsFromElement,
   customA4PageInnerPx,
   measureFootnoteClusterHeight,
@@ -18,6 +20,7 @@ function spacerWidget(height: number, isRow: boolean, colCount: number) {
       const tr = document.createElement('tr');
       tr.className = 'sv-a4-flow-gap-row';
       tr.setAttribute('contenteditable', 'false');
+      tr.setAttribute('data-sv-a4-artifact', 'true');
       const td = document.createElement('td');
       td.colSpan = Math.max(1, colCount);
       td.className = 'sv-a4-flow-gap-cell';
@@ -28,6 +31,7 @@ function spacerWidget(height: number, isRow: boolean, colCount: number) {
     const gap = document.createElement('div');
     gap.className = 'sv-a4-flow-gap';
     gap.setAttribute('contenteditable', 'false');
+    gap.setAttribute('data-sv-a4-artifact', 'true');
     gap.style.height = `${Math.max(1, height)}px`;
     return gap;
   };
@@ -39,6 +43,7 @@ function footnoteWidget(html: string, isRow: boolean, colCount: number) {
       const tr = document.createElement('tr');
       tr.className = 'sv-page-footnotes sv-page-footnotes-row';
       tr.setAttribute('contenteditable', 'false');
+      tr.setAttribute('data-sv-a4-artifact', 'true');
       const td = document.createElement('td');
       td.colSpan = Math.max(1, colCount);
       td.className = 'sv-page-footnotes-cell';
@@ -49,6 +54,7 @@ function footnoteWidget(html: string, isRow: boolean, colCount: number) {
     const wrap = document.createElement('div');
     wrap.className = 'sv-page-footnotes';
     wrap.setAttribute('contenteditable', 'false');
+    wrap.setAttribute('data-sv-a4-artifact', 'true');
     wrap.innerHTML = html;
     return wrap;
   };
@@ -64,23 +70,22 @@ function clusterHtml(store: HTMLElement | null, ids: string[]): string {
     .join('');
 }
 
-function planHash(
-  pages: Array<{ start: number; leftover: number; footnoteIds: string[]; footnoteHeight: number }>,
-): string {
-  return pages
-    .map(
-      (page) =>
-        `${page.start}:${page.leftover}:${page.footnoteHeight}:${page.footnoteIds.join(',')}`,
-    )
-    .join('|');
-}
-
 function posFor(view: EditorView, el: HTMLElement, atEnd: boolean): number {
   try {
     return view.posAtDOM(el, atEnd ? el.childNodes.length : 0);
   } catch {
     return -1;
   }
+}
+
+function findScrollParent(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return null;
 }
 
 function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) => void) {
@@ -90,11 +95,11 @@ function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) =>
   const pages = planA4Pages(collected, pageInner, CUSTOM_A4_GAP_PX, (ids) =>
     measureFootnoteClusterHeight(store, ids),
   );
-  const hash = planHash(pages);
-  const prevHash = a4PaginationKey.getState(view.state)?.hash;
+  const identity = a4PageIdentity(pages);
+  const prev = a4PaginationKey.getState(view.state);
   const pageCount = Math.max(1, pages.length);
-  if (hash === prevHash) {
-    onPageCount?.(pageCount);
+  if (identity === prev?.identity) {
+    if (prev.pageCount !== pageCount) onPageCount?.(pageCount);
     return;
   }
 
@@ -118,7 +123,7 @@ function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) =>
       }
     }
     if (next?.el) {
-      const spacerHeight = Math.max(1, page.leftover - page.footnoteHeight + CUSTOM_A4_GAP_PX);
+      const spacerHeight = a4SpacerHeight(page.leftover, page.footnoteHeight, CUSTOM_A4_GAP_PX);
       const pos = posFor(view, next.el, false);
       if (pos >= 0) {
         decorations.push(
@@ -128,7 +133,7 @@ function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) =>
             {
               side: -1,
               ignoreSelection: true,
-              key: `a4-${pos}-${spacerHeight}`,
+              key: `a4-${page.pageIndex}-${page.start}-${page.end}`,
             },
           ),
         );
@@ -137,10 +142,15 @@ function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) =>
   }
 
   const nextSet = DecorationSet.create(view.state.doc, decorations);
+  const scrollEl = findScrollParent(view.dom as HTMLElement);
+  const scrollTop = scrollEl?.scrollTop ?? 0;
   const tr = view.state.tr
-    .setMeta(a4PaginationKey, { set: nextSet, hash, pageCount })
+    .setMeta(a4PaginationKey, { set: nextSet, identity, pageCount })
     .setMeta('addToHistory', false);
   view.dispatch(tr);
+  if (scrollEl && scrollEl.scrollTop !== scrollTop) {
+    scrollEl.scrollTop = scrollTop;
+  }
   onPageCount?.(pageCount);
 }
 
@@ -157,10 +167,11 @@ export const A4Pagination = Extension.create<{ onPageCount?: (count: number) => 
       new Plugin({
         key: a4PaginationKey,
         state: {
-          init: () => ({ set: DecorationSet.empty, hash: '', pageCount: 1 }),
+          init: () => ({ set: DecorationSet.empty, identity: '', pageCount: 1 }),
           apply(tr, current, _old, newState) {
             const meta = tr.getMeta(a4PaginationKey);
             if (meta) return meta;
+            if (!tr.docChanged) return current;
             return {
               ...current,
               set: current.set.map(tr.mapping, newState.doc),
@@ -173,28 +184,45 @@ export const A4Pagination = Extension.create<{ onPageCount?: (count: number) => 
           },
         },
         view(view) {
-          let timer: ReturnType<typeof setTimeout> | null = null;
-          let observer: ResizeObserver | null = null;
+          let raf = 0;
+          let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+          let destroyed = false;
           const schedule = () => {
-            if (timer) clearTimeout(timer);
-            timer = setTimeout(() => {
+            if (destroyed) return;
+            if (raf) cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(() => {
+              raf = 0;
               try {
                 refreshA4Decorations(view, onPageCount);
               } catch {
-                /* layout ainda instável */
+                /* layout ainda instável no primeiro frame */
               }
-            }, 40);
+            });
+          };
+          const onWindowResize = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(schedule, 80);
+          };
+          const onImageLoad = (event: Event) => {
+            if (event.target instanceof HTMLImageElement) schedule();
           };
           schedule();
-          if (typeof ResizeObserver !== 'undefined') {
-            observer = new ResizeObserver(() => schedule());
-            observer.observe(view.dom);
-          }
+          window.addEventListener('resize', onWindowResize);
+          view.dom.addEventListener('load', onImageLoad, true);
+          void (document as Document & { fonts?: FontFaceSet }).fonts?.ready?.then(() => {
+            if (!destroyed) schedule();
+          });
           return {
-            update: schedule,
+            update(_view, prevState) {
+              if (_view.state.doc.eq(prevState.doc)) return;
+              schedule();
+            },
             destroy() {
-              if (timer) clearTimeout(timer);
-              observer?.disconnect();
+              destroyed = true;
+              if (raf) cancelAnimationFrame(raf);
+              if (resizeTimer) clearTimeout(resizeTimer);
+              window.removeEventListener('resize', onWindowResize);
+              view.dom.removeEventListener('load', onImageLoad, true);
             },
           };
         },
