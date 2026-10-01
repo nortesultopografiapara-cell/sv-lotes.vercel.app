@@ -20,6 +20,14 @@ import {
   type CompanyFinancialAccountType,
 } from '@/lib/finance/companyFinancialAccountTypes';
 import {
+  formatLfPartnershipNote,
+  formatLfPercentLabel,
+  parseLfContractConfigJson,
+  resolveLfContractConfig,
+} from '@/lib/lfImoveisContractConfig';
+import { hasLfContractSnapshot, readSaleLfSnapshotRaw } from '@/lib/lfImoveisContractSnapshot';
+import { formatEstrelaEnterpriseLocation } from '@/lib/estrelaDoSulContractFormat';
+import {
   CUSTOM_PLACEHOLDERS,
   customPlaceholderLabel,
   missingPlaceholderMarker,
@@ -194,6 +202,32 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
   const sides = resolveContractLotSides(lot);
   const dates = resolveContractPaymentDates(sale, receipts);
   const sellers = parsePreviewSellers({ company, project });
+  const lfParsed = parseLfContractConfigJson(
+    project.lf_contract_config_json ?? project.lf_contract_config,
+  );
+  const lfContext =
+    hasLfContractSnapshot(readSaleLfSnapshotRaw(sale)) ||
+    Boolean(lfParsed.participation) ||
+    Boolean(lfParsed.secondVendor.name) ||
+    String(sale.contract_model || project.contract_model || '')
+      .toUpperCase() === 'ESTRELA_DO_SUL';
+  const lfConfig = resolveLfContractConfig({ sale, project, company });
+  if (lfContext && lfConfig.hasSecondVendor) {
+    sellers[0] = {
+      name: pick(company.razao_social, company.fantasy_name, company.name, sellers[0]?.name),
+      cpfCnpj: pick(company.cnpj, company.document, sellers[0]?.cpfCnpj),
+      rg: sellers[0]?.rg || '',
+      address: pick(company.address, sellers[0]?.address),
+      phone: pick(company.phone, sellers[0]?.phone),
+    };
+    sellers[1] = {
+      name: pick(lfConfig.secondVendor.name),
+      cpfCnpj: pick(lfConfig.secondVendor.cpf),
+      rg: pick(lfConfig.secondVendor.rg),
+      address: pick(lfConfig.secondVendor.address),
+      phone: pick(lfConfig.secondVendor.phone),
+    };
+  }
   const seller1 = sellers[0] || {};
   const seller2 = sellers[1] || {};
   const saleValue = pick(sale.total_value, sale.agreed_price);
@@ -279,6 +313,9 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     PROJECT_CITY: pick(project.city),
     PROJECT_STATE: pick(project.state, project.uf),
     PROJECT_FORUM_CITY: pick(contract.forum_city_snapshot, project.forum_city, project.city),
+    PROJECT_LOCATION: Object.keys(project).length
+      ? formatEstrelaEnterpriseLocation(project)
+      : '',
 
     BLOCK_NAME: pick(lot.quadra, lot.block, lot.block_name, lot.name),
     LOT_NUMBER: pick(lot.lote, lot.lot_number, lot.numero, lot.lot),
@@ -342,6 +379,48 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     WITNESS_2_NAME: '',
     WITNESS_2_CPF: '',
   };
+
+  const companyLabel = pick(company.razao_social, company.fantasy_name, company.name);
+  const hasLfSource =
+    lfContext &&
+    (lfConfig.participationSource === 'sale' || lfConfig.participationSource === 'project');
+  values.LF_FIRST_VENDOR_PERCENT = hasLfSource
+    ? formatLfPercentLabel(lfConfig.firstVendorPercent)
+    : '';
+  values.LF_SECOND_VENDOR_PERCENT = hasLfSource
+    ? formatLfPercentLabel(lfConfig.secondVendorPercent)
+    : '';
+  values.PARTNERSHIP_NOTE =
+    lfContext && lfConfig.hasSecondVendor
+      ? formatLfPartnershipNote({
+          companyName: companyLabel,
+          secondVendorName: lfConfig.secondVendor.name,
+          firstVendorPercent: lfConfig.firstVendorPercent,
+          secondVendorPercent: lfConfig.secondVendorPercent,
+        })
+      : '';
+  const instCount = pick(parcelRecs.length || null, sale.installments_count);
+  values.INSTALLMENTS_SUMMARY = [
+    paymentLabel || persistedPaymentType,
+    instCount ? `${instCount} parcela(s)` : '',
+    installmentValue ? `de ${installmentValue}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const totalNum = Number(sale.total_value ?? sale.agreed_price);
+  const downNum = Number(sale.down_payment);
+  values.SALE_BALANCE = Number.isFinite(totalNum)
+    ? money(Math.max(0, totalNum - (Number.isFinite(downNum) ? downNum : 0)))
+    : '';
+  const cityUf = [
+    pick(project.city, company.city),
+    pick(project.uf, project.state, company.state).toUpperCase(),
+  ]
+    .filter(Boolean)
+    .join('/');
+  values.CONTRACT_CITY_DATE = [cityUf, values.CONTRACT_DATE].filter(Boolean).join(', ');
+
+
 
   values.SELLER_NAME = values.SELLER_1_NAME;
   values.SELLER_CPF_CNPJ = values.SELLER_1_CPF_CNPJ;

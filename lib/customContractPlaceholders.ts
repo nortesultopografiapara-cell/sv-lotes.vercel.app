@@ -124,6 +124,48 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
   field('PROJECT_CITY', 'Cidade do empreendimento', 'project', 'projects.city'),
   field('PROJECT_STATE', 'UF do empreendimento', 'project', 'projects.state | projects.uf'),
   field('PROJECT_FORUM_CITY', 'Comarca / foro', 'project', 'projects.forum_city | contracts.forum_city_snapshot'),
+  field(
+    'PROJECT_LOCATION',
+    'Localização completa do empreendimento',
+    'project',
+    'projects.address + neighborhood + city/uf',
+  ),
+  field(
+    'PARTNERSHIP_NOTE',
+    'Nota de participação dos vendedores',
+    'finance',
+    'lf_contract_snapshot_json | projects.lf_contract_config_json (percentuais dinâmicos)',
+  ),
+  field(
+    'LF_FIRST_VENDOR_PERCENT',
+    'Participação LF Imóveis (%)',
+    'finance',
+    'sales.lf_contract_snapshot_json | projects.lf_contract_config_json',
+  ),
+  field(
+    'LF_SECOND_VENDOR_PERCENT',
+    'Participação segundo vendedor (%)',
+    'finance',
+    'sales.lf_contract_snapshot_json | projects.lf_contract_config_json',
+  ),
+  field(
+    'INSTALLMENTS_SUMMARY',
+    'Resumo das parcelas',
+    'finance',
+    'sales.payment_type + finance_receipts',
+  ),
+  field(
+    'SALE_BALANCE',
+    'Saldo remanescente',
+    'finance',
+    'valor da venda menos entrada (finance_receipts)',
+  ),
+  field(
+    'CONTRACT_CITY_DATE',
+    'Cidade e data de assinatura',
+    'contract',
+    'projects.city/uf + data do contrato',
+  ),
 
   field('BLOCK_NAME', 'Quadra', 'lot', 'blocks.quadra | blocks.block | blocks.name'),
   field('LOT_NUMBER', 'Lote', 'lot', 'blocks.lote | blocks.lot_number | blocks.numero'),

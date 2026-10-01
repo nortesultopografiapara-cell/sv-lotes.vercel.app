@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Copy,
   Eye,
+  FilePenLine,
   FileText,
   History,
   Loader2,
@@ -23,6 +24,7 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { applyTenantIdEq, resolveRlsContext } from '@/lib/rls';
 import {
+  catalogEngineKey,
   pickPublishedVersionNumber,
 } from '@/lib/contractModelCentral';
 import { SALE_CONTRACT_MODEL_LABELS, type SaleContractModel } from '@/lib/contractModel';
@@ -58,6 +60,13 @@ import {
 } from '@/lib/customContractHtml';
 import { convertDocxToCustomHtml, isDocxFile } from '@/lib/customContractDocxImport';
 import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
+import {
+  CONVERT_TO_CUSTOM_CONFIRM,
+  CONVERT_TO_CUSTOM_LABEL,
+  canConvertEngineModelToCustom,
+  conversionNoteFromVersion,
+  planEngineToCustomPersist,
+} from '@/lib/engineModelToCustom';
 import ManageContractModelProjectsPanel, {
   type ManageProjectLink,
 } from '@/components/contracts/central/ManageContractModelProjectsPanel';
@@ -102,6 +111,7 @@ type Dialog =
   | { type: 'history'; modelId: string }
   | { type: 'manage'; modelId: string }
   | { type: 'saveAs'; modelId: string }
+  | { type: 'convert'; modelId: string }
   | { type: 'new' }
   | { type: 'import' }
   | { type: 'delete'; modelId: string };
@@ -577,6 +587,75 @@ export default function ContractModelsOperationalCentral() {
     });
   }
 
+  async function handleConvertToCustom(model: ModelRow) {
+    if (!tenantId) throw new Error('Empresa não identificada.');
+    const plan = planEngineToCustomPersist({
+      modelId: model.id,
+      catalogCode: model.catalog_code,
+      engineKey: model.engine_key,
+      source: model.source,
+      status: model.status,
+      publishedVersions: versions.filter((row) => row.model_id === model.id),
+      userId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(user?.id || ''),
+      )
+        ? user?.id
+        : null,
+    });
+    const now = new Date().toISOString();
+    if (!plan.skipPublishedInsert) {
+      const versionPayload = payloadForCentralTable('company_contract_model_versions', {
+        model_id: model.id,
+        company_id: tenantId,
+        version: plan.nextVersion,
+        status: 'published',
+        content_html: plan.html,
+        engine_params_json: plan.params,
+        published_at: now,
+        created_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          String(user?.id || ''),
+        )
+          ? user?.id
+          : null,
+      });
+      if ('tenant_id' in versionPayload) {
+        throw new Error('Versão de modelo não usa tenant_id.');
+      }
+      const { error: versionError } = await supabase
+        .from('company_contract_model_versions')
+        .insert(versionPayload);
+      if (versionError) throw new Error(versionError.message);
+    }
+    const { error: updateError } = await supabase
+      .from('company_contract_models')
+      .update({
+        catalog_code: 'CUSTOM',
+        engine_key: catalogEngineKey('CUSTOM'),
+        updated_at: now,
+      })
+      .eq('id', model.id)
+      .eq('company_id', tenantId);
+    if (updateError) throw new Error(updateError.message);
+    const { data: ensured, error: rpcError } = await supabase.rpc(
+      'ensure_company_contract_model_draft',
+      { p_model_id: model.id },
+    );
+    if (rpcError) throw new Error(rpcError.message);
+    void ensured;
+    const { error: draftError } = await supabase
+      .from('company_contract_model_versions')
+      .update({
+        content_html: plan.html,
+        engine_params_json: plan.params,
+        updated_at: now,
+      })
+      .eq('model_id', model.id)
+      .eq('company_id', tenantId)
+      .eq('status', 'draft')
+      .eq('version', 0);
+    if (draftError) throw new Error(draftError.message);
+  }
+
   async function handleArchiveToggle(model: ModelRow) {
     if (!tenantId) return;
     if (model.status === 'active') {
@@ -875,7 +954,7 @@ export default function ContractModelsOperationalCentral() {
                                 <ActionItem icon={Eye} label="Visualizar" onClick={() => openVisualize(model)} />
                                 <ActionItem
                                   icon={Settings2}
-                                  label={configureOrEditTarget(model.catalog_code) === 'a4-editor' ? 'Abrir editor A4' : 'Configurar/Editar'}
+                                  label={configureOrEditTarget(model.catalog_code) === 'a4-editor' ? 'Editar contrato' : 'Configurar/Editar'}
                                   onClick={() => openSheet(model)}
                                 />
                                 <ActionItem icon={Copy} label="Duplicar" onClick={() => { setMenuId(null); void run(() => handleDuplicate(model), 'Modelo duplicado.'); }} />
@@ -1005,6 +1084,16 @@ export default function ContractModelsOperationalCentral() {
             <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => void run(() => handleDuplicate(selected), 'Modelo duplicado.')}>
               Duplicar
             </button>
+            {canConvertEngineModelToCustom(selected) && (
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-sky-700 text-xs text-sky-100 inline-flex items-center gap-1.5"
+                onClick={() => setDialog({ type: 'convert', modelId: selected.id })}
+              >
+                <FilePenLine className="w-3.5 h-3.5" />
+                {CONVERT_TO_CUSTOM_LABEL}
+              </button>
+            )}
             <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => { setSaveAsName(`Cópia de ${selected.name}`); setDialog({ type: 'saveAs', modelId: selected.id }); }}>
               Salvar como novo
             </button>
@@ -1032,6 +1121,40 @@ export default function ContractModelsOperationalCentral() {
               onClick={() => void openDelete(selected)}
             >
               Excluir modelo
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {dialog?.type === 'convert' && selected && (
+        <Modal
+          title={CONVERT_TO_CUSTOM_LABEL}
+          onClose={() => setDialog({ type: 'sheet', modelId: selected.id })}
+        >
+          <p className="text-sm text-[var(--text-secondary)] whitespace-pre-line">
+            {CONVERT_TO_CUSTOM_CONFIRM}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs"
+              onClick={() => setDialog({ type: 'sheet', modelId: selected.id })}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
+              onClick={() =>
+                void run(async () => {
+                  await handleConvertToCustom(selected);
+                  setDialog(null);
+                  router.push(CUSTOM_CONTRACT_EDITOR_PATH(selected.id));
+                }, 'Modelo convertido para editável.')
+              }
+            >
+              {CONVERT_TO_CUSTOM_LABEL}
             </button>
           </div>
         </Modal>
@@ -1075,6 +1198,9 @@ export default function ContractModelsOperationalCentral() {
                   <div className="text-xs text-[var(--color-text-muted)]">
                     {row.status === 'published' ? 'Publicada' : 'Rascunho'} · {fmtDate(row.created_at)}
                   </div>
+                  {conversionNoteFromVersion(row) && (
+                    <div className="mt-1 text-xs text-sky-200">{conversionNoteFromVersion(row)}</div>
+                  )}
                 </li>
               ))}
             {versions.filter((v) => v.model_id === selected.id).length === 0 && (

@@ -7,7 +7,9 @@ export function onlyDigits(value?: string | null): string {
 }
 
 export function formatCpfCnpj(value?: string | null): string {
-  const digits = onlyDigits(value).slice(0, 14);
+  const raw = String(value ?? '').trim();
+  if (/\{\{[A-Z0-9_]+\}\}/.test(raw)) return raw;
+  const digits = onlyDigits(raw).slice(0, 14);
   if (!digits) return '';
 
   if (digits.length <= 11) {

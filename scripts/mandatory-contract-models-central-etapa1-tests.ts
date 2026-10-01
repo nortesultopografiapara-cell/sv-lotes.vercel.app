@@ -1129,6 +1129,13 @@ function assertStoreGis(
   const centralComponent = read(
     'components/contracts/central/ContractModelsOperationalCentral.tsx',
   );
+  assert(
+    centralComponent.includes('CONVERT_TO_CUSTOM_LABEL') &&
+      centralComponent.includes('canConvertEngineModelToCustom') &&
+      centralComponent.includes('handleConvertToCustom') &&
+      centralComponent.includes("type: 'convert'"),
+    'cópia de motor pode ser convertida para CUSTOM na Central',
+  );
   assert(!centralComponent.includes('withTenantFields'), 'UI não injeta tenant_id genérico');
   assert(
     centralComponent.includes("payloadForCentralTable('company_contract_model_versions'") &&

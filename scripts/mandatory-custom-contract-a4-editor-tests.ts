@@ -122,6 +122,9 @@ assert(
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'BROKER_NAME') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'FINANCIAL_ACCOUNT_LABEL') &&
     CUSTOM_PLACEHOLDERS.some((p) => p.key === 'WITNESS_1_NAME') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'PARTNERSHIP_NOTE') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'LF_FIRST_VENDOR_PERCENT') &&
+    CUSTOM_PLACEHOLDERS.some((p) => p.key === 'PROJECT_LOCATION') &&
     !CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SALE_NOTES') &&
     !CUSTOM_PLACEHOLDERS.some((p) => p.key === 'SPOUSE_CITY'),
   'placeholders compatíveis com o sistema atual',
@@ -382,11 +385,13 @@ assert(migration.includes('protect_published_contract_model_version'), 'trigger 
     );
   }
 }
-assert(central.includes('insertCustomDraftModel'), 'Novo Personalizado cria draft CUSTOM');
+  assert(central.includes('insertCustomDraftModel'), 'Novo Personalizado cria draft CUSTOM');
 assert(central.includes("catalog_code: 'CUSTOM'"), 'Personalizado grava catalog_code CUSTOM');
 assert(central.includes("engine_key: 'custom'"), 'Personalizado grava engine_key custom');
 assert(central.includes('DELETE_COMPANY_CONTRACT_MODEL_RPC'), 'exclusão segura chama RPC');
 assert(central.includes('CUSTOM_CONTRACT_EDITOR_PATH'), 'Central abre o editor A4');
+assert(central.includes("'Editar contrato'"), 'menu CUSTOM usa Editar contrato');
+assert(central.includes('CONVERT_TO_CUSTOM_LABEL'), 'Central oferece converter motor para CUSTOM');
 assert(central.includes('IMPORT_TEXT_HTML_ONLY'), 'import recusa PDF');
 assert(central.includes('convertDocxToCustomHtml') && central.includes('isDocxFile'), 'Central converte DOCX');
 assert(tiptap.includes('CONTRACT_TABLE_EXTENSIONS') && tiptap.includes('extension-image'), 'editor aceita tabelas e imagens');
