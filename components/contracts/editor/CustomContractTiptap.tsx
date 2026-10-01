@@ -14,6 +14,7 @@ import { CompanyLogoContext } from '@/components/contracts/editor/CompanyLogoCon
 import { CONTRACT_TABLE_EXTENSIONS } from '@/components/contracts/editor/ContractTableExtensions';
 import { ContractPlaceholder } from '@/components/contracts/editor/ContractPlaceholderNode';
 import { FontSize } from '@/components/contracts/editor/FontSizeExtension';
+import { ParagraphLayout } from '@/components/contracts/editor/ParagraphLayoutExtension';
 import {
   FootnoteDefinition,
   FootnoteReference,
@@ -62,7 +63,8 @@ export default function CustomContractTiptap({
       Underline,
       TextStyle,
       FontSize,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      ParagraphLayout,
+      TextAlign.configure({ types: ['heading', 'paragraph', 'tableCell', 'tableHeader'] }),
       Placeholder.configure({
         placeholder: 'Escreva o contrato nesta folha A4…',
       }),

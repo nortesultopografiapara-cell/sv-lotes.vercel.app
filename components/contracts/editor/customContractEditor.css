@@ -141,7 +141,9 @@
 }
 
 .sv-a4-sheet .ProseMirror table,
-.sv-editor-preview-doc table {
+.sv-editor-preview-doc table,
+.sv-a4-sheet .ProseMirror .estrela-table,
+.sv-editor-preview-doc .estrela-table {
   width: 100%;
   max-width: 100%;
   border-collapse: collapse;
@@ -151,11 +153,22 @@
   page-break-inside: auto;
 }
 
-.sv-a4-sheet .ProseMirror .tableWrapper {
+.sv-a4-sheet .ProseMirror .tableWrapper,
+.sv-editor-preview-doc .tableWrapper,
+.sv-a4-sheet .estrela-lead-table,
+.sv-editor-preview-doc .estrela-lead-table,
+.sv-a4-sheet .estrela-clause,
+.sv-editor-preview-doc .estrela-clause,
+.sv-a4-sheet .estrela-clause-keep,
+.sv-editor-preview-doc .estrela-clause-keep,
+.sv-a4-sheet .contract-clause,
+.sv-editor-preview-doc .contract-clause {
   position: relative;
   max-width: 100%;
   overflow: visible;
   margin: 0 0 12px;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 
 .sv-a4-sheet .ProseMirror .tableWrapper table {
@@ -174,8 +187,57 @@
   cursor: col-resize;
 }
 
-.sv-a4-sheet .ProseMirror.resize-cursor {
-  cursor: col-resize;
+.sv-a4-sheet .ProseMirror thead,
+.sv-editor-preview-doc thead {
+  display: table-header-group;
+}
+
+.sv-a4-repeated-header {
+  background: #fff;
+}
+
+.sv-a4-sheet .ProseMirror td[data-min-height],
+.sv-a4-sheet .ProseMirror th[data-min-height],
+.sv-a4-sheet .ProseMirror tr[data-min-height],
+.sv-editor-preview-doc td[data-min-height],
+.sv-editor-preview-doc th[data-min-height],
+.sv-editor-preview-doc tr[data-min-height] {
+  height: auto;
+}
+
+@media print {
+  .sv-a4-flow-gap,
+  .sv-a4-flow-gap-row,
+  .sv-page-break {
+    height: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .sv-a4-flow-gap::after,
+  .sv-page-break::after {
+    display: none;
+  }
+
+  .sv-a4-repeated-header {
+    display: none !important;
+  }
+
+  .sv-a4-sheet .ProseMirror,
+  .sv-a4-prose,
+  .sv-editor-preview-doc {
+    box-shadow: none !important;
+    min-height: 0 !important;
+  }
+
+  .sv-table-layout-bar,
+  .sv-logo-layout-bar,
+  .sv-fn-layout-bar {
+    display: none !important;
+  }
 }
 
 .sv-a4-sheet .ProseMirror tr,

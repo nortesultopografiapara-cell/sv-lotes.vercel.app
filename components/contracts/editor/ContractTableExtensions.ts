@@ -24,13 +24,46 @@ const verticalAlignAttr = {
   },
 };
 
-export const ContractTableRow = TableRow;
+const cellLayoutAttr = {
+  ...verticalAlignAttr,
+  minHeight: {
+    default: null,
+    parseHTML: (element: HTMLElement) => element.style.minHeight || element.getAttribute('data-min-height') || null,
+    renderHTML: (attributes: { minHeight?: string | null }) => {
+      if (!attributes.minHeight) return {};
+      return {
+        'data-min-height': attributes.minHeight,
+        style: `min-height:${attributes.minHeight}`,
+      };
+    },
+  },
+};
+
+export const ContractTableRow = TableRow.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      minHeight: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.style.minHeight || element.getAttribute('data-min-height') || null,
+        renderHTML: (attributes: { minHeight?: string | null }) => {
+          if (!attributes.minHeight) return {};
+          return {
+            'data-min-height': attributes.minHeight,
+            style: `min-height:${attributes.minHeight}`,
+          };
+        },
+      },
+    };
+  },
+});
 
 export const ContractTableCell = TableCell.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      ...verticalAlignAttr,
+      ...cellLayoutAttr,
     };
   },
 });
@@ -39,7 +72,7 @@ export const ContractTableHeader = TableHeader.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      ...verticalAlignAttr,
+      ...cellLayoutAttr,
     };
   },
 });
@@ -67,6 +100,7 @@ class ContractTableView extends TableView {
 export const ContractTable = Table.extend({
   addAttributes() {
     return {
+      ...this.parent?.(),
       borders: {
         default: 'normal',
         parseHTML: (element) => {

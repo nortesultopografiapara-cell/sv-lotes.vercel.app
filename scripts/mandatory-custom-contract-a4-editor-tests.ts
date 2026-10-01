@@ -652,13 +652,35 @@ void (async () => {
 
   const tableExt = read('components/contracts/editor/ContractTableExtensions.ts');
   assert(tableExt.includes('resizable: true'), 'tabelas usam resize oficial do TipTap');
+  assert(tableExt.includes('colwidth') || tableExt.includes('this.parent?.()'), 'largura de coluna persiste no HTML via colwidth');
+  assert(tableExt.includes('minHeight'), 'altura mínima da linha/célula');
   assert(editorUi.includes('addRowBefore') && editorUi.includes('addColumnAfter'), 'barra contextual insere linha/coluna');
   assert(editorUi.includes('deleteRow') && editorUi.includes('deleteTable'), 'barra contextual exclui linha/tabela');
   assert(editorUi.includes('mergeCells') && editorUi.includes('splitCell'), 'mesclar e dividir células');
+  assert(editorUi.includes('setTextAlign') && editorUi.includes('Texto justificado'), 'alinhamento horizontal na célula');
   assert(editorUi.includes("borders: 'none'") && css.includes('sv-table-borderless'), 'tabela sem bordas para assinaturas');
   assert(editorUi.includes('setCellAttribute') && editorUi.includes('verticalAlign'), 'alinhamento vertical da célula');
   assert(css.includes('column-resize-handle'), 'divisória de coluna arrastável');
   assert(css.includes('max-width: 100%'), 'tabela não ultrapassa a folha A4');
+  assert(css.includes('table-header-group'), 'cabeçalho de tabela pode repetir na página seguinte');
+  assert(layoutLib.includes('shouldExplodeTableIntoRows') && layoutLib.includes('cloneRepeatedTableHeader'), 'tabela explode em linhas e repete thead');
+  assert(layoutLib.includes('CUSTOM_A4_PAGE_CONFIG'), 'arquitetura de margens A4 preparada');
+  assert(editorUi.includes('deletePageBreak'), 'quebra manual pode ser removida');
+  assert(editorUi.includes('setParagraphLayout'), 'espaçamento e recuo de parágrafo');
+  assert(tiptap.includes('ParagraphLayout'), 'TipTap persiste layout de parágrafo');
+  assert(editorUi.includes('printCustomContractPreview') && editorUi.includes('Gerar PDF'), 'PDF sai da mesma paginação do preview');
+  assert(
+    fillCustomPlaceholdersForPreview('<table><tr><td>{{CLIENT_NAME}}</td></tr></table>', {
+      CLIENT_NAME: 'Maria Compradora',
+    }).includes('Maria Compradora'),
+    'tokens dentro de células continuam dinâmicos',
+  );
+  assert(
+    !fillCustomPlaceholdersForPreview('<td>{{PARTNERSHIP_NOTE}}</td>', {
+      PARTNERSHIP_NOTE: '40% e 60%',
+    }).includes('{{PARTNERSHIP_NOTE}}'),
+    'token em célula não vira texto morto na prévia',
+  );
 
   const mammothNotes = [
     '<p>ARRAS<sup><a href="#doc-42-footnote-5" id="doc-42-footnote-ref-5">[5]</a></sup> e medidas',
@@ -720,8 +742,67 @@ void (async () => {
     }
     assert(packStable, 'empacotador idempotente 100x com as mesmas dimensões');
     assert(firstPack.length >= 20, 'documento longo (Estrela-like) gera dezenas de folhas A4');
-    assert(!shouldExplodeTableByHeight(987, 987), 'tabela que cabe na folha permanece inteira');
+    assert(shouldExplodeTableByHeight(200, 987), 'tabela menor que a folha ainda quebra entre linhas');
     assert(shouldExplodeTableByHeight(988, 987), 'tabela maior que a folha quebra entre linhas');
+
+    const finance: A4LayoutUnit[] = [
+      { id: 'h', kind: 'heading', height: 36, keepTogether: true, keepWithNext: false },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        id: `fin${i}`,
+        kind: 'tableRow' as const,
+        height: 40,
+        keepTogether: true,
+        keepWithNext: false,
+        tableId: 'finance',
+        isTableHeader: i === 0,
+      })),
+    ];
+    const financePages = planA4Pages(finance, 200, 18);
+    assert(financePages.length >= 2, 'tabela financeira atravessa duas páginas');
+    assert(financePages[0].end >= 1 && financePages[0].end < 8, 'algumas linhas ficam na página do título');
+    assert(financePages[1].start === financePages[0].end + 1, 'continuação começa na linha seguinte');
+
+    const five: A4LayoutUnit[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `r5-${i}`,
+      kind: 'tableRow' as const,
+      height: 40,
+      keepTogether: true,
+      keepWithNext: false,
+      tableId: 't5',
+    }));
+    assert(planA4Pages(five, 987, 18).length === 1, 'tabela de 5 linhas cabe em uma folha');
+
+    const twenty: A4LayoutUnit[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `r20-${i}`,
+      kind: 'tableRow' as const,
+      height: 70,
+      keepTogether: true,
+      keepWithNext: false,
+      tableId: 't20',
+      isTableHeader: i === 0,
+    }));
+    const twentyPages = planA4Pages(twenty, 200, 18);
+    assert(twentyPages.length >= 3, 'tabela de 20 linhas usa várias páginas');
+
+    const fifty: A4LayoutUnit[] = Array.from({ length: 50 }, (_, i) => ({
+      id: `r50-${i}`,
+      kind: 'tableRow' as const,
+      height: 40,
+      keepTogether: true,
+      keepWithNext: false,
+      tableId: 't50',
+      isTableHeader: i === 0,
+    }));
+    const fiftyPages = planA4Pages(fifty, 200, 18);
+    assert(fiftyPages.length >= 8, 'tabela de 50 linhas pagina por linhas');
+
+    const tallCell: A4LayoutUnit[] = [
+      { id: 'c1', kind: 'tableRow', height: 40, keepTogether: true, keepWithNext: false, tableId: 'tall' },
+      { id: 'c2', kind: 'tableRow', height: 220, keepTogether: true, keepWithNext: false, tableId: 'tall' },
+      { id: 'c3', kind: 'tableRow', height: 40, keepTogether: true, keepWithNext: false, tableId: 'tall' },
+    ];
+    const tallPlan = planA4Pages(tallCell, 200, 18);
+    assert(tallPlan.length >= 2, 'célula com texto grande empurra só as linhas seguintes');
   }
 
   assert(layoutLib.includes('a4PageIdentity'), 'identidade de página não inclui leftover');

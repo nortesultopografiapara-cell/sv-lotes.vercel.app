@@ -6,13 +6,27 @@ import {
   CUSTOM_A4_GAP_PX,
   a4PageIdentity,
   a4SpacerHeight,
+  cloneRepeatedTableHeader,
   collectA4UnitsFromElement,
   customA4PageInnerPx,
+  isTableHeaderRow,
   measureFootnoteClusterHeight,
   planA4Pages,
 } from '@/lib/customContractA4Layout';
 
 const a4PaginationKey = new PluginKey('svCustomA4Pagination');
+
+function headerWidget(rowHtml: string) {
+  return () => {
+    const wrap = document.createElement('tbody');
+    wrap.innerHTML = rowHtml;
+    const tr = wrap.querySelector('tr') || document.createElement('tr');
+    tr.classList.add('sv-a4-repeated-header');
+    tr.setAttribute('contenteditable', 'false');
+    tr.setAttribute('data-sv-a4-artifact', 'true');
+    return tr;
+  };
+}
 
 function spacerWidget(height: number, isRow: boolean, colCount: number) {
   return () => {
@@ -137,6 +151,25 @@ function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) =>
             },
           ),
         );
+        const lastTable = last?.el?.closest('table');
+        const nextTable = next.el.closest('table');
+        if (
+          lastTable &&
+          nextTable &&
+          lastTable === nextTable &&
+          next.el.tagName.toLowerCase() === 'tr' &&
+          !isTableHeaderRow(next.el)
+        ) {
+          cloneRepeatedTableHeader(lastTable).forEach((row, headerIndex) => {
+            decorations.push(
+              Decoration.widget(pos, headerWidget(row.outerHTML), {
+                side: -1,
+                ignoreSelection: true,
+                key: `th-${page.pageIndex}-${headerIndex}`,
+              }),
+            );
+          });
+        }
       }
     }
   }

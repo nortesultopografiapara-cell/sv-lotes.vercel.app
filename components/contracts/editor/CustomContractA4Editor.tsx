@@ -63,6 +63,7 @@ import ManageContractModelProjectsPanel, {
   type ManageProjectLink,
 } from '@/components/contracts/central/ManageContractModelProjectsPanel';
 import CustomA4PaginatedHtml from '@/components/contracts/editor/CustomA4PaginatedHtml';
+import { printCustomContractPreview } from '@/lib/customContractPrint';
 import type { CompanyLogoAlign } from '@/lib/customContractLogo';
 import '@/components/contracts/editor/customContractEditor.css';
 
@@ -174,6 +175,7 @@ export default function CustomContractA4Editor() {
   const draftIdRef = useRef<string | null>(null);
   const tenantRef = useRef<string | null>(null);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewPrintRef = useRef<HTMLDivElement | null>(null);
 
   const lastPublished = useMemo(() => {
     return (
@@ -796,9 +798,103 @@ export default function CustomContractA4Editor() {
           {toolbarBtn('Centro', () => applyAlign('center'), editor?.isActive({ textAlign: 'center' }) || (editor?.isActive('companyLogo') && editor?.getAttributes('companyLogo')?.align === 'center'), <AlignCenter className="w-3.5 h-3.5" />)}
           {toolbarBtn('Direita', () => applyAlign('right'), editor?.isActive({ textAlign: 'right' }) || (editor?.isActive('companyLogo') && editor?.getAttributes('companyLogo')?.align === 'right'), <AlignRight className="w-3.5 h-3.5" />)}
           {toolbarBtn('Justificado', () => applyAlign('justify'), editor?.isActive({ textAlign: 'justify' }), <AlignJustify className="w-3.5 h-3.5" />)}
+          <select
+            className="h-8 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            title="Espaçamento entre linhas"
+            value={String(editor?.getAttributes('paragraph').lineHeight || editor?.getAttributes('heading').lineHeight || '')}
+            onChange={(e) => {
+              const value = e.target.value || null;
+              editor?.chain().focus().setParagraphLayout({ lineHeight: value }).run();
+              setToolbarTick((n) => n + 1);
+            }}
+          >
+            <option value="">Entrelinha</option>
+            <option value="1.15">1.15</option>
+            <option value="1.45">1.45</option>
+            <option value="1.6">1.6</option>
+            <option value="2">2.0</option>
+          </select>
+          <select
+            className="h-8 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            title="Espaço antes do parágrafo"
+            value={String(editor?.getAttributes('paragraph').marginTop || '')}
+            onChange={(e) => {
+              editor?.chain().focus().setParagraphLayout({ marginTop: e.target.value || null }).run();
+              setToolbarTick((n) => n + 1);
+            }}
+          >
+            <option value="">Antes</option>
+            <option value="0">0</option>
+            <option value="6px">6px</option>
+            <option value="12px">12px</option>
+            <option value="18px">18px</option>
+          </select>
+          <select
+            className="h-8 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            title="Espaço depois do parágrafo"
+            value={String(editor?.getAttributes('paragraph').marginBottom || '')}
+            onChange={(e) => {
+              editor?.chain().focus().setParagraphLayout({ marginBottom: e.target.value || null }).run();
+              setToolbarTick((n) => n + 1);
+            }}
+          >
+            <option value="">Depois</option>
+            <option value="0">0</option>
+            <option value="6px">6px</option>
+            <option value="10px">10px</option>
+            <option value="18px">18px</option>
+          </select>
+          <select
+            className="h-8 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            title="Recuo esquerdo"
+            value={String(editor?.getAttributes('paragraph').marginLeft || '')}
+            onChange={(e) => {
+              editor?.chain().focus().setParagraphLayout({ marginLeft: e.target.value || null }).run();
+              setToolbarTick((n) => n + 1);
+            }}
+          >
+            <option value="">Recuo</option>
+            <option value="0">0</option>
+            <option value="12px">12px</option>
+            <option value="24px">24px</option>
+            <option value="36px">36px</option>
+          </select>
+          <select
+            className="h-8 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            title="Recuo direito"
+            value={String(editor?.getAttributes('paragraph').marginRight || '')}
+            onChange={(e) => {
+              editor?.chain().focus().setParagraphLayout({ marginRight: e.target.value || null }).run();
+              setToolbarTick((n) => n + 1);
+            }}
+          >
+            <option value="">Recuo dir.</option>
+            <option value="0">0</option>
+            <option value="12px">12px</option>
+            <option value="24px">24px</option>
+            <option value="36px">36px</option>
+          </select>
+          <select
+            className="h-8 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-2"
+            title="Recuo da primeira linha"
+            value={String(editor?.getAttributes('paragraph').textIndent || '')}
+            onChange={(e) => {
+              editor?.chain().focus().setParagraphLayout({ textIndent: e.target.value || null }).run();
+              setToolbarTick((n) => n + 1);
+            }}
+          >
+            <option value="">1ª linha</option>
+            <option value="0">0</option>
+            <option value="12px">12px</option>
+            <option value="24px">24px</option>
+            <option value="36px">36px</option>
+          </select>
           {toolbarBtn('Lista', () => editor?.chain().focus().toggleBulletList().run(), editor?.isActive('bulletList'), <List className="w-3.5 h-3.5" />)}
           {toolbarBtn('Numerada', () => editor?.chain().focus().toggleOrderedList().run(), editor?.isActive('orderedList'), <ListOrdered className="w-3.5 h-3.5" />)}
           {toolbarBtn('Quebra de página', () => editor?.chain().focus().insertPageBreak().run(), false, 'Página')}
+          {editor?.isActive('pageBreak') && (
+            toolbarBtn('Remover quebra de página', () => editor.chain().focus().deletePageBreak().run())
+          )}
           {toolbarBtn(
             'Inserir tabela',
             () => editor?.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: false }).run(),
@@ -815,6 +911,10 @@ export default function CustomContractA4Editor() {
               {toolbarBtn('Excluir coluna', () => editor.chain().focus().deleteColumn().run())}
               {toolbarBtn('Mesclar células', () => editor.chain().focus().mergeCells().run())}
               {toolbarBtn('Dividir célula', () => editor.chain().focus().splitCell().run())}
+              {toolbarBtn('Texto à esquerda', () => editor.chain().focus().setTextAlign('left').run())}
+              {toolbarBtn('Texto ao centro', () => editor.chain().focus().setTextAlign('center').run())}
+              {toolbarBtn('Texto à direita', () => editor.chain().focus().setTextAlign('right').run())}
+              {toolbarBtn('Texto justificado', () => editor.chain().focus().setTextAlign('justify').run())}
               {toolbarBtn(
                 'Alinhar no topo',
                 () => editor.chain().focus().setCellAttribute('verticalAlign', 'top').run(),
@@ -844,6 +944,21 @@ export default function CustomContractA4Editor() {
                 editor.getAttributes('table').borders === 'none',
               )}
               {toolbarBtn('Excluir tabela', () => editor.chain().focus().deleteTable().run())}
+              <label className="inline-flex items-center gap-1 text-[11px] text-slate-300">
+                Altura mín.
+                <input
+                  type="number"
+                  min={0}
+                  className="h-7 w-16 rounded-md bg-[#1b1d22] border border-white/15 text-xs px-1"
+                  value={String(editor.getAttributes('tableCell').minHeight || editor.getAttributes('tableHeader').minHeight || '').replace('px', '')}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    const value = raw ? `${raw}px` : null;
+                    editor.chain().focus().setCellAttribute('minHeight', value).run();
+                    setToolbarTick((n) => n + 1);
+                  }}
+                />
+              </label>
             </span>
           )}
           {(editor?.isActive('footnoteReference') || editingNoteId) && (
@@ -1032,7 +1147,20 @@ export default function CustomContractA4Editor() {
             ))}
           </select>
           {previewLoading && <p className="text-xs text-gray-400 mb-2">Carregando dados da venda…</p>}
-          <div className="sv-editor-preview-doc max-h-[70vh] overflow-auto bg-[#2a2d36] p-4 rounded-lg">
+          <button
+            type="button"
+            className="mb-3 h-8 px-3 rounded-lg border border-white/10 text-xs"
+            onClick={() => {
+              const root = previewPrintRef.current;
+              if (root) printCustomContractPreview(root, name || 'Contrato');
+            }}
+          >
+            Gerar PDF
+          </button>
+          <div
+            ref={previewPrintRef}
+            className="sv-editor-preview-doc max-h-[70vh] overflow-auto bg-[#2a2d36] p-4 rounded-lg"
+          >
             <CustomA4PaginatedHtml
               html={
                 previewFilled ||

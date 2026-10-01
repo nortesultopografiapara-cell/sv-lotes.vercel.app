@@ -4,6 +4,7 @@ declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     pageBreak: {
       insertPageBreak: () => ReturnType;
+      deletePageBreak: () => ReturnType;
     };
   }
 }
@@ -35,6 +36,12 @@ export const PageBreak = Node.create({
         () =>
         ({ chain }) =>
           chain().focus().insertContent({ type: this.name }).run(),
+      deletePageBreak:
+        () =>
+        ({ commands, editor }) => {
+          if (!editor.isActive(this.name)) return false;
+          return commands.deleteSelection();
+        },
     };
   },
 });

@@ -14,10 +14,21 @@ import {
 } from '@/lib/customContractFootnotes';
 
 export const CUSTOM_A4_PAGE_MM = 297;
+export const CUSTOM_A4_WIDTH_MM = 210;
 export const CUSTOM_A4_PAD_MM = 18;
 export const CUSTOM_A4_GAP_PX = 18;
 export const CUSTOM_A4_MIN_SPLIT_REMAINING_PX = 64;
 export const A4_PAGE_IDENTITY_ATTR = 'data-sv-a4-identity';
+
+/** Arquitetura de página — valores atuais; margens independentes no futuro. */
+export const CUSTOM_A4_PAGE_CONFIG = {
+  widthMm: CUSTOM_A4_WIDTH_MM,
+  heightMm: CUSTOM_A4_PAGE_MM,
+  marginTopMm: CUSTOM_A4_PAD_MM,
+  marginBottomMm: CUSTOM_A4_PAD_MM,
+  marginLeftMm: CUSTOM_A4_PAD_MM,
+  marginRightMm: CUSTOM_A4_PAD_MM,
+} as const;
 
 export type A4LayoutKind =
   | 'heading'
@@ -38,6 +49,8 @@ export type A4LayoutUnit = {
   keepTogether: boolean;
   keepWithNext: boolean;
   footnoteIds?: string[];
+  tableId?: string;
+  isTableHeader?: boolean;
 };
 
 export type A4SpacerPlan = {
@@ -76,7 +89,35 @@ export function a4PageIdentity(pages: A4PagePlan[]): string {
 }
 
 export function shouldExplodeTableByHeight(contentHeight: number, pageInner: number): boolean {
-  return roundA4Measure(contentHeight) > roundA4Measure(pageInner);
+  void contentHeight;
+  void pageInner;
+  return true;
+}
+
+export function shouldExplodeTableIntoRows(tableEl: HTMLElement): boolean {
+  let rows = 0;
+  tableEl.querySelectorAll('tr').forEach((row) => {
+    if (row instanceof HTMLElement && !isA4PaginationArtifact(row)) rows += 1;
+  });
+  return rows > 1;
+}
+
+function tableHeaderHeight(units: A4LayoutUnit[], tableId: string): number {
+  return units
+    .filter((unit) => unit.tableId === tableId && unit.isTableHeader)
+    .reduce((sum, unit) => sum + Math.max(0, roundA4Measure(unit.height)), 0);
+}
+
+function pageAlreadyHasTableHeader(
+  units: A4LayoutUnit[],
+  start: number,
+  index: number,
+  tableId: string,
+): boolean {
+  for (let i = start; i < index; i += 1) {
+    if (units[i]?.tableId === tableId && units[i]?.isTableHeader) return true;
+  }
+  return false;
 }
 
 export function a4SpacerHeight(leftover: number, footnoteHeight: number, gap: number): number {
@@ -109,7 +150,7 @@ export function classifyA4Tag(
     return { kind: 'heading', keepTogether: true, keepWithNext: true };
   }
   if (tag === 'table') {
-    return { kind: 'table', keepTogether: true, keepWithNext: false };
+    return { kind: 'table', keepTogether: false, keepWithNext: false };
   }
   if (tag === 'tr') {
     return { kind: 'tableRow', keepTogether: true, keepWithNext: false };
@@ -205,12 +246,26 @@ export function planA4Pages(
       }
     }
 
-    if (packHeight > remaining && remaining < inner) {
+    let repeatedHeader = 0;
+    if (
+      unit.kind === 'tableRow' &&
+      !unit.isTableHeader &&
+      unit.tableId &&
+      remaining >= inner
+    ) {
+      const headerH = tableHeaderHeight(units, unit.tableId);
+      if (headerH > 0 && !pageAlreadyHasTableHeader(units, start, i, unit.tableId)) {
+        repeatedHeader = headerH;
+      }
+    }
+    const needed = packHeight + repeatedHeader;
+
+    if (needed > remaining && remaining < inner) {
       closePage(i);
       continue;
     }
 
-    remaining = Math.max(0, remaining - packHeight);
+    remaining = Math.max(0, remaining - needed);
     pageRefs = uniqueFootnoteIds([...pageRefs, ...packRefs]);
     i = packEnd + 1;
   }
@@ -256,6 +311,7 @@ export function isA4PaginationArtifact(el: HTMLElement): boolean {
     el.classList.contains('sv-a4-flow-gap') ||
     el.classList.contains('sv-a4-flow-gap-row') ||
     el.classList.contains('sv-a4-flow-gap-cell') ||
+    el.classList.contains('sv-a4-repeated-header') ||
     el.classList.contains('sv-page-footnotes') ||
     el.classList.contains('sv-page-footnotes-row') ||
     el.classList.contains('sv-footnote-store') ||
@@ -277,10 +333,58 @@ function measureUnitHeight(el: HTMLElement): number {
   return roundA4Measure(el.getBoundingClientRect().height);
 }
 
+export function isTableHeaderRow(row: HTMLElement): boolean {
+  if (row.parentElement?.tagName.toLowerCase() === 'thead') return true;
+  if (row.closest('tbody')) return false;
+  return Boolean(row.querySelector('th'));
+}
+
+export function tableHeaderRows(tableEl: HTMLElement): HTMLElement[] {
+  const head = tableEl.querySelector('thead');
+  const source = head
+    ? Array.from(head.querySelectorAll('tr'))
+    : Array.from(tableEl.querySelectorAll('tr'));
+  return source.filter(
+    (row) =>
+      row instanceof HTMLElement &&
+      !isA4PaginationArtifact(row) &&
+      (head ? true : isTableHeaderRow(row)),
+  ) as HTMLElement[];
+}
+
+export function cloneRepeatedTableHeader(tableEl: HTMLElement): HTMLElement[] {
+  return tableHeaderRows(tableEl).map((row) => {
+    const clone = row.cloneNode(true) as HTMLElement;
+    clone.classList.add('sv-a4-repeated-header');
+    clone.setAttribute('contenteditable', 'false');
+    clone.setAttribute('data-sv-a4-artifact', 'true');
+    return clone;
+  });
+}
+
+function isFlowWrapper(el: HTMLElement, pageInner: number): boolean {
+  const tag = el.tagName.toLowerCase();
+  if (tag !== 'div' && tag !== 'section' && tag !== 'article') return false;
+  if (el.classList.contains('tableWrapper')) return false;
+  if (el.hasAttribute('data-sv-page-break') || el.classList.contains('sv-page-break')) return false;
+  if (el.hasAttribute('data-sv-company-logo')) return false;
+  const kids = Array.from(el.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement && !isA4PaginationArtifact(child),
+  );
+  if (kids.length > 1) return true;
+  if (el.querySelector('table')) return true;
+  return measureUnitHeight(el) > pageInner;
+}
+
 export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number): A4DomUnit[] {
   const units: A4DomUnit[] = [];
   let index = 0;
-  const pushEl = (el: HTMLElement, tag = el.tagName) => {
+  let tableSerial = 0;
+  const pushEl = (
+    el: HTMLElement,
+    tag = el.tagName,
+    extra: Partial<Pick<A4LayoutUnit, 'tableId' | 'isTableHeader'>> = {},
+  ) => {
     const classified = classifyA4Tag(tag, el.innerText || el.textContent || '', {
       pageBreak: el.hasAttribute('data-sv-page-break') || el.classList.contains('sv-page-break'),
       companyLogo:
@@ -293,31 +397,54 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
       height: Math.max(1, measureUnitHeight(el)),
       footnoteIds: collectFootnoteIdsFromElement(el),
       ...classified,
+      ...extra,
     });
   };
 
-  for (const child of Array.from(root.children)) {
-    if (!(child instanceof HTMLElement)) continue;
-    if (isA4PaginationArtifact(child)) continue;
-    const tag = child.tagName.toLowerCase();
-    const tableEl =
-      tag === 'table' ? child : child.classList.contains('tableWrapper') ? child.querySelector('table') : null;
-    if (tableEl instanceof HTMLElement && shouldExplodeTableByHeight(tableContentHeight(tableEl), pageInner)) {
-      tableEl.querySelectorAll('tr').forEach((row) => {
-        if (row instanceof HTMLElement && !isA4PaginationArtifact(row)) {
-          pushEl(row, 'tr');
-        }
-      });
-      continue;
+  const explodeTable = (tableEl: HTMLElement) => {
+    const tableId = `tbl-${tableSerial++}`;
+    const rows = Array.from(tableEl.querySelectorAll('tr')).filter(
+      (row) => row instanceof HTMLElement && !isA4PaginationArtifact(row),
+    ) as HTMLElement[];
+    if (!shouldExplodeTableIntoRows(tableEl)) {
+      pushEl(tableEl, 'table', { tableId });
+      return;
     }
-    if ((tag === 'ul' || tag === 'ol') && measureUnitHeight(child) > pageInner) {
-      Array.from(child.children).forEach((item) => {
-        if (item instanceof HTMLElement && !isA4PaginationArtifact(item)) pushEl(item, item.tagName);
-      });
-      continue;
+    rows.forEach((row) => {
+      pushEl(row, 'tr', { tableId, isTableHeader: isTableHeaderRow(row) });
+    });
+  };
+
+  const walk = (parent: HTMLElement) => {
+    for (const child of Array.from(parent.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      if (isA4PaginationArtifact(child)) continue;
+      const tag = child.tagName.toLowerCase();
+      if (isFlowWrapper(child, pageInner)) {
+        walk(child);
+        continue;
+      }
+      const tableEl =
+        tag === 'table'
+          ? child
+          : child.classList.contains('tableWrapper')
+            ? child.querySelector('table')
+            : null;
+      if (tableEl instanceof HTMLElement) {
+        explodeTable(tableEl);
+        continue;
+      }
+      if ((tag === 'ul' || tag === 'ol') && measureUnitHeight(child) > pageInner) {
+        Array.from(child.children).forEach((item) => {
+          if (item instanceof HTMLElement && !isA4PaginationArtifact(item)) pushEl(item, item.tagName);
+        });
+        continue;
+      }
+      pushEl(child);
     }
-    pushEl(child);
-  }
+  };
+
+  walk(root);
   return units;
 }
 
@@ -388,6 +515,18 @@ export function applyCustomA4Pagination(root: HTMLElement): number {
       const spacerHeight = a4SpacerHeight(page.leftover, page.footnoteHeight, CUSTOM_A4_GAP_PX);
       const gap = createA4GapElement(next.el, spacerHeight);
       next.el.before(gap);
+      const lastTable = last?.el?.closest('table');
+      const nextTable = next.el.closest('table');
+      if (
+        lastTable &&
+        nextTable &&
+        lastTable === nextTable &&
+        next.el.tagName.toLowerCase() === 'tr' &&
+        !isTableHeaderRow(next.el)
+      ) {
+        const headers = cloneRepeatedTableHeader(lastTable);
+        headers.forEach((row) => next.el.before(row));
+      }
     }
   }
   root.setAttribute(A4_PAGE_IDENTITY_ATTR, identity);
