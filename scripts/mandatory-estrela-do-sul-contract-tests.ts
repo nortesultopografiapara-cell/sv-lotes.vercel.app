@@ -432,12 +432,12 @@ assert(
   const slices: string[] = [];
   let from = 0;
   while (from < lot13Html.length) {
-    const i = lot13Html.indexOf('MEDIDAS E CONFRONTAÇÕES', from);
+    const i = lot13Html.indexOf('Confrontações', from);
     if (i < 0) break;
     slices.push(lot13Html.slice(i, i + 900));
     from = i + 1;
   }
-  assert(slices.length >= 2, 'duas linhas MEDIDAS E CONFRONTAÇÕES');
+  assert(slices.length >= 2, 'duas linhas Confrontações');
   assert(
     slices.every((slice) => slice.includes(LOT13_TEXT)),
     'Capa Resumo e cláusula 1.3 com a mesma descrição',
@@ -452,10 +452,10 @@ assert(onlyCompany.includes('55,00m'), 'laterais GIS');
 assert(onlyCompany.includes('50.000,00'), 'preço da venda');
 assert(onlyCompany.includes('5.000,00'), 'sinal da venda');
 assert(onlyCompany.includes('1.500,00'), 'corretagem da venda');
-assert(onlyCompany.includes('MEDIDAS E CONFRONTAÇÕES'), 'rótulo medidas e confrontações');
-assert(!onlyCompany.includes('ARRAS<sup>2</sup>'), 'sem sobrescrito ARRAS²');
-assert(!onlyCompany.includes('PARCELAS E VALORES<sup>3</sup>'), 'sem sobrescrito PARCELAS³');
-assert(!onlyCompany.includes('CONFLITOS<sup>4</sup>'), 'sem sobrescrito CONFLITOS⁴');
+assert(onlyCompany.includes('Confrontações'), 'rótulo confrontações');
+assert(onlyCompany.includes('ARRAS)<sup>2</sup>'), 'nota 2 na capa (ARRAS)');
+assert(onlyCompany.includes('PARCELAS E VALORES<sup>3</sup>'), 'nota 3 na capa (parcelas)');
+assert(onlyCompany.includes('CONFLITOS<sup>4</sup>'), 'nota 4 na capa (conflitos)');
 assert(onlyCompany.includes('width:33%'), 'coluna Informação ~33%');
 assert(onlyCompany.includes('width:67%'), 'coluna Detalhamento ~67%');
 assert(onlyCompany.includes('10 (dez) parcela') || onlyCompany.includes('10 (dez)'), 'parcelas dinâmicas');
@@ -481,7 +481,8 @@ const withSecond = html({
 });
 assert(withSecond.includes('Antonio Ferreira Silva'), 'segundo vendedor');
 assert(withSecond.includes('718.773.122-15'), 'CPF segundo vendedor');
-assert(withSecond.includes('40%'), 'narrativa parceria (não split financeiro)');
+assert(withSecond.includes('30%'), 'narrativa parceria 30/70 (não split financeiro)');
+assert(withSecond.includes('70%'), 'narrativa 70% segundo vendedor');
 assert(
   (withSecond.match(/data-party-role="VENDOR"/g) || []).length === 4,
   'e-sign: dois VENDOR no instrumento (capa visual não duplica party)',
@@ -520,7 +521,8 @@ assert(
   (withSpouse.match(/data-party-role="SPOUSE"/g) || []).length === 2,
   'e-sign: SPOUSE na Capa e no instrumento',
 );
-assert(withSpouse.includes('CÔNJUGE ANUENTE'), 'cônjuge visual na capa e no instrumento');
+assert(withSpouse.includes('COMPRADOR 2'), 'cônjuge visual como COMPRADOR 2');
+assert(withSpouse.includes('CÔNJUGE ANUENTE'), 'qualificação CÔNJUGE ANUENTE no preâmbulo');
 assert(
   withSpouse.includes('neste ato com a anuência de seu cônjuge'),
   'qualificação do cônjuge no preâmbulo',
@@ -560,8 +562,12 @@ assert(
   '8.4→8.2 listada para decisão humana',
 );
 assert(
-  ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'CLAUSE_2_14_15'),
-  '2.14/2.15 listados para decisão humana',
+  ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'PARTNERSHIP_30_70'),
+  'rateio 30/70 documentado',
+);
+assert(
+  ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES.some((d) => d.id === 'CLAUSE_5_4_TWICE'),
+  '5.4 duplicado transcrito como no PDF',
 );
 
 function assertBefore(htmlSrc: string, first: string, second: string, msg: string) {
@@ -573,14 +579,20 @@ function assertBefore(htmlSrc: string, first: string, second: string, msg: strin
 assertBefore(
   onlyCompany,
   '4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS',
+  'class="estrela-infra-page"',
+  'item 4 na capa; infraestrutura na página seguinte',
+);
+assertBefore(
+  onlyCompany,
+  'class="estrela-infra-page"',
   'DOCUMENTO DE REFERÊNCIA DA OBRA',
-  'tabela do item 4 logo após o título',
+  'página 2 começa pela tabela de infraestrutura',
 );
 assertBefore(
   onlyCompany,
   'DOCUMENTO DE REFERÊNCIA DA OBRA',
   'data-estrela-sign-block="capa"',
-  'primeiro bloco de assinaturas fecha a Capa Resumo',
+  'primeiro bloco de assinaturas fecha a página de infraestrutura',
 );
 assertBefore(
   onlyCompany,
@@ -600,7 +612,8 @@ assertBefore(
   'data-estrela-sign-block="instrumento"',
   'segundo bloco de assinaturas no encerramento',
 );
-assert(!onlyCompany.includes('estrela-annex'), 'anexo antigo não permanece após as cláusulas');
+assert(onlyCompany.includes('estrela-infra-page'), 'página 2 de infraestrutura isolada da capa');
+assert(onlyCompany.includes('COMPRADOR 2'), 'slot COMPRADOR 2 mesmo sem cônjuge');
 assert(
   (onlyCompany.match(/class="estrela-closing-statement"/g) || []).length === 1,
   'fecho "justas e contratadas" só no instrumento',
@@ -944,20 +957,24 @@ assert(
   gisMeasures.includes('25% (vinte e cinco por cento)'),
   '9.3 retenção interpolada',
 );
-assert(!gisMeasures.includes('<sup>5</sup>'), 'sem nota 5 órfã');
-assert(!gisMeasures.includes('<sup>6</sup>'), 'sem nota 6 órfã');
-assert(!gisMeasures.includes('<sup>7</sup>'), 'sem nota 7 órfã');
+assert(gisMeasures.includes('<sup>5</sup>'), 'nota 5 de ARRAS na cláusula 2');
+assert(gisMeasures.includes('<sup>6</sup>'), 'nota 6 de corretagem na cláusula 2');
+assert(gisMeasures.includes('<sup>7</sup>'), 'nota 7 de taxa administrativa na cláusula 9');
 assert(
-  !gisMeasures.includes('Natureza jurídica: as ARRAS'),
-  'sem bloco explicativo de ARRAS',
+  gisMeasures.includes('Natureza jurídica: as ARRAS'),
+  'bloco explicativo de ARRAS na capa/cláusula',
 );
 assert(
-  !gisMeasures.includes('A comissão de corretagem possui natureza de remuneração'),
-  'sem bloco explicativo de corretagem',
+  gisMeasures.includes('A comissão de corretagem possui natureza de remuneração'),
+  'bloco explicativo de corretagem',
 );
 assert(
-  !gisMeasures.includes('A composição referente à Dedutação de Taxa'),
-  'sem bloco de taxa administrativa de distrato',
+  gisMeasures.includes('A composição referente à Dedicação de Taxa'),
+  'nota 7 de taxa administrativa de distrato',
+);
+assert(
+  gisMeasures.includes('suinocultura'),
+  'segundo 5.4 do PDF (vedação comercial) transcrito',
 );
 
 const outDir = path.join(process.cwd(), 'scripts', '_fixtures', 'estrela-do-sul');

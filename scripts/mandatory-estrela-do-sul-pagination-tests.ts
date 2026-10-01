@@ -180,16 +180,18 @@ const annexIdx = html.indexOf('4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS');
 const capaSignIdx = html.indexOf('data-estrela-sign-block="capa"');
 const instrumentIdx = html.indexOf('class="estrela-instrument"');
 const instSignIdx = html.indexOf('data-estrela-sign-block="instrumento"');
-assert(capaIdx < annexIdx && annexIdx < capaSignIdx && capaSignIdx < instrumentIdx && instrumentIdx < instSignIdx,
-  'Capa Resumo → tabela segurança → 1º bloco → page break → instrumento → 2º bloco');
+const infraIdx = html.indexOf('class="estrela-infra-page"');
+assert(capaIdx < annexIdx && annexIdx < infraIdx && infraIdx < capaSignIdx && capaSignIdx < instrumentIdx && instrumentIdx < instSignIdx,
+  'Capa Resumo → item 4 → página infraestrutura → 1º bloco → instrumento → 2º bloco');
+assert(cssRuleFor('.estrela-infra-page').includes('page-break-before: always'), 'infraestrutura começa em página nova');
 assert(cssRuleFor('.estrela-instrument').includes('page-break-before: always'), 'instrumento começa em página nova');
 assert(cssRuleFor('.estrela-capa').includes('font-size: 9pt'), 'CSS: Capa Resumo em 9pt');
 assert(
   css.includes('.estrela-capa .estrela-table td') &&
-    css.includes('padding-top: 6px !important') &&
-    css.includes('line-height: 1.4 !important') &&
+    css.includes('padding-top: 3px !important') &&
+    css.includes('line-height: 1.22 !important') &&
     css.includes('vertical-align: middle !important'),
-  'CSS: células da Capa com padding e line-height respiráveis',
+  'CSS: células da Capa compactas para caber notas 1–4 na página 1',
 );
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
@@ -219,12 +221,16 @@ assert(
   'CSS: fecho eletrônico viaja com data e selos',
 );
 assert(
-  cssRuleFor('.estrela-capa .estrela-section-title').includes('padding: 0 0 6px 0'),
+  cssRuleFor('.estrela-capa .estrela-section-title').includes('padding: 0 0 3px 0'),
   'CSS: heading da Capa com padding abaixo do texto',
 );
 assert(
-  cssRuleFor('.estrela-capa .estrela-table').includes('margin: 6px 0 10px 0'),
+  cssRuleFor('.estrela-capa .estrela-table').includes('margin: 3px 0 5px 0'),
   'CSS: tabela da Capa não sobe sobre o heading',
+);
+assert(
+  cssRuleFor('.estrela-capa-footnotes').includes('page-break-before: avoid'),
+  'CSS: notas 1–4 tentam permanecer na capa',
 );
 assert(css.includes(':has(.sv-esign-stamp)'), 'CSS: pack eletrônico detecta selos');
 assert(

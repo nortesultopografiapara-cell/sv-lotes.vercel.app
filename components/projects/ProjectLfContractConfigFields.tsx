@@ -86,11 +86,11 @@ export function ProjectLfContractConfigFields({
       ) : null}
       {percentsEmpty ? (
         <p className="text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] p-2 text-[var(--text-primary)]">
-          Sem percentuais salvos neste empreendimento: o contrato usará o fallback 40% (LF Imóveis) e 60% (segundo vendedor). Os campos abaixo ficam vazios de propósito — 40/60 só entra no contrato se você não gravar valores próprios.
+          Sem percentuais salvos neste empreendimento: o contrato usará o fallback 30% (LF Imóveis) e 70% (segundo vendedor). Os campos abaixo ficam vazios de propósito — 30/70 só entra no contrato se você não gravar valores próprios.
         </p>
       ) : percentsValid ? (
         <p className="text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] p-2 text-[var(--text-primary)]">
-          Percentuais próprios deste empreendimento: {first}% / {second}%. Estes valores ficam salvos no projeto; não são o fallback 40/60 da empresa.
+          Percentuais próprios deste empreendimento: {first}% / {second}%. Estes valores ficam salvos no projeto; não são o fallback 30/70 da empresa.
         </p>
       ) : null}
 
@@ -124,7 +124,7 @@ export function ProjectLfContractConfigFields({
             type="text"
             inputMode="decimal"
             value={value.firstVendorPercent}
-            placeholder="herdar 40"
+            placeholder="herdar 30"
             onChange={(e) => onChange({ ...value, firstVendorPercent: e.target.value })}
             className={FIELD_CLASS}
           />
@@ -137,7 +137,7 @@ export function ProjectLfContractConfigFields({
             type="text"
             inputMode="decimal"
             value={value.secondVendorPercent}
-            placeholder="herdar 60"
+            placeholder="herdar 70"
             onChange={(e) => onChange({ ...value, secondVendorPercent: e.target.value })}
             className={FIELD_CLASS}
           />

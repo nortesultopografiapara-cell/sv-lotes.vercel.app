@@ -58,7 +58,10 @@ const htmlEmpty = generateContractHTML({
   ...base,
 });
 assert(!htmlEmpty.includes('Antonio Ferreira Silva'), 'sem segundo vendedor no HTML');
-assert(!htmlEmpty.includes('40%'), 'sem narrativa 40/60 sem segundo vendedor');
+assert(
+  !htmlEmpty.includes('Será repassado ao primeiro vendedor'),
+  'sem narrativa de parceria sem segundo vendedor',
+);
 
 const htmlPartial = generateContractHTML({
   tenant: {
@@ -74,7 +77,8 @@ const htmlFull = generateContractHTML({
   ...base,
 });
 assert(htmlFull.includes('Antonio Ferreira Silva'), 'segundo vendedor completo no HTML');
-assert(htmlFull.includes('40%'), 'narrativa de parceria só com segundo vendedor');
+assert(htmlFull.includes('Será repassado ao primeiro vendedor'), 'narrativa de parceria só com segundo vendedor');
+assert(htmlFull.includes('30%') && htmlFull.includes('70%'), 'narrativa 30/70 com segundo vendedor');
 assert(!htmlFull.includes('revenueSplit') && !htmlFull.includes('Split de Recebimentos'), 'não cita split financeiro');
 
 const vendors = buildEstrelaDoSulEsignVendorPartyInputs({

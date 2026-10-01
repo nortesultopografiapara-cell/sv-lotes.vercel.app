@@ -175,7 +175,7 @@ export function readSaleLfSnapshotRaw(
 
 /**
  * Monta o JSON imutável a partir da resolução efetiva já calculada
- * (projeto → empresa → 40/60) + localização vigente do empreendimento.
+ * (projeto → empresa → 30/70) + localização vigente do empreendimento.
  */
 export function buildLfContractSnapshotPayload(input: {
   secondVendor: ContractSecondVendorFields;

@@ -244,7 +244,7 @@ function stripForbiddenKeys(obj: Record<string, unknown>): void {
 
 /**
  * Normaliza para save em projects.lf_contract_config_json.
- * Tudo vazio → null (fallback empresa + 40/60).
+ * Tudo vazio → null (fallback empresa + 30/70).
  */
 export function normalizeLfContractConfigForSave(
   input: unknown,

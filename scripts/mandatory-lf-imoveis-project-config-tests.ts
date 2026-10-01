@@ -355,8 +355,8 @@ console.log('\n=== round-trip form → payload → parse → update → read →
     project: { ...ESTRELA_PROJECT, lf_contract_config_json: rt.readJson },
     company: COMPANY,
   });
-  assert(resolved.usingPercentFallback, 'null usa fallback 40/60 na resolução');
-  assert(resolved.firstVendorPercent === 40 && resolved.secondVendorPercent === 60, 'resolução fallback 40/60');
+  assert(resolved.usingPercentFallback, 'null usa fallback 30/70 na resolução');
+  assert(resolved.firstVendorPercent === 30 && resolved.secondVendorPercent === 70, 'resolução fallback 30/70');
 }
 {
   const store: MockStore = {
@@ -495,7 +495,7 @@ console.log('\n=== round-trip form → payload → parse → update → read →
   );
 }
 
-console.log('\n=== Estrela sem config própria = fallback empresa 40/60 ===');
+console.log('\n=== Estrela sem config própria = fallback empresa 30/70 ===');
 {
   const resolved = resolveLfContractConfig({
     project: ESTRELA_PROJECT,
@@ -503,11 +503,11 @@ console.log('\n=== Estrela sem config própria = fallback empresa 40/60 ===');
   });
   assert(resolved.secondVendor.name === 'Antonio Ferreira Silva', 'Estrela → Antônio');
   assert(resolved.secondVendorSource === 'company', 'fonte empresa');
-  assert(resolved.firstVendorPercent === 40 && resolved.secondVendorPercent === 60, '40/60');
+  assert(resolved.firstVendorPercent === 30 && resolved.secondVendorPercent === 70, '30/70');
   assert(resolved.usingCompanySecondVendorFallback, 'usa fallback da empresa');
   const estrelaHtml = html(ESTRELA_PROJECT);
   assert(estrelaHtml.includes('Antonio Ferreira Silva'), 'contrato Estrela tem Antônio');
-  assert(estrelaHtml.includes('40%') && estrelaHtml.includes('60%'), 'contrato Estrela 40/60');
+  assert(estrelaHtml.includes('30%') && estrelaHtml.includes('70%'), 'contrato Estrela 30/70');
   assert(!estrelaHtml.includes('Bruno Beira Ficticio'), 'Estrela não vaza vendedor B');
 }
 
@@ -556,10 +556,10 @@ console.log('\n=== isolamento: editar Beira não muda Estrela ===');
     estrelaAfter.secondVendor.name === estrelaBefore.secondVendor.name,
     'Estrela permanece Antônio após editar Beira',
   );
-  assert(estrelaAfter.firstVendorPercent === 40, 'Estrela permanece 40%');
+  assert(estrelaAfter.firstVendorPercent === 30, 'Estrela permanece 30%');
   assert(beiraAfter.secondVendor.name === 'Nome Alterado So No Beira', 'Beira reflete a edição');
   assert(html(ESTRELA_PROJECT).includes('Antonio Ferreira Silva'), 'HTML Estrela intacto');
-  assert(html(ESTRELA_PROJECT).includes('40%'), 'HTML Estrela 40% intacto');
+  assert(html(ESTRELA_PROJECT).includes('30%'), 'HTML Estrela 30% intacto');
 }
 
 console.log('\n=== incompleto no projeto cai na empresa ===');
@@ -575,7 +575,7 @@ console.log('\n=== incompleto no projeto cai na empresa ===');
   assert(resolved.secondVendorSource === 'company', 'fonte empresa após incompleto');
 }
 
-console.log('\n=== percentuais inválidos → fallback 40/60 ===');
+console.log('\n=== percentuais inválidos → fallback 30/70 ===');
 {
   const resolved = resolveLfContractConfig({
     project: {
@@ -588,7 +588,7 @@ console.log('\n=== percentuais inválidos → fallback 40/60 ===');
     company: COMPANY,
   });
   assert(resolved.secondVendor.name === 'Bruno Beira Ficticio', 'vendedor B permanece');
-  assert(resolved.firstVendorPercent === 40 && resolved.secondVendorPercent === 60, 'percentuais inválidos → 40/60');
+  assert(resolved.firstVendorPercent === 30 && resolved.secondVendorPercent === 70, 'percentuais inválidos → 30/70');
 }
 
 console.log('\n=== e-sign usa o mesmo vendedor resolvido ===');

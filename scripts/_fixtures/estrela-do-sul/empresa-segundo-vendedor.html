@@ -135,17 +135,17 @@
   line-height: 1.2 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table {
-  font-size: 9pt !important;
-  margin: 6px 0 10px 0 !important;
+  font-size: 8.5pt !important;
+  margin: 3px 0 5px 0 !important;
   position: relative;
   z-index: 0;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-section-title {
   display: block !important;
   font-size: 9pt !important;
-  margin: 10px 0 0 0 !important;
-  padding: 0 0 6px 0 !important;
-  line-height: 1.25 !important;
+  margin: 6px 0 0 0 !important;
+  padding: 0 0 3px 0 !important;
+  line-height: 1.2 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
   position: relative;
@@ -153,12 +153,12 @@
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table th,
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table td {
-  padding-top: 6px !important;
-  padding-bottom: 6px !important;
-  padding-left: 6px !important;
-  padding-right: 6px !important;
-  line-height: 1.4 !important;
-  font-size: 9pt !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  line-height: 1.22 !important;
+  font-size: 8.5pt !important;
   vertical-align: middle !important;
   height: auto !important;
 }
@@ -198,7 +198,7 @@
   overflow: visible !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-td-keep {
-  line-height: 1.4 !important;
+  line-height: 1.22 !important;
 }
 .sv-contract-estrela-do-sul .estrela-footnote,
 .sv-contract-estrela-do-sul .estrela-capa p[style*="font-size:9pt"] {
@@ -276,9 +276,26 @@
   margin: 0 !important;
   padding-bottom: 4px !important;
 }
+.sv-contract-estrela-do-sul .estrela-infra-page {
+  page-break-before: always !important;
+  break-before: page !important;
+}
 .sv-contract-estrela-do-sul .estrela-instrument {
   page-break-before: always !important;
   break-before: page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-footnotes {
+  margin-top: 6px;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-footnotes .estrela-footnote,
+.sv-contract-estrela-do-sul .estrela-clause-footnotes .estrela-footnote {
+  font-size: 8pt !important;
+  line-height: 1.2 !important;
+  text-align: justify;
 }
 .sv-contract-estrela-do-sul .estrela-closing-statement {
   page-break-inside: avoid !important;
@@ -344,6 +361,8 @@
   min-height: 0 !important;
   page-break-before: auto !important;
   break-before: auto !important;
+  page-break-after: avoid !important;
+  break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .contract-closing-and-signatures--estrela:has(.sv-esign-stamp) .estrela-closing-statement {
   page-break-inside: avoid !important;
@@ -393,12 +412,11 @@
   margin: 0 auto 4px auto !important;
   height: 1px !important;
 }
-body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official-block,
-body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official-block.sv-pagination-force-break {
+body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official-block:not(.sv-pagination-force-break) {
   margin-top: 2px !important;
   margin-bottom: 0 !important;
-  page-break-before: auto !important;
-  break-before: auto !important;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
 }
 body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official {
   margin-top: 0 !important;
@@ -483,7 +501,7 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
       <h2 style="text-align:center; font-size:13pt; margin: 0 0 2px 0; text-transform:uppercase;">CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA</h2>
       <h3 style="text-align:center; font-size:12pt; margin: 0 0 6px 0; text-transform:uppercase;">CHACREAMENTO: Chacreamento Estrela Do Sul</h3>
 
-      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 4px 0;">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)</p>
+      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 4px 0;">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)<sup>1</sup></p>
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin:0 0 6px 0;">
         <thead>
         <tr>
@@ -521,7 +539,6 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
       </tr>
         </tbody>
       </table>
-      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 6px 0;">É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
 
       <div class="estrela-lead-table estrela-capa-object">
       <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 4px 0;">2. DO OBJETO E GEORREFERENCIAMENTO (INFORMAÇÕES MACRO)</p>
@@ -534,8 +551,8 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Nome do Projeto</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Chacreamento Estrela Do Sul</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Localização do Imóvel</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Palmares 2, Parauapebas/PA</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Área Vendida</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Chácara: Quadra 02, lote 15 — Área Total: 1.100,00m² (mil e cem metros quadrados)</div></td></tr>
-        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">MEDIDAS E CONFRONTAÇÕES</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">20,00m (vinte metros) de frente 20,00m (vinte metros) de fundo 55,00m (cinquenta e cinco metros) do lado direito 55,00m (cinquenta e cinco metros) do lado esquerdo</div></td></tr>
-        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Outras informações</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Será repassado ao primeiro vendedor, L.F. IMOVEIS LTDA, 40% do valor e 60% ao segundo vendedor, Antonio Ferreira Silva, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.</div></td></tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Confrontações</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">20,00m (vinte metros) de frente 20,00m (vinte metros) de fundo 55,00m (cinquenta e cinco metros) do lado direito 55,00m (cinquenta e cinco metros) do lado esquerdo</div></td></tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Outras informações</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Será repassado ao primeiro vendedor, L.F. IMOVEIS LTDA, 30% do valor e 70% ao segundo vendedor, Antonio Ferreira Silva, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.</div></td></tr>
         </tbody>
       </table>
       </div>
@@ -549,19 +566,35 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
         <tbody>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">VALOR TOTAL DO IMÓVEL</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">R$ 50.000,00 (cinquenta mil reais)</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">VALOR DE CORRETAGEM</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">R$ 1.500,00 (mil e quinhentos reais)</div></td></tr>
-        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">VALOR DO SINAL/ENTRADA (ARRAS)</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">R$ 5.000,00 (cinco mil reais)</div></td></tr>
-        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">PARCELAS E VALORES</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">10 (dez) parcelas de R$ 4.500,00 (quatro mil e quinhentos reais)</div></td></tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">VALOR DO SINAL/ENTRADA (ARRAS)<sup>2</sup></div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">R$ 5.000,00 (cinco mil reais)</div></td></tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">PARCELAS E VALORES<sup>3</sup></div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">10 (dez) parcelas de R$ 4.500,00 (quatro mil e quinhentos reais)</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">VENCIMENTO DA 1ª PARCELA</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">20/03/2026</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">ÍNDICE DE CORREÇÃO ANUAL</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">IGP-M</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">MULTA MORATÓRIA POR ATRASO</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">2% (dois por cento) sobre a parcela vencida</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">JUROS DE MORA POR ATRASO</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">1% (um por cento) ao mês</div></td></tr>
         </tbody>
       </table>
-      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 6px 0;">Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
 
       <div class="estrela-capa-section-4">
-        <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 4px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS</p>
-        
+        <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 4px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
+        <table class="estrela-table estrela-object-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin:0 0 6px 0;">
+          <colgroup><col class="estrela-col-info" style="width:33%;"/><col class="estrela-col-detail" style="width:67%;"/></colgroup>
+          <thead>
+          <tr><th style="border:1px solid #111; padding:2px 4px; text-align:left;"><div class="estrela-td-keep">ITEM</div></th><th style="border:1px solid #111; padding:2px 4px; text-align:left;"><div class="estrela-td-keep">Detalhamento</div></th></tr>
+          </thead>
+        </table>
+      </div>
+      <div class="estrela-capa-footnotes">
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>2</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelo possivel comprador ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de R$ 1.500,00 (mil e quinhentos reais).</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
+      </div>
+    </div>
+      
+    <div class="estrela-infra-page">
+      
+      
     <div class="estrela-capa-annex-table">
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin: 4px 0 6px 0;">
         <thead>
@@ -572,7 +605,6 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
         </tbody>
       </table>
     </div>
-      </div>
       
     <div class="estrela-capa-signatures" data-estrela-sign-block="capa">
       
@@ -585,22 +617,28 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
           
       <div class="signature-slot estrela-sign-slot signature-slot-buyer" data-party-role="BUYER" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
-        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR(A)</p>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR 1</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">Joao Comprador Da Silva</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº 529.982.247-25</p>
       </div>
           
       <div class="signature-slot estrela-sign-slot signature-slot-vendor-1" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
-        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">VENDEDOR(A)</p>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">L.F. IMOVEIS LTDA</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">L.F. IMOVEIS LTDA</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CNPJ 47.052.349/0001-30</p>
       </div>
           
+      <div class="signature-slot estrela-sign-slot signature-slot-buyer-2" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+        <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR 2</p>
+        
+        <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº</p>
+      </div>
           
       <div class="signature-slot estrela-sign-slot signature-slot-vendor-2" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
-        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">VENDEDOR(A)</p>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">Antonio Ferreira Silva</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">Antonio Ferreira Silva</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº 718.773.122-15</p>
       </div>
@@ -628,8 +666,9 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
     <h2 style="text-align:center; font-size:16pt; margin: 0 0 4px 0; text-transform:uppercase;">CONTRATO DE PROMESSA DE COMPRA E VENDA</h2>
     <p style="text-align:right; font-style:italic; margin: 0 0 10px 0;">Instrumento particular de compra e venda de imóvel<br/>do tipo chácara rural que se regerá pelas cláusulas e condições a seguir.</p>
     <p class="estrela-parties-lead" style="margin: 0 0 8px 0; text-align: justify;">
-      Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE CHÁCARA RURAL, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos <strong>Joao Comprador Da Silva</strong>, brasileiro, Casado, Agricultor, portador(a) do RG sob nº 8741233 SSP/PA e do CPF sob nº 529.982.247-25, residente e domiciliado(a) na Rua A, 100, Centro, Parauapebas, PA, doravante denominada <strong>COMPRADOR/CONTRATANTE</strong> e do outro temos a contratada <strong>L.F. IMOVEIS LTDA</strong>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 47.052.349/0001-30, com sede na Rua 24 de Marco, 99, Bairro Da Paz, Parauapebas/PA, CEP: 68515000, com o seguinte endereço eletrônico: contato@lfimoveis.test, doravante designada simplesmente como <strong>VENDEDOR/CONTRATADA</strong>.
+      Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE CHÁCARA RURAL, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos <strong>Joao Comprador Da Silva</strong>, brasileiro, Casado, Agricultor, portador(a) do RG sob nº 8741233 SSP/PA e do CPF sob nº 529.982.247-25, residente e domiciliado(a) na Rua A, 100, Centro, Parauapebas, PA, doravante denominada <strong>COMPRADOR/CONTRATANTE</strong> e do outro temos a contratada <strong>L.F. IMOVEIS LTDA</strong>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 47.052.349/0001-30, com sede na Rua 24 de Marco, 99, Bairro Da Paz, Parauapebas/PA, CEP: 68515000, com o seguinte endereço eletrônico: contato@lfimoveis.test, Telefone: 94988887777, doravante designada simplesmente como <strong>VENDEDOR/CONTRATADA</strong>.
     </p>
+    <p class="estrela-second-vendor-lead" style="margin: 0 0 8px 0; text-align: justify;"><strong>Antonio Ferreira Silva</strong>, Brasileiro, Casado, Empresário, Carteira de identidade nº 1234567 SSP/PA, CPF: 718.773.122-15, Residente e domiciliado na: Rua B, 10, Endereço eletrônico: antonio@estrela.test, doravante designado como <strong>VENDEDOR/CONTRATADA</strong>.</p>
     <p style="margin: 0 0 16px 0; text-align: justify;">
       As Partes, de livre e espontânea vontade, resolvem firmar o presente Instrumento Particular de Compra e Venda de Imóvel Rural, cujo objeto consiste na transação do loteamento de terra correspondente à chácara a seguir identificada.
     </p>
@@ -651,8 +690,8 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Nome do Projeto</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Chacreamento Estrela Do Sul</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Localização do Imóvel</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Palmares 2, Parauapebas/PA</div></td></tr>
         <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Área Vendida</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Chácara: Quadra 02, lote 15 — Área Total: 1.100,00m² (mil e cem metros quadrados)</div></td></tr>
-        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">MEDIDAS E CONFRONTAÇÕES</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">20,00m (vinte metros) de frente 20,00m (vinte metros) de fundo 55,00m (cinquenta e cinco metros) do lado direito 55,00m (cinquenta e cinco metros) do lado esquerdo</div></td></tr>
-        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Outras informações</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Será repassado ao primeiro vendedor, L.F. IMOVEIS LTDA, 40% do valor e 60% ao segundo vendedor, Antonio Ferreira Silva, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.</div></td></tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Confrontações</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">20,00m (vinte metros) de frente 20,00m (vinte metros) de fundo 55,00m (cinquenta e cinco metros) do lado direito 55,00m (cinquenta e cinco metros) do lado esquerdo</div></td></tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Outras informações</div></td><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">Será repassado ao primeiro vendedor, L.F. IMOVEIS LTDA, 30% do valor e 70% ao segundo vendedor, Antonio Ferreira Silva, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.</div></td></tr>
       </tbody>
     </table></div>
     </div>
@@ -686,14 +725,18 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.5.</strong> Dos Encargos Moratórios: O impontual pagamento de qualquer das parcelas, ou de seus respectivos reajustes, constituirá o COMPRADOR em mora de pleno direito, independentemente de prévio aviso, interpelação ou notificação, sujeitando o valor em atraso aos seguintes encargos, calculados de forma cumulativa desde a data do vencimento até a data da efetiva liquidação:</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;">a) Atualização monetária calculada <em>pro rata die</em> (proporcional aos dias de atraso), com base na variação do IGP-M/FGV;<br/>b) Juros de mora de 1% (um por cento) ao mês, calculados <em>pro rata die</em>;<br/>c) Multa moratória e irredutível de 2% (dois por cento), incidente sobre o valor total do débito devidamente atualizado.</p></div>
       </div>
-      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.6.</strong> Das Arras (Sinal): O valor pago a título de entrada e princípio de pagamento tem caráter de Arras, nos termos dos artigos 417 e seguintes do Código Civil Brasileiro, integrando o preço total do imóvel e sujeitando-se às regras de retenção previstas nas Cláusulas Penais em caso de inexecução do contrato.</p></div>
+      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.6.</strong> Das Arras (Sinal): O valor pago a título de entrada e princípio de pagamento tem caráter de Arras<sup>5</sup>, nos termos dos artigos 417 e seguintes do Código Civil Brasileiro, integrando o preço total do imóvel e sujeitando-se às regras de retenção previstas nas Cláusulas Penais em caso de inexecução do contrato.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.7.</strong> Do Termo de Quitação: Comprovada a liquidação integral do saldo devedor e o fiel cumprimento de todas as obrigações contratuais por parte do COMPRADOR, o VENDEDOR obriga-se a emitir e outorgar o respectivo Termo de Quitação no prazo máximo de 15 (quinze) dias úteis, instrumento este indispensável para a posterior lavratura da Escritura Pública Definitiva.</p></div>
-      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.8.</strong> Da Comissão de Corretagem: O COMPRADOR declara-se ciente de que o serviço de intermediação imobiliária foi efetivamente prestado, sendo de sua exclusiva responsabilidade o pagamento da comissão de corretagem aos corretores ou imobiliária vinculada, conforme valores e condições discriminados na Capa Resumo deste instrumento.</p></div>
+      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.8.</strong> Da Comissão de Corretagem<sup>6</sup>: O COMPRADOR declara-se ciente de que o serviço de intermediação imobiliária foi efetivamente prestado, sendo de sua exclusiva responsabilidade o pagamento da comissão de corretagem aos corretores ou imobiliária vinculada, conforme valores e condições discriminados na Capa Resumo deste instrumento.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.8.1.</strong> O valor de <strong>R$ 1.500,00</strong> (mil e quinhentos reais) é destinado exclusivamente à corretagem e não integra o preço do imóvel para fins de quitação junto ao VENDEDOR, tratando-se de obrigação autônoma por serviços de intermediação já concluídos.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.8.2.</strong> Em caso de resolução ou rescisão do presente contrato por culpa do COMPRADOR, o valor pago a título de corretagem não será objeto de restituição, nos termos do Art. 725 do Código Civil.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.9.</strong> Da Rescisão por Inadimplência: Sem prejuízo dos encargos moratórios previstos na cláusula anterior, o atraso no pagamento de qualquer parcela por período superior a 90 (noventa) dias conferirá à VENDEDORA (e/ou Corretora/Imobiliária, se houver poderes de representação) o direito de rescindir o presente contrato de pleno direito.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.9.1.</strong> A rescisão de que trata este artigo fica condicionada à prévia notificação do COMPRADOR, via cartório de títulos e documentos ou carta com aviso de recebimento (AR), concedendo-lhe o prazo de 15 (quinze) dias para purgação da mora (pagamento do débito atualizado).</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>2.9.2.</strong> Transcorrido o prazo da notificação sem a devida quitação, a rescisão se consolidará, sujeitando o COMPRADOR às penalidades de retenção de valores previstas nas Cláusulas Penais deste instrumento e na legislação vigente.</p></div>
+      <div class="estrela-clause-footnotes">
+        <p class="estrela-footnote" style="font-size:8pt; margin: 8px 0 3px 0;"><sup>5</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelo possivel comprador ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>6</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de R$ 1.500,00 (mil e quinhentos reais).</p>
+      </div>
     </div>
 
     <div class="contract-clause">
@@ -734,6 +777,7 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
       </div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>5.3.</strong> Da Perda das Benfeitorias: Nos termos dos artigos 1.220 e 1.255 do Código Civil, as acessões e benfeitorias introduzidas irregularmente, sem anuência da VENDEDORA ou em violação à lei, não conferirão ao COMPRADOR qualquer direito de retenção ou de indenização, integrando-se ao imóvel em caso de rescisão contratual, se a VENDEDORA não optar por sua demolição.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>5.4.</strong> Da Responsabilidade Ambiental: O COMPRADOR assume, de forma exclusiva e irrestrita, a responsabilidade civil, penal e administrativa por eventuais danos ambientais que vier a causar no lote (desmatamento irregular, intervenção em Área de Preservação Permanente – APP, poluição, queimadas e outros), obrigando-se a isentar e ressarcir a VENDEDORA por quaisquer multas, autuações ou embargos aplicados por órgãos públicos (IBAMA, SEMAS/PA, SEMMA, Ministério Público e outros).</p></div>
+      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>5.4.</strong> Considerando a finalidade de lazer e moradia do chacreamento, é terminantemente proibida a instalação de atividade comercial de suinocultura na unidade imobiliária, bem como de qualquer outra atividade que gere odores fétidos, dejetos poluentes ou ruídos que afetem o direito de vizinhança e a salubridade pública. O descumprimento desta vedação sujeitará o infrator à imediata notificação para encerramento da atividade, sob pena de aplicação de multa contratual e responsabilização por eventuais infrações ambientais.</p></div>
     </div>
 
     <div class="contract-clause">
@@ -783,7 +827,8 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
       </div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>9.1.</strong> Da Natureza Jurídica das Arras: Fica estabelecido que o valor entregue pelo COMPRADOR no ato da assinatura deste instrumento possui natureza jurídica de Arras Confirmatórias, nos estritos termos dos artigos 417 a 420 do Código Civil. Referida quantia consubstancia a garantia de cumprimento do negócio jurídico entabulado, operando-se, em caso de inexecução culposa ou desistência por parte do COMPRADOR, como indenização pré-fixada em favor da VENDEDORA.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>9.2.</strong> Da Comissão de Corretagem: As Partes declaram expressa ciência de que o valor de <strong>R$ 1.500,00</strong> (mil e quinhentos reais) ostenta a natureza de remuneração pelos serviços de intermediação imobiliária (corretagem) efetivamente prestados. Por se tratar de serviço consumado no ato da assinatura deste instrumento (art. 725 do Código Civil), referida quantia não integrará a base de cálculo para devolução e não será restituída ao COMPRADOR em nenhuma hipótese de distrato ou rescisão motivada por este.</p></div>
-      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>9.3.</strong> Das Penalidades por Rescisão: Operando-se a resolução do presente instrumento por iniciativa, inadimplemento ou culpa exclusiva do COMPRADOR, este sujeitar-se-á, de plano direto e cumulativamente, às seguintes deduções e penalidades, calculadas sobre o montante atualizado a ser eventualmente restituído:<br/>I. Perda integral da quantia paga a título de Arras/Sinal de Negócio (art. 418 do Código Civil);<br/>II. Retenção de 25% (vinte e cinco por cento) sobre o valor total das parcelas efetivamente pagas, a título de cláusula penal compensatória e indenização pelos custos operacionais, administrativos e de comercialização suportados pela VENDEDORA, em conformidade com os parâmetros da Lei nº 13.786/2018 (Lei do Distrato).</p></div>
+      <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>9.3.</strong> Das Penalidades por Rescisão: Operando-se a resolução do presente instrumento por iniciativa, inadimplemento ou culpa exclusiva do COMPRADOR, este sujeitar-se-á, de plano direto e cumulativamente, às seguintes deduções e penalidades, calculadas sobre o montante atualizado a ser eventualmente restituído:<br/>I. Perda integral da quantia paga a título de Arras/Sinal de Negócio (art. 418 do Código Civil);<br/>II. Retenção de 25% (vinte e cinco por cento) sobre o valor total das parcelas efetivamente pagas, a título de cláusula penal compensatória e indenização pelos custos operacionais, administrativos<sup>7</sup> e de comercialização suportados pela VENDEDORA, em conformidade com os parâmetros da Lei nº 13.786/2018 (Lei do Distrato).</p></div>
+      <p class="estrela-footnote" style="font-size:8pt; margin: 4px 0 8px 0;"><sup>7</sup> A composição referente à Dedicação de Taxa Administrativa de Distrato se encontra fixada em 5% (cinco por cento) sobre o valor total do contrato, destinada à cobertura de despesas operacionais e jurídicas indispensáveis ao cancelamento do negócio e reintegração do imóvel aos estoques da VENDEDORA.</p>
       <div class="estrela-item-group">
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;"><strong>9.4.</strong> Da Taxa de Fruição (Ocupação do Imóvel): Em caso de resolução contratual por inadimplemento ou culpa do COMPRADOR, será devida à VENDEDORA uma indenização mensal a título de fruição (taxa de ocupação) do imóvel.</p></div>
       <div class="estrela-item"><p class="estrela-item-p" style="margin: 0 0 6px 0; text-align: justify;">Parágrafo Único: A referida taxa será calculada à razão de 0.5% (meio por cento) ao mês sobre o valor total e atualizado deste contrato, ou no valor fixo mensal de R$ 500,00 (quinhentos reais), prevalecendo e aplicando-se sempre o que for maior. A taxa incidirá desde a data em que o COMPRADOR teve o lote disponibilizado para seu uso (imissão na posse) até a data da efetiva, comprovada e pacífica desocupação e devolução do bem à VENDEDORA, podendo este montante ser deduzido do saldo a ser restituído.</p></div>
@@ -852,22 +897,28 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
           
       <div class="signature-slot estrela-sign-slot signature-slot-buyer" data-party-role="BUYER" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
-        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR(A)</p>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR 1</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">Joao Comprador Da Silva</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº 529.982.247-25</p>
       </div>
           
       <div class="signature-slot estrela-sign-slot signature-slot-vendor-1" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
-        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">VENDEDOR(A)</p>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">L.F. IMOVEIS LTDA</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">L.F. IMOVEIS LTDA</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CNPJ 47.052.349/0001-30</p>
       </div>
           
+      <div class="signature-slot estrela-sign-slot signature-slot-buyer-2" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
+        <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">COMPRADOR 2</p>
+        
+        <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº</p>
+      </div>
           
       <div class="signature-slot estrela-sign-slot signature-slot-vendor-2" data-party-role="VENDOR" style="text-align: center; margin-bottom: 0; min-width: 0; width: 100%; overflow: visible; page-break-inside: avoid; break-inside: avoid-page;">
         <div class="signature-line" style="border-top: 1px solid #111; margin: 16px auto 0 auto; padding: 0; width: 72%; max-width: 260px; height: 8px; box-sizing: border-box;"></div>
-        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">VENDEDOR(A)</p>
+        <p style="margin: 8px 0 4px 0; font-weight: bold; text-transform: uppercase; font-size: 10.5pt; text-align: center;">Antonio Ferreira Silva</p>
         <p style="margin: 0 0 4px 0; font-weight: bold; font-size: 11pt; overflow-wrap: break-word; text-align: center;">Antonio Ferreira Silva</p>
         <p class="estrela-sign-doc" style="margin: 0; font-size: 10pt; font-weight: normal; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: visible; line-height: 1.35; padding-bottom: 2px; text-align: center;">CPF nº 718.773.122-15</p>
       </div>

@@ -6,6 +6,7 @@
 import type { EstrelaDoSulContractContext } from '@/lib/estrelaDoSulContractContext';
 import {
   ESTRELA_ASSIGNMENT_FEE_PERCENT,
+  ESTRELA_CLAUSE_5_4_COMMERCIAL,
   ESTRELA_CLAUSE_6_5_ESSENTIAL_INFRA_DAYS,
   ESTRELA_COMMERCIAL_START_MAX_MONTHS,
   ESTRELA_COMMERCIAL_START_PERCENT,
@@ -13,10 +14,12 @@ import {
   ESTRELA_CONSTRUCTION_MIN_INSTALLMENT,
   ESTRELA_CORRECTION_INDEX_LABEL,
   ESTRELA_CORRECTION_PERIOD_MONTHS,
+  ESTRELA_COVER_NOTE_2,
   ESTRELA_IRREGULAR_ASSIGNMENT_PENALTY_PERCENT,
   ESTRELA_IRREGULAR_BUILDING_PENALTY_PERCENT,
   ESTRELA_LATE_FINE_PERCENT,
   ESTRELA_LATE_INTEREST_PERCENT,
+  ESTRELA_NOTE_7,
   ESTRELA_OCCUPANCY_FEE_FLOOR,
   ESTRELA_OCCUPANCY_FEE_PERCENT,
   ESTRELA_RESCISSION_RETENTION_PERCENT,
@@ -118,7 +121,7 @@ export function buildEstrelaDoSulClausesHtml(
         <tr>${td('Nome do Projeto')}${td(escEstrelaHtml(ctx.enterpriseName))}</tr>
         <tr>${td('Localização do Imóvel')}${td(escEstrelaHtml(ctx.enterpriseLocation))}</tr>
         <tr>${td('Área Vendida')}${td(areaCell || '—')}</tr>
-        <tr>${td('MEDIDAS E CONFRONTAÇÕES')}${td(escEstrelaHtml(ctx.confrontacoesText) || '—')}</tr>
+        <tr>${td('Confrontações')}${td(escEstrelaHtml(ctx.confrontacoesText) || '—')}</tr>
         ${
           ctx.partnershipNote
             ? `<tr>${td('Outras informações')}${td(escEstrelaHtml(ctx.partnershipNote))}</tr>`
@@ -175,14 +178,18 @@ export function buildEstrelaDoSulClausesHtml(
       ${p(`<strong>2.5.</strong> Dos Encargos Moratórios: O impontual pagamento de qualquer das parcelas, ou de seus respectivos reajustes, constituirá o COMPRADOR em mora de pleno direito, independentemente de prévio aviso, interpelação ou notificação, sujeitando o valor em atraso aos seguintes encargos, calculados de forma cumulativa desde a data do vencimento até a data da efetiva liquidação:`)}
       ${p(`a) Atualização monetária calculada <em>pro rata die</em> (proporcional aos dias de atraso), com base na variação do IGP-M/FGV;<br/>b) Juros de mora de ${ESTRELA_LATE_INTEREST_PERCENT}% (um por cento) ao mês, calculados <em>pro rata die</em>;<br/>c) Multa moratória e irredutível de ${ESTRELA_LATE_FINE_PERCENT}% (dois por cento), incidente sobre o valor total do débito devidamente atualizado.`)}
       `)}
-      ${p('<strong>2.6.</strong> Das Arras (Sinal): O valor pago a título de entrada e princípio de pagamento tem caráter de Arras, nos termos dos artigos 417 e seguintes do Código Civil Brasileiro, integrando o preço total do imóvel e sujeitando-se às regras de retenção previstas nas Cláusulas Penais em caso de inexecução do contrato.')}
+      ${p('<strong>2.6.</strong> Das Arras (Sinal): O valor pago a título de entrada e princípio de pagamento tem caráter de Arras<sup>5</sup>, nos termos dos artigos 417 e seguintes do Código Civil Brasileiro, integrando o preço total do imóvel e sujeitando-se às regras de retenção previstas nas Cláusulas Penais em caso de inexecução do contrato.')}
       ${p('<strong>2.7.</strong> Do Termo de Quitação: Comprovada a liquidação integral do saldo devedor e o fiel cumprimento de todas as obrigações contratuais por parte do COMPRADOR, o VENDEDOR obriga-se a emitir e outorgar o respectivo Termo de Quitação no prazo máximo de 15 (quinze) dias úteis, instrumento este indispensável para a posterior lavratura da Escritura Pública Definitiva.')}
-      ${p('<strong>2.8.</strong> Da Comissão de Corretagem: O COMPRADOR declara-se ciente de que o serviço de intermediação imobiliária foi efetivamente prestado, sendo de sua exclusiva responsabilidade o pagamento da comissão de corretagem aos corretores ou imobiliária vinculada, conforme valores e condições discriminados na Capa Resumo deste instrumento.')}
+      ${p('<strong>2.8.</strong> Da Comissão de Corretagem<sup>6</sup>: O COMPRADOR declara-se ciente de que o serviço de intermediação imobiliária foi efetivamente prestado, sendo de sua exclusiva responsabilidade o pagamento da comissão de corretagem aos corretores ou imobiliária vinculada, conforme valores e condições discriminados na Capa Resumo deste instrumento.')}
       ${p(`<strong>2.8.1.</strong> O valor de ${money(ctx.valorCorretagemFmt, ctx.valorCorretagemExtenso)} é destinado exclusivamente à corretagem e não integra o preço do imóvel para fins de quitação junto ao VENDEDOR, tratando-se de obrigação autônoma por serviços de intermediação já concluídos.`)}
       ${p('<strong>2.8.2.</strong> Em caso de resolução ou rescisão do presente contrato por culpa do COMPRADOR, o valor pago a título de corretagem não será objeto de restituição, nos termos do Art. 725 do Código Civil.')}
       ${p('<strong>2.9.</strong> Da Rescisão por Inadimplência: Sem prejuízo dos encargos moratórios previstos na cláusula anterior, o atraso no pagamento de qualquer parcela por período superior a 90 (noventa) dias conferirá à VENDEDORA (e/ou Corretora/Imobiliária, se houver poderes de representação) o direito de rescindir o presente contrato de pleno direito.')}
       ${p('<strong>2.9.1.</strong> A rescisão de que trata este artigo fica condicionada à prévia notificação do COMPRADOR, via cartório de títulos e documentos ou carta com aviso de recebimento (AR), concedendo-lhe o prazo de 15 (quinze) dias para purgação da mora (pagamento do débito atualizado).')}
       ${p('<strong>2.9.2.</strong> Transcorrido o prazo da notificação sem a devida quitação, a rescisão se consolidará, sujeitando o COMPRADOR às penalidades de retenção de valores previstas nas Cláusulas Penais deste instrumento e na legislação vigente.')}
+      <div class="estrela-clause-footnotes">
+        <p class="estrela-footnote" style="font-size:8pt; margin: 8px 0 3px 0;"><sup>5</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_2)}</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>6</sup> ${escEstrelaHtml(`A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${ctx.valorCorretagemFmt}${ctx.valorCorretagemExtenso ? ` (${ctx.valorCorretagemExtenso})` : ''}.`)}</p>
+      </div>
     </div>
 
     <div class="contract-clause">
@@ -223,6 +230,7 @@ export function buildEstrelaDoSulClausesHtml(
       `)}
       ${p('<strong>5.3.</strong> Da Perda das Benfeitorias: Nos termos dos artigos 1.220 e 1.255 do Código Civil, as acessões e benfeitorias introduzidas irregularmente, sem anuência da VENDEDORA ou em violação à lei, não conferirão ao COMPRADOR qualquer direito de retenção ou de indenização, integrando-se ao imóvel em caso de rescisão contratual, se a VENDEDORA não optar por sua demolição.')}
       ${p('<strong>5.4.</strong> Da Responsabilidade Ambiental: O COMPRADOR assume, de forma exclusiva e irrestrita, a responsabilidade civil, penal e administrativa por eventuais danos ambientais que vier a causar no lote (desmatamento irregular, intervenção em Área de Preservação Permanente – APP, poluição, queimadas e outros), obrigando-se a isentar e ressarcir a VENDEDORA por quaisquer multas, autuações ou embargos aplicados por órgãos públicos (IBAMA, SEMAS/PA, SEMMA, Ministério Público e outros).')}
+      ${p(`<strong>5.4.</strong> ${escEstrelaHtml(ESTRELA_CLAUSE_5_4_COMMERCIAL)}`)}
     </div>
 
     <div class="contract-clause">
@@ -272,7 +280,8 @@ export function buildEstrelaDoSulClausesHtml(
       `)}
       ${p('<strong>9.1.</strong> Da Natureza Jurídica das Arras: Fica estabelecido que o valor entregue pelo COMPRADOR no ato da assinatura deste instrumento possui natureza jurídica de Arras Confirmatórias, nos estritos termos dos artigos 417 a 420 do Código Civil. Referida quantia consubstancia a garantia de cumprimento do negócio jurídico entabulado, operando-se, em caso de inexecução culposa ou desistência por parte do COMPRADOR, como indenização pré-fixada em favor da VENDEDORA.')}
       ${p(`<strong>9.2.</strong> Da Comissão de Corretagem: As Partes declaram expressa ciência de que o valor de ${money(ctx.valorCorretagemFmt, ctx.valorCorretagemExtenso)} ostenta a natureza de remuneração pelos serviços de intermediação imobiliária (corretagem) efetivamente prestados. Por se tratar de serviço consumado no ato da assinatura deste instrumento (art. 725 do Código Civil), referida quantia não integrará a base de cálculo para devolução e não será restituída ao COMPRADOR em nenhuma hipótese de distrato ou rescisão motivada por este.`)}
-      ${p(`<strong>9.3.</strong> Das Penalidades por Rescisão: Operando-se a resolução do presente instrumento por iniciativa, inadimplemento ou culpa exclusiva do COMPRADOR, este sujeitar-se-á, de plano direto e cumulativamente, às seguintes deduções e penalidades, calculadas sobre o montante atualizado a ser eventualmente restituído:<br/>I. Perda integral da quantia paga a título de Arras/Sinal de Negócio (art. 418 do Código Civil);<br/>II. Retenção de ${ESTRELA_RESCISSION_RETENTION_PERCENT}% (vinte e cinco por cento) sobre o valor total das parcelas efetivamente pagas, a título de cláusula penal compensatória e indenização pelos custos operacionais, administrativos e de comercialização suportados pela VENDEDORA, em conformidade com os parâmetros da Lei nº 13.786/2018 (Lei do Distrato).`)}
+      ${p(`<strong>9.3.</strong> Das Penalidades por Rescisão: Operando-se a resolução do presente instrumento por iniciativa, inadimplemento ou culpa exclusiva do COMPRADOR, este sujeitar-se-á, de plano direto e cumulativamente, às seguintes deduções e penalidades, calculadas sobre o montante atualizado a ser eventualmente restituído:<br/>I. Perda integral da quantia paga a título de Arras/Sinal de Negócio (art. 418 do Código Civil);<br/>II. Retenção de ${ESTRELA_RESCISSION_RETENTION_PERCENT}% (vinte e cinco por cento) sobre o valor total das parcelas efetivamente pagas, a título de cláusula penal compensatória e indenização pelos custos operacionais, administrativos<sup>7</sup> e de comercialização suportados pela VENDEDORA, em conformidade com os parâmetros da Lei nº 13.786/2018 (Lei do Distrato).`)}
+      <p class="estrela-footnote" style="font-size:8pt; margin: 4px 0 8px 0;"><sup>7</sup> ${escEstrelaHtml(ESTRELA_NOTE_7)}</p>
       ${itemGroup(`
       ${p(`<strong>9.4.</strong> Da Taxa de Fruição (Ocupação do Imóvel): Em caso de resolução contratual por inadimplemento ou culpa do COMPRADOR, será devida à VENDEDORA uma indenização mensal a título de fruição (taxa de ocupação) do imóvel.`)}
       ${p(`Parágrafo Único: A referida taxa será calculada à razão de ${ESTRELA_OCCUPANCY_FEE_PERCENT}% (meio por cento) ao mês sobre o valor total e atualizado deste contrato, ou no valor fixo mensal de ${formatEstrelaMoneyPhrase(ESTRELA_OCCUPANCY_FEE_FLOOR)}, prevalecendo e aplicando-se sempre o que for maior. A taxa incidirá desde a data em que o COMPRADOR teve o lote disponibilizado para seu uso (imissão na posse) até a data da efetiva, comprovada e pacífica desocupação e devolução do bem à VENDEDORA, podendo este montante ser deduzido do saldo a ser restituído.`)}

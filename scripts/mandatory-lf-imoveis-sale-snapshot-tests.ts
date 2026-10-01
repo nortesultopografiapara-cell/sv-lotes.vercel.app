@@ -238,10 +238,10 @@ assert(htmlNew.includes('30%') && htmlNew.includes('70%'), 'venda nova 30/70');
 assert(htmlNew.includes('Travessa B, 99'), 'venda nova endereço B');
 assert(!htmlNew.includes(VENDOR_B.name), 'venda nova sem vendedor B');
 
-console.log('\n=== Estrela homologado sem snapshot permanece Antônio 40/60 ===');
+console.log('\n=== Estrela homologado sem snapshot permanece Antônio 30/70 ===');
 const htmlEstrelaLive = html({ project: ESTRELA });
 assert(htmlEstrelaLive.includes('Antonio Ferreira Silva'), 'Estrela live Antônio');
-assert(htmlEstrelaLive.includes('40%') && htmlEstrelaLive.includes('60%'), 'Estrela live 40/60');
+assert(htmlEstrelaLive.includes('30%') && htmlEstrelaLive.includes('70%'), 'Estrela live 30/70');
 assert(!htmlEstrelaLive.includes(VENDOR_B.name), 'Estrela live sem vendedor B');
 assert(!htmlEstrelaLive.includes(VENDOR_C.name), 'Estrela live sem vendedor C');
 

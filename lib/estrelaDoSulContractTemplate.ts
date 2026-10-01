@@ -10,6 +10,7 @@ import {
 import { buildEstrelaDoSulClausesHtml } from '@/lib/estrelaDoSulContractClauses';
 import {
   buildEstrelaDoSulCapaHtml,
+  buildEstrelaDoSulInfraPageHtml,
   buildEstrelaDoSulPreambleHtml,
   buildEstrelaDoSulSignaturesHtml,
 } from '@/lib/estrelaDoSulContractParties';
@@ -115,17 +116,17 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   line-height: 1.2 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table {
-  font-size: 9pt !important;
-  margin: 6px 0 10px 0 !important;
+  font-size: 8.5pt !important;
+  margin: 3px 0 5px 0 !important;
   position: relative;
   z-index: 0;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-section-title {
   display: block !important;
   font-size: 9pt !important;
-  margin: 10px 0 0 0 !important;
-  padding: 0 0 6px 0 !important;
-  line-height: 1.25 !important;
+  margin: 6px 0 0 0 !important;
+  padding: 0 0 3px 0 !important;
+  line-height: 1.2 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
   position: relative;
@@ -133,12 +134,12 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table th,
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table td {
-  padding-top: 6px !important;
-  padding-bottom: 6px !important;
-  padding-left: 6px !important;
-  padding-right: 6px !important;
-  line-height: 1.4 !important;
-  font-size: 9pt !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  line-height: 1.22 !important;
+  font-size: 8.5pt !important;
   vertical-align: middle !important;
   height: auto !important;
 }
@@ -178,7 +179,7 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   overflow: visible !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-td-keep {
-  line-height: 1.4 !important;
+  line-height: 1.22 !important;
 }
 .sv-contract-estrela-do-sul .estrela-footnote,
 .sv-contract-estrela-do-sul .estrela-capa p[style*="font-size:9pt"] {
@@ -256,9 +257,26 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   margin: 0 !important;
   padding-bottom: 4px !important;
 }
+.sv-contract-estrela-do-sul .estrela-infra-page {
+  page-break-before: always !important;
+  break-before: page !important;
+}
 .sv-contract-estrela-do-sul .estrela-instrument {
   page-break-before: always !important;
   break-before: page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-footnotes {
+  margin-top: 6px;
+  page-break-before: avoid !important;
+  break-before: avoid-page !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid-page !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-footnotes .estrela-footnote,
+.sv-contract-estrela-do-sul .estrela-clause-footnotes .estrela-footnote {
+  font-size: 8pt !important;
+  line-height: 1.2 !important;
+  text-align: justify;
 }
 .sv-contract-estrela-do-sul .estrela-closing-statement {
   page-break-inside: avoid !important;
@@ -467,6 +485,7 @@ export function generateEstrelaDoSulContract(
     ${buildEstrelaDoSulContractPaginationCss()}
     <div class="sv-contract-document sv-contract-estrela-do-sul" data-contract-model="ESTRELA_DO_SUL" style="font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.35; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: ${CONTRACT_PDF_CONTENT_WIDTH_PX}px; box-sizing: border-box; text-align: justify;">
       ${buildEstrelaDoSulCapaHtml(ctx)}
+      ${buildEstrelaDoSulInfraPageHtml(ctx)}
       <div class="estrela-instrument">
         ${buildEstrelaDoSulPreambleHtml(ctx)}
         ${buildEstrelaDoSulClausesHtml(ctx)}

@@ -51,9 +51,10 @@ export const ESTRELA_OCCUPANCY_FEE_FLOOR = 500;
 /**
  * Narrativa de rateio entre vendedores do instrumento (capa / cláusula 1.3).
  * NÃO lê Split de Recebimentos. Fallback quando o projeto LF não tem percentuais próprios.
+ * PDF oficial 10 páginas: 30% L.F. Imóveis / 70% segundo vendedor.
  */
-export const ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT = 40;
-export const ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT = 60;
+export const ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT = 30;
+export const ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT = 70;
 
 /** Anexo: prazo de infraestrutura essencial. */
 export const ESTRELA_ANNEX_ESSENTIAL_INFRA_MONTHS = 12;
@@ -105,12 +106,25 @@ export const ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES = [
     status: 'transcrito-como-no-fonte',
   },
   {
-    id: 'PARTNERSHIP_40_60',
+    id: 'PARTNERSHIP_30_70',
     excerpt:
-      'Outras informações: 40% ao primeiro vendedor e 60% ao segundo, via boleto',
+      'Outras informações: 30% ao primeiro vendedor (L.F. Imóveis) e 70% ao segundo, via boleto',
     issue:
-      'Texto do instrumento, não do Split de Recebimentos. Incluído só se houver segundo vendedor; percentuais vêm da config LF do projeto, com fallback 40/60.',
-    status: 'aguardando-decisao',
+      'Texto do instrumento 10 páginas, não do Split de Recebimentos. Incluído só se houver segundo vendedor; percentuais vêm da config LF do projeto, com fallback 30/70.',
+    status: 'aplicado-dinamico',
+  },
+  {
+    id: 'WORD_FIELD_9_2',
+    excerpt: 'Cláusula 9.2 no PDF traz “[Data de Publicação]” no lugar do valor de corretagem',
+    issue:
+      'Campo de mala direta quebrado no Word. O motor interpola o valor real da corretagem da venda.',
+    status: 'aplicado-dinamico',
+  },
+  {
+    id: 'CLAUSE_5_4_TWICE',
+    excerpt: 'Dois parágrafos numerados 5.4 no PDF (ambiental + vedação de suinocultura)',
+    issue: 'Numeração repetida no instrumento. Transcrita como no PDF, sem renumerar.',
+    status: 'transcrito-como-no-fonte',
   },
   {
     id: 'LGPD_CITATION',
@@ -168,3 +182,18 @@ export const ESTRELA_ANNEX_ROWS = [
     detail: `Será permitida somente após o pagamento da ${ESTRELA_CONSTRUCTION_MIN_INSTALLMENT}ª (quarta) parcela do contrato ou com prazo mínimo de ${ESTRELA_CONSTRUCTION_EARLY_PAYOFF_MONTHS} (quatro) meses em caso de quitação antecipada.`,
   },
 ] as const;
+
+export const ESTRELA_COVER_NOTE_1 =
+  'É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.';
+
+export const ESTRELA_COVER_NOTE_2 =
+  'Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelo possivel comprador ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.';
+
+export const ESTRELA_COVER_NOTE_4 =
+  'Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.';
+
+export const ESTRELA_NOTE_7 =
+  `A composição referente à Dedicação de Taxa Administrativa de Distrato se encontra fixada em ${ESTRELA_DISTRACT_ADMIN_FEE_PERCENT}% (cinco por cento) sobre o valor total do contrato, destinada à cobertura de despesas operacionais e jurídicas indispensáveis ao cancelamento do negócio e reintegração do imóvel aos estoques da VENDEDORA.`;
+
+export const ESTRELA_CLAUSE_5_4_COMMERCIAL =
+  'Considerando a finalidade de lazer e moradia do chacreamento, é terminantemente proibida a instalação de atividade comercial de suinocultura na unidade imobiliária, bem como de qualquer outra atividade que gere odores fétidos, dejetos poluentes ou ruídos que afetem o direito de vizinhança e a salubridade pública. O descumprimento desta vedação sujeitará o infrator à imediata notificação para encerramento da atividade, sob pena de aplicação de multa contratual e responsabilização por eventuais infrações ambientais.';

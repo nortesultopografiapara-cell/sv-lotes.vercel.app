@@ -5,6 +5,9 @@
 import type { EstrelaDoSulContractContext } from '@/lib/estrelaDoSulContractContext';
 import {
   ESTRELA_ANNEX_ROWS,
+  ESTRELA_COVER_NOTE_1,
+  ESTRELA_COVER_NOTE_2,
+  ESTRELA_COVER_NOTE_4,
   ESTRELA_DO_SUL_CONTRACT_TITLE,
   ESTRELA_DO_SUL_COVER_TITLE,
   ESTRELA_DO_SUL_PROPERTY_TYPE,
@@ -37,7 +40,7 @@ function objectTableCols(): string {
 
 function buildSignatureSlot(params: {
   role: string;
-  partyRole: 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS';
+  partyRole?: 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS';
   name?: string;
   docLines?: string[];
   extraClass?: string;
@@ -51,8 +54,9 @@ function buildSignatureSlot(params: {
   const className = ['signature-slot', 'estrela-sign-slot', params.extraClass || '']
     .filter(Boolean)
     .join(' ');
+  const roleAttr = params.partyRole ? ` data-party-role="${params.partyRole}"` : '';
   return `
-      <div class="${className}" data-party-role="${params.partyRole}" style="${SLOT_STYLE}">
+      <div class="${className}"${roleAttr} style="${SLOT_STYLE}">
         <div class="signature-line" style="${LINE_STYLE}"></div>
         <p style="${ROLE_STYLE}">${escEstrelaHtml(params.role)}</p>
         ${name ? `<p style="${NAME_STYLE}">${name}</p>` : ''}
@@ -128,7 +132,7 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
       <h2 style="text-align:center; font-size:13pt; margin: 0 0 2px 0; text-transform:uppercase;">${escEstrelaHtml(ESTRELA_DO_SUL_COVER_TITLE)}</h2>
       <h3 style="text-align:center; font-size:12pt; margin: 0 0 6px 0; text-transform:uppercase;">CHACREAMENTO: ${escEstrelaHtml(ctx.enterpriseName)}</h3>
 
-      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 4px 0;">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)</p>
+      <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 4px 0;">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)<sup>1</sup></p>
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin:0 0 6px 0;">
         <thead>
         <tr>
@@ -142,7 +146,6 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
         ${vendorRows}
         </tbody>
       </table>
-      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 6px 0;">É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
 
       <div class="estrela-lead-table estrela-capa-object">
       <p class="estrela-section-title" style="font-weight:bold; margin: 0 0 4px 0;">2. DO OBJETO E GEORREFERENCIAMENTO (INFORMAÇÕES MACRO)</p>
@@ -155,7 +158,7 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
         <tr>${cell('Nome do Projeto')}${cell(ctx.enterpriseName)}</tr>
         <tr>${cell('Localização do Imóvel')}${cell(ctx.enterpriseLocation)}</tr>
         <tr>${cell('Área Vendida')}${cell(areaCell || '—')}</tr>
-        <tr>${cell('MEDIDAS E CONFRONTAÇÕES')}${cell(ctx.confrontacoesText || '—')}</tr>
+        <tr>${cell('Confrontações')}${cell(ctx.confrontacoesText || '—')}</tr>
         ${
           ctx.partnershipNote
             ? `<tr>${cell('Outras informações')}${cell(ctx.partnershipNote)}</tr>`
@@ -174,27 +177,52 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
         <tbody>
         <tr>${cell('VALOR TOTAL DO IMÓVEL')}${cell(ctx.valorTotalExtenso ? `${ctx.valorTotalFmt} (${ctx.valorTotalExtenso})` : ctx.valorTotalFmt)}</tr>
         <tr>${cell('VALOR DE CORRETAGEM')}${cell(ctx.valorCorretagemExtenso ? `${ctx.valorCorretagemFmt} (${ctx.valorCorretagemExtenso})` : ctx.valorCorretagemFmt)}</tr>
-        <tr>${cell('VALOR DO SINAL/ENTRADA (ARRAS)')}${cell(ctx.valorSinalExtenso ? `${ctx.valorSinalFmt} (${ctx.valorSinalExtenso})` : ctx.valorSinalFmt)}</tr>
-        <tr>${cell('PARCELAS E VALORES')}${cell(ctx.parcelasResumo)}</tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">VALOR DO SINAL/ENTRADA (ARRAS)<sup>2</sup></div></td>${cell(ctx.valorSinalExtenso ? `${ctx.valorSinalFmt} (${ctx.valorSinalExtenso})` : ctx.valorSinalFmt)}</tr>
+        <tr><td style="border:1px solid #111; padding:2px 4px;"><div class="estrela-td-keep">PARCELAS E VALORES<sup>3</sup></div></td>${cell(ctx.parcelasResumo)}</tr>
         <tr>${cell('VENCIMENTO DA 1ª PARCELA')}${cell(ctx.dataPrimeiraParcelaFmt)}</tr>
         <tr>${cell('ÍNDICE DE CORREÇÃO ANUAL')}${cell(ctx.indiceCorrecaoCapa)}</tr>
         <tr>${cell('MULTA MORATÓRIA POR ATRASO')}${cell('2% (dois por cento) sobre a parcela vencida')}</tr>
         <tr>${cell('JUROS DE MORA POR ATRASO')}${cell('1% (um por cento) ao mês')}</tr>
         </tbody>
       </table>
-      <p class="estrela-footnote" style="font-size:9pt; margin: 0 0 6px 0;">Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
 
       <div class="estrela-capa-section-4">
-        <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 4px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS</p>
-        ${buildEstrelaDoSulAnnexHtml(ctx)}
+        <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 4px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
+        <table class="estrela-table estrela-object-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin:0 0 6px 0;">
+          ${objectTableCols()}
+          <thead>
+          <tr>${th('ITEM')}${th('Detalhamento')}</tr>
+          </thead>
+        </table>
       </div>
+      <div class="estrela-capa-footnotes">
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>1</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_1)}</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>2</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_2)}</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>3</sup> ${escEstrelaHtml(estrelaCoverNote3(ctx))}</p>
+        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>4</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_4)}</p>
+      </div>
+    </div>`;
+}
+
+function estrelaCoverNote3(ctx: EstrelaDoSulContractContext): string {
+  const amount = ctx.valorCorretagemExtenso
+    ? `${ctx.valorCorretagemFmt} (${ctx.valorCorretagemExtenso})`
+    : ctx.valorCorretagemFmt;
+  return `A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${amount}.`;
+}
+
+export function buildEstrelaDoSulInfraPageHtml(ctx: EstrelaDoSulContractContext): string {
+  return `
+    <div class="estrela-infra-page">
+      ${buildEstrelaDoSulLogoHtml(ctx)}
+      ${buildEstrelaDoSulAnnexHtml(ctx)}
       ${buildEstrelaDoSulSignaturesHtml(ctx, 'capa')}
     </div>`;
 }
 
 export function buildEstrelaDoSulPreambleHtml(ctx: EstrelaDoSulContractContext): string {
   const creci = ctx.companyCreci
-    ? `, CRECI nº ${escEstrelaHtml(ctx.companyCreci)}`
+    ? `, CRECI${ctx.companyUf ? `(${escEstrelaHtml(ctx.companyUf)})` : ''} nº ${escEstrelaHtml(ctx.companyCreci)}`
     : '';
   const rgLine = ctx.clienteRg
     ? `portador(a) do RG sob nº ${escEstrelaHtml(ctx.clienteRg)}${
@@ -256,11 +284,39 @@ export function buildEstrelaDoSulPreambleHtml(ctx: EstrelaDoSulContractContext):
         ctx.companyEmail
           ? `, com o seguinte endereço eletrônico: ${escEstrelaHtml(ctx.companyEmail)}`
           : ''
+      }${
+        ctx.companyPhone ? `, Telefone: ${escEstrelaHtml(ctx.companyPhone)}` : ''
       }, doravante designada simplesmente como <strong>VENDEDOR/CONTRATADA</strong>.
     </p>
+    ${buildEstrelaSecondVendorPreamble(ctx)}
     <p style="margin: 0 0 16px 0; text-align: justify;">
       As Partes, de livre e espontânea vontade, resolvem firmar o presente Instrumento Particular de Compra e Venda de Imóvel Rural, cujo objeto consiste na transação do loteamento de terra correspondente à chácara a seguir identificada.
     </p>`;
+}
+
+function buildEstrelaSecondVendorPreamble(ctx: EstrelaDoSulContractContext): string {
+  if (!ctx.hasSecondVendor || !ctx.secondVendor.name) return '';
+  const v = ctx.secondVendor;
+  const rgLine = v.rg
+    ? `Carteira de identidade nº ${escEstrelaHtml(v.rg)}${
+        v.rgIssuer || v.rgUf
+          ? ` ${escEstrelaHtml([v.rgIssuer, v.rgUf].filter(Boolean).join('/'))}`
+          : ''
+      }`
+    : '';
+  const bits = [
+    estrelaStrong(v.name),
+    v.nationality ? escEstrelaHtml(v.nationality) : '',
+    v.maritalStatus ? escEstrelaHtml(v.maritalStatus) : '',
+    v.profession ? escEstrelaHtml(v.profession) : '',
+    rgLine,
+    v.cpf ? `CPF: ${escEstrelaHtml(formatCpfCnpj(v.cpf) || v.cpf)}` : '',
+    v.address ? `Residente e domiciliado na: ${escEstrelaHtml(v.address)}` : '',
+    v.email ? `Endereço eletrônico: ${escEstrelaHtml(v.email)}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return `<p class="estrela-second-vendor-lead" style="margin: 0 0 8px 0; text-align: justify;">${bits}, doravante designado como <strong>VENDEDOR/CONTRATADA</strong>.</p>`;
 }
 
 export function buildEstrelaDoSulAnnexHtml(_ctx: EstrelaDoSulContractContext): string {
@@ -284,31 +340,31 @@ export type EstrelaSignatureBlockKind = 'capa' | 'instrumento';
 
 function buildEstrelaSignatureGrid(ctx: EstrelaDoSulContractContext): string {
   const buyerSlot = buildSignatureSlot({
-    role: 'COMPRADOR(A)',
+    role: 'COMPRADOR 1',
     partyRole: 'BUYER',
     name: ctx.clienteNome,
-    docLines: [ctx.clienteCpf ? `CPF nº ${ctx.clienteCpf}` : ''].filter(Boolean),
+    docLines: [ctx.clienteCpf ? `CPF nº ${ctx.clienteCpf}` : 'CPF nº'].filter(Boolean),
     extraClass: 'signature-slot-buyer',
   });
   const companySlot = buildSignatureSlot({
-    role: 'VENDEDOR(A)',
+    role: ctx.companyName || 'VENDEDOR(A)',
     partyRole: 'VENDOR',
     name: ctx.companyName,
     docLines: [ctx.companyCnpj ? `CNPJ ${ctx.companyCnpj}` : ''].filter(Boolean),
     extraClass: 'signature-slot-vendor-1',
   });
-  const spouseSlot = ctx.hasConjuge
-    ? buildSignatureSlot({
-        role: 'CÔNJUGE ANUENTE',
-        partyRole: 'SPOUSE',
-        name: ctx.conjugeNome,
-        docLines: [ctx.conjugeCpf ? `CPF nº ${ctx.conjugeCpf}` : ''].filter(Boolean),
-        extraClass: 'signature-slot-spouse',
-      })
-    : '';
+  const spouseSlot = buildSignatureSlot({
+    role: 'COMPRADOR 2',
+    partyRole: ctx.hasConjuge ? 'SPOUSE' : undefined,
+    name: ctx.hasConjuge ? ctx.conjugeNome : '',
+    docLines: [
+      ctx.hasConjuge && ctx.conjugeCpf ? `CPF nº ${ctx.conjugeCpf}` : 'CPF nº',
+    ].filter(Boolean),
+    extraClass: ctx.hasConjuge ? 'signature-slot-spouse' : 'signature-slot-buyer-2',
+  });
   const secondSlot = ctx.hasSecondVendor
     ? buildSignatureSlot({
-        role: 'VENDEDOR(A)',
+        role: ctx.secondVendor.name || 'VENDEDOR(A)',
         partyRole: 'VENDOR',
         name: ctx.secondVendor.name,
         docLines: [
