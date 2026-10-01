@@ -7,7 +7,9 @@ import path from 'node:path';
 import { generateContractHTML } from '../lib/contractTemplate';
 import { buildEstrelaDoSulEsignVendorPartyInputs } from '../lib/estrelaDoSulContractEsign';
 import {
+  captureLfContractSnapshotForSale,
   isLfParticipationValid,
+  LF_PARTICIPATION_INCOMPLETE_MESSAGE,
   lfConfigToFormState,
   lfContractConfigPersistedEquals,
   normalizeLfContractConfigForSave,
@@ -589,6 +591,36 @@ console.log('\n=== percentuais inválidos → fallback 30/70 ===');
   });
   assert(resolved.secondVendor.name === 'Bruno Beira Ficticio', 'vendedor B permanece');
   assert(resolved.firstVendorPercent === 30 && resolved.secondVendorPercent === 70, 'percentuais inválidos → 30/70');
+}
+
+console.log('\n=== captura de venda nova sem percentuais válidos bloqueia ===');
+{
+  let blockedEmpty = false;
+  try {
+    captureLfContractSnapshotForSale({ project: ESTRELA_PROJECT, company: COMPANY });
+  } catch (error) {
+    blockedEmpty = String((error as Error).message).includes(LF_PARTICIPATION_INCOMPLETE_MESSAGE);
+  }
+  assert(blockedEmpty, 'Estrela sem percentuais não captura fallback');
+
+  let blockedInvalid = false;
+  try {
+    captureLfContractSnapshotForSale({
+      project: {
+        ...BEIRA_PROJECT,
+        lf_contract_config_json: {
+          secondVendor: VENDOR_B,
+          participation: { firstVendorPercent: 10, secondVendorPercent: 10 },
+        },
+      },
+      company: COMPANY,
+    });
+  } catch (error) {
+    blockedInvalid = String((error as Error).message).includes(
+      LF_PARTICIPATION_INCOMPLETE_MESSAGE,
+    );
+  }
+  assert(blockedInvalid, 'percentuais inválidos não capturam fallback 30/70');
 }
 
 console.log('\n=== e-sign usa o mesmo vendedor resolvido ===');

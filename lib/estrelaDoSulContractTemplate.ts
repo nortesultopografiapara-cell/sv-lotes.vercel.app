@@ -133,15 +133,20 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   z-index: 1;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table th,
-.sv-contract-estrela-do-sul .estrela-capa .estrela-table td {
-  padding-top: 3px !important;
-  padding-bottom: 3px !important;
-  padding-left: 4px !important;
-  padding-right: 4px !important;
-  line-height: 1.22 !important;
-  font-size: 8.5pt !important;
+.sv-contract-estrela-do-sul .estrela-capa .estrela-table td,
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-table th,
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-table td {
+  padding-top: 6px !important;
+  padding-bottom: 7px !important;
+  padding-left: 5px !important;
+  padding-right: 5px !important;
+  line-height: 1.18 !important;
   vertical-align: middle !important;
   height: auto !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa .estrela-table th,
+.sv-contract-estrela-do-sul .estrela-capa .estrela-table td {
+  font-size: 8.5pt !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-footnote {
   font-size: 8pt !important;
@@ -178,8 +183,12 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   padding: 0;
   overflow: visible !important;
 }
-.sv-contract-estrela-do-sul .estrela-capa .estrela-td-keep {
-  line-height: 1.22 !important;
+.sv-contract-estrela-do-sul .estrela-capa .estrela-td-keep,
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-td-keep {
+  line-height: 1.18 !important;
+  padding-top: 1px !important;
+  padding-bottom: 2px !important;
+  display: block;
 }
 .sv-contract-estrela-do-sul .estrela-footnote,
 .sv-contract-estrela-do-sul .estrela-capa p[style*="font-size:9pt"] {

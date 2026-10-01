@@ -27,10 +27,17 @@ import {
 
 export const LF_CONTRACT_CONFIG_COLUMN = 'lf_contract_config_json';
 
+/**
+ * Somente leitura de contratos/vendas antigas sem snapshot e sem percentuais
+ * no empreendimento. Não usar para criar venda nova.
+ */
 export const LF_PARTICIPATION_FALLBACK = {
   firstVendorPercent: ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT,
   secondVendorPercent: ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT,
 } as const;
+
+export const LF_PARTICIPATION_INCOMPLETE_MESSAGE =
+  'A configuração contratual do empreendimento está incompleta: informe os percentuais de participação dos vendedores (soma 100%) em Editar empreendimento.';
 
 export type LfContractParticipation = {
   firstVendorPercent: number;
@@ -244,7 +251,7 @@ function stripForbiddenKeys(obj: Record<string, unknown>): void {
 
 /**
  * Normaliza para save em projects.lf_contract_config_json.
- * Tudo vazio → null (fallback empresa + 30/70).
+ * Tudo vazio → null (segundo vendedor da empresa; percentuais ausentes).
  */
 export function normalizeLfContractConfigForSave(
   input: unknown,
@@ -362,6 +369,13 @@ export function resolveLfSecondVendor(input: {
   };
 }
 
+/**
+ * Resolução para renderizar contrato.
+ * Venda com snapshot válido → snapshot (imutável).
+ * Senão, percentuais válidos do empreendimento.
+ * Fallback 30/70: somente contratos/vendas antigas sem snapshot e sem config.
+ * Não usar esta função para gravar snapshot de venda nova.
+ */
 export function resolveLfParticipation(input: {
   sale?: Record<string, unknown> | null;
   project?: Record<string, unknown> | null;
@@ -447,21 +461,56 @@ export function isLfContractConfigFieldsEmpty(
   );
 }
 
+/** Percentuais válidos gravados no empreendimento — sem fallback 30/70. */
+export function readProjectLfParticipation(
+  project?: Record<string, unknown> | null,
+): LfContractParticipation | null {
+  const parsed = parseLfContractConfigJson(
+    project?.[LF_CONTRACT_CONFIG_COLUMN] ?? project?.lf_contract_config,
+  );
+  if (
+    parsed.participation &&
+    isLfParticipationValid(
+      parsed.participation.firstVendorPercent,
+      parsed.participation.secondVendorPercent,
+    )
+  ) {
+    return parsed.participation;
+  }
+  return null;
+}
+
+export function assertLfParticipationConfiguredForNewSale(
+  project?: Record<string, unknown> | null,
+): LfContractParticipation {
+  const participation = readProjectLfParticipation(project);
+  if (!participation) {
+    throw new Error(LF_PARTICIPATION_INCOMPLETE_MESSAGE);
+  }
+  return participation;
+}
+
+/**
+ * Congela a config do empreendimento na venda nova.
+ * Percentuais: somente os do projeto (nunca o fallback histórico 30/70).
+ * Segundo vendedor: resolução vigente (projeto → empresa).
+ */
 export function captureLfContractSnapshotForSale(input: {
   project?: Record<string, unknown> | null;
   company?: Record<string, unknown> | null;
   capturedAt?: string;
 }): Record<string, unknown> {
+  const participation = assertLfParticipationConfiguredForNewSale(input.project);
   const resolved = resolveLfContractConfig({
     project: input.project,
     company: input.company,
   });
   return buildLfContractSnapshotPayload({
     secondVendor: resolved.secondVendor,
-    firstVendorPercent: resolved.firstVendorPercent,
-    secondVendorPercent: resolved.secondVendorPercent,
+    firstVendorPercent: participation.firstVendorPercent,
+    secondVendorPercent: participation.secondVendorPercent,
     secondVendorSource: resolved.secondVendorSource,
-    participationSource: resolved.participationSource,
+    participationSource: 'project',
     project: input.project,
     capturedAt: input.capturedAt,
   });

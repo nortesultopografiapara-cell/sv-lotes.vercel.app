@@ -49,9 +49,10 @@ export const ESTRELA_OCCUPANCY_FEE_PERCENT = 0.5;
 export const ESTRELA_OCCUPANCY_FEE_FLOOR = 500;
 
 /**
- * Narrativa de rateio entre vendedores do instrumento (capa / cláusula 1.3).
- * NÃO lê Split de Recebimentos. Fallback quando o projeto LF não tem percentuais próprios.
- * PDF oficial 10 páginas: 30% L.F. Imóveis / 70% segundo vendedor.
+ * Leitura histórica da narrativa de rateio (capa / cláusula 1.3) quando a venda
+ * não tem snapshot e o empreendimento não tem percentuais próprios.
+ * NÃO é constante jurídica do motor e NÃO é Split de Recebimentos.
+ * Venda nova: percentuais vêm só de projects.lf_contract_config_json.
  */
 export const ESTRELA_PARTNERSHIP_FIRST_VENDOR_PERCENT = 30;
 export const ESTRELA_PARTNERSHIP_SECOND_VENDOR_PERCENT = 70;
@@ -110,7 +111,7 @@ export const ESTRELA_DO_SUL_DOCUMENT_DIVERGENCES = [
     excerpt:
       'Outras informações: 30% ao primeiro vendedor (L.F. Imóveis) e 70% ao segundo, via boleto',
     issue:
-      'Texto do instrumento 10 páginas, não do Split de Recebimentos. Incluído só se houver segundo vendedor; percentuais vêm da config LF do projeto, com fallback 30/70.',
+      'Texto do instrumento, não do Split de Recebimentos. Incluído só se houver segundo vendedor; percentuais vêm da config LF do empreendimento (congelados no snapshot da venda). Fallback 30/70 só na leitura de contratos legados sem snapshot/config.',
     status: 'aplicado-dinamico',
   },
   {

@@ -8,6 +8,7 @@ import { generateContractHTML } from '../lib/contractTemplate';
 import { buildEstrelaDoSulEsignVendorPartyInputs } from '../lib/estrelaDoSulContractEsign';
 import {
   captureLfContractSnapshotForSale,
+  LF_PARTICIPATION_INCOMPLETE_MESSAGE,
   resolveLfContractConfig,
 } from '../lib/lfImoveisContractConfig';
 import {
@@ -245,9 +246,82 @@ assert(htmlEstrelaLive.includes('30%') && htmlEstrelaLive.includes('70%'), 'Estr
 assert(!htmlEstrelaLive.includes(VENDOR_B.name), 'Estrela live sem vendedor B');
 assert(!htmlEstrelaLive.includes(VENDOR_C.name), 'Estrela live sem vendedor C');
 
-console.log('\n=== nova venda Estrela congela a resolução efetiva ===');
+console.log('\n=== nova venda sem percentuais do empreendimento é bloqueada ===');
+{
+  let blocked = false;
+  try {
+    captureLfContractSnapshotForSale({
+      project: ESTRELA,
+      company: COMPANY,
+    });
+  } catch (error) {
+    blocked = String((error as Error).message).includes(LF_PARTICIPATION_INCOMPLETE_MESSAGE);
+  }
+  assert(blocked, 'sem percentuais no empreendimento não grava snapshot 30/70');
+}
+
+console.log('\n=== Teste A/B: 40/60 congelado; empreendimento 50/50 não altera venda A ===');
+{
+  const project4060 = {
+    ...ESTRELA,
+    lf_contract_config_json: {
+      participation: { firstVendorPercent: 40, secondVendorPercent: 60 },
+    },
+  };
+  const snap4060 = captureLfContractSnapshotForSale({
+    project: project4060,
+    company: COMPANY,
+  });
+  const parsed4060 = parseLfContractSnapshotJson(snap4060);
+  assert(parsed4060?.participation?.firstVendorPercent === 40, 'snapshot A 40');
+  assert(parsed4060?.participation?.secondVendorPercent === 60, 'snapshot A 60');
+  const sale4060 = { ...SALE_BASE, [LF_CONTRACT_SNAPSHOT_COLUMN]: snap4060 };
+  const html4060 = html({ project: project4060, sale: sale4060 });
+  assert(
+    html4060.includes('40% do valor e 60% ao segundo vendedor'),
+    'capa/cláusula da venda A interpola 40/60',
+  );
+
+  const project5050 = {
+    ...ESTRELA,
+    lf_contract_config_json: {
+      participation: { firstVendorPercent: 50, secondVendorPercent: 50 },
+    },
+  };
+  const htmlAAfterEdit = html({ project: project5050, sale: sale4060 });
+  assert(
+    htmlAAfterEdit.includes('40% do valor e 60% ao segundo vendedor'),
+    'contrato A permanece 40/60 após empreendimento 50/50',
+  );
+  assert(
+    !htmlAAfterEdit.includes('50% do valor e 50% ao segundo vendedor'),
+    'contrato A não lê 50/50 live',
+  );
+
+  const snap5050 = captureLfContractSnapshotForSale({
+    project: project5050,
+    company: COMPANY,
+  });
+  const sale5050 = { ...SALE_BASE, [LF_CONTRACT_SNAPSHOT_COLUMN]: snap5050 };
+  const html5050 = html({ project: project5050, sale: sale5050 });
+  assert(
+    html5050.includes('50% do valor e 50% ao segundo vendedor'),
+    'venda B posterior interpola 50/50',
+  );
+  const parsedAAfter = parseLfContractSnapshotJson(sale4060[LF_CONTRACT_SNAPSHOT_COLUMN]);
+  assert(parsedAAfter?.participation?.firstVendorPercent === 40, 'snapshot A não mudou');
+  assert(parsedAAfter?.participation?.secondVendorPercent === 60, 'snapshot A permanece 60');
+}
+
+console.log('\n=== nova venda Estrela congela vendedor da resolução + percentuais do empreendimento ===');
+const ESTRELA_CONFIGURED = {
+  ...ESTRELA,
+  lf_contract_config_json: {
+    participation: { firstVendorPercent: 30, secondVendorPercent: 70 },
+  },
+};
 const snapEstrela = captureLfContractSnapshotForSale({
-  project: ESTRELA,
+  project: ESTRELA_CONFIGURED,
   company: COMPANY,
 });
 const saleEstrela = { ...SALE_BASE, [LF_CONTRACT_SNAPSHOT_COLUMN]: snapEstrela };

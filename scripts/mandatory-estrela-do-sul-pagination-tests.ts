@@ -188,10 +188,12 @@ assert(cssRuleFor('.estrela-instrument').includes('page-break-before: always'), 
 assert(cssRuleFor('.estrela-capa').includes('font-size: 9pt'), 'CSS: Capa Resumo em 9pt');
 assert(
   css.includes('.estrela-capa .estrela-table td') &&
-    css.includes('padding-top: 3px !important') &&
-    css.includes('line-height: 1.22 !important') &&
+    css.includes('.estrela-infra-page .estrela-table td') &&
+    css.includes('padding-top: 6px !important') &&
+    css.includes('padding-bottom: 7px !important') &&
+    css.includes('line-height: 1.18 !important') &&
     css.includes('vertical-align: middle !important'),
-  'CSS: células da Capa compactas para caber notas 1–4 na página 1',
+  'CSS: células da capa e da página de infraestrutura com texto centralizado',
 );
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');

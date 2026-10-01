@@ -41,7 +41,10 @@ import {
   detectPreviewAraguaiaNameCoerce,
   normalizeSaleContractModel,
 } from '@/lib/contractModel';
-import { captureLfContractSnapshotForSale } from '@/lib/lfImoveisContractConfig';
+import {
+  assertLfParticipationConfiguredForNewSale,
+  captureLfContractSnapshotForSale,
+} from '@/lib/lfImoveisContractConfig';
 import { buildTerminationPolicySnapshot } from '@/lib/contract-termination/snapshot';
 import { buildRecantoInstallmentSalesSnapshot } from '@/lib/recantoFixedInstallmentPlan';
 import {
@@ -453,6 +456,9 @@ export async function executeGisSaleCreate(
     uiFallback: input.tenantContractModel,
     companyFound: Boolean(tenantContractRow),
   });
+  if (normalizeSaleContractModel(saleContractModel) === 'ESTRELA_DO_SUL') {
+    assertLfParticipationConfiguredForNewSale(projDataSnapshot);
+  }
 
   const nameCoerce = detectPreviewAraguaiaNameCoerce({
     projectName: projDataSnapshot?.name,

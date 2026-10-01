@@ -453,6 +453,15 @@ assert(onlyCompany.includes('50.000,00'), 'preço da venda');
 assert(onlyCompany.includes('5.000,00'), 'sinal da venda');
 assert(onlyCompany.includes('1.500,00'), 'corretagem da venda');
 assert(onlyCompany.includes('Confrontações'), 'rótulo confrontações');
+assert(
+  onlyCompany.includes('DAS PARTES CONTRATANTES (QUALIFICAÇÃO)'),
+  'título de qualificação na capa',
+);
+assert(
+  !onlyCompany.includes('QUALIFICAÇÃO)<sup>1</sup>'),
+  'título de qualificação sem sobrescrito ¹',
+);
+assert(onlyCompany.includes('<sup>1</sup>'), 'texto da nota 1 permanece');
 assert(onlyCompany.includes('ARRAS)<sup>2</sup>'), 'nota 2 na capa (ARRAS)');
 assert(onlyCompany.includes('PARCELAS E VALORES<sup>3</sup>'), 'nota 3 na capa (parcelas)');
 assert(onlyCompany.includes('CONFLITOS<sup>4</sup>'), 'nota 4 na capa (conflitos)');
