@@ -163,7 +163,7 @@ function html(overrides: {
 assert(normalizeSaleContractModel('CHACREAMENTO_ESTRELA_DO_SUL') === 'ESTRELA_DO_SUL', 'alias CHACREAMENTO_');
 assert(SALE_CONTRACT_MODEL_OPTIONS.includes('ESTRELA_DO_SUL'), 'opção no seletor de projeto');
 assert(
-  SALE_CONTRACT_MODEL_LABELS.ESTRELA_DO_SUL === 'LF Imóveis',
+  SALE_CONTRACT_MODEL_LABELS.ESTRELA_DO_SUL === 'Estrela do Sul',
   'label UI',
 );
 assert(isEstrelaDoSulContractModel(COMPANY), 'isEstrelaDoSulContractModel');

@@ -22,7 +22,7 @@ import {
 import {
   normalizeSaleContractModel,
   SALE_CONTRACT_MODEL_LABELS,
-  SALE_CONTRACT_MODELS,
+  SALE_CONTRACT_MODEL_OPTIONS,
   type SaleContractModel,
 } from '@/lib/contractModel';
 import {
@@ -672,11 +672,16 @@ export function CompanySettingsV2Shell({
                 <div className="max-w-md">
                   <label className="sv-theme-label">Modelo de contrato padrão</label>
                   <select name="contract_model" value={contractModel} onChange={handleChange} className="sv-theme-field">
-                    {SALE_CONTRACT_MODELS.map((model: SaleContractModel) => (
-                      <option key={model} value={model} disabled={model === 'CUSTOM'}>
+                    {SALE_CONTRACT_MODEL_OPTIONS.map((model: SaleContractModel) => (
+                      <option key={model} value={model}>
                         {SALE_CONTRACT_MODEL_LABELS[model]}
                       </option>
                     ))}
+                    {contractModel === 'CUSTOM' ? (
+                      <option value="CUSTOM" disabled>
+                        {SALE_CONTRACT_MODEL_LABELS.CUSTOM}
+                      </option>
+                    ) : null}
                   </select>
                 </div>
 

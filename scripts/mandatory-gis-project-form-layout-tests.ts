@@ -69,6 +69,7 @@ assert(col1.includes('Endereço/Referência'), 'col1 endereço');
 assert(col1.includes('Município / Foro do Contrato'), 'col1 foro');
 assert(!col1.includes('Conta financeira padrão'), 'conta financeira não está na col1');
 assert(col2.includes('Modelo de contrato padrão do empreendimento'), 'col2 modelo');
+assert(col2.includes('SALE_CONTRACT_MODEL_OPTIONS'), 'col2 usa catálogo oficial de modelos');
 assert(col2.includes('ProjectLfContractConfigFields'), 'col2 bloco LF');
 assert(col2.includes('PROMITENTES VENDEDORES'), 'col2 e-sign Mundo Novo');
 assert(!col2.includes('ProjectRevenueSplitPanel'), 'Split não está na col2');

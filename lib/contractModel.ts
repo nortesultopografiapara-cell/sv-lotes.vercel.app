@@ -25,7 +25,7 @@ export const SALE_CONTRACT_MODEL_LABELS: Record<SaleContractModel, string> = {
   MENESES: 'Meneses',
   ARAGUAIA: 'Chacreamento Araguaia',
   MUNDO_NOVO: 'Chacreamento Mundo Novo',
-  ESTRELA_DO_SUL: 'LF Imóveis',
+  ESTRELA_DO_SUL: 'Estrela do Sul',
   CUSTOM: 'Personalizado (futuro)',
 };
 
