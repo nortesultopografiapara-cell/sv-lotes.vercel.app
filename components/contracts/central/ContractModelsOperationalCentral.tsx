@@ -63,9 +63,13 @@ import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
 import {
   CONVERT_TO_CUSTOM_CONFIRM,
   CONVERT_TO_CUSTOM_LABEL,
+  REBUILD_ESTRELA_CUSTOM_CONFIRM,
+  REBUILD_ESTRELA_CUSTOM_LABEL,
   canConvertEngineModelToCustom,
+  canRebuildEstrelaConvertedCustom,
   conversionNoteFromVersion,
   planEngineToCustomPersist,
+  renderEngineModelAsCustomHtml,
 } from '@/lib/engineModelToCustom';
 import ManageContractModelProjectsPanel, {
   type ManageProjectLink,
@@ -112,6 +116,7 @@ type Dialog =
   | { type: 'manage'; modelId: string }
   | { type: 'saveAs'; modelId: string }
   | { type: 'convert'; modelId: string }
+  | { type: 'rebuildEstrela'; modelId: string }
   | { type: 'new' }
   | { type: 'import' }
   | { type: 'delete'; modelId: string };
@@ -656,6 +661,37 @@ export default function ContractModelsOperationalCentral() {
     if (draftError) throw new Error(draftError.message);
   }
 
+  async function handleRebuildEstrelaCustom(model: ModelRow) {
+    if (!tenantId) throw new Error('Empresa não identificada.');
+    if (
+      !canRebuildEstrelaConvertedCustom({
+        catalog_code: model.catalog_code,
+        versions: versions.filter((row) => row.model_id === model.id),
+      })
+    ) {
+      throw new Error('Só é possível reconstruir um CUSTOM convertido de ESTRELA_DO_SUL.');
+    }
+    const html = renderEngineModelAsCustomHtml('ESTRELA_DO_SUL');
+    const now = new Date().toISOString();
+    const { data: ensured, error: rpcError } = await supabase.rpc(
+      'ensure_company_contract_model_draft',
+      { p_model_id: model.id },
+    );
+    if (rpcError) throw new Error(rpcError.message);
+    void ensured;
+    const { error: draftError } = await supabase
+      .from('company_contract_model_versions')
+      .update({
+        content_html: html,
+        updated_at: now,
+      })
+      .eq('model_id', model.id)
+      .eq('company_id', tenantId)
+      .eq('status', 'draft')
+      .eq('version', 0);
+    if (draftError) throw new Error(draftError.message);
+  }
+
   async function handleArchiveToggle(model: ModelRow) {
     if (!tenantId) return;
     if (model.status === 'active') {
@@ -1094,6 +1130,19 @@ export default function ContractModelsOperationalCentral() {
                 {CONVERT_TO_CUSTOM_LABEL}
               </button>
             )}
+            {canRebuildEstrelaConvertedCustom({
+              catalog_code: selected.catalog_code,
+              versions: versions.filter((row) => row.model_id === selected.id),
+            }) && (
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-sky-700 text-xs text-sky-100 inline-flex items-center gap-1.5"
+                onClick={() => setDialog({ type: 'rebuildEstrela', modelId: selected.id })}
+              >
+                <FilePenLine className="w-3.5 h-3.5" />
+                {REBUILD_ESTRELA_CUSTOM_LABEL}
+              </button>
+            )}
             <button type="button" className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs" onClick={() => { setSaveAsName(`Cópia de ${selected.name}`); setDialog({ type: 'saveAs', modelId: selected.id }); }}>
               Salvar como novo
             </button>
@@ -1155,6 +1204,40 @@ export default function ContractModelsOperationalCentral() {
               }
             >
               {CONVERT_TO_CUSTOM_LABEL}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {dialog?.type === 'rebuildEstrela' && selected && (
+        <Modal
+          title={REBUILD_ESTRELA_CUSTOM_LABEL}
+          onClose={() => setDialog({ type: 'sheet', modelId: selected.id })}
+        >
+          <p className="text-sm text-[var(--text-secondary)] whitespace-pre-line">
+            {REBUILD_ESTRELA_CUSTOM_CONFIRM}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="h-9 px-3 rounded-lg border border-[var(--color-border)] text-xs"
+              onClick={() => setDialog({ type: 'sheet', modelId: selected.id })}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
+              onClick={() =>
+                void run(async () => {
+                  await handleRebuildEstrelaCustom(selected);
+                  setDialog(null);
+                  router.push(CUSTOM_CONTRACT_EDITOR_PATH(selected.id));
+                }, 'Rascunho reconstruído com o contrato oficial.')
+              }
+            >
+              {REBUILD_ESTRELA_CUSTOM_LABEL}
             </button>
           </div>
         </Modal>

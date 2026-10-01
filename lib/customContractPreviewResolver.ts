@@ -268,6 +268,7 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     COMPANY_ZIP: pick(company.zip_code, company.cep),
     COMPANY_PHONE: pick(company.phone),
     COMPANY_EMAIL: pick(company.email),
+    COMPANY_CRECI: pick(company.creci),
     COMPANY_LOGO_URL: pick(company.logo_url),
 
     CLIENT_NAME: pick(customer.name),
@@ -335,7 +336,13 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
       receiptAmount(receipts, (n) => n === 0) ||
       receiptAmount(receipts, (n) => n === -1) ||
       money(sale.down_payment),
+    DOWN_PAYMENT_EXTENSO: moneyExtenso(
+      (receipts || []).find((row) => Number(row.installment_number) === 0)?.amount ??
+        (receipts || []).find((row) => Number(row.installment_number) === -1)?.amount ??
+        sale.down_payment,
+    ),
     BROKER_COMMISSION: money(commission),
+    BROKER_COMMISSION_EXTENSO: moneyExtenso(commission),
     INSTALLMENTS_COUNT: pick(
       parcelRecs.length || null,
       sale.installments_count,

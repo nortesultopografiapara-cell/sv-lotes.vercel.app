@@ -1,10 +1,15 @@
 /**
  * HTML tokenizado ESTRELA_DO_SUL → CUSTOM.
- * Reusa os builders do motor sem alterar generateEstrelaDoSulContract nem vendas.
+ * Reconstrói o contrato oficial (generateEstrelaDoSulContract) com {{TOKENS}}.
+ * Não altera o motor, vendas nem generated_html.
  */
 import { emptyContractSecondVendorFields } from '@/lib/contractSecondVendor';
 import { CONTRACT_PDF_CONTENT_WIDTH_PX } from '@/lib/contractPaginationEngine';
 import type { EstrelaDoSulContractContext } from '@/lib/estrelaDoSulContractContext';
+import {
+  ESTRELA_DO_SUL_CONTRACT_TITLE,
+  ESTRELA_DO_SUL_COVER_TITLE,
+} from '@/lib/estrelaDoSulContractConstants';
 import {
   buildEstrelaDoSulCapaHtml,
   buildEstrelaDoSulInfraPageHtml,
@@ -17,6 +22,34 @@ import { customPlaceholderToken } from '@/lib/customContractPlaceholders';
 function tok(key: string): string {
   return customPlaceholderToken(key);
 }
+
+const PAGE_BREAK =
+  '<div data-sv-page-break="true" class="sv-page-break"></div>';
+
+export const ESTRELA_OFFICIAL_CUSTOM_MARKERS = [
+  ESTRELA_DO_SUL_COVER_TITLE,
+  '1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)',
+  '2. DO OBJETO E GEORREFERENCIAMENTO (INFORMAÇÕES MACRO)',
+  '3. DAS CONDIÇÕES FINANCEIRAS E PERCENTUAIS APLICÁVEIS',
+  '4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS',
+  'CLÁUSULA PRIMEIRA',
+  'DO OBJETO, DA CAPA RESUMO E DOS ANEXOS',
+  'CLÁUSULA SEGUNDA',
+  'PAGAMENTO, REAJUSTE E MORA',
+  'CLÁUSULA TERCEIRA',
+  'CLÁUSULA QUARTA',
+  'CLÁUSULA QUINTA',
+  'CLÁUSULA SEXTA',
+  'CLÁUSULA SÉTIMA',
+  'CLÁUSULA OITAVA',
+  'CLÁUSULA NONA',
+  'CLÁUSULA DÉCIMA',
+  'CLÁUSULA DÉCIMA PRIMEIRA',
+  'CLÁUSULA DÉCIMA SEGUNDA',
+  ESTRELA_DO_SUL_CONTRACT_TITLE,
+  'ITEM',
+  'VALOR / DETALHAMENTO',
+] as const;
 
 export function buildEstrelaDoSulTokenContext(): EstrelaDoSulContractContext {
   const secondVendor = {
@@ -38,9 +71,9 @@ export function buildEstrelaDoSulTokenContext(): EstrelaDoSulContractContext {
     companyCity: tok('COMPANY_CITY'),
     companyUf: tok('COMPANY_STATE'),
     companyCep: tok('COMPANY_ZIP'),
-    companyCreci: '',
-    legalRepName: '',
-    legalRepCpf: '',
+    companyCreci: tok('COMPANY_CRECI'),
+    legalRepName: tok('SELLER_1_NAME'),
+    legalRepCpf: tok('SELLER_1_CPF_CNPJ'),
     hasSecondVendor: true,
     secondVendor,
     firstVendorPercent: 0,
@@ -88,10 +121,10 @@ export function buildEstrelaDoSulTokenContext(): EstrelaDoSulContractContext {
     valorTotalExtenso: tok('SALE_VALUE_EXTENSO'),
     valorCorretagem: 0,
     valorCorretagemFmt: tok('BROKER_COMMISSION'),
-    valorCorretagemExtenso: '',
+    valorCorretagemExtenso: tok('BROKER_COMMISSION_EXTENSO'),
     valorSinal: 0,
     valorSinalFmt: tok('DOWN_PAYMENT'),
-    valorSinalExtenso: '',
+    valorSinalExtenso: tok('DOWN_PAYMENT_EXTENSO'),
     valorSaldo: 0,
     valorSaldoFmt: tok('SALE_BALANCE'),
     qtdParcelas: 1,
@@ -108,12 +141,34 @@ export function buildEstrelaDoSulTokenContext(): EstrelaDoSulContractContext {
   };
 }
 
+function injectWitnessTokens(html: string): string {
+  return html
+    .replace(
+      /(<div class="[^"]*signature-slot-witness-1[^"]*"[\s\S]*?<p[^>]*>TESTEMUNHA 1<\/p>)/g,
+      `$1\n        <p>{{WITNESS_1_NAME}}</p>`,
+    )
+    .replace(
+      /(<div class="[^"]*signature-slot-witness-1[\s\S]*?)CPF nº:/g,
+      `$1CPF nº {{WITNESS_1_CPF}}`,
+    )
+    .replace(
+      /(<div class="[^"]*signature-slot-witness-2[^"]*"[\s\S]*?<p[^>]*>TESTEMUNHA 2<\/p>)/g,
+      `$1\n        <p>{{WITNESS_2_NAME}}</p>`,
+    )
+    .replace(
+      /(<div class="[^"]*signature-slot-witness-2[\s\S]*?)CPF nº:/g,
+      `$1CPF nº {{WITNESS_2_CPF}}`,
+    );
+}
+
 export function buildEstrelaDoSulTokenizedCustomHtml(): string {
   const ctx = buildEstrelaDoSulTokenContext();
-  return `
+  const html = `
     <div class="sv-contract-document sv-contract-estrela-do-sul sv-contract-custom-from-engine" data-contract-model="CUSTOM" data-converted-from="ESTRELA_DO_SUL" style="font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.35; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: ${CONTRACT_PDF_CONTENT_WIDTH_PX}px; box-sizing: border-box; text-align: justify;">
       ${buildEstrelaDoSulCapaHtml(ctx)}
+      ${PAGE_BREAK}
       ${buildEstrelaDoSulInfraPageHtml(ctx)}
+      ${PAGE_BREAK}
       <div class="estrela-instrument">
         ${buildEstrelaDoSulPreambleHtml(ctx)}
         ${buildEstrelaDoSulClausesHtml(ctx)}
@@ -121,4 +176,5 @@ export function buildEstrelaDoSulTokenizedCustomHtml(): string {
       </div>
     </div>
   `.trim();
+  return injectWitnessTokens(html);
 }

@@ -60,6 +60,7 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
   field('COMPANY_ZIP', 'CEP da empresa', 'company', 'companies.zip_code | companies.cep'),
   field('COMPANY_PHONE', 'Telefone da empresa', 'company', 'companies.phone'),
   field('COMPANY_EMAIL', 'E-mail da empresa', 'company', 'companies.email'),
+  field('COMPANY_CRECI', 'CRECI da empresa', 'company', 'companies.creci (quando cadastrado)'),
   field('COMPANY_LOGO_URL', 'Logo', 'company', 'companies.logo_url'),
 
   field('CLIENT_NAME', 'Nome do comprador', 'buyer', 'customers.name'),
@@ -207,7 +208,19 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
     'sales.payment_type via resolveSalePaymentMode.label',
   ),
   field('DOWN_PAYMENT', 'Sinal/entrada', 'finance', 'finance_receipts installment_number 0 ou -1'),
+  field(
+    'DOWN_PAYMENT_EXTENSO',
+    'Sinal/entrada por extenso',
+    'finance',
+    'extenso() sobre DOWN_PAYMENT',
+  ),
   field('BROKER_COMMISSION', 'Corretagem', 'finance', 'broker_commissions.amount | sales.commission'),
+  field(
+    'BROKER_COMMISSION_EXTENSO',
+    'Corretagem por extenso',
+    'finance',
+    'extenso() sobre BROKER_COMMISSION',
+  ),
   field('INSTALLMENTS_COUNT', 'Quantidade de parcelas', 'finance', 'sales.installments_count + receipts ≥ 1'),
   field('INSTALLMENT_VALUE', 'Valor da parcela', 'finance', 'finance_receipts installment_number ≥ 1'),
   field(

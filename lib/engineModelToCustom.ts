@@ -25,6 +25,11 @@ export const CONVERT_TO_CUSTOM_UNSUPPORTED =
 export const CONVERT_SYSTEM_SEED_BLOCKED =
   'O modelo original do sistema não pode ser convertido. Duplique-o e converta a cópia.';
 
+export const REBUILD_ESTRELA_CUSTOM_LABEL = 'Reconstruir contrato oficial';
+
+export const REBUILD_ESTRELA_CUSTOM_CONFIRM =
+  'Substituir o rascunho pelo contrato oficial ESTRELA_DO_SUL, com campos dinâmicos ({{CLIENT_NAME}}, {{PARTNERSHIP_NOTE}}, valores da venda, etc.)?\n\nO texto jurídico segue o contrato final homologado. Os dados da venda continuam tokens e serão preenchidos na Visualização.\n\nEsta ação altera somente o rascunho deste modelo CUSTOM. O motor ESTRELA original, Production e contratos já emitidos não mudam.';
+
 export type EngineToCustomSupported = (typeof ENGINE_TO_CUSTOM_SUPPORTED)[number];
 
 export type EngineToCustomConversionMeta = {
@@ -202,6 +207,29 @@ export function conversionNoteFromVersion(
   const converted = (raw as { convertedFrom?: { note?: string } }).convertedFrom;
   const note = String(converted?.note || '').trim();
   return note || null;
+}
+
+export function convertedFromCatalogCode(
+  version: Pick<OperationalVersion, 'engineParamsJson'> | { engine_params_json?: unknown } | null,
+): string {
+  const raw =
+    (version as OperationalVersion | null)?.engineParamsJson ??
+    (version as { engine_params_json?: unknown } | null)?.engine_params_json;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return '';
+  const converted = (raw as { convertedFrom?: { fromCatalogCode?: string } }).convertedFrom;
+  return String(converted?.fromCatalogCode || '').trim();
+}
+
+export function canRebuildEstrelaConvertedCustom(input: {
+  catalogCode?: string;
+  catalog_code?: string;
+  versions?: Array<{ engine_params_json?: unknown; engineParamsJson?: unknown }>;
+}): boolean {
+  const catalog = String(input.catalogCode || input.catalog_code || '').trim();
+  if (catalog !== 'CUSTOM') return false;
+  return (input.versions || []).some(
+    (row) => convertedFromCatalogCode(row) === 'ESTRELA_DO_SUL',
+  );
 }
 
 export function convertEngineModelToCustom(

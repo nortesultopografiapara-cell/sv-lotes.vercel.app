@@ -65,6 +65,12 @@ import ManageContractModelProjectsPanel, {
 import CustomA4PaginatedHtml from '@/components/contracts/editor/CustomA4PaginatedHtml';
 import { printCustomContractPreview } from '@/lib/customContractPrint';
 import type { CompanyLogoAlign } from '@/lib/customContractLogo';
+import {
+  REBUILD_ESTRELA_CUSTOM_CONFIRM,
+  REBUILD_ESTRELA_CUSTOM_LABEL,
+  canRebuildEstrelaConvertedCustom,
+  renderEngineModelAsCustomHtml,
+} from '@/lib/engineModelToCustom';
 import '@/components/contracts/editor/customContractEditor.css';
 
 const CustomContractTiptap = dynamic(
@@ -103,7 +109,7 @@ type LinkRow = {
 };
 type ProjectOpt = { id: string; name: string; companyId: string };
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-type Panel = 'preview' | 'history' | 'manage' | 'saveAs' | null;
+type Panel = 'preview' | 'history' | 'manage' | 'saveAs' | 'rebuildEstrela' | null;
 
 function firstRpcRow<T>(data: T | T[] | null | undefined): T | null {
   if (!data) return null;
@@ -168,6 +174,7 @@ export default function CustomContractA4Editor() {
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
   const [visualPageCount, setVisualPageCount] = useState(1);
   const [editingNoteId, setEditingNoteId] = useState('');
+  const [fromEstrela, setFromEstrela] = useState(false);
 
   const editorRef = useRef<Editor | null>(null);
   const htmlRef = useRef('');
@@ -317,6 +324,12 @@ export default function CustomContractA4Editor() {
     const importMeta = (draftRow.engine_params_json || ensured.engine_params_json || {}) as {
       import?: { warnings?: string[]; conversion?: string };
     };
+    setFromEstrela(
+      canRebuildEstrelaConvertedCustom({
+        catalog_code: String(modelRow.catalog_code),
+        versions: scoped,
+      }),
+    );
     if (importMeta.import?.warnings?.length) {
       setNotice(
         `Documento importado (${importMeta.import.conversion || 'arquivo'}). Conferir: ${importMeta.import.warnings
@@ -420,6 +433,18 @@ export default function CustomContractA4Editor() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível salvar o rascunho.');
     }
+  }
+
+  async function handleRebuildEstrelaOfficial() {
+    const html = renderEngineModelAsCustomHtml('ESTRELA_DO_SUL');
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    htmlRef.current = html;
+    setHtml(html);
+    setInitialHtml(html);
+    setContentKey(`rebuild-estrela:${Date.now()}:${html.length}`);
+    await persistDraft(html);
+    setPanel(null);
+    setNotice('Rascunho reconstruído com o contrato oficial ESTRELA_DO_SUL e campos dinâmicos.');
   }
 
   async function handlePublish() {
@@ -720,6 +745,16 @@ export default function CustomContractA4Editor() {
             <Save className="w-3.5 h-3.5" />
             Salvar rascunho
           </button>
+          {fromEstrela && (
+            <button
+              type="button"
+              disabled={!canOperate}
+              onClick={() => setPanel('rebuildEstrela')}
+              className="h-8 px-3 rounded-lg border border-sky-500/40 text-xs text-sky-100"
+            >
+              {REBUILD_ESTRELA_CUSTOM_LABEL}
+            </button>
+          )}
           <button
             type="button"
             disabled={!canPublish}
@@ -1233,6 +1268,32 @@ export default function CustomContractA4Editor() {
             }
             onDetach={(link) => runLinkAction(() => handleDetachLink(link), 'Associação removida.')}
           />
+        </EditorModal>
+      )}
+
+      {panel === 'rebuildEstrela' && (
+        <EditorModal title={REBUILD_ESTRELA_CUSTOM_LABEL} onClose={() => setPanel(null)}>
+          <p className="text-sm text-slate-300 whitespace-pre-line">{REBUILD_ESTRELA_CUSTOM_CONFIRM}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="h-9 px-3 rounded-lg border border-white/15 text-xs"
+              onClick={() => setPanel(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="h-9 px-3 rounded-lg bg-[var(--color-primary)] text-xs font-semibold"
+              onClick={() =>
+                void handleRebuildEstrelaOfficial().catch((e) =>
+                  setError(e instanceof Error ? e.message : 'Não foi possível reconstruir o contrato.'),
+                )
+              }
+            >
+              {REBUILD_ESTRELA_CUSTOM_LABEL}
+            </button>
+          </div>
         </EditorModal>
       )}
 

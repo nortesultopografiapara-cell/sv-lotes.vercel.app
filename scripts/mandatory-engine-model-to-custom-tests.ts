@@ -11,12 +11,15 @@ import {
   snapshotGisFields,
   type OperationalStore,
 } from '../lib/contractModelCentralOps';
+import { ESTRELA_OFFICIAL_CUSTOM_MARKERS } from '../lib/estrelaDoSulCustomTemplate';
 import {
   CONVERT_SYSTEM_SEED_BLOCKED,
   CONVERT_TO_CUSTOM_CONFIRM,
   CONVERT_TO_CUSTOM_LABEL,
   CONVERT_TO_CUSTOM_UNSUPPORTED,
+  REBUILD_ESTRELA_CUSTOM_LABEL,
   canConvertEngineModelToCustom,
+  canRebuildEstrelaConvertedCustom,
   conversionNoteFromVersion,
   convertEngineModelToCustom,
   engineToCustomHistoryNote,
@@ -155,11 +158,28 @@ assert(
     'CORRECTION_INDEX',
     'PARTNERSHIP_NOTE',
     'SALE_BALANCE',
+    'SALE_VALUE_EXTENSO',
+    'DOWN_PAYMENT_EXTENSO',
+    'BROKER_COMMISSION_EXTENSO',
+    'BLOCK_NAME',
+    'COMPANY_CRECI',
+    'WITNESS_1_CPF',
+    'WITNESS_2_CPF',
     'CONTRACT_CITY_DATE',
   ];
   for (const key of tokens) {
     assert(html.includes(`{{${key}}}`), `HTML tokenizado contém {{${key}}}`);
   }
+  for (const marker of ESTRELA_OFFICIAL_CUSTOM_MARKERS) {
+    assert(html.includes(marker), `contrato oficial contém: ${marker}`);
+  }
+  assert((html.match(/data-sv-page-break/g) || []).length >= 2, 'capa e anexo quebram como no PDF oficial');
+  assert(html.includes('estrela-capa-page-1') && html.includes('estrela-infra-page'), 'capa em duas folhas oficiais');
+  assert(
+    (html.match(/data-estrela-sign-block="capa"/g) || []).length === 1 &&
+      (html.match(/data-estrela-sign-block="instrumento"/g) || []).length === 1,
+    'assinaturas da capa e do instrumento',
+  );
   assert(!html.includes('JOÃO DA SILVA'), 'não congela nome de comprador');
   assert(!html.includes('Será repassado ao primeiro vendedor'), 'nota de parceria permanece token');
   assert(
@@ -322,6 +342,12 @@ assert(central.includes('CONVERT_TO_CUSTOM_LABEL'), 'Central tem botão Converte
 assert(central.includes("type: 'convert'"), 'Central abre confirmação de conversão');
 assert(central.includes('Cancelar'), 'confirmação tem Cancelar');
 assert(central.includes('handleConvertToCustom'), 'Central persiste a conversão');
+assert(central.includes('handleRebuildEstrelaCustom'), 'Central reconstrói o contrato oficial no rascunho CUSTOM');
+assert(central.includes('REBUILD_ESTRELA_CUSTOM_LABEL'), 'Central oferece reconstruir ESTRELA convertido');
+assert(
+  read('components/contracts/editor/CustomContractA4Editor.tsx').includes('handleRebuildEstrelaOfficial'),
+  'editor CUSTOM reconstrói o contrato oficial no rascunho',
+);
 assert(central.includes('ensure_company_contract_model_draft'), 'após converter garante draft CUSTOM');
 assert(central.includes("'Editar contrato'"), 'CUSTOM abre Editar contrato');
 assert(central.includes('conversionNoteFromVersion'), 'histórico mostra nota de conversão');
@@ -334,5 +360,23 @@ assert(
   !read('lib/engineModelToCustom.ts').includes('generateEstrelaDoSulContract('),
   'conversão não executa o motor de venda',
 );
+assert(
+  canRebuildEstrelaConvertedCustom({
+    catalog_code: 'CUSTOM',
+    versions: [
+      {
+        engine_params_json: {
+          convertedFrom: { fromCatalogCode: 'ESTRELA_DO_SUL' },
+        },
+      },
+    ],
+  }),
+  'CUSTOM convertido de ESTRELA pode reconstruir o oficial',
+);
+assert(
+  !canRebuildEstrelaConvertedCustom({ catalog_code: 'ESTRELA_DO_SUL', versions: [] }),
+  'motor ESTRELA original não reconstrói pelo botão CUSTOM',
+);
+assert(REBUILD_ESTRELA_CUSTOM_LABEL === 'Reconstruir contrato oficial', 'rótulo de reconstrução');
 
 console.log('OK — converter motor ESTRELA_DO_SUL → CUSTOM');

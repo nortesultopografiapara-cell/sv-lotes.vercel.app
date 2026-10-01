@@ -405,3 +405,109 @@
   background: #1b1d22;
   color: #e5e7eb;
 }
+
+/* Visual do contrato oficial ESTRELA no editor CUSTOM — sem travar tabela como bloco. */
+.sv-a4-sheet .sv-contract-estrela-do-sul,
+.sv-editor-preview-doc .sv-contract-estrela-do-sul {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111;
+  text-align: justify;
+}
+
+.sv-a4-sheet .estrela-capa,
+.sv-editor-preview-doc .estrela-capa {
+  font-size: 9pt;
+  line-height: 1.22;
+}
+
+.sv-a4-sheet .estrela-capa h2,
+.sv-editor-preview-doc .estrela-capa h2 {
+  font-size: 11pt;
+  margin: 0 0 2px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .estrela-capa h3,
+.sv-editor-preview-doc .estrela-capa h3 {
+  font-size: 10pt;
+  margin: 0 0 3px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .estrela-capa .estrela-table,
+.sv-editor-preview-doc .estrela-capa .estrela-table,
+.sv-a4-sheet .estrela-infra-page .estrela-table,
+.sv-editor-preview-doc .estrela-infra-page .estrela-table {
+  font-size: 8.5pt;
+  margin: 3px 0 5px;
+}
+
+.sv-a4-sheet .estrela-capa .estrela-section-title,
+.sv-editor-preview-doc .estrela-capa .estrela-section-title,
+.sv-a4-sheet .estrela-capa-section-4-title,
+.sv-editor-preview-doc .estrela-capa-section-4-title {
+  display: block;
+  font-size: 9pt;
+  margin: 6px 0 0;
+  padding: 0 0 3px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.sv-a4-sheet .estrela-clause-title,
+.sv-editor-preview-doc .estrela-clause-title {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 10px 0 4px;
+}
+
+.sv-a4-sheet .estrela-footnote,
+.sv-editor-preview-doc .estrela-footnote {
+  font-size: 8pt;
+  margin: 0 0 3px;
+  line-height: 1.2;
+}
+
+.sv-a4-sheet .signature-grid--estrela,
+.sv-editor-preview-doc .signature-grid--estrela {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 0;
+  align-items: start;
+  width: 100%;
+}
+
+.sv-a4-sheet .estrela-sign-col,
+.sv-editor-preview-doc .estrela-sign-col {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sv-a4-sheet .estrela-sign-col--left,
+.sv-editor-preview-doc .estrela-sign-col--left {
+  grid-column: 1;
+}
+
+.sv-a4-sheet .estrela-sign-col--right,
+.sv-editor-preview-doc .estrela-sign-col--right {
+  grid-column: 2;
+}
+
+.sv-a4-sheet .estrela-sign-slot .signature-line,
+.sv-editor-preview-doc .estrela-sign-slot .signature-line {
+  display: block;
+  margin: 16px auto 0;
+  width: 72%;
+  max-width: 260px;
+  height: 1px;
+  border-top: 1px solid #111;
+}
