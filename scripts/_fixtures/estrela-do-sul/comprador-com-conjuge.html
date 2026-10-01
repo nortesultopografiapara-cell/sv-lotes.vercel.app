@@ -154,7 +154,9 @@
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table th,
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table td,
 .sv-contract-estrela-do-sul .estrela-infra-page .estrela-table th,
-.sv-contract-estrela-do-sul .estrela-infra-page .estrela-table td {
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-table td,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-table th,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-table td {
   padding-top: 6px !important;
   padding-bottom: 7px !important;
   padding-left: 5px !important;
@@ -203,7 +205,8 @@
   overflow: visible !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-td-keep,
-.sv-contract-estrela-do-sul .estrela-infra-page .estrela-td-keep {
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-td-keep,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-td-keep {
   line-height: 1.18 !important;
   padding-top: 1px !important;
   padding-bottom: 2px !important;
@@ -214,26 +217,32 @@
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
 }
+.sv-contract-estrela-do-sul .estrela-capa-page-1 {
+  page-break-after: always !important;
+  break-after: page !important;
+}
 .sv-contract-estrela-do-sul .estrela-capa-section-4-title {
-  page-break-after: avoid !important;
-  break-after: avoid-page !important;
+  page-break-after: auto !important;
+  break-after: auto !important;
   font-size: 9pt !important;
-  margin: 0 0 4px 0 !important;
+  margin: 8px 0 0 0 !important;
   line-height: 1.25 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-annex-table {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
+  margin: 0 0 6px 0 !important;
 }
-.sv-contract-estrela-do-sul .estrela-capa .estrela-capa-annex-table .estrela-table {
-  margin: 2px 0 10px 0 !important;
+.sv-contract-estrela-do-sul .estrela-capa .estrela-capa-annex-table .estrela-table,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-capa-annex-table .estrela-table {
+  margin: 0 0 6px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  margin-top: 16px;
+  margin-top: 4px;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-signatures {
   page-break-inside: auto !important;
@@ -243,22 +252,22 @@
   margin-top: 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-closing-date {
-  margin-top: 8px !important;
+  margin-top: 6px !important;
   margin-bottom: 0 !important;
-  padding-bottom: 42px !important;
+  padding-bottom: 8px !important;
   font-size: 9pt !important;
-  line-height: 1.35 !important;
+  line-height: 1.3 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 48px !important;
+  row-gap: 12px !important;
   column-gap: 24px !important;
-  padding-top: 10px !important;
+  padding-top: 2px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 22px auto !important;
+  margin: 0 auto 6px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;
@@ -269,38 +278,46 @@
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-slot,
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-slot {
   margin-bottom: 0 !important;
-  padding-bottom: 8px !important;
+  padding-bottom: 2px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p {
   font-size: 9pt !important;
-  line-height: 1.3 !important;
+  line-height: 1.2 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="text-transform: uppercase"] {
-  margin: 8px 0 4px 0 !important;
+  margin: 4px 0 2px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="font-weight: bold"]:not([style*="text-transform: uppercase"]) {
-  margin: 2px 0 3px 0 !important;
+  margin: 1px 0 2px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-doc {
   margin: 0 !important;
-  padding-bottom: 4px !important;
+  padding-bottom: 1px !important;
 }
+.sv-contract-estrela-do-sul .estrela-capa-page-2,
 .sv-contract-estrela-do-sul .estrela-infra-page {
-  page-break-before: always !important;
-  break-before: page !important;
+  page-break-before: auto !important;
+  break-before: auto !important;
 }
 .sv-contract-estrela-do-sul .estrela-instrument {
   page-break-before: always !important;
   break-before: page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-footnotes {
-  margin-top: 6px;
+  margin-top: 4px;
+  margin-bottom: 4px;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
 }
-.sv-contract-estrela-do-sul .estrela-capa-footnotes .estrela-footnote,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-footnote,
+.sv-contract-estrela-do-sul .estrela-capa-footnotes .estrela-footnote {
+  font-size: 7.5pt !important;
+  line-height: 1.15 !important;
+  margin: 0 0 2px 0 !important;
+  text-align: justify;
+}
 .sv-contract-estrela-do-sul .estrela-clause-footnotes .estrela-footnote {
   font-size: 8pt !important;
   line-height: 1.2 !important;
@@ -505,7 +522,7 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
 </style>
     <div class="sv-contract-document sv-contract-estrela-do-sul" data-contract-model="ESTRELA_DO_SUL" style="font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.35; color: #111; background: #fff; padding: 0; margin: 0; width: 100%; max-width: 680px; box-sizing: border-box; text-align: justify;">
       
-    <div class="estrela-capa">
+    <div class="estrela-capa estrela-capa-page-1">
       
       <h2 style="text-align:center; font-size:13pt; margin: 0 0 2px 0; text-transform:uppercase;">CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA</h2>
       <h3 style="text-align:center; font-size:12pt; margin: 0 0 6px 0; text-transform:uppercase;">CHACREAMENTO: Chacreamento Estrela Do Sul</h3>
@@ -581,23 +598,10 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
 
       <div class="estrela-capa-section-4">
         <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 4px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
-        <table class="estrela-table estrela-object-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin:0 0 6px 0;">
-          <colgroup><col class="estrela-col-info" style="width:33%;"/><col class="estrela-col-detail" style="width:67%;"/></colgroup>
-          <thead>
-          <tr><th style="border:1px solid #111; padding:2px 4px; text-align:left;"><div class="estrela-td-keep">ITEM</div></th><th style="border:1px solid #111; padding:2px 4px; text-align:left;"><div class="estrela-td-keep">Detalhamento</div></th></tr>
-          </thead>
-        </table>
-      </div>
-      <div class="estrela-capa-footnotes">
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>2</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelo possivel comprador ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de R$ 1.500,00 (mil e quinhentos reais).</p>
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
       </div>
     </div>
       
-    <div class="estrela-infra-page">
-      
+    <div class="estrela-capa-page-2 estrela-infra-page">
       
     <div class="estrela-capa-annex-table">
       <table class="estrela-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin: 4px 0 6px 0;">
@@ -609,6 +613,12 @@ body:has(.sv-contract-estrela-do-sul .sv-esign-stamp) .sv-cert-official .sv-cert
         </tbody>
       </table>
     </div>
+      <div class="estrela-capa-footnotes">
+        <p class="estrela-footnote"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), para devido a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
+        <p class="estrela-footnote"><sup>2</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pelo possivel comprador ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio, em outras oportunidades, podendo ser aplicado como indenização pré-fixada.</p>
+        <p class="estrela-footnote"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de R$ 1.500,00 (mil e quinhentos reais).</p>
+        <p class="estrela-footnote"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
+      </div>
       
     <div class="estrela-capa-signatures" data-estrela-sign-block="capa">
       

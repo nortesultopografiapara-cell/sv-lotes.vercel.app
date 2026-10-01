@@ -135,7 +135,9 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table th,
 .sv-contract-estrela-do-sul .estrela-capa .estrela-table td,
 .sv-contract-estrela-do-sul .estrela-infra-page .estrela-table th,
-.sv-contract-estrela-do-sul .estrela-infra-page .estrela-table td {
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-table td,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-table th,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-table td {
   padding-top: 6px !important;
   padding-bottom: 7px !important;
   padding-left: 5px !important;
@@ -184,7 +186,8 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   overflow: visible !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa .estrela-td-keep,
-.sv-contract-estrela-do-sul .estrela-infra-page .estrela-td-keep {
+.sv-contract-estrela-do-sul .estrela-infra-page .estrela-td-keep,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-td-keep {
   line-height: 1.18 !important;
   padding-top: 1px !important;
   padding-bottom: 2px !important;
@@ -195,26 +198,32 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
 }
+.sv-contract-estrela-do-sul .estrela-capa-page-1 {
+  page-break-after: always !important;
+  break-after: page !important;
+}
 .sv-contract-estrela-do-sul .estrela-capa-section-4-title {
-  page-break-after: avoid !important;
-  break-after: avoid-page !important;
+  page-break-after: auto !important;
+  break-after: auto !important;
   font-size: 9pt !important;
-  margin: 0 0 4px 0 !important;
+  margin: 8px 0 0 0 !important;
   line-height: 1.25 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-annex-table {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
+  margin: 0 0 6px 0 !important;
 }
-.sv-contract-estrela-do-sul .estrela-capa .estrela-capa-annex-table .estrela-table {
-  margin: 2px 0 10px 0 !important;
+.sv-contract-estrela-do-sul .estrela-capa .estrela-capa-annex-table .estrela-table,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-capa-annex-table .estrela-table {
+  margin: 0 0 6px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures {
   page-break-inside: avoid !important;
   break-inside: avoid-page !important;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  margin-top: 16px;
+  margin-top: 4px;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-signatures {
   page-break-inside: auto !important;
@@ -224,22 +233,22 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   margin-top: 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .contract-closing-date {
-  margin-top: 8px !important;
+  margin-top: 6px !important;
   margin-bottom: 0 !important;
-  padding-bottom: 42px !important;
+  padding-bottom: 8px !important;
   font-size: 9pt !important;
-  line-height: 1.35 !important;
+  line-height: 1.3 !important;
   page-break-after: avoid !important;
   break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 48px !important;
+  row-gap: 12px !important;
   column-gap: 24px !important;
-  padding-top: 10px !important;
+  padding-top: 2px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 22px auto !important;
+  margin: 0 auto 6px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;
@@ -250,38 +259,46 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-slot,
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-slot {
   margin-bottom: 0 !important;
-  padding-bottom: 8px !important;
+  padding-bottom: 2px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p {
   font-size: 9pt !important;
-  line-height: 1.3 !important;
+  line-height: 1.2 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="text-transform: uppercase"] {
-  margin: 8px 0 4px 0 !important;
+  margin: 4px 0 2px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures p[style*="font-weight: bold"]:not([style*="text-transform: uppercase"]) {
-  margin: 2px 0 3px 0 !important;
+  margin: 1px 0 2px 0 !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-doc {
   margin: 0 !important;
-  padding-bottom: 4px !important;
+  padding-bottom: 1px !important;
 }
+.sv-contract-estrela-do-sul .estrela-capa-page-2,
 .sv-contract-estrela-do-sul .estrela-infra-page {
-  page-break-before: always !important;
-  break-before: page !important;
+  page-break-before: auto !important;
+  break-before: auto !important;
 }
 .sv-contract-estrela-do-sul .estrela-instrument {
   page-break-before: always !important;
   break-before: page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-footnotes {
-  margin-top: 6px;
+  margin-top: 4px;
+  margin-bottom: 4px;
   page-break-before: avoid !important;
   break-before: avoid-page !important;
-  page-break-inside: avoid !important;
-  break-inside: avoid-page !important;
+  page-break-inside: auto !important;
+  break-inside: auto !important;
 }
-.sv-contract-estrela-do-sul .estrela-capa-footnotes .estrela-footnote,
+.sv-contract-estrela-do-sul .estrela-capa-page-2 .estrela-footnote,
+.sv-contract-estrela-do-sul .estrela-capa-footnotes .estrela-footnote {
+  font-size: 7.5pt !important;
+  line-height: 1.15 !important;
+  margin: 0 0 2px 0 !important;
+  text-align: justify;
+}
 .sv-contract-estrela-do-sul .estrela-clause-footnotes .estrela-footnote {
   font-size: 8pt !important;
   line-height: 1.2 !important;

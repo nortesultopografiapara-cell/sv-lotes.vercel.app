@@ -132,7 +132,7 @@ assert(
   'CSS: 2º bloco usa espaço restante (não é indivisível como pack)',
 );
 assert(cssRuleFor('.contract-clause').includes('page-break-inside: auto'), 'CSS: cláusula enorme não é avoid global');
-assert(cssRuleFor('.estrela-capa-section-4-title').includes('page-break-after: avoid'), 'CSS: título segurança + tabela');
+assert(cssRuleFor('.estrela-capa-section-4-title').includes('page-break-after: auto'), 'CSS: título 4 permanece na página 1');
 assert(css.includes('padding-top: 5px !important'), 'CSS: padding-top das células');
 assert(css.includes('padding-bottom: 5px !important'), 'CSS: padding-bottom das células');
 assert(css.includes('vertical-align: middle !important'), 'CSS: vertical-align das células');
@@ -175,15 +175,20 @@ assert(html.includes('class="estrela-capa-signatures"'), 'wrapper capa signature
 assert(html.includes('class="contract-closing-and-signatures--estrela"'), 'wrapper instrumento signatures');
 assert(html.includes('class="signature-grid signature-grid--estrela"'), 'grade de signatários');
 
-const capaIdx = html.indexOf('class="estrela-capa"');
+assert(html.includes('class="estrela-capa estrela-capa-page-1"'), 'Capa Resumo página 1');
+assert(html.includes('class="estrela-capa-page-2 estrela-infra-page"'), 'Capa Resumo página 2');
+
+const capaIdx = html.indexOf('class="estrela-capa estrela-capa-page-1"');
 const annexIdx = html.indexOf('4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS');
 const capaSignIdx = html.indexOf('data-estrela-sign-block="capa"');
 const instrumentIdx = html.indexOf('class="estrela-instrument"');
 const instSignIdx = html.indexOf('data-estrela-sign-block="instrumento"');
-const infraIdx = html.indexOf('class="estrela-infra-page"');
-assert(capaIdx < annexIdx && annexIdx < infraIdx && infraIdx < capaSignIdx && capaSignIdx < instrumentIdx && instrumentIdx < instSignIdx,
-  'Capa Resumo → item 4 → página infraestrutura → 1º bloco → instrumento → 2º bloco');
-assert(cssRuleFor('.estrela-infra-page').includes('page-break-before: always'), 'infraestrutura começa em página nova');
+const infraIdx = html.indexOf('class="estrela-capa-page-2 estrela-infra-page"');
+const notesIdx = html.indexOf('class="estrela-capa-footnotes"');
+assert(capaIdx < annexIdx && annexIdx < infraIdx && infraIdx < notesIdx && notesIdx < capaSignIdx && capaSignIdx < instrumentIdx && instrumentIdx < instSignIdx,
+  'Pág.1 capa → item 4 → pág.2 infra+notas+assinaturas → instrumento');
+assert(cssRuleFor('.estrela-capa-page-1').includes('page-break-after: always'), 'página 1 da capa fecha com quebra explícita');
+assert(cssRuleFor('.estrela-capa-page-2').includes('page-break-before: auto'), 'página 2 não força quebra extra após a página 1');
 assert(cssRuleFor('.estrela-instrument').includes('page-break-before: always'), 'instrumento começa em página nova');
 assert(cssRuleFor('.estrela-capa').includes('font-size: 9pt'), 'CSS: Capa Resumo em 9pt');
 assert(
@@ -198,16 +203,16 @@ assert(
 assert(!cssRuleFor('.estrela-instrument').includes('font-size: 9pt'), 'CSS: instrumento não herda 9pt da Capa');
 assert(css.includes('font-size: 11pt'), 'CSS: instrumento permanece 11pt');
 assert(
-  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 48px'),
-  'CSS: 1º bloco físico usa o espaço livre da página 2',
+  cssRuleFor('.estrela-capa-signatures .signature-grid--estrela').includes('row-gap: 12px'),
+  'CSS: assinaturas da capa compactas para caber na página 2',
 );
 assert(
-  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 42px'),
-  'CSS: data da Capa afastada da primeira fileira',
+  cssRuleFor('.estrela-capa-signatures .contract-closing-date').includes('padding-bottom: 8px'),
+  'CSS: data da Capa próxima do bloco de assinaturas',
 );
 assert(
-  cssRuleFor('.estrela-capa-signatures .signature-line').includes('margin: 0 auto 22px auto'),
-  'CSS: linha física afastada do nome/CPF',
+  cssRuleFor('.estrela-capa-signatures .signature-line').includes('margin: 0 auto 6px auto'),
+  'CSS: linha física compacta na página 2',
 );
 assert(
   cssRuleFor('.estrela-closing-statement').includes('page-break-after: avoid'),
@@ -231,8 +236,12 @@ assert(
   'CSS: tabela da Capa não sobe sobre o heading',
 );
 assert(
-  cssRuleFor('.estrela-capa-footnotes').includes('page-break-before: avoid'),
-  'CSS: notas 1–4 tentam permanecer na capa',
+  cssRuleFor('.estrela-capa-footnotes').includes('page-break-inside: auto'),
+  'CSS: notas 1–4 não ocupam página exclusiva',
+);
+assert(
+  fs.readFileSync(path.join(process.cwd(), 'lib', 'contractPaginationEngine.ts'), 'utf8').includes('reportEstrelaCapaTwoPageOverflow'),
+  'html2pdf mede overflow da capa Estrela',
 );
 assert(css.includes(':has(.sv-esign-stamp)'), 'CSS: pack eletrônico detecta selos');
 assert(

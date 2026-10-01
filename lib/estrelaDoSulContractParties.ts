@@ -127,7 +127,7 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
       }`;
 
   return `
-    <div class="estrela-capa">
+    <div class="estrela-capa estrela-capa-page-1">
       ${buildEstrelaDoSulLogoHtml(ctx)}
       <h2 style="text-align:center; font-size:13pt; margin: 0 0 2px 0; text-transform:uppercase;">${escEstrelaHtml(ESTRELA_DO_SUL_COVER_TITLE)}</h2>
       <h3 style="text-align:center; font-size:12pt; margin: 0 0 6px 0; text-transform:uppercase;">CHACREAMENTO: ${escEstrelaHtml(ctx.enterpriseName)}</h3>
@@ -188,18 +188,6 @@ export function buildEstrelaDoSulCapaHtml(ctx: EstrelaDoSulContractContext): str
 
       <div class="estrela-capa-section-4">
         <p class="estrela-capa-section-4-title" style="font-weight:bold; margin: 0 0 4px 0;">4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS<sup>4</sup></p>
-        <table class="estrela-table estrela-object-table" style="width:100%; border-collapse:collapse; font-size:10.5pt; margin:0 0 6px 0;">
-          ${objectTableCols()}
-          <thead>
-          <tr>${th('ITEM')}${th('Detalhamento')}</tr>
-          </thead>
-        </table>
-      </div>
-      <div class="estrela-capa-footnotes">
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>1</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_1)}</p>
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>2</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_2)}</p>
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>3</sup> ${escEstrelaHtml(estrelaCoverNote3(ctx))}</p>
-        <p class="estrela-footnote" style="font-size:8pt; margin: 0 0 3px 0;"><sup>4</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_4)}</p>
       </div>
     </div>`;
 }
@@ -213,9 +201,14 @@ function estrelaCoverNote3(ctx: EstrelaDoSulContractContext): string {
 
 export function buildEstrelaDoSulInfraPageHtml(ctx: EstrelaDoSulContractContext): string {
   return `
-    <div class="estrela-infra-page">
-      ${buildEstrelaDoSulLogoHtml(ctx)}
+    <div class="estrela-capa-page-2 estrela-infra-page">
       ${buildEstrelaDoSulAnnexHtml(ctx)}
+      <div class="estrela-capa-footnotes">
+        <p class="estrela-footnote"><sup>1</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_1)}</p>
+        <p class="estrela-footnote"><sup>2</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_2)}</p>
+        <p class="estrela-footnote"><sup>3</sup> ${escEstrelaHtml(estrelaCoverNote3(ctx))}</p>
+        <p class="estrela-footnote"><sup>4</sup> ${escEstrelaHtml(ESTRELA_COVER_NOTE_4)}</p>
+      </div>
       ${buildEstrelaDoSulSignaturesHtml(ctx, 'capa')}
     </div>`;
 }

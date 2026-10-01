@@ -588,20 +588,26 @@ function assertBefore(htmlSrc: string, first: string, second: string, msg: strin
 assertBefore(
   onlyCompany,
   '4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS',
-  'class="estrela-infra-page"',
-  'item 4 na capa; infraestrutura na página seguinte',
+  'class="estrela-capa-page-2 estrela-infra-page"',
+  'item 4 na página 1; infraestrutura na página 2',
 );
 assertBefore(
   onlyCompany,
-  'class="estrela-infra-page"',
+  'class="estrela-capa-page-2 estrela-infra-page"',
   'DOCUMENTO DE REFERÊNCIA DA OBRA',
   'página 2 começa pela tabela de infraestrutura',
 );
 assertBefore(
   onlyCompany,
   'DOCUMENTO DE REFERÊNCIA DA OBRA',
+  'class="estrela-capa-footnotes"',
+  'notas 1–4 vêm depois da tabela, na mesma página 2',
+);
+assertBefore(
+  onlyCompany,
+  'class="estrela-capa-footnotes"',
   'data-estrela-sign-block="capa"',
-  'primeiro bloco de assinaturas fecha a página de infraestrutura',
+  'assinaturas fecham a página 2 da capa',
 );
 assertBefore(
   onlyCompany,
@@ -621,6 +627,8 @@ assertBefore(
   'data-estrela-sign-block="instrumento"',
   'segundo bloco de assinaturas no encerramento',
 );
+assert(onlyCompany.includes('class="estrela-capa estrela-capa-page-1"'), 'Capa Resumo página 1');
+assert(onlyCompany.includes('class="estrela-capa-page-2 estrela-infra-page"'), 'Capa Resumo página 2');
 assert(onlyCompany.includes('estrela-infra-page'), 'página 2 de infraestrutura isolada da capa');
 assert(onlyCompany.includes('COMPRADOR 2'), 'slot COMPRADOR 2 mesmo sem cônjuge');
 assert(

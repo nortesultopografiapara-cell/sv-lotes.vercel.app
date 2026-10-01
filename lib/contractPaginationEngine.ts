@@ -10,7 +10,10 @@
  * 3. Compactação leve de espaçamentos — sem alterar tipografia jurídica.
  * 4. Nova página só quando o bloco não cabe no espaço restante.
  */
-import { ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX } from './estrelaDoSulHtml2PdfPagination';
+import {
+  ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX,
+  reportEstrelaCapaTwoPageOverflow,
+} from './estrelaDoSulHtml2PdfPagination';
 
 /**
  * Margens Chromium/html2pdf alinhadas à altura real do header/footer template.
@@ -869,6 +872,18 @@ export const CONTRACT_PAGINATION_MEASURE_SCRIPT = `
   const estrelaInstrument = root.querySelector('.contract-closing-and-signatures--estrela');
   const estrelaElectronic = !!(estrelaRoot && root.querySelector('.sv-contract-estrela-do-sul .sv-esign-stamp'));
   const PAGE_H = estrelaRoot ? ESTRELA_PAGE_H : CLASSIC_PAGE_H;
+  const capa1 = root.querySelector('.estrela-capa-page-1');
+  const capa2 = root.querySelector('.estrela-capa-page-2');
+  if (capa1 && capa2) {
+    const h1 = Math.ceil(capa1.getBoundingClientRect().height || 0);
+    const h2 = Math.ceil(capa2.getBoundingClientRect().height || 0);
+    const capaOverflow = h1 > ESTRELA_PAGE_H + 12 || h2 > ESTRELA_PAGE_H + 12;
+    capa1.setAttribute('data-estrela-capa-overflow', capaOverflow ? 'true' : 'false');
+    capa2.setAttribute('data-estrela-capa-overflow', capaOverflow ? 'true' : 'false');
+    if (capaOverflow) {
+      console.warn('[ESTRELA_CAPA] Capa Resumo excedeu 2 páginas', { h1, h2, pageH: ESTRELA_PAGE_H });
+    }
+  }
   const pack = estrelaInstrument || root.querySelector('.contract-signature-pack, .contract-closing-and-signatures--recanto, .contract-closing-and-signatures--araguaia');
   const sig = estrelaInstrument
     ? estrelaInstrument.querySelector('.contract-signatures, .sv2-signatures')
@@ -1178,6 +1193,9 @@ export function prepareContractHtmlElementForPagination(
   }
 
   const result = applyContractPaginationBreaksToElement(element);
+  if (element.querySelector('.sv-contract-estrela-do-sul')) {
+    reportEstrelaCapaTwoPageOverflow(element);
+  }
 
   // Restaura layout imprimível — html2canvas captura a caixa visível do elemento.
   restoreContractElementStylesForHtml2PdfCapture(element);
