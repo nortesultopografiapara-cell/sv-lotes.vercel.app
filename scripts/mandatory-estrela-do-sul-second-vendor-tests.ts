@@ -8,6 +8,8 @@ import {
   parseContractSecondVendorJson,
 } from '../lib/contractSecondVendor';
 import { buildEstrelaDoSulEsignVendorPartyInputs } from '../lib/estrelaDoSulContractEsign';
+import { captureLfContractSnapshotForSale } from '../lib/lfImoveisContractConfig';
+import { LF_CONTRACT_SNAPSHOT_COLUMN } from '../lib/lfImoveisContractSnapshot';
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FALHOU — ${msg}`);
@@ -78,8 +80,52 @@ const htmlFull = generateContractHTML({
 });
 assert(htmlFull.includes('Antonio Ferreira Silva'), 'segundo vendedor completo no HTML');
 assert(htmlFull.includes('Será repassado ao primeiro vendedor'), 'narrativa de parceria só com segundo vendedor');
-assert(htmlFull.includes('30%') && htmlFull.includes('70%'), 'narrativa 30/70 com segundo vendedor');
+assert(htmlFull.includes('30%') && htmlFull.includes('70%'), 'legado sem config do projeto → fallback 30/70');
 assert(!htmlFull.includes('revenueSplit') && !htmlFull.includes('Split de Recebimentos'), 'não cita split financeiro');
+
+const project4060 = {
+  ...base.project,
+  lf_contract_config_json: {
+    participation: { firstVendorPercent: 40, secondVendorPercent: 60 },
+  },
+};
+const html4060 = generateContractHTML({
+  tenant: { ...company, contract_second_vendor_json: complete },
+  ...base,
+  project: project4060,
+});
+assert(
+  html4060.includes('40% do valor e 60% ao segundo vendedor'),
+  'empreendimento 40/60 sem snapshot → HTML 40/60',
+);
+assert(
+  !html4060.includes('30% do valor e 70% ao segundo vendedor'),
+  'config válida não cai no fallback 30/70',
+);
+
+const snap4060 = captureLfContractSnapshotForSale({
+  project: project4060,
+  company,
+});
+const htmlFrozen = generateContractHTML({
+  tenant: { ...company, contract_second_vendor_json: complete },
+  ...base,
+  project: {
+    ...base.project,
+    lf_contract_config_json: {
+      participation: { firstVendorPercent: 50, secondVendorPercent: 50 },
+    },
+  },
+  sale: { ...sale, [LF_CONTRACT_SNAPSHOT_COLUMN]: snap4060 },
+});
+assert(
+  htmlFrozen.includes('40% do valor e 60% ao segundo vendedor'),
+  'snapshot 40/60 prevalece sobre empreendimento 50/50',
+);
+assert(
+  !htmlFrozen.includes('50% do valor e 50% ao segundo vendedor'),
+  'não relê percentuais atuais do empreendimento',
+);
 
 const vendors = buildEstrelaDoSulEsignVendorPartyInputs({
   company: { ...company, contract_second_vendor_json: complete },
