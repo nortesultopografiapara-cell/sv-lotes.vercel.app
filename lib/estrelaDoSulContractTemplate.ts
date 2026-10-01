@@ -242,13 +242,16 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   break-after: avoid-page !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-grid--estrela {
-  row-gap: 12px !important;
-  column-gap: 24px !important;
-  padding-top: 2px !important;
+  row-gap: 0 !important;
+  column-gap: 28px !important;
+  padding-top: 10px !important;
+}
+.sv-contract-estrela-do-sul .estrela-capa-signatures .estrela-sign-col {
+  gap: 36px !important;
 }
 .sv-contract-estrela-do-sul .estrela-capa-signatures .signature-line {
   display: block !important;
-  margin: 0 auto 6px auto !important;
+  margin: 0 auto 8px auto !important;
   padding: 0 !important;
   height: 1px !important;
   border: 0 !important;
@@ -324,13 +327,22 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 24px;
-  row-gap: 16px;
+  row-gap: 0;
   align-items: start;
-  justify-items: center;
+  justify-items: stretch;
   width: 100%;
   page-break-inside: auto !important;
   break-inside: auto !important;
 }
+.sv-contract-estrela-do-sul .estrela-sign-col {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  min-width: 0;
+}
+.sv-contract-estrela-do-sul .estrela-sign-col--left { grid-column: 1; }
+.sv-contract-estrela-do-sul .estrela-sign-col--right { grid-column: 2; }
 .sv-contract-estrela-do-sul .contract-closing-date {
   page-break-after: avoid !important;
   break-after: avoid-page !important;
@@ -342,10 +354,6 @@ ${buildContractA4WidthSafeCss('.sv-contract-document.sv-contract-estrela-do-sul,
   break-inside: avoid-page !important;
   overflow: visible !important;
 }
-.sv-contract-estrela-do-sul .signature-slot-buyer { grid-column: 1; }
-.sv-contract-estrela-do-sul .signature-slot-vendor-1 { grid-column: 2; }
-.sv-contract-estrela-do-sul .signature-slot-witness-1 { grid-column: 1; }
-.sv-contract-estrela-do-sul .signature-slot-witness-2 { grid-column: 2; }
 .sv-contract-estrela-do-sul .signature-grid--estrela .estrela-sign-doc {
   white-space: nowrap !important;
   overflow: visible !important;

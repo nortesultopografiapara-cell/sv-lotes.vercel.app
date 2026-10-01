@@ -38,6 +38,10 @@ function objectTableCols(): string {
   return `<colgroup><col class="estrela-col-info" style="width:33%;"/><col class="estrela-col-detail" style="width:67%;"/></colgroup>`;
 }
 
+function sameSignatureLabel(a: string, b: string): boolean {
+  return a.trim().toUpperCase() === b.trim().toUpperCase();
+}
+
 function buildSignatureSlot(params: {
   role: string;
   partyRole?: 'VENDOR' | 'BUYER' | 'SPOUSE' | 'WITNESS';
@@ -45,7 +49,10 @@ function buildSignatureSlot(params: {
   docLines?: string[];
   extraClass?: string;
 }): string {
-  const name = escEstrelaHtml(params.name || '');
+  const role = (params.role || '').trim();
+  const rawName = (params.name || '').trim();
+  const name =
+    rawName && !sameSignatureLabel(role, rawName) ? escEstrelaHtml(rawName) : '';
   const docs = (params.docLines || [])
     .map((line) => escEstrelaHtml(line))
     .filter(Boolean)
@@ -58,7 +65,7 @@ function buildSignatureSlot(params: {
   return `
       <div class="${className}"${roleAttr} style="${SLOT_STYLE}">
         <div class="signature-line" style="${LINE_STYLE}"></div>
-        <p style="${ROLE_STYLE}">${escEstrelaHtml(params.role)}</p>
+        <p style="${ROLE_STYLE}">${escEstrelaHtml(role)}</p>
         ${name ? `<p style="${NAME_STYLE}">${name}</p>` : ''}
         ${docs}
       </div>`;
@@ -342,24 +349,23 @@ function buildEstrelaSignatureGrid(ctx: EstrelaDoSulContractContext): string {
   const companySlot = buildSignatureSlot({
     role: ctx.companyName || 'VENDEDOR(A)',
     partyRole: 'VENDOR',
-    name: ctx.companyName,
     docLines: [ctx.companyCnpj ? `CNPJ ${ctx.companyCnpj}` : ''].filter(Boolean),
     extraClass: 'signature-slot-vendor-1',
   });
-  const spouseSlot = buildSignatureSlot({
-    role: 'COMPRADOR 2',
-    partyRole: ctx.hasConjuge ? 'SPOUSE' : undefined,
-    name: ctx.hasConjuge ? ctx.conjugeNome : '',
-    docLines: [
-      ctx.hasConjuge && ctx.conjugeCpf ? `CPF nº ${ctx.conjugeCpf}` : 'CPF nº',
-    ].filter(Boolean),
-    extraClass: ctx.hasConjuge ? 'signature-slot-spouse' : 'signature-slot-buyer-2',
-  });
+  const spouseSlot =
+    ctx.hasConjuge && (ctx.conjugeNome || '').trim()
+      ? buildSignatureSlot({
+          role: 'COMPRADOR 2',
+          partyRole: 'SPOUSE',
+          name: ctx.conjugeNome,
+          docLines: [ctx.conjugeCpf ? `CPF nº ${ctx.conjugeCpf}` : ''].filter(Boolean),
+          extraClass: 'signature-slot-spouse',
+        })
+      : '';
   const secondSlot = ctx.hasSecondVendor
     ? buildSignatureSlot({
         role: ctx.secondVendor.name || 'VENDEDOR(A)',
         partyRole: 'VENDOR',
-        name: ctx.secondVendor.name,
         docLines: [
           ctx.secondVendor.cpf
             ? `CPF nº ${formatCpfCnpj(ctx.secondVendor.cpf) || ctx.secondVendor.cpf}`
@@ -382,12 +388,16 @@ function buildEstrelaSignatureGrid(ctx: EstrelaDoSulContractContext): string {
   });
   return `
         <div class="signature-grid signature-grid--estrela">
-          ${buyerSlot}
-          ${companySlot}
-          ${spouseSlot}
-          ${secondSlot}
-          ${witness1}
-          ${witness2}
+          <div class="estrela-sign-col estrela-sign-col--left">
+            ${buyerSlot}
+            ${spouseSlot}
+            ${witness1}
+          </div>
+          <div class="estrela-sign-col estrela-sign-col--right">
+            ${companySlot}
+            ${secondSlot}
+            ${witness2}
+          </div>
         </div>`;
 }
 

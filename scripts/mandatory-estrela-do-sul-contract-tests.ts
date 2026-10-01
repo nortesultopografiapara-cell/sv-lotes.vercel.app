@@ -531,6 +531,10 @@ assert(
   'e-sign: SPOUSE na Capa e no instrumento',
 );
 assert(withSpouse.includes('COMPRADOR 2'), 'cônjuge visual como COMPRADOR 2');
+assert(
+  (withSpouse.match(/COMPRADOR 2/g) || []).length === 2,
+  'COMPRADOR 2 na Capa Resumo e no instrumento',
+);
 assert(withSpouse.includes('CÔNJUGE ANUENTE'), 'qualificação CÔNJUGE ANUENTE no preâmbulo');
 assert(
   withSpouse.includes('neste ato com a anuência de seu cônjuge'),
@@ -585,6 +589,82 @@ function assertBefore(htmlSrc: string, first: string, second: string, msg: strin
   assert(a >= 0 && b >= 0 && a < b, msg);
 }
 
+function extractSignBlock(src: string, kind: 'capa' | 'instrumento'): string {
+  const start = src.indexOf(`data-estrela-sign-block="${kind}"`);
+  if (start < 0) return '';
+  if (kind === 'capa') {
+    const end = src.indexOf('class="estrela-instrument"');
+    return end > start ? src.slice(start, end) : src.slice(start);
+  }
+  return src.slice(start);
+}
+
+function countLiteral(hay: string, needle: string): number {
+  if (!needle) return 0;
+  return hay.split(needle).length - 1;
+}
+
+function assertSignatureBlock(
+  src: string,
+  kind: 'capa' | 'instrumento',
+  opts: {
+    companyName: string;
+    buyerName: string;
+    secondVendor?: string;
+    spouseName?: string;
+  },
+) {
+  const block = extractSignBlock(src, kind);
+  const label = kind === 'capa' ? 'Capa Resumo' : 'instrumento';
+  assert(Boolean(block), `${label}: bloco de assinatura presente`);
+  assert(block.includes('estrela-sign-col--left'), `${label}: coluna esquerda`);
+  assert(block.includes('estrela-sign-col--right'), `${label}: coluna direita`);
+  assert(block.includes('COMPRADOR 1'), `${label}: COMPRADOR 1`);
+  assert(block.includes('Joao Comprador Da Silva') || block.includes(opts.buyerName), `${label}: nome do comprador 1`);
+  assert(countLiteral(block, opts.companyName) === 1, `${label}: vendedor 1 uma vez`);
+  if (opts.secondVendor) {
+    assert(countLiteral(block, opts.secondVendor) === 1, `${label}: vendedor 2 uma vez`);
+    const right = block.slice(block.indexOf('estrela-sign-col--right'));
+    assert(
+      right.indexOf(opts.companyName) < right.indexOf(opts.secondVendor) &&
+        right.indexOf(opts.secondVendor) < right.indexOf('TESTEMUNHA 2'),
+      `${label}: coluna direita empresa → segundo vendedor → Testemunha 2`,
+    );
+  }
+  if (opts.spouseName) {
+    assert(block.includes('COMPRADOR 2'), `${label}: COMPRADOR 2`);
+    assert(block.includes(opts.spouseName), `${label}: nome do comprador 2`);
+    const spouseSlice = block.slice(block.indexOf('COMPRADOR 2'), block.indexOf('TESTEMUNHA 1'));
+    assert(/CPF nº\s+\d/.test(spouseSlice.replace(/\u00a0/g, ' ')), `${label}: CPF do comprador 2`);
+    const left = block.slice(
+      block.indexOf('estrela-sign-col--left'),
+      block.indexOf('estrela-sign-col--right'),
+    );
+    assert(
+      left.indexOf('COMPRADOR 1') < left.indexOf('COMPRADOR 2') &&
+        left.indexOf('COMPRADOR 2') < left.indexOf('TESTEMUNHA 1'),
+      `${label}: coluna esquerda Comprador 1 → 2 → Testemunha 1`,
+    );
+  } else {
+    assert(!block.includes('COMPRADOR 2'), `${label}: sem COMPRADOR 2`);
+    const left = block.slice(
+      block.indexOf('estrela-sign-col--left'),
+      block.indexOf('estrela-sign-col--right'),
+    );
+    assert(
+      left.indexOf('COMPRADOR 1') < left.indexOf('TESTEMUNHA 1'),
+      `${label}: coluna esquerda Comprador 1 → Testemunha 1`,
+    );
+  }
+  assert(block.includes('TESTEMUNHA 1') && block.includes('TESTEMUNHA 2'), `${label}: testemunhas`);
+  const w1Slot = block.slice(block.indexOf('TESTEMUNHA 1'), block.indexOf('TESTEMUNHA 1') + 420);
+  const w2Slot = block.slice(block.indexOf('TESTEMUNHA 2'), block.indexOf('TESTEMUNHA 2') + 420);
+  assert(w1Slot.includes('CPF nº:'), `${label}: testemunha 1 com campo CPF manual`);
+  assert(w2Slot.includes('CPF nº:'), `${label}: testemunha 2 com campo CPF manual`);
+  assert(!w1Slot.includes('font-size: 11pt'), `${label}: testemunha 1 sem nome inventado`);
+  assert(!w2Slot.includes('font-size: 11pt'), `${label}: testemunha 2 sem nome inventado`);
+}
+
 assertBefore(
   onlyCompany,
   '4. DOS ASPECTOS DE SEGURANÇA E CONFLITOS',
@@ -630,7 +710,7 @@ assertBefore(
 assert(onlyCompany.includes('class="estrela-capa estrela-capa-page-1"'), 'Capa Resumo página 1');
 assert(onlyCompany.includes('class="estrela-capa-page-2 estrela-infra-page"'), 'Capa Resumo página 2');
 assert(onlyCompany.includes('estrela-infra-page'), 'página 2 de infraestrutura isolada da capa');
-assert(onlyCompany.includes('COMPRADOR 2'), 'slot COMPRADOR 2 mesmo sem cônjuge');
+assert(!onlyCompany.includes('COMPRADOR 2'), 'sem cônjuge não renderiza COMPRADOR 2');
 assert(
   (onlyCompany.match(/class="estrela-closing-statement"/g) || []).length === 1,
   'fecho "justas e contratadas" só no instrumento',
@@ -643,6 +723,35 @@ assert(
   (onlyCompany.match(/TESTEMUNHA 1/g) || []).length === 2,
   'testemunha 1 na capa e no instrumento',
 );
+
+assertSignatureBlock(onlyCompany, 'capa', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+});
+assertSignatureBlock(onlyCompany, 'instrumento', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+});
+assertSignatureBlock(withSecond, 'capa', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+  secondVendor: 'Antonio Ferreira Silva',
+});
+assertSignatureBlock(withSecond, 'instrumento', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+  secondVendor: 'Antonio Ferreira Silva',
+});
+assertSignatureBlock(withSpouse, 'capa', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+  spouseName: 'Maria Souza Anuente',
+});
+assertSignatureBlock(withSpouse, 'instrumento', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+  spouseName: 'Maria Souza Anuente',
+});
 
 const fullHomolog = html({
   tenant: { contract_second_vendor_json: SECOND_VENDOR },
@@ -674,6 +783,18 @@ assert(
   (fullHomolog.match(/data-party-role="SPOUSE"/g) || []).length === 2,
   'homologação: e-sign SPOUSE x 2 blocos',
 );
+assertSignatureBlock(fullHomolog, 'capa', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+  secondVendor: 'Antonio Ferreira Silva',
+  spouseName: 'Maria Souza Anuente',
+});
+assertSignatureBlock(fullHomolog, 'instrumento', {
+  companyName: 'L.F. IMOVEIS LTDA',
+  buyerName: 'Joao Comprador da Silva',
+  secondVendor: 'Antonio Ferreira Silva',
+  spouseName: 'Maria Souza Anuente',
+});
 
 {
   const stamps = [
