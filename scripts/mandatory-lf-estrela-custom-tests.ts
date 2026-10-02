@@ -55,6 +55,11 @@ import {
   extractLfEstrelaHtmlFromDevelopPublishSql,
   sha256Utf8,
 } from './develop/lfEstrelaPublishSqlHtml';
+import {
+  buildProjectCustomContractOptions,
+  formatProjectCustomContractValue,
+  resolveProjectCompanyUuid,
+} from '../lib/projectCustomContractModels';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -551,15 +556,79 @@ assert(
 );
 
 const mapPage = read('app/map/page.tsx');
-assert(mapPage.includes('listPublishedCustomModelsLinkedToProject'), 'GIS carrega CUSTOM vinculados');
+assert(mapPage.includes('queryPublishedCustomModelsLinkedToProject'), 'GIS carrega CUSTOM vinculados');
+assert(mapPage.includes('resolveProjectCompanyUuid'), 'GIS usa a empresa do empreendimento, não o tenant da sessão');
+assert(mapPage.includes("console.info('[CUSTOM CONTRACT MODELS]'"), 'GIS loga diagnóstico CUSTOM no DEVELOP');
 assert(mapPage.includes('persistProjectCustomContractDefault'), 'salvar empreendimento persiste padrão CUSTOM');
 assert(mapPage.includes('parseProjectCustomContractModelId'), 'salvar não grava ccm: em projects.contract_model');
 assert(mapPage.includes('engineContractModelForCustomOverlay'), 'overlay LF preserva motor ESTRELA_DO_SUL');
+assert(
+  !/listPublishedCustomModelsLinkedToProject\(\s*supabase,\s*saasTenantId/.test(mapPage),
+  'GIS não filtra CUSTOM pelo saasTenantId da sessão',
+);
 
 const helpers = read('lib/projectCustomContractModels.ts');
 assert(helpers.includes("catalog_code', 'CUSTOM'"), 'lista só CUSTOM');
+assert(helpers.includes("engine_key', 'custom'"), 'lista só engine custom');
 assert(helpers.includes("status', 'published'"), 'lista só versões publicadas');
 assert(helpers.includes('is_project_default'), 'lista lê vínculo do empreendimento');
+assert(helpers.includes('.eq(\'project_id\', id)'), 'query parte do project_id real');
+
+assert(
+  resolveProjectCompanyUuid({
+    company_id: null,
+    tenant_id: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+  }) === '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+  'legado company_id NULL usa tenant_id UUID',
+);
+assert(
+  resolveProjectCompanyUuid({
+    company_id: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+    tenant_id: 'MASTER-ADMIN',
+  }) === '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+  'company_id UUID tem prioridade sobre tenant_id texto',
+);
+assert(
+  resolveProjectCompanyUuid({ company_id: null, tenant_id: 'MASTER-ADMIN' }) === '',
+  'tenant_id não-UUID não vira empresa',
+);
+
+const mapped = buildProjectCustomContractOptions({
+  projectCompanyUuid: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+  links: [
+    {
+      company_contract_model_id: 'a76f71da-57e7-41b5-8abe-ca022b10de77',
+      is_project_default: false,
+      company_id: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+    },
+  ],
+  models: [
+    {
+      id: 'a76f71da-57e7-41b5-8abe-ca022b10de77',
+      name: 'LF ESTRELA',
+      catalog_code: 'CUSTOM',
+      engine_key: 'custom',
+      status: 'active',
+      company_id: '3052a000-e8b9-43a4-b8ab-91a4392ffcbc',
+    },
+  ],
+  versions: [
+    {
+      model_id: 'a76f71da-57e7-41b5-8abe-ca022b10de77',
+      version: 1,
+      status: 'published',
+    },
+  ],
+});
+assert(mapped.length === 1, 'is_project_default=false não esconde LF ESTRELA');
+assert(mapped[0].id === 'a76f71da-57e7-41b5-8abe-ca022b10de77', 'mapeia o model_id publicado');
+assert(mapped[0].name === 'LF ESTRELA', 'mapeia o nome LF ESTRELA');
+assert(mapped[0].isProjectDefault === false, 'preserva is_project_default=false');
+assert(
+  formatProjectCustomContractValue(mapped[0].id) ===
+    'ccm:a76f71da-57e7-41b5-8abe-ca022b10de77',
+  'value interno ccm:<model_id>',
+);
 
 const publishSql = read('scripts/develop/sql/publish-lf-estrela-v1.develop.sql');
 const generatorSrc = read('scripts/develop/generate-publish-lf-estrela-sql.ts');

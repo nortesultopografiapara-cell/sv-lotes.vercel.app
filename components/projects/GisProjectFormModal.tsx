@@ -222,6 +222,7 @@ export function GisProjectFormModal(props: Props) {
                 <div>
                   <FieldLabel>Modelo de contrato padrão do empreendimento</FieldLabel>
                   <select
+                    data-testid="gis-project-contract-model"
                     value={props.contractModel}
                     onChange={(e) => props.onContractModelChange(e.target.value)}
                     className={FIELD_CLASS}

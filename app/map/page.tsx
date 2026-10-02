@@ -59,12 +59,14 @@ import {
   normalizeSaleContractModel,
   type SaleContractModel,
 } from '@/lib/contractModel';
+import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import {
   engineContractModelForCustomOverlay,
   formatProjectCustomContractValue,
-  listPublishedCustomModelsLinkedToProject,
   parseProjectCustomContractModelId,
   persistProjectCustomContractDefault,
+  queryPublishedCustomModelsLinkedToProject,
+  resolveProjectCompanyUuid,
   type ProjectCustomContractOption,
 } from '@/lib/projectCustomContractModels';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
@@ -598,7 +600,7 @@ export default function MapPage() {
   >([]);
 
   useEffect(() => {
-    if (!isProjectFormOpen || !saasTenantId) return;
+    if (!isProjectFormOpen) return;
     let cancelled = false;
     void fetch('/api/finance/financial-accounts', { credentials: 'include' })
       .then((res) => res.json().catch(() => ({})))
@@ -609,34 +611,47 @@ export default function MapPage() {
       .catch(() => {
         if (!cancelled) setProjectFinancialAccounts([]);
       });
-    void supabase
-      .from('companies')
-      .select('contract_model, contract_second_vendor_json')
-      .eq('id', saasTenantId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
-        setCompanyDefaultContractModel(
-          normalizeSaleContractModel(data?.contract_model),
-        );
-        setCompanySecondVendorJson(data?.contract_second_vendor_json ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCompanyDefaultContractModel('PADRAO');
-          setCompanySecondVendorJson(null);
-        }
-      });
+    if (saasTenantId) {
+      void supabase
+        .from('companies')
+        .select('contract_model, contract_second_vendor_json')
+        .eq('id', saasTenantId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled) return;
+          setCompanyDefaultContractModel(
+            normalizeSaleContractModel(data?.contract_model),
+          );
+          setCompanySecondVendorJson(data?.contract_second_vendor_json ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCompanyDefaultContractModel('PADRAO');
+            setCompanySecondVendorJson(null);
+          }
+        });
+    }
     if (projectFormMode === 'edit' && editingProject?.id) {
       const engineValue = String(editingProject.contract_model || '').trim();
-      void listPublishedCustomModelsLinkedToProject(
+      const projectId = String(editingProject.id);
+      const projectCompanyUuid = resolveProjectCompanyUuid(editingProject);
+      void queryPublishedCustomModelsLinkedToProject(
         supabase,
-        saasTenantId,
-        String(editingProject.id),
-      ).then((rows) => {
+        projectCompanyUuid,
+        projectId,
+      ).then((result) => {
         if (cancelled) return;
-        setProjectCustomContractModels(rows);
-        const defaultCustom = rows.find((row) => row.isProjectDefault);
+        if (isDevelopHomologRuntime()) {
+          console.info('[CUSTOM CONTRACT MODELS]', {
+            projectId,
+            projectCompanyUuid,
+            saasTenantId,
+            rows: result.rows,
+            error: result.error,
+          });
+        }
+        setProjectCustomContractModels(result.rows);
+        const defaultCustom = result.rows.find((row) => row.isProjectDefault);
         if (!defaultCustom) return;
         setNewProjectContractModel((current) =>
           current === engineValue || current === ''
@@ -650,7 +665,7 @@ export default function MapPage() {
     return () => {
       cancelled = true;
     };
-  }, [isProjectFormOpen, saasTenantId, projectFormMode, editingProject?.id]);
+  }, [isProjectFormOpen, saasTenantId, projectFormMode, editingProject]);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
   /** Patch in-place no GISMap após Identificar Frentes (sem refreshKey/fitBounds). */
@@ -2054,9 +2069,7 @@ export default function MapPage() {
             : undefined,
       });
 
-      const companyIdForLink = String(
-        saasTenantId || editingProject.company_id || editingProject.tenant_id || '',
-      );
+      const companyIdForLink = resolveProjectCompanyUuid(editingProject) || String(saasTenantId || '');
       const hadCustomDefault = projectCustomContractModels.some((row) => row.isProjectDefault);
       if (companyIdForLink && (customModelId || hadCustomDefault)) {
         await persistProjectCustomContractDefault(supabase, {
