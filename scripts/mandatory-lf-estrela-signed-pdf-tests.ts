@@ -121,6 +121,14 @@ function testSourceGuards() {
     'ensure NÃO usa skipPaginationMeasure para physical base',
   );
   assert(!ensureSlice.includes('input.html'), 'ensure NÃO recebe HTML para gerar base');
+  assert(
+    signed.includes('LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE'),
+    'sem base física: mensagem explícita de freeze ausente',
+  );
+  assert(
+    signed.includes('[LF PHYSICAL BASE LOOKUP TRACE]'),
+    'lookup loga physicalBaseFound/storagePath/pageCount',
+  );
   const buildStart = signed.indexOf('export async function buildLfEstrelaSignedSaleContractPdf');
   const buildSlice = signed.slice(buildStart);
   assert(
@@ -140,9 +148,25 @@ function testSourceGuards() {
     'P10 não usa pageIndex relativo em PDF de tamanho qualquer',
   );
   assert(pdf.includes('skipMeasure'), 'Chromium LF não executa measure/repaginação');
-  assert(page.includes('freezeLfEstrelaPhysicalPdfFromJsPdf'), 'Contratos congela PDF físico html2pdf');
+  assert(page.includes('freezeLfEstrelaPhysicalPdfBlob'), 'Contratos congela PDF físico html2pdf');
+  assert(page.includes('handleBaixarPDFAssinado'), 'Baixar PDF Assinado tem handler próprio');
+  assert(page.includes('[LF PHYSICAL FREEZE TRACE]'), 'TRACE do freeze no browser');
+  const physicalStart = page.indexOf('const handleBaixarPDF =');
+  const signedStart = page.indexOf('const handleBaixarPDFAssinado =');
+  assert(physicalStart > 0 && signedStart > physicalStart, 'handlers físicos e assinados separados');
+  const physicalSlice = page.slice(physicalStart, signedStart);
+  assert(
+    !physicalSlice.includes('/pdf?download=1'),
+    'Baixar PDF físico não chama a rota do PDF assinado',
+  );
+  assert(
+    physicalSlice.includes('freezeLfEstrelaPhysicalPdfBlob'),
+    'Baixar PDF físico envia o mesmo blob ao freeze',
+  );
   assert(page.includes('/physical-pdf'), 'POST freeze no Baixar PDF');
   assert(route.includes('persistLfEstrelaPhysicalPdf'), 'API freeze persiste PDF físico');
+  assert(route.includes('[LF PHYSICAL PDF POST TRACE]'), 'POST /physical-pdf loga TRACE');
+  assert(route.includes('saleDocumentId'), 'POST devolve saleDocumentId');
   assert(
     read('lib/lfEstrelaSignedPdf.ts').includes('LF_ESTRELA_PHYSICAL_BASE'),
     'freeze usa sale_documents LF_ESTRELA_PHYSICAL_BASE',
@@ -475,6 +499,20 @@ function testPhysicalBaseUsesSaleDocumentsNotPdfUrl() {
 }
 
 function testGenerationErrorIsNotSignature404() {
+  const missing = classifySignedPdfGenerationError(
+    new Error('PDF físico homologado ainda não foi congelado.'),
+  );
+  assert(
+    missing.includes('Primeiro gere o PDF físico deste contrato'),
+    'base ausente vira mensagem de UI, não JSON cru',
+  );
+  const zero = classifySignedPdfGenerationError(
+    new Error('Base física LF ESTRELA inválida: esperado 10 páginas, encontrado 0. Gere/congele novamente o PDF físico homologado.'),
+  );
+  assert(
+    zero.includes('Primeiro gere o PDF físico deste contrato'),
+    'encontrado 0 não é tratado como pageCount inválido genérico',
+  );
   const invalid = classifySignedPdfGenerationError(
     new Error(
       'Base física LF ESTRELA inválida: esperado 10 páginas, encontrado 15. Gere/congele novamente o PDF físico homologado.',

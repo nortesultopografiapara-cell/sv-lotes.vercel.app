@@ -879,7 +879,34 @@ export const SaleContractSignatureSection = forwardRef<
               label="Baixar PDF Assinado"
               primary
               onClick={() => {
-                window.location.href = signedPdfDownloadUrl;
+                void (async () => {
+                  try {
+                    const res = await fetch(signedPdfDownloadUrl, {
+                      credentials: 'include',
+                    });
+                    if (!res.ok) {
+                      const payload = (await res.json().catch(() => null)) as {
+                        error?: string;
+                      } | null;
+                      window.alert(
+                        payload?.error ||
+                          'Primeiro gere o PDF físico deste contrato para congelar a versão que será assinada.',
+                      );
+                      return;
+                    }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `contrato-assinado_${contract.contract_number || contract.id}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch {
+                    window.alert(
+                      'Não foi possível baixar o PDF assinado. Tente novamente depois de gerar o PDF físico.',
+                    );
+                  }
+                })();
               }}
             />
           </>

@@ -151,11 +151,23 @@ export async function GET(
         return NextResponse.json(
           {
             error: classified,
+            code: /Primeiro gere o PDF físico/i.test(classified)
+              ? 'PHYSICAL_BASE_MISSING'
+              : undefined,
             gitSha,
-            signedPdfReturn: 'generation_failed',
+            signedPdfReturn: /Primeiro gere o PDF físico/i.test(classified)
+              ? 'physical_base_missing'
+              : 'generation_failed',
             ...routeTrace,
           },
-          { status: 500, headers: deployHeaders('generation_failed') },
+          {
+            status: /Primeiro gere o PDF físico/i.test(classified) ? 409 : 500,
+            headers: deployHeaders(
+              /Primeiro gere o PDF físico/i.test(classified)
+                ? 'physical_base_missing'
+                : 'generation_failed',
+            ),
+          },
         );
       }
     }

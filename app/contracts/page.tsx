@@ -280,23 +280,67 @@ async function fetchContractHtmlFromApi(
   return null;
 }
 
-async function freezeLfEstrelaPhysicalPdfFromJsPdf(
+function downloadPdfBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function freezeLfEstrelaPhysicalPdfBlob(
   contractId: string,
-  pdf: { output: (type: string) => Blob },
-): Promise<void> {
-  try {
-    const blob = pdf.output("blob");
-    if (!blob || blob.size < 8) return;
-    const form = new FormData();
-    form.append("file", blob, "contrato-fisico.pdf");
-    await fetch(`/api/contracts/${contractId}/physical-pdf`, {
-      method: "POST",
-      credentials: "include",
-      body: form,
-    });
-  } catch (err) {
-    console.warn("[contracts] freeze physical LF ESTRELA failed", err);
+  blob: Blob,
+): Promise<{
+  contractId: string;
+  blobSize: number;
+  pageCount: number | null;
+  sha256: string | null;
+  postStatus: number | null;
+  storagePath: string | null;
+  saleDocumentId: string | null;
+}> {
+  const trace = {
+    contractId,
+    blobSize: blob?.size || 0,
+    pageCount: null as number | null,
+    sha256: null as string | null,
+    postStatus: null as number | null,
+    storagePath: null as string | null,
+    saleDocumentId: null as string | null,
+  };
+  if (!blob || blob.size < 8) {
+    console.error("[LF PHYSICAL FREEZE TRACE]", { ...trace, error: "blob vazio" });
+    throw new Error("PDF físico vazio — freeze não enviado.");
   }
+  const form = new FormData();
+  form.append("file", blob, "contrato-fisico.pdf");
+  const res = await fetch(`/api/contracts/${contractId}/physical-pdf`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  trace.postStatus = res.status;
+  const data = (await res.json().catch(() => null)) as {
+    error?: string;
+    pageCount?: number;
+    sha256?: string;
+    storagePath?: string;
+    saleDocumentId?: string | null;
+  } | null;
+  trace.pageCount = typeof data?.pageCount === "number" ? data.pageCount : null;
+  trace.sha256 = typeof data?.sha256 === "string" ? data.sha256 : null;
+  trace.storagePath = typeof data?.storagePath === "string" ? data.storagePath : null;
+  trace.saleDocumentId =
+    typeof data?.saleDocumentId === "string" ? data.saleDocumentId : null;
+  if (!res.ok) {
+    const error = data?.error || `POST ${res.status}`;
+    console.error("[LF PHYSICAL FREEZE TRACE]", { ...trace, error });
+    throw new Error(error);
+  }
+  console.info("[LF PHYSICAL FREEZE TRACE]", trace);
+  return trace;
 }
 
 /** @deprecated use loadContractsListForTenant — mantido para reload inline. */
@@ -1220,12 +1264,11 @@ export default function ContractsPage() {
       }
     }
     try {
-      const isElectronicallySigned = isSaleContractFullySigned(selectedContract);
       const mustRefresh = Boolean(
         (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
       );
       let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
-        refresh: mustRefresh && !isElectronicallySigned,
+        refresh: mustRefresh,
       });
       if (htmlBody) {
         setContractViewHtml(htmlBody);
@@ -1233,59 +1276,6 @@ export default function ContractsPage() {
       } else {
         htmlBody = resolvedContractHtml;
       }
-      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(htmlBody);
-
-      if (isElectronicallySigned) {
-        if (htmlLooksLfEstrela && htmlBody?.trim()) {
-          const { default: html2pdf } = await import("html2pdf.js");
-          const freezeEl = document.createElement("div");
-          freezeEl.innerHTML = htmlBody;
-          try {
-            prepareContractHtmlElementForPagination(freezeEl);
-            assertContractElementReadyForHtml2PdfCapture(freezeEl);
-            const opt = resolveContractHtml2pdfOptions(
-              tenantData || {},
-              `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
-              String(htmlBody || ""),
-            );
-            const pdf = await html2pdf()
-              .from(freezeEl)
-              .set(opt)
-              .toPdf()
-              .get("pdf");
-            await freezeLfEstrelaPhysicalPdfFromJsPdf(selectedContract.id, pdf);
-          } catch (freezeErr) {
-            console.warn("[contracts] freeze physical LF ESTRELA skipped", freezeErr);
-          } finally {
-            freezeEl.remove();
-          }
-        }
-        const res = await fetchWithTimeout(
-          `/api/contracts/${selectedContract.id}/pdf?download=1`,
-          { credentials: "include" },
-          CONTRACTS_FETCH_TIMEOUT_MS,
-        );
-        if (res.ok) {
-          const blob = await res.blob();
-          const disposition = res.headers.get('Content-Disposition') || '';
-          const match = disposition.match(/filename="([^"]+)"/);
-          const filename =
-            match?.[1] ||
-            `contrato-assinado_${selectedContract.contract_number || selectedContract.id}.pdf`;
-          const url = URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.download = filename;
-          anchor.click();
-          URL.revokeObjectURL(url);
-          return;
-        }
-        alert('Não foi possível baixar o PDF assinado. Tente novamente ou use Abrir PDF Assinado.');
-        return;
-      }
-
-      const { default: html2pdf } = await import("html2pdf.js");
-      const element = document.createElement("div");
 
       if (!htmlBody?.trim()) {
         alert(
@@ -1293,6 +1283,10 @@ export default function ContractsPage() {
         );
         return;
       }
+
+      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(htmlBody);
+      const { default: html2pdf } = await import("html2pdf.js");
+      const element = document.createElement("div");
 
       if (isRecantoPrimaveraContractModel(tenantData || {})) {
         htmlBody = await embedRecantoContractSignatureInHtml(
@@ -1337,26 +1331,35 @@ export default function ContractsPage() {
       );
 
       try {
-        await html2pdf()
+        const pdf = await html2pdf()
           .from(element)
           .set(opt)
           .toPdf()
-          .get("pdf")
-          .then(async (pdf: any) => {
-            if (htmlLooksLfEstrela) {
-              await freezeLfEstrelaPhysicalPdfFromJsPdf(selectedContract.id, pdf);
-              return;
-            }
-            applyContractPdfChrome(
-              pdf,
-              buildContractPdfChromeFromTenant(
-                pdfChromeTenant,
-                String(selectedContract.contract_number || ""),
-                logoBase64,
-              ),
+          .get("pdf");
+        if (!htmlLooksLfEstrela) {
+          applyContractPdfChrome(
+            pdf,
+            buildContractPdfChromeFromTenant(
+              pdfChromeTenant,
+              String(selectedContract.contract_number || ""),
+              logoBase64,
+            ),
+          );
+        }
+        const pdfBlob = pdf.output("blob") as Blob;
+        downloadPdfBlob(pdfBlob, pdfFilename);
+        if (htmlLooksLfEstrela) {
+          try {
+            await freezeLfEstrelaPhysicalPdfBlob(selectedContract.id, pdfBlob);
+          } catch (freezeErr) {
+            const message =
+              freezeErr instanceof Error ? freezeErr.message : String(freezeErr);
+            console.error("[contracts] freeze physical LF ESTRELA failed", freezeErr);
+            alert(
+              `PDF baixado, mas o freeze físico falhou:\n${message}\n\nO PDF assinado só funciona depois que o freeze concluir.`,
             );
-          })
-          .save();
+          }
+        }
       } finally {
         element.remove();
       }
@@ -1365,6 +1368,40 @@ export default function ContractsPage() {
         "Erro ao tentar baixar PDF. Certifique-se que html2pdf.js está instalado.",
       );
       console.error(e);
+    }
+  };
+
+  const handleBaixarPDFAssinado = async () => {
+    if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) return;
+    try {
+      const res = await fetchWithTimeout(
+        `/api/contracts/${selectedContract.id}/pdf?download=1`,
+        { credentials: "include" },
+        CONTRACTS_FETCH_TIMEOUT_MS,
+      );
+      if (res.ok) {
+        const blob = await res.blob();
+        const disposition = res.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/);
+        const filename =
+          match?.[1] ||
+          `contrato-assinado_${selectedContract.contract_number || selectedContract.id}.pdf`;
+        downloadPdfBlob(blob, filename);
+        return;
+      }
+      const payload = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      alert(
+        payload?.error ||
+          "Primeiro gere o PDF físico deste contrato para congelar a versão que será assinada.",
+      );
+    } catch (err) {
+      console.error(err);
+      alert(
+        "Não foi possível baixar o PDF assinado. Tente novamente depois de gerar o PDF físico.",
+      );
     }
   };
 
@@ -2614,7 +2651,7 @@ export default function ContractsPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              void handleBaixarPDF();
+                              void handleBaixarPDFAssinado();
                             }}
                             className="flex items-center gap-2 px-4 py-2 bg-emerald-700/90 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
                           >
