@@ -119,6 +119,36 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
   field('SELLER_2_RG', 'Vendedor 2 — RG', 'seller', 'seller_parties_json[1] | second_vendor.rg'),
   field('SELLER_2_ADDRESS', 'Vendedor 2 — endereço', 'seller', 'seller_parties_json[1] | second_vendor.address'),
   field('SELLER_2_PHONE', 'Vendedor 2 — telefone', 'seller', 'seller_parties_json[1] | second_vendor.phone'),
+  field(
+    'SELLER_2_EMAIL',
+    'Vendedor 2 — e-mail',
+    'seller',
+    'seller_parties_json[1] | second_vendor.email',
+  ),
+  field(
+    'SELLER_2_NATIONALITY',
+    'Vendedor 2 — nacionalidade',
+    'seller',
+    'second_vendor.nationality',
+  ),
+  field(
+    'SELLER_2_CIVIL_STATE',
+    'Vendedor 2 — estado civil',
+    'seller',
+    'second_vendor.maritalStatus',
+  ),
+  field(
+    'SELLER_2_PROFESSION',
+    'Vendedor 2 — profissão',
+    'seller',
+    'second_vendor.profession',
+  ),
+  field(
+    'SELLER_2_RG_ISSUER',
+    'Vendedor 2 — órgão emissor do RG',
+    'seller',
+    'second_vendor.rgIssuer + rgUf',
+  ),
 
   field('PROJECT_NAME', 'Empreendimento', 'project', 'projects.name'),
   field('PROJECT_ADDRESS', 'Localização/endereço do empreendimento', 'project', 'projects.address | projects.location'),
@@ -277,6 +307,12 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
 
   field('CONTRACT_NUMBER', 'Número do contrato', 'contract', 'contracts.contract_number'),
   field('CONTRACT_DATE', 'Data do contrato', 'contract', 'contracts.contract_date | sale_date'),
+  field(
+    'CONTRACT_DATE_EXTENSO',
+    'Data do contrato por extenso',
+    'contract',
+    'contracts.contract_date | sale_date (ex.: 30 DE SETEMBRO DE 2026)',
+  ),
   field(
     'SIGNATURE_CITY',
     'Local/cidade da assinatura',

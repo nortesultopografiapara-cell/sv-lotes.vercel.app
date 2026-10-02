@@ -61,6 +61,11 @@ import {
 import { convertDocxToCustomHtml, isDocxFile } from '@/lib/customContractDocxImport';
 import { DEFAULT_CUSTOM_CONTRACT_HTML } from '@/lib/customContractPlaceholders';
 import {
+  LF_ESTRELA_MODEL_NAME,
+  buildLfEstrelaCustomHtml,
+  isLfEstrelaModelName,
+} from '@/lib/lfEstrelaCustomTemplate';
+import {
   CONVERT_TO_CUSTOM_CONFIRM,
   CONVERT_TO_CUSTOM_LABEL,
   REBUILD_ESTRELA_CUSTOM_CONFIRM,
@@ -156,6 +161,7 @@ export default function ContractModelsOperationalCentral() {
   const [newProjectId, setNewProjectId] = useState('');
   const [newCompanyDefault, setNewCompanyDefault] = useState(false);
   const [newProjectDefault, setNewProjectDefault] = useState(false);
+  const [useLfEstrelaTemplate, setUseLfEstrelaTemplate] = useState(false);
   const [importName, setImportName] = useState('');
   const [importHtml, setImportHtml] = useState('');
   const [importFile, setImportFile] = useState<{ name: string; mime: string } | null>(null);
@@ -831,6 +837,7 @@ export default function ContractModelsOperationalCentral() {
                   setNewProjectId('');
                   setNewCompanyDefault(false);
                   setNewProjectDefault(false);
+                  setUseLfEstrelaTemplate(false);
                   setDialog({ type: 'new' });
                 }}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold"
@@ -1382,7 +1389,20 @@ export default function ContractModelsOperationalCentral() {
                 ))}
             </select>
           ) : (
-            <p className="text-xs text-amber-200 mb-3">{CUSTOM_NOT_IN_AUTO_EMISSION}</p>
+            <>
+              <p className="text-xs text-amber-200 mb-3">{CUSTOM_NOT_IN_AUTO_EMISSION}</p>
+              <label className="flex items-center gap-2 text-sm mb-3">
+                <input
+                  type="checkbox"
+                  checked={useLfEstrelaTemplate || isLfEstrelaModelName(newName)}
+                  onChange={(e) => {
+                    setUseLfEstrelaTemplate(e.target.checked);
+                    if (e.target.checked && !newName.trim()) setNewName(LF_ESTRELA_MODEL_NAME);
+                  }}
+                />
+                Usar texto oficial LF ESTRELA
+              </label>
+            </>
           )}
           <label className="block text-xs text-[var(--color-text-muted)] mb-1">
             Associar a empreendimento (opcional)
@@ -1448,9 +1468,13 @@ export default function ContractModelsOperationalCentral() {
                       ? versions.find((v) => v.model_id === base.id && v.status === 'draft')
                           ?.content_html || pub?.content_html
                       : null;
+                  const lfHtml =
+                    useLfEstrelaTemplate || isLfEstrelaModelName(name)
+                      ? buildLfEstrelaCustomHtml()
+                      : null;
                   id = await insertCustomDraftModel({
                     name,
-                    contentHtml: draftSource || DEFAULT_CUSTOM_CONTRACT_HTML,
+                    contentHtml: lfHtml || draftSource || DEFAULT_CUSTOM_CONTRACT_HTML,
                     params: newMode === 'existing' ? pub?.engine_params_json ?? null : null,
                   });
                 } else {

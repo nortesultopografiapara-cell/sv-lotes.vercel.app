@@ -7,6 +7,7 @@ import { formatInstallmentCorrectionLabel } from '@/lib/installmentCorrectionTyp
 import {
   formatContractDueDateBr,
   formatContractSaleDateBr,
+  formatContractSaleDateLongBr,
   resolveContractPaymentDates,
   resolveContractSaleDateRaw,
 } from '@/lib/contractPaymentDates';
@@ -308,6 +309,13 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     SELLER_2_RG: pick(seller2.rg),
     SELLER_2_ADDRESS: pick(seller2.address),
     SELLER_2_PHONE: pick(seller2.phone),
+    SELLER_2_EMAIL: pick(lfConfig.secondVendor.email),
+    SELLER_2_NATIONALITY: pick(lfConfig.secondVendor.nationality),
+    SELLER_2_CIVIL_STATE: pick(lfConfig.secondVendor.maritalStatus),
+    SELLER_2_PROFESSION: pick(lfConfig.secondVendor.profession),
+    SELLER_2_RG_ISSUER: [lfConfig.secondVendor.rgIssuer, lfConfig.secondVendor.rgUf]
+      .filter(Boolean)
+      .join('/'),
 
     PROJECT_NAME: pick(project.name),
     PROJECT_ADDRESS: pick(project.address, project.location, project.endereco),
@@ -373,6 +381,14 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     CONTRACT_DATE: contractDateRaw
       ? formatContractDueDateBr(contractDateRaw) || formatContractSaleDateBr(sale)
       : formatContractSaleDateBr(sale),
+    CONTRACT_DATE_EXTENSO: formatContractSaleDateLongBr({
+      ...sale,
+      contract_date: contractDateRaw || sale.contract_date,
+      sale_date: sale.sale_date,
+    })
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase(),
     SIGNATURE_CITY: pick(contract.forum_city_snapshot, project.forum_city, project.city, company.city),
     SALE_DATE: formatContractSaleDateBr(sale),
     TODAY: today.toLocaleDateString('pt-BR'),
