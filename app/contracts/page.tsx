@@ -104,6 +104,7 @@ import {
   loadContractsListForTenant,
 } from "@/lib/contractsListService";
 import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
+import { prepareLfEstrelaGisFinalHtml } from "@/lib/lfEstrelaPrintCss";
 import {
   CONTRACT_FINANCE_RECEIPTS_SELECT,
   contractReceiptStatusClassName,
@@ -1348,11 +1349,16 @@ export default function ContractsPage() {
     }
     const printWindow = window.open("", "_blank");
     if (printWindow) {
+      const printable = prepareLfEstrelaGisFinalHtml(htmlBody);
       printWindow.document.write(`
               <html>
-                  <head><title>Imprimir Contrato - ${selectedContract.contract_number || ""}</title></head>
-                  <body style="font-family: sans-serif; padding: 20px;">
-                      ${htmlBody}
+                  <head><title>Imprimir Contrato - ${selectedContract.contract_number || ""}</title>
+                  <style>
+                    html, body { color: #000; background: #fff; opacity: 1; -webkit-text-fill-color: #000; }
+                  </style>
+                  </head>
+                  <body style="font-family: 'Times New Roman', Times, serif; padding: 20px; color: #000; background: #fff;">
+                      ${printable}
                       <script>window.onload = function() { window.print(); }</script>
                   </body>
               </html>

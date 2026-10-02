@@ -10,6 +10,7 @@ import {
 } from '@/lib/customContractHtml';
 import { onlyDigits } from '@/lib/inputMasks';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
+import { prepareLfEstrelaGisFinalHtml } from '@/lib/lfEstrelaPrintCss';
 
 export const LF_ESTRELA_MISSING_HEADER =
   'Não foi possível gerar o LF ESTRELA.\nComplete os seguintes dados:';
@@ -130,6 +131,8 @@ export function composeLfEstrelaContractHtml(
     mode: CustomPlaceholderFillMode;
     sale?: Record<string, unknown> | null;
     requireComplete?: boolean;
+    /** Chrome institucional GIS/PDF — oculta COMPANY_LOGO_URL interno. */
+    gisChrome?: boolean;
   },
 ): { html: string; flags: LfEstrelaConditionFlags; missing: string[] } {
   const flags = resolveLfEstrelaConditionFlags(values, options.sale);
@@ -138,7 +141,10 @@ export function composeLfEstrelaContractHtml(
     throw new Error(formatLfEstrelaMissingMessage(missing));
   }
   const conditioned = applyLfEstrelaConditionals(templateHtml, flags);
-  const html = fillCustomPlaceholders(conditioned, values, options.mode);
+  let html = fillCustomPlaceholders(conditioned, values, options.mode);
+  if (options.gisChrome) {
+    html = prepareLfEstrelaGisFinalHtml(html);
+  }
   return { html, flags, missing };
 }
 

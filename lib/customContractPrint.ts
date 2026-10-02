@@ -53,6 +53,17 @@ body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   outline: none !important;
   box-shadow: none !important;
 }
+.sv-lf-estrela,
+.sv-lf-estrela * {
+  color: #000 !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #000 !important;
+}
+.sv-lf-estrela .sv-lf-green,
+.sv-lf-estrela .sv-lf-green * {
+  color: #1b7a3d !important;
+  -webkit-text-fill-color: #1b7a3d !important;
+}
 `.trim();
 
 export function printCustomContractPreview(root: HTMLElement, title = 'Contrato'): void {

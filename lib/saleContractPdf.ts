@@ -27,6 +27,10 @@ import {
   CONTRACT_PDF_MARGIN_MM,
 } from '@/lib/contractPaginationEngine';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
+import {
+  isLfEstrelaCustomHtml,
+  prepareLfEstrelaGisFinalHtml,
+} from '@/lib/lfEstrelaPrintCss';
 
 function escapeHtml(value: string): string {
   return String(value || '')
@@ -40,6 +44,9 @@ export function wrapSaleContractHtmlDocument(
   htmlFragment: string,
   title = 'Contrato',
 ): string {
+  const bodyHtml = isLfEstrelaCustomHtml(htmlFragment)
+    ? prepareLfEstrelaGisFinalHtml(htmlFragment)
+    : htmlFragment;
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -55,11 +62,14 @@ ${CONTRACT_PDF_PRINT_CSS}
     box-sizing: border-box;
     font-family: 'Times New Roman', Times, serif;
     font-size: 12pt;
-    color: #111;
+    color: #000;
+    background: #fff;
+    opacity: 1;
+    -webkit-text-fill-color: #000;
   }
 </style>
 </head>
-<body>${htmlFragment}</body>
+<body>${bodyHtml}</body>
 </html>`;
 }
 

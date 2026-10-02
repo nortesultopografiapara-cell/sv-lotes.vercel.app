@@ -133,6 +133,7 @@ export async function tryBuildLfEstrelaCustomSaleHtml(
     mode: 'final',
     sale: input.sale,
     requireComplete: true,
+    gisChrome: true,
   });
   assertNoSemDadoInFinalHtml(composed.html);
   return { html: composed.html, modelId: published.modelId, version: published.version };

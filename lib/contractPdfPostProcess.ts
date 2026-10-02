@@ -29,6 +29,7 @@ import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualificat
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
 import { buildEstrelaDoSulPdfChrome } from "@/lib/estrelaDoSulContractPdf";
+import { applyLfEstrelaGisPrintToCaptureElement } from "@/lib/lfEstrelaPrintCss";
 
 export type ContractPdfChromeInput = {
   tenantName: string;
@@ -76,6 +77,8 @@ export type ContractHtml2pdfOptions = {
     /** Largura do documento = área útil A4 (evita corte à direita). */
     windowWidth?: number;
     width?: number;
+    backgroundColor?: string;
+    onclone?: (doc: Document, element?: HTMLElement) => void;
   };
   jsPDF: { unit: string; format: string; orientation: string };
   pagebreak: ContractHtml2pdfPagebreakOptions;
@@ -110,6 +113,16 @@ export function getContractHtml2pdfOptions(
       logging: false,
       windowWidth: CONTRACT_PDF_CONTENT_WIDTH_PX,
       width: CONTRACT_PDF_CONTENT_WIDTH_PX,
+      backgroundColor: "#ffffff",
+      onclone(clonedDoc: Document, clonedElement?: HTMLElement) {
+        clonedDoc.documentElement.style.color = "#000";
+        clonedDoc.documentElement.style.backgroundColor = "#ffffff";
+        clonedDoc.body.style.color = "#000";
+        clonedDoc.body.style.backgroundColor = "#ffffff";
+        clonedDoc.body.style.opacity = "1";
+        clonedDoc.body.style.setProperty("-webkit-text-fill-color", "#000");
+        if (clonedElement) applyLfEstrelaGisPrintToCaptureElement(clonedElement);
+      },
     },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     pagebreak: {

@@ -14,6 +14,7 @@ import {
   ESTRELA_DO_SUL_PAGE_CONTENT_HEIGHT_PX,
   reportEstrelaCapaTwoPageOverflow,
 } from './estrelaDoSulHtml2PdfPagination';
+import { applyLfEstrelaGisPrintToCaptureElement } from './lfEstrelaPrintCss';
 
 /**
  * Margens Chromium/html2pdf alinhadas à altura real do header/footer template.
@@ -1199,6 +1200,7 @@ export function prepareContractHtmlElementForPagination(
 
   // Restaura layout imprimível — html2canvas captura a caixa visível do elemento.
   restoreContractElementStylesForHtml2PdfCapture(element);
+  applyLfEstrelaGisPrintToCaptureElement(element);
 
   return result;
 }
@@ -1216,9 +1218,14 @@ export function restoreContractElementStylesForHtml2PdfCapture(
   element.style.right = '';
   element.style.bottom = '';
   element.style.transform = '';
-  element.style.opacity = '';
+  element.style.opacity = '1';
   element.style.visibility = '';
   element.style.display = '';
+  element.style.color = '#000';
+  element.style.backgroundColor = '#ffffff';
+  if (typeof element.style.setProperty === 'function') {
+    element.style.setProperty('-webkit-text-fill-color', '#000');
+  }
   element.style.width = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
   element.style.maxWidth = `${CONTRACT_PDF_CONTENT_WIDTH_PX}px`;
   element.style.boxSizing = 'border-box';

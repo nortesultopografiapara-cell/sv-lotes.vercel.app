@@ -535,6 +535,7 @@ assert(diag.includes('→ ERRO'), 'página órfã por keepTogether é marcada');
 
 const regen = read('lib/contractRegeneration.ts');
 assert(regen.includes('tryBuildLfEstrelaCustomSaleHtml'), 'regeneração GIS tenta LF ESTRELA CUSTOM antes do motor');
+assert(read('lib/lfEstrelaSaleContract.ts').includes('gisChrome: true'), 'emissão GIS oculta logo interno');
 assert(!read('lib/lfEstrelaSaleContract.ts').includes('generateEstrelaDoSulContract'), 'loader CUSTOM não usa o motor ESTRELA');
 assert(read('lib/lfEstrelaSaleContract.ts').includes('isDevelopHomologRuntime'), 'CUSTOM só emite no DEVELOP');
 assert(
