@@ -679,11 +679,15 @@
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-51-tail,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-widow-pair {
   display: block;
-  margin-top: 0;
   break-inside: avoid;
   page-break-inside: avoid;
   orphans: 2;
   widows: 2;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-51-tail,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-51-tail {
+  margin-top: 5mm;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-date,

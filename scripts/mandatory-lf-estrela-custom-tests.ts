@@ -634,6 +634,26 @@ assert(/\.sv-lf-section\s*\{[^}]*margin:\s*4px 0 2mm/.test(css), 'prévia/editor
 assert(css.includes('sv-lf-keep-para'), 'prévia/editor protege parágrafo 2.9.1');
 assert(css.includes('sv-lf-51-tail'), 'prévia/editor protege o trecho final do 5.1');
 assert(css.includes('sv-lf-widow-pair'), 'prévia/editor protege últimas linhas do 5.1');
+assert(
+  /\.sv-lf-51-tail\s*\{[^}]*margin-top:\s*5mm/.test(read('lib/lfEstrelaPrintCss.ts')),
+  'print: folga de 5mm no trecho final do 5.1 (página 6)',
+);
+assert(
+  /\.sv-lf-51-tail\s*\{[^}]*margin-top:\s*5mm/.test(css),
+  'prévia/editor: folga de 5mm no trecho final do 5.1',
+);
+assert(
+  !/\.sv-lf-51-head[^{]*\{[^}]*margin-top:\s*\d+mm/.test(read('lib/lfEstrelaPrintCss.ts')),
+  '5.1 principal sem folga extra — só o trecho final',
+);
+assert(
+  !/margin-top:\s*(1[1-9]|[2-9]\d)mm/.test(
+    (read('lib/lfEstrelaPrintCss.ts').match(/\.sv-lf-51-tail\s*\{[^}]+\}/) || [''])[0],
+  ),
+  'folga do 5.1-tail no máximo 10mm',
+);
+assert((html.match(/data-sv-page-break/g) || []).length === 7, '10 páginas: sem nova quebra estrutural');
+assert(!/\.sv-lf-51-tail[^{]*\{[^}]*transform:/.test(read('lib/lfEstrelaPrintCss.ts')), 'sem transform no trecho final');
 assert(!/avoid:\s*\[[^\]]*['\"]h1['\"]/.test(read('lib/contractPdfPostProcess.ts').slice(
   read('lib/contractPdfPostProcess.ts').indexOf('getLfEstrelaCustomHtml2pdfOptions'),
   read('lib/contractPdfPostProcess.ts').indexOf('getLfEstrelaCustomHtml2pdfOptions') + 900,

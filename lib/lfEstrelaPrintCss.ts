@@ -161,11 +161,13 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-51-tail,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-widow-pair {
   display: block;
-  margin-top: 0;
   page-break-inside: avoid;
   break-inside: avoid;
   orphans: 2;
   widows: 2;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-51-tail {
+  margin-top: 5mm;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date {
   text-align: center;
