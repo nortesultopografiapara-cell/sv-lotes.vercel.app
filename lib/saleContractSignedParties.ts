@@ -23,6 +23,7 @@ export type SignedPdfSignatureSource =
   | 'process_signed'
   | 'parties_aggregate'
   | 'parties_by_contract'
+  | 'lineage'
   | 'none';
 
 export type ContractSignedPartiesResult = {
@@ -35,6 +36,22 @@ export type ContractSignedPartiesResult = {
   signedAt: Array<string | null>;
   signerNames: string[];
   signatureSource: SignedPdfSignatureSource;
+  lineageContractIds: string[];
+  processRows: Array<{
+    id: string;
+    contract_id: string;
+    signature_status: string | null;
+    created_at: string | null;
+  }>;
+  partyRows: Array<{
+    id: string;
+    contract_id: string | null;
+    contract_signature_id: string | null;
+    role: string;
+    status: string;
+    signer_name: string | null;
+    signed_at: string | null;
+  }>;
 };
 
 export function isProcessStatusSigned(status?: string | null): boolean {
@@ -92,13 +109,43 @@ export function resolveSignedPdfReadiness(input: {
   };
 }
 
+function summarizeProcesses(rows: ContractSignatureRow[]) {
+  return rows.map((row) => ({
+    id: String(row.id || ''),
+    contract_id: String(row.contract_id || ''),
+    signature_status: row.signature_status || null,
+    created_at: row.created_at || null,
+  }));
+}
+
+function summarizeParties(rows: ContractSignaturePartyRow[]) {
+  return rows.map((row) => ({
+    id: String(row.id || ''),
+    contract_id: row.contract_id || null,
+    contract_signature_id: row.contract_signature_id || null,
+    role: String(row.role || ''),
+    status: String(row.status || ''),
+    signer_name: row.signer_name || null,
+    signed_at: row.signed_at || null,
+  }));
+}
+
 function packResult(input: {
   contractId: string;
   process: ContractSignatureRow | null;
   parties: ContractSignaturePartyRow[];
   signatureSource: SignedPdfSignatureSource;
+  lineageContractIds?: string[];
+  processRows?: ContractSignatureRow[];
+  extraPartyRows?: ContractSignaturePartyRow[];
 }): ContractSignedPartiesResult {
   const progress = countSignedParties(input.parties);
+  const processRows = summarizeProcesses(input.processRows || (input.process ? [input.process] : []));
+  const partyRows = summarizeParties(
+    input.extraPartyRows && input.extraPartyRows.length
+      ? input.extraPartyRows
+      : input.parties,
+  );
   return {
     contractId: input.contractId,
     process: input.process,
@@ -111,7 +158,90 @@ function packResult(input: {
       .map((p) => String(p.signer_name || '').trim())
       .filter(Boolean),
     signatureSource: input.signatureSource,
+    lineageContractIds: input.lineageContractIds || [input.contractId],
+    processRows,
+    partyRows,
   };
+}
+
+export async function collectContractLineageIds(
+  supabaseAdmin: SupabaseClient,
+  input: {
+    contractId: string;
+    saleId?: string | null;
+    regeneratedFrom?: string | null;
+    contractNumber?: string | null;
+  },
+): Promise<string[]> {
+  const ids: string[] = [];
+  const add = (value?: string | null) => {
+    const id = String(value || '').trim();
+    if (id && !ids.includes(id)) ids.push(id);
+  };
+  add(input.contractId);
+
+  let saleId = String(input.saleId || '').trim();
+  let regeneratedFrom = String(input.regeneratedFrom || '').trim();
+  let contractNumber = String(input.contractNumber || '').trim();
+
+  if (input.contractId) {
+    const { data } = await supabaseAdmin
+      .from('contracts')
+      .select('id, regenerated_from, sale_id, contract_number, version')
+      .eq('id', input.contractId)
+      .maybeSingle();
+    if (data) {
+      const row = data as {
+        id?: string;
+        regenerated_from?: string | null;
+        sale_id?: string | null;
+        contract_number?: string | null;
+      };
+      add(row.id);
+      if (!regeneratedFrom) regeneratedFrom = String(row.regenerated_from || '').trim();
+      if (!saleId) saleId = String(row.sale_id || '').trim();
+      if (!contractNumber) contractNumber = String(row.contract_number || '').trim();
+    }
+  }
+
+  add(regeneratedFrom);
+
+  let walk = regeneratedFrom;
+  for (let i = 0; i < 20 && walk; i += 1) {
+    const { data } = await supabaseAdmin
+      .from('contracts')
+      .select('id, regenerated_from, sale_id, contract_number')
+      .eq('id', walk)
+      .maybeSingle();
+    if (!data) break;
+    add((data as { id?: string }).id);
+    walk = String((data as { regenerated_from?: string | null }).regenerated_from || '').trim();
+    add(walk);
+  }
+
+  if (saleId) {
+    const { data } = await supabaseAdmin
+      .from('contracts')
+      .select('id, regenerated_from')
+      .eq('sale_id', saleId);
+    for (const row of data || []) {
+      add((row as { id?: string }).id);
+      add((row as { regenerated_from?: string | null }).regenerated_from);
+    }
+  }
+
+  if (contractNumber) {
+    const { data } = await supabaseAdmin
+      .from('contracts')
+      .select('id, regenerated_from')
+      .eq('contract_number', contractNumber);
+    for (const row of data || []) {
+      add((row as { id?: string }).id);
+      add((row as { regenerated_from?: string | null }).regenerated_from);
+    }
+  }
+
+  return ids;
 }
 
 async function listProcessesByContractId(
@@ -160,27 +290,36 @@ export async function getContractSignedParties(
   options?: {
     saleId?: string | null;
     regeneratedFrom?: string | null;
+    contractNumber?: string | null;
   },
 ): Promise<ContractSignedPartiesResult> {
   const id = String(contractId || '').trim();
+  const lineageContractIds = id
+    ? await collectContractLineageIds(supabaseAdmin, {
+        contractId: id,
+        saleId: options?.saleId,
+        regeneratedFrom: options?.regeneratedFrom,
+        contractNumber: options?.contractNumber,
+      })
+    : [];
   const empty = packResult({
     contractId: id,
     process: null,
     parties: [],
     signatureSource: 'none',
+    lineageContractIds,
   });
   if (!id) return empty;
 
-  const tryContractIds = [id];
-  const regeneratedFrom = String(options?.regeneratedFrom || '').trim();
-  if (regeneratedFrom && regeneratedFrom !== id) {
-    tryContractIds.push(regeneratedFrom);
-  }
+  const allProcesses: ContractSignatureRow[] = [];
+  const allParties: ContractSignaturePartyRow[] = [];
 
-  for (const lookupId of tryContractIds) {
+  for (const lookupId of lineageContractIds) {
     const processes = await listProcessesByContractId(supabaseAdmin, lookupId);
+    allProcesses.push(...processes);
     for (const process of processes) {
       const parties = await listSignatureParties(supabaseAdmin, process.id);
+      allParties.push(...parties);
       const readiness = resolveSignedPdfReadiness({
         processStatus: process.signature_status,
         parties,
@@ -190,12 +329,17 @@ export async function getContractSignedParties(
           contractId: id,
           process,
           parties,
-          signatureSource: readiness.signatureSource,
+          signatureSource:
+            lookupId === id ? readiness.signatureSource : 'lineage',
+          lineageContractIds,
+          processRows: allProcesses,
+          extraPartyRows: allParties,
         });
       }
     }
 
     const byContract = await listSignaturePartiesByContract(supabaseAdmin, lookupId);
+    allParties.push(...byContract);
     const readiness = resolveSignedPdfReadiness({
       processStatus: null,
       parties: byContract,
@@ -209,7 +353,10 @@ export async function getContractSignedParties(
         contractId: id,
         process,
         parties: byContract,
-        signatureSource: 'parties_by_contract',
+        signatureSource: lookupId === id ? 'parties_by_contract' : 'lineage',
+        lineageContractIds,
+        processRows: allProcesses,
+        extraPartyRows: allParties,
       });
     }
   }
@@ -223,6 +370,7 @@ export async function getContractSignedParties(
       .order('created_at', { ascending: false });
     if (!error && data && data.length > 0) {
       const parties = data as ContractSignaturePartyRow[];
+      allParties.push(...parties);
       const readiness = resolveSignedPdfReadiness({
         processStatus: null,
         parties,
@@ -236,13 +384,50 @@ export async function getContractSignedParties(
           contractId: id,
           process,
           parties,
-          signatureSource: 'parties_by_contract',
+          signatureSource: 'lineage',
+          lineageContractIds,
+          processRows: allProcesses,
+          extraPartyRows: allParties,
         });
       }
     }
   }
 
-  return empty;
+  const leftover = resolveSignedPdfReadiness({
+    processStatus: allProcesses[0]?.signature_status || null,
+    parties: allParties,
+  });
+  if (leftover.ready || (leftover.totalCount > 0 && leftover.signedCount >= leftover.totalCount)) {
+    const processId = String(
+      allParties.find((p) => String(p.status || '').toUpperCase() === 'SIGNED')
+        ?.contract_signature_id ||
+        allProcesses[0]?.id ||
+        '',
+    ).trim();
+    const process = processId
+      ? allProcesses.find((row) => row.id === processId) ||
+        (await loadProcessById(supabaseAdmin, processId))
+      : allProcesses[0] || null;
+    return packResult({
+      contractId: id,
+      process,
+      parties: allParties,
+      signatureSource: leftover.signatureSource === 'none' ? 'lineage' : leftover.signatureSource,
+      lineageContractIds,
+      processRows: allProcesses,
+      extraPartyRows: allParties,
+    });
+  }
+
+  return packResult({
+    contractId: id,
+    process: allProcesses[0] || null,
+    parties: allParties,
+    signatureSource: 'none',
+    lineageContractIds,
+    processRows: allProcesses,
+    extraPartyRows: allParties,
+  });
 }
 
 /** Não persiste — só preenche o contexto in-memory para emitir certificado/PDF. */

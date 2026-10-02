@@ -2285,7 +2285,21 @@ export async function getLatestSignedSaleSignature(
   const { getContractSignedParties } = await import(
     '@/lib/saleContractSignedParties'
   );
-  const resolved = await getContractSignedParties(supabaseAdmin, contractId);
+  const { data } = await supabaseAdmin
+    .from('contracts')
+    .select('id, sale_id, regenerated_from, contract_number')
+    .eq('id', contractId)
+    .maybeSingle();
+  const row = (data || {}) as {
+    sale_id?: string | null;
+    regenerated_from?: string | null;
+    contract_number?: string | null;
+  };
+  const resolved = await getContractSignedParties(supabaseAdmin, contractId, {
+    saleId: row.sale_id || null,
+    regeneratedFrom: row.regenerated_from || null,
+    contractNumber: row.contract_number || null,
+  });
   return resolved.process;
 }
 

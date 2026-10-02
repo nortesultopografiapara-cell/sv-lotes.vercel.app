@@ -38,6 +38,7 @@ export function createSaleContractPdfResponse(
   pdfBytes: Uint8Array,
   disposition: SaleContractPdfDisposition,
   contractNumber: string,
+  extraHeaders?: Record<string, string>,
 ): Response {
   if (!isPdfBytes(pdfBytes)) {
     throw new Error('Buffer PDF inválido (cabeçalho %PDF ausente).');
@@ -50,6 +51,7 @@ export function createSaleContractPdfResponse(
     status: 200,
     headers: {
       ...headers,
+      ...extraHeaders,
       'Content-Length': String(body.byteLength),
     },
   });

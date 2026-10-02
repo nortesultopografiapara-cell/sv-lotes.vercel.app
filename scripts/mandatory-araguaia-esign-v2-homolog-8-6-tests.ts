@@ -44,6 +44,18 @@ console.log('\n=== A) Helper canônico compartilhado ===');
     !adminRoute.includes('loadSaleContractPdfForSign'),
     'admin não duplica pipeline inline',
   );
+  ok(
+    adminRoute.includes('[SIGNED PDF ROUTE TRACE]'),
+    'admin /pdf loga TRACE no mesmo request',
+  );
+  ok(
+    adminRoute.includes("signedPdfReturn: 'artifact_null'"),
+    '404 de assinatura é só artifact_null',
+  );
+  ok(
+    adminRoute.includes('classifySignedPdfGenerationError'),
+    'geração falha com erro classificado, não 404',
+  );
 
   const portalDl = readFileSync(
     join(root, 'lib/portal-cliente/contractDownload.ts'),

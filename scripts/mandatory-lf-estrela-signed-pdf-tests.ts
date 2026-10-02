@@ -10,6 +10,9 @@ import { PDFDocument } from 'pdf-lib';
 import type { ContractSignaturePartyRow } from '../lib/saleContractSignaturePartyTypes';
 import { resolveSignedPdfReadiness } from '../lib/saleContractSignedParties';
 import {
+  classifySignedPdfGenerationError,
+} from '../lib/deployGitSha';
+import {
   composeLfEstrelaSignedPdf,
   LF_ESTRELA_SIGNED_INSTRUMENT_PAGES,
   LF_ESTRELA_STAMP_LAYOUT,
@@ -111,6 +114,32 @@ function testSourceGuards() {
     !read('lib/saleContractSignatureService.ts').includes(".eq('signature_status', 'SIGNED')"),
     'PDF não exige mais signature_status=SIGNED exato no processo',
   );
+  const pdfRoute = read('app/api/contracts/[id]/pdf/route.ts');
+  assert(pdfRoute.includes('[SIGNED PDF ROUTE TRACE]'), 'rota /pdf loga TRACE antes do 404');
+  assert(pdfRoute.includes('signedPdfReturn'), 'rota /pdf identifica o return');
+  assert(pdfRoute.includes("signedPdfReturn: 'artifact_null'"), '404 só artifact_null');
+  assert(
+    pdfRoute.includes('getContractSignedParties(supabase, requestedContractId'),
+    'rota /pdf chama getContractSignedParties no mesmo request',
+  );
+  assert(
+    pdfRoute.includes('classifySignedPdfGenerationError'),
+    'falha de geração não vira 404 de assinatura',
+  );
+  assert(
+    pdfRoute.includes('X-SV-Git-Sha'),
+    'rota /pdf expõe SHA do deployment',
+  );
+  assert(
+    read('lib/saleContractSignedParties.ts').includes('collectContractLineageIds'),
+    'lineage regenerated_from / sale_id / contract_number',
+  );
+  assert(
+    read('app/api/build-info/route.ts').includes('getDeployGitSha'),
+    'GET /api/build-info confirma SHA',
+  );
+  const errorHits = pdfRoute.split('Contrato sem assinatura eletrônica registrada.').length - 1;
+  assert(errorHits === 1, 'mensagem 404 existe uma única vez na rota /pdf');
 }
 
 function testPartialStamps() {
@@ -247,10 +276,31 @@ function testSignedPdfFindsPartiesWithoutLegacyField() {
   assert(legacyProcess.ready === true, 'processo SIGNED legado (casing) ainda funciona');
 }
 
+function testGenerationErrorIsNotSignature404() {
+  const freeze = classifySignedPdfGenerationError(new Error('Falha ao congelar PDF físico'));
+  assert(freeze.includes('Falha ao congelar PDF físico LF ESTRELA'), 'classifica freeze');
+  const storage = classifySignedPdfGenerationError(new Error('Storage bucket missing'));
+  assert(storage.includes('Falha de Storage'), 'classifica storage');
+  const lib = classifySignedPdfGenerationError(new Error('pdf-lib overlay failed'));
+  assert(lib.includes('Falha de pdf-lib'), 'classifica pdf-lib');
+  const cert = classifySignedPdfGenerationError(new Error('certificado inválido'));
+  assert(cert.includes('Falha ao anexar certificado'), 'classifica certificado');
+  const generic = classifySignedPdfGenerationError(new Error('boom'));
+  assert(
+    generic.includes('Falha ao gerar PDF assinado LF ESTRELA'),
+    'erro genérico não vira 404 de assinatura',
+  );
+  assert(
+    !generic.includes('Contrato sem assinatura eletrônica registrada.'),
+    'geração nunca mascara como sem assinatura',
+  );
+}
+
 async function main() {
   testSourceGuards();
   testPartialStamps();
   testSignedPdfFindsPartiesWithoutLegacyField();
+  testGenerationErrorIsNotSignature404();
   await testComposePreservesInstrumentPages();
   console.log('OK — mandatory-lf-estrela-signed-pdf-tests passed');
 }

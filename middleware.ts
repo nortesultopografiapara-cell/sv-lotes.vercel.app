@@ -92,6 +92,7 @@ export async function middleware(request: NextRequest) {
     '/api/finance/inter/webhook/internal',
     '/api/master/corporate-finance/asaas/webhook',
     '/api/cron',
+    '/api/build-info',
     '/validar',
     '/validar-recibo',
     '/api/validar-recibo',

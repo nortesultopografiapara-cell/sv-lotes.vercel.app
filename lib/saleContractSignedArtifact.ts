@@ -94,6 +94,7 @@ export async function loadSignedSaleContractArtifact(
   const resolved = await getContractSignedParties(supabaseAdmin, id, {
     saleId: String(row.sale_id || '').trim() || null,
     regeneratedFrom: String(row.regenerated_from || '').trim() || null,
+    contractNumber: String(row.contract_number || '').trim() || null,
   });
 
   logSignedPdfTrace({
