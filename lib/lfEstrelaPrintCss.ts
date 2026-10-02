@@ -152,6 +152,14 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   line-height: 1.28;
   margin: 0 0 5px;
   text-align: justify;
+  orphans: 2;
+  widows: 2;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-widow-pair {
+  display: inline-block;
+  max-width: 100%;
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date {
   text-align: center;

@@ -1,75 +1,65 @@
 /**
- * Descrição contratual das parcelas a partir dos receipts reais.
- * Não recalcula valores — só agrupa o que a venda já gerou.
+ * Resumo comercial das parcelas no contrato.
+ * Fonte: snapshot da venda (quantidade, parcela-base, restante do sinal).
+ * Não lista ajustes de centavos dos finance_receipts.
  */
 import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { normalizeSignalRemainingPaymentMode } from '@/lib/recantoSignalRemaining';
 
-export type InstallmentScheduleReceipt = {
-  installment_number?: unknown;
-  amount?: unknown;
+export type CommercialInstallmentScheduleInput = {
+  totalCount?: unknown;
+  baseAmount?: unknown;
+  remainingMode?: unknown;
+  remainingInstallments?: unknown;
+  remainingAddon?: unknown;
 };
 
-function toCents(value: unknown): number | null {
+function money(value: unknown): number {
   const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  return Math.round(num * 100);
+  if (!Number.isFinite(num)) return 0;
+  return Math.round(Math.max(0, num) * 100) / 100;
 }
 
-function moneyFromCents(cents: number): string {
-  return formatCurrencyBRL(cents / 100).replace(/\u00a0/g, ' ');
+function moneyLabel(value: number): string {
+  return formatCurrencyBRL(value).replace(/\u00a0/g, ' ');
 }
 
 function ordinalFem(n: number): string {
   return `${n}ª`;
 }
 
-function formatGroup(from: number, to: number, cents: number): string {
-  const money = moneyFromCents(cents);
-  if (from === to) return `${ordinalFem(from)} de ${money}`;
-  return `${ordinalFem(from)} à ${ordinalFem(to)} de ${money}`;
+function uniqueLine(count: number, amount: number): string {
+  if (count <= 0 || amount < 0) return '';
+  if (count === 1) return `1 parcela de ${moneyLabel(amount)}`;
+  return `${count} parcelas de ${moneyLabel(amount)}`;
 }
 
 export function formatInstallmentScheduleDescription(
-  receipts: InstallmentScheduleReceipt[] | null | undefined,
-  fallback?: { count?: unknown; value?: unknown },
+  input: CommercialInstallmentScheduleInput,
 ): string {
-  const parcels = (receipts || [])
-    .map((row) => ({
-      n: Number(row.installment_number),
-      cents: toCents(row.amount),
-    }))
-    .filter((row): row is { n: number; cents: number } =>
-      Number.isFinite(row.n) && row.n >= 1 && row.cents != null,
-    )
-    .sort((a, b) => a.n - b.n);
+  const total = Math.max(0, Math.floor(Number(input.totalCount) || 0));
+  const base = money(input.baseAmount);
+  if (total <= 0) return '';
 
-  if (!parcels.length) {
-    const count = Number(fallback?.count);
-    const cents = toCents(fallback?.value);
-    if (Number.isFinite(count) && count > 0 && cents != null) {
-      return count === 1
-        ? `1 parcela de ${moneyFromCents(cents)}`
-        : `${count} parcelas de ${moneyFromCents(cents)}`;
-    }
-    return '';
+  const mode = normalizeSignalRemainingPaymentMode(
+    input.remainingMode == null ? null : String(input.remainingMode),
+  );
+  const addon = money(input.remainingAddon);
+  const firstCount =
+    mode === 'ALL_INSTALLMENTS'
+      ? total
+      : Math.max(0, Math.floor(Number(input.remainingInstallments) || 0));
+  const firstAmount = money(base + addon);
+
+  if (!mode || addon <= 0 || firstCount <= 0 || firstAmount === base) {
+    return uniqueLine(total, base);
   }
 
-  const groups: Array<{ from: number; to: number; cents: number }> = [];
-  for (const row of parcels) {
-    const last = groups[groups.length - 1];
-    if (last && last.cents === row.cents && row.n === last.to + 1) {
-      last.to = row.n;
-    } else {
-      groups.push({ from: row.n, to: row.n, cents: row.cents });
-    }
+  if (firstCount >= total) {
+    return uniqueLine(total, firstAmount);
   }
 
-  const count = parcels.length;
-  if (groups.length === 1) {
-    return count === 1
-      ? `1 parcela de ${moneyFromCents(groups[0].cents)}`
-      : `${count} parcelas de ${moneyFromCents(groups[0].cents)}`;
-  }
-
-  return `${count} parcelas — ${groups.map((g) => formatGroup(g.from, g.to, g.cents)).join('; ')}`;
+  return `${total} parcelas — ${ordinalFem(1)} à ${ordinalFem(firstCount)} de ${moneyLabel(
+    firstAmount,
+  )}; ${ordinalFem(firstCount + 1)} à ${ordinalFem(total)} de ${moneyLabel(base)}`;
 }

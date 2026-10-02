@@ -257,7 +257,7 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
     'INSTALLMENTS_SCHEDULE',
     'Descrição das parcelas',
     'finance',
-    'grupos reais de finance_receipts installment_number ≥ 1',
+    'snapshot comercial da venda (quantidade, parcela-base, restante do sinal)',
   ),
   field(
     'SALE_DUE_DATE',

@@ -665,6 +665,16 @@
   line-height: 1.28;
   margin: 0 0 5px;
   text-align: justify;
+  orphans: 2;
+  widows: 2;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-widow-pair,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-widow-pair {
+  display: inline-block;
+  max-width: 100%;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-date,

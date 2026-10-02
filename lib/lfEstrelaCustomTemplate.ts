@@ -427,7 +427,7 @@ ${p('<strong>4.4.</strong> O deferimento e a execução do serviço estarão con
 ${clauseOpen(
   'CLÁUSULA QUINTA',
   'DA EDIFICAÇÃO IRREGULAR E SUAS PENALIDADES',
-  p('<strong>5.1.</strong> Da Infração: A execução de qualquer obra, edificação, benfeitoria ou supressão de vegetação em desacordo com as condições estipuladas neste contrato (incluindo a ausência de prévia e expressa autorização da VENDEDORA), bem como o desrespeito às normas ambientais, urbanísticas ou aos recuos obrigatórios do lote rural individualizado, configurará infração contratual grave e posse de má-fé por parte do COMPRADOR.'),
+  p('<strong>5.1.</strong> Da Infração: A execução de qualquer obra, edificação, benfeitoria ou supressão de vegetação em desacordo com as condições estipuladas neste contrato (incluindo a ausência de prévia e expressa autorização da VENDEDORA), <span class="sv-lf-widow-pair">bem como o desrespeito às normas ambientais, urbanísticas ou aos recuos obrigatórios do lote rural individualizado, configurará infração contratual grave e posse de má-fé por parte do COMPRADOR.</span>'),
 )}
 ${p('<strong>5.2.</strong> Das Sanções e Demolição: Constatada a irregularidade, o COMPRADOR será notificado extrajudicialmente para, no prazo improrrogável de 15 (quinze) dias, paralisar a obra e promover a demolição e o desfazimento das intervenções irregulares, arcando integralmente com os custos de remoção de entulhos e de ações necessárias para a recuperação da área.')}
 ${p('<strong>I.</strong> O descumprimento da notificação sujeitará o COMPRADOR ao pagamento de multa não compensatória equivalente a 10% (dez por cento) do valor atualizado deste contrato, sem prejuízo da rescisão de pleno direito do presente instrumento.')}

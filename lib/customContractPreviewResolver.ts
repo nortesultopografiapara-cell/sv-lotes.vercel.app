@@ -30,6 +30,7 @@ import {
 import { hasLfContractSnapshot, readSaleLfSnapshotRaw } from '@/lib/lfImoveisContractSnapshot';
 import { formatEstrelaEnterpriseLocation } from '@/lib/estrelaDoSulContractFormat';
 import { formatInstallmentScheduleDescription } from '@/lib/installmentScheduleDescription';
+import { resolveRecantoSignalPlan } from '@/lib/recantoSignalRemaining';
 import {
   CUSTOM_PLACEHOLDERS,
   customPlaceholderLabel,
@@ -284,9 +285,20 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
   );
   const parcelRecs = receipts.filter((row) => Number(row.installment_number) >= 1);
   const installmentValue = money(parcelRecs[0]?.amount ?? sale.installment_value);
-  const installmentsSchedule = formatInstallmentScheduleDescription(parcelRecs, {
-    count: pick(parcelRecs.length || null, sale.installments_count),
-    value: parcelRecs[0]?.amount ?? sale.installment_value,
+  const signalPlan = resolveRecantoSignalPlan({
+    contractValue: sale.signal_contract_value ?? sale.down_payment,
+    paidAtSale: sale.signal_paid_at_sale,
+    paymentMode: sale.signal_remaining_payment_mode,
+    remainingInstallments: sale.signal_remaining_installments,
+    totalInstallments: sale.installments_count ?? parcelRecs.length,
+  });
+  const installmentsSchedule = formatInstallmentScheduleDescription({
+    totalCount: pick(sale.installments_count, parcelRecs.length),
+    baseAmount: sale.installment_value,
+    remainingMode: sale.signal_remaining_payment_mode,
+    remainingInstallments: sale.signal_remaining_installments,
+    remainingAddon:
+      sale.signal_remaining_installment_value ?? signalPlan.remainingInstallmentValue,
   });
   const today = input.today || new Date();
   const contractDateRaw = pick(

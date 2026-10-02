@@ -133,7 +133,13 @@ assert((html.match(/WITNESS_1_NAME/g) || []).length >= 2, 'testemunhas nos dois 
 assert((html.match(/data-sv-page-break/g) || []).length === 7, 'sete quebras estruturais (5.1–6.5 fluem juntos)');
 assert((html.match(/data-sv-lf-page="/g) || []).length === 8, 'oito seções estruturais; 5.1 não fica órfão antes de quebra');
 assert((html.match(/data-sv-company-logo/g) || []).length === 8, 'um logo por seção estrutural');
-assert(html.includes('sv-lf-keep-with-next'), 'título de cláusula permanece junto do início do primeiro parágrafo');
+assert(html.includes('sv-lf-widow-pair'), 'últimas linhas do 5.1 ficam juntas na quebra');
+assert(
+  html.includes('sv-lf-widow-pair') &&
+    html.includes('configurará infração contratual grave e posse de má-fé por parte do COMPRADOR.'),
+  '5.1 jurídico permanece; só o ponto de quebra é protegido',
+);
+assert(!/sv-lf-keep-para[\s\S]{0,80}5\.1\./.test(html), '5.1 não usa keepTogether do parágrafo inteiro');
 const keepBlocks = html.match(/<div class="sv-lf-keep-with-next">[\s\S]*?<\/div>/g) || [];
 assert(keepBlocks.length >= 12, 'keep-with-next em cada abertura de cláusula');
 assert(
@@ -601,9 +607,13 @@ assert(read('app/contracts/page.tsx').includes('htmlLooksLfEstrela'), 'PDF Contr
 assert(read('lib/contractPdfPostProcess.ts').includes('getLfEstrelaCustomHtml2pdfOptions'), 'html2pdf LF usa 15mm e quebra CSS');
 assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-keep-with-next'), 'html2pdf evita cortar título+primeiro parágrafo');
 assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-keep-para'), 'html2pdf evita cortar o parágrafo 2.9.1');
+assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-widow-pair'), 'html2pdf evita órfã das últimas linhas do 5.1');
+assert(/orphans:\s*2/.test(read('lib/lfEstrelaPrintCss.ts')), 'corpo jurídico com orphans 2');
+assert(/widows:\s*2/.test(read('lib/lfEstrelaPrintCss.ts')), 'corpo jurídico com widows 2');
 assert(/\.sv-lf-section\s*\{[^}]*margin:\s*4px 0 2mm/.test(read('lib/lfEstrelaPrintCss.ts')), 'títulos da capa com 2mm acima da tabela');
 assert(/\.sv-lf-section\s*\{[^}]*margin:\s*4px 0 2mm/.test(css), 'prévia/editor: títulos da capa com 2mm acima da tabela');
 assert(css.includes('sv-lf-keep-para'), 'prévia/editor protege parágrafo 2.9.1');
+assert(css.includes('sv-lf-widow-pair'), 'prévia/editor protege últimas linhas do 5.1');
 assert(!/avoid:\s*\[[^\]]*['\"]h1['\"]/.test(read('lib/contractPdfPostProcess.ts').slice(
   read('lib/contractPdfPostProcess.ts').indexOf('getLfEstrelaCustomHtml2pdfOptions'),
   read('lib/contractPdfPostProcess.ts').indexOf('getLfEstrelaCustomHtml2pdfOptions') + 900,
