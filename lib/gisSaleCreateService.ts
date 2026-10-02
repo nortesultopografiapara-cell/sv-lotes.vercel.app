@@ -41,6 +41,8 @@ import {
   detectPreviewAraguaiaNameCoerce,
   normalizeSaleContractModel,
 } from '@/lib/contractModel';
+import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
+import { buildSplitDownPaymentPersistFields } from '@/lib/recantoSignalRemaining';
 import {
   assertLfParticipationConfiguredForNewSale,
   captureLfContractSnapshotForSale,
@@ -496,40 +498,26 @@ export async function executeGisSaleCreate(
     ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ''))
     : 1;
 
-  const recantoSignalContract =
-    saleContractModel === 'RECANTO_PRIMAVERA'
-      ? parseCurrencyBRLNumber(
-          customerData.signal_contract_value || customerData.down_payment || '',
-        )
-      : null;
+  const splitDownPayment = usesSplitDownPaymentFinance(saleContractModel);
+  const recantoSignalContract = splitDownPayment
+    ? parseCurrencyBRLNumber(
+        customerData.signal_contract_value || customerData.down_payment || '',
+      )
+    : null;
   const recantoSignalPaidAtSale =
-    saleContractModel === 'RECANTO_PRIMAVERA' &&
+    splitDownPayment &&
     customerData.signal_paid_at_sale != null &&
     String(customerData.signal_paid_at_sale).trim() !== ''
       ? parseCurrencyBRLNumber(String(customerData.signal_paid_at_sale))
       : null;
-  const recantoSignalRemaining =
-    recantoSignalContract != null && recantoSignalPaidAtSale != null
-      ? Math.max(0, recantoSignalContract - recantoSignalPaidAtSale)
-      : null;
-  const recantoSignalMode =
-    saleContractModel === 'RECANTO_PRIMAVERA' &&
-    recantoSignalRemaining != null &&
-    recantoSignalRemaining > 0
-      ? String(customerData.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS')
-      : null;
-  const recantoSignalInstallments =
-    recantoSignalMode === 'FIRST_INSTALLMENTS'
-      ? Number(customerData.signal_remaining_installments) || null
-      : recantoSignalMode === 'ALL_INSTALLMENTS'
-        ? instCount
-        : null;
-  const recantoSignalInstallmentValue =
-    recantoSignalRemaining != null &&
-    recantoSignalInstallments &&
-    recantoSignalInstallments > 0
-      ? Math.round((recantoSignalRemaining / recantoSignalInstallments) * 100) / 100
-      : null;
+  const splitPersist = buildSplitDownPaymentPersistFields({
+    enabled: splitDownPayment,
+    contractValue: recantoSignalContract,
+    paidAtSale: recantoSignalPaidAtSale,
+    paymentMode: String(customerData.signal_remaining_payment_mode || ''),
+    remainingInstallments: Number(customerData.signal_remaining_installments) || null,
+    installmentsCount: instCount,
+  });
 
   const balloonPlan = resolveSaleBalloonPlan({
     useBalloon: Boolean(customerData.use_balloon_installments),
@@ -555,6 +543,7 @@ export async function executeGisSaleCreate(
       totalValue: customerData.final_value || finalPrice,
       downPayment: entryForPrincipal,
       contractModel: saleContractModel,
+      reduceByDownPayment: splitDownPayment ? false : undefined,
     });
     const balloonValidation = validateSaleBalloonConfiguration({
       plan: balloonPlan,
@@ -562,11 +551,14 @@ export async function executeGisSaleCreate(
       installmentsCount: instCount,
       principal,
       finalValue: customerData.final_value || finalPrice,
-      entryAmount: downPaymentReducesInstallmentBase(saleContractModel)
-        ? entryForPrincipal
-        : 0,
+      entryAmount:
+        splitDownPayment || !downPaymentReducesInstallmentBase(saleContractModel)
+          ? 0
+          : entryForPrincipal,
       firstInstallmentDueDate: customerData.first_installment_due_date,
-      entryReducesPrincipal: downPaymentReducesInstallmentBase(saleContractModel),
+      entryReducesPrincipal:
+        !splitDownPayment &&
+        downPaymentReducesInstallmentBase(saleContractModel),
     });
     if (!balloonValidation.valid) {
       throw new Error(balloonValidation.message);
@@ -608,21 +600,21 @@ export async function executeGisSaleCreate(
     discount: parseCurrencyBRLNumber(customerData.discount_value),
     total_value: customerData.final_value || finalPrice,
     down_payment:
-      recantoSignalContract ?? parseCurrencyBRLNumber(customerData.down_payment),
+      splitPersist.downPaymentOverride ?? parseCurrencyBRLNumber(customerData.down_payment),
     installments_count: instCount,
     installment_correction_type:
-      saleContractModel === 'RECANTO_PRIMAVERA'
+      splitDownPayment
         ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
         : normalizeInstallmentCorrectionType(
             customerData.installment_correction_type,
           ),
     status: 'ACTIVE',
-    signal_contract_value: recantoSignalContract,
-    signal_paid_at_sale: recantoSignalPaidAtSale,
-    signal_remaining_value: recantoSignalRemaining,
-    signal_remaining_payment_mode: recantoSignalMode,
-    signal_remaining_installments: recantoSignalInstallments,
-    signal_remaining_installment_value: recantoSignalInstallmentValue,
+    signal_contract_value: splitPersist.signalContractValue,
+    signal_paid_at_sale: splitPersist.signalPaidAtSale,
+    signal_remaining_value: splitPersist.signalRemainingValue,
+    signal_remaining_payment_mode: splitPersist.signalRemainingPaymentMode,
+    signal_remaining_installments: splitPersist.signalRemainingInstallments,
+    signal_remaining_installment_value: splitPersist.signalRemainingInstallmentValue,
     installment_definition_mode:
       recantoInstallmentSnapshot.installment_definition_mode,
     regular_installment_amount:

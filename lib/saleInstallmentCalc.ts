@@ -10,6 +10,7 @@ import {
   type SaleContractModel,
 } from '@/lib/contractModel';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
+import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
 
 export function downPaymentReducesInstallmentBase(
   contractModel: SaleContractModel | unknown,
@@ -24,10 +25,15 @@ export function resolveInstallmentPrincipal(params: {
   totalValue: number;
   downPayment?: number;
   contractModel?: SaleContractModel | unknown;
+  /** Override explícito (GIS split-down-payment). Sem override, usa o motor do modelo. */
+  reduceByDownPayment?: boolean;
 }): number {
   const total = Math.max(0, Number(params.totalValue) || 0);
   const down = Math.max(0, Number(params.downPayment) || 0);
-  if (downPaymentReducesInstallmentBase(params.contractModel)) {
+  const reduce =
+    params.reduceByDownPayment ??
+    downPaymentReducesInstallmentBase(params.contractModel);
+  if (reduce) {
     return Math.max(0, total - down);
   }
   return total;
@@ -59,6 +65,7 @@ export function computeInstallmentDisplayValue(params: {
   downPayment?: number;
   installmentsCount: number;
   contractModel?: SaleContractModel | unknown;
+  reduceByDownPayment?: boolean;
 }): number {
   const count = params.installmentsCount;
   if (count <= 0) return 0;
@@ -66,6 +73,7 @@ export function computeInstallmentDisplayValue(params: {
     totalValue: params.finalValue,
     downPayment: params.downPayment,
     contractModel: params.contractModel,
+    reduceByDownPayment: params.reduceByDownPayment,
   });
   return splitInstallmentAmounts(principal, count)[0] ?? 0;
 }
@@ -76,13 +84,19 @@ export function expectedSaleFinanceTotal(params: {
   grossDownPayment?: number;
   contractModel?: SaleContractModel | unknown;
   paymentType?: string;
+  reduceByDownPayment?: boolean;
 }): number {
   const finalValue = Math.max(0, Number(params.finalValue) || 0);
   const paymentType = params.paymentType || 'Parcelado';
   const mode = resolveSalePaymentMode({ payment_type: paymentType }).mode;
   if (mode === 'IMMEDIATE_CASH' || mode === 'SINGLE_FUTURE') return finalValue;
 
-  if (!downPaymentReducesInstallmentBase(params.contractModel)) {
+  const reduce =
+    params.reduceByDownPayment ??
+    (usesSplitDownPaymentFinance(params.contractModel)
+      ? false
+      : downPaymentReducesInstallmentBase(params.contractModel));
+  if (!reduce) {
     return finalValue + Math.max(0, Number(params.grossDownPayment) || 0);
   }
   return finalValue;

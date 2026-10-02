@@ -176,12 +176,29 @@ export function parsePreviewSellers(input: {
   return sellers;
 }
 
-function receiptAmount(
+function receiptAmountNumber(
   receipts: Array<Record<string, unknown>> | null | undefined,
   predicate: (n: number) => boolean,
-): string {
+): number | null {
   const match = (receipts || []).find((row) => predicate(Number(row.installment_number)));
-  return money(match?.amount);
+  const num = Number(match?.amount);
+  return Number.isFinite(num) ? num : null;
+}
+
+/** Sinal/entrada contratado (não o valor pago no ato quando há split). */
+function resolveContractedDownPayment(
+  sale: Record<string, unknown>,
+  receipts: Array<Record<string, unknown>> | null | undefined,
+): number | null {
+  const contracted = sale.signal_contract_value ?? sale.down_payment;
+  if (contracted != null && String(contracted).trim() !== '') {
+    const num = Number(contracted);
+    if (Number.isFinite(num)) return num;
+  }
+  return (
+    receiptAmountNumber(receipts, (n) => n === 0) ??
+    receiptAmountNumber(receipts, (n) => n === -1)
+  );
 }
 
 function publicFinancialAccountLabel(account: Record<string, unknown>): string {
@@ -364,15 +381,8 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     SALE_VALUE: money(saleValue),
     SALE_VALUE_EXTENSO: moneyExtenso(saleValue),
     PAYMENT_TYPE: paymentLabel || persistedPaymentType,
-    DOWN_PAYMENT:
-      receiptAmount(receipts, (n) => n === 0) ||
-      receiptAmount(receipts, (n) => n === -1) ||
-      money(sale.down_payment),
-    DOWN_PAYMENT_EXTENSO: moneyExtenso(
-      (receipts || []).find((row) => Number(row.installment_number) === 0)?.amount ??
-        (receipts || []).find((row) => Number(row.installment_number) === -1)?.amount ??
-        sale.down_payment,
-    ),
+    DOWN_PAYMENT: money(resolveContractedDownPayment(sale, receipts)),
+    DOWN_PAYMENT_EXTENSO: moneyExtenso(resolveContractedDownPayment(sale, receipts)),
     BROKER_COMMISSION: money(commission),
     BROKER_COMMISSION_EXTENSO: moneyExtenso(commission),
     INSTALLMENTS_COUNT: pick(

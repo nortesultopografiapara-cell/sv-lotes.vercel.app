@@ -10,9 +10,9 @@ import {
   resolveInstallmentPrincipal,
 } from '@/lib/saleInstallmentCalc';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
+import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
 import {
   applySignalAddonToInstallmentAmounts,
-  isRecantoPrimaveraSaleModel,
   resolveRecantoSignalPlan,
 } from '@/lib/recantoSignalRemaining';
 import {
@@ -150,7 +150,7 @@ export function buildSaleEditFinancePayloads(
         paid_at: new Date().toISOString(),
       });
     }
-    const isRecanto = isRecantoPrimaveraSaleModel(options?.contractModel);
+    const isRecanto = usesSplitDownPaymentFinance(options?.contractModel);
     const hasExplicitSignalPaidAtSale =
       data.signal_paid_at_sale != null &&
       String(data.signal_paid_at_sale).trim() !== '';
@@ -204,6 +204,7 @@ export function buildSaleEditFinancePayloads(
         totalValue: fValue,
         downPayment: grossDownPayment,
         contractModel: options?.contractModel,
+        reduceByDownPayment: isRecanto ? false : undefined,
       });
 
       const installmentMode = isRecanto

@@ -44,7 +44,6 @@ import {
 import { listCustomerSpouseSuggestions } from '@/lib/customerSpousesService';
 import {
   computeInstallmentDisplayValue,
-  downPaymentReducesInstallmentBase,
   resolveInstallmentPrincipal,
   splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
@@ -73,6 +72,7 @@ import {
   normalizeInstallmentCorrectionType,
 } from '@/lib/installmentCorrectionType';
 import type { SaleContractModel } from '@/lib/contractModel';
+import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
 import {
   formatCurrencyBRL,
   parseCurrencyBRLNumber,
@@ -541,7 +541,7 @@ export function CustomerLotFormModal({
   };
   const installmentsCount =
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
-  const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
+  const isRecantoSinal = usesSplitDownPaymentFinance(contractModel);
   const isStandardSaleForm = !isRecantoSinal;
   const signalContractValue = isRecantoSinal
     ? parseCurrencyBRLNumber(
@@ -582,6 +582,7 @@ export function CustomerLotFormModal({
           totalValue: finalValue,
           downPayment: isRecantoSinal ? signalContractValue : downPayment,
           contractModel,
+          reduceByDownPayment: isRecantoSinal ? false : undefined,
         })
       : 0;
 
@@ -620,6 +621,7 @@ export function CustomerLotFormModal({
               downPayment: isRecantoSinal ? signalContractValue : downPayment,
               installmentsCount,
               contractModel,
+              reduceByDownPayment: isRecantoSinal ? false : undefined,
             })
       : 0;
   const lotBaseAmountsForPreview =
@@ -709,6 +711,7 @@ export function CustomerLotFormModal({
                 downPayment: effectiveDownPayment,
                 installmentsCount: installmentsResult.value,
                 contractModel,
+                reduceByDownPayment: isRecantoSinal ? false : undefined,
               });
 
         if (isRecantoSinal) {
@@ -769,6 +772,7 @@ export function CustomerLotFormModal({
               totalValue: finalValue,
               downPayment: effectiveDownPayment,
               contractModel,
+              reduceByDownPayment: isRecantoSinal ? false : undefined,
             }),
             finalValue,
             entryAmount: isRecantoSinal ? 0 : downPayment,

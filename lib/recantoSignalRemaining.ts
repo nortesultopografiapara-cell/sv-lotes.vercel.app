@@ -245,3 +245,69 @@ export function buildRecantoSignalClauseText(plan: RecantoSignalPlan, totalInsta
   const n = plan.remainingInstallments || 0;
   return `O COMPRADOR pagará, a título de sinal contratual, o valor de ${fmt(plan.contractValue)}, o qual não será abatido do valor do lote nem do saldo parcelado. Desse sinal, ${fmt(plan.paidAtSale)} será pago no ato da assinatura/celebração da venda, ficando o saldo de ${fmt(plan.remainingValue)} parcelado em ${n} parcelas, acrescidas às primeiras parcelas do saldo parcelado do lote, conforme quadro de pagamento deste contrato.`;
 }
+
+export type SplitDownPaymentPersistFields = {
+  downPaymentOverride: number | null;
+  signalContractValue: number | null;
+  signalPaidAtSale: number | null;
+  signalRemainingValue: number | null;
+  signalRemainingPaymentMode: string | null;
+  signalRemainingInstallments: number | null;
+  signalRemainingInstallmentValue: number | null;
+};
+
+/** Snapshot das colunas sales.signal_* — mesma regra Recanto, sem nova matemática. */
+export function buildSplitDownPaymentPersistFields(input: {
+  enabled: boolean;
+  contractValue: number | null;
+  paidAtSale: number | null;
+  paymentMode?: string | null;
+  remainingInstallments?: number | null;
+  installmentsCount: number;
+}): SplitDownPaymentPersistFields {
+  if (!input.enabled) {
+    return {
+      downPaymentOverride: null,
+      signalContractValue: null,
+      signalPaidAtSale: null,
+      signalRemainingValue: null,
+      signalRemainingPaymentMode: null,
+      signalRemainingInstallments: null,
+      signalRemainingInstallmentValue: null,
+    };
+  }
+
+  const signalContractValue = input.contractValue;
+  const signalPaidAtSale = input.paidAtSale;
+  const signalRemainingValue =
+    signalContractValue != null && signalPaidAtSale != null
+      ? Math.max(0, money(signalContractValue - signalPaidAtSale))
+      : null;
+  const signalRemainingPaymentMode =
+    signalRemainingValue != null && signalRemainingValue > 0
+      ? String(input.paymentMode || 'FIRST_INSTALLMENTS')
+      : null;
+  const signalRemainingInstallments =
+    signalRemainingPaymentMode === 'FIRST_INSTALLMENTS'
+      ? Number(input.remainingInstallments) || null
+      : signalRemainingPaymentMode === 'ALL_INSTALLMENTS'
+        ? input.installmentsCount
+        : null;
+  const signalRemainingInstallmentValue =
+    signalRemainingValue != null &&
+    signalRemainingInstallments &&
+    signalRemainingInstallments > 0
+      ? Math.round((signalRemainingValue / signalRemainingInstallments) * 100) /
+        100
+      : null;
+
+  return {
+    downPaymentOverride: signalContractValue,
+    signalContractValue,
+    signalPaidAtSale,
+    signalRemainingValue,
+    signalRemainingPaymentMode,
+    signalRemainingInstallments,
+    signalRemainingInstallmentValue,
+  };
+}

@@ -59,7 +59,7 @@ import {
   normalizeInstallmentCorrectionType,
 } from "@/lib/installmentCorrectionType";
 import { buildSaleEditFinancePayloads } from "@/lib/saleEditFinanceRecalc";
-import { normalizeSaleContractModel } from "@/lib/contractModel";
+import { resolveSaleContractModelFromContext } from "@/lib/contractModel";
 import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
@@ -4101,7 +4101,7 @@ export default function GISMap({
   useEffect(() => {
     async function loadBrokersAndContractModel() {
       if (!user?.tenant_id || !isBrowserOnline()) return;
-      const [{ data: brokers }, { data: company }] = await Promise.all([
+      const [{ data: brokers }, { data: company }, projectRes] = await Promise.all([
         supabase
           .from("brokers")
           .select("id, name, commission_percent, commission_mode, commission_fixed_amount")
@@ -4113,6 +4113,13 @@ export default function GISMap({
           .select("contract_model")
           .eq("id", user.tenant_id)
           .maybeSingle(),
+        projectId
+          ? supabase
+              .from("projects")
+              .select("contract_model, name")
+              .eq("id", projectId)
+              .maybeSingle()
+          : Promise.resolve({ data: null as { contract_model?: string | null; name?: string | null } | null }),
       ]);
       setBrokersList(
         (brokers || []).map((b) => ({
@@ -4123,12 +4130,17 @@ export default function GISMap({
           commission_fixed_amount: b.commission_fixed_amount ?? null,
         })),
       );
+      const project = projectRes.data;
       setTenantContractModel(
-        normalizeSaleContractModel(company?.contract_model),
+        resolveSaleContractModelFromContext({
+          projectModel: project?.contract_model,
+          projectName: project?.name,
+          companyModel: company?.contract_model,
+        }).model,
       );
     }
     if (user) void loadBrokersAndContractModel();
-  }, [user?.tenant_id, user?.id]);
+  }, [user?.tenant_id, user?.id, projectId]);
 
   const openEditSaleForm = async (lot: any) => {
     if (!userCanEditSale) {

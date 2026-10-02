@@ -3,6 +3,8 @@
  * Toda aritmética monetária em centavos inteiros. Não afeta PADRAO/Meneses.
  */
 
+import { usesSplitDownPaymentFinance } from '@/lib/saleFinanceConfig';
+
 export const RECANTO_INSTALLMENT_DEFINITION_MODES = ['BY_COUNT', 'FIXED_AMOUNT'] as const;
 
 export type RecantoInstallmentDefinitionMode =
@@ -258,7 +260,7 @@ export function buildRecantoInstallmentSalesSnapshot(input: {
   const model = String(input.contractModel || '')
     .trim()
     .toUpperCase();
-  if (model !== 'RECANTO_PRIMAVERA') {
+  if (!usesSplitDownPaymentFinance(model || input.contractModel)) {
     return {
       installment_definition_mode: null,
       regular_installment_amount: null,
