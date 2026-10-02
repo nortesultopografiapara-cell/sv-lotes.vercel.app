@@ -29,7 +29,7 @@ import { formatAraguaiaSeatAddressParts } from "@/lib/araguaiaContractQualificat
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
 import { buildEstrelaDoSulPdfChrome } from "@/lib/estrelaDoSulContractPdf";
-import { applyLfEstrelaGisPrintToCaptureElement } from "@/lib/lfEstrelaPrintCss";
+import { applyLfEstrelaGisPrintToCaptureElement, isLfEstrelaCustomHtml, LF_ESTRELA_CUSTOM_PDF_MARGIN_MM } from "@/lib/lfEstrelaPrintCss";
 
 export type ContractPdfChromeInput = {
   tenantName: string;
@@ -132,6 +132,32 @@ export function getContractHtml2pdfOptions(
   };
 }
 
+export function getLfEstrelaCustomHtml2pdfOptions(
+  filename: string,
+): ContractHtml2pdfOptions {
+  return {
+    ...getContractHtml2pdfOptions(filename),
+    margin: [
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.top,
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.right,
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.bottom,
+      LF_ESTRELA_CUSTOM_PDF_MARGIN_MM.left,
+    ],
+    pagebreak: {
+      mode: ['css'],
+      avoid: [
+        '.sv-lf-sign',
+        '.lf-estrela-signatures',
+        '.sv-lf-table tr',
+        '.sv-company-logo',
+        'h1',
+        'h2',
+        'h3',
+      ],
+    },
+  };
+}
+
 /**
  * Recanto — evita corte de linha entre páginas (html2canvas fatia no meio do parágrafo
  * quando só a cláusula inteira está com break-inside:auto).
@@ -153,6 +179,9 @@ export function resolveContractHtml2pdfOptions(
   filename: string,
   html?: string | null,
 ): ContractHtml2pdfOptions {
+  if (isLfEstrelaCustomHtml(html)) {
+    return getLfEstrelaCustomHtml2pdfOptions(filename);
+  }
   if (isRecantoPrimaveraContractModel(tenant)) {
     return getRecantoContractHtml2pdfOptions(filename);
   }

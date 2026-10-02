@@ -96,16 +96,16 @@ function objectRows(): string[][] {
   ];
 }
 
-function financeRows(): string[][] {
+function financeRows(arrasNote: number, parcelasNote: number): string[][] {
   return [
     ['VALOR TOTAL DO IMÓVEL', `${t('SALE_VALUE')} (${t('SALE_VALUE_EXTENSO')})`],
     ['VALOR DE CORRETAGEM', `${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')})`],
     [
-      `VALOR DO SINAL/ENTRADA (ARRAS)<sup>2</sup>`,
+      `VALOR DO SINAL/ENTRADA (ARRAS)<sup>${arrasNote}</sup>`,
       `${t('DOWN_PAYMENT')} (${t('DOWN_PAYMENT_EXTENSO')})`,
     ],
     [
-      `PARCELAS E VALORES<sup>3</sup>`,
+      `PARCELAS E VALORES<sup>${parcelasNote}</sup>`,
       `${t('INSTALLMENTS_COUNT')} parcelas de ${t('INSTALLMENT_VALUE')}`,
     ],
     ['VENCIMENTO DAS 1ª PARCELA', t('FIRST_DUE_DATE')],
@@ -124,12 +124,12 @@ function objectTable(extraClass = ''): string {
   );
 }
 
-function financeTable(extraClass = ''): string {
+function financeTable(extraClass = '', arrasNote = 2, parcelasNote = 3): string {
   return table(
     `sv-lf-table sv-lf-table-finance ${extraClass}`.trim(),
     ['ITEM', 'VALOR / DETALHAMENTO'],
     [43, 57],
-    financeRows(),
+    financeRows(arrasNote, parcelasNote),
   );
 }
 
@@ -140,17 +140,26 @@ function signatureSlot(labelHtml: string, extraHtml: string): string {
 
 function signatureBlock(): string {
   return `<div class="sv-lf-sign lf-estrela-signatures" data-sv-keep-block="true">
-<div class="sv-lf-sign-col">
+<div class="sv-lf-sign-row">
 ${signatureSlot('COMPRADOR 1', `CPF n° ${t('CLIENT_CPF')}`)}
-<div class="sv-lf-sign-slot" data-sv-if="spouse"><p class="sv-lf-sign-line">&nbsp;</p><p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p></div>
-${signatureSlot(t('WITNESS_1_NAME'), `CPF n°: ${t('WITNESS_1_CPF')}`)}
-</div>
-<div class="sv-lf-sign-col">
 ${signatureSlot(t('COMPANY_LEGAL_NAME'), `CNPJ ${t('COMPANY_CNPJ')}`)}
+</div>
+<div class="sv-lf-sign-row">
+<div class="sv-lf-sign-slot" data-sv-if="spouse"><p class="sv-lf-sign-line">&nbsp;</p><p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p></div>
+<div class="sv-lf-sign-slot sv-lf-sign-empty" data-sv-if="noSpouse" aria-hidden="true"></div>
 ${signatureSlot(t('SELLER_2_NAME'), `CPF n°: ${t('SELLER_2_CPF_CNPJ')}`)}
+</div>
+<div class="sv-lf-sign-row">
+${signatureSlot(t('WITNESS_1_NAME'), `CPF n°: ${t('WITNESS_1_CPF')}`)}
 ${signatureSlot(t('WITNESS_2_NAME'), `CPF n°: ${t('WITNESS_2_CPF')}`)}
 </div>
 </div>`;
+}
+
+function lfPage(n: number, inner: string, last = false): string {
+  return `<section class="sv-lf-page" data-sv-lf-page="${n}">${logo()}${inner}</section>${
+    last ? '' : PAGE_BREAK
+  }`;
 }
 
 function clauseHead(main: string, sub: string): string {
@@ -167,9 +176,9 @@ function dateLine(): string {
 function logo(): string {
   return renderCompanyLogoBlock({
     align: 'center',
-    width: 108,
+    width: 120,
     marginBefore: 0,
-    marginAfter: 2,
+    marginAfter: 8,
   });
 }
 
@@ -284,7 +293,7 @@ export const LF_ESTRELA_REQUIRED_TOKENS = [
 
 export function buildLfEstrelaCustomHtml(): string {
   const html = `<div class="sv-lf-estrela">
-${logo()}
+${lfPage(1, `
 <h1 class="sv-lf-cover-title lf-estrela-title">CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA</h1>
 <p class="sv-lf-green"><strong>CHACREAMENTO: ${t('PROJECT_NAME')}</strong></p>
 <h2 class="sv-lf-section">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)<sup>1</sup></h2>
@@ -317,8 +326,8 @@ ${footnotes([
   note(3, `A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}).`),
   note(4, 'Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.'),
 ])}
-${PAGE_BREAK}
-${logo()}
+`)}
+${lfPage(2, `
 ${table(
   'sv-lf-table sv-lf-table-infra sv-lf-capa',
   ['ITEM', 'Detalhamento'],
@@ -349,8 +358,8 @@ ${table(
 )}
 ${dateLine()}
 ${signatureBlock()}
-${PAGE_BREAK}
-${logo()}
+`)}
+${lfPage(3, `
 <h1 class="sv-lf-instrument-title lf-estrela-title">CONTRATO DE PROMESSA<br>DE COMPRA E VENDA</h1>
 <p class="sv-lf-subtitle"><em>Instrumento particular de compra e venda de imóvel do tipo chácara rural que se regerá pelas cláusulas e condições a seguir.</em></p>
 ${p(`Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE CHÁCARA RURAL, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${t('CLIENT_NAME')}, ${t('CLIENT_NATIONALITY')}, ${t('CLIENT_CIVIL_STATE')}, ${t('CLIENT_PROFESSION')}, portador(a) do RG sob n° ${t('CLIENT_RG')} ${t('CLIENT_RG_ISSUER')} e do CPF sob n° ${t('CLIENT_CPF')}, residente e domiciliada(o) na ${t('CLIENT_ADDRESS')}, doravante denominada COMPRADOR/CONTRATANTE e do outro temos a contratada ${t('COMPANY_LEGAL_NAME')}, pessoa jurídica de direito privado, inscrita no CNPJ sob o n° ${t('COMPANY_CNPJ')}<span data-sv-if="companyCreci">, CRECI/(PA) n° ${t('COMPANY_CRECI')}</span>, com sede na ${t('COMPANY_ADDRESS')}, ${t('COMPANY_NEIGHBORHOOD')}, ${t('COMPANY_CITY')}/${t('COMPANY_STATE')}, CEP: ${t('COMPANY_ZIP')}, com o seguinte endereço eletrônico: ${t('COMPANY_EMAIL')}, Telefone: ${t('COMPANY_PHONE')}, doravante designada simplesmente como VENDEDOR/CONTRATADA.`)}
@@ -364,7 +373,9 @@ ${p('<strong>1.3.</strong> A exata delimitação e as medidas perimetrais da ch�
 ${objectTable()}
 ${clauseHead('CLÁUSULA SEGUNDA', 'PAGAMENTO, REAJUSTE E MORA')}
 ${p('<strong>2.1.</strong> O preço certo e ajustado da unidade imobiliária rural é de:')}
-${financeTable()}
+`)}
+${lfPage(4, `
+${financeTable('', 5, 6)}
 ${p('<strong>2.2.</strong> Do Saldo Remanescente: O saldo remanescente do preço ajustado será adimplido pelo COMPRADOR em parcelas mensais e sucessivas, cujos valores, quantidades e datas de vencimento encontram-se rigorosamente especificados na Capa Resumo (ou Anexo correspondente) deste instrumento.')}
 ${p('<strong>2.3.</strong> Da Correção Monetária: As parcelas vincendas sofrerão reajuste monetário anual, aplicando-se a variação positiva acumulada do Índice Geral de Preços - Mercado (IGP-M), apurado pela Fundação Getúlio Vargas (FGV). O reajuste incidirá a cada período de 12 (doze) meses, contados a partir da data de assinatura deste contrato (data-base).')}
 ${p('<strong>2.4.</strong> Na hipótese de extinção, vedação legal ou ausência de divulgação do IGP-M/FGV, adotar-se-á, de imediato, o IPCA/IBGE ou outro índice oficial que venha a substituí-lo, visando a preservação do equilíbrio econômico-financeiro da avença.')}
@@ -384,7 +395,8 @@ ${footnotes([
   note(5, 'Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pela parte compradora ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicada como indenização pré-fixada.'),
   note(6, `A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}).`),
 ])}
-${PAGE_BREAK}
+`)}
+${lfPage(5, `
 ${clauseHead('CLÁUSULA TERCEIRA', 'DA TRANSMISSÃO DA POSSE DEFINITIVA')}
 ${p('<strong>3.1.</strong> A eventual liberação do acesso e uso da chácara ao COMPRADOR (antes da conclusão da infraestrutura), na pendência de pagamento do saldo devedor, configurará posse meramente precária, resolúvel e vinculada ao fiel cumprimento deste instrumento.')}
 ${p('<strong>3.2.</strong> A referida posse não induzirá, em tempo algum, posse ad usucapionem (para fins de usucapião) e não transferirá a titularidade do bem, a qual permanecerá sob o domínio do VENDEDOR até a efetiva lavratura e registro da Escritura Pública de Compra e Venda, condicionada à quitação total do preço.')}
@@ -401,6 +413,8 @@ ${p('<strong>4.3.</strong> Da Remarcação Topográfica: Caso o COMPRADOR necess
 ${p('<strong>4.4.</strong> O deferimento e a execução do serviço estarão condicionados à irrestrita adimplência contratual do solicitante e ao recolhimento prévio de taxa de serviço (honorários topográficos) equivalente a 1% (um por cento) do valor total e atualizado deste Contrato, pagável mediante boleto bancário emitido especificamente para este fim.')}
 ${clauseHead('CLÁUSULA QUINTA', 'DA EDIFICAÇÃO IRREGULAR E SUAS PENALIDADES')}
 ${p('<strong>5.1.</strong> Da Infração: A execução de qualquer obra, edificação, benfeitoria ou supressão de vegetação em desacordo com as condições estipuladas neste contrato (incluindo a ausência de prévia e expressa autorização da VENDEDORA), bem como o desrespeito às normas ambientais, urbanísticas ou aos recuos obrigatórios do lote rural individualizado, configurará infração contratual grave e posse de má-fé por parte do COMPRADOR.')}
+`)}
+${lfPage(6, `
 ${p('<strong>5.2.</strong> Das Sanções e Demolição: Constatada a irregularidade, o COMPRADOR será notificado extrajudicialmente para, no prazo improrrogável de 15 (quinze) dias, paralisar a obra e promover a demolição e o desfazimento das intervenções irregulares, arcando integralmente com os custos de remoção de entulhos e de ações necessárias para a recuperação da área.')}
 ${p('<strong>I.</strong> O descumprimento da notificação sujeitará o COMPRADOR ao pagamento de multa não compensatória equivalente a 10% (dez por cento) do valor atualizado deste contrato, sem prejuízo da rescisão de pleno direito do presente instrumento.')}
 ${p('<strong>II.</strong> Fica resguardado à VENDEDORA o direito de, a seu exclusivo critério, promover a demolição das obras irregulares às custas do COMPRADOR, cobrando-lhe os valores despendidos com acréscimo de juros e correção monetária.')}
@@ -418,6 +432,8 @@ ${p('<strong>6.3.</strong> Da Condição Suspensiva: O cronograma físico de exe
 ${p('<strong>6.4.</strong> O COMPRADOR declara expressa ciência e anuência de que as obras de infraestrutura do empreendimento serão executadas sob o regime de implantação em etapas e que o desenvolvimento do cronograma físico-financeiro e a consequente entrega das benfeitorias ocorrerão de maneira escalonada e estritamente proporcional ao volume de vendas e de capitalização do projeto, sem que tal progressividade ou faseamento configure, por si só, mora automática da VENDEDORA, desde que respeitados os prazos máximos previstos neste contrato.')}
 ${p('<strong>6.5.</strong> O prazo estimado para conclusão da infraestrutura essencial é de até 120 (cento e vinte) dias, admitida prorrogação por motivo de força maior, caso fortuito, condições climáticas adversas ou exigências administrativas de órgãos públicos.')}
 ${clauseHead('CLÁUSULA SÉTIMA', 'DA RESPONSABILIDADE PELOS TRIBUTOS E ENCARGOS')}
+`)}
+${lfPage(7, `
 ${p('<strong>7.1.</strong> Dos Encargos Fiscais e Tributários: O COMPRADOR assume, a partir da assinatura do presente contrato, a responsabilidade exclusiva pelo pagamento de todos os tributos federais, estaduais ou municipais (ITR, IPTU, CCIR/INCRA, taxas ambientais e correlatas) incidentes sobre a unidade adquirida, devendo promover a alteração do cadastro de cobrança para o seu nome assim que legalmente autorizado.')}
 ${p('<strong>7.2.</strong> Caso ainda não exista individualização cadastral da unidade perante os órgãos competentes, o comprador reembolsará à vendedora os tributos incidentes proporcionalmente à área adquirida.')}
 ${p('<strong>7.3.</strong> Do Reembolso e Infração: Caso a VENDEDORA seja compelida a recolher qualquer tributo ou taxa em atraso para evitar a inscrição em Dívida Ativa ou execuções fiscais, exigirá do COMPRADOR o imediato reembolso do valor pago, acrescido de correção monetária (IGP-M/FGV), juros de 1% ao mês e multa de 2%.')}
@@ -434,7 +450,10 @@ ${p('<strong>8.3.</strong> Da Exclusividade na Intermediação (Fase de Cessão 
 ${p('<strong>8.4.</strong> Da Extinção da Exclusividade: Fica expressamente pactuado que a obrigatoriedade de intermediação exclusiva prevista no item 8.2 somente existirá enquanto houver saldo devedor pendente perante a VENDEDORA, a partir do momento de sua quitação, o COMPRADOR estará livre para comercializar o imóvel da forma que melhor lhe convier.')}
 ${p('<strong>8.5.</strong> Das Penalidades: A cessão, venda ou transferência irregular da unidade à revelia das regras acima estabelecidas implicará na cobrança de multa não compensatória equivalente a 20% (vinte por cento) do valor total e atualizado deste contrato, sem prejuízo da rescisão contratual de pleno direito e da ineficácia do negócio perante a VENDEDORA.')}
 ${clauseHead('CLÁUSULA NONA', 'DA RESOLUÇÃO CONTRATUAL, PENALIDADES E RESTITUIÇÃO DE VALORES')}
-${p('<strong>9.1.</strong> Da Natureza Jurídica das Arras: Fica estabelecido que o valor entregue pelo COMPRADOR no ato da assinatura deste instrumento possui natureza jurídica de Arras Confirmatórias, nos estritos termos dos artigos 417 a 420 do Código Civil. Referida quantia consubstancia a garantia de cumprimento do negócio jurídico entabulado, operando-se, em caso de inexecução culposa ou desistência por parte do COMPRADOR, como indenização pré-fixada em favor da VENDEDORA.')}
+${p('<strong>9.1.</strong> Da Natureza Jurídica das Arras: Fica estabelecido que o valor entregue pelo COMPRADOR no ato da assinatura deste instrumento possui natureza jurídica de Arras Confirmatórias, nos estritos termos dos')}
+`)}
+${lfPage(8, `
+${p('artigos 417 a 420 do Código Civil. Referida quantia consubstancia a garantia de cumprimento do negócio jurídico entabulado, operando-se, em caso de inexecução culposa ou desistência por parte do COMPRADOR, como indenização pré-fixada em favor da VENDEDORA.')}
 ${p(`<strong>9.2.</strong> Da Comissão de Corretagem: As Partes declaram expressa ciência de que o valor de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}) ostenta a natureza de remuneração pelos serviços de intermediação imobiliária (corretagem) efetivamente prestados. Por se tratar de serviço consumado no ato da assinatura deste instrumento (art. 725 do Código Civil), referida quantia não integrará a base de cálculo para devolução e não será restituída ao COMPRADOR em nenhuma hipótese de distrato ou rescisão motivada por este.`)}
 ${p('<strong>9.3.</strong> Das Penalidades por Rescisão: Operando-se a resolução do presente instrumento por iniciativa, inadimplemento ou culpa exclusiva do COMPRADOR, este sujeitar-se-á, de pleno direito e cumulativamente, às seguintes deduções e penalidades, calculadas sobre o montante atualizado a ser eventualmente restituído:')}
 ${p('<strong>I.</strong> Perda integral da quantia paga a título de Arras/Sinal de Negócio (art. 418 do Código Civil);')}
@@ -449,7 +468,10 @@ ${p('<strong>Parágrafo Único:</strong> A restituição ocorrerá em prazo não
 ${clauseHead('CLÁUSULA DÉCIMA', 'DA RESOLUÇÃO DE LOTE COM EDIFICAÇÕES E BENFEITORIAS')}
 ${p('<strong>10.1.</strong> Da Retomada do Imóvel: Na hipótese de rescisão por culpa do COMPRADOR havendo acessões ou benfeitorias introduzidas no lote rural, a VENDEDORA terá assegurado o direito potestativo de retomar a posse imediata do imóvel com todas as suas melhorias, aplicando-se as mesmas regras de retenção financeiras delineadas neste instrumento.')}
 ${p('<strong>10.2.</strong> Do Direito à Indenização e Retenção: O COMPRADOR fará jus à indenização exclusivamente pelas benfeitorias úteis e necessárias, sendo terminantemente excluídas as voluptuárias. Fica expressamente condicionado que tal indenização somente será devida se as obras tiverem sido edificadas em estrita observância às normas legais, ambientais, municipais e com a prévia aprovação expressa da VENDEDORA, conforme exigido neste contrato.')}
-${p('<strong>Parágrafo Único:</strong> O COMPRADOR renuncia expressamente ao direito de retenção do imóvel por benfeitorias (art. 1.219 do Código Civil), obrigando-se a desocupar a chácara imediatamente após a notificação de rescisão, sob pena de caracterização de esbulho possessório, sujeitando-se à reintegração de posse e ao pagamento de taxa de fruição diária.')}
+${p('<strong>Parágrafo Único:</strong> O COMPRADOR renuncia expressamente ao direito de retenção do imóvel por benfeitorias (art. 1.219 do Código Civil), obrigando-se a desocupar a chácara imediatamente após a')}
+`)}
+${lfPage(9, `
+${p('notificação de rescisão, sob pena de caracterização de esbulho possessório, sujeitando-se à reintegração de posse e ao pagamento de taxa de fruição diária.')}
 ${p('<strong>10.3.</strong> Da Isenção de Responsabilidade da VENDEDORA: Fica expressamente pactuado que a VENDEDORA não se responsabilizará por desembolsar, com recursos próprios, qualquer quantia a título de indenização pelas acessões ou benfeitorias erigidas no lote. O direito ao recebimento de tais valores pelo COMPRADOR ficará estritamente condicionado à efetiva revenda da unidade imobiliária a um terceiro (Novo Adquirente), operando-se a liquidação exclusivamente sob as condições delineadas no parágrafo seguinte.')}
 ${p('<strong>10.4.</strong> Da Condição e Forma de Repasse pelo Novo Adquirente: O repasse financeiro correspondente à avaliação das benfeitorias úteis e necessárias será suportado pelo Novo Adquirente. O COMPRADOR original declara ciência e concordância de que receberá a referida indenização de forma parcelada, nos exatos prazos, proporções e condições estabelecidos na nova negociação de venda, figurando a VENDEDORA apenas como mandatária, interveniente e facilitadora do repasse dos valores, isenta de qualquer solidariedade ou responsabilidade caso o Novo Adquirente torne-se inadimplente.')}
 ${p('<strong>10.5.</strong> Da Retenção para Regularização Documental e Tributária: A exigibilidade e a liberação de qualquer saldo indenizatório ao COMPRADOR ficam estritamente subordinadas à comprovação da absoluta regularidade técnica, documental e fiscal da obra.')}
@@ -463,6 +485,8 @@ ${p('<strong>11.3.</strong> Da Força Executiva Extrajudicial: O presente instru
 ${clauseHead('CLÁUSULA DÉCIMA SEGUNDA', 'DAS CONDIÇÕES FINAIS E DO FORO DE ELEIÇÃO')}
 ${p('<strong>12.1.</strong> O presente contrato é celebrado em caráter irrevogável e irretratável, não admitindo arrependimento unilateral, obrigando as partes contratantes, seus herdeiros e sucessores a qualquer título, ao fiel e integral cumprimento de todas as cláusulas e condições aqui pactuadas.')}
 ${p('<strong>12.2.</strong> A tolerância de qualquer das partes quanto ao descumprimento de obrigações contratuais, ou a não aplicação imediata das sanções previstas, será considerada mera liberalidade, não constituindo novação, renúncia de direitos ou alteração das cláusulas aqui pactuadas.')}
+`)}
+${lfPage(10, `
 ${p('<strong>12.3.</strong> As comunicações entre as partes poderão ser realizadas via e-mail, aplicativos de mensagens (whatsapp ou equivalente a ser indicado pelo comprador) ou carta com AR.')}
 ${p('<strong>Parágrafo único:</strong> O COMPRADOR obriga-se a manter seu endereço e contatos atualizados perante a VENDEDORA, sendo considerada válida e entregue qualquer notificação enviada para o último endereço informado no cadastro.')}
 ${p('<strong>12.4.</strong> Se qualquer cláusula ou disposição deste contrato for declarada nula ou inexequível por decisão judicial, tal nulidade não afetará as demais cláusulas, as quais permanecerão em pleno vigor e efeito entre as partes.')}
@@ -474,6 +498,7 @@ ${p(`<strong>12.7.</strong> Para dirimir quaisquer dúvidas ou controvérsias or
 ${p('E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma, na presença de 02 (duas) testemunhas instrumentárias abaixo identificadas.')}
 ${dateLine()}
 ${signatureBlock()}
+`, true)}
 </div>`;
 
   assertNoLfEstrelaPageMarkers(html);

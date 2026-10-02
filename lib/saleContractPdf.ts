@@ -256,8 +256,10 @@ export async function buildSaleContractPdfFromHtml(
         ? buildSvLotes2SaleContractPrintTemplates(chrome)
         : buildSaleContractPrintTemplates(chrome);
 
-  const pdfMargin =
-    chrome.headerVariant === 'estrela-do-sul'
+  const lf = isLfEstrelaCustomHtml(htmlFragment);
+  const pdfMargin = lf
+    ? { top: 15, right: 15, bottom: 15, left: 15 }
+    : chrome.headerVariant === 'estrela-do-sul'
       ? ESTRELA_DO_SUL_PDF_MARGIN_MM
       : CONTRACT_PDF_MARGIN_MM;
 
@@ -294,7 +296,7 @@ export async function buildSaleContractPdfFromHtml(
         bottom: `${pdfMargin.bottom}mm`,
         left: `${pdfMargin.left}mm`,
       },
-      displayHeaderFooter: true,
+      displayHeaderFooter: !lf,
       headerTemplate,
       footerTemplate,
     });

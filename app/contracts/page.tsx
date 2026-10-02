@@ -104,7 +104,7 @@ import {
   loadContractsListForTenant,
 } from "@/lib/contractsListService";
 import { MUNDO_NOVO_LOGO_PATH } from "@/lib/mundoNovoContractPdf";
-import { prepareLfEstrelaGisFinalHtml } from "@/lib/lfEstrelaPrintCss";
+import { isLfEstrelaCustomHtml, prepareLfEstrelaGisFinalHtml } from "@/lib/lfEstrelaPrintCss";
 import {
   CONTRACT_FINANCE_RECEIPTS_SELECT,
   contractReceiptStatusClassName,
@@ -1084,6 +1084,7 @@ export default function ContractsPage() {
       const htmlLooksEstrela = String(ver.generated_html || '').includes(
         'sv-contract-estrela-do-sul',
       );
+      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(ver.generated_html);
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
@@ -1091,7 +1092,7 @@ export default function ContractsPage() {
           : htmlLooksEstrela
             ? { ...(tenantData || {}), contract_model: 'ESTRELA_DO_SUL' }
           : tenantData || {};
-      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo || htmlLooksEstrela
+      const pdfOptions = htmlLooksAraguaia || htmlLooksMundoNovo || htmlLooksEstrela || htmlLooksLfEstrela
         ? resolveContractHtml2pdfOptions(
             pdfChromeTenant,
             pdfFilename,
@@ -1112,6 +1113,7 @@ export default function ContractsPage() {
           .toPdf()
           .get("pdf")
           .then((pdf: any) => {
+            if (htmlLooksLfEstrela) return;
             if (tenantData) {
               applyContractPdfChrome(
                 pdf,
@@ -1270,6 +1272,7 @@ export default function ContractsPage() {
       const htmlLooksEstrela = String(htmlBody || '').includes(
         'sv-contract-estrela-do-sul',
       );
+      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(htmlBody);
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
@@ -1299,6 +1302,7 @@ export default function ContractsPage() {
           .toPdf()
           .get("pdf")
           .then((pdf: any) => {
+            if (htmlLooksLfEstrela) return;
             applyContractPdfChrome(
               pdf,
               buildContractPdfChromeFromTenant(

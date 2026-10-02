@@ -1,5 +1,5 @@
 /**
- * Print GIS do LF ESTRELA: tinta preta + logo interno oculto.
+ * Print GIS do LF ESTRELA: tinta preta, logo central, 10 páginas do gabarito.
  * npx tsx scripts/mandatory-lf-estrela-print-css-tests.ts
  */
 import fs from 'node:fs';
@@ -29,7 +29,7 @@ function read(rel: string): string {
 function testPrintCssRequiredInk() {
   const violations = collectLfEstrelaPrintCssViolations(LF_ESTRELA_GIS_FINAL_PRINT_CSS);
   assert(violations.length === 0, `CSS GIS inválido: ${violations.join('; ')}`);
-  console.log('OK CSS GIS preto / opacity 1 / logo display:none');
+  console.log('OK CSS GIS preto / opacity 1 / logo visível / quebras');
 }
 
 function testLightCssFails() {
@@ -49,11 +49,11 @@ function testLightCssFails() {
 function testTemplateKeepsLogoToken() {
   const html = buildLfEstrelaCustomHtml();
   assert(html.includes('{{COMPANY_LOGO_URL}}'), 'template oficial preserva token');
-  assert((html.match(/COMPANY_LOGO_URL/g) || []).length >= 3, 'capa + quebras com logo');
+  assert((html.match(/\{\{COMPANY_LOGO_URL\}\}/g) || []).length === 10, 'capa + 9 páginas com logo');
   console.log('OK template CUSTOM preserva COMPANY_LOGO_URL');
 }
 
-function testGisFinalStripsLogos() {
+function testGisFinalKeepsLogos() {
   const template = buildLfEstrelaCustomHtml();
   const values: Record<string, string | null> = {
     COMPANY_LOGO_URL: 'https://cdn.example/logo-lf.png',
@@ -98,10 +98,11 @@ function testGisFinalStripsLogos() {
   assert(gis.html.includes(LF_ESTRELA_GIS_FINAL_ATTR), 'emissão GIS marca contexto final');
   assert(gis.html.includes(LF_ESTRELA_GIS_PRINT_STYLE_ID), 'emissão GIS embute CSS de tinta');
   const gisBody = gis.html.replace(/<style[\s\S]*?<\/style>/gi, '');
-  assert(!gisBody.includes('sv-company-logo'), 'GIS remove bloco de logo interno');
-  assert(!gis.html.includes('cdn.example/logo-lf.png'), 'GIS não deixa img do template');
+  assert(gisBody.includes('sv-company-logo'), 'GIS mantém bloco de logo central');
+  assert(gis.html.includes('cdn.example/logo-lf.png'), 'GIS renderiza img do template');
   assert(!/visibility:\s*hidden/.test(LF_ESTRELA_GIS_FINAL_PRINT_CSS), 'não usa visibility:hidden');
-  console.log('OK GIS suprime logo; editor isolado preserva');
+  assert(!/display:\s*none\s*!important/.test(LF_ESTRELA_GIS_FINAL_PRINT_CSS) || !/sv-company-logo[\s\S]{0,80}display:\s*none/.test(LF_ESTRELA_GIS_FINAL_PRINT_CSS), 'não oculta logo');
+  console.log('OK GIS mantém logo central; editor isolado preserva');
 }
 
 function testPrepareExistingStoredHtml() {
@@ -113,11 +114,11 @@ function testPrepareExistingStoredHtml() {
   assert(isLfEstrelaCustomHtml(stored), 'detecta HTML LF ESTRELA');
   const prepared = prepareLfEstrelaGisFinalHtml(stored);
   const preparedBody = prepared.replace(/<style[\s\S]*?<\/style>/gi, '');
-  assert(!preparedBody.includes('sv-company-logo'), 'print remove logo de HTML já persistido');
+  assert(preparedBody.includes('sv-company-logo'), 'print mantém logo de HTML já persistido');
   assert(prepared.includes('Cláusula primeira'), 'conteúdo jurídico permanece');
   assert(prepared.includes('color: #000 !important'), 'CSS de tinta no HTML preparado');
   const stripped = stripLfEstrelaInternalLogos(stored);
-  assert(!stripped.includes('logo.png'), 'strip remove src');
+  assert(stripped.includes('logo.png'), 'strip não remove mais o logo do gabarito');
   console.log('OK prepare no contrato já gerado');
 }
 
@@ -163,7 +164,10 @@ function testWiring() {
   );
   assert(wrapped.includes('color: #000'), 'documento Chromium preto');
   const wrappedBody = wrapped.replace(/<style[\s\S]*?<\/style>/gi, '');
-  assert(!wrappedBody.includes('sv-company-logo'), 'wrap GIS remove logo interno');
+  assert(wrappedBody.includes('sv-company-logo'), 'wrap GIS mantém logo central');
+  assert(page.includes('if (htmlLooksLfEstrela) return'), 'PDF Contratos não aplica chrome GIS no LF');
+  assert(pdf.includes('getLfEstrelaCustomHtml2pdfOptions'), 'opções html2pdf LF 15mm');
+  assert(wrap.includes('displayHeaderFooter: !lf'), 'Chromium LF sem header/footer GIS');
   console.log('OK wiring GIS/print');
 }
 
@@ -171,7 +175,7 @@ function main() {
   testPrintCssRequiredInk();
   testLightCssFails();
   testTemplateKeepsLogoToken();
-  testGisFinalStripsLogos();
+  testGisFinalKeepsLogos();
   testPrepareExistingStoredHtml();
   testNoSpouseUnchanged();
   testStarSelectorDoesNotSetDisplay();

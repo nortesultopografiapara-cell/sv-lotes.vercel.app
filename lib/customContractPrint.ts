@@ -47,11 +47,16 @@ body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .sv-lf-estrela .lf-estrela-signatures,
 .sv-lf-estrela .sv-lf-sign td,
 .sv-lf-estrela .sv-lf-sign-col,
+.sv-lf-estrela .sv-lf-sign-row,
 .sv-lf-estrela .sv-lf-sign-slot,
 .sv-lf-estrela .sv-lf-sign * {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
+}
+.sv-lf-estrela .sv-lf-sign-line {
+  border: none !important;
+  border-bottom: 1px solid #000 !important;
 }
 .sv-lf-estrela,
 .sv-lf-estrela * {

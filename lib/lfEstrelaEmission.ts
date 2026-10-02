@@ -93,6 +93,7 @@ export function applyLfEstrelaConditionals(
     (full, _tag: string, _attrs: string, flag: string) => {
       const key = String(flag || '').trim();
       if (key === 'spouse') return flags.spouse ? full : '';
+      if (key === 'noSpouse') return flags.spouse ? '' : full;
       if (key === 'companyCreci') return flags.companyCreci ? full : '';
       return full;
     },
@@ -131,7 +132,7 @@ export function composeLfEstrelaContractHtml(
     mode: CustomPlaceholderFillMode;
     sale?: Record<string, unknown> | null;
     requireComplete?: boolean;
-    /** Chrome institucional GIS/PDF — oculta COMPANY_LOGO_URL interno. */
+    /** CSS de tinta + quebras do gabarito; o logo central permanece. */
     gisChrome?: boolean;
   },
 ): { html: string; flags: LfEstrelaConditionFlags; missing: string[] } {

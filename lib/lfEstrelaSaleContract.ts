@@ -7,7 +7,7 @@ import {
   composeLfEstrelaContractHtml,
   assertNoSemDadoInFinalHtml,
 } from '@/lib/lfEstrelaEmission';
-import { isLfEstrelaModelName } from '@/lib/lfEstrelaCustomTemplate';
+import { buildLfEstrelaCustomHtml, isLfEstrelaModelName } from '@/lib/lfEstrelaCustomTemplate';
 import { resolveCustomPreviewValues } from '@/lib/customContractPreviewResolver';
 import { isDevelopHomologRuntime } from '@/lib/homolog/env';
 import { resolveBuyerNationality } from '@/lib/customerIdentity';
@@ -129,7 +129,7 @@ export async function tryBuildLfEstrelaCustomSaleHtml(
   if (resolvedClientNationality) {
     values.CLIENT_NATIONALITY = resolvedClientNationality;
   }
-  const composed = composeLfEstrelaContractHtml(published.html, values, {
+  const composed = composeLfEstrelaContractHtml(buildLfEstrelaCustomHtml(), values, {
     mode: 'final',
     sale: input.sale,
     requireComplete: true,

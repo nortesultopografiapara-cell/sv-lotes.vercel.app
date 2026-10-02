@@ -130,10 +130,12 @@ assert(html.includes('CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA'), '
 assert(html.includes('INFRAESTRUTURA ESSENCIAL'), 'bloco de infraestrutura');
 assert((html.match(/COMPRADOR 1/g) || []).length >= 2, 'dois blocos de assinatura (capa + instrumento)');
 assert((html.match(/WITNESS_1_NAME/g) || []).length >= 2, 'testemunhas nos dois blocos');
-assert((html.match(/data-sv-page-break/g) || []).length >= 2, 'quebras estruturais capa→infra e capa→instrumento');
+assert((html.match(/data-sv-page-break/g) || []).length === 9, 'nove quebras estruturais = 10 páginas');
+assert((html.match(/data-sv-lf-page="/g) || []).length === 10, 'dez seções de página do gabarito');
+assert((html.match(/data-sv-company-logo/g) || []).length === 10, 'um logo por página');
 
 const capaPages = html.split(/<div data-sv-page-break="true"[^>]*><\/div>/);
-assert(capaPages.length >= 3, 'Capa tem quebra para página 2 e para o instrumento');
+assert(capaPages.length === 10, 'Capa + infra + 8 páginas do instrumento');
 assert(
   capaPages[0].includes('CAPA RESUMO') &&
     capaPages[0].includes('DAS PARTES CONTRATANTES') &&
@@ -148,12 +150,35 @@ assert(
     capaPages[1].includes('COMPRADOR 1') &&
     capaPages[1].includes('WITNESS_1_NAME') &&
     capaPages[1].includes('lf-estrela-signatures') &&
-    !capaPages[1].includes('CONTRATO DE PROMESSA<br>'),
+    !capaPages[1].includes('CONTRATO DE PROMESSA<br>') &&
+    !capaPages[1].includes('CLÁUSULA PRIMEIRA'),
   'página 2 da Capa: infraestrutura + data + assinaturas (sem o instrumento)',
 );
 assert(
-  capaPages[2].includes('CONTRATO DE PROMESSA') && !capaPages[2].includes('INFRAESTRUTURA ESSENCIAL'),
-  'instrumento começa somente depois da Capa',
+  capaPages[2].includes('CONTRATO DE PROMESSA') &&
+    capaPages[2].includes('CLÁUSULA PRIMEIRA') &&
+    capaPages[2].includes('CLÁUSULA SEGUNDA') &&
+    !capaPages[2].includes('INFRAESTRUTURA ESSENCIAL') &&
+    !capaPages[2].includes('VALOR TOTAL DO IMÓVEL'),
+  'página 3 começa o instrumento e termina antes da tabela financeira',
+);
+assert(
+  capaPages[3].includes('VALOR TOTAL DO IMÓVEL') &&
+    capaPages[3].includes('<sup>5</sup>') &&
+    capaPages[3].includes('<sup>6</sup>') &&
+    capaPages[3].includes('2.9.2'),
+  'página 4: tabela financeira do instrumento + 2.2–2.9.2',
+);
+assert(capaPages[4].includes('CLÁUSULA TERCEIRA') && capaPages[4].includes('5.1.'), 'página 5: cláusulas 3–5.1');
+assert(capaPages[5].includes('5.2.') && capaPages[5].includes('CLÁUSULA SÉTIMA') && !capaPages[5].includes('7.1.'), 'página 6: 5.2–6.5 + título da sétima');
+assert(capaPages[6].includes('7.1.') && capaPages[6].includes('CLÁUSULA NONA'), 'página 7: 7.1 até início da nona');
+assert(capaPages[7].includes('9.2.') && capaPages[7].includes('CLÁUSULA DÉCIMA'), 'página 8: restante da nona + décima');
+assert(capaPages[8].includes('10.3.') && capaPages[8].includes('12.2.'), 'página 9: 10.3–12.2');
+assert(
+  capaPages[9].includes('12.3.') &&
+    capaPages[9].includes('CLÁUSULA DÉCIMA SEGUNDA') === false &&
+    capaPages[9].includes('lf-estrela-signatures'),
+  'página 10: 12.3–12.7 + data + assinaturas',
 );
 assert(!html.includes('sv-lf-keep'), 'assinatura da Capa sem keepTogether de página inteira');
 assert((html.match(/lf-estrela-footnote/g) || []).length >= 7, 'sete notas tipográficas');
@@ -343,7 +368,7 @@ const html30 = fillCustomPlaceholdersForPreview(html, {
 assert(html30.includes('30% do valor e 70%'), '30/70 só aparece quando a venda resolve esse percentual');
 
 const pages = countVisualA4Pages(html);
-assert(pages >= 4, `quebras estruturais geram várias páginas (contado=${pages}; A4 live ~10)`);
+assert(pages === 10, `gabarito estrutural tem 10 páginas (contado=${pages})`);
 
 const printLike = `<div class="sv-a4-sheet sv-a4-prose">${previewHtml}</div>`;
 markerScan('PDF/print HTML', printLike);
@@ -352,7 +377,8 @@ assert(printLike.includes('MARIA HOMOLOG LF'), 'PDF recebe o HTML da prévia res
 const estrelaMotor = read('lib/estrelaDoSulContractTemplate.ts');
 assert(estrelaMotor.includes('generateEstrelaDoSulContract') || estrelaMotor.length > 100, 'motor ESTRELA_DO_SUL permanece');
 
-assert(!/<table[^>]*sv-lf-sign/i.test(html), 'assinaturas da Capa/finais não usam tabela quadriculada');
+assert(html.includes('sv-lf-sign-row'), 'assinaturas em duas colunas por linha, sem grade');
+assert(html.includes('data-sv-if="noSpouse"'), 'sem cônjuge: spacer vazio no lugar da linha COMPRADOR 2');
 assert(html.includes('data-sv-if="spouse"'), 'linha COMPRADOR 2 é condicional');
 assert(html.includes('data-sv-if="companyCreci"'), 'CRECI da empresa é condicional');
 
@@ -535,7 +561,10 @@ assert(diag.includes('→ ERRO'), 'página órfã por keepTogether é marcada');
 
 const regen = read('lib/contractRegeneration.ts');
 assert(regen.includes('tryBuildLfEstrelaCustomSaleHtml'), 'regeneração GIS tenta LF ESTRELA CUSTOM antes do motor');
-assert(read('lib/lfEstrelaSaleContract.ts').includes('gisChrome: true'), 'emissão GIS oculta logo interno');
+assert(read('lib/lfEstrelaSaleContract.ts').includes('gisChrome: true'), 'emissão GIS aplica print GIS');
+assert(read('lib/lfEstrelaSaleContract.ts').includes('buildLfEstrelaCustomHtml()'), 'GIS usa HTML oficial TypeScript (diagramação 10 páginas)');
+assert(read('app/contracts/page.tsx').includes('htmlLooksLfEstrela'), 'PDF Contratos detecta LF ESTRELA');
+assert(read('lib/contractPdfPostProcess.ts').includes('getLfEstrelaCustomHtml2pdfOptions'), 'html2pdf LF usa 15mm e quebra CSS');
 assert(!read('lib/lfEstrelaSaleContract.ts').includes('generateEstrelaDoSulContract'), 'loader CUSTOM não usa o motor ESTRELA');
 assert(read('lib/lfEstrelaSaleContract.ts').includes('isDevelopHomologRuntime'), 'CUSTOM só emite no DEVELOP');
 assert(

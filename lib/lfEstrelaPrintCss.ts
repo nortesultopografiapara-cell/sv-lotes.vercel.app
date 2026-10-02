@@ -1,6 +1,6 @@
 /**
- * Print/PDF do LF ESTRELA no fluxo GIS (html2pdf + chrome institucional).
- * Editor/prévia isolada continua com {{COMPANY_LOGO_URL}}.
+ * Print/PDF do LF ESTRELA no fluxo GIS (html2pdf).
+ * Logo central do gabarito permanece. Chrome institucional GIS fica desligado.
  * Não altera texto jurídico nem tokens financeiros.
  */
 
@@ -8,35 +8,23 @@ export const LF_ESTRELA_GIS_PRINT_STYLE_ID = 'sv-lf-estrela-gis-print-css';
 export const LF_ESTRELA_GIS_FINAL_ATTR = 'data-sv-lf-estrela-gis-final';
 export const LF_ESTRELA_PRINT_INK = '#000';
 export const LF_ESTRELA_PRINT_GREEN = '#1b7a3d';
+export const LF_ESTRELA_CUSTOM_PDF_MARGIN_MM = {
+  top: 15,
+  right: 15,
+  bottom: 15,
+  left: 15,
+} as const;
 
-const COMPANY_LOGO_BLOCK_RE =
-  /<(div|span)\b[^>]*\bdata-sv-placeholder=["']COMPANY_LOGO_URL["'][^>]*>[\s\S]*?<\/\1>/gi;
-const COMPANY_LOGO_CLASS_RE =
-  /<(div|span)\b[^>]*\bclass=["'][^"']*\bsv-company-logo\b[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi;
 const GIS_STYLE_RE = new RegExp(
   `<style\\b[^>]*\\bid=["']${LF_ESTRELA_GIS_PRINT_STYLE_ID}["'][^>]*>[\\s\\S]*?<\\/style>`,
   'gi',
 );
 
 /**
- * CSS de emissão GIS/PDF. Logos internos em display:none (não visibility),
- * para não reservar altura. Não define display nos demais nós — preserva
- * data-sv-if / [hidden].
+ * CSS de emissão GIS/PDF. Tinta preta, logo central visível, quebras das 10 páginas.
+ * Não define display no seletor * — preserva data-sv-if / [hidden].
  */
 export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
-.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-company-logo,
-.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] [data-sv-placeholder="COMPANY_LOGO_URL"],
-.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] [data-sv-company-logo],
-.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-company-logo-img,
-.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-company-logo-empty {
-  display: none !important;
-  height: 0 !important;
-  width: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  overflow: hidden !important;
-}
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}],
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] * {
   color: ${LF_ESTRELA_PRINT_INK} !important;
@@ -52,17 +40,99 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   line-height: 1.28;
   text-align: justify;
 }
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-page-break {
+  display: block !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  page-break-after: always !important;
+  break-after: page !important;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-page:last-of-type {
+  page-break-after: auto;
+  break-after: auto;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-company-logo,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] [data-sv-placeholder="COMPANY_LOGO_URL"] {
+  text-align: center;
+  margin: 0 0 8px;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-company-logo-img {
+  width: 120px;
+  height: auto;
+  display: inline-block;
+}
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-green,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-green * {
   color: ${LF_ESTRELA_PRINT_GREEN} !important;
   -webkit-text-fill-color: ${LF_ESTRELA_PRINT_GREEN} !important;
   opacity: 1 !important;
 }
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-cover-title,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-title {
+  font-size: 12pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 2px 0 4px;
+  line-height: 1.2;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-instrument-title {
+  font-size: 15pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 4px 0 6px;
+  line-height: 1.15;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-subtitle {
+  text-align: center;
+  font-size: 10pt;
+  margin: 0 0 8px;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-section,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-clause-title {
+  font-size: 11pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 8px 0 0;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause-sub {
+  font-size: 10.5pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] p,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-body,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-body {
+  font-size: 10.5pt;
+  line-height: 1.28;
+  margin: 0 0 5px;
+  text-align: justify;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date {
+  text-align: center;
+  font-size: 10.5pt;
+  margin: 18px 0 10px;
+}
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign-line {
   color: transparent !important;
   -webkit-text-fill-color: transparent !important;
   opacity: 1 !important;
+  border: 0 !important;
   border-bottom: 1px solid ${LF_ESTRELA_PRINT_INK} !important;
+  height: 0;
+  margin: 28px 6% 4px;
+  padding: 0;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] h1,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] h2,
@@ -84,11 +154,19 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   color: ${LF_ESTRELA_PRINT_INK} !important;
   -webkit-text-fill-color: ${LF_ESTRELA_PRINT_INK} !important;
   opacity: 1 !important;
+  text-align: justify;
+  margin: 0 0 1px;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] table.sv-lf-table,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] table.lf-estrela-table {
   border-collapse: collapse;
   width: 100%;
+  table-layout: fixed;
+  margin: 2px 0 6px;
+  font-size: 8pt;
+  line-height: 1.2;
+  page-break-inside: auto;
+  break-inside: auto;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] table.sv-lf-table th,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] table.sv-lf-table td,
@@ -98,6 +176,44 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   -webkit-text-fill-color: ${LF_ESTRELA_PRINT_INK} !important;
   opacity: 1 !important;
   border: 1px solid ${LF_ESTRELA_PRINT_INK};
+  padding: 3px 5px;
+  vertical-align: top;
+  text-align: left;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-signatures {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  width: 100%;
+  border: 0 !important;
+  margin: 8px 0 0;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign-row {
+  display: flex;
+  gap: 36px;
+  width: 100%;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign-slot {
+  flex: 1;
+  min-width: 0;
+  border: 0 !important;
+  text-align: center;
+  padding: 4px 8px;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign-empty {
+  min-height: 0;
+  padding: 0;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign-slot p {
+  margin: 0;
+  text-align: center;
+  font-size: 9pt;
+  line-height: 1.15;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-signatures,
@@ -114,9 +230,7 @@ export function isLfEstrelaCustomHtml(html: string | null | undefined): boolean 
 }
 
 export function stripLfEstrelaInternalLogos(html: string): string {
-  return String(html || '')
-    .replace(COMPANY_LOGO_BLOCK_RE, '')
-    .replace(COMPANY_LOGO_CLASS_RE, '');
+  return String(html || '');
 }
 
 function markLfEstrelaGisFinalRoot(html: string): string {
@@ -133,11 +247,11 @@ export function lfEstrelaGisPrintStyleTag(): string {
   return `<style id="${LF_ESTRELA_GIS_PRINT_STYLE_ID}">${LF_ESTRELA_GIS_FINAL_PRINT_CSS}</style>`;
 }
 
-/** HTML persistido / capturado no PDF GIS: sem logo interno e com tinta preta. */
+/** HTML persistido / capturado no PDF GIS: tinta preta, logo central e quebras do gabarito. */
 export function prepareLfEstrelaGisFinalHtml(html: string): string {
   if (!isLfEstrelaCustomHtml(html)) return String(html || '');
-  const stripped = stripLfEstrelaInternalLogos(String(html || '').replace(GIS_STYLE_RE, ''));
-  return `${lfEstrelaGisPrintStyleTag()}${markLfEstrelaGisFinalRoot(stripped)}`;
+  const cleaned = String(html || '').replace(GIS_STYLE_RE, '');
+  return `${lfEstrelaGisPrintStyleTag()}${markLfEstrelaGisFinalRoot(cleaned)}`;
 }
 
 export function ensureLfEstrelaGisPrintStyle(doc: Document): void {
@@ -157,11 +271,6 @@ export function applyLfEstrelaGisPrintToCaptureElement(element: HTMLElement): vo
   const doc = element.ownerDocument || document;
   ensureLfEstrelaGisPrintStyle(doc);
   root.setAttribute(LF_ESTRELA_GIS_FINAL_ATTR, 'true');
-  root
-    .querySelectorAll(
-      '.sv-company-logo, [data-sv-placeholder="COMPANY_LOGO_URL"], [data-sv-company-logo], .sv-company-logo-img, .sv-company-logo-empty',
-    )
-    .forEach((node) => node.remove());
 
   element.style.color = LF_ESTRELA_PRINT_INK;
   element.style.backgroundColor = '#ffffff';
@@ -191,11 +300,14 @@ export function collectLfEstrelaPrintCssViolations(css: string): string[] {
   if (!/-webkit-text-fill-color:\s*#000\s*!important/i.test(source)) {
     violations.push('corpo sem -webkit-text-fill-color #000 !important');
   }
-  if (!/display:\s*none\s*!important/.test(source) || !/sv-company-logo/.test(source)) {
-    violations.push('logo interno sem display:none');
+  if (/display:\s*none\s*!important/.test(source) && /sv-company-logo/.test(source)) {
+    violations.push('logo interno não pode usar display:none');
   }
   if (/visibility:\s*hidden/.test(source) && /sv-company-logo/.test(source)) {
     violations.push('logo interno não pode usar visibility:hidden');
+  }
+  if (!/page-break-after:\s*always/i.test(source)) {
+    violations.push('GIS PDF sem page-break-after always nas quebras do gabarito');
   }
   const starDisplay = /\.sv-lf-estrela[^{]*\*\s*\{[^}]*\bdisplay\s*:/i.test(source);
   if (starDisplay) {
