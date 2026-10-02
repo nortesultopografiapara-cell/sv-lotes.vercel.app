@@ -541,7 +541,7 @@ assert(
   read('lib/lfEstrelaSaleContract.ts').includes('is_project_default'),
   'CUSTOM GIS só emite se LF ESTRELA for o padrão do empreendimento',
 );
-assert(read('lib/customContractPreviewResolver.ts').includes('customer.nationality'), 'resolver lê nacionalidade do cadastro');
+assert(read('lib/customContractPreviewResolver.ts').includes('resolveBuyerNationality'), 'resolver usa precedência de nacionalidade');
 assert(read('lib/customerIdentity.ts').includes("pick('nationality', 'nacionalidade')"), 'merge clientes/customers traz nacionalidade');
 
 const gisModal = read('components/projects/GisProjectFormModal.tsx');

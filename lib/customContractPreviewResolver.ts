@@ -15,6 +15,7 @@ import { formatContractLotBoundariesClause, resolveContractLotSides } from '@/li
 import { resolveIdentityDocumentFields } from '@/lib/contractIdentity';
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 import { resolveSaleSpouseContext } from '@/lib/saleSpouseFields';
+import { resolveBuyerNationality } from '@/lib/customerIdentity';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 import {
   formatFinancialAccountLabel,
@@ -317,7 +318,7 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     CLIENT_RG: pick(identity.rg, customer.rg),
     CLIENT_RG_ISSUER: pick(identity.issuer, customer.rg_issuer),
     CLIENT_RG_STATE: pick(identity.issuerState, customer.rg_issuer_state),
-    CLIENT_NATIONALITY: pick(customer.nationality, customer.nacionalidade),
+    CLIENT_NATIONALITY: resolveBuyerNationality({ sale, customer }) || null,
     CLIENT_PROFESSION: pick(customer.profession),
     CLIENT_CIVIL_STATE: pick(customer.civil_state, customer.marital_status),
     CLIENT_ADDRESS: pick(customer.address),

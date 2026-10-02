@@ -88,7 +88,7 @@ export function parseContractSecondVendorJson(
   return {
     name: pickClean(o, 'name', 'nome'),
     cpf: pickClean(o, 'cpf'),
-    rg: pickClean(o, 'rg'),
+    rg: pickClean(o, 'rg', 'rg_number', 'document_rg'),
     rgIssuer: pickClean(o, 'rgIssuer', 'rg_issuer', 'orgaoEmissor'),
     rgUf: pickClean(o, 'rgUf', 'rg_uf'),
     nationality: pickClean(o, 'nationality', 'nacionalidade'),
@@ -176,4 +176,24 @@ export function normalizeContractSecondVendorForSave(
   };
 
   return { ok: true, value };
+}
+
+/** Primeiro valor preenchido por campo — objeto vazio não apaga outro preenchido. */
+export function mergeContractSecondVendorFields(
+  ...layers: Array<ContractSecondVendorFields | null | undefined>
+): ContractSecondVendorFields {
+  const keys = Object.keys(CONTRACT_SECOND_VENDOR_EMPTY) as Array<
+    keyof ContractSecondVendorFields
+  >;
+  const out = emptyContractSecondVendorFields();
+  for (const key of keys) {
+    for (const layer of layers) {
+      const value = clean(layer?.[key]);
+      if (value) {
+        out[key] = value;
+        break;
+      }
+    }
+  }
+  return out;
 }

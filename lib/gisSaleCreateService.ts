@@ -28,7 +28,7 @@ import {
 } from '@/lib/saleInstallmentCalc';
 import { resolveSalePaymentMode } from '@/lib/salePaymentMode';
 import { getNextContractNumber, isValidStoredContractNumber } from '@/lib/contractNumber';
-import { resolveOrCreateCustomer } from '@/lib/customerIdentity';
+import { resolveOrCreateCustomer, customerPatchFromForm } from '@/lib/customerIdentity';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
 import { buildSaleSpouseDbPatch } from '@/lib/saleSpouseFields';
 import {
@@ -808,6 +808,9 @@ export async function executeGisSaleCreate(
           contractTenantId: tenantId,
           activeTenantId: tenantId,
           callerRole: String(input.userRole || 'ADMIN'),
+          customerFormOverlay: customerPatchFromForm(
+            customerData as { name?: string; nationality?: string },
+          ),
         });
 
         const viability = assessGeneratedContractViability({

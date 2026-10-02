@@ -11,6 +11,7 @@ import {
   emptyContractSecondVendorFields,
   isContractSecondVendorComplete,
   isContractSecondVendorFieldsEmpty,
+  mergeContractSecondVendorFields,
   normalizeContractSecondVendorForSave,
   parseContractSecondVendorJson,
   type ContractSecondVendorFields,
@@ -335,38 +336,61 @@ export function resolveLfSecondVendor(input: {
   source: LfSecondVendorSource;
 } {
   const saleSnap = parseLfContractSnapshotJson(readSaleLfSnapshotRaw(input.sale));
-  if (saleSnap?.hasSecondVendor) {
-    return {
-      vendor: saleSnap.secondVendor,
-      complete: true,
-      source: 'sale',
-    };
-  }
+  const saleVendor =
+    saleSnap?.hasSecondVendor ? saleSnap.secondVendor : emptyContractSecondVendorFields();
 
   const projectParsed = parseLfContractConfigJson(
     input.project?.[LF_CONTRACT_CONFIG_COLUMN] ??
       input.project?.lf_contract_config,
   );
-  if (isContractSecondVendorComplete(projectParsed.secondVendor)) {
-    return {
-      vendor: projectParsed.secondVendor,
-      complete: true,
-      source: 'project',
-    };
-  }
-
+  const partyVendor = parseProjectSellerPartyVendor(input.project, 1);
   const companyVendor = parseContractSecondVendorJson(
     input.company?.contract_second_vendor_json,
   );
-  if (isContractSecondVendorComplete(companyVendor)) {
-    return { vendor: companyVendor, complete: true, source: 'company' };
-  }
+
+  const vendor = mergeContractSecondVendorFields(
+    saleVendor,
+    projectParsed.secondVendor,
+    partyVendor,
+    companyVendor,
+  );
+
+  let source: LfSecondVendorSource = 'none';
+  if (isContractSecondVendorComplete(saleVendor)) source = 'sale';
+  else if (
+    isContractSecondVendorComplete(projectParsed.secondVendor) ||
+    isContractSecondVendorComplete(partyVendor)
+  ) {
+    source = 'project';
+  } else if (isContractSecondVendorComplete(companyVendor)) source = 'company';
 
   return {
-    vendor: emptyContractSecondVendorFields(),
-    complete: false,
-    source: 'none',
+    vendor,
+    complete: isContractSecondVendorComplete(vendor),
+    source,
   };
+}
+
+function parseProjectSellerPartyVendor(
+  project: Record<string, unknown> | null | undefined,
+  index: number,
+): ContractSecondVendorFields {
+  const raw = project?.seller_parties_json;
+  let rows: unknown[] = [];
+  if (Array.isArray(raw)) rows = raw;
+  else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) rows = parsed;
+    } catch {
+      rows = [];
+    }
+  }
+  const row = rows[index];
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return emptyContractSecondVendorFields();
+  }
+  return parseContractSecondVendorJson(row);
 }
 
 /**

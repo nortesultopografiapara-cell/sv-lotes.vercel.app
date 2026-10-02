@@ -220,6 +220,8 @@ export type RegenerationSession = {
   contractTenantId: string;
   activeTenantId: string;
   callerRole: string;
+  /** Dados confirmados no formulário da venda — prevalecem sobre o cadastro recarregado. */
+  customerFormOverlay?: Record<string, unknown> | null;
 };
 
 /** Empresa do contrato deve ser a mesma da sessão logada (ou impersonação ativa). */
@@ -753,6 +755,9 @@ export async function loadFreshRegenerationEntities(
       tenantId,
     });
   }
+  if (session.customerFormOverlay && Object.keys(session.customerFormOverlay).length) {
+    customer = mergeCustomerData(session.customerFormOverlay, customer);
+  }
 
   let receipts_sum = 0;
   let finance_receipts: Array<Record<string, unknown>> = [];
@@ -1039,6 +1044,7 @@ export async function buildFreshSaleContractHtml(
         ...contractPayloadPartial,
       },
       receipts: finance_receipts,
+      formOverlay: session.customerFormOverlay || null,
     });
     if (customLf) {
       html = customLf.html;

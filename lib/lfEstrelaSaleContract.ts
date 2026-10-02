@@ -10,6 +10,7 @@ import {
 import { isLfEstrelaModelName } from '@/lib/lfEstrelaCustomTemplate';
 import { resolveCustomPreviewValues } from '@/lib/customContractPreviewResolver';
 import { isDevelopHomologRuntime } from '@/lib/homolog/env';
+import { resolveBuyerNationality } from '@/lib/customerIdentity';
 
 export type LfEstrelaPublishedModel = {
   modelId: string;
@@ -82,6 +83,7 @@ export async function tryBuildLfEstrelaCustomSaleHtml(
     receipts?: Array<Record<string, unknown>> | null;
     commissions?: Array<Record<string, unknown>> | null;
     broker?: Record<string, unknown> | null;
+    formOverlay?: Record<string, unknown> | null;
   },
 ): Promise<{ html: string; modelId: string; version: number } | null> {
   if (!isDevelopHomologRuntime()) return null;
@@ -103,6 +105,30 @@ export async function tryBuildLfEstrelaCustomSaleHtml(
     commissions: input.commissions,
     broker: input.broker,
   });
+  const resolvedClientNationality = resolveBuyerNationality({
+    form: input.formOverlay,
+    sale: input.sale,
+    customer: input.customer,
+  });
+  console.info('[LF ESTRELA NATIONALITY TRACE]', {
+    formNationality: String(
+      input.formOverlay?.nationality || input.formOverlay?.nacionalidade || '',
+    ).trim() || null,
+    customerNationality: String(
+      input.customer?.nationality || input.customer?.nacionalidade || '',
+    ).trim() || null,
+    payloadNationality: String(
+      input.formOverlay?.nationality || input.formOverlay?.nacionalidade || '',
+    ).trim() || null,
+    saleCustomerNationality: String(
+      input.sale?.customer_nationality || input.sale?.buyer_nationality || '',
+    ).trim() || null,
+    snapshotNationality: null,
+    resolvedClientNationality: resolvedClientNationality || null,
+  });
+  if (resolvedClientNationality) {
+    values.CLIENT_NATIONALITY = resolvedClientNationality;
+  }
   const composed = composeLfEstrelaContractHtml(published.html, values, {
     mode: 'final',
     sale: input.sale,

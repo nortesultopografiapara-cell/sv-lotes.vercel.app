@@ -24,6 +24,7 @@
     "test:custom-contract-editor": "tsx scripts/mandatory-custom-contract-a4-editor-tests.ts",
     "test:engine-model-to-custom": "tsx scripts/mandatory-engine-model-to-custom-tests.ts",
     "test:lf-estrela": "tsx scripts/mandatory-lf-estrela-custom-tests.ts",
+    "test:lf-estrela-nationality": "tsx scripts/mandatory-lf-estrela-nationality-transport-tests.ts",
     "test:lf-estrela-split": "tsx scripts/mandatory-lf-estrela-split-down-payment-tests.ts",
     "test:sale-charges-quantity": "tsx scripts/mandatory-sale-charges-generate-quantity-tests.ts",
     "test:contract-identity": "tsx scripts/mandatory-contract-identity-tests.ts",

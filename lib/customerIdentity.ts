@@ -371,6 +371,49 @@ export function pickNonemptyCustomerField(...values: unknown[]): string {
 }
 
 /**
+ * Nacionalidade do comprador para a venda atual.
+ * Formulário > snapshot/venda > customers.nationality > clients legado.
+ * Nunca deixa string vazia sobrescrever valor preenchido.
+ */
+export function resolveBuyerNationality(input: {
+  form?: Record<string, unknown> | null;
+  sale?: Record<string, unknown> | null;
+  customer?: Record<string, unknown> | null;
+  client?: Record<string, unknown> | null;
+}): string {
+  const form = input.form || {};
+  const sale = input.sale || {};
+  const customer = input.customer || {};
+  const client = input.client || {};
+  return pickNonemptyCustomerField(
+    form.nationality,
+    form.nacionalidade,
+    sale.customer_nationality,
+    sale.buyer_nationality,
+    customer.nationality,
+    customer.nacionalidade,
+    client.nationality,
+    client.nacionalidade,
+  );
+}
+
+/** Remove só a coluna rejeitada pelo PostgREST; não descarta nationality junto com nacionalidade. */
+export function omitUnsupportedCustomerColumns(
+  payload: Record<string, unknown>,
+  errorMessage: string,
+): Record<string, unknown> {
+  const msg = String(errorMessage || '');
+  const next = { ...payload };
+  if (/nacionalidade/i.test(msg)) {
+    delete next.nacionalidade;
+  }
+  if (/\bnationality\b/i.test(msg) && !/nacionalidade/i.test(msg)) {
+    delete next.nationality;
+  }
+  return next;
+}
+
+/**
  * Mescla camadas sem apagar valores preenchidos.
  * Camadas anteriores no array têm maior prioridade (ex.: customers → sale → contract).
  */
@@ -513,7 +556,6 @@ export function customerPatchFromForm(
   }
   if (!isEmptyCustomerField(form.nationality)) {
     patch.nationality = form.nationality?.trim() || null;
-    patch.nacionalidade = form.nationality?.trim() || null;
   }
   if (!isEmptyCustomerField(form.civil_state)) {
     const civil = form.civil_state?.trim() || null;
@@ -706,10 +748,11 @@ export async function resolveOrCreateCustomer(
       .update(payload)
       .eq('id', customerId);
     if (updErr && /nationality|nacionalidade/i.test(updErr.message || '')) {
-      const { nationality: _n, nacionalidade: _n2, ...withoutNat } = payload as Record<string, unknown>;
-      void _n;
-      void _n2;
-      const retry = await supabase.from('customers').update(withoutNat).eq('id', customerId);
+      const retryPayload = omitUnsupportedCustomerColumns(
+        payload as Record<string, unknown>,
+        updErr.message || '',
+      );
+      const retry = await supabase.from('customers').update(retryPayload).eq('id', customerId);
       if (retry.error) console.warn('CUSTOMER_UPDATE_WARN', retry.error.message);
     } else if (updErr) console.warn('CUSTOMER_UPDATE_WARN', updErr.message);
   }
@@ -722,10 +765,11 @@ export async function resolveOrCreateCustomer(
       .select('id')
       .single();
     if (custError && /nationality|nacionalidade/i.test(custError.message || '')) {
-      const { nationality: _n, nacionalidade: _n2, ...withoutNat } = insertPayload;
-      void _n;
-      void _n2;
-      const retry = await supabase.from('customers').insert([withoutNat]).select('id').single();
+      const retryPayload = omitUnsupportedCustomerColumns(
+        insertPayload,
+        custError.message || '',
+      );
+      const retry = await supabase.from('customers').insert([retryPayload]).select('id').single();
       newCustomer = retry.data;
       custError = retry.error;
     }
