@@ -155,11 +155,17 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   orphans: 2;
   widows: 2;
 }
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-51-head {
+  margin-bottom: 0;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-51-tail,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-widow-pair {
-  display: inline-block;
-  max-width: 100%;
+  display: block;
+  margin-top: 0;
   page-break-inside: avoid;
   break-inside: avoid;
+  orphans: 2;
+  widows: 2;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date {
   text-align: center;

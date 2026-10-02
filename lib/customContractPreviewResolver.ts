@@ -29,7 +29,7 @@ import {
 } from '@/lib/lfImoveisContractConfig';
 import { hasLfContractSnapshot, readSaleLfSnapshotRaw } from '@/lib/lfImoveisContractSnapshot';
 import { formatEstrelaEnterpriseLocation } from '@/lib/estrelaDoSulContractFormat';
-import { formatInstallmentScheduleDescription } from '@/lib/installmentScheduleDescription';
+import { resolveCommercialInstallmentScheduleFromSale } from '@/lib/installmentScheduleDescription';
 import { resolveRecantoSignalPlan } from '@/lib/recantoSignalRemaining';
 import {
   CUSTOM_PLACEHOLDERS,
@@ -292,13 +292,9 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     remainingInstallments: sale.signal_remaining_installments,
     totalInstallments: sale.installments_count ?? parcelRecs.length,
   });
-  const installmentsSchedule = formatInstallmentScheduleDescription({
-    totalCount: pick(sale.installments_count, parcelRecs.length),
-    baseAmount: sale.installment_value,
-    remainingMode: sale.signal_remaining_payment_mode,
-    remainingInstallments: sale.signal_remaining_installments,
-    remainingAddon:
-      sale.signal_remaining_installment_value ?? signalPlan.remainingInstallmentValue,
+  const installmentsSchedule = resolveCommercialInstallmentScheduleFromSale(sale, {
+    projectLfConfig: project.lf_contract_config_json,
+    remainingAddonFallback: signalPlan.remainingInstallmentValue,
   });
   const today = input.today || new Date();
   const contractDateRaw = pick(

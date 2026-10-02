@@ -150,6 +150,7 @@ export function getLfEstrelaCustomHtml2pdfOptions(
         '.lf-estrela-signatures',
         '.sv-lf-keep-with-next',
         '.sv-lf-keep-para',
+        '.sv-lf-51-tail',
         '.sv-lf-widow-pair',
         '.sv-company-logo',
       ],

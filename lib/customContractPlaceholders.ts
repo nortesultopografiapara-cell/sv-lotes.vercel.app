@@ -257,7 +257,7 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
     'INSTALLMENTS_SCHEDULE',
     'Descrição das parcelas',
     'finance',
-    'snapshot comercial da venda (quantidade, parcela-base, restante do sinal)',
+    'snapshot comercial: quantidade + regular_installment_amount ou lote/qtd (não installment_value órfã; não acréscimo do sinal)',
   ),
   field(
     'SALE_DUE_DATE',
