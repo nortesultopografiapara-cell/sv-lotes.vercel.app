@@ -890,7 +890,7 @@ export const SaleContractSignatureSection = forwardRef<
                       } | null;
                       window.alert(
                         payload?.error ||
-                          'Primeiro gere o PDF físico deste contrato para congelar a versão que será assinada.',
+                          'Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.',
                       );
                       return;
                     }

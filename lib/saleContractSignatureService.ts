@@ -198,7 +198,7 @@ function scheduleSignaturePostInsertWork(
   })();
 }
 
-async function uploadSignedSaleContractPdf(
+export async function uploadSignedSaleContractPdf(
   supabaseAdmin: SupabaseClient,
   tenantId: string,
   contractNumber: string,
@@ -617,6 +617,27 @@ export async function sendSaleContractForSignature(
   const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
   if (!tenantId) {
     throw new SaleContractSignatureError('Contrato sem tenant vinculado.');
+  }
+
+  const storedHtmlForLf = String(
+    resolveStoredContractHtmlMeta(contractRow).html || '',
+  );
+  if (storedHtmlForLf) {
+    const { isLfEstrelaCustomHtml } = await import('@/lib/lfEstrelaPrintCss');
+    if (isLfEstrelaCustomHtml(storedHtmlForLf)) {
+      const { loadLfEstrelaPhysicalPdfBytes, LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE } =
+        await import('@/lib/lfEstrelaSignedPdf');
+      const physical = await loadLfEstrelaPhysicalPdfBytes({
+        supabaseAdmin,
+        tenantId,
+        contractNumber: String(contractRow.contract_number || resolvedId),
+        contractId: resolvedId,
+        saleId: String(contractRow.sale_id || '').trim() || null,
+      });
+      if (!physical) {
+        throw new SaleContractSignatureError(LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE);
+      }
+    }
   }
 
   mark('validate_signature_parties');
@@ -1704,6 +1725,19 @@ export async function loadSaleContractHtmlForSign(
   });
 }
 
+/**
+ * Função única de aquisição do instrumento-base + motor comum de PDF assinado.
+ *
+ * Recanto Primavera / Meneses / demais:
+ *   generated_html → carimbos HTML → certificado concatenado → Chromium
+ *   (`buildSaleContractPdfFromHtml`).
+ *
+ * LF ESTRELA:
+ *   company-assets/contracts/sale-physical/{tenant}/{numero}.pdf
+ *   (bytes html2pdf de 10 páginas) → overlay pdf-lib P2/P10 → certificado
+ *   anexado → `uploadSignedSaleContractPdf` (sale-signed + pdf_signed_url).
+ *   Nunca usa Chromium nem HTML para o instrumento-base.
+ */
 export async function loadSaleContractPdfForSign(
   supabaseAdmin: SupabaseClient,
   contractId: string,

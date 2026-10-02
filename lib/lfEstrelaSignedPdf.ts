@@ -17,16 +17,9 @@ import { isPdfBytes } from '@/lib/saasContractPdfHttp';
 import type { ContractPdfChromeInput } from '@/lib/contractPdfPostProcess';
 import type { ContractSignaturePartyRow } from '@/lib/saleContractSignaturePartyTypes';
 import {
-  createSystemGeneratedSaleDocumentMetadata,
-  buildUploadStoragePathForSale,
-} from '@/lib/saleDocumentService';
-import {
-  LF_ESTRELA_PHYSICAL_BASE_DOCUMENT_TYPE,
-  SALE_DOCUMENTS_STORAGE_BUCKET,
-} from '@/lib/saleDocuments';
-import {
   assertSaleContractBucketReady,
   buildPhysicalSaleContractStoragePath,
+  getSaleContractBucket,
 } from '@/lib/saleContractStorage';
 
 export const LF_ESTRELA_SIGNED_INSTRUMENT_PAGES = 10;
@@ -56,10 +49,10 @@ export const LF_ESTRELA_STAMP_LAYOUT = {
 } as const;
 
 export const LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE =
-  'PDF físico homologado ainda não foi congelado.';
+  'Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.';
 
 export const LF_ESTRELA_PHYSICAL_BASE_MISSING_UI_MESSAGE =
-  'Primeiro gere o PDF físico deste contrato para congelar a versão que será assinada.';
+  LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE;
 
 export function lfEstrelaInvalidPhysicalBaseMessage(found: number): string {
   return `Base física LF ESTRELA inválida: esperado ${LF_ESTRELA_SIGNED_INSTRUMENT_PAGES} páginas, encontrado ${found}. Gere/congele novamente o PDF físico homologado.`;
@@ -340,110 +333,6 @@ export function parseLfEstrelaPhysicalBaseDescription(description?: string | nul
   };
 }
 
-function matchesLfEstrelaPhysicalBase(
-  row: { description?: string | null; original_file_name?: string | null },
-  contractId: string,
-): boolean {
-  const id = String(contractId || '').trim();
-  if (!id) return false;
-  const parsed = parseLfEstrelaPhysicalBaseDescription(row.description);
-  if (parsed.contractId && parsed.contractId === id) return true;
-  return String(row.original_file_name || '').includes(id);
-}
-
-export async function findLfEstrelaPhysicalBaseDocument(input: {
-  supabaseAdmin: SupabaseClient;
-  saleId: string;
-  contractId: string;
-}): Promise<{
-  id: string;
-  storage_path: string;
-  description: string | null;
-  original_file_name: string;
-  created_at: string | null;
-} | null> {
-  const saleId = String(input.saleId || '').trim();
-  const contractId = String(input.contractId || '').trim();
-  if (!saleId || !contractId) return null;
-  const { data, error } = await input.supabaseAdmin
-    .from('sale_documents')
-    .select('id, storage_path, description, original_file_name, created_at')
-    .eq('sale_id', saleId)
-    .eq('document_type', LF_ESTRELA_PHYSICAL_BASE_DOCUMENT_TYPE)
-    .eq('category', 'SYSTEM_GENERATED')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
-  if (error) {
-    console.warn('[LF SIGNED PDF STAGE] sale_documents lookup failed', {
-      stage: 'physical_pdf_lookup',
-      saleId,
-      contractId,
-      message: error.message,
-    });
-    return null;
-  }
-  const match = (data || []).find((row) => matchesLfEstrelaPhysicalBase(row, contractId));
-  return match
-    ? {
-        id: String(match.id),
-        storage_path: String(match.storage_path || ''),
-        description: match.description || null,
-        original_file_name: String(match.original_file_name || ''),
-        created_at: match.created_at || null,
-      }
-    : null;
-}
-
-async function downloadSaleDocumentPdf(
-  supabaseAdmin: SupabaseClient,
-  storagePath: string,
-): Promise<Uint8Array | null> {
-  const path = String(storagePath || '').trim();
-  if (!path) return null;
-  const { data, error } = await supabaseAdmin.storage
-    .from(SALE_DOCUMENTS_STORAGE_BUCKET)
-    .download(path);
-  if (error || !data) return null;
-  const bytes = new Uint8Array(await data.arrayBuffer());
-  return isPdfBytes(bytes) ? bytes : null;
-}
-
-async function invalidateLfEstrelaPhysicalBaseDocument(input: {
-  supabaseAdmin: SupabaseClient;
-  documentId: string;
-  storagePath: string;
-  description?: string | null;
-  pageCount: number;
-}): Promise<void> {
-  const now = new Date().toISOString();
-  const suffix = `.invalid.${Date.now()}`;
-  const prev = String(input.description || '').trim();
-  const nextDesc =
-    `${prev} invalid_page_count=${input.pageCount} invalidated_at=${now}`.trim();
-  const { error } = await input.supabaseAdmin
-    .from('sale_documents')
-    .update({
-      deleted_at: now,
-      storage_path: `${input.storagePath}${suffix}`,
-      description: nextDesc.slice(0, 1800),
-      updated_at: now,
-    })
-    .eq('id', input.documentId)
-    .eq('document_type', LF_ESTRELA_PHYSICAL_BASE_DOCUMENT_TYPE)
-    .is('deleted_at', null);
-  console.warn('[LF SIGNED PDF STAGE]', {
-    stage: 'physical_pdf_invalidate',
-    documentId: input.documentId,
-    pageCount: input.pageCount,
-    message: lfEstrelaInvalidPhysicalBaseMessage(input.pageCount),
-  });
-  if (error) {
-    throw new Error(
-      `[stage=physical_pdf_invalidate] Falha ao invalidar base física LF ESTRELA: ${error.message}`,
-    );
-  }
-}
-
 export async function loadLfEstrelaPhysicalPdfBytes(input: {
   supabaseAdmin: SupabaseClient;
   tenantId: string;
@@ -452,162 +341,83 @@ export async function loadLfEstrelaPhysicalPdfBytes(input: {
   saleId?: string | null;
 }): Promise<{
   bytes: Uint8Array;
-  source: 'sale_documents' | 'storage';
+  source: 'storage';
   sha256: string;
   pageCount: number;
-  storagePath?: string;
-  saleDocumentId?: string | null;
+  storagePath: string;
+  bucket: string;
 } | null> {
-  const saleId = String(input.saleId || '').trim();
   const contractId = String(input.contractId || '').trim();
+  const tenantId = String(input.tenantId || '').trim();
+  const contractNumber = String(input.contractNumber || '').trim();
+  const bucket = getSaleContractBucket();
+  const storagePath = buildPhysicalSaleContractStoragePath(tenantId, contractNumber);
 
   const lookupTrace = (extra: Record<string, unknown>) => {
     console.info('[LF PHYSICAL BASE LOOKUP TRACE]', {
       requestedContractId: contractId || null,
-      saleId: saleId || null,
+      saleId: String(input.saleId || '').trim() || null,
       physicalBaseFound: false,
-      saleDocumentId: null,
-      storagePath: null,
+      bucket,
+      storagePath,
       storageBytes: 0,
       pageCount: null,
       ...extra,
     });
   };
 
-  const tryLoad = async (
-    bytes: Uint8Array | null,
-    source: 'sale_documents' | 'storage',
-    storagePath?: string,
-  ) => {
-    if (!bytes || bytes.byteLength === 0) return null;
-    if (!isPdfBytes(bytes)) return null;
-    const doc = await PDFDocument.load(bytes);
-    return {
-      bytes,
-      source,
-      sha256: sha256Hex(bytes),
-      pageCount: doc.getPageCount(),
-      storagePath,
-    };
-  };
-
-  if (saleId && contractId) {
-    const existing = await findLfEstrelaPhysicalBaseDocument({
-      supabaseAdmin: input.supabaseAdmin,
-      saleId,
-      contractId,
-    });
-    if (existing?.storage_path) {
-      const bytes = await downloadSaleDocumentPdf(
-        input.supabaseAdmin,
-        existing.storage_path,
-      );
-      if (!bytes) {
-        lookupTrace({
-          physicalBaseFound: true,
-          saleDocumentId: existing.id,
-          storagePath: existing.storage_path,
-          storageBytes: 0,
-          pageCount: null,
-          reason: 'download_failed',
-        });
-        return null;
-      }
-      if (bytes.byteLength === 0) {
-        lookupTrace({
-          physicalBaseFound: true,
-          saleDocumentId: existing.id,
-          storagePath: existing.storage_path,
-          storageBytes: 0,
-          pageCount: null,
-          reason: 'zero_bytes',
-        });
-        return null;
-      }
-      const loaded = await tryLoad(bytes, 'sale_documents', existing.storage_path);
-      if (loaded) {
-        if (loaded.pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
-          lookupTrace({
-            physicalBaseFound: true,
-            saleDocumentId: existing.id,
-            storagePath: existing.storage_path,
-            storageBytes: loaded.bytes.byteLength,
-            pageCount: loaded.pageCount,
-            reason: 'invalid_page_count',
-          });
-          await invalidateLfEstrelaPhysicalBaseDocument({
-            supabaseAdmin: input.supabaseAdmin,
-            documentId: existing.id,
-            storagePath: existing.storage_path,
-            description: existing.description,
-            pageCount: loaded.pageCount,
-          });
-          throw new Error(lfEstrelaInvalidPhysicalBaseMessage(loaded.pageCount));
-        }
-        lookupTrace({
-          physicalBaseFound: true,
-          saleDocumentId: existing.id,
-          storagePath: existing.storage_path,
-          storageBytes: loaded.bytes.byteLength,
-          pageCount: loaded.pageCount,
-          sha256: loaded.sha256,
-          reason: 'ok',
-        });
-        return { ...loaded, saleDocumentId: existing.id };
-      }
+  try {
+    const ready = await assertSaleContractBucketReady(input.supabaseAdmin);
+    const { data, error } = await input.supabaseAdmin.storage.from(ready).download(storagePath);
+    if (error || !data) {
+      lookupTrace({ reason: 'not_found', error: error?.message || 'objeto ausente' });
+      return null;
+    }
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    if (!bytes.byteLength) {
+      lookupTrace({ physicalBaseFound: true, storageBytes: 0, reason: 'zero_bytes' });
+      return null;
+    }
+    if (!isPdfBytes(bytes)) {
       lookupTrace({
         physicalBaseFound: true,
-        saleDocumentId: existing.id,
-        storagePath: existing.storage_path,
         storageBytes: bytes.byteLength,
-        pageCount: null,
         reason: 'not_pdf',
       });
       return null;
     }
-    lookupTrace({ reason: 'not_found' });
-  } else {
+    const pageCount = (await PDFDocument.load(bytes)).getPageCount();
+    if (pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+      lookupTrace({
+        physicalBaseFound: true,
+        storageBytes: bytes.byteLength,
+        pageCount,
+        reason: 'invalid_page_count',
+      });
+      throw new Error(lfEstrelaInvalidPhysicalBaseMessage(pageCount));
+    }
+    const sha256 = sha256Hex(bytes);
     lookupTrace({
-      reason: !saleId ? 'missing_sale_id' : 'missing_contract_id',
+      physicalBaseFound: true,
+      storageBytes: bytes.byteLength,
+      pageCount,
+      sha256,
+      reason: 'ok',
     });
-  }
-
-  try {
-    const bucket = await assertSaleContractBucketReady(input.supabaseAdmin);
-    const path = buildPhysicalSaleContractStoragePath(input.tenantId, input.contractNumber);
-    const { data, error } = await input.supabaseAdmin.storage.from(bucket).download(path);
-    if (error || !data) {
-      lookupTrace({ reason: 'legacy_storage_missing', storagePath: path });
-      return null;
-    }
-    const bytes = new Uint8Array(await data.arrayBuffer());
-    const loaded = await tryLoad(bytes, 'storage', path);
-    if (loaded && loaded.pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
-      lookupTrace({
-        physicalBaseFound: true,
-        storagePath: path,
-        storageBytes: loaded.bytes.byteLength,
-        pageCount: loaded.pageCount,
-        reason: 'invalid_page_count_legacy',
-      });
-      throw new Error(lfEstrelaInvalidPhysicalBaseMessage(loaded.pageCount));
-    }
-    if (loaded) {
-      lookupTrace({
-        physicalBaseFound: true,
-        storagePath: path,
-        storageBytes: loaded.bytes.byteLength,
-        pageCount: loaded.pageCount,
-        reason: 'ok_legacy',
-      });
-    }
-    return loaded;
+    return {
+      bytes,
+      source: 'storage',
+      sha256,
+      pageCount,
+      storagePath,
+      bucket: ready,
+    };
   } catch (err) {
     if (err instanceof Error && /Base física LF ESTRELA inválida/i.test(err.message)) {
       throw err;
     }
     lookupTrace({
-      reason: 'legacy_storage_error',
+      reason: 'storage_error',
       message: err instanceof Error ? err.message : String(err),
     });
     return null;
@@ -622,10 +432,6 @@ export async function persistLfEstrelaPhysicalPdf(input: {
   pdfBytes: Uint8Array;
   saleId?: string | null;
   version?: number | null;
-  projectId?: string | null;
-  lotId?: string | null;
-  buyerId?: string | null;
-  userId?: string | null;
   overwrite?: boolean;
 }): Promise<{
   url: string;
@@ -633,7 +439,7 @@ export async function persistLfEstrelaPhysicalPdf(input: {
   pageCount: number;
   reused: boolean;
   storagePath: string;
-  saleDocumentId: string | null;
+  bucket: string;
 }> {
   if (!isPdfBytes(input.pdfBytes)) {
     throw new Error('Arquivo enviado não é PDF.');
@@ -641,77 +447,51 @@ export async function persistLfEstrelaPhysicalPdf(input: {
   if (input.pdfBytes.byteLength === 0) {
     throw new Error('PDF físico vazio (0 bytes).');
   }
-  const saleId = String(input.saleId || '').trim();
-  if (!saleId) {
-    throw new Error(
-      '[stage=physical_pdf_freeze] Contrato sem sale_id — não é possível gravar o PDF físico em sale_documents.',
-    );
-  }
   const doc = await PDFDocument.load(input.pdfBytes);
   const pageCount = doc.getPageCount();
   assertLfEstrelaHomologatedPageCount(pageCount);
   const sha256 = sha256Hex(input.pdfBytes);
+  const bucket = await assertSaleContractBucketReady(input.supabaseAdmin);
+  const storagePath = buildPhysicalSaleContractStoragePath(
+    input.tenantId,
+    input.contractNumber,
+  );
 
-  const existing = await findLfEstrelaPhysicalBaseDocument({
-    supabaseAdmin: input.supabaseAdmin,
-    saleId,
-    contractId: input.contractId,
-  });
-  let canReuseExisting = Boolean(existing?.storage_path);
-  if (existing?.storage_path && !input.overwrite) {
-    const loaded = await downloadSaleDocumentPdf(
-      input.supabaseAdmin,
-      existing.storage_path,
-    );
-    if (loaded && isPdfBytes(loaded)) {
-      const existingCount = (await PDFDocument.load(loaded)).getPageCount();
-      if (existingCount === LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
-        console.info('[LF PHYSICAL PDF PERSIST TRACE]', {
-          contractId: input.contractId,
-          saleId,
-          pageCount: existingCount,
-          sha256: sha256Hex(loaded),
-          storagePath: existing.storage_path,
-          saleDocumentId: existing.id,
-          reused: true,
-        });
-        return {
-          url: existing.storage_path,
-          sha256: sha256Hex(loaded),
-          pageCount: existingCount,
-          reused: true,
-          storagePath: existing.storage_path,
-          saleDocumentId: existing.id,
-        };
+  if (!input.overwrite) {
+    const existing = await loadLfEstrelaPhysicalPdfBytes({
+      supabaseAdmin: input.supabaseAdmin,
+      tenantId: input.tenantId,
+      contractNumber: input.contractNumber,
+      contractId: input.contractId,
+      saleId: input.saleId,
+    }).catch((err) => {
+      if (err instanceof Error && /Base física LF ESTRELA inválida/i.test(err.message)) {
+        return null;
       }
-      await invalidateLfEstrelaPhysicalBaseDocument({
-        supabaseAdmin: input.supabaseAdmin,
-        documentId: existing.id,
-        storagePath: existing.storage_path,
-        description: existing.description,
-        pageCount: existingCount,
+      throw err;
+    });
+    if (existing && existing.pageCount === LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+      console.info('[LF PHYSICAL PDF PERSIST TRACE]', {
+        contractId: input.contractId,
+        bucket,
+        storagePath: existing.storagePath,
+        pageCount: existing.pageCount,
+        sha256: existing.sha256,
+        reused: true,
       });
-      canReuseExisting = false;
+      return {
+        url: existing.storagePath,
+        sha256: existing.sha256,
+        pageCount: existing.pageCount,
+        reused: true,
+        storagePath: existing.storagePath,
+        bucket,
+      };
     }
   }
 
-  const fileName = `lf-estrela-physical-${input.contractId}.pdf`;
-  const storagePath = buildUploadStoragePathForSale({
-    ctx: {
-      tenantId: input.tenantId,
-      companyId: input.tenantId,
-      projectId: input.projectId || null,
-      lotId: input.lotId || null,
-      buyerId: input.buyerId || null,
-    },
-    saleId,
-    category: 'SYSTEM_GENERATED',
-    fileName,
-    fileId: input.contractId,
-  });
-
   const { error: uploadError } = await input.supabaseAdmin.storage
-    .from(SALE_DOCUMENTS_STORAGE_BUCKET)
+    .from(bucket)
     .upload(storagePath, Buffer.from(input.pdfBytes), {
       contentType: 'application/pdf',
       upsert: true,
@@ -719,49 +499,22 @@ export async function persistLfEstrelaPhysicalPdf(input: {
     });
   if (uploadError) {
     throw new Error(
-      `[stage=physical_pdf_freeze] Falha ao congelar PDF físico (${SALE_DOCUMENTS_STORAGE_BUCKET}): ${uploadError.message}`,
+      `[stage=physical_pdf_freeze] Falha ao congelar PDF físico (${bucket}/${storagePath}): ${uploadError.message}`,
     );
-  }
-
-  let saleDocumentId: string | null = existing?.id || null;
-  if (!canReuseExisting) {
-    const row = await createSystemGeneratedSaleDocumentMetadata(input.supabaseAdmin, {
-      saleId,
-      ctx: {
-        tenantId: input.tenantId,
-        companyId: input.tenantId,
-        projectId: input.projectId || null,
-        lotId: input.lotId || null,
-        buyerId: input.buyerId || null,
-      },
-      userId: String(input.userId || input.tenantId),
-      documentType: LF_ESTRELA_PHYSICAL_BASE_DOCUMENT_TYPE,
-      description: buildLfEstrelaPhysicalBaseDescription({
-        contractId: input.contractId,
-        version: input.version,
-        sha256,
-        pageCount,
-      }),
-      originalFileName: fileName,
-      storagePath,
-      mimeType: 'application/pdf',
-      fileSize: input.pdfBytes.byteLength,
-    });
-    saleDocumentId = row.id;
   }
 
   console.info('[LF PHYSICAL PDF PERSIST TRACE]', {
     contractId: input.contractId,
-    saleId,
+    bucket,
+    storagePath,
     pageCount,
     sha256,
-    storagePath,
-    saleDocumentId,
     reused: false,
     uploadOk: true,
+    bytes: input.pdfBytes.byteLength,
   });
 
-  return { url: storagePath, sha256, pageCount, reused: false, storagePath, saleDocumentId };
+  return { url: storagePath, sha256, pageCount, reused: false, storagePath, bucket };
 }
 
 export async function ensureLfEstrelaPhysicalBase(input: {
@@ -770,19 +523,14 @@ export async function ensureLfEstrelaPhysicalBase(input: {
   tenantId: string;
   contractNumber: string;
   saleId?: string | null;
-  version?: number | null;
-  projectId?: string | null;
-  lotId?: string | null;
-  buyerId?: string | null;
-  pdfBytes?: Uint8Array | null;
-  userId?: string | null;
 }): Promise<{
   bytes: Uint8Array;
   sha256: string;
   pageCount: number;
   storagePath: string | null;
   reused: boolean;
-  source: 'existing' | 'uploaded';
+  source: 'existing';
+  bucket: string;
 }> {
   const loaded = await loadLfEstrelaPhysicalPdfBytes({
     supabaseAdmin: input.supabaseAdmin,
@@ -791,46 +539,18 @@ export async function ensureLfEstrelaPhysicalBase(input: {
     contractId: input.contractId,
     saleId: input.saleId,
   });
-  if (loaded) {
-    assertLfEstrelaHomologatedPageCount(loaded.pageCount);
-    return {
-      bytes: loaded.bytes,
-      sha256: loaded.sha256,
-      pageCount: loaded.pageCount,
-      storagePath: loaded.storagePath || null,
-      reused: true,
-      source: 'existing',
-    };
-  }
-
-  const bytes = input.pdfBytes && isPdfBytes(input.pdfBytes) ? input.pdfBytes : null;
-  if (!bytes) {
+  if (!loaded) {
     throw new Error(LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE);
   }
-
-  const persisted = await persistLfEstrelaPhysicalPdf({
-    supabaseAdmin: input.supabaseAdmin,
-    contractId: input.contractId,
-    tenantId: input.tenantId,
-    contractNumber: input.contractNumber,
-    pdfBytes: bytes,
-    saleId: input.saleId,
-    version: input.version,
-    projectId: input.projectId,
-    lotId: input.lotId,
-    buyerId: input.buyerId,
-    userId: input.userId,
-    overwrite: false,
-  });
-  assertLfEstrelaHomologatedPageCount(persisted.pageCount);
-
+  assertLfEstrelaHomologatedPageCount(loaded.pageCount);
   return {
-    bytes,
-    sha256: persisted.sha256,
-    pageCount: persisted.pageCount,
-    storagePath: persisted.storagePath,
-    reused: persisted.reused,
-    source: 'uploaded',
+    bytes: loaded.bytes,
+    sha256: loaded.sha256,
+    pageCount: loaded.pageCount,
+    storagePath: loaded.storagePath,
+    reused: true,
+    source: 'existing',
+    bucket: loaded.bucket,
   };
 }
 
@@ -889,10 +609,6 @@ export async function buildLfEstrelaSignedSaleContractPdf(input: {
       tenantId: input.tenantId,
       contractNumber: input.contractNumber,
       saleId: input.saleId,
-      version: input.version,
-      projectId: input.projectId,
-      lotId: input.lotId,
-      buyerId: input.buyerId,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -935,11 +651,36 @@ export async function buildLfEstrelaSignedSaleContractPdf(input: {
       stamps,
       certificatePdfBytes,
     });
-    console.info('[LF SIGNED PDF STAGE]', {
-      stage: 'append',
-      requestedContractId: input.contractId,
-      bytes: signed.byteLength,
-    });
+    try {
+      const { uploadSignedSaleContractPdf } = await import(
+        '@/lib/saleContractSignatureService'
+      );
+      const pdfSignedUrl = await uploadSignedSaleContractPdf(
+        input.supabaseAdmin,
+        input.tenantId,
+        input.contractNumber,
+        signed,
+      );
+      const { error: signedUrlErr } = await input.supabaseAdmin
+        .from('contracts')
+        .update({
+          pdf_signed_url: pdfSignedUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.contractId);
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: 'append',
+        requestedContractId: input.contractId,
+        bytes: signed.byteLength,
+        signedStorage: 'company-assets/contracts/sale-signed',
+        pdfSignedUrlOk: !signedUrlErr,
+      });
+    } catch (storeErr) {
+      console.warn('[LF SIGNED PDF STAGE] sale-signed persist failed', {
+        requestedContractId: input.contractId,
+        message: storeErr instanceof Error ? storeErr.message : String(storeErr),
+      });
+    }
     return signed;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

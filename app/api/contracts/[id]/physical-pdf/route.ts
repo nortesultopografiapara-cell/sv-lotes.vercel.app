@@ -165,10 +165,6 @@ export async function POST(
       pdfBytes: bytes,
       saleId,
       version: Number(contract.version || 0) || null,
-      projectId,
-      lotId: String(contract.block_id || '').trim() || null,
-      buyerId: String(contract.customer_id || '').trim() || null,
-      userId: user.id,
       overwrite: false,
     });
 
@@ -176,13 +172,14 @@ export async function POST(
       contractId,
       contentType,
       bytesReceived: bytes.byteLength,
+      physicalBaseFound: true,
       pageCount: result.pageCount,
       company_id: companyId,
       project_id: projectId,
       sale_id: saleId,
+      bucket: result.bucket,
       storagePath: result.storagePath,
       uploadOk: true,
-      saleDocumentId: result.saleDocumentId,
       sha256: result.sha256,
       reused: result.reused,
       postStatus: 200,
@@ -195,7 +192,7 @@ export async function POST(
       sha256: result.sha256,
       pageCount: result.pageCount,
       storagePath: result.storagePath,
-      saleDocumentId: result.saleDocumentId,
+      bucket: result.bucket,
     });
   } catch (err) {
     const message =

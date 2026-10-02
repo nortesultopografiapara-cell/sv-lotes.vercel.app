@@ -19,9 +19,9 @@ export function classifySignedPdfGenerationError(err: unknown): string {
   const stack = err instanceof Error ? err.stack : '';
   const blob = `${message}\n${stack || ''}`;
   if (
-    /ainda não foi congelado|PHYSICAL_BASE_MISSING|encontrado 0/i.test(blob)
+    /ainda não foi congelado|PHYSICAL_BASE_MISSING|encontrado 0|Gere primeiro o PDF físico/i.test(blob)
   ) {
-    return 'Primeiro gere o PDF físico deste contrato para congelar a versão que será assinada.';
+    return 'Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.';
   }
   const invalidBase = message.match(
     /Base física LF ESTRELA inválida: esperado \d+ páginas, encontrado \d+\. Gere\/congele novamente o PDF físico homologado\./,

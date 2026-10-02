@@ -19,10 +19,13 @@ import {
   assertLfEstrelaHomologatedPageCount,
   lfEstrelaInvalidPhysicalBaseMessage,
 } from '../lib/lfEstrelaSignedPdf';
-import { validateSaleDocumentType } from '../lib/saleDocuments';
 import {
   classifySignedPdfGenerationError,
 } from '../lib/deployGitSha';
+import {
+  buildPhysicalSaleContractStoragePath,
+  getSaleContractBucket,
+} from '../lib/saleContractStorage';
 import {
   composeLfEstrelaSignedPdf,
   LF_ESTRELA_SIGNED_INSTRUMENT_PAGES,
@@ -166,14 +169,55 @@ function testSourceGuards() {
   assert(page.includes('/physical-pdf'), 'POST freeze no Baixar PDF');
   assert(route.includes('persistLfEstrelaPhysicalPdf'), 'API freeze persiste PDF físico');
   assert(route.includes('[LF PHYSICAL PDF POST TRACE]'), 'POST /physical-pdf loga TRACE');
-  assert(route.includes('saleDocumentId'), 'POST devolve saleDocumentId');
+  assert(route.includes('bucket: result.bucket'), 'POST devolve bucket company-assets');
+  assert(route.includes('storagePath: result.storagePath'), 'POST devolve path sale-physical');
+  assert(!route.includes('saleDocumentId'), 'POST não usa sale_documents como fonte');
   assert(
-    read('lib/lfEstrelaSignedPdf.ts').includes('LF_ESTRELA_PHYSICAL_BASE'),
-    'freeze usa sale_documents LF_ESTRELA_PHYSICAL_BASE',
+    !signed.includes("from('sale_documents')"),
+    'LF não consulta sale_documents no instrumento',
   );
   assert(
-    read('lib/lfEstrelaSignedPdf.ts').includes('SALE_DOCUMENTS_STORAGE_BUCKET'),
-    'PDF físico no bucket sale-documents',
+    !signed.includes('SALE_DOCUMENTS_STORAGE_BUCKET'),
+    'LF não usa bucket sale-documents',
+  );
+  assert(
+    !signed.includes('sale-documents'),
+    'LF não depende do bucket sale-documents',
+  );
+  assert(
+    signed.includes('buildPhysicalSaleContractStoragePath'),
+    'PDF físico em company-assets/contracts/sale-physical',
+  );
+  assert(
+    signed.includes('uploadSignedSaleContractPdf'),
+    'PDF assinado reutiliza uploadSignedSaleContractPdf',
+  );
+  assert(
+    signed.includes('pdf_signed_url'),
+    'PDF assinado atualiza contracts.pdf_signed_url',
+  );
+  const loadStart = service.indexOf('export async function loadSaleContractPdfForSign');
+  const loadEnd = service.indexOf('export async function getLatestSignedSaleSignature');
+  assert(loadStart > 0 && loadEnd > loadStart, 'loadSaleContractPdfForSign existe');
+  const loadSlice = service.slice(loadStart, loadEnd);
+  assert(
+    loadSlice.includes('if (lfEstrela)'),
+    'loadSaleContractPdfForSign bifurca LF ESTRELA na aquisição',
+  );
+  assert(
+    loadSlice.includes('await buildSaleContractPdfFromHtml(html, chrome)'),
+    'Recanto/Meneses/demais permanecem HTML → Chromium',
+  );
+  assert(
+    loadSlice.includes('buildLfEstrelaSignedSaleContractPdf'),
+    'LF ESTRELA adquire sale-physical no mesmo loadSaleContractPdfForSign',
+  );
+  const lfIfIdx = loadSlice.indexOf('if (lfEstrela)');
+  const lfReturnIdx = loadSlice.indexOf('return { pdf, contractNumber };', lfIfIdx);
+  const lfAcquire = loadSlice.slice(lfIfIdx, lfReturnIdx > lfIfIdx ? lfReturnIdx : lfIfIdx + 2500);
+  assert(
+    !lfAcquire.includes('buildSaleContractPdfFromHtml(html, chrome)'),
+    'LF ESTRELA nunca usa Chromium para o instrumento-base',
   );
   assert(
     !read('lib/saleContractSignatureService.ts').includes('pdf_url'),
@@ -249,6 +293,10 @@ function testSourceGuards() {
   assert(
     !service.includes('freeze_lf_physical_start'),
     'envio para assinatura NÃO congela physical base via Chromium',
+  );
+  assert(
+    service.includes('loadLfEstrelaPhysicalPdfBytes'),
+    'envio LF ESTRELA exige sale-physical já congelado',
   );
   assert(
     read('lib/saleContractSignedArtifact.ts').includes('resolveSignedPdfDocumentContractId'),
@@ -480,7 +528,15 @@ function testNeverUseSignatureProcessIdAsContractId() {
   assert(hydrated.id === signatureProcessId, 'hydrate preserva o id do processo');
 }
 
-function testPhysicalBaseUsesSaleDocumentsNotPdfUrl() {
+function testPhysicalBaseUsesCompanyAssetsSalePhysical() {
+  const tenantId = '3052a000-e8b9-43a4-b8ab-91a4392ffcbc';
+  const contractNumber = '000000012/2026';
+  const storagePath = buildPhysicalSaleContractStoragePath(tenantId, contractNumber);
+  assert(getSaleContractBucket() === 'company-assets', 'bucket padrão company-assets');
+  assert(
+    storagePath === `contracts/sale-physical/${tenantId}/000000012_2026.pdf`,
+    'path físico sale-physical por tenant/numero',
+  );
   const contractId = '9345eea4-2512-49f0-bbd8-944230161154';
   const sha = 'a'.repeat(64);
   const desc = buildLfEstrelaPhysicalBaseDescription({
@@ -494,8 +550,6 @@ function testPhysicalBaseUsesSaleDocumentsNotPdfUrl() {
   assert(parsed.version === 11, 'description guarda version');
   assert(parsed.pageCount === 10, 'description guarda page_count=10');
   assert(parsed.sha256 === sha, 'description guarda sha256');
-  const typeOk = validateSaleDocumentType('SYSTEM_GENERATED', 'LF_ESTRELA_PHYSICAL_BASE');
-  assert(typeOk.valid, 'LF_ESTRELA_PHYSICAL_BASE é SYSTEM_GENERATED');
 }
 
 function testGenerationErrorIsNotSignature404() {
@@ -503,14 +557,14 @@ function testGenerationErrorIsNotSignature404() {
     new Error('PDF físico homologado ainda não foi congelado.'),
   );
   assert(
-    missing.includes('Primeiro gere o PDF físico deste contrato'),
+    missing.includes('Gere primeiro o PDF físico deste contrato'),
     'base ausente vira mensagem de UI, não JSON cru',
   );
   const zero = classifySignedPdfGenerationError(
     new Error('Base física LF ESTRELA inválida: esperado 10 páginas, encontrado 0. Gere/congele novamente o PDF físico homologado.'),
   );
   assert(
-    zero.includes('Primeiro gere o PDF físico deste contrato'),
+    zero.includes('Gere primeiro o PDF físico deste contrato'),
     'encontrado 0 não é tratado como pageCount inválido genérico',
   );
   const invalid = classifySignedPdfGenerationError(
@@ -547,7 +601,7 @@ async function main() {
   testPartialStamps();
   testSignedPdfFindsPartiesWithoutLegacyField();
   testNeverUseSignatureProcessIdAsContractId();
-  testPhysicalBaseUsesSaleDocumentsNotPdfUrl();
+  testPhysicalBaseUsesCompanyAssetsSalePhysical();
   testGenerationErrorIsNotSignature404();
   await testComposePreservesInstrumentPages();
   console.log('OK — mandatory-lf-estrela-signed-pdf-tests passed');

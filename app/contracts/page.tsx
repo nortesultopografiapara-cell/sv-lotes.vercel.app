@@ -299,7 +299,7 @@ async function freezeLfEstrelaPhysicalPdfBlob(
   sha256: string | null;
   postStatus: number | null;
   storagePath: string | null;
-  saleDocumentId: string | null;
+  bucket: string | null;
 }> {
   const trace = {
     contractId,
@@ -308,7 +308,7 @@ async function freezeLfEstrelaPhysicalPdfBlob(
     sha256: null as string | null,
     postStatus: null as number | null,
     storagePath: null as string | null,
-    saleDocumentId: null as string | null,
+    bucket: null as string | null,
   };
   if (!blob || blob.size < 8) {
     console.error("[LF PHYSICAL FREEZE TRACE]", { ...trace, error: "blob vazio" });
@@ -327,19 +327,25 @@ async function freezeLfEstrelaPhysicalPdfBlob(
     pageCount?: number;
     sha256?: string;
     storagePath?: string;
-    saleDocumentId?: string | null;
+    bucket?: string | null;
   } | null;
   trace.pageCount = typeof data?.pageCount === "number" ? data.pageCount : null;
   trace.sha256 = typeof data?.sha256 === "string" ? data.sha256 : null;
   trace.storagePath = typeof data?.storagePath === "string" ? data.storagePath : null;
-  trace.saleDocumentId =
-    typeof data?.saleDocumentId === "string" ? data.saleDocumentId : null;
+  trace.bucket = typeof data?.bucket === "string" ? data.bucket : null;
   if (!res.ok) {
     const error = data?.error || `POST ${res.status}`;
-    console.error("[LF PHYSICAL FREEZE TRACE]", { ...trace, error });
+    console.error("[LF PHYSICAL FREEZE TRACE]", {
+      ...trace,
+      physicalBaseFound: false,
+      error,
+    });
     throw new Error(error);
   }
-  console.info("[LF PHYSICAL FREEZE TRACE]", trace);
+  console.info("[LF PHYSICAL FREEZE TRACE]", {
+    ...trace,
+    physicalBaseFound: true,
+  });
   return trace;
 }
 
@@ -1395,7 +1401,7 @@ export default function ContractsPage() {
       } | null;
       alert(
         payload?.error ||
-          "Primeiro gere o PDF físico deste contrato para congelar a versão que será assinada.",
+          "Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.",
       );
     } catch (err) {
       console.error(err);

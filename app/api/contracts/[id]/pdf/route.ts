@@ -143,6 +143,10 @@ export async function GET(
         );
       } catch (genErr) {
         const classified = classifySignedPdfGenerationError(genErr);
+        const physicalMissing =
+          /Gere primeiro o PDF f[ií]sico|Primeiro gere o PDF f[ií]sico/i.test(
+            classified,
+          );
         console.error('[SIGNED PDF ROUTE TRACE] generation failed', {
           ...routeTrace,
           message: genErr instanceof Error ? genErr.message : String(genErr),
@@ -151,21 +155,17 @@ export async function GET(
         return NextResponse.json(
           {
             error: classified,
-            code: /Primeiro gere o PDF físico/i.test(classified)
-              ? 'PHYSICAL_BASE_MISSING'
-              : undefined,
+            code: physicalMissing ? 'PHYSICAL_BASE_MISSING' : undefined,
             gitSha,
-            signedPdfReturn: /Primeiro gere o PDF físico/i.test(classified)
+            signedPdfReturn: physicalMissing
               ? 'physical_base_missing'
               : 'generation_failed',
             ...routeTrace,
           },
           {
-            status: /Primeiro gere o PDF físico/i.test(classified) ? 409 : 500,
+            status: physicalMissing ? 409 : 500,
             headers: deployHeaders(
-              /Primeiro gere o PDF físico/i.test(classified)
-                ? 'physical_base_missing'
-                : 'generation_failed',
+              physicalMissing ? 'physical_base_missing' : 'generation_failed',
             ),
           },
         );
