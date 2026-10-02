@@ -42,12 +42,20 @@ function td(html: string, pct?: number): string {
   return `<td colspan="1" rowspan="1"${attr}>${html}</td>`;
 }
 
-function table(className: string, head: string[], pcts: number[], rows: string[][]): string {
+function table(
+  className: string,
+  head: string[],
+  pcts: number[],
+  rows: string[][],
+  rowAttrs: Array<string | undefined> = [],
+): string {
   const headRow = `<tr>${head.map((cell, i) => th(cell, pcts[i] || 50)).join('')}</tr>`;
   const body = rows
     .map(
-      (row) =>
-        `<tr>${row.map((cell, i) => td(cell, pcts[i])).join('')}</tr>`,
+      (row, rowIndex) =>
+        `<tr${rowAttrs[rowIndex] ? ` ${rowAttrs[rowIndex]}` : ''}>${row
+          .map((cell, i) => td(cell, pcts[i]))
+          .join('')}</tr>`,
     )
     .join('');
   const classes = `${className} lf-estrela-table`.trim();
@@ -125,22 +133,24 @@ function financeTable(extraClass = ''): string {
   );
 }
 
-function signatureBlock(opts: { witnessLeftLabel: string }): string {
-  const line = '<p class="sv-lf-sign-line">______________________________</p>';
-  return `<table class="sv-lf-sign lf-estrela-signatures"><tbody>
-<tr class="sv-lf-sign-row">
-${td(`${line}<p><strong>COMPRADOR 1</strong></p><p>CPF n° ${t('CLIENT_CPF')}</p>`, 50)}
-${td(`${line}<p><strong>${t('COMPANY_LEGAL_NAME')}</strong></p><p>CNPJ ${t('COMPANY_CNPJ')}</p>`, 50)}
-</tr>
-<tr class="sv-lf-sign-row">
-${td(`${line}<p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p>`, 50)}
-${td(`${line}<p><strong>${t('SELLER_2_NAME')}</strong></p><p>CPF n°: ${t('SELLER_2_CPF_CNPJ')}</p>`, 50)}
-</tr>
-<tr class="sv-lf-sign-row">
-${td(`${line}<p><strong>${opts.witnessLeftLabel}</strong></p><p>CPF n°: ${t('WITNESS_1_CPF')}</p>`, 50)}
-${td(`${line}<p><strong>TESTEMUNHA 2</strong></p><p>CPF n°: ${t('WITNESS_2_CPF')}</p>`, 50)}
-</tr>
-</tbody></table>`;
+function signatureSlot(labelHtml: string, extraHtml: string): string {
+  const line = '<p class="sv-lf-sign-line">&nbsp;</p>';
+  return `<div class="sv-lf-sign-slot">${line}<p><strong>${labelHtml}</strong></p><p>${extraHtml}</p></div>`;
+}
+
+function signatureBlock(): string {
+  return `<div class="sv-lf-sign lf-estrela-signatures" data-sv-keep-block="true">
+<div class="sv-lf-sign-col">
+${signatureSlot('COMPRADOR 1', `CPF n° ${t('CLIENT_CPF')}`)}
+<div class="sv-lf-sign-slot" data-sv-if="spouse"><p class="sv-lf-sign-line">&nbsp;</p><p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p></div>
+${signatureSlot(t('WITNESS_1_NAME'), `CPF n°: ${t('WITNESS_1_CPF')}`)}
+</div>
+<div class="sv-lf-sign-col">
+${signatureSlot(t('COMPANY_LEGAL_NAME'), `CNPJ ${t('COMPANY_CNPJ')}`)}
+${signatureSlot(t('SELLER_2_NAME'), `CPF n°: ${t('SELLER_2_CPF_CNPJ')}`)}
+${signatureSlot(t('WITNESS_2_NAME'), `CPF n°: ${t('WITNESS_2_CPF')}`)}
+</div>
+</div>`;
 }
 
 function clauseHead(main: string, sub: string): string {
@@ -288,6 +298,7 @@ ${table(
     ['COMPRADOR (A)', t('CLIENT_NAME'), 'COMPRADOR (A)', t('CLIENT_CPF')],
     ['COMPRADOR (A)', t('SPOUSE_NAME'), 'COMPRADOR (A)', t('SPOUSE_CPF')],
   ],
+  [undefined, undefined, undefined, 'data-sv-if="spouse"'],
 )}
 <h2 class="sv-lf-section">2. DO OBJETO E GEORREFERENCIAMENTO (INFORMAÇÕES MACRO)</h2>
 ${objectTable('sv-lf-capa')}
@@ -337,12 +348,12 @@ ${table(
   ],
 )}
 ${dateLine()}
-${signatureBlock({ witnessLeftLabel: 'TESTEMUNHA 1' })}
+${signatureBlock()}
 ${PAGE_BREAK}
 ${logo()}
 <h1 class="sv-lf-instrument-title lf-estrela-title">CONTRATO DE PROMESSA<br>DE COMPRA E VENDA</h1>
 <p class="sv-lf-subtitle"><em>Instrumento particular de compra e venda de imóvel do tipo chácara rural que se regerá pelas cláusulas e condições a seguir.</em></p>
-${p(`Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE CHÁCARA RURAL, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${t('CLIENT_NAME')}, ${t('CLIENT_NATIONALITY')}, ${t('CLIENT_CIVIL_STATE')}, ${t('CLIENT_PROFESSION')}, portador(a) do RG sob n° ${t('CLIENT_RG')} ${t('CLIENT_RG_ISSUER')} e do CPF sob n° ${t('CLIENT_CPF')}, residente e domiciliada(o) na ${t('CLIENT_ADDRESS')}, doravante denominada COMPRADOR/CONTRATANTE e do outro temos a contratada ${t('COMPANY_LEGAL_NAME')}, pessoa jurídica de direito privado, inscrita no CNPJ sob o n° ${t('COMPANY_CNPJ')}, CRECI/(PA) n° ${t('COMPANY_CRECI')}, com sede na ${t('COMPANY_ADDRESS')}, ${t('COMPANY_NEIGHBORHOOD')}, ${t('COMPANY_CITY')}/${t('COMPANY_STATE')}, CEP: ${t('COMPANY_ZIP')}, com o seguinte endereço eletrônico: ${t('COMPANY_EMAIL')}, Telefone: ${t('COMPANY_PHONE')}, doravante designada simplesmente como VENDEDOR/CONTRATADA.`)}
+${p(`Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE CHÁCARA RURAL, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${t('CLIENT_NAME')}, ${t('CLIENT_NATIONALITY')}, ${t('CLIENT_CIVIL_STATE')}, ${t('CLIENT_PROFESSION')}, portador(a) do RG sob n° ${t('CLIENT_RG')} ${t('CLIENT_RG_ISSUER')} e do CPF sob n° ${t('CLIENT_CPF')}, residente e domiciliada(o) na ${t('CLIENT_ADDRESS')}, doravante denominada COMPRADOR/CONTRATANTE e do outro temos a contratada ${t('COMPANY_LEGAL_NAME')}, pessoa jurídica de direito privado, inscrita no CNPJ sob o n° ${t('COMPANY_CNPJ')}<span data-sv-if="companyCreci">, CRECI/(PA) n° ${t('COMPANY_CRECI')}</span>, com sede na ${t('COMPANY_ADDRESS')}, ${t('COMPANY_NEIGHBORHOOD')}, ${t('COMPANY_CITY')}/${t('COMPANY_STATE')}, CEP: ${t('COMPANY_ZIP')}, com o seguinte endereço eletrônico: ${t('COMPANY_EMAIL')}, Telefone: ${t('COMPANY_PHONE')}, doravante designada simplesmente como VENDEDOR/CONTRATADA.`)}
 ${p(`${t('SELLER_2_NAME')}, ${t('SELLER_2_NATIONALITY')}, ${t('SELLER_2_CIVIL_STATE')}, ${t('SELLER_2_PROFESSION')}, Carteira de identidade n° ${t('SELLER_2_RG')} ${t('SELLER_2_RG_ISSUER')}, CPF: ${t('SELLER_2_CPF_CNPJ')}, Residente e domiciliado na: ${t('SELLER_2_ADDRESS')}, Endereço eletrônico: ${t('SELLER_2_EMAIL')}. doravante designado simplesmente como VENDEDOR/CONTRATADA.`)}
 ${p('As Partes, de livre e espontânea vontade, resolvem firmar o presente Instrumento Particular de Compra e Venda de Imóvel Rural, cujo objeto consiste na transação do loteamento de terra correspondente à chácara a seguir identificada.')}
 ${clauseHead('CLÁUSULA PRIMEIRA', 'DO OBJETO, DA CAPA RESUMO E DOS ANEXOS')}
@@ -462,7 +473,7 @@ ${p('<strong>12.6.</strong> O COMPRADOR autoriza a VENDEDORA a coletar e tratar 
 ${p(`<strong>12.7.</strong> Para dirimir quaisquer dúvidas ou controvérsias oriundas do presente contrato que não puderem ser resolvidas amigavelmente, as partes elegem, com exclusão de qualquer outro por mais privilegiado que seja, o Foro da Comarca de ${t('PROJECT_FORUM_CITY')}/Estado do ${t('PROJECT_STATE')}.`)}
 ${p('E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma, na presença de 02 (duas) testemunhas instrumentárias abaixo identificadas.')}
 ${dateLine()}
-${signatureBlock({ witnessLeftLabel: 'TESTEMUNHA 1' })}
+${signatureBlock()}
 </div>`;
 
   assertNoLfEstrelaPageMarkers(html);

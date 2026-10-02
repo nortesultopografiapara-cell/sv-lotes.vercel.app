@@ -163,46 +163,58 @@ export function countVisualA4Pages(html: string, livePageCount?: number): number
   return Math.max(1, breaks + flowGaps + 1);
 }
 
-export function fillCustomPlaceholdersForPreview(
+export type CustomPlaceholderFillMode = 'diagnostic' | 'final';
+
+function renderPlaceholderValue(
+  key: string,
+  raw: string | null | undefined,
+  mode: CustomPlaceholderFillMode,
+): string {
+  const text = raw == null ? '' : String(raw).trim();
+  if (text) {
+    return mode === 'final'
+      ? escapeHtml(text)
+      : `<span class="sv-filled-placeholder">${escapeHtml(text)}</span>`;
+  }
+  if (mode === 'final') {
+    if (key === 'WITNESS_1_NAME') return 'TESTEMUNHA 1';
+    if (key === 'WITNESS_2_NAME') return 'TESTEMUNHA 2';
+    if (key === 'WITNESS_1_CPF' || key === 'WITNESS_2_CPF') return '__________________';
+    return '';
+  }
+  return `<span class="sv-missing-placeholder">${escapeHtml(
+    missingPlaceholderMarker(customPlaceholderLabel(key)),
+  )}</span>`;
+}
+
+export function fillCustomPlaceholders(
   html: string,
   values: Record<string, string | null>,
+  mode: CustomPlaceholderFillMode = 'diagnostic',
 ): string {
+  const emptyLogo = mode === 'final' ? '' : COMPANY_LOGO_PREVIEW_EMPTY;
   const hydrated = hydrateCustomPlaceholderHtml(html);
   const withLogo = hydrated.replace(COMPANY_LOGO_BLOCK_RE, (full) =>
     renderCompanyLogoDisplay(
       parseCompanyLogoLayoutFromHtml(full),
       values[COMPANY_LOGO_KEY],
-      COMPANY_LOGO_PREVIEW_EMPTY,
+      emptyLogo,
     ),
   );
   const replacedSpans = mapHtmlOutsideCompanyLogoBlocks(withLogo, (chunk) =>
     chunk.replace(PLACEHOLDER_SPAN_RE, (_full, key: string) => {
       const normalized = String(key || '').toUpperCase();
       if (normalized === COMPANY_LOGO_KEY) {
-        return renderCompanyLogoDisplay(
-          undefined,
-          values[COMPANY_LOGO_KEY],
-          COMPANY_LOGO_PREVIEW_EMPTY,
-        );
+        return renderCompanyLogoDisplay(undefined, values[COMPANY_LOGO_KEY], emptyLogo);
       }
-      const raw = values[normalized];
-      if (raw == null || !String(raw).trim()) {
-        return `<span class="sv-missing-placeholder">${escapeHtml(
-          missingPlaceholderMarker(customPlaceholderLabel(normalized)),
-        )}</span>`;
-      }
-      return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
+      return renderPlaceholderValue(normalized, values[normalized], mode);
     }),
   );
   return mapHtmlOutsideCompanyLogoBlocks(replacedSpans, (chunk) =>
     chunk.replace(BARE_TOKEN_RE, (full, key: string) => {
       const normalized = String(key || '').toUpperCase();
       if (normalized === COMPANY_LOGO_KEY) {
-        return renderCompanyLogoDisplay(
-          undefined,
-          values[COMPANY_LOGO_KEY],
-          COMPANY_LOGO_PREVIEW_EMPTY,
-        );
+        return renderCompanyLogoDisplay(undefined, values[COMPANY_LOGO_KEY], emptyLogo);
       }
       if (
         values[normalized] === undefined &&
@@ -211,15 +223,23 @@ export function fillCustomPlaceholdersForPreview(
       ) {
         return full;
       }
-      const raw = values[normalized];
-      if (raw == null || !String(raw).trim()) {
-        return `<span class="sv-missing-placeholder">${escapeHtml(
-          missingPlaceholderMarker(customPlaceholderLabel(normalized)),
-        )}</span>`;
-      }
-      return `<span class="sv-filled-placeholder">${escapeHtml(raw)}</span>`;
+      return renderPlaceholderValue(normalized, values[normalized], mode);
     }),
   );
+}
+
+export function fillCustomPlaceholdersForPreview(
+  html: string,
+  values: Record<string, string | null>,
+): string {
+  return fillCustomPlaceholders(html, values, 'diagnostic');
+}
+
+export function fillCustomPlaceholdersForFinal(
+  html: string,
+  values: Record<string, string | null>,
+): string {
+  return fillCustomPlaceholders(html, values, 'final');
 }
 
 export function extractPlaceholderKeys(html: string): string[] {

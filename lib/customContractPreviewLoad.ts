@@ -5,6 +5,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CustomPreviewInput } from '@/lib/customContractPreviewResolver';
+import { loadCustomerForSaleContract } from '@/lib/loadCustomerForSaleContract';
 
 export type PreviewSaleOption = {
   id: string;
@@ -83,7 +84,7 @@ export async function loadCustomPreviewContext(
   const financialAccountId = String(sale.financial_account_id || '');
   const [
     companyRes,
-    customerRes,
+    customer,
     projectRes,
     lotRes,
     contractRes,
@@ -94,8 +95,11 @@ export async function loadCustomPreviewContext(
   ] = await Promise.all([
       supabase.from('companies').select('*').eq('id', tenantId).maybeSingle(),
       sale.customer_id
-        ? supabase.from('customers').select('*').eq('id', sale.customer_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
+        ? loadCustomerForSaleContract(supabase, {
+            customerId: String(sale.customer_id),
+            tenantId,
+          })
+        : Promise.resolve({} as Record<string, unknown>),
       sale.project_id
         ? supabase.from('projects').select('*').eq('id', sale.project_id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -133,7 +137,7 @@ export async function loadCustomPreviewContext(
         : Promise.resolve({ data: null, error: null }),
     ]);
 
-  if (customerRes.data && !tenantMatch(customerRes.data as Record<string, unknown>, tenantId)) {
+  if (customer.id && !tenantMatch(customer, tenantId)) {
     throw new Error('Cliente de outra empresa.');
   }
   if (projectRes.data && !tenantMatch(projectRes.data as Record<string, unknown>, tenantId)) {
@@ -151,7 +155,7 @@ export async function loadCustomPreviewContext(
   return {
     tenantId,
     company: (companyRes.data || null) as Record<string, unknown> | null,
-    customer: (customerRes.data || null) as Record<string, unknown> | null,
+    customer: customer.id ? customer : null,
     sale: sale as Record<string, unknown>,
     project: (projectRes.data || null) as Record<string, unknown> | null,
     lot: (lotRes.data || null) as Record<string, unknown> | null,

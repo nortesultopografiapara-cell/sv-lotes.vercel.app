@@ -16,9 +16,25 @@ import {
 } from '../lib/customContractModelEditor';
 import {
   countVisualA4Pages,
+  fillCustomPlaceholdersForFinal,
   fillCustomPlaceholdersForPreview,
   hydrateCustomPlaceholderHtml,
 } from '../lib/customContractHtml';
+import { CUSTOM_CONTRACT_PRINT_EXTRA_CSS } from '../lib/customContractPrint';
+import {
+  CUSTOM_A4_MARGIN_MM,
+  customA4ContentWidthMm,
+  formatA4PageDiagnostic,
+  reportA4Pages,
+  type A4LayoutUnit,
+} from '../lib/customContractA4Layout';
+import {
+  applyLfEstrelaConditionals,
+  assertNoSemDadoInFinalHtml,
+  composeLfEstrelaContractHtml,
+  formatLfEstrelaMissingMessage,
+  LF_ESTRELA_REQUIRED_FIELDS,
+} from '../lib/lfEstrelaEmission';
 import { CUSTOM_PLACEHOLDER_KEYS } from '../lib/customContractPlaceholders';
 import { resolveCustomPreviewValues } from '../lib/customContractPreviewResolver';
 import { formatLfPartnershipNote } from '../lib/lfImoveisContractConfig';
@@ -34,10 +50,6 @@ import {
   findLfEstrelaPageMarkers,
   isLfEstrelaModelName,
 } from '../lib/lfEstrelaCustomTemplate';
-import {
-  CUSTOM_A4_MARGIN_MM,
-  customA4ContentWidthMm,
-} from '../lib/customContractA4Layout';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -107,7 +119,7 @@ for (let n = 1; n <= 12; n += 1) {
 assert(html.includes('CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA'), 'Capa Resumo');
 assert(html.includes('INFRAESTRUTURA ESSENCIAL'), 'bloco de infraestrutura');
 assert((html.match(/COMPRADOR 1/g) || []).length >= 2, 'dois blocos de assinatura (capa + instrumento)');
-assert((html.match(/TESTEMUNHA 1/g) || []).length >= 2, 'testemunhas nos dois blocos');
+assert((html.match(/WITNESS_1_NAME/g) || []).length >= 2, 'testemunhas nos dois blocos');
 assert((html.match(/data-sv-page-break/g) || []).length >= 2, 'quebras estruturais capa→infra e capa→instrumento');
 
 const capaPages = html.split(/<div data-sv-page-break="true"[^>]*><\/div>/);
@@ -124,7 +136,7 @@ assert(
 assert(
   capaPages[1].includes('INFRAESTRUTURA ESSENCIAL') &&
     capaPages[1].includes('COMPRADOR 1') &&
-    capaPages[1].includes('TESTEMUNHA 1') &&
+    capaPages[1].includes('WITNESS_1_NAME') &&
     capaPages[1].includes('lf-estrela-signatures') &&
     !capaPages[1].includes('CONTRATO DE PROMESSA<br>'),
   'página 2 da Capa: infraestrutura + data + assinaturas (sem o instrumento)',
@@ -329,5 +341,193 @@ assert(printLike.includes('MARIA HOMOLOG LF'), 'PDF recebe o HTML da prévia res
 
 const estrelaMotor = read('lib/estrelaDoSulContractTemplate.ts');
 assert(estrelaMotor.includes('generateEstrelaDoSulContract') || estrelaMotor.length > 100, 'motor ESTRELA_DO_SUL permanece');
+
+assert(!/<table[^>]*sv-lf-sign/i.test(html), 'assinaturas da Capa/finais não usam tabela quadriculada');
+assert(html.includes('data-sv-if="spouse"'), 'linha COMPRADOR 2 é condicional');
+assert(html.includes('data-sv-if="companyCreci"'), 'CRECI da empresa é condicional');
+
+const homologValues: Record<string, string | null> = {
+  CLIENT_NAME: 'SEVERINO JOSE DE FRANÇA',
+  CLIENT_CPF: '012.345.678-90',
+  CLIENT_RG: '1234567',
+  CLIENT_RG_ISSUER: 'PC/PA',
+  CLIENT_NATIONALITY: 'Brasileiro',
+  CLIENT_CIVIL_STATE: 'Solteiro(a)',
+  CLIENT_PROFESSION: 'Agricultor',
+  CLIENT_ADDRESS: 'Rua Homologação, 100',
+  COMPANY_LEGAL_NAME: 'L.F. IMÓVEIS LTDA',
+  COMPANY_CNPJ: '47.052.349/0001-30',
+  COMPANY_ADDRESS: 'Palmares 2',
+  COMPANY_NEIGHBORHOOD: 'Palmares 2',
+  COMPANY_CITY: 'Parauapebas',
+  COMPANY_STATE: 'PA',
+  COMPANY_ZIP: '68515-000',
+  COMPANY_EMAIL: 'lf@example.com',
+  COMPANY_PHONE: '94999990000',
+  COMPANY_CRECI: '',
+  SELLER_2_NAME: 'ANTONIO FERREIRA SILVA',
+  SELLER_2_CPF_CNPJ: '718.773.122-15',
+  SELLER_2_NATIONALITY: 'Brasileiro',
+  SELLER_2_CIVIL_STATE: 'Casado(a)',
+  SELLER_2_PROFESSION: 'Empresário',
+  SELLER_2_RG: '9988776',
+  SELLER_2_RG_ISSUER: 'PC/PA',
+  SELLER_2_ADDRESS: 'Parauapebas/PA',
+  SELLER_2_EMAIL: 'aferreirasilva199@gmail.com',
+  PROJECT_NAME: 'CHACREAMENTO ESTRELA DO SUL',
+  PROJECT_CITY: 'Parauapebas',
+  PROJECT_STATE: 'PA',
+  PROJECT_FORUM_CITY: 'Parauapebas',
+  BLOCK_NAME: '02',
+  LOT_NUMBER: '14',
+  LOT_AREA: '628,26 m²',
+  SALE_VALUE: 'R$ 62,83',
+  SALE_VALUE_EXTENSO: 'sessenta e dois reais e oitenta e três centavos',
+  PAYMENT_TYPE: 'Parcelado',
+  DOWN_PAYMENT: 'R$ 10,00',
+  INSTALLMENTS_COUNT: '5',
+  INSTALLMENT_VALUE: 'R$ 10,57',
+  FIRST_DUE_DATE: '25/09/2026',
+  CONTRACT_DATE_EXTENSO: 'VINTE E CINCO DE SETEMBRO DE DOIS MIL E VINTE E SEIS',
+  PARTNERSHIP_NOTE:
+    'Será repassado ao primeiro vendedor, L.F. IMÓVEIS LTDA, 40% do valor e 60% ao segundo vendedor, ANTONIO FERREIRA SILVA, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.',
+  LF_FIRST_VENDOR_PERCENT: '40%',
+  LF_SECOND_VENDOR_PERCENT: '60%',
+  SPOUSE_NAME: '',
+  SPOUSE_CPF: '',
+  WITNESS_1_NAME: '',
+  WITNESS_1_CPF: '',
+  WITNESS_2_NAME: '',
+  WITNESS_2_CPF: '',
+};
+
+const saleWithoutSpouse = { has_spouse: false, sale_spouse_name: '', sale_spouse_cpf: '' };
+const composedFinal = composeLfEstrelaContractHtml(html, homologValues, {
+  mode: 'final',
+  sale: saleWithoutSpouse,
+  requireComplete: true,
+});
+assertNoSemDadoInFinalHtml(composedFinal.html);
+assert(!composedFinal.html.includes('[SEM DADO:'), 'PDF final sem marcador [SEM DADO:');
+assert(!/COMPRADOR 2/i.test(composedFinal.html), 'sem cônjuge: não imprime COMPRADOR 2');
+assert(!composedFinal.html.includes('CRECI/(PA)'), 'sem CRECI cadastrado: trecho oculto');
+assert(composedFinal.html.includes('TESTEMUNHA 1'), 'testemunha 1 mantém rótulo jurídico');
+assert(composedFinal.html.includes('__________________'), 'CPF da testemunha vira linha em branco');
+assert(composedFinal.html.includes('SEVERINO JOSE DE FRANÇA'), 'fixture homolog: comprador');
+assert(composedFinal.html.includes('CHACREAMENTO ESTRELA DO SUL'), 'fixture homolog: empreendimento');
+assert(composedFinal.html.includes('628,26 m²'), 'fixture homolog: área');
+assert(composedFinal.html.includes('40%'), 'fixture homolog: 40/60');
+assert(composedFinal.html.includes('R$ 62,83'), 'fixture homolog: valor');
+assert(composedFinal.html.includes('R$ 10,00'), 'fixture homolog: sinal');
+assert(composedFinal.html.includes('R$ 10,57'), 'fixture homolog: parcelas');
+assert(composedFinal.html.includes('25/09/2026'), 'fixture homolog: 1º vencimento');
+assert(!composedFinal.html.includes('generateEstrelaDoSulContract'), 'HTML CUSTOM não chama o motor');
+
+const withSpouse = composeLfEstrelaContractHtml(
+  html,
+  { ...homologValues, SPOUSE_NAME: 'MARIA CONJUGE', SPOUSE_CPF: '529.982.247-25' },
+  {
+    mode: 'final',
+    sale: { has_spouse: true, sale_spouse_name: 'MARIA CONJUGE', sale_spouse_cpf: '52998224725' },
+    requireComplete: true,
+  },
+);
+assert(/COMPRADOR 2/i.test(withSpouse.html), 'com cônjuge: imprime COMPRADOR 2');
+assert(withSpouse.html.includes('MARIA CONJUGE'), 'com cônjuge: nome na capa');
+
+const stripped = applyLfEstrelaConditionals(html, { spouse: false, companyCreci: false });
+assert(!/data-sv-if="spouse"/i.test(stripped), 'condicional cônjuge remove o bloco');
+assert(!/CRECI\/\(PA\)/i.test(stripped), 'condicional CRECI remove o trecho');
+
+const incomplete = composeLfEstrelaContractHtml(
+  html,
+  { ...homologValues, CLIENT_NATIONALITY: '', SELLER_2_RG: '' },
+  { mode: 'final', sale: saleWithoutSpouse, requireComplete: false },
+);
+assert(incomplete.missing.includes('Nacionalidade do comprador'), 'nacionalidade obrigatória se vazia');
+assert(incomplete.missing.includes('RG do vendedor 2'), 'RG do vendedor 2 obrigatório se vendedor 2 existe');
+const blocked = formatLfEstrelaMissingMessage(incomplete.missing);
+assert(blocked.includes('Não foi possível gerar o LF ESTRELA.'), 'mensagem de bloqueio');
+assert(blocked.includes('• Nacionalidade do comprador'), 'lista o que falta');
+assert(LF_ESTRELA_REQUIRED_FIELDS.some((f) => f.key === 'CLIENT_NATIONALITY'), 'nacionalidade está na lista obrigatória');
+
+let threw = false;
+try {
+  composeLfEstrelaContractHtml(html, { CLIENT_NAME: 'X' }, {
+    mode: 'final',
+    sale: saleWithoutSpouse,
+    requireComplete: true,
+  });
+} catch (e) {
+  threw = e instanceof Error && e.message.includes('Não foi possível gerar o LF ESTRELA.');
+}
+assert(threw, 'emissão final bloqueia se obrigatórios faltam');
+
+const diagnostic = fillCustomPlaceholdersForPreview('<p>{{CLIENT_NATIONALITY}}</p>', {
+  CLIENT_NATIONALITY: null,
+});
+assert(diagnostic.includes('[SEM DADO:'), 'modo edição ainda sinaliza token sem fonte');
+const finalFill = fillCustomPlaceholdersForFinal('<p>{{CLIENT_NATIONALITY}}</p>', {
+  CLIENT_NATIONALITY: null,
+});
+assert(!finalFill.includes('[SEM DADO:'), 'modo final não imprime [SEM DADO:');
+
+assert(
+  /page-break-after:\s*auto !important/.test(CUSTOM_CONTRACT_PRINT_EXTRA_CSS) &&
+    CUSTOM_CONTRACT_PRINT_EXTRA_CSS.includes('.sv-page-break'),
+  'print: .sv-page-break não gera segunda quebra',
+);
+assert(
+  /sv-a4-flow-gap[\s\S]*page-break-after:\s*always !important/.test(CUSTOM_CONTRACT_PRINT_EXTRA_CSS),
+  'print: só o spacer do A4Pagination quebra página',
+);
+assert(
+  /font-size:\s*7pt !important/.test(CUSTOM_CONTRACT_PRINT_EXTRA_CSS) &&
+    /line-height:\s*1\.1 !important/.test(CUSTOM_CONTRACT_PRINT_EXTRA_CSS),
+  'print: notas com estilo computado 7pt / line-height 1.1',
+);
+assert(
+  /sv-lf-sign[\s\S]*border:\s*none !important/.test(CUSTOM_CONTRACT_PRINT_EXTRA_CSS),
+  'print: assinaturas sem grade visível',
+);
+
+const diagUnits: A4LayoutUnit[] = [
+  { id: 'u0', height: 34, kind: 'paragraph', keepTogether: false, keepWithNext: false },
+  { id: 'u1', height: 900, kind: 'table', keepTogether: true, keepWithNext: false },
+];
+const diagPages = [
+  {
+    start: 0,
+    end: 0,
+    leftover: 1000,
+    footnoteIds: [],
+    footnoteHeight: 0,
+    pageIndex: 0,
+    breakReason: 'keepWithNext' as const,
+    nextKind: 'table',
+    keepTogether: true,
+  },
+  {
+    start: 1,
+    end: 1,
+    leftover: 80,
+    footnoteIds: [],
+    footnoteHeight: 0,
+    pageIndex: 1,
+    breakReason: 'end' as const,
+  },
+];
+const diag = formatA4PageDiagnostic(reportA4Pages(diagUnits, diagPages, 1034));
+assert(diag.includes('Page 1:'), 'diagnóstico registra número da página');
+assert(diag.includes('usedHeight: 34px'), 'diagnóstico registra usedHeight');
+assert(diag.includes('keepTogether: true'), 'diagnóstico registra keepTogether');
+assert(diag.includes('→ ERRO'), 'página órfã por keepTogether é marcada');
+
+const regen = read('lib/contractRegeneration.ts');
+assert(regen.includes('tryBuildLfEstrelaCustomSaleHtml'), 'regeneração GIS tenta LF ESTRELA CUSTOM antes do motor');
+assert(!read('lib/lfEstrelaSaleContract.ts').includes('generateEstrelaDoSulContract'), 'loader CUSTOM não usa o motor ESTRELA');
+assert(read('lib/lfEstrelaSaleContract.ts').includes('isDevelopHomologRuntime'), 'CUSTOM só emite no DEVELOP');
+assert(read('lib/customContractPreviewResolver.ts').includes('customer.nationality'), 'resolver lê nacionalidade do cadastro');
+assert(read('lib/customerIdentity.ts').includes("pick('nationality', 'nacionalidade')"), 'merge clientes/customers traz nacionalidade');
 
 console.log('\nOK — testes obrigatórios LF ESTRELA.');

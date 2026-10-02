@@ -38,8 +38,13 @@ export type CustomPreviewSeller = {
   name?: string | null;
   cpfCnpj?: string | null;
   rg?: string | null;
+  rgIssuer?: string | null;
   address?: string | null;
   phone?: string | null;
+  email?: string | null;
+  nationality?: string | null;
+  civilState?: string | null;
+  profession?: string | null;
 };
 
 export type CustomPreviewInput = {
@@ -132,8 +137,13 @@ export function parsePreviewSellers(input: {
     name: pick(row.name, row.nome, row.full_name),
     cpfCnpj: pick(row.cpf, row.cpf_cnpj, row.document, row.cnpj),
     rg: pick(row.rg, row.rg_number),
+    rgIssuer: pick(row.rg_issuer, row.rgIssuer, row.orgao_emissor),
     address: pick(row.address, row.endereco),
     phone: pick(row.phone, row.telefone),
+    email: pick(row.email),
+    nationality: pick(row.nationality, row.nacionalidade),
+    civilState: pick(row.maritalStatus, row.civil_state, row.estado_civil, row.marital_status),
+    profession: pick(row.profession, row.profissao),
   }));
 
   const companySeller = normalizeSellerFromCompany(input.company || {});
@@ -153,8 +163,13 @@ export function parsePreviewSellers(input: {
       name: pick(second.name, second.nome),
       cpfCnpj: pick(second.cpf, second.cpf_cnpj, second.document),
       rg: pick(second.rg),
+      rgIssuer: pick(second.rgIssuer, second.rg_issuer, [second.rgIssuer, second.rgUf].filter(Boolean).join('/')),
       address: pick(second.address),
       phone: pick(second.phone),
+      email: pick(second.email),
+      nationality: pick(second.nationality),
+      civilState: pick(second.maritalStatus, second.civil_state),
+      profession: pick(second.profession),
     };
     if (extra.name || extra.cpfCnpj) sellers.push(extra);
   }
@@ -222,11 +237,19 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
       phone: pick(company.phone, sellers[0]?.phone),
     };
     sellers[1] = {
-      name: pick(lfConfig.secondVendor.name),
-      cpfCnpj: pick(lfConfig.secondVendor.cpf),
-      rg: pick(lfConfig.secondVendor.rg),
-      address: pick(lfConfig.secondVendor.address),
-      phone: pick(lfConfig.secondVendor.phone),
+      name: pick(lfConfig.secondVendor.name, sellers[1]?.name),
+      cpfCnpj: pick(lfConfig.secondVendor.cpf, sellers[1]?.cpfCnpj),
+      rg: pick(lfConfig.secondVendor.rg, sellers[1]?.rg),
+      rgIssuer: pick(
+        [lfConfig.secondVendor.rgIssuer, lfConfig.secondVendor.rgUf].filter(Boolean).join('/'),
+        sellers[1]?.rgIssuer,
+      ),
+      address: pick(lfConfig.secondVendor.address, sellers[1]?.address),
+      phone: pick(lfConfig.secondVendor.phone, sellers[1]?.phone),
+      email: pick(lfConfig.secondVendor.email, sellers[1]?.email),
+      nationality: pick(lfConfig.secondVendor.nationality, sellers[1]?.nationality),
+      civilState: pick(lfConfig.secondVendor.maritalStatus, sellers[1]?.civilState),
+      profession: pick(lfConfig.secondVendor.profession, sellers[1]?.profession),
     };
   }
   const seller1 = sellers[0] || {};
@@ -269,7 +292,7 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     COMPANY_ZIP: pick(company.zip_code, company.cep),
     COMPANY_PHONE: pick(company.phone),
     COMPANY_EMAIL: pick(company.email),
-    COMPANY_CRECI: pick(company.creci),
+    COMPANY_CRECI: pick(company.creci, company.contract_creci, company.creci_number),
     COMPANY_LOGO_URL: pick(company.logo_url),
 
     CLIENT_NAME: pick(customer.name),
@@ -277,7 +300,7 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     CLIENT_RG: pick(identity.rg, customer.rg),
     CLIENT_RG_ISSUER: pick(identity.issuer, customer.rg_issuer),
     CLIENT_RG_STATE: pick(identity.issuerState, customer.rg_issuer_state),
-    CLIENT_NATIONALITY: '',
+    CLIENT_NATIONALITY: pick(customer.nationality, customer.nacionalidade),
     CLIENT_PROFESSION: pick(customer.profession),
     CLIENT_CIVIL_STATE: pick(customer.civil_state, customer.marital_status),
     CLIENT_ADDRESS: pick(customer.address),
@@ -306,16 +329,17 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
     SELLER_1_PHONE: pick(seller1.phone),
     SELLER_2_NAME: pick(seller2.name),
     SELLER_2_CPF_CNPJ: pick(seller2.cpfCnpj),
-    SELLER_2_RG: pick(seller2.rg),
-    SELLER_2_ADDRESS: pick(seller2.address),
-    SELLER_2_PHONE: pick(seller2.phone),
-    SELLER_2_EMAIL: pick(lfConfig.secondVendor.email),
-    SELLER_2_NATIONALITY: pick(lfConfig.secondVendor.nationality),
-    SELLER_2_CIVIL_STATE: pick(lfConfig.secondVendor.maritalStatus),
-    SELLER_2_PROFESSION: pick(lfConfig.secondVendor.profession),
-    SELLER_2_RG_ISSUER: [lfConfig.secondVendor.rgIssuer, lfConfig.secondVendor.rgUf]
-      .filter(Boolean)
-      .join('/'),
+    SELLER_2_RG: pick(seller2.rg, lfConfig.secondVendor.rg),
+    SELLER_2_ADDRESS: pick(seller2.address, lfConfig.secondVendor.address),
+    SELLER_2_PHONE: pick(seller2.phone, lfConfig.secondVendor.phone),
+    SELLER_2_EMAIL: pick(seller2.email, lfConfig.secondVendor.email),
+    SELLER_2_NATIONALITY: pick(seller2.nationality, lfConfig.secondVendor.nationality),
+    SELLER_2_CIVIL_STATE: pick(seller2.civilState, lfConfig.secondVendor.maritalStatus),
+    SELLER_2_PROFESSION: pick(seller2.profession, lfConfig.secondVendor.profession),
+    SELLER_2_RG_ISSUER: pick(
+      seller2.rgIssuer,
+      [lfConfig.secondVendor.rgIssuer, lfConfig.secondVendor.rgUf].filter(Boolean).join('/'),
+    ),
 
     PROJECT_NAME: pick(project.name),
     PROJECT_ADDRESS: pick(project.address, project.location, project.endereco),

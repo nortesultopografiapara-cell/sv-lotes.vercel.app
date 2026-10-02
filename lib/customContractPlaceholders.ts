@@ -72,7 +72,7 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
     'CLIENT_NATIONALITY',
     'Nacionalidade do comprador',
     'buyer',
-    'sem fonte automática atualmente (não existe na Nova Venda nem em customers)',
+    'customers.nationality | customers.nacionalidade | clients.nationality',
   ),
   field('CLIENT_PROFESSION', 'Profissão do comprador', 'buyer', 'customers.profession'),
   field('CLIENT_CIVIL_STATE', 'Estado civil do comprador', 'buyer', 'customers.civil_state | marital_status'),

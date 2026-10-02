@@ -135,8 +135,12 @@ assert(
   'placeholders compatíveis com o sistema atual',
 );
 assert(
-  PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'),
-  'nacionalidade do comprador sem fonte automática',
+  PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'),
+  'testemunhas marcadas sem fonte automática',
+);
+assert(
+  !PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'),
+  'nacionalidade do comprador tem fonte cadastral',
 );
 
 assert(
@@ -524,7 +528,7 @@ void (async () => {
   assert(values.CLIENT_NAME === 'João', 'fonte real do comprador');
   assert(values.CLIENT_RG_ISSUER === 'PC', 'órgão emissor sem concatenar UF');
   assert(values.CLIENT_RG_STATE === 'PA', 'UF emissor do RG da Nova Venda');
-  assert(values.CLIENT_NATIONALITY == null, 'nacionalidade do comprador sem fonte automática');
+  assert(values.CLIENT_NATIONALITY === 'Brasileira', 'nacionalidade do comprador a partir de customers/clients');
   assert(values.SPOUSE_NATIONALITY === 'Brasileira', 'nacionalidade do cônjuge da venda');
   assert(values.PROJECT_NAME === 'Estrela do Sul', 'fonte real do empreendimento');
   assert(String(values.LOT_PRICE || '').includes('40.000'), 'LOT_PRICE = valor original do lote');
@@ -538,7 +542,7 @@ void (async () => {
   assert(String(values.FINANCIAL_ACCOUNT_LABEL || '').includes('Conta Imobiliária'), 'conta recebedora pública');
   assert(values.FINANCIAL_ACCOUNT_BENEFICIARY === 'SV Lotes', 'beneficiário da conta recebedora');
   assert(values.SELLER_1_NAME === 'Vendedor Um', 'vendedor 1 a partir de seller_parties_json (leitura)');
-  assert(values.WITNESS_1_NAME == null, 'testemunha sem fonte automática');
+  assert(!values.WITNESS_1_NAME, 'testemunha sem cadastro fica vazia no resolver');
   let cross = false;
   try {
     resolveCustomPreviewValues({
@@ -568,7 +572,7 @@ void (async () => {
   assert(!previewResolver.includes('gisSaleCreateService'), 'resolver não cria venda GIS');
   assert(docxLib.includes("from 'mammoth'") || docxLib.includes('from "mammoth"'), 'importação usa mammoth');
   assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('WITNESS_1_NAME'), 'testemunhas marcadas sem fonte');
-  assert(PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'), 'nacionalidade comprador sem fonte');
+  assert(!PLACEHOLDERS_WITHOUT_AUTOMATIC_SOURCE.includes('CLIENT_NATIONALITY'), 'nacionalidade comprador com fonte');
 
   const css = read('components/contracts/editor/customContractEditor.css');
   const logoNode = read('components/contracts/editor/CompanyLogoNode.ts');

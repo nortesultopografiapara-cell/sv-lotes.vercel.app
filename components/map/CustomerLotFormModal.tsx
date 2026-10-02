@@ -1233,6 +1233,15 @@ export function CustomerLotFormModal({
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Nacionalidade</label>
+                  <input
+                    type="text"
+                    value={formData.nationality || ''}
+                    onChange={(e) => setField({ nationality: e.target.value })}
+                    className={GIS_INPUT}
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil *</label>
                   <select
                     value={formData.civil_state}

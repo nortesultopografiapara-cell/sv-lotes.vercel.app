@@ -214,9 +214,18 @@
 }
 
 @media print {
-  .sv-a4-flow-gap,
-  .sv-a4-flow-gap-row,
+  /* Autoridade única de quebra: spacers do A4Pagination. O data-sv-page-break
+     já foi consumido pelo empacotador; não pode gerar uma segunda folha. */
   .sv-page-break {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  .sv-a4-flow-gap,
+  .sv-a4-flow-gap-row {
     height: 0 !important;
     margin: 0 !important;
     background: transparent !important;
@@ -247,6 +256,21 @@
     max-width: 100% !important;
     padding: var(--paper-pad) !important;
     box-sizing: border-box !important;
+  }
+
+  .sv-lf-estrela .sv-lf-note,
+  .sv-lf-estrela .sv-lf-footnote,
+  .sv-lf-estrela .lf-estrela-footnote {
+    font-size: 7pt !important;
+    line-height: 1.1 !important;
+  }
+
+  .sv-lf-estrela .sv-lf-sign,
+  .sv-lf-estrela .lf-estrela-signatures,
+  .sv-lf-estrela .sv-lf-sign td,
+  .sv-lf-estrela .sv-lf-sign-slot {
+    border: 0 !important;
+    outline: none !important;
   }
 
   .sv-table-layout-bar,
@@ -651,8 +675,8 @@
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-note,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-footnote,
 .sv-editor-preview-doc .sv-lf-estrela .lf-estrela-footnote {
-  font-size: 7pt;
-  line-height: 1.1;
+  font-size: 7pt !important;
+  line-height: 1.1 !important;
   text-align: justify;
   margin: 0 0 1px;
   padding: 0;
@@ -698,28 +722,48 @@
 
 .sv-a4-sheet .sv-lf-estrela table.sv-lf-sign,
 .sv-a4-sheet .sv-lf-estrela table.lf-estrela-signatures,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-signatures,
 .sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign,
-.sv-editor-preview-doc .sv-lf-estrela table.lf-estrela-signatures {
+.sv-editor-preview-doc .sv-lf-estrela table.lf-estrela-signatures,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-signatures {
+  display: flex;
+  gap: 28px;
   width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
+  border: 0 !important;
+  outline: none;
+  background: transparent;
   margin: 4px 0 0;
-  border: 0;
+  padding: 0;
   break-inside: auto;
   page-break-inside: auto;
 }
 
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-col,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-col {
+  flex: 1;
+  min-width: 0;
+}
+
 .sv-a4-sheet .sv-lf-estrela table.sv-lf-sign td,
-.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign td {
-  border: 0;
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-slot,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign td,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-slot {
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
   text-align: center;
   vertical-align: top;
-  padding: 8px 8px 2px;
+  padding: 10px 8px 4px;
   font-size: 9pt;
+  background: transparent;
 }
 
 .sv-a4-sheet .sv-lf-estrela table.sv-lf-sign p,
-.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign p {
+.sv-a4-sheet .sv-lf-estrela .sv-lf-sign-slot p,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign p,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-slot p {
   margin: 0;
   text-align: center;
   font-size: 9pt;
@@ -728,9 +772,9 @@
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-sign-line,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-line {
-  margin: 10px 10% 2px;
+  margin: 12px 8% 2px;
   border: 0;
-  border-bottom: 1px solid #111;
+  border-bottom: 1px solid #111 !important;
   height: 0;
   padding: 0;
   line-height: 1;

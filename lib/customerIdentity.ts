@@ -25,6 +25,8 @@ export type CustomerRecord = {
   phone?: string | null;
   email?: string | null;
   profession?: string | null;
+  nationality?: string | null;
+  nacionalidade?: string | null;
   civil_state?: string | null;
   marital_status?: string | null;
   address?: string | null;
@@ -47,6 +49,7 @@ export type CustomerFormValues = {
   rg_issuer: string;
   rg_issuer_state: string;
   profession: string;
+  nationality?: string;
   civil_state: string;
   phone: string;
   email: string;
@@ -88,6 +91,7 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     rg_issuer: customer.rg_issuer || '',
     rg_issuer_state: customer.rg_issuer_state || customer.state_uf || customer.state || '',
     profession: customer.profession || '',
+    nationality: String(customer.nationality || customer.nacionalidade || ''),
     civil_state: customer.civil_state || customer.marital_status || '',
     phone: customer.phone || '',
     email: customer.email || '',
@@ -108,6 +112,7 @@ export function emptyCustomerFormValues(): CustomerFormValues {
     rg_issuer: '',
     rg_issuer_state: '',
     profession: '',
+    nationality: '',
     civil_state: '',
     phone: '',
     email: '',
@@ -417,6 +422,9 @@ export function mergeCustomerData(
   const profession = pick('profession');
   if (profession) merged.profession = profession;
 
+  const nationality = pick('nationality', 'nacionalidade');
+  if (nationality) merged.nationality = nationality;
+
   const civilState = pick('civil_state', 'marital_status');
   if (civilState) {
     merged.civil_state = civilState;
@@ -503,6 +511,10 @@ export function customerPatchFromForm(
   if (!isEmptyCustomerField(form.profession)) {
     patch.profession = form.profession?.trim() || null;
   }
+  if (!isEmptyCustomerField(form.nationality)) {
+    patch.nationality = form.nationality?.trim() || null;
+    patch.nacionalidade = form.nationality?.trim() || null;
+  }
   if (!isEmptyCustomerField(form.civil_state)) {
     const civil = form.civil_state?.trim() || null;
     patch.civil_state = civil;
@@ -561,6 +573,7 @@ export function buildCustomerPayload(
     rg_issuer: form.rg_issuer?.trim() || null,
     rg_issuer_state: form.rg_issuer_state?.trim().toUpperCase() || null,
     profession: form.profession?.trim() || null,
+    nationality: form.nationality?.trim() || null,
     marital_status: form.civil_state?.trim() || null,
     civil_state: form.civil_state?.trim() || null,
     address: form.address?.trim().toUpperCase() || null,
@@ -692,15 +705,30 @@ export async function resolveOrCreateCustomer(
       .from('customers')
       .update(payload)
       .eq('id', customerId);
-    if (updErr) console.warn('CUSTOMER_UPDATE_WARN', updErr.message);
+    if (updErr && /nationality|nacionalidade/i.test(updErr.message || '')) {
+      const { nationality: _n, nacionalidade: _n2, ...withoutNat } = payload as Record<string, unknown>;
+      void _n;
+      void _n2;
+      const retry = await supabase.from('customers').update(withoutNat).eq('id', customerId);
+      if (retry.error) console.warn('CUSTOMER_UPDATE_WARN', retry.error.message);
+    } else if (updErr) console.warn('CUSTOMER_UPDATE_WARN', updErr.message);
   }
 
   if (!customerId) {
-    const { data: newCustomer, error: custError } = await supabase
+    let insertPayload: Record<string, unknown> = payload as Record<string, unknown>;
+    let { data: newCustomer, error: custError } = await supabase
       .from('customers')
-      .insert([payload])
+      .insert([insertPayload])
       .select('id')
       .single();
+    if (custError && /nationality|nacionalidade/i.test(custError.message || '')) {
+      const { nationality: _n, nacionalidade: _n2, ...withoutNat } = insertPayload;
+      void _n;
+      void _n2;
+      const retry = await supabase.from('customers').insert([withoutNat]).select('id').single();
+      newCustomer = retry.data;
+      custError = retry.error;
+    }
 
     if (custError || !newCustomer) {
       throw new Error(custError?.message || 'Não foi possível criar o cliente.');
@@ -746,6 +774,7 @@ export async function resolveOrCreateCustomer(
     email: payload.email,
     rg: payload.rg,
     profession: payload.profession,
+    nationality: payload.nationality,
     civil_state: payload.civil_state,
     address: payload.address,
     neighborhood: payload.neighborhood,

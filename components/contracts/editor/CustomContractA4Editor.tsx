@@ -47,6 +47,8 @@ import {
   sanitizeImportedContractHtml,
   countVisualA4Pages,
 } from '@/lib/customContractHtml';
+import { composeLfEstrelaContractHtml } from '@/lib/lfEstrelaEmission';
+import { isLfEstrelaModelName } from '@/lib/lfEstrelaCustomTemplate';
 import {
   CUSTOM_PLACEHOLDER_GROUPS,
   CUSTOM_PLACEHOLDERS,
@@ -165,6 +167,7 @@ export default function CustomContractA4Editor() {
   });
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewFilled, setPreviewFilled] = useState<string | null>(null);
+  const [previewMissing, setPreviewMissing] = useState<string[]>([]);
   const [previewSales, setPreviewSales] = useState<PreviewSaleOption[]>([]);
   const [previewSaleId, setPreviewSaleId] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -645,13 +648,25 @@ export default function CustomContractA4Editor() {
     const tenantId = tenantRef.current;
     if (!saleId || !tenantId) {
       setPreviewFilled(null);
+      setPreviewMissing([]);
       return;
     }
     setPreviewLoading(true);
     try {
       const ctx = await loadCustomPreviewContext(supabase, tenantId, saleId);
       const values = resolveCustomPreviewValues(ctx);
-      setPreviewFilled(fillCustomPlaceholdersForPreview(htmlRef.current, values));
+      if (isLfEstrelaModelName(name)) {
+        const composed = composeLfEstrelaContractHtml(htmlRef.current, values, {
+          mode: 'final',
+          sale: ctx.sale,
+          requireComplete: false,
+        });
+        setPreviewFilled(composed.html);
+        setPreviewMissing(composed.missing);
+      } else {
+        setPreviewFilled(fillCustomPlaceholdersForPreview(htmlRef.current, values));
+        setPreviewMissing([]);
+      }
     } catch (e) {
       setPreviewFilled(null);
       setError(e instanceof Error ? e.message : 'Não foi possível montar a prévia.');
@@ -1182,10 +1197,18 @@ export default function CustomContractA4Editor() {
             ))}
           </select>
           {previewLoading && <p className="text-xs text-gray-400 mb-2">Carregando dados da venda…</p>}
+          {previewMissing.length > 0 && (
+            <p className="mb-3 text-xs text-amber-200 whitespace-pre-line">
+              {`Não foi possível gerar o LF ESTRELA.\nComplete os seguintes dados:\n${previewMissing
+                .map((item) => `• ${item}`)
+                .join('\n')}`}
+            </p>
+          )}
           <button
             type="button"
             className="mb-3 h-8 px-3 rounded-lg border border-white/10 text-xs"
             onClick={() => {
+              if (previewMissing.length) return;
               const root = previewPrintRef.current;
               if (root) printCustomContractPreview(root, name || 'Contrato');
             }}

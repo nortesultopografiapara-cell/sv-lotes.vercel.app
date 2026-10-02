@@ -183,6 +183,7 @@ export function buildCompanySettingsSavePayload(
       legal_representative_address:
         String(company.legal_representative_address ?? '').trim() || null,
       contract_second_vendor_json: secondVendor.value,
+      creci: String(company.creci ?? '').trim() || null,
       contract_bank_name: company.contract_bank_name || null,
       contract_bank_branch: company.contract_bank_branch || null,
       contract_bank_account: company.contract_bank_account || null,

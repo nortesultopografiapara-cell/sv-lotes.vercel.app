@@ -61,6 +61,8 @@ export type A4SpacerPlan = {
   pageIndex: number;
 };
 
+export type A4PageBreakReason = 'manual' | 'overflow' | 'keepWithNext' | 'end';
+
 export type A4PagePlan = {
   start: number;
   end: number;
@@ -68,6 +70,22 @@ export type A4PagePlan = {
   footnoteIds: string[];
   footnoteHeight: number;
   pageIndex: number;
+  breakReason?: A4PageBreakReason;
+  nextKind?: string;
+  keepTogether?: boolean;
+};
+
+export type A4PageReport = {
+  pageIndex: number;
+  usedHeight: number;
+  availableHeight: number;
+  leftover: number;
+  occupancy: number;
+  breakReason: A4PageBreakReason;
+  nextKind?: string;
+  keepTogether?: boolean;
+  manualBreak: boolean;
+  sparse: boolean;
 };
 
 export function roundA4Measure(px: number): number {
@@ -127,6 +145,51 @@ export function findUnintendedSparseA4Pages(
     if (prev?.kind === 'pageBreak') return false;
     return true;
   });
+}
+
+export function reportA4Pages(
+  units: A4LayoutUnit[],
+  pages: A4PagePlan[],
+  pageInner: number,
+): A4PageReport[] {
+  const inner = Math.max(1, pageInner);
+  return pages.map((page) => {
+    const leftover = Math.max(0, page.leftover);
+    const usedHeight = Math.max(0, inner - leftover);
+    const occupancy = a4PageOccupancy(leftover, inner);
+    const reason = page.breakReason || 'end';
+    return {
+      pageIndex: page.pageIndex,
+      usedHeight,
+      availableHeight: inner,
+      leftover,
+      occupancy,
+      breakReason: reason,
+      nextKind: page.nextKind,
+      keepTogether: page.keepTogether,
+      manualBreak: reason === 'manual',
+      sparse: occupancy < A4_SPARSE_OCCUPANCY_MAX && reason !== 'manual',
+    };
+  });
+}
+
+export function formatA4PageDiagnostic(report: A4PageReport[]): string {
+  return report
+    .map((page) => {
+      const n = page.pageIndex + 1;
+      const errorMark = page.sparse ? '\n→ ERRO' : '';
+      return [
+        `Page ${n}:`,
+        `usedHeight: ${page.usedHeight}px`,
+        `availableHeight: ${page.availableHeight}px`,
+        `breakReason: ${page.breakReason}`,
+        `nextNode: ${page.nextKind || 'end'}`,
+        `manualBreak: ${page.manualBreak}`,
+        `keepTogether: ${page.keepTogether === true}`,
+        `sparse: ${page.sparse}${errorMark}`,
+      ].join('\n');
+    })
+    .join('\n\n');
 }
 
 function packKeepWithNextChain(
@@ -254,7 +317,7 @@ export function planA4Pages(
   let pageRefs: string[] = [];
   let i = 0;
 
-  const closePage = (endExclusive: number) => {
+  const closePage = (endExclusive: number, reason: A4PageBreakReason, nextUnit?: A4LayoutUnit | null) => {
     if (endExclusive <= start && pages.length && endExclusive === start) {
       remaining = inner;
       pageRefs = [];
@@ -269,6 +332,9 @@ export function planA4Pages(
       footnoteIds: ids,
       footnoteHeight: roundA4Measure(footnoteHeightFor(ids)),
       pageIndex,
+      breakReason: reason,
+      nextKind: nextUnit?.kind,
+      keepTogether: nextUnit?.keepTogether,
     });
     start = endExclusive;
     remaining = inner;
@@ -281,7 +347,7 @@ export function planA4Pages(
     const height = Math.max(0, roundA4Measure(unit.height) || Number(unit.height) || 0);
 
     if (unit.kind === 'pageBreak') {
-      if (i > start) closePage(i);
+      if (i > start) closePage(i, 'manual', unit);
       else {
         remaining = inner;
         pageRefs = [];
@@ -303,7 +369,7 @@ export function planA4Pages(
     if (unit.keepWithNext && next && next.kind !== 'pageBreak' && packEnd === i) {
       const combined = height + Math.max(0, roundA4Measure(next.height) || Number(next.height) || 0);
       if (remaining < inner && remaining < combined) {
-        closePage(i);
+        closePage(i, 'keepWithNext', unit);
         continue;
       }
     }
@@ -323,7 +389,7 @@ export function planA4Pages(
     const needed = packHeight + repeatedHeader;
 
     if (needed > remaining && remaining < inner) {
-      closePage(i);
+      closePage(i, 'overflow', unit);
       continue;
     }
 
@@ -333,7 +399,7 @@ export function planA4Pages(
   }
 
   if (start < units.length || pages.length === 0) {
-    closePage(units.length);
+    closePage(units.length, 'end', null);
   }
 
   void gap;
@@ -428,6 +494,8 @@ function isFlowWrapper(el: HTMLElement, pageInner: number): boolean {
   const tag = el.tagName.toLowerCase();
   if (tag !== 'div' && tag !== 'section' && tag !== 'article') return false;
   if (el.classList.contains('tableWrapper')) return false;
+  if (el.hasAttribute('data-sv-keep-block')) return false;
+  if (el.classList.contains('sv-lf-sign') || el.classList.contains('lf-estrela-signatures')) return false;
   if (el.hasAttribute('data-sv-page-break') || el.classList.contains('sv-page-break')) return false;
   if (el.hasAttribute('data-sv-company-logo')) return false;
   const kids = Array.from(el.children).filter(
@@ -563,6 +631,13 @@ export function applyCustomA4Pagination(root: HTMLElement): number {
   );
   const identity = a4PageIdentity(pages);
   const pageCount = Math.max(1, pages.length);
+  if (root.querySelector('.sv-lf-estrela')) {
+    const report = reportA4Pages(collected, pages, pageInner);
+    console.info('[LF ESTRELA A4]', formatA4PageDiagnostic(report), {
+      pageCount,
+      sparsePages: report.filter((page) => page.sparse).map((page) => page.pageIndex + 1),
+    });
+  }
   if (root.getAttribute(A4_PAGE_IDENTITY_ATTR) === identity) {
     return pageCount;
   }

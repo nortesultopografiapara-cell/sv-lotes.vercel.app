@@ -446,6 +446,10 @@ export function CompanySettingsV2Shell({
                       <input type="text" required name="cnpj" value={documentRaw} onChange={handleChange} className="sv-theme-field" />
                     </div>
                     <div>
+                      <label className="sv-theme-label">CRECI</label>
+                      <input type="text" name="creci" value={String(company.creci || '')} onChange={handleChange} className="sv-theme-field" placeholder="Ex.: J1233-PA" />
+                    </div>
+                    <div>
                       <label className="sv-theme-label">Telefone *</label>
                       <input type="text" required name="phone" value={String(company.phone || '')} onChange={handleChange} className="sv-theme-field" />
                     </div>

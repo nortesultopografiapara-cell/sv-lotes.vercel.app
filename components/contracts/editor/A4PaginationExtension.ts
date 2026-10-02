@@ -9,9 +9,11 @@ import {
   cloneRepeatedTableHeader,
   collectA4UnitsFromElement,
   customA4PageInnerPx,
+  formatA4PageDiagnostic,
   isTableHeaderRow,
   measureFootnoteClusterHeight,
   planA4Pages,
+  reportA4Pages,
 } from '@/lib/customContractA4Layout';
 
 const a4PaginationKey = new PluginKey('svCustomA4Pagination');
@@ -109,6 +111,13 @@ function refreshA4Decorations(view: EditorView, onPageCount?: (count: number) =>
   const pages = planA4Pages(collected, pageInner, CUSTOM_A4_GAP_PX, (ids) =>
     measureFootnoteClusterHeight(store, ids),
   );
+  if ((view.dom as HTMLElement).querySelector?.('.sv-lf-estrela')) {
+    const report = reportA4Pages(collected, pages, pageInner);
+    console.info('[LF ESTRELA A4]', formatA4PageDiagnostic(report), {
+      pageCount: Math.max(1, pages.length),
+      sparsePages: report.filter((page) => page.sparse).map((page) => page.pageIndex + 1),
+    });
+  }
   const identity = a4PageIdentity(pages);
   const prev = a4PaginationKey.getState(view.state);
   const pageCount = Math.max(1, pages.length);
