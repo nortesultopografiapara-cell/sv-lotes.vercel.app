@@ -153,7 +153,7 @@ function testSourceGuards() {
   assert(pdf.includes('skipMeasure'), 'Chromium LF não executa measure/repaginação');
   assert(page.includes('freezeLfEstrelaPhysicalPdfBlob'), 'Contratos congela PDF físico html2pdf');
   assert(page.includes('handleBaixarPDFAssinado'), 'Baixar PDF Assinado tem handler próprio');
-  assert(page.includes('[LF PHYSICAL FREEZE TRACE]'), 'TRACE do freeze no browser');
+  assert(page.includes('[LF PHYSICAL STORAGE TRACE]'), 'TRACE do freeze no Storage');
   const physicalStart = page.indexOf('const handleBaixarPDF =');
   const signedStart = page.indexOf('const handleBaixarPDFAssinado =');
   assert(physicalStart > 0 && signedStart > physicalStart, 'handlers físicos e assinados separados');
@@ -166,9 +166,16 @@ function testSourceGuards() {
     physicalSlice.includes('freezeLfEstrelaPhysicalPdfBlob'),
     'Baixar PDF físico envia o mesmo blob ao freeze',
   );
-  assert(page.includes('/physical-pdf'), 'POST freeze no Baixar PDF');
-  assert(route.includes('persistLfEstrelaPhysicalPdf'), 'API freeze persiste PDF físico');
-  assert(route.includes('[LF PHYSICAL PDF POST TRACE]'), 'POST /physical-pdf loga TRACE');
+  assert(page.includes('uploadToSignedUrl'), 'browser envia o Blob direto ao Storage');
+  assert(page.includes('intent: "prepare"'), 'API só autoriza, não recebe o PDF');
+  assert(page.includes('intent: "confirm"'), 'backend confirma o objeto no Storage');
+  assert(!page.includes('form.append("file"'), 'não envia o PDF pela Function (evita HTTP 413)');
+  assert(page.includes('PDF físico congelado para assinatura.'), 'UX DEVELOP após freeze');
+  assert(route.includes('prepareLfEstrelaPhysicalDirectUpload'), 'API emite signed upload URL');
+  assert(route.includes('confirmLfEstrelaPhysicalDirectUpload'), 'API confirma objeto no Storage');
+  assert(route.includes('[LF PHYSICAL STORAGE TRACE]'), 'POST /physical-pdf loga TRACE de Storage');
+  assert(!route.includes('request.formData()'), 'API não lê o PDF no body');
+  assert(!route.includes('persistLfEstrelaPhysicalPdf'), 'API não faz upload do PDF pela Function');
   assert(route.includes('bucket: result.bucket'), 'POST devolve bucket company-assets');
   assert(route.includes('storagePath: result.storagePath'), 'POST devolve path sale-physical');
   assert(!route.includes('saleDocumentId'), 'POST não usa sale_documents como fonte');
@@ -183,6 +190,18 @@ function testSourceGuards() {
   assert(
     !signed.includes('sale-documents'),
     'LF não depende do bucket sale-documents',
+  );
+  assert(
+    signed.includes('prepareLfEstrelaPhysicalDirectUpload'),
+    'freeze emite signed upload URL, sem receber o PDF',
+  );
+  assert(
+    signed.includes('createSignedUploadUrl'),
+    'signed upload URL do company-assets',
+  );
+  assert(
+    signed.includes('confirmLfEstrelaPhysicalDirectUpload'),
+    'backend valida o objeto após upload direto',
   );
   assert(
     signed.includes('buildPhysicalSaleContractStoragePath'),

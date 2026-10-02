@@ -517,6 +517,172 @@ export async function persistLfEstrelaPhysicalPdf(input: {
   return { url: storagePath, sha256, pageCount, reused: false, storagePath, bucket };
 }
 
+export type LfEstrelaPhysicalPrepareResult =
+  | {
+      reused: true;
+      bucket: string;
+      storagePath: string;
+      pageCount: number;
+      sha256: string;
+      storedSize: number;
+    }
+  | {
+      reused: false;
+      bucket: string;
+      storagePath: string;
+      signedUrl: string;
+      token: string;
+      path: string;
+    };
+
+export async function prepareLfEstrelaPhysicalDirectUpload(input: {
+  supabaseAdmin: SupabaseClient;
+  contractId: string;
+  tenantId: string;
+  contractNumber: string;
+  saleId?: string | null;
+  pageCount?: number | null;
+  blobSize?: number | null;
+}): Promise<LfEstrelaPhysicalPrepareResult> {
+  if (
+    input.pageCount != null &&
+    Number(input.pageCount) !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES
+  ) {
+    throw new Error(lfEstrelaInvalidPhysicalBaseMessage(Number(input.pageCount)));
+  }
+  if (input.blobSize != null && Number(input.blobSize) <= 0) {
+    throw new Error('PDF físico vazio (0 bytes).');
+  }
+
+  const existing = await loadLfEstrelaPhysicalPdfBytes({
+    supabaseAdmin: input.supabaseAdmin,
+    tenantId: input.tenantId,
+    contractNumber: input.contractNumber,
+    contractId: input.contractId,
+    saleId: input.saleId,
+  }).catch((err) => {
+    if (err instanceof Error && /Base física LF ESTRELA inválida/i.test(err.message)) {
+      return null;
+    }
+    throw err;
+  });
+
+  if (existing && existing.pageCount === LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+    console.info('[LF PHYSICAL STORAGE TRACE]', {
+      contractId: input.contractId,
+      bucket: existing.bucket,
+      storagePath: existing.storagePath,
+      pageCount: existing.pageCount,
+      sha256: existing.sha256,
+      storedSize: existing.bytes.byteLength,
+      uploadStatus: 'reused',
+    });
+    return {
+      reused: true,
+      bucket: existing.bucket,
+      storagePath: existing.storagePath,
+      pageCount: existing.pageCount,
+      sha256: existing.sha256,
+      storedSize: existing.bytes.byteLength,
+    };
+  }
+
+  const bucket = await assertSaleContractBucketReady(input.supabaseAdmin);
+  const storagePath = buildPhysicalSaleContractStoragePath(
+    input.tenantId,
+    input.contractNumber,
+  );
+  const { data, error } = await input.supabaseAdmin.storage
+    .from(bucket)
+    .createSignedUploadUrl(storagePath, { upsert: true });
+  if (error || !data?.signedUrl || !data.token) {
+    throw new Error(
+      `Falha ao autorizar upload direto do PDF físico (${bucket}/${storagePath}): ${
+        error?.message || 'signed URL ausente'
+      }`,
+    );
+  }
+
+  console.info('[LF PHYSICAL STORAGE TRACE]', {
+    contractId: input.contractId,
+    bucket,
+    storagePath,
+    uploadStatus: 'prepare',
+    signedUrlIssued: true,
+  });
+
+  return {
+    reused: false,
+    bucket,
+    storagePath,
+    signedUrl: data.signedUrl,
+    token: data.token,
+    path: data.path || storagePath,
+  };
+}
+
+export async function confirmLfEstrelaPhysicalDirectUpload(input: {
+  supabaseAdmin: SupabaseClient;
+  contractId: string;
+  tenantId: string;
+  contractNumber: string;
+  saleId?: string | null;
+  sha256?: string | null;
+  pageCount?: number | null;
+  blobSize?: number | null;
+}): Promise<{
+  bucket: string;
+  storagePath: string;
+  pageCount: number;
+  sha256: string;
+  storedSize: number;
+}> {
+  const loaded = await loadLfEstrelaPhysicalPdfBytes({
+    supabaseAdmin: input.supabaseAdmin,
+    tenantId: input.tenantId,
+    contractNumber: input.contractNumber,
+    contractId: input.contractId,
+    saleId: input.saleId,
+  });
+  if (!loaded) {
+    throw new Error(LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE);
+  }
+  assertLfEstrelaHomologatedPageCount(loaded.pageCount);
+  const clientSha = String(input.sha256 || '').trim().toLowerCase();
+  if (clientSha && clientSha !== loaded.sha256) {
+    throw new Error(
+      'SHA-256 do PDF no Storage não confere com o arquivo gerado no navegador.',
+    );
+  }
+  if (
+    input.blobSize != null &&
+    Number(input.blobSize) > 0 &&
+    loaded.bytes.byteLength !== Number(input.blobSize)
+  ) {
+    throw new Error(
+      `Tamanho do PDF no Storage (${loaded.bytes.byteLength}) não confere com o gerado (${input.blobSize}).`,
+    );
+  }
+
+  console.info('[LF PHYSICAL STORAGE TRACE]', {
+    contractId: input.contractId,
+    bucket: loaded.bucket,
+    storagePath: loaded.storagePath,
+    pageCount: loaded.pageCount,
+    sha256: loaded.sha256,
+    storedSize: loaded.bytes.byteLength,
+    uploadStatus: 'success',
+  });
+
+  return {
+    bucket: loaded.bucket,
+    storagePath: loaded.storagePath,
+    pageCount: loaded.pageCount,
+    sha256: loaded.sha256,
+    storedSize: loaded.bytes.byteLength,
+  };
+}
+
 export async function ensureLfEstrelaPhysicalBase(input: {
   supabaseAdmin: SupabaseClient;
   contractId: string;

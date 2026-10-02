@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server';
-import { PDFDocument } from 'pdf-lib';
 import {
   createAdminSupabase,
   getRequestAuthUser,
   resolveCallerProfile,
 } from '@/lib/supabase/server';
 import {
-  LF_ESTRELA_SIGNED_INSTRUMENT_PAGES,
-  persistLfEstrelaPhysicalPdf,
+  confirmLfEstrelaPhysicalDirectUpload,
+  prepareLfEstrelaPhysicalDirectUpload,
 } from '@/lib/lfEstrelaSignedPdf';
-import { isPdfBytes } from '@/lib/saasContractPdfHttp';
 import { SaleContractSignatureError } from '@/lib/saleContractSignatureService';
 import { loadSaleContractContext } from '@/lib/contractRegeneration';
 
@@ -43,18 +41,40 @@ async function assertContractAccess(
   return contract;
 }
 
+/**
+ * Autoriza/confirma freeze do PDF físico LF ESTRELA.
+ * NÃO recebe o PDF — o browser envia os bytes direto ao Storage.
+ */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: contractId } = await params;
-  const contentType = request.headers.get('content-type');
+  const contentType = request.headers.get('content-type') || '';
   try {
-    const { user, configError } = await getRequestAuthUser(request);
-    if (configError || !user) {
-      console.error('[LF PHYSICAL PDF POST TRACE]', {
+    if (/multipart\/form-data/i.test(contentType)) {
+      console.error('[LF PHYSICAL STORAGE TRACE]', {
         contractId,
         contentType,
+        uploadStatus: 'rejected_payload',
+        postStatus: 415,
+        error: 'PDF não pode passar pela Function (HTTP 413). Use upload direto ao Storage.',
+      });
+      return NextResponse.json(
+        {
+          error:
+            'PDF físico deve ir direto ao Storage. Não envie o arquivo nesta API.',
+        },
+        { status: 415 },
+      );
+    }
+
+    const { user, configError } = await getRequestAuthUser(request);
+    if (configError || !user) {
+      console.error('[LF PHYSICAL STORAGE TRACE]', {
+        contractId,
+        contentType,
+        uploadStatus: 'unauthenticated',
         postStatus: 401,
         error: configError || 'Não autenticado',
       });
@@ -66,9 +86,10 @@ export async function POST(
 
     const { client: supabase, configError: adminError } = createAdminSupabase();
     if (!supabase || adminError) {
-      console.error('[LF PHYSICAL PDF POST TRACE]', {
+      console.error('[LF PHYSICAL STORAGE TRACE]', {
         contractId,
         contentType,
+        uploadStatus: 'supabase_missing',
         postStatus: 503,
         error: adminError || 'Supabase não configurado',
       });
@@ -79,121 +100,80 @@ export async function POST(
     }
 
     const contract = await assertContractAccess(supabase, contractId, user.id);
-    const form = await request.formData();
-    const file = form.get('file');
-    if (!(file instanceof Blob)) {
-      console.error('[LF PHYSICAL PDF POST TRACE]', {
-        contractId,
-        contentType,
-        bytesReceived: 0,
-        postStatus: 400,
-        error: 'Envie o PDF físico em file.',
-      });
-      return NextResponse.json(
-        { error: 'Envie o PDF físico em file.' },
-        { status: 400 },
-      );
-    }
-
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const companyId = String(contract.tenant_id || contract.company_id || '');
-    const projectId = String(contract.project_id || '').trim() || null;
+    const body = (await request.json().catch(() => ({}))) as {
+      intent?: string;
+      pageCount?: number;
+      sha256?: string;
+      blobSize?: number;
+    };
+    const intent = String(body.intent || '').trim().toLowerCase();
+    const tenantId = String(contract.tenant_id || contract.company_id || '');
+    const contractNumber = String(contract.contract_number || contractId);
     const saleId = String(contract.sale_id || '').trim() || null;
 
-    if (bytes.byteLength === 0) {
-      console.error('[LF PHYSICAL PDF POST TRACE]', {
+    if (intent === 'prepare') {
+      const result = await prepareLfEstrelaPhysicalDirectUpload({
+        supabaseAdmin: supabase,
         contractId,
-        contentType,
-        bytesReceived: 0,
-        pageCount: null,
-        company_id: companyId,
-        project_id: projectId,
-        sale_id: saleId,
-        postStatus: 400,
-        error: 'PDF físico vazio (0 bytes).',
+        tenantId,
+        contractNumber,
+        saleId,
+        pageCount: typeof body.pageCount === 'number' ? body.pageCount : null,
+        blobSize: typeof body.blobSize === 'number' ? body.blobSize : null,
       });
-      return NextResponse.json(
-        { error: 'PDF físico vazio (0 bytes).' },
-        { status: 400 },
-      );
-    }
-    if (!isPdfBytes(bytes)) {
-      console.error('[LF PHYSICAL PDF POST TRACE]', {
+      console.info('[LF PHYSICAL STORAGE TRACE]', {
         contractId,
-        contentType,
-        bytesReceived: bytes.byteLength,
-        pageCount: null,
-        company_id: companyId,
-        project_id: projectId,
-        sale_id: saleId,
-        postStatus: 400,
-        error: 'Arquivo não é PDF.',
+        intent: 'prepare',
+        blobSize: body.blobSize ?? null,
+        pageCount: body.pageCount ?? (result.reused ? result.pageCount : null),
+        sha256: body.sha256 || (result.reused ? result.sha256 : null),
+        bucket: result.bucket,
+        storagePath: result.storagePath,
+        uploadStatus: result.reused ? 'reused' : 'prepare',
+        storedSize: result.reused ? result.storedSize : 0,
+        postStatus: 200,
       });
-      return NextResponse.json({ error: 'Arquivo não é PDF.' }, { status: 400 });
-    }
-    if (bytes.byteLength > 25 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: 'PDF físico excede 25 MB.' },
-        { status: 413 },
-      );
+      return NextResponse.json({
+        success: true,
+        ...result,
+      });
     }
 
-    const pageCount = (await PDFDocument.load(bytes)).getPageCount();
-    if (pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
-      const error = `Base física LF ESTRELA inválida: esperado ${LF_ESTRELA_SIGNED_INSTRUMENT_PAGES} páginas, encontrado ${pageCount}. Gere/congele novamente o PDF físico homologado.`;
-      console.error('[LF PHYSICAL PDF POST TRACE]', {
+    if (intent === 'confirm') {
+      const result = await confirmLfEstrelaPhysicalDirectUpload({
+        supabaseAdmin: supabase,
         contractId,
-        contentType,
-        bytesReceived: bytes.byteLength,
-        pageCount,
-        company_id: companyId,
-        project_id: projectId,
-        sale_id: saleId,
-        postStatus: 400,
-        error,
+        tenantId,
+        contractNumber,
+        saleId,
+        sha256: body.sha256 || null,
+        pageCount: typeof body.pageCount === 'number' ? body.pageCount : null,
+        blobSize: typeof body.blobSize === 'number' ? body.blobSize : null,
       });
-      return NextResponse.json({ error }, { status: 400 });
+      console.info('[LF PHYSICAL STORAGE TRACE]', {
+        contractId,
+        intent: 'confirm',
+        blobSize: body.blobSize ?? result.storedSize,
+        pageCount: result.pageCount,
+        sha256: result.sha256,
+        bucket: result.bucket,
+        storagePath: result.storagePath,
+        uploadStatus: 'success',
+        storedSize: result.storedSize,
+        postStatus: 200,
+      });
+      return NextResponse.json({
+        success: true,
+        frozen: true,
+        reused: false,
+        ...result,
+      });
     }
 
-    const tenantId = companyId;
-    const contractNumber = String(contract.contract_number || contractId);
-    const result = await persistLfEstrelaPhysicalPdf({
-      supabaseAdmin: supabase,
-      contractId,
-      tenantId,
-      contractNumber,
-      pdfBytes: bytes,
-      saleId,
-      version: Number(contract.version || 0) || null,
-      overwrite: false,
-    });
-
-    console.info('[LF PHYSICAL PDF POST TRACE]', {
-      contractId,
-      contentType,
-      bytesReceived: bytes.byteLength,
-      physicalBaseFound: true,
-      pageCount: result.pageCount,
-      company_id: companyId,
-      project_id: projectId,
-      sale_id: saleId,
-      bucket: result.bucket,
-      storagePath: result.storagePath,
-      uploadOk: true,
-      sha256: result.sha256,
-      reused: result.reused,
-      postStatus: 200,
-    });
-
-    return NextResponse.json({
-      success: true,
-      frozen: true,
-      reused: result.reused,
-      sha256: result.sha256,
-      pageCount: result.pageCount,
-      storagePath: result.storagePath,
-      bucket: result.bucket,
-    });
+    return NextResponse.json(
+      { error: 'Informe intent=prepare ou intent=confirm.' },
+      { status: 400 },
+    );
   } catch (err) {
     const message =
       err instanceof SaleContractSignatureError
@@ -202,9 +182,10 @@ export async function POST(
           ? err.message
           : 'Falha ao congelar PDF físico.';
     const status = err instanceof SaleContractSignatureError ? 400 : 500;
-    console.error('[LF PHYSICAL PDF POST TRACE]', {
+    console.error('[LF PHYSICAL STORAGE TRACE]', {
       contractId,
       contentType,
+      uploadStatus: 'failed',
       postStatus: status,
       error: message,
     });
