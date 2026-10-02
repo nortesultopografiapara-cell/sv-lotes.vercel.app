@@ -165,9 +165,12 @@ function testWiring() {
   assert(wrapped.includes('color: #000'), 'documento Chromium preto');
   const wrappedBody = wrapped.replace(/<style[\s\S]*?<\/style>/gi, '');
   assert(wrappedBody.includes('sv-company-logo'), 'wrap GIS mantém logo central');
-  assert(page.includes('if (htmlLooksLfEstrela) return'), 'PDF Contratos não aplica chrome GIS no LF');
+  assert(page.includes('if (htmlLooksLfEstrela)'), 'PDF Contratos não aplica chrome GIS no LF');
   assert(pdf.includes('getLfEstrelaCustomHtml2pdfOptions'), 'opções html2pdf LF 15mm');
-  assert(wrap.includes('displayHeaderFooter: !lf'), 'Chromium LF sem header/footer GIS');
+  assert(
+    wrap.includes('displayHeaderFooter: showChrome') && wrap.includes('skipMeasure'),
+    'Chromium LF sem header/footer GIS e sem measure/repaginação',
+  );
   console.log('OK wiring GIS/print');
 }
 

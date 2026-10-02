@@ -1,0 +1,474 @@
+/**
+ * PDF assinado LF ESTRELA — overlay no PDF físico congelado.
+ *
+ * O instrumento aprovado (html2pdf, 10 páginas) é imutável.
+ * Assinatura eletrônica NÃO reimprime HTML nem repagina.
+ * Carimbos verdes entram por coordenadas nas páginas 2 e 10.
+ * Certificado eletrônico é anexado somente depois da página 10.
+ */
+
+import { createHash } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { PDFDocument, rgb, StandardFonts, type PDFPage, type RGB } from 'pdf-lib';
+import { getCompanyDisplayName } from '@/lib/contractCompanyDisplay';
+import { sortEstrelaDoSulVendorParties } from '@/lib/estrelaDoSulContractEsign';
+import { isLfEstrelaCustomHtml } from '@/lib/lfEstrelaPrintCss';
+import { isPdfBytes, fetchPdfBytesFromUrl } from '@/lib/saasContractPdfHttp';
+import type { ContractPdfChromeInput } from '@/lib/contractPdfPostProcess';
+import type { ContractSignaturePartyRow } from '@/lib/saleContractSignaturePartyTypes';
+import {
+  assertSaleContractBucketReady,
+  buildPhysicalSaleContractStoragePath,
+  getSaleContractBucket,
+} from '@/lib/saleContractStorage';
+
+export const LF_ESTRELA_SIGNED_INSTRUMENT_PAGES = 10;
+export const LF_ESTRELA_STAMP_PAGE_NUMBERS = [2, 10] as const;
+export const LF_ESTRELA_STAMP_GREEN: RGB = rgb(22 / 255, 101 / 255, 52 / 255);
+
+/** A4 em pontos (origem pdf-lib: canto inferior esquerdo). */
+const A4_WIDTH = 595.28;
+const MARGIN_PT = (15 / 25.4) * 72;
+const CONTENT_WIDTH = A4_WIDTH - MARGIN_PT * 2;
+const COL_GAP = 27;
+const COL_WIDTH = (CONTENT_WIDTH - COL_GAP) / 2;
+const COL_LEFT_CENTER = MARGIN_PT + COL_WIDTH / 2;
+const COL_RIGHT_CENTER = MARGIN_PT + COL_WIDTH + COL_GAP + COL_WIDTH / 2;
+
+/**
+ * Linha da assinatura (y da baseline do carimbo, ~3–14pt acima da linha).
+ * Página 2 = Capa Resumo (tabela de infraestrutura + assinaturas mais altas).
+ * Página 10 = encerramento do instrumento (texto 12.3–12.7 + assinaturas mais baixas).
+ */
+export const LF_ESTRELA_STAMP_LAYOUT = {
+  page2: { row1: 458, row2: 393, row3: 328 },
+  page10: { row1: 248, row2: 183, row3: 118 },
+} as const;
+
+export type LfEstrelaOverlaySlot =
+  | 'BUYER_1'
+  | 'COMPANY'
+  | 'BUYER_2'
+  | 'SELLER_2'
+  | 'WITNESS_1'
+  | 'WITNESS_2';
+
+export type LfEstrelaOverlayStamp = {
+  slot: LfEstrelaOverlaySlot;
+  lines: string[];
+};
+
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+export function isLfEstrelaSignedPipelineHtml(html: string | null | undefined): boolean {
+  return isLfEstrelaCustomHtml(html);
+}
+
+function partySigned(party?: ContractSignaturePartyRow | null): boolean {
+  if (!party) return false;
+  return (
+    String(party.status || '').toUpperCase() === 'SIGNED' &&
+    Boolean(String(party.signed_at || '').trim())
+  );
+}
+
+function upperName(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+function winAnsiSafe(value: string): string {
+  return String(value || '').replace(/[^\u0000-\u00ff]/g, '');
+}
+
+export function resolveLfEstrelaOverlayStamps(input: {
+  parties: ContractSignaturePartyRow[];
+  company?: Record<string, unknown> | null;
+}): LfEstrelaOverlayStamp[] {
+  const parties = Array.isArray(input.parties) ? input.parties : [];
+  const company = input.company && typeof input.company === 'object' ? input.company : {};
+  const companyName =
+    String(
+      company.razao_social ||
+        company.legal_name ||
+        company.fantasy_name ||
+        company.name ||
+        '',
+    ).trim() || getCompanyDisplayName(company) || 'LF IMOVEIS LTDA';
+  const buyer = parties.find((p) => String(p.role).toUpperCase() === 'BUYER');
+  const spouse = parties.find((p) => String(p.role).toUpperCase() === 'SPOUSE');
+  const vendors = sortEstrelaDoSulVendorParties(
+    parties.filter((p) => String(p.role).toUpperCase() === 'VENDOR'),
+    company,
+  );
+  const companyVendor = vendors[0];
+  const seller2 = vendors[1];
+  const witness1 = parties.find((p) => String(p.role).toUpperCase() === 'WITNESS_1');
+  const witness2 = parties.find((p) => String(p.role).toUpperCase() === 'WITNESS_2');
+
+  const stamps: LfEstrelaOverlayStamp[] = [];
+
+  if (partySigned(buyer)) {
+    stamps.push({
+      slot: 'BUYER_1',
+      lines: ['ASSINADO DIGITALMENTE', upperName(buyer?.signer_name)],
+    });
+  }
+
+  if (partySigned(companyVendor)) {
+    stamps.push({
+      slot: 'COMPANY',
+      lines: [
+        'ASSINADO DIGITALMENTE',
+        upperName(companyVendor?.signer_name),
+        `Representante de ${companyName}`,
+      ],
+    });
+  }
+
+  if (partySigned(spouse)) {
+    stamps.push({
+      slot: 'BUYER_2',
+      lines: ['ASSINADO DIGITALMENTE', upperName(spouse?.signer_name)],
+    });
+  }
+
+  if (partySigned(seller2)) {
+    stamps.push({
+      slot: 'SELLER_2',
+      lines: ['ASSINADO DIGITALMENTE', upperName(seller2?.signer_name)],
+    });
+  }
+
+  if (partySigned(witness1)) {
+    stamps.push({
+      slot: 'WITNESS_1',
+      lines: ['ASSINADO DIGITALMENTE', upperName(witness1?.signer_name)],
+    });
+  }
+
+  if (partySigned(witness2)) {
+    stamps.push({
+      slot: 'WITNESS_2',
+      lines: ['ASSINADO DIGITALMENTE', upperName(witness2?.signer_name)],
+    });
+  }
+
+  return stamps.filter((s) => s.lines.some((line) => line && line !== 'ASSINADO DIGITALMENTE'));
+}
+
+function slotCenterX(slot: LfEstrelaOverlaySlot): number {
+  if (slot === 'BUYER_1' || slot === 'BUYER_2' || slot === 'WITNESS_1') {
+    return COL_LEFT_CENTER;
+  }
+  return COL_RIGHT_CENTER;
+}
+
+function slotLineY(slot: LfEstrelaOverlaySlot, pageNumber: number): number {
+  const layout =
+    pageNumber === 2 ? LF_ESTRELA_STAMP_LAYOUT.page2 : LF_ESTRELA_STAMP_LAYOUT.page10;
+  if (slot === 'BUYER_1' || slot === 'COMPANY') return layout.row1;
+  if (slot === 'BUYER_2' || slot === 'SELLER_2') return layout.row2;
+  return layout.row3;
+}
+
+function drawCheckmark(page: PDFPage, x: number, y: number, color: RGB): void {
+  page.drawLine({
+    start: { x, y: y + 2.2 },
+    end: { x: x + 3.2, y },
+    thickness: 1.15,
+    color,
+  });
+  page.drawLine({
+    start: { x: x + 3.2, y },
+    end: { x: x + 8.4, y: y + 7.2 },
+    thickness: 1.15,
+    color,
+  });
+}
+
+function drawStampOnPage(
+  page: PDFPage,
+  stamp: LfEstrelaOverlayStamp,
+  pageNumber: number,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  fontBold: Awaited<ReturnType<PDFDocument['embedFont']>>,
+): void {
+  const centerX = slotCenterX(stamp.slot);
+  const lineY = slotLineY(stamp.slot, pageNumber);
+  const color = LF_ESTRELA_STAMP_GREEN;
+  const size = 7.2;
+  const leading = 9.1;
+  const lines = stamp.lines.map((line) => winAnsiSafe(line)).filter(Boolean);
+  if (!lines.length) return;
+
+  const blockHeight = leading * lines.length;
+  let y = lineY + 4 + (blockHeight - leading);
+
+  lines.forEach((line, index) => {
+    const useBold = index === 0;
+    const activeFont = useBold ? fontBold : font;
+    const label = index === 0 ? line : line;
+    const width = Math.min(activeFont.widthOfTextAtSize(label, size), COL_WIDTH - 12);
+    const textX =
+      index === 0
+        ? centerX - (width + 12) / 2 + 12
+        : centerX - Math.min(activeFont.widthOfTextAtSize(label, size), COL_WIDTH - 8) / 2;
+
+    if (index === 0) {
+      drawCheckmark(page, textX - 11, y, color);
+    }
+
+    page.drawText(label, {
+      x: textX,
+      y,
+      size,
+      font: activeFont,
+      color,
+      maxWidth: COL_WIDTH - 10,
+    });
+    y -= leading;
+  });
+}
+
+export async function overlayLfEstrelaSignatureStamps(
+  pdfDoc: PDFDocument,
+  stamps: LfEstrelaOverlayStamp[],
+): Promise<void> {
+  if (!stamps.length) return;
+  const pages = pdfDoc.getPages();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pageCount = pages.length;
+  const targets = [
+    { index: 1, number: 2 },
+    {
+      index: Math.min(LF_ESTRELA_SIGNED_INSTRUMENT_PAGES, pageCount) - 1,
+      number: pageCount >= LF_ESTRELA_SIGNED_INSTRUMENT_PAGES ? 10 : pageCount,
+    },
+  ].filter((t) => t.index >= 0 && t.index < pageCount);
+
+  for (const target of targets) {
+    const page = pages[target.index];
+    for (const stamp of stamps) {
+      drawStampOnPage(page, stamp, target.number, font, fontBold);
+    }
+  }
+}
+
+export async function composeLfEstrelaSignedPdf(input: {
+  physicalBytes: Uint8Array;
+  stamps: LfEstrelaOverlayStamp[];
+  certificatePdfBytes?: Uint8Array | null;
+}): Promise<Uint8Array> {
+  if (!isPdfBytes(input.physicalBytes)) {
+    throw new Error('PDF físico LF ESTRELA inválido (cabeçalho %PDF ausente).');
+  }
+
+  const physical = await PDFDocument.load(input.physicalBytes);
+  const out = await PDFDocument.create();
+  const copied = await out.copyPages(physical, physical.getPageIndices());
+  copied.forEach((page) => out.addPage(page));
+
+  await overlayLfEstrelaSignatureStamps(out, input.stamps);
+
+  const certBytes = input.certificatePdfBytes;
+  if (certBytes && isPdfBytes(certBytes) && certBytes.byteLength > 0) {
+    const cert = await PDFDocument.load(certBytes);
+    const certPages = await out.copyPages(cert, cert.getPageIndices());
+    certPages.forEach((page) => out.addPage(page));
+  }
+
+  return out.save();
+}
+
+export async function loadLfEstrelaPhysicalPdfBytes(input: {
+  supabaseAdmin: SupabaseClient;
+  tenantId: string;
+  contractNumber: string;
+  pdfUrl?: string | null;
+}): Promise<{ bytes: Uint8Array; source: 'pdf_url' | 'storage'; sha256: string; pageCount: number } | null> {
+  const tryLoad = async (bytes: Uint8Array | null, source: 'pdf_url' | 'storage') => {
+    if (!bytes || !isPdfBytes(bytes)) return null;
+    const doc = await PDFDocument.load(bytes);
+    return {
+      bytes,
+      source,
+      sha256: sha256Hex(bytes),
+      pageCount: doc.getPageCount(),
+    };
+  };
+
+  const fromUrl = await fetchPdfBytesFromUrl(String(input.pdfUrl || '').trim());
+  const loadedUrl = await tryLoad(fromUrl, 'pdf_url');
+  if (loadedUrl) return loadedUrl;
+
+  try {
+    const bucket = await assertSaleContractBucketReady(input.supabaseAdmin);
+    const path = buildPhysicalSaleContractStoragePath(input.tenantId, input.contractNumber);
+    const { data, error } = await input.supabaseAdmin.storage.from(bucket).download(path);
+    if (error || !data) return null;
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    return tryLoad(bytes, 'storage');
+  } catch {
+    return null;
+  }
+}
+
+export async function persistLfEstrelaPhysicalPdf(input: {
+  supabaseAdmin: SupabaseClient;
+  contractId: string;
+  tenantId: string;
+  contractNumber: string;
+  pdfBytes: Uint8Array;
+  overwrite?: boolean;
+}): Promise<{
+  url: string;
+  sha256: string;
+  pageCount: number;
+  reused: boolean;
+}> {
+  if (!isPdfBytes(input.pdfBytes)) {
+    throw new Error('Arquivo enviado não é PDF.');
+  }
+  const doc = await PDFDocument.load(input.pdfBytes);
+  const pageCount = doc.getPageCount();
+  const sha256 = sha256Hex(input.pdfBytes);
+
+  const { data: existing } = await input.supabaseAdmin
+    .from('contracts')
+    .select('pdf_url')
+    .eq('id', input.contractId)
+    .maybeSingle();
+  const existingUrl = String((existing as { pdf_url?: string | null } | null)?.pdf_url || '').trim();
+
+  if (existingUrl && !input.overwrite) {
+    const loaded = await loadLfEstrelaPhysicalPdfBytes({
+      supabaseAdmin: input.supabaseAdmin,
+      tenantId: input.tenantId,
+      contractNumber: input.contractNumber,
+      pdfUrl: existingUrl,
+    });
+    if (loaded) {
+      return {
+        url: existingUrl,
+        sha256: loaded.sha256,
+        pageCount: loaded.pageCount,
+        reused: true,
+      };
+    }
+  }
+
+  const bucket = await assertSaleContractBucketReady(input.supabaseAdmin);
+  const storagePath = buildPhysicalSaleContractStoragePath(
+    input.tenantId,
+    input.contractNumber,
+  );
+  const { error: uploadError } = await input.supabaseAdmin.storage
+    .from(bucket)
+    .upload(storagePath, Buffer.from(input.pdfBytes), {
+      contentType: 'application/pdf',
+      upsert: true,
+      cacheControl: '31536000',
+    });
+  if (uploadError) {
+    throw new Error(
+      `Falha ao congelar PDF físico (${getSaleContractBucket()}): ${uploadError.message}`,
+    );
+  }
+
+  const hashPath = `${storagePath}.sha256`;
+  await input.supabaseAdmin.storage.from(bucket).upload(hashPath, Buffer.from(sha256, 'utf8'), {
+    contentType: 'text/plain',
+    upsert: true,
+    cacheControl: '31536000',
+  });
+
+  const { data: signedData, error: signError } = await input.supabaseAdmin.storage
+    .from(bucket)
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+  let url = signedData?.signedUrl || '';
+  if (signError || !url) {
+    const { data: publicData } = input.supabaseAdmin.storage.from(bucket).getPublicUrl(storagePath);
+    url = publicData?.publicUrl || '';
+  }
+  if (!url) {
+    throw new Error('PDF físico enviado, mas não foi possível gerar URL.');
+  }
+
+  const { error: updateError } = await input.supabaseAdmin
+    .from('contracts')
+    .update({ pdf_url: url })
+    .eq('id', input.contractId);
+  if (updateError) {
+    throw new Error(`PDF físico salvo, mas pdf_url não atualizou: ${updateError.message}`);
+  }
+
+  return { url, sha256, pageCount, reused: false };
+}
+
+export async function buildLfEstrelaSignedSaleContractPdf(input: {
+  supabaseAdmin: SupabaseClient;
+  contractId: string;
+  contractNumber: string;
+  tenantId: string;
+  tenant: Record<string, unknown>;
+  company?: Record<string, unknown> | null;
+  originalHtml: string;
+  chrome: ContractPdfChromeInput;
+  signature?: { id?: string | null } | null;
+  certificateHtml?: string | null;
+  physicalPdfUrl?: string | null;
+}): Promise<Uint8Array> {
+  const { listSignatureParties } = await import('@/lib/saleContractSignatureParties');
+  const { buildSaleContractPdfFromHtml } = await import('@/lib/saleContractPdf');
+
+  let parties: ContractSignaturePartyRow[] = [];
+  if (input.signature?.id) {
+    parties = await listSignatureParties(input.supabaseAdmin, String(input.signature.id));
+  }
+
+  const stamps = resolveLfEstrelaOverlayStamps({
+    parties,
+    company: input.company || input.tenant,
+  });
+
+  let physical = await loadLfEstrelaPhysicalPdfBytes({
+    supabaseAdmin: input.supabaseAdmin,
+    tenantId: input.tenantId,
+    contractNumber: input.contractNumber,
+    pdfUrl: input.physicalPdfUrl,
+  });
+
+  if (!physical) {
+    const fallback = await buildSaleContractPdfFromHtml(input.originalHtml, input.chrome, {
+      skipPaginationMeasure: true,
+    });
+    physical = {
+      bytes: fallback,
+      source: 'storage',
+      sha256: sha256Hex(fallback),
+      pageCount: (await PDFDocument.load(fallback)).getPageCount(),
+    };
+  }
+
+  let certificatePdfBytes: Uint8Array | null = null;
+  const certificateHtml = String(input.certificateHtml || '').trim();
+  if (certificateHtml) {
+    certificatePdfBytes = await buildSaleContractPdfFromHtml(certificateHtml, input.chrome, {
+      skipPaginationMeasure: true,
+      displayHeaderFooter: false,
+      marginMm: { top: 15, right: 15, bottom: 15, left: 15 },
+    });
+  }
+
+  return composeLfEstrelaSignedPdf({
+    physicalBytes: physical.bytes,
+    stamps,
+    certificatePdfBytes,
+  });
+}

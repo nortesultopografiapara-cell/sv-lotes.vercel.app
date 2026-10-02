@@ -280,6 +280,25 @@ async function fetchContractHtmlFromApi(
   return null;
 }
 
+async function freezeLfEstrelaPhysicalPdfFromJsPdf(
+  contractId: string,
+  pdf: { output: (type: string) => Blob },
+): Promise<void> {
+  try {
+    const blob = pdf.output("blob");
+    if (!blob || blob.size < 8) return;
+    const form = new FormData();
+    form.append("file", blob, "contrato-fisico.pdf");
+    await fetch(`/api/contracts/${contractId}/physical-pdf`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+  } catch (err) {
+    console.warn("[contracts] freeze physical LF ESTRELA failed", err);
+  }
+}
+
 /** @deprecated use loadContractsListForTenant — mantido para reload inline. */
 async function loadContractsList(
   user: any,
@@ -1202,8 +1221,45 @@ export default function ContractsPage() {
     }
     try {
       const isElectronicallySigned = isSaleContractFullySigned(selectedContract);
+      const mustRefresh = Boolean(
+        (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
+      );
+      let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
+        refresh: mustRefresh && !isElectronicallySigned,
+      });
+      if (htmlBody) {
+        setContractViewHtml(htmlBody);
+        setContractViewError(null);
+      } else {
+        htmlBody = resolvedContractHtml;
+      }
+      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(htmlBody);
 
       if (isElectronicallySigned) {
+        if (htmlLooksLfEstrela && htmlBody?.trim()) {
+          const { default: html2pdf } = await import("html2pdf.js");
+          const freezeEl = document.createElement("div");
+          freezeEl.innerHTML = htmlBody;
+          try {
+            prepareContractHtmlElementForPagination(freezeEl);
+            assertContractElementReadyForHtml2PdfCapture(freezeEl);
+            const opt = resolveContractHtml2pdfOptions(
+              tenantData || {},
+              `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
+              String(htmlBody || ""),
+            );
+            const pdf = await html2pdf()
+              .from(freezeEl)
+              .set(opt)
+              .toPdf()
+              .get("pdf");
+            await freezeLfEstrelaPhysicalPdfFromJsPdf(selectedContract.id, pdf);
+          } catch (freezeErr) {
+            console.warn("[contracts] freeze physical LF ESTRELA skipped", freezeErr);
+          } finally {
+            freezeEl.remove();
+          }
+        }
         const res = await fetchWithTimeout(
           `/api/contracts/${selectedContract.id}/pdf?download=1`,
           { credentials: "include" },
@@ -1230,20 +1286,6 @@ export default function ContractsPage() {
 
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
-
-      // Preferir HTML persistido da versão ativa; rebuild só se needs_regenerar.
-      const mustRefresh = Boolean(
-        (selectedContract as { needs_regenerar?: boolean | null }).needs_regenerar,
-      );
-      let htmlBody = await fetchContractHtmlFromApi(selectedContract.id, user, {
-        refresh: mustRefresh,
-      });
-      if (htmlBody) {
-        setContractViewHtml(htmlBody);
-        setContractViewError(null);
-      } else {
-        htmlBody = resolvedContractHtml;
-      }
 
       if (!htmlBody?.trim()) {
         alert(
@@ -1272,7 +1314,6 @@ export default function ContractsPage() {
       const htmlLooksEstrela = String(htmlBody || '').includes(
         'sv-contract-estrela-do-sul',
       );
-      const htmlLooksLfEstrela = isLfEstrelaCustomHtml(htmlBody);
       const pdfChromeTenant = htmlLooksMundoNovo
         ? { ...(tenantData || {}), contract_model: 'MUNDO_NOVO' }
         : htmlLooksAraguaia
@@ -1301,8 +1342,11 @@ export default function ContractsPage() {
           .set(opt)
           .toPdf()
           .get("pdf")
-          .then((pdf: any) => {
-            if (htmlLooksLfEstrela) return;
+          .then(async (pdf: any) => {
+            if (htmlLooksLfEstrela) {
+              await freezeLfEstrelaPhysicalPdfFromJsPdf(selectedContract.id, pdf);
+              return;
+            }
             applyContractPdfChrome(
               pdf,
               buildContractPdfChromeFromTenant(

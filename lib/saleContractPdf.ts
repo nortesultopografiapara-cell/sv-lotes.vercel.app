@@ -239,9 +239,16 @@ export async function loadTenantLogoBase64ForPdf(
   return loadSvLotesLogoDataUrl();
 }
 
+export type BuildSaleContractPdfFromHtmlOptions = {
+  skipPaginationMeasure?: boolean;
+  displayHeaderFooter?: boolean;
+  marginMm?: { top: number; right: number; bottom: number; left: number };
+};
+
 export async function buildSaleContractPdfFromHtml(
   htmlFragment: string,
   chrome: ContractPdfChromeInput,
+  options?: BuildSaleContractPdfFromHtmlOptions,
 ): Promise<Uint8Array> {
   const documentHtml = wrapSaleContractHtmlDocument(
     htmlFragment,
@@ -257,11 +264,18 @@ export async function buildSaleContractPdfFromHtml(
         : buildSaleContractPrintTemplates(chrome);
 
   const lf = isLfEstrelaCustomHtml(htmlFragment);
-  const pdfMargin = lf
+  const pdfMargin = options?.marginMm
+    ? options.marginMm
+    : lf
     ? { top: 15, right: 15, bottom: 15, left: 15 }
     : chrome.headerVariant === 'estrela-do-sul'
       ? ESTRELA_DO_SUL_PDF_MARGIN_MM
       : CONTRACT_PDF_MARGIN_MM;
+  const skipMeasure = Boolean(options?.skipPaginationMeasure || lf);
+  const showChrome =
+    options?.displayHeaderFooter !== undefined
+      ? options.displayHeaderFooter
+      : !lf;
 
   let browser: Browser | null = null;
   let page: Awaited<ReturnType<Browser['newPage']>> | null = null;
@@ -279,12 +293,15 @@ export async function buildSaleContractPdfFromHtml(
     // Engine única: mede espaço restante.
     // Assinaturas só vão para nova página se não couberem; certificado é independente
     // (nunca empurra assinaturas juntos — evita páginas quase vazias).
-    try {
-      await page.evaluate(CONTRACT_PAGINATION_MEASURE_SCRIPT);
-    } catch (measureErr) {
-      console.warn('[sale-sign-pdf] pagination measure skipped', {
-        message: measureErr instanceof Error ? measureErr.message : String(measureErr),
-      });
+    // LF ESTRELA: o PDF físico já está paginado (html2pdf, 10 páginas). Não medir/repartir.
+    if (!skipMeasure) {
+      try {
+        await page.evaluate(CONTRACT_PAGINATION_MEASURE_SCRIPT);
+      } catch (measureErr) {
+        console.warn('[sale-sign-pdf] pagination measure skipped', {
+          message: measureErr instanceof Error ? measureErr.message : String(measureErr),
+        });
+      }
     }
 
     const pdfBuffer = await page.pdf({
@@ -296,7 +313,7 @@ export async function buildSaleContractPdfFromHtml(
         bottom: `${pdfMargin.bottom}mm`,
         left: `${pdfMargin.left}mm`,
       },
-      displayHeaderFooter: !lf,
+      displayHeaderFooter: showChrome,
       headerTemplate,
       footerTemplate,
     });

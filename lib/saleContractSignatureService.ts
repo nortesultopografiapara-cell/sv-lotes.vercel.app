@@ -1704,7 +1704,7 @@ export async function loadSaleContractPdfForSign(
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('contract_number, tenant_id, company_id, created_at, version')
+    .select('contract_number, tenant_id, company_id, created_at, version, pdf_url')
     .eq('id', contractId)
     .single();
 
@@ -1738,6 +1738,11 @@ export async function loadSaleContractPdfForSign(
   const { isEstrelaDoSulSaleContractModel, sortEstrelaDoSulVendorParties } = await import(
     '@/lib/estrelaDoSulContractEsign'
   );
+  const { isLfEstrelaCustomHtml } = await import('@/lib/lfEstrelaPrintCss');
+
+  const originalHtml = html;
+  const lfEstrela = isLfEstrelaCustomHtml(originalHtml);
+  let lfCertificateHtml = '';
 
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
@@ -2030,7 +2035,9 @@ export async function loadSaleContractPdfForSign(
           signature.signature_status,
         );
 
-      if (useAraguaiaElectronicBlock) {
+      if (lfEstrela) {
+        // LF ESTRELA: carimbos são overlay no PDF físico. Não injetar HTML.
+      } else if (useAraguaiaElectronicBlock) {
         // ELECTRONIC_SIGNED: substitui linhas físicas; certificado detalhado à parte.
         const { applyAraguaiaElectronicSignaturesToContractHtml } =
           await import('@/lib/araguaiaContractElectronicSignatures');
@@ -2092,7 +2099,7 @@ export async function loadSaleContractPdfForSign(
           html = applyElectronicSignatureStampsToContractHtml(html, stamps);
         }
       }
-    } else {
+    } else if (!lfEstrela) {
       html = stripManualContractSignaturesForSignedPdf(html);
     }
 
@@ -2199,23 +2206,27 @@ export async function loadSaleContractPdfForSign(
       witnessCards,
       omitPartyEvidenceCards: isMundoNovoSaleContractModel(contractModelForCert),
     });
-    html = isEstrelaDoSulSaleContractModel(contractModelForCert)
-      ? insertCertificateAfterEstrelaInstrumentPack(html, certificateHtml)
-      : html + certificateHtml;
+    if (lfEstrela) {
+      lfCertificateHtml = certificateHtml;
+    } else {
+      html = isEstrelaDoSulSaleContractModel(contractModelForCert)
+        ? insertCertificateAfterEstrelaInstrumentPack(html, certificateHtml)
+        : html + certificateHtml;
 
-    if (
-      isMundoNovoSaleContractModel(contractModelForCert) &&
-      html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
-    ) {
-      const { applyMundoNovoElectronicCertificateNewPage } = await import(
-        '@/lib/mundoNovoContractElectronicSignatures'
-      );
-      html = applyMundoNovoElectronicCertificateNewPage(html);
+      if (
+        isMundoNovoSaleContractModel(contractModelForCert) &&
+        html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
+      ) {
+        const { applyMundoNovoElectronicCertificateNewPage } = await import(
+          '@/lib/mundoNovoContractElectronicSignatures'
+        );
+        html = applyMundoNovoElectronicCertificateNewPage(html);
+      }
+
+      // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.
+      const moved = extractContractInstitutionalFooter(html);
+      html = moved.html + (moved.footerHtml || '');
     }
-
-    // Rodapé institucional só no final absoluto (após certificado), nunca entre assinaturas e evidências.
-    const moved = extractContractInstitutionalFooter(html);
-    html = moved.html + (moved.footerHtml || '');
   }
 
   try {
@@ -2230,6 +2241,28 @@ export async function loadSaleContractPdfForSign(
       contractNumber,
       logoBase64,
     );
+    if (lfEstrela) {
+      const { buildLfEstrelaSignedSaleContractPdf } = await import(
+        '@/lib/lfEstrelaSignedPdf'
+      );
+      const pdf = await buildLfEstrelaSignedSaleContractPdf({
+        supabaseAdmin,
+        contractId,
+        contractNumber,
+        tenantId,
+        tenant,
+        company:
+          (options?.signContext?.company as Record<string, unknown> | null) ||
+          tenant,
+        originalHtml,
+        chrome,
+        signature: options?.signature || null,
+        certificateHtml: lfCertificateHtml,
+        physicalPdfUrl: String(contractRow.pdf_url || ''),
+      });
+      return { pdf, contractNumber };
+    }
+
     const pdf =
       isMundoNovoSaleContractModel(contractModelForCert) &&
       html.includes('data-signature-mode="ELECTRONIC_SIGNED"')
