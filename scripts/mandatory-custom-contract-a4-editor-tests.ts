@@ -57,6 +57,8 @@ import {
   planA4BlockSpacers,
   planA4Pages,
   shouldExplodeTableByHeight,
+  findUnintendedSparseA4Pages,
+  a4PageOccupancy,
   type A4LayoutUnit,
 } from '../lib/customContractA4Layout';
 import { normalizeCustomFootnotesHtml } from '../lib/customContractFootnotes';
@@ -634,6 +636,44 @@ void (async () => {
     assert(
       signPlan.some((row) => row.beforeUnitId === 's1' || row.beforeUnitId === 's2'),
       'bloco de assinatura evita quebra interna quando não cabe no restante',
+    );
+
+    const signRows: A4LayoutUnit[] = [
+      { id: 'sr1', kind: 'tableRow', height: 50, keepTogether: true, keepWithNext: true },
+      { id: 'sr2', kind: 'tableRow', height: 50, keepTogether: true, keepWithNext: true },
+      { id: 'sr3', kind: 'tableRow', height: 50, keepTogether: true, keepWithNext: false },
+    ];
+    const signTogether = planA4Pages(signRows, 200, 18);
+    assert(signTogether.length === 1, '3 linhas de assinatura compactas cabem juntas');
+    const signJump = planA4Pages(
+      [
+        { id: 'infra', kind: 'tableRow', height: 140, keepTogether: true, keepWithNext: false },
+        ...signRows,
+      ],
+      200,
+      18,
+    );
+    assert(signJump.length === 2, 'se o trio de assinatura não cabe no resto, as 3 linhas sobem juntas');
+    assert(signJump[1].start === 1, 'assinaturas não deixam uma linha órfã na página seguinte');
+
+    const sparseUnits: A4LayoutUnit[] = [
+      { id: 'full', kind: 'paragraph', height: 490, keepTogether: false, keepWithNext: false },
+      { id: 'tiny', kind: 'paragraph', height: 20, keepTogether: false, keepWithNext: false },
+    ];
+    const sparsePages = planA4Pages(sparseUnits, 500, 18);
+    const unintended = findUnintendedSparseA4Pages(sparseUnits, sparsePages, 500);
+    assert(unintended.length >= 1, 'detecta página quase vazia criada pelo empacotador');
+    assert(a4PageOccupancy(sparsePages[1].leftover, 500) < 0.18, 'página órfã tem ocupação baixa');
+
+    const manualBreak: A4LayoutUnit[] = [
+      { id: 'capa', kind: 'paragraph', height: 400, keepTogether: false, keepWithNext: false },
+      { id: 'br', kind: 'pageBreak', height: 1, keepTogether: true, keepWithNext: false },
+      { id: 'infra2', kind: 'tableRow', height: 80, keepTogether: true, keepWithNext: false },
+    ];
+    const manualPages = planA4Pages(manualBreak, 500, 18);
+    assert(
+      findUnintendedSparseA4Pages(manualBreak, manualPages, 500).length === 0,
+      'quebra manual da referência (capa p2) não é página órfã',
     );
   }
 

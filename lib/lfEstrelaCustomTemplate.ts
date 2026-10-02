@@ -20,9 +20,17 @@ function t(key: string): string {
   return customPlaceholderToken(key);
 }
 
-function p(html: string, className = ''): string {
+function p(html: string, className = 'sv-lf-body lf-estrela-body'): string {
   const cls = className ? ` class="${className}"` : '';
   return `<p${cls}>${html}</p>`;
+}
+
+function note(n: number, html: string): string {
+  return `<p class="sv-lf-note sv-lf-footnote lf-estrela-footnote"><sup>${n}</sup> ${html}</p>`;
+}
+
+function footnotes(items: string[]): string {
+  return `<div class="sv-lf-footnotes">${items.join('')}</div>`;
 }
 
 function th(text: string, pct: number): string {
@@ -42,7 +50,8 @@ function table(className: string, head: string[], pcts: number[], rows: string[]
         `<tr>${row.map((cell, i) => td(cell, pcts[i])).join('')}</tr>`,
     )
     .join('');
-  return `<table class="${className}"><thead>${headRow}</thead><tbody>${body}</tbody></table>`;
+  const classes = `${className} lf-estrela-table`.trim();
+  return `<table class="${classes}"><thead>${headRow}</thead><tbody>${body}</tbody></table>`;
 }
 
 export function isLfEstrelaModelName(name: string): boolean {
@@ -118,24 +127,24 @@ function financeTable(extraClass = ''): string {
 
 function signatureBlock(opts: { witnessLeftLabel: string }): string {
   const line = '<p class="sv-lf-sign-line">______________________________</p>';
-  return `<table class="sv-lf-sign sv-lf-keep"><tbody>
-<tr>
-${td(`${line}<p><strong>COMPRADOR 1</strong></p><p>CPF n° ${t('CLIENT_CPF')}</p><p>${t('CLIENT_NAME')}</p>`, 50)}
+  return `<table class="sv-lf-sign lf-estrela-signatures"><tbody>
+<tr class="sv-lf-sign-row">
+${td(`${line}<p><strong>COMPRADOR 1</strong></p><p>CPF n° ${t('CLIENT_CPF')}</p>`, 50)}
 ${td(`${line}<p><strong>${t('COMPANY_LEGAL_NAME')}</strong></p><p>CNPJ ${t('COMPANY_CNPJ')}</p>`, 50)}
 </tr>
-<tr>
-${td(`${line}<p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p><p>${t('SPOUSE_NAME')}</p>`, 50)}
+<tr class="sv-lf-sign-row">
+${td(`${line}<p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p>`, 50)}
 ${td(`${line}<p><strong>${t('SELLER_2_NAME')}</strong></p><p>CPF n°: ${t('SELLER_2_CPF_CNPJ')}</p>`, 50)}
 </tr>
-<tr>
-${td(`${line}<p><strong>${opts.witnessLeftLabel}</strong></p><p>CPF n°: ${t('WITNESS_1_CPF')}</p><p>${t('WITNESS_1_NAME')}</p>`, 50)}
-${td(`${line}<p><strong>TESTEMUNHA 2</strong></p><p>CPF n°: ${t('WITNESS_2_CPF')}</p><p>${t('WITNESS_2_NAME')}</p>`, 50)}
+<tr class="sv-lf-sign-row">
+${td(`${line}<p><strong>${opts.witnessLeftLabel}</strong></p><p>CPF n°: ${t('WITNESS_1_CPF')}</p>`, 50)}
+${td(`${line}<p><strong>TESTEMUNHA 2</strong></p><p>CPF n°: ${t('WITNESS_2_CPF')}</p>`, 50)}
 </tr>
 </tbody></table>`;
 }
 
 function clauseHead(main: string, sub: string): string {
-  return `<h2 class="sv-lf-clause">${main}</h2><h3 class="sv-lf-clause-sub">${sub}</h3>`;
+  return `<h2 class="sv-lf-clause lf-estrela-clause-title">${main}</h2><h3 class="sv-lf-clause-sub">${sub}</h3>`;
 }
 
 function dateLine(): string {
@@ -148,9 +157,9 @@ function dateLine(): string {
 function logo(): string {
   return renderCompanyLogoBlock({
     align: 'center',
-    width: 132,
+    width: 108,
     marginBefore: 0,
-    marginAfter: 6,
+    marginAfter: 2,
   });
 }
 
@@ -266,7 +275,7 @@ export const LF_ESTRELA_REQUIRED_TOKENS = [
 export function buildLfEstrelaCustomHtml(): string {
   const html = `<div class="sv-lf-estrela">
 ${logo()}
-<h1 class="sv-lf-cover-title">CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA</h1>
+<h1 class="sv-lf-cover-title lf-estrela-title">CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA</h1>
 <p class="sv-lf-green"><strong>CHACREAMENTO: ${t('PROJECT_NAME')}</strong></p>
 <h2 class="sv-lf-section">1. DAS PARTES CONTRATANTES (QUALIFICAÇÃO)<sup>1</sup></h2>
 ${table(
@@ -291,10 +300,12 @@ ${table(
   [32, 68],
   [['', '']],
 )}
-<p class="sv-lf-note"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), garantindo a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
-<p class="sv-lf-note"><sup>2</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pela parte compradora ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicada como indenização pré-fixada.</p>
-<p class="sv-lf-note"><sup>3</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}).</p>
-<p class="sv-lf-note"><sup>4</sup> Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.</p>
+${footnotes([
+  note(1, 'É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), garantindo a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.'),
+  note(2, 'Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pela parte compradora ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicada como indenização pré-fixada.'),
+  note(3, `A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}).`),
+  note(4, 'Na hipótese de rescisão motivada pelo Comprador, o saldo a ser restituído sofrerá o desconto de: arras, retenção de até 25% do valor pago, corretagem, taxa de fruição, tributos, despesas operacionais, custos de revenda e eventuais multas contratuais.'),
+])}
 ${PAGE_BREAK}
 ${logo()}
 ${table(
@@ -329,7 +340,7 @@ ${dateLine()}
 ${signatureBlock({ witnessLeftLabel: 'TESTEMUNHA 1' })}
 ${PAGE_BREAK}
 ${logo()}
-<h1 class="sv-lf-instrument-title">CONTRATO DE PROMESSA<br>DE COMPRA E VENDA</h1>
+<h1 class="sv-lf-instrument-title lf-estrela-title">CONTRATO DE PROMESSA<br>DE COMPRA E VENDA</h1>
 <p class="sv-lf-subtitle"><em>Instrumento particular de compra e venda de imóvel do tipo chácara rural que se regerá pelas cláusulas e condições a seguir.</em></p>
 ${p(`Pelo presente instrumento particular de CONTRATO DE COMPRA E VENDA DE CHÁCARA RURAL, que se regerá pelas cláusulas e condições abaixo descritas, de um lado temos ${t('CLIENT_NAME')}, ${t('CLIENT_NATIONALITY')}, ${t('CLIENT_CIVIL_STATE')}, ${t('CLIENT_PROFESSION')}, portador(a) do RG sob n° ${t('CLIENT_RG')} ${t('CLIENT_RG_ISSUER')} e do CPF sob n° ${t('CLIENT_CPF')}, residente e domiciliada(o) na ${t('CLIENT_ADDRESS')}, doravante denominada COMPRADOR/CONTRATANTE e do outro temos a contratada ${t('COMPANY_LEGAL_NAME')}, pessoa jurídica de direito privado, inscrita no CNPJ sob o n° ${t('COMPANY_CNPJ')}, CRECI/(PA) n° ${t('COMPANY_CRECI')}, com sede na ${t('COMPANY_ADDRESS')}, ${t('COMPANY_NEIGHBORHOOD')}, ${t('COMPANY_CITY')}/${t('COMPANY_STATE')}, CEP: ${t('COMPANY_ZIP')}, com o seguinte endereço eletrônico: ${t('COMPANY_EMAIL')}, Telefone: ${t('COMPANY_PHONE')}, doravante designada simplesmente como VENDEDOR/CONTRATADA.`)}
 ${p(`${t('SELLER_2_NAME')}, ${t('SELLER_2_NATIONALITY')}, ${t('SELLER_2_CIVIL_STATE')}, ${t('SELLER_2_PROFESSION')}, Carteira de identidade n° ${t('SELLER_2_RG')} ${t('SELLER_2_RG_ISSUER')}, CPF: ${t('SELLER_2_CPF_CNPJ')}, Residente e domiciliado na: ${t('SELLER_2_ADDRESS')}, Endereço eletrônico: ${t('SELLER_2_EMAIL')}. doravante designado simplesmente como VENDEDOR/CONTRATADA.`)}
@@ -358,8 +369,10 @@ ${p('<strong>2.8.2.</strong> Em caso de resolução ou rescisão do presente con
 ${p('<strong>2.9.</strong> Da Rescisão por Inadimplência: Sem prejuízo dos encargos moratórios previstos na cláusula anterior, o atraso no pagamento de qualquer parcela por período superior a 90 (noventa) dias conferirá à VENDEDORA (e/ou Corretora/Imobiliária, se houver poderes de representação) o direito de rescindir o presente contrato de pleno direito.')}
 ${p('<strong>2.9.1.</strong> A rescisão de que trata este artigo fica condicionada à prévia notificação do COMPRADOR, via cartório de títulos e documentos ou carta com aviso de recebimento (AR), concedendo-lhe o prazo de 15 (quinze) dias para purgação da mora (pagamento do débito atualizado).')}
 ${p('<strong>2.9.2.</strong> Transcorrido o prazo da notificação sem a devida quitação, a rescisão se consolidará, sujeitando o COMPRADOR às penalidades de retenção de valores previstas nas Cláusulas Penais deste instrumento e na legislação vigente.')}
-<p class="sv-lf-note"><sup>5</sup> Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pela parte compradora ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicada como indenização pré-fixada.</p>
-<p class="sv-lf-note"><sup>6</sup> A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}).</p>
+${footnotes([
+  note(5, 'Natureza jurídica: as ARRAS nos termos dos arts. 417 a 420 do Código Civil – É considerado um valor em dinheiro entregue pela parte compradora ao momento da assinatura de um contrato com objetivo de garantia de cumprimento do negócio e, em outras oportunidades, podendo ser aplicada como indenização pré-fixada.'),
+  note(6, `A comissão de corretagem possui natureza de remuneração pelos serviços de intermediação e não será restituída em caso de distrato, sendo este valor na importância de ${t('BROKER_COMMISSION')} (${t('BROKER_COMMISSION_EXTENSO')}).`),
+])}
 ${PAGE_BREAK}
 ${clauseHead('CLÁUSULA TERCEIRA', 'DA TRANSMISSÃO DA POSSE DEFINITIVA')}
 ${p('<strong>3.1.</strong> A eventual liberação do acesso e uso da chácara ao COMPRADOR (antes da conclusão da infraestrutura), na pendência de pagamento do saldo devedor, configurará posse meramente precária, resolúvel e vinculada ao fiel cumprimento deste instrumento.')}
@@ -415,7 +428,9 @@ ${p(`<strong>9.2.</strong> Da Comissão de Corretagem: As Partes declaram expres
 ${p('<strong>9.3.</strong> Das Penalidades por Rescisão: Operando-se a resolução do presente instrumento por iniciativa, inadimplemento ou culpa exclusiva do COMPRADOR, este sujeitar-se-á, de pleno direito e cumulativamente, às seguintes deduções e penalidades, calculadas sobre o montante atualizado a ser eventualmente restituído:')}
 ${p('<strong>I.</strong> Perda integral da quantia paga a título de Arras/Sinal de Negócio (art. 418 do Código Civil);')}
 ${p('<strong>II.</strong> Retenção de 25% (vinte e cinco por cento) sobre o valor total das parcelas efetivamente pagas, a título de cláusula penal compensatória e indenização pelos custos operacionais, administrativos<sup>7</sup> e de comercialização suportados pela VENDEDORA, em conformidade com os parâmetros da Lei nº 13.786/2018 (Lei do Distrato).')}
-<p class="sv-lf-note"><sup>7</sup> A composição referente à Dedução de Taxa Administrativa de Distrato se encontra fixada em 5% (cinco por cento) sobre o valor total do contrato, destinada à cobertura de despesas operacionais e jurídicas indissociáveis ao cancelamento do negócio e reintegração do imóvel ao estoque da VENDEDORA.</p>
+${footnotes([
+  note(7, 'A composição referente à Dedução de Taxa Administrativa de Distrato se encontra fixada em 5% (cinco por cento) sobre o valor total do contrato, destinada à cobertura de despesas operacionais e jurídicas indissociáveis ao cancelamento do negócio e reintegração do imóvel ao estoque da VENDEDORA.'),
+])}
 ${p('<strong>9.4.</strong> Da Taxa de Fruição (Ocupação do Imóvel): Em caso de resolução contratual por inadimplemento ou culpa do COMPRADOR, será devida à VENDEDORA uma indenização mensal a título de fruição (taxa de ocupação) do imóvel.')}
 ${p('<strong>Parágrafo Único:</strong> A referida taxa será calculada à razão de 0,5% (meio por cento) ao mês sobre o valor total e atualizado deste contrato, ou no valor fixo mensal de R$ 500,00 (quinhentos reais), prevalecendo e aplicando-se sempre o que for maior. A taxa incidirá desde a data em que o COMPRADOR teve o lote disponibilizado para seu uso (imissão na posse) até a data da efetiva, comprovada e pacífica desocupação e devolução do bem à VENDEDORA, podendo este montante ser deduzido do saldo a ser restituído.')}
 ${p('<strong>9.5.</strong> Da Forma e Prazo de Restituição: O saldo remanescente a ser restituído ao COMPRADOR - apurado após sofrer o desconto cumulativo das arras, da retenção de até 25% do valor pago, da comissão de corretagem, da taxa de fruição, dos tributos (IPTU/ITR), das despesas operacionais, dos custos de revenda e de eventuais multas contratuais – será pago somente após a efetiva e incontroversa desocupação e devolução da posse do imóvel à VENDEDORA.')}

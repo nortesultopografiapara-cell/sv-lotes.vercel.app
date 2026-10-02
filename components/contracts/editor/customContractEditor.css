@@ -531,13 +531,13 @@
   border-top: 1px solid #111;
 }
 
-/* LF ESTRELA — CUSTOM oficial (diagramação das 10 páginas de referência) */
+/* LF ESTRELA — hierarquia tipográfica das 10 páginas de referência (não compactar tudo) */
 .sv-a4-sheet .sv-lf-estrela,
 .sv-a4-prose .sv-lf-estrela,
 .sv-editor-preview-doc .sv-lf-estrela {
   font-family: "Times New Roman", Times, serif;
-  font-size: 11pt;
-  line-height: 1.32;
+  font-size: 10.5pt;
+  line-height: 1.28;
   color: #111;
   text-align: justify;
   max-width: 100%;
@@ -545,49 +545,64 @@
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-cover-title,
-.sv-editor-preview-doc .sv-lf-estrela .sv-lf-cover-title {
-  font-size: 13pt;
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-title,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-cover-title,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-title {
+  font-size: 12pt;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
-  margin: 4px 0 6px;
-  line-height: 1.25;
+  margin: 2px 0 4px;
+  line-height: 1.2;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-instrument-title,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-instrument-title {
-  font-size: 16pt;
+  font-size: 15pt;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
-  margin: 8px 0 10px;
-  line-height: 1.2;
+  margin: 4px 0 6px;
+  line-height: 1.15;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-green,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-green {
   color: #1b7a3d;
   text-align: center;
-  font-size: 12pt;
-  margin: 0 0 12px;
+  font-size: 11pt;
+  margin: 0 0 6px;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-subtitle,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-subtitle {
   text-align: center;
-  font-size: 10.5pt;
-  margin: 0 0 14px;
+  font-size: 10pt;
+  margin: 0 0 8px;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-section,
-.sv-editor-preview-doc .sv-lf-estrela .sv-lf-section,
-.sv-a4-sheet .sv-lf-estrela .sv-lf-clause,
-.sv-editor-preview-doc .sv-lf-estrela .sv-lf-clause {
-  font-size: 11.5pt;
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-section {
+  font-size: 11pt;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
-  margin: 12px 0 2px;
+  margin: 8px 0 2px;
+  border-bottom: 0;
+  padding-bottom: 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-clause,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-clause-title,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-clause,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-clause-title {
+  font-size: 11pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 8px 0 0;
   border-bottom: 0;
   padding-bottom: 0;
   break-after: avoid;
@@ -596,45 +611,66 @@
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-clause-sub,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-clause-sub {
-  font-size: 11pt;
+  font-size: 10.5pt;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   break-after: avoid;
   page-break-after: avoid;
 }
 
 .sv-a4-sheet .sv-lf-estrela p,
-.sv-editor-preview-doc .sv-lf-estrela p {
-  margin: 0 0 7px;
+.sv-a4-sheet .sv-lf-estrela .sv-lf-body,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-body,
+.sv-editor-preview-doc .sv-lf-estrela p,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-body,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-body {
+  font-size: 10.5pt;
+  line-height: 1.28;
+  margin: 0 0 5px;
   text-align: justify;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-date,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-date {
   text-align: center;
-  margin: 18px 0 14px;
+  font-size: 10.5pt;
+  margin: 10px 0 8px;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-footnotes,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-footnotes {
+  margin: 6px 0 0;
+  padding: 0;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-note,
-.sv-editor-preview-doc .sv-lf-estrela .sv-lf-note {
-  font-size: 7.5pt;
-  line-height: 1.25;
+.sv-a4-sheet .sv-lf-estrela .sv-lf-footnote,
+.sv-a4-sheet .sv-lf-estrela .lf-estrela-footnote,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-note,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-footnote,
+.sv-editor-preview-doc .sv-lf-estrela .lf-estrela-footnote {
+  font-size: 7pt;
+  line-height: 1.1;
   text-align: justify;
-  margin: 2px 0;
+  margin: 0 0 1px;
+  padding: 0;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-capa,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-capa,
 .sv-a4-sheet .sv-lf-estrela table.sv-lf-table,
-.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table {
-  font-size: 8.5pt;
-  line-height: 1.25;
+.sv-a4-sheet .sv-lf-estrela table.lf-estrela-table,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table,
+.sv-editor-preview-doc .sv-lf-estrela table.lf-estrela-table {
+  font-size: 8pt;
+  line-height: 1.2;
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin: 4px 0 10px;
+  margin: 2px 0 6px;
   break-inside: auto;
   page-break-inside: auto;
 }
@@ -644,7 +680,7 @@
 .sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table th,
 .sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table td {
   border: 1px solid #111;
-  padding: 3px 5px;
+  padding: 2px 4px;
   vertical-align: top;
   text-align: left;
   overflow-wrap: anywhere;
@@ -661,13 +697,16 @@
 }
 
 .sv-a4-sheet .sv-lf-estrela table.sv-lf-sign,
-.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign {
+.sv-a4-sheet .sv-lf-estrela table.lf-estrela-signatures,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign,
+.sv-editor-preview-doc .sv-lf-estrela table.lf-estrela-signatures {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin: 8px 0 0;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 4px 0 0;
+  border: 0;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 
 .sv-a4-sheet .sv-lf-estrela table.sv-lf-sign td,
@@ -675,27 +714,33 @@
   border: 0;
   text-align: center;
   vertical-align: top;
-  padding: 18px 10px 8px;
-  font-size: 10pt;
+  padding: 8px 8px 2px;
+  font-size: 9pt;
+}
+
+.sv-a4-sheet .sv-lf-estrela table.sv-lf-sign p,
+.sv-editor-preview-doc .sv-lf-estrela table.sv-lf-sign p {
+  margin: 0;
+  text-align: center;
+  font-size: 9pt;
+  line-height: 1.15;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-sign-line,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-sign-line {
-  margin: 0 12% 6px;
+  margin: 10px 10% 2px;
   border: 0;
   border-bottom: 1px solid #111;
-  height: 28px;
+  height: 0;
+  padding: 0;
+  line-height: 1;
+  font-size: 1px;
   text-align: center;
   color: transparent;
-}
-
-.sv-a4-sheet .sv-lf-estrela .sv-lf-keep,
-.sv-editor-preview-doc .sv-lf-estrela .sv-lf-keep {
-  break-inside: avoid;
-  page-break-inside: avoid;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-company-logo,
 .sv-editor-preview-doc .sv-lf-estrela .sv-company-logo {
   text-align: center;
+  margin: 0 0 2px;
 }

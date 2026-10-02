@@ -110,6 +110,33 @@ assert((html.match(/COMPRADOR 1/g) || []).length >= 2, 'dois blocos de assinatur
 assert((html.match(/TESTEMUNHA 1/g) || []).length >= 2, 'testemunhas nos dois blocos');
 assert((html.match(/data-sv-page-break/g) || []).length >= 2, 'quebras estruturais capa→infra e capa→instrumento');
 
+const capaPages = html.split(/<div data-sv-page-break="true"[^>]*><\/div>/);
+assert(capaPages.length >= 3, 'Capa tem quebra para página 2 e para o instrumento');
+assert(
+  capaPages[0].includes('CAPA RESUMO') &&
+    capaPages[0].includes('DAS PARTES CONTRATANTES') &&
+    capaPages[0].includes('DAS CONDIÇÕES FINANCEIRAS') &&
+    capaPages[0].includes('lf-estrela-footnote') &&
+    capaPages[0].includes('<sup>1</sup>') &&
+    capaPages[0].includes('<sup>4</sup>'),
+  'página 1 da Capa: seções 1–4 + notas 1–4',
+);
+assert(
+  capaPages[1].includes('INFRAESTRUTURA ESSENCIAL') &&
+    capaPages[1].includes('COMPRADOR 1') &&
+    capaPages[1].includes('TESTEMUNHA 1') &&
+    capaPages[1].includes('lf-estrela-signatures') &&
+    !capaPages[1].includes('CONTRATO DE PROMESSA<br>'),
+  'página 2 da Capa: infraestrutura + data + assinaturas (sem o instrumento)',
+);
+assert(
+  capaPages[2].includes('CONTRATO DE PROMESSA') && !capaPages[2].includes('INFRAESTRUTURA ESSENCIAL'),
+  'instrumento começa somente depois da Capa',
+);
+assert(!html.includes('sv-lf-keep'), 'assinatura da Capa sem keepTogether de página inteira');
+assert((html.match(/lf-estrela-footnote/g) || []).length >= 7, 'sete notas tipográficas');
+assert(html.includes('sv-lf-body lf-estrela-body'), 'parágrafos do corpo com classe distinta das notas');
+
 for (const key of LF_ESTRELA_REQUIRED_TOKENS) {
   assert(CUSTOM_PLACEHOLDER_KEYS.has(key), `token oficial existe: ${key}`);
   assert(html.includes(`{{${key}}}`), `HTML usa {{${key}}}`);
@@ -129,9 +156,19 @@ assert(html.includes('1% (um por cento) ao mês'), 'constante jurídica juros 1%
 const css = read('components/contracts/editor/customContractEditor.css');
 assert(css.includes('.sv-lf-estrela'), 'CSS LF ESTRELA no editor/prévia/PDF');
 assert(css.includes('page-break-inside: auto'), 'tabelas podem atravessar páginas');
-assert(/table\.sv-lf-table[\s\S]{0,220}page-break-inside:\s*auto/.test(css), 'tabela LF quebra por linha');
+assert(/table\.sv-lf-table[\s\S]{0,400}page-break-inside:\s*auto/.test(css), 'tabela LF quebra por linha');
+assert(/\.sv-lf-note[\s\S]{0,800}font-size:\s*7pt/.test(css), 'notas 1–4 da Capa em 7pt');
+assert(/\.sv-lf-footnote[\s\S]{0,600}font-size:\s*7pt/.test(css), 'notas 5–7 do instrumento em 7pt');
+assert(/\.lf-estrela-footnote[\s\S]{0,180}line-height:\s*1\.1/.test(css), 'notas com line-height compacto 1.1');
+assert(css.includes('.lf-estrela-title'), 'classe de título');
+assert(css.includes('.lf-estrela-clause-title'), 'classe de cláusula');
+assert(css.includes('.lf-estrela-body'), 'classe de corpo');
+assert(css.includes('.lf-estrela-table'), 'classe de tabela');
+assert(css.includes('.lf-estrela-signatures'), 'classe de assinatura');
+assert(!/table\.sv-lf-sign[\s\S]{0,220}page-break-inside:\s*avoid/.test(css), 'assinatura LF não é keepTogether gigante');
 assert(CUSTOM_A4_MARGIN_MM === 15 && customA4ContentWidthMm() === 180, 'LF ESTRELA usa área útil 180mm');
 assert(css.includes('--paper-pad: 15mm'), 'margem visual 15mm no editor/prévia');
+assert(!css.includes('--paper-pad: 10mm') && !css.includes('--paper-pad: 12mm'), 'margens 15mm não foram reduzidas');
 assert(!/<t[hd]\b[^>]*style="width:\d+px"/.test(html), 'colunas LF não usam px que estouram a folha');
 assert(/<th[^>]*style="width:\d+%"/.test(html), 'colunas LF em % da área útil');
 

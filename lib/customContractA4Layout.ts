@@ -102,6 +102,57 @@ export function a4PageIdentity(pages: A4PagePlan[]): string {
     .join('|');
 }
 
+/** Ocupação abaixo disso = página quase vazia (órfã), salvo quebra manual. */
+export const A4_SPARSE_OCCUPANCY_MAX = 0.18;
+
+export function a4PageOccupancy(leftover: number, pageInner: number): number {
+  const inner = Math.max(1, roundA4Measure(pageInner) || Number(pageInner) || 1);
+  const used = Math.max(0, inner - Math.max(0, leftover));
+  return used / inner;
+}
+
+/**
+ * Páginas com ocupação vertical anormalmente baixa que NÃO começam após
+ * `data-sv-page-break` intencional (referência LF ESTRELA: capa p2, cláusula 3).
+ */
+export function findUnintendedSparseA4Pages(
+  units: A4LayoutUnit[],
+  pages: A4PagePlan[],
+  pageInner: number,
+  maxOccupancy = A4_SPARSE_OCCUPANCY_MAX,
+): A4PagePlan[] {
+  return pages.filter((page) => {
+    if (a4PageOccupancy(page.leftover, pageInner) >= maxOccupancy) return false;
+    const prev = page.start > 0 ? units[page.start - 1] : null;
+    if (prev?.kind === 'pageBreak') return false;
+    return true;
+  });
+}
+
+function packKeepWithNextChain(
+  units: A4LayoutUnit[],
+  startIndex: number,
+  inner: number,
+): { packHeight: number; packEnd: number; packRefs: string[] } {
+  const unit = units[startIndex];
+  let packHeight = Math.max(0, roundA4Measure(unit.height) || Number(unit.height) || 0);
+  let packEnd = startIndex;
+  let packRefs = [...(unit.footnoteIds || [])];
+  let j = startIndex;
+  while (j < units.length - 1) {
+    const current = units[j];
+    const nxt = units[j + 1];
+    if (!current.keepWithNext || !nxt || nxt.kind === 'pageBreak') break;
+    const nextH = Math.max(0, roundA4Measure(nxt.height) || Number(nxt.height) || 0);
+    if (packHeight + nextH > inner) break;
+    packHeight += nextH;
+    packEnd = j + 1;
+    packRefs = [...packRefs, ...(nxt.footnoteIds || [])];
+    j += 1;
+  }
+  return { packHeight, packEnd, packRefs };
+}
+
 export function shouldExplodeTableByHeight(contentHeight: number, pageInner: number): boolean {
   void contentHeight;
   void pageInner;
@@ -245,16 +296,13 @@ export function planA4Pages(
     }
 
     const next = i + 1 < units.length ? units[i + 1] : null;
-    let packHeight = height;
-    let packEnd = i;
-    let packRefs = [...(unit.footnoteIds || [])];
-    if (unit.keepWithNext && next && next.kind !== 'pageBreak') {
+    const packed = packKeepWithNextChain(units, i, inner);
+    let packHeight = packed.packHeight;
+    let packEnd = packed.packEnd;
+    let packRefs = packed.packRefs;
+    if (unit.keepWithNext && next && next.kind !== 'pageBreak' && packEnd === i) {
       const combined = height + Math.max(0, roundA4Measure(next.height) || Number(next.height) || 0);
-      if (combined <= inner) {
-        packHeight = combined;
-        packEnd = i + 1;
-        packRefs = [...packRefs, ...(next.footnoteIds || [])];
-      } else if (remaining < inner && remaining < combined) {
+      if (remaining < inner && remaining < combined) {
         closePage(i);
         continue;
       }
@@ -397,7 +445,7 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
   const pushEl = (
     el: HTMLElement,
     tag = el.tagName,
-    extra: Partial<Pick<A4LayoutUnit, 'tableId' | 'isTableHeader'>> = {},
+    extra: Partial<Pick<A4LayoutUnit, 'tableId' | 'isTableHeader' | 'keepWithNext' | 'kind'>> = {},
   ) => {
     const classified = classifyA4Tag(tag, el.innerText || el.textContent || '', {
       pageBreak: el.hasAttribute('data-sv-page-break') || el.classList.contains('sv-page-break'),
@@ -424,8 +472,14 @@ export function collectA4UnitsFromElement(root: HTMLElement, pageInner: number):
       pushEl(tableEl, 'table', { tableId });
       return;
     }
-    rows.forEach((row) => {
-      pushEl(row, 'tr', { tableId, isTableHeader: isTableHeaderRow(row) });
+    const signTable =
+      tableEl.classList.contains('sv-lf-sign') || tableEl.classList.contains('lf-estrela-signatures');
+    rows.forEach((row, rowIndex) => {
+      pushEl(row, 'tr', {
+        tableId,
+        isTableHeader: isTableHeaderRow(row),
+        keepWithNext: signTable ? rowIndex < rows.length - 1 : undefined,
+      });
     });
   };
 
