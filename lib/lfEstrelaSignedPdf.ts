@@ -43,14 +43,27 @@ const COL_LEFT_CENTER = MARGIN_PT + COL_WIDTH / 2;
 const COL_RIGHT_CENTER = MARGIN_PT + COL_WIDTH + COL_GAP + COL_WIDTH / 2;
 
 /**
- * Linha da assinatura (y da baseline do carimbo, ~3–14pt acima da linha).
- * Página 2 = Capa Resumo (tabela de infraestrutura + assinaturas mais altas).
- * Página 10 = encerramento do instrumento (texto 12.3–12.7 + assinaturas mais baixas).
+ * Y pdf-lib (origem inferior) da área livre ACIMA da linha física.
+ * Página 2 = Capa Resumo. O gabarito 458/393/328 cobria COMPRADOR 1 / CPF,
+ * LF IMOVEIS / CNPJ e ANTONIO / CPF; +24pt (~8,5 mm) sobe o carimbo compacto
+ * para a área livre da assinatura, sem escrever por cima do nome preto.
+ * Página 10 = encerramento do instrumento (texto 12.3–12.7).
+ * P10 só é aplicado depois de validar pageCount === 10.
  */
 export const LF_ESTRELA_STAMP_LAYOUT = {
-  page2: { row1: 458, row2: 393, row3: 328 },
+  page2: { row1: 482, row2: 417, row3: 352 },
   page10: { row1: 248, row2: 183, row3: 118 },
 } as const;
+
+export function lfEstrelaInvalidPhysicalBaseMessage(found: number): string {
+  return `Base física LF ESTRELA inválida: esperado ${LF_ESTRELA_SIGNED_INSTRUMENT_PAGES} páginas, encontrado ${found}. Gere/congele novamente o PDF físico homologado.`;
+}
+
+export function assertLfEstrelaHomologatedPageCount(pageCount: number): void {
+  if (pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+    throw new Error(lfEstrelaInvalidPhysicalBaseMessage(pageCount));
+  }
+}
 
 export type LfEstrelaOverlaySlot =
   | 'BUYER_1'
@@ -208,8 +221,8 @@ function drawStampOnPage(
   const centerX = slotCenterX(stamp.slot);
   const lineY = slotLineY(stamp.slot, pageNumber);
   const color = LF_ESTRELA_STAMP_GREEN;
-  const size = 7.2;
-  const leading = 9.1;
+  const size = 6.6;
+  const leading = 8.2;
   const lines = stamp.lines.map((line) => winAnsiSafe(line)).filter(Boolean);
   if (!lines.length) return;
 
@@ -248,16 +261,14 @@ export async function overlayLfEstrelaSignatureStamps(
 ): Promise<void> {
   if (!stamps.length) return;
   const pages = pdfDoc.getPages();
+  const pageCount = pages.length;
+  assertLfEstrelaHomologatedPageCount(pageCount);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const pageCount = pages.length;
   const targets = [
     { index: 1, number: 2 },
-    {
-      index: Math.min(LF_ESTRELA_SIGNED_INSTRUMENT_PAGES, pageCount) - 1,
-      number: pageCount >= LF_ESTRELA_SIGNED_INSTRUMENT_PAGES ? 10 : pageCount,
-    },
-  ].filter((t) => t.index >= 0 && t.index < pageCount);
+    { index: 9, number: 10 },
+  ];
 
   for (const target of targets) {
     const page = pages[target.index];
@@ -277,6 +288,7 @@ export async function composeLfEstrelaSignedPdf(input: {
   }
 
   const physical = await PDFDocument.load(input.physicalBytes);
+  assertLfEstrelaHomologatedPageCount(physical.getPageCount());
   const out = await PDFDocument.create();
   const copied = await out.copyPages(physical, physical.getPageIndices());
   copied.forEach((page) => out.addPage(page));
@@ -297,22 +309,27 @@ export function buildLfEstrelaPhysicalBaseDescription(input: {
   contractId: string;
   version?: number | null;
   sha256: string;
+  pageCount?: number | null;
 }): string {
-  return `LF_ESTRELA_PHYSICAL_BASE contract_id=${input.contractId} version=${Number(input.version) || 1} sha256=${input.sha256}`;
+  const pageCount = Number(input.pageCount) || LF_ESTRELA_SIGNED_INSTRUMENT_PAGES;
+  return `LF_ESTRELA_PHYSICAL_BASE contract_id=${input.contractId} version=${Number(input.version) || 1} page_count=${pageCount} sha256=${input.sha256}`;
 }
 
 export function parseLfEstrelaPhysicalBaseDescription(description?: string | null): {
   contractId: string | null;
   version: number | null;
+  pageCount: number | null;
   sha256: string | null;
 } {
   const text = String(description || '');
   const contractId = text.match(/contract_id=([0-9a-f-]{36})/i)?.[1] || null;
   const versionRaw = text.match(/version=(\d+)/i)?.[1] || null;
+  const pageCountRaw = text.match(/page_count=(\d+)/i)?.[1] || null;
   const sha256 = text.match(/sha256=([a-f0-9]{64})/i)?.[1] || null;
   return {
     contractId,
     version: versionRaw ? Number(versionRaw) : null,
+    pageCount: pageCountRaw ? Number(pageCountRaw) : null,
     sha256,
   };
 }
@@ -385,6 +402,42 @@ async function downloadSaleDocumentPdf(
   return isPdfBytes(bytes) ? bytes : null;
 }
 
+async function invalidateLfEstrelaPhysicalBaseDocument(input: {
+  supabaseAdmin: SupabaseClient;
+  documentId: string;
+  storagePath: string;
+  description?: string | null;
+  pageCount: number;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const suffix = `.invalid.${Date.now()}`;
+  const prev = String(input.description || '').trim();
+  const nextDesc =
+    `${prev} invalid_page_count=${input.pageCount} invalidated_at=${now}`.trim();
+  const { error } = await input.supabaseAdmin
+    .from('sale_documents')
+    .update({
+      deleted_at: now,
+      storage_path: `${input.storagePath}${suffix}`,
+      description: nextDesc.slice(0, 1800),
+      updated_at: now,
+    })
+    .eq('id', input.documentId)
+    .eq('document_type', LF_ESTRELA_PHYSICAL_BASE_DOCUMENT_TYPE)
+    .is('deleted_at', null);
+  console.warn('[LF SIGNED PDF STAGE]', {
+    stage: 'physical_pdf_invalidate',
+    documentId: input.documentId,
+    pageCount: input.pageCount,
+    message: lfEstrelaInvalidPhysicalBaseMessage(input.pageCount),
+  });
+  if (error) {
+    throw new Error(
+      `[stage=physical_pdf_invalidate] Falha ao invalidar base física LF ESTRELA: ${error.message}`,
+    );
+  }
+}
+
 export async function loadLfEstrelaPhysicalPdfBytes(input: {
   supabaseAdmin: SupabaseClient;
   tenantId: string;
@@ -428,7 +481,19 @@ export async function loadLfEstrelaPhysicalPdfBytes(input: {
         existing.storage_path,
       );
       const loaded = await tryLoad(bytes, 'sale_documents', existing.storage_path);
-      if (loaded) return loaded;
+      if (loaded) {
+        if (loaded.pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+          await invalidateLfEstrelaPhysicalBaseDocument({
+            supabaseAdmin: input.supabaseAdmin,
+            documentId: existing.id,
+            storagePath: existing.storage_path,
+            description: existing.description,
+            pageCount: loaded.pageCount,
+          });
+          throw new Error(lfEstrelaInvalidPhysicalBaseMessage(loaded.pageCount));
+        }
+        return loaded;
+      }
     }
   }
 
@@ -438,8 +503,15 @@ export async function loadLfEstrelaPhysicalPdfBytes(input: {
     const { data, error } = await input.supabaseAdmin.storage.from(bucket).download(path);
     if (error || !data) return null;
     const bytes = new Uint8Array(await data.arrayBuffer());
-    return tryLoad(bytes, 'storage', path);
-  } catch {
+    const loaded = await tryLoad(bytes, 'storage', path);
+    if (loaded && loaded.pageCount !== LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+      throw new Error(lfEstrelaInvalidPhysicalBaseMessage(loaded.pageCount));
+    }
+    return loaded;
+  } catch (err) {
+    if (err instanceof Error && /Base física LF ESTRELA inválida/i.test(err.message)) {
+      throw err;
+    }
     return null;
   }
 }
@@ -475,6 +547,7 @@ export async function persistLfEstrelaPhysicalPdf(input: {
   }
   const doc = await PDFDocument.load(input.pdfBytes);
   const pageCount = doc.getPageCount();
+  assertLfEstrelaHomologatedPageCount(pageCount);
   const sha256 = sha256Hex(input.pdfBytes);
 
   const existing = await findLfEstrelaPhysicalBaseDocument({
@@ -482,19 +555,31 @@ export async function persistLfEstrelaPhysicalPdf(input: {
     saleId,
     contractId: input.contractId,
   });
+  let canReuseExisting = Boolean(existing?.storage_path);
   if (existing?.storage_path && !input.overwrite) {
     const loaded = await downloadSaleDocumentPdf(
       input.supabaseAdmin,
       existing.storage_path,
     );
     if (loaded && isPdfBytes(loaded)) {
-      return {
-        url: existing.storage_path,
-        sha256: sha256Hex(loaded),
-        pageCount: (await PDFDocument.load(loaded)).getPageCount(),
-        reused: true,
+      const existingCount = (await PDFDocument.load(loaded)).getPageCount();
+      if (existingCount === LF_ESTRELA_SIGNED_INSTRUMENT_PAGES) {
+        return {
+          url: existing.storage_path,
+          sha256: sha256Hex(loaded),
+          pageCount: existingCount,
+          reused: true,
+          storagePath: existing.storage_path,
+        };
+      }
+      await invalidateLfEstrelaPhysicalBaseDocument({
+        supabaseAdmin: input.supabaseAdmin,
+        documentId: existing.id,
         storagePath: existing.storage_path,
-      };
+        description: existing.description,
+        pageCount: existingCount,
+      });
+      canReuseExisting = false;
     }
   }
 
@@ -526,7 +611,7 @@ export async function persistLfEstrelaPhysicalPdf(input: {
     );
   }
 
-  if (!existing) {
+  if (!canReuseExisting) {
     await createSystemGeneratedSaleDocumentMetadata(input.supabaseAdmin, {
       saleId,
       ctx: {
@@ -542,6 +627,7 @@ export async function persistLfEstrelaPhysicalPdf(input: {
         contractId: input.contractId,
         version: input.version,
         sha256,
+        pageCount,
       }),
       originalFileName: fileName,
       storagePath,
@@ -563,9 +649,7 @@ export async function ensureLfEstrelaPhysicalBase(input: {
   projectId?: string | null;
   lotId?: string | null;
   buyerId?: string | null;
-  html?: string | null;
   pdfBytes?: Uint8Array | null;
-  chrome?: ContractPdfChromeInput | null;
   userId?: string | null;
 }): Promise<{
   bytes: Uint8Array;
@@ -573,7 +657,7 @@ export async function ensureLfEstrelaPhysicalBase(input: {
   pageCount: number;
   storagePath: string | null;
   reused: boolean;
-  source: 'existing' | 'uploaded' | 'generated';
+  source: 'existing' | 'uploaded';
 }> {
   const loaded = await loadLfEstrelaPhysicalPdfBytes({
     supabaseAdmin: input.supabaseAdmin,
@@ -583,6 +667,7 @@ export async function ensureLfEstrelaPhysicalBase(input: {
     saleId: input.saleId,
   });
   if (loaded) {
+    assertLfEstrelaHomologatedPageCount(loaded.pageCount);
     return {
       bytes: loaded.bytes,
       sha256: loaded.sha256,
@@ -593,30 +678,9 @@ export async function ensureLfEstrelaPhysicalBase(input: {
     };
   }
 
-  let bytes = input.pdfBytes && isPdfBytes(input.pdfBytes) ? input.pdfBytes : null;
-  let source: 'uploaded' | 'generated' = 'uploaded';
+  const bytes = input.pdfBytes && isPdfBytes(input.pdfBytes) ? input.pdfBytes : null;
   if (!bytes) {
-    const html = String(input.html || '').trim();
-    if (!html || !isLfEstrelaCustomHtml(html)) {
-      throw new Error(
-        '[stage=physical_pdf_freeze] Sem PDF físico congelado e sem HTML LF ESTRELA para gerar o base.',
-      );
-    }
-    if (!input.chrome) {
-      throw new Error(
-        '[stage=physical_pdf_freeze] Chrome de PDF ausente para congelar o físico LF ESTRELA.',
-      );
-    }
-    console.info('[LF SIGNED PDF STAGE]', {
-      stage: 'physical_pdf_freeze',
-      requestedContractId: input.contractId,
-      saleId: input.saleId || null,
-    });
-    const { buildSaleContractPdfFromHtml } = await import('@/lib/saleContractPdf');
-    bytes = await buildSaleContractPdfFromHtml(html, input.chrome, {
-      skipPaginationMeasure: true,
-    });
-    source = 'generated';
+    throw new Error(lfEstrelaInvalidPhysicalBaseMessage(0));
   }
 
   const persisted = await persistLfEstrelaPhysicalPdf({
@@ -633,6 +697,7 @@ export async function ensureLfEstrelaPhysicalBase(input: {
     userId: input.userId,
     overwrite: false,
   });
+  assertLfEstrelaHomologatedPageCount(persisted.pageCount);
 
   return {
     bytes,
@@ -640,7 +705,7 @@ export async function ensureLfEstrelaPhysicalBase(input: {
     pageCount: persisted.pageCount,
     storagePath: persisted.storagePath,
     reused: persisted.reused,
-    source: persisted.reused ? 'existing' : source,
+    source: 'uploaded',
   };
 }
 
@@ -703,8 +768,6 @@ export async function buildLfEstrelaSignedSaleContractPdf(input: {
       projectId: input.projectId,
       lotId: input.lotId,
       buyerId: input.buyerId,
-      html: input.originalHtml,
-      chrome: input.chrome,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -18,6 +18,12 @@ export function classifySignedPdfGenerationError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err || 'erro desconhecido');
   const stack = err instanceof Error ? err.stack : '';
   const blob = `${message}\n${stack || ''}`;
+  const invalidBase = message.match(
+    /Base física LF ESTRELA inválida: esperado \d+ páginas, encontrado \d+\. Gere\/congele novamente o PDF físico homologado\./,
+  );
+  if (invalidBase) {
+    return invalidBase[0];
+  }
   if (/pdf-lib|PDFDocument|overlay/i.test(blob)) {
     return `Falha de pdf-lib no PDF assinado LF ESTRELA: ${message}`;
   }

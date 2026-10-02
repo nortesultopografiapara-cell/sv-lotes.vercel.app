@@ -16,6 +16,8 @@ import {
 import {
   buildLfEstrelaPhysicalBaseDescription,
   parseLfEstrelaPhysicalBaseDescription,
+  assertLfEstrelaHomologatedPageCount,
+  lfEstrelaInvalidPhysicalBaseMessage,
 } from '../lib/lfEstrelaSignedPdf';
 import { validateSaleDocumentType } from '../lib/saleDocuments';
 import {
@@ -106,6 +108,37 @@ function testSourceGuards() {
   );
   assert(signed.includes('overlayLfEstrelaSignatureStamps'), 'overlay pdf-lib');
   assert(signed.includes('composeLfEstrelaSignedPdf'), 'compose físico + overlay + certificado');
+  const ensureStart = signed.indexOf('export async function ensureLfEstrelaPhysicalBase');
+  const ensureEnd = signed.indexOf('export async function buildLfEstrelaSignedSaleContractPdf');
+  assert(ensureStart > 0 && ensureEnd > ensureStart, 'ensureLfEstrelaPhysicalBase existe');
+  const ensureSlice = signed.slice(ensureStart, ensureEnd);
+  assert(
+    !ensureSlice.includes('buildSaleContractPdfFromHtml'),
+    'ensure NÃO renderiza HTML no servidor como physical base',
+  );
+  assert(
+    !ensureSlice.includes('skipPaginationMeasure'),
+    'ensure NÃO usa skipPaginationMeasure para physical base',
+  );
+  assert(!ensureSlice.includes('input.html'), 'ensure NÃO recebe HTML para gerar base');
+  const buildStart = signed.indexOf('export async function buildLfEstrelaSignedSaleContractPdf');
+  const buildSlice = signed.slice(buildStart);
+  assert(
+    !buildSlice.includes('html: input.originalHtml'),
+    'PDF assinado NÃO passa HTML para congelar physical base',
+  );
+  assert(
+    signed.includes('assertLfEstrelaHomologatedPageCount'),
+    'fail-closed pageCount === 10',
+  );
+  assert(
+    signed.includes('{ index: 9, number: 10 }'),
+    'P10 só no índice 9 da base homologada de 10 páginas',
+  );
+  assert(
+    !signed.includes('Math.min(LF_ESTRELA_SIGNED_INSTRUMENT_PAGES, pageCount)'),
+    'P10 não usa pageIndex relativo em PDF de tamanho qualquer',
+  );
   assert(pdf.includes('skipMeasure'), 'Chromium LF não executa measure/repaginação');
   assert(page.includes('freezeLfEstrelaPhysicalPdfFromJsPdf'), 'Contratos congela PDF físico html2pdf');
   assert(page.includes('/physical-pdf'), 'POST freeze no Baixar PDF');
@@ -188,6 +221,10 @@ function testSourceGuards() {
   assert(
     lookup.includes('lookup usou o ID do processo de assinatura'),
     'recusa process id como contracts.id',
+  );
+  assert(
+    !service.includes('freeze_lf_physical_start'),
+    'envio para assinatura NÃO congela physical base via Chromium',
   );
   assert(
     read('lib/saleContractSignedArtifact.ts').includes('resolveSignedPdfDocumentContractId'),
@@ -302,6 +339,36 @@ async function testComposePreservesInstrumentPages() {
     LF_ESTRELA_STAMP_LAYOUT.page2.row1 > LF_ESTRELA_STAMP_LAYOUT.page10.row1,
     'P2 (capa) tem assinaturas mais altas que P10',
   );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.row1 > 458,
+    'P2 subiu para a área livre acima da linha (não cobre nomes/CPFs)',
+  );
+
+  let threwInvalid = false;
+  try {
+    await composeLfEstrelaSignedPdf({
+      physicalBytes: await blankA4Pdf(15),
+      stamps,
+    });
+  } catch (err) {
+    threwInvalid = /esperado 10 páginas, encontrado 15/i.test(
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  assert(threwInvalid, 'base de 15 páginas é recusada (fail-closed)');
+  assert(
+    lfEstrelaInvalidPhysicalBaseMessage(15).includes('encontrado 15'),
+    'mensagem explícita com pageCount encontrado',
+  );
+  try {
+    assertLfEstrelaHomologatedPageCount(15);
+    assert(false, 'assert 15 páginas deveria lançar');
+  } catch (err) {
+    assert(
+      err instanceof Error && err.message === lfEstrelaInvalidPhysicalBaseMessage(15),
+      'assertLfEstrelaHomologatedPageCount usa a mensagem obrigatória',
+    );
+  }
 }
 
 function testSignedPdfFindsPartiesWithoutLegacyField() {
@@ -396,16 +463,28 @@ function testPhysicalBaseUsesSaleDocumentsNotPdfUrl() {
     contractId,
     version: 11,
     sha256: sha,
+    pageCount: 10,
   });
   const parsed = parseLfEstrelaPhysicalBaseDescription(desc);
   assert(parsed.contractId === contractId, 'description guarda contracts.id');
   assert(parsed.version === 11, 'description guarda version');
+  assert(parsed.pageCount === 10, 'description guarda page_count=10');
   assert(parsed.sha256 === sha, 'description guarda sha256');
   const typeOk = validateSaleDocumentType('SYSTEM_GENERATED', 'LF_ESTRELA_PHYSICAL_BASE');
   assert(typeOk.valid, 'LF_ESTRELA_PHYSICAL_BASE é SYSTEM_GENERATED');
 }
 
 function testGenerationErrorIsNotSignature404() {
+  const invalid = classifySignedPdfGenerationError(
+    new Error(
+      'Base física LF ESTRELA inválida: esperado 10 páginas, encontrado 15. Gere/congele novamente o PDF físico homologado.',
+    ),
+  );
+  assert(
+    invalid ===
+      'Base física LF ESTRELA inválida: esperado 10 páginas, encontrado 15. Gere/congele novamente o PDF físico homologado.',
+    'pageCount != 10 não é mascarado',
+  );
   const freeze = classifySignedPdfGenerationError(new Error('Falha ao congelar PDF físico'));
   assert(freeze.includes('Falha ao congelar PDF físico LF ESTRELA'), 'classifica freeze');
   const storage = classifySignedPdfGenerationError(new Error('Storage bucket missing'));
