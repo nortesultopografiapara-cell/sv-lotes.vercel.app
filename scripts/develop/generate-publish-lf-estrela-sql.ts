@@ -13,9 +13,13 @@ import {
   assertNoLfEstrelaPageMarkers,
   buildLfEstrelaCustomHtml,
 } from '../../lib/lfEstrelaCustomTemplate';
+import {
+  LF_ESTRELA_SQL_HTML_TAG,
+  assertLfEstrelaSqlHtmlMatchesOfficial,
+} from './lfEstrelaPublishSqlHtml';
 
 const PROJECT_ID = '760c32d8-4c43-403b-986c-9872011f44cd';
-const HTML_TAG = 'lf_estrela_html_v1';
+const HTML_TAG = LF_ESTRELA_SQL_HTML_TAG;
 const BODY_TAG = 'publish_lf_estrela';
 const OUT = join(__dirname, 'sql', 'publish-lf-estrela-v1.develop.sql');
 const UUID_RE = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
@@ -35,11 +39,14 @@ function main() {
 -- SQL Editor: https://supabase.com/dashboard/project/hoynysmynxncdlptuzub/sql
 -- NÃO executar em Production aezktedncttwpqeunjej
 -- NÃO altera projects.company_id
+-- NÃO altera projects.tenant_id
 -- NÃO altera projects.contract_model (legado NULL / herda empresa)
+-- NÃO desabilita nenhum trigger (incluindo trg_project_contract_model_link_tenant)
 -- NÃO apaga Estrela do Sul / system_seed
 -- NÃO marca LF ESTRELA como padrão (o usuário seleciona no dropdown e salva)
 -- Empresa: mesma origem do GIS (company_id || tenant_id) + relações reais do project_id
--- HTML oficial do commit b346e09 (buildLfEstrelaCustomHtml)
+-- Vínculo: só INSERT se project_company_uuid(project) = empresa resolvida
+-- HTML: interpolado de buildLfEstrelaCustomHtml() — não editar o texto jurídico neste arquivo
 -- =============================================================================
 
 BEGIN;
@@ -57,7 +64,6 @@ DECLARE
   v_project_company_uuid uuid;
   v_candidate_count int;
   v_candidate_dump text;
-  v_bypass_trigger boolean := false;
   v_model_id uuid;
   v_draft_id uuid;
   v_published_html text;
@@ -214,7 +220,6 @@ BEGIN
         INTO v_company_id, v_origin
       FROM lf_estrela_company_hits h
       GROUP BY h.company_id;
-      v_bypass_trigger := (v_project_company_uuid IS NULL);
     ELSIF COALESCE(v_candidate_count, 0) = 0 THEN
       RAISE EXCEPTION
         'ABORT: não foi possível determinar a empresa do project_id %. projects.company_id=% projects.tenant_id=% contract_model=%. Nenhuma relação sales/blocks/owner/split/conta financeira apontou para uma companies.id.',
@@ -234,16 +239,34 @@ BEGIN
     RAISE EXCEPTION 'ABORT: company_id resolvido não existe em companies';
   END IF;
 
-  RAISE NOTICE 'VALIDAÇÃO LF ESTRELA — project_id=% project_name=% projects.company_id=% projects.tenant_id=% projects.contract_model=% company_id=% company_name=% origem=% bypass_trigger=%',
+  RAISE NOTICE 'VALIDAÇÃO LF ESTRELA — project_id=% project_name=% projects.company_id=% projects.tenant_id=% projects.contract_model=% project_company_uuid=% company_id=% company_name=% origem=%',
     v_project_id,
     v_project_name,
     v_project_company_col,
     v_project_tenant_col,
     v_project_model,
+    v_project_company_uuid,
     v_company_id,
     v_company_name,
-    v_origin,
-    v_bypass_trigger;
+    v_origin;
+
+  -- trg_project_contract_model_link_tenant / enforce_project_contract_model_link_tenant:
+  -- 1) model.company_id = project_company_uuid(project)
+  -- 2) NEW.company_id = model.company_id
+  -- project_company_uuid só lê projects.company_id (UUID) ou, se nulo, projects.tenant_id (UUID).
+  -- Se ambos forem NULL, o trigger RAISE 'project_contract_model_links cannot cross tenant'.
+  -- Este script não atualiza o projeto e não desabilita o trigger.
+  IF v_project_company_uuid IS NULL THEN
+    RAISE EXCEPTION
+      'ABORT: trg_project_contract_model_link_tenant rejeitaria o INSERT. Condição: project_company_uuid(project) IS NULL (projects.company_id=% / projects.tenant_id=%). Mensagem oficial: project_contract_model_links cannot cross tenant. Empresa resolvida pelas relações reais: % (%). Alternativa segura (passo humano, fora deste SQL): preencher somente projects.tenant_id com essa empresa UUID, sem alterar company_id nem contract_model, e reexecutar. Não desabilitar o trigger.',
+      v_project_company_col, v_project_tenant_col, v_company_id, v_company_name;
+  END IF;
+
+  IF v_project_company_uuid IS DISTINCT FROM v_company_id THEN
+    RAISE EXCEPTION
+      'ABORT: trg_project_contract_model_link_tenant rejeitaria o INSERT. Condição: project_company_uuid(%) IS DISTINCT FROM model/empresa resolvida (%). Mensagem oficial: project_contract_model_links cannot cross tenant. Este script não atualiza o projeto e não desabilita o trigger.',
+      v_project_company_uuid, v_company_id;
+  END IF;
 
   SELECT m.id
     INTO v_model_id
@@ -387,34 +410,19 @@ BEGIN
     );
   END IF;
 
-  BEGIN
-    IF v_bypass_trigger THEN
-      EXECUTE 'ALTER TABLE public.project_contract_model_links DISABLE TRIGGER trg_project_contract_model_link_tenant';
-    END IF;
-
-    INSERT INTO public.project_contract_model_links (
-      project_id,
-      company_id,
-      company_contract_model_id,
-      is_project_default
-    )
-    SELECT v_project_id, v_company_id, v_model_id, false
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM public.project_contract_model_links l
-      WHERE l.project_id = v_project_id
-        AND l.company_contract_model_id = v_model_id
-    );
-
-    IF v_bypass_trigger THEN
-      EXECUTE 'ALTER TABLE public.project_contract_model_links ENABLE TRIGGER trg_project_contract_model_link_tenant';
-    END IF;
-  EXCEPTION WHEN OTHERS THEN
-    IF v_bypass_trigger THEN
-      EXECUTE 'ALTER TABLE public.project_contract_model_links ENABLE TRIGGER trg_project_contract_model_link_tenant';
-    END IF;
-    RAISE;
-  END;
+  INSERT INTO public.project_contract_model_links (
+    project_id,
+    company_id,
+    company_contract_model_id,
+    is_project_default
+  )
+  SELECT v_project_id, v_company_id, v_model_id, false
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.project_contract_model_links l
+    WHERE l.project_id = v_project_id
+      AND l.company_contract_model_id = v_model_id
+  );
 
   RAISE NOTICE 'LF ESTRELA publicado. company=% (%) project=% origem=% model=%',
     v_company_id, v_company_name, v_project_id, v_origin, v_model_id;
@@ -457,9 +465,14 @@ WHERE m.name = '${LF_ESTRELA_MODEL_NAME}'
 ORDER BY v.version DESC;
 `;
 
+  if (/DISABLE\s+TRIGGER/i.test(sql) || /ENABLE\s+TRIGGER/i.test(sql)) {
+    throw new Error('SQL gerado não pode alterar estado de trigger de integridade');
+  }
+  const match = assertLfEstrelaSqlHtmlMatchesOfficial(sql, html);
+
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, sql, 'utf8');
-  console.log(JSON.stringify({ out: OUT, htmlChars: html.length }, null, 2));
+  console.log(JSON.stringify({ out: OUT, htmlChars: match.chars, sha256: match.sha256 }, null, 2));
 }
 
 main();

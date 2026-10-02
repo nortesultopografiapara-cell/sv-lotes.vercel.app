@@ -50,6 +50,11 @@ import {
   findLfEstrelaPageMarkers,
   isLfEstrelaModelName,
 } from '../lib/lfEstrelaCustomTemplate';
+import {
+  assertLfEstrelaSqlHtmlMatchesOfficial,
+  extractLfEstrelaHtmlFromDevelopPublishSql,
+  sha256Utf8,
+} from './develop/lfEstrelaPublishSqlHtml';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -557,9 +562,29 @@ assert(helpers.includes("status', 'published'"), 'lista só versões publicadas'
 assert(helpers.includes('is_project_default'), 'lista lê vínculo do empreendimento');
 
 const publishSql = read('scripts/develop/sql/publish-lf-estrela-v1.develop.sql');
+const generatorSrc = read('scripts/develop/generate-publish-lf-estrela-sql.ts');
 assert(publishSql.includes('760c32d8-4c43-403b-986c-9872011f44cd'), 'SQL usa o project_id real do DEVELOP');
 assert(publishSql.includes('project_company_uuid'), 'SQL resolve empresa pela origem GIS');
 assert(!publishSql.includes('ABORT: motor do empreendimento não é ESTRELA_DO_SUL'), 'SQL legado não exige contract_model ESTRELA_DO_SUL');
 assert(!/FROM public\\.projects p\\s+WHERE p\\.company_id = v_company_id/.test(publishSql), 'SQL não exige projects.company_id preenchido');
+assert(!/DISABLE\s+TRIGGER/i.test(publishSql), 'SQL publicado não contém DISABLE TRIGGER');
+assert(!/ENABLE\s+TRIGGER/i.test(publishSql), 'SQL publicado não contém ENABLE TRIGGER');
+assert(!publishSql.includes('v_bypass_trigger'), 'SQL não contorna trg_project_contract_model_link_tenant');
+assert(!/DISABLE\s+TRIGGER/i.test(generatorSrc), 'gerador não emite DISABLE TRIGGER');
+assert(!/ENABLE\s+TRIGGER/i.test(generatorSrc), 'gerador não emite ENABLE TRIGGER');
+assert(publishSql.includes('project_contract_model_links cannot cross tenant'), 'SQL documenta a rejeição oficial do trigger');
+assert(publishSql.includes('NÃO altera projects.tenant_id'), 'SQL não atualiza tenant_id automaticamente');
+assert(
+  publishSql.includes('SELECT v_project_id, v_company_id, v_model_id, false'),
+  'vínculo is_project_default=false',
+);
+
+const officialHtml = buildLfEstrelaCustomHtml();
+const htmlFromSql = extractLfEstrelaHtmlFromDevelopPublishSql(publishSql);
+assert(htmlFromSql === officialHtml, 'HTML do SQL DEVELOP é byte-a-byte igual a buildLfEstrelaCustomHtml()');
+const htmlMatch = assertLfEstrelaSqlHtmlMatchesOfficial(publishSql, officialHtml);
+assert(htmlMatch.sha256 === sha256Utf8(officialHtml), 'SHA-256 do HTML publicado = SHA-256 da fonte oficial');
+assert(!htmlFromSql.includes('ramoção'), 'HTML oficial não contém typo ramoção');
+assert(!htmlFromSql.includes('reamescente'), 'HTML oficial não contém typo reamescente');
 
 console.log('\nOK — testes obrigatórios LF ESTRELA.');
