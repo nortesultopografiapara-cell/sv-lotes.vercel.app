@@ -29,7 +29,7 @@ console.log('\n=== A) Helper canônico compartilhado ===');
   ok(helper.includes('loadSignedSaleContractArtifact'), 'helper load');
   ok(helper.includes('resolveSignedContractArtifactMeta'), 'helper meta');
   ok(helper.includes('loadSaleContractPdfForSign'), 'regen = admin');
-  ok(helper.includes('getLatestSignedSaleSignature'), 'SIGNED process');
+  ok(helper.includes('getContractSignedParties'), 'parties = fonte da tela /contracts');
   ok(helper.includes('pdf_signed_url'), 'fallback URL');
 
   const adminRoute = readFileSync(

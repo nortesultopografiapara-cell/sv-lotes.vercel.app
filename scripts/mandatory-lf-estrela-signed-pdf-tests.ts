@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import type { ContractSignaturePartyRow } from '../lib/saleContractSignaturePartyTypes';
+import { resolveSignedPdfReadiness } from '../lib/saleContractSignedParties';
 import {
   composeLfEstrelaSignedPdf,
   LF_ESTRELA_SIGNED_INSTRUMENT_PAGES,
@@ -98,6 +99,18 @@ function testSourceGuards() {
   assert(page.includes('/physical-pdf'), 'POST freeze no Baixar PDF');
   assert(route.includes('persistLfEstrelaPhysicalPdf'), 'API freeze persiste pdf_url');
   assert(read('lib/saleContractStorage.ts').includes('sale-physical'), 'path físico separado do assinado');
+  assert(
+    read('lib/saleContractSignedParties.ts').includes('getContractSignedParties'),
+    'fonte de verdade única getContractSignedParties',
+  );
+  assert(
+    read('lib/saleContractSignedArtifact.ts').includes('getContractSignedParties'),
+    'PDF assinado usa a mesma fonte da tela',
+  );
+  assert(
+    !read('lib/saleContractSignatureService.ts').includes(".eq('signature_status', 'SIGNED')"),
+    'PDF não exige mais signature_status=SIGNED exato no processo',
+  );
 }
 
 function testPartialStamps() {
@@ -205,9 +218,39 @@ async function testComposePreservesInstrumentPages() {
   );
 }
 
+function testSignedPdfFindsPartiesWithoutLegacyField() {
+  const threeSigned = [
+    party('BUYER', 'SEVERINO JOSE DE FRANÇA', 'SIGNED'),
+    party('VENDOR', 'LUZIA FELIPE DE SOUSA', 'SIGNED'),
+    party('VENDOR', 'ANTONIO FERREIRA SILVA', 'SIGNED'),
+  ];
+  const ready = resolveSignedPdfReadiness({
+    processStatus: 'PARTIALLY_SIGNED',
+    parties: threeSigned,
+  });
+  assert(ready.ready === true, '3 parties SIGNED + legado vazio/parcial → PDF DEVE funcionar');
+  assert(ready.signedCount === 3, 'signedCount = 3');
+  assert(ready.signatureSource === 'parties_aggregate', 'fonte = parties, não campo legado');
+
+  const none = resolveSignedPdfReadiness({
+    processStatus: null,
+    parties: [],
+  });
+  assert(none.ready === false, '0 parties assinadas → sem PDF assinado');
+  assert(none.signedCount === 0, 'signedCount = 0');
+  assert(none.signatureSource === 'none', 'fonte nenhuma');
+
+  const legacyProcess = resolveSignedPdfReadiness({
+    processStatus: 'signed',
+    parties: [],
+  });
+  assert(legacyProcess.ready === true, 'processo SIGNED legado (casing) ainda funciona');
+}
+
 async function main() {
   testSourceGuards();
   testPartialStamps();
+  testSignedPdfFindsPartiesWithoutLegacyField();
   await testComposePreservesInstrumentPages();
   console.log('OK — mandatory-lf-estrela-signed-pdf-tests passed');
 }

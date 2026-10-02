@@ -10,10 +10,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSaleContractFullySigned } from '@/lib/saleContractDashboardStats';
 import { fetchPdfBytesFromUrl } from '@/lib/saasContractPdfHttp';
 import {
-  getLatestSignedSaleSignature,
   loadSaleContractPdfForSign,
   loadSaleSignPageContext,
 } from '@/lib/saleContractSignatureService';
+import {
+  getContractSignedParties,
+  hydrateSignatureRowForSignedPdf,
+  logSignedPdfTrace,
+} from '@/lib/saleContractSignedParties';
 import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
 
 export type SignedSaleContractArtifactSource =
@@ -64,7 +68,8 @@ export function resolveSignedContractArtifactMeta(contract: {
 
 /**
  * Carrega bytes do PDF assinado — mesma ordem do endpoint admin.
- * Requer processo SIGNED (getLatestSignedSaleSignature) e/ou pdf_signed_url.
+ * Fonte de verdade: parties (igual à tela /contracts) + processo, não só
+ * contract_signatures.signature_status = 'SIGNED' exato.
  */
 export async function loadSignedSaleContractArtifact(
   supabaseAdmin: SupabaseClient,
@@ -78,7 +83,7 @@ export async function loadSignedSaleContractArtifact(
   if (!row) {
     const { data } = await supabaseAdmin
       .from('contracts')
-      .select('id, contract_number, status, signature_status, pdf_signed_url, tenant_id, company_id')
+      .select('id, contract_number, status, signature_status, pdf_signed_url, tenant_id, company_id, sale_id, regenerated_from')
       .eq('id', id)
       .maybeSingle();
     row = (data as Record<string, unknown>) || null;
@@ -86,9 +91,37 @@ export async function loadSignedSaleContractArtifact(
   if (!row) return null;
 
   const contractNumber = String(row.contract_number || id).trim();
-  const signature = await getLatestSignedSaleSignature(supabaseAdmin, id);
+  const resolved = await getContractSignedParties(supabaseAdmin, id, {
+    saleId: String(row.sale_id || '').trim() || null,
+    regeneratedFrom: String(row.regenerated_from || '').trim() || null,
+  });
 
-  if (signature) {
+  logSignedPdfTrace({
+    contractId: id,
+    contractNumber,
+    uiSignatureParties: resolved.signerNames,
+    pdfSignatureParties: resolved.signerNames,
+    signedCount: resolved.signedCount,
+    totalCount: resolved.totalCount,
+    statuses: resolved.statuses,
+    signedAt: resolved.signedAt,
+    signatureSource: resolved.signatureSource,
+    processStatus: resolved.process?.signature_status || null,
+    processId: resolved.process?.id || null,
+    legacyContractSignatureStatus: row.signature_status || null,
+    legacyContractStatus: row.status || null,
+  });
+
+  const signature = resolved.process
+    ? hydrateSignatureRowForSignedPdf(resolved.process, resolved.parties)
+    : null;
+
+  if (resolved.signatureSource !== 'none') {
+    if (!signature) {
+      throw new Error(
+        'Assinaturas eletrônicas encontradas nas parties, mas o processo (contract_signatures) não foi localizado.',
+      );
+    }
     try {
       const signContext = await loadSaleSignPageContext(supabaseAdmin, signature);
       const { pdf, contractNumber: num } = await loadSaleContractPdfForSign(
@@ -105,10 +138,26 @@ export async function loadSignedSaleContractArtifact(
         };
       }
     } catch (regenErr) {
-      console.warn('[SIGNED_SALE_ARTIFACT] regeneration failed', {
+      console.error('[SIGNED PDF TRACE] generation failed', {
         contractId: id.slice(0, 8),
+        contractNumber,
+        signedCount: resolved.signedCount,
+        signatureSource: resolved.signatureSource,
         message: regenErr instanceof Error ? regenErr.message : String(regenErr),
       });
+      const storedSignedUrl = String(row.pdf_signed_url || '').trim();
+      if (storedSignedUrl) {
+        const bytes = await fetchPdfBytesFromUrl(storedSignedUrl);
+        if (bytes && bytes.byteLength >= 5) {
+          return {
+            bytes,
+            source: 'pdf_signed_url',
+            contractNumber,
+            contractId: id,
+          };
+        }
+      }
+      throw regenErr;
     }
   }
 

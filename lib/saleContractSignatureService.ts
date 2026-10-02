@@ -2282,15 +2282,11 @@ export async function getLatestSignedSaleSignature(
   supabaseAdmin: SupabaseClient,
   contractId: string,
 ): Promise<ContractSignatureRow | null> {
-  const { data } = await supabaseAdmin
-    .from('contract_signatures')
-    .select('*')
-    .eq('contract_id', contractId)
-    .eq('signature_status', 'SIGNED')
-    .order('signed_at', { ascending: false })
-    .limit(10);
-  const row = excludeTerminationSignatures((data || []) as ContractSignatureRow[])[0];
-  return row || null;
+  const { getContractSignedParties } = await import(
+    '@/lib/saleContractSignedParties'
+  );
+  const resolved = await getContractSignedParties(supabaseAdmin, contractId);
+  return resolved.process;
 }
 
 export async function loadSaleSignPageContext(
