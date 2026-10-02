@@ -130,10 +130,16 @@ assert(html.includes('CAPA RESUMO DO CONTRATO DE PROMESSA DE COMPRA E VENDA'), '
 assert(html.includes('INFRAESTRUTURA ESSENCIAL'), 'bloco de infraestrutura');
 assert((html.match(/COMPRADOR 1/g) || []).length >= 2, 'dois blocos de assinatura (capa + instrumento)');
 assert((html.match(/WITNESS_1_NAME/g) || []).length >= 2, 'testemunhas nos dois blocos');
-assert((html.match(/data-sv-page-break/g) || []).length === 8, 'oito quebras estruturais (P4+P5 fluem juntos)');
-assert((html.match(/data-sv-lf-page="/g) || []).length === 9, 'nove seções estruturais; financeiro+cláusula 3 fluem na mesma seção');
-assert((html.match(/data-sv-company-logo/g) || []).length === 9, 'um logo por seção estrutural');
-assert(html.includes('sv-lf-keep-with-next'), 'título de cláusula + primeiro parágrafo ficam juntos');
+assert((html.match(/data-sv-page-break/g) || []).length === 7, 'sete quebras estruturais (5.1–6.5 fluem juntos)');
+assert((html.match(/data-sv-lf-page="/g) || []).length === 8, 'oito seções estruturais; 5.1 não fica órfão antes de quebra');
+assert((html.match(/data-sv-company-logo/g) || []).length === 8, 'um logo por seção estrutural');
+assert(html.includes('sv-lf-keep-with-next'), 'título de cláusula permanece junto do início do primeiro parágrafo');
+const keepBlocks = html.match(/<div class="sv-lf-keep-with-next">[\s\S]*?<\/div>/g) || [];
+assert(keepBlocks.length >= 12, 'keep-with-next em cada abertura de cláusula');
+assert(
+  keepBlocks.every((block) => !block.includes('<p')),
+  'keep-with-next só no título da cláusula, sem parágrafo jurídico longo',
+);
 assert(
   (html.match(/sv-lf-keep-para/g) || []).length === 1,
   'keep-para só no parágrafo individual 2.9.1',
@@ -148,7 +154,7 @@ assert(
 );
 
 const capaPages = html.split(/<div data-sv-page-break="true"[^>]*><\/div>/);
-assert(capaPages.length === 9, 'Capa + infra + instrumento sem página órfã de notas/título');
+assert(capaPages.length === 8, 'Capa + infra + instrumento sem página órfã de 5.1/título');
 assert(
   capaPages[0].includes('CAPA RESUMO') &&
     capaPages[0].includes('DAS PARTES CONTRATANTES') &&
@@ -181,28 +187,24 @@ assert(
     capaPages[3].includes('<sup>6</sup>') &&
     capaPages[3].includes('2.9.2') &&
     capaPages[3].includes('CLÁUSULA TERCEIRA') &&
-    capaPages[3].includes('5.1.'),
-  'financeiro + notas 5–6 + cláusula 3 fluem juntos (sem página vazia)',
+    capaPages[3].includes('5.1.') &&
+    capaPages[3].includes('5.2.') &&
+    capaPages[3].includes('6.5.') &&
+    !capaPages[3].includes('CLÁUSULA SÉTIMA'),
+  'financeiro até 6.5 fluem juntos (5.1 não gera página vazia)',
 );
 assert(
-  capaPages[4].includes('5.2.') &&
-    capaPages[4].includes('6.5.') &&
-    !capaPages[4].includes('CLÁUSULA SÉTIMA') &&
-    !capaPages[4].includes('7.1.'),
-  '5.2–6.5 sem título órfão da sétima',
-);
-assert(
-  capaPages[5].includes('CLÁUSULA SÉTIMA') &&
-    capaPages[5].includes('7.1.') &&
-    capaPages[5].includes('CLÁUSULA NONA'),
+  capaPages[4].includes('CLÁUSULA SÉTIMA') &&
+    capaPages[4].includes('7.1.') &&
+    capaPages[4].includes('CLÁUSULA NONA'),
   'Cláusula Sétima acompanha 7.1 na mesma página estrutural',
 );
-assert(capaPages[6].includes('9.2.') && capaPages[6].includes('CLÁUSULA DÉCIMA'), 'continuação da nona + décima');
-assert(capaPages[7].includes('10.3.') && capaPages[7].includes('12.2.'), '10.3–12.2');
+assert(capaPages[5].includes('9.2.') && capaPages[5].includes('CLÁUSULA DÉCIMA'), 'continuação da nona + décima');
+assert(capaPages[6].includes('10.3.') && capaPages[6].includes('12.2.'), '10.3–12.2');
 assert(
-  capaPages[8].includes('12.3.') &&
-    capaPages[8].includes('CLÁUSULA DÉCIMA SEGUNDA') === false &&
-    capaPages[8].includes('lf-estrela-signatures'),
+  capaPages[7].includes('12.3.') &&
+    capaPages[7].includes('CLÁUSULA DÉCIMA SEGUNDA') === false &&
+    capaPages[7].includes('lf-estrela-signatures'),
   'fechamento 12.3–12.7 + data + assinaturas',
 );
 assert(!html.includes('sv-lf-keepTogether'), 'assinatura da Capa sem keepTogether de página inteira');
@@ -221,6 +223,8 @@ assert(!/30 DE SETEMBRO DE 2026/i.test(html), 'data de assinatura é token');
 assert(html.includes('{{CLIENT_NAME}}'), 'comprador dinâmico');
 assert(html.includes('{{BLOCK_NAME}}') && html.includes('{{LOT_NUMBER}}'), 'imóvel dinâmico');
 assert(html.includes('{{SALE_VALUE}}') && html.includes('{{BROKER_COMMISSION}}'), 'financeiro dinâmico');
+assert(html.includes('{{INSTALLMENTS_SCHEDULE}}'), 'descrição de parcelas dinâmica');
+assert(!html.includes('parcelas de {{INSTALLMENT_VALUE}}'), 'não imprime só a 1ª parcela como se todas fossem iguais');
 assert(html.includes('{{CONTRACT_DATE_EXTENSO}}'), 'data dinâmica por extenso');
 assert(html.includes('2% (dois por cento) sobre a parcela vencida'), 'constante jurídica multa 2%');
 assert(html.includes('1% (um por cento) ao mês'), 'constante jurídica juros 1%');
@@ -393,7 +397,7 @@ const html30 = fillCustomPlaceholdersForPreview(html, {
 assert(html30.includes('30% do valor e 70%'), '30/70 só aparece quando a venda resolve esse percentual');
 
 const pages = countVisualA4Pages(html);
-assert(pages === 9, `quebras estruturais sem páginas órfãs (contado=${pages}; PDF visual ~10 pelo fluxo P4+P5)`);
+assert(pages === 8, `quebras estruturais sem páginas órfãs (contado=${pages}; PDF visual ~10 pelo fluxo 5.1–6.5)`);
 
 const printLike = `<div class="sv-a4-sheet sv-a4-prose">${previewHtml}</div>`;
 markerScan('PDF/print HTML', printLike);
@@ -447,8 +451,9 @@ const homologValues: Record<string, string | null> = {
   PAYMENT_TYPE: 'Parcelado',
   DOWN_PAYMENT: 'R$ 10,00',
   INSTALLMENTS_COUNT: '5',
-  INSTALLMENT_VALUE: 'R$ 10,57',
-  FIRST_DUE_DATE: '25/09/2026',
+  INSTALLMENT_VALUE: 'R$ 15,21',
+  INSTALLMENTS_SCHEDULE: '5 parcelas — 1ª à 3ª de R$ 15,21; 4ª à 5ª de R$ 12,88',
+  FIRST_DUE_DATE: '05/10/2026',
   CONTRACT_DATE_EXTENSO: 'VINTE E CINCO DE SETEMBRO DE DOIS MIL E VINTE E SEIS',
   PARTNERSHIP_NOTE:
     'Será repassado ao primeiro vendedor, L.F. IMÓVEIS LTDA, 40% do valor e 60% ao segundo vendedor, ANTONIO FERREIRA SILVA, sócio citado no contrato de parceria através de boleto o qual fará a distribuição dos valores para ambas as contas, mensalmente seguindo assim até a quitação do objeto em questão.',
@@ -480,8 +485,12 @@ assert(composedFinal.html.includes('628,26 m²'), 'fixture homolog: área');
 assert(composedFinal.html.includes('40%'), 'fixture homolog: 40/60');
 assert(composedFinal.html.includes('R$ 62,83'), 'fixture homolog: valor');
 assert(composedFinal.html.includes('R$ 10,00'), 'fixture homolog: sinal');
-assert(composedFinal.html.includes('R$ 10,57'), 'fixture homolog: parcelas');
-assert(composedFinal.html.includes('25/09/2026'), 'fixture homolog: 1º vencimento');
+assert(
+  composedFinal.html.includes('5 parcelas — 1ª à 3ª de R$ 15,21; 4ª à 5ª de R$ 12,88'),
+  'fixture homolog: cronograma real das parcelas',
+);
+assert(!composedFinal.html.includes('5 parcelas de R$ 15,21'), 'não imprime 5 parcelas iguais à 1ª');
+assert(composedFinal.html.includes('05/10/2026'), 'fixture homolog: 1º vencimento');
 assert(!composedFinal.html.includes('generateEstrelaDoSulContract'), 'HTML CUSTOM não chama o motor');
 
 const withSpouse = composeLfEstrelaContractHtml(

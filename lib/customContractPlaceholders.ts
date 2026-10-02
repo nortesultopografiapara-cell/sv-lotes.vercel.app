@@ -254,6 +254,12 @@ export const CUSTOM_PLACEHOLDERS: CustomPlaceholderDef[] = [
   field('INSTALLMENTS_COUNT', 'Quantidade de parcelas', 'finance', 'sales.installments_count + receipts ≥ 1'),
   field('INSTALLMENT_VALUE', 'Valor da parcela', 'finance', 'finance_receipts installment_number ≥ 1'),
   field(
+    'INSTALLMENTS_SCHEDULE',
+    'Descrição das parcelas',
+    'finance',
+    'grupos reais de finance_receipts installment_number ≥ 1',
+  ),
+  field(
     'SALE_DUE_DATE',
     'Data de vencimento',
     'finance',

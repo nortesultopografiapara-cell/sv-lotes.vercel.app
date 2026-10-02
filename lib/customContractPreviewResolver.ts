@@ -29,6 +29,7 @@ import {
 } from '@/lib/lfImoveisContractConfig';
 import { hasLfContractSnapshot, readSaleLfSnapshotRaw } from '@/lib/lfImoveisContractSnapshot';
 import { formatEstrelaEnterpriseLocation } from '@/lib/estrelaDoSulContractFormat';
+import { formatInstallmentScheduleDescription } from '@/lib/installmentScheduleDescription';
 import {
   CUSTOM_PLACEHOLDERS,
   customPlaceholderLabel,
@@ -283,6 +284,10 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
   );
   const parcelRecs = receipts.filter((row) => Number(row.installment_number) >= 1);
   const installmentValue = money(parcelRecs[0]?.amount ?? sale.installment_value);
+  const installmentsSchedule = formatInstallmentScheduleDescription(parcelRecs, {
+    count: pick(parcelRecs.length || null, sale.installments_count),
+    value: parcelRecs[0]?.amount ?? sale.installment_value,
+  });
   const today = input.today || new Date();
   const contractDateRaw = pick(
     contract.contract_date,
@@ -391,6 +396,7 @@ export function resolveCustomPreviewValues(input: CustomPreviewInput): Record<st
       sale.installments_count,
     ),
     INSTALLMENT_VALUE: installmentValue,
+    INSTALLMENTS_SCHEDULE: installmentsSchedule,
     SALE_DUE_DATE: saleDueDate,
     FIRST_DUE_DATE: firstDue,
     LAST_DUE_DATE: pick(dates.lastInstallmentDueFmt, formatContractDueDateBr(dates.lastInstallmentDueRaw)),

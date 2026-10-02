@@ -106,7 +106,7 @@ function financeRows(arrasNote: number, parcelasNote: number): string[][] {
     ],
     [
       `PARCELAS E VALORES<sup>${parcelasNote}</sup>`,
-      `${t('INSTALLMENTS_COUNT')} parcelas de ${t('INSTALLMENT_VALUE')}`,
+      t('INSTALLMENTS_SCHEDULE'),
     ],
     ['VENCIMENTO DAS 1ª PARCELA', t('FIRST_DUE_DATE')],
     ['ÍNDICE DE CORREÇÃO ANUAL', t('CORRECTION_INDEX')],
@@ -167,7 +167,7 @@ function clauseHead(main: string, sub: string): string {
 }
 
 function clauseOpen(main: string, sub: string, firstHtml: string): string {
-  return `<div class="sv-lf-keep-with-next">${clauseHead(main, sub)}${firstHtml}</div>`;
+  return `<div class="sv-lf-keep-with-next">${clauseHead(main, sub)}</div>${firstHtml}`;
 }
 
 function dateLine(): string {
@@ -288,8 +288,7 @@ export const LF_ESTRELA_REQUIRED_TOKENS = [
   'BROKER_COMMISSION_EXTENSO',
   'DOWN_PAYMENT',
   'DOWN_PAYMENT_EXTENSO',
-  'INSTALLMENTS_COUNT',
-  'INSTALLMENT_VALUE',
+  'INSTALLMENTS_SCHEDULE',
   'FIRST_DUE_DATE',
   'CORRECTION_INDEX',
   'CONTRACT_DATE_EXTENSO',
@@ -430,8 +429,6 @@ ${clauseOpen(
   'DA EDIFICAÇÃO IRREGULAR E SUAS PENALIDADES',
   p('<strong>5.1.</strong> Da Infração: A execução de qualquer obra, edificação, benfeitoria ou supressão de vegetação em desacordo com as condições estipuladas neste contrato (incluindo a ausência de prévia e expressa autorização da VENDEDORA), bem como o desrespeito às normas ambientais, urbanísticas ou aos recuos obrigatórios do lote rural individualizado, configurará infração contratual grave e posse de má-fé por parte do COMPRADOR.'),
 )}
-`)}
-${lfPage(6, `
 ${p('<strong>5.2.</strong> Das Sanções e Demolição: Constatada a irregularidade, o COMPRADOR será notificado extrajudicialmente para, no prazo improrrogável de 15 (quinze) dias, paralisar a obra e promover a demolição e o desfazimento das intervenções irregulares, arcando integralmente com os custos de remoção de entulhos e de ações necessárias para a recuperação da área.')}
 ${p('<strong>I.</strong> O descumprimento da notificação sujeitará o COMPRADOR ao pagamento de multa não compensatória equivalente a 10% (dez por cento) do valor atualizado deste contrato, sem prejuízo da rescisão de pleno direito do presente instrumento.')}
 ${p('<strong>II.</strong> Fica resguardado à VENDEDORA o direito de, a seu exclusivo critério, promover a demolição das obras irregulares às custas do COMPRADOR, cobrando-lhe os valores despendidos com acréscimo de juros e correção monetária.')}

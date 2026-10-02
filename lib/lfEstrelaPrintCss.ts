@@ -95,6 +95,10 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   page-break-inside: avoid;
   break-inside: avoid;
 }
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-keep-with-next + p {
+  page-break-before: avoid;
+  break-before: avoid;
+}
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-section,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-clause-title {

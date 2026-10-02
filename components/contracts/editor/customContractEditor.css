@@ -687,6 +687,12 @@
   page-break-inside: avoid;
 }
 
+.sv-a4-sheet .sv-lf-estrela .sv-lf-keep-with-next + p,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-keep-with-next + p {
+  break-before: avoid;
+  page-break-before: avoid;
+}
+
 .sv-a4-sheet .sv-lf-estrela .sv-lf-footnotes,
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-footnotes {
   margin: 6px 0 0;
