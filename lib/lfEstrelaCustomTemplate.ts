@@ -25,21 +25,21 @@ function p(html: string, className = ''): string {
   return `<p${cls}>${html}</p>`;
 }
 
-function th(text: string, width: number): string {
-  return `<th colspan="1" rowspan="1" colwidth="${width}" style="width:${width}px">${text}</th>`;
+function th(text: string, pct: number): string {
+  return `<th colspan="1" rowspan="1" style="width:${pct}%">${text}</th>`;
 }
 
-function td(html: string, width?: number): string {
-  const attr = width ? ` colwidth="${width}" style="width:${width}px"` : '';
+function td(html: string, pct?: number): string {
+  const attr = pct ? ` style="width:${pct}%"` : '';
   return `<td colspan="1" rowspan="1"${attr}>${html}</td>`;
 }
 
-function table(className: string, head: string[], widths: number[], rows: string[][]): string {
-  const headRow = `<tr>${head.map((cell, i) => th(cell, widths[i] || 120)).join('')}</tr>`;
+function table(className: string, head: string[], pcts: number[], rows: string[][]): string {
+  const headRow = `<tr>${head.map((cell, i) => th(cell, pcts[i] || 50)).join('')}</tr>`;
   const body = rows
     .map(
       (row) =>
-        `<tr>${row.map((cell, i) => td(cell, widths[i])).join('')}</tr>`,
+        `<tr>${row.map((cell, i) => td(cell, pcts[i])).join('')}</tr>`,
     )
     .join('');
   return `<table class="${className}"><thead>${headRow}</thead><tbody>${body}</tbody></table>`;
@@ -102,7 +102,7 @@ function objectTable(extraClass = ''): string {
   return table(
     `sv-lf-table sv-lf-table-object ${extraClass}`.trim(),
     ['Informação', 'Detalhamento'],
-    [210, 448],
+    [32, 68],
     objectRows(),
   );
 }
@@ -111,7 +111,7 @@ function financeTable(extraClass = ''): string {
   return table(
     `sv-lf-table sv-lf-table-finance ${extraClass}`.trim(),
     ['ITEM', 'VALOR / DETALHAMENTO'],
-    [280, 378],
+    [43, 57],
     financeRows(),
   );
 }
@@ -120,16 +120,16 @@ function signatureBlock(opts: { witnessLeftLabel: string }): string {
   const line = '<p class="sv-lf-sign-line">______________________________</p>';
   return `<table class="sv-lf-sign sv-lf-keep"><tbody>
 <tr>
-${td(`${line}<p><strong>COMPRADOR 1</strong></p><p>CPF n° ${t('CLIENT_CPF')}</p><p>${t('CLIENT_NAME')}</p>`, 329)}
-${td(`${line}<p><strong>${t('COMPANY_LEGAL_NAME')}</strong></p><p>CNPJ ${t('COMPANY_CNPJ')}</p>`, 329)}
+${td(`${line}<p><strong>COMPRADOR 1</strong></p><p>CPF n° ${t('CLIENT_CPF')}</p><p>${t('CLIENT_NAME')}</p>`, 50)}
+${td(`${line}<p><strong>${t('COMPANY_LEGAL_NAME')}</strong></p><p>CNPJ ${t('COMPANY_CNPJ')}</p>`, 50)}
 </tr>
 <tr>
-${td(`${line}<p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p><p>${t('SPOUSE_NAME')}</p>`, 329)}
-${td(`${line}<p><strong>${t('SELLER_2_NAME')}</strong></p><p>CPF n°: ${t('SELLER_2_CPF_CNPJ')}</p>`, 329)}
+${td(`${line}<p><strong>COMPRADOR 2</strong></p><p>CPF n° ${t('SPOUSE_CPF')}</p><p>${t('SPOUSE_NAME')}</p>`, 50)}
+${td(`${line}<p><strong>${t('SELLER_2_NAME')}</strong></p><p>CPF n°: ${t('SELLER_2_CPF_CNPJ')}</p>`, 50)}
 </tr>
 <tr>
-${td(`${line}<p><strong>${opts.witnessLeftLabel}</strong></p><p>CPF n°: ${t('WITNESS_1_CPF')}</p><p>${t('WITNESS_1_NAME')}</p>`, 329)}
-${td(`${line}<p><strong>TESTEMUNHA 2</strong></p><p>CPF n°: ${t('WITNESS_2_CPF')}</p><p>${t('WITNESS_2_NAME')}</p>`, 329)}
+${td(`${line}<p><strong>${opts.witnessLeftLabel}</strong></p><p>CPF n°: ${t('WITNESS_1_CPF')}</p><p>${t('WITNESS_1_NAME')}</p>`, 50)}
+${td(`${line}<p><strong>TESTEMUNHA 2</strong></p><p>CPF n°: ${t('WITNESS_2_CPF')}</p><p>${t('WITNESS_2_NAME')}</p>`, 50)}
 </tr>
 </tbody></table>`;
 }
@@ -272,7 +272,7 @@ ${logo()}
 ${table(
   'sv-lf-table sv-lf-table-parties sv-lf-capa',
   ['Parte', 'Nome/Razão Social', 'Qualidade no Contrato', 'Documento – CNPJ/CPF'],
-  [110, 210, 168, 170],
+  [17, 32, 25, 26],
   [
     ['VENDEDOR (A)', t('COMPANY_LEGAL_NAME'), 'VENDEDOR (A)', t('COMPANY_CNPJ')],
     ['VENDEDOR (A)', t('SELLER_2_NAME'), 'VENDEDOR (A)', t('SELLER_2_CPF_CNPJ')],
@@ -288,7 +288,7 @@ ${financeTable('sv-lf-capa')}
 ${table(
   'sv-lf-table sv-lf-capa',
   ['ITEM', 'Detalhamento'],
-  [210, 448],
+  [32, 68],
   [['', '']],
 )}
 <p class="sv-lf-note"><sup>1</sup> É responsabilidade do(a) COMPRADOR(A) informar ao VENDEDOR(A) sobre seu estado civil (casado ou união estável), garantindo a inclusão do cônjuge/companheiro(a) neste contrato e na Escritura Pública, conforme exigência legal.</p>
@@ -300,7 +300,7 @@ ${logo()}
 ${table(
   'sv-lf-table sv-lf-table-infra sv-lf-capa',
   ['ITEM', 'Detalhamento'],
-  [280, 378],
+  [43, 57],
   [
     ['DOCUMENTO DE REFERÊNCIA DA OBRA', 'Planta Topográfica.'],
     [

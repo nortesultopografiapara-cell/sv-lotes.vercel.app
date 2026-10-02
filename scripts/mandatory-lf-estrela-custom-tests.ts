@@ -34,6 +34,10 @@ import {
   findLfEstrelaPageMarkers,
   isLfEstrelaModelName,
 } from '../lib/lfEstrelaCustomTemplate';
+import {
+  CUSTOM_A4_MARGIN_MM,
+  customA4ContentWidthMm,
+} from '../lib/customContractA4Layout';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -126,6 +130,10 @@ const css = read('components/contracts/editor/customContractEditor.css');
 assert(css.includes('.sv-lf-estrela'), 'CSS LF ESTRELA no editor/prévia/PDF');
 assert(css.includes('page-break-inside: auto'), 'tabelas podem atravessar páginas');
 assert(/table\.sv-lf-table[\s\S]{0,220}page-break-inside:\s*auto/.test(css), 'tabela LF quebra por linha');
+assert(CUSTOM_A4_MARGIN_MM === 15 && customA4ContentWidthMm() === 180, 'LF ESTRELA usa área útil 180mm');
+assert(css.includes('--paper-pad: 15mm'), 'margem visual 15mm no editor/prévia');
+assert(!/<t[hd]\b[^>]*style="width:\d+px"/.test(html), 'colunas LF não usam px que estouram a folha');
+assert(/<th[^>]*style="width:\d+%"/.test(html), 'colunas LF em % da área útil');
 
 const printSrc = read('lib/customContractPrint.ts');
 assert(printSrc.includes('printCustomContractPreview'), 'PDF usa a prévia paginada CUSTOM');
@@ -133,6 +141,11 @@ assert(!/generateEstrelaDoSulContract\s*\(/.test(printSrc), 'PDF não chama o mo
 assert(
   printSrc.includes('Não usa generateContractHTML') || !/generateContractHTML\s*\(/.test(printSrc),
   'PDF não usa generateContractHTML',
+);
+assert(/@page \{ size: A4; margin: 0; \}/.test(printSrc), 'PDF não duplica 15mm no @page');
+assert(
+  /<body class="sv-editor-preview-doc">\$\{html\}<\/body>/.test(printSrc),
+  'PDF imprime a folha já diagramada, sem segundo padding',
 );
 
 const templateSrc = read('lib/lfEstrelaCustomTemplate.ts');
@@ -273,7 +286,7 @@ assert(html30.includes('30% do valor e 70%'), '30/70 só aparece quando a venda 
 const pages = countVisualA4Pages(html);
 assert(pages >= 4, `quebras estruturais geram várias páginas (contado=${pages}; A4 live ~10)`);
 
-const printLike = `<div class="sv-a4-sheet sv-a4-prose sv-editor-preview-doc">${previewHtml}</div>`;
+const printLike = `<div class="sv-a4-sheet sv-a4-prose">${previewHtml}</div>`;
 markerScan('PDF/print HTML', printLike);
 assert(printLike.includes('MARIA HOMOLOG LF'), 'PDF recebe o HTML da prévia resolvida');
 

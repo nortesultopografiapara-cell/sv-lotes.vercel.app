@@ -1,7 +1,15 @@
 /**
  * Impressão / PDF do editor CUSTOM — mesma paginação visual A4.
  * Não usa generateContractHTML nem motores TypeScript.
+ *
+ * Área útil: A4 210mm com padding --paper-pad (15mm). @page margin 0
+ * para não duplicar a margem do conteúdo já diagramado.
  */
+import {
+  CUSTOM_A4_MARGIN_MM,
+  CUSTOM_A4_PAGE_MM,
+  CUSTOM_A4_WIDTH_MM,
+} from '@/lib/customContractA4Layout';
 
 export function printCustomContractPreview(root: HTMLElement, title = 'Contrato'): void {
   const html = root.innerHTML;
@@ -26,10 +34,16 @@ export function printCustomContractPreview(root: HTMLElement, title = 'Contrato'
   doc.write(`<!doctype html><html><head><title>${title}</title>${styles}
     <style>
       @page { size: A4; margin: 0; }
-      html, body { margin: 0; background: #fff; }
+      html, body {
+        margin: 0;
+        background: #fff;
+        --paper-width: ${CUSTOM_A4_WIDTH_MM}mm;
+        --paper-height: ${CUSTOM_A4_PAGE_MM}mm;
+        --paper-pad: ${CUSTOM_A4_MARGIN_MM}mm;
+      }
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     </style>
-  </head><body><div class="sv-a4-sheet sv-a4-prose sv-editor-preview-doc">${html}</div></body></html>`);
+  </head><body class="sv-editor-preview-doc">${html}</body></html>`);
   doc.close();
   const run = () => {
     try {

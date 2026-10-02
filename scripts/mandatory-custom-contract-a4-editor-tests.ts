@@ -51,6 +51,9 @@ import {
 } from '../lib/customContractLogo';
 import {
   a4PageIdentity,
+  CUSTOM_A4_MARGIN_MM,
+  CUSTOM_A4_PAGE_CONFIG,
+  customA4ContentWidthMm,
   planA4BlockSpacers,
   planA4Pages,
   shouldExplodeTableByHeight,
@@ -665,6 +668,25 @@ void (async () => {
   assert(css.includes('table-header-group'), 'cabeçalho de tabela pode repetir na página seguinte');
   assert(layoutLib.includes('shouldExplodeTableIntoRows') && layoutLib.includes('cloneRepeatedTableHeader'), 'tabela explode em linhas e repete thead');
   assert(layoutLib.includes('CUSTOM_A4_PAGE_CONFIG'), 'arquitetura de margens A4 preparada');
+  assert(CUSTOM_A4_MARGIN_MM === 15, 'margem segura A4 = 15mm');
+  assert(
+    CUSTOM_A4_PAGE_CONFIG.marginLeftMm === 15 &&
+      CUSTOM_A4_PAGE_CONFIG.marginRightMm === 15 &&
+      CUSTOM_A4_PAGE_CONFIG.marginTopMm === 15 &&
+      CUSTOM_A4_PAGE_CONFIG.marginBottomMm === 15,
+    '15mm em todos os lados',
+  );
+  assert(customA4ContentWidthMm() === 180, 'área útil horizontal = 180mm');
+  assert(css.includes('--paper-pad: 15mm'), 'editor/prévia usam --paper-pad 15mm');
+  assert(css.includes('overflow-x: hidden'), 'conteúdo não vaza da área útil');
+  const printSrc = read('lib/customContractPrint.ts');
+  assert(/@page \{ size: A4; margin: 0; \}/.test(printSrc), 'PDF não duplica margem no @page');
+  assert(printSrc.includes('CUSTOM_A4_MARGIN_MM') && printSrc.includes('--paper-pad:'), 'PDF herda os 15mm do conteúdo');
+  assert(
+    /<body class="sv-editor-preview-doc">\$\{html\}<\/body>/.test(printSrc),
+    'PDF não embrulha a folha A4 com um segundo padding',
+  );
+  assert(!printSrc.includes('sv-a4-sheet sv-a4-prose sv-editor-preview-doc'), 'PDF sem wrapper A4 extra');
   assert(editorUi.includes('deletePageBreak'), 'quebra manual pode ser removida');
   assert(editorUi.includes('setParagraphLayout'), 'espaçamento e recuo de parágrafo');
   assert(tiptap.includes('ParagraphLayout'), 'TipTap persiste layout de parágrafo');

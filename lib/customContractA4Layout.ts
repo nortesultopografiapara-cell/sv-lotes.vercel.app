@@ -15,19 +15,21 @@ import {
 
 export const CUSTOM_A4_PAGE_MM = 297;
 export const CUSTOM_A4_WIDTH_MM = 210;
-export const CUSTOM_A4_PAD_MM = 18;
+/** Margem segura única (editor = prévia = PDF). Não somar com @page. */
+export const CUSTOM_A4_MARGIN_MM = 15;
+export const CUSTOM_A4_PAD_MM = CUSTOM_A4_MARGIN_MM;
 export const CUSTOM_A4_GAP_PX = 18;
 export const CUSTOM_A4_MIN_SPLIT_REMAINING_PX = 64;
 export const A4_PAGE_IDENTITY_ATTR = 'data-sv-a4-identity';
 
-/** Arquitetura de página — valores atuais; margens independentes no futuro. */
+/** Arquitetura de página — fonte de verdade da área útil A4. */
 export const CUSTOM_A4_PAGE_CONFIG = {
   widthMm: CUSTOM_A4_WIDTH_MM,
   heightMm: CUSTOM_A4_PAGE_MM,
-  marginTopMm: CUSTOM_A4_PAD_MM,
-  marginBottomMm: CUSTOM_A4_PAD_MM,
-  marginLeftMm: CUSTOM_A4_PAD_MM,
-  marginRightMm: CUSTOM_A4_PAD_MM,
+  marginTopMm: CUSTOM_A4_MARGIN_MM,
+  marginBottomMm: CUSTOM_A4_MARGIN_MM,
+  marginLeftMm: CUSTOM_A4_MARGIN_MM,
+  marginRightMm: CUSTOM_A4_MARGIN_MM,
 } as const;
 
 export type A4LayoutKind =
@@ -78,8 +80,20 @@ export function mmToPx(mm: number, dpi = 96): number {
   return Math.round((Number(mm) / 25.4) * dpi);
 }
 
+export function customA4ContentWidthMm(): number {
+  return (
+    CUSTOM_A4_PAGE_CONFIG.widthMm -
+    CUSTOM_A4_PAGE_CONFIG.marginLeftMm -
+    CUSTOM_A4_PAGE_CONFIG.marginRightMm
+  );
+}
+
 export function customA4PageInnerPx(): number {
-  return mmToPx(CUSTOM_A4_PAGE_MM - CUSTOM_A4_PAD_MM * 2);
+  return mmToPx(
+    CUSTOM_A4_PAGE_CONFIG.heightMm -
+      CUSTOM_A4_PAGE_CONFIG.marginTopMm -
+      CUSTOM_A4_PAGE_CONFIG.marginBottomMm,
+  );
 }
 
 export function a4PageIdentity(pages: A4PagePlan[]): string {

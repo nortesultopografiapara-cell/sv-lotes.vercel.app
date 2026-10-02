@@ -1,7 +1,9 @@
-.sv-a4-editor {
+.sv-a4-editor,
+.sv-a4-sheet,
+.sv-editor-preview-doc {
   --paper-width: 210mm;
   --paper-height: 297mm;
-  --paper-pad: 18mm;
+  --paper-pad: 15mm;
   --page-gap: 18px;
 }
 
@@ -30,12 +32,14 @@
 .sv-a4-sheet .ProseMirror,
 .sv-a4-prose {
   outline: none;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
   min-height: var(--paper-height);
   padding: var(--paper-pad);
   box-sizing: border-box;
   background-color: #ffffff;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  max-width: var(--paper-width);
 }
 
 .sv-a4-sheet .ProseMirror h1,
@@ -97,6 +101,9 @@
   font-weight: 600;
   line-height: 1.7;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
   vertical-align: baseline;
 }
 
@@ -111,7 +118,7 @@
   page-break-after: always;
   break-after: page;
   height: var(--page-gap, 18px);
-  margin: 12px calc(0px - var(--paper-pad, 18mm));
+  margin: 12px calc(0px - var(--paper-pad, 15mm));
   border: 0;
   background: #2a2d36;
   position: relative;
@@ -149,6 +156,7 @@
   border-collapse: collapse;
   margin: 0 0 12px;
   table-layout: fixed;
+  box-sizing: border-box;
   break-inside: auto;
   page-break-inside: auto;
 }
@@ -165,7 +173,7 @@
 .sv-editor-preview-doc .contract-clause {
   position: relative;
   max-width: 100%;
-  overflow: visible;
+  overflow-x: hidden;
   margin: 0 0 12px;
   break-inside: auto;
   page-break-inside: auto;
@@ -231,6 +239,14 @@
   .sv-editor-preview-doc {
     box-shadow: none !important;
     min-height: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .sv-a4-sheet.sv-a4-prose {
+    width: var(--paper-width) !important;
+    max-width: 100% !important;
+    padding: var(--paper-pad) !important;
+    box-sizing: border-box !important;
   }
 
   .sv-table-layout-bar,
@@ -259,6 +275,9 @@
   padding: 4px 6px;
   vertical-align: top;
   word-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 
 .sv-a4-sheet .ProseMirror table.sv-table-borderless th,
@@ -521,6 +540,8 @@
   line-height: 1.32;
   color: #111;
   text-align: justify;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-cover-title,
@@ -626,6 +647,9 @@
   padding: 3px 5px;
   vertical-align: top;
   text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
   break-inside: avoid;
   page-break-inside: avoid;
 }
