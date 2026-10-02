@@ -249,6 +249,8 @@ assert(
   const gis = readFileSync(join(root, 'components/projects/GisProjectFormModal.tsx'), 'utf8');
   assert(gis.includes('SALE_CONTRACT_MODEL_OPTIONS.map'), 'GIS usa o catálogo oficial no select');
   assert(gis.includes('SALE_CONTRACT_MODEL_LABELS[model]'), 'GIS mostra o rótulo do catálogo');
+  assert(gis.includes('customContractModels'), 'GIS também lista CUSTOM publicados vinculados ao empreendimento');
+  assert(!SALE_CONTRACT_MODEL_OPTIONS.includes('CUSTOM'), 'CUSTOM continua fora do catálogo de motores');
 }
 
 {

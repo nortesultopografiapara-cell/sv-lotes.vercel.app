@@ -16,6 +16,11 @@ import {
 } from '@/lib/finance/companyFinancialAccountTypes';
 import type { LfContractConfigFormState } from '@/lib/lfImoveisContractConfig';
 import type { ProjectModalMode } from '@/lib/project-form';
+import {
+  customOptionShowsLfConfig,
+  formatProjectCustomContractValue,
+  type ProjectCustomContractOption,
+} from '@/lib/projectCustomContractModels';
 
 const FIELD_CLASS =
   'w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]';
@@ -56,6 +61,7 @@ type Props = {
   financialAccountId: string;
   contractModel: string;
   companyDefaultContractModel: SaleContractModel;
+  customContractModels?: ProjectCustomContractOption[];
   financialAccounts: GisProjectFormAccount[];
   mundoNovoSellerContacts: MundoNovoContact[];
   lfContractConfig: LfContractConfigFormState;
@@ -95,7 +101,9 @@ export function GisProjectFormModal(props: Props) {
   const effectiveModel = normalizeSaleContractModel(
     props.contractModel || props.companyDefaultContractModel,
   );
-  const showLf = effectiveModel === 'ESTRELA_DO_SUL';
+  const showLf =
+    effectiveModel === 'ESTRELA_DO_SUL' ||
+    customOptionShowsLfConfig(props.contractModel, props.customContractModels || []);
   const showMundoNovo =
     effectiveModel === 'MUNDO_NOVO' && props.mundoNovoSellerContacts.length > 0;
   const isEdit = props.mode === 'edit';
@@ -225,6 +233,11 @@ export function GisProjectFormModal(props: Props) {
                     {SALE_CONTRACT_MODEL_OPTIONS.map((model) => (
                       <option key={model} value={model}>
                         {SALE_CONTRACT_MODEL_LABELS[model]}
+                      </option>
+                    ))}
+                    {(props.customContractModels || []).map((model) => (
+                      <option key={model.id} value={formatProjectCustomContractValue(model.id)}>
+                        {model.name}
                       </option>
                     ))}
                   </select>

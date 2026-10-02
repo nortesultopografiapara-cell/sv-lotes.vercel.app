@@ -527,7 +527,33 @@ const regen = read('lib/contractRegeneration.ts');
 assert(regen.includes('tryBuildLfEstrelaCustomSaleHtml'), 'regeneração GIS tenta LF ESTRELA CUSTOM antes do motor');
 assert(!read('lib/lfEstrelaSaleContract.ts').includes('generateEstrelaDoSulContract'), 'loader CUSTOM não usa o motor ESTRELA');
 assert(read('lib/lfEstrelaSaleContract.ts').includes('isDevelopHomologRuntime'), 'CUSTOM só emite no DEVELOP');
+assert(
+  read('lib/lfEstrelaSaleContract.ts').includes('is_project_default'),
+  'CUSTOM GIS só emite se LF ESTRELA for o padrão do empreendimento',
+);
 assert(read('lib/customContractPreviewResolver.ts').includes('customer.nationality'), 'resolver lê nacionalidade do cadastro');
 assert(read('lib/customerIdentity.ts').includes("pick('nationality', 'nacionalidade')"), 'merge clientes/customers traz nacionalidade');
+
+const gisModal = read('components/projects/GisProjectFormModal.tsx');
+assert(gisModal.includes('customContractModels'), 'dropdown do empreendimento aceita extras CUSTOM');
+assert(gisModal.includes('formatProjectCustomContractValue'), 'extras usam prefixo ccm:');
+
+const contractModelSrc = read('lib/contractModel.ts');
+assert(
+  contractModelSrc.includes("export const SALE_CONTRACT_MODEL_OPTIONS") &&
+    !/SALE_CONTRACT_MODEL_OPTIONS: SaleContractModel\[\] = \[[^\]]*CUSTOM/s.test(contractModelSrc),
+  'SALE_CONTRACT_MODEL_OPTIONS não inclui CUSTOM',
+);
+
+const mapPage = read('app/map/page.tsx');
+assert(mapPage.includes('listPublishedCustomModelsLinkedToProject'), 'GIS carrega CUSTOM vinculados');
+assert(mapPage.includes('persistProjectCustomContractDefault'), 'salvar empreendimento persiste padrão CUSTOM');
+assert(mapPage.includes('parseProjectCustomContractModelId'), 'salvar não grava ccm: em projects.contract_model');
+assert(mapPage.includes('engineContractModelForCustomOverlay'), 'overlay LF preserva motor ESTRELA_DO_SUL');
+
+const helpers = read('lib/projectCustomContractModels.ts');
+assert(helpers.includes("catalog_code', 'CUSTOM'"), 'lista só CUSTOM');
+assert(helpers.includes("status', 'published'"), 'lista só versões publicadas');
+assert(helpers.includes('is_project_default'), 'lista lê vínculo do empreendimento');
 
 console.log('\nOK — testes obrigatórios LF ESTRELA.');

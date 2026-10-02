@@ -157,12 +157,6 @@ async function main() {
     throw new Error('ABORT: não alterar o motor do empreendimento (esperado ESTRELA_DO_SUL).');
   }
 
-  await sb
-    .from('project_contract_model_links')
-    .update({ is_project_default: false })
-    .eq('project_id', project.id)
-    .eq('company_id', TENANT_ID);
-
   const { data: link } = await sb
     .from('project_contract_model_links')
     .select('id')
@@ -170,18 +164,12 @@ async function main() {
     .eq('project_id', project.id)
     .maybeSingle();
 
-  if (link?.id) {
-    const { error: linkUpdateError } = await sb
-      .from('project_contract_model_links')
-      .update({ is_project_default: true })
-      .eq('id', link.id);
-    if (linkUpdateError) throw new Error(linkUpdateError.message);
-  } else {
+  if (!link?.id) {
     const linkPayload = payloadForCentralTable('project_contract_model_links', {
       project_id: project.id,
       company_id: TENANT_ID,
       company_contract_model_id: modelId,
-      is_project_default: true,
+      is_project_default: false,
     });
     const { error: linkError } = await sb
       .from('project_contract_model_links')
@@ -206,7 +194,7 @@ async function main() {
         modelId,
         publishedVersion: verify?.version || publishedVersion,
         linkedToEstrelaDoSul: true,
-        isProjectDefault: true,
+        isProjectDefault: false,
         projectContractModelUnchanged: project.contract_model,
         htmlChars: html.length,
         rpcError: rpcError?.message || null,

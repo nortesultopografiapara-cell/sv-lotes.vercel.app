@@ -41,25 +41,14 @@ export async function loadPublishedLfEstrelaForProject(
 
   const preferred = [...models]
     .filter((row) => String(row.catalog_code || '').toUpperCase() === 'CUSTOM')
-    .sort((a, b) => {
-      const aDefault = links.some(
+    .filter((row) => isLfEstrelaModelName(String(row.name || '')))
+    .filter((row) =>
+      links.some(
         (link) =>
-          String(link.company_contract_model_id) === String(a.id) && link.is_project_default,
-      )
-        ? 0
-        : 1;
-      const bDefault = links.some(
-        (link) =>
-          String(link.company_contract_model_id) === String(b.id) && link.is_project_default,
-      )
-        ? 0
-        : 1;
-      if (aDefault !== bDefault) return aDefault - bDefault;
-      const aName = isLfEstrelaModelName(String(a.name || '')) ? 0 : 1;
-      const bName = isLfEstrelaModelName(String(b.name || '')) ? 0 : 1;
-      return aName - bName;
-    })[0];
-  if (!preferred?.id || !isLfEstrelaModelName(String(preferred.name || ''))) return null;
+          String(link.company_contract_model_id) === String(row.id) && link.is_project_default,
+      ),
+    )[0];
+  if (!preferred?.id) return null;
 
   const { data: versions, error: versionError } = await supabase
     .from('company_contract_model_versions')

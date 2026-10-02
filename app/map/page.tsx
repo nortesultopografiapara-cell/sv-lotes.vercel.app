@@ -59,6 +59,14 @@ import {
   normalizeSaleContractModel,
   type SaleContractModel,
 } from '@/lib/contractModel';
+import {
+  engineContractModelForCustomOverlay,
+  formatProjectCustomContractValue,
+  listPublishedCustomModelsLinkedToProject,
+  parseProjectCustomContractModelId,
+  persistProjectCustomContractDefault,
+  type ProjectCustomContractOption,
+} from '@/lib/projectCustomContractModels';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
@@ -585,6 +593,9 @@ export default function MapPage() {
   >([]);
   const [projectFormSubmitting, setProjectFormSubmitting] = useState(false);
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
+  const [projectCustomContractModels, setProjectCustomContractModels] = useState<
+    ProjectCustomContractOption[]
+  >([]);
 
   useEffect(() => {
     if (!isProjectFormOpen || !saasTenantId) return;
@@ -616,10 +627,30 @@ export default function MapPage() {
           setCompanySecondVendorJson(null);
         }
       });
+    if (projectFormMode === 'edit' && editingProject?.id) {
+      const engineValue = String(editingProject.contract_model || '').trim();
+      void listPublishedCustomModelsLinkedToProject(
+        supabase,
+        saasTenantId,
+        String(editingProject.id),
+      ).then((rows) => {
+        if (cancelled) return;
+        setProjectCustomContractModels(rows);
+        const defaultCustom = rows.find((row) => row.isProjectDefault);
+        if (!defaultCustom) return;
+        setNewProjectContractModel((current) =>
+          current === engineValue || current === ''
+            ? formatProjectCustomContractValue(defaultCustom.id)
+            : current,
+        );
+      });
+    } else {
+      setProjectCustomContractModels([]);
+    }
     return () => {
       cancelled = true;
     };
-  }, [isProjectFormOpen, saasTenantId]);
+  }, [isProjectFormOpen, saasTenantId, projectFormMode, editingProject?.id]);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
   /** Patch in-place no GISMap após Identificar Frentes (sem refreshKey/fitBounds). */
@@ -1914,6 +1945,7 @@ export default function MapPage() {
     setProjectFormMode('create');
     setEditingProject(null);
     setProjectFeedback(null);
+    setProjectCustomContractModels([]);
     resetProjectForm();
   };
 
@@ -1995,6 +2027,14 @@ export default function MapPage() {
       const impersonatingTenantId =
         typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null;
 
+      const customModelId = parseProjectCustomContractModelId(newProjectContractModel);
+      const persistEngineModel = customModelId
+        ? engineContractModelForCustomOverlay(editingProject.contract_model)
+        : newProjectContractModel || null;
+      const effectiveEngineModel = normalizeSaleContractModel(
+        persistEngineModel || companyDefaultContractModel,
+      );
+
       const { project: saved } = await updateProjectThroughApi(editingProject.id, {
         name,
         city,
@@ -2005,20 +2045,26 @@ export default function MapPage() {
         impersonatingTenantId:
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
         financial_account_id: newProjectFinancialAccountId || null,
-        contract_model: newProjectContractModel || null,
+        contract_model: persistEngineModel,
         seller_party_contacts:
-          normalizeSaleContractModel(
-            newProjectContractModel || companyDefaultContractModel,
-          ) === 'MUNDO_NOVO'
-            ? mundoNovoSellerContacts
-            : undefined,
+          effectiveEngineModel === 'MUNDO_NOVO' ? mundoNovoSellerContacts : undefined,
         lf_contract_config:
-          normalizeSaleContractModel(
-            newProjectContractModel || companyDefaultContractModel,
-          ) === 'ESTRELA_DO_SUL'
+          effectiveEngineModel === 'ESTRELA_DO_SUL' || Boolean(customModelId)
             ? lfContractConfig
             : undefined,
       });
+
+      const companyIdForLink = String(
+        saasTenantId || editingProject.company_id || editingProject.tenant_id || '',
+      );
+      const hadCustomDefault = projectCustomContractModels.some((row) => row.isProjectDefault);
+      if (companyIdForLink && (customModelId || hadCustomDefault)) {
+        await persistProjectCustomContractDefault(supabase, {
+          companyId: companyIdForLink,
+          projectId: String(editingProject.id),
+          customModelId,
+        });
+      }
 
       const updatedFields = {
         name: String(saved.name ?? name),
@@ -3257,6 +3303,7 @@ export default function MapPage() {
       financialAccountId={newProjectFinancialAccountId}
       contractModel={newProjectContractModel}
       companyDefaultContractModel={companyDefaultContractModel}
+      customContractModels={projectCustomContractModels}
       financialAccounts={projectFinancialAccounts}
       mundoNovoSellerContacts={mundoNovoSellerContacts}
       lfContractConfig={lfContractConfig}
