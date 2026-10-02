@@ -91,6 +91,10 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   font-size: 10pt;
   margin: 0 0 8px;
 }
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-keep-with-next {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-section,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause,
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-clause-title {
@@ -101,6 +105,18 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   margin: 8px 0 0;
   page-break-after: avoid;
   break-after: avoid;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause-sub,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] h2,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] h3 {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause-sub + p {
+  page-break-before: avoid;
+  break-before: avoid;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause-sub {
   font-size: 10.5pt;
@@ -122,7 +138,15 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date {
   text-align: center;
   font-size: 10.5pt;
-  margin: 18px 0 10px;
+  margin: 18px 0 0;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date + .sv-lf-sign,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date + .lf-estrela-signatures {
+  margin-top: 20mm;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date + .sv-lf-sign .sv-lf-sign-row:first-child .sv-lf-sign-line,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-date + .lf-estrela-signatures .sv-lf-sign-row:first-child .sv-lf-sign-line {
+  margin-top: 0;
 }
 .sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-sign-line {
   color: transparent !important;
@@ -176,7 +200,7 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   -webkit-text-fill-color: ${LF_ESTRELA_PRINT_INK} !important;
   opacity: 1 !important;
   border: 1px solid ${LF_ESTRELA_PRINT_INK};
-  padding: 3px 5px;
+  padding: 2px 5px 8px;
   vertical-align: top;
   text-align: left;
   page-break-inside: avoid;

@@ -660,7 +660,20 @@
 .sv-editor-preview-doc .sv-lf-estrela .sv-lf-date {
   text-align: center;
   font-size: 10.5pt;
-  margin: 18px 0 10px;
+  margin: 18px 0 0;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date + .sv-lf-sign,
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date + .lf-estrela-signatures,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date + .sv-lf-sign,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date + .lf-estrela-signatures {
+  margin-top: 20mm;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-keep-with-next,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-keep-with-next {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-footnotes,
@@ -704,7 +717,7 @@
 .sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table th,
 .sv-editor-preview-doc .sv-lf-estrela table.sv-lf-table td {
   border: 1px solid #111;
-  padding: 2px 4px;
+  padding: 2px 5px 8px;
   vertical-align: top;
   text-align: left;
   overflow-wrap: anywhere;
@@ -739,6 +752,11 @@
   padding: 0;
   break-inside: avoid;
   page-break-inside: avoid;
+}
+
+.sv-a4-sheet .sv-lf-estrela .sv-lf-date + .sv-lf-sign .sv-lf-sign-row:first-child .sv-lf-sign-line,
+.sv-editor-preview-doc .sv-lf-estrela .sv-lf-date + .sv-lf-sign .sv-lf-sign-row:first-child .sv-lf-sign-line {
+  margin-top: 0;
 }
 
 .sv-a4-sheet .sv-lf-estrela .sv-lf-sign-row,

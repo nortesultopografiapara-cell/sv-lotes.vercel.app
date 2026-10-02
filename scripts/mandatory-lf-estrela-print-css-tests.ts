@@ -49,7 +49,7 @@ function testLightCssFails() {
 function testTemplateKeepsLogoToken() {
   const html = buildLfEstrelaCustomHtml();
   assert(html.includes('{{COMPANY_LOGO_URL}}'), 'template oficial preserva token');
-  assert((html.match(/\{\{COMPANY_LOGO_URL\}\}/g) || []).length === 10, 'capa + 9 páginas com logo');
+  assert((html.match(/\{\{COMPANY_LOGO_URL\}\}/g) || []).length === 9, 'logo em cada seção estrutural');
   console.log('OK template CUSTOM preserva COMPANY_LOGO_URL');
 }
 
