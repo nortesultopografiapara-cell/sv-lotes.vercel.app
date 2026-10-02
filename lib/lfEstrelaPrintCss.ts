@@ -102,9 +102,23 @@ export const LF_ESTRELA_GIS_FINAL_PRINT_CSS = `
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
-  margin: 8px 0 0;
   page-break-after: avoid;
   break-after: avoid;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-clause,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .lf-estrela-clause-title {
+  margin: 8px 0 0;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-section {
+  margin: 4px 0 2mm;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-section + table.sv-lf-table,
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-section + table.lf-estrela-table {
+  margin-top: 0;
+}
+.sv-lf-estrela[${LF_ESTRELA_GIS_FINAL_ATTR}] .sv-lf-keep-para {
   page-break-inside: avoid;
   break-inside: avoid;
 }

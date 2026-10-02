@@ -149,6 +149,7 @@ export function getLfEstrelaCustomHtml2pdfOptions(
         '.sv-lf-sign',
         '.lf-estrela-signatures',
         '.sv-lf-keep-with-next',
+        '.sv-lf-keep-para',
         '.sv-company-logo',
       ],
     },

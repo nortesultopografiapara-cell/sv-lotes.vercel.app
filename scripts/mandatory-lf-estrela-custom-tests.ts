@@ -134,6 +134,18 @@ assert((html.match(/data-sv-page-break/g) || []).length === 8, 'oito quebras est
 assert((html.match(/data-sv-lf-page="/g) || []).length === 9, 'nove seções estruturais; financeiro+cláusula 3 fluem na mesma seção');
 assert((html.match(/data-sv-company-logo/g) || []).length === 9, 'um logo por seção estrutural');
 assert(html.includes('sv-lf-keep-with-next'), 'título de cláusula + primeiro parágrafo ficam juntos');
+assert(
+  (html.match(/sv-lf-keep-para/g) || []).length === 1,
+  'keep-para só no parágrafo individual 2.9.1',
+);
+assert(
+  /class="sv-lf-body lf-estrela-body sv-lf-keep-para"><strong>2\.9\.1\.<\/strong>/.test(html),
+  '2.9.1 inteiro no parágrafo com keep-para',
+);
+assert(
+  !/sv-lf-keep-para[\s\S]{0,80}2\.9\.2/.test(html),
+  '2.9.2 não entra no keep-para do 2.9.1',
+);
 
 const capaPages = html.split(/<div data-sv-page-break="true"[^>]*><\/div>/);
 assert(capaPages.length === 9, 'Capa + infra + instrumento sem página órfã de notas/título');
@@ -579,6 +591,10 @@ assert(read('lib/lfEstrelaSaleContract.ts').includes('buildLfEstrelaCustomHtml()
 assert(read('app/contracts/page.tsx').includes('htmlLooksLfEstrela'), 'PDF Contratos detecta LF ESTRELA');
 assert(read('lib/contractPdfPostProcess.ts').includes('getLfEstrelaCustomHtml2pdfOptions'), 'html2pdf LF usa 15mm e quebra CSS');
 assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-keep-with-next'), 'html2pdf evita cortar título+primeiro parágrafo');
+assert(read('lib/contractPdfPostProcess.ts').includes('.sv-lf-keep-para'), 'html2pdf evita cortar o parágrafo 2.9.1');
+assert(/\.sv-lf-section\s*\{[^}]*margin:\s*4px 0 2mm/.test(read('lib/lfEstrelaPrintCss.ts')), 'títulos da capa com 2mm acima da tabela');
+assert(/\.sv-lf-section\s*\{[^}]*margin:\s*4px 0 2mm/.test(css), 'prévia/editor: títulos da capa com 2mm acima da tabela');
+assert(css.includes('sv-lf-keep-para'), 'prévia/editor protege parágrafo 2.9.1');
 assert(!/avoid:\s*\[[^\]]*['\"]h1['\"]/.test(read('lib/contractPdfPostProcess.ts').slice(
   read('lib/contractPdfPostProcess.ts').indexOf('getLfEstrelaCustomHtml2pdfOptions'),
   read('lib/contractPdfPostProcess.ts').indexOf('getLfEstrelaCustomHtml2pdfOptions') + 900,
