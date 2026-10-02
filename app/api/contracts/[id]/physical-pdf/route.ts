@@ -90,6 +90,12 @@ export async function POST(
       tenantId,
       contractNumber,
       pdfBytes: bytes,
+      saleId: String(contract.sale_id || '').trim() || null,
+      version: Number(contract.version || 0) || null,
+      projectId: String(contract.project_id || '').trim() || null,
+      lotId: String(contract.block_id || '').trim() || null,
+      buyerId: String(contract.customer_id || '').trim() || null,
+      userId: user.id,
       overwrite: false,
     });
 
@@ -99,7 +105,7 @@ export async function POST(
       reused: result.reused,
       sha256: result.sha256,
       pageCount: result.pageCount,
-      pdfUrl: result.url,
+      storagePath: result.storagePath,
     });
   } catch (err) {
     const message =

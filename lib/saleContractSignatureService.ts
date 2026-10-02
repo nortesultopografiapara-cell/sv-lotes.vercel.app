@@ -679,6 +679,49 @@ export async function sendSaleContractForSignature(
     throw partyErr;
   }
 
+  if (storedHtml) {
+    try {
+      const { isLfEstrelaCustomHtml } = await import('@/lib/lfEstrelaPrintCss');
+      if (isLfEstrelaCustomHtml(storedHtml)) {
+        mark('freeze_lf_physical_start');
+        const { ensureLfEstrelaPhysicalBase } = await import('@/lib/lfEstrelaSignedPdf');
+        const { buildContractPdfChromeFromTenant } = await import(
+          '@/lib/contractPdfPostProcess'
+        );
+        const { loadTenantLogoBase64ForPdf } = await import('@/lib/saleContractPdf');
+        const { data: tenant } = tenantId
+          ? await supabaseAdmin.from('companies').select('*').eq('id', tenantId).maybeSingle()
+          : { data: null };
+        const tenantRow = (tenant || {}) as Record<string, unknown>;
+        const logoBase64 = await loadTenantLogoBase64ForPdf(tenantRow);
+        const chrome = buildContractPdfChromeFromTenant(
+          tenantRow,
+          String(contractRow.contract_number || ''),
+          logoBase64,
+        );
+        await ensureLfEstrelaPhysicalBase({
+          supabaseAdmin,
+          contractId: resolvedId,
+          tenantId,
+          contractNumber: String(contractRow.contract_number || resolvedId),
+          saleId: String(contractRow.sale_id || '').trim() || null,
+          version: Number(contractRow.version || 0) || null,
+          projectId: String(contractRow.project_id || '').trim() || null,
+          lotId: String(contractRow.block_id || '').trim() || null,
+          buyerId: String(contractRow.customer_id || '').trim() || null,
+          html: storedHtml,
+          chrome,
+        });
+        mark('freeze_lf_physical_done');
+      }
+    } catch (freezeErr) {
+      console.error('[LF SIGNED PDF STAGE] freeze at send failed', {
+        contractId: resolvedId,
+        message: freezeErr instanceof Error ? freezeErr.message : String(freezeErr),
+      });
+    }
+  }
+
   mark('response', {
     hasSignUrl: Boolean(signUrl),
     signUrlPreview: signUrl ? `${signUrl.slice(0, 48)}…` : null,
@@ -1732,7 +1775,9 @@ export async function loadSaleContractPdfForSign(
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('contract_number, tenant_id, company_id, created_at, version, pdf_url')
+    .select(
+      'id, contract_number, tenant_id, company_id, created_at, version, sale_id, project_id, customer_id, block_id',
+    )
     .eq('id', contractId)
     .maybeSingle();
 
@@ -2275,14 +2320,15 @@ export async function loadSaleContractPdfForSign(
       const { buildLfEstrelaSignedSaleContractPdf } = await import(
         '@/lib/lfEstrelaSignedPdf'
       );
+      const saleId = String(
+        contractRow.sale_id || options?.signContext?.contract?.sale_id || '',
+      ).trim();
       console.info('[LF SIGNED PDF STAGE]', {
-        stage: String(contractRow.pdf_url || '').trim()
-          ? 'physical_pdf_lookup'
-          : 'physical_pdf_freeze',
+        stage: 'physical_pdf_lookup',
         requestedContractId: contractId,
         lookupContractId: contractId,
         signatureProcessId: signatureProcessId || null,
-        pdfUrl: String(contractRow.pdf_url || '').trim() || null,
+        saleId: saleId || null,
       });
       const pdf = await buildLfEstrelaSignedSaleContractPdf({
         supabaseAdmin,
@@ -2297,7 +2343,11 @@ export async function loadSaleContractPdfForSign(
         chrome,
         signature: options?.signature || null,
         certificateHtml: lfCertificateHtml,
-        physicalPdfUrl: String(contractRow.pdf_url || ''),
+        saleId,
+        version: Number(contractRow.version || 0) || null,
+        projectId: String(contractRow.project_id || '').trim() || null,
+        lotId: String(contractRow.block_id || '').trim() || null,
+        buyerId: String(contractRow.customer_id || '').trim() || null,
       });
       console.info('[LF SIGNED PDF STAGE]', {
         stage: 'append',

@@ -84,7 +84,7 @@ export async function loadSignedSaleContractArtifact(
   if (!row) {
     const { data } = await supabaseAdmin
       .from('contracts')
-      .select('id, contract_number, status, signature_status, pdf_signed_url, pdf_url, tenant_id, company_id, sale_id, regenerated_from')
+      .select('id, contract_number, status, signature_status, pdf_signed_url, tenant_id, company_id, sale_id, regenerated_from, version, project_id, customer_id, block_id')
       .eq('id', id)
       .maybeSingle();
     row = (data as Record<string, unknown>) || null;
@@ -152,7 +152,8 @@ export async function loadSignedSaleContractArtifact(
         stage: 'physical_pdf_lookup',
         requestedContractId: id,
         lookupContractId: documentContractId,
-        pdfUrl: String(row.pdf_url || signContext.contract.pdf_url || '').trim() || null,
+        pdfUrl: null,
+        saleId: row.sale_id || null,
       });
       const { pdf, contractNumber: num } = await loadSaleContractPdfForSign(
         supabaseAdmin,

@@ -14,6 +14,11 @@ import {
   resolveSignedPdfReadiness,
 } from '../lib/saleContractSignedParties';
 import {
+  buildLfEstrelaPhysicalBaseDescription,
+  parseLfEstrelaPhysicalBaseDescription,
+} from '../lib/lfEstrelaSignedPdf';
+import { validateSaleDocumentType } from '../lib/saleDocuments';
+import {
   classifySignedPdfGenerationError,
 } from '../lib/deployGitSha';
 import {
@@ -104,7 +109,23 @@ function testSourceGuards() {
   assert(pdf.includes('skipMeasure'), 'Chromium LF não executa measure/repaginação');
   assert(page.includes('freezeLfEstrelaPhysicalPdfFromJsPdf'), 'Contratos congela PDF físico html2pdf');
   assert(page.includes('/physical-pdf'), 'POST freeze no Baixar PDF');
-  assert(route.includes('persistLfEstrelaPhysicalPdf'), 'API freeze persiste pdf_url');
+  assert(route.includes('persistLfEstrelaPhysicalPdf'), 'API freeze persiste PDF físico');
+  assert(
+    read('lib/lfEstrelaSignedPdf.ts').includes('LF_ESTRELA_PHYSICAL_BASE'),
+    'freeze usa sale_documents LF_ESTRELA_PHYSICAL_BASE',
+  );
+  assert(
+    read('lib/lfEstrelaSignedPdf.ts').includes('SALE_DOCUMENTS_STORAGE_BUCKET'),
+    'PDF físico no bucket sale-documents',
+  );
+  assert(
+    !read('lib/saleContractSignatureService.ts').includes('pdf_url'),
+    'pipeline /pdf não consulta contracts.pdf_url',
+  );
+  assert(
+    !read('lib/lfEstrelaSignedPdf.ts').includes('pdf_url'),
+    'persistência LF não grava contracts.pdf_url',
+  );
   assert(read('lib/saleContractStorage.ts').includes('sale-physical'), 'path físico separado do assinado');
   assert(
     read('lib/saleContractSignedParties.ts').includes('getContractSignedParties'),
@@ -368,6 +389,22 @@ function testNeverUseSignatureProcessIdAsContractId() {
   assert(hydrated.id === signatureProcessId, 'hydrate preserva o id do processo');
 }
 
+function testPhysicalBaseUsesSaleDocumentsNotPdfUrl() {
+  const contractId = '9345eea4-2512-49f0-bbd8-944230161154';
+  const sha = 'a'.repeat(64);
+  const desc = buildLfEstrelaPhysicalBaseDescription({
+    contractId,
+    version: 11,
+    sha256: sha,
+  });
+  const parsed = parseLfEstrelaPhysicalBaseDescription(desc);
+  assert(parsed.contractId === contractId, 'description guarda contracts.id');
+  assert(parsed.version === 11, 'description guarda version');
+  assert(parsed.sha256 === sha, 'description guarda sha256');
+  const typeOk = validateSaleDocumentType('SYSTEM_GENERATED', 'LF_ESTRELA_PHYSICAL_BASE');
+  assert(typeOk.valid, 'LF_ESTRELA_PHYSICAL_BASE é SYSTEM_GENERATED');
+}
+
 function testGenerationErrorIsNotSignature404() {
   const freeze = classifySignedPdfGenerationError(new Error('Falha ao congelar PDF físico'));
   assert(freeze.includes('Falha ao congelar PDF físico LF ESTRELA'), 'classifica freeze');
@@ -393,6 +430,7 @@ async function main() {
   testPartialStamps();
   testSignedPdfFindsPartiesWithoutLegacyField();
   testNeverUseSignatureProcessIdAsContractId();
+  testPhysicalBaseUsesSaleDocumentsNotPdfUrl();
   testGenerationErrorIsNotSignature404();
   await testComposePreservesInstrumentPages();
   console.log('OK — mandatory-lf-estrela-signed-pdf-tests passed');
