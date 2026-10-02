@@ -110,6 +110,9 @@ function testSourceGuards() {
     'certificado LF não é concatenado no HTML do instrumento',
   );
   assert(signed.includes('overlayLfEstrelaSignatureStamps'), 'overlay pdf-lib');
+  assert(signed.includes('lfEstrelaStampAnchor'), 'âncoras X/Y por slot');
+  assert(signed.includes('companyRepresentative'), 'slot P2/P10 da representante');
+  assert(!signed.includes('row1:'), 'não usa row1 genérico compartilhado');
   assert(signed.includes('composeLfEstrelaSignedPdf'), 'compose físico + overlay + certificado');
   const ensureStart = signed.indexOf('export async function ensureLfEstrelaPhysicalBase');
   const ensureEnd = signed.indexOf('export async function buildLfEstrelaSignedSaleContractPdf');
@@ -427,12 +430,30 @@ async function testComposePreservesInstrumentPages() {
     'carimbos nas páginas 2 e 10',
   );
   assert(
-    LF_ESTRELA_STAMP_LAYOUT.page2.row1 > LF_ESTRELA_STAMP_LAYOUT.page10.row1,
+    LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y > LF_ESTRELA_STAMP_LAYOUT.page10.buyer.y,
     'P2 (capa) tem assinaturas mais altas que P10',
   );
   assert(
-    LF_ESTRELA_STAMP_LAYOUT.page2.row1 > 458,
-    'P2 subiu para a área livre acima da linha (não cobre nomes/CPFs)',
+    LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y !== LF_ESTRELA_STAMP_LAYOUT.page2.seller2.y,
+    'P2 buyer e seller2 têm Y independentes',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.companyRepresentative.x !==
+      LF_ESTRELA_STAMP_LAYOUT.page2.buyer.x,
+    'P2 company e buyer têm X independentes (colunas)',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page10.seller2.y > LF_ESTRELA_STAMP_LAYOUT.page10.witness2.y + 30,
+    'P10 Antonio fica acima da linha de TESTEMUNHA 2',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page10.companyRepresentative.y >
+      LF_ESTRELA_STAMP_LAYOUT.page10.seller2.y + 18,
+    'P10 Luzia e Antonio não compartilham a mesma faixa',
+  );
+  assert(
+    LF_ESTRELA_STAMP_LAYOUT.page2.buyer.y > 458,
+    'P2 buyer permanece na área livre acima da linha da Capa',
   );
 
   let threwInvalid = false;

@@ -35,18 +35,61 @@ const COL_WIDTH = (CONTENT_WIDTH - COL_GAP) / 2;
 const COL_LEFT_CENTER = MARGIN_PT + COL_WIDTH / 2;
 const COL_RIGHT_CENTER = MARGIN_PT + COL_WIDTH + COL_GAP + COL_WIDTH / 2;
 
+export type LfEstrelaStampAnchor = {
+  x: number;
+  y: number;
+};
+
 /**
- * Y pdf-lib (origem inferior) da área livre ACIMA da linha física.
- * Página 2 = Capa Resumo. O gabarito 458/393/328 cobria COMPRADOR 1 / CPF,
- * LF IMOVEIS / CNPJ e ANTONIO / CPF; +24pt (~8,5 mm) sobe o carimbo compacto
- * para a área livre da assinatura, sem escrever por cima do nome preto.
- * Página 10 = encerramento do instrumento (texto 12.3–12.7).
- * P10 só é aplicado depois de validar pageCount === 10.
+ * Âncoras pdf-lib (origem inferior esquerda).
+ * `y` = baseline da ÚLTIMA linha do carimbo (logo acima da linha preta).
+ * Cada slot tem X/Y próprio — P2 e P10 não compartilham row1/row2.
+ *
+ * Anteriores (row compartilhado):
+ *   P2  row1=482 (buyer+company)  row2=417 (seller2)  row3=352
+ *   P10 row1=248 (buyer+company)  row2=183 (seller2)  row3=118
  */
 export const LF_ESTRELA_STAMP_LAYOUT = {
-  page2: { row1: 482, row2: 417, row3: 352 },
-  page10: { row1: 248, row2: 183, row3: 118 },
+  page2: {
+    buyer: { x: COL_LEFT_CENTER, y: 502 },
+    companyRepresentative: { x: COL_RIGHT_CENTER, y: 500 },
+    seller2: { x: COL_RIGHT_CENTER, y: 453 },
+    buyer2: { x: COL_LEFT_CENTER, y: 453 },
+    witness1: { x: COL_LEFT_CENTER, y: 392 },
+    witness2: { x: COL_RIGHT_CENTER, y: 392 },
+  },
+  page10: {
+    buyer: { x: COL_LEFT_CENTER, y: 322 },
+    companyRepresentative: { x: COL_RIGHT_CENTER, y: 320 },
+    seller2: { x: COL_RIGHT_CENTER, y: 275 },
+    buyer2: { x: COL_LEFT_CENTER, y: 275 },
+    witness1: { x: COL_LEFT_CENTER, y: 224 },
+    witness2: { x: COL_RIGHT_CENTER, y: 224 },
+  },
 } as const;
+
+export function lfEstrelaStampAnchor(
+  pageNumber: 2 | 10,
+  slot: LfEstrelaOverlaySlot,
+): LfEstrelaStampAnchor {
+  const page = pageNumber === 2 ? LF_ESTRELA_STAMP_LAYOUT.page2 : LF_ESTRELA_STAMP_LAYOUT.page10;
+  switch (slot) {
+    case 'BUYER_1':
+      return page.buyer;
+    case 'COMPANY':
+      return page.companyRepresentative;
+    case 'SELLER_2':
+      return page.seller2;
+    case 'BUYER_2':
+      return page.buyer2;
+    case 'WITNESS_1':
+      return page.witness1;
+    case 'WITNESS_2':
+      return page.witness2;
+    default:
+      return page.buyer;
+  }
+}
 
 export const LF_ESTRELA_PHYSICAL_BASE_MISSING_MESSAGE =
   'Gere primeiro o PDF físico deste contrato para congelar a versão que será assinada.';
@@ -180,19 +223,14 @@ export function resolveLfEstrelaOverlayStamps(input: {
   return stamps.filter((s) => s.lines.some((line) => line && line !== 'ASSINADO DIGITALMENTE'));
 }
 
-function slotCenterX(slot: LfEstrelaOverlaySlot): number {
-  if (slot === 'BUYER_1' || slot === 'BUYER_2' || slot === 'WITNESS_1') {
-    return COL_LEFT_CENTER;
-  }
-  return COL_RIGHT_CENTER;
+function slotCenterX(slot: LfEstrelaOverlaySlot, pageNumber: number): number {
+  const page = pageNumber === 2 ? 2 : 10;
+  return lfEstrelaStampAnchor(page, slot).x;
 }
 
 function slotLineY(slot: LfEstrelaOverlaySlot, pageNumber: number): number {
-  const layout =
-    pageNumber === 2 ? LF_ESTRELA_STAMP_LAYOUT.page2 : LF_ESTRELA_STAMP_LAYOUT.page10;
-  if (slot === 'BUYER_1' || slot === 'COMPANY') return layout.row1;
-  if (slot === 'BUYER_2' || slot === 'SELLER_2') return layout.row2;
-  return layout.row3;
+  const page = pageNumber === 2 ? 2 : 10;
+  return lfEstrelaStampAnchor(page, slot).y;
 }
 
 function drawCheckmark(page: PDFPage, x: number, y: number, color: RGB): void {
@@ -217,7 +255,7 @@ function drawStampOnPage(
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
   fontBold: Awaited<ReturnType<PDFDocument['embedFont']>>,
 ): void {
-  const centerX = slotCenterX(stamp.slot);
+  const centerX = slotCenterX(stamp.slot, pageNumber);
   const lineY = slotLineY(stamp.slot, pageNumber);
   const color = LF_ESTRELA_STAMP_GREEN;
   const size = 6.6;
