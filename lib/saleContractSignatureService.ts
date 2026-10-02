@@ -1614,14 +1614,26 @@ export async function loadSaleContractHtmlForSign(
   supabaseAdmin: SupabaseClient,
   contractId: string,
 ): Promise<string> {
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: contractId,
+    lookupContractId: contractId,
+    signatureProcessId: null,
+    saleId: null,
+    physicalPdfContractId: contractId,
+    regeneratedFrom: null,
+    stage: 'physical_pdf_lookup',
+  });
+
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
     .select('*')
     .eq('id', contractId)
-    .single();
+    .maybeSingle();
 
   if (error || !contract) {
-    throw new SaleContractSignatureError('Contrato não encontrado.');
+    throw new SaleContractSignatureError(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. lookupContractId=${contractId} supabase=${error?.message || 'sem linha'}.`,
+    );
   }
 
   const contractRow = contract as Record<string, unknown>;
@@ -1700,16 +1712,34 @@ export async function loadSaleContractPdfForSign(
     signContext?: Awaited<ReturnType<typeof loadSaleSignPageContext>> | null;
   },
 ): Promise<{ pdf: Uint8Array; contractNumber: string }> {
+  const signatureProcessId = String(options?.signature?.id || '').trim();
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: contractId,
+    lookupContractId: contractId,
+    signatureProcessId: signatureProcessId || null,
+    saleId: null,
+    physicalPdfContractId: contractId,
+    regeneratedFrom: null,
+    stage: 'physical_pdf_lookup',
+  });
+  if (signatureProcessId && contractId === signatureProcessId) {
+    throw new SaleContractSignatureError(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. loadSaleContractPdfForSign recebeu o ID do processo (${signatureProcessId}) como contracts.id.`,
+    );
+  }
+
   let html = await loadSaleContractHtmlForSign(supabaseAdmin, contractId);
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
     .select('contract_number, tenant_id, company_id, created_at, version, pdf_url')
     .eq('id', contractId)
-    .single();
+    .maybeSingle();
 
   if (error || !contract) {
-    throw new SaleContractSignatureError('Contrato não encontrado.');
+    throw new SaleContractSignatureError(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. lookupContractId=${contractId} signatureProcessId=${signatureProcessId || 'n/a'} supabase=${error?.message || 'sem linha'}.`,
+    );
   }
 
   const contractRow = contract as Record<string, unknown>;
@@ -2245,6 +2275,15 @@ export async function loadSaleContractPdfForSign(
       const { buildLfEstrelaSignedSaleContractPdf } = await import(
         '@/lib/lfEstrelaSignedPdf'
       );
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: String(contractRow.pdf_url || '').trim()
+          ? 'physical_pdf_lookup'
+          : 'physical_pdf_freeze',
+        requestedContractId: contractId,
+        lookupContractId: contractId,
+        signatureProcessId: signatureProcessId || null,
+        pdfUrl: String(contractRow.pdf_url || '').trim() || null,
+      });
       const pdf = await buildLfEstrelaSignedSaleContractPdf({
         supabaseAdmin,
         contractId,
@@ -2259,6 +2298,11 @@ export async function loadSaleContractPdfForSign(
         signature: options?.signature || null,
         certificateHtml: lfCertificateHtml,
         physicalPdfUrl: String(contractRow.pdf_url || ''),
+      });
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: 'append',
+        requestedContractId: contractId,
+        pagesHint: pdf.byteLength,
       });
       return { pdf, contractNumber };
     }
@@ -2306,6 +2350,7 @@ export async function getLatestSignedSaleSignature(
 export async function loadSaleSignPageContext(
   supabaseAdmin: SupabaseClient,
   signature: ContractSignatureRow,
+  options?: { documentContractId?: string | null },
 ): Promise<{
   contract: Record<string, unknown>;
   customer: Record<string, unknown> | null;
@@ -2313,14 +2358,42 @@ export async function loadSaleSignPageContext(
   project: Record<string, unknown> | null;
   company: Record<string, unknown> | null;
 }> {
-  const { data: contract } = await supabaseAdmin
+  const signatureProcessId = String(signature.id || '').trim();
+  const lookupContractId = String(
+    options?.documentContractId || signature.contract_id || '',
+  ).trim();
+
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: String(options?.documentContractId || signature.contract_id || ''),
+    lookupContractId,
+    signatureProcessId,
+    saleId: null,
+    physicalPdfContractId: lookupContractId,
+    regeneratedFrom: null,
+    stage: 'contract_lookup',
+  });
+
+  if (!lookupContractId) {
+    throw new SaleContractSignatureError(
+      `[stage=contract_lookup] Contrato não encontrado. lookupContractId vazio (signatureProcessId=${signatureProcessId}).`,
+    );
+  }
+  if (signatureProcessId && lookupContractId === signatureProcessId) {
+    throw new SaleContractSignatureError(
+      `[stage=contract_lookup] Contrato não encontrado. lookup usou o ID do processo de assinatura (${signatureProcessId}) em vez de contracts.id.`,
+    );
+  }
+
+  const { data: contract, error } = await supabaseAdmin
     .from('contracts')
     .select('*')
-    .eq('id', signature.contract_id)
-    .single();
+    .eq('id', lookupContractId)
+    .maybeSingle();
 
-  if (!contract) {
-    throw new SaleContractSignatureError('Contrato não encontrado.');
+  if (error || !contract) {
+    throw new SaleContractSignatureError(
+      `[stage=contract_lookup] Contrato não encontrado. lookupContractId=${lookupContractId} signatureProcessId=${signatureProcessId} supabase=${error?.message || 'sem linha'}.`,
+    );
   }
 
   const contractRow = contract as Record<string, unknown>;

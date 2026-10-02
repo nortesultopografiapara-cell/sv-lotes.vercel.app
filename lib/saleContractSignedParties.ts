@@ -430,10 +430,34 @@ export async function getContractSignedParties(
   });
 }
 
+/**
+ * PDF-base / freeze sempre usam o contracts.id pedido pela rota.
+ * Nunca o ID do processo de assinatura nem o ID de uma party.
+ */
+export function resolveSignedPdfDocumentContractId(input: {
+  requestedContractId: string;
+  signatureProcessId?: string | null;
+  signatureContractId?: string | null;
+  partyContractId?: string | null;
+}): string {
+  const requested = String(input.requestedContractId || '').trim();
+  const processId = String(input.signatureProcessId || '').trim();
+  if (!requested) {
+    throw new Error('requestedContractId vazio para o PDF assinado.');
+  }
+  if (processId && requested === processId) {
+    throw new Error(
+      `contractId não pode ser o ID do processo de assinatura (${processId}).`,
+    );
+  }
+  return requested;
+}
+
 /** Não persiste — só preenche o contexto in-memory para emitir certificado/PDF. */
 export function hydrateSignatureRowForSignedPdf(
   process: ContractSignatureRow,
   parties: ContractSignaturePartyRow[],
+  documentContractId?: string | null,
 ): ContractSignatureRow {
   const signed = parties.filter(
     (p) => String(p.status || '').toUpperCase() === 'SIGNED',
@@ -443,9 +467,19 @@ export function hydrateSignatureRowForSignedPdf(
   const lastVendor = [...vendors].sort((a, b) =>
     String(a.signed_at || '').localeCompare(String(b.signed_at || '')),
   ).at(-1);
+  const processId = String(process.id || '').trim();
+  const contractId = resolveSignedPdfDocumentContractId({
+    requestedContractId: String(
+      documentContractId || process.contract_id || '',
+    ).trim(),
+    signatureProcessId: processId,
+    signatureContractId: process.contract_id,
+    partyContractId: parties[0]?.contract_id,
+  });
 
   return {
     ...process,
+    contract_id: contractId,
     signature_status: 'SIGNED',
     signed_at: process.signed_at || buyer?.signed_at || lastVendor?.signed_at || process.created_at,
     vendor_signed_at:

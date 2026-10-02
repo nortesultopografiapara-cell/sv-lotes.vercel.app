@@ -8,7 +8,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import type { ContractSignaturePartyRow } from '../lib/saleContractSignaturePartyTypes';
-import { resolveSignedPdfReadiness } from '../lib/saleContractSignedParties';
+import {
+  hydrateSignatureRowForSignedPdf,
+  resolveSignedPdfDocumentContractId,
+  resolveSignedPdfReadiness,
+} from '../lib/saleContractSignedParties';
 import {
   classifySignedPdfGenerationError,
 } from '../lib/deployGitSha';
@@ -140,6 +144,38 @@ function testSourceGuards() {
   );
   const errorHits = pdfRoute.split('Contrato sem assinatura eletrônica registrada.').length - 1;
   assert(errorHits === 1, 'mensagem 404 existe uma única vez na rota /pdf');
+  const lookup = read('lib/saleContractSignatureService.ts');
+  assert(
+    lookup.includes('[LF SIGNED PDF CONTRACT LOOKUP]'),
+    'lookup do contrato loga TRACE antes da busca',
+  );
+  assert(
+    lookup.includes('documentContractId'),
+    'loadSaleSignPageContext aceita contracts.id pedido, não o processo',
+  );
+  const ctxStart = lookup.indexOf('export async function loadSaleSignPageContext');
+  assert(ctxStart > 0, 'loadSaleSignPageContext existe');
+  const ctxSlice = lookup.slice(ctxStart, ctxStart + 2800);
+  assert(
+    ctxSlice.includes('.eq(\'id\', lookupContractId)'),
+    'contexto de PDF busca contracts.id resolvido, não o processo',
+  );
+  assert(
+    !ctxSlice.includes(".eq('id', signature.contract_id)"),
+    'loadSaleSignPageContext não usa signature.contract_id cru',
+  );
+  assert(
+    lookup.includes('lookup usou o ID do processo de assinatura'),
+    'recusa process id como contracts.id',
+  );
+  assert(
+    read('lib/saleContractSignedArtifact.ts').includes('resolveSignedPdfDocumentContractId'),
+    'artefato pina o PDF-base no contracts.id da rota',
+  );
+  assert(
+    read('lib/lfEstrelaSignedPdf.ts').includes('stage: \'physical_pdf_lookup\''),
+    'pipeline LF loga estágio physical_pdf_lookup',
+  );
 }
 
 function testPartialStamps() {
@@ -276,6 +312,62 @@ function testSignedPdfFindsPartiesWithoutLegacyField() {
   assert(legacyProcess.ready === true, 'processo SIGNED legado (casing) ainda funciona');
 }
 
+function testNeverUseSignatureProcessIdAsContractId() {
+  const contractId = '9345eea4-2512-49f0-bbd8-944230161154';
+  const signatureProcessId = '50a793d5-7811-461b-af1c-1992af6633a4';
+  const resolved = resolveSignedPdfDocumentContractId({
+    requestedContractId: contractId,
+    signatureProcessId,
+    signatureContractId: signatureProcessId,
+    partyContractId: contractId,
+  });
+  assert(resolved === contractId, 'PDF-base usa contracts.id pedido');
+  assert(resolved !== signatureProcessId, 'PDF-base nunca usa o ID do processo');
+
+  let threw = false;
+  try {
+    resolveSignedPdfDocumentContractId({
+      requestedContractId: signatureProcessId,
+      signatureProcessId,
+    });
+  } catch {
+    threw = true;
+  }
+  assert(threw, 'recusa loadContract(signatureProcessId)');
+
+  const hydrated = hydrateSignatureRowForSignedPdf(
+    {
+      id: signatureProcessId,
+      contract_id: signatureProcessId,
+      tenant_id: 't',
+      customer_id: null,
+      signer_name: null,
+      signer_email: null,
+      signer_document: null,
+      signature_status: 'PARTIALLY_SIGNED',
+      signature_token: 'tok',
+      signature_url: 'url',
+      ip_address: null,
+      user_agent: null,
+      viewed_at: null,
+      signed_at: null,
+      expires_at: '2099-01-01T00:00:00.000Z',
+      signature_hash: null,
+      created_at: '2026-10-02T12:00:00.000Z',
+      updated_at: '2026-10-02T12:00:00.000Z',
+    },
+    [
+      party('BUYER', 'SEVERINO JOSE DE FRANÇA', 'SIGNED', {
+        contract_id: contractId,
+        contract_signature_id: signatureProcessId,
+      }),
+    ],
+    contractId,
+  );
+  assert(hydrated.contract_id === contractId, 'hydrate pina contract_id no contrato pedido');
+  assert(hydrated.id === signatureProcessId, 'hydrate preserva o id do processo');
+}
+
 function testGenerationErrorIsNotSignature404() {
   const freeze = classifySignedPdfGenerationError(new Error('Falha ao congelar PDF físico'));
   assert(freeze.includes('Falha ao congelar PDF físico LF ESTRELA'), 'classifica freeze');
@@ -300,6 +392,7 @@ async function main() {
   testSourceGuards();
   testPartialStamps();
   testSignedPdfFindsPartiesWithoutLegacyField();
+  testNeverUseSignatureProcessIdAsContractId();
   testGenerationErrorIsNotSignature404();
   await testComposePreservesInstrumentPages();
   console.log('OK — mandatory-lf-estrela-signed-pdf-tests passed');

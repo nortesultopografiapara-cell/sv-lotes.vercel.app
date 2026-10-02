@@ -426,6 +426,23 @@ export async function buildLfEstrelaSignedSaleContractPdf(input: {
 }): Promise<Uint8Array> {
   const { listSignatureParties } = await import('@/lib/saleContractSignatureParties');
   const { buildSaleContractPdfFromHtml } = await import('@/lib/saleContractPdf');
+  const signatureProcessId = String(input.signature?.id || '').trim();
+
+  console.info('[LF SIGNED PDF CONTRACT LOOKUP]', {
+    requestedContractId: input.contractId,
+    lookupContractId: input.contractId,
+    signatureProcessId: signatureProcessId || null,
+    saleId: null,
+    physicalPdfContractId: input.contractId,
+    regeneratedFrom: null,
+    stage: 'physical_pdf_lookup',
+  });
+
+  if (signatureProcessId && input.contractId === signatureProcessId) {
+    throw new Error(
+      `[stage=physical_pdf_lookup] Contrato não encontrado. buildLfEstrelaSignedSaleContractPdf recebeu o ID do processo (${signatureProcessId}) como contracts.id.`,
+    );
+  }
 
   let parties: ContractSignaturePartyRow[] = [];
   if (input.signature?.id) {
@@ -437,38 +454,80 @@ export async function buildLfEstrelaSignedSaleContractPdf(input: {
     company: input.company || input.tenant,
   });
 
-  let physical = await loadLfEstrelaPhysicalPdfBytes({
-    supabaseAdmin: input.supabaseAdmin,
-    tenantId: input.tenantId,
-    contractNumber: input.contractNumber,
-    pdfUrl: input.physicalPdfUrl,
-  });
+  let physical: Awaited<ReturnType<typeof loadLfEstrelaPhysicalPdfBytes>> = null;
+  try {
+    physical = await loadLfEstrelaPhysicalPdfBytes({
+      supabaseAdmin: input.supabaseAdmin,
+      tenantId: input.tenantId,
+      contractNumber: input.contractNumber,
+      pdfUrl: input.physicalPdfUrl,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`[stage=physical_pdf_lookup] ${message}`);
+  }
 
   if (!physical) {
-    const fallback = await buildSaleContractPdfFromHtml(input.originalHtml, input.chrome, {
-      skipPaginationMeasure: true,
+    console.info('[LF SIGNED PDF STAGE]', {
+      stage: 'physical_pdf_freeze',
+      requestedContractId: input.contractId,
+      pdfUrl: String(input.physicalPdfUrl || '').trim() || null,
     });
-    physical = {
-      bytes: fallback,
-      source: 'storage',
-      sha256: sha256Hex(fallback),
-      pageCount: (await PDFDocument.load(fallback)).getPageCount(),
-    };
+    try {
+      const fallback = await buildSaleContractPdfFromHtml(input.originalHtml, input.chrome, {
+        skipPaginationMeasure: true,
+      });
+      physical = {
+        bytes: fallback,
+        source: 'storage',
+        sha256: sha256Hex(fallback),
+        pageCount: (await PDFDocument.load(fallback)).getPageCount(),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`[stage=physical_pdf_freeze] ${message}`);
+    }
   }
 
   let certificatePdfBytes: Uint8Array | null = null;
   const certificateHtml = String(input.certificateHtml || '').trim();
   if (certificateHtml) {
-    certificatePdfBytes = await buildSaleContractPdfFromHtml(certificateHtml, input.chrome, {
-      skipPaginationMeasure: true,
-      displayHeaderFooter: false,
-      marginMm: { top: 15, right: 15, bottom: 15, left: 15 },
+    console.info('[LF SIGNED PDF STAGE]', {
+      stage: 'certificate',
+      requestedContractId: input.contractId,
     });
+    try {
+      certificatePdfBytes = await buildSaleContractPdfFromHtml(certificateHtml, input.chrome, {
+        skipPaginationMeasure: true,
+        displayHeaderFooter: false,
+        marginMm: { top: 15, right: 15, bottom: 15, left: 15 },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`[stage=certificate] ${message}`);
+    }
   }
 
-  return composeLfEstrelaSignedPdf({
-    physicalBytes: physical.bytes,
-    stamps,
-    certificatePdfBytes,
+  console.info('[LF SIGNED PDF STAGE]', {
+    stage: 'overlay',
+    requestedContractId: input.contractId,
+    stampCount: stamps.length,
+    physicalPages: physical.pageCount,
   });
+  try {
+    const signed = await composeLfEstrelaSignedPdf({
+      physicalBytes: physical.bytes,
+      stamps,
+      certificatePdfBytes,
+    });
+    console.info('[LF SIGNED PDF STAGE]', {
+      stage: 'append',
+      requestedContractId: input.contractId,
+      bytes: signed.byteLength,
+    });
+    return signed;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`[stage=overlay] ${message}`);
+  }
 }

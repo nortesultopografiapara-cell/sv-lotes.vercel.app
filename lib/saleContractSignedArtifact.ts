@@ -17,6 +17,7 @@ import {
   getContractSignedParties,
   hydrateSignatureRowForSignedPdf,
   logSignedPdfTrace,
+  resolveSignedPdfDocumentContractId,
 } from '@/lib/saleContractSignedParties';
 import { shouldBlockUnsignedFallbackAfterElectronicSign } from '@/lib/saleContractSignatureRenderMode';
 
@@ -83,7 +84,7 @@ export async function loadSignedSaleContractArtifact(
   if (!row) {
     const { data } = await supabaseAdmin
       .from('contracts')
-      .select('id, contract_number, status, signature_status, pdf_signed_url, tenant_id, company_id, sale_id, regenerated_from')
+      .select('id, contract_number, status, signature_status, pdf_signed_url, pdf_url, tenant_id, company_id, sale_id, regenerated_from')
       .eq('id', id)
       .maybeSingle();
     row = (data as Record<string, unknown>) || null;
@@ -113,8 +114,19 @@ export async function loadSignedSaleContractArtifact(
     legacyContractStatus: row.status || null,
   });
 
+  const documentContractId = resolveSignedPdfDocumentContractId({
+    requestedContractId: id,
+    signatureProcessId: resolved.process?.id,
+    signatureContractId: resolved.process?.contract_id,
+    partyContractId: resolved.parties[0]?.contract_id,
+  });
+
   const signature = resolved.process
-    ? hydrateSignatureRowForSignedPdf(resolved.process, resolved.parties)
+    ? hydrateSignatureRowForSignedPdf(
+        resolved.process,
+        resolved.parties,
+        documentContractId,
+      )
     : null;
 
   if (resolved.signatureSource !== 'none') {
@@ -124,10 +136,27 @@ export async function loadSignedSaleContractArtifact(
       );
     }
     try {
-      const signContext = await loadSaleSignPageContext(supabaseAdmin, signature);
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: 'contract_lookup',
+        requestedContractId: id,
+        lookupContractId: documentContractId,
+        signatureProcessId: signature.id,
+        saleId: row.sale_id || null,
+        physicalPdfContractId: documentContractId,
+        regeneratedFrom: row.regenerated_from || null,
+      });
+      const signContext = await loadSaleSignPageContext(supabaseAdmin, signature, {
+        documentContractId,
+      });
+      console.info('[LF SIGNED PDF STAGE]', {
+        stage: 'physical_pdf_lookup',
+        requestedContractId: id,
+        lookupContractId: documentContractId,
+        pdfUrl: String(row.pdf_url || signContext.contract.pdf_url || '').trim() || null,
+      });
       const { pdf, contractNumber: num } = await loadSaleContractPdfForSign(
         supabaseAdmin,
-        id,
+        documentContractId,
         { signature, signContext },
       );
       if (pdf.byteLength >= 5) {
