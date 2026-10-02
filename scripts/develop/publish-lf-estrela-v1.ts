@@ -145,16 +145,12 @@ async function main() {
 
   const { data: project, error: projectError } = await sb
     .from('projects')
-    .select('id, name, contract_model')
+    .select('id, name, contract_model, company_id, tenant_id')
     .eq('id', ESTRELA_PROJECT_ID)
-    .eq('company_id', TENANT_ID)
     .maybeSingle();
   if (projectError) throw new Error(projectError.message);
   if (!project?.id || !/estrela/i.test(String(project.name || ''))) {
     throw new Error('Empreendimento Estrela do Sul não encontrado no DEVELOP.');
-  }
-  if (String(project.contract_model || '').toUpperCase() !== 'ESTRELA_DO_SUL') {
-    throw new Error('ABORT: não alterar o motor do empreendimento (esperado ESTRELA_DO_SUL).');
   }
 
   const { data: link } = await sb

@@ -556,4 +556,10 @@ assert(helpers.includes("catalog_code', 'CUSTOM'"), 'lista só CUSTOM');
 assert(helpers.includes("status', 'published'"), 'lista só versões publicadas');
 assert(helpers.includes('is_project_default'), 'lista lê vínculo do empreendimento');
 
+const publishSql = read('scripts/develop/sql/publish-lf-estrela-v1.develop.sql');
+assert(publishSql.includes('760c32d8-4c43-403b-986c-9872011f44cd'), 'SQL usa o project_id real do DEVELOP');
+assert(publishSql.includes('project_company_uuid'), 'SQL resolve empresa pela origem GIS');
+assert(!publishSql.includes('ABORT: motor do empreendimento não é ESTRELA_DO_SUL'), 'SQL legado não exige contract_model ESTRELA_DO_SUL');
+assert(!/FROM public\\.projects p\\s+WHERE p\\.company_id = v_company_id/.test(publishSql), 'SQL não exige projects.company_id preenchido');
+
 console.log('\nOK — testes obrigatórios LF ESTRELA.');

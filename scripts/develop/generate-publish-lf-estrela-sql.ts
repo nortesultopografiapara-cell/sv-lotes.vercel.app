@@ -14,11 +14,11 @@ import {
   buildLfEstrelaCustomHtml,
 } from '../../lib/lfEstrelaCustomTemplate';
 
-const COMPANY_HINT = '3052a000-e8b9-43a4-b8ab-91a4392ffcbc';
-const PROJECT_HINT = '760c32d8-4c43-403b-986c-9872011f44cd';
+const PROJECT_ID = '760c32d8-4c43-403b-986c-9872011f44cd';
 const HTML_TAG = 'lf_estrela_html_v1';
 const BODY_TAG = 'publish_lf_estrela';
 const OUT = join(__dirname, 'sql', 'publish-lf-estrela-v1.develop.sql');
+const UUID_RE = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 
 function main() {
   const html = buildLfEstrelaCustomHtml();
@@ -34,9 +34,11 @@ function main() {
 -- DEVELOP ONLY — projeto hoynysmynxncdlptuzub
 -- SQL Editor: https://supabase.com/dashboard/project/hoynysmynxncdlptuzub/sql
 -- NÃO executar em Production aezktedncttwpqeunjej
--- NÃO altera projects.contract_model (motor ESTRELA_DO_SUL permanece)
+-- NÃO altera projects.company_id
+-- NÃO altera projects.contract_model (legado NULL / herda empresa)
 -- NÃO apaga Estrela do Sul / system_seed
 -- NÃO marca LF ESTRELA como padrão (o usuário seleciona no dropdown e salva)
+-- Empresa: mesma origem do GIS (company_id || tenant_id) + relações reais do project_id
 -- HTML oficial do commit b346e09 (buildLfEstrelaCustomHtml)
 -- =============================================================================
 
@@ -45,9 +47,17 @@ BEGIN;
 DO $${BODY_TAG}$
 DECLARE
   v_company_id uuid;
-  v_project_id uuid;
+  v_company_name text;
+  v_origin text;
+  v_project_id uuid := '${PROJECT_ID}'::uuid;
   v_project_name text;
   v_project_model text;
+  v_project_company_col text;
+  v_project_tenant_col text;
+  v_project_company_uuid uuid;
+  v_candidate_count int;
+  v_candidate_dump text;
+  v_bypass_trigger boolean := false;
   v_model_id uuid;
   v_draft_id uuid;
   v_published_html text;
@@ -56,57 +66,184 @@ DECLARE
 ${html}
 $${HTML_TAG}$;
 BEGIN
-  SELECT c.id
-    INTO v_company_id
-  FROM public.companies c
-  WHERE c.id = '${COMPANY_HINT}'::uuid
-  LIMIT 1;
-
-  IF v_company_id IS NULL THEN
-    SELECT c.id
-      INTO v_company_id
-    FROM public.companies c
-    WHERE c.name ILIKE '%L.F.%'
-       OR c.fantasy_name ILIKE '%L.F.%'
-       OR c.name ILIKE '%ESTRELA DO SUL%'
-       OR c.fantasy_name ILIKE '%ESTRELA DO SUL%'
-    ORDER BY c.created_at
-    LIMIT 1;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.projects p WHERE p.id = v_project_id
+  ) THEN
+    RAISE EXCEPTION 'DEVELOP: project_id % não encontrado', v_project_id;
   END IF;
 
-  IF v_company_id IS NULL THEN
-    RAISE EXCEPTION 'DEVELOP: company_id da L.F. / Estrela do Sul não encontrado';
-  END IF;
-
-  SELECT p.id, p.name, p.contract_model
-    INTO v_project_id, v_project_name, v_project_model
+  SELECT
+    p.name,
+    p.contract_model::text,
+    nullif(btrim(to_jsonb(p)->>'company_id'), ''),
+    nullif(btrim(to_jsonb(p)->>'tenant_id'), '')
+  INTO v_project_name, v_project_model, v_project_company_col, v_project_tenant_col
   FROM public.projects p
-  WHERE p.company_id = v_company_id
-    AND p.id = '${PROJECT_HINT}'::uuid
-  LIMIT 1;
+  WHERE p.id = v_project_id;
 
-  IF v_project_id IS NULL THEN
-    SELECT p.id, p.name, p.contract_model
-      INTO v_project_id, v_project_name, v_project_model
-    FROM public.projects p
-    WHERE p.company_id = v_company_id
-      AND (
-        p.name ILIKE 'CHACREAMENTO ESTRELA DO SUL'
-        OR p.name ILIKE '%ESTRELA DO SUL%'
-      )
-    ORDER BY p.created_at
-    LIMIT 1;
-  END IF;
-
-  IF v_project_id IS NULL OR v_project_name IS NULL OR v_project_name !~* 'estrela' THEN
-    RAISE EXCEPTION 'DEVELOP: empreendimento CHACREAMENTO ESTRELA DO SUL não encontrado';
-  END IF;
-
-  IF upper(trim(coalesce(v_project_model, ''))) IS DISTINCT FROM 'ESTRELA_DO_SUL' THEN
+  IF v_project_name IS NULL OR v_project_name !~* 'estrela' THEN
     RAISE EXCEPTION
-      'ABORT: motor do empreendimento não é ESTRELA_DO_SUL (atual=%)',
-      v_project_model;
+      'ABORT: project_id % não é CHACREAMENTO ESTRELA DO SUL (nome=%)',
+      v_project_id, v_project_name;
   END IF;
+
+  BEGIN
+    SELECT public.project_company_uuid(p.*)
+      INTO v_project_company_uuid
+    FROM public.projects p
+    WHERE p.id = v_project_id;
+  EXCEPTION WHEN undefined_function THEN
+    v_project_company_uuid := NULL;
+  END;
+
+  CREATE TEMP TABLE IF NOT EXISTS lf_estrela_company_hits (
+    company_id uuid NOT NULL,
+    origin text NOT NULL
+  ) ON COMMIT DROP;
+  DELETE FROM lf_estrela_company_hits;
+
+  IF v_project_company_uuid IS NOT NULL THEN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    VALUES (
+      v_project_company_uuid,
+      'project_company_uuid (GIS oficial: projects.company_id || projects.tenant_id)'
+    );
+  END IF;
+
+  IF v_project_company_col ~* '${UUID_RE}' THEN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    VALUES (v_project_company_col::uuid, 'projects.company_id');
+  END IF;
+
+  IF v_project_tenant_col ~* '${UUID_RE}' THEN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    VALUES (
+      v_project_tenant_col::uuid,
+      'projects.tenant_id (filtro GIS: tenant_id OR company_id)'
+    );
+  END IF;
+
+  BEGIN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    SELECT DISTINCT x.id, 'sales.company_id/tenant_id do project_id'
+    FROM (
+      SELECT NULLIF(btrim(to_jsonb(s)->>'company_id'), '') AS raw
+      FROM public.sales s
+      WHERE s.project_id = v_project_id
+      UNION ALL
+      SELECT NULLIF(btrim(to_jsonb(s)->>'tenant_id'), '')
+      FROM public.sales s
+      WHERE s.project_id = v_project_id
+    ) t
+    CROSS JOIN LATERAL (
+      SELECT t.raw::uuid AS id
+      WHERE t.raw ~* '${UUID_RE}'
+    ) x;
+  EXCEPTION WHEN undefined_table OR undefined_column OR invalid_text_representation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    SELECT DISTINCT x.id, 'blocks.tenant_id/company_id do project_id'
+    FROM (
+      SELECT NULLIF(btrim(to_jsonb(b)->>'tenant_id'), '') AS raw
+      FROM public.blocks b
+      WHERE b.project_id = v_project_id
+      UNION ALL
+      SELECT NULLIF(btrim(to_jsonb(b)->>'company_id'), '')
+      FROM public.blocks b
+      WHERE b.project_id = v_project_id
+    ) t
+    CROSS JOIN LATERAL (
+      SELECT t.raw::uuid AS id
+      WHERE t.raw ~* '${UUID_RE}'
+    ) x;
+  EXCEPTION WHEN undefined_table OR undefined_column OR invalid_text_representation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    SELECT DISTINCT opa.tenant_id, 'owner_project_access.tenant_id'
+    FROM public.owner_project_access opa
+    WHERE opa.project_id = v_project_id
+      AND opa.tenant_id IS NOT NULL;
+  EXCEPTION WHEN undefined_table OR undefined_column THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    SELECT DISTINCT cfg.company_id, 'project_revenue_split_configs.company_id'
+    FROM public.project_revenue_split_configs cfg
+    WHERE cfg.project_id = v_project_id
+      AND cfg.company_id IS NOT NULL;
+  EXCEPTION WHEN undefined_table OR undefined_column THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO lf_estrela_company_hits(company_id, origin)
+    SELECT DISTINCT fa.company_id, 'company_financial_accounts via projects.financial_account_id'
+    FROM public.projects p
+    JOIN public.company_financial_accounts fa
+      ON fa.id::text = NULLIF(btrim(to_jsonb(p)->>'financial_account_id'), '')
+    WHERE p.id = v_project_id
+      AND fa.company_id IS NOT NULL;
+  EXCEPTION WHEN undefined_table OR undefined_column THEN
+    NULL;
+  END;
+
+  DELETE FROM lf_estrela_company_hits h
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.companies c WHERE c.id = h.company_id
+  );
+
+  IF v_project_company_uuid IS NOT NULL
+     AND EXISTS (SELECT 1 FROM public.companies c WHERE c.id = v_project_company_uuid) THEN
+    v_company_id := v_project_company_uuid;
+    v_origin := 'project_company_uuid (GIS oficial: projects.company_id || projects.tenant_id)';
+  ELSE
+    SELECT COUNT(DISTINCT h.company_id), string_agg(DISTINCT h.company_id::text || ' ← ' || h.origin, ' | ')
+      INTO v_candidate_count, v_candidate_dump
+    FROM lf_estrela_company_hits h;
+
+    IF COALESCE(v_candidate_count, 0) = 1 THEN
+      SELECT h.company_id, string_agg(DISTINCT h.origin, ' + ')
+        INTO v_company_id, v_origin
+      FROM lf_estrela_company_hits h
+      GROUP BY h.company_id;
+      v_bypass_trigger := (v_project_company_uuid IS NULL);
+    ELSIF COALESCE(v_candidate_count, 0) = 0 THEN
+      RAISE EXCEPTION
+        'ABORT: não foi possível determinar a empresa do project_id %. projects.company_id=% projects.tenant_id=% contract_model=%. Nenhuma relação sales/blocks/owner/split/conta financeira apontou para uma companies.id.',
+        v_project_id, v_project_company_col, v_project_tenant_col, v_project_model;
+    ELSE
+      RAISE EXCEPTION
+        'ABORT: empresa ambígua para project_id %. candidatos=%',
+        v_project_id, v_candidate_dump;
+    END IF;
+  END IF;
+
+  SELECT c.name INTO v_company_name
+  FROM public.companies c
+  WHERE c.id = v_company_id;
+
+  IF v_company_id IS NULL OR v_company_name IS NULL THEN
+    RAISE EXCEPTION 'ABORT: company_id resolvido não existe em companies';
+  END IF;
+
+  RAISE NOTICE 'VALIDAÇÃO LF ESTRELA — project_id=% project_name=% projects.company_id=% projects.tenant_id=% projects.contract_model=% company_id=% company_name=% origem=% bypass_trigger=%',
+    v_project_id,
+    v_project_name,
+    v_project_company_col,
+    v_project_tenant_col,
+    v_project_model,
+    v_company_id,
+    v_company_name,
+    v_origin,
+    v_bypass_trigger;
 
   SELECT m.id
     INTO v_model_id
@@ -250,22 +387,37 @@ BEGIN
     );
   END IF;
 
-  INSERT INTO public.project_contract_model_links (
-    project_id,
-    company_id,
-    company_contract_model_id,
-    is_project_default
-  )
-  SELECT v_project_id, v_company_id, v_model_id, false
-  WHERE NOT EXISTS (
-    SELECT 1
-    FROM public.project_contract_model_links l
-    WHERE l.project_id = v_project_id
-      AND l.company_contract_model_id = v_model_id
-  );
+  BEGIN
+    IF v_bypass_trigger THEN
+      EXECUTE 'ALTER TABLE public.project_contract_model_links DISABLE TRIGGER trg_project_contract_model_link_tenant';
+    END IF;
 
-  RAISE NOTICE 'LF ESTRELA publicado. company=% project=% model=%',
-    v_company_id, v_project_id, v_model_id;
+    INSERT INTO public.project_contract_model_links (
+      project_id,
+      company_id,
+      company_contract_model_id,
+      is_project_default
+    )
+    SELECT v_project_id, v_company_id, v_model_id, false
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM public.project_contract_model_links l
+      WHERE l.project_id = v_project_id
+        AND l.company_contract_model_id = v_model_id
+    );
+
+    IF v_bypass_trigger THEN
+      EXECUTE 'ALTER TABLE public.project_contract_model_links ENABLE TRIGGER trg_project_contract_model_link_tenant';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    IF v_bypass_trigger THEN
+      EXECUTE 'ALTER TABLE public.project_contract_model_links ENABLE TRIGGER trg_project_contract_model_link_tenant';
+    END IF;
+    RAISE;
+  END;
+
+  RAISE NOTICE 'LF ESTRELA publicado. company=% (%) project=% origem=% model=%',
+    v_company_id, v_company_name, v_project_id, v_origin, v_model_id;
 END
 $${BODY_TAG}$;
 
@@ -290,6 +442,7 @@ SELECT
   p.id AS project_id,
   p.name AS project_name,
   p.contract_model AS project_engine,
+  l.company_id AS link_company_id,
   l.is_project_default
 FROM public.company_contract_models m
 JOIN public.company_contract_model_versions v
@@ -297,6 +450,7 @@ JOIN public.company_contract_model_versions v
  AND v.status = 'published'
 LEFT JOIN public.project_contract_model_links l
   ON l.company_contract_model_id = m.id
+ AND l.project_id = '${PROJECT_ID}'::uuid
 LEFT JOIN public.projects p
   ON p.id = l.project_id
 WHERE m.name = '${LF_ESTRELA_MODEL_NAME}'
